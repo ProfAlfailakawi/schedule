@@ -355,7 +355,8 @@ ok('184 an official branch-site location proven by the authority document is reg
    and 'if(!prefix||prefix===basePrefix)continue;' in server
    and 'if(!scope||scope.isBase)continue;' in server
    and 'source:"AUTHORITY_DOCUMENT"' in server
-   and 'if(provisioned.buildings.length||provisioned.rooms.length)registry=await readLocationRegistry(true);' in server)
+   and 'if(provisioned.buildings.length||provisioned.rooms.length)registry=await readLocationRegistry(true);' in server
+   and 'تعذّر تسجيل مواقع الفرع المذكورة في المستند' in server)
 
 ok('185 an empty print portal claims no paper, and the rule outranks the portal display rule that carries an id',
    'body.has-print-portal>#app-print-root>.print-only:empty{display:none!important}' in print_css

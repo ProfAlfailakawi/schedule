@@ -6846,11 +6846,19 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      building. */
   /* مواقع الفرع التي أثبتتها الوثيقة تدخل السجل قبل حسم أي صف، وإلا خرج صف
      الفحيحيل بلا مبنى لمجرد أن تاريخ القسم كله من مقره الرئيسي. */
-  const provisioned=await provisionBranchSiteLocationsFromAuthority(registry,parsed.rows as any[],{
-    branchRoot:academicDigits(headerPreflight.branch?.code).slice(0,3),baseSitePrefix:targetSitePrefix,
-    colleges,sections,collegeId,sectionId,byUserId:Number(req.user?.SystemUserId||0),
-  });
-  if(provisioned.buildings.length||provisioned.rooms.length)registry=await readLocationRegistry(true);
+  /* وتسجيلُها زيادةُ خيرٍ لا شرطُ قراءة: إن تعذّرت الكتابة لم يسقط الاستيراد
+     كله معها — تُقرأ الصفوف بالسجل كما هو، وتبقى صفوف ذلك الموقع بلا مبنى
+     محسوم فيراجعها صاحبها، وهو أهون من ردّ المستند كله بخطأ. */
+  let provisioned:{buildings:string[];rooms:string[]}={buildings:[],rooms:[]};
+  try{
+    provisioned=await provisionBranchSiteLocationsFromAuthority(registry,parsed.rows as any[],{
+      branchRoot:academicDigits(headerPreflight.branch?.code).slice(0,3),baseSitePrefix:targetSitePrefix,
+      colleges,sections,collegeId,sectionId,byUserId:Number(req.user?.SystemUserId||0),
+    });
+    if(provisioned.buildings.length||provisioned.rooms.length)registry=await readLocationRegistry(true);
+  }catch{
+    parsed.issues.push("تعذّر تسجيل مواقع الفرع المذكورة في المستند؛ تابعت القراءة بالسجل الحالي، وما لم يُحسم مبناه يظهر للمراجعة.");
+  }
 
   const confirmedOfficialBuildingCodes=registry.buildings.filter((item:any)=>item.confidence==="CONFIRMED").map((item:any)=>String(item.officialCode||""));
   const sourceBranchRoot=academicDigits(headerPreflight.branch?.code).slice(0,3);
