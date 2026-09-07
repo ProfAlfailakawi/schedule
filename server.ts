@@ -2823,10 +2823,15 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
    * ولا شيء من هذا يتعدى فصله: النوافذ تُقرأ من جدول هذا الفصل، والطلبات
    * محفوظة برقمه، فلا ينتقل إذنٌ إلى فصل قادم بحال.
    */
-  const roomOwnerSection=(room:any)=>{
-    const ids=[...new Set([...(Array.isArray(room.primarySectionIds)?room.primarySectionIds:[]),...(Array.isArray(room.sectionIds)?room.sectionIds:[])].map(Number).filter(Boolean))];
-    return ids.length?ids[0]:0;
-  };
+  /* ── القاعة المشتركة لها أكثر من صاحب ────────────────────────────────────
+   * كان يُؤخذ أولُ قسم مسجَّل مالكاً وحيداً، فقسمٌ لا يظهر اسمه إلا ثانياً في
+   * قاعة مشتركة لا يُرى في اللوحة قط — ولا في مرشِّح الأقسام — فيقول صاحب
+   * الجدول: «في أقسام لم تظهر». فصارت الأسماء كلها تُذكر، ويبقى الطلبُ إلى
+   * الأول: قاعةٌ واحدة وإذنٌ واحد، لكن القارئ يعرف مع مَن يتشاركها. */
+  const roomOwnerSections=(room:any)=>[...new Set([
+    ...(Array.isArray(room.primarySectionIds)?room.primarySectionIds:[]),
+    ...(Array.isArray(room.sectionIds)?room.sectionIds:[]),
+  ].map(Number).filter(Boolean))];
   const buildingById=new Map(registry.buildings.map(building=>[building.id,building]));
   const collegeRooms=registry.rooms.filter(room=>{
     if(!room.active||room.confidence!=="CONFIRMED")return false;
@@ -2837,11 +2842,17 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
   });
   const opportunities:any[]=[];
   for(const room of collegeRooms){
-    const ownerSectionId=roomOwnerSection(room);
-    /* قاعة بلا قسم مسجَّل لا أحد يأذن فيها، وقاعة قسمي لا تُستعار من نفسي. */
-    if(!ownerSectionId||ownerSectionId===sectionId)continue;
+    const ownerIds=roomOwnerSections(room);
+    const ownerSectionId=ownerIds[0]||0;
+    /* قاعة بلا قسم مسجَّل لا أحد يأذن فيها، وقاعة قسمي لا تُستعار من نفسي —
+       ولو كنت أحد شركائها. */
+    if(!ownerSectionId||ownerIds.includes(sectionId))continue;
     const ownerSection=sections.find(section=>Number(section.AdSectionId)===ownerSectionId);
     if(!ownerSection)continue;
+    const ownerSections=ownerIds
+      .map(id=>sections.find(section=>Number(section.AdSectionId)===id))
+      .filter(Boolean)
+      .map(section=>({id:Number(section!.AdSectionId),name:String(section!.AdSectionName||"")}));
     const ownerCollegeId=Number(ownerSection.AdCollegeId||0);
     const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===ownerCollegeId);
     if(!ownerCollege)continue;
@@ -2869,6 +2880,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
               confidence:0,historyTerms:0,ownerShare:0,
               ownerCollegeId,ownerSectionId,
               ownerCollegeName:ownerCollege.AdCollegeName,ownerSectionName:ownerSection.AdSectionName,
+              ownerSections,shared:ownerSections.length>1,
             });
           }
         }
@@ -4647,7 +4659,15 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
     /* مبنى الموقع يظهر ولو لم يُسجَّل له بعد قاعة لهذا القسم: المراجع يثبّت
        المبنى أولاً ثم يختار «بانتظار تثبيت القاعة» — وحجبه يترك المحاضرة بلا
        مكان يمكن اختياره أصلاً. */
-    (!sectionId||eligibleBuildingIds.has(building.id)||inBranch(building.officialCode))&&
+    /* ── ومبنى الكلية المفتوحة كذلك ────────────────────────────────────
+       التعليق أعلاه كان يصف ما لا يفعله الشرط: «يظهر ولو لم يُسجَّل له بعد
+       قاعة لهذا القسم» لم تكن تتحقق إلا في وضع مواقع الفرع. فقسمٌ في الجهراء
+       لم تُسجَّل له قاعة بعد كان يفتح محرر الجدول فلا يجد مبنى واحداً يختاره
+       — لا إضافة موعد ولا تعديله. فصار انتماء المبنى للكلية المفتوحة كافياً
+       لعرضه؛ والقاعات تبقى محكومة بقاعدتها: قاعات القسم والمشتركة والمستعارة
+       بموافقة، ومن لا قاعة له بعد يختار «بانتظار تثبيت القاعة». */
+    (!sectionId||eligibleBuildingIds.has(building.id)||inBranch(building.officialCode)
+      ||(Boolean(collegeId)&&building.collegeIds.includes(collegeId)))&&
     (borrowedBuildingIds.has(building.id)||!collegeId||!building.collegeIds.length||building.collegeIds.includes(collegeId)||inBranch(building.officialCode))
   );
   const ids=new Set(buildings.map(building=>building.id));

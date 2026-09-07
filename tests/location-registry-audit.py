@@ -263,7 +263,7 @@ shell_css=(ROOT/'src/styles/03-shell.css').read_text()
 ok('130p the guide confirmation sits ABOVE the guide panel instead of trapped behind it', '.guide-preview-backdrop{position:fixed;inset:0;z-index:2300' in shell_css and '.smart-guide{\n  position:fixed;left:18px;top:18px;bottom:18px;z-index:2200' in shell_css)
 ok('130q a handover banner ends when the screen resolves it, and can never outlive its purpose', 'if (!tourActiveRef.current) finishHandoffToScreen();' in smart_guide and 'finishHandoffRef.current?.();' in smart_guide and '}, 12000);' in smart_guide)
 ok('130r re-importing one document never conflicts with the copies it is about to replace at the other sites', 'const ownScopes=new Set<string>' in server and 'departmentScopes.map(scope=>`${scope.collegeId}:${scope.sectionId}`)' in server)
-ok('130s a site building is offered even before a hall of this department is recorded under it', 'inBranch(building.officialCode))&&' in server and 'inBranch(buildingCodeById.get(room.buildingId))' in server)
+ok('130s a site building is offered even before a hall of this department is recorded under it', 'inBranch(building.officialCode)\n      ||(Boolean(collegeId)&&building.collegeIds.includes(collegeId)))&&' in server and 'inBranch(buildingCodeById.get(room.buildingId))' in server)
 ok('130t the site opening covers OTHER sites only, so the picker never becomes every building of the branch', 'const otherSitePrefixes=new Set<string>();' in server and "prefix&&prefix!==basePrefix)otherSitePrefixes.add(prefix)" in server)
 ok('130u a building number is written with its site whenever the list holds more than one site', 'const multiSite=bySite.size>1;' in (ROOT/'src/components/LocationPicker.tsx').read_text() and '<optgroup key={prefix} label={officialSiteLabel(prefix)}>' in (ROOT/'src/components/LocationPicker.tsx').read_text())
 ok('130v report scope is asked at the moment of printing, not carried as a second button for every report', 'query-scope-menu' in reports_branch_ui and 'setScopeMenu(scopeMenu === "comprehensive" ? null : "comprehensive")' in reports_branch_ui and '"يجمع الفروع…" : "الشامل — كل الفروع"' not in reports_branch_ui)
@@ -384,11 +384,11 @@ ok('188 hall barter offers every free window in the college from THIS term only 
    and 'return roomColleges.includes(collegeId);' in server
    and 'const free=!roomRows.some(row=>rowOccupiesWindow(row,day,start,end))' in server)
 ok('189 a room with no registered department cannot be borrowed, and no department borrows from itself',
-   'if(!ownerSectionId||ownerSectionId===sectionId)continue;' in server
+   'if(!ownerSectionId||ownerIds.includes(sectionId))continue;' in server
    and 'if(!requesterGender||hallCampusGender(ownerCollege.AdCollegeName)!==requesterGender)continue;' in server)
 ok('190 the barter board hides itself when there is nothing to borrow and nothing pending, and filters what it does show',
    'if (!hasAnything && !loading && !error) return null;' in barter_board
-   and 'hall-barter-owner-chips' in barter_board
+   and 'hall-barter-selects' in barter_board
    and 'hall-barter-search' in barter_board
    and 'ثبات الفراغ' not in barter_board
    and 'لهذا الفصل وحده' in barter_board)
@@ -397,5 +397,19 @@ ok('191 a changed instructor in the change report carries the civil id beside th
    'fieldChanged(entry, "AdInstructorId") && instructor?.AdInstructorCivil' in authority_report
    and 'className="authority-pdf-civil print-ltr"' in authority_report
    and '.authority-pdf-instructor .authority-pdf-civil{' in print_css)
+
+ok('192 a shared hall names every department registered to it, so a co-owner department is never invisible, and the request still goes to one owner',
+   'const roomOwnerSections=(room:any)=>' in server
+   and 'if(!ownerSectionId||ownerIds.includes(sectionId))continue;' in server
+   and 'ownerSections,shared:ownerSections.length>1,' in server
+   and 'ownersOf(item).some(owner => owner.id === ownerFilter)' in barter_board)
+ok('193 the barter filters are four compact lists in one row — day, building, department, period — not a wall of chips',
+   'hall-barter-selects' in barter_board
+   and 'تصفية باليوم' in barter_board and 'تصفية بالمبنى' in barter_board
+   and 'تصفية بالقسم' in barter_board and 'تصفية بالفترة' in barter_board
+   and 'hall-barter-owner-chips' not in barter_board
+   and 'hall-barter-owner-chips' not in schedule_css)
+ok('194 a building of the open college is selectable even before a room is registered for that department',
+   '||(Boolean(collegeId)&&building.collegeIds.includes(collegeId)))&&' in server)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
