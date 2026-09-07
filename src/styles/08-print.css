@@ -2128,7 +2128,13 @@
    Shared report rules above are unchanged; this host is visible only when this
    new report is being printed. */
 @media print{
-  .authority-pdf-print-host{display:none!important}
+  /* ── تقرير التغييرات لا يلحق بغيره ─────────────────────────────────
+   * `#app-print-root .print-only{display:block!important}` تحمل معرّفاً،
+   * فهي أقوى من صنفٍ مجرّد: ظلّ هذا المنفذ ظاهراً في كل طباعة أخرى متى
+   * بقي في الذاكرة تقريرُ تغييراتٍ سبق فتحه، فخرج التقرير الشامل ومعه
+   * تقرير التغييرات في وثيقة واحدة. القاعدة هنا بالقوة نفسها، ولا يفتحه
+   * إلا `data-print-kind="authority-pdf"` أدناه. */
+  #app-print-root>.authority-pdf-print-host,.authority-pdf-print-host{display:none!important}
   html[data-print-kind="authority-pdf"] #app-print-root>.print-only{display:none!important}
   html[data-print-kind="authority-pdf"] #app-print-root>.authority-pdf-print-host{display:block!important;visibility:visible!important}
   .authority-pdf-report,.authority-pdf-page{page:comprehensive!important}

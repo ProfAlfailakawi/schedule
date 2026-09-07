@@ -322,4 +322,7 @@ ok('175 weak course-column vote may use strict adjacent section/reference geomet
 ok('176 failed course cells receive field-specific same-cell local threshold recovery only after the fast strip lane', '(field === "code" || field === "refcode")' in doc_ocr and 'localOtsu: true' in doc_ocr and 'recognitionCell=s.localOtsu?otsuBinarize(lib,cell):cell' in doc_ocr)
 ok('177 older CamScanner course cells may carry at most two leading grid-rule glyphs for discovery and exact catalogue-constrained same-cell recovery', 'boundedLeadingRuleTail' in doc_ocr and 'token.length<=exactLength+2' in doc_ocr and 'token.length<=key.length+2' in doc_ocr and 'token.endsWith(key)||token.startsWith(key)' in doc_ocr)
 
+ok('178 the changes report never rides along with another printed document', '#app-print-root>.authority-pdf-print-host,.authority-pdf-print-host{display:none!important}' in print_css and 'if (printKind !== kind || authorityReport || authorityBook) {' in reports_src and 'setPrintKind("comprehensive-branch"); setAuthorityReport(null); setAuthorityBook(null);' in reports_src)
+ok('179 a hall registered to another department is absent from the picker until a barter is approved', 'if(room.sectionIds.some(id=>branchSectionIds.has(Number(id))))return true;' in server and 'if(borrowedSet.has(room.id))return true;' in server and 'return room.sectionIds.length===0&&inBranch(buildingCodeById.get(room.buildingId));' in server)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
