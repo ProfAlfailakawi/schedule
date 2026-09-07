@@ -72,7 +72,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [xlsxDraft, setXlsxDraft] = useState("");
   /* أين نُشر كل صف: يُملأ من رد النشر، ويبقى على الشاشة حين يكون الجواب أكثر
      من موقع واحد — لأن وثيقة وُزِّعت على ثلاثة جداول لا تُغلق نافذتها بصمت. */
-  const [publishedScopes, setPublishedScopes] = useState<Array<{siteLabel:string;count:number}>>([]);
+  /* ── ما بعد النشر ليس صفحةً أخرى ─────────────────────────────────────────
+   * كان الضغط على «تعبئة ونشرها» يعيد صاحبه إلى نافذة النقل الصغيرة بتبويباتها
+   * الخمسة، وكأن شيئاً لم يقع. والنشر خاتمة لا خطوة: تُعرض حصيلته وحدها — كم
+   * موعداً نُشر، وفي أي موقع — ثم يُغلق الباب بيده هو. */
+  const [publishReceipt, setPublishReceipt] = useState<{count:number;scopes:Array<{siteLabel:string;count:number}>}|null>(null);
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
   const [readProgress, setReadProgress] = useState<{ pct: number; message: string } | null>(null);
   /* The quick-edit course picker needs the department's catalogue; fetched once
@@ -472,7 +476,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   const readExcel = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
-    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishedScopes([]);
+    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishReceipt(null);
     setBusy(true);
     try {
       const XLSX = await import("xlsx");
@@ -703,7 +707,6 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
      * فبدا أن الاستيراد ابتلعها. الصمت هو العيب، لا التوزيع: النتيجة تُقال
      * الآن باسم كل موقع وعدد ما نُشر فيه. */
     const scopes=Array.isArray(data?.scopes)?data.scopes.filter((scope:any)=>scope&&scope.siteLabel):[];
-    setPublishedScopes(scopes);
     setXlsxDraft(`published:${id}`);onChanged();
     return scopes as Array<{siteLabel:string;count:number}>;
   };
@@ -756,13 +759,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
          instead of announcing a saved draft the reader would read as done. */
       if(publishNow&&id){
         const scopes=await publishImportedDraft(id);
-        /* “تعبئة ونشر” is a completed action, not another review step: the sheet
-           closes once the server confirms. The one exception is a publication
-           that landed in MORE THAN ONE site — closing on that would hide the
-           only place the reader is told where their rows went. */
-        if(scopes.length>1)return;
-        setXlsxDraft(id);
-        onClose();
+        /* لا عودة إلى النافذة الصغيرة ولا إلى جدول المعاينة: حصيلة النشر تحلّ
+           محلّ الشاشة كلها، ومنها يُغلق. */
+        const total=scopes.reduce((sum,scope)=>sum+Number(scope?.count||0),0)||Number(xlsxPreview?.count||0);
+        setPublishReceipt({count:total,scopes});
       } else {
         setXlsxDraft(id||"تم");
       }
@@ -779,7 +779,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     /* A new file starts a new review. Anything the sharper reading proposed for
        the previous file would otherwise still be on screen, offering cells that
        belong to a table that is no longer here. */
-    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishedScopes([]);
+    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishReceipt(null);
     if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") { await readPdf(file); return; }
     if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
     setError(null); setPreview(null); setPayload(null);
@@ -877,7 +877,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
   return (
     <div className="transfer-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className={`transfer-sheet visual-minimal${importPreviewOpen ? " is-page-wide" : ""}`} role="dialog" aria-modal="true" aria-label="نقل الجدول">
+      <section className={`transfer-sheet visual-minimal${importPreviewOpen && !publishReceipt ? " is-page-wide" : ""}`} role="dialog" aria-modal="true" aria-label="نقل الجدول">
         <header>
           <div>
             <span className="surface-kicker">الجدول كوحدة واحدة</span>
@@ -886,6 +886,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
 
+        {/* التبويبات تختفي مع الحصيلة: الشاشة قالت ما جرى، ولا عودة إلى
+            تبويبات النقل إلا بعد إغلاقها. */}
+        {publishReceipt ? null : (
         <nav className="transfer-tabs">
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")} title="تصدير"><Download />تصدير</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")} title="استيراد"><Upload />استيراد</button>
@@ -893,7 +896,27 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")} title="استبدال"><UserMinus />استبدال</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
         </nav>
+        )}
 
+        {publishReceipt ? (
+          <div className="transfer-body">
+            <div className="transfer-receipt" role="status" aria-live="polite">
+              <span className="transfer-receipt-mark"><Check aria-hidden="true" /></span>
+              <h3>نُشر الجدول</h3>
+              <p><b>{countOf(publishReceipt.count, AR.appointment)}</b> في مكانها من الجدول المعتمد.</p>
+              {publishReceipt.scopes.length > 1 ? (
+                <ul className="transfer-receipt-scopes">
+                  {publishReceipt.scopes.map(scope => (
+                    <li key={scope.siteLabel}><span>{scope.siteLabel}</span><b>{countOf(Number(scope.count||0), AR.appointment)}</b></li>
+                  ))}
+                </ul>
+              ) : null}
+              <small>تقرير تغييرات الجدول متاح الآن في مركز الاستعلامات والتقارير{publishReceipt.scopes.length > 1 ? "، وجدول كل موقع يُفتح من كليته: الكلية ثم القسم نفسه" : ""}.</small>
+              <PrimaryButton type="button" data-guide-ignore="إغلاق صندوق حصيلة النشر بعد اكتمالها؛ لا ينفذ ميزة تشغيلية" onClick={onClose}>تم</PrimaryButton>
+            </div>
+          </div>
+        ) : (
+        <>
         {!scopeReady ? (
           <p className="transfer-note"><AlertTriangle />اختر الكلية والقسم والفصل أولاً.</p>
         ) : null}
@@ -1156,23 +1179,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       {xlsxPreview.issues.length > 8 ? <li className="muted">و{xlsxPreview.issues.length - 8} غيرها…</li> : null}
                     </ul>
                   ) : null}
+                  {/* حصيلة النشر لها صندوقها الذي يحلّ محلّ الشاشة كلها، فلم
+                      يبق هنا إلا خبر المسودة. */}
                   {xlsxDraft ? (
-                    <>
-                      <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")
-                        ? "اكتمل تعبئة الجدول ونشره بنجاح. تقرير تغييرات PDF أصبح متاحاً في مركز الاستعلامات والتقارير."
-                        : "حُفظت المسودة داخل أدوات البيانات. يمكنك نشرها من هنا متى شئت."}</p>
-                      {publishedScopes.length>1 ? (
-                        <div className="transfer-published-scopes">
-                          <strong>وُزِّع الجدول على مواقع الفرع كما هو مكتوب في المستند:</strong>
-                          <ul>
-                            {publishedScopes.map(scope => (
-                              <li key={scope.siteLabel}><span>{scope.siteLabel}</span><b>{countOf(Number(scope.count||0), AR.appointment)}</b></li>
-                            ))}
-                          </ul>
-                          <small>جدول كل موقع يُفتح من كليته: اختر الكلية ثم القسم نفسه.</small>
-                        </div>
-                      ) : null}
-                    </>
+                    <p className="transfer-done"><Check /> حُفظت المسودة داخل أدوات البيانات. يمكنك نشرها من هنا متى شئت.</p>
                   ) : (
                     <div className="transfer-import-commit-wrap">
                       {/* الرسالة عند اليد التي تضغط. كانت تُعرض في أعلى النافذة
@@ -1372,6 +1382,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
             </>
           ) : null}
         </div>
+        </>
+        )}
       </section>
     </div>
   );

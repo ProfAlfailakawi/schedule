@@ -97,6 +97,13 @@
     overflow:visible !important;background:#fff !important;
     transform:none !important;
   }
+  /* ── لا ورقة لمنفذٍ فارغ ────────────────────────────────────────────
+     كل منفذ طباعة يترك في الجذر عنصراً حتى حين لا يحمل تقريراً. والعنصر
+     الفارغ يبقى على الورقة الافتراضية بينما التقرير على ورقة مسمّاة، فيفرض
+     المحرك انتقالاً بينهما ويخرج بعد آخر صفحة بياضٌ لا شيء فيه. الفارغ لا
+     يُطبع أصلاً. */
+  #app-print-root>.print-only:empty,
+  body.has-print-portal>#app-print-root>.print-only:empty{display:none!important}
   body.has-print-portal>#app-print-root .print-only,
   #app-print-root .print-only,
   .print-only{
@@ -2134,7 +2141,9 @@
    * بقي في الذاكرة تقريرُ تغييراتٍ سبق فتحه، فخرج التقرير الشامل ومعه
    * تقرير التغييرات في وثيقة واحدة. القاعدة هنا بالقوة نفسها، ولا يفتحه
    * إلا `data-print-kind="authority-pdf"` أدناه. */
-  #app-print-root>.authority-pdf-print-host,.authority-pdf-print-host{display:none!important}
+  #app-print-root>.authority-pdf-print-host,
+  body.has-print-portal>#app-print-root>.authority-pdf-print-host,
+  .authority-pdf-print-host{display:none!important}
   html[data-print-kind="authority-pdf"] #app-print-root>.print-only{display:none!important}
   html[data-print-kind="authority-pdf"] #app-print-root>.authority-pdf-print-host{display:block!important;visibility:visible!important}
   .authority-pdf-report,.authority-pdf-page{page:comprehensive!important}

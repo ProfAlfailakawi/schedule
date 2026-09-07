@@ -120,6 +120,22 @@ export function recoverOfficialBuildingCodeFromAuthorityCell(
     ||(official==="J"&&rawGlyph==="1");
   const packedFull=token.match(/^(\d{3})([A-Z0-9])(\d{2})$/);
   const packedDropZero=token.match(/^(\d{2})([A-Z0-9])(\d{2})$/);
+  /* ── الحرف المتضرر لا يُخمَّن، بل يسقط من المعادلة ────────────────────────
+   *
+   * كان الترميم يعرف تلفَ B و J وحدهما (8 و1)، فصفُّ الجهراء يُنقذ وصفُّ
+   * الفحيحيل لا — والقارئ يرى العلة «في الفحيحيل فقط» ولا يعرف لماذا.
+   * وقائمة تخمينٍ لكل حرف علاجٌ للأعراض. الأصحّ أن يُسأل: هل بقيةُ ما في
+   * الخلية — أرقامُ الفرع ورقمُ المبنى — تحدد كوداً رسمياً واحداً لا ثانيَ
+   * له في هذا الفرع؟ فإن كانت كذلك فالكود ثابتٌ بالدليل مهما قرأ الماسحُ
+   * الحرف، وإن نازعه كودٌ آخر بالرقم نفسه رُفض الصف كما كان يُرفض. لا
+   * تخمينَ حرفٍ، ولا توسيعَ للمقبول عند أدنى التباس. */
+  const uniqueByNumber=(building:string)=>{
+    const hits=candidates.filter(code=>{
+      const parsed=code.match(/^(\d{3})([A-Z])(\d{2})$/);
+      return Boolean(parsed&&parsed[3]===building);
+    });
+    return hits.length===1?hits[0]:null;
+  };
   const packed=packedFull||packedDropZero;
   if(packed&&(!branch||packed[1]===branch||packed[1]===branch.slice(-2))){
     const hits=candidates.filter(code=>{
@@ -127,6 +143,8 @@ export function recoverOfficialBuildingCodeFromAuthorityCell(
       return Boolean(parsed&&parsed[3]===packed[3]&&siteGlyphMatches(packed[2],parsed[2]));
     });
     if(hits.length===1)return hits[0];
+    const byNumber=uniqueByNumber(packed[3]);
+    if(byNumber)return byNumber;
   }
   for(const piece of alphaPieces){
     const beforeDigits=piece[1],siteGlyph=piece[2],building=String(Number(piece[3])).padStart(2,"0");
@@ -136,6 +154,8 @@ export function recoverOfficialBuildingCodeFromAuthorityCell(
       return Boolean(parsed&&parsed[3]===building&&siteGlyphMatches(siteGlyph,parsed[2]));
     });
     if(hits.length===1)return hits[0];
+    const byNumber=uniqueByNumber(building);
+    if(byNumber)return byNumber;
   }
 
   /* A clean short site+building token (B09) is accepted only if the supplied

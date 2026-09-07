@@ -61,7 +61,7 @@ import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRe
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
-import { collegeBranchRoot, collegeSitePrefix, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
+import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
 
@@ -148,6 +148,96 @@ async function readLocationRegistry(force=false){
   locationRegistryCache={at:Date.now(),...merged};return locationRegistryCache;
 }
 function invalidateLocationRegistry(){locationRegistryCache=null;}
+
+/* ── مواقع الفرع تدخل السجل من الوثيقة المعتمدة ───────────────────────────
+ *
+ * سجل المباني بُني من تاريخ الجداول، وتاريخ القسم كله من مقره الرئيسي. فحين
+ * جاءت وثيقة الجهة تحمل صفوف الجهراء والفحيحيل معاً، وجد النظام مبنى الجهراء
+ * 012J14 مسجَّلاً — لأن للقسم فيه تاريخاً — ولم يجد للفحيحيل 012F15 شيئاً.
+ * فخرج صف الفحيحيل بلا مبنى ولا قاعة، ولا مبنى في القائمة يُختار له: القسم
+ * يدرّس في موقع لا يعرفه سجله.
+ *
+ * والوثيقة المعتمدة هي بعينها المرجع الذي يُبنى منه السجل. فحين تُثبت رمزاً
+ * رسمي الشكل تماماً — ثلاثة أرقام فرع، حرف موقع، رقمَا مبنى — لموقعٍ له كلية
+ * مسجَّلة في النظام داخل فرع الوثيقة نفسه، فذلك إثبات لا تخمين، ويُسجَّل.
+ *
+ * وحدوده ثلاثة، وهي التي تجعله آمناً:
+ *   • المواقع الأخرى وحدها. المقر المفتوح سجله مبنيّ من تاريخه، وأي زيادة
+ *     فيه من قراءة ضوئية احتمالُ خطئها أكبر من فائدتها.
+ *   • الشكل الرسمي الكامل فقط. لا اختصار ولا ترميم ولا رقم مجاور.
+ *   • الفرع نفسه. 011 بنين لا يدخل من وثيقة 012 بنات مهما كان الشكل صحيحاً.
+ */
+async function provisionBranchSiteLocationsFromAuthority(
+  registry:{buildings:MasterBuilding[];rooms:MasterRoom[]},
+  rows:readonly any[],
+  ctx:{branchRoot:string;baseSitePrefix?:string;colleges:readonly any[];sections:readonly any[];collegeId:number;sectionId:number;byUserId:number},
+):Promise<{buildings:string[];rooms:string[]}>{
+  const branchRoot=String(ctx.branchRoot||"").replace(/\D/g,"").slice(0,3);
+  const basePrefix=String(ctx.baseSitePrefix||"").toUpperCase();
+  if(!branchRoot)return {buildings:[],rooms:[]};
+
+  const scopeOf=(prefix:string)=>resolveBranchScope(prefix,{colleges:ctx.colleges as any,sections:ctx.sections as any,baseCollegeId:ctx.collegeId,baseSectionId:ctx.sectionId});
+  const now=new Date().toISOString();
+  const buildingByCode=new Map(registry.buildings.map(item=>[String(item.officialCode||"").toUpperCase(),item]));
+  const newBuildings:MasterBuilding[]=[];
+  const newRooms:MasterRoom[]=[];
+  const roomKeys=new Set(registry.rooms.map(room=>`${room.buildingId}|${String(room.canonicalCode||"").toUpperCase()}`));
+
+  for(const row of rows){
+    /* حدٌّ للطول ثم حذفُ محرفٍ محرف: `\s+` على نصٍّ قادم من ملفٍ خارجي مسارٌ
+       معروف لاستنزاف المعالج بمدخل طويل، ولا حاجة إليه هنا أصلاً. */
+    const reading=String(row?.sourceBuildingText||row?.AdRoomCode||"").slice(0,40).normalize("NFKC").replace(/\s/g,"").toUpperCase();
+    const shape=reading.match(/^(\d{3})([A-Z])(\d{2})$/);
+    if(!shape||shape[1]!==branchRoot)continue;
+    /* لا يعبر من القراءة إلى هوية المستند حرفٌ واحد كما قُرئ: الكود يُعاد
+       بناؤه من أجزاء النمط الثلاثة، فما يُكتب معرّفاً في قاعدة البيانات
+       مُولَّدٌ عندنا لا منقولٌ من ملف. */
+    const code=`${shape[1]}${shape[2]}${shape[3]}`;
+    const prefix=`${shape[1]}${shape[2]}`;
+    if(!prefix||prefix===basePrefix)continue;               // المقر المفتوح لا يُوسَّع من قراءة ضوئية
+    const scope=scopeOf(prefix);
+    if(!scope||scope.isBase)continue;                       // موقع بلا كلية مسجَّلة: لا يُخترع له شيء
+
+    let building=buildingByCode.get(code);
+    if(!building){
+      building={
+        id:`building_${code}`,officialCode:code,sitePrefix:prefix,prefix:shape[1],siteLetter:shape[2],
+        buildingNumber:String(Number(shape[3])),siteName:scope.siteLabel,branchName:scope.collegeName,description:"",
+        active:true,aliases:[],collegeIds:[scope.collegeId],sectionIds:[scope.sectionId],
+        historicalUsageCount:0,firstTermId:null,lastTermId:null,roomCount:0,
+        confidence:"CONFIRMED",source:"AUTHORITY_DOCUMENT",adminVerified:false,
+        evidence:[`أثبتت وثيقة الجدول المعتمدة الرمز الرسمي ${code} لموقع «${scope.siteLabel}» داخل الفرع ${branchRoot}.`],
+        auditHistory:[{at:now,byUserId:ctx.byUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now,
+      } as MasterBuilding;
+      buildingByCode.set(code,building);newBuildings.push(building);
+    }else if(!building.sectionIds.includes(scope.sectionId)){
+      /* المبنى مسجَّل والقسم يدرّس فيه بشهادة الوثيقة: تُضاف علاقته وحدها. */
+      building={...building,sectionIds:[...building.sectionIds,scope.sectionId],updatedAt:now};
+      buildingByCode.set(code,building);newBuildings.push(building);
+    }
+
+    const roomReading=String(row?.sourceRoomText||row?.AdRoomHall||"").slice(0,40).normalize("NFKC").replace(/\s/g,"").toUpperCase();
+    const roomShape=roomReading.match(/^([A-Z]{1,2})(\d{1,3})$/);
+    if(!roomShape||isInvalidLocationToken(roomReading))continue;
+    const roomCode=`${roomShape[1]}${roomShape[2]}`;
+    const key=`${building.id}|${roomCode}`;
+    if(roomKeys.has(key))continue;
+    roomKeys.add(key);
+    newRooms.push({
+      id:`room_${code}_${roomCode}`,buildingId:building.id,buildingCode:code,canonicalCode:roomCode,active:true,
+      aliases:[],collegeIds:[scope.collegeId],sectionIds:[scope.sectionId],primarySectionIds:[scope.sectionId],
+      shared:false,sharedConfidence:"CONFIRMED",historicalUsageCount:0,
+      confidence:"CONFIRMED",source:"AUTHORITY_DOCUMENT",adminVerified:false,
+      evidence:[`أثبتت وثيقة الجدول المعتمدة القاعة ${roomCode} داخل المبنى ${code} لقسم «${scope.sectionName}» في «${scope.siteLabel}».`],
+      auditHistory:[{at:now,byUserId:ctx.byUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now,
+    } as MasterRoom);
+  }
+
+  if(newBuildings.length)await Repository.upsertLocationBuildings(newBuildings);
+  if(newRooms.length)await Repository.upsertLocationRooms(newRooms);
+  if(newBuildings.length||newRooms.length)invalidateLocationRegistry();
+  return {buildings:newBuildings.map(item=>item.officialCode),rooms:newRooms.map(item=>`${item.buildingCode}/${item.canonicalCode}`)};
+}
 async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:number){
   const [registry,colleges]=await Promise.all([readLocationRegistry(),Repository.getColleges()]);
   /* الموقع داخل الفرع نفسه ليس خارج النطاق: قاعة الجهراء تبقى قابلة للتعديل
@@ -4495,6 +4585,14 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
    */
   const includeBranchSites=String(req.query.branchSites||"")==="1";
   const branchSectionIds=new Set<number>([sectionId].filter(Boolean));
+  /* ── ما يُملأ أولاً يُعرَّف أولاً ──────────────────────────────────────────
+   * كان هذا التعريف تحت الحلقة التي تملؤه. والمترجم يسكت — النداء داخل دالة —
+   * بينما التنفيذ يرمي ReferenceError عند أول طلب بمواقع الفرع، فيعود الطلب
+   * خطأً ٥٠٠ وتصل القوائم فارغة: يفتح المستخدم التحرير فلا يجد مبناه ولا
+   * قاعته، وقد كانا مكتوبين أمامه قبل الضغط بلحظة.
+   * المواقع الأخرى فقط: مباني الموقع المفتوح تبقى محكومة بقاعدتها الأصلية —
+   * مبنى فيه قاعة لهذا القسم — وإلا انقلبت القائمة إلى كل مباني الفرع. */
+  const otherSitePrefixes=new Set<string>();
   if(includeBranchSites&&collegeId&&sectionId){
     const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
     const sites=siblingBranchScopes({colleges:colleges as any,sections:sections as any,baseCollegeId:collegeId,baseSectionId:sectionId});
@@ -4505,10 +4603,6 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
       if(prefix&&prefix!==basePrefix)otherSitePrefixes.add(prefix);
     });
   }
-  /* المواقع الأخرى فقط: مباني الموقع المفتوح تبقى محكومة بقاعدتها الأصلية —
-     مبنى فيه قاعة لهذا القسم — وإلا انقلبت القائمة إلى كل مباني الفرع، وهي
-     عشرات. المطلوب أن يجد صفُّ الجهراء مبنى الجهراء، لا أن يجد الجميع كل شيء. */
-  const otherSitePrefixes=new Set<string>();
   const inBranch=(officialCode:unknown)=>{
     if(!otherSitePrefixes.size)return false;
     const prefix=String(officialCode||"").toUpperCase().slice(0,4);
@@ -6567,12 +6661,13 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     if(earlyProblem){res.status(earlyProblem.status).json(earlyProblem.body);return;}
   }
 
-  const [allCourses,allInstructors,sectionHistory,departmentRooms,registry,departmentDelegates,visitingRoster]=await Promise.all([
+  const [allCourses,allInstructors,sectionHistory,departmentRooms,registrySnapshot,departmentDelegates,visitingRoster]=await Promise.all([
     Repository.getCourses(),Repository.getInstructors(),
     Repository.getSchedulesByScope({collegeId,sectionId}),
     Repository.getDepartmentRooms(collegeId,sectionId),readLocationRegistry(),
     Repository.getDepartmentDelegates(collegeId,sectionId),Repository.getVisitingRoster(collegeId,sectionId,termId),
   ]);
+  let registry=registrySnapshot as {buildings:MasterBuilding[];rooms:MasterRoom[]};
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
 
   /* Department history/delegates/visitors remain useful review evidence, but
@@ -6749,6 +6844,22 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      values need department context. This also lets us identify a real Fahaheel
      or Jahra exception instead of misclassifying it as an unknown main-campus
      building. */
+  /* مواقع الفرع التي أثبتتها الوثيقة تدخل السجل قبل حسم أي صف، وإلا خرج صف
+     الفحيحيل بلا مبنى لمجرد أن تاريخ القسم كله من مقره الرئيسي. */
+  /* وتسجيلُها زيادةُ خيرٍ لا شرطُ قراءة: إن تعذّرت الكتابة لم يسقط الاستيراد
+     كله معها — تُقرأ الصفوف بالسجل كما هو، وتبقى صفوف ذلك الموقع بلا مبنى
+     محسوم فيراجعها صاحبها، وهو أهون من ردّ المستند كله بخطأ. */
+  let provisioned:{buildings:string[];rooms:string[]}={buildings:[],rooms:[]};
+  try{
+    provisioned=await provisionBranchSiteLocationsFromAuthority(registry,parsed.rows as any[],{
+      branchRoot:academicDigits(headerPreflight.branch?.code).slice(0,3),baseSitePrefix:targetSitePrefix,
+      colleges,sections,collegeId,sectionId,byUserId:Number(req.user?.SystemUserId||0),
+    });
+    if(provisioned.buildings.length||provisioned.rooms.length)registry=await readLocationRegistry(true);
+  }catch{
+    parsed.issues.push("تعذّر تسجيل مواقع الفرع المذكورة في المستند؛ تابعت القراءة بالسجل الحالي، وما لم يُحسم مبناه يظهر للمراجعة.");
+  }
+
   const confirmedOfficialBuildingCodes=registry.buildings.filter((item:any)=>item.confidence==="CONFIRMED").map((item:any)=>String(item.officialCode||""));
   const sourceBranchRoot=academicDigits(headerPreflight.branch?.code).slice(0,3);
   for(const row of parsed.rows as any[]){

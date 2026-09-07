@@ -134,6 +134,15 @@ assert.equal(officialSiteLabel("012J"),"التربية الأساسية - الج
 assert.equal(officialSiteLabel("012F"),"التربية الأساسية - الفحيحيل");
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("011B17","012",officialBuildings),null);
 
+/* الحرف المتضرر يسقط من المعادلة ولا يُخمَّن: أرقام الفرع ورقم المبنى تحدد
+   كوداً واحداً في الفرع، فيُقبل مهما قرأ الماسح الحرف — والفحيحيل كالجهراء.
+   وإن نازع الرقمَ كودٌ آخر في الفرع نفسه رُفض الصف كما كان. */
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012E15","012",officialBuildings),"012F15");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12P15","012",officialBuildings),"012F15");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012715","012",officialBuildings),"012F15");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012E15","012",[...officialBuildings,"012J15"]),null);
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012E15","011",officialBuildings),null);
+
 /* A hall is accepted only inside its already-confirmed building. FO7 is a
    measured OCR form of F07; it may recover only because that exact official
    room exists under 012B07. */
