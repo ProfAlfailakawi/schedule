@@ -61,7 +61,7 @@ import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRe
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
-import { collegeBranchRoot, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
+import { collegeBranchRoot, collegeSitePrefix, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
 
@@ -3164,7 +3164,22 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
       message: "شيء لم ينتبه له أحد", detail: hall.text });
   }
 
-  return [...conflicts, ...barterNotes, ...(roomNotice ? [roomNotice] : []), ...softTravel, ...rhythmNote, ...memoryNotes];
+  /* ── الاستعارة المعتمدة ليست مخالفة نطاق ────────────────────────────────
+   * «تنبيه نطاق القاعة» يقول إن القاعة مسجلة لقسم آخر، وهو صحيح دائماً — حتى
+   * بعد أن يوافق القسم المضيف. وهو يمنع الحفظ (فليس soft)، فكان القسم الذي
+   * أتمّ الطلب والموافقة يُمنع من استعمال ما استُعير له، والرسالة التي يقرؤها
+   * «تنبيه» لا «رفض». فمتى غطّت نوافذُه المعتمدة أيام الموعد ووقتَه كاملاً،
+   * تحوّل التنبيه إلى ما هو: خبر يُقرأ ولا يمنع، بنصّه الصحيح. وما عدا ذلك
+   * يبقى مانعاً كما كان — الاستعارة تُطلب وتُعتمد، ولا تُفترض. */
+  const barterCoversRow=myApprovedWindows.length>0&&selectedBarterDays.length>0&&!borrowerWindowViolation;
+  const roomNotes=roomNotice
+    ? [barterCoversRow
+        ? {...roomNotice,severity:"low",soft:true,
+           message:`قاعة مستعارة بنافذة معتمدة: ${candidate.AdRoomCode}/${candidate.AdRoomHall}`,
+           detail:"القاعة مسجلة لقسم آخر، والاستعارة معتمدة لهذا اليوم والوقت. الحفظ مسموح داخل النافذة فقط."}
+        : roomNotice]
+    : [];
+  return [...conflicts, ...barterNotes, ...roomNotes, ...softTravel, ...rhythmNote, ...memoryNotes];
 }
 
 /**
@@ -4445,17 +4460,24 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
    */
   const includeBranchSites=String(req.query.branchSites||"")==="1";
   const branchSectionIds=new Set<number>([sectionId].filter(Boolean));
-  let branchRoots=new Set<string>();
   if(includeBranchSites&&collegeId&&sectionId){
     const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
     const sites=siblingBranchScopes({colleges:colleges as any,sections:sections as any,baseCollegeId:collegeId,baseSectionId:sectionId});
-    sites.forEach(site=>{branchSectionIds.add(Number(site.sectionId));branchRoots.add(String(site.sitePrefix||"").replace(/\D/g,"").slice(0,3));});
-    branchRoots=new Set([...branchRoots].filter(Boolean));
+    const basePrefix=collegeSitePrefix(colleges as any,collegeId);
+    sites.forEach(site=>{
+      branchSectionIds.add(Number(site.sectionId));
+      const prefix=String(site.sitePrefix||"").toUpperCase();
+      if(prefix&&prefix!==basePrefix)otherSitePrefixes.add(prefix);
+    });
   }
+  /* المواقع الأخرى فقط: مباني الموقع المفتوح تبقى محكومة بقاعدتها الأصلية —
+     مبنى فيه قاعة لهذا القسم — وإلا انقلبت القائمة إلى كل مباني الفرع، وهي
+     عشرات. المطلوب أن يجد صفُّ الجهراء مبنى الجهراء، لا أن يجد الجميع كل شيء. */
+  const otherSitePrefixes=new Set<string>();
   const inBranch=(officialCode:unknown)=>{
-    if(!branchRoots.size)return false;
-    const root=String(officialCode||"").replace(/\D/g,"").slice(0,3);
-    return Boolean(root&&branchRoots.has(root));
+    if(!otherSitePrefixes.size)return false;
+    const prefix=String(officialCode||"").toUpperCase().slice(0,4);
+    return Boolean(prefix&&otherSitePrefixes.has(prefix));
   };
   const registry=await readLocationRegistry();
   const confirmedRooms=registry.rooms.filter(r=>r.active&&r.confidence==="CONFIRMED");

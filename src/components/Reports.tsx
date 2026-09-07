@@ -325,6 +325,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [branchCourses, setBranchCourses] = useState<AdCourse[]>([]);
   const [branchDenied, setBranchDenied] = useState<string[]>([]);
   const [branchBusy, setBranchBusy] = useState(false);
+  /* نطاق التقارير: الموقع المفتوح وحده (الافتراضي) أو مواقع الفرع كلها. */
+  const [branchAllSites, setBranchAllSites] = useState(false);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
   const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
@@ -1607,26 +1609,25 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               >
                 <Printer aria-hidden="true" />
               </button>
-              <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
-                <Table2 aria-hidden="true" />التقرير الشامل
+              <SecondaryButton type="button" onClick={() => branchAllSites ? void printBranchComprehensive() : printReport("comprehensive")} disabled={branchBusy} title={branchAllSites ? `وثيقة القسم كاملة في مواقع الفرع: ${branchSites.map(site => site.siteLabel).join(" · ")}` : "وثيقة القسم الرسمية بكل تفاصيل الجدول"}>
+                <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : "التقرير الشامل"}
               </SecondaryButton>
-              {/* لا يظهر هذا الزر إلا لقسم له نظير في موقع آخر من فرعه. القسم
-                  ذو الموقع الواحد يرى الشاشة كما كانت تماماً. */}
-              {branchSites.length > 1 ? (
-                <SecondaryButton type="button" data-guide-ignore="طباعة التقرير الشامل لمواقع الفرع في وثيقة واحدة" onClick={() => void printBranchComprehensive()} disabled={branchBusy} title={`وثيقة القسم كاملة في مواقع الفرع: ${branchSites.map(site => site.siteLabel).join(" · ")}`}>
-                  <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : "الشامل — كل الفروع"}
-                </SecondaryButton>
-              ) : null}
             </> : null}
             {!pending && authorityReportAvailable && all.length > 0 ? (
-              <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل">
+              <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => branchAllSites ? void printBranchAuthorityReport() : void printAuthorityReport()} disabled={authorityReportBusy} title={branchAllSites ? `تغييرات ${branchSites.map(site => site.siteLabel).join(" · ")} في وثيقة واحدة` : "يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل"}>
                 <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
               </SecondaryButton>
             ) : null}
-            {!pending && authorityReportAvailable && all.length > 0 && branchSites.length > 1 ? (
-              <SecondaryButton type="button" data-guide-ignore="طباعة تقرير التغييرات لمواقع الفرع في وثيقة واحدة" onClick={() => void printBranchAuthorityReport()} disabled={authorityReportBusy} title={`تغييرات ${branchSites.map(site => site.siteLabel).join(" · ")} في وثيقة واحدة`}>
-                <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "التغييرات — كل الفروع"}
-              </SecondaryButton>
+            {/* ── النطاق مفتاح واحد، لا نسخة ثانية من كل زر ────────────────────
+                إضافة «— كل الفروع» بجانب كل تقرير ضاعفت الأزرار: أربعة أزرار
+                تقول شيئين. والنطاق ليس تقريراً آخر، بل صفة للتقرير نفسه — فصار
+                مفتاحاً صغيراً واحداً يحكم الزرّين معاً، ولا يظهر أصلاً لقسم لا
+                وجود له إلا في موقع واحد. */}
+            {branchSites.length > 1 ? (
+              <div className="query-branch-scope" role="group" aria-label="نطاق التقارير">
+                <button type="button" data-guide-ignore="اختيار نطاق التقارير بين الموقع الحالي ومواقع الفرع" className={branchAllSites ? "" : "on"} aria-pressed={!branchAllSites} onClick={() => setBranchAllSites(false)}>هذا الموقع</button>
+                <button type="button" data-guide-ignore="اختيار نطاق التقارير بين الموقع الحالي ومواقع الفرع" className={branchAllSites ? "on" : ""} aria-pressed={branchAllSites} onClick={() => setBranchAllSites(true)} title={branchSites.map(site => site.siteLabel).join(" · ")}>كل الفروع</button>
+              </div>
             ) : null}
           </div> : null}
         </header>

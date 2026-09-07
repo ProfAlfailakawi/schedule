@@ -127,6 +127,13 @@
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .query-canvas-actions{display:flex;align-items:center;gap:var(--s2)}
+/* ── النطاق مفتاح، لا زر ثانٍ لكل تقرير ──────────────────────────────────
+   شريط صغير هادئ بجانب زرّي التقارير: يقول أين ننظر، ولا يزاحمهما في الوزن
+   البصري. ولا يظهر أصلاً لقسم لا وجود له إلا في موقع واحد. */
+.query-branch-scope{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2)}
+.query-branch-scope button{padding:5px 11px;border:0;border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:.72rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.query-branch-scope button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-sm)}
+.query-branch-scope button:hover:not(.on){color:var(--ink)}
 .query-empty{min-height:300px;display:grid;place-items:center;padding:var(--s7)}
 /* --- The result list, waiting ------------------------------------------------
    Placeholder rows in the shape of the answer, sharing the app's one shimmer
@@ -2399,6 +2406,8 @@
   .query-canvas-head{padding:var(--s3) var(--s4);align-items:flex-start}
   .query-count small{display:none}
   .query-canvas-actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+  /* على الشاشة الضيقة يأخذ المفتاح سطره كاملاً فوق الزرّين اللذين يحكمهما. */
+  .query-branch-scope{grid-column:1/-1;justify-content:center}
   .query-canvas-actions>button{justify-content:center;min-width:0;padding-inline:var(--s2)}
   .query-canvas-actions>button:last-child{grid-column:1/-1}
 

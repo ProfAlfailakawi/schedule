@@ -45,7 +45,10 @@ export function locationPreflight(row: Partial<FSchedule>, registry: LocationReg
   if(!room){issues.push({type:"unknown_room",severity:"high",message:"اختر قاعة رسمية من سجل القاعات أو اختر «بانتظار تثبيت القاعة»."});return {ok:false,issues};}
   if(!room.active||room.confidence!=="CONFIRMED")issues.push({type:"inactive_room",severity:"high",message:"القاعة غير فعالة أو لم تعتمد بعد."});
   if(room.buildingId!==building.id)issues.push({type:"room_building",severity:"high",message:"القاعة المختارة لا تنتمي إلى المبنى المختار."});
-  if(opts.sectionId && !opts.allowOutOfScopeRoom && !sameBranch && !room.shared && room.sectionIds.length && !room.sectionIds.includes(Number(opts.sectionId)))issues.push({type:"room_scope",severity:"high",message:"القاعة مرتبطة بقسم آخر وليست مصنفة كقاعة مشتركة أو مستعارة بنافذة معتمدة."});
+  /* الفرع يوسّع نطاق المبنى لا نطاق القاعة: مواقع الفرع كلها للكلية نفسها،
+     أما القاعة فتبقى لقسمها، ولا تُستعمل من قسم آخر إلا بنافذة استعارة معتمدة
+     — وهي التي تمرّ عبر allowOutOfScopeRoom بعد التحقق منها. */
+  if(opts.sectionId && !opts.allowOutOfScopeRoom && !room.shared && room.sectionIds.length && !room.sectionIds.includes(Number(opts.sectionId)))issues.push({type:"room_scope",severity:"high",message:"القاعة مرتبطة بقسم آخر وليست مصنفة كقاعة مشتركة أو مستعارة بنافذة معتمدة."});
   return {ok:!issues.some(x=>x.severity==="high"),issues,canonical:{...row,buildingId:building.id,roomId:room.id,AdRoomCode:building.officialCode,AdRoomHall:room.canonicalCode,locationStatus:"VERIFIED",locationResolvedAt:new Date().toISOString()}};
 }
 
