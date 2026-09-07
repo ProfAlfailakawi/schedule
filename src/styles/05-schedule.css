@@ -7619,8 +7619,15 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   border:0!important;border-radius:0!important;background:var(--canvas)!important;box-shadow:none!important;
   overflow:auto!important;overscroll-behavior:contain!important;
 }
+/* ── القياس من الحاوية لا من النافذة ──────────────────────────────────────
+ * كان عرض البطاقة يُحسب من 100vw مطروحاً منه تقدير للحشو. و100vw تشمل عرض
+ * شريط التمرير العمودي، والحشو الفعلي clamp آخر — فمتى طال المحتوى وظهر
+ * الشريط صار الابن أعرض من صندوق أبيه بضع بكسلات. في الاتجاه من اليمين
+ * لليسار يخرج الفائض من جهة البداية، وهي الجهة التي لا يصل إليها التمرير في
+ * WebKit: فتُقتطع أوائل البطاقات ولا سبيل إلى رؤيتها. القياس الآن من الحاوية
+ * نفسها — 100% من صندوق أبيه بعد حشوه — فلا فائض ولا حساب. */
 .hall-barter-board.is-open .hall-barter-summary{
-  width:min(1180px,calc(100vw - clamp(36px,4.8vw,68px)))!important;min-height:112px!important;
+  width:min(1180px,100%)!important;min-height:112px!important;
   /* The close control is fixed to the *physical* left, which in RTL is the
      inline END. The clearance therefore belongs on the left; reserving it on
      the right left the ✕ sitting on top of the chevron on every window
@@ -7630,12 +7637,12 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   background:var(--surface)!important;box-shadow:var(--shadow-sm)!important;
 }
 .hall-barter-board.is-open .hall-barter-body{
-  width:min(1180px,calc(100vw - clamp(36px,4.8vw,68px)))!important;min-height:0!important;
+  width:min(1180px,100%)!important;min-height:0!important;
   margin:14px auto 34px!important;padding:22px clamp(18px,2.5vw,30px) 30px!important;
   border:1px solid var(--line)!important;border-radius:28px!important;background:var(--surface)!important;
   box-shadow:var(--shadow-sm)!important;overflow:visible!important;
 }
-.hall-barter-board.is-open .hall-barter-opportunity-grid{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))!important}
+.hall-barter-board.is-open .hall-barter-opportunity-grid{grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr))!important}
 /* Physical left is intentional: inline-start is the right side in RTL. */
 .hall-barter-screen-close{
   position:fixed;top:max(18px,env(safe-area-inset-top));left:max(18px,env(safe-area-inset-left));right:auto!important;
@@ -8067,3 +8074,27 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .transfer-commit-error>svg{width:18px;height:18px;flex:none;color:var(--danger,#a2402f);margin-top:1px}
 .transfer-commit-error strong{display:block;color:var(--danger,#a2402f);font-size:var(--t-sm);font-weight:750;line-height:1.6}
 .transfer-commit-error small{display:block;margin-top:5px;color:var(--muted);font-size:.72rem;line-height:1.6}
+
+/* ── حصيلة النشر: خاتمة، لا شاشة أخرى ────────────────────────────────────
+   بعد «تعبئة … ونشرها» كانت النافذة تعود إلى تبويباتها الخمسة وكأن شيئاً لم
+   يقع. هذا الصندوق يحلّ محلّ الشاشة كلها: ما نُشر، وأين، وزرٌّ واحد يُغلق. */
+.transfer-receipt{
+  margin:var(--s5) auto;max-width:520px;padding:var(--s6) var(--s5);
+  display:grid;justify-items:center;gap:var(--s3);text-align:center;
+  border:1px solid color-mix(in srgb,var(--primary,#12463c) 22%,var(--line));border-radius:22px;
+  background:var(--surface);box-shadow:var(--shadow-sm);
+}
+.transfer-receipt-mark{
+  display:grid;place-items:center;width:54px;height:54px;border-radius:18px;
+  background:color-mix(in srgb,var(--primary,#12463c) 12%,var(--surface-2));
+  color:var(--primary,#12463c);
+}
+.transfer-receipt-mark>svg{width:26px;height:26px}
+.transfer-receipt>h3{margin:0;font-size:var(--t-lg,1.05rem);font-weight:800;color:var(--ink)}
+.transfer-receipt>p{margin:0;color:var(--ink-2)}
+.transfer-receipt>p>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-receipt-scopes{width:100%;margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.transfer-receipt-scopes li{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:8px 12px;border-radius:12px;background:var(--surface-2);font-size:var(--t-sm)}
+.transfer-receipt-scopes li>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-receipt>small{color:var(--muted);font-size:var(--t-xs,.72rem);line-height:1.7}
+.transfer-receipt>.btn{min-width:132px}

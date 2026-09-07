@@ -2122,7 +2122,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               changed: sum.changed + entry.report.counts.changed,
               unchanged: sum.unchanged + entry.report.counts.unchanged,
             }), { added: 0, deleted: 0, changed: 0, unchanged: 0 }),
-            rows: authorityBook.flatMap(entry => entry.report.rows.map(row => ({ ...row, siteLabel: entry.site.siteLabel }))),
+            /* الرقاقة للفرع وحده: صفوف المقر الرئيسي تبقى بلا وسم — القاعدة
+               نفسها المعمول بها في التقرير الشامل. */
+            rows: authorityBook.flatMap(entry => entry.report.rows.map(row => ({ ...row, siteLabel: entry.site.isBase ? "" : entry.site.siteLabel }))),
           };
           const bookSites = authorityBook.map(entry => ({
             label: entry.site.siteLabel,
@@ -2411,7 +2413,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
     const bookSites = kind === "comprehensive-branch" && siteGroups?.length
       ? siteGroups.filter(group => group.rows.length)
       : [];
-    bookSites.forEach(group => group.rows.forEach(row => siteOfRow.set(row, group.site.siteLabel)));
+    /* ── الرقاقة تقول «هذا ليس مقرّك» ────────────────────────────────────
+     * وسمُ الموقع على كل صف من المقر الرئيسي لا يخبر القارئ بشيء: الوثيقة
+     * وثيقته، والأصل أنها منه. فالرقاقة تُكتب على الاستثناء وحده — الجهراء
+     * والفحيحيل — ويبقى الرئيسي بلا وسم، فيقفز الفرع للعين من أول نظرة. */
+    bookSites.forEach(group => { if (!group.site.isBase) group.rows.forEach(row => siteOfRow.set(row, group.site.siteLabel)); });
     const showSite = bookSites.length > 1;
     const bookRows = showSite ? sortRows(bookSites.flatMap(group => group.rows)) : sortRows(rows);
     const totalRows = bookRows.length;

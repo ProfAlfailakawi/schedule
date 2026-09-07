@@ -243,7 +243,7 @@ ok('130c a site of the same branch is not out of scope, while another branch sti
 reports_branch=(ROOT/'src/components/Reports.tsx').read_text()
 authority_branch=(ROOT/'src/components/AuthorityPdfReport.tsx').read_text()
 ok('130f the branch-wide documents are the SAME renderers, so a one-site department prints exactly what it printed before', 'if (kind === "comprehensive" || kind === "comprehensive-branch")' in reports_branch and 'siteGroups?.length' in reports_branch and 'branchSites.length > 1 ?' in reports_branch)
-ok('130x the change report across sites is ONE merged document, not three reports glued together', 'rows: authorityBook.flatMap(entry => entry.report.rows.map(row => ({ ...row, siteLabel: entry.site.siteLabel })))' in reports_branch and 'showSite = false,' in authority_branch and 'print-site-chip' in authority_branch)
+ok('130x the change report across sites is ONE merged document, not three reports glued together', 'rows: authorityBook.flatMap(entry => entry.report.rows.map(row => ({ ...row, siteLabel: entry.site.isBase ? "" : entry.site.siteLabel })))' in reports_branch and 'showSite = false,' in authority_branch and 'print-site-chip' in authority_branch)
 ok('130g the book numbers its pages continuously across sites instead of restarting at every site', '{bookPage} / {totalPages}' in reports_branch and 'pageOffset + pageIndex + 1' in authority_branch and 'pageTotal ?? pages.length' in authority_branch)
 ok('130h the first page states the shape of the whole department before its detail', 'print-comprehensive-sites' in reports_branch and 'print-comprehensive-sites' in authority_branch and '.print-comprehensive-sites{' in (ROOT/'src/styles/08-print.css').read_text())
 ok('130i a site outside the reader permissions is named, never silently dropped from the document', 'لم تُدرج مواقع خارج صلاحياتك' in reports_branch and 'denied.push(site.siteLabel)' in reports_branch)
@@ -251,7 +251,7 @@ ok('130j the branch document takes each site whole timetable, never one filtered
 # A row belongs to the site its OFFICIAL BUILDING names — a field can be lost, a building code cannot.
 ok('130k publishing reads each row site from the confirmed building, never only from a field that an edit can clear', 'const siteOfRow=(row:any)=>{' in server and 'building?.sitePrefix||building?.officialCode?.slice(0,4)' in server and 'splitRowsByBranch(locatedRows,branchContext)' in server)
 ok('130l choosing a building in the preview SETS the site instead of erasing it', 'sourceSitePrefix: String(b?.sitePrefix || b?.officialCode?.slice(0, 4) || "").toUpperCase() || undefined' in (ROOT/'src/components/ImportPreviewTable.tsx').read_text())
-ok('130m a publication spread across sites names every site and its count instead of closing in silence', 'transfer-published-scopes' in transfer and 'if(scopes.length>1)return;' in transfer and 'data?.scopes' in transfer)
+ok('130m a publication spread across sites names every site and its count instead of closing in silence', 'transfer-receipt-scopes' in transfer and 'setPublishReceipt({count:total,scopes})' in transfer and 'data?.scopes' in transfer)
 location_picker=(ROOT/'src/components/LocationPicker.tsx').read_text()
 reports_branch_ui=(ROOT/'src/components/Reports.tsx').read_text()
 import_preview=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
@@ -322,7 +322,47 @@ ok('175 weak course-column vote may use strict adjacent section/reference geomet
 ok('176 failed course cells receive field-specific same-cell local threshold recovery only after the fast strip lane', '(field === "code" || field === "refcode")' in doc_ocr and 'localOtsu: true' in doc_ocr and 'recognitionCell=s.localOtsu?otsuBinarize(lib,cell):cell' in doc_ocr)
 ok('177 older CamScanner course cells may carry at most two leading grid-rule glyphs for discovery and exact catalogue-constrained same-cell recovery', 'boundedLeadingRuleTail' in doc_ocr and 'token.length<=exactLength+2' in doc_ocr and 'token.length<=key.length+2' in doc_ocr and 'token.endsWith(key)||token.startsWith(key)' in doc_ocr)
 
-ok('178 the changes report never rides along with another printed document', '#app-print-root>.authority-pdf-print-host,.authority-pdf-print-host{display:none!important}' in print_css and 'if (printKind !== kind || authorityReport || authorityBook) {' in reports_src and 'setPrintKind("comprehensive-branch"); setAuthorityReport(null); setAuthorityBook(null);' in reports_src)
+ok('178 the changes report never rides along with another printed document', 'body.has-print-portal>#app-print-root>.authority-pdf-print-host,' in print_css and 'if (printKind !== kind || authorityReport || authorityBook) {' in reports_src and 'setPrintKind("comprehensive-branch"); setAuthorityReport(null); setAuthorityBook(null);' in reports_src)
 ok('179 a hall registered to another department is absent from the picker until a barter is approved', 'if(room.sectionIds.some(id=>branchSectionIds.has(Number(id))))return true;' in server and 'if(borrowedSet.has(room.id))return true;' in server and 'return room.sectionIds.length===0&&inBranch(buildingCodeById.get(room.buildingId));' in server)
+
+schedule_css=(ROOT/'src/styles/05-schedule.css').read_text()
+transfer_src=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
+
+ok('180 publishing from the import preview ends in its own receipt instead of returning to the transfer tabs',
+   'const [publishReceipt, setPublishReceipt]' in transfer_src
+   and 'setPublishReceipt({count:total,scopes})' in transfer_src
+   and 'className="transfer-receipt"' in transfer_src
+   and '{publishReceipt ? null : (' in transfer_src
+   and '.transfer-receipt{' in schedule_css)
+
+ok('181 the site chip is written on branch rows only, never on the main campus, in both printed reports',
+   'bookSites.forEach(group => { if (!group.site.isBase) group.rows.forEach(row => siteOfRow.set(row, group.site.siteLabel)); });' in reports_src
+   and 'siteLabel: entry.site.isBase ? "" : entry.site.siteLabel' in reports_src)
+
+ok('182 the per-site change tally is written in words, and no change is said outright',
+   '`مضاف ${site.added}`' in authority_report and '`محذوف ${site.deleted}`' in authority_report
+   and '`معدّل ${site.changed}`' in authority_report and '"بلا تغيير"' in authority_report
+   and '+{site.added}' not in authority_report)
+
+ok('183 the branch-site prefix set is declared before the loop that fills it (a const read first threw at runtime)',
+   server.index('const otherSitePrefixes=new Set<string>();') < server.index('if(prefix&&prefix!==basePrefix)otherSitePrefixes.add(prefix);'))
+
+ok('184 an official branch-site location proven by the authority document is registered, and only at other sites of the same branch',
+   'async function provisionBranchSiteLocationsFromAuthority(' in server
+   and 'const shape=code.match(/^(\\d{3})([A-Z])(\\d{2})$/);' in server
+   and 'if(!shape||shape[1]!==branchRoot)continue;' in server
+   and 'if(!prefix||prefix===basePrefix)continue;' in server
+   and 'if(!scope||scope.isBase)continue;' in server
+   and 'source:"AUTHORITY_DOCUMENT"' in server
+   and 'if(provisioned.buildings.length||provisioned.rooms.length)registry=await readLocationRegistry(true);' in server)
+
+ok('185 an empty print portal claims no paper, and the rule outranks the portal display rule that carries an id',
+   'body.has-print-portal>#app-print-root>.print-only:empty{display:none!important}' in print_css
+   and 'body.has-print-portal>#app-print-root>.authority-pdf-print-host,' in print_css)
+
+ok('186 the hall-barter screen measures its cards against its own container, not against the viewport',
+   'width:min(1180px,100%)!important;min-height:112px!important' in schedule_css
+   and 'width:min(1180px,100%)!important;min-height:0!important' in schedule_css
+   and 'calc(100vw - clamp(36px,4.8vw,68px))' not in schedule_css)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

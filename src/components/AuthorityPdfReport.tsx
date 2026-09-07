@@ -110,9 +110,18 @@ export default function AuthorityPdfReport({
               {pageOffset + pageIndex === 0 && bookSites?.length ? (
                 <div className="print-comprehensive-sites" role="note">
                   <span>مواقع القسم في هذا الفصل:</span>
-                  {bookSites.map(site => (
-                    <b key={site.label}>{site.label} · +{site.added} −{site.deleted} ±{site.changed}</b>
-                  ))}
+                  {/* ── يُقرأ بلا شرح ────────────────────────────────────────
+                      كان السطر يقول «+1 −0 ±1»، وهي رموز يعرفها من كتبها. وما
+                      يحتاجه قارئ الوثيقة كلمتان: ماذا أُضيف وماذا حُذف وماذا
+                      عُدّل، وما لا تغيير فيه يُقال صراحةً لا بصفرٍ مركون. */}
+                  {bookSites.map(site => {
+                    const parts = [
+                      site.added ? `مضاف ${site.added}` : "",
+                      site.deleted ? `محذوف ${site.deleted}` : "",
+                      site.changed ? `معدّل ${site.changed}` : "",
+                    ].filter(Boolean);
+                    return <b key={site.label}>{site.label} · {parts.length ? parts.join(" · ") : "بلا تغيير"}</b>;
+                  })}
                 </div>
               ) : null}
             </header>
