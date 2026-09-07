@@ -458,7 +458,7 @@ ok('200 barter filters accumulate — each list is counted after the OTHER choic
 
 ok('201 a pending barter request is counted for the department wherever the user is, from a light inbox endpoint, and shown as a breathing dot on the schedule nav',
    'app.get("/api/hall-barter/inbox"' in server
-   and 'const owns=(request:HallBarterRequest)=>req.user?.IsAdminUser||isScopeAllowed(req,Number(request.ownerCollegeId),Number(request.ownerSectionId));' in server
+   and 'const owns=(request:HallBarterRequest)=>scopes.some(scope=>Number(scope.AdCollegeId)===Number(request.ownerCollegeId)&&Number(scope.AdSectionId)===Number(request.ownerSectionId));' in server
    and 'fetch("/api/hall-barter/inbox"' in app_src
    and 'badge={barterPending}' in app_src
    and '.side-nav-link .side-nav-badge{' in (ROOT/'src/styles/03-shell.css').read_text())
@@ -467,10 +467,13 @@ ok('202 a waiting request carries its age quietly, and turns amber past three da
    and 'const ageChip = (row: HallBarterReservationView)' in barter_board
    and 'days >= 3' in barter_board
    and '.hall-barter-age.is-stale{' in schedule_css)
-ok('203 the editor offers borrowing only when a time is set and no room is chosen yet — a quiet bridge, gone once a room is picked',
+ok('203 the editor offers borrowing inline when a time is set and no room is chosen yet — it borrows in place without opening the full board or leaving the editor',
    'schedule-borrow-hint' in (ROOT/'src/components/Schedules.tsx').read_text()
-   and 'setBarterOpenSignal(v => v + 1)' in (ROOT/'src/components/Schedules.tsx').read_text()
-   and '.schedule-borrow-hint{' in schedule_css)
+   and 'const openBorrow = async ()' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and 'const requestBorrow = async (op: any)' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and 'schedule-borrow-panel' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and '.schedule-borrow-hint{' in schedule_css
+   and '.schedule-borrow-panel{' in schedule_css)
 
 ok('204 the barter board keeps a term-wide log of every movement — folded by default, both directions and all statuses, printable as a report',
    'const logRows = useMemo(' in barter_board

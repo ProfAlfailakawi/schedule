@@ -2943,6 +2943,45 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   // waits until the days or the time have been touched, or until a save is
   // attempted; the submit button stays disabled meanwhile either way.
   const [scheduleTouched, setScheduleTouched] = useState(false);
+  /* ── الاستعارة داخل المحرر، بلا مغادرة ────────────────────────────────────
+   * صاحب الجدول عالقٌ في وضع موعد: لا قاعة له في هذا الوقت. لا يريد أن
+   * تُقذف أمامه شاشةٌ عملاقة تقطع عمله — يريد أن يستعير هنا، ويكمل. فالتلميح
+   * يفتح لوحةً صغيرة أسفله: القاعات المتاحة للاستعارة في يومه ووقته، بزرّ
+   * «اطلب» يرسل الطلب في مكانه، ثم يواصل جدوله؛ وتظهر القاعة في مختاره بعد
+   * الموافقة. لا انتقال، ولا شاشة تملأ العين. */
+  const [borrowOpen, setBorrowOpen] = useState(false);
+  const [borrowBusy, setBorrowBusy] = useState(false);
+  const [borrowMsg, setBorrowMsg] = useState("");
+  const [borrowRooms, setBorrowRooms] = useState<any[]>([]);
+  const openBorrow = async () => {
+    const next = !borrowOpen;
+    setBorrowOpen(next);
+    if (!next) return;
+    setBorrowBusy(true); setBorrowMsg(""); setBorrowRooms([]);
+    try {
+      const q = new URLSearchParams({ collegeId: String(form.AdCollegeId || 0), sectionId: String(form.AdSectionId || 0), termId: String(form.AdTermId || 0) });
+      const response = await fetch(`/api/hall-barter?${q}`, { credentials: "include" });
+      const data = await response.json().catch(() => ({}));
+      const dayKeys = new Set(selectedFormDays.map((d: any) => d.key));
+      const start = form.fstarttime, end = form.fendtime;
+      const covers = (o: any) => (!start || !end) ? true : (String(o.startTime) <= start && String(o.endTime) >= end);
+      const ops = (Array.isArray(data?.opportunities) ? data.opportunities : [])
+        .filter((o: any) => (dayKeys.size ? dayKeys.has(o.day) : true) && covers(o));
+      const seen = new Set<string>(); const list: any[] = [];
+      for (const o of ops) { const k = String(o.roomId || `${o.roomCode}${o.roomHall}`); if (seen.has(k)) continue; seen.add(k); list.push(o); }
+      setBorrowRooms(list);
+    } catch { setBorrowRooms([]); } finally { setBorrowBusy(false); }
+  };
+  const requestBorrow = async (op: any) => {
+    setBorrowBusy(true);
+    try {
+      const response = await fetch("/api/hall-barter/requests", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ collegeId: form.AdCollegeId, sectionId: form.AdSectionId, termId: form.AdTermId, opportunityId: op.id }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "تعذر إرسال الطلب");
+      setBorrowMsg(`أُرسل طلب استعارة ${op.roomCode}/${op.roomHall} إلى ${op.ownerSectionName}. تظهر في مختار القاعة بعد الموافقة — واصل جدولك.`);
+      setBorrowRooms(list => list.filter(x => x.id !== op.id));
+    } catch (e: any) { setBorrowMsg(e?.message || "تعذر إرسال الطلب"); } finally { setBorrowBusy(false); }
+  };
   /* Clicking the start-time field brings the shared wheel counter to it, the
      same one the quick-add card opens on, instead of leaving the editor with a
      bare native time input. */
@@ -8422,18 +8461,42 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     يعرض عليك استعارة قاعة من قسم آخر، ويفتح اللوحة على مكانها.
                     يظهر في هذه الحال وحدها، ويغيب فور اختيار القاعة — لا زحمة
                     في نموذجٍ مكتظ أصلاً. */}
+                {/* يكفي أن تكون بدأت تحديد الموعد (يومٌ أو وقت) ولم تختر قاعة
+                    بعد؛ فالجسر يظهر مبكراً بجانب القاعة ويغيب فور اختيارها. */}
                 {Number(form.AdTermId||0) && Number(form.AdCollegeId||0) && Number(form.AdSectionId||0)
-                  && selectedFormDays.length && form.fstarttime && form.fendtime
+                  && (selectedFormDays.length || form.fstarttime || form.fendtime)
                   && !form.roomId && form.locationStatus !== "PENDING_ROOM" ? (
-                  <button
-                    type="button"
-                    className="schedule-borrow-hint"
-                    data-guide-ignore="جسر هادئ يفتح لوحة استعارة القاعات حين لم تُختر قاعة بعد؛ لا يحجز بنفسه"
-                    onClick={() => { setWorkspaceToolsOpen(true); setBarterOpenSignal(v => v + 1); }}
-                  >
-                    <ArrowLeftRight aria-hidden="true" />
-                    <span>لم تجد قاعة متاحة في هذا الوقت؟ <b>استعِر قاعة من قسم آخر</b></span>
-                  </button>
+                  <div className="schedule-borrow">
+                    <button
+                      type="button"
+                      className={`schedule-borrow-hint${borrowOpen ? " open" : ""}`}
+                      aria-expanded={borrowOpen}
+                      data-guide-ignore="يفتح استعارةً مصغّرة داخل المحرر حين لم تُختر قاعة بعد؛ لا يحجز بنفسه ولا يغادر الشاشة"
+                      onClick={() => void openBorrow()}
+                    >
+                      <ArrowLeftRight aria-hidden="true" />
+                      <span>لم تجد قاعة متاحة في هذا الوقت؟ <b>استعِر قاعة من قسم آخر</b></span>
+                      <ChevronDown className="schedule-borrow-chevron" aria-hidden="true" />
+                    </button>
+                    {borrowOpen ? (
+                      <div className="schedule-borrow-panel">
+                        {borrowBusy && !borrowRooms.length ? <p className="schedule-borrow-empty">يبحث عن قاعات متاحة…</p> : null}
+                        {!borrowBusy && !borrowRooms.length && !borrowMsg ? <p className="schedule-borrow-empty">لا قاعة متاحة للاستعارة في هذا اليوم والوقت الآن.</p> : null}
+                        {borrowRooms.length ? (
+                          <ul className="schedule-borrow-list">
+                            {borrowRooms.map(op => (
+                              <li key={op.id}>
+                                <span className="schedule-borrow-room" dir="ltr">{op.roomCode}/{op.roomHall}</span>
+                                <span className="schedule-borrow-owner">{op.ownerSectionName}</span>
+                                <button type="button" disabled={borrowBusy} onClick={() => void requestBorrow(op)} data-guide-ignore="يرسل طلب استعارة قاعة من داخل المحرر دون مغادرته">اطلب</button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {borrowMsg ? <p className="schedule-borrow-msg">{borrowMsg}</p> : null}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
                 {roomOwner ? (
                   <div className="room-owner-note" role="status">
