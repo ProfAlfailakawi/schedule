@@ -6,11 +6,13 @@ import {
   ChevronDown,
   Clock3,
   RefreshCw,
+  Printer,
+  ScrollText,
   Search,
   ShieldCheck,
   X,
 } from "lucide-react";
-import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
+import { GhostButton, PrimaryButton, SecondaryButton, PrintPortal } from "./ui";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 type Opportunity = {
@@ -58,6 +60,7 @@ export type HallBarterReservationView = {
   ownerCollegeId: number;
   ownerSectionId: number;
   createdAt: string;
+  ageDays?: number;
 };
 
 type Facets = {
@@ -113,6 +116,7 @@ export default function HallBarterBoard({
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [logOpen, setLogOpen] = useState(false);
   const boardRef = useRef<HTMLElement | null>(null);
   /* بحثٌ واحد يقبل القسم والمبنى ورمز القاعة، ورقاقات الأقسام تختصر الطريق:
      القائمة صارت كل قاعات الكلية، ومن غير مرشِّح تصير كشفاً لا يُقرأ. */
@@ -265,9 +269,41 @@ export default function HallBarterBoard({
   }));
   const cancel = (requestId: string) => act(requestId, () => readJson(`/api/hall-barter/requests/${encodeURIComponent(requestId)}/cancel`, { method: "POST" }));
 
+  /* عمرُ الطلب المنتظر يُقال بهدوء: طلبٌ مرّ عليه ثلاثة أيام بلا ردّ يلوّن
+     وسمُه كهرمانياً — تذكيرٌ بلا إزعاج، لا رقمَ صارخ. */
+  const ageText = (days = 0) => days <= 0 ? "اليوم" : days === 1 ? "أمس" : `منذ ${days} ${days === 2 ? "يومين" : days <= 10 ? "أيام" : "يوماً"}`;
+  const ageChip = (row: HallBarterReservationView) => {
+    const days = Number(row.ageDays || 0);
+    return <span className={`hall-barter-age${days >= 3 ? " is-stale" : ""}`}><Clock3 aria-hidden="true" />{ageText(days)}</span>;
+  };
+
   const windowLine = (row: Pick<HallBarterReservationView, "dayLabel" | "startTime" | "endTime" | "roomCode" | "roomHall">) => (
     <span className="hall-barter-window"><Clock3 aria-hidden="true" /><b>{row.dayLabel}</b><time dir="ltr">{formatScheduleTimeRange(row.startTime, row.endTime)}</time><em dir="ltr">{row.roomCode}/{row.roomHall}</em></span>
   );
+
+  /* ── سجلّ الفصل: كل حركةٍ في مكانٍ واحد ──────────────────────────────────
+   * اللوحة تُظهر ما ينتظر قراراً وما اعتُمد؛ لكن صاحب الجدول يريد أحياناً أن
+   * يرى الصورة كاملة: ماذا استعار وممن، ومن استعار منه، وما رُفض وما أُلغي.
+   * هي مجموع الوارد والصادر بكل حالاته، صفاً واحداً لكل حركة، مطويةً حتى
+   * تُطلب — فلا تزحم من لا يريدها — وتُطبع كما تُطبع التقارير. */
+  const logRows = useMemo(() => {
+    const seen = new Set<string>();
+    return [...board.incoming, ...board.outgoing]
+      .filter(row => { if (seen.has(row.id)) return false; seen.add(row.id); return true; })
+      .map(row => ({ ...row, incoming: board.incoming.some(r => r.id === row.id) }))
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  }, [board.incoming, board.outgoing]);
+  /* تاريخٌ نظيف بلا علامات اتجاهٍ من التوطين: يُبنى بيده dd/mm/yyyy فلا
+     يتبعثر بين خانات الجدول. */
+  const fmtDate = (iso: string) => { const t = Date.parse(String(iso || "")); if (!Number.isFinite(t)) return "—"; const d = new Date(t); const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; };
+  const printLog = () => {
+    const root = document.documentElement;
+    root.dataset.printKind = "barter-log";
+    const done = () => { delete root.dataset.printKind; window.removeEventListener("afterprint", done); };
+    window.addEventListener("afterprint", done, { once: true });
+    window.setTimeout(() => { try { window.print(); } catch { done(); } }, 30);
+    window.setTimeout(done, 4000);
+  };
 
   /* ── لا أيقونة لبابٍ لا يُفتح ────────────────────────────────────────────
      لوحةٌ عنوانها «٠ فرصة» تشغل مكاناً وتعِد بشيء لا تملكه. فمتى لم تكن هناك
@@ -310,7 +346,7 @@ export default function HallBarterBoard({
                 {incomingPending.map(row => (
                   <article key={row.id}>
                     <div className="hall-barter-request-main">
-                      <strong>{row.requesterSectionName}</strong>
+                      <div className="hall-barter-request-head"><strong>{row.requesterSectionName}</strong>{ageChip(row)}</div>
                       {windowLine(row)}
                     </div>
                     <div className="hall-barter-actions">
@@ -410,7 +446,7 @@ export default function HallBarterBoard({
                   <article key={row.id}>
                     <div><strong>{row.ownerSectionName}</strong></div>
                     {windowLine(row)}
-                    <span className="hall-barter-pending-label">{statusLabel(row.status)}</span>
+                    <span className="hall-barter-pending-label">{statusLabel(row.status)}{row.ageDays && row.ageDays >= 3 ? <em className="hall-barter-pending-age"> · {ageText(row.ageDays)}</em> : null}</span>
                     <GhostButton type="button" disabled={busyId === row.id} onClick={() => void cancel(row.id)}>إلغاء الطلب</GhostButton>
                   </article>
                 ))}
@@ -418,8 +454,61 @@ export default function HallBarterBoard({
             </div>
           ) : null}
 
+          {logRows.length ? (
+            <div className="hall-barter-section hall-barter-log">
+              <button type="button" className="hall-barter-log-toggle" aria-expanded={logOpen} onClick={() => setLogOpen(v => !v)} data-guide-ignore="يطوي أو يفتح سجل حركات الاستعارة لهذا الفصل؛ عرضٌ فقط">
+                <ScrollText aria-hidden="true" />
+                <span><small>عرضٌ فقط</small><strong>سجل استعارات الفصل</strong></span>
+                <b>{logRows.length}</b>
+                <ChevronDown className={`hall-barter-log-chevron${logOpen ? " open" : ""}`} aria-hidden="true" />
+              </button>
+              {logOpen ? (
+                <div className="hall-barter-log-body">
+                  <div className="hall-barter-log-tools">
+                    <GhostButton type="button" onClick={printLog} data-guide-ignore="يطبع سجل استعارات الفصل؛ لا يغيّر بيانات"><Printer />طباعة السجل</GhostButton>
+                  </div>
+                  <ul className="hall-barter-log-list">
+                    {logRows.map(row => (
+                      <li key={row.id} className={`hall-barter-log-row status-${row.status}`}>
+                        <span className={`hall-barter-log-dir ${row.incoming ? "in" : "out"}`}>{row.incoming ? "وارد" : "صادر"}</span>
+                        <span className="hall-barter-log-with">{row.incoming ? row.requesterSectionName : row.ownerSectionName}</span>
+                        <span className="hall-barter-log-window" dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)} · {row.roomCode}/{row.roomHall}</span>
+                        <span className={`hall-barter-log-status status-${row.status}`}>{statusLabel(row.status)}</span>
+                        <span className="hall-barter-log-date" dir="ltr">{fmtDate(row.createdAt)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
         </div>
       ) : null}
+
+      <PrintPortal className="hall-barter-log-print-host">
+        <div className="hall-barter-log-print">
+          <header className="hall-barter-log-print-head">
+            <h1>سجل استعارات القاعات — هذا الفصل</h1>
+            <p>{fmtDate(new Date().toISOString())}</p>
+          </header>
+          <table>
+            <thead><tr><th>الاتجاه</th><th>القسم</th><th>القاعة</th><th>اليوم والوقت</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+            <tbody>
+              {logRows.map(row => (
+                <tr key={row.id}>
+                  <td>{row.incoming ? "وارد إلينا" : "صادر منّا"}</td>
+                  <td>{row.incoming ? row.requesterSectionName : row.ownerSectionName}</td>
+                  <td dir="ltr">{row.roomCode}/{row.roomHall}</td>
+                  <td dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)}</td>
+                  <td>{statusLabel(row.status)}</td>
+                  <td dir="ltr">{fmtDate(row.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </PrintPortal>
     </section>
   );
 }

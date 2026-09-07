@@ -186,6 +186,26 @@
 }
 .side-nav-link>svg:first-child{width:18px;height:18px;color:#7c8781}
 .side-nav-link span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ── طلبٌ ينتظر قراراً، بأخفّ إشارة ────────────────────────────────────────
+   في الشريط المفتوح: حبّةٌ صغيرة بلون النظام عند نهاية السطر تحمل العدد. وفي
+   الشريط المطوي (أيقونات فقط): تنكمش إلى نقطةٍ تنبض على ركن الأيقونة، فلا رقم
+   يزحم ولا لون يصرخ — إشارةٌ تُرى ولا تُثقل. */
+.side-nav-link .side-nav-badge{
+  flex:none;display:inline-grid;place-items:center;min-width:18px;width:auto;height:18px;
+  padding:0 5px;border-radius:999px;overflow:visible;
+  background:color-mix(in srgb,var(--accent,#1f8f76) 88%,#000);
+  color:#fff;font-size:10.5px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#1f8f76) 22%,transparent);
+}
+.side-nav-link .side-nav-badge>b{font-weight:800}
+.side-nav-link.active .side-nav-badge{box-shadow:0 0 0 3px #ffffff14}
+@keyframes side-nav-badge-breathe{
+  0%,70%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#1f8f76) 22%,transparent)}
+  35%{box-shadow:0 0 0 7px color-mix(in srgb,var(--accent,#1f8f76) 4%,transparent)}
+}
+@media (prefers-reduced-motion:no-preference){
+  .side-nav-link .side-nav-badge{animation:side-nav-badge-breathe 3s ease-out infinite}
+}
 .side-nav-link:hover{background:#ffffff0a;color:var(--nav-ink)}
 .side-nav-link:hover>svg:first-child{color:#b6c1bb}
 /* You are here, said quietly: a whisper of accent behind the row, the brass
@@ -307,6 +327,14 @@
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .sidebar-brand>button:first-child{
     justify-content:center;padding-inline:0;gap:0;
   }
+  /* الشريط المطوي: العدد لا مكان له، فتبقى النقطة وحدها على ركن الأيقونة.
+     (تُذكر .side-nav-link صراحةً لتتفوّق على قاعدة إخفاء العناوين span.) */
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .side-nav-link .side-nav-badge{
+    display:block;position:absolute;top:8px;inset-inline-start:calc(50% + 6px);
+    min-width:0;width:8px;height:8px;padding:0;overflow:hidden;color:transparent;
+    box-shadow:0 0 0 2px var(--nav,#12211c);animation:none;
+  }
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .side-nav-link .side-nav-badge>b{display:none}
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip{margin-inline:8px;min-width:0;max-width:none;width:44px;padding:0;justify-content:center;gap:0;border-radius:16px}
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>span,
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>i,

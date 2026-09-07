@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-07T17:04:55.790Z",
+  "generatedAt": "2026-09-07T19:44:01.053Z",
   "fingerprints": [
     "src/App.tsx|NavButton|intelligence مركز الذكاء|<NavButton activeView={activeView} onGo={go} view=\"intelligence\" icon={<WandSparkles />} label=\"مركز الذكاء\" />",
-    "src/App.tsx|NavButton|schedules الجدول الدراسي|<NavButton activeView={activeView} onGo={go} view=\"schedules\" icon={<CalendarDays />} label=\"الجدول الدراسي\" />",
+    "src/App.tsx|NavButton|schedules الجدول الدراسي|<NavButton activeView={activeView} onGo={go} view=\"schedules\" icon={<CalendarDays />} label=\"الجدول الدراسي\" badge={barterPending} />",
     "src/App.tsx|NavButton|users إدارة النظام|<NavButton activeView={activeView} onGo={go} view=\"users\" active={adminViews.includes(activeView as AdminMode)} icon={<SlidersHorizontal />} label=\"إدارة النظام\" />",
     "src/App.tsx|NavButton|الاستعلامات والتقارير|<NavButton activeView={activeView} onGo={go} view={(smartSearchView || smartReportView) as View} active={searchViews.includes(activeView as ReportMode) || reportViews.includes(acti",
     "src/App.tsx|NavButton|البيانات الأكاديمية|<NavButton activeView={activeView} onGo={go} view={academicEntry} active={academicViews.includes(activeView as AcademicTab)} icon={<Library />} label=\"البيانات الأكاديمية\" />",
     "src/App.tsx|PrimaryButton|button أكمل العمل|<PrimaryButton type=\"button\" onClick={() => setIdleWarning(false)}>",
-    "src/App.tsx|button|<dynamic> <dynamic> button active page nav-arrow|<button type=\"button\" className={`side-nav-link ${on ? \"active\" : \"\"}`} aria-current={on ? \"page\" : undefined} aria-label={label} title={label} onPointerEnter={() => prefetchView(v",
+    "src/App.tsx|button|<dynamic> <dynamic> button active page side-nav-badge true #+ nav-arrow|<button type=\"button\" className={`side-nav-link ${on ? \"active\" : \"\"}`} aria-current={on ? \"page\" : undefined} aria-label={label} title={label} onPointerEnter={() => prefetchView(v",
     "src/App.tsx|button|<dynamic> <dynamic> button dark تفعيل الوضع الفاتح تفعيل الوضع الداكن dark الوضع الفاتح الوضع الداكن dark light dark dark|<button type=\"button\" aria-label={ theme === \"dark\" ? \"تفعيل الوضع الفاتح\" : \"تفعيل الوضع الداكن\" } title={theme === \"dark\" ? \"الوضع الفاتح\" : \"الوضع الداكن\"} onClick={() => choose",
     "src/App.tsx|button|<dynamic> button active page mobile-dock-icon true mobile-dock-label|<button type=\"button\" className={`mobile-dock-link ${on ? \"active\" : \"\"}`} aria-current={on ? \"page\" : undefined} aria-label={label} onPointerEnter={() => prefetchView(view)} onFoc",
     "src/App.tsx|button|<dynamic> button context-active active المزيد، الوجهة الحالية داخل القائمة فتح المزيد app-sidebar mobile-dock-icon true mobile-dock-label ال|<button type=\"button\" className={`mobile-dock-link mobile-dock-more ${ mobileMoreHoldsActive ? \"context-active\" : \"\" } ${sidebarOpen ? \"active\" : \"\"}`} aria-label={ mobileMoreHolds",

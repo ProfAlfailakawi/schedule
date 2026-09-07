@@ -295,6 +295,7 @@ function NavButton({
   active,
   activeView,
   onGo,
+  badge = 0,
 }: {
   view: View;
   icon: React.ReactNode;
@@ -303,6 +304,8 @@ function NavButton({
   active?: boolean;
   activeView: View;
   onGo: (view: View) => void;
+  /** عدد يستحق قراراً — نقطة تنبض على الأيقونة، لا رقمٌ يزحم السطر. */
+  badge?: number;
 }) {
   const on = active ?? activeView === view;
   const visibleText = view === "dashboard" ? "" : (visualLabel ?? label);
@@ -319,6 +322,7 @@ function NavButton({
     >
       {icon}
       {visibleText ? <span>{visibleText}</span> : null}
+      {badge > 0 ? <span className="side-nav-badge" aria-hidden="true"><b>{badge > 99 ? "99+" : badge}</b></span> : null}
       {on ? <ChevronLeft className="nav-arrow" /> : null}
     </button>
   );
@@ -467,7 +471,24 @@ export default function App() {
   const [guideHint, setGuideHint] = useState<{ key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
   const [guideProfileRevision, setGuideProfileRevision] = useState(0);
   const [ambientDismissedKey, setAmbientDismissedKey] = useState("");
+  /* ── طلبات الاستعارة المنتظرة قرارك، أينما كنت ─────────────────────────────
+   * نقطةٌ على أيقونة الجدول تتبع القسم لا الشاشة: خفيفةٌ، تُقرأ كل دقيقتين،
+   * وتختفي حين لا شيء ينتظر. */
+  const [barterPending, setBarterPending] = useState(0);
   useEffect(() => { setTelemetryOwner(Number(user?.SystemUserId || 0)); }, [user?.SystemUserId]);
+  useEffect(() => {
+    if (!user || !hasPerm(7)) { setBarterPending(0); return; }
+    let alive = true;
+    const read = () => fetch("/api/hall-barter/inbox", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (alive && d) setBarterPending(Number(d.pending || 0)); })
+      .catch(() => undefined);
+    void read();
+    const timer = window.setInterval(read, 120000);
+    const onFocus = () => void read();
+    window.addEventListener("focus", onFocus);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
+  }, [user?.SystemUserId, permissions]);
   /**
    * ── الشاشات الثقيلة تُحمَّل قبل أن تُطلب ──────────────────────────────────
    *
@@ -2133,6 +2154,7 @@ export default function App() {
                 view="schedules"
                 icon={<CalendarDays />}
                 label="الجدول الدراسي"
+                badge={barterPending}
               />
             ) : null}
             {smartSearchView || smartReportView ? (
