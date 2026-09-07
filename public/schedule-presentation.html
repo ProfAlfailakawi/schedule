@@ -458,7 +458,6 @@ body.read .hint{display:none}
 @media(min-width:900px){.dials{grid-template-columns:repeat(3,1fr)}}
 .dial{background:var(--surface); padding:clamp(15px,2vw,26px); display:flex; align-items:center; gap:clamp(12px,1.6vw,20px)}
 .dial.hero{background:linear-gradient(135deg,rgba(208,166,99,.10),transparent 70%)}
-@media(min-width:900px){.dial.hero{grid-column:span 2}}
 .dial__ring{position:relative; width:clamp(54px,5.6vw,74px); aspect-ratio:1; flex:none}
 .dial__ring svg{position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg)}
 .dial__trk{fill:none; stroke:var(--surface-3); stroke-width:12}
@@ -685,6 +684,19 @@ html,body{margin:0}
         <div class="dial__ring">
           <svg viewBox="0 0 100 100" aria-hidden="true">
             <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+            <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:330"></circle>
+          </svg>
+        </div>
+        <div class="dial__txt">
+          <span class="dial__c">ماليزيا · MPCB</span>
+          <span class="dial__t">نحو 4 أسابيع</span>
+          <span class="dial__s">جدول مقررات · Case Study · MPCB</span>
+        </div>
+      </div>
+      <div class="dial">
+        <div class="dial__ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
             <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:500"></circle>
           </svg>
         </div>
@@ -740,7 +752,7 @@ html,body{margin:0}
   </div>
   <div class="notes">
     <span class="notes__k">ملاحظة العرض — تحفّظ منهجي</span>
-    <p>هذه <b>دراسات حالة مستقلة محكَّمة، لا متوسط عالمي</b> — تختلف باختلاف حجم الجامعة. <b>وكلها جداول مقررات مثل نظامنا</b>: استبعدنا عمدًا دراسات جداول الاختبارات لأن مقارنتها بنظامنا غير سليمة منهجيًّا. الأزمنة منقولة من المصادر؛ وامتلاء الحلقات تقريبي للمقارنة البصرية. نعرض الزمن اليدوي وحده عمدًا: هذه المشكلة المشتركة، ولا نقارن أنفسنا بأنظمة غيرنا. قل: «خمس جامعات حقيقية، جداول مقررات مثل جدولنا تمامًا — وهذا ما تلتهمه المهمة من وقتها.»</p>
+    <p>هذه <b>دراسات حالة مستقلة محكَّمة، لا متوسط عالمي</b> — تختلف باختلاف حجم الجامعة. <b>وكلها جداول مقررات مثل نظامنا</b>: استبعدنا عمدًا دراسات جداول الاختبارات لأن مقارنتها بنظامنا غير سليمة منهجيًّا. الأزمنة منقولة من المصادر؛ وامتلاء الحلقات تقريبي للمقارنة البصرية. نعرض الزمن اليدوي وحده عمدًا: هذه المشكلة المشتركة، ولا نقارن أنفسنا بأنظمة غيرنا. قل: «ست جامعات حقيقية، جداول مقررات مثل جدولنا تمامًا — وهذا ما تلتهمه المهمة من وقتها.»</p>
   </div>
 </section>
 <section class="slide">
