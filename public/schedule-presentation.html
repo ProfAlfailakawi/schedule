@@ -453,25 +453,21 @@ body.read .hint{display:none}
 
 /* ---------- world case-studies: a shrink bar per country ---------- */
 .world{display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:15px; overflow:hidden}
-.wrow{display:grid; grid-template-columns:clamp(118px,14vw,182px) 1fr clamp(84px,10vw,124px); align-items:center;
-  gap:clamp(10px,1.5vw,22px); background:var(--surface); padding:clamp(10px,1.2vw,16px) clamp(15px,1.9vw,26px)}
+.wrow{display:grid; grid-template-columns:clamp(120px,15vw,200px) 1fr clamp(88px,10vw,128px); align-items:center;
+  gap:clamp(10px,1.5vw,22px); background:var(--surface); padding:clamp(9px,1.05vw,14px) clamp(16px,2vw,30px)}
 .wrow.star{background:linear-gradient(90deg,rgba(208,166,99,.10),transparent 70%)}
 .wc{display:flex; flex-direction:column; gap:2px; min-width:0}
 .wc__c{font-family:var(--font-display); font-weight:600; font-size:clamp(.98rem,1.5vw,1.18rem); color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .wc__u{font-family:var(--font-mono); font-size:.58rem; letter-spacing:.04em; color:var(--muted-2)}
 .wc__u.star{color:var(--brass)}
-/* the visual shrink: a long muted track = manual, a bright short cap = automated */
-.wbar{position:relative; height:16px; border-radius:8px; background:var(--surface-3); overflow:hidden; min-width:60px}
-.wbar__man{position:absolute; inset-block:0; inset-inline-start:0; border-radius:8px;
-  background:repeating-linear-gradient(135deg,var(--line-strong),var(--line-strong) 5px,transparent 5px,transparent 10px)}
-.wbar__auto{position:absolute; inset-block:0; inset-inline-start:0; border-radius:8px; background:linear-gradient(90deg,var(--jade),var(--jade-deep));
-  width:0; transition:width 1s var(--ease)}
-.slide.is-live .wbar__auto{width:var(--w)}
-.star .wbar__auto{background:linear-gradient(90deg,var(--brass),#8a6a2e)}
-.wt{display:flex; flex-direction:column; gap:7px}
-.wt__man{font-family:var(--font-body); font-size:clamp(.82rem,1.2vw,.98rem); color:var(--muted); text-decoration:line-through; text-decoration-color:var(--danger); text-decoration-thickness:1.5px}
-.wt__auto{font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:clamp(.92rem,1.4vw,1.14rem); font-weight:600; color:var(--jade-strong); text-align:end}
-.star .wt__auto{color:var(--brass)}
+/* one prominent column: how long it takes them, manually */
+.wtime{display:flex; align-items:baseline; gap:10px}
+.wt__man{font-family:var(--font-display); font-weight:600; font-size:clamp(1.15rem,2vw,1.7rem); color:var(--ink); white-space:nowrap}
+.wt__man .u{font-family:var(--font-body); font-weight:300; font-size:.62em; color:var(--muted)}
+.star .wt__man{color:var(--brass)}
+.whead{background:var(--surface-2)}
+.whead .hc{font-family:var(--font-mono); font-size:.62rem; letter-spacing:.06em; color:var(--muted-2)}
+.whead .hc.man{color:var(--muted)}
 .wsrc{font-family:var(--font-mono); font-size:.56rem; letter-spacing:.03em; color:var(--muted-2); text-align:end; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 
 /* ---------- the time contrast: weeks vs minutes ---------- */
@@ -666,74 +662,49 @@ html,body{margin:0}
   <div class="slide__in">
     <div class="head"><p class="eyebrow">المقياس العالمي · دراسات محكَّمة</p><h2>ما تأخذه الجامعات في أسابيع.</h2></div>
     <div class="world">
+      <div class="wrow whead">
+        <div class="wc"><span class="hc">الجامعة</span></div>
+        <div class="wtime"><span class="hc man">الوقت يدويًّا</span></div>
+        <span class="wsrc" style="color:var(--muted-2)">المصدر المنشور</span>
+      </div>
       <div class="wrow">
         <div class="wc"><span class="wc__c">الكويت · AOU</span><span class="wc__u">جدول مقررات</span></div>
-        <div class="wt">
-          <div class="wbar"><span class="wbar__man"></span><span class="wbar__auto" style="--w:30%"></span></div>
-          <div style="display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:10px">
-            <span class="wt__man">4–6 أسابيع</span><span class="wt__auto">2–3 أيام</span>
-          </div>
-        </div>
+        <div class="wtime"><span class="wt__man">4–6<span class="u"> أسابيع</span></span></div>
         <span class="wsrc">iJET 2026</span>
-      </div>
-      <div class="wrow star">
-        <div class="wc"><span class="wc__c">تشيلي · Chile</span><span class="wc__u star">مقررات + قاعات · دليل الجودة</span></div>
-        <div class="wt">
-          <div class="wbar"><span class="wbar__man"></span><span class="wbar__auto" style="--w:12%"></span></div>
-          <div style="display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:10px">
-            <span class="wt__man">أسبوعان</span><span class="wt__auto">&lt; 30 دقيقة</span>
-          </div>
-        </div>
-        <span class="wsrc">Interfaces 2010</span>
       </div>
       <div class="wrow">
         <div class="wc"><span class="wc__c">أمريكا · Cornell</span><span class="wc__u">جدول مقررات</span></div>
-        <div class="wt">
-          <div class="wbar"><span class="wbar__man"></span><span class="wbar__auto" style="--w:24%"></span></div>
-          <div style="display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:10px">
-            <span class="wt__man">أسابيع</span><span class="wt__auto">بضع ساعات</span>
-          </div>
-        </div>
+        <div class="wtime"><span class="wt__man">عدة<span class="u"> أسابيع</span></span></div>
         <span class="wsrc">Interfaces 2002</span>
       </div>
       <div class="wrow">
         <div class="wc"><span class="wc__c">سنغافورة · NUS</span><span class="wc__u">جدول اختبارات</span></div>
-        <div class="wt">
-          <div class="wbar"><span class="wbar__man"></span><span class="wbar__auto" style="--w:8%"></span></div>
-          <div style="display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:10px">
-            <span class="wt__man">عدة أسابيع</span><span class="wt__auto">&lt; 5 دقائق</span>
-          </div>
-        </div>
-        <span class="wsrc">AAAI/IAAI 2002</span>
+        <div class="wtime"><span class="wt__man">عدة<span class="u"> أسابيع</span></span></div>
+        <span class="wsrc">AAAI 2002</span>
+      </div>
+      <div class="wrow">
+        <div class="wc"><span class="wc__c">تشيلي · Chile</span><span class="wc__u">مقررات + قاعات</span></div>
+        <div class="wtime"><span class="wt__man">أسبوعان<span class="u"> </span></span></div>
+        <span class="wsrc">Interfaces 2010</span>
       </div>
       <div class="wrow">
         <div class="wc"><span class="wc__c">البرتغال · ISEL</span><span class="wc__u">جدول اختبارات</span></div>
-        <div class="wt">
-          <div class="wbar"><span class="wbar__man"></span><span class="wbar__auto" style="--w:9%"></span></div>
-          <div style="display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:10px">
-            <span class="wt__man">نحو أسبوع</span><span class="wt__auto">≈ 5 دقائق</span>
-          </div>
-        </div>
+        <div class="wtime"><span class="wt__man">نحو<span class="u"> أسبوع</span></span></div>
         <span class="wsrc">IJCCI 2012</span>
       </div>
       <div class="wrow">
         <div class="wc"><span class="wc__c">الجزائر · Tlemcen</span><span class="wc__u">جدول مقررات</span></div>
-        <div class="wt">
-          <div class="wbar"><span class="wbar__man"></span><span class="wbar__auto" style="--w:14%"></span></div>
-          <div style="display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:10px">
-            <span class="wt__man">نحو 10 أيام</span><span class="wt__auto">دقائق</span>
-          </div>
-        </div>
+        <div class="wtime"><span class="wt__man">نحو 10<span class="u"> أيام</span></span></div>
         <span class="wsrc">IJKEDM 2021</span>
       </div>
     </div>
     <div class="cite">
-      <span><b>الشطب الأحمر</b> = يدويًّا · <b style="color:var(--jade)">الشريط</b> = التوليد الآلي · كل صف مصدره على يمينه</span>
+      <span>ست جامعات حقيقية · هذا زمنها <b style="color:var(--ink)">اليدوي</b> · والصفحة التالية: زمننا نحن</span>
     </div>
   </div>
   <div class="notes">
     <span class="notes__k">ملاحظة العرض — تحفّظ منهجي مهم</span>
-    <p>هذه <b>دراسات حالة مستقلة ومحكَّمة، لا متوسط عالمي</b> — تختلف باختلاف حجم الجامعة ونوع الجدول (مقررات أو اختبارات) وما إذا كان الزمن يشمل جمع البيانات أم التوليد فقط. لا تقل «المتوسط العالمي كذا». أقوى صف هو <b>تشيلي</b> (المميَّز بالذهبي): دراسة في مجلة Interfaces تُثبت أن السرعة (أقل من 30 دقيقة مقابل أسبوعين) رافقها تحسّن فعلي — انخفاض 52٪ في المقاعد غير المستغلّة وتقلّص المقررات المتعارضة من 55 إلى 21 عبر ثلاث سنوات. أي أن السرعة لم تأتِ على حساب الجودة. الأشرطة تصويرية للانكماش، لا مقياس زمني خطي (الوحدات تختلف). قل: «هذه ست جامعات حقيقية، وكل رقم مصدره منشور — والصفحة التالية: نحن.»</p>
+    <p>هذه <b>دراسات حالة مستقلة ومحكَّمة، لا متوسط عالمي</b> — تختلف باختلاف حجم الجامعة ونوع الجدول (مقررات أو اختبارات) وما إذا كان الزمن يشمل جمع البيانات أم التوليد فقط. لا تقل «المتوسط العالمي كذا». أقوى صف هو <b>تشيلي</b> (المميَّز بالذهبي): دراسة في مجلة Interfaces تُثبت أن السرعة (أقل من 30 دقيقة مقابل أسبوعين) رافقها تحسّن فعلي — انخفاض 52٪ في المقاعد غير المستغلّة وتقلّص المقررات المتعارضة من 55 إلى 21 عبر ثلاث سنوات. أي أن السرعة لم تأتِ على حساب الجودة. الأشرطة تصويرية للانكماش، لا مقياس زمني خطي (الوحدات تختلف). نعرض هنا الزمن اليدوي فقط عمدًا: هذه هي المشكلة المشتركة حول العالم. لا نعرض أن بعضها أتمت العملية لاحقًا، لأن هدف العرض إبراز تميّزنا نحن في الصفحة التالية (3:24)، لا مقارنتنا بأنظمة غيرنا. قل: «ست جامعات حقيقية، هذا زمنها يدويًّا — والآن انظروا زمننا.»</p>
   </div>
 </section>
 <section class="slide">
