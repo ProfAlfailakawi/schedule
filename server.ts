@@ -62,6 +62,7 @@ import { academicDigits, assignAuthoritySections, authorityDepartmentCode, autho
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
+import type { BranchScope } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
 
@@ -7322,24 +7323,38 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   const courseByIdForPublish=new Map(publishCourses.map((course:any)=>[Number(course.AdCourseId),course]));
   const courseKey=(collegeId:number,sectionId:number,code:unknown)=>`${collegeId}:${sectionId}:${academicDigits(code)||String(code||"").trim().toUpperCase()}`;
   const courseByScopeCode=new Map(publishCourses.map((course:any)=>[courseKey(Number(course.AdCollegeId),Number(course.AdSectionId),course.CourseCode),course]));
-  const missingCourses:string[]=[];
+  const missingTwins=new Map<string,{scope:BranchScope;origin:any}>();
+  const unknownCourses:string[]=[];
   const groups=split.groups.map(group=>{
     const rows=group.rows.map((row:any)=>{
       if(group.scope.isBase)return {...row,AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId};
       const origin=courseByIdForPublish.get(Number(row.AdCourseId));
-      const twin=origin?courseByScopeCode.get(courseKey(group.scope.collegeId,group.scope.sectionId,origin.CourseCode)):undefined;
-      if(!twin){
-        missingCourses.push(`«${String(origin?.CourseName||row.AdCourseName||row.AdCourseId)}» غير موجود في كتالوج القسم بـ«${group.scope.siteLabel}».`);
+      if(!origin){
+        unknownCourses.push(`صف «${String(row.AdCourseName||row.AdCourseId)}» بلا مقرر معروف في النظام.`);
         return {...row,AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId};
+      }
+      const key=courseKey(group.scope.collegeId,group.scope.sectionId,origin.CourseCode);
+      const twin=courseByScopeCode.get(key);
+      if(!twin){
+        /* ── المقرر يُنسخ إلى كتالوج الموقع، ولا يُخترع ─────────────────────
+         * القسم واحد في مواقعه الثلاثة، ولكل موقع كتالوجه. والوثيقة المعتمدة
+         * تُثبت أن هذا المقرر يُدرَّس في الفحيحيل، بينما كتالوج الفحيحيل لم
+         * يُنشأ له فيه سطر بعد — فكان النشر كله يُردّ من أجل سطرٍ ناقص.
+         * والمقرر موجود في النظام بهويته الكاملة في كتالوج المقر، فيُنسخ منه
+         * كما هو: الرمز نفسه والاسم والوحدات والساعات. لا قيمة تُقرأ من ملف،
+         * ولا رقم يُخترع، ولا نسخ إلا بعد التحقق من الصلاحية على ذلك القسم. */
+        missingTwins.set(key,{scope:group.scope,origin});
+        return {...row,AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId,__twinKey:key};
       }
       return {...row,AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId,AdCourseId:Number(twin.AdCourseId),AdCourseName:String(twin.CourseName||row.AdCourseName||"")};
     });
     return {scope:group.scope,rows};
   });
-  if(missingCourses.length){
-    res.status(400).json({error:"لا يمكن النشر: مقرر أو أكثر ليس له نظير في قسم الموقع الآخر. لم يُنشر أي صف.",code:"BRANCH_COURSE_MISSING",issues:[...new Set(missingCourses)].slice(0,20)});return;
+  if(unknownCourses.length){
+    res.status(400).json({error:"لا يمكن النشر: مقرر أو أكثر ليس له نظير في قسم الموقع الآخر. لم يُنشر أي صف.",code:"BRANCH_COURSE_MISSING",issues:[...new Set(unknownCourses)].slice(0,20)});return;
   }
 
+  /* الصلاحية تُفحص قبل أول كتابة، والنسخ كتابة. */
   const forbidden=groups.filter(group=>!isScopeAllowed(req,group.scope.collegeId,group.scope.sectionId));
   if(forbidden.length){
     res.status(403).json({
@@ -7347,6 +7362,35 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
       code:"BRANCH_SCOPE_FORBIDDEN",
       issues:forbidden.map(group=>`«${group.scope.siteLabel}» — ${countOf(group.rows.length,AR.row)} تحتاج صلاحية على قسمها هناك.`),
     });return;
+  }
+
+  const plantedTwins:string[]=[];
+  if(missingTwins.size){
+    const failed:string[]=[];
+    for(const [key,entry] of missingTwins){
+      try{
+        const created=await Repository.createCourse(
+          entry.scope.collegeId,entry.scope.sectionId,
+          String(entry.origin.CourseCode||"").trim(),String(entry.origin.CourseName||"").trim(),
+          Number(entry.origin.CourseCredit||0),Number(entry.origin.CourseHours||0),Number(entry.origin.MaxStudent||0),
+        );
+        courseByScopeCode.set(key,created as any);
+        plantedTwins.push(`«${String(created.CourseName||"")}» في «${entry.scope.siteLabel}»`);
+      }catch{
+        failed.push(`«${String(entry.origin.CourseName||entry.origin.CourseCode)}» تعذّرت إضافته إلى كتالوج القسم بـ«${entry.scope.siteLabel}».`);
+      }
+    }
+    if(failed.length){
+      res.status(400).json({error:"لا يمكن النشر: مقرر أو أكثر ليس له نظير في قسم الموقع الآخر. لم يُنشر أي صف.",code:"BRANCH_COURSE_MISSING",issues:[...new Set(failed)].slice(0,20)});return;
+    }
+    groups.forEach(group=>{
+      group.rows=group.rows.map((row:any)=>{
+        if(!row.__twinKey)return row;
+        const twin=courseByScopeCode.get(String(row.__twinKey));
+        const {__twinKey,...rest}=row;
+        return twin?{...rest,AdCourseId:Number(twin.AdCourseId),AdCourseName:String(twin.CourseName||rest.AdCourseName||"")}:rest;
+      });
+    });
   }
 
   for(const group of groups){
@@ -7376,7 +7420,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
     if(group.scope.isBase||!publication)publication=record;
   }
   await Repository.updateScheduleDraft(draft.id,{status:"published",rows:written,publishedAt:new Date().toISOString()});
-  res.json({success:true,count:written.length,publication,adjusted,scopes:publishedScopes});
+  res.json({success:true,count:written.length,publication,adjusted,scopes:publishedScopes,plantedCourses:plantedTwins});
 });
 
 app.get("/api/intelligence/versions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

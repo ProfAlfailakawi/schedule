@@ -367,4 +367,11 @@ ok('186 the hall-barter screen measures its cards against its own container, not
    and 'width:min(1180px,100%)!important;min-height:0!important' in schedule_css
    and 'calc(100vw - clamp(36px,4.8vw,68px))' not in schedule_css)
 
+ok('187 a course the authority document places at a branch site is copied from the main catalogue after the permission check, never invented, and the copy is announced',
+   'missingTwins.set(key,{scope:group.scope,origin});' in server
+   and server.index("const forbidden=groups.filter(group=>!isScopeAllowed(req,group.scope.collegeId,group.scope.sectionId));") < server.index("const created=await Repository.createCourse(")
+   and 'String(entry.origin.CourseCode||"").trim(),String(entry.origin.CourseName||"").trim(),' in server
+   and 'plantedCourses:plantedTwins' in server
+   and 'transfer-receipt-planted' in transfer_src)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

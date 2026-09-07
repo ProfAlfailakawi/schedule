@@ -8098,3 +8098,6 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .transfer-receipt-scopes li>b{font-weight:800;color:var(--primary,#12463c)}
 .transfer-receipt>small{color:var(--muted);font-size:var(--t-xs,.72rem);line-height:1.7}
 .transfer-receipt>.btn{min-width:132px}
+.transfer-receipt-planted{width:100%;padding:10px 12px;border:1px dashed color-mix(in srgb,var(--primary,#12463c) 30%,var(--line));border-radius:14px;background:var(--surface-2);text-align:start}
+.transfer-receipt-planted>strong{display:block;font-size:var(--t-xs,.72rem);font-weight:750;color:var(--ink-2)}
+.transfer-receipt-planted>ul{margin:6px 0 0;padding-inline-start:16px;display:grid;gap:3px;font-size:var(--t-xs,.72rem);color:var(--ink)}
