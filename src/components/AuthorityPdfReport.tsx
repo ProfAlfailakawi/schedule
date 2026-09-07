@@ -30,6 +30,16 @@ interface Props {
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
   visitingIds: Set<number>;
+  /* ── الوثيقة الواحدة عبر مواقع الفرع ──────────────────────────────────────
+   * حين يُطلب تقرير التغييرات للقسم كله، يُصيَّر هذا المكوّن مرة لكل موقع داخل
+   * وثيقة واحدة. ولأن ترقيم الصفحات يجب أن يقرأ كوثيقة واحدة لا كثلاث وثائق
+   * ملتصقة، يستقبل موضعه من الكتاب بدل أن يحسب لنفسه. وإن لم يُمرَّر شيء —
+   * وهي الحال في تقرير الموقع الواحد — فالسلوك كما كان تماماً.
+   */
+  pageOffset?: number;
+  pageTotal?: number;
+  /** يُطبع مرة واحدة في أول صفحة من الكتاب: شكل القسم كله قبل تفصيله. */
+  bookSites?: Array<{ label: string; added: number; deleted: number; changed: number }>;
 }
 
 const pageItems = <T,>(items: T[], size: number): T[][] => {
@@ -48,6 +58,9 @@ export default function AuthorityPdfReport({
   courseById,
   instructorById,
   visitingIds,
+  pageOffset = 0,
+  pageTotal,
+  bookSites,
 }: Props) {
   const entries = [...report.rows].sort((a, b) => {
     const ar = Number((a.current || a.source)?.sourceOrder ?? Number.MAX_SAFE_INTEGER);
@@ -89,6 +102,14 @@ export default function AuthorityPdfReport({
                 <div><span>القسم</span><strong>{[sectionCode, sectionName].filter(Boolean).join(" ") || "—"}</strong></div>
                 <div><span>الفرع</span><strong>{branch}</strong></div>
               </div>
+              {pageOffset + pageIndex === 0 && bookSites?.length ? (
+                <div className="print-comprehensive-sites" role="note">
+                  <span>مواقع القسم في هذا الفصل:</span>
+                  {bookSites.map(site => (
+                    <b key={site.label}>{site.label} · +{site.added} −{site.deleted} ±{site.changed}</b>
+                  ))}
+                </div>
+              ) : null}
             </header>
 
             <div className="print-comprehensive-grid authority-pdf-grid" role="table" aria-label="تقرير تغييرات الجدول">
@@ -156,7 +177,7 @@ export default function AuthorityPdfReport({
                   <span className="authority-pdf-key authority-pdf-key-deleted">محذوف</span>
                   <span className="authority-pdf-key authority-pdf-key-changed">معدّل</span>
                 </div>
-                <div className="print-comprehensive-page-number"><bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi></div>
+                <div className="print-comprehensive-page-number"><bdi dir="ltr">{pageOffset + pageIndex + 1} / {pageTotal ?? pages.length}</bdi></div>
               </div>
             </footer>
           </section>

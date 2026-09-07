@@ -833,6 +833,27 @@
     border-top:.8pt solid #8d9792 !important;
     height:0 !important;
   }
+  /* ── شكل القسم كله قبل تفصيله ──────────────────────────────────────────
+     سطر واحد في أول صفحة من وثيقة تضم مواقع الفرع: أسماء المواقع وحجم كل
+     واحد. يقرؤه المستلم قبل أن يقلب الصفحات فيعرف ما بين يديه. لا وجود له
+     في وثيقة الموقع الواحد لأن الفقرة نفسها لا تُصيَّر هناك. */
+  .print-comprehensive-sites{
+    display:flex !important;
+    flex-wrap:wrap !important;
+    align-items:center !important;
+    gap:1.6mm 3.2mm !important;
+    margin:0 0 2.4mm !important;
+    padding:1.6mm 2.4mm !important;
+    border:.7pt solid #1f6b5c !important;
+    border-radius:1.2mm !important;
+    background:#f4f8f6 !important;
+    font-size:7.4pt !important;
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
+  .print-comprehensive-sites>span{color:#4a5751 !important;font-weight:700 !important}
+  .print-comprehensive-sites>b{font-weight:800 !important;color:#12463c !important}
+
   .print-comprehensive-legend{
     display:flex !important;
     flex-wrap:wrap !important;

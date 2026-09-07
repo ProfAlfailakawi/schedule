@@ -10,6 +10,7 @@ import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, Pri
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
+import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
@@ -35,7 +36,7 @@ export type ReportMode =
   | "reportDepartment" | "reportInstructor" | "reportRoom" | "reportTime" | "reportRoomTime";
 
 type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "fairness" | "balance";
-type PrintKind = Lens | "comprehensive" | null;
+type PrintKind = Lens | "comprehensive" | "comprehensive-branch" | null;
 
 /* Safari is the one printing engine here that ignores `@page size` (so wide
    sheets meet portrait paper) — detected once, and only ever used to OFFER a
@@ -311,6 +312,19 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [terms, setTerms] = useState<AdTerm[]>([]);
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
   const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
+  /* ── القسم الواحد في مواقع الفرع ──────────────────────────────────────────
+   * القسم يُدرَّس في الرئيسي والجهراء والفحيحيل، ولكل موقع كلية مستقلة وجدول
+   * منشور في مكانه — وهذا هو الصواب في البيانات. لكن رئيس القسم يريد أحياناً
+   * أن يرى قسمه كله في وثيقة واحدة، لا ثلاث وثائق يجمعها بيده.
+   *
+   * فالمواقع تُشتق هنا من القوائم المحمّلة أصلاً (الكليات والأقسام)، بلا نداء
+   * جديد ولا حقل جديد: بادئة كود الموقع هي الفرع، والقسم الشقيق يُعرف برمزه.
+   * ولا يظهر شيء من هذا لقسم لا وجود له إلا في موقع واحد.
+   */
+  const [branchRows, setBranchRows] = useState<Record<string, FSchedule[]>>({});
+  const [branchCourses, setBranchCourses] = useState<AdCourse[]>([]);
+  const [branchDenied, setBranchDenied] = useState<string[]>([]);
+  const [branchBusy, setBranchBusy] = useState(false);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
   const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
@@ -329,6 +343,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   const [authorityReport, setAuthorityReport] = useState<AuthorityReport | null>(null);
+  /* تقرير التغييرات للقسم كله: تقرير لكل موقع، مرتبة كما تُقرأ — الموقع
+     المفتوح أولاً — وتُطبع كوثيقة واحدة بترقيم متصل. */
+  const [authorityBook, setAuthorityBook] = useState<Array<{ site: BranchScope; report: AuthorityReport }> | null>(null);
   const [authorityReportBusy, setAuthorityReportBusy] = useState(false);
   const [authorityReportAvailable, setAuthorityReportAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -595,6 +612,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const rowMatchesRoom = useCallback((row: FSchedule, roomId: string) => !roomId || rowLocation(row).room?.id === roomId, [rowLocation]);
   const instructorById = useMemo(() => new Map(instructors.map(x => [x.AdInstructorId, x])), [instructors]);
   const courseById = useMemo(() => new Map(courses.map(x => [x.AdCourseId, x])), [courses]);
+  /* وثيقة تضم مواقع الفرع تحتاج كتالوج كل موقع: المقرر نفسه له رقم مستقل في
+     كل قسم، فبغير هذا الدمج تخرج أعمدة الوحدات والساعات والسعة فارغة. */
+  const bookCourseById = useMemo(
+    () => new Map([...courses, ...branchCourses].map(x => [x.AdCourseId, x])),
+    [courses, branchCourses],
+  );
   const collegeById = useMemo(() => new Map(colleges.map(x => [x.AdCollegeId, x])), [colleges]);
   const sectionById = useMemo(() => new Map(sections.map(x => [x.AdSectionId, x])), [sections]);
   const termById = useMemo(() => new Map(terms.map(x => [x.AdTermId, x])), [terms]);
@@ -797,6 +820,61 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     collegeName,
     sectionName
   ].filter(Boolean).join(" · ");
+
+  /* مواقع هذا القسم داخل فرعه — الموقع المفتوح أولاً. القائمة فارغة لقسم لا
+     نظير له في موقع آخر، وعندها لا يظهر أي شيء من هذه الطبقة على الشاشة. */
+  const branchSites = useMemo<BranchScope[]>(() => {
+    if (!resolvedCollegeId || !resolvedSectionId) return [];
+    const sites = siblingBranchScopes({
+      colleges: colleges as any,
+      sections: sections as any,
+      baseCollegeId: resolvedCollegeId,
+      baseSectionId: resolvedSectionId,
+    });
+    return sites.length > 1 ? sites : [];
+  }, [colleges, sections, resolvedCollegeId, resolvedSectionId]);
+  const otherBranchSites = useMemo(() => branchSites.filter(site => !site.isBase), [branchSites]);
+
+  /* صفوف المواقع الأخرى تُقرأ عند الحاجة فقط — أي حين يطلب القارئ وثيقة تضم
+     الفروع — ومن نقاط النهاية نفسها التي تحرس الصلاحيات. موقع خارج صلاحية
+     القارئ يُسمّى له صراحةً بدل أن يُحذف من الوثيقة بصمت. */
+  /* وثيقة واحدة تحكمها قاعدة واحدة: كل موقع يدخلها بجدول قسمه كاملاً كما هو
+     منشور، لا بنتيجة بحث. مرشّحات الشاشة تخص «التقرير الشامل» للموقع المفتوح
+     وتبقى كما هي؛ أما وثيقة الفروع فهي الوثيقة الرسمية للقسم في مواقعه، ولو
+     أخذ الموقعُ المفتوح نتيجةً مرشَّحة بينما تأخذ البقية جداولها كاملة لخرج
+     مستند يقارن ما لا يُقارن. */
+  const branchSiteGroups = useMemo(() => branchSites.map(site => ({
+    site,
+    rows: site.isBase ? all : (branchRows[`${site.collegeId}:${site.sectionId}`] || []),
+  })), [branchSites, branchRows, all]);
+
+  const loadBranchRows = useCallback(async () => {
+    if (!filters.termId || !otherBranchSites.length) return { rows: {} as Record<string, FSchedule[]>, denied: [] as string[] };
+    setBranchBusy(true);
+    const rows: Record<string, FSchedule[]> = {};
+    const denied: string[] = [];
+    const courseBag: AdCourse[] = [];
+    try {
+      await Promise.all(otherBranchSites.map(async site => {
+        const key = `${site.collegeId}:${site.sectionId}`;
+        const query = new URLSearchParams({ collegeId: String(site.collegeId), sectionId: String(site.sectionId), termId: String(filters.termId) });
+        const [rowsResponse, coursesResponse] = await Promise.all([
+          fetch(`/api/schedules?${query}`),
+          fetch(`/api/courses?sectionId=${site.sectionId}`),
+        ]);
+        if (!rowsResponse.ok) { denied.push(site.siteLabel); return; }
+        rows[key] = await rowsResponse.json();
+        if (coursesResponse.ok) {
+          const list = await coursesResponse.json();
+          if (Array.isArray(list)) courseBag.push(...list);
+        }
+      }));
+      setBranchRows(rows);
+      setBranchDenied(denied);
+      setBranchCourses(courseBag);
+      return { rows, denied };
+    } finally { setBranchBusy(false); }
+  }, [filters.termId, otherBranchSites]);
 
   // --- grouped views -------------------------------------------------------
 
@@ -1076,6 +1154,75 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     return () => { cancelled = true; };
   }, [filters.collegeId, filters.sectionId, filters.termId, all.length]);
 
+  /* الطباعة بعد القراءة: نفس نمط «تقرير تغييرات الجدول» القائم — تُجلب
+     البيانات أولاً ثم تُثبَّت الورقة ثم يُستدعى أمر الطباعة. */
+  const runPrint = (kind: string) => {
+    closeReportEvents();
+    const root = document.documentElement;
+    root.dataset.printKind = kind;
+    if (SAFARI_PRINT_ENGINE || IOS_CHROME_PRINT_ENGINE) root.dataset.printRotate = "1";
+    if (CHROMIUM_PRINT_ENGINE) root.dataset.printChromium = "1";
+    let leftForPrint = false;
+    let resumed = false;
+    const clearPrintFlags = () => {
+      delete root.dataset.printKind;
+      delete root.dataset.printRotate;
+      delete root.dataset.printChromium;
+    };
+    const resume = () => {
+      if (resumed) return;
+      resumed = true;
+      window.removeEventListener("afterprint", resume);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clearPrintFlags();
+      openReportEvents();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") leftForPrint = true;
+      else if (leftForPrint) resume();
+    };
+    window.addEventListener("afterprint", resume, { once: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    let invoked = false;
+    if (SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
+      try { invoked = document.execCommand("print"); } catch { invoked = false; }
+    }
+    if (!invoked) window.print();
+    window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
+  };
+
+  const printBranchComprehensive = async () => {
+    if (!branchSites.length) return;
+    setError(null);
+    const { denied } = await loadBranchRows();
+    if (denied.length) setError(`لم تُدرج مواقع خارج صلاحياتك: ${denied.join("، ")}.`);
+    flushSync(() => setPrintKind("comprehensive-branch"));
+    runPrint("comprehensive-branch");
+  };
+
+  const printBranchAuthorityReport = async () => {
+    if (!branchSites.length || !filters.termId) return;
+    setAuthorityReportBusy(true);
+    setError(null);
+    try {
+      await loadBranchRows();
+      const books: Array<{ site: BranchScope; report: AuthorityReport }> = [];
+      const missing: string[] = [];
+      for (const site of branchSites) {
+        const query = new URLSearchParams({ collegeId: String(site.collegeId), sectionId: String(site.sectionId), termId: String(filters.termId) });
+        const response = await fetch(`/api/reports/authority-pdf-diff?${query}`);
+        if (!response.ok) { missing.push(site.siteLabel); continue; }
+        books.push({ site, report: await response.json() as AuthorityReport });
+      }
+      if (!books.length) throw new Error("لا توجد نسخة PDF معتمدة محفوظة لأي من مواقع هذا القسم.");
+      if (missing.length) setError(`مواقع بلا نسخة معتمدة محفوظة لم تُدرج: ${missing.join("، ")}.`);
+      flushSync(() => { setAuthorityReport(null); setAuthorityBook(books); });
+      runPrint("authority-pdf");
+    } catch (e: any) {
+      setError(e?.message || "تعذر إعداد تقرير تغييرات الجدول لكل الفروع");
+    } finally { setAuthorityReportBusy(false); }
+  };
+
   const printAuthorityReport = async () => {
     if (!filters.collegeId || !filters.sectionId || !filters.termId) {
       setError("اختر الفصل والكلية والقسم أولاً لفتح تقرير تغييرات الجدول.");
@@ -1094,7 +1241,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       if (!response.ok) throw new Error(data.error || "تعذر إعداد تقرير تغييرات الجدول");
 
       closeReportEvents();
-      flushSync(() => setAuthorityReport(data as AuthorityReport));
+      flushSync(() => { setAuthorityBook(null); setAuthorityReport(data as AuthorityReport); });
 
       const root = document.documentElement;
       root.dataset.printKind = "authority-pdf";
@@ -1463,10 +1610,22 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
                 <Table2 aria-hidden="true" />التقرير الشامل
               </SecondaryButton>
+              {/* لا يظهر هذا الزر إلا لقسم له نظير في موقع آخر من فرعه. القسم
+                  ذو الموقع الواحد يرى الشاشة كما كانت تماماً. */}
+              {branchSites.length > 1 ? (
+                <SecondaryButton type="button" data-guide-ignore="طباعة التقرير الشامل لمواقع الفرع في وثيقة واحدة" onClick={() => void printBranchComprehensive()} disabled={branchBusy} title={`وثيقة القسم كاملة في مواقع الفرع: ${branchSites.map(site => site.siteLabel).join(" · ")}`}>
+                  <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : "الشامل — كل الفروع"}
+                </SecondaryButton>
+              ) : null}
             </> : null}
             {!pending && authorityReportAvailable && all.length > 0 ? (
               <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل">
                 <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
+              </SecondaryButton>
+            ) : null}
+            {!pending && authorityReportAvailable && all.length > 0 && branchSites.length > 1 ? (
+              <SecondaryButton type="button" data-guide-ignore="طباعة تقرير التغييرات لمواقع الفرع في وثيقة واحدة" onClick={() => void printBranchAuthorityReport()} disabled={authorityReportBusy} title={`تغييرات ${branchSites.map(site => site.siteLabel).join(" · ")} في وثيقة واحدة`}>
+                <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "التغييرات — كل الفروع"}
               </SecondaryButton>
             ) : null}
           </div> : null}
@@ -1911,13 +2070,47 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           termName={termName}
           sectionName={sectionName}
           sectionCode={sectionCode}
-          courseById={courseById}
+          courseById={printKind === "comprehensive-branch" ? bookCourseById : courseById}
           instructorById={instructorById}
           visitingIds={visitingIds}
+          siteGroups={branchSiteGroups}
         />
       </PrintPortal>
       <PrintPortal className="authority-pdf-print-host">
-        {authorityReport ? (
+        {/* إما تقرير موقع واحد، أو كتاب مواقع الفرع — لا يجتمعان في المنفذ. */}
+        {authorityBook?.length ? (() => {
+          const pageCounts = authorityBook.map(entry => Math.max(1, Math.ceil(entry.report.rows.length / 23)));
+          const bookTotal = pageCounts.reduce((sum, count) => sum + count, 0);
+          const bookSites = authorityBook.map(entry => ({
+            label: entry.site.siteLabel,
+            added: entry.report.counts.added,
+            deleted: entry.report.counts.deleted,
+            changed: entry.report.counts.changed,
+          }));
+          let offset = 0;
+          return authorityBook.map((entry, index) => {
+            const pageOffset = offset;
+            offset += pageCounts[index];
+            return (
+              <React.Fragment key={`${entry.site.collegeId}:${entry.site.sectionId}`}>
+              <AuthorityPdfReport
+                report={entry.report}
+                termName={termName}
+                collegeName={entry.site.siteLabel}
+                collegeCode={collegeCode}
+                sectionName={entry.site.sectionName || sectionName}
+                sectionCode={sectionCode}
+                courseById={bookCourseById}
+                instructorById={instructorById}
+                visitingIds={visitingIds}
+                pageOffset={pageOffset}
+                pageTotal={bookTotal}
+                bookSites={bookSites}
+              />
+              </React.Fragment>
+            );
+          });
+        })() : authorityReport ? (
           <AuthorityPdfReport
             report={authorityReport}
             termName={termName}
@@ -2095,7 +2288,7 @@ function PrintPageMeta({ page, total, college, date }: { page: number; total: nu
   );
 }
 
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds }: {
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -2111,6 +2304,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
   visitingIds: Set<number>;
+  /** مواقع الفرع ومواعيد كل منها — تُمرَّر فقط لوثيقة «كل الفروع». */
+  siteGroups?: Array<{ site: BranchScope; rows: FSchedule[] }>;
 }) {
   if (!kind) return null;
 
@@ -2126,6 +2321,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
     fairness: "عدالة توزيع العبء",
     balance: "ميزان الأقسام",
     comprehensive: "تقرير الجدول الشامل",
+    "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
   };
   const courseOf = (row: FSchedule) => courseById.get(row.AdCourseId);
   const instructorOf = (row: FSchedule) => instructorById.get(row.AdInstructorId);
@@ -2145,31 +2341,51 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
    */
   const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).reverse().join(",") || "—";
 
-  if (kind === "comprehensive") {
-    const comprehensiveRows = [...rows].sort((a, b) =>
+  if (kind === "comprehensive" || kind === "comprehensive-branch") {
+    /* ── وثيقة واحدة، ومواقع الفرع داخلها ────────────────────────────────────
+     * التقرير الشامل وثيقة رسمية لها ترويسة وتواقيع ومفتاح أيام، وشكلها ليس
+     * موضع اجتهاد. فالمواقع لا تُنتج تقريراً ثانياً بتنسيق مشابه: هي المُصيّر
+     * نفسه، يعمل على مجموعة واحدة كما كان، أو على ثلاث حين يطلب القارئ قسمه
+     * كله. الوثيقة أحادية الموقع تخرج مطابقة لما كانت حرفاً بحرف — لا عمود
+     * زائد ولا سطر زائد — لأن ما يخص المواقع لا يُرسم إلا حين توجد مواقع.
+     *
+     * وكل موقع يبدأ صفحة جديدة بترويسته باسمه، بينما ترقيم الصفحات متصل عبر
+     * الوثيقة كلها: مستند واحد يُسلَّم كاملاً، ونسخة مطبوعة يمكن فصلها بحسب
+     * الموقع دون قطع صفحة في نصفها.
+     */
+    const sortRows = (list: FSchedule[]) => [...list].sort((a, b) =>
       byArabic(courseOf(a)?.CourseName || a.AdCourseName, courseOf(b)?.CourseName || b.AdCourseName) ||
       byArabic(a.SCode, b.SCode) ||
       String(a.fstarttime).localeCompare(String(b.fstarttime)) ||
       Number(a.id) - Number(b.id)
     );
-    const pages = paginateComprehensiveRows(comprehensiveRows);
+    const bookGroups = kind === "comprehensive-branch" && siteGroups?.length
+      ? siteGroups.filter(group => group.rows.length).map(group => ({ label: group.site.siteLabel, sectionName: group.site.sectionName || sectionName, rows: sortRows(group.rows) }))
+      : [{ label: "", sectionName, rows: sortRows(rows) }];
+    const totalRows = bookGroups.reduce((sum, group) => sum + group.rows.length, 0);
     const legendItems = DAYS.map((day, index) => `${index + 1}=${day.label}`);
+    const paged = bookGroups.map(group => ({ ...group, pages: paginateComprehensiveRows(group.rows) }));
+    const totalPages = paged.reduce((sum, group) => sum + group.pages.length, 0);
+    let pageCursor = 0;
 
     return (
       <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-book">
-        {rows.length ? (
+        {totalRows ? (
           <div className="print-comprehensive-pages">
-            {pages.map((pageRows, pageIndex) => (
-              <section className="print-comprehensive-page" key={`page-${pageIndex + 1}`}>
+            {paged.map(group => group.pages.map((pageRows, pageIndex) => {
+              pageCursor += 1;
+              const bookPage = pageCursor;
+              return (
+              <section className="print-comprehensive-page" key={`${group.label || "scope"}-page-${pageIndex + 1}`}>
                 <header className="print-comprehensive-classic-head">
                   <div className="print-comprehensive-head-top">
                     <div className="print-comprehensive-side print-comprehensive-side-right">
                       <div><span>رمز القسم العلمي</span><strong>{sectionCode || "—"}</strong></div>
-                      <div><span>القسم العلمي</span><strong>{sectionName || "—"}</strong></div>
+                      <div><span>القسم العلمي</span><strong>{group.sectionName || "—"}</strong></div>
                     </div>
                     <div className="print-comprehensive-title-block">
                       <h1>تقرير القسم العلمي الشامل</h1>
-                      <p>الكلية: {collegeName || "—"}</p>
+                      <p>الكلية: {group.label || collegeName || "—"}</p>
                     </div>
                     <div className="print-comprehensive-side print-comprehensive-side-left">
                       <div><span>الفصل الدراسي</span><strong>{termName || scopeLine || "—"}</strong></div>
@@ -2177,6 +2393,17 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     </div>
                   </div>
                 </header>
+
+                {/* شكل القسم كله قبل تفصيله: كم شعبة في كل موقع، مرة واحدة في
+                    أول صفحة من الوثيقة، ولا وجود له في تقرير الموقع الواحد. */}
+                {bookPage === 1 && paged.length > 1 ? (
+                  <div className="print-comprehensive-sites" role="note">
+                    <span>مواقع القسم في هذا الفصل:</span>
+                    {paged.map(site => (
+                      <b key={site.label}>{site.label} · {countOf(site.rows.length, AR.lecture)}</b>
+                    ))}
+                  </div>
+                ) : null}
 
                 <div className="print-comprehensive-grid" role="table" aria-label="تفاصيل المقررات والجدول">
                   <div className="print-comprehensive-grid-row print-comprehensive-grid-head" role="row">
@@ -2234,11 +2461,12 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <div className="print-comprehensive-legend">
                       {legendItems.map(item => <span key={item}>{item}</span>)}
                     </div>
-                    <div className="print-comprehensive-page-number"><bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi></div>
+                    <div className="print-comprehensive-page-number"><bdi dir="ltr">{bookPage} / {totalPages}</bdi></div>
                   </div>
                 </footer>
               </section>
-            ))}
+              );
+            }))}
           </div>
         ) : <p className="print-empty">لا توجد مواعيد ضمن النطاق المحدد.</p>}
       </div>
