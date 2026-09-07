@@ -254,6 +254,9 @@ export default function SmartGuide({
   );
   const [iconIntro, setIconIntro] = useState<{ key:string; title:string; summary:string } | null>(null);
   const [screenHandoff, setScreenHandoff] = useState<{ title:string; detail:string } | null>(null);
+  /* يُملأ بعد تعريف finishHandoffToScreen أدناه؛ المؤقّت أعلاه يحتاجه ولا يمكنه
+     أن يسبقه في الترتيب. */
+  const finishHandoffRef = useRef<(() => void) | null>(null);
   const [routineDraft, setRoutineDraft] = useState<{ sequence: string[]; name: string } | null>(null);
   const [collectiveFriction, setCollectiveFriction] = useState<Array<{ name: string; count: number }>>([]);
   const [collectiveInsights, setCollectiveInsights] = useState<Array<{ featureId:string; version:number; step:string; attempts:number; failureRate:number; abandonRate:number; helpRate:number; helpToSuccessRate:number; changeVsPrevious:number }>>([]);
@@ -290,8 +293,18 @@ export default function SmartGuide({
   const showScreenHandoff = useCallback((title:string, detail:string) => {
     if (handoffTimerRef.current) window.clearTimeout(handoffTimerRef.current);
     setScreenHandoff({ title, detail });
-    // Handoff is state, not a decorative timer. It remains until the screen/command resolves.
-    handoffTimerRef.current = null;
+    /* ── التسليم ينتهي، وإلا صار لافتة دائمة ────────────────────────────────
+     * البلاغ حالة لا مؤقّت: يبقى حتى تُحسم الشاشة أو الأمر. لكن بعض المسارات
+     * لا تُحسم أبداً — فُتحت الشاشة ونُفّذ الأمر ولم يقل أحد إن التسليم انتهى —
+     * فيبقى «سلّمتك الخطوة إلى الشاشة» معلّقاً في أعلى الشاشة إلى ما لا نهاية،
+     * ولا زر عليه ليُغلق. الحسم يبقى هو الطريق الطبيعي، وهذا حدٌّ أخير له:
+     * بعد اثنتي عشرة ثانية يُطوى التسليم من نفسه. والإرشاد الحي مستثنى، لأن
+     * بطاقته على الشاشة هي التسليم نفسه وما زالت تعمل. */
+    handoffTimerRef.current = window.setTimeout(() => {
+      handoffTimerRef.current = null;
+      if (tourActiveRef.current) return;
+      finishHandoffRef.current?.();
+    }, 12000);
   }, []);
   const beginScreenHandoff = useCallback((title:string, detail:string) => {
     handoffGenerationRef.current += 1;
@@ -315,6 +328,9 @@ export default function SmartGuide({
     setPointMode(false);
     setDrawerHidden(false);
     setScreenHandoff(null);
+    /* المرشد عاد بيد المستخدم: مؤقّت التسليم لم يعد له معنى، ولو بقي لأغلق
+       اللوحة بعد ثوانٍ بلا سبب. */
+    if (handoffTimerRef.current) { window.clearTimeout(handoffTimerRef.current); handoffTimerRef.current = null; }
     if (message) setNotice(message);
   }, [clearLifecycleTimers]);
   const finishHandoffToScreen = useCallback(() => {
@@ -328,8 +344,10 @@ export default function SmartGuide({
     pendingCloseViewRef.current=null;
     workflowRemainingRef.current=0;
     setScreenHandoff(null);
+    if (handoffTimerRef.current) { window.clearTimeout(handoffTimerRef.current); handoffTimerRef.current = null; }
     onClose();
   }, [clearLifecycleTimers, onClose]);
+  finishHandoffRef.current = finishHandoffToScreen;
 
   const refreshProfile = useCallback(() => setProfile(loadGuideProfile(userId)), [userId]);
   const admin = Boolean(root || user?.IsAdminUser);
@@ -630,6 +648,10 @@ export default function SmartGuide({
       if (!pending || pending.view !== view) return;
       pendingViewCommandRef.current=null;
       runCommand(pending.command);
+      /* وصلت الشاشة ونُفّذ ما عليها: هذا هو حسم التسليم. كان البلاغ يبقى بعده
+         معلّقاً لأن أحداً لم يعلن انتهاءه. والإرشاد الحي يُستثنى: بطاقته على
+         الشاشة هي استمرار التسليم لا نهايته. */
+      if (!tourActiveRef.current) finishHandoffToScreen();
     };
     window.addEventListener("schedule-view-ready", onViewReady as EventListener);
     return () => window.removeEventListener("schedule-view-ready", onViewReady as EventListener);
