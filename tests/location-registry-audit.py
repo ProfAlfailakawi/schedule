@@ -238,6 +238,14 @@ ok('130 Authority diff engine can still represent full deletion against an empty
 # One Authority document holds every site of the branch, and each row is published where it belongs.
 ok('130b each row of one Authority document is published into its own branch department, all sites or none', 'splitRowsByBranch(publishRows' in server and 'BRANCH_SCOPE_UNRESOLVED' in server and 'BRANCH_SCOPE_FORBIDDEN' in server and 'BRANCH_COURSE_MISSING' in server and 'BRANCH_VALIDATION_FAILED' in server)
 ok('130c a site of the same branch is not out of scope, while another branch still is', 'branchRoot' in (ROOT/'src/server/locationRegistryEngine.ts').read_text() and 'sameBranch' in (ROOT/'src/server/locationRegistryEngine.ts').read_text() and 'branchRoot:collegeBranchRoot' not in server)
+# One department taught at several sites of one branch reads as ONE document when asked for.
+reports_branch=(ROOT/'src/components/Reports.tsx').read_text()
+authority_branch=(ROOT/'src/components/AuthorityPdfReport.tsx').read_text()
+ok('130f the branch-wide documents are the SAME renderers, so a one-site department prints exactly what it printed before', 'if (kind === "comprehensive" || kind === "comprehensive-branch")' in reports_branch and 'siteGroups?.length' in reports_branch and 'branchSites.length > 1 ?' in reports_branch)
+ok('130g the book numbers its pages continuously across sites instead of restarting at every site', '{bookPage} / {totalPages}' in reports_branch and 'pageOffset + pageIndex + 1' in authority_branch and 'pageTotal ?? pages.length' in authority_branch)
+ok('130h the first page states the shape of the whole department before its detail', 'print-comprehensive-sites' in reports_branch and 'print-comprehensive-sites' in authority_branch and '.print-comprehensive-sites{' in (ROOT/'src/styles/08-print.css').read_text())
+ok('130i a site outside the reader permissions is named, never silently dropped from the document', 'لم تُدرج مواقع خارج صلاحياتك' in reports_branch and 'denied.push(site.siteLabel)' in reports_branch)
+ok('130j the branch document takes each site whole timetable, never one filtered site beside three complete ones', 'rows: site.isBase ? all :' in reports_branch)
 ok('130d a department report compares only the baseline rows of its own site', 'authorityBaselineForScope' in server and 'siblingBranchScopes({colleges:colleges as any' in server)
 ok('131 Authority report shows visiting badge beside canonical instructor identity', 'VisitingBadge' in authority_report and 'visitingIds.has(Number(row.AdInstructorId))' in authority_report and 'visitingIds={visitingIds}' in reports_src)
 ok('132 duplicate source PDF filename is not printed under the Authority report title', '<p>{report.sourceFileName}</p>' not in authority_report)
