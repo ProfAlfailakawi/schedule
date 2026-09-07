@@ -326,7 +326,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [branchDenied, setBranchDenied] = useState<string[]>([]);
   const [branchBusy, setBranchBusy] = useState(false);
   /* نطاق التقارير: الموقع المفتوح وحده (الافتراضي) أو مواقع الفرع كلها. */
-  const [branchAllSites, setBranchAllSites] = useState(false);
+  /* أي زر تقرير فتح قائمة نطاقه الآن — والقائمة تُغلق بالضغط خارجها. */
+  const [scopeMenu, setScopeMenu] = useState<"comprehensive" | "authority" | null>(null);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
   const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
@@ -1073,6 +1074,18 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     DAYS.forEach(day => { if (filters[day.key]) params.set(day.key, "true"); });
     return params.toString();
   };
+  useEffect(() => {
+    if (!scopeMenu) return;
+    const close = (event: Event) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event.type === "pointerdown" && (event.target as HTMLElement)?.closest?.(".query-report-action")) return;
+      setScopeMenu(null);
+    };
+    document.addEventListener("pointerdown", close, true);
+    document.addEventListener("keydown", close, true);
+    return () => { document.removeEventListener("pointerdown", close, true); document.removeEventListener("keydown", close, true); };
+  }, [scopeMenu]);
+
   const printReport = (kind: Exclude<PrintKind, null> = lens) => {
     /* Safari/WebKit has a long-standing failure mode where an active EventSource
        can make window.print() silently do nothing. Pause the live schedule stream
@@ -1609,24 +1622,34 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               >
                 <Printer aria-hidden="true" />
               </button>
-              <SecondaryButton type="button" data-guide-ignore="طباعة التقرير الشامل بنطاقه المختار داخل مركز الاستعلامات" onClick={() => branchAllSites ? void printBranchComprehensive() : printReport("comprehensive")} disabled={branchBusy} title={branchAllSites ? `وثيقة القسم كاملة في مواقع الفرع: ${branchSites.map(site => site.siteLabel).join(" · ")}` : "وثيقة القسم الرسمية بكل تفاصيل الجدول"}>
-                <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : "التقرير الشامل"}
-              </SecondaryButton>
+              {/* ── السؤال يُطرح عند الضغط، لا قبله ────────────────────────────
+                  زر لكل تقرير، ومفتاح دائم للنطاق: ثلاثة عناصر تشغل الشريط
+                  طوال الوقت لأجل قرار يُتخذ لحظةَ الطباعة فقط. فصار الزر يسأل
+                  حين يُضغط: هذا الموقع أم كل الفروع؟ ولقسم في موقع واحد لا
+                  سؤال أصلاً — يطبع مباشرة كما كان. */}
+              <div className="query-report-action">
+                <SecondaryButton type="button" data-guide-ignore="طباعة التقرير الشامل بنطاقه المختار داخل مركز الاستعلامات" aria-haspopup={branchSites.length > 1 || undefined} aria-expanded={scopeMenu === "comprehensive" || undefined} onClick={() => branchSites.length > 1 ? setScopeMenu(scopeMenu === "comprehensive" ? null : "comprehensive") : printReport("comprehensive")} disabled={branchBusy} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
+                  <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : "التقرير الشامل"}
+                </SecondaryButton>
+                {scopeMenu === "comprehensive" ? (
+                  <div className="query-scope-menu" role="menu">
+                    <button type="button" role="menuitem" data-guide-ignore="طباعة التقرير الشامل للموقع المفتوح" onClick={() => { setScopeMenu(null); printReport("comprehensive"); }}>هذا الموقع<small>{collegeName || "—"}</small></button>
+                    <button type="button" role="menuitem" data-guide-ignore="طباعة التقرير الشامل لمواقع الفرع في وثيقة واحدة" onClick={() => { setScopeMenu(null); void printBranchComprehensive(); }}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button>
+                  </div>
+                ) : null}
+              </div>
             </> : null}
             {!pending && authorityReportAvailable && all.length > 0 ? (
-              <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => branchAllSites ? void printBranchAuthorityReport() : void printAuthorityReport()} disabled={authorityReportBusy} title={branchAllSites ? `تغييرات ${branchSites.map(site => site.siteLabel).join(" · ")} في وثيقة واحدة` : "يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل"}>
-                <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
-              </SecondaryButton>
-            ) : null}
-            {/* ── النطاق مفتاح واحد، لا نسخة ثانية من كل زر ────────────────────
-                إضافة «— كل الفروع» بجانب كل تقرير ضاعفت الأزرار: أربعة أزرار
-                تقول شيئين. والنطاق ليس تقريراً آخر، بل صفة للتقرير نفسه — فصار
-                مفتاحاً صغيراً واحداً يحكم الزرّين معاً، ولا يظهر أصلاً لقسم لا
-                وجود له إلا في موقع واحد. */}
-            {branchSites.length > 1 ? (
-              <div className="query-branch-scope" role="group" aria-label="نطاق التقارير">
-                <button type="button" data-guide-ignore="اختيار نطاق التقارير بين الموقع الحالي ومواقع الفرع" className={branchAllSites ? "" : "on"} aria-pressed={!branchAllSites} onClick={() => setBranchAllSites(false)}>هذا الموقع</button>
-                <button type="button" data-guide-ignore="اختيار نطاق التقارير بين الموقع الحالي ومواقع الفرع" className={branchAllSites ? "on" : ""} aria-pressed={branchAllSites} onClick={() => setBranchAllSites(true)} title={branchSites.map(site => site.siteLabel).join(" · ")}>كل الفروع</button>
+              <div className="query-report-action">
+                <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" aria-haspopup={branchSites.length > 1 || undefined} aria-expanded={scopeMenu === "authority" || undefined} onClick={() => branchSites.length > 1 ? setScopeMenu(scopeMenu === "authority" ? null : "authority") : void printAuthorityReport()} disabled={authorityReportBusy} title="يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل">
+                  <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
+                </SecondaryButton>
+                {scopeMenu === "authority" ? (
+                  <div className="query-scope-menu" role="menu">
+                    <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير التغييرات للموقع المفتوح" onClick={() => { setScopeMenu(null); void printAuthorityReport(); }}>هذا الموقع<small>{collegeName || "—"}</small></button>
+                    <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير التغييرات لمواقع الفرع في وثيقة واحدة" onClick={() => { setScopeMenu(null); void printBranchAuthorityReport(); }}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div> : null}
@@ -2080,37 +2103,42 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       <PrintPortal className="authority-pdf-print-host">
         {/* إما تقرير موقع واحد، أو كتاب مواقع الفرع — لا يجتمعان في المنفذ. */}
         {authorityBook?.length ? (() => {
-          const pageCounts = authorityBook.map(entry => Math.max(1, Math.ceil(entry.report.rows.length / 23)));
-          const bookTotal = pageCounts.reduce((sum, count) => sum + count, 0);
+          /* ── وثيقة واحدة، لا ثلاث ملتصقة ────────────────────────────────
+           * كان كل موقع يُطبع تقريراً كاملاً بترويسته. والقارئ يريد ورقة قسمه
+           * كما تصدر من الجهة: صفوفاً متصلة بترتيب المستند، وبجانب كل صف اسم
+           * موقعه. فتُدمج التقارير في تقرير واحد، وتُجمع أعداده، ويظهر عمود
+           * «الموقع» — ولا وجود له في تقرير الموقع الواحد. */
+          const merged = {
+            ...authorityBook[0].report,
+            counts: authorityBook.reduce((sum, entry) => ({
+              added: sum.added + entry.report.counts.added,
+              deleted: sum.deleted + entry.report.counts.deleted,
+              changed: sum.changed + entry.report.counts.changed,
+              unchanged: sum.unchanged + entry.report.counts.unchanged,
+            }), { added: 0, deleted: 0, changed: 0, unchanged: 0 }),
+            rows: authorityBook.flatMap(entry => entry.report.rows.map(row => ({ ...row, siteLabel: entry.site.siteLabel }))),
+          };
           const bookSites = authorityBook.map(entry => ({
             label: entry.site.siteLabel,
             added: entry.report.counts.added,
             deleted: entry.report.counts.deleted,
             changed: entry.report.counts.changed,
           }));
-          let offset = 0;
-          return authorityBook.map((entry, index) => {
-            const pageOffset = offset;
-            offset += pageCounts[index];
-            return (
-              <React.Fragment key={`${entry.site.collegeId}:${entry.site.sectionId}`}>
-              <AuthorityPdfReport
-                report={entry.report}
-                termName={termName}
-                collegeName={entry.site.siteLabel}
-                collegeCode={collegeCode}
-                sectionName={entry.site.sectionName || sectionName}
-                sectionCode={sectionCode}
-                courseById={bookCourseById}
-                instructorById={instructorById}
-                visitingIds={visitingIds}
-                pageOffset={pageOffset}
-                pageTotal={bookTotal}
-                bookSites={bookSites}
-              />
-              </React.Fragment>
-            );
-          });
+          return (
+            <AuthorityPdfReport
+              report={merged}
+              termName={termName}
+              collegeName={`${collegeName || "—"} — كل الفروع`}
+              collegeCode={collegeCode}
+              sectionName={sectionName}
+              sectionCode={sectionCode}
+              courseById={bookCourseById}
+              instructorById={instructorById}
+              visitingIds={visitingIds}
+              bookSites={bookSites}
+              showSite
+            />
+          );
         })() : authorityReport ? (
           <AuthorityPdfReport
             report={authorityReport}
@@ -2354,39 +2382,54 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
      * الوثيقة كلها: مستند واحد يُسلَّم كاملاً، ونسخة مطبوعة يمكن فصلها بحسب
      * الموقع دون قطع صفحة في نصفها.
      */
+    /* ── ترتيب المستند هو ترتيب المستند المعتمد ─────────────────────────────
+     * الصف المستورد يحمل موضعه الأصلي في ملف الجهة، وهو الترتيب الذي يقرأ به
+     * القسم جدوله ويقارنه بورقته. فهو المقدَّم؛ والترتيب الأبجدي القديم يبقى
+     * لما لا يحمل موضعاً (صف أُضيف يدوياً) وللأوراق التي لا أصل مستورداً لها. */
+    const importOrder = (row: FSchedule) => {
+      const order = Number((row as any).sourceOrder);
+      return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
+    };
     const sortRows = (list: FSchedule[]) => [...list].sort((a, b) =>
+      importOrder(a) - importOrder(b) ||
       byArabic(courseOf(a)?.CourseName || a.AdCourseName, courseOf(b)?.CourseName || b.AdCourseName) ||
       byArabic(a.SCode, b.SCode) ||
       String(a.fstarttime).localeCompare(String(b.fstarttime)) ||
       Number(a.id) - Number(b.id)
     );
-    const bookGroups = kind === "comprehensive-branch" && siteGroups?.length
-      ? siteGroups.filter(group => group.rows.length).map(group => ({ label: group.site.siteLabel, sectionName: group.site.sectionName || sectionName, rows: sortRows(group.rows) }))
-      : [{ label: "", sectionName, rows: sortRows(rows) }];
-    const totalRows = bookGroups.reduce((sum, group) => sum + group.rows.length, 0);
+    /* ── الفروع داخل الوثيقة، لا ثلاث وثائق ملتصقة ──────────────────────────
+     * كان كل موقع يبدأ بترويسته وصفحاته. والقارئ يريد جدول قسمه كما يقرؤه في
+     * ورقة الجهة: صفوفاً متصلة بترتيبها، وبجانب كل صف اسمُ موقعه. فصار عموداً
+     * واحداً اسمه «الموقع»، لا يُرسم أصلاً حين تكون الوثيقة لموقع واحد. */
+    const siteOfRow = new Map<FSchedule, string>();
+    const bookSites = kind === "comprehensive-branch" && siteGroups?.length
+      ? siteGroups.filter(group => group.rows.length)
+      : [];
+    bookSites.forEach(group => group.rows.forEach(row => siteOfRow.set(row, group.site.siteLabel)));
+    const showSite = bookSites.length > 1;
+    const bookRows = showSite ? sortRows(bookSites.flatMap(group => group.rows)) : sortRows(rows);
+    const totalRows = bookRows.length;
     const legendItems = DAYS.map((day, index) => `${index + 1}=${day.label}`);
-    const paged = bookGroups.map(group => ({ ...group, pages: paginateComprehensiveRows(group.rows) }));
-    const totalPages = paged.reduce((sum, group) => sum + group.pages.length, 0);
-    let pageCursor = 0;
+    const pages = paginateComprehensiveRows(bookRows);
+    const totalPages = pages.length;
 
     return (
-      <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-book">
+      <div className={`print-report print-wide print-query-report print-comprehensive print-comprehensive-book${showSite ? " print-comprehensive-with-site" : ""}`}>
         {totalRows ? (
           <div className="print-comprehensive-pages">
-            {paged.map(group => group.pages.map((pageRows, pageIndex) => {
-              pageCursor += 1;
-              const bookPage = pageCursor;
+            {pages.map((pageRows, pageIndex) => {
+              const bookPage = pageIndex + 1;
               return (
-              <section className="print-comprehensive-page" key={`${group.label || "scope"}-page-${pageIndex + 1}`}>
+              <section className="print-comprehensive-page" key={`page-${pageIndex + 1}`}>
                 <header className="print-comprehensive-classic-head">
                   <div className="print-comprehensive-head-top">
                     <div className="print-comprehensive-side print-comprehensive-side-right">
                       <div><span>رمز القسم العلمي</span><strong>{sectionCode || "—"}</strong></div>
-                      <div><span>القسم العلمي</span><strong>{group.sectionName || "—"}</strong></div>
+                      <div><span>القسم العلمي</span><strong>{sectionName || "—"}</strong></div>
                     </div>
                     <div className="print-comprehensive-title-block">
                       <h1>تقرير القسم العلمي الشامل</h1>
-                      <p>الكلية: {group.label || collegeName || "—"}</p>
+                      <p>الكلية: {collegeName || "—"}{showSite ? " — كل الفروع" : ""}</p>
                     </div>
                     <div className="print-comprehensive-side print-comprehensive-side-left">
                       <div><span>الفصل الدراسي</span><strong>{termName || scopeLine || "—"}</strong></div>
@@ -2397,11 +2440,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
 
                 {/* شكل القسم كله قبل تفصيله: كم شعبة في كل موقع، مرة واحدة في
                     أول صفحة من الوثيقة، ولا وجود له في تقرير الموقع الواحد. */}
-                {bookPage === 1 && paged.length > 1 ? (
+                {bookPage === 1 && showSite ? (
                   <div className="print-comprehensive-sites" role="note">
                     <span>مواقع القسم في هذا الفصل:</span>
-                    {paged.map(site => (
-                      <b key={site.label}>{site.label} · {countOf(site.rows.length, AR.lecture)}</b>
+                    {bookSites.map(site => (
+                      <b key={site.site.siteLabel}>{site.site.siteLabel} · {countOf(site.rows.length, AR.lecture)}</b>
                     ))}
                   </div>
                 ) : null}
@@ -2420,6 +2463,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                       "الأيام",
                       "المبنى",
                       "القاعة",
+                      ...(showSite ? ["الموقع"] : []),
                       "أستاذ المقرر",
                       "الرقم المدني",
                     ].map(head => <div role="columnheader" key={head}>{head}</div>)}
@@ -2444,6 +2488,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                           <div role="cell" className="print-ltr">{dayCodeCell(row)}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</div>
+                          {showSite ? <div role="cell" className="print-wrap print-site-cell">{siteOfRow.get(row) || "—"}</div> : null}
                           <div role="cell" className="print-wrap print-instructor-name">{instructorPrintName(row)}</div>
                           <div role="cell" className="print-ltr print-civil">{instructor?.AdInstructorCivil || "—"}</div>
                         </div>
@@ -2467,7 +2512,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                 </footer>
               </section>
               );
-            }))}
+            })}
           </div>
         ) : <p className="print-empty">لا توجد مواعيد ضمن النطاق المحدد.</p>}
       </div>

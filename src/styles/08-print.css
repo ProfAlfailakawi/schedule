@@ -1279,6 +1279,14 @@
     border:1pt solid #1f6b5c !important;
     background:#fff !important;
   }
+  /* عمود «الموقع» يظهر فقط في وثيقة تضم مواقع الفرع؛ وحين يظهر تُضيَّق
+     الأعمدة المرنة قليلاً فلا تتجاوز الورقة عرضها. */
+  .print-comprehensive-with-site .print-comprehensive-grid-row{
+    grid-template-columns:
+      9mm 18mm 11mm minmax(34mm,1fr)
+      9mm 9mm 11mm 24mm 15mm 12mm 14mm 18mm 30mm 25mm !important;
+  }
+  .print-comprehensive-with-site .print-site-cell{font-weight:700 !important}
   .print-comprehensive-grid-row{
     display:grid !important;
     grid-template-columns:
@@ -2130,6 +2138,8 @@
   .authority-pdf-scope-grid span{font-size:6.2pt!important;color:#5d6966!important;font-weight:700!important}
   .authority-pdf-scope-grid strong{font-size:7.4pt!important;color:#111!important;white-space:normal!important}
   .authority-pdf-grid .print-comprehensive-grid-row{grid-template-columns:17mm 19mm 12mm minmax(43mm,1fr) 10mm 10mm 12mm 15mm 17mm 26mm 16mm minmax(34mm,1fr)!important}
+  /* عمود «الموقع» في تقرير التغييرات: لا يُرسم إلا في وثيقة تضم مواقع الفرع. */
+  .authority-pdf-with-site .authority-pdf-grid .print-comprehensive-grid-row{grid-template-columns:16mm 18mm 11mm minmax(34mm,1fr) 9mm 9mm 11mm 14mm 16mm 18mm 24mm 15mm minmax(30mm,1fr)!important}
   .authority-pdf-grid .print-comprehensive-grid-row>[role="cell"],.authority-pdf-grid .print-comprehensive-grid-row>[role="columnheader"]{font-size:5.95pt!important;padding-inline:.55mm!important}
   .authority-pdf-grid .print-comprehensive-grid-head>[role="columnheader"]{font-size:5.65pt!important}
   .authority-pdf-grid .authority-pdf-row{position:relative!important}
