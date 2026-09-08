@@ -499,12 +499,15 @@ ok('206 a pending barter request older than a week auto-cancels with a stated re
    and 'cancelReason' in (ROOT/'src/types.ts').read_text()
    and 'row.status === "cancelled" && row.cancelReason' in barter_board)
 
-ok('207 the inline borrow panel carries the same three filters as the board — day, building, department — under its search',
+ok('207 the inline borrow panel carries the board’s three filters — day, building, department — and they interdepend: each option set is computed from the OTHER active filters, and a thin time line distinguishes two rooms of one department',
    'const [borrowDay, setBorrowDay]' in schedules_src
    and 'const [borrowBuilding, setBorrowBuilding]' in schedules_src
    and 'const [borrowDept, setBorrowDept]' in schedules_src
    and 'schedule-borrow-selects' in schedules_src
-   and '.schedule-borrow-selects{' in schedule_css)
+   and 'const matchExcept = (op: any, except: string) =>' in schedules_src
+   and 'schedule-borrow-time' in schedules_src
+   and '.schedule-borrow-selects{' in schedule_css
+   and '.schedule-borrow-time{' in schedule_css)
 
 ok('208 the academic scope is shared product-wide: Query Center reads the last chosen college/section/term first, not its own stale memory',
    'Number(workspaceSaved.filterCollege || saved.filters?.collegeId || 0)' in reports_src
