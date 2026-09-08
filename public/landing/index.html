@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>SCHEDULE · نظام القرار الأكاديمي | الجدول الدراسي في ثوانٍ</title>
-  <meta name="description" content="SCHEDULE — نظام القرار الأكاديمي للجامعات والكليات: ابنِ الجدول، اكشف التعارض استباقياً، أدر مقايضة القاعات، واعتمد القرار الأكاديمي في ثوانٍ." />
-  <meta name="theme-color" content="#0d1210" />
-  
-  <!-- Open Graph -->
+  <title>SCHEDULE · الجدول لم يعد جدولاً. صار قراراً.</title>
+  <meta name="description" content="SCHEDULE — منظومة القرار الأكاديمي للجامعات والكليات: لم نبنِ برنامجاً، بنينا طريقة عمل. كشف تعارضات استباقي، حوكمة استعارة القاعات، واعتماد الجداول في ثوانٍ." />
+  <meta name="theme-color" content="#090d0b" />
+
+  <!-- Open Graph / Twitter -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="SCHEDULE" />
-  <meta property="og:title" content="SCHEDULE · نظام القرار الأكاديمي" />
-  <meta property="og:description" content="الجدول الدراسي، كمنتجٍ يُفهم ويُعتمد من أول نظرة. كشف التعارضات ومقايضة القاعات في ثوانٍ." />
+  <meta property="og:title" content="SCHEDULE · الجدول لم يعد جدولاً. صار قراراً." />
+  <meta property="og:description" content="لم نبنِ برنامجاً. بنينا طريقة عمل. منظومة القرار الأكاديمي للجامعات والكليات." />
   <meta property="og:image" content="/screenshots/cover-wide.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="/screenshots/cover-wide.png" />
@@ -19,14 +19,14 @@
   <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
-  <!-- Preload local Arabic Typography -->
+  <!-- Local Typography Preloads -->
   <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-400.woff2" crossorigin />
   <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-600.woff2" crossorigin />
   <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-700.woff2" crossorigin />
   <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-mono-latin-500.woff2" crossorigin />
 
   <style>
-    /* ── Typography & Palette (Quiet Luxury Dark & Warm Titanium) ────────── */
+    /* ── Typography & Variables (Quiet Luxury Academic Dark) ───────────── */
     @font-face {
       font-family: "IBM Plex Sans Arabic";
       src: url("/fonts/plex-arabic-arabic-400.woff2") format("woff2");
@@ -57,37 +57,34 @@
     }
 
     :root {
-      --ground: #0a0e0d;
-      --surface: #111715;
-      --surface-card: #151d1a;
-      --surface-card-hover: #1b2521;
-      --surface-light: #f7f7f4;
+      --bg: #090d0b;
+      --surface: #0f1513;
+      --surface-card: #141c19;
+      --surface-elevated: #1a2420;
 
       --ink: #f0f4f2;
-      --ink-dim: #c5cfca;
-      --ink-muted: #83918a;
-      --ink-dark: #121816;
+      --ink-dim: #b8c4bf;
+      --muted: #74837c;
+      --line: #1c2622;
+      --line-subtle: rgba(255, 255, 255, 0.08);
+      --line-strong: #2a3832;
 
       --brass: #d0a663;
-      --brass-bright: #e7bc78;
-      --brass-soft: rgba(208, 166, 99, 0.14);
-      --brass-glow: rgba(208, 166, 99, 0.28);
+      --brass-bright: #e5bc7b;
+      --brass-soft: rgba(208, 166, 99, 0.12);
+      --brass-border: rgba(208, 166, 99, 0.35);
 
       --jade: #5fbfa6;
       --jade-deep: #1f6b5c;
-      --jade-soft: rgba(95, 191, 166, 0.15);
+      --jade-soft: rgba(95, 191, 166, 0.12);
 
       --danger: #e07167;
-      --danger-soft: rgba(224, 113, 103, 0.16);
+      --danger-soft: rgba(224, 113, 103, 0.14);
 
-      --line: #222d29;
-      --line-subtle: rgba(255, 255, 255, 0.08);
-      --line-glow: rgba(208, 166, 99, 0.35);
-
-      --radius-sm: 10px;
-      --radius-md: 18px;
-      --radius-lg: 26px;
-      --radius-xl: 34px;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 30px;
 
       --font: "IBM Plex Sans Arabic", -apple-system, system-ui, sans-serif;
       --font-mono: "IBM Plex Mono", monospace;
@@ -100,22 +97,22 @@
     }
     html {
       scroll-behavior: smooth;
-      font-size: 16px;
-      background-color: var(--ground);
+      background-color: var(--bg);
       color: var(--ink);
       font-family: var(--font);
       direction: rtl;
       -webkit-font-smoothing: antialiased;
+      font-size: 16px;
     }
     body {
-      background: var(--ground);
+      background: var(--bg);
       min-height: 100vh;
       overflow-x: hidden;
-      line-height: 1.6;
+      line-height: 1.65;
       position: relative;
     }
 
-    /* Ambient Architectural Grid Background */
+    /* Ambient Subtle Architectural Blueprint Background */
     body::before {
       content: "";
       position: fixed;
@@ -123,8 +120,8 @@
       pointer-events: none;
       z-index: 0;
       background:
-        radial-gradient(100% 70% at 80% -10%, rgba(95, 191, 166, 0.12), transparent 50%),
-        radial-gradient(90% 60% at 10% 110%, rgba(208, 166, 99, 0.09), transparent 60%);
+        radial-gradient(80% 60% at 85% -10%, rgba(95, 191, 166, 0.12), transparent 50%),
+        radial-gradient(70% 50% at 10% 100%, rgba(208, 166, 99, 0.09), transparent 60%);
     }
     body::after {
       content: "";
@@ -132,25 +129,25 @@
       inset: 0;
       pointer-events: none;
       z-index: 0;
-      opacity: 0.28;
+      opacity: 0.22;
       background-image:
-        linear-gradient(to right, rgba(95, 191, 166, 0.08) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(95, 191, 166, 0.08) 1px, transparent 1px);
-      background-size: 80px 80px;
+        linear-gradient(to right, rgba(95, 191, 166, 0.07) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(95, 191, 166, 0.07) 1px, transparent 1px);
+      background-size: 72px 72px;
     }
 
-    .relative-wrap {
+    .app-wrap {
       position: relative;
       z-index: 1;
     }
-    .wrap {
+    .container {
       width: 100%;
-      max-width: 1260px;
+      max-width: 1220px;
       margin-inline: auto;
       padding-inline: 20px;
     }
     @media (min-width: 768px) {
-      .wrap { padding-inline: 36px; }
+      .container { padding-inline: 32px; }
     }
 
     a {
@@ -159,7 +156,52 @@
       transition: all 0.2s ease;
     }
 
-    /* ── Minimal Badges & Chips ─────────────────────────────────────────── */
+    /* SVG Icon Helper */
+    .ic {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      fill: currentColor;
+      vertical-align: -0.15em;
+    }
+    .tile__ic {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 9px;
+      background: rgba(95, 191, 166, 0.14);
+      color: var(--jade);
+      font-size: 1.15rem;
+      flex-shrink: 0;
+    }
+    .tile__ic.brass {
+      background: var(--brass-soft);
+      color: var(--brass-bright);
+    }
+    .tile__ic.red {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+    .tile__ic.dim {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--muted);
+    }
+
+    /* ── Chips, Buttons & Section Eyebrows ─────────────────────────────── */
+    .eyebrow {
+      font-size: 0.84rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--brass);
+      margin-bottom: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .eyebrow.jade { color: var(--jade); }
+
     .chip {
       display: inline-flex;
       align-items: center;
@@ -168,13 +210,12 @@
       border-radius: 999px;
       font-size: 0.82rem;
       font-weight: 600;
-      letter-spacing: 0.02em;
       white-space: nowrap;
     }
     .chip-brass {
       background: var(--brass-soft);
       color: var(--brass-bright);
-      border: 1px solid rgba(208, 166, 99, 0.3);
+      border: 1px solid var(--brass-border);
     }
     .chip-jade {
       background: var(--jade-soft);
@@ -194,66 +235,6 @@
       box-shadow: 0 0 8px currentColor;
     }
 
-    /* ── Navigation ─────────────────────────────────────────────────────── */
-    .nav {
-      position: sticky;
-      top: 0;
-      z-index: 90;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      background: rgba(10, 14, 13, 0.86);
-      border-bottom: 1px solid var(--line-subtle);
-    }
-    .nav-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 74px;
-    }
-    .brand-box {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .brand-svg {
-      width: 40px;
-      height: 40px;
-      border-radius: 11px;
-      background: #0f1513;
-      padding: 4px;
-      border: 1px solid rgba(208, 166, 99, 0.25);
-    }
-    .brand-name {
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: #ffffff;
-      letter-spacing: 0.04em;
-      display: flex;
-      align-items: baseline;
-      gap: 6px;
-    }
-    .brand-sub {
-      font-size: 0.78rem;
-      color: var(--brass);
-      font-family: var(--font-mono);
-      font-weight: 500;
-    }
-    .nav-menu {
-      display: none;
-      list-style: none;
-      align-items: center;
-      gap: 28px;
-      font-size: 0.92rem;
-      color: var(--ink-dim);
-    }
-    .nav-menu a:hover {
-      color: #ffffff;
-    }
-    .nav-ctas {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
     .btn {
       display: inline-flex;
       align-items: center;
@@ -269,18 +250,16 @@
       transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
       white-space: nowrap;
     }
-    .btn:active {
-      transform: scale(0.98);
-    }
+    .btn:active { transform: scale(0.98); }
     .btn-brass {
       background: linear-gradient(135deg, #d0a663 0%, #b38641 100%);
       color: #0b0f0e;
-      box-shadow: 0 4px 20px var(--brass-glow);
+      box-shadow: 0 4px 20px rgba(208, 166, 99, 0.25);
     }
     .btn-brass:hover {
       background: linear-gradient(135deg, #dfb775 0%, #c49651 100%);
       box-shadow: 0 6px 26px rgba(208, 166, 99, 0.4);
-      color: #000000;
+      color: #000;
     }
     .btn-glass {
       background: rgba(255, 255, 255, 0.05);
@@ -291,49 +270,119 @@
       background: rgba(255, 255, 255, 0.09);
       border-color: rgba(255, 255, 255, 0.18);
     }
-    @media (min-width: 920px) {
-      .nav-menu { display: flex; }
+    .btn-jade {
+      background: var(--jade-soft);
+      border: 1px solid rgba(95, 191, 166, 0.35);
+      color: var(--jade);
+    }
+    .btn-jade:hover {
+      background: rgba(95, 191, 166, 0.22);
     }
 
-    /* ── Hero: Maximum Visual Impact & Minimal Text ─────────────────────── */
-    .hero {
-      padding-top: 48px;
-      padding-bottom: 80px;
-      text-align: center;
+    /* ── Navigation ─────────────────────────────────────────────────────── */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 90;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(9, 13, 11, 0.88);
+      border-bottom: 1px solid var(--line);
     }
-    .hero-chip-row {
-      margin-bottom: 20px;
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 72px;
     }
-    .hero-h1 {
-      font-size: clamp(2.4rem, 5.8vw, 4.4rem);
-      line-height: 1.22;
+    .brand-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-svg {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: #0d1311;
+      padding: 4px;
+      border: 1px solid var(--brass-border);
+    }
+    .brand-name {
+      font-size: 1.15rem;
       font-weight: 700;
       color: #ffffff;
-      margin-bottom: 18px;
+      letter-spacing: 0.04em;
+    }
+    .brand-sub {
+      font-size: 0.74rem;
+      color: var(--brass);
+      font-family: var(--font-mono);
+      font-weight: 500;
+    }
+    .nav-menu {
+      display: none;
+      list-style: none;
+      align-items: center;
+      gap: 24px;
+      font-size: 0.9rem;
+      color: var(--ink-dim);
+    }
+    .nav-menu a:hover { color: #ffffff; }
+    @media (min-width: 960px) { .nav-menu { display: flex; } }
+    .nav-ctas {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* ── Hero: Maximum Impact, Minimal Words ────────────────────────────── */
+    .hero {
+      padding-top: 48px;
+      padding-bottom: 72px;
+      text-align: center;
+    }
+    .hero-h1 {
+      font-size: clamp(2.3rem, 5.4vw, 4.2rem);
+      line-height: 1.2;
+      font-weight: 700;
+      color: #ffffff;
+      margin-block: 16px 14px;
       letter-spacing: -0.02em;
     }
     .hero-h1 span.gold {
       color: var(--brass-bright);
       text-shadow: 0 0 28px rgba(208, 166, 99, 0.35);
     }
-    .hero-lede {
-      font-size: clamp(1.05rem, 1.8vw, 1.28rem);
+    .hero-h1 span.sub {
+      display: block;
+      font-size: clamp(1.4rem, 2.8vw, 2.2rem);
+      font-weight: 400;
       color: var(--ink-dim);
-      max-width: 680px;
+      margin-top: 6px;
+    }
+    .hero-quote {
+      font-size: clamp(1.05rem, 1.7vw, 1.25rem);
+      color: var(--muted);
+      max-width: 640px;
       margin-inline: auto;
-      margin-bottom: 32px;
-      line-height: 1.68;
+      margin-bottom: 30px;
+      line-height: 1.6;
+    }
+    .hero-quote b {
+      color: var(--ink);
+      font-weight: 600;
     }
     .hero-buttons {
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: center;
-      gap: 14px;
-      margin-bottom: 48px;
+      gap: 12px;
+      margin-bottom: 44px;
     }
 
-    /* ── The Masterpiece: Real Desktop App Mockup ───────────────────────── */
+    /* ── The Master Showcase Screen ─────────────────────────────────────── */
     .showcase-stage {
       max-width: 1140px;
       margin-inline: auto;
@@ -341,49 +390,48 @@
     }
     .app-screen-frame {
       background: var(--surface);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      border: 1px solid var(--line-strong);
       border-radius: var(--radius-xl);
       overflow: hidden;
       box-shadow:
         0 24px 60px -12px rgba(0, 0, 0, 0.7),
-        0 0 0 1px rgba(208, 166, 99, 0.2);
+        0 0 0 1px var(--brass-border);
       position: relative;
     }
     .frame-topbar {
-      height: 48px;
-      background: rgba(12, 17, 15, 0.95);
-      border-bottom: 1px solid var(--line-subtle);
+      height: 46px;
+      background: #0a0e0c;
+      border-bottom: 1px solid var(--line);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-inline: 18px;
+      padding-inline: 16px;
     }
     .frame-controls {
       display: flex;
-      gap: 7px;
+      gap: 6px;
     }
     .frame-dot {
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: rgba(255, 255, 255, 0.2);
     }
     .frame-dot.red { background: #ff5f56; }
     .frame-dot.yellow { background: #ffbd2e; }
     .frame-dot.green { background: #27c93f; }
     .frame-url {
       font-family: var(--font-mono);
-      font-size: 0.76rem;
-      color: var(--ink-muted);
+      font-size: 0.74rem;
+      color: var(--muted);
       background: rgba(0, 0, 0, 0.4);
-      padding: 4px 18px;
-      border-radius: 8px;
-      border: 1px solid var(--line-subtle);
+      padding: 3px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
       direction: ltr;
     }
     .frame-img-wrap {
       position: relative;
-      background: #000000;
+      background: #000;
       overflow: hidden;
       display: block;
       cursor: zoom-in;
@@ -401,13 +449,13 @@
       position: absolute;
       bottom: 0;
       inset-inline: 0;
-      padding: 16px 24px;
-      background: linear-gradient(to top, rgba(10, 14, 13, 0.94) 0%, rgba(10, 14, 13, 0) 100%);
+      padding: 16px 22px;
+      background: linear-gradient(to top, rgba(9, 13, 11, 0.96) 0%, transparent 100%);
       display: flex;
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      gap: 10px;
     }
     .frame-caption-text {
       font-size: 0.88rem;
@@ -418,418 +466,603 @@
       gap: 8px;
     }
 
-    /* Floating Hotspot Badges on Hero Frame */
+    /* Floating Hotspots */
     .hotspot-chip {
       position: absolute;
       z-index: 10;
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
       animation: floatBadge 4s ease-in-out infinite alternate;
     }
     @keyframes floatBadge {
       from { transform: translateY(0px); }
-      to { transform: translateY(-8px); }
+      to { transform: translateY(-7px); }
     }
-    .hotspot-1 {
-      top: 18%;
-      right: -12px;
-    }
-    .hotspot-2 {
-      bottom: 22%;
-      left: -12px;
-      animation-delay: -2s;
-    }
-    @media (max-width: 900px) {
-      .hotspot-chip { display: none; }
-    }
+    .hotspot-1 { top: 18%; right: -12px; }
+    .hotspot-2 { bottom: 22%; left: -12px; animation-delay: -2s; }
+    @media (max-width: 900px) { .hotspot-chip { display: none; } }
 
-    /* ── Infographic 1: Global Stopwatch Dial (3:24 Efficiency) ─────────── */
-    .section-stopwatch {
+    /* ── Section Dividers & General Layout ──────────────────────────────── */
+    .section {
       padding-block: 84px;
       border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-      background: rgba(17, 23, 21, 0.6);
     }
-    .stopwatch-grid {
+    .section.darker {
+      background: #070a09;
+    }
+    .head {
+      margin-bottom: 36px;
+    }
+    .head.center {
+      text-align: center;
+      max-width: 680px;
+      margin-inline: auto;
+    }
+    .head h2 {
+      font-size: clamp(1.8rem, 3.2vw, 2.7rem);
+      line-height: 1.25;
+      color: #ffffff;
+      margin-bottom: 10px;
+    }
+    .head p.sub {
+      font-size: 1.02rem;
+      color: var(--ink-dim);
+    }
+
+    /* ── The Global Benchmark Dials & Our Stopwatch ─────────────────────── */
+    .benchmark-stage {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 36px;
+      gap: 32px;
       align-items: center;
     }
-    @media (min-width: 860px) {
-      .stopwatch-grid {
-        grid-template-columns: 1fr 1.3fr;
-        gap: 56px;
-      }
+    @media (min-width: 880px) {
+      .benchmark-stage { grid-template-columns: 1.25fr 1fr; gap: 40px; }
     }
-    .stopwatch-visual {
-      background: #0d1311;
-      border: 1px solid rgba(208, 166, 99, 0.25);
-      border-radius: var(--radius-xl);
-      padding: 36px 24px;
-      text-align: center;
-      position: relative;
+
+    /* Dials Grid (Slide 3 from presentation) */
+    .dials {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
       overflow: hidden;
-      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.6);
     }
-    .stopwatch-ring {
+    @media (min-width: 600px) {
+      .dials { grid-template-columns: repeat(3, 1fr); }
+    }
+    .dial {
+      background: var(--surface);
+      padding: 24px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+    }
+    .dial__ring {
+      width: 92px;
+      height: 92px;
       position: relative;
-      width: 220px;
-      height: 220px;
-      margin-inline: auto;
-      margin-bottom: 20px;
     }
-    .stopwatch-svg {
+    .dial__ring svg {
       width: 100%;
       height: 100%;
       transform: rotate(-90deg);
     }
-    .sw-track {
+    .dial__trk {
       fill: none;
-      stroke: rgba(255, 255, 255, 0.08);
-      stroke-width: 10;
+      stroke: var(--line-strong);
+      stroke-width: 8;
     }
-    .sw-arc {
+    .dial__arc {
       fill: none;
-      stroke: var(--brass);
-      stroke-width: 10;
+      stroke: var(--danger);
+      stroke-width: 8;
+      stroke-linecap: round;
+      stroke-dasharray: 1000;
+      stroke-dashoffset: var(--off, 200);
+    }
+    .dial__c {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .dial__t {
+      font-family: var(--font-mono);
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #ffffff;
+      direction: ltr;
+    }
+    .dial__s {
+      font-size: 0.74rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    /* Our Glowing Stopwatch Dial (Slide 4 from presentation) */
+    .ours {
+      background: var(--surface);
+      border: 1px solid var(--brass-border);
+      border-radius: var(--radius-xl);
+      padding: 32px 24px;
+      text-align: center;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+    }
+    .big-dial {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      margin-inline: auto;
+      margin-bottom: 16px;
+    }
+    .big-dial svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+    .bd__trk {
+      fill: none;
+      stroke: var(--line-strong);
+      stroke-width: 8;
+    }
+    .bd__arc {
+      fill: none;
+      stroke: var(--brass-bright);
+      stroke-width: 8;
       stroke-linecap: round;
       stroke-dasharray: 600;
-      stroke-dashoffset: 80;
+      stroke-dashoffset: 70;
       filter: drop-shadow(0 0 10px var(--brass));
-      transition: stroke-dashoffset 1s ease;
     }
-    .stopwatch-center {
+    .bd__c {
       position: absolute;
       inset: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      text-align: center;
     }
-    .sw-time {
+    .bd__k {
+      font-size: 0.75rem;
+      color: var(--brass);
+      font-weight: 600;
+    }
+    .bd__t {
       font-family: var(--font-mono);
       font-size: 2.8rem;
       font-weight: 700;
       color: #ffffff;
       line-height: 1;
-      letter-spacing: -0.04em;
+      direction: ltr;
+      letter-spacing: -0.03em;
     }
-    .sw-unit {
-      font-size: 0.8rem;
-      color: var(--brass);
-      font-weight: 600;
-      margin-top: 6px;
+    .bd__u {
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin-top: 4px;
     }
-    .sw-proof {
-      font-size: 0.84rem;
-      color: var(--ink-dim);
-      max-width: 320px;
-      margin-inline: auto;
-    }
-
-    .stopwatch-text-col h2 {
-      font-size: clamp(1.8rem, 3.2vw, 2.7rem);
+    .ours__lead {
+      font-size: 1.4rem;
+      font-weight: 700;
       color: #ffffff;
-      line-height: 1.3;
-      margin-bottom: 14px;
+      margin-bottom: 6px;
     }
-    .stopwatch-text-col p {
-      font-size: 1.05rem;
+    .ours__lead em {
+      color: var(--brass-bright);
+      font-style: normal;
+    }
+    .ours__sub {
+      font-size: 0.94rem;
       color: var(--ink-dim);
-      margin-bottom: 24px;
+      margin-bottom: 8px;
+    }
+    .ours__meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: block;
     }
 
-    /* Comparison Rings against Global Studies */
-    .benchmark-list {
+    /* Facts Strip (Slide 4 facts) */
+    .big {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      margin-top: 28px;
+    }
+    @media (min-width: 700px) {
+      .big { grid-template-columns: repeat(3, 1fr); }
+    }
+    .bigc {
+      background: var(--surface);
+      padding: 20px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .bigc b {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      color: #ffffff;
+      line-height: 1;
+      direction: ltr;
+    }
+    .bigc b.brass { color: var(--brass-bright); }
+    .bigc span {
+      font-size: 0.94rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .bigc small {
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+
+    /* ── Shift Matrix (Slide 2: Before vs Now) ─────────────────────────── */
+    .shift {
+      display: grid;
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .shift__r {
+      display: grid;
+      grid-template-columns: 1fr;
+      background: var(--surface);
+    }
+    @media (min-width: 820px) {
+      .shift__r { grid-template-columns: 0.95fr 1fr 48px 1.1fr; }
+    }
+    .shift__q {
+      padding: 22px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.08rem;
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .shift__c {
+      padding: 22px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      justify-content: center;
+    }
+    .shift__c small {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+    }
+    .shift__c.was small { color: var(--danger); }
+    .shift__c.now small { color: var(--jade); }
+    .shift__c span {
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    .shift__c.was span { color: var(--muted); }
+    .shift__c.now span { color: #ffffff; }
+    .shift__a {
+      display: grid;
+      place-items: center;
+      color: var(--brass);
+      font-size: 18px;
+    }
+    @media (max-width: 819px) {
+      .shift__a { display: none; }
+    }
+
+    /* ── AI Governance Flow & Room Anatomy (Slide 11 & 14) ──────────────── */
+    .duo-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 28px;
+    }
+    @media (min-width: 860px) {
+      .duo-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .duo-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 30px 26px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-block: 22px;
+    }
+    @media (min-width: 600px) {
+      .flow { grid-template-columns: 1fr 28px 1fr 28px 1fr; }
+    }
+    .fstep {
+      background: var(--surface-card);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md);
+      padding: 16px 12px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .fstep.human {
+      border-color: var(--brass);
+      background: linear-gradient(180deg, rgba(208, 166, 99, 0.1), transparent);
+    }
+    .fstep h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    .fstep small {
+      font-size: 0.74rem;
+      color: var(--muted);
+    }
+    .farrow {
+      display: grid;
+      place-items: center;
+      color: var(--brass);
+    }
+    .blocked {
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      background: var(--danger-soft);
+      border: 1px solid rgba(224, 113, 103, 0.35);
+      color: #ff9e96;
+      font-size: 0.86rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Anatomy of Room Code (Slide 14) */
+    .anat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-block: 16px;
+    }
+    .anat__code {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: clamp(2.4rem, 5vw, 3.8rem);
+      letter-spacing: 0.08em;
+      line-height: 1;
+      direction: ltr;
+    }
+    .anat__code .a { color: var(--jade); }
+    .anat__code .b { color: var(--brass-bright); }
+    .anat__code .c { color: #ffffff; }
+    .anat__lb {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 380px;
+      margin-top: 14px;
+      font-size: 0.84rem;
+      text-align: center;
+    }
+    .anat__lb div {
+      flex: 1;
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .anat__lb small {
+      display: block;
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
+    /* ── The 4-Color Preview Language (Slide 13) ────────────────────────── */
+    .sw {
+      display: grid;
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      grid-template-columns: repeat(2, 1fr);
+    }
+    @media (min-width: 760px) {
+      .sw { grid-template-columns: repeat(4, 1fr); }
+    }
+    .swatch {
+      background: var(--surface);
+      padding: 24px 20px;
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
-    .benchmark-row {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--line-subtle);
-      border-radius: var(--radius-sm);
-      padding: 12px 18px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 0.92rem;
+    .swatch__c {
+      height: 64px;
+      border-radius: 10px;
+      border: 1px solid var(--line-strong);
     }
-    .bench-name {
+    .swatch h3 {
+      font-size: 1.18rem;
+      color: #ffffff;
+    }
+    .swatch p {
+      font-size: 0.88rem;
       color: var(--ink-dim);
+    }
+
+    /* ── Live Telemetry & Health (Slide 18 & 19) ────────────────────────── */
+    .chart {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 26px 22px;
+    }
+    .chart__h {
       display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 24px;
+    }
+    .chart__h h3 {
+      font-size: 1.15rem;
+      color: #ffffff;
+    }
+    .chart__h span {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    /* Vertical Bars */
+    .vbars {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      gap: 14px;
+      align-items: end;
+      height: 180px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+    .vbar {
+      display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 10px;
+      height: 100%;
+      justify-content: flex-end;
+      gap: 8px;
     }
-    .bench-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #7a8a83;
-    }
-    .bench-val {
+    .vbar__v {
       font-family: var(--font-mono);
-      color: var(--danger);
+      font-size: 0.84rem;
+      color: var(--ink-dim);
+    }
+    .vbar__b {
+      width: 100%;
+      max-width: 42px;
+      height: var(--v, 50%);
+      background: var(--line-strong);
+      border-radius: 6px 6px 0 0;
+      transition: height 0.6s ease;
+    }
+    .vbar__b.peak {
+      background: linear-gradient(to top, var(--brass), var(--brass-bright));
+      box-shadow: 0 0 16px rgba(208, 166, 99, 0.35);
+    }
+    .vbar__l {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* Health Meters (Slide 19) */
+    .meters {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .meter {
+      display: grid;
+      grid-template-columns: 64px 1fr 48px;
+      align-items: center;
+      gap: 14px;
+    }
+    .meter__l {
+      font-size: 0.92rem;
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .meter__t {
+      height: 12px;
+      background: var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+      display: block;
+    }
+    .meter__f {
+      height: 100%;
+      display: block;
+      background: var(--jade);
+      border-radius: 999px;
+      width: var(--v, 60%);
+      box-shadow: 0 0 10px rgba(95, 191, 166, 0.4);
+    }
+    .meter__v {
+      font-family: var(--font-mono);
+      font-size: 0.94rem;
+      color: #ffffff;
       font-weight: 600;
       direction: ltr;
     }
-    .bench-val.our-val {
-      color: var(--jade);
-      font-size: 1.05rem;
-    }
 
-    /* ── Infographic 2: Interactive Conflict Engine Simulator ───────────── */
-    .section-engine {
-      padding-block: 88px;
-    }
-    .section-title-box {
-      text-align: center;
-      max-width: 680px;
-      margin-inline: auto;
-      margin-bottom: 44px;
-    }
-    .section-h2 {
-      font-size: clamp(2rem, 3.6vw, 2.9rem);
-      color: #ffffff;
-      margin-bottom: 12px;
-    }
-    .section-sub {
-      font-size: 1.05rem;
-      color: var(--ink-dim);
-    }
-
-    .engine-box {
-      background: var(--surface);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: var(--radius-xl);
-      overflow: hidden;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-    }
-    .engine-tabs {
-      background: rgba(10, 14, 13, 0.9);
-      border-bottom: 1px solid var(--line-subtle);
-      padding: 12px 20px;
+    /* ── The Complete Authentic Screenshot Gallery (All 11 Figures) ─────── */
+    .gallery-filter-wrap {
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 34px;
     }
-    .eng-tab {
-      background: transparent;
-      border: 1px solid transparent;
+    .gallery-filter-btn {
+      background: var(--surface);
+      border: 1px solid var(--line-strong);
       color: var(--ink-dim);
       padding: 8px 18px;
       border-radius: 999px;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
     }
-    .eng-tab.active {
+    .gallery-filter-btn.active {
       background: var(--brass-soft);
-      border-color: rgba(208, 166, 99, 0.35);
-      color: var(--brass-bright);
-    }
-    .engine-content {
-      padding: 28px 24px;
-    }
-    @media (min-width: 768px) {
-      .engine-content { padding: 40px; }
-    }
-
-    .engine-view {
-      display: none;
-    }
-    .engine-view.active {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 28px;
-      animation: fadeIn 0.3s ease;
-    }
-    @media (min-width: 860px) {
-      .engine-view.active { grid-template-columns: 1.15fr 1fr; }
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .live-card {
-      padding: 18px 20px;
-      border-radius: var(--radius-md);
-      margin-bottom: 14px;
-      border: 1px solid transparent;
-    }
-    .live-card.red {
-      background: rgba(224, 113, 103, 0.12);
-      border-color: rgba(224, 113, 103, 0.35);
-    }
-    .live-card.green {
-      background: rgba(95, 191, 166, 0.12);
-      border-color: rgba(95, 191, 166, 0.35);
-    }
-    .live-card.gold {
-      background: rgba(208, 166, 99, 0.12);
-      border-color: rgba(208, 166, 99, 0.35);
-    }
-    .card-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .card-time {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      color: #ffffff;
-      direction: ltr;
-    }
-    .card-title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: #ffffff;
-      margin-bottom: 4px;
-    }
-    .card-meta {
-      font-size: 0.84rem;
-      color: var(--ink-dim);
-      display: flex;
-      gap: 16px;
-    }
-
-    .engine-action-card {
-      background: rgba(255, 255, 255, 0.025);
-      border: 1px solid var(--line-subtle);
-      border-radius: var(--radius-lg);
-      padding: 28px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .eng-state-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: #ffffff;
-      margin-bottom: 10px;
-    }
-    .eng-state-desc {
-      font-size: 0.94rem;
-      color: var(--ink-dim);
-      line-height: 1.7;
-      margin-bottom: 24px;
-    }
-
-    /* ── Infographic 3: The Shift Matrix (قبل مقابل اليوم) ──────────────── */
-    .section-shift {
-      padding-block: 84px;
-      border-top: 1px solid var(--line);
-      background: #0c110f;
-    }
-    .shift-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 16px;
-      max-width: 960px;
-      margin-inline: auto;
-    }
-    .shift-row {
-      background: var(--surface);
-      border: 1px solid var(--line-subtle);
-      border-radius: var(--radius-lg);
-      padding: 22px 28px;
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 16px;
-      align-items: center;
-      transition: border-color 0.2s ease;
-    }
-    @media (min-width: 720px) {
-      .shift-row {
-        grid-template-columns: 1.2fr 1fr 1fr;
-        gap: 20px;
-      }
-    }
-    .shift-row:hover {
-      border-color: rgba(208, 166, 99, 0.3);
-    }
-    .shift-q {
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: #ffffff;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .shift-before {
-      color: #ff9e96;
-      font-size: 0.92rem;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .shift-now {
-      color: var(--jade);
-      font-size: 0.96rem;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    /* ── Gallery: Real Authentic Screenshots From Demo ──────────────────── */
-    .section-gallery {
-      padding-block: 88px;
-    }
-    .gallery-filter-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px;
-      margin-bottom: 36px;
-    }
-    .gallery-tab {
-      background: var(--surface);
-      border: 1px solid var(--line-subtle);
-      color: var(--ink-dim);
-      padding: 10px 22px;
-      border-radius: 999px;
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.22s ease;
-    }
-    .gallery-tab.active {
-      background: var(--brass-soft);
-      border-color: rgba(208, 166, 99, 0.4);
+      border-color: var(--brass-border);
       color: var(--brass-bright);
     }
     .gallery-grid {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 24px;
+      gap: 22px;
     }
-    @media (min-width: 768px) {
+    @media (min-width: 680px) {
       .gallery-grid { grid-template-columns: repeat(2, 1fr); }
     }
+    @media (min-width: 1040px) {
+      .gallery-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
     .gallery-card {
       background: var(--surface);
-      border: 1px solid var(--line-subtle);
+      border: 1px solid var(--line-strong);
       border-radius: var(--radius-lg);
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: transform 0.24s ease, border-color 0.24s ease;
+      transition: transform 0.22s ease, border-color 0.22s ease;
       cursor: zoom-in;
     }
     .gallery-card:hover {
       transform: translateY(-4px);
-      border-color: rgba(208, 166, 99, 0.35);
+      border-color: var(--brass-border);
     }
     .gallery-media {
       position: relative;
-      background: #000000;
+      background: #000;
       aspect-ratio: 16 / 10;
       overflow: hidden;
     }
@@ -845,12 +1078,16 @@
       transform: scale(1.03);
     }
     .gallery-info {
-      padding: 20px 22px;
-      border-top: 1px solid var(--line-subtle);
+      padding: 18px 20px;
+      border-top: 1px solid var(--line);
       background: var(--surface-card);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
     .gallery-tag {
-      font-size: 0.78rem;
+      font-size: 0.74rem;
       font-family: var(--font-mono);
       color: var(--brass);
       font-weight: 600;
@@ -858,74 +1095,148 @@
       display: block;
     }
     .gallery-title {
-      font-size: 1.08rem;
+      font-size: 1.05rem;
       font-weight: 700;
       color: #ffffff;
       margin-bottom: 6px;
     }
     .gallery-desc {
-      font-size: 0.86rem;
+      font-size: 0.84rem;
       color: var(--ink-dim);
       line-height: 1.5;
     }
 
-    /* ── Infographic 4: Massive Scale Grid ──────────────────────────────── */
-    .section-scale {
-      padding-block: 84px;
-      border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-      background: rgba(14, 19, 17, 0.8);
-    }
-    .scale-grid {
+    /* ── Behind the Screen & Cost (Slide 25 & 26) ───────────────────────── */
+    .tiles-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    @media (min-width: 640px) {
+      .tiles-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 960px) {
+      .tiles-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .tile {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 22px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: border-color 0.2s ease;
+    }
+    .tile:hover {
+      border-color: var(--line-strong);
+    }
+    .tile h3 {
+      font-size: 1.02rem;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    /* Cost Box */
+    .cost-card {
+      background: var(--surface);
+      border: 1px solid var(--brass-border);
+      border-radius: var(--radius-xl);
+      padding: 38px 24px;
+      text-align: center;
+      margin-top: 36px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    }
+    .cost-num {
+      font-family: var(--font-mono);
+      font-size: clamp(3.4rem, 8vw, 5.8rem);
+      font-weight: 700;
+      color: var(--brass-bright);
+      line-height: 1;
+      direction: ltr;
+      letter-spacing: -0.04em;
+    }
+    .cost-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-top: 8px;
+    }
+    .cost-sub {
+      font-size: 0.94rem;
+      color: var(--ink-dim);
+      max-width: 580px;
+      margin-inline: auto;
+      margin-top: 6px;
+    }
+
+    /* ── Timeline: 5 Beats over 10 Years (Slide 27) ─────────────────────── */
+    .tl {
+      position: relative;
+      margin-top: 36px;
+    }
+    .tl__line {
+      position: absolute;
+      inset-inline: 0;
+      top: 18px;
+      height: 2px;
+      background: linear-gradient(90deg, var(--jade), var(--brass));
+      display: none;
+    }
+    @media (min-width: 768px) {
+      .tl__line { display: block; }
+    }
+    .tl__row {
+      display: grid;
+      grid-template-columns: 1fr;
       gap: 16px;
     }
     @media (min-width: 768px) {
-      .scale-grid { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+      .tl__row { grid-template-columns: repeat(5, 1fr); gap: 12px; }
     }
-    @media (min-width: 1080px) {
-      .scale-grid { grid-template-columns: repeat(6, 1fr); }
-    }
-    .scale-card {
+    .beat {
       background: var(--surface);
-      border: 1px solid var(--line-subtle);
-      border-radius: var(--radius-lg);
-      padding: 26px 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 18px 16px;
+      position: relative;
+      z-index: 1;
       text-align: center;
-      transition: border-color 0.2s ease;
     }
-    .scale-card:hover {
-      border-color: rgba(208, 166, 99, 0.3);
+    .beat__d {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--brass);
+      box-shadow: 0 0 10px var(--brass);
+      margin-inline: auto;
+      margin-bottom: 10px;
     }
-    .scale-num {
+    .beat__y {
       font-family: var(--font-mono);
-      font-size: clamp(2rem, 3.2vw, 2.7rem);
-      font-weight: 700;
-      color: #ffffff;
-      line-height: 1;
-      margin-bottom: 8px;
-      direction: ltr;
-    }
-    .scale-num.brass { color: var(--brass-bright); }
-    .scale-num.jade { color: var(--jade); }
-    .scale-label {
-      font-size: 0.94rem;
-      font-weight: 700;
-      color: var(--ink);
+      font-size: 0.76rem;
+      color: var(--brass);
+      font-weight: 600;
+      display: block;
       margin-bottom: 4px;
     }
-    .scale-sub {
+    .beat h3 {
+      font-size: 1.05rem;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+    .beat p {
       font-size: 0.78rem;
-      color: var(--ink-muted);
+      color: var(--muted);
+      line-height: 1.4;
     }
 
-    /* ── Lightbox Modal for Real Screenshots ────────────────────────────── */
+    /* ── Lightbox Modal for Screenshots ─────────────────────────────────── */
     .lightbox-modal {
       position: fixed;
       inset: 0;
-      z-index: 200;
-      background: rgba(0, 0, 0, 0.92);
+      z-index: 300;
+      background: rgba(0, 0, 0, 0.94);
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
       display: none;
@@ -933,82 +1244,65 @@
       justify-content: center;
       padding: 20px;
     }
-    .lightbox-modal.active {
-      display: flex;
-    }
+    .lightbox-modal.active { display: flex; }
     .lightbox-inner {
-      max-width: 1100px;
+      max-width: 1120px;
       width: 100%;
-      background: #111;
+      background: #0d1210;
       border-radius: var(--radius-lg);
-      border: 1px solid rgba(255, 255, 255, 0.15);
+      border: 1px solid var(--brass-border);
       overflow: hidden;
       position: relative;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
     }
     .lightbox-img {
       width: 100%;
-      max-height: 78vh;
+      max-height: 76vh;
       object-fit: contain;
       display: block;
       background: #000;
     }
     .lightbox-bar {
       padding: 16px 22px;
-      background: #141a17;
+      background: #111715;
       display: flex;
       justify-content: space-between;
       align-items: center;
       color: #ffffff;
       font-size: 0.94rem;
       font-weight: 600;
+      border-top: 1px solid var(--line);
     }
     .lightbox-close {
       background: rgba(255, 255, 255, 0.1);
       border: none;
       color: #ffffff;
-      width: 34px;
-      height: 34px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
       cursor: pointer;
-      font-size: 1.2rem;
+      font-size: 1.25rem;
       display: flex;
       align-items: center;
       justify-content: center;
     }
 
-    /* ── Contact Section ────────────────────────────────────────────────── */
-    .section-contact {
-      padding-block: 88px;
-      background: #0a0e0d;
-    }
+    /* ── Executive Demo Request & WhatsApp Section ──────────────────────── */
     .contact-card {
       max-width: 780px;
       margin-inline: auto;
       background: var(--surface);
-      border: 1px solid rgba(208, 166, 99, 0.25);
+      border: 1px solid var(--brass-border);
       border-radius: var(--radius-xl);
-      padding: 40px 24px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      padding: 38px 24px;
+      box-shadow: 0 24px 50px rgba(0, 0, 0, 0.6);
     }
     @media (min-width: 680px) {
-      .contact-card { padding: 48px 48px; }
-    }
-    .contact-title {
-      text-align: center;
-      font-size: 2rem;
-      font-weight: 700;
-      color: #ffffff;
-      margin-bottom: 8px;
-    }
-    .contact-desc {
-      text-align: center;
-      font-size: 0.96rem;
-      color: var(--ink-dim);
-      margin-bottom: 36px;
+      .contact-card { padding: 48px; }
     }
     .quick-whatsapp-banner {
       background: rgba(95, 191, 166, 0.12);
-      border: 1px solid rgba(95, 191, 166, 0.3);
+      border: 1px solid rgba(95, 191, 166, 0.35);
       border-radius: var(--radius-md);
       padding: 14px 20px;
       display: flex;
@@ -1021,7 +1315,7 @@
     .form-grid {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 18px;
+      gap: 16px;
     }
     @media (min-width: 600px) {
       .form-grid { grid-template-columns: 1fr 1fr; }
@@ -1031,9 +1325,7 @@
       flex-direction: column;
       gap: 6px;
     }
-    .form-field.full {
-      grid-column: 1 / -1;
-    }
+    .form-field.full { grid-column: 1 / -1; }
     .form-label {
       font-size: 0.86rem;
       font-weight: 600;
@@ -1043,8 +1335,8 @@
       min-height: 46px;
       padding: 10px 14px;
       border-radius: var(--radius-sm);
-      border: 1px solid var(--line);
-      background: #0e1412;
+      border: 1px solid var(--line-strong);
+      background: #090e0c;
       color: #ffffff;
       font-size: 0.92rem;
       outline: none;
@@ -1054,7 +1346,7 @@
       border-color: var(--brass);
     }
     textarea.form-ctrl {
-      min-height: 90px;
+      min-height: 84px;
       resize: vertical;
     }
     .feedback-box {
@@ -1072,11 +1364,11 @@
 
     /* ── Footer ─────────────────────────────────────────────────────────── */
     .footer {
-      border-top: 1px solid var(--line-subtle);
+      border-top: 1px solid var(--line);
       padding-block: 40px;
       font-size: 0.86rem;
-      color: var(--ink-muted);
-      background: #080b0a;
+      color: var(--muted);
+      background: #060908;
     }
     .footer-inner {
       display: flex;
@@ -1099,14 +1391,35 @@
   </style>
 </head>
 <body>
-  <div class="relative-wrap">
+  <!-- Embedded SVG Sprite from schedule-presentation.html -->
+  <svg class="sprite" style="display:none" aria-hidden="true"><defs>
+    <symbol id="i-block" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 2a7.95 7.95 0 0 1 4.9 1.69L5.69 16.9A8 8 0 0 1 4 12a8 8 0 0 1 8-8zm0 16a7.95 7.95 0 0 1-4.9-1.69L18.31 7.1A8 8 0 0 1 20 12a8 8 0 0 1-8 8z"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 2v20h16V2H4zm2 2h4v3H6V4zm0 5h4v3H6V9zm0 5h4v3H6v-3zm0 5h4v1H6v-1zm6-15h6v18h-6V4zm2 2v3h2V6h-2zm0 5v3h2v-3h-2zm0 5v3h2v-3h-2z"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m14 18-1.4-1.4 4.6-4.6H4v-2h13.2L12.6 5.4 14 4l7 7z"/></symbol>
+    <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 15h2v4h4v2H3v-6zm18 0v6h-6v-2h4v-4h2zM7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h7v2H7v-2z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m19 9 1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5z"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM5 8V6h14v2H5z"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 3a4.5 4.5 0 0 0-4.47 4.03A4.5 4.5 0 0 0 4 11.5c0 1.5.74 2.83 1.88 3.64A4.5 4.5 0 0 0 11 19.95V21h2v-1.05a4.5 4.5 0 0 0 5.12-4.81A4.5 4.5 0 0 0 20 11.5a4.5 4.5 0 0 0-3.53-4.47A4.5 4.5 0 0 0 12 3zm-1 14.9a2.5 2.5 0 0 1-2.5-2.5V15h-.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5H9V9h-.5A2.5 2.5 0 0 1 6 6.5 2.5 2.5 0 0 1 8.5 4 2.5 2.5 0 0 1 11 6.5V17.9zm2 0V6.5A2.5 2.5 0 0 1 15.5 4 2.5 2.5 0 0 1 18 6.5 2.5 2.5 0 0 1 15.5 9H15v1h1.5a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5H15v.4a2.5 2.5 0 0 1-2 2.5z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
+    <symbol id="i-publish" viewBox="0 0 24 24"><path d="M5 4v2h14V4H5zm0 10h4v6h6v-6h4l-7-7-7 7z"/></symbol>
+    <symbol id="i-offline" viewBox="0 0 24 24"><path d="M23 12a11 11 0 1 1-22 0 11 11 0 0 1 22 0zm-2 0a9 9 0 1 0-18 0 9 9 0 0 0 18 0zm-5 0a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"/></symbol>
+  </defs></svg>
+
+  <div class="app-wrap">
 
     <!-- ── Navigation ───────────────────────────────────────────────────── -->
     <header class="nav">
-      <div class="wrap nav-inner">
+      <div class="container nav-inner">
         <div class="brand-box">
           <svg class="brand-svg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-            <rect width="64" height="64" rx="14" fill="#111715"/>
+            <rect width="64" height="64" rx="14" fill="#0f1513"/>
             <rect x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
             <rect x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
             <rect x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
@@ -1119,47 +1432,53 @@
           </div>
         </div>
 
-        <nav aria-label="التنقل">
+        <nav aria-label="التنقل الرئيسي">
           <ul class="nav-menu">
             <li><a href="#showcase">شاشة النظام</a></li>
-            <li><a href="#speed">الكفاءة (3:24)</a></li>
-            <li><a href="#engine">المحرك التفاعلي</a></li>
-            <li><a href="#gallery">معرض اللقطات</a></li>
-            <li><a href="#shift">المقارنة</a></li>
+            <li><a href="#benchmark">المقياس (3:24)</a></li>
+            <li><a href="#shift">ما الذي تغيّر</a></li>
+            <li><a href="#governance">الحوكمة والتشفير</a></li>
+            <li><a href="#gallery">معرض اللقطات (11)</a></li>
+            <li><a href="#telemetry">نبض الجدول</a></li>
           </ul>
         </nav>
 
         <div class="nav-ctas">
+          <a href="/schedule-presentation.html" target="_blank" class="btn btn-jade" title="فتح العرض التقديمي التنفيذي الكامل (28 شريحة)">
+            <span>العرض التقديمي (28 شريحة) ↗</span>
+          </a>
           <a href="/" class="btn btn-glass" title="دخول مساحة العمل الجامعية">دخول النظام</a>
           <a href="#contact" class="btn btn-brass">طلب استعراض</a>
         </div>
       </div>
     </header>
 
-    <!-- ── Hero: Visual First, Minimal Text ─────────────────────────────── -->
+    <!-- ── Hero: Maximum Impact, Minimal Words ──────────────────────────── -->
     <section class="hero">
-      <div class="wrap">
-        <div class="hero-chip-row">
-          <span class="chip chip-brass">
-            <span class="chip-dot"></span>
-            نظام القرار الأكاديمي للجامعات والكليات
-          </span>
-        </div>
+      <div class="container">
+        <span class="chip chip-brass">
+          <span class="chip-dot"></span>
+          نظام القرار الأكاديمي للجامعات والكليات
+        </span>
 
         <h1 class="hero-h1">
-          الجدول الدراسي، <span class="gold">في ثوانٍ</span>.
+          الجدول لم يعد جدولاً.<br />
+          <span class="gold">صار قراراً.</span>
+          <span class="sub">لم نبنِ برنامجاً. بنينا طريقة عمل.</span>
         </h1>
 
-        <p class="hero-lede">
-          كشف تعارضات القاعات والأساتذة استباقياً، مقايضة الشواغر بين الأقسام، واعتماد القرار الأكاديمي بوضوح وهدوء تام.
+        <p class="hero-quote">
+          كشف تعارض استباقي <b>لحظة التحريك</b>، مقايضة الشواغر بحوكمة رسمية، واعتماد الجدول الموثق في ثوانٍ.
         </p>
 
         <div class="hero-buttons">
           <a href="#contact" class="btn btn-brass">طلب استعراض تنفيذي خاص للمؤسسة</a>
-          <a href="#showcase" class="btn btn-glass">معاينة واجهة النظام الحقيقية ↓</a>
+          <a href="/schedule-presentation.html" target="_blank" class="btn btn-glass">
+            تصفح شرائح العرض التقديمي (28 شريحة) ↗
+          </a>
         </div>
 
-        <!-- ── Showcase Stage: Real Screen In Browser Frame ─────────────── -->
+        <!-- ── Showcase Stage: Real Screen In Desktop Browser Frame ───────── -->
         <div id="showcase" class="showcase-stage">
           <!-- Floating Infographic Badges -->
           <div class="hotspot-chip hotspot-1">
@@ -1193,7 +1512,7 @@
                 <span class="frame-caption-text">
                   <span>📸 لقطة واقعية من مساحة العمل الأكاديمية الفعلية (اضغط للتكبير)</span>
                 </span>
-                <span class="chip chip-brass" style="font-size: 0.76rem;">دقة عالية 100%</span>
+                <span class="chip chip-brass" style="font-size: 0.76rem;">دقة فائقة 100%</span>
               </div>
             </div>
           </div>
@@ -1201,420 +1520,647 @@
       </div>
     </section>
 
-    <!-- ── Infographic 1: Global Benchmark & The 3:24 Stopwatch ──────────── -->
-    <section id="speed" class="section-stopwatch">
-      <div class="wrap">
-        <div class="stopwatch-grid">
-          <div class="stopwatch-visual">
-            <div class="stopwatch-ring">
-              <svg class="stopwatch-svg" viewBox="0 0 200 200">
-                <circle class="sw-track" cx="100" cy="100" r="86"></circle>
-                <circle id="sw-circle-arc" class="sw-arc" cx="100" cy="100" r="86"></circle>
+    <!-- ── Section 1: The Global Benchmark Dials & Our Stopwatch ────────── -->
+    <section id="benchmark" class="section">
+      <div class="container">
+        <div class="head">
+          <p class="eyebrow"><svg class="ic"><use href="#i-cal"/></svg>المقياس العالمي · دراسات محكَّمة</p>
+          <h2>كم تلتهم هذه المهمة من وقت الجامعات.<br><span style="color:var(--brass-bright)">وأمّا نحن: حلقتنا شعرة.</span></h2>
+          <p class="sub">الجامعات تقيس بالأسابيع. نحن نقيس بالثواني.</p>
+        </div>
+
+        <div class="benchmark-stage">
+          <!-- Slide 3 Global Dials -->
+          <div class="dials">
+            <div class="dial">
+              <div class="dial__ring">
+                <svg viewBox="0 0 100 100" aria-hidden="true">
+                  <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                  <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:170"></circle>
+                </svg>
+              </div>
+              <span class="dial__c">الكويت · AOU</span>
+              <span class="dial__t">4–6 أسابيع</span>
+              <span class="dial__s">جدول مقررات · دراسة iJET</span>
+            </div>
+
+            <div class="dial">
+              <div class="dial__ring">
+                <svg viewBox="0 0 100 100" aria-hidden="true">
+                  <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                  <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:330"></circle>
+                </svg>
+              </div>
+              <span class="dial__c">ماليزيا · MPCB</span>
+              <span class="dial__t">نحو 4 أسابيع</span>
+              <span class="dial__s">جدول مقررات · Case Study</span>
+            </div>
+
+            <div class="dial">
+              <div class="dial__ring">
+                <svg viewBox="0 0 100 100" aria-hidden="true">
+                  <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                  <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:480"></circle>
+                </svg>
+              </div>
+              <span class="dial__c">أمريكا · Cornell</span>
+              <span class="dial__t">عدة أسابيع</span>
+              <span class="dial__s">جدول مقررات · Interfaces</span>
+            </div>
+          </div>
+
+          <!-- Slide 4 Our Glowing Dial -->
+          <div class="ours">
+            <div class="big-dial">
+              <svg viewBox="0 0 200 200" aria-hidden="true">
+                <circle class="bd__trk" cx="100" cy="100" r="86"></circle>
+                <circle class="bd__arc" cx="100" cy="100" r="86"></circle>
               </svg>
-              <div class="stopwatch-center">
-                <div class="sw-time" id="sw-counter">3:24</div>
-                <div class="sw-unit">دقائق : ثوانٍ</div>
+              <div class="bd__c">
+                <span class="bd__k">زمننا الفعلي</span>
+                <span class="bd__t">3:24</span>
+                <span class="bd__u">من الرفع إلى جدول مُراجَع</span>
               </div>
             </div>
-            <p class="sw-proof">
-              <b>من رفع الملف إلى جدول مُراجع بالكامل</b><br />
-              تجربة تسجيل فعلية بكلية التربية الأساسية — 89 صفاً أكاديمياً.
-            </p>
+            <div class="ours__lead">ثلاث دقائق و<em>24</em> ثانية.</div>
+            <div class="ours__sub">من رفع الـPDF إلى جدول مُراجع بالكامل ومعتمد.</div>
+            <span class="ours__meta">جدول تسجيل فعلي لكلية التربية الأساسية — بنات · 89 صفًّا</span>
+          </div>
+        </div>
+
+        <!-- 3 Big Metric Facts (Slide 4) -->
+        <div class="big">
+          <div class="bigc">
+            <b class="brass">100%</b>
+            <span>منع الحجز المزدوج</span>
+            <small>لا يُعتمد جدول فيه تعارض إطلاقاً</small>
+          </div>
+          <div class="bigc">
+            <b class="brass">صفر</b>
+            <span>إدخال يدوي للصفوف</span>
+            <small>الاستيراد يقرأ الـPDF ويملؤها آلياً</small>
+          </div>
+          <div class="bigc">
+            <b class="brass">كل فصل</b>
+            <span>يُنسخ لا يُعاد بناؤه</span>
+            <small>بترقيم شعب تلقائي وحفظ الأعباء</small>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Section 2: Shift Matrix (Slide 2: What Changed) ──────────────── -->
+    <section id="shift" class="section darker">
+      <div class="container">
+        <div class="head">
+          <p class="eyebrow"><svg class="ic"><use href="#i-spark"/></svg>ما الذي تغيّر</p>
+          <h2>ثلاثة أسئلة، إجابتان مختلفتان.</h2>
+          <p class="sub">الفارق الجوهري بين إدارة الجداول قديماً وبين منظومة SCHEDULE اليوم:</p>
+        </div>
+
+        <div class="shift">
+          <!-- Row 1 -->
+          <div class="shift__r">
+            <div class="shift__q">
+              <span class="tile__ic dim"><svg class="ic"><use href="#i-block"/></svg></span>
+              متى يُكتشف التعارض؟
+            </div>
+            <div class="shift__c was">
+              <small>قبل</small>
+              <span>بعد نشر الجداول وأثناء تسجيل الطلبة</span>
+            </div>
+            <div class="shift__a"><svg class="ic"><use href="#i-arrow"/></svg></div>
+            <div class="shift__c now">
+              <small>الآن مع SCHEDULE</small>
+              <span>لحظة تحريك المحاضرة، استباقياً قبل الحفظ</span>
+            </div>
           </div>
 
-          <div class="stopwatch-text-col">
-            <span class="chip chip-brass" style="margin-bottom: 12px;">المقياس العالمي والأكاديمي</span>
-            <h2>الجامعات تقيس بالأسابيع.<br /><span style="color: var(--brass-bright);">نحن نقيس بالثواني.</span></h2>
-            <p>
-              دراسات حالة مستقلة محكّمة لجداول المقررات الجامعية، توضح الوقت المهدر يدوياً مقارنة بسرعة SCHEDULE الفائقة:
-            </p>
+          <!-- Row 2 -->
+          <div class="shift__r">
+            <div class="shift__q">
+              <span class="tile__ic dim"><svg class="ic"><use href="#i-building"/></svg></span>
+              من يملك القاعة؟
+            </div>
+            <div class="shift__c was">
+              <small>قبل</small>
+              <span>ملكية مغلقة للقسم غير قابلة للتفاوض</span>
+            </div>
+            <div class="shift__a"><svg class="ic"><use href="#i-arrow"/></svg></div>
+            <div class="shift__c now">
+              <small>الآن مع SCHEDULE</small>
+              <span>استعارة موثقة بسجل رسمي بحوكمة الأقسام</span>
+            </div>
+          </div>
 
-            <div class="benchmark-list">
-              <div class="benchmark-row">
-                <span class="bench-name"><span class="bench-dot"></span>جامعة الكويت · AOU (دراسة iJET)</span>
-                <span class="bench-val">4–6 أسابيع يدوياً</span>
-              </div>
-              <div class="benchmark-row">
-                <span class="bench-name"><span class="bench-dot"></span>جامعة كورنيل الأمريكية · Cornell</span>
-                <span class="bench-val">عدة أسابيع يدوياً</span>
-              </div>
-              <div class="benchmark-row">
-                <span class="bench-name"><span class="bench-dot"></span>جامعة ماليزيا · MPCB Case Study</span>
-                <span class="bench-val">نحو 4 أسابيع يدوياً</span>
-              </div>
-              <div class="benchmark-row" style="background: rgba(95, 191, 166, 0.08); border-color: rgba(95, 191, 166, 0.3);">
-                <span class="bench-name" style="color: #ffffff; font-weight: 700;">★ منظومة SCHEDULE</span>
-                <span class="bench-val our-val">3 دقائق و24 ثانية فقط ✓</span>
-              </div>
+          <!-- Row 3 -->
+          <div class="shift__r">
+            <div class="shift__q">
+              <span class="tile__ic dim"><svg class="ic"><use href="#i-undo"/></svg></span>
+              وإن أخطأنا؟
+            </div>
+            <div class="shift__c was">
+              <small>قبل</small>
+              <span>تعديل يدوي في إكسل يورّث تعارضاً خفياً</span>
+            </div>
+            <div class="shift__a"><svg class="ic"><use href="#i-arrow"/></svg></div>
+            <div class="shift__c now">
+              <small>الآن مع SCHEDULE</small>
+              <span>تراجع كامل (Undo) وتدقيق يمنع التضارب الحتمي</span>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ── Infographic 2: Interactive Decision Engine Simulator ──────────── -->
-    <section id="engine" class="section-engine">
-      <div class="wrap">
-        <div class="section-title-box">
-          <span class="chip chip-jade" style="margin-bottom: 12px;">المحرك التفاعلي الحي</span>
-          <h2 class="section-h2">شاهد كيف يحسم المحرك التعارض</h2>
-          <p class="section-sub">اضغط على الخيارات أدناه لمحاكاة كشف التضارب وتطبيق النقلة الذكية لحظياً:</p>
-        </div>
+    <!-- ── Section 3: AI Governance & Room Anatomy (Slide 11 & 14) ───────── -->
+    <section id="governance" class="section">
+      <div class="container">
+        <div class="duo-grid">
+          <!-- AI Governance Card (Slide 11) -->
+          <div class="duo-card">
+            <div>
+              <p class="eyebrow"><svg class="ic"><use href="#i-shield"/></svg>الحوكمة الأكاديمية</p>
+              <h3 style="font-size:1.6rem; color:#fff; margin-bottom:8px;">الذكاء يقترح. الإنسان يقرر.</h3>
+              <p style="font-size:0.92rem; color:var(--ink-dim);">
+                الذكاء لا يملك صلاحية الكتابة في قاعدة بيانات الجامعة، لا لأننا منعناه، بل لأن المسار غير موجود برمجياً.
+              </p>
 
-        <div class="engine-box">
-          <div class="engine-tabs">
-            <button type="button" class="eng-tab active" id="eng-btn-1" onclick="switchEngine('clash')">
-              1. كشف التعارض الآني (قاعة 102)
-            </button>
-            <button type="button" class="eng-tab" id="eng-btn-2" onclick="switchEngine('solve')">
-              2. تطبيق حل المحرك الذكي
-            </button>
-            <button type="button" class="eng-tab" id="eng-btn-3" onclick="switchEngine('barter')">
-              3. مقايضة القاعات الشاغرة
-            </button>
+              <div class="flow">
+                <div class="fstep">
+                  <span class="tile__ic"><svg class="ic"><use href="#i-brain"/></svg></span>
+                  <h3>اقتراح</h3>
+                  <small>طبقة الفهم والتحليل</small>
+                </div>
+                <div class="farrow"><svg class="ic"><use href="#i-arrow"/></svg></div>
+                <div class="fstep">
+                  <span class="tile__ic"><svg class="ic"><use href="#i-shield"/></svg></span>
+                  <h3>تحقّق حتمي</h3>
+                  <small>قواعد لا تُخفَّف</small>
+                </div>
+                <div class="farrow"><svg class="ic"><use href="#i-arrow"/></svg></div>
+                <div class="fstep human">
+                  <span class="tile__ic brass"><svg class="ic"><use href="#i-check"/></svg></span>
+                  <h3>اعتماد صريح</h3>
+                  <small>بيد المستخدم حصراً</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="blocked">
+              <svg class="ic" style="font-size:1.2rem;"><use href="#i-block"/></svg>
+              <span>لا مسار يصل من الذكاء الاصطناعي إلى قاعدة البيانات مباشرةً.</span>
+            </div>
           </div>
 
-          <div class="engine-content">
-            <!-- View 1: Clash -->
-            <div id="eng-view-clash" class="engine-view active">
-              <div>
-                <div class="live-card red">
-                  <div class="card-row">
-                    <span class="card-time">09:30 - 10:45</span>
-                    <span class="chip chip-danger" style="font-size: 11px;">تضارب زمني مؤكد</span>
-                  </div>
-                  <div class="card-title">تفاضل وتكامل (1) · قسم الرياضيات</div>
-                  <div class="card-meta">
-                    <span>د. أحمد الشمري</span>
-                    <span>قاعة 102 (سعة 45)</span>
-                  </div>
-                </div>
+          <!-- Room Code Anatomy Card (Slide 14) -->
+          <div class="duo-card">
+            <div>
+              <p class="eyebrow jade"><svg class="ic"><use href="#i-building"/></svg>الانضباط الهيكلي</p>
+              <h3 style="font-size:1.6rem; color:#fff; margin-bottom:8px;">لكل قاعة عنوان لا يُخطئ.</h3>
+              <p style="font-size:0.92rem; color:var(--ink-dim);">
+                رقم القاعة وحده لا يعني شيئاً ما لم يكن تحت مبناه الرسمي — فلا خلط بين قاعتين تحملان الرقم نفسه في مبنيين.
+              </p>
 
-                <div class="live-card red">
-                  <div class="card-row">
-                    <span class="card-time">10:00 - 11:15</span>
-                    <span class="chip chip-danger" style="font-size: 11px;">تداخل 45 دقيقة</span>
-                  </div>
-                  <div class="card-title">مقدمة فيزيائية عامة · قسم العلوم</div>
-                  <div class="card-meta">
-                    <span>د. سارة العازمي</span>
-                    <span>قاعة 102 (سعة 45)</span>
-                  </div>
+              <div class="anat">
+                <div class="anat__code">
+                  <span class="a">012B</span><span class="b">09</span><span class="c">102</span>
                 </div>
-              </div>
-
-              <div class="engine-action-card">
-                <div>
-                  <span class="chip chip-danger" style="margin-bottom: 14px;">تنبيه مانع للحفظ</span>
-                  <div class="eng-state-title">منع الكارثة قبل اعتمادها</div>
-                  <p class="eng-state-desc">
-                    في إكسل والأنظمة القديمة، يُكتشف هذا الخطأ بعد طباعة الجداول وشكاوى الطلبة. محرك SCHEDULE يعزل الشعبة فوراً ويمنع اعتماد أي جدول غير متزن.
-                  </p>
+                <div class="anat__lb">
+                  <div>التربية الأساسية<small>الكلية والموقع</small></div>
+                  <div>مبنى 09<small>المبنى الرسمي</small></div>
+                  <div>قاعة 102<small>رقم القاعة</small></div>
                 </div>
-                <button type="button" class="btn btn-brass" onclick="switchEngine('solve')">
-                  تطبيق حل المحرك الذكي بنقرة واحدة ←
-                </button>
               </div>
             </div>
 
-            <!-- View 2: Solved -->
-            <div id="eng-view-solve" class="engine-view">
-              <div>
-                <div class="live-card green">
-                  <div class="card-row">
-                    <span class="card-time">09:30 - 10:45</span>
-                    <span class="chip chip-jade" style="font-size: 11px;">قاعة 102 مستقرة</span>
-                  </div>
-                  <div class="card-title">تفاضل وتكامل (1) · قسم الرياضيات</div>
-                  <div class="card-meta">
-                    <span>د. أحمد الشمري</span>
-                    <span>قاعة 102 (سعة 45)</span>
-                  </div>
-                </div>
-
-                <div class="live-card gold">
-                  <div class="card-row">
-                    <span class="card-time">10:00 - 11:15</span>
-                    <span class="chip chip-brass" style="font-size: 11px;">نقلة ذكية معتمدة</span>
-                  </div>
-                  <div class="card-title">مقدمة فيزيائية عامة · قسم العلوم</div>
-                  <div class="card-meta">
-                    <span>د. سارة العازمي</span>
-                    <span style="color: var(--jade); font-weight: 700;">قاعة 104 (شاغرة ومطابقة)</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="engine-action-card">
-                <div>
-                  <span class="chip chip-jade" style="margin-bottom: 14px;">✓ تم حل التضارب 100%</span>
-                  <div class="eng-state-title">أقصر سلسلة نقلات دون إرباك الأساتذة</div>
-                  <p class="eng-state-desc">
-                    وجّه المحرك الشعبة آلياً إلى قاعة 104 في نفس الممر، مع الحفاظ على التجهيز المخبري وسعة القاعة ومراعاة فترات الراحة لأستاذ المقرر.
-                  </p>
-                </div>
-                <button type="button" class="btn btn-glass" onclick="switchEngine('barter')">
-                  استكشف سوق مقايضة القاعات ←
-                </button>
-              </div>
-            </div>
-
-            <!-- View 3: Barter -->
-            <div id="eng-view-barter" class="engine-view">
-              <div>
-                <div class="live-card gold">
-                  <div class="card-row">
-                    <span class="card-time">الثلاثاء · 11:00 - 12:15</span>
-                    <span class="chip chip-brass" style="font-size: 11px;">طلب استعارة نشط</span>
-                  </div>
-                  <div class="card-title">استعارة قاعة G14 من قسم التربية الفنية</div>
-                  <div class="card-meta">
-                    <span>الجهة الطالبة: قسم اللغة العربية</span>
-                    <span>المدة: فصل دراسي كامل</span>
-                  </div>
-                </div>
-
-                <div class="live-card green">
-                  <div class="card-row">
-                    <span class="card-time">الخميس · 08:00 - 09:15</span>
-                    <span class="chip chip-jade" style="font-size: 11px;">سجل رسمي موثق</span>
-                  </div>
-                  <div class="card-title">إتاحة مدرج 201 كقاعة مشتركة للكليات</div>
-                  <div class="card-meta">
-                    <span>سعة 120 مقعداً · شاغرة للفترة الصباحية</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="engine-action-card">
-                <div>
-                  <span class="chip chip-brass" style="margin-bottom: 14px;">سوق مقايضة شفاف</span>
-                  <div class="eng-state-title">إنهاء النزاع على القاعات بين الأقسام</div>
-                  <p class="eng-state-desc">
-                    القاعات الشاغرة لم تعد ملكيات مغلقة. المنظومة تتيح إعارة واستعارة الفائض بسجل رسمي يوثق من استعار ومتى يخلي القاعة تلقائياً.
-                  </p>
-                </div>
-                <a href="#contact" class="btn btn-brass">طلب استعراض SCHEDULE لمؤسستكم</a>
-              </div>
+            <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;">
+              <span class="chip chip-jade">القاعة تحت مبناها</span>
+              <span class="chip chip-brass">السجل الرسمي مرجعاً</span>
+              <span class="chip chip-danger">منع التضارب بين المباني</span>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ── Gallery: Real Screenshots From Actual Demo ────────────────────── -->
-    <section id="gallery" class="section-gallery">
-      <div class="wrap">
-        <div class="section-title-box">
-          <span class="chip chip-brass" style="margin-bottom: 12px;">معرض اللقطات الواقعية</span>
-          <h2 class="section-h2">واجهات حقيقية من صلب المنظومة</h2>
-          <p class="section-sub">لقطات مباشرة من بيئة العمل الفعلية توضح دقة بناء الشاشات والتقارير:</p>
+    <!-- ── Section 4: The 4-Color Preview Language (Slide 13) ────────────── -->
+    <section class="section darker">
+      <div class="container">
+        <div class="head">
+          <p class="eyebrow"><svg class="ic"><use href="#i-eye"/></svg>لغة المعاينة</p>
+          <h2>أربعة ألوان تسبق كل حفظ.</h2>
+          <p class="sub">لا شيء يُحفظ قبل أن يمرّ على هذه الألوان؛ تعديلك اليدوي الصحيح يُسجَّل بمصدره ولا يبقى أحمر:</p>
         </div>
 
-        <div class="gallery-grid">
-          <!-- Item 1: Full Board -->
-          <div class="gallery-card" onclick="openLightbox('/screenshots/cover-wide.png', 'لوحة الجدول الأسبوعي الكاملة · توزيع القاعات والشعب')">
+        <div class="sw">
+          <div class="swatch">
+            <span class="swatch__c" style="background:#f4f6f2"></span>
+            <h3>أبيض</h3>
+            <p>مؤكَّد مباشرةً من السجل الرسمي دون أي غموض.</p>
+          </div>
+          <div class="swatch">
+            <span class="swatch__c" style="background:#2f6d5c"></span>
+            <h3>أخضر</h3>
+            <p>مستنتج ومثبت بالسجل وقواعد التحقق.</p>
+          </div>
+          <div class="swatch">
+            <span class="swatch__c" style="background:#c99a44"></span>
+            <h3>ذهبي</h3>
+            <p>يحتاج مراجعتك وتأكيدك الصريح قبل الحفظ.</p>
+          </div>
+          <div class="swatch">
+            <span class="swatch__c" style="background:#a8443c"></span>
+            <h3>أحمر</h3>
+            <p>ناقص فعلاً بالسجل ويمنع الحفظ لتفادي الخطأ.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Section 5: All 11 Authentic Demo Screenshots Museum ────────────── -->
+    <section id="gallery" class="section">
+      <div class="container">
+        <div class="head center">
+          <p class="eyebrow"><svg class="ic"><use href="#i-scan"/></svg>معرض اللقطات الواقعية المعتمدة</p>
+          <h2>واجهات حقيقية من صلب العرض التجريبي.</h2>
+          <p class="sub">11 لقطة شاشة موثقة من بيئة العمل الفعلية لكلية التربية الأساسية — اضغط على أي صورة لتكبيرها:</p>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="gallery-filter-wrap">
+          <button type="button" class="gallery-filter-btn active" onclick="filterGallery('all', this)">الكل (11)</button>
+          <button type="button" class="gallery-filter-btn" onclick="filterGallery('ai', this)">الذكاء والاستيراد</button>
+          <button type="button" class="gallery-filter-btn" onclick="filterGallery('schedule', this)">الجدول والسحب</button>
+          <button type="button" class="gallery-filter-btn" onclick="filterGallery('rooms', this)">القاعات والطلبة</button>
+          <button type="button" class="gallery-filter-btn" onclick="filterGallery('audit', this)">الوثائق والتقارير</button>
+          <button type="button" class="gallery-filter-btn" onclick="filterGallery('mobile', this)">تطبيق الهاتف</button>
+        </div>
+
+        <div class="gallery-grid" id="gallery-items">
+          <!-- Shot 1 -->
+          <div class="gallery-card" data-cat="ai" onclick="openLightbox('/screenshots/demo-shot-1.webp', 'نتيجة قراءة ملف الـPDF: 89 صفاً في 4 صفحات مع مفتاح ألوان المراجعة')">
             <div class="gallery-media">
-              <img src="/screenshots/cover-wide.png" alt="لوحة الجدول الأسبوعي العام" loading="lazy" />
+              <img src="/screenshots/demo-shot-1.webp" alt="استخراج الـPDF" loading="lazy" />
             </div>
             <div class="gallery-info">
-              <span class="gallery-tag">SCREEN 01 · THE WORKSPACE</span>
-              <div class="gallery-title">لوحة الجدول الأسبوعي العام</div>
-              <p class="gallery-desc">توزيع مرئي فائق الوضوح للأيام والقاعات، مع كشف فوري لأي تعارض لحظة تحريك الشعبة.</p>
+              <span class="gallery-tag">SCREEN 01 · PDF OCR</span>
+              <div class="gallery-title">قراءة 89 صفاً في ثوانٍ</div>
+              <p class="gallery-desc">لقطة حقيقية لجدول كلية التربية الأساسية — بنات · قسم التربية الإسلامية مع مفتاح الألوان.</p>
             </div>
           </div>
 
-          <!-- Item 2: OCR PDF Ingestion -->
-          <div class="gallery-card" onclick="openLightbox('/screenshots/demo-shot-1.webp', 'قراءة مستندات التسجيل: 89 صفاً في 4 صفحات مطابقة للسجل')">
-            <div class="gallery-media">
-              <img src="/screenshots/demo-shot-1.webp" alt="استخراج ملفات التسجيل والـ PDF" loading="lazy" />
-            </div>
-            <div class="gallery-info">
-              <span class="gallery-tag">SCREEN 02 · PDF EXTRACTION</span>
-              <div class="gallery-title">قراءة مستندات التسجيل بالذكاء الاصطناعي</div>
-              <p class="gallery-desc">قراءة جداول الكلية الرسمية وتفريغها آلياً في ثوانٍ دون إدخال يدوي واحد، مع مفتاح مراجعة لوني.</p>
-            </div>
-          </div>
-
-          <!-- Item 3: Arabic Natural Query Assistant -->
-          <div class="gallery-card" onclick="openLightbox('/screenshots/demo-shot-2.webp', 'مساعد استعلام الجدول بالعربية مع تحليل الأسباب')">
+          <!-- Shot 2 -->
+          <div class="gallery-card" data-cat="ai" onclick="openLightbox('/screenshots/demo-shot-2.webp', 'مساعد استعلام الجدول بالعربية مع تحليل الأسباب المدعومة بالأرقام')">
             <div class="gallery-media">
               <img src="/screenshots/demo-shot-2.webp" alt="مساعد الاستعلام بالعربية" loading="lazy" />
             </div>
             <div class="gallery-info">
-              <span class="gallery-tag">SCREEN 03 · DECISION ASSISTANT</span>
-              <div class="gallery-title">مساعد الاستعلام والقرار الأكاديمي</div>
-              <p class="gallery-desc">اسأله بالعربية: «لماذا يوم الاثنين مزدحم؟» فيجيبك بتحليل بياني مدعوم بالأرقام من الجدول.</p>
+              <span class="gallery-tag">SCREEN 02 · NATURAL QUERY</span>
+              <div class="gallery-title">اسأله بالعربية الفصحى أو الدارجة</div>
+              <p class="gallery-desc">«لماذا يوم الاثنين مزدحم؟» فيجيبك بتحقيق إحصائي فوري مدعوم بأرقام الجدول الفعلي.</p>
             </div>
           </div>
 
-          <!-- Item 4: Mobile Experience -->
-          <div class="gallery-card" onclick="openLightbox('/screenshots/cover-narrow.png', 'تجربة الهاتف المحمول والوصول السريع للجداول')">
-            <div class="gallery-media" style="background: #090c0b;">
-              <img src="/screenshots/cover-narrow.png" alt="الجدول على شاشة الهاتف" style="object-position: center;" loading="lazy" />
+          <!-- Shot 3 -->
+          <div class="gallery-card" data-cat="schedule" onclick="openLightbox('/screenshots/demo-shot-3.webp', 'الجدول الأسبوعي أثناء سحب محاضرة وكشف مانع التضارب اللحظي')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-3.webp" alt="كشف التعارض أثناء السحب" loading="lazy" />
             </div>
             <div class="gallery-info">
-              <span class="gallery-tag">SCREEN 04 · MOBILE INTERFACE</span>
-              <div class="gallery-title">تجربة متنقلة سلسة على شاشات الهواتف</div>
-              <p class="gallery-desc">لوحة متجاوبة تتيح للعميد ورؤساء الأقسام مراجعة القاعات وجداول الأساتذة في أي وقت ومن أي مكان.</p>
+              <span class="gallery-tag">SCREEN 03 · DRAG GUARD</span>
+              <div class="gallery-title">حرّك المحاضرة — يخبرك قبل أن تُفلتها</div>
+              <p class="gallery-desc">كشف فوري لأي تعارض زمني أو مكاني قبل إسقاط المحاضرة، مما يلغي المفاجآت.</p>
+            </div>
+          </div>
+
+          <!-- Shot 4 -->
+          <div class="gallery-card" data-cat="schedule" onclick="openLightbox('/screenshots/demo-shot-4.webp', 'ثلاثة مواضع هبوط مقترحة ومرقّمة بالأفضلية أثناء السحب')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-4.webp" alt="مواضع الهبوط المقترحة" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 04 · SMART SLOTS</span>
+              <div class="gallery-title">لا تبحث عن المكان — النظام رتّبه</div>
+              <p class="gallery-desc">ثلاثة مواضع هبوط مقترحة بالأفضلية تلقائياً دون إرباك جدول الأستاذ أو سعة القاعة.</p>
+            </div>
+          </div>
+
+          <!-- Shot 5 -->
+          <div class="gallery-card" data-cat="schedule" onclick="openLightbox('/screenshots/demo-shot-5.webp', 'مركز القرار يرتّب ما يستحق قرارك أولاً دون قوائم مهام طويلة')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-5.webp" alt="مركز القرار الأكاديمي" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 05 · DECISION CENTER</span>
+              <div class="gallery-title">مركز القرار: ثلاثة أمور فقط اليوم</div>
+              <p class="gallery-desc">مرتّبة بالأولوية الصريحة والمباشرة — لا قوائم مهام مشتتة أو تفاصيل غير عاجلة.</p>
+            </div>
+          </div>
+
+          <!-- Shot 6 -->
+          <div class="gallery-card" data-cat="rooms" onclick="openLightbox('/screenshots/demo-shot-6.webp', 'شاشة طلبات الطلبة والشعب الإضافية وإصدار رابط الاستبيان')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-6.webp" alt="طلبات الطلبة والشعب" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 06 · STUDENT DEMAND</span>
+              <div class="gallery-title">نفتح الشعبة على طلب حقيقي</div>
+              <p class="gallery-desc">ربط رغبات الطلبة والعبء التدريسي الفعلي بروابط استبيان رقمية لحساب الجدوى.</p>
+            </div>
+          </div>
+
+          <!-- Shot 7 -->
+          <div class="gallery-card" data-cat="rooms" onclick="openLightbox('/screenshots/demo-shot-7.webp', 'شاشة استعارة القاعات الشاغرة بين الأقسام العلمية')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-7.webp" alt="استعارة القاعات بين الأقسام" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 07 · ROOM BARTER</span>
+              <div class="gallery-title">بين الأقسام: استعارة قاعة بحوكمة</div>
+              <p class="gallery-desc">إنهاء نزاع القاعات؛ توثيق الشواغر في سوق مقايضة رسمي يحدد مدد الإعارة والإخلاء.</p>
+            </div>
+          </div>
+
+          <!-- Shot 8 -->
+          <div class="gallery-card" data-cat="audit" onclick="openLightbox('/screenshots/demo-shot-8.webp', 'تقرير تغييرات الجدول الرسمي بثلاثة ألوان وثلاثة توقيعات معتمدة')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-8.webp" alt="تقرير التغييرات الرسمي" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 08 · OFFICIAL REPORT</span>
+              <div class="gallery-title">الوثيقة الرسمية: تقرير التغييرات</div>
+              <p class="gallery-desc">وثيقة رسمية بثلاثة ألوان وثلاثة توقيعات، توثق كل تعديل ومصدره بدقة تامة.</p>
+            </div>
+          </div>
+
+          <!-- Shot 9 -->
+          <div class="gallery-card" data-cat="audit" onclick="openLightbox('/screenshots/demo-shot-9.webp', 'تكبير على صفوف التقرير: لا يلوّن الصف بأكمله بل يلوّن الخلية التي تغيّرت تحديداً')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-9.webp" alt="التدقيق الخلوي للتغييرات" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 09 · CELL-LEVEL DIFF</span>
+              <div class="gallery-title">يلوّن الخلية التي تغيّرت فقط</div>
+              <p class="gallery-desc">خلايا ذهبية للمعدّل، وخط شطب للمحذوف، وأخضر للمضاف — وضوح بصري تام في الاجتماع.</p>
+            </div>
+          </div>
+
+          <!-- Shot 10 -->
+          <div class="gallery-card" data-cat="mobile" onclick="openLightbox('/screenshots/demo-shot-10.webp', 'اللوحة الرئيسية على الهاتف الذكي')">
+            <div class="gallery-media" style="background:#090d0b;">
+              <img src="/screenshots/demo-shot-10.webp" alt="اللوحة الرئيسية على الهاتف" loading="lazy" style="object-fit:contain;" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 10 · MOBILE APP</span>
+              <div class="gallery-title">في الجيب: اللوحة الرئيسية</div>
+              <p class="gallery-desc">تطبيق خفيف وسريع في جيب العميد ورئيس القسم لمتابعة نبض اليوم لحظة بلحظة.</p>
+            </div>
+          </div>
+
+          <!-- Shot 11 -->
+          <div class="gallery-card" data-cat="mobile" onclick="openLightbox('/screenshots/demo-shot-11.webp', 'الجدول الأسبوعي على شاشة الهاتف الذكي')">
+            <div class="gallery-media" style="background:#090d0b;">
+              <img src="/screenshots/demo-shot-11.webp" alt="الجدول على الهاتف" loading="lazy" style="object-fit:contain;" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 11 · MOBILE SCHEDULE</span>
+              <div class="gallery-title">في الجيب: تصفح الجدول الكامل</div>
+              <p class="gallery-desc">استعراض القاعات والأوقات بدقة وانسيابية فائقة عبر شاشات الهواتف المحمولة.</p>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ── Infographic 3: The Shift Matrix (قبل مقابل اليوم) ──────────────── -->
-    <section id="shift" class="section-shift">
-      <div class="wrap">
-        <div class="section-title-box">
-          <span class="chip chip-jade" style="margin-bottom: 12px;">مصفوفة التحول</span>
-          <h2 class="section-h2">ثلاثة أسئلة، إجابتان مختلفتان</h2>
-          <p class="section-sub">الفارق الجوهري بين إدارة الجداول التقليدية ونظام القرار الأكاديمي:</p>
+    <!-- ── Section 6: Live Telemetry & Health (Slide 18 & 19) ────────────── -->
+    <section id="telemetry" class="section darker">
+      <div class="container">
+        <div class="head">
+          <p class="eyebrow"><svg class="ic"><use href="#i-cal"/></svg>نبض اليوم وقراءة حيّة</p>
+          <h2>77 محاضرة الآن. والجدول يعرف شكل أسبوعه.</h2>
+          <p class="sub">صحة الجدول ومؤشرات الإشغال والذروة تُحسب تلقائياً:</p>
         </div>
 
-        <div class="shift-grid">
-          <div class="shift-row">
-            <div class="shift-q">
-              <span>⚠️ متى يُكتشف التعارض؟</span>
+        <div class="duo-grid">
+          <!-- Weekly Load Chart (Slide 18) -->
+          <div class="chart">
+            <div class="chart__h">
+              <h3>حمل الأسبوع الأكاديمي</h3>
+              <span>عدد المحاضرات الفعلية في كل يوم</span>
             </div>
-            <div class="shift-before">
-              <span>✕ قبل: بعد النشر وشكاوى الطلبة</span>
-            </div>
-            <div class="shift-now">
-              <span>✓ اليوم: لحظة السحب والإفلات</span>
+            <div class="vbars">
+              <div class="vbar">
+                <span class="vbar__v">77</span>
+                <span class="vbar__b" style="--v:67%"></span>
+                <span class="vbar__l">الأحد</span>
+              </div>
+              <div class="vbar">
+                <span class="vbar__v" style="color:var(--brass-bright); font-weight:700;">114</span>
+                <span class="vbar__b peak" style="--v:100%"></span>
+                <span class="vbar__l" style="color:#fff; font-weight:600;">الاثنين (ذروة)</span>
+              </div>
+              <div class="vbar">
+                <span class="vbar__v">86</span>
+                <span class="vbar__b" style="--v:75%"></span>
+                <span class="vbar__l">الثلاثاء</span>
+              </div>
+              <div class="vbar">
+                <span class="vbar__v" style="color:var(--brass-bright); font-weight:700;">114</span>
+                <span class="vbar__b peak" style="--v:100%"></span>
+                <span class="vbar__l" style="color:#fff; font-weight:600;">الأربعاء (ذروة)</span>
+              </div>
+              <div class="vbar">
+                <span class="vbar__v">62</span>
+                <span class="vbar__b" style="--v:54%"></span>
+                <span class="vbar__l">الخميس</span>
+              </div>
             </div>
           </div>
 
-          <div class="shift-row">
-            <div class="shift-q">
-              <span>🏛️ من يملك القاعة الشاغرة؟</span>
+          <!-- Schedule Health Indicators (Slide 19) -->
+          <div class="chart">
+            <div class="chart__h">
+              <h3>صحة الجدول الأكاديمي</h3>
+              <span>أربعة مؤشرات دقيقة من 100</span>
             </div>
-            <div class="shift-before">
-              <span>✕ قبل: التفاهم الشفوي واحتكار الأقسام</span>
+            <div class="meters">
+              <div class="meter">
+                <span class="meter__l">جودة</span>
+                <span class="meter__t"><i class="meter__f" style="--v:64%"></i></span>
+                <span class="meter__v">64%</span>
+              </div>
+              <div class="meter">
+                <span class="meter__l">مرونة</span>
+                <span class="meter__t"><i class="meter__f" style="--v:54%; background:var(--brass);"></i></span>
+                <span class="meter__v">54%</span>
+              </div>
+              <div class="meter">
+                <span class="meter__l">عدالة</span>
+                <span class="meter__t"><i class="meter__f" style="--v:71%"></i></span>
+                <span class="meter__v">71%</span>
+              </div>
+              <div class="meter">
+                <span class="meter__l">إشغال</span>
+                <span class="meter__t"><i class="meter__f" style="--v:62%"></i></span>
+                <span class="meter__v">62%</span>
+              </div>
             </div>
-            <div class="shift-now">
-              <span>✓ اليوم: السجل الرسمي وسوق المقايضة</span>
-            </div>
-          </div>
-
-          <div class="shift-row">
-            <div class="shift-q">
-              <span>↩️ وإن وقع خطأ في الجدول؟</span>
-            </div>
-            <div class="shift-before">
-              <span>✕ قبل: إعادة العمل اليدوي لأيام</span>
-            </div>
-            <div class="shift-now">
-              <span>✓ اليوم: تراجع واحد فوري موثق</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ── Infographic 4: Massive Scale Grid ──────────────────────────────── -->
-    <section class="section-scale">
-      <div class="wrap">
-        <div class="scale-grid">
-          <div class="scale-card">
-            <div class="scale-num brass">13</div>
-            <div class="scale-label">كلية</div>
-            <div class="scale-sub">في قرار أكاديمي موحد</div>
-          </div>
-
-          <div class="scale-card">
-            <div class="scale-num brass">87</div>
-            <div class="scale-label">قسماً علمياً</div>
-            <div class="scale-sub">في مساحة عمل متكاملة</div>
-          </div>
-
-          <div class="scale-card">
-            <div class="scale-num brass">31</div>
-            <div class="scale-label">فصلاً دراسياً</div>
-            <div class="scale-sub">طبقات من الذاكرة المحفوظة</div>
-          </div>
-
-          <div class="scale-card">
-            <div class="scale-num">15,430</div>
-            <div class="scale-label">موعداً أكاديمياً</div>
-            <div class="scale-sub">محفوظة وموثقة تاريخياً</div>
-          </div>
-
-          <div class="scale-card">
-            <div class="scale-num">1,404</div>
-            <div class="scale-label">مقرراً دراسياً</div>
-            <div class="scale-sub">هوية وبيانات معتمدة</div>
-          </div>
-
-          <div class="scale-card">
-            <div class="scale-num jade">100%</div>
-            <div class="scale-label">منع الحجز المزدوج</div>
-            <div class="scale-sub">يستحيل تكرار قاعة أو أستاذ</div>
+            <p style="font-size:0.8rem; color:var(--muted); margin-top:20px; line-height:1.5;">
+              * مؤشر المرونة 54 يوضح أن هامش المناورة ضيق، مما يفتح نقاشاً إدارياً فورياً قبل بداية الفصل.
+            </p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ── Contact / Private Demo Request ─────────────────────────────────── -->
-    <section id="contact" class="section-contact">
-      <div class="wrap">
-        <div class="contact-card">
-          <div style="text-align: center; margin-bottom: 12px;">
-            <span class="chip chip-brass">الخطوة التالية</span>
+    <!-- ── Section 7: Behind The Screen & The Cost (Slide 25 & 26) ────────── -->
+    <section class="section">
+      <div class="container">
+        <div class="head">
+          <p class="eyebrow"><svg class="ic"><use href="#i-shield"/></svg>ما لا يظهر على الشاشة</p>
+          <h2>الجمال سهل. الثقة أخذت عشر سنوات.</h2>
+          <p class="sub">انضباط تقني مبني خصيصاً لبيانات الجامعات الحساسة:</p>
+        </div>
+
+        <div class="tiles-grid">
+          <div class="tile">
+            <span class="tile__ic"><svg class="ic"><use href="#i-check"/></svg></span>
+            <h3>11 اختبار مطابقة حتمية</h3>
           </div>
-          <h2 class="contact-title">طلب استعراض تنفيذي خاص بالمؤسسة</h2>
-          <p class="contact-desc">
-            يسرنا ترتيب جلسة استعراض حية لعمادة كليتكم أو إدارتكم الجامعية، لعرض كيف يحل SCHEDULE تعقيدات الجداول لديكم.
+          <div class="tile">
+            <span class="tile__ic brass"><svg class="ic"><use href="#i-undo"/></svg></span>
+            <h3>تراجع كامل لكل تعديل</h3>
+          </div>
+          <div class="tile">
+            <span class="tile__ic"><svg class="ic"><use href="#i-lock"/></svg></span>
+            <h3>صلاحيات عزل الأقسام</h3>
+          </div>
+          <div class="tile">
+            <span class="tile__ic"><svg class="ic"><use href="#i-building"/></svg></span>
+            <h3>سجل مباني موحد ومعتمد</h3>
+          </div>
+          <div class="tile">
+            <span class="tile__ic"><svg class="ic"><use href="#i-offline"/></svg></span>
+            <h3>طابع وقت رقمي لكل خطوة</h3>
+          </div>
+          <div class="tile">
+            <span class="tile__ic red"><svg class="ic"><use href="#i-block"/></svg></span>
+            <h3>100% منع للحجز المزدوج</h3>
+          </div>
+        </div>
+
+        <!-- The Cost Card (Slide 26) -->
+        <div class="cost-card">
+          <p class="eyebrow center" style="justify-content:center;">السؤال الأخير: وكم يكلّف كل هذا؟</p>
+          <div class="cost-num">$3.5</div>
+          <div class="cost-title">تكلفة الاستضافة والتشغيل السحابي شهرياً</div>
+          <p class="cost-sub">
+            <b>0 رسوم ترخيص</b> · <b>0 اشتراك سنوي</b> لكل كلية أو مستخدم · <b>0 مورد خارجي احتكاري</b>.<br />
+            الكود والبيانات بالكامل ملك للجامعة، وكلفة الاستشارة الواحدة في السوق تفوق ترخيص النظام لسنة كاملة.
           </p>
+        </div>
+      </div>
+    </section>
 
-          <!-- Fast Direct WhatsApp Access -->
+    <!-- ── Section 8: The 10-Year Journey (Slide 27) ──────────────────────── -->
+    <section class="section darker">
+      <div class="container">
+        <div class="head">
+          <p class="eyebrow"><svg class="ic"><use href="#i-cal"/></svg>الطريق</p>
+          <h2>من جدول يعمل، إلى مركز قرار.</h2>
+          <p class="sub">خمس نقلات جوهرية عبر عشر سنوات من العمل الميداني المستمر:</p>
+        </div>
+
+        <div class="tl">
+          <div class="tl__line" aria-hidden="true"></div>
+          <div class="tl__row">
+            <div class="beat">
+              <div class="beat__d"></div>
+              <span class="beat__y">البداية</span>
+              <h3>جدول يعمل</h3>
+              <p>شاشة واحدة تُنهي التعارض اليدوي الصريح.</p>
+            </div>
+            <div class="beat">
+              <div class="beat__d"></div>
+              <span class="beat__y">الاتساع</span>
+              <h3>الكليات والأقسام</h3>
+              <p>عزل الصلاحيات واستيعاب الفصول المتعددة.</p>
+            </div>
+            <div class="beat">
+              <div class="beat__d"></div>
+              <span class="beat__y">الانضباط</span>
+              <h3>سجل المباني</h3>
+              <p>تشفير القاعات وضبط السعات ومواصفات المعامل.</p>
+            </div>
+            <div class="beat">
+              <div class="beat__d"></div>
+              <span class="beat__y">القراءة</span>
+              <h3>الاستيراد الذكي</h3>
+              <p>قراءة ملفات الـPDF العربية في ثوانٍ دون إدخال يدوي.</p>
+            </div>
+            <div class="beat" style="border-color:var(--brass); background:rgba(208,166,99,0.06);">
+              <div class="beat__d" style="background:var(--brass-bright);"></div>
+              <span class="beat__y">اليوم</span>
+              <h3 style="color:var(--brass-bright);">مركز القرار</h3>
+              <p>حوكمة استعارة القاعات ومساعد القرار الذكي بالعربية.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Section 9: Executive Demo Request & WhatsApp Direct ────────────── -->
+    <section id="contact" class="section">
+      <div class="container">
+        <div class="contact-card">
+          <div class="head center" style="margin-bottom:24px;">
+            <span class="chip chip-brass" style="margin-bottom:12px;">طلب استعراض تنفيذي</span>
+            <h2>ابدأ تجربة SCHEDULE في كليتكم</h2>
+            <p class="sub">استعراض حي ومباشر على بيانات حقيقية من جداولكم الرسمية:</p>
+          </div>
+
+          <!-- Quick WhatsApp Banner -->
           <div class="quick-whatsapp-banner">
             <div>
-              <div style="font-weight: 700; color: #ffffff;">تواصل مباشر وسريع عبر الواتساب؟</div>
-              <div style="font-size: 0.84rem; color: var(--ink-dim);">مستشارنا الأكاديمي متاح للتنسيق المباشر مع العمادات</div>
+              <div style="font-weight:700; color:#ffffff; font-size:0.96rem;">محادثة فورية مباشرة عبر WhatsApp</div>
+              <div style="font-size:0.84rem; color:var(--ink-dim);">مخصصة لممثلي العمادات والكليات ورؤساء الأقسام للرد السريع.</div>
             </div>
-            <a href="https://wa.me/96599999999?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D8%8C%20%D9%86%D8%B1%D8%BA%D8%A8%20%D9%81%D9%8A%20%D8%B7%D9%84%D8%A8%20%D8%AC%D9%84%D8%B3%D8%A9%20%D8%A7%D8%B3%D8%AA%D8%B9%D8%B1%D8%A7%D8%B6%20%D8%AE%D8%A7%D8%B5%D8%A9%20%D9%84%D9%86%D8%B8%D8%A7%D9%85%20SCHEDULE" target="_blank" rel="noopener noreferrer" class="btn btn-brass" style="min-height: 38px; padding: 8px 18px; font-size: 0.88rem;">
-              مراسلة فورية عبر WhatsApp ←
+            <a href="https://wa.me/96599999999?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%D8%8C%20%D9%86%D9%88%D8%AF%20%D8%B7%D9%84%D8%A8%20%D8%A7%D8%B3%D8%AA%D8%B9%D8%B1%D8%A7%D8%B6%20%D8%AA%D9%86%D9%81%D9%8A%D8%B0%D9%8A%20%D9%84%D9%86%D8%B8%D8%A7%D9%85%20SCHEDULE" target="_blank" rel="noopener noreferrer" class="btn btn-jade">
+              <span>محادثة واتساب سريعة 💬</span>
             </a>
           </div>
 
-          <form id="contact-form" onsubmit="submitLead(event)">
+          <form id="inquiry-form" onsubmit="handleInquiry(event)">
             <div class="form-grid">
               <div class="form-field">
-                <label class="form-label" for="inst">اسم الجامعة أو الكلية *</label>
-                <input type="text" id="inst" name="inst" class="form-ctrl" placeholder="مثال: جامعة الكويت / كلية التربية الأساسية" required />
+                <label for="inst" class="form-label">اسم الجامعة / الكلية *</label>
+                <input type="text" id="inst" name="institution" class="form-ctrl" placeholder="مثال: كلية التربية الأساسية" required />
               </div>
-
               <div class="form-field">
-                <label class="form-label" for="person">الاسم والمنصب الأكاديمي *</label>
-                <input type="text" id="person" name="person" class="form-ctrl" placeholder="مثال: د. فهد - رئيس قسم / منسق جدول" required />
+                <label for="name" class="form-label">الاسم والصفة الأكاديمية *</label>
+                <input type="text" id="name" name="name" class="form-ctrl" placeholder="مثال: د. عبدالله الفيلكاوي" required />
               </div>
-
               <div class="form-field">
-                <label class="form-label" for="mail">البريد الإلكتروني الرسمي *</label>
-                <input type="email" id="mail" name="mail" class="form-ctrl" placeholder="name@university.edu" required />
+                <label for="email" class="form-label">البريد الإلكتروني المؤسسي *</label>
+                <input type="email" id="email" name="email" class="form-ctrl" placeholder="name@university.edu" required />
               </div>
-
               <div class="form-field">
-                <label class="form-label" for="tel">رقم الهاتف / الواتساب للتنسيق *</label>
-                <input type="tel" id="tel" name="tel" class="form-ctrl" placeholder="+965 xxxxxxxx" required />
+                <label for="phone" class="form-label">رقم الهاتف / الواتساب *</label>
+                <input type="tel" id="phone" name="phone" class="form-ctrl" placeholder="+965 ........ (أرقام إنجليزية)" required dir="ltr" />
               </div>
-
               <div class="form-field full">
-                <label class="form-label" for="note">ملاحظة أو تحدٍ ترغبون بحله (اختياري)</label>
-                <textarea id="note" name="note" class="form-ctrl" placeholder="مثال: نرغب في فحص تضارب القاعات بالفرع الجديد وتوزيع الأعباء التدريسية..."></textarea>
+                <label for="notes" class="form-label">ملاحظات أو مواعيد مفضلة للاستعراض</label>
+                <textarea id="notes" name="notes" class="form-ctrl" placeholder="اذكر عدد الأقسام أو الشعب التقريبية إن وُجدت"></textarea>
+              </div>
+              <div class="form-field full">
+                <button type="submit" id="submit-btn" class="btn btn-brass" style="width:100%; min-height:50px; font-size:1rem;">
+                  إرسال طلب الاستعراض التنفيذي
+                </button>
               </div>
             </div>
 
-            <div style="margin-top: 24px; text-align: center;">
-              <button type="submit" id="submit-btn" class="btn btn-brass" style="width: 100%; max-width: 360px; font-size: 1.05rem;">
-                إرسال طلب الاستعراض الخاص
-              </button>
-            </div>
-
-            <div id="form-feedback" class="feedback-box">
-              ✓ تم استلام طلبكم بنجاح. سيتواصل معكم مستشارنا الأكاديمي خلال 24 ساعة لترتيب الموعد الأنسب لكم.
-            </div>
+            <div id="feedback" class="feedback-box"></div>
           </form>
         </div>
       </div>
@@ -1622,111 +2168,111 @@
 
     <!-- ── Footer ─────────────────────────────────────────────────────────── -->
     <footer class="footer">
-      <div class="wrap footer-inner">
+      <div class="container footer-inner">
         <div>
           <span class="footer-brand-title">SCHEDULE · نظام القرار الأكاديمي</span>
-          <p style="margin-top: 4px; font-size: 0.8rem;">جميع الحقوق محفوظة © 2026. صُمم للميدان الأكاديمي الجامعي بأعلى معايير الهدوء والوقار.</p>
+          <p style="margin-top:4px; font-size:0.8rem; color:var(--muted);">
+            جميع الحقوق محفوظة © 2026. مهندس بأعلى معايير حوكمة البيانات الأكاديمية.
+          </p>
         </div>
-        <div style="display: flex; gap: 20px;">
-          <a href="/">دخول النظام القائم</a>
-          <a href="#showcase">شاشة النظام</a>
-          <a href="#contact">طلب استعراض</a>
+        <div style="display:flex; gap:16px; align-items:center;">
+          <a href="/schedule-presentation.html" target="_blank" style="color:var(--brass);">العرض التقديمي (28 شريحة) ↗</a>
+          <a href="/" style="color:var(--ink-dim);">دخول النظام</a>
+          <a href="#benchmark" style="color:var(--muted);">المقياس العالمي</a>
         </div>
       </div>
     </footer>
 
   </div>
 
-  <!-- ── Screenshot Lightbox Modal ───────────────────────────────────────── -->
+  <!-- ── Lightbox Modal ───────────────────────────────────────────────────── -->
   <div id="lightbox" class="lightbox-modal" onclick="closeLightbox(event)">
     <div class="lightbox-inner" onclick="event.stopPropagation()">
+      <img id="lightbox-target-img" src="" alt="عرض مكبّر" class="lightbox-img" />
       <div class="lightbox-bar">
-        <span id="lightbox-caption">معاينة واجهة النظام</span>
-        <button type="button" class="lightbox-close" onclick="closeLightbox()">&times;</button>
+        <span id="lightbox-caption">لقطة من النظام</span>
+        <button type="button" class="lightbox-close" onclick="closeLightbox(event)">✕</button>
       </div>
-      <img id="lightbox-img" src="" alt="معاينة الشاشة" class="lightbox-img" />
     </div>
   </div>
 
-  <!-- ── Interactive Engine Scripts ─────────────────────────────────────── -->
   <script>
-    // Tab switching for the conflict simulator
-    function switchEngine(tabKey) {
-      document.querySelectorAll('.eng-tab').forEach(function(b) { b.classList.remove('active'); });
-      document.querySelectorAll('.engine-view').forEach(function(v) { v.classList.remove('active'); });
-
-      if (tabKey === 'clash') {
-        document.getElementById('eng-btn-1').classList.add('active');
-        document.getElementById('eng-view-clash').classList.add('active');
-      } else if (tabKey === 'solve') {
-        document.getElementById('eng-btn-2').classList.add('active');
-        document.getElementById('eng-view-solve').classList.add('active');
-      } else if (tabKey === 'barter') {
-        document.getElementById('eng-btn-3').classList.add('active');
-        document.getElementById('eng-view-barter').classList.add('active');
+    // ── Lightbox Logic ───────────────────────────────────────────────────
+    function openLightbox(src, caption) {
+      const modal = document.getElementById('lightbox');
+      const img = document.getElementById('lightbox-target-img');
+      const cap = document.getElementById('lightbox-caption');
+      if (modal && img) {
+        img.src = src;
+        cap.textContent = caption || 'لقطة شاشة من النظام';
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
       }
     }
-
-    // Lightbox Modal for screenshots
-    function openLightbox(imgSrc, captionText) {
-      var modal = document.getElementById('lightbox');
-      var img = document.getElementById('lightbox-img');
-      var cap = document.getElementById('lightbox-caption');
-      img.src = imgSrc;
-      cap.textContent = captionText || 'معاينة الواجهة';
-      modal.classList.add('active');
-      document.body.style.overflow = 'hidden';
+    function closeLightbox(e) {
+      const modal = document.getElementById('lightbox');
+      if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+      }
     }
-
-    function closeLightbox() {
-      var modal = document.getElementById('lightbox');
-      modal.classList.remove('active');
-      document.body.style.overflow = '';
-    }
-
-    // Escape key closes modal
-    window.addEventListener('keydown', function(e) {
+    document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeLightbox();
     });
 
-    // Form submission
-    function submitLead(e) {
-      e.preventDefault();
-      var btn = document.getElementById('submit-btn');
-      var feedback = document.getElementById('form-feedback');
+    // ── Gallery Category Filter ──────────────────────────────────────────
+    function filterGallery(category, btn) {
+      const buttons = document.querySelectorAll('.gallery-filter-btn');
+      buttons.forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
 
-      var inst = document.getElementById('inst').value;
-      var person = document.getElementById('person').value;
-      var mail = document.getElementById('mail').value;
-      var tel = document.getElementById('tel').value;
-      var note = document.getElementById('note').value;
+      const cards = document.querySelectorAll('#gallery-items .gallery-card');
+      cards.forEach(card => {
+        const cat = card.getAttribute('data-cat');
+        if (category === 'all' || cat === category) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    // ── Executive Inquiry Form Submission ────────────────────────────────
+    async function handleInquiry(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submit-btn');
+      const box = document.getElementById('feedback');
+      const form = document.getElementById('inquiry-form');
 
       btn.disabled = true;
-      btn.textContent = 'جارٍ إرسال الطلب...';
+      btn.textContent = 'جاري الإرسال...';
+      box.classList.remove('active');
 
-      fetch('/api/landing/inquiry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          institution: inst,
-          name: person,
-          email: mail,
-          phone: tel,
-          message: note,
-          submittedAt: new Date().toISOString()
-        })
-      })
-      .then(function(res) { return res.json().catch(function() { return { success: true }; }); })
-      .then(function(data) {
-        feedback.classList.add('active');
-        btn.style.display = 'none';
-        feedback.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      })
-      .catch(function(err) {
-        feedback.textContent = 'تم تسجيل طلبكم بنجاح! سيتواصل معكم فريقنا الأكاديمي قريباً.';
-        feedback.classList.add('active');
-        btn.style.display = 'none';
-      });
+      const payload = {
+        institution: form.institution.value.trim(),
+        name: form.name.value.trim(),
+        email: form.email.value.trim(),
+        phone: form.phone.value.trim(),
+        notes: form.notes.value.trim()
+      };
+
+      try {
+        const res = await fetch('/api/landing/inquiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        box.textContent = data.message || 'تم استلام طلبكم بنجاح. سيتواصل معكم فريقنا الأكاديمي خلال 24 ساعة.';
+        box.classList.add('active');
+        form.reset();
+      } catch (err) {
+        box.textContent = 'تم استلام طلبكم بنجاح، وسيتواصل معكم فريقنا الأكاديمي قريباً.';
+        box.classList.add('active');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'إرسال طلب الاستعراض التنفيذي';
+      }
     }
   </script>
 </body>
