@@ -81,7 +81,7 @@ const app = express();
  * gone). Trusting one hop restores the real client IP as the limiter key.
  */
 app.set("trust proxy", 1);
-const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
+const PORT = 3000;
 
 
 // User-facing reference lists follow one ordering contract everywhere: Arabic
@@ -333,7 +333,9 @@ process.on("uncaughtException", (error) => {
 app.disable("x-powered-by");
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("X-Frame-Options", "DENY");
+  if (!process.env.APPLET_ID) {
+    res.setHeader("X-Frame-Options", "DENY");
+  }
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   /**
@@ -358,10 +360,10 @@ app.use((req, res, next) => {
    * What is set here is the subset that restricts nothing the application does
    * and still closes real classes of attack: no plugins, no injected <base> to
    * re-point every relative URL, no form posting to a foreign origin, and no
-   * framing (the modern spelling of the X-Frame-Options above, which browsers
-   * that support both prefer).
+   * framing outside AI Studio preview iframe.
    */
-  res.setHeader("Content-Security-Policy", "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  const cspFrameAncestors = process.env.APPLET_ID ? "" : "; frame-ancestors 'none'";
+  res.setHeader("Content-Security-Policy", `object-src 'none'; base-uri 'self'; form-action 'self'${cspFrameAncestors}`);
   next();
 });
 // Every text response leaves the building gzipped. The largest payloads here —
@@ -9987,7 +9989,7 @@ function publicPageNonce(res: Response): string {
        never navigates, but if that script ever fails the browser falls back to a
        native submit — which should reach this application, not be dropped. */
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    ...(process.env.APPLET_ID ? [] : ["frame-ancestors 'none'"]),
   ].join("; "));
   return nonce;
 }
