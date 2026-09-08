@@ -532,7 +532,7 @@
       overflow: hidden;
     }
     @media (min-width: 600px) {
-      .dials { grid-template-columns: repeat(3, 1fr); }
+      .dials { grid-template-columns: repeat(2, 1fr); }
     }
     .dial {
       background: var(--surface);
@@ -542,6 +542,10 @@
       align-items: center;
       text-align: center;
       gap: 14px;
+      transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+    .dial:hover {
+      transform: translateY(-2px);
     }
     .dial__ring {
       width: 92px;
@@ -552,6 +556,17 @@
       width: 100%;
       height: 100%;
       transform: rotate(-90deg);
+      transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .dials.animated .dial .dial__ring svg {
+      animation: spinDialEntry 1.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .dial:hover .dial__ring svg {
+      transform: rotate(270deg) scale(1.06);
+    }
+    @keyframes spinDialEntry {
+      0% { transform: rotate(-450deg) scale(0.85); }
+      100% { transform: rotate(-90deg) scale(1); }
     }
     .dial__trk {
       fill: none;
@@ -565,6 +580,7 @@
       stroke-linecap: round;
       stroke-dasharray: 1000;
       stroke-dashoffset: var(--off, 200);
+      transition: stroke-dashoffset 1.4s ease;
     }
     .dial__c {
       font-size: 0.8rem;
@@ -604,6 +620,14 @@
       width: 100%;
       height: 100%;
       transform: rotate(-90deg);
+      transition: transform 0.8s ease;
+    }
+    .ours.animated .big-dial svg {
+      animation: spinBigDial 1.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes spinBigDial {
+      0% { transform: rotate(-450deg) scale(0.9); }
+      100% { transform: rotate(-90deg) scale(1); }
     }
     .bd__trk {
       fill: none;
@@ -951,14 +975,29 @@
       font-family: var(--font-mono);
       font-size: 0.84rem;
       color: var(--ink-dim);
+      transition: color 0.3s ease, transform 0.3s ease;
     }
     .vbar__b {
       width: 100%;
       max-width: 42px;
-      height: var(--v, 50%);
+      height: 0%;
       background: var(--line-strong);
       border-radius: 6px 6px 0 0;
-      transition: height 0.6s ease;
+      transition: height 1.1s cubic-bezier(0.34, 1.4, 0.64, 1), box-shadow 0.3s ease, transform 0.3s ease;
+    }
+    .vbars.animated .vbar__b {
+      height: var(--v, 50%);
+    }
+    .vbars.animated .vbar:nth-child(1) .vbar__b { transition-delay: 0.08s; }
+    .vbars.animated .vbar:nth-child(2) .vbar__b { transition-delay: 0.18s; }
+    .vbars.animated .vbar:nth-child(3) .vbar__b { transition-delay: 0.28s; }
+    .vbars.animated .vbar:nth-child(4) .vbar__b { transition-delay: 0.38s; }
+    .vbars.animated .vbar:nth-child(5) .vbar__b { transition-delay: 0.48s; }
+
+    .vbar:hover .vbar__b {
+      transform: scaleY(1.06);
+      transform-origin: bottom;
+      filter: brightness(1.2);
     }
     .vbar__b.peak {
       background: linear-gradient(to top, var(--brass), var(--brass-bright));
@@ -981,6 +1020,10 @@
       grid-template-columns: 64px 1fr 48px;
       align-items: center;
       gap: 14px;
+      transition: transform 0.25s ease;
+    }
+    .meter:hover {
+      transform: translateX(-4px);
     }
     .meter__l {
       font-size: 0.92rem;
@@ -993,15 +1036,27 @@
       border-radius: 999px;
       overflow: hidden;
       display: block;
+      transition: box-shadow 0.3s ease;
+    }
+    .meter:hover .meter__t {
+      box-shadow: 0 0 12px rgba(46, 169, 140, 0.45);
     }
     .meter__f {
       height: 100%;
       display: block;
       background: var(--jade);
       border-radius: 999px;
-      width: var(--v, 60%);
+      width: 0%;
       box-shadow: 0 0 10px rgba(95, 191, 166, 0.4);
+      transition: width 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
+    .meters.animated .meter__f {
+      width: var(--v, 60%);
+    }
+    .meters.animated .meter:nth-child(1) .meter__f { transition-delay: 0.1s; }
+    .meters.animated .meter:nth-child(2) .meter__f { transition-delay: 0.22s; }
+    .meters.animated .meter:nth-child(3) .meter__f { transition-delay: 0.34s; }
+    .meters.animated .meter:nth-child(4) .meter__f { transition-delay: 0.46s; }
     .meter__v {
       font-family: var(--font-mono);
       font-size: 0.94rem;
@@ -1410,6 +1465,7 @@
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol>
     <symbol id="i-publish" viewBox="0 0 24 24"><path d="M5 4v2h14V4H5zm0 10h4v6h6v-6h4l-7-7-7 7z"/></symbol>
     <symbol id="i-offline" viewBox="0 0 24 24"><path d="M23 12a11 11 0 1 1-22 0 11 11 0 0 1 22 0zm-2 0a9 9 0 1 0-18 0 9 9 0 0 0 18 0zm-5 0a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z"/></symbol>
   </defs></svg>
 
   <div class="app-wrap">
@@ -1498,26 +1554,26 @@
                 <span class="frame-dot yellow"></span>
                 <span class="frame-dot green"></span>
               </div>
-              <div class="frame-url">schedule.dr-alfailakawi.com/fschedule/index</div>
+              <div class="frame-url" style="display:none;"></div>
               <div style="display:flex; gap:6px; align-items:center;">
-                <button type="button" id="btn-view-screen" class="chip chip-brass" style="cursor:pointer; border:none; padding:3px 10px; font-size:0.75rem;" onclick="toggleHeroView('screen')">📸 لقطة واقعية موثقة</button>
-                <button type="button" id="btn-view-live" class="chip chip-jade" style="cursor:pointer; border:none; opacity:0.7; padding:3px 10px; font-size:0.75rem;" onclick="toggleHeroView('live')">⚡ لوحة تفاعلية حية</button>
+                <button type="button" id="btn-view-live" class="chip chip-jade" style="cursor:pointer; border:none; padding:3px 12px; font-size:0.75rem;" onclick="toggleHeroView('live')">⚡ لوحة تفاعلية حية (خط واضح 100%)</button>
+                <button type="button" id="btn-view-screen" class="chip chip-brass" style="cursor:pointer; border:none; opacity:0.7; padding:3px 12px; font-size:0.75rem;" onclick="toggleHeroView('screen')">📸 رسم موثق (SVG)</button>
               </div>
             </div>
 
-            <!-- Authentic Screenshot Mode -->
-            <div id="hero-img-mode" class="frame-img-wrap" onclick="openLightbox('/screenshots/real-live-dashboard.webp', 'لوحة المتابعة التنفيذية وصحة الجدول المباشرة — كلية التربية الأساسية (بنات)')">
-              <img src="/screenshots/real-live-dashboard.webp" onerror="this.src='/screenshots/cover-wide.png'" alt="واجهة نظام SCHEDULE الحقيقية" class="frame-img" loading="eager" />
+            <!-- Authentic Screenshot / Vector Mode -->
+            <div id="hero-img-mode" class="frame-img-wrap" style="display:none;" onclick="openLightbox('/screenshots/real-live-dashboard.svg', 'لوحة المتابعة التنفيذية وصحة الجدول المباشرة — كلية التربية الأساسية')">
+              <img src="/screenshots/real-live-dashboard.svg" onerror="this.src='/screenshots/cover-wide.png'" alt="واجهة نظام SCHEDULE الحقيقية" class="frame-img" loading="eager" />
               <div class="frame-caption-overlay">
                 <span class="frame-caption-text">
-                  <span>📸 لقطة واقعية معتمدة من مساحة العمل الأكاديمية الفعلية (اضغط للتكبير الكامل)</span>
+                  <span>📸 رسم تفصيلي معتمد للوحة المتابعة والقرار الأكاديمي (اضغط للتكبير)</span>
                 </span>
-                <span class="chip chip-brass" style="font-size: 0.76rem;">دقة فائقة 100%</span>
+                <span class="chip chip-brass" style="font-size: 0.76rem;">دقة عالية</span>
               </div>
             </div>
 
-            <!-- Interactive Live Dashboard Mode (Simulated Real DOM Engine) -->
-            <div id="hero-live-mode" style="display:none; padding:clamp(16px,2.4vw,28px); background:#0c1310; color:#fff;">
+            <!-- Interactive Live Dashboard Mode (Simulated Real DOM Engine - 100% Crisp Fonts) -->
+            <div id="hero-live-mode" style="display:block; padding:clamp(16px,2.4vw,28px); background:#0c1310; color:#fff;">
               <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:14px; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
                 <div>
                   <div style="font-size:1.15rem; font-weight:700; color:#fff;">لوحة المتابعة المباشرة · الفصل الحالي</div>
@@ -1619,20 +1675,6 @@
               <div class="dial__ring">
                 <svg viewBox="0 0 100 100" aria-hidden="true">
                   <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
-                  <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:170"></circle>
-                </svg>
-              </div>
-              <div class="dial__txt">
-                <span class="dial__c">الكويت · AOU</span>
-                <span class="dial__t">4–6 أسابيع</span>
-                <span class="dial__s">دراسة iJET المحكّمة ↗</span>
-              </div>
-            </div>
-
-            <div class="dial" onclick="selectDial(1, this)">
-              <div class="dial__ring">
-                <svg viewBox="0 0 100 100" aria-hidden="true">
-                  <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
                   <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:330"></circle>
                 </svg>
               </div>
@@ -1643,7 +1685,7 @@
               </div>
             </div>
 
-            <div class="dial" onclick="selectDial(2, this)">
+            <div class="dial" onclick="selectDial(1, this)">
               <div class="dial__ring">
                 <svg viewBox="0 0 100 100" aria-hidden="true">
                   <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
@@ -1661,13 +1703,13 @@
           <!-- Dynamic Study Comparison Drawer -->
           <div id="dial-detail-drawer" style="margin-top:14px; background:#121b16; border:1px solid rgba(46,169,140,0.3); border-radius:12px; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div>
-              <span id="dial-study-title" style="font-weight:700; color:#fff; font-size:0.95rem;">دراسة iJET (الجامعة العربية المفتوحة - الكويت)</span>
+              <span id="dial-study-title" style="font-weight:700; color:#fff; font-size:0.95rem;">دراسة MPCB الأكاديمية (ماليزيا)</span>
               <p id="dial-study-desc" style="margin:4px 0 0; font-size:0.84rem; color:var(--ink-dim);">
-                تستغرق لجان الجداول 4 إلى 6 أسابيع من الاجتماعات اليدوية لمطابقة القاعات وتجنب تعارضات الطلبة.
+                تتطلب عملية بناء الجدول الدراسي قرابة 4 أسابيع كاملة من المراجعات اليدوية المستمرة والتدقيق الورقي.
               </p>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-              <span class="chip chip-brass" id="dial-speedup-badge" style="font-size:0.78rem;">SCHEDULE أسرع بـ 1,800 ضعف</span>
+              <span class="chip chip-brass" id="dial-speedup-badge" style="font-size:0.78rem;">SCHEDULE أسرع بـ 1,200 ضعف</span>
             </div>
           </div>
 
@@ -1935,28 +1977,28 @@
               <tr class="audit-row" data-color="white" style="border-bottom:1px solid rgba(255,255,255,0.04); transition:all 0.2s ease;">
                 <td style="padding:10px 8px; color:#fff; font-weight:600;">تجويد القرآن (1)</td>
                 <td style="padding:10px 8px; font-family:var(--font-mono);">01</td>
-                <td style="padding:10px 8px;">د. عبدالله الفيلكاوي</td>
+                <td style="padding:10px 8px;">د. أحمد</td>
                 <td style="padding:10px 8px;">09-102 · ح ث 09:00</td>
                 <td style="padding:10px 8px;"><span class="chip" style="background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.3); font-size:0.72rem;">أبيض: مطابق للسجل</span></td>
               </tr>
               <tr class="audit-row" data-color="green" style="border-bottom:1px solid rgba(255,255,255,0.04); transition:all 0.2s ease;">
                 <td style="padding:10px 8px; color:#fff; font-weight:600;">العقيدة الإسلامية</td>
                 <td style="padding:10px 8px; font-family:var(--font-mono);">02</td>
-                <td style="padding:10px 8px;">عضو هيئة تدريس معتمد</td>
+                <td style="padding:10px 8px;">د. احمد محمد</td>
                 <td style="padding:10px 8px;">09-104 · ن ر 11:00</td>
                 <td style="padding:10px 8px;"><span class="chip chip-jade" style="font-size:0.72rem;">أخضر: مستنتج ومثبت</span></td>
               </tr>
               <tr class="audit-row" data-color="gold" style="border-bottom:1px solid rgba(255,255,255,0.04); transition:all 0.2s ease;">
                 <td style="padding:10px 8px; color:#fff; font-weight:600;">الفقه المقارن</td>
                 <td style="padding:10px 8px; font-family:var(--font-mono);">03</td>
-                <td style="padding:10px 8px;">د. أستاذ منتدب</td>
+                <td style="padding:10px 8px;">د. احمد محمد</td>
                 <td style="padding:10px 8px;">08-110 · ح ث 13:00</td>
                 <td style="padding:10px 8px;"><span class="chip chip-brass" style="font-size:0.72rem;">ذهبي: يتطلب تأكيد الاعتماد</span></td>
               </tr>
               <tr class="audit-row" data-color="red" style="transition:all 0.2s ease;">
                 <td style="padding:10px 8px; color:#fff; font-weight:600;">علوم الحديث وتطبيقاته</td>
                 <td style="padding:10px 8px; font-family:var(--font-mono);">04</td>
-                <td style="padding:10px 8px; color:var(--red-text);">غير محدد (ناقص)</td>
+                <td style="padding:10px 8px; color:var(--red-text);">د. احمد محمد</td>
                 <td style="padding:10px 8px;">قيد التوزيع</td>
                 <td style="padding:10px 8px;"><span class="chip chip-danger" style="font-size:0.72rem;">أحمر: ناقص يمنع الحفظ</span></td>
               </tr>
@@ -2316,29 +2358,30 @@
       <div class="container">
         <div class="contact-card">
           <div class="head center" style="margin-bottom:24px;">
-            <span class="chip chip-brass" style="margin-bottom:12px;">طلب استعراض تنفيذي عبر البريد الأكاديمي</span>
-            <h2>تواصل مباشر مع المطوّر الأكاديمي</h2>
-            <p class="sub">مخصص لعمادات الكليات، لجان الجداول الدراسية، ورؤساء الأقسام العلمية:</p>
+            <span class="chip chip-brass" style="margin-bottom:12px;">طلب استعراض تنفيذي</span>
+            <h2>تواصل مباشر مع المطورين</h2>
+            <p class="sub">د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي — كلية التربية الأساسية</p>
           </div>
 
-          <!-- Official Direct Academic Email Box -->
+          <!-- Official Direct Academic Contact Box -->
           <div style="background:#131d17; border:1px solid rgba(46,169,140,0.35); border-radius:14px; padding:20px; margin-bottom:28px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
             <div>
-              <div style="font-size:0.8rem; color:var(--jade-strong); font-weight:600; margin-bottom:4px;">البريد الأكاديمي المعتمد والمباشر:</div>
-              <a href="mailto:Ah.Alfailakawi@paaet.edu.kw" id="official-email-link" style="font-size:clamp(1.15rem, 2.2vw, 1.45rem); font-weight:700; color:#ffffff; font-family:var(--font-mono); text-decoration:none; display:inline-block; direction:ltr;">
-                Ah.Alfailakawi@paaet.edu.kw
-              </a>
+              <div style="font-size:0.82rem; color:var(--jade-strong); font-weight:600; margin-bottom:4px;">إعداد وتطوير:</div>
+              <div style="font-size:clamp(1.05rem, 2vw, 1.3rem); font-weight:700; color:#ffffff;">
+                د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي
+              </div>
               <div style="font-size:0.84rem; color:var(--ink-dim); margin-top:4px;">
-                د. عبدالله الفيلكاوي · الهيئة العامة للتعليم التطبيقي والتدريب (PAAET) · كلية التربية الأساسية
+                الهيئة العامة للتعليم التطبيقي والتدريب · كلية التربية الأساسية
               </div>
             </div>
-            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-              <button type="button" class="btn btn-glass" onclick="copyOfficialEmail(this)" style="font-size:0.88rem; padding:10px 18px;">
-                <span id="copy-btn-text">📋 نسخ البريد</span>
-              </button>
-              <a href="mailto:Ah.Alfailakawi@paaet.edu.kw?subject=%D8%B7%D9%84%D8%A8%20%D8%A7%D8%B3%D8%AA%D8%B9%D8%B1%D8%A7%D8%B6%20%D8%AA%D9%86%D9%81%D9%8A%D8%B0%D9%8A%20%D9%84%D9%86%D8%B8%D8%A7%D9%85%20SCHEDULE&body=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%20%D9%88%D8%B1%D8%AD%D9%85%D8%A9%20%D8%A7%D9%84%D9%84%D9%87%D8%8C%0A%0A%D9%86%D9%88%D8%AF%20%D8%B7%D9%84%D8%A8%20%D8%A7%D8%B3%D8%AA%D8%B9%D8%B1%D8%A7%D8%B6%20%D8%AA%D9%86%D9%81%D9%8A%D8%B0%D9%8A%20%D9%84%D9%86%D8%B8%D8%A7%D9%85%20SCHEDULE%20%D9%84%D9%83%D9%84%D9%8A%D8%AA%D9%86%D8%A7.%0A%0A%D8%A7%D8%B3%D9%85%20%D8%A7%D9%84%D9%83%D9%84%D9%8A%D8%A9%20%2F%20%D8%A7%D9%84%D8%AC%D8%A7%D9%85%D8%B9%D8%A9%3A%0A%D8%A7%D9%84%D8%A7%D8%B3%D9%85%20%D9%88%D8%A7%D9%84%D8%B5%D9%81%D8%A9%3A%0A%D9%85%D9%84%D8%A7%D8%AD%D8%B8%D8%A7%D8%AA%3A" class="btn btn-brass" style="font-size:0.88rem; padding:10px 20px;">
-                <span>إرسال بريد فوري ✉️</span>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+              <a href="mailto:Ah.Alfailakawi@paaet.edu.kw?subject=%D8%B7%D9%84%D8%A8%20%D8%A7%D8%B3%D8%AA%D8%B9%D8%B1%D8%A7%D8%B6%20%D8%AA%D9%86%D9%81%D9%8A%D8%B0%D9%8A%20%D9%84%D9%86%D8%B8%D8%A7%D9%85%20SCHEDULE" class="btn btn-brass" style="padding:10px 18px; display:inline-flex; align-items:center; gap:8px;" title="مراسلة فورية عبر البريد" aria-label="مراسلة فورية عبر البريد">
+                <svg class="ic" style="width:20px; height:20px;"><use href="#i-mail"/></svg>
+                <span style="font-size:0.9rem;">مراسلة فورية</span>
               </a>
+              <button type="button" class="btn btn-glass" onclick="copyOfficialEmail(this)" style="padding:10px 14px; display:inline-flex; align-items:center; gap:6px;" title="نسخ البريد" aria-label="نسخ البريد">
+                <span id="copy-btn-text">📋</span>
+              </button>
             </div>
           </div>
 
@@ -2346,23 +2389,24 @@
             <div class="form-grid">
               <div class="form-field">
                 <label for="inst" class="form-label">اسم الجامعة / الكلية *</label>
-                <input type="text" id="inst" name="institution" class="form-ctrl" placeholder="مثال: كلية التربية الأساسية" required />
+                <input type="text" id="inst" name="institution" class="form-ctrl" value="كلية التربية الأساسية" placeholder="كلية التربية الأساسية" required />
               </div>
               <div class="form-field">
                 <label for="name" class="form-label">الاسم والصفة الأكاديمية *</label>
-                <input type="text" id="name" name="name" class="form-ctrl" placeholder="مثال: د. عبدالله الفيلكاوي" required />
+                <input type="text" id="name" name="name" class="form-ctrl" placeholder="مثال: د. احمد محمد" required />
               </div>
               <div class="form-field full">
                 <label for="email" class="form-label">بريدك الإلكتروني الأكاديمي أو المؤسسي *</label>
-                <input type="email" id="email" name="email" class="form-ctrl" placeholder="name@university.edu" required />
+                <input type="email" id="email" name="email" class="form-ctrl" placeholder="name@paaet.edu.kw" required />
               </div>
               <div class="form-field full">
                 <label for="notes" class="form-label">ملاحظات أو مواعيد مفضلة للاستعراض</label>
                 <textarea id="notes" name="notes" class="form-ctrl" placeholder="اذكر عدد الأقسام أو الشعب التقريبية والاحتياجات المحددة"></textarea>
               </div>
               <div class="form-field full">
-                <button type="submit" id="submit-btn" class="btn btn-brass" style="width:100%; min-height:50px; font-size:1rem;">
-                  إرسال طلب الاستعراض عبر البريد الأكاديمي ✉️
+                <button type="submit" id="submit-btn" class="btn btn-brass" style="width:100%; min-height:50px; font-size:1rem; display:inline-flex; align-items:center; justify-content:center; gap:8px;">
+                  <svg class="ic" style="width:18px; height:18px;"><use href="#i-mail"/></svg>
+                  <span>إرسال طلب الاستعراض عبر البريد الأكاديمي</span>
                 </button>
               </div>
             </div>
@@ -2378,12 +2422,17 @@
       <div class="container footer-inner">
         <div>
           <span class="footer-brand-title">SCHEDULE · نظام القرار الأكاديمي</span>
-          <p style="margin-top:4px; font-size:0.8rem; color:var(--muted);">
+          <p style="margin-top:4px; font-size:0.82rem; color:var(--muted);">
+            إعداد وتطوير: د. أحمد حسين الفيلكاوي - د. عبدالعزيز دخيل العنزي · كلية التربية الأساسية
+          </p>
+          <p style="margin-top:2px; font-size:0.75rem; color:var(--muted); opacity:0.8;">
             جميع الحقوق محفوظة © 2026. مهندس بأعلى معايير حوكمة البيانات الأكاديمية.
           </p>
         </div>
         <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
-          <a href="mailto:Ah.Alfailakawi@paaet.edu.kw" style="color:var(--brass); font-weight:600; font-family:var(--font-mono); direction:ltr;">Ah.Alfailakawi@paaet.edu.kw</a>
+          <a href="mailto:Ah.Alfailakawi@paaet.edu.kw" class="btn btn-glass" style="padding:8px 12px; display:inline-flex; align-items:center;" title="البريد الإلكتروني" aria-label="البريد الإلكتروني">
+            <svg class="ic" style="width:18px; height:18px;"><use href="#i-mail"/></svg>
+          </a>
           <a href="/" style="color:var(--ink-dim);">دخول النظام</a>
           <a href="#benchmark" style="color:var(--muted);">المقياس العالمي</a>
         </div>
@@ -2440,11 +2489,6 @@
 
     // ── Benchmark Dials Interactivity ───────────────────────────────────
     const benchmarkStudies = [
-      {
-        title: "دراسة iJET (الجامعة العربية المفتوحة - الكويت)",
-        desc: "تستغرق لجان الجداول 4 إلى 6 أسابيع من الاجتماعات اليدوية لمطابقة القاعات وتجنب تعارضات الطلبة.",
-        speedup: "SCHEDULE أسرع بـ 1,800 ضعف"
-      },
       {
         title: "دراسة MPCB الأكاديمية (ماليزيا)",
         desc: "تتطلب عملية بناء الجدول الدراسي قرابة 4 أسابيع كاملة من المراجعات اليدوية المستمرة والتدقيق الورقي.",
@@ -2708,6 +2752,93 @@
         btn.disabled = false;
         btn.textContent = 'إرسال طلب الاستعراض عبر البريد الأكاديمي ✉️';
       }
+    }
+
+    // ── Dynamic Scroll-Triggered Infographic Animations ──────────────────
+    function setupInfographicObserver() {
+      const targets = document.querySelectorAll('.dials, .ours, .vbars, .meters');
+      if (!targets.length) return;
+
+      const animatedOnce = new WeakSet();
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('animated');
+
+            // If not yet animated numbers, animate them smoothly
+            if (!animatedOnce.has(entry.target)) {
+              animatedOnce.add(entry.target);
+
+              // If vbars, count up the values
+              if (entry.target.classList.contains('vbars')) {
+                animateBarValues();
+              }
+              // If meters, count up the percentages
+              if (entry.target.classList.contains('meters')) {
+                animateMeterValues();
+              }
+            }
+          }
+        });
+      }, { threshold: 0.2 });
+
+      targets.forEach(t => observer.observe(t));
+    }
+
+    function animateBarValues() {
+      const barNums = [
+        { el: document.querySelector('#weekly-vbars .vbar:nth-child(1) .vbar__v'), target: 77 },
+        { el: document.querySelector('#weekly-vbars .vbar:nth-child(2) .vbar__v'), target: 114 },
+        { el: document.querySelector('#weekly-vbars .vbar:nth-child(3) .vbar__v'), target: 86 },
+        { el: document.querySelector('#weekly-vbars .vbar:nth-child(4) .vbar__v'), target: 114 },
+        { el: document.querySelector('#weekly-vbars .vbar:nth-child(5) .vbar__v'), target: 62 }
+      ];
+
+      barNums.forEach(item => {
+        if (!item.el) return;
+        let current = 0;
+        const step = Math.max(1, Math.floor(item.target / 25));
+        const timer = setInterval(() => {
+          current += step;
+          if (current >= item.target) {
+            item.el.textContent = item.target;
+            clearInterval(timer);
+          } else {
+            item.el.textContent = current;
+          }
+        }, 28);
+      });
+    }
+
+    function animateMeterValues() {
+      const meterNums = [
+        { el: document.querySelector('#health-meters .meter:nth-child(1) .meter__v'), target: 94 },
+        { el: document.querySelector('#health-meters .meter:nth-child(2) .meter__v'), target: 46 },
+        { el: document.querySelector('#health-meters .meter:nth-child(3) .meter__v'), target: 73 },
+        { el: document.querySelector('#health-meters .meter:nth-child(4) .meter__v'), target: 89 }
+      ];
+
+      meterNums.forEach(item => {
+        if (!item.el) return;
+        let current = 0;
+        const step = Math.max(1, Math.floor(item.target / 25));
+        const timer = setInterval(() => {
+          current += step;
+          if (current >= item.target) {
+            item.el.textContent = item.target + '%';
+            clearInterval(timer);
+          } else {
+            item.el.textContent = current + '%';
+          }
+        }, 28);
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', setupInfographicObserver);
+    } else {
+      setupInfographicObserver();
     }
   </script>
 </body>

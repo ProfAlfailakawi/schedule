@@ -1,5 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" direction="rtl" style="background:#f6f5f0; font-family:'IBM Plex Sans Arabic', system-ui, -apple-system, sans-serif;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" direction="rtl" style="background:#f6f5f0; font-family:'Cairo', system-ui, -apple-system, sans-serif;">
   <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&amp;display=swap');
+      text, tspan {
+        font-family: 'Cairo', 'Segoe UI', system-ui, sans-serif !important;
+      }
+    </style>
     <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
       <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.03" />
     </filter>
