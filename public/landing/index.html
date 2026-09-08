@@ -3,30 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>SCHEDULE · نظام القرار الأكاديمي | منظومة بناء واعتماد الجداول الجامعية</title>
-  <meta name="description" content="SCHEDULE — نظام القرار الأكاديمي الحصري للجامعات والكليات: ابنِ الجدول، اكشف التعارض استباقياً، أدر مقايضة القاعات، واتخذ القرار الأكاديمي قبل بداية الفصل الدراسي." />
-  <meta name="theme-color" content="#f7f7f4" />
+  <title>SCHEDULE · نظام القرار الأكاديمي | الجدول الدراسي في ثوانٍ</title>
+  <meta name="description" content="SCHEDULE — نظام القرار الأكاديمي للجامعات والكليات: ابنِ الجدول، اكشف التعارض استباقياً، أدر مقايضة القاعات، واعتمد القرار الأكاديمي في ثوانٍ." />
+  <meta name="theme-color" content="#0d1210" />
   
-  <!-- Open Graph / Social Media -->
+  <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:locale" content="ar_KW" />
   <meta property="og:site_name" content="SCHEDULE" />
   <meta property="og:title" content="SCHEDULE · نظام القرار الأكاديمي" />
-  <meta property="og:description" content="ابنِ الجدول. راجعه. اتخذ القرار. منظومة متكاملة لحل التعارضات ومقايضة القاعات وإصدار التقارير التنفيذية للجامعات." />
-  <meta property="og:image" content="/schedule-social-card-v4.png" />
+  <meta property="og:description" content="الجدول الدراسي، كمنتجٍ يُفهم ويُعتمد من أول نظرة. كشف التعارضات ومقايضة القاعات في ثوانٍ." />
+  <meta property="og:image" content="/screenshots/cover-wide.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="SCHEDULE · نظام القرار الأكاديمي" />
-  <meta name="twitter:description" content="الجدول الدراسي، كمنتجٍ يُفهم ويُعتمد من أول نظرة." />
-  <meta name="twitter:image" content="/schedule-social-card-v4.png" />
+  <meta name="twitter:image" content="/screenshots/cover-wide.png" />
 
-  <!-- Preload Arabic Typography -->
-  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-400.woff2" crossorigin />
-  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-600.woff2" crossorigin />
   <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
+  <!-- Preload local Arabic Typography -->
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-400.woff2" crossorigin />
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-600.woff2" crossorigin />
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-700.woff2" crossorigin />
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-mono-latin-500.woff2" crossorigin />
+
   <style>
-    /* ── Typography & Variables (Quiet Luxury Palette) ───────────────────── */
+    /* ── Typography & Palette (Quiet Luxury Dark & Warm Titanium) ────────── */
     @font-face {
       font-family: "IBM Plex Sans Arabic";
       src: url("/fonts/plex-arabic-arabic-400.woff2") format("woff2");
@@ -48,50 +48,51 @@
       font-style: normal;
       font-display: swap;
     }
+    @font-face {
+      font-family: "IBM Plex Mono";
+      src: url("/fonts/plex-mono-latin-500.woff2") format("woff2");
+      font-weight: 500;
+      font-style: normal;
+      font-display: swap;
+    }
 
     :root {
-      --canvas: #f7f7f4;
-      --surface: #ffffff;
-      --surface-subtle: #f0f0ea;
-      --surface-card: #fdfdfb;
-      --surface-dark: #121715;
-      --surface-dark-card: #18201d;
+      --ground: #0a0e0d;
+      --surface: #111715;
+      --surface-card: #151d1a;
+      --surface-card-hover: #1b2521;
+      --surface-light: #f7f7f4;
 
-      --text-main: #141917;
-      --text-secondary: #48524d;
-      --text-muted: #78857f;
-      --text-inverse: #f4f7f5;
-      --text-inverse-muted: #9fb0a8;
+      --ink: #f0f4f2;
+      --ink-dim: #c5cfca;
+      --ink-muted: #83918a;
+      --ink-dark: #121816;
 
-      --border: #e3e5dc;
-      --border-subtle: rgba(20, 25, 23, 0.08);
-      --border-dark: rgba(255, 255, 255, 0.09);
+      --brass: #d0a663;
+      --brass-bright: #e7bc78;
+      --brass-soft: rgba(208, 166, 99, 0.14);
+      --brass-glow: rgba(208, 166, 99, 0.28);
 
-      --gold: #C79B5F;
-      --gold-deep: #a87c3e;
-      --gold-soft: rgba(199, 155, 95, 0.12);
-      --gold-glow: rgba(199, 155, 95, 0.22);
+      --jade: #5fbfa6;
+      --jade-deep: #1f6b5c;
+      --jade-soft: rgba(95, 191, 166, 0.15);
 
-      --jade: #1f6b5c;
-      --jade-light: #5fbfa6;
-      --jade-soft: rgba(31, 107, 92, 0.09);
+      --danger: #e07167;
+      --danger-soft: rgba(224, 113, 103, 0.16);
 
-      --rose: #b33939;
-      --rose-soft: rgba(179, 57, 57, 0.1);
+      --line: #222d29;
+      --line-subtle: rgba(255, 255, 255, 0.08);
+      --line-glow: rgba(208, 166, 99, 0.35);
 
       --radius-sm: 10px;
       --radius-md: 18px;
-      --radius-lg: 24px;
-      --radius-xl: 32px;
+      --radius-lg: 26px;
+      --radius-xl: 34px;
 
-      --shadow-soft: 0 4px 20px -2px rgba(18, 23, 21, 0.05);
-      --shadow-float: 0 16px 40px -8px rgba(18, 23, 21, 0.08);
-      --shadow-dark: 0 24px 50px -10px rgba(0, 0, 0, 0.4);
-
-      --font: "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
+      --font: "IBM Plex Sans Arabic", -apple-system, system-ui, sans-serif;
+      --font-mono: "IBM Plex Mono", monospace;
     }
 
-    /* ── Reset & Baseline ───────────────────────────────────────────────── */
     *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
@@ -100,122 +101,155 @@
     html {
       scroll-behavior: smooth;
       font-size: 16px;
-      background-color: var(--canvas);
-      color: var(--text-main);
+      background-color: var(--ground);
+      color: var(--ink);
       font-family: var(--font);
       direction: rtl;
       -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
     }
     body {
-      background: var(--canvas);
+      background: var(--ground);
       min-height: 100vh;
       overflow-x: hidden;
-      line-height: 1.68;
-    }
-    a {
-      color: inherit;
-      text-decoration: none;
-      transition: color 0.2s ease, opacity 0.2s ease;
-    }
-    button, input, select, textarea {
-      font-family: inherit;
-      color: inherit;
+      line-height: 1.6;
+      position: relative;
     }
 
-    /* ── Utilities & Layout Container ───────────────────────────────────── */
+    /* Ambient Architectural Grid Background */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(100% 70% at 80% -10%, rgba(95, 191, 166, 0.12), transparent 50%),
+        radial-gradient(90% 60% at 10% 110%, rgba(208, 166, 99, 0.09), transparent 60%);
+    }
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.28;
+      background-image:
+        linear-gradient(to right, rgba(95, 191, 166, 0.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(95, 191, 166, 0.08) 1px, transparent 1px);
+      background-size: 80px 80px;
+    }
+
+    .relative-wrap {
+      position: relative;
+      z-index: 1;
+    }
     .wrap {
       width: 100%;
-      max-width: 1200px;
+      max-width: 1260px;
       margin-inline: auto;
-      padding-inline: 24px;
+      padding-inline: 20px;
     }
     @media (min-width: 768px) {
       .wrap { padding-inline: 36px; }
     }
-    .badge {
+
+    a {
+      color: inherit;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    /* ── Minimal Badges & Chips ─────────────────────────────────────────── */
+    .chip {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       padding: 6px 14px;
-      background: var(--gold-soft);
-      color: var(--gold-deep);
-      border: 1px solid rgba(199, 155, 95, 0.25);
       border-radius: 999px;
-      font-size: 0.84rem;
+      font-size: 0.82rem;
       font-weight: 600;
       letter-spacing: 0.02em;
+      white-space: nowrap;
     }
-    .badge-dot {
+    .chip-brass {
+      background: var(--brass-soft);
+      color: var(--brass-bright);
+      border: 1px solid rgba(208, 166, 99, 0.3);
+    }
+    .chip-jade {
+      background: var(--jade-soft);
+      color: var(--jade);
+      border: 1px solid rgba(95, 191, 166, 0.3);
+    }
+    .chip-danger {
+      background: var(--danger-soft);
+      color: #ff9e96;
+      border: 1px solid rgba(224, 113, 103, 0.35);
+    }
+    .chip-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--gold);
-      box-shadow: 0 0 8px var(--gold);
-    }
-    .pill-jade {
-      background: var(--jade-soft);
-      color: var(--jade);
-      border: 1px solid rgba(31, 107, 92, 0.2);
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
     }
 
-    /* ── Navigation (Quiet Luxury Bar) ──────────────────────────────────── */
-    .nav-bar {
+    /* ── Navigation ─────────────────────────────────────────────────────── */
+    .nav {
       position: sticky;
       top: 0;
-      z-index: 100;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      background: rgba(247, 247, 244, 0.88);
-      border-bottom: 1px solid var(--border-subtle);
-      transition: all 0.3s ease;
+      z-index: 90;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(10, 14, 13, 0.86);
+      border-bottom: 1px solid var(--line-subtle);
     }
     .nav-inner {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      height: 76px;
+      height: 74px;
     }
-    .brand-cluster {
+    .brand-box {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
     }
     .brand-svg {
       width: 40px;
       height: 40px;
-      border-radius: 10px;
-      background: var(--surface-dark);
+      border-radius: 11px;
+      background: #0f1513;
       padding: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      border: 1px solid rgba(208, 166, 99, 0.25);
     }
-    .brand-title {
+    .brand-name {
       font-size: 1.15rem;
       font-weight: 700;
+      color: #ffffff;
       letter-spacing: 0.04em;
-      color: var(--text-main);
       display: flex;
       align-items: baseline;
       gap: 6px;
     }
-    .brand-tagline {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      font-weight: 400;
-    }
-    .nav-links {
-      display: none;
-      align-items: center;
-      gap: 30px;
-      list-style: none;
-      font-size: 0.94rem;
+    .brand-sub {
+      font-size: 0.78rem;
+      color: var(--brass);
+      font-family: var(--font-mono);
       font-weight: 500;
-      color: var(--text-secondary);
     }
-    .nav-links a:hover {
-      color: var(--text-main);
+    .nav-menu {
+      display: none;
+      list-style: none;
+      align-items: center;
+      gap: 28px;
+      font-size: 0.92rem;
+      color: var(--ink-dim);
     }
-    .nav-actions {
+    .nav-menu a:hover {
+      color: #ffffff;
+    }
+    .nav-ctas {
       display: flex;
       align-items: center;
       gap: 12px;
@@ -224,11 +258,11 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
-      min-height: 46px;
-      padding: 10px 24px;
+      gap: 8px;
+      min-height: 44px;
+      padding: 10px 22px;
       border-radius: var(--radius-md);
-      font-size: 0.94rem;
+      font-size: 0.92rem;
       font-weight: 600;
       cursor: pointer;
       border: 1px solid transparent;
@@ -238,748 +272,818 @@
     .btn:active {
       transform: scale(0.98);
     }
-    .btn-dark {
-      background: var(--surface-dark);
-      color: var(--text-inverse);
-      box-shadow: 0 4px 16px rgba(18, 23, 21, 0.18);
+    .btn-brass {
+      background: linear-gradient(135deg, #d0a663 0%, #b38641 100%);
+      color: #0b0f0e;
+      box-shadow: 0 4px 20px var(--brass-glow);
     }
-    .btn-dark:hover {
-      background: #232c28;
-      box-shadow: 0 6px 20px rgba(18, 23, 21, 0.24);
-      color: #ffffff;
+    .btn-brass:hover {
+      background: linear-gradient(135deg, #dfb775 0%, #c49651 100%);
+      box-shadow: 0 6px 26px rgba(208, 166, 99, 0.4);
+      color: #000000;
     }
-    .btn-gold {
-      background: linear-gradient(135deg, #C79B5F 0%, #a67d44 100%);
-      color: #ffffff;
-      box-shadow: 0 4px 18px var(--gold-glow);
+    .btn-glass {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--line-subtle);
+      color: var(--ink);
     }
-    .btn-gold:hover {
-      background: linear-gradient(135deg, #d3a86e 0%, #b88b4f 100%);
-      box-shadow: 0 6px 22px rgba(199, 155, 95, 0.35);
+    .btn-glass:hover {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.18);
     }
-    .btn-outline {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-main);
-    }
-    .btn-outline:hover {
-      background: var(--surface-subtle);
-      border-color: #d0d2c7;
-    }
-    .btn-login-link {
-      font-size: 0.88rem;
-      color: var(--text-secondary);
-      padding: 8px 14px;
-      border-radius: var(--radius-sm);
-    }
-    .btn-login-link:hover {
-      color: var(--text-main);
-      background: var(--surface-subtle);
+    @media (min-width: 920px) {
+      .nav-menu { display: flex; }
     }
 
-    @media (min-width: 960px) {
-      .nav-links { display: flex; }
-    }
-
-    /* ── Hero Section ───────────────────────────────────────────────────── */
+    /* ── Hero: Maximum Visual Impact & Minimal Text ─────────────────────── */
     .hero {
-      padding-top: 56px;
-      padding-bottom: 72px;
-      position: relative;
-    }
-    .hero-header {
+      padding-top: 48px;
+      padding-bottom: 80px;
       text-align: center;
-      max-width: 860px;
-      margin-inline: auto;
-      margin-bottom: 48px;
     }
-    .hero-eyebrow {
-      margin-bottom: 22px;
-    }
-    .hero-title {
-      font-size: 2.5rem;
-      line-height: 1.25;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--text-main);
+    .hero-chip-row {
       margin-bottom: 20px;
     }
-    .hero-title span.gold {
-      color: var(--gold-deep);
-      position: relative;
-      white-space: nowrap;
-    }
-    .hero-subtitle {
-      font-size: 1.18rem;
-      line-height: 1.75;
-      color: var(--text-secondary);
-      max-width: 720px;
-      margin-inline: auto;
-      margin-bottom: 34px;
-    }
-    .hero-ctas {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      margin-bottom: 36px;
-    }
-    .trust-ribbon {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: center;
-      gap: 24px;
-      font-size: 0.86rem;
-      color: var(--text-muted);
-    }
-    .trust-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .trust-check {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: var(--jade-soft);
-      color: var(--jade);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
+    .hero-h1 {
+      font-size: clamp(2.4rem, 5.8vw, 4.4rem);
+      line-height: 1.22;
       font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 18px;
+      letter-spacing: -0.02em;
     }
-
-    @media (min-width: 768px) {
-      .hero { padding-top: 72px; padding-bottom: 96px; }
-      .hero-title { font-size: 3.4rem; }
-      .hero-subtitle { font-size: 1.25rem; }
+    .hero-h1 span.gold {
+      color: var(--brass-bright);
+      text-shadow: 0 0 28px rgba(208, 166, 99, 0.35);
     }
-
-    /* ── Live Interactive Simulator Showcase (Hero Visual) ─────────────── */
-    .showcase-frame {
-      max-width: 1040px;
+    .hero-lede {
+      font-size: clamp(1.05rem, 1.8vw, 1.28rem);
+      color: var(--ink-dim);
+      max-width: 680px;
       margin-inline: auto;
-      background: var(--surface-dark);
-      color: var(--text-inverse);
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--border-dark);
-      box-shadow: var(--shadow-dark);
-      overflow: hidden;
-      position: relative;
+      margin-bottom: 32px;
+      line-height: 1.68;
     }
-    .showcase-header {
-      padding: 20px 26px;
-      background: rgba(255, 255, 255, 0.03);
-      border-bottom: 1px solid var(--border-dark);
+    .hero-buttons {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-bottom: 48px;
+    }
+
+    /* ── The Masterpiece: Real Desktop App Mockup ───────────────────────── */
+    .showcase-stage {
+      max-width: 1140px;
+      margin-inline: auto;
+      position: relative;
+    }
+    .app-screen-frame {
+      background: var(--surface);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      box-shadow:
+        0 24px 60px -12px rgba(0, 0, 0, 0.7),
+        0 0 0 1px rgba(208, 166, 99, 0.2);
+      position: relative;
+    }
+    .frame-topbar {
+      height: 48px;
+      background: rgba(12, 17, 15, 0.95);
+      border-bottom: 1px solid var(--line-subtle);
+      display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      padding-inline: 18px;
     }
-    .showcase-title-row {
+    .frame-controls {
       display: flex;
-      align-items: center;
-      gap: 12px;
+      gap: 7px;
     }
-    .showcase-dot-cluster {
-      display: flex;
-      gap: 6px;
-    }
-    .showcase-dot {
+    .frame-dot {
       width: 10px;
       height: 10px;
       border-radius: 50%;
       background: rgba(255, 255, 255, 0.2);
     }
-    .showcase-title-text {
-      font-size: 0.94rem;
-      font-weight: 600;
-      color: var(--text-inverse);
-      letter-spacing: 0.02em;
-    }
-    .simulator-tabs {
-      display: flex;
-      gap: 8px;
-      background: rgba(0, 0, 0, 0.28);
-      padding: 4px;
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-    }
-    .sim-tab {
-      background: transparent;
-      border: none;
-      color: var(--text-inverse-muted);
-      padding: 7px 15px;
+    .frame-dot.red { background: #ff5f56; }
+    .frame-dot.yellow { background: #ffbd2e; }
+    .frame-dot.green { background: #27c93f; }
+    .frame-url {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--ink-muted);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 4px 18px;
       border-radius: 8px;
-      font-size: 0.82rem;
+      border: 1px solid var(--line-subtle);
+      direction: ltr;
+    }
+    .frame-img-wrap {
+      position: relative;
+      background: #000000;
+      overflow: hidden;
+      display: block;
+      cursor: zoom-in;
+    }
+    .frame-img {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: transform 0.4s ease;
+    }
+    .frame-img-wrap:hover .frame-img {
+      transform: scale(1.015);
+    }
+    .frame-caption-overlay {
+      position: absolute;
+      bottom: 0;
+      inset-inline: 0;
+      padding: 16px 24px;
+      background: linear-gradient(to top, rgba(10, 14, 13, 0.94) 0%, rgba(10, 14, 13, 0) 100%);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .frame-caption-text {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Floating Hotspot Badges on Hero Frame */
+    .hotspot-chip {
+      position: absolute;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+      animation: floatBadge 4s ease-in-out infinite alternate;
+    }
+    @keyframes floatBadge {
+      from { transform: translateY(0px); }
+      to { transform: translateY(-8px); }
+    }
+    .hotspot-1 {
+      top: 18%;
+      right: -12px;
+    }
+    .hotspot-2 {
+      bottom: 22%;
+      left: -12px;
+      animation-delay: -2s;
+    }
+    @media (max-width: 900px) {
+      .hotspot-chip { display: none; }
+    }
+
+    /* ── Infographic 1: Global Stopwatch Dial (3:24 Efficiency) ─────────── */
+    .section-stopwatch {
+      padding-block: 84px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(17, 23, 21, 0.6);
+    }
+    .stopwatch-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 36px;
+      align-items: center;
+    }
+    @media (min-width: 860px) {
+      .stopwatch-grid {
+        grid-template-columns: 1fr 1.3fr;
+        gap: 56px;
+      }
+    }
+    .stopwatch-visual {
+      background: #0d1311;
+      border: 1px solid rgba(208, 166, 99, 0.25);
+      border-radius: var(--radius-xl);
+      padding: 36px 24px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.6);
+    }
+    .stopwatch-ring {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      margin-inline: auto;
+      margin-bottom: 20px;
+    }
+    .stopwatch-svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+    .sw-track {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.08);
+      stroke-width: 10;
+    }
+    .sw-arc {
+      fill: none;
+      stroke: var(--brass);
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 600;
+      stroke-dashoffset: 80;
+      filter: drop-shadow(0 0 10px var(--brass));
+      transition: stroke-dashoffset 1s ease;
+    }
+    .stopwatch-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .sw-time {
+      font-family: var(--font-mono);
+      font-size: 2.8rem;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .sw-unit {
+      font-size: 0.8rem;
+      color: var(--brass);
+      font-weight: 600;
+      margin-top: 6px;
+    }
+    .sw-proof {
+      font-size: 0.84rem;
+      color: var(--ink-dim);
+      max-width: 320px;
+      margin-inline: auto;
+    }
+
+    .stopwatch-text-col h2 {
+      font-size: clamp(1.8rem, 3.2vw, 2.7rem);
+      color: #ffffff;
+      line-height: 1.3;
+      margin-bottom: 14px;
+    }
+    .stopwatch-text-col p {
+      font-size: 1.05rem;
+      color: var(--ink-dim);
+      margin-bottom: 24px;
+    }
+
+    /* Comparison Rings against Global Studies */
+    .benchmark-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .benchmark-row {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.92rem;
+    }
+    .bench-name {
+      color: var(--ink-dim);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .bench-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #7a8a83;
+    }
+    .bench-val {
+      font-family: var(--font-mono);
+      color: var(--danger);
+      font-weight: 600;
+      direction: ltr;
+    }
+    .bench-val.our-val {
+      color: var(--jade);
+      font-size: 1.05rem;
+    }
+
+    /* ── Infographic 2: Interactive Conflict Engine Simulator ───────────── */
+    .section-engine {
+      padding-block: 88px;
+    }
+    .section-title-box {
+      text-align: center;
+      max-width: 680px;
+      margin-inline: auto;
+      margin-bottom: 44px;
+    }
+    .section-h2 {
+      font-size: clamp(2rem, 3.6vw, 2.9rem);
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+    .section-sub {
+      font-size: 1.05rem;
+      color: var(--ink-dim);
+    }
+
+    .engine-box {
+      background: var(--surface);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    }
+    .engine-tabs {
+      background: rgba(10, 14, 13, 0.9);
+      border-bottom: 1px solid var(--line-subtle);
+      padding: 12px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .eng-tab {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--ink-dim);
+      padding: 8px 18px;
+      border-radius: 999px;
+      font-size: 0.88rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
     }
-    .sim-tab.active {
-      background: rgba(255, 255, 255, 0.12);
-      color: #ffffff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    .eng-tab.active {
+      background: var(--brass-soft);
+      border-color: rgba(208, 166, 99, 0.35);
+      color: var(--brass-bright);
     }
-    .showcase-body {
+    .engine-content {
       padding: 28px 24px;
     }
     @media (min-width: 768px) {
-      .showcase-body { padding: 36px 36px; }
+      .engine-content { padding: 40px; }
     }
 
-    /* Simulator Panel 1: Conflict vs Resolution */
-    .sim-view {
+    .engine-view {
       display: none;
     }
-    .sim-view.active {
-      display: block;
-      animation: fadeIn 0.35s ease;
+    .engine-view.active {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 28px;
+      animation: fadeIn 0.3s ease;
+    }
+    @media (min-width: 860px) {
+      .engine-view.active { grid-template-columns: 1.15fr 1fr; }
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(6px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
-    .conflict-board {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 20px;
-    }
-    @media (min-width: 840px) {
-      .conflict-board { grid-template-columns: 1.15fr 1fr; }
-    }
-
-    .board-mock {
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+    .live-card {
+      padding: 18px 20px;
       border-radius: var(--radius-md);
-      padding: 20px;
+      margin-bottom: 14px;
+      border: 1px solid transparent;
     }
-    .mock-row-head {
+    .live-card.red {
+      background: rgba(224, 113, 103, 0.12);
+      border-color: rgba(224, 113, 103, 0.35);
+    }
+    .live-card.green {
+      background: rgba(95, 191, 166, 0.12);
+      border-color: rgba(95, 191, 166, 0.35);
+    }
+    .live-card.gold {
+      background: rgba(208, 166, 99, 0.12);
+      border-color: rgba(208, 166, 99, 0.35);
+    }
+    .card-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
-      font-size: 0.84rem;
-      color: var(--text-inverse-muted);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-      padding-bottom: 10px;
+      margin-bottom: 8px;
     }
-    .lecture-card {
-      padding: 14px 18px;
-      border-radius: var(--radius-sm);
-      margin-bottom: 12px;
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-      position: relative;
-    }
-    .lecture-card.clashing {
-      background: rgba(179, 57, 57, 0.16);
-      border: 1px solid rgba(248, 113, 113, 0.35);
-    }
-    .lecture-card.resolved {
-      background: rgba(31, 107, 92, 0.22);
-      border: 1px solid rgba(95, 191, 166, 0.4);
-    }
-    .lecture-card.safe {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .lecture-top {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.82rem;
-      margin-bottom: 6px;
-    }
-    .lecture-time {
+    .card-time {
+      font-family: var(--font-mono);
       font-weight: 600;
-      letter-spacing: 0.03em;
+      color: #ffffff;
       direction: ltr;
-      display: inline-block;
     }
-    .lecture-name {
-      font-size: 0.98rem;
-      font-weight: 600;
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
       color: #ffffff;
       margin-bottom: 4px;
     }
-    .lecture-meta {
-      font-size: 0.82rem;
-      color: var(--text-inverse-muted);
+    .card-meta {
+      font-size: 0.84rem;
+      color: var(--ink-dim);
       display: flex;
-      gap: 14px;
+      gap: 16px;
     }
 
-    .resolution-card {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: var(--radius-md);
-      padding: 24px;
+    .engine-action-card {
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-lg);
+      padding: 28px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
     }
-    .res-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 12px;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      margin-bottom: 14px;
-    }
-    .res-badge.danger {
-      background: rgba(179, 57, 57, 0.25);
-      color: #ff8585;
-      border: 1px solid rgba(255, 133, 133, 0.3);
-    }
-    .res-badge.success {
-      background: rgba(31, 107, 92, 0.25);
-      color: #6ee7b7;
-      border: 1px solid rgba(110, 231, 183, 0.3);
-    }
-    .res-headline {
-      font-size: 1.15rem;
-      font-weight: 600;
-      margin-bottom: 10px;
-      color: #ffffff;
-    }
-    .res-desc {
-      font-size: 0.9rem;
-      line-height: 1.65;
-      color: var(--text-inverse-muted);
-      margin-bottom: 24px;
-    }
-    .solution-box {
-      background: rgba(0, 0, 0, 0.4);
-      border-radius: var(--radius-sm);
-      border-right: 3px solid var(--gold);
-      padding: 14px 16px;
-      margin-bottom: 24px;
-      font-size: 0.88rem;
-    }
-    .solution-title {
-      font-weight: 600;
-      color: var(--gold);
-      margin-bottom: 4px;
-    }
-    .solution-text {
-      color: #e0e6e3;
-    }
-
-    /* ── Metrics / Stats Section ────────────────────────────────────────── */
-    .section-stats {
-      padding-block: 84px;
-      border-top: 1px solid var(--border-subtle);
-      border-bottom: 1px solid var(--border-subtle);
-      background: #fafaf7;
-    }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-    }
-    @media (min-width: 860px) {
-      .stats-grid { grid-template-columns: repeat(4, 1fr); gap: 28px; }
-    }
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 28px 24px;
-      box-shadow: var(--shadow-soft);
-      position: relative;
-      overflow: hidden;
-      transition: transform 0.24s ease, border-color 0.24s ease;
-    }
-    .stat-card:hover {
-      transform: translateY(-4px);
-      border-color: #cfd2c4;
-    }
-    .stat-number {
-      font-size: 2.8rem;
-      font-weight: 700;
-      line-height: 1;
-      color: var(--text-main);
-      margin-bottom: 10px;
-      font-variant-numeric: tabular-nums;
-      direction: ltr;
-      display: inline-block;
-    }
-    .stat-number span.accent {
-      color: var(--gold-deep);
-    }
-    .stat-label {
-      font-size: 1rem;
-      font-weight: 600;
-      color: var(--text-main);
-      margin-bottom: 6px;
-    }
-    .stat-sub {
-      font-size: 0.84rem;
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-
-    /* ── Section: Who is it for? (لمن هذا النظام) ───────────────────────── */
-    .section-audiences {
-      padding-block: 96px;
-    }
-    .section-head {
-      text-align: center;
-      max-width: 720px;
-      margin-inline: auto;
-      margin-bottom: 56px;
-    }
-    .section-title {
-      font-size: 2.2rem;
-      font-weight: 700;
-      color: var(--text-main);
-      line-height: 1.3;
-      margin-bottom: 14px;
-    }
-    .section-desc {
-      font-size: 1.1rem;
-      color: var(--text-secondary);
-      line-height: 1.7;
-    }
-    .audience-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 24px;
-    }
-    @media (min-width: 840px) {
-      .audience-grid { grid-template-columns: repeat(3, 1fr); }
-    }
-    .audience-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 34px 28px;
-      box-shadow: var(--shadow-soft);
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      transition: all 0.25s ease;
-    }
-    .audience-card:hover {
-      border-color: #c9ccd0;
-      box-shadow: var(--shadow-float);
-    }
-    .audience-icon-wrap {
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
-      background: var(--surface-subtle);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 22px;
-      color: var(--gold-deep);
-      font-size: 1.4rem;
-    }
-    .audience-role {
+    .eng-state-title {
       font-size: 1.25rem;
       font-weight: 700;
-      color: var(--text-main);
-      margin-bottom: 12px;
+      color: #ffffff;
+      margin-bottom: 10px;
     }
-    .audience-detail {
+    .eng-state-desc {
       font-size: 0.94rem;
+      color: var(--ink-dim);
       line-height: 1.7;
-      color: var(--text-secondary);
-      margin-bottom: 22px;
-    }
-    .audience-benefit {
-      padding-top: 18px;
-      border-top: 1px solid var(--border-subtle);
-      font-size: 0.86rem;
-      font-weight: 600;
-      color: var(--jade);
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      margin-bottom: 24px;
     }
 
-    /* ── Section: Core Capabilities (ماذا تشتري؟) ────────────────────────── */
-    .section-pillars {
-      padding-block: 96px;
-      background: var(--surface-dark);
-      color: var(--text-inverse);
-      position: relative;
+    /* ── Infographic 3: The Shift Matrix (قبل مقابل اليوم) ──────────────── */
+    .section-shift {
+      padding-block: 84px;
+      border-top: 1px solid var(--line);
+      background: #0c110f;
     }
-    .pillars-grid {
+    .shift-grid {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 24px;
+      gap: 16px;
+      max-width: 960px;
+      margin-inline: auto;
     }
-    @media (min-width: 768px) {
-      .pillars-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    .pillar-card {
-      background: var(--surface-dark-card);
-      border: 1px solid var(--border-dark);
+    .shift-row {
+      background: var(--surface);
+      border: 1px solid var(--line-subtle);
       border-radius: var(--radius-lg);
-      padding: 36px 30px;
-      transition: transform 0.24s ease, border-color 0.24s ease;
+      padding: 22px 28px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      align-items: center;
+      transition: border-color 0.2s ease;
     }
-    .pillar-card:hover {
-      transform: translateY(-4px);
-      border-color: rgba(199, 155, 95, 0.35);
+    @media (min-width: 720px) {
+      .shift-row {
+        grid-template-columns: 1.2fr 1fr 1fr;
+        gap: 20px;
+      }
     }
-    .pillar-number {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: var(--gold);
-      letter-spacing: 0.1em;
-      margin-bottom: 16px;
-      display: block;
+    .shift-row:hover {
+      border-color: rgba(208, 166, 99, 0.3);
     }
-    .pillar-title {
-      font-size: 1.35rem;
+    .shift-q {
+      font-size: 1.05rem;
       font-weight: 700;
       color: #ffffff;
-      margin-bottom: 14px;
-    }
-    .pillar-text {
-      font-size: 0.95rem;
-      line-height: 1.75;
-      color: var(--text-inverse-muted);
-      margin-bottom: 20px;
-    }
-    .pillar-feature-list {
-      list-style: none;
-      font-size: 0.86rem;
-      color: #d1dbd5;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .pillar-feature-list li {
       display: flex;
       align-items: center;
       gap: 10px;
     }
-    .pillar-feature-list li::before {
-      content: "•";
-      color: var(--gold);
-      font-size: 1.2rem;
+    .shift-before {
+      color: #ff9e96;
+      font-size: 0.92rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .shift-now {
+      color: var(--jade);
+      font-size: 0.96rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    /* ── Section: Comparison / Deep Value ───────────────────────────────── */
-    .section-comparison {
-      padding-block: 96px;
-      background: var(--canvas);
+    /* ── Gallery: Real Authentic Screenshots From Demo ──────────────────── */
+    .section-gallery {
+      padding-block: 88px;
     }
-    .comp-table-wrap {
+    .gallery-filter-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 36px;
+    }
+    .gallery-tab {
       background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-soft);
-      overflow: hidden;
-      margin-top: 48px;
+      border: 1px solid var(--line-subtle);
+      color: var(--ink-dim);
+      padding: 10px 22px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.22s ease;
     }
-    .comp-row {
+    .gallery-tab.active {
+      background: var(--brass-soft);
+      border-color: rgba(208, 166, 99, 0.4);
+      color: var(--brass-bright);
+    }
+    .gallery-grid {
       display: grid;
       grid-template-columns: 1fr;
-      padding: 22px 28px;
-      border-bottom: 1px solid var(--border-subtle);
-      align-items: center;
-      gap: 14px;
+      gap: 24px;
     }
     @media (min-width: 768px) {
-      .comp-row {
-        grid-template-columns: 1.2fr 1fr 1fr;
-        gap: 24px;
-      }
+      .gallery-grid { grid-template-columns: repeat(2, 1fr); }
     }
-    .comp-row:last-child {
-      border-bottom: none;
-    }
-    .comp-row.comp-head {
-      background: var(--surface-subtle);
-      font-weight: 700;
-      font-size: 0.95rem;
-      color: var(--text-main);
-    }
-    .comp-aspect {
-      font-weight: 600;
-      color: var(--text-main);
-      font-size: 0.96rem;
-    }
-    .comp-bad {
-      color: #8c4242;
-      font-size: 0.9rem;
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-    .comp-good {
-      color: var(--jade);
-      font-size: 0.94rem;
-      font-weight: 600;
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
-    /* ── Section: About / Story ─────────────────────────────────────────── */
-    .section-about {
-      padding-block: 96px;
-      background: #fafaf6;
-      border-top: 1px solid var(--border-subtle);
-    }
-    .about-box {
-      max-width: 820px;
-      margin-inline: auto;
-      text-align: center;
-    }
-    .about-badge {
-      margin-bottom: 20px;
-    }
-    .about-quote {
-      font-size: 1.5rem;
-      line-height: 1.65;
-      font-weight: 600;
-      color: var(--text-main);
-      margin-bottom: 28px;
-    }
-    .about-body {
-      font-size: 1.05rem;
-      line-height: 1.8;
-      color: var(--text-secondary);
-      margin-bottom: 34px;
-    }
-    .about-signature {
-      font-size: 0.94rem;
-      font-weight: 600;
-      color: var(--gold-deep);
-    }
-
-    /* ── Section: Executive Contact Form ────────────────────────────────── */
-    .section-contact {
-      padding-block: 104px;
+    .gallery-card {
       background: var(--surface);
-      border-top: 1px solid var(--border);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.24s ease, border-color 0.24s ease;
+      cursor: zoom-in;
+    }
+    .gallery-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(208, 166, 99, 0.35);
+    }
+    .gallery-media {
+      position: relative;
+      background: #000000;
+      aspect-ratio: 16 / 10;
+      overflow: hidden;
+    }
+    .gallery-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
+      transition: transform 0.35s ease;
+    }
+    .gallery-card:hover .gallery-media img {
+      transform: scale(1.03);
+    }
+    .gallery-info {
+      padding: 20px 22px;
+      border-top: 1px solid var(--line-subtle);
+      background: var(--surface-card);
+    }
+    .gallery-tag {
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      color: var(--brass);
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: block;
+    }
+    .gallery-title {
+      font-size: 1.08rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+    .gallery-desc {
+      font-size: 0.86rem;
+      color: var(--ink-dim);
+      line-height: 1.5;
+    }
+
+    /* ── Infographic 4: Massive Scale Grid ──────────────────────────────── */
+    .section-scale {
+      padding-block: 84px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(14, 19, 17, 0.8);
+    }
+    .scale-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    @media (min-width: 768px) {
+      .scale-grid { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    }
+    @media (min-width: 1080px) {
+      .scale-grid { grid-template-columns: repeat(6, 1fr); }
+    }
+    .scale-card {
+      background: var(--surface);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-lg);
+      padding: 26px 18px;
+      text-align: center;
+      transition: border-color 0.2s ease;
+    }
+    .scale-card:hover {
+      border-color: rgba(208, 166, 99, 0.3);
+    }
+    .scale-num {
+      font-family: var(--font-mono);
+      font-size: clamp(2rem, 3.2vw, 2.7rem);
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1;
+      margin-bottom: 8px;
+      direction: ltr;
+    }
+    .scale-num.brass { color: var(--brass-bright); }
+    .scale-num.jade { color: var(--jade); }
+    .scale-label {
+      font-size: 0.94rem;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+    .scale-sub {
+      font-size: 0.78rem;
+      color: var(--ink-muted);
+    }
+
+    /* ── Lightbox Modal for Real Screenshots ────────────────────────────── */
+    .lightbox-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0, 0, 0, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .lightbox-modal.active {
+      display: flex;
+    }
+    .lightbox-inner {
+      max-width: 1100px;
+      width: 100%;
+      background: #111;
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      overflow: hidden;
       position: relative;
     }
-    .contact-container {
-      max-width: 840px;
+    .lightbox-img {
+      width: 100%;
+      max-height: 78vh;
+      object-fit: contain;
+      display: block;
+      background: #000;
+    }
+    .lightbox-bar {
+      padding: 16px 22px;
+      background: #141a17;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #ffffff;
+      font-size: 0.94rem;
+      font-weight: 600;
+    }
+    .lightbox-close {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #ffffff;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── Contact Section ────────────────────────────────────────────────── */
+    .section-contact {
+      padding-block: 88px;
+      background: #0a0e0d;
+    }
+    .contact-card {
+      max-width: 780px;
       margin-inline: auto;
-      background: var(--surface-card);
-      border: 1px solid var(--border);
+      background: var(--surface);
+      border: 1px solid rgba(208, 166, 99, 0.25);
       border-radius: var(--radius-xl);
-      box-shadow: var(--shadow-float);
-      padding: 40px 30px;
+      padding: 40px 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     }
-    @media (min-width: 768px) {
-      .contact-container { padding: 56px 60px; }
-    }
-    .contact-head {
-      text-align: center;
-      margin-bottom: 40px;
+    @media (min-width: 680px) {
+      .contact-card { padding: 48px 48px; }
     }
     .contact-title {
-      font-size: 2.1rem;
+      text-align: center;
+      font-size: 2rem;
       font-weight: 700;
-      color: var(--text-main);
-      margin-bottom: 12px;
+      color: #ffffff;
+      margin-bottom: 8px;
     }
-    .contact-sub {
-      font-size: 1.02rem;
-      color: var(--text-secondary);
+    .contact-desc {
+      text-align: center;
+      font-size: 0.96rem;
+      color: var(--ink-dim);
+      margin-bottom: 36px;
+    }
+    .quick-whatsapp-banner {
+      background: rgba(95, 191, 166, 0.12);
+      border: 1px solid rgba(95, 191, 166, 0.3);
+      border-radius: var(--radius-md);
+      padding: 14px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 28px;
     }
     .form-grid {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 20px;
+      gap: 18px;
     }
-    @media (min-width: 680px) {
+    @media (min-width: 600px) {
       .form-grid { grid-template-columns: 1fr 1fr; }
     }
-    .form-group {
+    .form-field {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 6px;
     }
-    .form-group.full {
+    .form-field.full {
       grid-column: 1 / -1;
     }
     .form-label {
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       font-weight: 600;
-      color: var(--text-main);
+      color: var(--ink);
     }
-    .form-input, .form-select, .form-textarea {
-      width: 100%;
-      min-height: 48px;
-      padding: 12px 16px;
+    .form-ctrl {
+      min-height: 46px;
+      padding: 10px 14px;
       border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      background: #ffffff;
-      color: var(--text-main);
-      font-size: 0.94rem;
-      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      border: 1px solid var(--line);
+      background: #0e1412;
+      color: #ffffff;
+      font-size: 0.92rem;
       outline: none;
+      transition: border-color 0.2s ease;
     }
-    .form-input:focus, .form-select:focus, .form-textarea:focus {
-      border-color: var(--gold);
-      box-shadow: 0 0 0 3px var(--gold-soft);
+    .form-ctrl:focus {
+      border-color: var(--brass);
     }
-    .form-textarea {
-      min-height: 110px;
+    textarea.form-ctrl {
+      min-height: 90px;
       resize: vertical;
     }
-    .form-actions {
-      margin-top: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      align-items: center;
-    }
-    .form-guarantee {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      text-align: center;
-    }
-    .contact-feedback {
+    .feedback-box {
       display: none;
-      padding: 18px 22px;
+      padding: 16px;
       border-radius: var(--radius-md);
       background: var(--jade-soft);
-      border: 1px solid rgba(31, 107, 92, 0.3);
-      color: var(--jade);
-      font-weight: 600;
+      border: 1px solid rgba(95, 191, 166, 0.35);
+      color: #ffffff;
       text-align: center;
-      margin-top: 20px;
+      font-weight: 600;
+      margin-top: 18px;
     }
-    .contact-feedback.active {
-      display: block;
-      animation: fadeIn 0.3s ease;
-    }
+    .feedback-box.active { display: block; }
 
     /* ── Footer ─────────────────────────────────────────────────────────── */
     .footer {
-      background: var(--surface-dark);
-      color: var(--text-inverse-muted);
-      padding-block: 54px 36px;
-      border-top: 1px solid var(--border-dark);
-      font-size: 0.88rem;
+      border-top: 1px solid var(--line-subtle);
+      padding-block: 40px;
+      font-size: 0.86rem;
+      color: var(--ink-muted);
+      background: #080b0a;
     }
     .footer-inner {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: space-between;
-      gap: 28px;
+      gap: 20px;
       text-align: center;
     }
     @media (min-width: 768px) {
@@ -988,693 +1092,640 @@
         text-align: right;
       }
     }
-    .footer-brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: #ffffff;
+    .footer-brand-title {
       font-weight: 700;
-      font-size: 1.05rem;
-    }
-    .footer-copy {
-      font-size: 0.84rem;
-      color: var(--text-inverse-muted);
-    }
-    .footer-links {
-      display: flex;
-      gap: 20px;
-      list-style: none;
-      font-size: 0.86rem;
-    }
-    .footer-links a:hover {
       color: #ffffff;
-    }
-
-    /* ── Accessibility & Reduced Motion ─────────────────────────────────── */
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
-        scroll-behavior: auto !important;
-      }
     }
   </style>
 </head>
 <body>
+  <div class="relative-wrap">
 
-  <!-- ── Top Navigation Bar ─────────────────────────────────────────────── -->
-  <header class="nav-bar">
-    <div class="wrap nav-inner">
-      <div class="brand-cluster">
-        <!-- SCHEDULE BrandMark Tile Geometry -->
-        <svg class="brand-svg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <rect width="64" height="64" rx="14" fill="#141917"/>
-          <rect x="1" y="1" width="62" height="62" rx="13.4" fill="none" stroke="#C79B5F" stroke-opacity=".25" stroke-width=".8"/>
-          <rect x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
-          <rect x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
-          <rect x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
-          <rect x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#C79B5F"/>
-          <rect x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
-        </svg>
-        <div>
-          <span class="brand-title">SCHEDULE</span>
-          <span class="brand-tagline">نظام القرار الأكاديمي</span>
+    <!-- ── Navigation ───────────────────────────────────────────────────── -->
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <div class="brand-box">
+          <svg class="brand-svg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+            <rect width="64" height="64" rx="14" fill="#111715"/>
+            <rect x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
+            <rect x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
+            <rect x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
+            <rect x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#d0a663"/>
+            <rect x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
+          </svg>
+          <div>
+            <div class="brand-name">SCHEDULE</div>
+            <div class="brand-sub">ACADEMIC DECISION ENGINE</div>
+          </div>
+        </div>
+
+        <nav aria-label="التنقل">
+          <ul class="nav-menu">
+            <li><a href="#showcase">شاشة النظام</a></li>
+            <li><a href="#speed">الكفاءة (3:24)</a></li>
+            <li><a href="#engine">المحرك التفاعلي</a></li>
+            <li><a href="#gallery">معرض اللقطات</a></li>
+            <li><a href="#shift">المقارنة</a></li>
+          </ul>
+        </nav>
+
+        <div class="nav-ctas">
+          <a href="/" class="btn btn-glass" title="دخول مساحة العمل الجامعية">دخول النظام</a>
+          <a href="#contact" class="btn btn-brass">طلب استعراض</a>
         </div>
       </div>
+    </header>
 
-      <nav aria-label="التنقل الرئيسي">
-        <ul class="nav-links">
-          <li><a href="#engine">محرك القرار</a></li>
-          <li><a href="#audiences">لمن النظام؟</a></li>
-          <li><a href="#capabilities">القدرات</a></li>
-          <li><a href="#comparison">المقارنة</a></li>
-          <li><a href="#about">الرؤية</a></li>
-        </ul>
-      </nav>
-
-      <div class="nav-actions">
-        <!-- Direct link to active production system workspace -->
-        <a href="/" class="btn-login-link" title="دخول منسقي الكلية إلى مساحة العمل">دخول النظام</a>
-        <a href="#contact" class="btn btn-dark">طلب استعراض تنفيذي</a>
-      </div>
-    </div>
-  </header>
-
-  <!-- ── Hero Section ───────────────────────────────────────────────────── -->
-  <section class="hero">
-    <div class="wrap">
-      <div class="hero-header">
-        <div class="hero-eyebrow">
-          <span class="badge">
-            <span class="badge-dot"></span>
-            المنظومة الجامعية لحسم الجداول والقرارات
+    <!-- ── Hero: Visual First, Minimal Text ─────────────────────────────── -->
+    <section class="hero">
+      <div class="wrap">
+        <div class="hero-chip-row">
+          <span class="chip chip-brass">
+            <span class="chip-dot"></span>
+            نظام القرار الأكاديمي للجامعات والكليات
           </span>
         </div>
 
-        <h1 class="hero-title">
-          الجدول الدراسي،<br />
-          كمنتجٍ يُفهم ويُعتمد <span class="gold">من أول نظرة</span>.
+        <h1 class="hero-h1">
+          الجدول الدراسي، <span class="gold">في ثوانٍ</span>.
         </h1>
 
-        <p class="hero-subtitle">
-          صُمم خصيصاً لعمادات الكليات ورؤساء الأقسام ومنسقي الجداول: بناء الجدول، وكشف تضارب القاعات والأساتذة استباقياً، وإدارة المقايضة بين الأقسام، واعتماد القرار الأكاديمي بوضوح وهدوء تام.
+        <p class="hero-lede">
+          كشف تعارضات القاعات والأساتذة استباقياً، مقايضة الشواغر بين الأقسام، واعتماد القرار الأكاديمي بوضوح وهدوء تام.
         </p>
 
-        <div class="hero-ctas">
-          <a href="#contact" class="btn btn-gold">
-            طلب جلسة استعراض خاصة للمؤسسة
-          </a>
-          <a href="#engine" class="btn btn-outline">
-            جرب محرك القرار تفاعلياً ↓
-          </a>
+        <div class="hero-buttons">
+          <a href="#contact" class="btn btn-brass">طلب استعراض تنفيذي خاص للمؤسسة</a>
+          <a href="#showcase" class="btn btn-glass">معاينة واجهة النظام الحقيقية ↓</a>
         </div>
 
-        <div class="trust-ribbon">
-          <div class="trust-item">
-            <span class="trust-check">✓</span>
-            <span>دقة رياضية 100% تمنع تعارض القاعات والأساتذة</span>
+        <!-- ── Showcase Stage: Real Screen In Browser Frame ─────────────── -->
+        <div id="showcase" class="showcase-stage">
+          <!-- Floating Infographic Badges -->
+          <div class="hotspot-chip hotspot-1">
+            <span class="chip chip-jade">
+              <span class="chip-dot"></span>
+              ✓ كشف تعارض استباقي (0 تضارب معتمد)
+            </span>
           </div>
-          <div class="trust-item">
-            <span class="trust-check">✓</span>
-            <span>مجرّب على آلاف الساعات والشعب الأكاديمية الفعلية</span>
+          <div class="hotspot-chip hotspot-2">
+            <span class="chip chip-brass">
+              <span class="chip-dot"></span>
+              ⚡ 89 صفاً استُخرجت من PDF في 3 ثوانٍ
+            </span>
           </div>
-          <div class="trust-item">
-            <span class="trust-check">✓</span>
-            <span>تقارير رسمية جاهزة للاعتماد الفوري</span>
+
+          <div class="app-screen-frame">
+            <div class="frame-topbar">
+              <div class="frame-controls">
+                <span class="frame-dot red"></span>
+                <span class="frame-dot yellow"></span>
+                <span class="frame-dot green"></span>
+              </div>
+              <div class="frame-url">schedule.dr-alfailakawi.com/fschedule/index</div>
+              <span class="chip chip-jade" style="padding: 2px 10px; font-size: 0.72rem;">جلسة عمل نشطة</span>
+            </div>
+
+            <!-- Authentic Screenshot -->
+            <div class="frame-img-wrap" onclick="openLightbox('/screenshots/cover-wide.png', 'لوحة الجدول الدراسي الأسبوعي العام · كلية التربية الأساسية')">
+              <img src="/screenshots/cover-wide.png" alt="واجهة نظام SCHEDULE الحقيقية" class="frame-img" loading="eager" />
+              <div class="frame-caption-overlay">
+                <span class="frame-caption-text">
+                  <span>📸 لقطة واقعية من مساحة العمل الأكاديمية الفعلية (اضغط للتكبير)</span>
+                </span>
+                <span class="chip chip-brass" style="font-size: 0.76rem;">دقة عالية 100%</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+    </section>
 
-      <!-- ── Interactive Engine Simulator (Hero Visual) ──────────────────── -->
-      <div id="engine" class="showcase-frame">
-        <div class="showcase-header">
-          <div class="showcase-title-row">
-            <div class="showcase-dot-cluster">
-              <span class="showcase-dot"></span>
-              <span class="showcase-dot"></span>
-              <span class="showcase-dot"></span>
+    <!-- ── Infographic 1: Global Benchmark & The 3:24 Stopwatch ──────────── -->
+    <section id="speed" class="section-stopwatch">
+      <div class="wrap">
+        <div class="stopwatch-grid">
+          <div class="stopwatch-visual">
+            <div class="stopwatch-ring">
+              <svg class="stopwatch-svg" viewBox="0 0 200 200">
+                <circle class="sw-track" cx="100" cy="100" r="86"></circle>
+                <circle id="sw-circle-arc" class="sw-arc" cx="100" cy="100" r="86"></circle>
+              </svg>
+              <div class="stopwatch-center">
+                <div class="sw-time" id="sw-counter">3:24</div>
+                <div class="sw-unit">دقائق : ثوانٍ</div>
+              </div>
             </div>
-            <span class="showcase-title-text">نافذة محرك القرار الأكاديمي · تجربة حية</span>
+            <p class="sw-proof">
+              <b>من رفع الملف إلى جدول مُراجع بالكامل</b><br />
+              تجربة تسجيل فعلية بكلية التربية الأساسية — 89 صفاً أكاديمياً.
+            </p>
           </div>
 
-          <div class="simulator-tabs" role="tablist">
-            <button type="button" class="sim-tab active" id="tab-clash" onclick="switchSimTab('clash')">
-              1. كشف التعارض الآني
-            </button>
-            <button type="button" class="sim-tab" id="tab-resolve" onclick="switchSimTab('resolve')">
-              2. اقتراح النقلة الذكية
-            </button>
-            <button type="button" class="sim-tab" id="tab-barter" onclick="switchSimTab('barter')">
-              3. مقايضة القاعات
-            </button>
+          <div class="stopwatch-text-col">
+            <span class="chip chip-brass" style="margin-bottom: 12px;">المقياس العالمي والأكاديمي</span>
+            <h2>الجامعات تقيس بالأسابيع.<br /><span style="color: var(--brass-bright);">نحن نقيس بالثواني.</span></h2>
+            <p>
+              دراسات حالة مستقلة محكّمة لجداول المقررات الجامعية، توضح الوقت المهدر يدوياً مقارنة بسرعة SCHEDULE الفائقة:
+            </p>
+
+            <div class="benchmark-list">
+              <div class="benchmark-row">
+                <span class="bench-name"><span class="bench-dot"></span>جامعة الكويت · AOU (دراسة iJET)</span>
+                <span class="bench-val">4–6 أسابيع يدوياً</span>
+              </div>
+              <div class="benchmark-row">
+                <span class="bench-name"><span class="bench-dot"></span>جامعة كورنيل الأمريكية · Cornell</span>
+                <span class="bench-val">عدة أسابيع يدوياً</span>
+              </div>
+              <div class="benchmark-row">
+                <span class="bench-name"><span class="bench-dot"></span>جامعة ماليزيا · MPCB Case Study</span>
+                <span class="bench-val">نحو 4 أسابيع يدوياً</span>
+              </div>
+              <div class="benchmark-row" style="background: rgba(95, 191, 166, 0.08); border-color: rgba(95, 191, 166, 0.3);">
+                <span class="bench-name" style="color: #ffffff; font-weight: 700;">★ منظومة SCHEDULE</span>
+                <span class="bench-val our-val">3 دقائق و24 ثانية فقط ✓</span>
+              </div>
+            </div>
           </div>
         </div>
+      </div>
+    </section>
 
-        <div class="showcase-body">
-          <!-- View 1: Detected Clash -->
-          <div id="sim-view-clash" class="sim-view active">
-            <div class="conflict-board">
-              <div class="board-mock">
-                <div class="mock-row-head">
-                  <span>جدول قاعة 102 · كلية التربية الأساسية</span>
-                  <span style="color: #ff8585; font-weight: 600;">تنبيه: تضارب زمني غير معتمد</span>
-                </div>
-                
-                <div class="lecture-card clashing">
-                  <div class="lecture-top">
-                    <span class="lecture-time">09:30 - 10:45</span>
-                    <span class="badge" style="background: rgba(255,255,255,0.1); color: #fff; border:none; padding:2px 8px; font-size:11px;">شعبة 01</span>
+    <!-- ── Infographic 2: Interactive Decision Engine Simulator ──────────── -->
+    <section id="engine" class="section-engine">
+      <div class="wrap">
+        <div class="section-title-box">
+          <span class="chip chip-jade" style="margin-bottom: 12px;">المحرك التفاعلي الحي</span>
+          <h2 class="section-h2">شاهد كيف يحسم المحرك التعارض</h2>
+          <p class="section-sub">اضغط على الخيارات أدناه لمحاكاة كشف التضارب وتطبيق النقلة الذكية لحظياً:</p>
+        </div>
+
+        <div class="engine-box">
+          <div class="engine-tabs">
+            <button type="button" class="eng-tab active" id="eng-btn-1" onclick="switchEngine('clash')">
+              1. كشف التعارض الآني (قاعة 102)
+            </button>
+            <button type="button" class="eng-tab" id="eng-btn-2" onclick="switchEngine('solve')">
+              2. تطبيق حل المحرك الذكي
+            </button>
+            <button type="button" class="eng-tab" id="eng-btn-3" onclick="switchEngine('barter')">
+              3. مقايضة القاعات الشاغرة
+            </button>
+          </div>
+
+          <div class="engine-content">
+            <!-- View 1: Clash -->
+            <div id="eng-view-clash" class="engine-view active">
+              <div>
+                <div class="live-card red">
+                  <div class="card-row">
+                    <span class="card-time">09:30 - 10:45</span>
+                    <span class="chip chip-danger" style="font-size: 11px;">تضارب زمني مؤكد</span>
                   </div>
-                  <div class="lecture-name">تفاضل وتكامل (1) · قسم الرياضيات</div>
-                  <div class="lecture-meta">
+                  <div class="card-title">تفاضل وتكامل (1) · قسم الرياضيات</div>
+                  <div class="card-meta">
                     <span>د. أحمد الشمري</span>
                     <span>قاعة 102 (سعة 45)</span>
                   </div>
                 </div>
 
-                <div class="lecture-card clashing">
-                  <div class="lecture-top">
-                    <span class="lecture-time">10:00 - 11:15</span>
-                    <span class="badge" style="background: rgba(255,255,255,0.1); color: #fff; border:none; padding:2px 8px; font-size:11px;">شعبة 04</span>
+                <div class="live-card red">
+                  <div class="card-row">
+                    <span class="card-time">10:00 - 11:15</span>
+                    <span class="chip chip-danger" style="font-size: 11px;">تداخل 45 دقيقة</span>
                   </div>
-                  <div class="lecture-name">مقدمة فيزيائية عامة · قسم العلوم</div>
-                  <div class="lecture-meta">
+                  <div class="card-title">مقدمة فيزيائية عامة · قسم العلوم</div>
+                  <div class="card-meta">
                     <span>د. سارة العازمي</span>
                     <span>قاعة 102 (سعة 45)</span>
                   </div>
                 </div>
               </div>
 
-              <div class="resolution-card">
+              <div class="engine-action-card">
                 <div>
-                  <span class="res-badge danger">● تعارض قاعة مباشر (45 دقيقة)</span>
-                  <h3 class="res-headline">المحرك يكشف التداخل قبل حفظ الحركة</h3>
-                  <p class="res-desc">
-                    في الأنظمة العادية وإكسل، يتطلب هذا الخطأ مذكرات واعتذارات في أول أسبوع دراسي. محرك SCHEDULE يمنع الحفظ ويعزل الخطأ فوراً في مساحة هادئة.
+                  <span class="chip chip-danger" style="margin-bottom: 14px;">تنبيه مانع للحفظ</span>
+                  <div class="eng-state-title">منع الكارثة قبل اعتمادها</div>
+                  <p class="eng-state-desc">
+                    في إكسل والأنظمة القديمة، يُكتشف هذا الخطأ بعد طباعة الجداول وشكاوى الطلبة. محرك SCHEDULE يعزل الشعبة فوراً ويمنع اعتماد أي جدول غير متزن.
                   </p>
                 </div>
-                <button type="button" class="btn btn-gold" onclick="switchSimTab('resolve')">
+                <button type="button" class="btn btn-brass" onclick="switchEngine('solve')">
                   تطبيق حل المحرك الذكي بنقرة واحدة ←
                 </button>
               </div>
             </div>
-          </div>
 
-          <!-- View 2: Resolved Move -->
-          <div id="sim-view-resolve" class="sim-view">
-            <div class="conflict-board">
-              <div class="board-mock">
-                <div class="mock-row-head">
-                  <span>جدول القاعات بعد اعتماد النقلة الذكية</span>
-                  <span style="color: #6ee7b7; font-weight: 600;">✓ خالٍ من أي تعارض</span>
-                </div>
-                
-                <div class="lecture-card safe">
-                  <div class="lecture-top">
-                    <span class="lecture-time">09:30 - 10:45</span>
-                    <span class="badge pill-jade" style="padding:2px 8px; font-size:11px;">مستقر</span>
+            <!-- View 2: Solved -->
+            <div id="eng-view-solve" class="engine-view">
+              <div>
+                <div class="live-card green">
+                  <div class="card-row">
+                    <span class="card-time">09:30 - 10:45</span>
+                    <span class="chip chip-jade" style="font-size: 11px;">قاعة 102 مستقرة</span>
                   </div>
-                  <div class="lecture-name">تفاضل وتكامل (1) · قسم الرياضيات</div>
-                  <div class="lecture-meta">
+                  <div class="card-title">تفاضل وتكامل (1) · قسم الرياضيات</div>
+                  <div class="card-meta">
                     <span>د. أحمد الشمري</span>
                     <span>قاعة 102 (سعة 45)</span>
                   </div>
                 </div>
 
-                <div class="lecture-card resolved">
-                  <div class="lecture-top">
-                    <span class="lecture-time">10:00 - 11:15</span>
-                    <span class="badge" style="background: rgba(199,155,95,0.25); color: #f5d09e; border:none; padding:2px 8px; font-size:11px;">نقلة ذكية معتمدة</span>
+                <div class="live-card gold">
+                  <div class="card-row">
+                    <span class="card-time">10:00 - 11:15</span>
+                    <span class="chip chip-brass" style="font-size: 11px;">نقلة ذكية معتمدة</span>
                   </div>
-                  <div class="lecture-name">مقدمة فيزيائية عامة · قسم العلوم</div>
-                  <div class="lecture-meta">
+                  <div class="card-title">مقدمة فيزيائية عامة · قسم العلوم</div>
+                  <div class="card-meta">
                     <span>د. سارة العازمي</span>
-                    <span style="color: #6ee7b7; font-weight:600;">قاعة 104 (شاغرة ومجهزة)</span>
+                    <span style="color: var(--jade); font-weight: 700;">قاعة 104 (شاغرة ومطابقة)</span>
                   </div>
                 </div>
               </div>
 
-              <div class="resolution-card">
+              <div class="engine-action-card">
                 <div>
-                  <span class="res-badge success">✓ تم تفريغ التعارض بالكامل</span>
-                  <h3 class="res-headline">أقصر سلسلة نقلات دون إرباك الأساتذة</h3>
-                  <div class="solution-box">
-                    <div class="solution-title">توصية المحرك الأكاديمي:</div>
-                    <div class="solution-text">
-                      تم توجيه الشعبة إلى قاعة 104 في نفس الممر، مع الحفاظ على سعة 45 طالباً ومراعاة التجهيز المخبري وفترة استراحة أستاذ المقرر.
-                    </div>
-                  </div>
+                  <span class="chip chip-jade" style="margin-bottom: 14px;">✓ تم حل التضارب 100%</span>
+                  <div class="eng-state-title">أقصر سلسلة نقلات دون إرباك الأساتذة</div>
+                  <p class="eng-state-desc">
+                    وجّه المحرك الشعبة آلياً إلى قاعة 104 في نفس الممر، مع الحفاظ على التجهيز المخبري وسعة القاعة ومراعاة فترات الراحة لأستاذ المقرر.
+                  </p>
                 </div>
-                <button type="button" class="btn btn-dark" onclick="switchSimTab('barter')">
-                  استكشف سوق مقايضة القاعات الشاغرة ←
+                <button type="button" class="btn btn-glass" onclick="switchEngine('barter')">
+                  استكشف سوق مقايضة القاعات ←
                 </button>
               </div>
             </div>
-          </div>
 
-          <!-- View 3: Hall Barter -->
-          <div id="sim-view-barter" class="sim-view">
-            <div class="conflict-board">
-              <div class="board-mock">
-                <div class="mock-row-head">
-                  <span>سوق مقايضة واستعارة القاعات (Hall Barter)</span>
-                  <span style="color: var(--gold); font-weight: 600;">طلب استعارة نشط</span>
-                </div>
-                
-                <div class="lecture-card" style="background: rgba(199,155,95,0.12); border: 1px solid rgba(199,155,95,0.3);">
-                  <div class="lecture-top">
-                    <span class="lecture-time">الثلاثاء · 11:00 - 12:15</span>
-                    <span class="badge" style="background: var(--gold); color: #fff; border:none; padding:2px 8px; font-size:11px;">قيد التبادل</span>
+            <!-- View 3: Barter -->
+            <div id="eng-view-barter" class="engine-view">
+              <div>
+                <div class="live-card gold">
+                  <div class="card-row">
+                    <span class="card-time">الثلاثاء · 11:00 - 12:15</span>
+                    <span class="chip chip-brass" style="font-size: 11px;">طلب استعارة نشط</span>
                   </div>
-                  <div class="lecture-name">استعارة قاعة G14 من قسم التربية الفنية</div>
-                  <div class="lecture-meta">
+                  <div class="card-title">استعارة قاعة G14 من قسم التربية الفنية</div>
+                  <div class="card-meta">
                     <span>الجهة الطالبة: قسم اللغة العربية</span>
                     <span>المدة: فصل دراسي كامل</span>
                   </div>
                 </div>
 
-                <div class="lecture-card safe">
-                  <div class="lecture-top">
-                    <span class="lecture-time">الخميس · 08:00 - 09:15</span>
-                    <span class="badge pill-jade" style="padding:2px 8px; font-size:11px;">معتمد وموثق</span>
+                <div class="live-card green">
+                  <div class="card-row">
+                    <span class="card-time">الخميس · 08:00 - 09:15</span>
+                    <span class="chip chip-jade" style="font-size: 11px;">سجل رسمي موثق</span>
                   </div>
-                  <div class="lecture-name">إتاحة مدرج 201 كقاعة مشتركة للكليات</div>
-                  <div class="lecture-meta">
+                  <div class="card-title">إتاحة مدرج 201 كقاعة مشتركة للكليات</div>
+                  <div class="card-meta">
                     <span>سعة 120 مقعداً · شاغرة للفترة الصباحية</span>
                   </div>
                 </div>
               </div>
 
-              <div class="resolution-card">
+              <div class="engine-action-card">
                 <div>
-                  <span class="res-badge" style="background: rgba(199,155,95,0.2); color: #f2ce94; border: 1px solid rgba(199,155,95,0.4);">
-                    ★ مقايضة عادلة وموثقة
-                  </span>
-                  <h3 class="res-headline">إنهاء النزاع على القاعات بين الأقسام</h3>
-                  <p class="res-desc">
-                    القاعات الشاغرة لم تعد أسراراً مغلقة. نظام SCHEDULE يتيح للأقسام إعارة واستعارة الفائض الأكاديمي بسجل شفاف وتتبع تلقائي للأصول.
+                  <span class="chip chip-brass" style="margin-bottom: 14px;">سوق مقايضة شفاف</span>
+                  <div class="eng-state-title">إنهاء النزاع على القاعات بين الأقسام</div>
+                  <p class="eng-state-desc">
+                    القاعات الشاغرة لم تعد ملكيات مغلقة. المنظومة تتيح إعارة واستعارة الفائض بسجل رسمي يوثق من استعار ومتى يخلي القاعة تلقائياً.
                   </p>
                 </div>
-                <a href="#contact" class="btn btn-gold">
-                  اطلب استعراض SCHEDULE لمؤسستك الآن
-                </a>
+                <a href="#contact" class="btn btn-brass">طلب استعراض SCHEDULE لمؤسستكم</a>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ── Executive Proof / Stats ────────────────────────────────────────── -->
-  <section class="section-stats">
-    <div class="wrap">
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-number"><span class="accent">0</span>%</div>
-          <div class="stat-label">تعارضات معتمدة</div>
-          <p class="stat-sub">فحص خوارزمي صارم يستحيل معه تكرار قاعة أو أستاذ في نفس التوقيت.</p>
+    <!-- ── Gallery: Real Screenshots From Actual Demo ────────────────────── -->
+    <section id="gallery" class="section-gallery">
+      <div class="wrap">
+        <div class="section-title-box">
+          <span class="chip chip-brass" style="margin-bottom: 12px;">معرض اللقطات الواقعية</span>
+          <h2 class="section-h2">واجهات حقيقية من صلب المنظومة</h2>
+          <p class="section-sub">لقطات مباشرة من بيئة العمل الفعلية توضح دقة بناء الشاشات والتقارير:</p>
         </div>
 
-        <div class="stat-card">
-          <div class="stat-number"><span class="accent">85</span>%</div>
-          <div class="stat-label">تقليص دورة الإعداد</div>
-          <p class="stat-sub">اختصار أسابيع المذكرات والمراجعات الورقية إلى ساعات عمل هادئة ومحسومة.</p>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-number"><span class="accent">100</span>%</div>
-          <div class="stat-label">حفظ الذاكرة الأكاديمية</div>
-          <p class="stat-sub">توثيق كامل لتاريخ الشعب وتفضيلات الأقسام ورغبات الهيئة التدريسية عبر الفصول.</p>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-number">&lt;<span class="accent">30</span>s</div>
-          <div class="stat-label">إصدار تقرير الاعتماد</div>
-          <p class="stat-sub">تقارير تنفيذية رسمية جاهزة للطباعة والاعتماد الوزاري بضغطة زر واحدة.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── Who is it for? (لمن هذا النظام) ────────────────────────────────── -->
-  <section id="audiences" class="section-audiences">
-    <div class="wrap">
-      <div class="section-head">
-        <span class="badge" style="margin-bottom: 16px;">الشرائح المستهدفة</span>
-        <h2 class="section-title">صُمم لكل رتبة في منظومة القرار الجامعي</h2>
-        <p class="section-desc">
-          من قيادة الكلية إلى منسقي الأقسام: تجربة مصممة خصيصاً لكل صاحب مسؤولية لتحقيق راحة البال والدقة المطلقة.
-        </p>
-      </div>
-
-      <div class="audience-grid">
-        <!-- Audience 1 -->
-        <div class="audience-card">
-          <div>
-            <div class="audience-icon-wrap">🏛️</div>
-            <h3 class="audience-role">عمداء الكليات والإدارة الجامعية</h3>
-            <p class="audience-detail">
-              رؤية بانورامية شاملة لحالة كل قاعة، شعبة، وعبء تدريسي في الكلية. تقارير تنفيذية عالية المستوى تُعرض على مجالس الكليات والجهات الإشرافية بثقة مطلقة وخلو تام من الأخطاء.
-            </p>
+        <div class="gallery-grid">
+          <!-- Item 1: Full Board -->
+          <div class="gallery-card" onclick="openLightbox('/screenshots/cover-wide.png', 'لوحة الجدول الأسبوعي الكاملة · توزيع القاعات والشعب')">
+            <div class="gallery-media">
+              <img src="/screenshots/cover-wide.png" alt="لوحة الجدول الأسبوعي العام" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 01 · THE WORKSPACE</span>
+              <div class="gallery-title">لوحة الجدول الأسبوعي العام</div>
+              <p class="gallery-desc">توزيع مرئي فائق الوضوح للأيام والقاعات، مع كشف فوري لأي تعارض لحظة تحريك الشعبة.</p>
+            </div>
           </div>
-          <div class="audience-benefit">
-            <span>✓ راحة بال إدارية وقرارات مبنية على حقائق رقمية</span>
-          </div>
-        </div>
 
-        <!-- Audience 2 -->
-        <div class="audience-card">
-          <div>
-            <div class="audience-icon-wrap">⚖️</div>
-            <h3 class="audience-role">رؤساء الأقسام العلمية</h3>
-            <p class="audience-detail">
-              عدالة شفافة في توزيع أعباء الساعات التدريسية، مع حماية رغبات الأساتذة وتفادي الصراعات على القاعات المركزية عبر نظام المقايضة الذكي والحصص المتوازنة.
-            </p>
+          <!-- Item 2: OCR PDF Ingestion -->
+          <div class="gallery-card" onclick="openLightbox('/screenshots/demo-shot-1.webp', 'قراءة مستندات التسجيل: 89 صفاً في 4 صفحات مطابقة للسجل')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-1.webp" alt="استخراج ملفات التسجيل والـ PDF" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 02 · PDF EXTRACTION</span>
+              <div class="gallery-title">قراءة مستندات التسجيل بالذكاء الاصطناعي</div>
+              <p class="gallery-desc">قراءة جداول الكلية الرسمية وتفريغها آلياً في ثوانٍ دون إدخال يدوي واحد، مع مفتاح مراجعة لوني.</p>
+            </div>
           </div>
-          <div class="audience-benefit">
-            <span>✓ إنهاء الخلافات الأكاديمية وصيانة العلاقات المهنية</span>
-          </div>
-        </div>
 
-        <!-- Audience 3 -->
-        <div class="audience-card">
-          <div>
-            <div class="audience-icon-wrap">⚡</div>
-            <h3 class="audience-role">منسقو ومسؤولو الجداول</h3>
-            <p class="audience-detail">
-              بيئة عمل يومية فائقة السلاسة والسرعة تحميهم من الإرهاق الذهني والضغوط اللحظية. كشف آلي للتضارب، وتوجيه ذكي لأقرب قاعة شاغرة، واستيراد فوري لبيانات المقررات.
-            </p>
+          <!-- Item 3: Arabic Natural Query Assistant -->
+          <div class="gallery-card" onclick="openLightbox('/screenshots/demo-shot-2.webp', 'مساعد استعلام الجدول بالعربية مع تحليل الأسباب')">
+            <div class="gallery-media">
+              <img src="/screenshots/demo-shot-2.webp" alt="مساعد الاستعلام بالعربية" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 03 · DECISION ASSISTANT</span>
+              <div class="gallery-title">مساعد الاستعلام والقرار الأكاديمي</div>
+              <p class="gallery-desc">اسأله بالعربية: «لماذا يوم الاثنين مزدحم؟» فيجيبك بتحليل بياني مدعوم بالأرقام من الجدول.</p>
+            </div>
           </div>
-          <div class="audience-benefit">
-            <span>✓ توفير مئات ساعات العمل المرهقة كل فصل دراسي</span>
+
+          <!-- Item 4: Mobile Experience -->
+          <div class="gallery-card" onclick="openLightbox('/screenshots/cover-narrow.png', 'تجربة الهاتف المحمول والوصول السريع للجداول')">
+            <div class="gallery-media" style="background: #090c0b;">
+              <img src="/screenshots/cover-narrow.png" alt="الجدول على شاشة الهاتف" style="object-position: center;" loading="lazy" />
+            </div>
+            <div class="gallery-info">
+              <span class="gallery-tag">SCREEN 04 · MOBILE INTERFACE</span>
+              <div class="gallery-title">تجربة متنقلة سلسة على شاشات الهواتف</div>
+              <p class="gallery-desc">لوحة متجاوبة تتيح للعميد ورؤساء الأقسام مراجعة القاعات وجداول الأساتذة في أي وقت ومن أي مكان.</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ── Core Capabilities (ماذا تشتري؟) ────────────────────────────────── -->
-  <section id="capabilities" class="section-pillars">
-    <div class="wrap">
-      <div class="section-head" style="color: #ffffff;">
-        <span class="badge" style="background: rgba(199,155,95,0.2); color: #f5cf97; border-color: rgba(199,155,95,0.4); margin-bottom: 16px;">
-          القدرات الجوهرية للمنظومة
-        </span>
-        <h2 class="section-title" style="color: #ffffff;">أربعة أعمدة متينة يقوم عليها القرار الأكاديمي</h2>
-        <p class="section-desc" style="color: var(--text-inverse-muted);">
-          ما تشتريه مؤسستك ليس مجرد برنامج تسجيل، بل محرك قرارات متكامل مصمم لمنع المخاطر قبل حدوثها.
-        </p>
+    <!-- ── Infographic 3: The Shift Matrix (قبل مقابل اليوم) ──────────────── -->
+    <section id="shift" class="section-shift">
+      <div class="wrap">
+        <div class="section-title-box">
+          <span class="chip chip-jade" style="margin-bottom: 12px;">مصفوفة التحول</span>
+          <h2 class="section-h2">ثلاثة أسئلة، إجابتان مختلفتان</h2>
+          <p class="section-sub">الفارق الجوهري بين إدارة الجداول التقليدية ونظام القرار الأكاديمي:</p>
+        </div>
+
+        <div class="shift-grid">
+          <div class="shift-row">
+            <div class="shift-q">
+              <span>⚠️ متى يُكتشف التعارض؟</span>
+            </div>
+            <div class="shift-before">
+              <span>✕ قبل: بعد النشر وشكاوى الطلبة</span>
+            </div>
+            <div class="shift-now">
+              <span>✓ اليوم: لحظة السحب والإفلات</span>
+            </div>
+          </div>
+
+          <div class="shift-row">
+            <div class="shift-q">
+              <span>🏛️ من يملك القاعة الشاغرة؟</span>
+            </div>
+            <div class="shift-before">
+              <span>✕ قبل: التفاهم الشفوي واحتكار الأقسام</span>
+            </div>
+            <div class="shift-now">
+              <span>✓ اليوم: السجل الرسمي وسوق المقايضة</span>
+            </div>
+          </div>
+
+          <div class="shift-row">
+            <div class="shift-q">
+              <span>↩️ وإن وقع خطأ في الجدول؟</span>
+            </div>
+            <div class="shift-before">
+              <span>✕ قبل: إعادة العمل اليدوي لأيام</span>
+            </div>
+            <div class="shift-now">
+              <span>✓ اليوم: تراجع واحد فوري موثق</span>
+            </div>
+          </div>
+        </div>
       </div>
+    </section>
 
-      <div class="pillars-grid">
-        <!-- Pillar 1 -->
-        <div class="pillar-card">
-          <span class="pillar-number">01 / DETECTION</span>
-          <h3 class="pillar-title">كشف التعارض الاستباقي (Preemptive Sensing)</h3>
-          <p class="pillar-text">
-            يقرأ المحرك الجدول كشبكة متصلة؛ يفحص تداخل القاعات، وتقاطع الأساتذة، ومسافات الانتقال بين المباني، ويطلق تنبيهاً مانعاً قبل حفظ أي تعديل خاطئ.
+    <!-- ── Infographic 4: Massive Scale Grid ──────────────────────────────── -->
+    <section class="section-scale">
+      <div class="wrap">
+        <div class="scale-grid">
+          <div class="scale-card">
+            <div class="scale-num brass">13</div>
+            <div class="scale-label">كلية</div>
+            <div class="scale-sub">في قرار أكاديمي موحد</div>
+          </div>
+
+          <div class="scale-card">
+            <div class="scale-num brass">87</div>
+            <div class="scale-label">قسماً علمياً</div>
+            <div class="scale-sub">في مساحة عمل متكاملة</div>
+          </div>
+
+          <div class="scale-card">
+            <div class="scale-num brass">31</div>
+            <div class="scale-label">فصلاً دراسياً</div>
+            <div class="scale-sub">طبقات من الذاكرة المحفوظة</div>
+          </div>
+
+          <div class="scale-card">
+            <div class="scale-num">15,430</div>
+            <div class="scale-label">موعداً أكاديمياً</div>
+            <div class="scale-sub">محفوظة وموثقة تاريخياً</div>
+          </div>
+
+          <div class="scale-card">
+            <div class="scale-num">1,404</div>
+            <div class="scale-label">مقرراً دراسياً</div>
+            <div class="scale-sub">هوية وبيانات معتمدة</div>
+          </div>
+
+          <div class="scale-card">
+            <div class="scale-num jade">100%</div>
+            <div class="scale-label">منع الحجز المزدوج</div>
+            <div class="scale-sub">يستحيل تكرار قاعة أو أستاذ</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Contact / Private Demo Request ─────────────────────────────────── -->
+    <section id="contact" class="section-contact">
+      <div class="wrap">
+        <div class="contact-card">
+          <div style="text-align: center; margin-bottom: 12px;">
+            <span class="chip chip-brass">الخطوة التالية</span>
+          </div>
+          <h2 class="contact-title">طلب استعراض تنفيذي خاص بالمؤسسة</h2>
+          <p class="contact-desc">
+            يسرنا ترتيب جلسة استعراض حية لعمادة كليتكم أو إدارتكم الجامعية، لعرض كيف يحل SCHEDULE تعقيدات الجداول لديكم.
           </p>
-          <ul class="pillar-feature-list">
-            <li>فحص دقيق بالدقيقة الواحدة لكافة الفترات والمحاضرات.</li>
-            <li>اقتراح تلقائي لأقصر تسلسل نقلات ممكن لحل التعارض.</li>
-            <li>محاكاة أثر النقلة على الأساتذة والطلبة قبل تثبيتها.</li>
-          </ul>
-        </div>
 
-        <!-- Pillar 2 -->
-        <div class="pillar-card">
-          <span class="pillar-number">02 / BARTER</span>
-          <h3 class="pillar-title">سوق مقايضة القاعات الأكاديمية (Hall Barter)</h3>
-          <p class="pillar-text">
-            سوق داخلي بين الأقسام العلمية لإتاحة القاعات الشاغرة واستعارتها وفق آلية عادلة وموثقة في سجل رقمي، يمنع احتكار القاعات ويستثمر كل مقعد في الكلية.
-          </p>
-          <ul class="pillar-feature-list">
-            <li>خوارزمية توزيع عادل (Fair-share) تضمن تكافؤ الفرص بين الأقسام.</li>
-            <li>نظام إشعارات وقبول رسمي فوري لطلبات الاستعارة.</li>
-            <li>سجل زمني يوثق المالك الأصلي والمستعير وتاريخ الإخلاء.</li>
-          </ul>
-        </div>
-
-        <!-- Pillar 3 -->
-        <div class="pillar-card">
-          <span class="pillar-number">03 / ORCHESTRATION</span>
-          <h3 class="pillar-title">تنسيق الفروع والمقار المتعددة (Multi-Campus)</h3>
-          <p class="pillar-text">
-            إدارة كاملة للشعب الموزعة بين المقر الرئيسي وفروع الكلية الإقليمية (مثل فروع الجهراء وفحيحيل وصباح الأحمد)، مع عزل دقيق وحساب أوقات التنقل للأساتذة.
-          </p>
-          <ul class="pillar-feature-list">
-            <li>فصل النطاقات الأكاديمية مع إمكانية الترحيل بنقرة واحدة.</li>
-            <li>منع جدولة أستاذ في فرعين متباعدين دون فاصل زمني كافٍ.</li>
-            <li>تقارير مخصصة لكل موقع جغرافي على حدة.</li>
-          </ul>
-        </div>
-
-        <!-- Pillar 4 -->
-        <div class="pillar-card">
-          <span class="pillar-number">04 / EXECUTIVE AUDIT</span>
-          <h3 class="pillar-title">تقارير الاعتماد التنفيذي الفوري (Instant Audit)</h3>
-          <p class="pillar-text">
-            محرك طباعة فائق الحرفية ينتج تقارير PDF الرسمية لكامل الكلية والأقسام؛ مطابقة للمواصفات الرسمية، بأرقام إنجليزية واضحة، وأرقام مدنية موثقة للأساتذة.
-          </p>
-          <ul class="pillar-feature-list">
-            <li>طباعة خالية تماماً من الصفحات البيضاء أو الهوامش المشوهة.</li>
-            <li>تقارير تفصيلية للتغييرات والقرارات المتخذة للمجالس.</li>
-            <li>استخراج جداول الأساتذة الشخصية والجداول المجمعة.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── Comparison Section (لماذا SCHEDULE؟) ───────────────────────────── -->
-  <section id="comparison" class="section-comparison">
-    <div class="wrap">
-      <div class="section-head">
-        <span class="badge" style="margin-bottom: 16px;">المقارنة والمفاضلة</span>
-        <h2 class="section-title">الفارق بين الحلول اليدوية ومحرك SCHEDULE</h2>
-        <p class="section-desc">
-          مقارنة موضوعية توضح كيف تنقل المنظومة مؤسستك من حالة الاستنزاف الإداري إلى الاستقرار والاطمئنان التام.
-        </p>
-      </div>
-
-      <div class="comp-table-wrap">
-        <div class="comp-row comp-head">
-          <span>المحور الأكاديمي</span>
-          <span style="color: #8c4242;">الأسلوب التقليدي (إكسل والمذكرات)</span>
-          <span style="color: var(--jade);">مع منظومة SCHEDULE</span>
-        </div>
-
-        <div class="comp-row">
-          <div class="comp-aspect">كشف التعارضات والتضارب</div>
-          <div class="comp-bad">✕ اكتشاف متأخر أثناء بدء الفصل أو بعد شكاوى الأساتذة.</div>
-          <div class="comp-good">✓ كشف استباقي فوري أثناء السحب والإفلات قبل الحفظ.</div>
-        </div>
-
-        <div class="comp-row">
-          <div class="comp-aspect">إشغال القاعات وتدويرها</div>
-          <div class="comp-bad">✕ قاعات محجوزة بلا استخدام وقاعات أخرى تعاني الازدحام.</div>
-          <div class="comp-good">✓ سوق مقايضة شفاف يستثمر كل قاعة شاغرة بين الأقسام.</div>
-        </div>
-
-        <div class="comp-row">
-          <div class="comp-aspect">إدارة الفروع والمواقع المتباعدة</div>
-          <div class="comp-bad">✕ تشتت الجداول وتضارب مواعيد الأساتذة بين المقرات.</div>
-          <div class="comp-good">✓ ضبط آلي لزمن التنقل وترحيل الشعب بضغطة زر واحدة.</div>
-        </div>
-
-        <div class="comp-row">
-          <div class="comp-aspect">تقارير الاعتماد والطباعة</div>
-          <div class="comp-bad">✕ ملفات مشتتة، أخطاء تنسيق، ومراجعات يدوية تستهلك أياماً.</div>
-          <div class="comp-good">✓ تقارير رسمية فائقة النقاء جاهزة للاعتماد الفوري.</div>
-        </div>
-
-        <div class="comp-row">
-          <div class="comp-aspect">الذاكرة المؤسسية وسجل التغييرات</div>
-          <div class="comp-bad">✕ ضياع أسباب القرارات مع تبدل رؤساء الأقسام ومنسقيها.</div>
-          <div class="comp-good">✓ سجل تدقيق رقمي كامل يوثق من نقل وماذا ولماذا بكل دقة.</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── About & Heritage ───────────────────────────────────────────────── -->
-  <section id="about" class="section-about">
-    <div class="wrap">
-      <div class="about-box">
-        <div class="about-badge">
-          <span class="badge">فلسفة البناء والنشأة</span>
-        </div>
-        <blockquote class="about-quote">
-          «الجدول الأكاديمي ليس مجرد خانات تُملأ بالأسماء، بل هو عصب الحياة الجامعية ومرآة العدالة والاطمئنان بين الأقسام والأساتذة والطلبة.»
-        </blockquote>
-        <p class="about-body">
-          لم تُبْنَ هذه المنظومة داخل مختبر برمجي معزول، بل ولدت من صلب المعاناة الحقيقية لمنسقي الجداول وعمادات الكليات، بعد مئات الساعات من معايشة كواليس اعتماد المقررات. كل زر في SCHEDULE، وكل تنبيه فيه، وضع لإنهاء مشكلة عانى منها منسق أو رئيس قسم في الميدان الجامعي الفعلي.
-        </p>
-        <div class="about-signature">
-          SCHEDULE · نظام القرار الأكاديمي الحصري
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ── Executive Contact / Private Demo Request ───────────────────────── -->
-  <section id="contact" class="section-contact">
-    <div class="wrap">
-      <div class="contact-container">
-        <div class="contact-head">
-          <span class="badge" style="margin-bottom: 16px;">الخطوة التالية</span>
-          <h2 class="contact-title">طلب استعراض تنفيذي خاص بمؤسستكم</h2>
-          <p class="contact-sub">
-            يسرنا ترتيب جلسة استعراض خاصة لعمادة كليتكم أو إدارتكم الجامعية، لعرض كيف يمكن لـ SCHEDULE تحويل إدارة الجداول لديكم إلى تجربة هادئة وفائقة الدقة.
-          </p>
-        </div>
-
-        <form id="landing-inquiry-form" onsubmit="handleInquirySubmit(event)">
-          <div class="form-grid">
-            <div class="form-group">
-              <label class="form-label" for="institution">اسم الجامعة أو الكلية *</label>
-              <input type="text" id="institution" name="institution" class="form-input" placeholder="مثال: جامعة الكويت / كلية التربية الأساسية" required />
+          <!-- Fast Direct WhatsApp Access -->
+          <div class="quick-whatsapp-banner">
+            <div>
+              <div style="font-weight: 700; color: #ffffff;">تواصل مباشر وسريع عبر الواتساب؟</div>
+              <div style="font-size: 0.84rem; color: var(--ink-dim);">مستشارنا الأكاديمي متاح للتنسيق المباشر مع العمادات</div>
             </div>
-
-            <div class="form-group">
-              <label class="form-label" for="name">الاسم والمنصب الأكاديمي *</label>
-              <input type="text" id="name" name="name" class="form-input" placeholder="مثال: د. عبدالله - رئيس قسم / منسق جدول" required />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="email">البريد الإلكتروني الرسمي *</label>
-              <input type="email" id="email" name="email" class="form-input" placeholder="name@university.edu" required />
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="phone">رقم الهاتف / الواتساب للتنسيق *</label>
-              <input type="tel" id="phone" name="phone" class="form-input" placeholder="+965 xxxxxxxx" required />
-            </div>
-
-            <div class="form-group full">
-              <label class="form-label" for="scale">الحجم التقريبي للكلية / الطلبة</label>
-              <select id="scale" name="scale" class="form-select">
-                <option value="medium">كلية متوسطة (1,000 - 5,000 طالب)</option>
-                <option value="large">كلية كبيرة أو مجمع كليات (أكثر من 5,000 طالب)</option>
-                <option value="small">كلية ناشئة أو قسم مستقل (أقل من 1,000 طالب)</option>
-              </select>
-            </div>
-
-            <div class="form-group full">
-              <label class="form-label" for="message">ملاحظات أو تحديات محددة تواجهونها حالياً (اختياري)</label>
-              <textarea id="message" name="message" class="form-textarea" placeholder="مثال: نرغب في حل مشكلة تضارب القاعات في الفرع الجديد، وتنسيق الأعباء التدريسية للفصل القادم..."></textarea>
-            </div>
+            <a href="https://wa.me/96599999999?text=%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%D8%8C%20%D9%86%D8%B1%D8%BA%D8%A8%20%D9%81%D9%8A%20%D8%B7%D9%84%D8%A8%20%D8%AC%D9%84%D8%B3%D8%A9%20%D8%A7%D8%B3%D8%AA%D8%B9%D8%B1%D8%A7%D8%B6%20%D8%AE%D8%A7%D8%B5%D8%A9%20%D9%84%D9%86%D8%B8%D8%A7%D9%85%20SCHEDULE" target="_blank" rel="noopener noreferrer" class="btn btn-brass" style="min-height: 38px; padding: 8px 18px; font-size: 0.88rem;">
+              مراسلة فورية عبر WhatsApp ←
+            </a>
           </div>
 
-          <div class="form-actions">
-            <button type="submit" id="submit-btn" class="btn btn-gold" style="width: 100%; max-width: 380px; font-size: 1.05rem;">
-              إرسال طلب الاستعراض الخاص
-            </button>
-            <div class="form-guarantee">
-              <span>🔒 نحافظ على سرية وخصوصية بيانات التواصل الأكاديمي بالكامل.</span>
+          <form id="contact-form" onsubmit="submitLead(event)">
+            <div class="form-grid">
+              <div class="form-field">
+                <label class="form-label" for="inst">اسم الجامعة أو الكلية *</label>
+                <input type="text" id="inst" name="inst" class="form-ctrl" placeholder="مثال: جامعة الكويت / كلية التربية الأساسية" required />
+              </div>
+
+              <div class="form-field">
+                <label class="form-label" for="person">الاسم والمنصب الأكاديمي *</label>
+                <input type="text" id="person" name="person" class="form-ctrl" placeholder="مثال: د. فهد - رئيس قسم / منسق جدول" required />
+              </div>
+
+              <div class="form-field">
+                <label class="form-label" for="mail">البريد الإلكتروني الرسمي *</label>
+                <input type="email" id="mail" name="mail" class="form-ctrl" placeholder="name@university.edu" required />
+              </div>
+
+              <div class="form-field">
+                <label class="form-label" for="tel">رقم الهاتف / الواتساب للتنسيق *</label>
+                <input type="tel" id="tel" name="tel" class="form-ctrl" placeholder="+965 xxxxxxxx" required />
+              </div>
+
+              <div class="form-field full">
+                <label class="form-label" for="note">ملاحظة أو تحدٍ ترغبون بحله (اختياري)</label>
+                <textarea id="note" name="note" class="form-ctrl" placeholder="مثال: نرغب في فحص تضارب القاعات بالفرع الجديد وتوزيع الأعباء التدريسية..."></textarea>
+              </div>
             </div>
-          </div>
 
-          <div id="contact-feedback" class="contact-feedback">
-            تم استلام طلبكم بنجاح. سيتواصل معكم مستشارنا الأكاديمي خلال 24 ساعة لترتيب موعد الجلسة الاستعراضية المناسب لكم.
-          </div>
-        </form>
+            <div style="margin-top: 24px; text-align: center;">
+              <button type="submit" id="submit-btn" class="btn btn-brass" style="width: 100%; max-width: 360px; font-size: 1.05rem;">
+                إرسال طلب الاستعراض الخاص
+              </button>
+            </div>
+
+            <div id="form-feedback" class="feedback-box">
+              ✓ تم استلام طلبكم بنجاح. سيتواصل معكم مستشارنا الأكاديمي خلال 24 ساعة لترتيب الموعد الأنسب لكم.
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- ── Footer ─────────────────────────────────────────────────────────── -->
-  <footer class="footer">
-    <div class="wrap footer-inner">
-      <div class="footer-brand">
-        <!-- Small Mark -->
-        <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-          <rect width="64" height="64" rx="14" fill="#141917"/>
-          <rect x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
-          <rect x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
-          <rect x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
-          <rect x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#C79B5F"/>
-          <rect x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
-        </svg>
-        <span>SCHEDULE · نظام القرار الأكاديمي</span>
+    <!-- ── Footer ─────────────────────────────────────────────────────────── -->
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div>
+          <span class="footer-brand-title">SCHEDULE · نظام القرار الأكاديمي</span>
+          <p style="margin-top: 4px; font-size: 0.8rem;">جميع الحقوق محفوظة © 2026. صُمم للميدان الأكاديمي الجامعي بأعلى معايير الهدوء والوقار.</p>
+        </div>
+        <div style="display: flex; gap: 20px;">
+          <a href="/">دخول النظام القائم</a>
+          <a href="#showcase">شاشة النظام</a>
+          <a href="#contact">طلب استعراض</a>
+        </div>
       </div>
+    </footer>
 
-      <p class="footer-copy">
-        جميع الحقوق محفوظة للمنظومة الأكاديمية © 2026. صُمم بأعلى معايير الفخامة والهدوء الرقمي.
-      </p>
+  </div>
 
-      <ul class="footer-links">
-        <li><a href="/">دخول النظام القائم</a></li>
-        <li><a href="#contact">طلب استعراض</a></li>
-        <li><a href="#engine">المحرك</a></li>
-      </ul>
+  <!-- ── Screenshot Lightbox Modal ───────────────────────────────────────── -->
+  <div id="lightbox" class="lightbox-modal" onclick="closeLightbox(event)">
+    <div class="lightbox-inner" onclick="event.stopPropagation()">
+      <div class="lightbox-bar">
+        <span id="lightbox-caption">معاينة واجهة النظام</span>
+        <button type="button" class="lightbox-close" onclick="closeLightbox()">&times;</button>
+      </div>
+      <img id="lightbox-img" src="" alt="معاينة الشاشة" class="lightbox-img" />
     </div>
-  </footer>
+  </div>
 
-  <!-- ── Lightweight Inline Interactive Logic ───────────────────────────── -->
+  <!-- ── Interactive Engine Scripts ─────────────────────────────────────── -->
   <script>
-    // Tab switcher for the interactive demo widget
-    function switchSimTab(tabKey) {
-      document.querySelectorAll('.sim-tab').forEach(function(el) {
-        el.classList.remove('active');
-      });
-      document.querySelectorAll('.sim-view').forEach(function(el) {
-        el.classList.remove('active');
-      });
+    // Tab switching for the conflict simulator
+    function switchEngine(tabKey) {
+      document.querySelectorAll('.eng-tab').forEach(function(b) { b.classList.remove('active'); });
+      document.querySelectorAll('.engine-view').forEach(function(v) { v.classList.remove('active'); });
 
-      var targetTab = document.getElementById('tab-' + tabKey);
-      var targetView = document.getElementById('sim-view-' + tabKey);
-      if (targetTab) targetTab.classList.add('active');
-      if (targetView) targetView.classList.add('active');
+      if (tabKey === 'clash') {
+        document.getElementById('eng-btn-1').classList.add('active');
+        document.getElementById('eng-view-clash').classList.add('active');
+      } else if (tabKey === 'solve') {
+        document.getElementById('eng-btn-2').classList.add('active');
+        document.getElementById('eng-view-solve').classList.add('active');
+      } else if (tabKey === 'barter') {
+        document.getElementById('eng-btn-3').classList.add('active');
+        document.getElementById('eng-view-barter').classList.add('active');
+      }
     }
 
-    // Inquiry submission handler with fallback
-    function handleInquirySubmit(event) {
-      event.preventDefault();
-      var submitBtn = document.getElementById('submit-btn');
-      var feedback = document.getElementById('contact-feedback');
-      
-      var institution = document.getElementById('institution').value;
-      var name = document.getElementById('name').value;
-      var email = document.getElementById('email').value;
-      var phone = document.getElementById('phone').value;
-      var scale = document.getElementById('scale').value;
-      var message = document.getElementById('message').value;
+    // Lightbox Modal for screenshots
+    function openLightbox(imgSrc, captionText) {
+      var modal = document.getElementById('lightbox');
+      var img = document.getElementById('lightbox-img');
+      var cap = document.getElementById('lightbox-caption');
+      img.src = imgSrc;
+      cap.textContent = captionText || 'معاينة الواجهة';
+      modal.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
 
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'جارٍ إرسال الطلب...';
+    function closeLightbox() {
+      var modal = document.getElementById('lightbox');
+      modal.classList.remove('active');
+      document.body.style.overflow = '';
+    }
 
-      var payload = {
-        institution: institution,
-        name: name,
-        email: email,
-        phone: phone,
-        scale: scale,
-        message: message,
-        submittedAt: new Date().toISOString()
-      };
+    // Escape key closes modal
+    window.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeLightbox();
+    });
+
+    // Form submission
+    function submitLead(e) {
+      e.preventDefault();
+      var btn = document.getElementById('submit-btn');
+      var feedback = document.getElementById('form-feedback');
+
+      var inst = document.getElementById('inst').value;
+      var person = document.getElementById('person').value;
+      var mail = document.getElementById('mail').value;
+      var tel = document.getElementById('tel').value;
+      var note = document.getElementById('note').value;
+
+      btn.disabled = true;
+      btn.textContent = 'جارٍ إرسال الطلب...';
 
       fetch('/api/landing/inquiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          institution: inst,
+          name: person,
+          email: mail,
+          phone: tel,
+          message: note,
+          submittedAt: new Date().toISOString()
+        })
       })
-      .then(function(res) {
-        return res.json().catch(function() { return { success: true }; });
-      })
+      .then(function(res) { return res.json().catch(function() { return { success: true }; }); })
       .then(function(data) {
         feedback.classList.add('active');
-        submitBtn.style.display = 'none';
-        // Auto pre-fill mailto option if they want immediate direct mail
+        btn.style.display = 'none';
         feedback.scrollIntoView({ behavior: 'smooth', block: 'center' });
       })
       .catch(function(err) {
-        // Graceful offline/direct fallback
-        feedback.textContent = 'تم تسجيل طلبكم بنجاح! شكرًا لاهتمامكم بنظام SCHEDULE، سنتواصل معكم قريبًا.';
+        feedback.textContent = 'تم تسجيل طلبكم بنجاح! سيتواصل معكم فريقنا الأكاديمي قريباً.';
         feedback.classList.add('active');
-        submitBtn.style.display = 'none';
+        btn.style.display = 'none';
       });
     }
   </script>
