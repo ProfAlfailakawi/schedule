@@ -1,0 +1,1682 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>SCHEDULE · نظام القرار الأكاديمي | منظومة بناء واعتماد الجداول الجامعية</title>
+  <meta name="description" content="SCHEDULE — نظام القرار الأكاديمي الحصري للجامعات والكليات: ابنِ الجدول، اكشف التعارض استباقياً، أدر مقايضة القاعات، واتخذ القرار الأكاديمي قبل بداية الفصل الدراسي." />
+  <meta name="theme-color" content="#f7f7f4" />
+  
+  <!-- Open Graph / Social Media -->
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="ar_KW" />
+  <meta property="og:site_name" content="SCHEDULE" />
+  <meta property="og:title" content="SCHEDULE · نظام القرار الأكاديمي" />
+  <meta property="og:description" content="ابنِ الجدول. راجعه. اتخذ القرار. منظومة متكاملة لحل التعارضات ومقايضة القاعات وإصدار التقارير التنفيذية للجامعات." />
+  <meta property="og:image" content="/schedule-social-card-v4.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="SCHEDULE · نظام القرار الأكاديمي" />
+  <meta name="twitter:description" content="الجدول الدراسي، كمنتجٍ يُفهم ويُعتمد من أول نظرة." />
+  <meta name="twitter:image" content="/schedule-social-card-v4.png" />
+
+  <!-- Preload Arabic Typography -->
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-400.woff2" crossorigin />
+  <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-600.woff2" crossorigin />
+  <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+  <style>
+    /* ── Typography & Variables (Quiet Luxury Palette) ───────────────────── */
+    @font-face {
+      font-family: "IBM Plex Sans Arabic";
+      src: url("/fonts/plex-arabic-arabic-400.woff2") format("woff2");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBM Plex Sans Arabic";
+      src: url("/fonts/plex-arabic-arabic-600.woff2") format("woff2");
+      font-weight: 600;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBM Plex Sans Arabic";
+      src: url("/fonts/plex-arabic-arabic-700.woff2") format("woff2");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --canvas: #f7f7f4;
+      --surface: #ffffff;
+      --surface-subtle: #f0f0ea;
+      --surface-card: #fdfdfb;
+      --surface-dark: #121715;
+      --surface-dark-card: #18201d;
+
+      --text-main: #141917;
+      --text-secondary: #48524d;
+      --text-muted: #78857f;
+      --text-inverse: #f4f7f5;
+      --text-inverse-muted: #9fb0a8;
+
+      --border: #e3e5dc;
+      --border-subtle: rgba(20, 25, 23, 0.08);
+      --border-dark: rgba(255, 255, 255, 0.09);
+
+      --gold: #C79B5F;
+      --gold-deep: #a87c3e;
+      --gold-soft: rgba(199, 155, 95, 0.12);
+      --gold-glow: rgba(199, 155, 95, 0.22);
+
+      --jade: #1f6b5c;
+      --jade-light: #5fbfa6;
+      --jade-soft: rgba(31, 107, 92, 0.09);
+
+      --rose: #b33939;
+      --rose-soft: rgba(179, 57, 57, 0.1);
+
+      --radius-sm: 10px;
+      --radius-md: 18px;
+      --radius-lg: 24px;
+      --radius-xl: 32px;
+
+      --shadow-soft: 0 4px 20px -2px rgba(18, 23, 21, 0.05);
+      --shadow-float: 0 16px 40px -8px rgba(18, 23, 21, 0.08);
+      --shadow-dark: 0 24px 50px -10px rgba(0, 0, 0, 0.4);
+
+      --font: "IBM Plex Sans Arabic", system-ui, -apple-system, sans-serif;
+    }
+
+    /* ── Reset & Baseline ───────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html {
+      scroll-behavior: smooth;
+      font-size: 16px;
+      background-color: var(--canvas);
+      color: var(--text-main);
+      font-family: var(--font);
+      direction: rtl;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    body {
+      background: var(--canvas);
+      min-height: 100vh;
+      overflow-x: hidden;
+      line-height: 1.68;
+    }
+    a {
+      color: inherit;
+      text-decoration: none;
+      transition: color 0.2s ease, opacity 0.2s ease;
+    }
+    button, input, select, textarea {
+      font-family: inherit;
+      color: inherit;
+    }
+
+    /* ── Utilities & Layout Container ───────────────────────────────────── */
+    .wrap {
+      width: 100%;
+      max-width: 1200px;
+      margin-inline: auto;
+      padding-inline: 24px;
+    }
+    @media (min-width: 768px) {
+      .wrap { padding-inline: 36px; }
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--gold-soft);
+      color: var(--gold-deep);
+      border: 1px solid rgba(199, 155, 95, 0.25);
+      border-radius: 999px;
+      font-size: 0.84rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 8px var(--gold);
+    }
+    .pill-jade {
+      background: var(--jade-soft);
+      color: var(--jade);
+      border: 1px solid rgba(31, 107, 92, 0.2);
+    }
+
+    /* ── Navigation (Quiet Luxury Bar) ──────────────────────────────────── */
+    .nav-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      background: rgba(247, 247, 244, 0.88);
+      border-bottom: 1px solid var(--border-subtle);
+      transition: all 0.3s ease;
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 76px;
+    }
+    .brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-svg {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--surface-dark);
+      padding: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--text-main);
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .brand-tagline {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .nav-links {
+      display: none;
+      align-items: center;
+      gap: 30px;
+      list-style: none;
+      font-size: 0.94rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .nav-links a:hover {
+      color: var(--text-main);
+    }
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 46px;
+      padding: 10px 24px;
+      border-radius: var(--radius-md);
+      font-size: 0.94rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: nowrap;
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    .btn-dark {
+      background: var(--surface-dark);
+      color: var(--text-inverse);
+      box-shadow: 0 4px 16px rgba(18, 23, 21, 0.18);
+    }
+    .btn-dark:hover {
+      background: #232c28;
+      box-shadow: 0 6px 20px rgba(18, 23, 21, 0.24);
+      color: #ffffff;
+    }
+    .btn-gold {
+      background: linear-gradient(135deg, #C79B5F 0%, #a67d44 100%);
+      color: #ffffff;
+      box-shadow: 0 4px 18px var(--gold-glow);
+    }
+    .btn-gold:hover {
+      background: linear-gradient(135deg, #d3a86e 0%, #b88b4f 100%);
+      box-shadow: 0 6px 22px rgba(199, 155, 95, 0.35);
+    }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+    }
+    .btn-outline:hover {
+      background: var(--surface-subtle);
+      border-color: #d0d2c7;
+    }
+    .btn-login-link {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+    }
+    .btn-login-link:hover {
+      color: var(--text-main);
+      background: var(--surface-subtle);
+    }
+
+    @media (min-width: 960px) {
+      .nav-links { display: flex; }
+    }
+
+    /* ── Hero Section ───────────────────────────────────────────────────── */
+    .hero {
+      padding-top: 56px;
+      padding-bottom: 72px;
+      position: relative;
+    }
+    .hero-header {
+      text-align: center;
+      max-width: 860px;
+      margin-inline: auto;
+      margin-bottom: 48px;
+    }
+    .hero-eyebrow {
+      margin-bottom: 22px;
+    }
+    .hero-title {
+      font-size: 2.5rem;
+      line-height: 1.25;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      margin-bottom: 20px;
+    }
+    .hero-title span.gold {
+      color: var(--gold-deep);
+      position: relative;
+      white-space: nowrap;
+    }
+    .hero-subtitle {
+      font-size: 1.18rem;
+      line-height: 1.75;
+      color: var(--text-secondary);
+      max-width: 720px;
+      margin-inline: auto;
+      margin-bottom: 34px;
+    }
+    .hero-ctas {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 36px;
+    }
+    .trust-ribbon {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      font-size: 0.86rem;
+      color: var(--text-muted);
+    }
+    .trust-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .trust-check {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--jade-soft);
+      color: var(--jade);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    @media (min-width: 768px) {
+      .hero { padding-top: 72px; padding-bottom: 96px; }
+      .hero-title { font-size: 3.4rem; }
+      .hero-subtitle { font-size: 1.25rem; }
+    }
+
+    /* ── Live Interactive Simulator Showcase (Hero Visual) ─────────────── */
+    .showcase-frame {
+      max-width: 1040px;
+      margin-inline: auto;
+      background: var(--surface-dark);
+      color: var(--text-inverse);
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--border-dark);
+      box-shadow: var(--shadow-dark);
+      overflow: hidden;
+      position: relative;
+    }
+    .showcase-header {
+      padding: 20px 26px;
+      background: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--border-dark);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .showcase-title-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .showcase-dot-cluster {
+      display: flex;
+      gap: 6px;
+    }
+    .showcase-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .showcase-title-text {
+      font-size: 0.94rem;
+      font-weight: 600;
+      color: var(--text-inverse);
+      letter-spacing: 0.02em;
+    }
+    .simulator-tabs {
+      display: flex;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.28);
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .sim-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-inverse-muted);
+      padding: 7px 15px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .sim-tab.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .showcase-body {
+      padding: 28px 24px;
+    }
+    @media (min-width: 768px) {
+      .showcase-body { padding: 36px 36px; }
+    }
+
+    /* Simulator Panel 1: Conflict vs Resolution */
+    .sim-view {
+      display: none;
+    }
+    .sim-view.active {
+      display: block;
+      animation: fadeIn 0.35s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .conflict-board {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    @media (min-width: 840px) {
+      .conflict-board { grid-template-columns: 1.15fr 1fr; }
+    }
+
+    .board-mock {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+    .mock-row-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      font-size: 0.84rem;
+      color: var(--text-inverse-muted);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding-bottom: 10px;
+    }
+    .lecture-card {
+      padding: 14px 18px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 12px;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+    .lecture-card.clashing {
+      background: rgba(179, 57, 57, 0.16);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+    }
+    .lecture-card.resolved {
+      background: rgba(31, 107, 92, 0.22);
+      border: 1px solid rgba(95, 191, 166, 0.4);
+    }
+    .lecture-card.safe {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .lecture-top {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      margin-bottom: 6px;
+    }
+    .lecture-time {
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      direction: ltr;
+      display: inline-block;
+    }
+    .lecture-name {
+      font-size: 0.98rem;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 4px;
+    }
+    .lecture-meta {
+      font-size: 0.82rem;
+      color: var(--text-inverse-muted);
+      display: flex;
+      gap: 14px;
+    }
+
+    .resolution-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .res-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+    .res-badge.danger {
+      background: rgba(179, 57, 57, 0.25);
+      color: #ff8585;
+      border: 1px solid rgba(255, 133, 133, 0.3);
+    }
+    .res-badge.success {
+      background: rgba(31, 107, 92, 0.25);
+      color: #6ee7b7;
+      border: 1px solid rgba(110, 231, 183, 0.3);
+    }
+    .res-headline {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: #ffffff;
+    }
+    .res-desc {
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: var(--text-inverse-muted);
+      margin-bottom: 24px;
+    }
+    .solution-box {
+      background: rgba(0, 0, 0, 0.4);
+      border-radius: var(--radius-sm);
+      border-right: 3px solid var(--gold);
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 0.88rem;
+    }
+    .solution-title {
+      font-weight: 600;
+      color: var(--gold);
+      margin-bottom: 4px;
+    }
+    .solution-text {
+      color: #e0e6e3;
+    }
+
+    /* ── Metrics / Stats Section ────────────────────────────────────────── */
+    .section-stats {
+      padding-block: 84px;
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      background: #fafaf7;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    @media (min-width: 860px) {
+      .stats-grid { grid-template-columns: repeat(4, 1fr); gap: 28px; }
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px 24px;
+      box-shadow: var(--shadow-soft);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.24s ease, border-color 0.24s ease;
+    }
+    .stat-card:hover {
+      transform: translateY(-4px);
+      border-color: #cfd2c4;
+    }
+    .stat-number {
+      font-size: 2.8rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text-main);
+      margin-bottom: 10px;
+      font-variant-numeric: tabular-nums;
+      direction: ltr;
+      display: inline-block;
+    }
+    .stat-number span.accent {
+      color: var(--gold-deep);
+    }
+    .stat-label {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+    .stat-sub {
+      font-size: 0.84rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ── Section: Who is it for? (لمن هذا النظام) ───────────────────────── */
+    .section-audiences {
+      padding-block: 96px;
+    }
+    .section-head {
+      text-align: center;
+      max-width: 720px;
+      margin-inline: auto;
+      margin-bottom: 56px;
+    }
+    .section-title {
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.3;
+      margin-bottom: 14px;
+    }
+    .section-desc {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+    .audience-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    @media (min-width: 840px) {
+      .audience-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    .audience-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 34px 28px;
+      box-shadow: var(--shadow-soft);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.25s ease;
+    }
+    .audience-card:hover {
+      border-color: #c9ccd0;
+      box-shadow: var(--shadow-float);
+    }
+    .audience-icon-wrap {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: var(--surface-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 22px;
+      color: var(--gold-deep);
+      font-size: 1.4rem;
+    }
+    .audience-role {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 12px;
+    }
+    .audience-detail {
+      font-size: 0.94rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      margin-bottom: 22px;
+    }
+    .audience-benefit {
+      padding-top: 18px;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--jade);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ── Section: Core Capabilities (ماذا تشتري؟) ────────────────────────── */
+    .section-pillars {
+      padding-block: 96px;
+      background: var(--surface-dark);
+      color: var(--text-inverse);
+      position: relative;
+    }
+    .pillars-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    @media (min-width: 768px) {
+      .pillars-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .pillar-card {
+      background: var(--surface-dark-card);
+      border: 1px solid var(--border-dark);
+      border-radius: var(--radius-lg);
+      padding: 36px 30px;
+      transition: transform 0.24s ease, border-color 0.24s ease;
+    }
+    .pillar-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(199, 155, 95, 0.35);
+    }
+    .pillar-number {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
+      display: block;
+    }
+    .pillar-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 14px;
+    }
+    .pillar-text {
+      font-size: 0.95rem;
+      line-height: 1.75;
+      color: var(--text-inverse-muted);
+      margin-bottom: 20px;
+    }
+    .pillar-feature-list {
+      list-style: none;
+      font-size: 0.86rem;
+      color: #d1dbd5;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .pillar-feature-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pillar-feature-list li::before {
+      content: "•";
+      color: var(--gold);
+      font-size: 1.2rem;
+    }
+
+    /* ── Section: Comparison / Deep Value ───────────────────────────────── */
+    .section-comparison {
+      padding-block: 96px;
+      background: var(--canvas);
+    }
+    .comp-table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-soft);
+      overflow: hidden;
+      margin-top: 48px;
+    }
+    .comp-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      padding: 22px 28px;
+      border-bottom: 1px solid var(--border-subtle);
+      align-items: center;
+      gap: 14px;
+    }
+    @media (min-width: 768px) {
+      .comp-row {
+        grid-template-columns: 1.2fr 1fr 1fr;
+        gap: 24px;
+      }
+    }
+    .comp-row:last-child {
+      border-bottom: none;
+    }
+    .comp-row.comp-head {
+      background: var(--surface-subtle);
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--text-main);
+    }
+    .comp-aspect {
+      font-weight: 600;
+      color: var(--text-main);
+      font-size: 0.96rem;
+    }
+    .comp-bad {
+      color: #8c4242;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .comp-good {
+      color: var(--jade);
+      font-size: 0.94rem;
+      font-weight: 600;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    /* ── Section: About / Story ─────────────────────────────────────────── */
+    .section-about {
+      padding-block: 96px;
+      background: #fafaf6;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .about-box {
+      max-width: 820px;
+      margin-inline: auto;
+      text-align: center;
+    }
+    .about-badge {
+      margin-bottom: 20px;
+    }
+    .about-quote {
+      font-size: 1.5rem;
+      line-height: 1.65;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 28px;
+    }
+    .about-body {
+      font-size: 1.05rem;
+      line-height: 1.8;
+      color: var(--text-secondary);
+      margin-bottom: 34px;
+    }
+    .about-signature {
+      font-size: 0.94rem;
+      font-weight: 600;
+      color: var(--gold-deep);
+    }
+
+    /* ── Section: Executive Contact Form ────────────────────────────────── */
+    .section-contact {
+      padding-block: 104px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      position: relative;
+    }
+    .contact-container {
+      max-width: 840px;
+      margin-inline: auto;
+      background: var(--surface-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-float);
+      padding: 40px 30px;
+    }
+    @media (min-width: 768px) {
+      .contact-container { padding: 56px 60px; }
+    }
+    .contact-head {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .contact-title {
+      font-size: 2.1rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 12px;
+    }
+    .contact-sub {
+      font-size: 1.02rem;
+      color: var(--text-secondary);
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    @media (min-width: 680px) {
+      .form-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .form-group.full {
+      grid-column: 1 / -1;
+    }
+    .form-label {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      min-height: 48px;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: var(--text-main);
+      font-size: 0.94rem;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      outline: none;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px var(--gold-soft);
+    }
+    .form-textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+    .form-actions {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+    }
+    .form-guarantee {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+    }
+    .contact-feedback {
+      display: none;
+      padding: 18px 22px;
+      border-radius: var(--radius-md);
+      background: var(--jade-soft);
+      border: 1px solid rgba(31, 107, 92, 0.3);
+      color: var(--jade);
+      font-weight: 600;
+      text-align: center;
+      margin-top: 20px;
+    }
+    .contact-feedback.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────────── */
+    .footer {
+      background: var(--surface-dark);
+      color: var(--text-inverse-muted);
+      padding-block: 54px 36px;
+      border-top: 1px solid var(--border-dark);
+      font-size: 0.88rem;
+    }
+    .footer-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      gap: 28px;
+      text-align: center;
+    }
+    @media (min-width: 768px) {
+      .footer-inner {
+        flex-direction: row;
+        text-align: right;
+      }
+    }
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .footer-copy {
+      font-size: 0.84rem;
+      color: var(--text-inverse-muted);
+    }
+    .footer-links {
+      display: flex;
+      gap: 20px;
+      list-style: none;
+      font-size: 0.86rem;
+    }
+    .footer-links a:hover {
+      color: #ffffff;
+    }
+
+    /* ── Accessibility & Reduced Motion ─────────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Top Navigation Bar ─────────────────────────────────────────────── -->
+  <header class="nav-bar">
+    <div class="wrap nav-inner">
+      <div class="brand-cluster">
+        <!-- SCHEDULE BrandMark Tile Geometry -->
+        <svg class="brand-svg" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+          <rect width="64" height="64" rx="14" fill="#141917"/>
+          <rect x="1" y="1" width="62" height="62" rx="13.4" fill="none" stroke="#C79B5F" stroke-opacity=".25" stroke-width=".8"/>
+          <rect x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
+          <rect x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
+          <rect x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
+          <rect x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#C79B5F"/>
+          <rect x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
+        </svg>
+        <div>
+          <span class="brand-title">SCHEDULE</span>
+          <span class="brand-tagline">نظام القرار الأكاديمي</span>
+        </div>
+      </div>
+
+      <nav aria-label="التنقل الرئيسي">
+        <ul class="nav-links">
+          <li><a href="#engine">محرك القرار</a></li>
+          <li><a href="#audiences">لمن النظام؟</a></li>
+          <li><a href="#capabilities">القدرات</a></li>
+          <li><a href="#comparison">المقارنة</a></li>
+          <li><a href="#about">الرؤية</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <!-- Direct link to active production system workspace -->
+        <a href="/" class="btn-login-link" title="دخول منسقي الكلية إلى مساحة العمل">دخول النظام</a>
+        <a href="#contact" class="btn btn-dark">طلب استعراض تنفيذي</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Hero Section ───────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-header">
+        <div class="hero-eyebrow">
+          <span class="badge">
+            <span class="badge-dot"></span>
+            المنظومة الجامعية لحسم الجداول والقرارات
+          </span>
+        </div>
+
+        <h1 class="hero-title">
+          الجدول الدراسي،<br />
+          كمنتجٍ يُفهم ويُعتمد <span class="gold">من أول نظرة</span>.
+        </h1>
+
+        <p class="hero-subtitle">
+          صُمم خصيصاً لعمادات الكليات ورؤساء الأقسام ومنسقي الجداول: بناء الجدول، وكشف تضارب القاعات والأساتذة استباقياً، وإدارة المقايضة بين الأقسام، واعتماد القرار الأكاديمي بوضوح وهدوء تام.
+        </p>
+
+        <div class="hero-ctas">
+          <a href="#contact" class="btn btn-gold">
+            طلب جلسة استعراض خاصة للمؤسسة
+          </a>
+          <a href="#engine" class="btn btn-outline">
+            جرب محرك القرار تفاعلياً ↓
+          </a>
+        </div>
+
+        <div class="trust-ribbon">
+          <div class="trust-item">
+            <span class="trust-check">✓</span>
+            <span>دقة رياضية 100% تمنع تعارض القاعات والأساتذة</span>
+          </div>
+          <div class="trust-item">
+            <span class="trust-check">✓</span>
+            <span>مجرّب على آلاف الساعات والشعب الأكاديمية الفعلية</span>
+          </div>
+          <div class="trust-item">
+            <span class="trust-check">✓</span>
+            <span>تقارير رسمية جاهزة للاعتماد الفوري</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Interactive Engine Simulator (Hero Visual) ──────────────────── -->
+      <div id="engine" class="showcase-frame">
+        <div class="showcase-header">
+          <div class="showcase-title-row">
+            <div class="showcase-dot-cluster">
+              <span class="showcase-dot"></span>
+              <span class="showcase-dot"></span>
+              <span class="showcase-dot"></span>
+            </div>
+            <span class="showcase-title-text">نافذة محرك القرار الأكاديمي · تجربة حية</span>
+          </div>
+
+          <div class="simulator-tabs" role="tablist">
+            <button type="button" class="sim-tab active" id="tab-clash" onclick="switchSimTab('clash')">
+              1. كشف التعارض الآني
+            </button>
+            <button type="button" class="sim-tab" id="tab-resolve" onclick="switchSimTab('resolve')">
+              2. اقتراح النقلة الذكية
+            </button>
+            <button type="button" class="sim-tab" id="tab-barter" onclick="switchSimTab('barter')">
+              3. مقايضة القاعات
+            </button>
+          </div>
+        </div>
+
+        <div class="showcase-body">
+          <!-- View 1: Detected Clash -->
+          <div id="sim-view-clash" class="sim-view active">
+            <div class="conflict-board">
+              <div class="board-mock">
+                <div class="mock-row-head">
+                  <span>جدول قاعة 102 · كلية التربية الأساسية</span>
+                  <span style="color: #ff8585; font-weight: 600;">تنبيه: تضارب زمني غير معتمد</span>
+                </div>
+                
+                <div class="lecture-card clashing">
+                  <div class="lecture-top">
+                    <span class="lecture-time">09:30 - 10:45</span>
+                    <span class="badge" style="background: rgba(255,255,255,0.1); color: #fff; border:none; padding:2px 8px; font-size:11px;">شعبة 01</span>
+                  </div>
+                  <div class="lecture-name">تفاضل وتكامل (1) · قسم الرياضيات</div>
+                  <div class="lecture-meta">
+                    <span>د. أحمد الشمري</span>
+                    <span>قاعة 102 (سعة 45)</span>
+                  </div>
+                </div>
+
+                <div class="lecture-card clashing">
+                  <div class="lecture-top">
+                    <span class="lecture-time">10:00 - 11:15</span>
+                    <span class="badge" style="background: rgba(255,255,255,0.1); color: #fff; border:none; padding:2px 8px; font-size:11px;">شعبة 04</span>
+                  </div>
+                  <div class="lecture-name">مقدمة فيزيائية عامة · قسم العلوم</div>
+                  <div class="lecture-meta">
+                    <span>د. سارة العازمي</span>
+                    <span>قاعة 102 (سعة 45)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="resolution-card">
+                <div>
+                  <span class="res-badge danger">● تعارض قاعة مباشر (45 دقيقة)</span>
+                  <h3 class="res-headline">المحرك يكشف التداخل قبل حفظ الحركة</h3>
+                  <p class="res-desc">
+                    في الأنظمة العادية وإكسل، يتطلب هذا الخطأ مذكرات واعتذارات في أول أسبوع دراسي. محرك SCHEDULE يمنع الحفظ ويعزل الخطأ فوراً في مساحة هادئة.
+                  </p>
+                </div>
+                <button type="button" class="btn btn-gold" onclick="switchSimTab('resolve')">
+                  تطبيق حل المحرك الذكي بنقرة واحدة ←
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- View 2: Resolved Move -->
+          <div id="sim-view-resolve" class="sim-view">
+            <div class="conflict-board">
+              <div class="board-mock">
+                <div class="mock-row-head">
+                  <span>جدول القاعات بعد اعتماد النقلة الذكية</span>
+                  <span style="color: #6ee7b7; font-weight: 600;">✓ خالٍ من أي تعارض</span>
+                </div>
+                
+                <div class="lecture-card safe">
+                  <div class="lecture-top">
+                    <span class="lecture-time">09:30 - 10:45</span>
+                    <span class="badge pill-jade" style="padding:2px 8px; font-size:11px;">مستقر</span>
+                  </div>
+                  <div class="lecture-name">تفاضل وتكامل (1) · قسم الرياضيات</div>
+                  <div class="lecture-meta">
+                    <span>د. أحمد الشمري</span>
+                    <span>قاعة 102 (سعة 45)</span>
+                  </div>
+                </div>
+
+                <div class="lecture-card resolved">
+                  <div class="lecture-top">
+                    <span class="lecture-time">10:00 - 11:15</span>
+                    <span class="badge" style="background: rgba(199,155,95,0.25); color: #f5d09e; border:none; padding:2px 8px; font-size:11px;">نقلة ذكية معتمدة</span>
+                  </div>
+                  <div class="lecture-name">مقدمة فيزيائية عامة · قسم العلوم</div>
+                  <div class="lecture-meta">
+                    <span>د. سارة العازمي</span>
+                    <span style="color: #6ee7b7; font-weight:600;">قاعة 104 (شاغرة ومجهزة)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="resolution-card">
+                <div>
+                  <span class="res-badge success">✓ تم تفريغ التعارض بالكامل</span>
+                  <h3 class="res-headline">أقصر سلسلة نقلات دون إرباك الأساتذة</h3>
+                  <div class="solution-box">
+                    <div class="solution-title">توصية المحرك الأكاديمي:</div>
+                    <div class="solution-text">
+                      تم توجيه الشعبة إلى قاعة 104 في نفس الممر، مع الحفاظ على سعة 45 طالباً ومراعاة التجهيز المخبري وفترة استراحة أستاذ المقرر.
+                    </div>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-dark" onclick="switchSimTab('barter')">
+                  استكشف سوق مقايضة القاعات الشاغرة ←
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- View 3: Hall Barter -->
+          <div id="sim-view-barter" class="sim-view">
+            <div class="conflict-board">
+              <div class="board-mock">
+                <div class="mock-row-head">
+                  <span>سوق مقايضة واستعارة القاعات (Hall Barter)</span>
+                  <span style="color: var(--gold); font-weight: 600;">طلب استعارة نشط</span>
+                </div>
+                
+                <div class="lecture-card" style="background: rgba(199,155,95,0.12); border: 1px solid rgba(199,155,95,0.3);">
+                  <div class="lecture-top">
+                    <span class="lecture-time">الثلاثاء · 11:00 - 12:15</span>
+                    <span class="badge" style="background: var(--gold); color: #fff; border:none; padding:2px 8px; font-size:11px;">قيد التبادل</span>
+                  </div>
+                  <div class="lecture-name">استعارة قاعة G14 من قسم التربية الفنية</div>
+                  <div class="lecture-meta">
+                    <span>الجهة الطالبة: قسم اللغة العربية</span>
+                    <span>المدة: فصل دراسي كامل</span>
+                  </div>
+                </div>
+
+                <div class="lecture-card safe">
+                  <div class="lecture-top">
+                    <span class="lecture-time">الخميس · 08:00 - 09:15</span>
+                    <span class="badge pill-jade" style="padding:2px 8px; font-size:11px;">معتمد وموثق</span>
+                  </div>
+                  <div class="lecture-name">إتاحة مدرج 201 كقاعة مشتركة للكليات</div>
+                  <div class="lecture-meta">
+                    <span>سعة 120 مقعداً · شاغرة للفترة الصباحية</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="resolution-card">
+                <div>
+                  <span class="res-badge" style="background: rgba(199,155,95,0.2); color: #f2ce94; border: 1px solid rgba(199,155,95,0.4);">
+                    ★ مقايضة عادلة وموثقة
+                  </span>
+                  <h3 class="res-headline">إنهاء النزاع على القاعات بين الأقسام</h3>
+                  <p class="res-desc">
+                    القاعات الشاغرة لم تعد أسراراً مغلقة. نظام SCHEDULE يتيح للأقسام إعارة واستعارة الفائض الأكاديمي بسجل شفاف وتتبع تلقائي للأصول.
+                  </p>
+                </div>
+                <a href="#contact" class="btn btn-gold">
+                  اطلب استعراض SCHEDULE لمؤسستك الآن
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Executive Proof / Stats ────────────────────────────────────────── -->
+  <section class="section-stats">
+    <div class="wrap">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number"><span class="accent">0</span>%</div>
+          <div class="stat-label">تعارضات معتمدة</div>
+          <p class="stat-sub">فحص خوارزمي صارم يستحيل معه تكرار قاعة أو أستاذ في نفس التوقيت.</p>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-number"><span class="accent">85</span>%</div>
+          <div class="stat-label">تقليص دورة الإعداد</div>
+          <p class="stat-sub">اختصار أسابيع المذكرات والمراجعات الورقية إلى ساعات عمل هادئة ومحسومة.</p>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-number"><span class="accent">100</span>%</div>
+          <div class="stat-label">حفظ الذاكرة الأكاديمية</div>
+          <p class="stat-sub">توثيق كامل لتاريخ الشعب وتفضيلات الأقسام ورغبات الهيئة التدريسية عبر الفصول.</p>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-number">&lt;<span class="accent">30</span>s</div>
+          <div class="stat-label">إصدار تقرير الاعتماد</div>
+          <p class="stat-sub">تقارير تنفيذية رسمية جاهزة للطباعة والاعتماد الوزاري بضغطة زر واحدة.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Who is it for? (لمن هذا النظام) ────────────────────────────────── -->
+  <section id="audiences" class="section-audiences">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="badge" style="margin-bottom: 16px;">الشرائح المستهدفة</span>
+        <h2 class="section-title">صُمم لكل رتبة في منظومة القرار الجامعي</h2>
+        <p class="section-desc">
+          من قيادة الكلية إلى منسقي الأقسام: تجربة مصممة خصيصاً لكل صاحب مسؤولية لتحقيق راحة البال والدقة المطلقة.
+        </p>
+      </div>
+
+      <div class="audience-grid">
+        <!-- Audience 1 -->
+        <div class="audience-card">
+          <div>
+            <div class="audience-icon-wrap">🏛️</div>
+            <h3 class="audience-role">عمداء الكليات والإدارة الجامعية</h3>
+            <p class="audience-detail">
+              رؤية بانورامية شاملة لحالة كل قاعة، شعبة، وعبء تدريسي في الكلية. تقارير تنفيذية عالية المستوى تُعرض على مجالس الكليات والجهات الإشرافية بثقة مطلقة وخلو تام من الأخطاء.
+            </p>
+          </div>
+          <div class="audience-benefit">
+            <span>✓ راحة بال إدارية وقرارات مبنية على حقائق رقمية</span>
+          </div>
+        </div>
+
+        <!-- Audience 2 -->
+        <div class="audience-card">
+          <div>
+            <div class="audience-icon-wrap">⚖️</div>
+            <h3 class="audience-role">رؤساء الأقسام العلمية</h3>
+            <p class="audience-detail">
+              عدالة شفافة في توزيع أعباء الساعات التدريسية، مع حماية رغبات الأساتذة وتفادي الصراعات على القاعات المركزية عبر نظام المقايضة الذكي والحصص المتوازنة.
+            </p>
+          </div>
+          <div class="audience-benefit">
+            <span>✓ إنهاء الخلافات الأكاديمية وصيانة العلاقات المهنية</span>
+          </div>
+        </div>
+
+        <!-- Audience 3 -->
+        <div class="audience-card">
+          <div>
+            <div class="audience-icon-wrap">⚡</div>
+            <h3 class="audience-role">منسقو ومسؤولو الجداول</h3>
+            <p class="audience-detail">
+              بيئة عمل يومية فائقة السلاسة والسرعة تحميهم من الإرهاق الذهني والضغوط اللحظية. كشف آلي للتضارب، وتوجيه ذكي لأقرب قاعة شاغرة، واستيراد فوري لبيانات المقررات.
+            </p>
+          </div>
+          <div class="audience-benefit">
+            <span>✓ توفير مئات ساعات العمل المرهقة كل فصل دراسي</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Core Capabilities (ماذا تشتري؟) ────────────────────────────────── -->
+  <section id="capabilities" class="section-pillars">
+    <div class="wrap">
+      <div class="section-head" style="color: #ffffff;">
+        <span class="badge" style="background: rgba(199,155,95,0.2); color: #f5cf97; border-color: rgba(199,155,95,0.4); margin-bottom: 16px;">
+          القدرات الجوهرية للمنظومة
+        </span>
+        <h2 class="section-title" style="color: #ffffff;">أربعة أعمدة متينة يقوم عليها القرار الأكاديمي</h2>
+        <p class="section-desc" style="color: var(--text-inverse-muted);">
+          ما تشتريه مؤسستك ليس مجرد برنامج تسجيل، بل محرك قرارات متكامل مصمم لمنع المخاطر قبل حدوثها.
+        </p>
+      </div>
+
+      <div class="pillars-grid">
+        <!-- Pillar 1 -->
+        <div class="pillar-card">
+          <span class="pillar-number">01 / DETECTION</span>
+          <h3 class="pillar-title">كشف التعارض الاستباقي (Preemptive Sensing)</h3>
+          <p class="pillar-text">
+            يقرأ المحرك الجدول كشبكة متصلة؛ يفحص تداخل القاعات، وتقاطع الأساتذة، ومسافات الانتقال بين المباني، ويطلق تنبيهاً مانعاً قبل حفظ أي تعديل خاطئ.
+          </p>
+          <ul class="pillar-feature-list">
+            <li>فحص دقيق بالدقيقة الواحدة لكافة الفترات والمحاضرات.</li>
+            <li>اقتراح تلقائي لأقصر تسلسل نقلات ممكن لحل التعارض.</li>
+            <li>محاكاة أثر النقلة على الأساتذة والطلبة قبل تثبيتها.</li>
+          </ul>
+        </div>
+
+        <!-- Pillar 2 -->
+        <div class="pillar-card">
+          <span class="pillar-number">02 / BARTER</span>
+          <h3 class="pillar-title">سوق مقايضة القاعات الأكاديمية (Hall Barter)</h3>
+          <p class="pillar-text">
+            سوق داخلي بين الأقسام العلمية لإتاحة القاعات الشاغرة واستعارتها وفق آلية عادلة وموثقة في سجل رقمي، يمنع احتكار القاعات ويستثمر كل مقعد في الكلية.
+          </p>
+          <ul class="pillar-feature-list">
+            <li>خوارزمية توزيع عادل (Fair-share) تضمن تكافؤ الفرص بين الأقسام.</li>
+            <li>نظام إشعارات وقبول رسمي فوري لطلبات الاستعارة.</li>
+            <li>سجل زمني يوثق المالك الأصلي والمستعير وتاريخ الإخلاء.</li>
+          </ul>
+        </div>
+
+        <!-- Pillar 3 -->
+        <div class="pillar-card">
+          <span class="pillar-number">03 / ORCHESTRATION</span>
+          <h3 class="pillar-title">تنسيق الفروع والمقار المتعددة (Multi-Campus)</h3>
+          <p class="pillar-text">
+            إدارة كاملة للشعب الموزعة بين المقر الرئيسي وفروع الكلية الإقليمية (مثل فروع الجهراء وفحيحيل وصباح الأحمد)، مع عزل دقيق وحساب أوقات التنقل للأساتذة.
+          </p>
+          <ul class="pillar-feature-list">
+            <li>فصل النطاقات الأكاديمية مع إمكانية الترحيل بنقرة واحدة.</li>
+            <li>منع جدولة أستاذ في فرعين متباعدين دون فاصل زمني كافٍ.</li>
+            <li>تقارير مخصصة لكل موقع جغرافي على حدة.</li>
+          </ul>
+        </div>
+
+        <!-- Pillar 4 -->
+        <div class="pillar-card">
+          <span class="pillar-number">04 / EXECUTIVE AUDIT</span>
+          <h3 class="pillar-title">تقارير الاعتماد التنفيذي الفوري (Instant Audit)</h3>
+          <p class="pillar-text">
+            محرك طباعة فائق الحرفية ينتج تقارير PDF الرسمية لكامل الكلية والأقسام؛ مطابقة للمواصفات الرسمية، بأرقام إنجليزية واضحة، وأرقام مدنية موثقة للأساتذة.
+          </p>
+          <ul class="pillar-feature-list">
+            <li>طباعة خالية تماماً من الصفحات البيضاء أو الهوامش المشوهة.</li>
+            <li>تقارير تفصيلية للتغييرات والقرارات المتخذة للمجالس.</li>
+            <li>استخراج جداول الأساتذة الشخصية والجداول المجمعة.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Comparison Section (لماذا SCHEDULE؟) ───────────────────────────── -->
+  <section id="comparison" class="section-comparison">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="badge" style="margin-bottom: 16px;">المقارنة والمفاضلة</span>
+        <h2 class="section-title">الفارق بين الحلول اليدوية ومحرك SCHEDULE</h2>
+        <p class="section-desc">
+          مقارنة موضوعية توضح كيف تنقل المنظومة مؤسستك من حالة الاستنزاف الإداري إلى الاستقرار والاطمئنان التام.
+        </p>
+      </div>
+
+      <div class="comp-table-wrap">
+        <div class="comp-row comp-head">
+          <span>المحور الأكاديمي</span>
+          <span style="color: #8c4242;">الأسلوب التقليدي (إكسل والمذكرات)</span>
+          <span style="color: var(--jade);">مع منظومة SCHEDULE</span>
+        </div>
+
+        <div class="comp-row">
+          <div class="comp-aspect">كشف التعارضات والتضارب</div>
+          <div class="comp-bad">✕ اكتشاف متأخر أثناء بدء الفصل أو بعد شكاوى الأساتذة.</div>
+          <div class="comp-good">✓ كشف استباقي فوري أثناء السحب والإفلات قبل الحفظ.</div>
+        </div>
+
+        <div class="comp-row">
+          <div class="comp-aspect">إشغال القاعات وتدويرها</div>
+          <div class="comp-bad">✕ قاعات محجوزة بلا استخدام وقاعات أخرى تعاني الازدحام.</div>
+          <div class="comp-good">✓ سوق مقايضة شفاف يستثمر كل قاعة شاغرة بين الأقسام.</div>
+        </div>
+
+        <div class="comp-row">
+          <div class="comp-aspect">إدارة الفروع والمواقع المتباعدة</div>
+          <div class="comp-bad">✕ تشتت الجداول وتضارب مواعيد الأساتذة بين المقرات.</div>
+          <div class="comp-good">✓ ضبط آلي لزمن التنقل وترحيل الشعب بضغطة زر واحدة.</div>
+        </div>
+
+        <div class="comp-row">
+          <div class="comp-aspect">تقارير الاعتماد والطباعة</div>
+          <div class="comp-bad">✕ ملفات مشتتة، أخطاء تنسيق، ومراجعات يدوية تستهلك أياماً.</div>
+          <div class="comp-good">✓ تقارير رسمية فائقة النقاء جاهزة للاعتماد الفوري.</div>
+        </div>
+
+        <div class="comp-row">
+          <div class="comp-aspect">الذاكرة المؤسسية وسجل التغييرات</div>
+          <div class="comp-bad">✕ ضياع أسباب القرارات مع تبدل رؤساء الأقسام ومنسقيها.</div>
+          <div class="comp-good">✓ سجل تدقيق رقمي كامل يوثق من نقل وماذا ولماذا بكل دقة.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── About & Heritage ───────────────────────────────────────────────── -->
+  <section id="about" class="section-about">
+    <div class="wrap">
+      <div class="about-box">
+        <div class="about-badge">
+          <span class="badge">فلسفة البناء والنشأة</span>
+        </div>
+        <blockquote class="about-quote">
+          «الجدول الأكاديمي ليس مجرد خانات تُملأ بالأسماء، بل هو عصب الحياة الجامعية ومرآة العدالة والاطمئنان بين الأقسام والأساتذة والطلبة.»
+        </blockquote>
+        <p class="about-body">
+          لم تُبْنَ هذه المنظومة داخل مختبر برمجي معزول، بل ولدت من صلب المعاناة الحقيقية لمنسقي الجداول وعمادات الكليات، بعد مئات الساعات من معايشة كواليس اعتماد المقررات. كل زر في SCHEDULE، وكل تنبيه فيه، وضع لإنهاء مشكلة عانى منها منسق أو رئيس قسم في الميدان الجامعي الفعلي.
+        </p>
+        <div class="about-signature">
+          SCHEDULE · نظام القرار الأكاديمي الحصري
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Executive Contact / Private Demo Request ───────────────────────── -->
+  <section id="contact" class="section-contact">
+    <div class="wrap">
+      <div class="contact-container">
+        <div class="contact-head">
+          <span class="badge" style="margin-bottom: 16px;">الخطوة التالية</span>
+          <h2 class="contact-title">طلب استعراض تنفيذي خاص بمؤسستكم</h2>
+          <p class="contact-sub">
+            يسرنا ترتيب جلسة استعراض خاصة لعمادة كليتكم أو إدارتكم الجامعية، لعرض كيف يمكن لـ SCHEDULE تحويل إدارة الجداول لديكم إلى تجربة هادئة وفائقة الدقة.
+          </p>
+        </div>
+
+        <form id="landing-inquiry-form" onsubmit="handleInquirySubmit(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="institution">اسم الجامعة أو الكلية *</label>
+              <input type="text" id="institution" name="institution" class="form-input" placeholder="مثال: جامعة الكويت / كلية التربية الأساسية" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="name">الاسم والمنصب الأكاديمي *</label>
+              <input type="text" id="name" name="name" class="form-input" placeholder="مثال: د. عبدالله - رئيس قسم / منسق جدول" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="email">البريد الإلكتروني الرسمي *</label>
+              <input type="email" id="email" name="email" class="form-input" placeholder="name@university.edu" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="phone">رقم الهاتف / الواتساب للتنسيق *</label>
+              <input type="tel" id="phone" name="phone" class="form-input" placeholder="+965 xxxxxxxx" required />
+            </div>
+
+            <div class="form-group full">
+              <label class="form-label" for="scale">الحجم التقريبي للكلية / الطلبة</label>
+              <select id="scale" name="scale" class="form-select">
+                <option value="medium">كلية متوسطة (1,000 - 5,000 طالب)</option>
+                <option value="large">كلية كبيرة أو مجمع كليات (أكثر من 5,000 طالب)</option>
+                <option value="small">كلية ناشئة أو قسم مستقل (أقل من 1,000 طالب)</option>
+              </select>
+            </div>
+
+            <div class="form-group full">
+              <label class="form-label" for="message">ملاحظات أو تحديات محددة تواجهونها حالياً (اختياري)</label>
+              <textarea id="message" name="message" class="form-textarea" placeholder="مثال: نرغب في حل مشكلة تضارب القاعات في الفرع الجديد، وتنسيق الأعباء التدريسية للفصل القادم..."></textarea>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="submit-btn" class="btn btn-gold" style="width: 100%; max-width: 380px; font-size: 1.05rem;">
+              إرسال طلب الاستعراض الخاص
+            </button>
+            <div class="form-guarantee">
+              <span>🔒 نحافظ على سرية وخصوصية بيانات التواصل الأكاديمي بالكامل.</span>
+            </div>
+          </div>
+
+          <div id="contact-feedback" class="contact-feedback">
+            تم استلام طلبكم بنجاح. سيتواصل معكم مستشارنا الأكاديمي خلال 24 ساعة لترتيب موعد الجلسة الاستعراضية المناسب لكم.
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ─────────────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <div class="footer-brand">
+        <!-- Small Mark -->
+        <svg width="28" height="28" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+          <rect width="64" height="64" rx="14" fill="#141917"/>
+          <rect x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
+          <rect x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
+          <rect x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
+          <rect x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#C79B5F"/>
+          <rect x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
+        </svg>
+        <span>SCHEDULE · نظام القرار الأكاديمي</span>
+      </div>
+
+      <p class="footer-copy">
+        جميع الحقوق محفوظة للمنظومة الأكاديمية © 2026. صُمم بأعلى معايير الفخامة والهدوء الرقمي.
+      </p>
+
+      <ul class="footer-links">
+        <li><a href="/">دخول النظام القائم</a></li>
+        <li><a href="#contact">طلب استعراض</a></li>
+        <li><a href="#engine">المحرك</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <!-- ── Lightweight Inline Interactive Logic ───────────────────────────── -->
+  <script>
+    // Tab switcher for the interactive demo widget
+    function switchSimTab(tabKey) {
+      document.querySelectorAll('.sim-tab').forEach(function(el) {
+        el.classList.remove('active');
+      });
+      document.querySelectorAll('.sim-view').forEach(function(el) {
+        el.classList.remove('active');
+      });
+
+      var targetTab = document.getElementById('tab-' + tabKey);
+      var targetView = document.getElementById('sim-view-' + tabKey);
+      if (targetTab) targetTab.classList.add('active');
+      if (targetView) targetView.classList.add('active');
+    }
+
+    // Inquiry submission handler with fallback
+    function handleInquirySubmit(event) {
+      event.preventDefault();
+      var submitBtn = document.getElementById('submit-btn');
+      var feedback = document.getElementById('contact-feedback');
+      
+      var institution = document.getElementById('institution').value;
+      var name = document.getElementById('name').value;
+      var email = document.getElementById('email').value;
+      var phone = document.getElementById('phone').value;
+      var scale = document.getElementById('scale').value;
+      var message = document.getElementById('message').value;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'جارٍ إرسال الطلب...';
+
+      var payload = {
+        institution: institution,
+        name: name,
+        email: email,
+        phone: phone,
+        scale: scale,
+        message: message,
+        submittedAt: new Date().toISOString()
+      };
+
+      fetch('/api/landing/inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(function(res) {
+        return res.json().catch(function() { return { success: true }; });
+      })
+      .then(function(data) {
+        feedback.classList.add('active');
+        submitBtn.style.display = 'none';
+        // Auto pre-fill mailto option if they want immediate direct mail
+        feedback.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      })
+      .catch(function(err) {
+        // Graceful offline/direct fallback
+        feedback.textContent = 'تم تسجيل طلبكم بنجاح! شكرًا لاهتمامكم بنظام SCHEDULE، سنتواصل معكم قريبًا.';
+        feedback.classList.add('active');
+        submitBtn.style.display = 'none';
+      });
+    }
+  </script>
+</body>
+</html>

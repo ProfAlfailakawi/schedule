@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import path from "path";
+import fs from "fs";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
@@ -702,8 +703,8 @@ app.get("/api/health", (_req, res) => {
   }));
 });
 
-app.use("/api", (_req, res, next) => {
-  if (!databaseDown) { next(); return; }
+app.use("/api", (req, res, next) => {
+  if (!databaseDown || req.path === "/landing/inquiry") { next(); return; }
   res.status(503).type("application/json; charset=utf-8").send(JSON.stringify({
     error: "الخدمة متوقفة: تعذر الاتصال بقاعدة البيانات الحقيقية.",
     ref: databaseDownRef,
@@ -11143,6 +11144,29 @@ async function startServer() {
     databaseDown = databaseFailure;
   }
 
+  // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
+  app.post("/api/landing/inquiry", express.json(), (req, res) => {
+    try {
+      const { institution, name, email, phone, scale, message } = req.body || {};
+      console.log("[landing-inquiry] New executive demo request:", {
+        institution,
+        name,
+        email,
+        phone,
+        scale,
+        messageLength: message ? String(message).length : 0,
+        receivedAt: new Date().toISOString(),
+      });
+      res.json({
+        success: true,
+        message: "تم استلام طلبكم بنجاح. سيتواصل معكم فريقنا الأكاديمي خلال 24 ساعة.",
+      });
+    } catch (e: any) {
+      console.error("[landing-inquiry] Failed to process inquiry:", e);
+      res.status(500).json({ error: "تعذر تسجيل الطلب مؤقتاً." });
+    }
+  });
+
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
   });
@@ -11171,6 +11195,38 @@ async function startServer() {
   const isProduction = process.env.NODE_ENV === "production" ||
                        process.env.npm_lifecycle_event === "start" ||
                        process.argv[1]?.endsWith("server.cjs");
+
+  // ── توجيه صفحة الهبوط التسويقية (Quiet Luxury Landing Page) ─────────────────
+  // معزولة ومستقلة تماماً: تُعرض حصراً عند طلب /landing أو /landing/ أو عبر النطاق الفرعي home.*
+  // ولا تؤثر إطلاقاً على مسارات المنظومة القائمة ومساحة العمل الرئيسية.
+  const isLandingRequest = (req: Request) => {
+    const host = String(req.hostname || req.headers.host || "").toLowerCase();
+    const cleanPath = req.path.toLowerCase();
+    return host.startsWith("home.") || cleanPath === "/landing" || cleanPath === "/landing/" || cleanPath.startsWith("/landing/");
+  };
+
+  app.use((req, res, next) => {
+    if (!isLandingRequest(req)) return next();
+
+    const distLanding = path.join(process.cwd(), "dist", "landing", "index.html");
+    const publicLanding = path.join(process.cwd(), "public", "landing", "index.html");
+    const landingFile = isProduction
+      ? (fs.existsSync(distLanding) ? distLanding : publicLanding)
+      : publicLanding;
+
+    // Sub-assets under /landing/ (e.g. css/js/images)
+    if (req.path.startsWith("/landing/") && req.path.length > "/landing/".length) {
+      const sub = req.path.slice("/landing/".length);
+      const subFile = path.join(process.cwd(), isProduction ? "dist/landing" : "public/landing", sub);
+      if (fs.existsSync(subFile) && fs.statSync(subFile).isFile()) {
+        return res.sendFile(subFile);
+      }
+    }
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.sendFile(landingFile);
+  });
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import("vite");
