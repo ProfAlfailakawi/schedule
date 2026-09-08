@@ -2954,11 +2954,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const [borrowMsg, setBorrowMsg] = useState("");
   const [borrowRooms, setBorrowRooms] = useState<any[]>([]);
   const [borrowQuery, setBorrowQuery] = useState("");
+  const [borrowDay, setBorrowDay] = useState("");
+  const [borrowBuilding, setBorrowBuilding] = useState("");
+  const [borrowDept, setBorrowDept] = useState("");
   const openBorrow = async () => {
     const next = !borrowOpen;
     setBorrowOpen(next);
     if (!next) return;
-    setBorrowBusy(true); setBorrowMsg(""); setBorrowRooms([]); setBorrowQuery("");
+    setBorrowBusy(true); setBorrowMsg(""); setBorrowRooms([]); setBorrowQuery(""); setBorrowDay(""); setBorrowBuilding(""); setBorrowDept("");
     try {
       const q = new URLSearchParams({ collegeId: String(form.AdCollegeId || 0), sectionId: String(form.AdSectionId || 0), termId: String(form.AdTermId || 0) });
       const response = await fetch(`/api/hall-barter?${q}`, { credentials: "include" });
@@ -8495,11 +8498,50 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             />
                           </div>
                         ) : null}
+                        {borrowRooms.length > 5 ? (() => {
+                          const uniq = (key: string) => {
+                            const seen = new Map<string, { value: string; label: string }>();
+                            for (const op of borrowRooms) {
+                              const value = String(key === "day" ? op.day : key === "building" ? op.building || op.roomCode : op.ownerSectionId);
+                              if (!value || value === "undefined" || seen.has(value)) continue;
+                              seen.set(value, { value, label: key === "day" ? (op.dayLabel || value) : key === "building" ? value : (op.ownerSectionName || value) });
+                            }
+                            return [...seen.values()];
+                          };
+                          const dayOpts = uniq("day"), buildingOpts = uniq("building"), deptOpts = uniq("dept");
+                          if (dayOpts.length < 2 && buildingOpts.length < 2 && deptOpts.length < 2) return null;
+                          const active = borrowDay || borrowBuilding || borrowDept;
+                          return (
+                            <div className="schedule-borrow-selects">
+                              {dayOpts.length > 1 ? (
+                                <select aria-label="تصفية باليوم" value={borrowDay} onChange={e => setBorrowDay(e.target.value)} data-guide-ignore="تصفية قائمة الاستعارة المصغّرة باليوم">
+                                  <option value="">كل الأيام</option>
+                                  {dayOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                              ) : null}
+                              {buildingOpts.length > 1 ? (
+                                <select aria-label="تصفية بالمبنى" value={borrowBuilding} onChange={e => setBorrowBuilding(e.target.value)} data-guide-ignore="تصفية قائمة الاستعارة المصغّرة بالمبنى">
+                                  <option value="">كل المباني</option>
+                                  {buildingOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                              ) : null}
+                              {deptOpts.length > 1 ? (
+                                <select aria-label="تصفية بالقسم" value={borrowDept} onChange={e => setBorrowDept(e.target.value)} data-guide-ignore="تصفية قائمة الاستعارة المصغّرة بالقسم">
+                                  <option value="">كل الأقسام</option>
+                                  {deptOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                              ) : null}
+                              {active ? <button type="button" className="schedule-borrow-clear" onClick={() => { setBorrowDay(""); setBorrowBuilding(""); setBorrowDept(""); }} data-guide-ignore="مسح مرشِّحات قائمة الاستعارة المصغّرة">مسح</button> : null}
+                            </div>
+                          );
+                        })() : null}
                         {(() => {
-                          const q = borrowQuery.trim();
-                          const matched = q
-                            ? borrowRooms.filter(op => `${op.roomCode}/${op.roomHall} ${op.ownerSectionName || ""}`.toLowerCase().includes(q.toLowerCase()))
-                            : borrowRooms;
+                          const q = borrowQuery.trim().toLowerCase();
+                          const matched = borrowRooms.filter(op =>
+                            (!q || `${op.roomCode}/${op.roomHall} ${op.ownerSectionName || ""}`.toLowerCase().includes(q))
+                            && (!borrowDay || String(op.day) === borrowDay)
+                            && (!borrowBuilding || String(op.building || op.roomCode) === borrowBuilding)
+                            && (!borrowDept || String(op.ownerSectionId) === borrowDept));
                           const shown = matched.slice(0, 5);
                           if (!matched.length && borrowRooms.length) return <p className="schedule-borrow-empty">لا نتيجة لبحثك.</p>;
                           if (!shown.length) return null;

@@ -3638,7 +3638,7 @@ export const Repository = {
     return (db.hallBarterRequests || []).filter(keep).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
-  updateHallBarterRequest: async (id: string, fields: Partial<Pick<HallBarterRequest, "status" | "respondedAt" | "responderUserId" | "responderName">>): Promise<HallBarterRequest> => {
+  updateHallBarterRequest: async (id: string, fields: Partial<Pick<HallBarterRequest, "status" | "respondedAt" | "responderUserId" | "responderName" | "cancelReason">>): Promise<HallBarterRequest> => {
     const updatedAt = new Date().toISOString();
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("hallBarterRequests").doc(id);

@@ -8236,6 +8236,20 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-borrow-search input::placeholder{color:var(--ink-3,#9aa3a0)}
 .schedule-borrow-search input::-webkit-search-cancel-button{cursor:pointer}
 .schedule-borrow-more{margin:0;padding:8px 13px 10px;font-size:11.5px;color:var(--ink-2);text-align:center}
+/* فلاتر القائمة المصغّرة: ثلاثةٌ خفيفة (يوم · مبنى · قسم) بنفس آلية اللوحة. */
+.schedule-borrow-selects{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 6px 0}
+.schedule-borrow-selects>select{
+  min-height:32px;padding:0 24px 0 9px;border:1px solid color-mix(in srgb,var(--accent,#176f62) 18%,var(--line));
+  border-radius:9px;background:var(--surface);color:var(--ink-2);font:inherit;font-size:11.5px;cursor:pointer;
+  max-width:150px;text-overflow:ellipsis;
+}
+.schedule-borrow-selects>select:hover{border-color:color-mix(in srgb,var(--accent,#176f62) 34%,var(--line))}
+.schedule-borrow-selects>select:focus-visible{outline:2px solid color-mix(in srgb,var(--accent,#176f62) 45%,transparent);outline-offset:1px}
+.schedule-borrow-clear{
+  min-height:32px;padding:0 11px;border:1px solid transparent;border-radius:9px;
+  background:transparent;color:var(--accent,#176f62);font-size:11.5px;font-weight:700;cursor:pointer;
+}
+.schedule-borrow-clear:hover{background:color-mix(in srgb,var(--accent,#176f62) 9%,transparent)}
 .schedule-borrow-list{list-style:none;margin:0;padding:5px}
 .schedule-borrow-list li{
   display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;
@@ -8284,6 +8298,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .hall-barter-log-status.status-pending{background:color-mix(in srgb,#c8890f 15%,var(--surface-2));color:#8a5b06}
 .hall-barter-log-status.status-rejected{background:color-mix(in srgb,#b3352f 13%,var(--surface-2));color:#a3322c}
 .hall-barter-log-status.status-cancelled{background:var(--surface-2);color:var(--ink-3)}
+.hall-barter-log-reason{font-style:normal;font-weight:600;opacity:.85}
 .hall-barter-log-date{flex:none;color:var(--ink-3);font-size:10px;font-variant-numeric:tabular-nums}
 @media(max-width:620px){
   .hall-barter-log-row{grid-template-columns:auto minmax(0,1fr) auto;gap:6px}
