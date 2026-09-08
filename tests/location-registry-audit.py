@@ -491,4 +491,23 @@ ok('205 a branch site (الجهراء/الفحيحيل) does not import for itse
    and 'collegeName={colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName}' in (ROOT/'src/components/Schedules.tsx').read_text()
    and '.transfer-branch-import{' in (ROOT/'src/styles/09-details.css').read_text())
 
+ok('206 a pending barter request older than a week auto-cancels with a stated reason, so it stops counting and shows «ملغاة» with why',
+   'const HALL_BARTER_STALE_DAYS = 7' in server
+   and 'async function sweepStaleHallBarter' in server
+   and 'await sweepStaleHallBarter(await Repository.getHallBarterRequests(0))' in server
+   and 'const requests=await sweepStaleHallBarter(requestsRaw)' in server
+   and 'cancelReason' in (ROOT/'src/types.ts').read_text()
+   and 'row.status === "cancelled" && row.cancelReason' in barter_board)
+
+ok('207 the inline borrow panel carries the same three filters as the board — day, building, department — under its search',
+   'const [borrowDay, setBorrowDay]' in schedules_src
+   and 'const [borrowBuilding, setBorrowBuilding]' in schedules_src
+   and 'const [borrowDept, setBorrowDept]' in schedules_src
+   and 'schedule-borrow-selects' in schedules_src
+   and '.schedule-borrow-selects{' in schedule_css)
+
+ok('208 the academic scope is shared product-wide: Query Center reads the last chosen college/section/term first, not its own stale memory',
+   'Number(workspaceSaved.filterCollege || saved.filters?.collegeId || 0)' in reports_src
+   and 'Number(workspaceSaved.filterTerm || saved.filters?.termId || 0)' in reports_src)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

@@ -43,6 +43,7 @@ export type HallBarterReservationView = {
   buildingId?: string;
   roomId?: string;
   status: "pending" | "approved" | "rejected" | "cancelled";
+  cancelReason?: string;
   day: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
   roomCode: string;
   roomHall: string;
@@ -358,7 +359,7 @@ export default function HallBarterBoard({
                         <span className={`hall-barter-log-dir ${row.incoming ? "in" : "out"}`}>{row.incoming ? "وارد" : "صادر"}</span>
                         <span className="hall-barter-log-with">{row.incoming ? row.requesterSectionName : row.ownerSectionName}</span>
                         <span className="hall-barter-log-window" dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)} · {row.roomCode}/{row.roomHall}</span>
-                        <span className={`hall-barter-log-status status-${row.status}`}>{statusLabel(row.status)}</span>
+                        <span className={`hall-barter-log-status status-${row.status}`}>{statusLabel(row.status)}{row.status === "cancelled" && row.cancelReason ? <em className="hall-barter-log-reason"> · {row.cancelReason}</em> : null}</span>
                         <span className="hall-barter-log-date" dir="ltr">{fmtDate(row.createdAt)}</span>
                       </li>
                     ))}
@@ -502,7 +503,7 @@ export default function HallBarterBoard({
                   <td>{row.incoming ? row.requesterSectionName : row.ownerSectionName}</td>
                   <td dir="ltr">{row.roomCode}/{row.roomHall}</td>
                   <td dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)}</td>
-                  <td>{statusLabel(row.status)}</td>
+                  <td>{statusLabel(row.status)}{row.status === "cancelled" && row.cancelReason ? ` — ${row.cancelReason}` : ""}</td>
                   <td dir="ltr">{fmtDate(row.createdAt)}</td>
                 </tr>
               ))}

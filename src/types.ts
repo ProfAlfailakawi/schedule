@@ -488,6 +488,8 @@ export interface HallBarterRequest {
   respondedAt?: string;
   responderUserId?: number;
   responderName?: string;
+  /** سبب الإلغاء — يُملأ حين يُلغى الطلب تلقائياً بانتهاء مهلته. */
+  cancelReason?: string;
 }
 
 /**

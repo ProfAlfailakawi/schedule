@@ -334,9 +334,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [filters, setFilters] = useState<Filters>(() => ({
     ...fresh(),
     ...(saved.filters || {}),
-    collegeId: Number(saved.filters?.collegeId || workspaceSaved.filterCollege || 0) || 0,
-    sectionId: Number(saved.filters?.sectionId || workspaceSaved.filterSection || 0) || 0,
-    termId: Number(saved.filters?.termId || workspaceSaved.filterTerm || 0) || 0,
+    // النطاق الأكاديمي (الكلية/القسم/الفصل) مشترك للمنتج كله: يُقرأ آخر اختيار
+    // من أي شاشة أولاً — لا ذاكرة الاستعلامات وحدها — فلا يرى المستخدم فصلاً
+    // قديماً (٢٠١٧) اختاره النظام لأن الجدول غيّر النطاق ولم تُحدَّث الاستعلامات.
+    collegeId: Number(workspaceSaved.filterCollege || saved.filters?.collegeId || 0) || 0,
+    sectionId: Number(workspaceSaved.filterSection || saved.filters?.sectionId || 0) || 0,
+    termId: Number(workspaceSaved.filterTerm || saved.filters?.termId || 0) || 0,
     instructorId: 0,
     instructorQuery: "",
     civil: "",

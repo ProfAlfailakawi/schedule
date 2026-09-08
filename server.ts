@@ -2700,6 +2700,23 @@ async function roomScopeNotice(row:any){
 const HALL_BARTER_MIN_WINDOW_MINUTES = 50;
 const HALL_BARTER_MAX_OPPORTUNITIES = 400;
 const HALL_BARTER_DAY_LABEL = new Map(SCHEDULE_DAY_KEYS.map((key,index)=>[key,DAY_LABELS[index]]));
+/* مهلة الطلب المعلّق: أسبوع. بعده يُلغى تلقائياً بسبب واضح، فلا يبقى معلّقاً
+ * إلى الأبد ولا يُبقي العدّاد مضيئاً — ويظهر في السجل «ملغي» بسببه. */
+const HALL_BARTER_STALE_DAYS = 7;
+const HALL_BARTER_STALE_REASON = "انتهت المهلة (أسبوع دون رد)";
+/** يُلغي كل طلبٍ معلّق تجاوز مهلته، ويعيد القائمة بعد التحديث. */
+async function sweepStaleHallBarter(requests:HallBarterRequest[]):Promise<HallBarterRequest[]>{
+  const cutoff=Date.now()-HALL_BARTER_STALE_DAYS*86400000;
+  const stale=requests.filter(request=>request.status==="pending"&&(Date.parse(String(request.createdAt||""))||Date.now())<cutoff);
+  if(!stale.length)return requests;
+  const updatedById=new Map<string,HallBarterRequest>();
+  for(const request of stale){
+    const updated=await Repository.updateHallBarterRequest(request.id,{status:"cancelled",cancelReason:HALL_BARTER_STALE_REASON});
+    if(updated)updatedById.set(String(request.id),updated);
+  }
+  if(updatedById.size){hallBarterSerial++;hallBarterBoardCache.clear();}
+  return requests.map(request=>updatedById.get(String(request.id))||request);
+}
 type HallCampusGender = "male" | "female" | null;
 function hallCampusGender(name: unknown): HallCampusGender {
   const value=String(name||"").trim().toLocaleLowerCase("ar");
@@ -2793,13 +2810,16 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
   if(cached&&cached.scheduleSerial===driftSerial&&cached.barterSerial===hallBarterSerial&&cached.expiresAt>Date.now())return cached.body;
   /* لا قراءة لكل جداول النظام بعد اليوم: السؤال صار عن هذا الفصل وحده،
      وقراءة عشر سنوات لكل لوحة كانت أثقل شيء فيها. */
-  const [termRowsRaw,collegeHistoryRaw,sections,colleges,requests,registry]=await Promise.all([
+  const [termRowsRaw,collegeHistoryRaw,sections,colleges,requestsRaw,registry]=await Promise.all([
     Repository.getSchedulesByScope({termId}),
     /* تاريخ هذه الكلية وحدها — لا جداول النظام كلها — ليُعرف صاحبُ كل قاعة
        ولو لم يكتب السجل اسمه ولم يُدخل القسمُ جدولَه بعد. */
     Repository.getSchedulesByScope({collegeId}),
     Repository.getSections(),Repository.getColleges(),Repository.getHallBarterRequests(termId),readLocationRegistry(),
   ]);
+  /* طلبٌ معلّق تجاوز أسبوعاً يُلغى تلقائياً هنا، فيظهر في السجل «ملغي» بسببه
+     ولا يعود يُحسب على أحد. */
+  const requests=await sweepStaleHallBarter(requestsRaw);
   const canonicalForBarter=(row:FSchedule):FSchedule=>{
     if(row.buildingId&&row.roomId)return row;
     const b=resolveBuilding(registry,row.AdRoomCode,{collegeId:Number(row.AdCollegeId||0),sectionId:Number(row.AdSectionId||0)});
@@ -3921,7 +3941,7 @@ app.post("/api/hall-barter/requests/:id/cancel", requirePermission(7), async (re
  * لا في شاشة الجدول وحدها: طلبٌ ينتظر قرار قسمه لا ينام لأن صاحبه لم يفتح
  * الجدول اليوم. خفيفٌ متعمَّد — عدٌّ فقط، بلا بناء لوحةٍ كاملة. */
 app.get("/api/hall-barter/inbox", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const all=await Repository.getHallBarterRequests(0);
+  const all=await sweepStaleHallBarter(await Repository.getHallBarterRequests(0));
   /* ── العدّاد لصاحب القاعة، لا للمدير الذي يرى كل شيء ──────────────────────
    * يُقاس بعضوية النطاق صراحةً — لا بـ isScopeAllowed الذي يعيد «نعم» لكل شيء
    * للمدير — فلا يُنبَّه مديرُ النظام بطلبٍ لقسمٍ ليس قسمه. من له أقسام يُعدّ
