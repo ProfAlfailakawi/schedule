@@ -521,10 +521,10 @@
       .benchmark-stage { grid-template-columns: 1.25fr 1fr; gap: 40px; }
     }
 
-    /* Dials Grid (Slide 3 from presentation) */
+    /* Dials Grid (Slide 3 from presentation - 6 Studies) */
     .dials {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: repeat(2, 1fr);
       gap: 1px;
       background: var(--line);
       border: 1px solid var(--line);
@@ -532,7 +532,7 @@
       overflow: hidden;
     }
     @media (min-width: 600px) {
-      .dials { grid-template-columns: repeat(2, 1fr); }
+      .dials { grid-template-columns: repeat(3, 1fr); }
     }
     .dial {
       background: var(--surface);
@@ -1231,59 +1231,71 @@
       margin-top: 36px;
     }
     .tl__line {
-      position: absolute;
-      inset-inline: 0;
-      top: 18px;
-      height: 2px;
-      background: linear-gradient(90deg, var(--jade), var(--brass));
-      display: none;
-    }
-    @media (min-width: 768px) {
-      .tl__line { display: block; }
+      display: none !important;
     }
     .tl__row {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 16px;
+      gap: 14px;
     }
     @media (min-width: 768px) {
-      .tl__row { grid-template-columns: repeat(5, 1fr); gap: 12px; }
+      .tl__row { grid-template-columns: repeat(5, 1fr); gap: 14px; }
     }
     .beat {
       background: var(--surface);
       border: 1px solid var(--line);
+      border-top: 3px solid var(--jade);
       border-radius: var(--radius-md);
-      padding: 18px 16px;
+      padding: 22px 16px;
       position: relative;
-      z-index: 1;
       text-align: center;
+      transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .beat:hover {
+      transform: translateY(-4px);
+      border-color: rgba(208,166,99,0.5);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.3);
+    }
+    .beat.beat-active {
+      border-top: 3px solid var(--brass-bright);
+      border-color: rgba(208,166,99,0.4);
+      background: rgba(208,166,99,0.06);
+    }
+    .beat__badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(46,169,140,0.12);
+      border: 1px solid rgba(46,169,140,0.25);
+      font-size: 0.74rem;
+      font-family: var(--font-mono);
+      color: var(--jade-strong);
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .beat.beat-active .beat__badge {
+      background: rgba(208,166,99,0.15);
+      border-color: rgba(208,166,99,0.35);
+      color: var(--brass-bright);
     }
     .beat__d {
-      width: 12px;
-      height: 12px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: var(--brass);
-      box-shadow: 0 0 10px var(--brass);
-      margin-inline: auto;
-      margin-bottom: 10px;
-    }
-    .beat__y {
-      font-family: var(--font-mono);
-      font-size: 0.76rem;
-      color: var(--brass);
-      font-weight: 600;
-      display: block;
-      margin-bottom: 4px;
+      background: currentColor;
     }
     .beat h3 {
       font-size: 1.05rem;
       color: #ffffff;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      font-weight: 700;
     }
     .beat p {
-      font-size: 0.78rem;
+      font-size: 0.8rem;
       color: var(--muted);
-      line-height: 1.4;
+      line-height: 1.45;
     }
 
     /* ── Lightbox Modal for Screenshots ─────────────────────────────────── */
@@ -1490,18 +1502,16 @@
 
         <nav aria-label="التنقل الرئيسي">
           <ul class="nav-menu">
-            <li><a href="#showcase">شاشة النظام</a></li>
-            <li><a href="#benchmark">المقياس (3:24)</a></li>
-            <li><a href="#shift">ما الذي تغيّر</a></li>
-            <li><a href="#governance">الحوكمة والتشفير</a></li>
-            <li><a href="#gallery">معرض اللقطات (11)</a></li>
-            <li><a href="#telemetry">نبض الجدول</a></li>
+            <li><a href="#benchmark">المقياس</a></li>
+            <li><a href="#shift">التحول</a></li>
+            <li><a href="#governance">الحوكمة</a></li>
+            <li><a href="#gallery">اللقطات</a></li>
+            <li><a href="#telemetry">النبض</a></li>
           </ul>
         </nav>
 
         <div class="nav-ctas">
-          <a href="/" class="btn btn-glass" title="دخول مساحة العمل الجامعية">دخول النظام</a>
-          <a href="#contact" class="btn btn-brass">تواصل عبر البريد الأكاديمي</a>
+          <a href="/" class="btn btn-brass" title="دخول مساحة العمل الجامعية">دخول النظام</a>
         </div>
       </div>
     </header>
@@ -1525,7 +1535,7 @@
         </p>
 
         <div class="hero-buttons">
-          <a href="#contact" class="btn btn-brass">طلب استعراض تنفيذي (عبر البريد الرسمي)</a>
+          <a href="/" class="btn btn-brass">دخول النظام الأكاديمي</a>
           <a href="#benchmark" class="btn btn-glass">
             <span>محاكاة المعالجة الحية (3:24) ↓</span>
           </a>
@@ -1669,47 +1679,115 @@
         </div>
 
         <div class="benchmark-stage">
-          <!-- Slide 3 Global Dials (Interactive) -->
-          <div class="dials" id="benchmark-dials">
-            <div class="dial" onclick="selectDial(0, this)">
-              <div class="dial__ring">
-                <svg viewBox="0 0 100 100" aria-hidden="true">
-                  <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
-                  <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:330"></circle>
-                </svg>
+          <!-- Slide 3 Global Dials (All 6 Studies from Presentation) -->
+          <div>
+            <div class="dials" id="benchmark-dials">
+              <!-- 0: Kuwait -->
+              <div class="dial" onclick="selectDial(0, this)" style="border-color:var(--brass-bright); cursor:pointer;">
+                <div class="dial__ring">
+                  <svg viewBox="0 0 100 100" aria-hidden="true">
+                    <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                    <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:170"></circle>
+                  </svg>
+                </div>
+                <div class="dial__txt">
+                  <span class="dial__c">الكويت · AOU</span>
+                  <span class="dial__t">4–6 أسابيع</span>
+                  <span class="dial__s">iJET 2026 ↗</span>
+                </div>
               </div>
-              <div class="dial__txt">
-                <span class="dial__c">ماليزيا · MPCB</span>
-                <span class="dial__t">نحو 4 أسابيع</span>
-                <span class="dial__s">دراسة حالة أكاديمية ↗</span>
+
+              <!-- 1: Malaysia -->
+              <div class="dial" onclick="selectDial(1, this)" style="cursor:pointer;">
+                <div class="dial__ring">
+                  <svg viewBox="0 0 100 100" aria-hidden="true">
+                    <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                    <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:330"></circle>
+                  </svg>
+                </div>
+                <div class="dial__txt">
+                  <span class="dial__c">ماليزيا · MPCB</span>
+                  <span class="dial__t">نحو 4 أسابيع</span>
+                  <span class="dial__s">Case Study ↗</span>
+                </div>
+              </div>
+
+              <!-- 2: USA Cornell -->
+              <div class="dial" onclick="selectDial(2, this)" style="cursor:pointer;">
+                <div class="dial__ring">
+                  <svg viewBox="0 0 100 100" aria-hidden="true">
+                    <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                    <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:500"></circle>
+                  </svg>
+                </div>
+                <div class="dial__txt">
+                  <span class="dial__c">أمريكا · Cornell</span>
+                  <span class="dial__t">عدة أسابيع</span>
+                  <span class="dial__s">Interfaces ↗</span>
+                </div>
+              </div>
+
+              <!-- 3: Chile -->
+              <div class="dial" onclick="selectDial(3, this)" style="cursor:pointer;">
+                <div class="dial__ring">
+                  <svg viewBox="0 0 100 100" aria-hidden="true">
+                    <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                    <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:670"></circle>
+                  </svg>
+                </div>
+                <div class="dial__txt">
+                  <span class="dial__c">تشيلي · Chile</span>
+                  <span class="dial__t">أسبوعان</span>
+                  <span class="dial__s">Interfaces ↗</span>
+                </div>
+              </div>
+
+              <!-- 4: Algeria -->
+              <div class="dial" onclick="selectDial(4, this)" style="cursor:pointer;">
+                <div class="dial__ring">
+                  <svg viewBox="0 0 100 100" aria-hidden="true">
+                    <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                    <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:760"></circle>
+                  </svg>
+                </div>
+                <div class="dial__txt">
+                  <span class="dial__c">الجزائر · Tlemcen</span>
+                  <span class="dial__t">نحو 10 أيام</span>
+                  <span class="dial__s">IJKEDM ↗</span>
+                </div>
+              </div>
+
+              <!-- 5: Indonesia -->
+              <div class="dial" onclick="selectDial(5, this)" style="cursor:pointer;">
+                <div class="dial__ring">
+                  <svg viewBox="0 0 100 100" aria-hidden="true">
+                    <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+                    <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:930"></circle>
+                  </svg>
+                </div>
+                <div class="dial__txt">
+                  <span class="dial__c">إندونيسيا · UGM</span>
+                  <span class="dial__t">3 أيام عمل</span>
+                  <span class="dial__s">IEEE InAES ↗</span>
+                </div>
               </div>
             </div>
 
-            <div class="dial" onclick="selectDial(1, this)">
-              <div class="dial__ring">
-                <svg viewBox="0 0 100 100" aria-hidden="true">
-                  <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
-                  <circle class="dial__arc" cx="50" cy="50" r="40" style="--off:480"></circle>
-                </svg>
-              </div>
-              <div class="dial__txt">
-                <span class="dial__c">أمريكا · Cornell</span>
-                <span class="dial__t">عدة أسابيع</span>
-                <span class="dial__s">دراسة Interfaces ↗</span>
-              </div>
+            <div style="font-size:0.75rem; color:var(--muted); margin-top:8px; text-align:center;">
+              جميعها <b>جداول مقررات</b> — مثل نظامنا · كل حلقة = حجم الوقت المستهلك يدويًّا في الجامعات
             </div>
           </div>
 
           <!-- Dynamic Study Comparison Drawer -->
           <div id="dial-detail-drawer" style="margin-top:14px; background:#121b16; border:1px solid rgba(46,169,140,0.3); border-radius:12px; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
             <div>
-              <span id="dial-study-title" style="font-weight:700; color:#fff; font-size:0.95rem;">دراسة MPCB الأكاديمية (ماليزيا)</span>
+              <span id="dial-study-title" style="font-weight:700; color:#fff; font-size:0.95rem;">دراسة iJET 2026 المحكّمة (الكويت · AOU)</span>
               <p id="dial-study-desc" style="margin:4px 0 0; font-size:0.84rem; color:var(--ink-dim);">
-                تتطلب عملية بناء الجدول الدراسي قرابة 4 أسابيع كاملة من المراجعات اليدوية المستمرة والتدقيق الورقي.
+                تستغرق لجان الجداول 4 إلى 6 أسابيع من الاجتماعات اليدوية لمطابقة القاعات وتجنب تعارضات الطلبة.
               </p>
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
-              <span class="chip chip-brass" id="dial-speedup-badge" style="font-size:0.78rem;">SCHEDULE أسرع بـ 1,200 ضعف</span>
+              <span class="chip chip-brass" id="dial-speedup-badge" style="font-size:0.78rem;">SCHEDULE أسرع بـ 1,800 ضعف</span>
             </div>
           </div>
 
@@ -2014,12 +2092,12 @@
         <div class="head center">
           <p class="eyebrow"><svg class="ic"><use href="#i-scan"/></svg>معرض اللقطات الواقعية المعتمدة</p>
           <h2>واجهات حقيقية من صلب العرض التجريبي.</h2>
-          <p class="sub">12 لقطة شاشة موثقة من بيئة العمل الفعلية لكلية التربية الأساسية — اضغط على أي صورة لتكبيرها:</p>
+          <p class="sub">11 لقطة موثقة من بيئة العمل الفعلية لكلية التربية الأساسية — اضغط على أي صورة لتكبيرها:</p>
         </div>
 
         <!-- Filter tabs -->
         <div class="gallery-filter-wrap">
-          <button type="button" class="gallery-filter-btn active" onclick="filterGallery('all', this)">الكل (12)</button>
+          <button type="button" class="gallery-filter-btn active" onclick="filterGallery('all', this)">الكل (11)</button>
           <button type="button" class="gallery-filter-btn" onclick="filterGallery('ai', this)">الذكاء والاستيراد</button>
           <button type="button" class="gallery-filter-btn" onclick="filterGallery('schedule', this)">الجدول والسحب</button>
           <button type="button" class="gallery-filter-btn" onclick="filterGallery('rooms', this)">القاعات والطلبة</button>
@@ -2028,18 +2106,6 @@
         </div>
 
         <div class="gallery-grid" id="gallery-items">
-          <!-- Shot 0 (Verified Real Dashboard from Live System) -->
-          <div class="gallery-card" data-cat="schedule" onclick="openLightbox('/screenshots/real-live-dashboard.webp', 'لوحة المتابعة التنفيذية وصحة الجدول المباشرة — كلية التربية الأساسية (بنات)')">
-            <div class="gallery-media">
-              <img src="/screenshots/real-live-dashboard.webp" onerror="this.src='/screenshots/cover-wide.png'" alt="لوحة المتابعة التنفيذية الفعلية" loading="lazy" />
-            </div>
-            <div class="gallery-info">
-              <span class="gallery-tag">SCREEN 00 · LIVE DASHBOARD</span>
-              <div class="gallery-title">لوحة المتابعة والجاهزية (اللقطة الحقيقية)</div>
-              <p class="gallery-desc">لقطة واقعية معتمدة من مساحة العمل: مؤشرات الجودة 94%، وتوزيع 47 محاضرة، وفحص 0 تعارض.</p>
-            </div>
-          </div>
-
           <!-- Shot 1 -->
           <div class="gallery-card" data-cat="ai" onclick="openLightbox('/screenshots/demo-shot-1.webp', 'نتيجة قراءة ملف الـPDF: 89 صفاً في 4 صفحات مع مفتاح ألوان المراجعة')">
             <div class="gallery-media">
@@ -2316,35 +2382,44 @@
         </div>
 
         <div class="tl">
-          <div class="tl__line" aria-hidden="true"></div>
           <div class="tl__row">
             <div class="beat">
-              <div class="beat__d"></div>
-              <span class="beat__y">البداية</span>
+              <div class="beat__badge">
+                <span class="beat__d"></span>
+                <span>المرحلة 01 · البداية</span>
+              </div>
               <h3>جدول يعمل</h3>
               <p>شاشة واحدة تُنهي التعارض اليدوي الصريح.</p>
             </div>
             <div class="beat">
-              <div class="beat__d"></div>
-              <span class="beat__y">الاتساع</span>
+              <div class="beat__badge">
+                <span class="beat__d"></span>
+                <span>المرحلة 02 · الاتساع</span>
+              </div>
               <h3>الكليات والأقسام</h3>
               <p>عزل الصلاحيات واستيعاب الفصول المتعددة.</p>
             </div>
             <div class="beat">
-              <div class="beat__d"></div>
-              <span class="beat__y">الانضباط</span>
+              <div class="beat__badge">
+                <span class="beat__d"></span>
+                <span>المرحلة 03 · الانضباط</span>
+              </div>
               <h3>سجل المباني</h3>
               <p>تشفير القاعات وضبط السعات ومواصفات المعامل.</p>
             </div>
             <div class="beat">
-              <div class="beat__d"></div>
-              <span class="beat__y">القراءة</span>
+              <div class="beat__badge">
+                <span class="beat__d"></span>
+                <span>المرحلة 04 · القراءة</span>
+              </div>
               <h3>الاستيراد الذكي</h3>
               <p>قراءة ملفات الـPDF العربية في ثوانٍ دون إدخال يدوي.</p>
             </div>
-            <div class="beat" style="border-color:var(--brass); background:rgba(208,166,99,0.06);">
-              <div class="beat__d" style="background:var(--brass-bright);"></div>
-              <span class="beat__y">اليوم</span>
+            <div class="beat beat-active">
+              <div class="beat__badge">
+                <span class="beat__d"></span>
+                <span>المرحلة 05 · اليوم</span>
+              </div>
               <h3 style="color:var(--brass-bright);">مركز القرار</h3>
               <p>حوكمة استعارة القاعات ومساعد القرار الذكي بالعربية.</p>
             </div>
@@ -2490,14 +2565,34 @@
     // ── Benchmark Dials Interactivity ───────────────────────────────────
     const benchmarkStudies = [
       {
-        title: "دراسة MPCB الأكاديمية (ماليزيا)",
+        title: "دراسة iJET 2026 المحكّمة (الكويت · AOU)",
+        desc: "تستغرق لجان الجداول 4 إلى 6 أسابيع من الاجتماعات اليدوية لمطابقة القاعات وتجنب تعارضات الطلبة.",
+        speedup: "SCHEDULE أسرع بـ 1,800 ضعف"
+      },
+      {
+        title: "دراسة MPCB الأكاديمية (ماليزيا · Case Study)",
         desc: "تتطلب عملية بناء الجدول الدراسي قرابة 4 أسابيع كاملة من المراجعات اليدوية المستمرة والتدقيق الورقي.",
         speedup: "SCHEDULE أسرع بـ 1,200 ضعف"
       },
       {
-        title: "دراسة Interfaces الأكاديمية (جامعة كورنيل - أمريكا)",
+        title: "دراسة Interfaces 2002 الأكاديمية (أمريكا · Cornell)",
         desc: "تستهلك عملية التحكيم والجداول عدة أسابيع لمعالجة رغبات الأساتذة وتفادي التضارب في القاعات الكبرى.",
         speedup: "SCHEDULE أسرع بـ 2,000 ضعف"
+      },
+      {
+        title: "دراسة Interfaces 2010 المحكّمة (تشيلي · Chile)",
+        desc: "استغرق بناء جدول المقررات وتوزيع القاعات أسبوعين كاملين من العمل الشاق لتفادي التضارب المكاني والزمني.",
+        speedup: "SCHEDULE أسرع بـ 600 ضعف"
+      },
+      {
+        title: "دراسة IJKEDM 2021 المحكّمة (الجزائر · Tlemcen)",
+        desc: "تطلبت معالجة قيود الأساتذة والشعب 10 أيام عمل متواصلة للوصول إلى صيغة مقبولة قبل اعتمادها.",
+        speedup: "SCHEDULE أسرع بـ 420 ضعف"
+      },
+      {
+        title: "دراسة IEEE InAES 2017 المحكّمة (إندونيسيا · UGM)",
+        desc: "استغرقت العملية 3 أيام عمل كاملة من المحاولات اليدوية لاحتواء تعارضات التسجيل واختناق القاعات.",
+        speedup: "SCHEDULE أسرع بـ 130 ضعف"
       }
     ];
 
