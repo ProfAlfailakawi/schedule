@@ -8258,7 +8258,10 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-borrow-list li+li{border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
 .schedule-borrow-list li:hover{background:color-mix(in srgb,var(--accent,#176f62) 5%,var(--surface))}
 .schedule-borrow-room{font-weight:700;font-size:12.5px;color:var(--ink);letter-spacing:.2px}
-.schedule-borrow-owner{flex:1;min-width:0;font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.schedule-borrow-owner{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.schedule-borrow-owner>b{font-weight:600;font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* الوقت تحت اسم القسم بخطٍّ رفيع جدًّا: يميّز قاعتين لقسمٍ واحد دون ضجيج. */
+.schedule-borrow-time{font-style:normal;font-weight:350;font-size:10px;color:var(--ink-3,#9aa3a0);letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .schedule-borrow-list button{
   flex:none;padding:5px 14px;border:0;border-radius:8px;cursor:pointer;
   font-size:12px;font-weight:700;color:#fff;background:var(--accent,#176f62);

@@ -8499,9 +8499,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           </div>
                         ) : null}
                         {borrowRooms.length > 5 ? (() => {
-                          const uniq = (key: string) => {
+                          /* فلاتر مترابطة كاللوحة: خيارات كل فلترٍ تُحسب من الصفوف
+                             التي تطابق الفلاتر الأخرى، لا من كل الصفوف — فاختيار
+                             المبنى يضيّق الأقسام، واختيار القسم يضيّق المباني. */
+                          const matchExcept = (op: any, except: string) =>
+                            (except === "day" || !borrowDay || String(op.day) === borrowDay)
+                            && (except === "building" || !borrowBuilding || String(op.building || op.roomCode) === borrowBuilding)
+                            && (except === "dept" || !borrowDept || String(op.ownerSectionId) === borrowDept);
+                          const uniq = (key: "day" | "building" | "dept") => {
                             const seen = new Map<string, { value: string; label: string }>();
                             for (const op of borrowRooms) {
+                              if (!matchExcept(op, key)) continue;
                               const value = String(key === "day" ? op.day : key === "building" ? op.building || op.roomCode : op.ownerSectionId);
                               if (!value || value === "undefined" || seen.has(value)) continue;
                               seen.set(value, { value, label: key === "day" ? (op.dayLabel || value) : key === "building" ? value : (op.ownerSectionName || value) });
@@ -8551,7 +8559,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                 {shown.map(op => (
                                   <li key={op.id}>
                                     <span className="schedule-borrow-room" dir="ltr">{op.roomCode}/{op.roomHall}</span>
-                                    <span className="schedule-borrow-owner">{op.ownerSectionName}</span>
+                                    <span className="schedule-borrow-owner">
+                                      <b>{op.ownerSectionName}</b>
+                                      {op.startTime && op.endTime ? <em className="schedule-borrow-time" dir="ltr">{op.dayLabel ? `${op.dayLabel} · ` : ""}{formatScheduleTimeRange(op.startTime, op.endTime)}</em> : null}
+                                    </span>
                                     <button type="button" disabled={borrowBusy} onClick={() => void requestBorrow(op)} data-guide-ignore="يرسل طلب استعارة قاعة من داخل المحرر دون مغادرته">اطلب</button>
                                   </li>
                                 ))}
