@@ -11227,7 +11227,23 @@ async function startServer() {
 
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    return res.sendFile(landingFile);
+
+    try {
+      let html = fs.readFileSync(landingFile, "utf8");
+      const proto = String(req.headers["x-forwarded-proto"] || "https");
+      const rawHost = String(req.headers["x-forwarded-host"] || req.headers.host || "schedule.dr-alfailakawi.com");
+      const host = rawHost.split(":")[0];
+      const origin = `${proto}://${rawHost}`;
+      
+      // Ensure absolute URL for WhatsApp / Facebook / Twitter link preview crawlers
+      html = html.replace(
+        /content="\/screenshots\/cover-wide\.png"/g,
+        `content="${origin}/screenshots/cover-wide.png"`
+      );
+      return res.send(html);
+    } catch {
+      return res.sendFile(landingFile);
+    }
   });
 
   if (!isProduction) {
