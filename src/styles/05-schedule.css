@@ -311,7 +311,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
   overflow-x:auto;
   overflow-y:hidden;
   overscroll-behavior-x:contain;
-  scrollbar-gutter:stable;
+  scrollbar-gutter:auto;
 }
 .week-scroll-top{
   height:17px;
@@ -6984,7 +6984,7 @@ html[data-schedule-workspace="focus"] .rooms-scale{
   overflow-x:auto;
   overflow-y:hidden;
   overscroll-behavior-inline:contain;
-  scrollbar-gutter:stable;
+  scrollbar-gutter:auto;
 }
 .rooms-main-scroll::-webkit-scrollbar{height:10px}
 .rooms-main-scroll::-webkit-scrollbar-track{background:transparent}
@@ -7682,9 +7682,13 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
    removing it costs no layout: the canvas keeps its exact width, every column,
    card and hour position is untouched, and the viewport simply stops hiding a
    sliver it was reserving for a scrollbar that never comes. */
+.week-scroll-top,
 .week-scroll-main,
+.week-ruler-scroll,
+.rooms-ruler-scroll,
 .rooms-main-scroll{
-  scrollbar-gutter:auto;
+  scrollbar-gutter:auto !important;
+  scroll-behavior:auto !important;
 }
 
 /* === بورصة sits in the tools row, so it dresses like the tools row ========

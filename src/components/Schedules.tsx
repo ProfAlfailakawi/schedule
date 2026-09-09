@@ -5952,26 +5952,53 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * dropped. A mirrored surface can therefore never become a source, and no
    * clamped value can ever travel back upstream. Only a hand moves the grid.
    */
-  /** Where the mirror last parked each surface. A surface still sitting on
-   *  that offset was put there by us, so its scroll events are echoes — not a
-   *  hand. The entry survives until the surface genuinely moves elsewhere,
-   *  which is what keeps a follower parked at its clamped end from being read
-   *  as a new gesture every time the browser re-fires its scroll event. */
-  const scrollEchoRef = useRef<WeakMap<Element, number>>(new WeakMap());
+  /**
+   * Horizontal scroll synchronization without jitter, echoes, or feedback loops.
+   *
+   * When multiple scrollers share the same timeline (top scroller, sticky ruler, main grid),
+   * programmatic writes to target.scrollLeft trigger asynchronous browser scroll events.
+   * While one surface is actively scrolling, all programmatic scroll events arriving on
+   * follower surfaces are recognized as driven updates and ignored immediately.
+   * This ensures a strictly one-way flow: user gesture -> driver -> followers, with ZERO oscillation.
+   */
+  const activeScrollerRef = useRef<HTMLElement | null>(null);
+  const scrollLockTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (scrollLockTimeoutRef.current) clearTimeout(scrollLockTimeoutRef.current);
+    };
+  }, []);
+
+  const claimScroller = (element: HTMLElement | null) => {
+    if (element) activeScrollerRef.current = element;
+  };
+
   const mirrorHorizontalScroll = (source: HTMLElement | null | undefined, targets: Array<HTMLElement | null>) => {
     if (!source) return;
-    const echo = scrollEchoRef.current;
+
+    // If another surface is currently driving the gesture, any event arriving on
+    // this surface is an echo from our own programmatic assignment.
+    // Drop it immediately so it never writes back upstream or starts a feedback oscillation.
+    if (activeScrollerRef.current && activeScrollerRef.current !== source) {
+      return;
+    }
+
+    activeScrollerRef.current = source;
+    if (scrollLockTimeoutRef.current) {
+      clearTimeout(scrollLockTimeoutRef.current);
+    }
+    scrollLockTimeoutRef.current = setTimeout(() => {
+      activeScrollerRef.current = null;
+      scrollLockTimeoutRef.current = null;
+    }, 120);
+
     const value = source.scrollLeft;
-    const driven = echo.get(source);
-    if (driven !== undefined && Math.abs(driven - value) <= 1) return;
-    echo.delete(source);
     for (const target of targets) {
       if (!target || target === source) continue;
-      if (Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
-      // Record where it *actually* landed, not what we asked for: a surface
-      // with a shorter range clamps, and the clamped offset is the one its own
-      // scroll event will report.
-      echo.set(target, target.scrollLeft);
+      if (Math.abs(target.scrollLeft - value) > 0.5) {
+        target.scrollLeft = value;
+      }
     }
   };
   const syncWeekScroll = (source: "top" | "ruler" | "main", _value?: number) => {
@@ -10383,6 +10410,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 <div
                   ref={roomsRulerScrollRef}
                   className="rooms-ruler-scroll"
+                  onPointerDown={(e) => claimScroller(e.currentTarget)}
+                  onTouchStart={(e) => claimScroller(e.currentTarget)}
+                  onWheel={(e) => claimScroller(e.currentTarget)}
                   onScroll={(e) => syncRoomsScroll("ruler", e.currentTarget.scrollLeft)}
                   aria-label="شريط ساعات القاعات"
                 >
@@ -10422,6 +10452,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 <div
                   ref={roomsMainScrollRef}
                   className="rooms-main-scroll"
+                  onPointerDown={(e) => claimScroller(e.currentTarget)}
+                  onTouchStart={(e) => claimScroller(e.currentTarget)}
+                  onWheel={(e) => claimScroller(e.currentTarget)}
                   onScroll={(e) => syncRoomsScroll("main", e.currentTarget.scrollLeft)}
                 >
                   <div
@@ -10937,6 +10970,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   className="week-scroll-top week-strip-scroll-top no-print"
                   data-expanded={expandedDay || undefined}
                   style={weekStripStyle}
+                  onPointerDown={(e) => claimScroller(e.currentTarget)}
+                  onTouchStart={(e) => claimScroller(e.currentTarget)}
+                  onWheel={(e) => claimScroller(e.currentTarget)}
                   onScroll={(e) => syncWeekScroll("top", e.currentTarget.scrollLeft)}
                   aria-label="تمرير أفقي أعلى الجدول"
                   data-guide-ignore="شريط تمرير بصري للوحة الأسبوع ولا ينفذ أي إجراء على بيانات الجدول"
@@ -10947,6 +10983,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   ref={weekRulerScrollRef}
                   className="week-ruler-scroll"
                   style={weekStripStyle}
+                  onPointerDown={(e) => claimScroller(e.currentTarget)}
+                  onTouchStart={(e) => claimScroller(e.currentTarget)}
+                  onWheel={(e) => claimScroller(e.currentTarget)}
                   onScroll={(e) => syncWeekScroll("ruler", e.currentTarget.scrollLeft)}
                   aria-label="شريط ساعات الأسبوع"
                 >
@@ -10983,6 +11022,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 <div
                   ref={weekMainScrollRef}
                   className="week-scroll-main week-strips-scroll"
+                  onPointerDown={(e) => claimScroller(e.currentTarget)}
+                  onTouchStart={(e) => claimScroller(e.currentTarget)}
+                  onWheel={(e) => claimScroller(e.currentTarget)}
                   onScroll={(e) => syncWeekScroll("main", e.currentTarget.scrollLeft)}
                 >
                   <div
@@ -11187,6 +11229,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               className="week-scroll-top no-print"
               data-expanded={expandedDay || undefined}
               style={weekGridStyle}
+              onPointerDown={(e) => claimScroller(e.currentTarget)}
+              onTouchStart={(e) => claimScroller(e.currentTarget)}
+              onWheel={(e) => claimScroller(e.currentTarget)}
               onScroll={(e) => syncWeekScroll("top", e.currentTarget.scrollLeft)}
               aria-label="تمرير أفقي أعلى الجدول"
               data-guide-ignore="شريط تمرير بصري للوحة الأسبوع ولا ينفذ أي إجراء على بيانات الجدول"
@@ -11196,6 +11241,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             <div
               ref={weekMainScrollRef}
               className="week-scroll-main"
+              onPointerDown={(e) => claimScroller(e.currentTarget)}
+              onTouchStart={(e) => claimScroller(e.currentTarget)}
+              onWheel={(e) => claimScroller(e.currentTarget)}
               onScroll={(e) => syncWeekScroll("main", e.currentTarget.scrollLeft)}
             >
             <div
