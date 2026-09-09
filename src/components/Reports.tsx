@@ -2061,7 +2061,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                   {(visitingHistory?.terms || []).map(term => <span key={term.termId}>{term.termName}</span>)}
                 </div>
                 {visitingHistoryRows.map(person => {
-                  const byTerm = new Map(person.terms.map(term => [Number(term.termId), term]));
+                  const byTerm = new Map<number, VisitingHistoryPerson["terms"][number]>(person.terms.map(term => [Number(term.termId), term]));
                   return (
                     <div className="visiting-history-row" role="row" key={person.instructorId}>
                       <strong>{person.name}<small dir="ltr">{person.civil || ""}</small></strong>
