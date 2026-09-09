@@ -200,7 +200,7 @@ const PAGE_ROWS = {
   fairnessRows: 11,   // the score block costs 122mm before a single row is drawn: 12 rows measured 211mm, 11 fit
   balanceRows: 14,    // 8.0mm a department
   visitingRows: 7,
-  visitingHistoryRows: 14,
+  visitingHistoryRows: 11,
 } as const;
 
 const COMPREHENSIVE_FIRST_PAGE_ROWS = 23;
@@ -958,27 +958,42 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   const visitingHistoryRows = useMemo(() => {
     const people = visitingHistory?.people || [];
-    // The history endpoint intentionally preserves old roster rows, but the
-    // report must represent the CURRENT instructor directory. If an instructor
-    // has been deleted from the system, do not resurrect that stale identity in
-    // the fairness comparison. For people who still exist, prefer the live name
-    // and civil number so historical cards cannot drift from the directory.
+    // Historical roster rows are evidence, not a licence to resurrect a person
+    // who no longer exists in the live directory. For fairness we also count
+    // only terms that carried a real teaching section: a name placed on a
+    // roster but never given a section is not workload and must not inflate the
+    // comparison years later.
     return people
       .filter(person => instructorById.has(Number(person.instructorId)))
       .map(person => {
         const live = instructorById.get(Number(person.instructorId));
+        const activeTerms = (person.terms || [])
+          .map(term => {
+            const itemCount = Array.isArray(term.items) ? term.items.length : 0;
+            const sections = Math.max(Number(term.sections || 0), itemCount);
+            return { ...term, sections };
+          })
+          .filter(term => Number(term.sections || 0) > 0);
         return {
           ...person,
           name: live?.AdInstructorName || person.name,
           civil: live?.AdInstructorCivil || person.civil || "",
+          terms: activeTerms,
+          times: activeTerms.length,
+          sections: activeTerms.reduce((sum, term) => sum + Number(term.sections || 0), 0),
         };
       })
+      .filter(person => person.times > 0 && person.sections > 0)
       .sort((a, b) => b.times - a.times || b.sections - a.sections || byRoomLabel(a.name, b.name));
   }, [visitingHistory, instructorById]);
+  const visitingHistoryActiveTermIds = useMemo(() => new Set(
+    visitingHistoryRows.flatMap(person => person.terms.map(term => Number(term.termId))).filter(Boolean)
+  ), [visitingHistoryRows]);
   const visibleVisitingHistory = useMemo(() => visitingHistory ? {
     ...visitingHistory,
+    terms: (visitingHistory.terms || []).filter(term => visitingHistoryActiveTermIds.has(Number(term.termId))),
     people: visitingHistoryRows,
-  } : null, [visitingHistory, visitingHistoryRows]);
+  } : null, [visitingHistory, visitingHistoryActiveTermIds, visitingHistoryRows]);
   const maxVisitingTerms = Math.max(1, ...visitingHistoryRows.map(person => Number(person.times || 0)));
   const visitingHistorySectionTotal = visitingHistoryRows.reduce((sum, person) => sum + Number(person.sections || 0), 0);
 
@@ -2121,11 +2136,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <div>
                   <span>المقارنة عبر السنوات</span>
                   <strong>الأكثر انتدابًا يظهر أولًا</strong>
-                  <p>المقارنة تبدأ بعدد الفصول، ثم إجمالي الشعب. اضغط على أي اسم لرؤية كل فصل والشعب التي أُسندت إليه.</p>
+                  <p>المقارنة تبدأ بعدد الفصول ذات الشعب الفعلية، ثم إجمالي الشعب. اضغط على أي اسم لرؤية كل فصل والشعب التي أُسندت إليه.</p>
                 </div>
                 <div className="visiting-history-summary-facts">
                   <span><b>{num(visitingHistoryRows.length)}</b><small>منتدب</small></span>
-                  <span><b>{num(visitingHistory?.terms.length || 0)}</b><small>فصل مرصود</small></span>
+                  <span><b>{num(visibleVisitingHistory?.terms.length || 0)}</b><small>فصل فعلي</small></span>
                   <span><b>{num(visitingHistorySectionTotal)}</b><small>شعبة تاريخيًا</small></span>
                 </div>
               </section>
@@ -3093,45 +3108,121 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   if (kind === "visitingHistory") {
     const people = visitingHistory?.people || [];
     const sortedPeople = [...people].sort((a, b) => b.times - a.times || b.sections - a.sections || byArabic(a.name, b.name));
-    const pages = sortedPeople.length ? paginateItems(sortedPeople, PAGE_ROWS.visitingHistoryRows) : [];
-    const historyTerms = visitingHistory?.terms || [];
+    const activeTermIds = new Set(sortedPeople.flatMap(person => person.terms.map(term => Number(term.termId))).filter(Boolean));
+    const historyTerms = (visitingHistory?.terms || [])
+      .filter(term => activeTermIds.has(Number(term.termId)))
+      .sort((a, b) => termChronology({ AdTermId: b.termId, AdTermName: b.termName }) - termChronology({ AdTermId: a.termId, AdTermName: a.termName }));
+
+    /* One academic year is one visual column. The first/second semester live
+       inside that column as two tiny cells. Ten years therefore cost ten
+       columns, not twenty noisy ones, while the person + fairness totals stay
+       readable. If the archive grows beyond ten years we paginate years in
+       bands and repeat the identity columns rather than shrinking typography. */
+    type HistoryYearSlot = { key: string; label: string; term: { termId: number; termName: string } | null; order: number };
+    type HistoryYearBand = { key: string; label: string; chronology: number; slots: HistoryYearSlot[] };
+    const normalizeYearDigits = (value: string) => String(value || "")
+      .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+      .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
+    const seasonOf = (name: string) => {
+      const text = String(name || "");
+      if (/الأول|الاول/.test(text)) return { key: "first", label: "الأول", order: 1 };
+      if (/الثاني/.test(text)) return { key: "second", label: "الثاني", order: 2 };
+      if (/الصيف/.test(text)) return { key: "summer", label: "الصيفي", order: 3 };
+      return { key: `other-${text}`, label: "فصل", order: 9 };
+    };
+    const yearMap = new Map<string, { key: string; label: string; chronology: number; terms: Array<{ termId: number; termName: string; season: ReturnType<typeof seasonOf> }> }>();
+    historyTerms.forEach(term => {
+      const termNameValue = String(term.termName || "");
+      const normalizedTermName = normalizeYearDigits(termNameValue);
+      const match = normalizedTermName.match(/(\d{4})\s*\/\s*(\d{4})/);
+      const key = match ? `${match[1]}/${match[2]}` : `term-${term.termId}`;
+      const label = match ? `${match[1]}/${match[2]}` : termNameValue;
+      const chronology = termChronology({ AdTermId: term.termId, AdTermName: term.termName });
+      const band = yearMap.get(key) || { key, label, chronology, terms: [] };
+      band.chronology = Math.max(band.chronology, chronology);
+      band.terms.push({ ...term, season: seasonOf(termNameValue) });
+      yearMap.set(key, band);
+    });
+    const historyYears: HistoryYearBand[] = [...yearMap.values()]
+      .sort((a, b) => b.chronology - a.chronology)
+      .map(year => {
+        const bySeason = new Map(year.terms.map(term => [term.season.key, term]));
+        const slots: HistoryYearSlot[] = [
+          { key: "first", label: "الأول", term: bySeason.get("first") || null, order: 1 },
+          { key: "second", label: "الثاني", term: bySeason.get("second") || null, order: 2 },
+        ];
+        if (bySeason.has("summer")) slots.push({ key: "summer", label: "الصيفي", term: bySeason.get("summer") || null, order: 3 });
+        year.terms.filter(term => !["first", "second", "summer"].includes(term.season.key))
+          .sort((a, b) => a.season.order - b.season.order || a.termId - b.termId)
+          .forEach((term, index) => slots.push({ key: `other-${term.termId}`, label: term.season.label || `فصل ${index + 1}`, term, order: 9 + index }));
+        return { key: year.key, label: year.label, chronology: year.chronology, slots };
+      });
+
+    const peoplePages = sortedPeople.length ? paginateItems(sortedPeople, PAGE_ROWS.visitingHistoryRows) : [];
+    const yearPages = historyYears.length ? paginateItems(historyYears, 10) : [[] as HistoryYearBand[]];
+    const pages = peoplePages.flatMap((pagePeople, peoplePageIndex) =>
+      yearPages.map((pageYears, yearPageIndex) => ({ pagePeople, pageYears, peoplePageIndex, yearPageIndex }))
+    );
+
     return (
       <div className="print-report print-wide print-query-report print-visiting-history-report">
-        {pages.length ? pages.map((pagePeople, pageIndex) => (
-          <section className="print-explicit-page" key={`visiting-history-page-${pageIndex + 1}`}>
+        {pages.length ? pages.map((page, pageIndex) => (
+          <section className="print-explicit-page print-visiting-history-page" key={`visiting-history-page-${page.peoplePageIndex + 1}-${page.yearPageIndex + 1}`}>
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
-            <div className="print-query-summaryline">
-              <span><b>{people.length}</b> منتدب مسجل</span>
-              <span><b>{historyTerms.length}</b> فصول مرصودة</span>
+            <div className="print-query-summaryline print-history-summaryline">
+              <span><b>{sortedPeople.length}</b> منتدب فعلي</span>
+              <span><b>{historyYears.length}</b> سنوات أكاديمية</span>
+              <span className="print-history-legend">داخل كل سنة: <b>الأول</b> ثم <b>الثاني</b> · الرقم = عدد الشعب</span>
             </div>
-            <table>
+            <table className="print-history-matrix">
+              <colgroup>
+                <col className="print-history-col-person" />
+                <col className="print-history-col-terms" />
+                <col className="print-history-col-sections" />
+                {page.pageYears.map(year => <col key={`col-${year.key}`} className="print-history-col-year" />)}
+              </colgroup>
               <thead>
                 <tr>
-                  <th>المنتدب</th>
-                  <th>فصول الانتداب</th>
-                  <th>إجمالي الشعب</th>
-                  {historyTerms.map(term => <th key={term.termId}>{term.termName}</th>)}
+                  <th className="print-history-head-person">المنتدب</th>
+                  <th className="print-history-head-total">فصول<br />الانتداب</th>
+                  <th className="print-history-head-total">إجمالي<br />الشعب</th>
+                  {page.pageYears.map(year => (
+                    <th key={year.key} className="print-history-year-head">
+                      <bdi dir="ltr">{year.label}</bdi>
+                      <span className="print-history-year-slots" style={{ gridTemplateColumns: `repeat(${year.slots.length}, minmax(0, 1fr))` }}>
+                        {year.slots.map(slot => <small key={`${year.key}-${slot.key}`}>{slot.label}</small>)}
+                      </span>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {pagePeople.map(person => {
-                  const byTerm = new Map<number, VisitingHistoryPerson["terms"][number]>(person.terms.map(t => [Number(t.termId), t]));
+                {page.pagePeople.map(person => {
+                  const byTerm = new Map<number, VisitingHistoryPerson["terms"][number]>(person.terms.map(term => [Number(term.termId), term]));
                   return (
                     <tr key={person.instructorId}>
-                      <td className="print-wrap">
+                      <td className="print-history-person-cell">
                         <strong>{person.name}</strong>
                         {person.civil ? <small className="print-ltr">{person.civil}</small> : null}
                       </td>
-                      <td>{person.times}</td>
-                      <td>{person.sections}</td>
-                      {historyTerms.map(term => {
-                        const cell = byTerm.get(Number(term.termId));
-                        return (
-                          <td key={`${person.instructorId}-${term.termId}`}>
-                            {cell ? `${cell.sections} شعب` : "—"}
-                          </td>
-                        );
-                      })}
+                      <td className="print-history-total-cell"><strong>{person.times}</strong><small>فصل</small></td>
+                      <td className="print-history-total-cell is-sections"><strong>{person.sections}</strong><small>شعبة</small></td>
+                      {page.pageYears.map(year => (
+                        <td key={`${person.instructorId}-${year.key}`} className="print-history-year-cell">
+                          <span className="print-history-term-slots" style={{ gridTemplateColumns: `repeat(${year.slots.length}, minmax(0, 1fr))` }}>
+                            {year.slots.map(slot => {
+                              const cell = slot.term ? byTerm.get(Number(slot.term.termId)) : undefined;
+                              const sections = Number(cell?.sections || 0);
+                              const level = sections ? Math.min(4, Math.max(1, sections)) : 0;
+                              return (
+                                <i key={`${person.instructorId}-${year.key}-${slot.key}`} className={`print-history-term-slot ${level ? `level-${level}` : "is-empty"}`}>
+                                  {sections || ""}
+                                </i>
+                              );
+                            })}
+                          </span>
+                        </td>
+                      ))}
                     </tr>
                   );
                 })}
@@ -3139,7 +3230,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             </table>
             <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
           </section>
-        )) : <p className="print-empty">لا يوجد تاريخ مسجل للمنتدبين.</p>}
+        )) : <p className="print-empty">لا يوجد تاريخ فعلي للمنتدبين.</p>}
       </div>
     );
   }
