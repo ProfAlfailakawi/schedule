@@ -192,6 +192,8 @@ const PAGE_ROWS = {
   timeGroups: 10,     // 9.3mm a group
   fairnessRows: 11,   // the score block costs 122mm before a single row is drawn: 12 rows measured 211mm, 11 fit
   balanceRows: 14,    // 8.0mm a department
+  visitingRows: 7,
+  visitingHistoryRows: 14,
 } as const;
 
 const COMPREHENSIVE_FIRST_PAGE_ROWS = 23;
@@ -1453,9 +1455,16 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     requestAnimationFrame(() => document.getElementById(`query-lens-tab-${next.id}`)?.focus());
   };
 
+  const lensCountDescription =
+    shownLenses.length === 10 ? "عشر عدسات" :
+    shownLenses.length === 9 ? "تسع عدسات" :
+    shownLenses.length === 8 ? "ثماني عدسات" :
+    shownLenses.length === 7 ? "سبع عدسات" :
+    `${shownLenses.length} عدسات`;
+
   return (
     <div className="content-stack query-page visual-minimal">
-      <PageTitle eyebrow="الاستعلامات والتقارير" subtitle={`سؤال واحد · ${shownLenses.length === 8 ? "ثماني عدسات" : "سبع عدسات"}`}>مركز الاستعلام</PageTitle>
+      <PageTitle eyebrow="الاستعلامات والتقارير" subtitle={`سؤال واحد · ${lensCountDescription}`}>مركز الاستعلام</PageTitle>
 
       {error ? (
         <Notice onDismiss={() => setError(null)}>
@@ -2225,6 +2234,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           roomLoad={roomLoad}
           roomDay={roomDay}
           balance={balance}
+          visitingHistory={visitingHistory}
           scopeLine={scopeLine}
           collegeName={collegeName}
           termName={termName}
@@ -2455,7 +2465,7 @@ function PrintPageMeta({ page, total, college, date }: { page: number; total: nu
   );
 }
 
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups }: {
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -2463,6 +2473,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   roomLoad: any;
   roomDay: number | "week";
   balance: any;
+  visitingHistory?: { terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[] } | null;
   scopeLine: string;
   collegeName: string;
   termName: string;
@@ -2927,6 +2938,105 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
           </section>
         )) : <p className="print-empty">لا توجد أوقات ضمن النطاق المحدد.</p>}
+      </div>
+    );
+  }
+
+  if (kind === "visiting") {
+    const visitingRows = rows.filter(row => visitingIds.has(Number(row.AdInstructorId)));
+    const groups = groupRows(visitingRows, row => instructorOf(row)?.AdInstructorName || "منتدب");
+    const pages = groups.flatMap(group => paginateItems(group.rows, PAGE_ROWS.visitingRows).map(groupRows => ({ group, rows: groupRows })));
+    return (
+      <div className="print-report print-wide print-query-report print-query-groups-report print-visiting-report">
+        {pages.length ? pages.map((page, pageIndex) => {
+          const instructor = instructorOf(page.group.rows[0]);
+          const load = page.group.rows.reduce((total, row) => total + duration(row) * Math.max(1, dayFlags(row).length), 0);
+          const days = new Set(page.group.rows.flatMap(row => dayFlags(row).map(day => day.key))).size;
+          return (
+            <section className="print-explicit-page" key={`visiting-${page.group.key}-${pageIndex}`}>
+              <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+              <section className="print-query-group">
+                <header>
+                  <div>
+                    <strong>{page.group.key}</strong>
+                    {instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}
+                  </div>
+                  <span><b>{page.group.rows.length}</b> شعبة</span>
+                  <span><b>{Math.round(load / 60)}</b> س أسبوعياً</span>
+                  <span><b>{days}</b> أيام</span>
+                </header>
+                <table>
+                  <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
+                  <thead><tr><th>المقرر</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الشعبة</th></tr></thead>
+                  <tbody>{page.rows.map(row => <tr key={row.id}>
+                    <td className="print-course-block"><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"}</bdi></span></td>
+                    <td className="print-days">{dayCell(row)}</td>
+                    <td className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</td>
+                    <td className="print-ltr">{placeOfRow(row)}</td>
+                    <td className="print-ltr">{row.SCode || "—"}</td>
+                  </tr>)}</tbody>
+                </table>
+              </section>
+              <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
+            </section>
+          );
+        }) : <p className="print-empty">لا يوجد منتدبون مسجلون في هذا الفصل.</p>}
+      </div>
+    );
+  }
+
+  if (kind === "visitingHistory") {
+    const people = visitingHistory?.people || [];
+    const sortedPeople = [...people].sort((a, b) => b.times - a.times || b.sections - a.sections || byArabic(a.name, b.name));
+    const pages = sortedPeople.length ? paginateItems(sortedPeople, PAGE_ROWS.visitingHistoryRows) : [];
+    const historyTerms = visitingHistory?.terms || [];
+    return (
+      <div className="print-report print-wide print-query-report print-visiting-history-report">
+        {pages.length ? pages.map((pagePeople, pageIndex) => (
+          <section className="print-explicit-page" key={`visiting-history-page-${pageIndex + 1}`}>
+            <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+            <div className="print-query-summaryline">
+              <span><b>{people.length}</b> منتدب مسجل</span>
+              <span><b>{historyTerms.length}</b> فصول مرصودة</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>المنتدب</th>
+                  <th>مرات الانتداب</th>
+                  <th>إجمالي الشعب</th>
+                  <th>إجمالي المواد</th>
+                  {historyTerms.map(term => <th key={term.termId}>{term.termName}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {pagePeople.map(person => {
+                  const byTerm = new Map<number, VisitingHistoryPerson["terms"][number]>(person.terms.map(t => [Number(t.termId), t]));
+                  return (
+                    <tr key={person.instructorId}>
+                      <td className="print-wrap">
+                        <strong>{person.name}</strong>
+                        {person.civil ? <small className="print-ltr">{person.civil}</small> : null}
+                      </td>
+                      <td>{person.times}</td>
+                      <td>{person.sections}</td>
+                      <td>{person.courses}</td>
+                      {historyTerms.map(term => {
+                        const cell = byTerm.get(Number(term.termId));
+                        return (
+                          <td key={`${person.instructorId}-${term.termId}`}>
+                            {cell ? `${cell.sections} شعب (${cell.courses} م)` : "—"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
+          </section>
+        )) : <p className="print-empty">لا يوجد تاريخ مسجل للمنتدبين.</p>}
       </div>
     );
   }

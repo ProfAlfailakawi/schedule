@@ -3644,7 +3644,7 @@ function listenForScheduleChangesAcrossInstances() {
   });
 }
 
-app.get("/api/schedules/events", requirePermission(7), (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/schedules/events", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), (req: AuthenticatedRequest, res: Response) => {
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
@@ -4731,7 +4731,7 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
   res.json({instructorIds:await Repository.saveVisitingRoster(collegeId,sectionId,toTermId,merged),copied:selected.length});
 });
 
-app.get("/api/reports/visiting-history", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
   if(!collegeId||!sectionId){res.status(400).json({error:"حدد الكلية والقسم."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
