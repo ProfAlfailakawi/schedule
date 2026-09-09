@@ -958,8 +958,27 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   const visitingHistoryRows = useMemo(() => {
     const people = visitingHistory?.people || [];
-    return [...people].sort((a, b) => b.times - a.times || b.sections - a.sections || byRoomLabel(a.name, b.name));
-  }, [visitingHistory]);
+    // The history endpoint intentionally preserves old roster rows, but the
+    // report must represent the CURRENT instructor directory. If an instructor
+    // has been deleted from the system, do not resurrect that stale identity in
+    // the fairness comparison. For people who still exist, prefer the live name
+    // and civil number so historical cards cannot drift from the directory.
+    return people
+      .filter(person => instructorById.has(Number(person.instructorId)))
+      .map(person => {
+        const live = instructorById.get(Number(person.instructorId));
+        return {
+          ...person,
+          name: live?.AdInstructorName || person.name,
+          civil: live?.AdInstructorCivil || person.civil || "",
+        };
+      })
+      .sort((a, b) => b.times - a.times || b.sections - a.sections || byRoomLabel(a.name, b.name));
+  }, [visitingHistory, instructorById]);
+  const visibleVisitingHistory = useMemo(() => visitingHistory ? {
+    ...visitingHistory,
+    people: visitingHistoryRows,
+  } : null, [visitingHistory, visitingHistoryRows]);
   const maxVisitingTerms = Math.max(1, ...visitingHistoryRows.map(person => Number(person.times || 0)));
   const visitingHistorySectionTotal = visitingHistoryRows.reduce((sum, person) => sum + Number(person.sections || 0), 0);
 
@@ -2320,7 +2339,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           roomLoad={roomLoad}
           roomDay={roomDay}
           balance={balance}
-          visitingHistory={visitingHistory}
+          visitingHistory={visibleVisitingHistory}
           scopeLine={scopeLine}
           collegeName={collegeName}
           termName={termName}
