@@ -12,7 +12,7 @@ import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
-import { sortTermsNewest } from "../utils/termSequence";
+import { sortTermsNewest, termChronology } from "../utils/termSequence";
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
@@ -81,7 +81,14 @@ interface VisitingHistoryPerson {
   times: number;
   sections: number;
   courses: number;
-  terms: Array<{ termId: number; termName: string; rostered: boolean; sections: number; courses: number }>;
+  terms: Array<{
+    termId: number;
+    termName: string;
+    rostered: boolean;
+    sections: number;
+    courses: number;
+    items?: Array<{ scheduleId: number; courseId: number; courseName?: string; sectionCode?: string }>;
+  }>;
 }
 
 const fresh = (): Filters => ({
@@ -118,8 +125,8 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
   { id: "room", label: "القاعات", hint: "ما تشغله كل قاعة ومتى تفرغ", icon: <Building2 /> },
   { id: "matrix", label: "القاعات × الأوقات", hint: "شبكة تقاطع كل قاعة مع كل وقت", icon: <Table2 /> },
   { id: "time", label: "الأوقات", hint: "توزّع المواعيد على ساعات اليوم", icon: <Clock3 /> },
-  { id: "visiting", label: "منتدبو الفصل", hint: "كل منتدب في الفصل الحالي مع جدوله وحمله", icon: <UserPlus /> },
-  { id: "visitingHistory", label: "تاريخ المنتدبين", hint: "كم مرة انتدب كل شخص وفي أي فصول وكم مادة أخذ", icon: <History /> },
+  { id: "visiting", label: "المنتدبون", hint: "منتدبو الفصل الحالي أو المقارنة عبر كل الفصول", icon: <UserPlus /> },
+  { id: "visitingHistory", label: "كل الفصول", hint: "المقارنة التاريخية للمنتدبين حسب عدد الفصول والشعب", icon: <History /> },
   { id: "fairness", label: "عدالة الحمل", hint: "تفاوت الحمل الأسبوعي بين الأساتذة", icon: <Scale /> },
   /* Main administrator only — see `shownLenses`. It is the one reading nobody
      else is allowed to see, so it must not appear as a locked door to them. */
@@ -424,7 +431,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     if(!filters.collegeId||!filters.sectionId||!filters.termId){setVisitingIds(new Set());return;}
     const controller=new AbortController();
     const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId),termId:String(filters.termId)});
-    fetch(`/api/visiting-roster?${qs}`,{signal:controller.signal})
+    fetch(`/api/reports/visiting-roster?${qs}`,{signal:controller.signal})
       .then(response=>response.ok?response.json():{instructorIds:[]})
       .then(data=>setVisitingIds(new Set((Array.isArray(data?.instructorIds)?data.instructorIds:[]).map(Number).filter(Boolean))))
       .catch(error=>{if(error?.name!=="AbortError")setVisitingIds(new Set());});
@@ -560,7 +567,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
    */
   /* The balance lens exists only for the account that can act on it. */
   const shownLenses = useMemo(
-    () => LENSES.filter(item => item.id !== "balance" || isPowerAdmin),
+    () => LENSES.filter(item => item.id !== "visitingHistory" && (item.id !== "balance" || isPowerAdmin)),
     [isPowerAdmin],
   );
   useEffect(() => {
@@ -953,6 +960,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const people = visitingHistory?.people || [];
     return [...people].sort((a, b) => b.times - a.times || b.sections - a.sections || byRoomLabel(a.name, b.name));
   }, [visitingHistory]);
+  const maxVisitingTerms = Math.max(1, ...visitingHistoryRows.map(person => Number(person.times || 0)));
+  const visitingHistorySectionTotal = visitingHistoryRows.reduce((sum, person) => sum + Number(person.sections || 0), 0);
 
   const byTime = useMemo(() => {
     const groups = new Map<string, FSchedule[]>();
@@ -1633,25 +1642,51 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       </section>
 
       <nav className="lens-strip no-print" role="tablist" aria-label="طريقة عرض النتائج" aria-orientation="horizontal">
-        {shownLenses.map((item, index) => (
-          <button
-            key={item.id}
-            type="button"
-            id={`query-lens-tab-${item.id}`}
-            role="tab"
-            className={lens === item.id ? "active" : ""}
-            aria-selected={lens === item.id}
-            aria-controls="query-lens-panel"
-            tabIndex={lens === item.id ? 0 : -1}
-            onClick={() => selectLens(item.id)}
-            onKeyDown={event => moveLensFocus(event, index)}
-            title={item.hint}
-          >
-            {React.cloneElement(item.icon as React.ReactElement, { "aria-hidden": true })}
-            <span>{item.label}</span>
-          </button>
-        ))}
+        {shownLenses.map((item, index) => {
+          const active = lens === item.id || (item.id === "visiting" && lens === "visitingHistory");
+          return (
+            <button
+              key={item.id}
+              type="button"
+              id={`query-lens-tab-${item.id}`}
+              role="tab"
+              className={active ? "active" : ""}
+              aria-selected={active}
+              aria-controls="query-lens-panel"
+              tabIndex={active ? 0 : -1}
+              onClick={() => selectLens(item.id)}
+              onKeyDown={event => moveLensFocus(event, index)}
+              title={item.hint}
+            >
+              {React.cloneElement(item.icon as React.ReactElement, { "aria-hidden": true })}
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
       </nav>
+
+      {lens === "visiting" || lens === "visitingHistory" ? (
+        <div className="visiting-scope-switch no-print" role="group" aria-label="نطاق عرض المنتدبين">
+          <button
+            type="button"
+            className={lens === "visiting" ? "active" : ""}
+            aria-pressed={lens === "visiting"}
+            onClick={() => selectLens("visiting")}
+          >
+            <UserPlus aria-hidden="true" />
+            <span><b>منتدبو الفصل</b><small>{termName || "الفصل المحدد"}</small></span>
+          </button>
+          <button
+            type="button"
+            className={lens === "visitingHistory" ? "active" : ""}
+            aria-pressed={lens === "visitingHistory"}
+            onClick={() => selectLens("visitingHistory")}
+          >
+            <History aria-hidden="true" />
+            <span><b>كل الفصول</b><small>مقارنة تاريخية للعدالة في الانتداب</small></span>
+          </button>
+        </div>
+      ) : null}
 
       {mobileWideNotice ? (
         <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="هذا العرض يحتاج كمبيوتر">
@@ -2037,7 +2072,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                     <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
                     <span className="group-bar"><i style={{ width: share(group.sections, Math.max(1, ...visitingTermGroups.map(item => item.sections))) }} /></span>
                     <b>{num(group.sections)} شعب</b>
-                    <em>{num(group.courses)} مواد</em>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {openGroup === `visiting-${group.id}` ? (
@@ -2061,31 +2095,80 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         ) : lens === "visitingHistory" ? (
           visitingHistoryRows.length ? (
             <div className="lens-visiting-history">
-              <div className="visiting-history-table" role="table" aria-label="تاريخ المنتدبين" style={{ ["--visit-term-count" as any]: Math.max(1, visitingHistory?.terms.length || 0) }}>
-                <div className="visiting-history-row visiting-history-head" role="row">
-                  <strong>المنتدب</strong>
-                  <span>مرات الانتداب</span>
-                  <span>إجمالي الشعب</span>
-                  <span>إجمالي المواد</span>
-                  {(visitingHistory?.terms || []).map(term => <span key={term.termId}>{term.termName}</span>)}
+              <section className="visiting-history-summary" aria-label="ملخص المقارنة التاريخية">
+                <div>
+                  <span>المقارنة عبر السنوات</span>
+                  <strong>الأكثر انتدابًا يظهر أولًا</strong>
+                  <p>المقارنة تبدأ بعدد الفصول، ثم إجمالي الشعب. اضغط على أي اسم لرؤية كل فصل والشعب التي أُسندت إليه.</p>
                 </div>
-                {visitingHistoryRows.map(person => {
-                  const byTerm = new Map<number, VisitingHistoryPerson["terms"][number]>(person.terms.map(term => [Number(term.termId), term]));
+                <div className="visiting-history-summary-facts">
+                  <span><b>{num(visitingHistoryRows.length)}</b><small>منتدب</small></span>
+                  <span><b>{num(visitingHistory?.terms.length || 0)}</b><small>فصل مرصود</small></span>
+                  <span><b>{num(visitingHistorySectionTotal)}</b><small>شعبة تاريخيًا</small></span>
+                </div>
+              </section>
+
+              <div className="visiting-history-cards">
+                {visitingHistoryRows.map((person, index) => {
+                  const groupId = `visiting-history-${person.instructorId}`;
+                  const open = openGroup === groupId;
+                  const orderedTerms = [...person.terms].sort((a, b) =>
+                    termChronology({ AdTermId: b.termId, AdTermName: b.termName }) - termChronology({ AdTermId: a.termId, AdTermName: a.termName })
+                  );
                   return (
-                    <div className="visiting-history-row" role="row" key={person.instructorId}>
-                      <strong>{person.name}<small dir="ltr">{person.civil || ""}</small></strong>
-                      <span>{num(person.times)}</span>
-                      <span>{num(person.sections)}</span>
-                      <span>{num(person.courses)}</span>
-                      {(visitingHistory?.terms || []).map(term => {
-                        const cell = byTerm.get(Number(term.termId));
-                        return (
-                          <span key={`${person.instructorId}-${term.termId}`} className={cell ? "has-visit" : ""}>
-                            {cell ? <><CheckCircle2 aria-hidden="true" /><b>{num(cell.sections)}</b><small>{num(cell.courses)} مواد</small></> : "—"}
-                          </span>
-                        );
-                      })}
-                    </div>
+                    <article key={person.instructorId} className={open ? "open" : ""}>
+                      <button
+                        type="button"
+                        className="visiting-history-person"
+                        data-guide-ignore="فتح السجل التاريخي للمنتدب للقراءة فقط"
+                        aria-expanded={open}
+                        aria-controls={`${groupId}-details`}
+                        onClick={() => setOpenGroup(open ? null : groupId)}
+                      >
+                        <span className="visiting-history-rank" aria-label={`الترتيب ${index + 1}`}>{num(index + 1)}</span>
+                        <span className="visiting-history-person-name">
+                          <strong>{person.name}</strong>
+                          {person.civil ? <small dir="ltr">{person.civil}</small> : null}
+                          {index === 0 ? <em>الأعلى تاريخيًا</em> : null}
+                        </span>
+                        <span className="visiting-history-meter" aria-hidden="true">
+                          <i><b style={{ width: share(person.times, maxVisitingTerms) }} /></i>
+                        </span>
+                        <span className="visiting-history-fact is-terms"><b>{num(person.times)}</b><small>فصول</small></span>
+                        <span className="visiting-history-fact is-sections"><b>{num(person.sections)}</b><small>شعبة</small></span>
+                        <ChevronDown aria-hidden="true" />
+                      </button>
+
+                      {open ? (
+                        <div className="visiting-history-details" id={`${groupId}-details`}>
+                          {orderedTerms.map(term => (
+                            <section key={`${person.instructorId}-${term.termId}`} className="visiting-history-term">
+                              <header>
+                                <span><CheckCircle2 aria-hidden="true" /><strong>{term.termName}</strong></span>
+                                <b>{num(term.sections)} شعب</b>
+                              </header>
+                              {term.items?.length ? (
+                                <div className="visiting-history-sections">
+                                  {term.items.map((item, itemIndex) => {
+                                    const course = courseById.get(Number(item.courseId));
+                                    const courseName = course?.CourseName || item.courseName || "مقرر";
+                                    const courseCode = course?.CourseCode || "";
+                                    return (
+                                      <span key={`${term.termId}-${item.scheduleId || itemIndex}`}>
+                                        <b>شعبة {item.sectionCode || "—"}</b>
+                                        <small>{courseCode ? `${courseCode} · ` : ""}{courseName}</small>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <small className="visiting-history-no-sections">مسجل ضمن منتدبي هذا الفصل دون شعبة محفوظة في الجدول.</small>
+                              )}
+                            </section>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
                   );
                 })}
               </div>
@@ -2496,8 +2579,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
     room: "إشغال القاعات والفراغات",
     matrix: "القاعات × الأوقات",
     time: "الأوقات",
-    visiting: "منتدبو الفصل",
-    visitingHistory: "تاريخ المنتدبين",
+    visiting: "المنتدبون — الفصل الحالي",
+    visitingHistory: "المنتدبون — كل الفصول",
     fairness: "عدالة توزيع العبء",
     balance: "ميزان الأقسام",
     comprehensive: "تقرير الجدول الشامل",
@@ -3003,9 +3086,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
               <thead>
                 <tr>
                   <th>المنتدب</th>
-                  <th>مرات الانتداب</th>
+                  <th>فصول الانتداب</th>
                   <th>إجمالي الشعب</th>
-                  <th>إجمالي المواد</th>
                   {historyTerms.map(term => <th key={term.termId}>{term.termName}</th>)}
                 </tr>
               </thead>
@@ -3020,12 +3102,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                       </td>
                       <td>{person.times}</td>
                       <td>{person.sections}</td>
-                      <td>{person.courses}</td>
                       {historyTerms.map(term => {
                         const cell = byTerm.get(Number(term.termId));
                         return (
                           <td key={`${person.instructorId}-${term.termId}`}>
-                            {cell ? `${cell.sections} شعب (${cell.courses} م)` : "—"}
+                            {cell ? `${cell.sections} شعب` : "—"}
                           </td>
                         );
                       })}

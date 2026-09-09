@@ -569,19 +569,102 @@
 .fairness-rows .over small{color:var(--warning)}
 .fairness-rows .under i>b{background:var(--info)}
 .fairness-rows .under small{color:var(--info)}
-.lens-visiting-history{padding:var(--s5);overflow:auto}
-.visiting-history-table{display:grid;min-width:920px;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
-.visiting-history-row{display:grid;grid-template-columns:minmax(190px,1.4fr) 92px 92px 92px repeat(var(--visit-term-count,8),minmax(126px,1fr));align-items:stretch;border-block-start:1px solid var(--line)}
-.visiting-history-row:first-child{border-block-start:0}
-.visiting-history-row>*{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;padding:10px 12px;border-inline-start:1px solid var(--line);font-size:var(--t-sm)}
-.visiting-history-row>*:first-child{justify-content:flex-start;border-inline-start:0}
-.visiting-history-row strong{display:grid;gap:2px;font-weight:700}
-.visiting-history-row strong small{color:var(--muted);font-size:var(--t-xs);font-weight:500}
-.visiting-history-head{position:sticky;top:0;z-index:1;background:var(--surface-2);font-weight:700;color:var(--ink)}
-.visiting-history-row .has-visit{background:color-mix(in srgb,var(--success-soft) 72%,var(--surface));color:var(--success)}
-.visiting-history-row .has-visit svg{width:15px;height:15px;flex:none}
-.visiting-history-row .has-visit b{color:var(--ink);font-variant-numeric:tabular-nums}
-.visiting-history-row .has-visit small{color:var(--muted);font-size:var(--t-xs)}
+/* --- Lens: visiting instructors --------------------------------------------
+   One entry in the main lens strip opens two readings: the current term and
+   the historical fairness view. The history is intentionally card-based rather
+   than a wide spreadsheet so the first glance answers the real question:
+   who has been delegated more often across the years? */
+.lens-visiting>article>button{grid-template-columns:36px minmax(0,1fr) minmax(80px,180px) 78px 16px}
+
+.visiting-scope-switch{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2);
+  padding:var(--s2);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);
+}
+.visiting-scope-switch>button{
+  min-width:0;display:grid;grid-template-columns:34px minmax(0,1fr);align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);border:1px solid transparent;border-radius:var(--r-md);
+  background:transparent;color:var(--muted);text-align:start;transition:background .16s var(--ease),border-color .16s var(--ease),color .16s var(--ease);
+}
+.visiting-scope-switch>button:hover{background:var(--surface-2);color:var(--ink)}
+.visiting-scope-switch>button.active{border-color:color-mix(in srgb,var(--accent) 26%,var(--line));background:var(--accent-softer);color:var(--accent-ink)}
+.visiting-scope-switch svg{width:18px;height:18px;justify-self:center}
+.visiting-scope-switch span{min-width:0;display:grid;gap:2px}
+.visiting-scope-switch b{font-size:var(--t-sm);font-weight:700;color:var(--ink)}
+.visiting-scope-switch small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:var(--t-xs)}
+
+.lens-visiting-history{display:grid;gap:var(--s4);padding:var(--s5)}
+.visiting-history-summary{
+  display:grid;grid-template-columns:minmax(0,1.4fr) minmax(300px,.8fr);align-items:center;gap:var(--s5);
+  padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-lg);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 7%,var(--surface)) 0%,var(--surface) 62%);
+}
+.visiting-history-summary>div:first-child>span{display:block;color:var(--brass);font-size:var(--t-eyebrow);font-weight:700;letter-spacing:.04em}
+.visiting-history-summary>div:first-child>strong{display:block;margin-top:var(--s1);font-size:clamp(20px,2vw,28px);font-weight:650;letter-spacing:-.02em}
+.visiting-history-summary>div:first-child>p{max-width:720px;margin-top:var(--s2);color:var(--muted);font-size:var(--t-sm);line-height:1.75}
+.visiting-history-summary-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2)}
+.visiting-history-summary-facts>span{display:grid;gap:2px;padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:color-mix(in srgb,var(--surface) 88%,transparent);text-align:center}
+.visiting-history-summary-facts b{font-size:clamp(20px,2.2vw,30px);font-weight:650;font-variant-numeric:tabular-nums;color:var(--accent)}
+.visiting-history-summary-facts small{color:var(--muted);font-size:var(--t-xs)}
+
+.visiting-history-cards{display:flex;flex-direction:column;gap:var(--s2)}
+.visiting-history-cards>article{overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);transition:border-color .16s var(--ease),box-shadow .16s var(--ease)}
+.visiting-history-cards>article:hover{border-color:var(--line-strong)}
+.visiting-history-cards>article.open{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));box-shadow:var(--shadow-sm)}
+.visiting-history-person{
+  width:100%;display:grid;grid-template-columns:34px minmax(180px,1.25fr) minmax(110px,1fr) 74px 74px 16px;
+  align-items:center;gap:var(--s4);padding:var(--s4) var(--s5);color:var(--ink);text-align:start;background:transparent;
+  transition:background .14s var(--ease);
+}
+.visiting-history-person:hover,.visiting-history-cards>article.open>.visiting-history-person{background:var(--surface-2)}
+.visiting-history-person>svg{width:16px;height:16px;color:var(--muted);transition:transform .2s var(--ease)}
+.visiting-history-cards>article.open>.visiting-history-person>svg{transform:rotate(180deg)}
+.visiting-history-rank{
+  width:30px;height:30px;display:grid;place-items:center;border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted);font:700 var(--t-xs)/1 var(--font-mono);font-variant-numeric:tabular-nums;
+}
+.visiting-history-cards>article:first-child .visiting-history-rank{background:color-mix(in srgb,var(--brass) 16%,var(--surface));color:var(--brass)}
+.visiting-history-person-name{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px var(--s2)}
+.visiting-history-person-name strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-h4);font-weight:650}
+.visiting-history-person-name small{grid-column:1;color:var(--muted);font-size:var(--t-xs)}
+.visiting-history-person-name em{grid-column:2;grid-row:1 / span 2;align-self:center;padding:3px 7px;border:1px solid color-mix(in srgb,var(--brass) 36%,var(--line));border-radius:var(--r-full);background:color-mix(in srgb,var(--brass) 8%,var(--surface));color:var(--brass);font-size:10px;font-style:normal;font-weight:700;white-space:nowrap}
+.visiting-history-meter{display:grid;gap:4px}
+.visiting-history-meter>i{display:block;height:8px;border-radius:var(--r-full);background:var(--surface-3);overflow:hidden}
+.visiting-history-meter>i>b{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 58%,var(--brass)));transition:width .45s var(--ease-out)}
+.visiting-history-fact{display:grid;justify-items:end;line-height:1.1}
+.visiting-history-fact b{font-size:var(--t-h4);font-weight:700;font-variant-numeric:tabular-nums}
+.visiting-history-fact small{margin-top:3px;color:var(--muted);font-size:10px}
+
+.visiting-history-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--s3);padding:0 var(--s5) var(--s5);animation:rise .2s var(--ease-out) both}
+.visiting-history-term{min-width:0;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.visiting-history-term>header{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding-bottom:var(--s3);border-bottom:1px solid var(--line)}
+.visiting-history-term>header>span{min-width:0;display:flex;align-items:center;gap:var(--s2)}
+.visiting-history-term>header svg{width:15px;height:15px;flex:none;color:var(--success)}
+.visiting-history-term>header strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm);font-weight:700}
+.visiting-history-term>header>b{flex:none;padding:3px 8px;border-radius:var(--r-full);background:var(--accent-softer);color:var(--accent-ink);font-size:var(--t-xs);font-weight:700}
+.visiting-history-sections{display:grid;gap:var(--s2);margin-top:var(--s3)}
+.visiting-history-sections>span{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:var(--s3);padding:var(--s2) 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.visiting-history-sections>span:first-child{border-top:0}
+.visiting-history-sections b{font-size:var(--t-xs);font-weight:700;white-space:nowrap}
+.visiting-history-sections small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:var(--t-xs)}
+.visiting-history-no-sections{display:block;margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+
+@media (max-width:760px){
+  .visiting-scope-switch{grid-template-columns:1fr}
+  .lens-visiting-history{padding:var(--s3)}
+  .visiting-history-summary{grid-template-columns:1fr;padding:var(--s4)}
+  .visiting-history-summary-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .visiting-history-summary-facts>span{padding:var(--s2)}
+  .visiting-history-person{grid-template-columns:30px minmax(0,1fr) 16px;gap:var(--s3);padding:var(--s4)}
+  .visiting-history-rank{grid-column:1;grid-row:1}
+  .visiting-history-person-name{grid-column:2;grid-row:1}
+  .visiting-history-person>svg{grid-column:3;grid-row:1}
+  .visiting-history-meter{grid-column:1/-1;grid-row:2}
+  .visiting-history-fact{grid-row:3;justify-items:start;padding-top:var(--s1)}
+  .visiting-history-fact.is-terms{grid-column:1/2}
+  .visiting-history-fact.is-sections{grid-column:2/3}
+  .visiting-history-details{grid-template-columns:1fr;padding:0 var(--s4) var(--s4)}
+  .visiting-history-person-name em{display:none}
+}
 
 /* ==========================================================================
    INTELLIGENCE WORKSPACE

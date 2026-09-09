@@ -4626,6 +4626,21 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   res.json({ instructorIds, instructors });
 });
 
+/** Read-only counterpart for the inquiry centre. Report permissions must be
+ * able to see the current visiting roster without granting the data-editing
+ * permission used by the schedule transfer tool. */
+app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const instructorIds=await Repository.getVisitingRoster(collegeId, sectionId, termId);
+  const wanted=new Set(instructorIds.map(Number));
+  const instructors=(await Repository.getInstructors()).filter(person=>wanted.has(Number(person.AdInstructorId)));
+  res.json({ instructorIds, instructors });
+});
+
 // A delegate badge is global to the person, but department directories are not.
 app.get("/api/delegates", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
   res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() });
@@ -4775,12 +4790,22 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
         rostered:true,
         sections:mine.length,
         courses:distinctCourses,
+        items:mine.map((row:any)=>({
+          scheduleId:Number(row.id||0),
+          courseId:Number(row.AdCourseId||0),
+          courseName:String(row.AdCourseName||""),
+          sectionCode:String(row.SCode||"").trim(),
+        })),
       });
       people.set(instructorId,current);
     }
   }
+  const knownOrderedTermIds=sortTermsNewestServer(terms.filter(term=>termIds.includes(Number(term.AdTermId))))
+    .map(term=>Number(term.AdTermId));
+  const knownTermIdSet=new Set(knownOrderedTermIds);
+  const orderedTermIds=[...knownOrderedTermIds,...termIds.filter(termId=>!knownTermIdSet.has(termId)).sort((a,b)=>b-a)];
   res.json({
-    terms:termIds.map(termId=>({termId,termName:termsById.get(termId)?.AdTermName||String(termId)})),
+    terms:orderedTermIds.map(termId=>({termId,termName:termsById.get(termId)?.AdTermName||String(termId)})),
     people:[...people.values()],
   });
 });

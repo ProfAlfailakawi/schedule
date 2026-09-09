@@ -9341,6 +9341,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   if (mode === "copy") return copyView;
   if (editor !== "index") return editorView;
 
+  const visitingFilterButton = () => visitingIds.size ? (
+    <button
+      type="button"
+      data-guide-ignore="فلتر منتدبي الفصل يغيّر العرض فقط ولا يعدّل بيانات الجدول"
+      className={`schedule-ops-pill visiting-filter ${visitingOnly ? "on" : ""}`}
+      onClick={() => setVisitingOnly(value => !value)}
+      aria-pressed={visitingOnly}
+      title="عرض شعب المنتدبين فقط"
+    >
+      <UsersRound aria-hidden="true" />
+      <b>المنتدبون</b>
+      <span>{Array.from(visitingIds).length.toLocaleString("ar-KW-u-nu-latn")}</span>
+    </button>
+  ) : null;
+
   return (
     <div className={`content-stack schedule-page ${phoneReadOnly ? "schedule-phone" : ""}`.trim()}>
       {/* Lifted clear of the board's horizontal scroller so nothing can clip it,
@@ -9573,22 +9588,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           </Field>
           {rowsLoading ? <span className="filter-strip-busy" role="status"><i aria-hidden="true" />يقرأ الجدول…</span> : null}
         </div>
-        {visitingIds.size ? (
-          <div className="schedule-quick-filters no-print" role="group" aria-label="مرشحات سريعة للجدول">
-            <button
-              type="button"
-              data-guide-ignore="فلتر منتدبي الفصل يغيّر العرض فقط ولا يعدّل بيانات الجدول"
-              className={`schedule-ops-pill ${visitingOnly ? "on" : ""}`}
-              onClick={() => setVisitingOnly(value => !value)}
-              aria-pressed={visitingOnly}
-              title="عرض شعب المنتدبين فقط"
-            >
-              <UsersRound aria-hidden="true" />
-              <b>المنتدبون</b>
-              <span>{Array.from(visitingIds).length.toLocaleString("ar-KW-u-nu-latn")}</span>
-            </button>
-          </div>
-        ) : null}
         <div className="schedule-tools" role="toolbar" aria-label="أدوات عرض الجدول">
           <div className="schedule-view-cluster">
           <div className="segmented" role="group" aria-label="طريقة عرض الجدول">
@@ -9804,7 +9803,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             </div>
             <span>{agendaRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
           </div>
-          {hueLegend.length > 1 ? (
+          {hueLegend.length > 1 || visitingIds.size ? (
             <div className="week-legend agenda-legend" role="group" aria-label="مفتاح الألوان">
               <div className="week-legend-basis" role="group" aria-label="معنى اللون">
                 {([
@@ -9830,6 +9829,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     : hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}
                 </b>
               </div>
+              {visitingFilterButton()}
               {legendSearchable ? (
                 <span className="week-legend-search">
                   <Search aria-hidden="true" />
@@ -10328,7 +10328,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </div>
                   </div>
                 ) : null}
-                {hueLegend.length > 1 ? (
+                {hueLegend.length > 1 || visitingIds.size ? (
                   <div className="week-legend rooms-legend" role="group" aria-label="مفتاح ألوان المباني والقاعات">
                     <div className="week-legend-basis" role="group" aria-label="معنى اللون">
                       {([
@@ -10353,6 +10353,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           : hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}
                       </b>
                     </div>
+                    {visitingFilterButton()}
                     {legendSearchable ? (
                       <span className="week-legend-search">
                         <Search aria-hidden="true" />
@@ -10711,7 +10712,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               So the key sits with the grid it explains, and carries the texture
               switch itself.
             */}
-            {hueLegend.length > 1 ? (
+            {hueLegend.length > 1 || visitingIds.size ? (
               <div className="week-legend" role="group" aria-label="مفتاح الألوان">
                 {/* The alphabet the colours are written in, switched where the
                     colours are actually being read rather than three menus away.
@@ -10740,6 +10741,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       : hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}
                   </b>
                 </div>
+                {visitingFilterButton()}
                 {legendSearchable ? (
                   <span className="week-legend-search">
                     <Search aria-hidden="true" />
