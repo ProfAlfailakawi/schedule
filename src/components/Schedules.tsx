@@ -870,6 +870,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     [replay, setReplay] = useState<any>(null),
     [replayLoading, setReplayLoading] = useState(false),
     [quickSearch, setQuickSearch] = useState(""),
+    [visitingOnly, setVisitingOnly] = useState(false),
     [pendingOnly, setPendingOnly] = useState(false),
     [pendingNoticeVisible, setPendingNoticeVisible] = useState(false);
   const [decisionEditQueue, setDecisionEditQueue] = useState<{ ids: number[]; index: number } | null>(null);
@@ -3396,13 +3397,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const deferredSearch = useDeferredValue(quickSearch);
   const filteredRows=useMemo(()=>{
     const q=deferredSearch.trim().toLowerCase();
-    const source=pendingOnly?rows.filter(r=>r.locationStatus==="PENDING_ROOM"&&(!user?.AdInstructorId||Number(r.AdInstructorId)===Number(user.AdInstructorId))):rows;
+    let source=pendingOnly?rows.filter(r=>r.locationStatus==="PENDING_ROOM"&&(!user?.AdInstructorId||Number(r.AdInstructorId)===Number(user.AdInstructorId))):rows;
+    if(visitingOnly)source=source.filter(r=>visitingIds.has(Number(r.AdInstructorId)));
     const visible=q?source.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)}):[...source];
     return visible.sort((a,b)=>
       byArabic(a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName||"",b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName||"")||
       byArabic(a.SCode,b.SCode)||mins(a.fstarttime)-mins(b.fstarttime)||Number(a.id)-Number(b.id)
     );
-  },[rows,deferredSearch,courseById,instructorById,pendingOnly,user?.AdInstructorId]);
+  },[rows,deferredSearch,courseById,instructorById,pendingOnly,visitingOnly,visitingIds,user?.AdInstructorId]);
 
   /**
    * The legend is a real shared filter, not three unrelated paint effects.
@@ -9544,6 +9546,22 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           </Field>
           {rowsLoading ? <span className="filter-strip-busy" role="status"><i aria-hidden="true" />يقرأ الجدول…</span> : null}
         </div>
+        {visitingIds.size ? (
+          <div className="schedule-quick-filters no-print" role="group" aria-label="مرشحات سريعة للجدول">
+            <button
+              type="button"
+              data-guide-ignore="فلتر منتدبي الفصل يغيّر العرض فقط ولا يعدّل بيانات الجدول"
+              className={`schedule-ops-pill ${visitingOnly ? "on" : ""}`}
+              onClick={() => setVisitingOnly(value => !value)}
+              aria-pressed={visitingOnly}
+              title="عرض شعب المنتدبين فقط"
+            >
+              <UsersRound aria-hidden="true" />
+              <b>المنتدبون</b>
+              <span>{Array.from(visitingIds).length.toLocaleString("ar-KW-u-nu-latn")}</span>
+            </button>
+          </div>
+        ) : null}
         <div className="schedule-tools" role="toolbar" aria-label="أدوات عرض الجدول">
           <div className="schedule-view-cluster">
           <div className="segmented" role="group" aria-label="طريقة عرض الجدول">

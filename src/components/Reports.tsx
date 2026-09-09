@@ -3,7 +3,7 @@ import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, ClipboardList, Clock3, LayoutList,
-  Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
+  CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
@@ -35,7 +35,7 @@ export type ReportMode =
   | "searchInstructor" | "searchRoom" | "searchTime" | "searchRoomTime" | "searchAdvanced"
   | "reportDepartment" | "reportInstructor" | "reportRoom" | "reportTime" | "reportRoomTime";
 
-type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "fairness" | "balance";
+type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "visiting" | "visitingHistory" | "fairness" | "balance";
 type PrintKind = Lens | "comprehensive" | "comprehensive-branch" | null;
 
 /* Safari is the one printing engine here that ignores `@page size` (so wide
@@ -74,6 +74,16 @@ interface Filters {
   sun: boolean; mon: boolean; tue: boolean; wed: boolean; thr: boolean;
 }
 
+interface VisitingHistoryPerson {
+  instructorId: number;
+  name: string;
+  civil?: string;
+  times: number;
+  sections: number;
+  courses: number;
+  terms: Array<{ termId: number; termName: string; rostered: boolean; sections: number; courses: number }>;
+}
+
 const fresh = (): Filters => ({
   collegeId: 0, sectionId: 0, termId: 0, instructorId: 0, civil: "", instructorQuery: "",
   building: "", hall: "", courseId: 0, courseCode: "",
@@ -108,6 +118,8 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
   { id: "room", label: "القاعات", hint: "ما تشغله كل قاعة ومتى تفرغ", icon: <Building2 /> },
   { id: "matrix", label: "القاعات × الأوقات", hint: "شبكة تقاطع كل قاعة مع كل وقت", icon: <Table2 /> },
   { id: "time", label: "الأوقات", hint: "توزّع المواعيد على ساعات اليوم", icon: <Clock3 /> },
+  { id: "visiting", label: "منتدبو الفصل", hint: "كل منتدب في الفصل الحالي مع جدوله وحمله", icon: <UserPlus /> },
+  { id: "visitingHistory", label: "تاريخ المنتدبين", hint: "كم مرة انتدب كل شخص وفي أي فصول وكم مادة أخذ", icon: <History /> },
   { id: "fairness", label: "عدالة الحمل", hint: "تفاوت الحمل الأسبوعي بين الأساتذة", icon: <Scale /> },
   /* Main administrator only — see `shownLenses`. It is the one reading nobody
      else is allowed to see, so it must not appear as a locked door to them. */
@@ -312,6 +324,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [terms, setTerms] = useState<AdTerm[]>([]);
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
   const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
+  const [visitingHistory, setVisitingHistory] = useState<{ terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[] } | null>(null);
+  const [visitingHistoryLoading, setVisitingHistoryLoading] = useState(false);
   /* ── القسم الواحد في مواقع الفرع ──────────────────────────────────────────
    * القسم يُدرَّس في الرئيسي والجهراء والفحيحيل، ولكل موقع كلية مستقلة وجدول
    * منشور في مكانه — وهذا هو الصواب في البيانات. لكن رئيس القسم يريد أحياناً
@@ -414,6 +428,22 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       .catch(error=>{if(error?.name!=="AbortError")setVisitingIds(new Set());});
     return()=>controller.abort();
   },[filters.collegeId,filters.sectionId,filters.termId]);
+
+  useEffect(() => {
+    if(lens!=="visitingHistory"||!filters.collegeId||!filters.sectionId){return;}
+    const controller=new AbortController();
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId)});
+    setVisitingHistoryLoading(true);
+    fetch(`/api/reports/visiting-history?${qs}`,{signal:controller.signal})
+      .then(response=>{if(!response.ok)throw new Error("تعذر تحميل تاريخ المنتدبين");return response.json();})
+      .then(data=>setVisitingHistory({
+        terms:Array.isArray(data?.terms)?data.terms:[],
+        people:Array.isArray(data?.people)?data.people:[],
+      }))
+      .catch(error=>{if(error?.name!=="AbortError"){setVisitingHistory(null);setError(String(error?.message||error));}})
+      .finally(()=>{if(!controller.signal.aborted)setVisitingHistoryLoading(false);});
+    return()=>controller.abort();
+  },[lens,filters.collegeId,filters.sectionId]);
 
   useEffect(() => {
     (async () => {
@@ -896,6 +926,31 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       }))
       .sort((a, b) => byRoomLabel(a.name, b.name));
   }, [results, instructorById]);
+
+  const visitingTermGroups = useMemo(() => {
+    const groups = new Map<number, FSchedule[]>();
+    results
+      .filter(row => visitingIds.has(Number(row.AdInstructorId)))
+      .forEach(row => groups.set(Number(row.AdInstructorId), [...(groups.get(Number(row.AdInstructorId)) || []), row]));
+    return [...groups.entries()].map(([id, rows]) => {
+      const distinctCourses = new Set(rows.map(row => Number(row.AdCourseId || 0)).filter(Boolean)).size;
+      const weeklyMinutes = rows.reduce((total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0);
+      return {
+        id,
+        name: instructorById.get(id)?.AdInstructorName || `منتدب ${id}`,
+        civil: instructorById.get(id)?.AdInstructorCivil || "",
+        rows,
+        sections: rows.length,
+        courses: distinctCourses,
+        weeklyMinutes,
+      };
+    }).sort((a, b) => b.sections - a.sections || byRoomLabel(a.name, b.name));
+  }, [results, visitingIds, instructorById]);
+
+  const visitingHistoryRows = useMemo(() => {
+    const people = visitingHistory?.people || [];
+    return [...people].sort((a, b) => b.times - a.times || b.sections - a.sections || byRoomLabel(a.name, b.name));
+  }, [visitingHistory]);
 
   const byTime = useMemo(() => {
     const groups = new Map<string, FSchedule[]>();
@@ -1616,8 +1671,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       >
         <header className="query-canvas-head no-print">
           <div className="query-count" aria-live="polite" aria-atomic="true">
-            <b>{num(results.length)}</b>
-            <span>موعد</span>
+            <b>{num(lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length)}</b>
+            <span>{lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           {!pending && (results.length || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
@@ -1665,9 +1720,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         </header>
 
 
-        {loading || pending ? (
+        {loading || pending || (lens === "visitingHistory" && visitingHistoryLoading) ? (
           <QuerySkeleton />
-        ) : !results.length && lens !== "room" && lens !== "balance" ? (
+        ) : !results.length && lens !== "room" && lens !== "balance" && lens !== "visitingHistory" ? (
           <div className="query-empty">
             <EmptyState
               title={error ? "تعذّرت القراءة" : "لا نتائج"}
@@ -1957,6 +2012,78 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               </div>
             ) : null}
           </div>
+        ) : lens === "visiting" ? (
+          visitingTermGroups.length ? (
+            <div className="lens-groups lens-visiting">
+              {visitingTermGroups.map(group => (
+                <article key={group.id} className={openGroup === `visiting-${group.id}` ? "open" : ""}>
+                  <button
+                    type="button"
+                    data-guide-ignore="فتح مجموعة منتدب الفصل داخل التقرير فقط ولا يغير بيانات الجدول"
+                    aria-expanded={openGroup === `visiting-${group.id}`}
+                    aria-controls={`query-visiting-group-${group.id}`}
+                    onClick={() => setOpenGroup(openGroup === `visiting-${group.id}` ? null : `visiting-${group.id}`)}
+                  >
+                    <span className="group-avatar"><UserPlus /></span>
+                    <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
+                    <span className="group-bar"><i style={{ width: share(group.sections, Math.max(1, ...visitingTermGroups.map(item => item.sections))) }} /></span>
+                    <b>{num(group.sections)} شعب</b>
+                    <em>{num(group.courses)} مواد</em>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                  {openGroup === `visiting-${group.id}` ? (
+                    <div className="group-rows" id={`query-visiting-group-${group.id}`}>
+                      {group.rows.map(row => (
+                        <div key={row.id}>
+                          <span className="code-chip">{courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
+                          <span>{courseById.get(row.AdCourseId)?.CourseName || row.AdCourseName}</span>
+                          <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
+                          <small>{dayText(row)} · {row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="query-empty"><EmptyState title="لا يوجد منتدبون في هذا الفصل" detail="أضفهم من أداة المنتدبين داخل الجدول الدراسي، ثم سيظهر تقريرهم هنا." /></div>
+          )
+        ) : lens === "visitingHistory" ? (
+          visitingHistoryRows.length ? (
+            <div className="lens-visiting-history">
+              <div className="visiting-history-table" role="table" aria-label="تاريخ المنتدبين" style={{ ["--visit-term-count" as any]: Math.max(1, visitingHistory?.terms.length || 0) }}>
+                <div className="visiting-history-row visiting-history-head" role="row">
+                  <strong>المنتدب</strong>
+                  <span>مرات الانتداب</span>
+                  <span>إجمالي الشعب</span>
+                  <span>إجمالي المواد</span>
+                  {(visitingHistory?.terms || []).map(term => <span key={term.termId}>{term.termName}</span>)}
+                </div>
+                {visitingHistoryRows.map(person => {
+                  const byTerm = new Map(person.terms.map(term => [Number(term.termId), term]));
+                  return (
+                    <div className="visiting-history-row" role="row" key={person.instructorId}>
+                      <strong>{person.name}<small dir="ltr">{person.civil || ""}</small></strong>
+                      <span>{num(person.times)}</span>
+                      <span>{num(person.sections)}</span>
+                      <span>{num(person.courses)}</span>
+                      {(visitingHistory?.terms || []).map(term => {
+                        const cell = byTerm.get(Number(term.termId));
+                        return (
+                          <span key={`${person.instructorId}-${term.termId}`} className={cell ? "has-visit" : ""}>
+                            {cell ? <><CheckCircle2 aria-hidden="true" /><b>{num(cell.sections)}</b><small>{num(cell.courses)} مواد</small></> : "—"}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="query-empty"><EmptyState title="لا يوجد تاريخ منتدبين" detail="بعد حفظ منتدبي الفصول سيظهر هنا سجل المقارنة بين السنوات." /></div>
+          )
         ) : lens === "instructor" ? (
           <div className="lens-groups">
             {groups.map(group => (
@@ -2358,6 +2485,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
     room: "إشغال القاعات والفراغات",
     matrix: "القاعات × الأوقات",
     time: "الأوقات",
+    visiting: "منتدبو الفصل",
+    visitingHistory: "تاريخ المنتدبين",
     fairness: "عدالة توزيع العبء",
     balance: "ميزان الأقسام",
     comprehensive: "تقرير الجدول الشامل",

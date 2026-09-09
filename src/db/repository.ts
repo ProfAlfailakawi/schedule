@@ -3987,6 +3987,20 @@ export const Repository = {
     return unique;
   },
 
+  getVisitingRosterHistory: async (collegeId: number, sectionId: number): Promise<VisitingRoster[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("visitingRosters")
+        .where("collegeId", "==", collegeId)
+        .where("sectionId", "==", sectionId)
+        .get();
+      return snap.docs.map(doc => doc.data() as VisitingRoster)
+        .filter(row => Number(row.termId) && Array.isArray(row.instructorIds));
+    }
+    return (db.visitingRosters || [])
+      .filter(row => Number(row.collegeId) === collegeId && Number(row.sectionId) === sectionId && Number(row.termId))
+      .map(row => ({ ...row, instructorIds: (row.instructorIds || []).map(Number).filter(Boolean) }));
+  },
+
   /** Department-owned visiting-instructor directory; independent of terms. */
   getDepartmentDelegates: async (collegeId: number, sectionId: number): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}`;

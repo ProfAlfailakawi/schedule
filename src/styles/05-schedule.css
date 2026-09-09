@@ -1347,6 +1347,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   border:1.5px solid currentColor;border-top-color:transparent;
   animation:boot-turn .7s linear infinite;
 }
+.schedule-quick-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}
+.schedule-quick-filters .schedule-ops-pill{cursor:pointer}
+.schedule-quick-filters .schedule-ops-pill.on{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:color-mix(in srgb,var(--accent-soft) 70%,var(--surface));color:var(--accent)}
 @keyframes boot-turn{to{transform:rotate(360deg)}}
 
 /* --------------------------------------------------------------------------

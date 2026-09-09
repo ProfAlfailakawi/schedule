@@ -4731,6 +4731,60 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
   res.json({instructorIds:await Repository.saveVisitingRoster(collegeId,sectionId,toTermId,merged),copied:selected.length});
 });
 
+app.get("/api/reports/visiting-history", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
+  if(!collegeId||!sectionId){res.status(400).json({error:"حدد الكلية والقسم."});return;}
+  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [rosters,instructors,terms]=await Promise.all([
+    Repository.getVisitingRosterHistory(collegeId,sectionId),
+    Repository.getInstructors(),
+    Repository.getTerms(),
+  ]);
+  const peopleById=new Map(instructors.map(person=>[Number(person.AdInstructorId),person]));
+  const termsById=new Map(terms.map(term=>[Number(term.AdTermId),term]));
+  const termIds=[...new Set(rosters.map(row=>Number(row.termId)).filter(Boolean))];
+  const rowsByTerm=new Map<number,any[]>();
+  await Promise.all(termIds.map(async termId=>{
+    rowsByTerm.set(termId,await Repository.getSchedulesByScope({collegeId,sectionId,termId}));
+  }));
+  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[]}>();
+  for(const roster of rosters){
+    const termId=Number(roster.termId||0);
+    const term=termsById.get(termId);
+    const ids=[...new Set((roster.instructorIds||[]).map(Number).filter(Boolean))];
+    const termRows=rowsByTerm.get(termId)||[];
+    for(const instructorId of ids){
+      const mine=termRows.filter(row=>Number(row.AdInstructorId)===instructorId);
+      const distinctCourses=new Set(mine.map(row=>Number(row.AdCourseId||0)).filter(Boolean)).size;
+      const person=peopleById.get(instructorId);
+      const current=people.get(instructorId)||{
+        instructorId,
+        name:person?.AdInstructorName||`منتدب ${instructorId}`,
+        civil:person?.AdInstructorCivil||"",
+        times:0,
+        sections:0,
+        courses:0,
+        terms:[],
+      };
+      current.times+=1;
+      current.sections+=mine.length;
+      current.courses+=distinctCourses;
+      current.terms.push({
+        termId,
+        termName:term?.AdTermName||String(termId),
+        rostered:true,
+        sections:mine.length,
+        courses:distinctCourses,
+      });
+      people.set(instructorId,current);
+    }
+  }
+  res.json({
+    terms:termIds.map(termId=>({termId,termName:termsById.get(termId)?.AdTermName||String(termId)})),
+    people:[...people.values()],
+  });
+});
+
 /** Compatibility read for old consumers. Rooms now come only from the confirmed Master Registry; ordinary users cannot pin or create rooms. */
 app.get("/api/department-rooms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);

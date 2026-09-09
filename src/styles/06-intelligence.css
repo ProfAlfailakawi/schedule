@@ -569,6 +569,19 @@
 .fairness-rows .over small{color:var(--warning)}
 .fairness-rows .under i>b{background:var(--info)}
 .fairness-rows .under small{color:var(--info)}
+.lens-visiting-history{padding:var(--s5);overflow:auto}
+.visiting-history-table{display:grid;min-width:920px;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
+.visiting-history-row{display:grid;grid-template-columns:minmax(190px,1.4fr) 92px 92px 92px repeat(var(--visit-term-count,8),minmax(126px,1fr));align-items:stretch;border-block-start:1px solid var(--line)}
+.visiting-history-row:first-child{border-block-start:0}
+.visiting-history-row>*{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;padding:10px 12px;border-inline-start:1px solid var(--line);font-size:var(--t-sm)}
+.visiting-history-row>*:first-child{justify-content:flex-start;border-inline-start:0}
+.visiting-history-row strong{display:grid;gap:2px;font-weight:700}
+.visiting-history-row strong small{color:var(--muted);font-size:var(--t-xs);font-weight:500}
+.visiting-history-head{position:sticky;top:0;z-index:1;background:var(--surface-2);font-weight:700;color:var(--ink)}
+.visiting-history-row .has-visit{background:color-mix(in srgb,var(--success-soft) 72%,var(--surface));color:var(--success)}
+.visiting-history-row .has-visit svg{width:15px;height:15px;flex:none}
+.visiting-history-row .has-visit b{color:var(--ink);font-variant-numeric:tabular-nums}
+.visiting-history-row .has-visit small{color:var(--muted);font-size:var(--t-xs)}
 
 /* ==========================================================================
    INTELLIGENCE WORKSPACE
