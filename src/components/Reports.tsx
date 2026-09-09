@@ -1648,6 +1648,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <button
               key={item.id}
               type="button"
+              data-guide-ignore="تبويبات نتائج الاستعلام تغيّر طريقة العرض فقط ولا تنفذ إجراءً على البيانات"
               id={`query-lens-tab-${item.id}`}
               role="tab"
               className={active ? "active" : ""}
@@ -1669,6 +1670,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         <div className="visiting-scope-switch no-print" role="group" aria-label="نطاق عرض المنتدبين">
           <button
             type="button"
+            data-guide-ignore="تبديل نطاق المنتدبين إلى الفصل المحدد يغيّر العرض فقط ولا يعدّل البيانات"
             className={lens === "visiting" ? "active" : ""}
             aria-pressed={lens === "visiting"}
             onClick={() => selectLens("visiting")}
@@ -1678,6 +1680,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           </button>
           <button
             type="button"
+            data-guide-ignore="تبديل نطاق المنتدبين إلى كل الفصول يغيّر العرض فقط ولا يعدّل البيانات"
             className={lens === "visitingHistory" ? "active" : ""}
             aria-pressed={lens === "visitingHistory"}
             onClick={() => selectLens("visitingHistory")}
