@@ -204,11 +204,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     if (!window.confirm("حذف المنتدب من قائمة منتدبي هذا القسم؟ لن يُحذف من النظام، ولن تتغير سجلات الفصول السابقة.")) return;
     setBusy(true); setError(null);
     try {
-      const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId) });
+      const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
       const response = await fetch(`/api/department-delegates/${id}?${query}`, { method: "DELETE" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر الحذف.");
       setDirectoryIds(data.instructorIds || []);
+      setRoster(Array.isArray(data.roster) ? data.roster : current => current.filter(item => Number(item) !== Number(id)));
       setDirectoryPeople(current => current.filter(person => person.AdInstructorId !== id));
       if (editingDelegate === id) setEditingDelegate(0);
       onChanged();

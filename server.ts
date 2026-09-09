@@ -3702,6 +3702,39 @@ app.get("/api/schedules/events", requireAnyPermission([7, 8, 9, 10, 14, 16, 17])
 });
 
 /**
+ * Read the visiting roster exactly as the live UI should understand it.
+ *
+ * A term roster may outlive a person being removed from the department's
+ * visiting directory. Those old IDs are useful historical evidence, but they
+ * must not keep a "2 visitors" badge alive in today's schedule, nor resurrect
+ * someone the department deliberately removed. The persistent department
+ * directory is therefore the live-membership authority, while the global
+ * instructor table confirms that the identity itself still exists.
+ *
+ * Historical roster documents are never rewritten here; this is a read filter
+ * only, so past evidence remains intact for audit/recovery.
+ */
+async function readLiveVisitingRoster(collegeId: number, sectionId: number, termId: number) {
+  if (!collegeId || !sectionId || !termId) return { instructorIds: [] as number[], instructors: [] as any[] };
+  const [roster, directory, instructors] = await Promise.all([
+    Repository.getVisitingRoster(collegeId, sectionId, termId),
+    Repository.getDepartmentDelegates(collegeId, sectionId),
+    Repository.getInstructors(),
+  ]);
+  const directoryIds = new Set(directory.map(Number));
+  const instructorById = new Map(instructors.map(person => [Number(person.AdInstructorId), person]));
+  const instructorIds = [...new Set(
+    roster
+      .map(Number)
+      .filter(id => Number.isFinite(id) && id > 0 && directoryIds.has(id) && instructorById.has(id))
+  )];
+  return {
+    instructorIds,
+    instructors: instructorIds.map(id => instructorById.get(id)).filter(Boolean),
+  };
+}
+
+/**
  * The whole workspace in one request.
  *
  * Opening the schedule used to be a conversation: colleges, then sections, then
@@ -3746,18 +3779,17 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
     }
   }
 
-  const [rows, scopedInstructors, historicalDepartmentInstructors, courses, visitingInstructorIds] = await Promise.all([
+  const [rows, scopedInstructors, historicalDepartmentInstructors, courses, visitingRoster] = await Promise.all([
     readSchedulesForRequest(req, collegeId, sectionId, termId),
     sectionId
       ? Repository.getInstructorsByScope(sectionId, termId)
       : (collegeId ? Repository.getInstructorsByScheduleScope({ collegeId, termId }) : Promise.resolve([])),
     sectionId ? Repository.getInstructorsByScope(sectionId, 0) : Promise.resolve([]),
     sectionId ? Repository.getCoursesBySection(sectionId) : Promise.resolve([]),
-    sectionId && collegeId ? Repository.getVisitingRoster(collegeId, sectionId, termId) : Promise.resolve([] as number[]),
+    readLiveVisitingRoster(collegeId, sectionId, termId),
   ]);
-  const visitingPeople = visitingInstructorIds.length
-    ? (await Repository.getInstructors()).filter(person => visitingInstructorIds.includes(Number(person.AdInstructorId)))
-    : [];
+  const visitingInstructorIds = visitingRoster.instructorIds;
+  const visitingPeople = visitingRoster.instructors;
   const instructors = [...new Map([...historicalDepartmentInstructors, ...scopedInstructors, ...visitingPeople].map(person => [Number(person.AdInstructorId), person])).values()]
     .sort((a,b)=>String(a.AdInstructorName||"").localeCompare(String(b.AdInstructorName||""),"ar"));
 
@@ -4620,9 +4652,7 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const instructorIds=await Repository.getVisitingRoster(collegeId, sectionId, termId);
-  const wanted=new Set(instructorIds.map(Number));
-  const instructors=(await Repository.getInstructors()).filter(person=>wanted.has(Number(person.AdInstructorId)));
+  const { instructorIds, instructors } = await readLiveVisitingRoster(collegeId, sectionId, termId);
   res.json({ instructorIds, instructors });
 });
 
@@ -4635,9 +4665,7 @@ app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 1
   const termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const instructorIds=await Repository.getVisitingRoster(collegeId, sectionId, termId);
-  const wanted=new Set(instructorIds.map(Number));
-  const instructors=(await Repository.getInstructors()).filter(person=>wanted.has(Number(person.AdInstructorId)));
+  const { instructorIds, instructors } = await readLiveVisitingRoster(collegeId, sectionId, termId);
   res.json({ instructorIds, instructors });
 });
 
@@ -4706,10 +4734,20 @@ app.put("/api/department-delegates/:instructorId", requirePermission(7), async (
 });
 
 app.delete("/api/department-delegates/:instructorId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),instructorId=Number(req.params.instructorId||0);
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0),instructorId=Number(req.params.instructorId||0);
   if(!collegeId||!sectionId||!instructorId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const current=await Repository.getDepartmentDelegates(collegeId,sectionId);
-  res.json({instructorIds:await Repository.saveDepartmentDelegates(collegeId,sectionId,current.filter(id=>Number(id)!==instructorId))});
+  const instructorIds=await Repository.saveDepartmentDelegates(collegeId,sectionId,current.filter(id=>Number(id)!==instructorId));
+  // Removing a delegate from the department is effective immediately for the
+  // open term, but previous-term rosters are deliberately left untouched.
+  // This prevents a stale current roster from keeping the schedule badge alive
+  // while preserving the historical evidence promised by the UI.
+  let roster:number[]|undefined;
+  if(termId){
+    const currentRoster=await Repository.getVisitingRoster(collegeId,sectionId,termId);
+    roster=await Repository.saveVisitingRoster(collegeId,sectionId,termId,currentRoster.filter(id=>Number(id)!==instructorId));
+  }
+  res.json({instructorIds,...(roster?{roster}:{})});
 });
 
 /** Backwards-compatible creation path now writes the department directory too. */
@@ -4750,11 +4788,13 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
   if(!collegeId||!sectionId){res.status(400).json({error:"حدد الكلية والقسم."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [rosters,instructors,terms]=await Promise.all([
+  const [rosters,instructors,terms,directory]=await Promise.all([
     Repository.getVisitingRosterHistory(collegeId,sectionId),
     Repository.getInstructors(),
     Repository.getTerms(),
+    Repository.getDepartmentDelegates(collegeId,sectionId),
   ]);
+  const activeDelegateIds=new Set(directory.map(Number));
   const peopleById=new Map(instructors.map(person=>[Number(person.AdInstructorId),person]));
   const termsById=new Map(terms.map(term=>[Number(term.AdTermId),term]));
   const termIds=[...new Set(rosters.map(row=>Number(row.termId)).filter(Boolean))];
@@ -4766,7 +4806,11 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
   for(const roster of rosters){
     const termId=Number(roster.termId||0);
     const term=termsById.get(termId);
-    const ids=[...new Set((roster.instructorIds||[]).map(Number).filter(Boolean))];
+    const ids=[...new Set(
+      (roster.instructorIds||[])
+        .map(Number)
+        .filter((id:number)=>Boolean(id)&&activeDelegateIds.has(id)&&peopleById.has(id))
+    )];
     const termRows=rowsByTerm.get(termId)||[];
     for(const instructorId of ids){
       const mine=termRows.filter(row=>Number(row.AdInstructorId)===instructorId);

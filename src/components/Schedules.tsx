@@ -1424,6 +1424,20 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
 
   const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
 
+  // The roster is a term-membership list; this toolbar, however, filters the
+  // timetable itself. Count only visitors who actually have at least one row in
+  // the currently loaded board, so the chip can never promise "2 visitors" and
+  // then open an empty timetable merely because two roster names have no
+  // appointment yet.
+  const scheduledVisitingIds = useMemo(() => {
+    if (!visitingIds.size || !rows.length) return new Set<number>();
+    const scheduledInstructorIds = new Set(rows.map(row => Number(row.AdInstructorId)).filter(Boolean));
+    return new Set([...visitingIds].filter(id => scheduledInstructorIds.has(Number(id))));
+  }, [rows, visitingIds]);
+  useEffect(() => {
+    if (visitingOnly && !scheduledVisitingIds.size) setVisitingOnly(false);
+  }, [visitingOnly, scheduledVisitingIds]);
+
   /** The department's own staff, ordered by how much of it they carry. */
   const departmentInstructorIds = useMemo(() => {
     const load = new Map<number, number>();
@@ -3398,13 +3412,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const filteredRows=useMemo(()=>{
     const q=deferredSearch.trim().toLowerCase();
     let source=pendingOnly?rows.filter(r=>r.locationStatus==="PENDING_ROOM"&&(!user?.AdInstructorId||Number(r.AdInstructorId)===Number(user.AdInstructorId))):rows;
-    if(visitingOnly)source=source.filter(r=>visitingIds.has(Number(r.AdInstructorId)));
+    if(visitingOnly)source=source.filter(r=>scheduledVisitingIds.has(Number(r.AdInstructorId)));
     const visible=q?source.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)}):[...source];
     return visible.sort((a,b)=>
       byArabic(a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName||"",b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName||"")||
       byArabic(a.SCode,b.SCode)||mins(a.fstarttime)-mins(b.fstarttime)||Number(a.id)-Number(b.id)
     );
-  },[rows,deferredSearch,courseById,instructorById,pendingOnly,visitingOnly,visitingIds,user?.AdInstructorId]);
+  },[rows,deferredSearch,courseById,instructorById,pendingOnly,visitingOnly,scheduledVisitingIds,user?.AdInstructorId]);
 
   /**
    * The legend is a real shared filter, not three unrelated paint effects.
@@ -9341,7 +9355,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   if (mode === "copy") return copyView;
   if (editor !== "index") return editorView;
 
-  const visitingFilterButton = () => visitingIds.size ? (
+  const visitingFilterButton = () => scheduledVisitingIds.size ? (
     <button
       type="button"
       data-guide-ignore="فلتر منتدبي الفصل يغيّر العرض فقط ولا يعدّل بيانات الجدول"
@@ -9352,7 +9366,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     >
       <UsersRound aria-hidden="true" />
       <b>المنتدبون</b>
-      <span>{Array.from(visitingIds).length.toLocaleString("ar-KW-u-nu-latn")}</span>
+      <span>{scheduledVisitingIds.size.toLocaleString("ar-KW-u-nu-latn")}</span>
     </button>
   ) : null;
 
@@ -9803,7 +9817,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             </div>
             <span>{agendaRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
           </div>
-          {hueLegend.length > 1 || visitingIds.size ? (
+          {hueLegend.length > 1 || scheduledVisitingIds.size ? (
             <div className="week-legend agenda-legend" role="group" aria-label="مفتاح الألوان">
               <div className="week-legend-basis" role="group" aria-label="معنى اللون">
                 {([
@@ -10328,7 +10342,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </div>
                   </div>
                 ) : null}
-                {hueLegend.length > 1 || visitingIds.size ? (
+                {hueLegend.length > 1 || scheduledVisitingIds.size ? (
                   <div className="week-legend rooms-legend" role="group" aria-label="مفتاح ألوان المباني والقاعات">
                     <div className="week-legend-basis" role="group" aria-label="معنى اللون">
                       {([
@@ -10712,7 +10726,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               So the key sits with the grid it explains, and carries the texture
               switch itself.
             */}
-            {hueLegend.length > 1 || visitingIds.size ? (
+            {hueLegend.length > 1 || scheduledVisitingIds.size ? (
               <div className="week-legend" role="group" aria-label="مفتاح الألوان">
                 {/* The alphabet the colours are written in, switched where the
                     colours are actually being read rather than three menus away.
