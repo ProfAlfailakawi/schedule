@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 import { flushSync } from "react-dom";
 import {
@@ -13,6 +13,10 @@ import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext"
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { sortTermsNewest, termChronology } from "../utils/termSequence";
+import {
+  buildVisitingHistoryModel, sortVisitingTerms, visitingHeatLevel,
+  type VisitingHistoryPerson, type VisitingHistoryYear,
+} from "../utils/visitingHistory";
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
@@ -72,23 +76,6 @@ interface Filters {
   courseId: number; courseCode: string;
   startTime: string; endTime: string;
   sun: boolean; mon: boolean; tue: boolean; wed: boolean; thr: boolean;
-}
-
-interface VisitingHistoryPerson {
-  instructorId: number;
-  name: string;
-  civil?: string;
-  times: number;
-  sections: number;
-  courses: number;
-  terms: Array<{
-    termId: number;
-    termName: string;
-    rostered: boolean;
-    sections: number;
-    courses: number;
-    items?: Array<{ scheduleId: number; courseId: number; courseName?: string; sectionCode?: string }>;
-  }>;
 }
 
 const fresh = (): Filters => ({
@@ -300,6 +287,45 @@ const dedupeVisibleOptions = <T,>(
  * scroll position steady when the real rows land in their place. Inert — no
  * data, no interaction.
  */
+/**
+ * بطاقة فصل واحد داخل سجل منتدب: الشعب التي أُسندت إليه فيه، بأسمائها.
+ * تُستدعى من موضعين — خانة فصل بعينها، أو السجل كاملاً — فبقيت واحدة كي لا
+ * يختلف ما يقرؤه المستخدم باختلاف الطريق الذي وصل منه.
+ */
+function VisitingHistoryTermCard({ term, courseById }: {
+  /* المشروع لا يحمّل @types/react، فلا يعرف المدقّق أن «key» سمة محجوزة لرياكت
+     ولا تصل إلى الخصائص. إعلانها هنا يُسكت الخطأ دون أن يستعملها أحد. */
+  key?: string;
+  term: VisitingHistoryPerson["terms"][number];
+  courseById: Map<number, AdCourse>;
+}) {
+  return (
+    <section className="visiting-history-term">
+      <header>
+        <span><CheckCircle2 aria-hidden="true" /><strong>{term.termName}</strong></span>
+        <b>{Number(term.sections || 0).toLocaleString("ar-KW-u-nu-latn")} شعب</b>
+      </header>
+      {term.items?.length ? (
+        <div className="visiting-history-sections">
+          {term.items.map((item, itemIndex) => {
+            const course = courseById.get(Number(item.courseId));
+            const courseName = course?.CourseName || item.courseName || "مقرر";
+            const courseCode = course?.CourseCode || "";
+            return (
+              <span key={`${term.termId}-${item.scheduleId || itemIndex}`}>
+                <b>شعبة {item.sectionCode || "—"}</b>
+                <small>{courseCode ? `${courseCode} · ` : ""}{courseName}</small>
+              </span>
+            );
+          })}
+        </div>
+      ) : (
+        <small className="visiting-history-no-sections">مسجل ضمن منتدبي هذا الفصل دون شعبة محفوظة في الجدول.</small>
+      )}
+    </section>
+  );
+}
+
 function QuerySkeleton() {
   return (
     <div className="query-skeleton" role="status" aria-busy="true">
@@ -335,6 +361,13 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
   const [visitingHistory, setVisitingHistory] = useState<{ terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[] } | null>(null);
   const [visitingHistoryLoading, setVisitingHistoryLoading] = useState(false);
+  /* ── نافذة السنوات ────────────────────────────────────────────────────────
+   * الأرشيف يكبر ولا يصغر: خمس عشرة سنة تعني ثلاثين فصلاً، ولو صُفّت كلها في
+   * عرض واحد لصار كل عمود شريطاً لا يُقرأ. فالنافذة تُظهر أحدث ما يُقارَن به
+   * فعلاً، وما قبلها يُطوى في عمود واحد يحمل مجموعه — لا يضيع، ويُفتح بضغطة.
+   */
+  const [historyWindow, setHistoryWindow] = useState<number>(6);
+  const [openHistoryCell, setOpenHistoryCell] = useState<string | null>(null);
   /* ── القسم الواحد في مواقع الفرع ──────────────────────────────────────────
    * القسم يُدرَّس في الرئيسي والجهراء والفحيحيل، ولكل موقع كلية مستقلة وجدول
    * منشور في مكانه — وهذا هو الصواب في البيانات. لكن رئيس القسم يريد أحياناً
@@ -994,7 +1027,18 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     terms: (visitingHistory.terms || []).filter(term => visitingHistoryActiveTermIds.has(Number(term.termId))),
     people: visitingHistoryRows,
   } : null, [visitingHistory, visitingHistoryActiveTermIds, visitingHistoryRows]);
-  const maxVisitingTerms = Math.max(1, ...visitingHistoryRows.map(person => Number(person.times || 0)));
+  const historyModel = useMemo(
+    () => buildVisitingHistoryModel(visibleVisitingHistory, historyWindow),
+    [visibleVisitingHistory, historyWindow]
+  );
+  const maxVisitingSections = Math.max(1, ...visitingHistoryRows.map(person => Number(person.sections || 0)));
+  /* لا يُعرض خيار «آخر ١٠ سنوات» على أرشيف عمره أربع سنوات: الخيار الذي لا
+     يغيّر شيئاً يوهم القارئ أن هناك ما يُخفى عنه. */
+  const historyYearChoices = useMemo(() => {
+    const total = historyModel.totals.years;
+    const options = [4, 6, 10].filter(value => value < total).map(value => ({ value, label: `آخر ${value.toLocaleString("ar-KW-u-nu-latn")} سنوات` }));
+    return [...options, { value: 0, label: total ? `كل السنوات (${total.toLocaleString("ar-KW-u-nu-latn")})` : "كل السنوات" }];
+  }, [historyModel.totals.years]);
   const visitingHistorySectionTotal = visitingHistoryRows.reduce((sum, person) => sum + Number(person.sections || 0), 0);
 
   const byTime = useMemo(() => {
@@ -2135,79 +2179,166 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               <section className="visiting-history-summary" aria-label="ملخص المقارنة التاريخية">
                 <div>
                   <span>المقارنة عبر السنوات</span>
-                  <strong>الأكثر انتدابًا يظهر أولًا</strong>
-                  <p>المقارنة تبدأ بعدد الفصول ذات الشعب الفعلية، ثم إجمالي الشعب. اضغط على أي اسم لرؤية كل فصل والشعب التي أُسندت إليه.</p>
+                  <strong>من انتُدب، ومتى، وكم شعبة</strong>
+                  <p>كل سنة أكاديمية عمود واحد، وداخله الفصل الأول ثم الثاني ثم الصيفي إن وُجد. الرقم في الخانة = عدد الشعب. اضغط أي خانة لرؤية شعبها، أو اسم المنتدب لرؤية سجله كاملاً.</p>
+                  {historyYearChoices.length > 1 ? (
+                    <div className="visiting-history-window" role="group" aria-label="نطاق السنوات المعروضة">
+                      {historyYearChoices.map(choice => (
+                        <button
+                          key={choice.value}
+                          type="button"
+                          data-guide-ignore="تغيير نطاق السنوات يغيّر العرض فقط ولا يمس البيانات"
+                          className={historyWindow === choice.value ? "active" : ""}
+                          aria-pressed={historyWindow === choice.value}
+                          onClick={() => { setHistoryWindow(choice.value); setOpenHistoryCell(null); }}
+                        >{choice.label}</button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="visiting-history-summary-facts">
                   <span><b>{num(visitingHistoryRows.length)}</b><small>منتدب</small></span>
-                  <span><b>{num(visibleVisitingHistory?.terms.length || 0)}</b><small>فصل فعلي</small></span>
+                  <span><b>{num(historyModel.totals.years)}</b><small>سنة أكاديمية</small></span>
                   <span><b>{num(visitingHistorySectionTotal)}</b><small>شعبة تاريخيًا</small></span>
                 </div>
               </section>
 
-              <div className="visiting-history-cards">
-                {visitingHistoryRows.map((person, index) => {
-                  const groupId = `visiting-history-${person.instructorId}`;
-                  const open = openGroup === groupId;
-                  const orderedTerms = [...person.terms].sort((a, b) =>
-                    termChronology({ AdTermId: b.termId, AdTermName: b.termName }) - termChronology({ AdTermId: a.termId, AdTermName: a.termName })
-                  );
-                  return (
-                    <article key={person.instructorId} className={open ? "open" : ""}>
-                      <button
-                        type="button"
-                        className="visiting-history-person"
-                        data-guide-ignore="فتح السجل التاريخي للمنتدب للقراءة فقط"
-                        aria-expanded={open}
-                        aria-controls={`${groupId}-details`}
-                        onClick={() => setOpenGroup(open ? null : groupId)}
-                      >
-                        <span className="visiting-history-rank" aria-label={`الترتيب ${index + 1}`}>{num(index + 1)}</span>
-                        <span className="visiting-history-person-name">
-                          <strong>{person.name}</strong>
-                          {person.civil ? <small dir="ltr">{person.civil}</small> : null}
-                          {index === 0 ? <em>الأعلى تاريخيًا</em> : null}
-                        </span>
-                        <span className="visiting-history-meter" aria-hidden="true">
-                          <i><b style={{ width: share(person.times, maxVisitingTerms) }} /></i>
-                        </span>
-                        <span className="visiting-history-fact is-terms"><b>{num(person.times)}</b><small>فصول</small></span>
-                        <span className="visiting-history-fact is-sections"><b>{num(person.sections)}</b><small>شعبة</small></span>
-                        <ChevronDown aria-hidden="true" />
-                      </button>
-
-                      {open ? (
-                        <div className="visiting-history-details" id={`${groupId}-details`}>
-                          {orderedTerms.map(term => (
-                            <section key={`${person.instructorId}-${term.termId}`} className="visiting-history-term">
-                              <header>
-                                <span><CheckCircle2 aria-hidden="true" /><strong>{term.termName}</strong></span>
-                                <b>{num(term.sections)} شعب</b>
-                              </header>
-                              {term.items?.length ? (
-                                <div className="visiting-history-sections">
-                                  {term.items.map((item, itemIndex) => {
-                                    const course = courseById.get(Number(item.courseId));
-                                    const courseName = course?.CourseName || item.courseName || "مقرر";
-                                    const courseCode = course?.CourseCode || "";
+              <div className="visiting-history-matrix-wrap">
+                <table className="visiting-history-matrix">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="is-person">المنتدب</th>
+                      <th scope="col" className="is-total">فصول<br />الانتداب</th>
+                      <th scope="col" className="is-total">إجمالي<br />الشعب</th>
+                      {historyModel.archive ? (
+                        <th scope="col" className="is-archive">
+                          <bdi dir="ltr">{historyModel.archive.label}</bdi>
+                          <span>{num(historyModel.archive.yearCount)} سنوات سابقة</span>
+                        </th>
+                      ) : null}
+                      {historyModel.years.map(year => (
+                        <th key={year.key} scope="col" className="is-year">
+                          <bdi dir="ltr">{year.label}</bdi>
+                          <span className="visiting-history-slots" style={{ gridTemplateColumns: `repeat(${year.slots.length}, minmax(0, 1fr))` }}>
+                            {year.slots.map(slot => <small key={`${year.key}-${slot.key}`}>{slot.label}</small>)}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historyModel.people.map((person, index) => {
+                      const groupId = `visiting-history-${person.instructorId}`;
+                      const openAll = openGroup === groupId;
+                      const byTerm = new Map<number, VisitingHistoryPerson["terms"][number]>(
+                        person.terms.map(term => [Number(term.termId), term])
+                      );
+                      const openTerm = openHistoryCell?.startsWith(`${person.instructorId}:`)
+                        ? byTerm.get(Number(openHistoryCell.split(":")[1]))
+                        : undefined;
+                      const columnCount = 3 + historyModel.years.length + (historyModel.archive ? 1 : 0);
+                      return (
+                        <Fragment key={person.instructorId}>
+                          <tr className={openAll || openTerm ? "is-open" : ""}>
+                            <th scope="row" className="is-person">
+                              <button
+                                type="button"
+                                data-guide-ignore="فتح السجل التاريخي للمنتدب للقراءة فقط"
+                                aria-expanded={openAll}
+                                aria-controls={`${groupId}-details`}
+                                onClick={() => { setOpenGroup(openAll ? null : groupId); setOpenHistoryCell(null); }}
+                              >
+                                <span className="visiting-history-rank" aria-label={`الترتيب ${index + 1}`}>{num(index + 1)}</span>
+                                <span className="visiting-history-person-name">
+                                  <strong>{person.name}</strong>
+                                  {person.civil ? <small dir="ltr">{person.civil}</small> : null}
+                                </span>
+                                <ChevronDown aria-hidden="true" />
+                              </button>
+                            </th>
+                            <td className="is-total"><b>{num(person.times)}</b><small>فصل</small></td>
+                            <td className="is-total is-sections">
+                              <span className="visiting-history-meter" aria-hidden="true">
+                                <i><b style={{ width: share(person.sections, maxVisitingSections) }} /></i>
+                              </span>
+                              <b>{num(person.sections)}</b><small>شعبة</small>
+                            </td>
+                            {historyModel.archive ? (
+                              <td className="is-archive">
+                                {historyModel.archive.sectionsByPerson.get(Number(person.instructorId)) ? (
+                                  <span className="visiting-history-archive-fact">
+                                    <b>{num(historyModel.archive.sectionsByPerson.get(Number(person.instructorId)) || 0)}</b>
+                                    <small>{num(historyModel.archive.termsByPerson.get(Number(person.instructorId)) || 0)} فصل</small>
+                                  </span>
+                                ) : <i className="visiting-history-cell is-empty" aria-label="بلا انتداب" />}
+                              </td>
+                            ) : null}
+                            {historyModel.years.map(year => (
+                              <td key={`${person.instructorId}-${year.key}`} className="is-year">
+                                <span className="visiting-history-slots" style={{ gridTemplateColumns: `repeat(${year.slots.length}, minmax(0, 1fr))` }}>
+                                  {year.slots.map(slot => {
+                                    const cell = slot.term ? byTerm.get(Number(slot.term.termId)) : undefined;
+                                    const sections = Number(cell?.sections || 0);
+                                    const level = visitingHeatLevel(sections);
+                                    const cellKey = `${person.instructorId}:${slot.term?.termId || 0}`;
+                                    if (!level) return <i key={`${year.key}-${slot.key}`} className="visiting-history-cell is-empty" aria-hidden="true" />;
                                     return (
-                                      <span key={`${term.termId}-${item.scheduleId || itemIndex}`}>
-                                        <b>شعبة {item.sectionCode || "—"}</b>
-                                        <small>{courseCode ? `${courseCode} · ` : ""}{courseName}</small>
-                                      </span>
+                                      <button
+                                        key={`${year.key}-${slot.key}`}
+                                        type="button"
+                                        data-guide-ignore="فتح شعب هذا الفصل للقراءة فقط"
+                                        className={`visiting-history-cell level-${level}${openHistoryCell === cellKey ? " is-active" : ""}`}
+                                        aria-pressed={openHistoryCell === cellKey}
+                                        title={`${cell?.termName || slot.term?.termName || ""} · ${sections} شعبة`}
+                                        onClick={() => { setOpenHistoryCell(openHistoryCell === cellKey ? null : cellKey); setOpenGroup(null); }}
+                                      >{num(sections)}</button>
                                     );
                                   })}
+                                </span>
+                              </td>
+                            ))}
+                          </tr>
+                          {openTerm ? (
+                            <tr className="visiting-history-drawer">
+                              <td colSpan={columnCount}>
+                                <div className="visiting-history-details">
+                                  <VisitingHistoryTermCard term={openTerm} courseById={courseById} />
                                 </div>
-                              ) : (
-                                <small className="visiting-history-no-sections">مسجل ضمن منتدبي هذا الفصل دون شعبة محفوظة في الجدول.</small>
-                              )}
-                            </section>
-                          ))}
-                        </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                          {openAll ? (
+                            <tr className="visiting-history-drawer">
+                              <td colSpan={columnCount}>
+                                <div className="visiting-history-details" id={`${groupId}-details`}>
+                                  {sortVisitingTerms(person.terms).map(term => (
+                                    <VisitingHistoryTermCard key={`${person.instructorId}-${term.termId}`} term={term} courseById={courseById} />
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <th scope="row" className="is-person">إجمالي القسم</th>
+                      <td className="is-total"><b>{num(historyModel.totals.terms)}</b><small>فصل</small></td>
+                      <td className="is-total is-sections"><b>{num(historyModel.totals.sections)}</b><small>شعبة</small></td>
+                      {historyModel.archive ? (
+                        <td className="is-archive"><b>{num(historyModel.archive.years.reduce((sum, year) => sum + year.sections, 0))}</b></td>
                       ) : null}
-                    </article>
-                  );
-                })}
+                      {historyModel.years.map(year => (
+                        <td key={`total-${year.key}`} className="is-year">
+                          <b>{num(year.sections)}</b>
+                          <small>{num(year.people)} منتدب</small>
+                        </td>
+                      ))}
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
           ) : (
@@ -3106,60 +3237,15 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "visitingHistory") {
-    const people = visitingHistory?.people || [];
-    const sortedPeople = [...people].sort((a, b) => b.times - a.times || b.sections - a.sections || byArabic(a.name, b.name));
-    const activeTermIds = new Set(sortedPeople.flatMap(person => person.terms.map(term => Number(term.termId))).filter(Boolean));
-    const historyTerms = (visitingHistory?.terms || [])
-      .filter(term => activeTermIds.has(Number(term.termId)))
-      .sort((a, b) => termChronology({ AdTermId: b.termId, AdTermName: b.termName }) - termChronology({ AdTermId: a.termId, AdTermName: a.termName }));
-
-    /* One academic year is one visual column. The first/second semester live
-       inside that column as two tiny cells. Ten years therefore cost ten
-       columns, not twenty noisy ones, while the person + fairness totals stay
-       readable. If the archive grows beyond ten years we paginate years in
-       bands and repeat the identity columns rather than shrinking typography. */
-    type HistoryYearSlot = { key: string; label: string; term: { termId: number; termName: string } | null; order: number };
-    type HistoryYearBand = { key: string; label: string; chronology: number; slots: HistoryYearSlot[] };
-    const normalizeYearDigits = (value: string) => String(value || "")
-      .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
-      .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
-    const seasonOf = (name: string) => {
-      const text = String(name || "");
-      if (/الأول|الاول/.test(text)) return { key: "first", label: "الأول", order: 1 };
-      if (/الثاني/.test(text)) return { key: "second", label: "الثاني", order: 2 };
-      if (/الصيف/.test(text)) return { key: "summer", label: "الصيفي", order: 3 };
-      return { key: `other-${text}`, label: "فصل", order: 9 };
-    };
-    const yearMap = new Map<string, { key: string; label: string; chronology: number; terms: Array<{ termId: number; termName: string; season: ReturnType<typeof seasonOf> }> }>();
-    historyTerms.forEach(term => {
-      const termNameValue = String(term.termName || "");
-      const normalizedTermName = normalizeYearDigits(termNameValue);
-      const match = normalizedTermName.match(/(\d{4})\s*\/\s*(\d{4})/);
-      const key = match ? `${match[1]}/${match[2]}` : `term-${term.termId}`;
-      const label = match ? `${match[1]}/${match[2]}` : termNameValue;
-      const chronology = termChronology({ AdTermId: term.termId, AdTermName: term.termName });
-      const band = yearMap.get(key) || { key, label, chronology, terms: [] };
-      band.chronology = Math.max(band.chronology, chronology);
-      band.terms.push({ ...term, season: seasonOf(termNameValue) });
-      yearMap.set(key, band);
-    });
-    const historyYears: HistoryYearBand[] = [...yearMap.values()]
-      .sort((a, b) => b.chronology - a.chronology)
-      .map(year => {
-        const bySeason = new Map(year.terms.map(term => [term.season.key, term]));
-        const slots: HistoryYearSlot[] = [
-          { key: "first", label: "الأول", term: bySeason.get("first") || null, order: 1 },
-          { key: "second", label: "الثاني", term: bySeason.get("second") || null, order: 2 },
-        ];
-        if (bySeason.has("summer")) slots.push({ key: "summer", label: "الصيفي", term: bySeason.get("summer") || null, order: 3 });
-        year.terms.filter(term => !["first", "second", "summer"].includes(term.season.key))
-          .sort((a, b) => a.season.order - b.season.order || a.termId - b.termId)
-          .forEach((term, index) => slots.push({ key: `other-${term.termId}`, label: term.season.label || `فصل ${index + 1}`, term, order: 9 + index }));
-        return { key: year.key, label: year.label, chronology: year.chronology, slots };
-      });
+    /* الورقة والشاشة تقرآن النموذج نفسه: سنة أكاديمية = عمود، وداخله الفصول.
+       عشر سنوات على الورقة الواحدة، وما زاد ينتقل إلى ورقة تالية تُعاد فيها
+       أعمدة الهوية والمجاميع — أفضل من تصغير الخط حتى لا يُقرأ. */
+    const model = buildVisitingHistoryModel(visitingHistory, 0);
+    const sortedPeople = model.people;
+    const historyYears = model.years;
 
     const peoplePages = sortedPeople.length ? paginateItems(sortedPeople, PAGE_ROWS.visitingHistoryRows) : [];
-    const yearPages = historyYears.length ? paginateItems(historyYears, 10) : [[] as HistoryYearBand[]];
+    const yearPages = historyYears.length ? paginateItems(historyYears, 10) : [[] as VisitingHistoryYear[]];
     const pages = peoplePages.flatMap((pagePeople, peoplePageIndex) =>
       yearPages.map((pageYears, yearPageIndex) => ({ pagePeople, pageYears, peoplePageIndex, yearPageIndex }))
     );
@@ -3171,7 +3257,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <div className="print-query-summaryline print-history-summaryline">
               <span><b>{sortedPeople.length}</b> منتدب فعلي</span>
-              <span><b>{historyYears.length}</b> سنوات أكاديمية</span>
+              <span><b>{model.totals.years}</b> سنوات أكاديمية</span>
+              {yearPages.length > 1 ? <span><b>{page.yearPageIndex + 1}</b> من <b>{yearPages.length}</b> نطاق سنوات</span> : null}
               <span className="print-history-legend">داخل كل سنة: <b>الأول</b> ثم <b>الثاني</b> · الرقم = عدد الشعب</span>
             </div>
             <table className="print-history-matrix">
@@ -3213,7 +3300,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                             {year.slots.map(slot => {
                               const cell = slot.term ? byTerm.get(Number(slot.term.termId)) : undefined;
                               const sections = Number(cell?.sections || 0);
-                              const level = sections ? Math.min(4, Math.max(1, sections)) : 0;
+                              const level = visitingHeatLevel(sections);
                               return (
                                 <i key={`${person.instructorId}-${year.key}-${slot.key}`} className={`print-history-term-slot ${level ? `level-${level}` : "is-empty"}`}>
                                   {sections || ""}
@@ -3227,6 +3314,18 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td className="print-history-person-cell"><strong>إجمالي القسم</strong></td>
+                  <td className="print-history-total-cell"><strong>{model.totals.terms}</strong><small>فصل</small></td>
+                  <td className="print-history-total-cell is-sections"><strong>{model.totals.sections}</strong><small>شعبة</small></td>
+                  {page.pageYears.map(year => (
+                    <td key={`total-${year.key}`} className="print-history-year-cell is-total">
+                      <strong>{year.sections}</strong><small>{year.people} منتدب</small>
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
             </table>
             <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
           </section>

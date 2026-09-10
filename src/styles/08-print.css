@@ -2442,6 +2442,19 @@
   .print-history-total-cell.is-sections strong{color:#7a5722 !important}
 
   .print-history-year-cell{background:#fff !important}
+  /* سطر الإجمالي يغلق الجدول: مجموع شعب السنة وعدد من انتُدب فيها، فيقرأ
+     المدير الصفحة أفقيًا للشخص وعموديًا للسنة دون أن يجمع بيده. */
+  .print-history-matrix tfoot td{
+    border-top:1.1pt solid #1f4f43 !important;
+    background:#f2f6f4 !important;
+    text-align:center !important;
+  }
+  .print-history-matrix tfoot .print-history-year-cell.is-total strong{
+    display:block !important;font-size:8.4pt !important;font-weight:800 !important;color:#1f4f43 !important;line-height:1.1 !important;
+  }
+  .print-history-matrix tfoot .print-history-year-cell.is-total small{
+    display:block !important;font-size:6.2pt !important;color:#5d6b66 !important;
+  }
   .print-history-term-slots{
     display:grid !important;
     width:100% !important;
