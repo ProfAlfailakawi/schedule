@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton } from "./ui";
 import LocationPicker from "./LocationPicker";
+import GenesisChoreography, { type ChoreoPhase } from "./GenesisChoreography";
+import useReducedMotion from "./SchedulePhysics/useReducedMotion";
 import {
   BriefScene,
   ContextPicker,
@@ -108,6 +110,8 @@ export default function LivingScheduleLayer({
   onPanelOpenChange,
 }: Props) {
   const power = Boolean(user?.SystemUserId);
+  const reducedMotion = useReducedMotion();
+  const genesisPreviewRef = useRef<HTMLElement | null>(null);
   const [living, setLiving] = useState<any>(null),
     [scene, setScene] = useState<Scene | null>(null),
     [busy, setBusy] = useState(false),
@@ -133,6 +137,7 @@ export default function LivingScheduleLayer({
     [genesisEdit, setGenesisEdit] = useState<any>(null),
     [genesisBulkEdit, setGenesisBulkEdit] = useState(false),
     [genesisDeleteAllConfirm, setGenesisDeleteAllConfirm] = useState(false),
+    [choreoPhase, setChoreoPhase] = useState<ChoreoPhase>("idle"),
     [memoryReason, setMemoryReason] = useState(""),
     [memory, setMemory] = useState<any>(null),
     [safety, setSafety] = useState<any[]>([]),
@@ -421,12 +426,22 @@ export default function LivingScheduleLayer({
     return () => { alive = false; };
   }, [scene, sourceTerm, collegeId, sectionId]);
 
+  // Leaving the scene, or a switch to reduced motion, clears the stage at
+  // once so the plain result is never hidden behind a show nobody wants.
+  useEffect(() => {
+    if (scene !== "genesis" || reducedMotion) setChoreoPhase("idle");
+  }, [scene, reducedMotion]);
+
   const runGenesis = async () => {
     if (!sourceTerm) return;
     setBusy(true);
     setError("");
     setGenesis(null);
     setGenesisUndoPoint(null);
+    // The wait becomes the show: real courses, faculty, rooms, days and
+    // times float on a quiet stage until the draft arrives, then settle onto
+    // the real table. Reduced motion keeps the plain quiet wait instead.
+    if (!reducedMotion) setChoreoPhase("drift");
     try {
       const d = await json("/api/intelligence/genesis", {
         method: "POST",
@@ -439,6 +454,7 @@ export default function LivingScheduleLayer({
         }),
       });
       setGenesis(d);
+      setChoreoPhase((current) => (current === "drift" ? "settle" : current));
       setMessage(
         d.reviewRequired
           ? `تم بناء المسودة بنجاح، ومعها ${d.reviewRequired} ملاحظة واضحة للمراجعة قبل النشر.`
@@ -446,6 +462,7 @@ export default function LivingScheduleLayer({
       );
       onEnsureWeek?.();
     } catch (e: any) {
+      setChoreoPhase("idle");
       setError(e.message);
     } finally {
       setBusy(false);
@@ -1075,6 +1092,17 @@ export default function LivingScheduleLayer({
                       أنشئ المسودة للفصل الحالي
                     </PrimaryButton>
                   </div>
+                  {reducedMotion && busy && !genesis ? (
+                    <p className="choreo-quiet" role="status">يُبنى الجدول الآن…</p>
+                  ) : null}
+                  <GenesisChoreography
+                    phase={choreoPhase}
+                    rows={sourceRows}
+                    courses={courses}
+                    instructors={instructors}
+                    targetRoot={genesisPreviewRef}
+                    onSettled={() => setChoreoPhase("idle")}
+                  />
                   {genesis ? (
                     <>
                       <div className="genesis-result">
@@ -1096,7 +1124,11 @@ export default function LivingScheduleLayer({
                         </div>
                       </div>
                       {Array.isArray(genesis.previewRows) && genesis.previewRows.length ? (
-                        <section className="genesis-preview" aria-label="الجدول المنسوخ داخل المسودة">
+                        <section
+                          className={`genesis-preview${choreoPhase === "settle" ? " genesis-arrival" : ""}`}
+                          aria-label="الجدول المنسوخ داخل المسودة"
+                          ref={genesisPreviewRef}
+                        >
                           <header>
                             <div>
                               <small>النسخة التي تم إنشاؤها فعليًا</small>
@@ -1120,12 +1152,12 @@ export default function LivingScheduleLayer({
                                   return <React.Fragment key={`${row.id}-${row.index}`}>
                                     <tr className={flagged ? "genesis-row-issue" : ""}>
                                       <td>{row.index}</td>
-                                      <td><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode || "—"}</small></td>
+                                      <td data-choreo-target="course"><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode || "—"}</small></td>
                                       <td dir="ltr">{row.section || "—"}</td>
-                                      <td>{row.days || "—"}</td>
-                                      <td dir="ltr">{formatScheduleTimeRange(row.start, row.end)}</td>
-                                      <td dir="ltr">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
-                                      <td><span>{row.instructor || "—"}</span></td>
+                                      <td data-choreo-target="day">{row.days || "—"}</td>
+                                      <td dir="ltr" data-choreo-target="time">{formatScheduleTimeRange(row.start, row.end)}</td>
+                                      <td dir="ltr" data-choreo-target="room">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
+                                      <td data-choreo-target="instructor"><span>{row.instructor || "—"}</span></td>
                                       <td><div className="genesis-row-actions"><button className="genesis-fix" type="button" onClick={() => beginGenesisEdit(row)}><Save /> تعديل</button><button className="genesis-delete" data-guide-ignore="حذف موعد واحد من مسودة بداية الفصل فقط" type="button" onClick={() => void deleteGenesisRow(Number(row.id))} disabled={busy}><Trash2 /> حذف</button></div></td>
                                     </tr>
                                     {flagged ? <tr className="genesis-row-reason"><td colSpan={8}><ShieldAlert /><strong>سبب المنع:</strong><span>{(genesis.rowIssues?.[String(row.id)] || [])[0] || "هذا الموعد مرتبط بمشكلة تمنع النشر."}</span></td></tr> : null}

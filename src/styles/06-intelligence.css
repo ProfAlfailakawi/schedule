@@ -4475,3 +4475,34 @@ button.twin-delta{width:100%}
 .transfer-orientation-icon svg{width:17px;height:17px}
 @media(max-width:640px){.transfer-orientation-guidance{margin-inline:8px;padding:10px 12px}.transfer-orientation-guidance strong{font-size:12px}}
 .pdf-report-table tr.deleted td.pdf-report-reference-number{text-decoration:none}
+
+/* ============================================================
+   Genesis choreography — the wait itself becomes the show.
+   Real courses, faculty, rooms, days and times drift on a quiet
+   stage while the draft is built, then settle onto the actual
+   preview table. Transform + opacity only; the stage never holds
+   the result back once it is ready.
+   ============================================================ */
+.choreo-stage{position:fixed;inset:0;z-index:180;pointer-events:none;overflow:hidden}
+.choreo-veil{position:absolute;inset:0;background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.choreo-chip{position:absolute;max-width:min(240px,60vw);padding:7px 13px;border-radius:999px;border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));background:var(--surface);color:var(--ink,inherit);box-shadow:0 6px 18px -12px color-mix(in srgb,var(--accent) 45%,transparent);font-size:var(--t-xs);font-weight:650;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;will-change:transform,opacity}
+.choreo-course{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:color-mix(in srgb,var(--accent) 7%,var(--surface));font-weight:720}
+.choreo-instructor{background:color-mix(in srgb,var(--accent) 3%,var(--surface))}
+.choreo-room,.choreo-time{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:600}
+.choreo-day{color:color-mix(in srgb,var(--accent) 72%,var(--ink,#333));background:color-mix(in srgb,var(--accent) 5%,var(--surface-2))}
+.choreo-conflict{border-style:dashed;border-color:color-mix(in srgb,var(--danger,#b3423c) 55%,var(--line))}
+.choreo-caption{position:absolute;inset-inline:0;bottom:clamp(28px,9vh,84px);margin:0;display:grid;gap:4px;justify-items:center;text-align:center;padding-inline:16px}
+.choreo-caption strong{font-size:14px;font-weight:760;letter-spacing:-.01em}
+.choreo-caption span{font-size:var(--t-xs);color:var(--muted)}
+.choreo-quiet{margin:var(--s3) 0 0;font-size:var(--t-xs);color:var(--muted)}
+/* The table the elements land on: rows arrive in the same breath. */
+.genesis-arrival tbody tr{animation:choreo-row-in .5s cubic-bezier(.22,1,.36,1) both}
+.genesis-arrival tbody tr:nth-child(2){animation-delay:.06s}
+.genesis-arrival tbody tr:nth-child(3){animation-delay:.12s}
+.genesis-arrival tbody tr:nth-child(4){animation-delay:.18s}
+.genesis-arrival tbody tr:nth-child(5){animation-delay:.24s}
+.genesis-arrival tbody tr:nth-child(6){animation-delay:.3s}
+.genesis-arrival tbody tr:nth-child(n+7){animation-delay:.36s}
+@keyframes choreo-row-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:560px){.choreo-chip{padding:5px 10px;font-size:10.5px;max-width:52vw}}
+@media(prefers-reduced-motion:reduce){.choreo-stage{display:none}.genesis-arrival tbody tr{animation:none}}
