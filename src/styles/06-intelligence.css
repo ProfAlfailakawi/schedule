@@ -606,35 +606,81 @@
 .visiting-history-summary-facts b{font-size:clamp(20px,2.2vw,30px);font-weight:650;font-variant-numeric:tabular-nums;color:var(--accent)}
 .visiting-history-summary-facts small{color:var(--muted);font-size:var(--t-xs)}
 
-.visiting-history-cards{display:flex;flex-direction:column;gap:var(--s2)}
-.visiting-history-cards>article{overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);transition:border-color .16s var(--ease),box-shadow .16s var(--ease)}
-.visiting-history-cards>article:hover{border-color:var(--line-strong)}
-.visiting-history-cards>article.open{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));box-shadow:var(--shadow-sm)}
-.visiting-history-person{
-  width:100%;display:grid;grid-template-columns:34px minmax(180px,1.25fr) minmax(110px,1fr) 74px 74px 16px;
-  align-items:center;gap:var(--s4);padding:var(--s4) var(--s5);color:var(--ink);text-align:start;background:transparent;
-  transition:background .14s var(--ease);
+/* ── مصفوفة الانتداب عبر السنوات ───────────────────────────────────────────
+   عمود الاسم مثبّت، والسنوات تنزلق تحته. الأرشيف يطول ولا يتمدد العرض: نافذة
+   السنوات تحكم كم عمودًا يُرسم، وما قبلها عمود واحد يحمل مجموعه. */
+.visiting-history-window{display:flex;flex-wrap:wrap;gap:var(--s1);margin-top:var(--s3)}
+.visiting-history-window>button{
+  padding:5px 11px;border:1px solid var(--line);border-radius:var(--r-full);background:var(--surface);
+  color:var(--muted);font-size:var(--t-xs);font-weight:650;transition:background .14s var(--ease),color .14s var(--ease),border-color .14s var(--ease);
 }
-.visiting-history-person:hover,.visiting-history-cards>article.open>.visiting-history-person{background:var(--surface-2)}
-.visiting-history-person>svg{width:16px;height:16px;color:var(--muted);transition:transform .2s var(--ease)}
-.visiting-history-cards>article.open>.visiting-history-person>svg{transform:rotate(180deg)}
+.visiting-history-window>button:hover{border-color:var(--line-strong);color:var(--ink)}
+.visiting-history-window>button.active{border-color:color-mix(in srgb,var(--accent) 42%,var(--line));background:var(--accent-softer);color:var(--accent-ink)}
+
+.visiting-history-matrix-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.visiting-history-matrix{width:100%;border-collapse:separate;border-spacing:0;font-variant-numeric:tabular-nums}
+.visiting-history-matrix th,.visiting-history-matrix td{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line);text-align:center;vertical-align:middle}
+.visiting-history-matrix thead th{
+  position:sticky;top:0;z-index:2;
+  background:var(--surface-2);color:var(--muted);font-size:var(--t-xs);font-weight:700;line-height:1.35;white-space:nowrap;
+}
+.visiting-history-matrix th.is-person{
+  position:sticky;inset-inline-start:0;z-index:3;min-width:230px;
+  background:var(--surface);text-align:start;
+}
+.visiting-history-matrix thead th.is-person{z-index:4;background:var(--surface-2)}
+.visiting-history-matrix tbody tr.is-open>th.is-person,
+.visiting-history-matrix tbody tr:hover>th.is-person{background:var(--surface-2)}
+.visiting-history-matrix tbody tr:hover>td{background:color-mix(in srgb,var(--surface-2) 60%,transparent)}
+.visiting-history-matrix th.is-person>button{
+  width:100%;display:grid;grid-template-columns:30px minmax(0,1fr) 14px;align-items:center;gap:var(--s3);
+  padding:var(--s1) 0;color:var(--ink);text-align:start;background:transparent;
+}
+.visiting-history-matrix th.is-person>button>svg{width:14px;height:14px;color:var(--muted);transition:transform .2s var(--ease)}
+.visiting-history-matrix tr.is-open th.is-person>button>svg{transform:rotate(180deg)}
+.visiting-history-matrix td.is-total{min-width:74px}
+.visiting-history-matrix td.is-total b{display:block;font-size:var(--t-h4);font-weight:700}
+.visiting-history-matrix td.is-total small{display:block;color:var(--muted);font-size:10px}
+.visiting-history-matrix td.is-sections{min-width:104px}
+.visiting-history-matrix td.is-archive,.visiting-history-matrix th.is-archive{min-width:104px;background:color-mix(in srgb,var(--surface-3) 46%,transparent)}
+.visiting-history-matrix th.is-archive span{display:block;margin-top:3px;color:var(--muted);font-size:10px;font-weight:600}
+.visiting-history-archive-fact b{display:block;font-size:var(--t-h4);font-weight:700;color:var(--brass)}
+.visiting-history-archive-fact small{display:block;color:var(--muted);font-size:10px}
+.visiting-history-matrix th.is-year,.visiting-history-matrix td.is-year{min-width:96px}
+.visiting-history-matrix th.is-year>bdi{display:block;font:700 var(--t-xs)/1.2 var(--font-mono)}
+.visiting-history-slots{display:grid;gap:3px;margin-top:4px}
+.visiting-history-matrix th.is-year .visiting-history-slots small{color:var(--muted);font-size:9px;font-weight:600}
+.visiting-history-matrix td.is-year .visiting-history-slots{margin-top:0}
+.visiting-history-cell{
+  display:grid;place-items:center;min-height:28px;border-radius:var(--r-sm);
+  background:var(--surface-3);color:var(--muted);font:700 var(--t-xs)/1 var(--font-mono);font-style:normal;
+  transition:transform .14s var(--ease),box-shadow .14s var(--ease);
+}
+button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.visiting-history-cell.is-active{box-shadow:0 0 0 2px var(--accent)}
+.visiting-history-cell.is-empty{background:color-mix(in srgb,var(--surface-3) 42%,transparent)}
+.visiting-history-cell.level-1{background:color-mix(in srgb,var(--accent) 16%,var(--surface));color:var(--accent-ink)}
+.visiting-history-cell.level-2{background:color-mix(in srgb,var(--accent) 32%,var(--surface));color:var(--accent-ink)}
+.visiting-history-cell.level-3{background:color-mix(in srgb,var(--accent) 52%,var(--surface));color:#fff}
+.visiting-history-cell.level-4{background:color-mix(in srgb,var(--accent) 74%,var(--surface));color:#fff}
+.visiting-history-matrix tfoot td,.visiting-history-matrix tfoot th{border-bottom:0;background:var(--surface-2);font-weight:700}
+.visiting-history-matrix tfoot th.is-person{background:var(--surface-2);font-size:var(--t-sm)}
+.visiting-history-matrix tfoot b{display:block;font-size:var(--t-sm)}
+.visiting-history-matrix tfoot small{display:block;color:var(--muted);font-size:9px;font-weight:600}
+.visiting-history-drawer>td{padding:0;background:var(--surface-2)}
 .visiting-history-rank{
-  width:30px;height:30px;display:grid;place-items:center;border-radius:var(--r-full);
+  width:28px;height:28px;display:grid;place-items:center;border-radius:var(--r-full);
   background:var(--surface-3);color:var(--muted);font:700 var(--t-xs)/1 var(--font-mono);font-variant-numeric:tabular-nums;
 }
-.visiting-history-cards>article:first-child .visiting-history-rank{background:color-mix(in srgb,var(--brass) 16%,var(--surface));color:var(--brass)}
-.visiting-history-person-name{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px var(--s2)}
-.visiting-history-person-name strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-h4);font-weight:650}
-.visiting-history-person-name small{grid-column:1;color:var(--muted);font-size:var(--t-xs)}
-.visiting-history-person-name em{grid-column:2;grid-row:1 / span 2;align-self:center;padding:3px 7px;border:1px solid color-mix(in srgb,var(--brass) 36%,var(--line));border-radius:var(--r-full);background:color-mix(in srgb,var(--brass) 8%,var(--surface));color:var(--brass);font-size:10px;font-style:normal;font-weight:700;white-space:nowrap}
-.visiting-history-meter{display:grid;gap:4px}
-.visiting-history-meter>i{display:block;height:8px;border-radius:var(--r-full);background:var(--surface-3);overflow:hidden}
+.visiting-history-matrix tbody tr:first-of-type .visiting-history-rank{background:color-mix(in srgb,var(--brass) 16%,var(--surface));color:var(--brass)}
+.visiting-history-person-name{min-width:0;display:grid;gap:2px}
+.visiting-history-person-name strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm);font-weight:650}
+.visiting-history-person-name small{color:var(--muted);font-size:10px}
+.visiting-history-meter{display:block;margin-bottom:4px}
+.visiting-history-meter>i{display:block;height:5px;border-radius:var(--r-full);background:var(--surface-3);overflow:hidden}
 .visiting-history-meter>i>b{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 58%,var(--brass)));transition:width .45s var(--ease-out)}
-.visiting-history-fact{display:grid;justify-items:end;line-height:1.1}
-.visiting-history-fact b{font-size:var(--t-h4);font-weight:700;font-variant-numeric:tabular-nums}
-.visiting-history-fact small{margin-top:3px;color:var(--muted);font-size:10px}
 
-.visiting-history-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--s3);padding:0 var(--s5) var(--s5);animation:rise .2s var(--ease-out) both}
+.visiting-history-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--s3);padding:var(--s4);text-align:start;animation:rise .2s var(--ease-out) both}
 .visiting-history-term{min-width:0;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
 .visiting-history-term>header{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding-bottom:var(--s3);border-bottom:1px solid var(--line)}
 .visiting-history-term>header>span{min-width:0;display:flex;align-items:center;gap:var(--s2)}
@@ -654,16 +700,12 @@
   .visiting-history-summary{grid-template-columns:1fr;padding:var(--s4)}
   .visiting-history-summary-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
   .visiting-history-summary-facts>span{padding:var(--s2)}
-  .visiting-history-person{grid-template-columns:30px minmax(0,1fr) 16px;gap:var(--s3);padding:var(--s4)}
-  .visiting-history-rank{grid-column:1;grid-row:1}
-  .visiting-history-person-name{grid-column:2;grid-row:1}
-  .visiting-history-person>svg{grid-column:3;grid-row:1}
-  .visiting-history-meter{grid-column:1/-1;grid-row:2}
-  .visiting-history-fact{grid-row:3;justify-items:start;padding-top:var(--s1)}
-  .visiting-history-fact.is-terms{grid-column:1/2}
-  .visiting-history-fact.is-sections{grid-column:2/3}
-  .visiting-history-details{grid-template-columns:1fr;padding:0 var(--s4) var(--s4)}
-  .visiting-history-person-name em{display:none}
+  /* على الشاشة الصغيرة يبقى الاسم مثبتًا وتنزلق السنوات وحدها؛ إخفاء الأعمدة
+     كان يخفي الحكم نفسه — من انتُدب أكثر — فلا يبقى للجدول معنى. */
+  .visiting-history-matrix th.is-person{min-width:170px}
+  .visiting-history-matrix th,.visiting-history-matrix td{padding:var(--s2)}
+  .visiting-history-matrix th.is-year,.visiting-history-matrix td.is-year{min-width:80px}
+  .visiting-history-details{grid-template-columns:1fr;padding:var(--s3)}
 }
 
 /* ==========================================================================
