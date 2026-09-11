@@ -172,9 +172,7 @@
 .danger-action{color:var(--danger) !important}
 
 .button-spinner,
-.app-loading span,
-.spotlight-loading span,
-.context-loading span{
+.spotlight-loading span{
   width:20px;height:20px;
   border-radius:var(--r-full);
   border:2px solid color-mix(in srgb,var(--muted) 30%,transparent);
@@ -183,6 +181,66 @@
   animation:spin .7s linear infinite;
 }
 .btn .button-spinner{width:15px;height:15px;border-width:2px}
+
+/* ==========================================================================
+   MICRO LOADER — خلايا صغيرة تتجمع إلى جدول 3×3 مصغّر
+   Assembly happens once; afterwards one accent cell calmly slides between
+   two empty slots. Transform/opacity only, mounts after ~250ms so fast
+   operations never flash it. Sizes via the --sml custom property.
+   ========================================================================== */
+.sml{
+  --sml:24px;
+  position:relative;
+  display:inline-grid;place-items:center;
+  width:var(--sml);height:var(--sml);
+  flex:none;
+  opacity:0;
+  animation:sml-mount .16s var(--ease) .25s forwards;
+}
+.sml-grid{
+  display:grid;width:100%;height:100%;
+  grid-template-columns:repeat(3,1fr);
+  grid-template-rows:repeat(3,1fr);
+  gap:calc(var(--sml)*0.09);
+}
+.sml-grid i{
+  border-radius:calc(var(--sml)*0.14);
+  background:color-mix(in srgb,var(--muted) 20%,transparent);
+  opacity:0;
+  animation:sml-cell .5s var(--ease-out) .12s forwards;
+}
+.sml-grid i.a{animation:sml-piece .62s cubic-bezier(.22,1,.36,1) forwards}
+.sml-grid i.a1{background:var(--accent);--sx:-150%;--sy:-130%}
+.sml-grid i.a2{background:var(--brass);--sx:150%;--sy:-115%;animation-delay:.07s}
+.sml-grid i.a3{background:var(--success);--sx:-145%;--sy:135%;animation-delay:.14s}
+.sml-grid i.a4{
+  background:color-mix(in srgb,var(--accent) 55%,var(--surface));
+  --sx:150%;--sy:130%;
+  /* Assemble once, then a single calm hop to the neighbouring empty slot. */
+  animation:
+    sml-piece .62s cubic-bezier(.22,1,.36,1) .21s forwards,
+    sml-hop 3.4s var(--ease) 1.7s infinite;
+}
+@keyframes sml-mount{to{opacity:1}}
+@keyframes sml-cell{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes sml-piece{
+  0%{opacity:0;transform:translate(var(--sx),var(--sy)) scale(.6)}
+  55%{opacity:1}
+  82%{transform:translate(0,0) scale(1.03)}
+  100%{opacity:1;transform:translate(0,0) scale(1)}
+}
+@keyframes sml-hop{
+  0%,26%{transform:translateX(0)}
+  42%,60%{transform:translateX(133%)}
+  78%,100%{transform:translateX(0)}
+}
+@media (prefers-reduced-motion:reduce){
+  .sml{animation:sml-mount .01s linear .25s forwards}
+  .sml-grid i,
+  .sml-grid i.a,
+  .sml-grid i.a4{animation:sml-calm 2.6s ease-in-out .3s infinite}
+}
+@keyframes sml-calm{0%,100%{opacity:1}50%{opacity:.55}}
 
 .icon-action{
   width:36px;height:36px;

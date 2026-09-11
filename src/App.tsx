@@ -106,7 +106,7 @@ const Onboarding = safeLazy(() => import("./components/Onboarding"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
-import { PrimaryButton } from "./components/ui";
+import { MicroLoader, PrimaryButton } from "./components/ui";
 import SmartGuide from "./components/SmartGuide";
 import { canProactivelyHint, allAllowedGuideFeatures, guideUnreadSummary, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureEvent, recordFeatureDwell, recordRoute, setGuideTask, setLauncherIntroduced, evaluateGuideFriction, classifyGuideReason, predictedNextFeature, canAccessGuideFeature } from "./guide/smartGuide";
 
@@ -1459,8 +1459,8 @@ export default function App() {
   if (loading) {
     if (health !== "online") return connectionGate(true);
     return (
-      <div className="app-loading">
-        <span />
+      <div className="app-loading" aria-busy="true">
+        <MicroLoader size={48} label="جاري تجهيز مساحة العمل…" />
       </div>
     );
   }

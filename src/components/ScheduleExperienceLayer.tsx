@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import { livingScopeKey, sharedLiving } from "../utils/livingCache";
-import { Notice, useDialogDismiss } from "./ui";
+import { MicroLoader, Notice, useDialogDismiss } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
 import { sortTermsNewest } from "../utils/termSequence";
@@ -584,8 +584,8 @@ export default function ScheduleExperienceLayer({
               </div>
             </header>
             {e.decisionBusy ? (
-              <div className="decision-loading">
-                <i />
+              <div className="decision-loading" aria-busy="true">
+                <MicroLoader size={32} label="جاري تحليل القرار…" />
                 <strong>أحدد العقدة الأعلى أثرًا…</strong>
                 <span>موانع محتملة · فراغ · قاعة · قواعد</span>
               </div>

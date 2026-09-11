@@ -1837,11 +1837,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s2);
   min-height:220px;padding:var(--s7);text-align:center;color:var(--muted);
 }
-.decision-loading i{
-  width:24px;height:24px;margin-bottom:var(--s2);
-  border-radius:50%;border:2px solid var(--line-strong);border-top-color:var(--accent);
-  animation:spin .7s linear infinite;
-}
+.decision-loading .sml{margin-bottom:var(--s2)}
 .decision-loading strong,.decision-error strong,.decision-no-data strong{color:var(--ink);font-size:var(--t-h4);font-weight:600}
 .decision-loading span,.decision-no-data span{font-size:var(--t-sm)}
 .decision-error{color:var(--danger)}
