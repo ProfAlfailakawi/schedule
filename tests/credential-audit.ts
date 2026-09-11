@@ -78,7 +78,16 @@ if (!admin) {
   errors.push("admin user not found");
 } else {
   const adminPassword = decrypt(admin.SystemUserPassVault);
-  if (admin.SystemUserLogin !== "admin" || adminPassword !== "a7424400") {
+  /* The expected legacy admin password is a live credential and must never be
+     committed. Provide it via LEGACY_ADMIN_PASSWORD when running this audit
+     locally; without it, only the login name and hash↔vault consistency
+     (already checked above for every user) are verified. */
+  const expectedAdminPassword = process.env.LEGACY_ADMIN_PASSWORD || "";
+  if (admin.SystemUserLogin !== "admin") {
+    errors.push("admin legacy login mismatch");
+  } else if (!expectedAdminPassword) {
+    console.log("[SKIP] LEGACY_ADMIN_PASSWORD not set — admin plaintext value not compared (hash/vault consistency still audited).");
+  } else if (adminPassword !== expectedAdminPassword) {
     errors.push("admin legacy credential mismatch");
   }
 }
