@@ -1342,15 +1342,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   align-self:end;min-height:44px;
   color:var(--muted);font-size:var(--t-xs);white-space:nowrap;
 }
-.filter-strip-busy i{
-  width:12px;height:12px;border-radius:var(--r-full);
-  border:1.5px solid currentColor;border-top-color:transparent;
-  animation:boot-turn .7s linear infinite;
-}
+/* المؤشر هو المحمّل المصغّر بهوية الجدول (خلايا تتجمع إلى 3×3) بدل حلقة generic. */
 .schedule-quick-filters{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}
 .schedule-quick-filters .schedule-ops-pill,.week-legend .schedule-ops-pill.visiting-filter{cursor:pointer}
 .schedule-quick-filters .schedule-ops-pill.on,.week-legend .schedule-ops-pill.visiting-filter.on{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:color-mix(in srgb,var(--accent-soft) 70%,var(--surface));color:var(--accent)}
-@keyframes boot-turn{to{transform:rotate(360deg)}}
 
 /* --------------------------------------------------------------------------
    WHOSE HALL IS THIS
