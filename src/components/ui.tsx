@@ -597,4 +597,33 @@ export function MetaPill({label,value,dir}:{label:React.ReactNode;value:React.Re
   const glyph=PILL_GLYPHS[key];
   return <span className="meta-pill" dir={dir} title={key||undefined}>{glyph?<span className="meta-pill-glyph" aria-hidden="true">{glyph}</span>:<small>{label}</small>}<b>{value}</b></span>;
 }
+/**
+ * ── محمّل مصغّر بهوية الجدول ────────────────────────────────────────────────
+ *
+ * Small scattered cells fly in once and settle into a mini 3×3 timetable;
+ * afterwards a single accent cell calmly slides between two empty slots.
+ * CSS-driven (transform/opacity only), mounts with a built-in ~250ms delay so
+ * fast operations never flash it, and prefers-reduced-motion swaps the
+ * assembly for a gentle opacity pulse on the already-assembled grid.
+ * Use it for real timetable work (generation, recalculation, conflict checks,
+ * fetching schedule data) — not for instant UI like dropdowns or tab changes.
+ */
+export function MicroLoader({ size = 24, label = "جاري المعالجة…", className = "" }: { size?: number; label?: string; className?: string }) {
+  return (
+    <span
+      className={`sml ${className}`.trim()}
+      role="status"
+      aria-label={label}
+      style={{ "--sml": `${size}px` } as React.CSSProperties}
+    >
+      <span className="sml-grid" aria-hidden="true">
+        {Array.from({ length: 9 }, (_, i) => {
+          const accent = [1, 3, 5, 7].indexOf(i);
+          return <i key={i} className={accent >= 0 ? `a a${accent + 1}` : undefined} />;
+        })}
+      </span>
+    </span>
+  );
+}
+
 export function SkeletonDeck({count=4}:{count?:number}){return <div className="record-deck skeleton-deck">{Array.from({length:count},(_,i)=><article className="record-card skeleton-card" key={i}><span/><div><i/><i/></div></article>)}</div>}

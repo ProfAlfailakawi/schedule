@@ -61,6 +61,7 @@ import {
   GhostButton,
   IconAction,
   MetaPill,
+  MicroLoader,
   Notice,
   PageTitle,
   PrimaryButton,
@@ -12054,8 +12055,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         </PrintPortal>
       ) : null}
       {contextLoading ? (
-        <div className="context-loading">
-          <span />
+        <div className="context-loading" aria-busy="true">
+          <MicroLoader size={32} label="جاري جلب بيانات الموعد…" />
         </div>
       ) : null}
       {context ? (
