@@ -2,6 +2,7 @@ import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
 import App from "./App.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
+import EntranceOverture from "./components/EntranceOverture.tsx";
 import {safeStorage} from "./utils/safeStorage";
 import {BUILD_STAMP} from "./generated/buildStamp";
 import {toEnglishDigits} from "./utils/digits";
@@ -260,7 +261,7 @@ window.addEventListener("error",event=>{
 window.addEventListener("load",()=>{window.setTimeout(()=>safeStorage.remove(RECOVERY_KEY,"session"),4000)});
 
 const container=document.getElementById("root")!;
-createRoot(container).render(<StrictMode><ErrorBoundary><App/></ErrorBoundary></StrictMode>);
+createRoot(container).render(<StrictMode><ErrorBoundary><App/><EntranceOverture/></ErrorBoundary></StrictMode>);
 
 // Tell the document-level boot guard that the screen is alive. It waits for a
 // real paint rather than for render() to return, because React commits later.
