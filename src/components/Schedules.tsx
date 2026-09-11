@@ -9601,7 +9601,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               ))}
             </select>
           </Field>
-          {rowsLoading ? <span className="filter-strip-busy" role="status"><i aria-hidden="true" />يقرأ الجدول…</span> : null}
+          {rowsLoading ? <span className="filter-strip-busy" role="status"><MicroLoader size={16} label="يقرأ الجدول…" />يقرأ الجدول…</span> : null}
         </div>
         <div className="schedule-tools" role="toolbar" aria-label="أدوات عرض الجدول">
           <div className="schedule-view-cluster">
