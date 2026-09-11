@@ -2,7 +2,7 @@
 
 | Legacy area | Legacy workflow/source | New implementation | Verification status |
 |---|---|---|---|
-| Login | `SystemUser` + active/locked/deleted + original credentials | `/api/auth/*`, `Login.tsx` | All 29 real users migrated; `admin / a7424400` verified; old AI demo password rejected |
+| Login | `SystemUser` + active/locked/deleted + original credentials | `/api/auth/*`, `Login.tsx` | All 29 real users migrated; legacy `admin` credential verified (value kept outside the repo; see `LEGACY_ADMIN_PASSWORD` in tests); old AI demo password rejected |
 | Home | 4 metrics + latest-term/day table with old admin/scoped quirks | `/api/dashboard`, `Dashboard.tsx` | Old DayOfWeek/default-Sunday behavior and dashboard totals preserved |
 | AdTerm | Index → Create/Edit → موافق/تراجع → Delete | `Terms.tsx` | Implemented and parity-audited |
 | AdCollege | Index → Create/Edit → موافق/تراجع → Delete | `Colleges.tsx` | FK delete guard preserved |

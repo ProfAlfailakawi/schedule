@@ -1797,8 +1797,16 @@ async function runTests() {
   const admin = await Repository.getUserByLogin("admin");
   assert(admin?.SystemUserId === 1, "legacy admin account exists with SystemUserId=1");
   assert(admin?.IsAdminUser === true && admin?.IsActive === true && admin?.IsLocked === false && !admin?.IsDeleted, "legacy admin status preserved");
-  assert(!!admin && Repository.verifyPassword("a7424400", admin.SystemUserPass), "legacy admin password authenticates after scrypt migration");
-  assert(!!admin && Repository.decryptPasswordFromVault(admin.SystemUserPassVault) === "a7424400", "legacy admin password view/edit value survives AES-GCM compatibility migration");
+  /* The real legacy admin password is a live credential and is never written
+     in this repository. Export LEGACY_ADMIN_PASSWORD alongside the private
+     snapshot to run these two checks; without it they are skipped by name. */
+  const legacyAdminPassword = process.env.LEGACY_ADMIN_PASSWORD || "";
+  if (legacyAdminPassword) {
+    assert(!!admin && Repository.verifyPassword(legacyAdminPassword, admin.SystemUserPass), "legacy admin password authenticates after scrypt migration");
+    assert(!!admin && Repository.decryptPasswordFromVault(admin.SystemUserPassVault) === legacyAdminPassword, "legacy admin password view/edit value survives AES-GCM compatibility migration");
+  } else {
+    originalLog("[SKIP] LEGACY_ADMIN_PASSWORD not set — legacy admin scrypt/vault round-trip not verified in this run.");
+  }
   assert(!!admin && !Repository.verifyPassword("password123", admin.SystemUserPass), "obsolete AI Studio demo password is rejected");
   const secureHash = Repository.hashPassword("new-password");
   assert(secureHash.startsWith("scrypt$") && Repository.verifyPassword("new-password", secureHash), "new passwords use scrypt");
