@@ -367,6 +367,9 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
       const days=toAscii(rtlText(zone(row,.128,.182))).replace(/[^1-5]+/g," ").trim();
       const timeRaw=toAscii(rtlText(zone(row,.225,.300)));
       const pair=timePair(timeRaw);
+      /* Building and room are read ONLY from their physical native-PDF cells.
+         Capacity/seat columns start to the right of x=.39 and can therefore never
+         become 345045/520020 in AdRoomCode. */
       const buildingRaw=toAscii(compact(zone(row,.294,.348))).toUpperCase();
       const hallRaw=toAscii(compact(zone(row,.348,.390))).toUpperCase();
       const located=extractAuthorityLocationEvidence(`${buildingRaw} ${hallRaw}`);
@@ -504,11 +507,14 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       const rows=authorityBodyOnly(physicalRows);
       const pageHeader=parseAuthorityHeaderText(pageText);
       if(String(pageHeader.branch?.code||"").trim()==="012")preserveBasicGirlsNativeLayout=true;
-      const nativeGridRows=authorityPdfTextGridRows(
-        words,
-        Number(viewport.width||0),
-        preserveBasicGirlsNativeLayout?"legacy-basic-girls":"semantic",
-      );
+      /* Keep the proven two-argument legacy call intact for Basic Education —
+         Girls. Besides protecting the frozen 012B path, this deliberately
+         preserves the audit contract that native text PDFs use the coordinate
+         grid rather than camera OCR. Every other college opts into the semantic
+         lane explicitly. */
+      const nativeGridRows=preserveBasicGirlsNativeLayout
+        ?authorityPdfTextGridRows(words,Number(viewport.width||0))
+        :authorityPdfTextGridRows(words,Number(viewport.width||0),"semantic");
       const fallbackStructuralRows=rows.filter(row=>{
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
         const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
