@@ -158,14 +158,14 @@ doc=(ROOT/'src/utils/documentOcr.ts').read_text()
 server=(ROOT/'server.ts').read_text()
 ok('81 scientific department code is college + local department', 'college 01 + department 01 => 0101' in auth and 'authorityDepartmentMatches' in server)
 ok('82 course identity is number-only and canonical name comes from system', 'Course NAMES are display evidence only' in doc and 'AdCourseName:course.CourseName' in doc)
-ok('83 imported sections restart at 501 per canonical course', 'assignAuthoritySections' in auth and 'nextByCourse' in auth and 'sequentialSections:true' in server and 'assignAuthoritySections(safeDraftRows(parsed.rows' in server)
+ok('83 imported Authority sections preserve the printed source cell across every college', 'assignAuthoritySections' in auth and 'sourceSectionText' in auth and 'source || current || ""' in auth and 'sequentialSections:true' in server and 'assignAuthoritySections(safeDraftRows(parsed.rows' in server)
 ok('84 instructor import uses unique full/two/three-name system identity with no edit-distance rescue', 'TWO or THREE real name tokens' in doc and 'ambiguous names stay blank' in doc and 'const globalHit=choose(catalogue,false)' in doc)
 preview=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
 ok('85 unmatched instructor source text is never displayed as a canonical professor', 'person?.AdInstructorName ?' in preview and 'person.AdInstructorName' in preview and 'person?.AdInstructorName || String(row.sourceInstructorText' not in preview)
 ok('86 document department rejects local-only code when college composite is known', 'if (college && composite) return source === composite' in auth)
-ok('87 authority section sequence is re-applied server-side after preview, edit, delete and publish', server.count('assignAuthoritySections(safeDraftRows') >= 5)
+ok('87 authority source section normalization is re-applied server-side after preview, edit, delete and publish', server.count('assignAuthoritySections(safeDraftRows') >= 5)
 transfer=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
-ok('88 authority section sequence is re-applied in both import UIs', 'assignAuthoritySections(next)' in transfer and 'assignAuthoritySections(rows)' in intel)
+ok('88 authority source section normalization is re-applied in both import UIs', 'assignAuthoritySections(next)' in transfer and 'assignAuthoritySections(rows)' in intel)
 ok('89 canonical header receipt uses system department label after numeric proof', 'canonical system label in the receipt/preview' in server and 'name:canonicalName' in server)
 ok('90 fallback parser never confuses full course key with CRN', 'value!==sourceCourseCode' in doc and 'sourceCourseCode=sourceCourseRuns.find' in doc)
 
@@ -310,7 +310,7 @@ ok('163 multi-page course identity is physically anchored by adjacent section + 
 ok('164 public student-case survey is civil-first and does not probe while name/department are being typed', 'ابدأ بالرقم المدني' in server and 'body:JSON.stringify({civil:civil})' in server and 'probePriorIdentity' not in server and 'loadIdentityMemory' not in server)
 ok('165 prior student identity is restored server-side by exact civil id and the stored name/department are read-only', 'name:String(prior.name||"")' in server and 'تم العثور على طلب سابق لهذا الرقم المدني' in server and 'الاسم والرقم المدني والقسم العلمي مثبتة' in server)
 ok('166 graduate upload shows the approved visual example only when a new graduation sheet is actually needed', '/graduation-sheet-example.jpg' in server and 'id="proofExample"' in server and 'if(example)example.hidden=false' in server and 'if(example)example.hidden=true' in server)
-ok('167 untouched Authority PDF section numbering is canonicalized in the immutable baseline before diffing', 'const baseline=assignAuthoritySections([...(baselineInput||[])])' in server and '?assignAuthoritySections(safeDraftRows(req.body?.baselineRows' in server)
+ok('167 immutable Authority baselines restore source-owned section identity before diffing', 'const baseline=assignAuthoritySections([...(baselineInput||[])])' in server and '?assignAuthoritySections(safeDraftRows(req.body?.baselineRows' in server)
 ok('168 Authority instructor comparison uses the visible canonical identity so import-time id resolution does not create a false yellow row', 'sameInstructorIdentity' in server and 'foldHeaderIdentity(source.sourceInstructorText' in server and 'foldHeaderIdentity(names?.get(Number(next.AdInstructorId))' in server)
 ok('169 graduate-sheet example asset is bundled locally with the public survey', (ROOT/'public/graduation-sheet-example.jpg').exists())
 ok('170 section-only Authority canonicalization is audit-visible but cannot create a modified badge', 'const visibleChangedFields=changedFields.filter(field=>field!=="SCode")' in server and 'status:visibleChangedFields.length?"changed":"unchanged"' in server)
@@ -512,5 +512,10 @@ ok('207 the inline borrow panel carries the board’s three filters — day, bui
 ok('208 the academic scope is shared product-wide: Query Center reads the last chosen college/section/term first, not its own stale memory',
    'Number(workspaceSaved.filterCollege || saved.filters?.collegeId || 0)' in reports_src
    and 'Number(workspaceSaved.filterTerm || saved.filters?.termId || 0)' in reports_src)
+
+ok('209 an actually empty selected term hides the zero counters and schedule-health deck instead of showing fake 100 scores',
+   '!rowsForeign && rows.length > 0 ? (' in schedules_src
+   and '<section className="schedule-mini-stats">' in schedules_src
+   and '<LivingScheduleLayer' in schedules_src)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

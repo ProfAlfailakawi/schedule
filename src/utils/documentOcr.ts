@@ -1,5 +1,5 @@
 import type { AdCourse, AdInstructor } from "../types";
-import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches } from "./authorityAcademicCodes";
+import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "./authorityAcademicCodes";
 import { OFFICIAL_COLLEGE_SITE_PREFIXES } from "./locationCollegePrefixes";
 
 const toAscii=(value:string)=>String(value||"")
@@ -338,7 +338,7 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number):GridRow[
     const referenceText=toAscii(rtlText(zone(row,.895,.945)));
     const reference=(referenceText.match(/\b\d{4,8}\b/g)||[]).find(value=>value!==code)||"";
     const sectionText=toAscii(compact(zone(row,.862,.900)));
-    const scode=(sectionText.match(/(?:50[1-9]|5[1-9]\d|[6-9]\d{2})/)||[])[0]||"";
+    const scode=(sectionText.match(/\d{1,4}/g)||[]).map(normalizeAuthoritySectionCode).find(Boolean)||"";
     const courseText=rtlText(zone(row,.718,.872));
     const instructorText=rtlText(zone(row,0,.128));
     const days=toAscii(rtlText(zone(row,.128,.182))).replace(/[^1-5]+/g," ").trim();
@@ -1204,10 +1204,14 @@ const stripPatterns={
   code:/^\d{7}$/,
   refcode:/^\d{11,13}$/,
   reference:/^\d{4,8}$/,
-  /* Authority section numbers in this schedule family start at 501. Keeping
-     the structural reader to 501–999 stops border artefacts such as 150/450/
-     1507 from being presented as confirmed sections. */
-  scode:/^(?:50[1-9]|5[1-9]\d|[6-9]\d{2})$/,
+  /* SWRSCHA section numbering varies by report generation. Older exports use
+     501/502… while the 2026-2027 report family can use 01/02… (and sometimes
+     1 without the leading zero). The broad shape is used only after geometry
+     anchors this strip beside the reference column. General fallback claiming
+     below remains on the legacy 5xx shape so small capacity/day columns cannot
+     steal SECTION when the identity geometry itself is missing. */
+  scode:/^(?=\d{1,4}$)(?!0+$)\d+$/,
+  scodeLegacy:/^(?:50[1-9]|5[1-9]\d|[6-9]\d{2})$/,
   building:OFFICIAL_BUILDING_PATTERN,
   hall:/^[A-Z]\d{1,3}$/i,
   days:/^[1-5](?:[\s,\-–—./]*[1-5])*$/,
@@ -1724,7 +1728,7 @@ mark('setup');
     const hits=Math.max(validatorHits(numericGrey[near].cells,stripPatterns.scode),validatorHits(numericBin[near].cells,stripPatterns.scode));
     if(hits>=minimumRows){scodeIndex=near;break;}
   }
-  if(scodeIndex<0)scodeIndex=claim(stripPatterns.scode,minimumRows,taken);
+  if(scodeIndex<0)scodeIndex=claim(stripPatterns.scodeLegacy,minimumRows,taken);
   if(scodeIndex>=0)taken.add(scodeIndex);
   if(timeIndex<0&&!codeSpan&&!refcodeSpan&&refcodeIndex<0&&codeIndex<0)return null;
 
@@ -2459,8 +2463,8 @@ mark('escalation');
       const pair=timePair(rawTime);
       if(pair){start=start||pair.start;end=end||pair.end;}
     }
-    let scode=scodeAt(row).replace(/\D/g,"");
-    if(!/^\d{3}$/.test(scode)||Number(scode)<501)scode="";
+    let scode=normalizeAuthoritySectionCode(scodeAt(row));
+    if(!authoritySectionCodeLooksPlausible(scode))scode="";
 
     const bRaw=buildingAt(row);
     const hRaw=hallAt(row);
@@ -3642,7 +3646,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   const validGrids=gridRows.filter(grid=>{
     const combined = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText} ${grid.building} ${grid.hall}`;
     if(isHeaderLine(combined)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))return false;
-    const hasData = Boolean(grid.code || grid.reference || grid.start || grid.days || (grid.scode && Number(grid.scode)>=500) || grid.courseText.length > 2);
+    const hasData = Boolean(grid.code || grid.reference || grid.start || grid.days || authoritySectionCodeLooksPlausible(grid.scode) || grid.courseText.length > 2);
     return hasData;
   });
   const firstPass=validGrids.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText)}));
@@ -3662,7 +3666,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     if(!course){
       const rawEvidence = grid.courseText || grid.code || "";
       if(isHeaderLine(rawEvidence)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
-      const hasScheduleData = Boolean(grid.start || grid.days || (grid.scode && Number(grid.scode)>=500) || grid.reference || (grid.code && grid.code.length >= 3));
+      const hasScheduleData = Boolean(grid.start || grid.days || authoritySectionCodeLooksPlausible(grid.scode) || grid.reference || (grid.code && grid.code.length >= 3));
       if(!hasScheduleData || !rawEvidence || rawEvidence.length < 3) {
         continue;
       }
@@ -3756,17 +3760,18 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       rows.push(...pageRows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
     }
   }
-  const assignSequentialSections=()=>{
+  const preserveAuthoritySections=()=>{
     if(options?.sequentialSections===false)return;
     const numbered=assignAuthoritySections(rows);
     rows.splice(0,rows.length,...numbered);
   };
   if(rows.length){
-    /* Owner rule: the canonical section code is generated per canonical course,
-       starting 501 for the first imported row of that course, then 502, 503… .
-       The PDF cell remains in sourceSectionText for audit only. */
-    assignSequentialSections();
-    return{rows,issues:[...new Set(issues).values()].filter(issue=>!/لم أتعرف على رقم الشعبة/.test(issue)),lines:scanned};
+    /* The section cell is document identity. Preserve the printed value exactly
+       after digit normalization (01/02… or 501/502/510…), never regenerate it
+       from row order. The shared helper also repairs older generated values when
+       sourceSectionText exists, while source-less legacy rows are left intact. */
+    preserveAuthoritySections();
+    return{rows,issues:[...new Set(issues).values()],lines:scanned};
   }
 
   const activityTokens=["محاضرة","مختبر","تمارين","كلينيكي","عملي","نظري","ورشة","تدريب","بحث"];
@@ -3811,7 +3816,13 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       }
 
       const reference=digitRuns.find(value=>/^\d{4,8}$/.test(value))||"";
-      const section=digitRuns.find(v=>Number(v)>=500&&Number(v)<=999)||"";
+      const referenceCellIndex=reference ? cells.findIndex(c=>toAscii(c.text).includes(reference)) : -1;
+      let section="";
+      if(referenceCellIndex>=0){
+        const adjacentCells=cells.slice(Math.max(0,referenceCellIndex-2),referenceCellIndex+3);
+        const exactCell=adjacentCells.find(c=>authoritySectionCodeLooksPlausible(toAscii(c.text).trim())&&toAscii(c.text).trim()!==reference);
+        if(exactCell)section=normalizeAuthoritySectionCode(toAscii(exactCell.text).trim());
+      }
       const instructorHit=matchInstructorName(line,instructors,preferredInstructorIds);
 
       rows.push({
@@ -3890,13 +3901,16 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       const adjacentCells=cells.slice(Math.max(0,referenceCellIndex-2),referenceCellIndex+3);
       const exactCell=adjacentCells.find(c=>{
         const t=toAscii(c.text).trim();
-        return /^\d{1,4}$/.test(t) && t!==courseCode.slice(-3) && t!==reference;
+        return authoritySectionCodeLooksPlausible(t) && t!==courseCode.slice(-3) && t!==reference;
       });
-      if(exactCell) section=toAscii(exactCell.text).trim();
+      if(exactCell) section=normalizeAuthoritySectionCode(toAscii(exactCell.text).trim());
     }
     if(!section){
-      const secCandidate=digitRuns.find(v=>/^(50[1-9]|5[1-9]\d|\d{3})$/.test(v)&&v!==reference&&v!==courseCode.slice(-3));
-      if(secCandidate)section=secCandidate;
+      /* Without a proven reference neighbour, keep the old conservative 5xx
+         fallback. Small values such as 3/25/60 also occur in unit/capacity
+         columns and must never be guessed as a section from flattened text. */
+      const secCandidate=digitRuns.find(v=>/^(?:50[1-9]|5[1-9]\d|[6-9]\d{2})$/.test(v)&&v!==reference&&v!==courseCode.slice(-3));
+      if(secCandidate)section=normalizeAuthoritySectionCode(secCandidate);
     }
 
     // Rule 8: Instructor extraction with department priority
@@ -3943,8 +3957,8 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
   }
 
   if(!rows.length)issues.push("لم أتعرف على صفوف الجدول. تأكد أن الملف واضح وبنفس نموذج الجدول المعتمد.");
-  assignSequentialSections();
-  return{rows,issues:[...new Set(issues).values()].filter(issue=>!/لم أتعرف على رقم الشعبة/.test(issue)),lines:scanned};
+  preserveAuthoritySections();
+  return{rows,issues:[...new Set(issues).values()],lines:scanned};
 }
 
 export function transcriptFacts(text:string){

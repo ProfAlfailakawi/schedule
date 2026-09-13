@@ -10,7 +10,7 @@ const fixture=JSON.parse(readFileSync(join(here,"fixtures/authority-import-golde
 const academic=fixture.academic;
 const courseInstructorIds=new Map<number,Set<number>>(Object.entries(academic.courseInstructorIds).map(([id,people])=>[Number(id),new Set((people as number[]).map(Number))]));
 const pages:OcrPage[]=[{rows:[],gridRows:academic.rows.map((row:any)=>({
-  code:row.code,reference:row.reference,scode:"999",courseText:row.courseText,instructorText:row.instructorText,
+  code:row.code,reference:row.reference,scode:row.expectedSection,courseText:row.courseText,instructorText:row.instructorText,
   building:row.building,buildingRaw:row.building,hall:row.hall,hallRaw:row.hall,start:row.start,end:row.end,days:row.days,
 }))} as any];
 const parsed=parseScheduleTable(pages,academic.courses,academic.instructors,new Set(academic.instructors.map((person:any)=>Number(person.AdInstructorId))),{
@@ -21,7 +21,7 @@ academic.rows.forEach((expected:any,index:number)=>{
   const row=parsed.rows[index];
   assert.equal(row.AdCourseId,expected.expectedCourseId,`row ${index+1}: course identity changed`);
   assert.equal(row.AdCourseName,academic.courses.find((course:any)=>Number(course.AdCourseId)===Number(expected.expectedCourseId))?.CourseName,`row ${index+1}: canonical course name changed`);
-  assert.equal(row.SCode,expected.expectedSection,`row ${index+1}: 501 sequence changed`);
+  assert.equal(row.SCode,expected.expectedSection,`row ${index+1}: source section identity changed`);
   assert.equal(row.AdInstructorId,expected.expectedInstructorId,`row ${index+1}: instructor safety changed`);
 });
 

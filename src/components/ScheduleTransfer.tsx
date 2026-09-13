@@ -9,7 +9,7 @@ import SchedulePublish from "./SchedulePublish";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
-import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
+import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 import { campusOf } from "../utils/campusTravel";
 
@@ -286,8 +286,13 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     rows.forEach((row, index) => {
       const n = (index + 1).toLocaleString("ar-KW-u-nu-latn");
       if (!Number(row.AdCourseId)) issues.add(`الصف ${n}: المقرر غير محدد.`);
-      const sectionNumber=Number(String(row.SCode||""));
-      if (!/^\d{3}$/.test(String(row.SCode || "").trim()) || sectionNumber < 501) issues.add(`الصف ${n}: الشعبة يجب أن تكون ضمن تسلسل المقرر 501، 502، 503…`);
+      const sectionValue=String(row.SCode||"").trim();
+      if (importKind === "authority-pdf") {
+        if (!authoritySectionCodeLooksPlausible(sectionValue)) issues.add(`الصف ${n}: رقم الشعبة غير صالح أو لم يُقرأ من ملف PDF.`);
+      } else {
+        const sectionNumber=Number(sectionValue);
+        if (!/^\d{3}$/.test(sectionValue) || sectionNumber < 501) issues.add(`الصف ${n}: الشعبة يجب أن تكون ضمن تسلسل المقرر 501، 502، 503…`);
+      }
       if (!hasDays(row)) issues.add(`الصف ${n}: أيام المحاضرة غير محددة.`);
       const start = minutes(row.fstarttime), end = minutes(row.fendtime);
       if (start < 0 || end <= start) issues.add(`الصف ${n}: الوقت غير مكتمل أو غير صالح.`);
@@ -342,11 +347,10 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     const hasDays = (row: ImportRow) => Boolean(row.fsunday || row.fmonday || row.ftuesday || row.fwednesday || row.fthursday);
     const minutes = (value: string) => { const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/); return match ? Number(match[1]) * 60 + Number(match[2]) : -1; };
     const rowReady = (row: ImportRow) => {
-      const sectionNumber = Number(String(row.SCode || ""));
       const start = minutes(row.fstarttime), end = minutes(row.fendtime);
       return Boolean(
         Number(row.AdCourseId) &&
-        /^\d{3}$/.test(String(row.SCode || "").trim()) && sectionNumber >= 501 &&
+        authoritySectionCodeLooksPlausible(row.SCode) &&
         hasDays(row) && start >= 0 && end > start &&
         row.buildingId && (row.roomId || row.locationStatus === "PENDING_ROOM") &&
         Number(row.AdInstructorId) && (departmentIds.includes(Number(row.AdInstructorId)) || roster.includes(Number(row.AdInstructorId)))
@@ -752,8 +756,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       const data = await response.json();
       if (!response.ok) {
         /* The server re-validates every row (times inside the schedule day, the
-           501+ section series, a course/instructor that truly belongs to this
-           department). When it refuses, it names the offending rows in `issues`.
+           source-preserved PDF section, and a course/instructor that truly belongs
+           to this department). When it refuses, it names the offending rows in `issues`.
            Surfacing them turns a blank "أكمل الحقول المطلوبة" — a message with
            nothing visibly wrong after the reviewer has cleared the preview — into
            an actionable list, so the reader can see exactly what still blocks the

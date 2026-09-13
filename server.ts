@@ -59,7 +59,14 @@ import {
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
-import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
+import {
+  academicDigits,
+  assignAuthoritySections,
+  authorityDepartmentCode,
+  authorityDepartmentMatches,
+  authoritySectionCodeLooksPlausible,
+  normalizeAuthoritySectionCode,
+} from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
@@ -1331,12 +1338,11 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       if(field==="AdInstructorId"&&sameInstructorIdentity())return false;
       return comparable(field,source[field])!==comparable(field,next[field]);
     });
-    /* The Authority section number is system-canonicalized after import (501,
-       502, 503...). It remains in changedFields for audit truth, but it is not a
-       USER edit. A section-only canonical difference must therefore neither
-       create a «معدّل» badge nor make an untouched PDF row look edited. If a
-       real field changes as well, the row is still changed and only that real
-       field is highlighted by the report. */
+    /* Section identity is source-owned. Older drafts may still carry a
+       generated section from a pre-fix import; assignAuthoritySections repairs
+       it from sourceSectionText before this comparison. Keep SCode out of the
+       user-edit badge because the Authority preview locks that cell, while the
+       full changedFields array still preserves audit truth. */
     const visibleChangedFields=changedFields.filter(field=>field!=="SCode");
     reportRows.push({status:visibleChangedFields.length?"changed":"unchanged",changedFields,referenceNumber:String(source.referenceNumber||next.referenceNumber||""),source,current:next});
   });
@@ -1411,8 +1417,8 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
     else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
     if(options.requireDepartmentInstructor){
-      const authoritySection=Number(String(row.SCode||""));
-      if(!/^\d{3}$/.test(String(row.SCode||""))||authoritySection<501||authoritySection>999)errors.push(`السطر ${index + 1}: شعبة جدول PDF يجب أن تبدأ من 501 وتستمر 502، 503… لكل مقرر`);
+      const authoritySection=normalizeAuthoritySectionCode(row.SCode);
+      if(!authoritySectionCodeLooksPlausible(authoritySection))errors.push(`السطر ${index + 1}: رقم الشعبة في جدول PDF غير صالح أو لم يُقرأ من المصدر`);
     }else if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية`);
     /* The authority PDF IS the room decision. The university publishes the hall
        beside the course, so re-asking the registry whether the department owns
@@ -7126,7 +7132,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     :{recoveredRows:0,recoveredCells:0,rowFields:new Map<number,string[]>()};
   if(scanHistoryRecovery.recoveredRows){
     /* Course identity may have been the missing cropped cell. Re-run ONLY the
-       existing canonical section numbering after recovery; no OCR geometry or
+       source-preserving section normalizer after recovery; no OCR geometry or
        one-page behaviour is changed. */
     const renumbered=assignAuthoritySections(parsed.rows as any[]);
     parsed.rows.splice(0,parsed.rows.length,...renumbered);
@@ -7185,8 +7191,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     row.sourceBuildingText=sourceBuildingRaw;row.sourceRoomText=sourceRoomRaw;
     const token=rawBuilding.normalize("NFKC").replace(/\s+/g,"").toUpperCase();
     const normalizedInstructor=foldHeaderIdentity(row.sourceInstructorText);
-    const sectionToken=String(row.SCode||"").replace(/\D/g,"");
-    const authoritySectionConfirmed=/^\d{3}$/.test(sectionToken)&&Number(sectionToken)>=501;
+    const sectionToken=normalizeAuthoritySectionCode(row.SCode);
+    const sourceSectionToken=normalizeAuthoritySectionCode(row.sourceSectionText);
+    const authoritySectionConfirmed=authoritySectionCodeLooksPlausible(sectionToken);
+    const sectionMatchesSource=Boolean(sourceSectionToken&&sectionToken===sourceSectionToken);
     const activeDayKeys=["fsunday","fmonday","ftuesday","fwednesday","fthursday"].filter(key=>Boolean(row[key]));
     const timeConfirmed=/^\d{2}:\d{2}$/.test(String(row.fstarttime||""))&&/^\d{2}:\d{2}$/.test(String(row.fendtime||""))&&String(row.fendtime)>String(row.fstarttime);
     const readMode=String(row.sourceReadMode||"ocr-grid");
@@ -7198,7 +7206,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const instructorScore=Number(row.instructorMatchScore||0);
     row.importEvidence={
       course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdCourseId)?100:0,source:fieldSource("AdCourseId"),method:fieldDerived("AdCourseId")?"HISTORICAL_UNIQUE_FINGERPRINT":"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:fieldDerived("AdCourseId"),reason:Number(row.AdCourseId)?(fieldDerived("AdCourseId")?"خلية رقم المقرر كانت فارغة؛ استعيدت فقط لأن بقية حقائق الصف طابقت سجلاً تاريخياً واحد المعنى":"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط"):"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
-      section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",score:authoritySectionConfirmed?99:0,source:"SYSTEM_SEQUENCE",method:"COURSE_LOCAL_501_SEQUENCE",derived:true,reason:authoritySectionConfirmed?"رقم الشعبة مولد حسب ترتيب شعب المقرر: 501 ثم 502 ثم 503…":"تعذر توليد رقم شعبة canonical",evidence:["المقرر canonical","ترتيب ظهور شعب المقرر في المستند","بداية ثابتة 501"]},
+      section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",score:sectionMatchesSource?100:(authoritySectionConfirmed?96:0),source:sectionMatchesSource?readSource:(authoritySectionConfirmed?"PRESERVED_CANONICAL":"UNRESOLVED"),method:sectionMatchesSource?"EXACT_SECTION_CELL":(authoritySectionConfirmed?"PRESERVED_SECTION_VALUE":"UNRESOLVED"),derived:Boolean(authoritySectionConfirmed&&!sectionMatchesSource),reason:sectionMatchesSource?"رقم الشعبة محفوظ كما طُبع في خلية الشعبة بالمستند دون إعادة ترقيم":(authoritySectionConfirmed?"حُفظ رقم الشعبة الموجود دون توليد تسلسل جديد":"تعذر إثبات رقم الشعبة من المصدر؛ تُترك للمراجعة بدلاً من اختراع قيمة"),evidence:sectionMatchesSource?["خلية الشعبة الأصلية","لا إعادة ترقيم حسب ترتيب الصفوف"]:(authoritySectionConfirmed?["قيمة شعبة محفوظة كما وصلت للمحلل"]:["لا توليد 501/502 عند غياب الشعبة"])},
       days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?"CONFIRMED":"UNRESOLVED",score:activeDayKeys.length?100:0,source:fieldSource("fsunday","fmonday","ftuesday","fwednesday","fthursday"),method:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_DAYS",derived:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"),reason:activeDayKeys.length?(fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة":"أيام المحاضرة قُرئت من خلية الأيام نفسها"):"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
       time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?"CONFIRMED":"UNRESOLVED",score:timeConfirmed?100:0,source:fieldSource("fstarttime","fendtime"),method:fieldDerived("fstarttime","fendtime")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_TIME_PAIR",derived:fieldDerived("fstarttime","fendtime"),reason:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"خلية الوقت كانت ناقصة؛ استعيدت من تطابق تاريخي فريد مع تطبيع HH:MM فقط":"زوج الوقت مثبت من خلية الوقت نفسها"):"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
       instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:fieldSource("AdInstructorId"),method:fieldDerived("AdInstructorId")?"HISTORICAL_UNIQUE_FINGERPRINT":(instructorMethod||"UNRESOLVED"),derived:fieldDerived("AdInstructorId")||Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"اسم الأستاذ لم يُحسم من OCR؛ استعيدت الهوية فقط من بصمة صف تاريخية غير ملتبسة":"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء"):"لم ينتج النص مرشحاً واحداً يقينياً؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},

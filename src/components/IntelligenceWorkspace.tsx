@@ -79,7 +79,7 @@ import { type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
 import { roomIdentityKey } from "../utils/locationRegistry";
-import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
+import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
@@ -374,16 +374,15 @@ const importRowsOverlap = (a: ImportRow, b: ImportRow) => {
   const a0=importClockMinutes(a.fstarttime),a1=importClockMinutes(a.fendtime),b0=importClockMinutes(b.fstarttime),b1=importClockMinutes(b.fendtime);
   return a0>=0&&a1>a0&&b0>=0&&b1>b0&&a0<b1&&b0<a1;
 };
-/** Authority-PDF section identity follows the canonical course, not OCR.
- * Every canonical course starts at 501 and advances in source-row order. */
+/** Authority-PDF section identity comes from the printed section cell.
+ * Preserve the exact source value (including leading zeroes and legitimate gaps). */
 const normalizeImportSectionSeries = (rows: ImportRow[]) => assignAuthoritySections(rows);
 const validateImportRowsLocally = (rows: ImportRow[]) => {
   const issues:string[] = [];
   rows.forEach((row, index) => {
     const label = `الصف ${(index + 1).toLocaleString("ar-KW-u-nu-latn")}`;
     if (!Number(row.AdCourseId)) issues.push(`${label}: المقرر غير محدد`);
-    const sectionNumber=Number(String(row.SCode||""));
-    if (!/^\d{3}$/.test(String(row.SCode || "")) || sectionNumber < 501) issues.push(`${label}: الشعبة يجب أن تكون ضمن تسلسل المقرر 501، 502، 503…`);
+    if (!authoritySectionCodeLooksPlausible(row.SCode)) issues.push(`${label}: رقم الشعبة غير صالح أو لم يُقرأ من ملف PDF`);
     if (![row.fsunday,row.fmonday,row.ftuesday,row.fwednesday,row.fthursday].some(Boolean)) issues.push(`${label}: الأيام غير محددة`);
     const start=importClockMinutes(row.fstarttime),end=importClockMinutes(row.fendtime);
     if (start < 0 || end < 0 || end <= start) issues.push(`${label}: الوقت غير مكتمل أو غير منطقي`);

@@ -75,31 +75,54 @@ export function authorityCourseCodeMatches(sourceCode: unknown, catalogueCourseC
   return source.length === 3 && source === tail;
 }
 
-/**
- * Canonical section numbering for an Authority-PDF import.
+/** Normalize a section value exactly as printed by SWRSCHA.
  *
- * Section identity is derived from the canonical course identity, never copied
- * from OCR. Every course starts at 501 and advances in source-row order. An
- * unresolved course deliberately receives no canonical section number; the
- * original printed value remains available separately as sourceSectionText.
+ * Section numbering is not globally fixed. Older reports may print 501/502…
+ * (and may legitimately skip a number), while newer reports can print 01/02…
+ * or even 1 without a leading zero. The section cell is therefore source
+ * identity, not a value that may be regenerated from row order.
  */
-export function assignAuthoritySections<T extends { AdCourseId?: unknown; SCode?: unknown; sourceOrder?: unknown }>(input: readonly T[]): T[] {
-  const rows = input.map(row => ({ ...row })) as T[];
-  const ordered = rows.map((row, index) => {
-    const numericOrder = Number(row.sourceOrder);
-    return { row, index, order: Number.isFinite(numericOrder) ? numericOrder : index };
-  }).sort((a, b) => a.order - b.order || a.index - b.index);
+export function normalizeAuthoritySectionCode(value: unknown): string {
+  const raw = String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+    .trim();
+  if (!/^\d{1,4}$/.test(raw)) return "";
+  if (Number(raw) <= 0) return "";
+  return raw;
+}
 
-  const nextByCourse = new Map<number, number>();
-  for (const item of ordered) {
-    const courseId = Number(item.row.AdCourseId || 0);
-    if (!Number.isFinite(courseId) || courseId <= 0) {
-      item.row.SCode = "";
-      continue;
-    }
-    const next = (nextByCourse.get(courseId) || 500) + 1;
-    nextByCourse.set(courseId, next);
-    item.row.SCode = String(next);
-  }
-  return rows;
+export function authoritySectionCodeLooksPlausible(value: unknown): boolean {
+  return Boolean(normalizeAuthoritySectionCode(value));
+}
+
+/**
+ * Source-preserving Authority section assignment.
+ *
+ * The PDF section cell wins whenever it is readable. This intentionally keeps
+ * leading zeroes and real gaps (01, 02, 04 / 501, 502, 510). Missing section
+ * evidence is never invented from row order.
+ *
+ * Migration rule: sourceSectionText outranks any value that an older build may
+ * have generated. This repairs already-saved previews such as printed `01`
+ * becoming `501`, while leaving the proven girls flow untouched because its
+ * printed 5xx source value is already the same value users see. If an old row
+ * has no source cell at all, its stored SCode is preserved rather than guessed.
+ */
+export function assignAuthoritySections<T extends {
+  AdCourseId?: unknown;
+  SCode?: unknown;
+  sourceOrder?: unknown;
+  sourceSectionText?: unknown;
+  importEvidence?: { section?: { method?: unknown } } | unknown;
+}>(input: readonly T[]): T[] {
+  return input.map(original => {
+    const row = { ...original } as T;
+    const source = normalizeAuthoritySectionCode((row as any).sourceSectionText);
+    const current = normalizeAuthoritySectionCode((row as any).SCode);
+    (row as any).SCode = source || current || "";
+    return row;
+  });
 }

@@ -9547,42 +9547,44 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           technology and diagnostics; blocking problems still use the existing
           conflict/error UI, and undo remains in the compact undo bar. */}
       {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
+      {!rowsForeign && rows.length > 0 ? (
       <div className="schedule-overview-stack no-print">
-      <section className="schedule-mini-stats">
-        <StatCard
-          icon={<CalendarDays />}
-          value={filteredRows.length}
-          label="موعد ظاهر"
+        <section className="schedule-mini-stats">
+          <StatCard
+            icon={<CalendarDays />}
+            value={filteredRows.length}
+            label="موعد ظاهر"
+          />
+          <StatCard
+            icon={<Table2 />}
+            value={
+              new Set(filteredRows.map((x) => roomIdentityKey(x)).filter(Boolean)).size
+            }
+            label="قاعة مستخدمة"
+          />
+          <StatCard
+            icon={<Sparkles />}
+            value={new Set(filteredRows.map((x) => x.AdInstructorId)).size}
+            label="أستاذ مقرر"
+          />
+        </section>
+        <LivingScheduleLayer
+          user={user}
+          rows={filteredRows}
+          courses={courses}
+          instructors={instructors}
+          terms={terms}
+          collegeId={filterCollege}
+          sectionId={filterSection}
+          termId={filterTerm}
+          onOpenRow={openEdit}
+          onRefresh={loadRows}
+          experience={experience}
+          onEnsureWeek={() => setViewMode("week")}
+          onPanelOpenChange={setLivingPanelOpen}
         />
-        <StatCard
-          icon={<Table2 />}
-          value={
-            new Set(filteredRows.map((x) => roomIdentityKey(x)).filter(Boolean)).size
-          }
-          label="قاعة مستخدمة"
-        />
-        <StatCard
-          icon={<Sparkles />}
-          value={new Set(filteredRows.map((x) => x.AdInstructorId)).size}
-          label="أستاذ مقرر"
-        />
-      </section>
-      <LivingScheduleLayer
-        user={user}
-        rows={filteredRows}
-        courses={courses}
-        instructors={instructors}
-        terms={terms}
-        collegeId={filterCollege}
-        sectionId={filterSection}
-        termId={filterTerm}
-        onOpenRow={openEdit}
-        onRefresh={loadRows}
-        experience={experience}
-        onEnsureWeek={() => setViewMode("week")}
-        onPanelOpenChange={setLivingPanelOpen}
-      />
       </div>
+      ) : null}
       <Surface className="schedule-control">
         <div className="filter-strip">
           <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>

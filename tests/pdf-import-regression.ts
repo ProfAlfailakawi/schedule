@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
-import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
+import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { fairShareByOwner } from "../src/utils/hallBarterFairness.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -55,6 +55,14 @@ assert.equal(authorityDepartmentMatches("01", "01", "01"), false);
 assert.equal(authorityDepartmentMatches("0102", "01", "01"), false);
 assert.equal(authorityCourseCodeMatches("0101102", "102", "0101"), true);
 assert.equal(authorityCourseCodeMatches("0102102", "102", "0101"), false);
+assert.equal(normalizeAuthoritySectionCode("٠١"), "01");
+assert.equal(normalizeAuthoritySectionCode("01"), "01");
+assert.equal(authoritySectionCodeLooksPlausible("1"), true);
+assert.equal(authoritySectionCodeLooksPlausible("01"), true);
+assert.equal(authoritySectionCodeLooksPlausible("501"), true);
+assert.equal(authoritySectionCodeLooksPlausible("510"), true);
+assert.equal(authoritySectionCodeLooksPlausible("0"), false);
+assert.equal(authoritySectionCodeLooksPlausible("A1"), false);
 assert.equal(authorityCourseCellLooksPlausible("0101102","0101"),true);
 assert.equal(authorityCourseCellLooksPlausible("5011894","0101"),false);
 assert.equal(authorityCourseColumnLooksPlausible("010110","0101"),true);
@@ -190,8 +198,9 @@ const roomFingerprintRegistry:any={
 assert.equal(resolveBuildingFromUniqueRoom(roomFingerprintRegistry,"F31",{branchRoot:"012"}).value?.officialCode,"012B07");
 assert.equal(resolveBuildingFromUniqueRoom(roomFingerprintRegistry,"F12",{branchRoot:"012"}).status,"REVIEW_REQUIRED");
 
-/* Course NUMBER is canonical; system name wins; sections are generated 501+ per
-   course; an abbreviated professor name never receives a real instructor ID. */
+/* Course NUMBER is canonical; system name wins; the section printed by the
+   Authority PDF is source identity and must survive unchanged. An abbreviated
+   professor name never receives a real instructor ID. */
 const courses:any[]=[
   {AdCourseId:11,AdCollegeId:6,AdSectionId:9,CourseCode:"102",CourseName:"الثقافة الإسلامية",CourseHours:3,CourseCredit:3},
   {AdCourseId:12,AdCollegeId:6,AdSectionId:9,CourseCode:"103",CourseName:"اسم آخر في النظام",CourseHours:3,CourseCredit:3},
@@ -206,19 +215,19 @@ const instructors:any[]=[
   {AdInstructorId:27,AdInstructorName:"د. عبد الرحمن نوري أحمد المطيري"},
 ];
 const gridRows:any[]=[
-  {code:"0101102",reference:"18945",scode:"777",courseText:"اسم OCR خاطئ تماماً",instructorText:"د. علي يوسف أحمد السند",building:"",buildingRaw:"12B09",hall:"F13",hallRaw:"F13",start:"15:30",end:"16:50",days:"42"},
-  {code:"0101102",reference:"18946",scode:"123",courseText:"اسم آخر خاطئ",instructorText:"علي السند",building:"012B07",hall:"F31",start:"11:00",end:"11:50",days:"531"},
-  {code:"0101103",reference:"18947",scode:"999",courseText:"حتى لو اسم OCR لا يطابق",instructorText:"",building:"012B07",hall:"F31",start:"08:00",end:"09:20",days:"42"},
+  {code:"0101102",reference:"18945",scode:"01",courseText:"اسم OCR خاطئ تماماً",instructorText:"د. علي يوسف أحمد السند",building:"",buildingRaw:"12B09",hall:"F13",hallRaw:"F13",start:"15:30",end:"16:50",days:"42"},
+  {code:"0101102",reference:"18946",scode:"02",courseText:"اسم آخر خاطئ",instructorText:"علي السند",building:"012B07",hall:"F31",start:"11:00",end:"11:50",days:"531"},
+  {code:"0101103",reference:"18947",scode:"01",courseText:"حتى لو اسم OCR لا يطابق",instructorText:"",building:"012B07",hall:"F31",start:"08:00",end:"09:20",days:"42"},
 ];
 const pages:OcrPage[]=[{rows:[],gridRows} as any];
 const parsed=parseScheduleTable(pages,courses,instructors,new Set([21,22]),{authorityDepartmentCode:"0101",sequentialSections:true});
 assert.equal(parsed.rows.length,3);
 assert.equal(parsed.rows[0].AdCourseId,11);
 assert.equal(parsed.rows[0].AdCourseName,"الثقافة الإسلامية");
-assert.equal(parsed.rows[0].SCode,"501");
-assert.equal(parsed.rows[1].SCode,"502");
+assert.equal(parsed.rows[0].SCode,"01");
+assert.equal(parsed.rows[1].SCode,"02");
 assert.equal(parsed.rows[2].AdCourseId,12);
-assert.equal(parsed.rows[2].SCode,"501");
+assert.equal(parsed.rows[2].SCode,"01");
 assert.equal(parsed.rows[0].AdInstructorId,21);
 assert.equal(parsed.rows[1].AdInstructorId,21);
 
@@ -246,7 +255,7 @@ assert.equal(instructorParsed.rows[4].AdInstructorId,27);
    leftmost identity cell as one complete phrase. */
 const word=(text:string,x0:number,x1:number,y=200)=>({text,x0,y0:y-5,x1,y1:y+1});
 const nativeWords:any[]=[
-  word("0101102",744,787),word("18945",712,742),word("501",691,709),
+  word("0101102",744,787),word("18945",712,742),word("01",691,709),
   word("الثقافة",668,686),word("الاسلامية",636,665),
   word("45",435,447),word("45",388,400),word("0",343,350),
   word("F13",279,297),word("012B09",236,273),
@@ -258,21 +267,32 @@ const native=authorityPdfTextGridRows(nativeWords,792);
 assert.equal(native.length,1);
 assert.equal(native[0].building,"012B09");
 assert.equal(native[0].hall,"F13");
+assert.equal(native[0].scode,"01");
 assert.doesNotMatch(native[0].building,/345045|520020/);
 assert.match(native[0].instructorText,/عبدالرحمن/);
 
-/* The same numbering rule is reused after edits/deletes. Unresolved courses do
-   not receive a fake canonical section number. */
-const renumbered=assignAuthoritySections([
-  {AdCourseId:11,SCode:"900",sourceOrder:20},
-  {AdCourseId:12,SCode:"888",sourceOrder:30},
-  {AdCourseId:11,SCode:"777",sourceOrder:10},
-  {AdCourseId:0,SCode:"501",sourceOrder:40},
+/* Section identity is preserved from the printed cell. Legitimate gaps such as
+   510 stay gaps; missing values stay missing. Older generated-501 drafts are
+   repaired from immutable sourceSectionText, while source-less legacy values
+   remain untouched instead of being guessed from row order. */
+const preservedSections=assignAuthoritySections([
+  {AdCourseId:11,SCode:"501",sourceSectionText:"01",sourceOrder:20},
+  {AdCourseId:11,SCode:"509",sourceSectionText:"510",sourceOrder:30},
+  {AdCourseId:0,SCode:"",sourceSectionText:"02",sourceOrder:40},
+  {AdCourseId:11,SCode:"",sourceSectionText:"",sourceOrder:50},
+  // A draft saved by the old 501 generator must be repaired from the immutable
+  // source cell on reopen. This is the exact boys-report regression.
+  {AdCourseId:11,SCode:"501",sourceSectionText:"01",sourceOrder:60,importEvidence:{section:{method:"COURSE_LOCAL_501_SEQUENCE"}}},
+  // Girls reports already print 5xx values; source priority therefore leaves
+  // the known-good flow byte-for-byte identical at the section level.
+  {AdCourseId:12,SCode:"501",sourceSectionText:"501",sourceOrder:70},
 ]);
-assert.equal(renumbered[2].SCode,"501");
-assert.equal(renumbered[0].SCode,"502");
-assert.equal(renumbered[1].SCode,"501");
-assert.equal(renumbered[3].SCode,"");
+assert.equal(preservedSections[0].SCode,"01");
+assert.equal(preservedSections[1].SCode,"510");
+assert.equal(preservedSections[2].SCode,"02");
+assert.equal(preservedSections[3].SCode,"");
+assert.equal(preservedSections[4].SCode,"01");
+assert.equal(preservedSections[5].SCode,"501");
 
 
 /* In a flattened/fallback row, the seven-digit course key must not be consumed
@@ -323,7 +343,7 @@ assert.equal(graduationSheet.passedUnits,114);
 const genericTranscript=graduationSheetFacts(`كشف درجات\n904102301536\nالوحدات المجتازة: 114`);
 assert.equal(genericTranscript.isGraduationSheet,false);
 
-console.log(JSON.stringify({ passed: 59, checks: [
+console.log(JSON.stringify({ passed: 70, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -343,8 +363,9 @@ console.log(JSON.stringify({ passed: 59, checks: [
   "catalogue-constrained same-cell recovery accepts the O-to-0 course glyph correction",
   "welded section+CRN values such as 5011894 are rejected as course keys",
   "unresolved OCR course evidence never becomes the canonical display title",
-  "sections are generated 501, 502... independently for each course",
-  "section numbering is reapplied after row edits/deletes and unresolved courses stay blank",
+  "Authority section values are preserved exactly from their source cells",
+  "legacy generated 501 values are repaired from immutable sourceSectionText while girls 5xx stays unchanged",
+  "legitimate section gaps stay intact and unresolved source sections remain blank",
   "full course key is preserved as source evidence and never confused with CRN",
   "instructor full-name match remains exact when available",
   "two/three exact Arabic name tokens may select only one system instructor",

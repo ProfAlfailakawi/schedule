@@ -6,7 +6,7 @@ This file freezes the import behavior that is already working well. It is a guar
 
 1. Native PDFs use the embedded text layer and physical cell coordinates. Scans/photos use OCR.
 2. Course identity is the course **number**. The displayed course name is always the canonical system name.
-3. Sections are generated per course: `501`, `502`, `503`… and restart at `501` for the next course.
+3. Section identity is read from the Authority PDF section cell and preserved exactly (for example `01`, `02`, or legacy `501`, `510`). Leading zeroes and legitimate gaps are data; never regenerate sections from row order. If the section cell cannot be proven, leave it unresolved for review instead of fabricating a value.
 4. The Authority location grammar is owned by one resolver. Example: `012B09` = site `012B` + building `09`.
 5. A room is valid only inside its already-confirmed building. The same room code in another building is a different identity.
 6. Seat/capacity welds such as `345045`, `520020`, and `320020` are never interpreted as building codes. A damaged building may be inferred from a room only when the room fingerprint points to one official building in the permitted branch.

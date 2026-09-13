@@ -7,6 +7,7 @@ import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { expectedMinutesForDay, type DayKey as RegulationDayKey } from "../utils/scheduleRegulations";
 import { cleanBuildingCode, cleanHallCode } from "../utils/cleanRoom";
 import { roomIdentityKey } from "../utils/locationRegistry";
+import { authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
 
 /**
  * Editable authority-PDF preview.
@@ -146,7 +147,7 @@ export default function ImportPreviewTable({
   const hasDays = (row: ImportRow) => DAY_CHIPS.some(day => Boolean(row[day.key]));
   const missing = {
     course: (row: ImportRow) => !Number(row.AdCourseId),
-    scode: (row: ImportRow) => { const value=String(row.SCode || "").trim(); return !/^\d{3}$/.test(value) || Number(value) < 501; },
+    scode: (row: ImportRow) => !authoritySectionCodeLooksPlausible(row.SCode),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
