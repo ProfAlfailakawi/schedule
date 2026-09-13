@@ -299,18 +299,36 @@ function authorityBodyOnly(rows:OcrRow[]):OcrRow[]{
 }
 
 /**
- * Reconstruct the native SWRSCHA PDF directly from its embedded text
- * coordinates. This path is intentionally separate from camera OCR: generated
- * PDFs already know exactly where each glyph lives, so asking Tesseract to
- * rediscover Building/Room/Instructor is both slower and less accurate.
- *
- * The ratios below are the printed SWRSCHA column geometry, expressed as a
- * fraction of page width (not hard-coded pixels). A row is accepted only when
- * the far-right academic key proves a 7-digit course number. That proof makes
- * the remaining fixed cells safe to read without ever mining capacity columns
- * for a "building".
+ * Native generated SWRSCHA PDFs are read from their embedded text coordinates,
+ * never re-OCR'd as photographs. A row still has to prove its seven-digit
+ * academic key before any timetable values are accepted.
  */
-export function authorityPdfTextGridRows(words:Word[],pageWidth:number):GridRow[]{
+export type AuthorityPdfNativeLayout = "legacy-basic-girls" | "semantic";
+
+/** Fold only enough Arabic typography to identify SWRSCHA body labels. */
+function nativeAuthorityLabel(value:string):string{
+  return String(value||"")
+    .normalize("NFKC")
+    .replace(/[ً-ْـ]/g,"")
+    .replace(/[أإآٱ]/g,"ا")
+    .replace(/ى/g,"ي")
+    .replace(/ة/g,"ه")
+    .replace(/\s+/g,"")
+    .trim();
+}
+
+/**
+ * Reconstruct generated SWRSCHA rows from the PDF text layer.
+ *
+ * `legacy-basic-girls` is deliberately the frozen, already-proven geometry for
+ * كلية التربية الأساسية بنات. Every other college uses the semantic lane:
+ * academic identity is anchored from the far-right course code/reference/
+ * section sequence, while days are taken immediately beside «النشاط», time is
+ * taken from the row's explicit clock pair, and location is taken only from an
+ * official building token. This makes column shifts harmless instead of
+ * teaching the importer one set of x-ratios per college.
+ */
+export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:AuthorityPdfNativeLayout="legacy-basic-girls"):GridRow[]{
   if(!words.length||!Number.isFinite(pageWidth)||pageWidth<=0)return[];
   const center=(word:Word)=>(word.x0+word.x1)/2;
   const yCenter=(word:Word)=>(word.y0+word.y1)/2;
@@ -328,6 +346,8 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number):GridRow[
   const rtlText=(row:Word[])=>[...row].sort((a,b)=>b.x1-a.x1).map(word=>word.text).join(" ").replace(/\s+/g," ").trim();
   const compact=(row:Word[])=>rtlText(row).replace(/\s+/g,"");
   const rows:GridRow[]=[];
+  const activityNames=new Set(["محاضره","مختبر","تمارين","كلينيكي","عملي","نظري","ورشه","تدريب","بحث"]);
+
   for(const group of groups.sort((a,b)=>a.y-b.y)){
     const row=group.words;
     const rightText=rtlText(zone(row,.885,1.001));
@@ -335,24 +355,108 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number):GridRow[
     const code=rightRuns.find(run=>/^\d{7}$/.test(run))||"";
     if(!code)continue;
 
-    const referenceText=toAscii(rtlText(zone(row,.895,.945)));
-    const reference=(referenceText.match(/\b\d{4,8}\b/g)||[]).find(value=>value!==code)||"";
-    const sectionText=toAscii(compact(zone(row,.862,.900)));
-    const scode=(sectionText.match(/\d{1,4}/g)||[]).map(normalizeAuthoritySectionCode).find(Boolean)||"";
-    const courseText=rtlText(zone(row,.718,.872));
-    const instructorText=rtlText(zone(row,0,.128));
-    const days=toAscii(rtlText(zone(row,.128,.182))).replace(/[^1-5]+/g," ").trim();
-    const timeRaw=toAscii(rtlText(zone(row,.225,.300)));
-    const pair=timePair(timeRaw);
+    /* The girls lane is intentionally bit-for-bit the existing production
+       reader. Do not widen or reinterpret its columns here. */
+    if(layout==="legacy-basic-girls"){
+      const referenceText=toAscii(rtlText(zone(row,.895,.945)));
+      const reference=(referenceText.match(/\b\d{4,8}\b/g)||[]).find(value=>value!==code)||"";
+      const sectionText=toAscii(compact(zone(row,.862,.900)));
+      const scode=(sectionText.match(/\d{1,4}/g)||[]).map(normalizeAuthoritySectionCode).find(Boolean)||"";
+      const courseText=rtlText(zone(row,.718,.872));
+      const instructorText=rtlText(zone(row,0,.128));
+      const days=toAscii(rtlText(zone(row,.128,.182))).replace(/[^1-5]+/g," ").trim();
+      const timeRaw=toAscii(rtlText(zone(row,.225,.300)));
+      const pair=timePair(timeRaw);
+      const buildingRaw=toAscii(compact(zone(row,.294,.348))).toUpperCase();
+      const hallRaw=toAscii(compact(zone(row,.348,.390))).toUpperCase();
+      const located=extractAuthorityLocationEvidence(`${buildingRaw} ${hallRaw}`);
+      const building=located.building||cleanBuildingCode(buildingRaw);
+      const hall=located.hall||cleanHallCode(hallRaw);
+      rows.push({
+        code,reference,scode,courseText,instructorText,days,daysRaw:days,timeRaw,
+        start:pair?.start||"",end:pair?.end||"",
+        building,hall,buildingRaw,hallRaw,sourceMode:"pdf-text",
+      });
+      continue;
+    }
 
-    /* Building and room are read ONLY from their physical native-PDF cells.
-       Capacity/seat columns start to the right of x=.39 and can therefore never
-       become 345045/520020 in AdRoomCode. */
-    const buildingRaw=toAscii(compact(zone(row,.294,.348))).toUpperCase();
-    const hallRaw=toAscii(compact(zone(row,.348,.390))).toUpperCase();
-    const located=extractAuthorityLocationEvidence(`${buildingRaw} ${hallRaw}`);
-    const building=located.building||cleanBuildingCode(buildingRaw);
-    const hall=located.hall||cleanHallCode(hallRaw);
+    /* ── Semantic lane for every other college ─────────────────────────────
+       The user's failing 011 report moves SECTION, DAYS, TIME and instructor
+       relative to 012B. Fixed ratios therefore read the CRN as SECTION and
+       only the first day digit (or no day at all). The row already exposes
+       stronger evidence than x-ratios, so use that evidence directly. */
+    const rowAsc=[...row].sort((a,b)=>center(a)-center(b));
+    const asciiOf=(word:Word)=>toAscii(String(word.text||"")).trim();
+    const codeWord=[...row].filter(word=>/^\d{7}$/.test(asciiOf(word).replace(/\D/g,""))).sort((a,b)=>center(b)-center(a))[0];
+    const codeX=codeWord?center(codeWord):pageWidth*.94;
+
+    const numericBeforeCode=row
+      .filter(word=>center(word)<codeX&&/^\d+$/.test(asciiOf(word)))
+      .sort((a,b)=>center(b)-center(a));
+    const referenceWord=numericBeforeCode.find(word=>{const token=asciiOf(word);return /^\d{4,8}$/.test(token)&&token!==code;});
+    const reference=referenceWord?asciiOf(referenceWord):"";
+    const referenceX=referenceWord?center(referenceWord):codeX-pageWidth*.045;
+    const sectionWord=numericBeforeCode.find(word=>{
+      if(center(word)>=referenceX)return false;
+      const token=normalizeAuthoritySectionCode(asciiOf(word));
+      return Boolean(token)&&referenceX-center(word)<=pageWidth*.09;
+    });
+    const scode=sectionWord?normalizeAuthoritySectionCode(asciiOf(sectionWord)):"";
+    const sectionX=sectionWord?center(sectionWord):referenceX-pageWidth*.035;
+
+    /* Course prose is the Arabic cluster immediately left of SECTION. Status,
+       response and seat columns are Latin/numeric and are never admitted. */
+    const courseWords=row.filter(word=>{
+      const x=center(word);
+      const text=String(word.text||"").normalize("NFKC");
+      return x<sectionX&&x>sectionX-pageWidth*.20&&(/[ء-ي]/.test(text)||/^\(?\d{1,2}\)?$/.test(toAscii(text).trim()));
+    });
+    const courseText=rtlText(courseWords);
+
+    const activityWord=rowAsc.find(word=>activityNames.has(nativeAuthorityLabel(word.text)));
+    const activityX=activityWord?center(activityWord):pageWidth*.23;
+
+    /* DAYS are the consecutive day tokens immediately to the left of ACTIVITY.
+       This survives 42, 5 3 1 and 5 4 3 2 1 whether pdfjs emits one item or
+       five. It cannot accidentally mine the capacity columns because scanning
+       stops at the first non-day item. */
+    const leftOfActivity=row.filter(word=>center(word)<activityX).sort((a,b)=>center(b)-center(a));
+    const dayWords:Word[]=[];
+    for(const word of leftOfActivity){
+      const raw=asciiOf(word).replace(/[|،,;:_/\\–—-]/g," ").trim();
+      const daySyntax=Boolean(raw)&&/^[1-5](?:\s+[1-5])*$/.test(raw)&&Boolean(parseDays(raw));
+      if(daySyntax){dayWords.push(word);continue;}
+      if(dayWords.length)break;
+      /* Skip zero-width/punctuation artefacts before the first actual token. */
+      if(!raw)continue;
+      break;
+    }
+    const days=dayWords.length?toAscii(rtlText(dayWords)).replace(/[^1-5]+/g," ").trim():"";
+    const dayLeft=dayWords.length?Math.min(...dayWords.map(word=>center(word))):activityX;
+    const instructorText=rtlText(row.filter(word=>center(word)<dayLeft-pageWidth*.002&&/[ء-ي]/.test(String(word.text||"").normalize("NFKC"))));
+
+    /* The printed clock pair carries its own dash and is therefore stronger
+       than any absolute TIME x-position. Limit evidence to the activity→room
+       corridor when possible, then fall back to the proven whole row. */
+    const semanticRowText=rtlText(row);
+    const located=extractAuthorityLocationEvidence(semanticRowText);
+    const buildingWord=located.building?rowAsc.find(word=>asciiOf(word).replace(/[^A-Z0-9]/gi,"").toUpperCase().includes(located.building)):undefined;
+    const buildingX=buildingWord?center(buildingWord):Math.min(pageWidth*.42,activityX+pageWidth*.20);
+    const timeWords=row.filter(word=>center(word)>activityX&&center(word)<buildingX);
+    let timeRaw=toAscii(rtlText(timeWords));
+    let pair=timePair(timeRaw);
+    if(!pair){timeRaw=toAscii(semanticRowText);pair=timePair(timeRaw);}
+
+    let building=located.building;
+    let hall=located.hall;
+    let buildingRaw=buildingWord?asciiOf(buildingWord).replace(/\s+/g,"").toUpperCase():toAscii(compact(zone(row,.294,.365))).toUpperCase();
+    if(!building)building=cleanBuildingCode(buildingRaw);
+    let hallWord:Word|undefined;
+    if(buildingWord){
+      hallWord=rowAsc.find(word=>center(word)>center(buildingWord)&&center(word)-center(buildingWord)<pageWidth*.09&&Boolean(cleanHallCode(asciiOf(word))));
+    }
+    let hallRaw=hallWord?asciiOf(hallWord).replace(/\s+/g,"").toUpperCase():toAscii(compact(zone(row,.34,.42))).toUpperCase();
+    if(!hall)hall=cleanHallCode(hallRaw);
 
     rows.push({
       code,reference,scode,courseText,instructorText,days,daysRaw:days,timeRaw,
@@ -370,6 +474,7 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
     const count=Math.min(Number(pdf.numPages||0),MAX_PAGES);
     if(!count)return null;
     const pages:OcrPage[]=[];const pageTexts:string[]=[];let structuralRows=0,totalChars=0,pagesWithBody=0;
+    let preserveBasicGirlsNativeLayout=false;
     for(let index=1;index<=count;index++){
       onProgress?.({phase:"render",page:index,pages:count,message:`فحص النص المضمّن في الصفحة ${index} من ${count}`});
       const page=await pdf.getPage(index);
@@ -397,7 +502,13 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       const pageText=physicalRows.map(row=>row.line).join("\n");
       pageTexts.push(pageText);
       const rows=authorityBodyOnly(physicalRows);
-      const nativeGridRows=authorityPdfTextGridRows(words,Number(viewport.width||0));
+      const pageHeader=parseAuthorityHeaderText(pageText);
+      if(String(pageHeader.branch?.code||"").trim()==="012")preserveBasicGirlsNativeLayout=true;
+      const nativeGridRows=authorityPdfTextGridRows(
+        words,
+        Number(viewport.width||0),
+        preserveBasicGirlsNativeLayout?"legacy-basic-girls":"semantic",
+      );
       const fallbackStructuralRows=rows.filter(row=>{
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
         const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)

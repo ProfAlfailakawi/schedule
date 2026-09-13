@@ -117,6 +117,36 @@ assert.equal(authorityDaysCellLooksPlausible("1 3 5"),true);
 assert.equal(authorityDaysCellLooksPlausible("534"),false);
 assert.equal(authorityDaysCellLooksPlausible("5 3 3"),false);
 
+
+/* Generated SWRSCHA text PDFs are not column-identical across colleges.
+   The 011 (Basic Education — Boys) layout places DAYS around x=.17-.21,
+   SECTION around x=.85 and the second clock close to x=.31. The old 012B
+   ratios therefore produced an all-red DAYS column and could also lose section
+   and time. Non-girls generated PDFs must be read by row semantics instead. */
+{
+  const y0=170,y1=178;
+  const word=(text:string,x0:number,x1:number)=>({text,x0,y0,x1,y1});
+  const boysNativeWords:any[]=[
+    word("شجاع",90.4,108.7),word("غازي",111.4,129.2),
+    word("4",148.1,153.5),word("2",158.9,164.3),
+    word("محاضرة",180.2,207.1),
+    word("1220",212.3,233.9),word("-",236.6,239.9),word("1100",242.5,264.2),
+    word("011B18",264.8,301.7),word("G07",306.0,326.2),
+    word("الثقافة",654.4,682.5),word("الاسلامية",685.2,702.6),
+    word("01",710.5,722.4),word("10643",728.0,757.8),word("0101102",759.4,801.0),
+  ];
+  const semanticRows=authorityPdfTextGridRows(boysNativeWords,841.8898,"semantic");
+  assert.equal(semanticRows.length,1);
+  assert.equal(semanticRows[0].scode,"01");
+  assert.equal(semanticRows[0].reference,"10643");
+  assert.equal(semanticRows[0].days.replace(/\s+/g,""),"24");
+  assert.equal(semanticRows[0].start,"11:00");
+  assert.equal(semanticRows[0].end,"12:20");
+  assert.equal(semanticRows[0].building,"011B18");
+  assert.equal(semanticRows[0].hall,"G07");
+  assert.match(semanticRows[0].instructorText,/شجاع/);
+}
+
 /* Building-column proof is anchored to the owner's official site prefixes.
    Concatenated seat/capacity values must never be allowed to claim BUILDING. */
 assert.equal(authorityBuildingCellLooksPlausible("012B09"),true);
