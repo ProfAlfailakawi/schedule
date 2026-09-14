@@ -3839,7 +3839,7 @@ button.twin-delta{width:100%}
 @media(max-width:760px){
   .visual-minimal.query-page .query-more{grid-template-columns:minmax(0,1fr);gap:12px}
   .visual-minimal.query-page .query-more>.field,
-  .visual-minimal.query-page .query-more>.field.wide{grid-column:1/-1;inline-size:100%;overflow:hidden}
+  .visual-minimal.query-page .query-more>.field.wide{grid-column:1/-1;inline-size:100%}
   .visual-minimal.query-page .query-more .time-pair{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;width:100%}
 }
 
