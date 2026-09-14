@@ -21,7 +21,18 @@ export const academicDigits = (value: unknown): string => String(value ?? "")
 /** Return the document-level department key represented by this catalogue row. */
 export function authorityDepartmentCode(collegeCode: unknown, sectionCode: unknown): string {
   const collegeRaw = academicDigits(collegeCode);
-  const college = collegeRaw && collegeRaw.length <= 2 ? collegeRaw.padStart(2, "0") : collegeRaw;
+  /* The live catalogue commonly stores the BRANCH/site code (011, 012, 022,
+     0420, 0520...) in AdCollegeCode, while SWRSCHA's scientific-department
+     identity uses the two-digit COLLEGE authority printed separately in the
+     header: 01, 02, 04, 05.... The first two digits are therefore the stable
+     college authority boundary. This preserves Basic Education 011/012 as 01
+     while correctly mapping Commercial Girls 022 -> 02, Technology Girls
+     0420 -> 04, Nursing Girls 0520 -> 05, and the equivalent branches. */
+  const college = !collegeRaw
+    ? ""
+    : collegeRaw.length >= 2
+      ? collegeRaw.slice(0, 2)
+      : collegeRaw.padStart(2, "0");
   const section = academicDigits(sectionCode);
   if (!section) return "";
 

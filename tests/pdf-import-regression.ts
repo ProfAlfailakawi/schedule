@@ -58,7 +58,36 @@ assert.equal(authorityDepartmentCode("02", "0201"), "0201");
 assert.equal(authorityDepartmentCode("03", "0101"), "0301");
 assert.equal(authorityDepartmentCode("04", "0101"), "0401");
 assert.equal(authorityDepartmentCode("05", "0101"), "0501");
+/* Real catalogue college codes can be branch/site identities rather than the
+   two-digit college authority printed by SWRSCHA. Only the first two digits
+   belong to the department key. */
+assert.equal(authorityDepartmentCode("011", "0101"), "0101");
+assert.equal(authorityDepartmentCode("012", "0101"), "0101");
+assert.equal(authorityDepartmentCode("022", "0101"), "0201");
+assert.equal(authorityDepartmentCode("022T", "0101"), "0201");
+assert.equal(authorityDepartmentCode("0420", "0101"), "0401");
+assert.equal(authorityDepartmentCode("0520", "0101"), "0501");
+assert.equal(authorityDepartmentMatches("0101", "011", "0101"), true);
+assert.equal(authorityDepartmentMatches("0101", "012", "0101"), true);
+assert.equal(authorityDepartmentMatches("0201", "022", "0101"), true);
+assert.equal(authorityDepartmentMatches("0201", "022T", "0101"), true);
+assert.equal(authorityDepartmentMatches("0401", "0420", "0101"), true);
+assert.equal(authorityDepartmentMatches("0501", "0520", "0101"), true);
+assert.equal(authorityDepartmentMatches("0202", "022", "0101"), false);
 assert.equal(authorityDepartmentMatches("0201", "02", "0101"), true);
+
+/* Exact header shape from Commercial Studies — Girls. The document carries
+   college 02 / branch 022 / department 0201 while the selected system section
+   can still carry the shared 0101 identity. The branch code must never be
+   mistaken for the two-digit college authority. */
+const commercialGirlsHeader=parseAuthorityHeaderText(`
+الفصل : الفصل الدراسي الاول 2027-2026 كلية الدراسات التجارية
+القسم : 0201 تربية اسلامية (تربية اساسية) الفرع : 022 كلية الدراسات التجارية بنات
+الكلية : 02
+`);
+assert.equal(commercialGirlsHeader.branch?.code,"022");
+assert.equal(commercialGirlsHeader.department?.code,"0201");
+assert.equal(authorityDepartmentMatches(commercialGirlsHeader.department?.code,"022","0101"),true);
 assert.equal(authorityDepartmentMatches("0401", "04", "0101"), true);
 assert.equal(authorityDepartmentMatches("0202", "02", "0101"), false);
 assert.equal(authorityDepartmentMatches("0101", "02", "0101"), false);

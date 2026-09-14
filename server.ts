@@ -6890,6 +6890,17 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const targetSection=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===collegeId);
   const targetCollegeName=String(targetCollege?.AdCollegeName||"");
   const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
+  /* SWRSCHA separates the two-digit COLLEGE authority (02) from the branch
+     (022). The application catalogue may keep a branch/site code in
+     AdCollegeCode, so department identity must be built from the official site
+     prefix first: 022T -> 02, 0420 -> 04, 0520 -> 05. Basic Education
+     011/012 therefore remains 01 exactly as before. */
+  const targetAuthorityCollegeCode=(()=>{
+    const siteDigits=academicDigits(targetSitePrefix);
+    if(siteDigits.length>=2)return siteDigits.slice(0,2);
+    const catalogueDigits=academicDigits(targetCollege?.AdCollegeCode);
+    return catalogueDigits.length>=2?catalogueDigits.slice(0,2):catalogueDigits;
+  })();
   let headerPreflight=await readAuthorityPdfHeader(bytes);
 
   /* Restore the proven orientation safety guard. Keep the protection, but only
@@ -6942,12 +6953,12 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
     if(header?.department&&targetSection){
       const sourceDepartment=academicDigits(header.department.code);
-      const targetDepartment=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection.AdSectionCode);
+      const targetDepartment=authorityDepartmentCode(targetAuthorityCollegeCode,targetSection.AdSectionCode);
       /* SWRSCHA prints the scientific department as COLLEGE + LOCAL DEPARTMENT:
          college 01 + department 01 => 0101. The system catalogue stores those
          two authorities separately, so comparing 0101 directly with local 01
          is a false mismatch. Build the document key from the real catalogue. */
-      const sameDepartment=authorityDepartmentMatches(sourceDepartment,targetCollege?.AdCollegeCode,targetSection.AdSectionCode);
+      const sameDepartment=authorityDepartmentMatches(sourceDepartment,targetAuthorityCollegeCode,targetSection.AdSectionCode);
       const sourceName=foldHeaderIdentity(header.department.name);
       const namedMatches=sourceName.length>=5?sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId).filter((item:any)=>{
         const candidate=foldHeaderIdentity(item.AdSectionName);
@@ -7026,7 +7037,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
   /* Multi-page photographed tables get one extra, strictly catalogue-bound
      course-key rescue. The one-page OCR path is intentionally unchanged. */
-  const ocrDepartmentKey=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection?.AdSectionCode);
+  const ocrDepartmentKey=authorityDepartmentCode(targetAuthorityCollegeCode,targetSection?.AdSectionCode);
   const authorityCourseKeys=courses.map((course:any)=>{
     const digits=academicDigits(course?.CourseCode);
     /* A shared catalogue row can carry the seven-digit key of the college where
@@ -7094,9 +7105,9 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      canonical system label in the receipt/preview. OCR text such as `0101 01`
      is source evidence, not the department's canonical display identity. */
   if(headerPreflight.department&&targetSection&&authorityDepartmentMatches(
-    headerPreflight.department.code,targetCollege?.AdCollegeCode,targetSection.AdSectionCode
+    headerPreflight.department.code,targetAuthorityCollegeCode,targetSection.AdSectionCode
   )){
-    const canonicalCode=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection.AdSectionCode);
+    const canonicalCode=authorityDepartmentCode(targetAuthorityCollegeCode,targetSection.AdSectionCode);
     const canonicalName=String(targetSection.AdSectionName||"").trim();
     headerPreflight.department={
       code:canonicalCode||academicDigits(headerPreflight.department.code),
@@ -7121,7 +7132,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(422).json({error:message,code:"SUSPICIOUS_EXTRACTION",pageDiagnostics:recognized.pageDiagnostics});return;
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
-  const documentDepartmentCode=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection?.AdSectionCode);
+  const documentDepartmentCode=authorityDepartmentCode(targetAuthorityCollegeCode,targetSection?.AdSectionCode);
   const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,{authorityDepartmentCode:documentDepartmentCode,sequentialSections:true,courseInstructorIds});
 
   /* MULTI-PAGE SCAN — SAFE MISSING-CELL RECOVERY ONLY
