@@ -13,7 +13,11 @@ type AliasEditor={kind:"building"|"room";id:string;label:string;value:string;cur
 const empty:Payload={buildings:[],rooms:[],reviewCases:[],runs:[],health:{},pending:[],colleges:[],sections:[]};
 async function json(url:string,init?:RequestInit){const r=await fetch(url,{...init,headers:{"Content-Type":"application/json",...(init?.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||"تعذر تنفيذ العملية");return data;}
 const aliases=(items:any[]|undefined)=>Array.isArray(items)?items.map(item=>String(item?.value||"").trim()).filter(Boolean):[];
-const intersects=(a:number[],b:number[])=>a.some(id=>b.includes(id));
+const numericIdSet=(values:readonly unknown[]):Set<number>=>new Set(values.map(Number).filter(id=>Number.isFinite(id)&&id>0));
+const intersects=(a:readonly unknown[],b:readonly unknown[])=>{
+  const right=numericIdSet(b);
+  return a.some(id=>right.has(Number(id)));
+};
 const buildingPrefix=(building:MasterBuilding)=>String(building.officialCode?.slice(0,4)||building.sitePrefix||"").trim().toUpperCase();
 const migrationLabel=(key:string)=>({scanned:"تم فحصها",verified:"موثقة",buildingChanged:"تم توحيد المبنى",roomChanged:"تم توحيد القاعة",review:"تحتاج مراجعة",invalid:"Placeholder تاريخي",unchanged:"بدون تغيير"} as Record<string,string>)[key]||key;
 const reviewKindLabel=(kind:string)=>({BUILDING:"مبنى",ROOM:"قاعة",PAIR:"مبنى/قاعة",SWAPPED_FIELDS:"احتمال تبديل الحقول",UNKNOWN_PREFIX:"كود موقع غير معروف",CROSS_BUILDING_ROOM_CODE:"رمز قاعة في أكثر من مبنى"} as Record<string,string>)[kind]||kind;
@@ -114,7 +118,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
     const searchable=[building.officialCode,building.sitePrefix,officialSiteLabel(buildingPrefix(building),building.siteName||building.branchName),building.siteName,building.branchName,...aliases(building.aliases),...bCollegeIds.map(id=>data.colleges.find(c=>Number(c.AdCollegeId)===id)?.AdCollegeName||""),...bSectionIds.map(id=>data.sections.find(s=>Number(s.AdSectionId)===id)?.AdSectionName||"")].join(" ").toLowerCase();
     if(q&&!searchable.includes(q))return false;
     if(statusFilter!=="all"&&(statusFilter==="active"?!building.active:building.active))return false;
-    if(selectedCollegeIds.length&&!intersects(bCollegeIds,selectedCollegeIds))return false;
+    if(selectedCollegeIds.length&&!bCollegeIds.some(id=>selectedCollegeIds.includes(Number(id))))return false;
     if(sectionFilter){
       const hasDepartmentRoom=(roomIdsByBuilding.get(building.id)||[]).some(room=>room.sectionIds.includes(sectionFilter));
       if(!hasDepartmentRoom)return false;
