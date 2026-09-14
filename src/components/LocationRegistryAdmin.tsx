@@ -76,7 +76,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   },[data.colleges]);
 
   const selectedCollegeGroup=collegeGroups.find(group=>group.key===collegeFilter);
-  const selectedCollegeIds=selectedCollegeGroup?.ids||[];
+  const selectedCollegeIds:number[]=selectedCollegeGroup?.ids??[];
 
   const roomIdsByBuilding=useMemo(()=>{
     const map=new Map<string,MasterRoom[]>();
@@ -84,7 +84,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
     return map;
   },[data.rooms]);
 
-  const buildingCollegeIds=(building:MasterBuilding)=>{
+  const buildingCollegeIds=(building:MasterBuilding):number[]=>{
     const prefix=buildingPrefix(building);
     /* A confirmed official building code is the physical identity of the site.
        Historical room links may contain stale cross-college associations (for
@@ -95,14 +95,14 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
     if(prefix){
       const officialIds=data.colleges
         .filter(college=>officialCollegeSitePrefix(college.AdCollegeName)===prefix)
-        .map(college=>Number(college.AdCollegeId)).filter(Boolean);
+        .map(college=>Number(college.AdCollegeId)).filter((id):id is number=>Number.isFinite(id)&&id>0);
       if(officialIds.length)return [...new Set(officialIds)];
     }
     const ids=new Set<number>((building.collegeIds||[]).map(Number).filter(Boolean));
     for(const room of roomIdsByBuilding.get(building.id)||[])for(const id of room.collegeIds||[])if(Number(id))ids.add(Number(id));
     return [...ids];
   };
-  const buildingSectionIds=(building:MasterBuilding)=>{
+  const buildingSectionIds=(building:MasterBuilding):number[]=>{
     const ids=new Set<number>((building.sectionIds||[]).map(Number).filter(Boolean));
     for(const room of roomIdsByBuilding.get(building.id)||[])for(const id of room.sectionIds||[])if(Number(id))ids.add(Number(id));
     return [...ids];
