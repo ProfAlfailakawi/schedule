@@ -7029,7 +7029,14 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const ocrDepartmentKey=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection?.AdSectionCode);
   const authorityCourseKeys=courses.map((course:any)=>{
     const digits=academicDigits(course?.CourseCode);
-    if(/^\d{7}$/.test(digits))return digits;
+    /* A shared catalogue row can carry the seven-digit key of the college where
+       it was first created (for example 0101101), while this SWRSCHA document
+       belongs to another college (0201101 / 0401101 ...). Course identity is
+       still the same three-digit tail inside the already-proven department.
+       Rebuild the document key from that proven scope so multi-page OCR rescue
+       uses the same college-aware identity as the normal row matcher. College
+       01 is unchanged because ocrDepartmentKey remains its existing 01xx key. */
+    if(/^\d{7}$/.test(digits)&&/^\d{4}$/.test(ocrDepartmentKey))return`${ocrDepartmentKey}${digits.slice(-3)}`;
     if(/^\d{3}$/.test(digits)&&/^\d{4}$/.test(ocrDepartmentKey))return`${ocrDepartmentKey}${digits}`;
     return"";
   }).filter(Boolean);

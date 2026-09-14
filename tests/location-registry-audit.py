@@ -518,4 +518,10 @@ ok('209 an actually empty selected term hides the zero counters and schedule-hea
    and '<section className="schedule-mini-stats">' in schedules_src
    and '<LivingScheduleLayer' in schedules_src)
 
+ok('210 non-basic colleges rebase shared academic department/course keys to the report college while Basic Education 01 stays frozen',
+   'if (college === "01")' in auth
+   and 'section.length === 4' in auth
+   and '`${college}${section.slice(-2)}`' in auth
+   and '`${ocrDepartmentKey}${digits.slice(-3)}`' in server)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

@@ -49,11 +49,30 @@ assert.equal(authorityDepartmentCode("01", "01"), "0101");
 assert.equal(authorityDepartmentCode("01", "1"), "0101");
 assert.equal(authorityDepartmentCode("1", "1"), "0101");
 assert.equal(authorityDepartmentCode("01", "0101"), "0101");
+/* Basic Education (01) stays frozen, while the same canonical section exposed
+   under another college is rendered with that college's SWRSCHA prefix. This
+   is the real Commercial Studies Girls case: catalogue 0101, document 0201. */
+assert.equal(authorityDepartmentCode("01", "0201"), "0201");
+assert.equal(authorityDepartmentCode("02", "0101"), "0201");
+assert.equal(authorityDepartmentCode("02", "0201"), "0201");
+assert.equal(authorityDepartmentCode("03", "0101"), "0301");
+assert.equal(authorityDepartmentCode("04", "0101"), "0401");
+assert.equal(authorityDepartmentCode("05", "0101"), "0501");
+assert.equal(authorityDepartmentMatches("0201", "02", "0101"), true);
+assert.equal(authorityDepartmentMatches("0401", "04", "0101"), true);
+assert.equal(authorityDepartmentMatches("0202", "02", "0101"), false);
+assert.equal(authorityDepartmentMatches("0101", "02", "0101"), false);
 assert.equal(authorityDepartmentMatches("0101", "01", "01"), true);
 assert.equal(authorityDepartmentMatches("0101", "1", "1"), true);
 assert.equal(authorityDepartmentMatches("01", "01", "01"), false);
 assert.equal(authorityDepartmentMatches("0102", "01", "01"), false);
 assert.equal(authorityCourseCodeMatches("0101102", "102", "0101"), true);
+/* Full seven-digit catalogue keys can also be shared from another college; the
+   proven document department owns the first four digits, while the course's
+   three-digit tail remains canonical. */
+assert.equal(authorityCourseCodeMatches("0201101", "0101101", "0201"), true);
+assert.equal(authorityCourseCodeMatches("0401101", "0101101", "0401"), true);
+assert.equal(authorityCourseCodeMatches("0202101", "0101101", "0201"), false);
 assert.equal(authorityCourseCodeMatches("0102102", "102", "0101"), false);
 assert.equal(normalizeAuthoritySectionCode("٠١"), "01");
 assert.equal(normalizeAuthoritySectionCode("01"), "01");

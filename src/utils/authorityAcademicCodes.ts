@@ -25,6 +25,24 @@ export function authorityDepartmentCode(collegeCode: unknown, sectionCode: unkno
   const section = academicDigits(sectionCode);
   if (!section) return "";
 
+  /* كلية التربية الأساسية (01) هي المسار الذهبي القائم — بنات وبنين — فلا
+     نعيد تفسير أي كود كامل فيها. هذا يحافظ حرفياً على السلوك الذي يعمل الآن. */
+  if (college === "01") {
+    if (section.length >= 4 && section.startsWith(college)) return section;
+    if (section.length <= 2) return `${college}${section.padStart(2, "0")}`;
+    return section;
+  }
+
+  /* في الكليات الأخرى قد يحتفظ كتالوج النظام بهوية القسم المشتركة كما أُنشئت
+     أصلاً تحت كلية أخرى (مثال: 0101 للتربية الإسلامية)، بينما SWRSCHA يطبع
+     هوية الوثيقة بحسب كلية التقرير نفسها: 02 + 01 => 0201، 04 + 01 => 0401.
+     أول رقمين ملك للكلية، وآخر رقمين هما القسم العلمي المحلي؛ لذلك نعيد ربط
+     الكود ذي الأربع خانات بالكلية المختارة فقط، من دون تغيير هوية القسم المحلية.
+     هذا لا يوسّع المطابقة بين الأقسام: 0201 لا يمكن أن يطابق 0202. */
+  if (college.length === 2 && section.length === 4) {
+    return section.startsWith(college) ? section : `${college}${section.slice(-2)}`;
+  }
+
   // Some installations already store the complete document key in AdSectionCode.
   if (section.length >= 4 && (!college || section.startsWith(college))) return section;
 
