@@ -95,3 +95,39 @@
 /* Location migration explanation: compact and explicit instead of opaque counters. */
 .location-migration-explain{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.location-migration-explain article{padding:10px 12px;border:1px solid var(--line,#e5e7eb);border-radius:12px;background:var(--soft-surface,#f8faf9)}.location-migration-explain article.success{grid-column:1/-1;background:color-mix(in srgb,var(--accent,#16745f) 7%,var(--surface,#fff));border-color:color-mix(in srgb,var(--accent,#16745f) 20%,var(--line,#e5e7eb))}.location-migration-explain b{font-size:.82rem}.location-migration-explain p{margin:4px 0 0;color:var(--muted-text,#667085);font-size:.76rem;line-height:1.65}.location-admin-tabs:has(button:nth-child(2):last-child){min-width:min(360px,100%)}.location-admin-tabs:has(button:nth-child(2):last-child)>button{flex:1;justify-content:center}.location-admin-toolbar{grid-template-columns:minmax(240px,1.6fr) repeat(4,minmax(132px,.7fr))!important}
 @media(max-width:720px){.location-migration-explain{grid-template-columns:1fr}.location-migration-explain article.success{grid-column:auto}}
+
+/* ── سجل المواقع على الهاتف: لا يخرج شيء من إطار الشاشة ───────────────────
+   A late desktop toolbar rule uses !important and was winning after the older
+   phone media query, leaving a 240px search track plus four 132px selects on a
+   narrow viewport. These are the final, equally-specific phone contracts. */
+@media (max-width:900px){
+  .location-admin-page,
+  .location-admin-page>*,
+  .location-admin-toolbar,
+  .location-admin-columns,
+  .location-admin-columns>.surface,
+  .location-admin-list,
+  .location-admin-detail{min-width:0!important;max-width:100%!important}
+  .location-admin-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))!important;width:100%!important}
+  .location-search{grid-column:1/-1!important;min-width:0!important;width:100%!important}
+  .location-admin-toolbar>select,
+  .location-admin-toolbar>.btn{min-width:0!important;max-width:100%!important;width:100%!important}
+  .location-admin-columns{grid-template-columns:minmax(0,1fr)!important;width:100%!important}
+  .location-master-list,.location-room-table{min-width:0!important;max-width:100%!important}
+}
+@media (max-width:560px){
+  .location-admin-toolbar{grid-template-columns:minmax(0,1fr)!important}
+  .location-search,
+  .location-admin-toolbar>select,
+  .location-admin-toolbar>.btn{grid-column:1/-1!important}
+  .location-filter-summary{min-width:0!important;max-width:100%!important;overflow:hidden}
+  .location-filter-summary .badge{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .location-admin-title{min-width:0;max-width:100%}
+  .location-admin-title>div{min-width:0}
+  .location-title-actions{min-width:0;max-width:100%;flex-wrap:wrap!important}
+  .location-create-building,.location-create-room{grid-template-columns:minmax(0,1fr)!important;width:100%!important;max-width:100%!important}
+  .location-create-building>*,.location-create-room>*{min-width:0!important;max-width:100%!important;width:100%!important}
+  .location-code-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+}
+.location-code-preview.invalid{color:var(--danger,#b54747);background:color-mix(in srgb,var(--danger,#b54747) 8%,transparent)}
+

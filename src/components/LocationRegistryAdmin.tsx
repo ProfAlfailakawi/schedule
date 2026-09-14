@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Building2, CheckCircle2, CircleAlert, Database, DoorOpen, Info, Plus, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
 import type { AdCollege, AdSection, LocationMigrationRun, LocationReviewCase, MasterBuilding, MasterRoom } from "../types";
 import { Badge, Field, Notice, PrimaryButton, SecondaryButton, Surface, useDialogDismiss } from "./ui";
-import { buildingNumberLabel, normalizeCollegeName, officialCollegeSitePrefix, officialSiteLabel } from "../utils/locationCollegePrefixes";
+import { buildingNumberLabel, normalizeCollegeName, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "../utils/locationCollegePrefixes";
 import { compareLocationCodes } from "../utils/locationRegistry";
 import { byArabic, sortByName } from "../utils/sorting";
 
@@ -27,7 +27,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   const [editEntity,setEditEntity]=useState<any>(null),[aliasEditor,setAliasEditor]=useState<AliasEditor>(null);
   useDialogDismiss(Boolean(aliasEditor), () => setAliasEditor(null));
   useDialogDismiss(Boolean(editEntity) && !aliasEditor, () => setEditEntity(null));
-  const [newBuilding,setNewBuilding]=useState({collegeId:0,buildingNumber:"",siteName:"",branchName:""});
+  const [newBuilding,setNewBuilding]=useState({collegeId:0,officialCode:"",siteName:"",branchName:""});
   const [newRoom,setNewRoom]=useState({buildingId:"",canonicalCode:""});
   const [showBuildingCreate,setShowBuildingCreate]=useState(false),[showRoomCreate,setShowRoomCreate]=useState(false);
   const [migrationPreview,setMigrationPreview]=useState<any>(null);
@@ -122,6 +122,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   const sectionName=(id:number)=>data.sections.find(s=>Number(s.AdSectionId)===Number(id))?.AdSectionName||String(id);
   const selectedNewBuildingCollege=data.colleges.find(c=>Number(c.AdCollegeId)===Number(newBuilding.collegeId));
   const selectedNewBuildingPrefix=officialCollegeSitePrefix(selectedNewBuildingCollege?.AdCollegeName);
+  const parsedNewBuildingCode=selectedNewBuildingPrefix?parseOfficialBuildingCode(newBuilding.officialCode,selectedNewBuildingPrefix):null;
   const filterActive=Boolean(q||statusFilter!=="all"||collegeFilter!=="all"||sectionFilter);
 
   const mutate=async(url:string,init:RequestInit,ok:string,pending?:string)=>{
@@ -189,7 +190,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
     <div className="location-admin-columns">
       <Surface className="location-admin-list">
         <div className="location-admin-title"><div><h2>المباني</h2><p>اختر مبنى لعرض قاعاته.</p></div><div className="location-title-actions"><Badge>{buildings.length}</Badge><SecondaryButton type="button" data-guide-ignore="إظهار نموذج إضافة مبنى" disabled={demoReadOnly} onClick={()=>setShowBuildingCreate(v=>!v)}><Plus/>{showBuildingCreate?"إغلاق":"مبنى جديد"}</SecondaryButton></div></div>
-        {showBuildingCreate?<div className="location-inline-form location-create-building"><select aria-label="كلية المبنى الجديد" value={newBuilding.collegeId} onChange={e=>setNewBuilding({...newBuilding,collegeId:Number(e.target.value),buildingNumber:""})}><option value={0}>اختر الكلية/الموقع</option>{collegeGroups.map(group=><option key={group.key} value={group.ids[0]}>{group.label}</option>)}</select><input inputMode="numeric" placeholder="رقم المبنى" value={newBuilding.buildingNumber} onChange={e=>setNewBuilding({...newBuilding,buildingNumber:e.target.value.replace(/\D/g,"").slice(0,3)})}/><span className="location-code-preview" dir="ltr">{selectedNewBuildingPrefix?`${selectedNewBuildingPrefix}${String(Number(newBuilding.buildingNumber||0)).padStart(2,"0")}`:"—"}</span><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={!newBuilding.collegeId||!newBuilding.buildingNumber||!selectedNewBuildingPrefix||busy||demoReadOnly} onClick={async()=>{const ok=await mutate("/api/admin/location-registry/buildings",{method:"POST",body:JSON.stringify({...newBuilding,collegeIds:[newBuilding.collegeId]})},"تمت إضافة المبنى");if(ok){setNewBuilding({collegeId:0,buildingNumber:"",siteName:"",branchName:""});setShowBuildingCreate(false);}}}><Plus/>إضافة</PrimaryButton></div>:null}
+        {showBuildingCreate?<div className="location-inline-form location-create-building"><select aria-label="كلية المبنى الجديد" value={newBuilding.collegeId} onChange={e=>setNewBuilding({...newBuilding,collegeId:Number(e.target.value),officialCode:""})}><option value={0}>اختر الكلية/الموقع</option>{collegeGroups.map(group=><option key={group.key} value={group.ids[0]}>{group.label}</option>)}</select><input dir="ltr" inputMode="text" autoCapitalize="characters" spellCheck={false} aria-label="كود المبنى الرسمي الكامل" placeholder={selectedNewBuildingPrefix?`مثال ${selectedNewBuildingPrefix}01`:"كود المبنى الكامل، مثال 022T01"} value={newBuilding.officialCode} onChange={e=>setNewBuilding({...newBuilding,officialCode:e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,7)})}/><span className={`location-code-preview${newBuilding.officialCode&&!parsedNewBuildingCode?" invalid":""}`} dir="ltr">{parsedNewBuildingCode?.officialCode||(selectedNewBuildingPrefix?`${selectedNewBuildingPrefix}01`:"—")}</span><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={!newBuilding.collegeId||!parsedNewBuildingCode||busy||demoReadOnly} onClick={async()=>{const ok=await mutate("/api/admin/location-registry/buildings",{method:"POST",body:JSON.stringify({...newBuilding,buildingNumber:parsedNewBuildingCode?.buildingNumber,collegeIds:[newBuilding.collegeId]})},"تمت إضافة المبنى");if(ok){setNewBuilding({collegeId:0,officialCode:"",siteName:"",branchName:""});setShowBuildingCreate(false);}}}><Plus/>إضافة</PrimaryButton></div>:null}
         <div className="location-master-list">{buildings.length?buildings.map(building=><button type="button" data-guide-ignore="اختيار مبنى داخل لوحة السجل" className={current?.id===building.id?"active":""} key={building.id} onClick={()=>setSelectedBuilding(building.id)}><div className="location-building-row"><strong dir="ltr">{building.officialCode}</strong>{!building.active?<Badge>غير فعّال</Badge>:null}</div><span>{officialSiteLabel(buildingPrefix(building),building.siteName||building.branchName)} · مبنى {buildingNumberLabel(building)}</span><small>{building.roomCount} قاعة · {building.historicalUsageCount} استخدام تاريخي</small></button>):<div className="location-empty-state"><Search/><strong>لا توجد مبانٍ تطابق الفلاتر</strong><button type="button" data-guide-ignore="مسح فلاتر سجل المواقع" onClick={resetFilters}>مسح الفلاتر</button></div>}</div>
       </Surface>
 

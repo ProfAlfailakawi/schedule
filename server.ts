@@ -5000,7 +5000,7 @@ app.get("/api/admin/location-registry", requirePermission(7), requirePowerAdmin,
   const normalizedRegistry={...registry,rooms:registry.rooms.map(room=>({...room,shared:room.sectionIds.length>1,sharedConfidence:room.sectionIds.length>1?"CONFIRMED":room.sharedConfidence}))};
   res.json({...normalizedRegistry,reviewCases,runs,health:registryHealth(normalizedRegistry,rows,reviewCases),pending,colleges,sections,terms});
 });
-app.post("/api/admin/location-registry/buildings", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
+app.post("/api/admin/location-registry/buildings", requirePermission(7), requireRootAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const collegeIds=locationIdList(req.body?.collegeIds);
   if(collegeIds.length!==1){res.status(400).json({error:"اختر كلية/موقعًا واحدًا للمبنى الجديد حتى لا تصبح هويته ملتبسة."});return;}
   const colleges=await Repository.getColleges();
@@ -5008,14 +5008,19 @@ app.post("/api/admin/location-registry/buildings", requirePermission(7), require
   if(!college){res.status(400).json({error:"الكلية المختارة غير موجودة."});return;}
   const sitePrefix=officialCollegeSitePrefix(college.AdCollegeName);
   if(!sitePrefix){res.status(409).json({error:"لا يوجد كود كلية/موقع رسمي مثبت لهذه الكلية. أضف الكود المرجعي أولًا بدل التخمين."});return;}
-  const number=String(req.body?.buildingNumber||"").trim();
-  const code=officialBuildingCode(sitePrefix,number);
-  if(!code){res.status(400).json({error:"رقم المبنى غير صالح."});return;}
-  const parsed=parseOfficialBuildingCode(code,sitePrefix);
-  if(!parsed){res.status(400).json({error:"تعذر تكوين كود المبنى من Prefix الكلية ورقم المبنى."});return;}
+
+  /* Root-only manual entry accepts the exact official building identity, e.g.
+     022T01. The selected college remains the authority: a code from another
+     site is rejected instead of silently being re-based or guessed. Keep the
+     old numeric payload as a compatibility fallback for an already-open tab. */
+  const manualCode=String(req.body?.officialCode||"").normalize("NFKC").trim().toUpperCase().replace(/\s+/g,"");
+  const legacyCode=manualCode?"":officialBuildingCode(sitePrefix,String(req.body?.buildingNumber||"").trim());
+  const parsed=parseOfficialBuildingCode(manualCode||legacyCode||"",sitePrefix);
+  if(!parsed){res.status(400).json({error:`كود المبنى غير صالح أو لا يتبع الموقع الرسمي ${sitePrefix}. مثال: ${sitePrefix}01`});return;}
+  const code=parsed.officialCode;
   const registry=await readLocationRegistry();if(registry.buildings.some(x=>x.officialCode===code)){res.status(409).json({error:"المبنى موجود بالفعل"});return;}
   const now=new Date().toISOString();
-  const row:MasterBuilding={id:`building_${code}`,officialCode:code,sitePrefix:parsed.sitePrefix,prefix:/^[0-9]{3}[A-Z]$/.test(parsed.sitePrefix)?parsed.sitePrefix.slice(0,3):parsed.sitePrefix,siteLetter:/[A-Z]$/.test(parsed.sitePrefix)?parsed.sitePrefix.slice(-1):"",buildingNumber:parsed.buildingNumber,siteName:String(req.body?.siteName||college.AdCollegeName||"").trim(),branchName:String(req.body?.branchName||college.AdCollegeName||"").trim(),description:String(req.body?.description||"").trim(),active:true,aliases:[],collegeIds,sectionIds:locationIdList(req.body?.sectionIds),historicalUsageCount:0,roomCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[`اعتماد يدوي من مدير النظام. Prefix الكلية الرسمي ${sitePrefix} + المبنى ${parsed.buildingNumber}.`],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now};
+  const row:MasterBuilding={id:`building_${code}`,officialCode:code,sitePrefix:parsed.sitePrefix,prefix:/^[0-9]{3}[A-Z]$/.test(parsed.sitePrefix)?parsed.sitePrefix.slice(0,3):parsed.sitePrefix,siteLetter:/[A-Z]$/.test(parsed.sitePrefix)?parsed.sitePrefix.slice(-1):"",buildingNumber:parsed.buildingNumber,siteName:String(req.body?.siteName||college.AdCollegeName||"").trim(),branchName:String(req.body?.branchName||college.AdCollegeName||"").trim(),description:String(req.body?.description||"").trim(),active:true,aliases:[],collegeIds,sectionIds:locationIdList(req.body?.sectionIds),historicalUsageCount:0,roomCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[manualCode?`اعتماد يدوي من المدير الرئيسي للكود الرسمي ${code}.`:`اعتماد يدوي من المدير الرئيسي. Prefix الكلية الرسمي ${sitePrefix} + المبنى ${parsed.buildingNumber}.`],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now};
   await Repository.upsertLocationBuildings([row]);invalidateLocationRegistry();res.status(201).json(row);
 });
 app.put("/api/admin/location-registry/buildings/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{

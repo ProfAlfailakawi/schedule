@@ -526,4 +526,26 @@ ok('210 non-basic colleges rebase shared academic department/course keys to the 
    and '`${college}${section.slice(-2)}`' in auth
    and '`${ocrDepartmentKey}${digits.slice(-3)}`' in server)
 
+location_admin=(ROOT/'src/components/LocationRegistryAdmin.tsx').read_text()
+index_css=(ROOT/'src/index.css').read_text()
+
+ok('211 only the root administrator may create a building and the server accepts a full official code only inside the selected college prefix',
+   'app.post("/api/admin/location-registry/buildings", requirePermission(7), requireRootAdmin' in server
+   and 'const manualCode=String(req.body?.officialCode||"")' in server
+   and 'parseOfficialBuildingCode(manualCode||legacyCode||"",sitePrefix)' in server
+   and 'كود المبنى غير صالح أو لا يتبع الموقع الرسمي' in server)
+
+ok('212 the root location UI accepts a complete official building code such as 022T01 and validates it with the same parser before submit',
+   'كود المبنى الكامل، مثال 022T01' in location_admin
+   and 'parseOfficialBuildingCode(newBuilding.officialCode,selectedNewBuildingPrefix)' in location_admin
+   and 'officialCode:e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,7)' in location_admin
+   and 'buildingNumber:parsedNewBuildingCode?.buildingNumber' in location_admin)
+
+ok('213 the location registry phone layout overrides the late desktop important grid and keeps every control inside the viewport',
+   'سجل المواقع على الهاتف: لا يخرج شيء من إطار الشاشة' in index_css
+   and '.location-admin-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))!important' in index_css
+   and '.location-admin-toolbar{grid-template-columns:minmax(0,1fr)!important}' in index_css
+   and '.location-admin-columns{grid-template-columns:minmax(0,1fr)!important' in index_css)
+
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
