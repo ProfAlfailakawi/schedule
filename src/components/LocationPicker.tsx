@@ -4,7 +4,13 @@ import { PENDING_ROOM, compareLocationCodes, roomGroups } from "../utils/locatio
 import { buildingNumberLabel, officialSiteLabel } from "../utils/locationCollegePrefixes";
 
 type LocationValue=Pick<FSchedule,"AdRoomCode"|"AdRoomHall"|"buildingId"|"roomId"|"locationStatus"|"sourceBuildingText"|"sourceRoomText">;
-type PickerRoom=MasterRoom&{sharedWith?:string[]};
+type PickerRoom=MasterRoom&{
+  sharedWith?:string[];
+  borrowedFrom?:string;
+  fromDepartmentHistory?:boolean;
+  pinnedForDepartment?:boolean;
+  historyNeedsBorrowing?:boolean;
+};
 type RegistryPayload={buildings:MasterBuilding[];rooms:PickerRoom[];borrowedRoomIds:string[]};
 /** اسم صاحب القاعة المستعارة كما يرسله الخادم مع القاعة. */
 const borrowedLabel=(room:any)=>{const owner=String(room?.borrowedFrom||"").trim();return owner?`${room.canonicalCode} — ${owner}`:String(room?.canonicalCode||"");};
@@ -39,10 +45,10 @@ const sharedRoomLabel=(room:PickerRoom)=>{
  * الجهراء وقائمةُ مبانٍ لا تعرض إلا مباني الرئيسي — أي أن المراجع مطالب
  * باختيار مبنى لا وجود له في موقع المحاضرة. تُطلب سعة المواقع صراحةً، ولا
  * تُطلب إلا من معاينة الاستيراد، فتبقى شاشات الإضافة والتعديل كما هي. */
-function useRegistry(collegeId:number,sectionId:number,termId?:number,branchSites=false){
+function useRegistry(collegeId:number,sectionId:number,termId?:number,branchSites=false,departmentHistory=false){
   const [data,setData]=useState<RegistryPayload>({buildings:[],rooms:[],borrowedRoomIds:[]});
   const [loading,setLoading]=useState(false);
-  useEffect(()=>{let alive=true;const controller=new AbortController();setLoading(true);const q=new URLSearchParams({collegeId:String(collegeId||0),sectionId:String(sectionId||0)});if(termId)q.set("termId",String(termId));if(branchSites)q.set("branchSites","1");fetch(`/api/location-registry?${q}`,{signal:controller.signal}).then(r=>r.ok?r.json():Promise.reject()).then(payload=>{if(!alive)return;setData({buildings:(Array.isArray(payload?.buildings)?payload.buildings:[]).slice().sort((a:any,b:any)=>(Number(buildingNumberLabel(a))||9999)-(Number(buildingNumberLabel(b))||9999)||String(a.officialCode||"").localeCompare(String(b.officialCode||""))),rooms:Array.isArray(payload?.rooms)?payload.rooms:[],borrowedRoomIds:Array.isArray(payload?.borrowedRoomIds)?payload.borrowedRoomIds.map(String):[]});}).catch(()=>{if(alive)setData({buildings:[],rooms:[],borrowedRoomIds:[]});}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;controller.abort();};},[collegeId,sectionId,termId,branchSites]);
+  useEffect(()=>{let alive=true;const controller=new AbortController();setLoading(true);const q=new URLSearchParams({collegeId:String(collegeId||0),sectionId:String(sectionId||0)});if(termId)q.set("termId",String(termId));if(branchSites)q.set("branchSites","1");if(departmentHistory)q.set("departmentHistory","1");fetch(`/api/location-registry?${q}`,{signal:controller.signal}).then(r=>r.ok?r.json():Promise.reject()).then(payload=>{if(!alive)return;setData({buildings:(Array.isArray(payload?.buildings)?payload.buildings:[]).slice().sort((a:any,b:any)=>(Number(buildingNumberLabel(a))||9999)-(Number(buildingNumberLabel(b))||9999)||String(a.officialCode||"").localeCompare(String(b.officialCode||""))),rooms:Array.isArray(payload?.rooms)?payload.rooms:[],borrowedRoomIds:Array.isArray(payload?.borrowedRoomIds)?payload.borrowedRoomIds.map(String):[]});}).catch(()=>{if(alive)setData({buildings:[],rooms:[],borrowedRoomIds:[]});}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;controller.abort();};},[collegeId,sectionId,termId,branchSites,departmentHistory]);
   return {...data,loading};
 }
 
@@ -105,20 +111,36 @@ export function RoomPicker({collegeId,sectionId,termId,buildingId,roomId,locatio
 }
 
 export default function LocationPicker({collegeId,sectionId,termId,value,onChange,disabled=false,showRaw=false,allowPending=true}:{collegeId:number;sectionId:number;termId?:number;value:Partial<LocationValue>;onChange:(patch:Partial<LocationValue>)=>void;disabled?:boolean;showRaw?:boolean;allowPending?:boolean}){
-  const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId);
+  /* Add/Edit deliberately asks for the department's historical directory.
+     Import uses RoomPicker above and keeps its document-authority flow isolated. */
+  const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId,false,true);
   const registry=useMemo(()=>({buildings,rooms}),[buildings,rooms]);
   const groups=useMemo(()=>value.buildingId?roomGroups(registry,value.buildingId,sectionId):{own:[],shared:[],other:[]},[registry,value.buildingId,sectionId]);
   const ownRooms=useMemo(()=>[...groups.own].sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)),[groups]);
   const sharedRooms=useMemo(()=>[...groups.shared].sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)),[groups]);
   const departmentRooms=useMemo(()=>[...ownRooms,...sharedRooms],[ownRooms,sharedRooms]);
   const borrowed=useMemo(()=>{const ids=new Set(borrowedRoomIds);const already=new Set(departmentRooms.map(r=>r.id));return value.buildingId?rooms.filter(room=>room.buildingId===value.buildingId&&ids.has(room.id)&&!already.has(room.id)).sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)):[];},[borrowedRoomIds,departmentRooms,rooms,value.buildingId]);
+  const historicalRooms=useMemo(()=>{
+    if(!value.buildingId)return [] as PickerRoom[];
+    const claimed=new Set([...departmentRooms,...borrowed].map(room=>room.id));
+    return rooms.filter(room=>room.buildingId===value.buildingId&&room.fromDepartmentHistory&&!room.historyNeedsBorrowing&&!claimed.has(room.id)).sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode));
+  },[value.buildingId,departmentRooms,borrowed,rooms]);
+  const restrictedHistoricalRooms=useMemo(()=>{
+    if(!value.buildingId)return [] as PickerRoom[];
+    const claimed=new Set([...departmentRooms,...borrowed].map(room=>room.id));
+    return rooms.filter(room=>room.buildingId===value.buildingId&&room.fromDepartmentHistory&&room.historyNeedsBorrowing&&!claimed.has(room.id)).sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode));
+  },[value.buildingId,departmentRooms,borrowed,rooms]);
   const selectedBuilding=buildings.find(b=>b.id===value.buildingId);
+  const selectedHistoricalRoom=historicalRooms.find(room=>room.id===value.roomId);
   const locationPending=value.locationStatus==="PENDING_ROOM";
   const chooseBuilding=(id:string)=>{const b=buildings.find(x=>x.id===id);onChange({buildingId:b?.id,roomId:undefined,AdRoomCode:b?.officialCode||"",AdRoomHall:"",locationStatus:undefined});};
   const chooseRoom=(id:string)=>{if(id===PENDING_ROOM){onChange({roomId:undefined,AdRoomHall:"",locationStatus:"PENDING_ROOM"});return;}const r=rooms.find(x=>x.id===id);onChange({roomId:r?.id,AdRoomHall:r?.canonicalCode||"",locationStatus:r?"VERIFIED":undefined});};
   return <div className="location-registry-picker" data-location-registry-picker="true">
     <label><span>المبنى <b>*</b></span><select aria-label="المبنى الرسمي" value={value.buildingId||""} disabled={disabled||loading} onChange={e=>chooseBuilding(e.target.value)} required><option value="">{loading?"جارٍ تحميل المباني…":"اختر المبنى"}</option>{buildings.map(b=><option key={b.id} value={b.id}>{buildingNumberLabel(b)}</option>)}</select></label>
-    <label><span>القاعة <b>*</b></span><select aria-label="القاعة الرسمية" value={locationPending?PENDING_ROOM:(value.roomId||"")} disabled={disabled||!selectedBuilding} onChange={e=>chooseRoom(e.target.value)} required><option value="">{selectedBuilding?"اختر القاعة الرسمية":"اختر المبنى أولاً"}</option>{ownRooms.length?<optgroup label="قاعات القسم">{ownRooms.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}{sharedRooms.length?<optgroup label="قاعات مشتركة مع أقسام أخرى">{sharedRooms.map(r=><option key={r.id} value={r.id}>{sharedRoomLabel(r as PickerRoom)}</option>)}</optgroup>:null}{borrowed.length?<optgroup label="قاعات مستعارة معتمدة">{borrowed.map(r=><option key={r.id} value={r.id}>{borrowedLabel(r)}</option>)}</optgroup>:null}{allowPending?<option value={PENDING_ROOM}>بانتظار تثبيت القاعة</option>:null}</select></label>
+    <label><span>القاعة <b>*</b></span><select aria-label="القاعة الرسمية" value={locationPending?PENDING_ROOM:(value.roomId||"")} disabled={disabled||!selectedBuilding||loading} onChange={e=>chooseRoom(e.target.value)} required><option value="">{selectedBuilding?"اختر القاعة الرسمية":"اختر المبنى أولاً"}</option>{ownRooms.length?<optgroup label="قاعات القسم">{ownRooms.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}{sharedRooms.length?<optgroup label="قاعات مشتركة مع أقسام أخرى">{sharedRooms.map(r=><option key={r.id} value={r.id}>{sharedRoomLabel(r as PickerRoom)}</option>)}</optgroup>:null}{historicalRooms.length?<optgroup label="قاعات القسم من السجل التاريخي">{historicalRooms.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}{borrowed.length?<optgroup label="قاعات مستعارة معتمدة">{borrowed.map(r=><option key={r.id} value={r.id}>{borrowedLabel(r)}</option>)}</optgroup>:null}{restrictedHistoricalRooms.length?<optgroup label="استخدام تاريخي يحتاج استعارة">{restrictedHistoricalRooms.map(r=><option key={r.id} value={r.id} disabled>{r.canonicalCode} · تحتاج استعارة معتمدة</option>)}</optgroup>:null}{allowPending?<option value={PENDING_ROOM}>بانتظار تثبيت القاعة</option>:null}</select></label>
+    {selectedHistoricalRoom?<small className="location-history-badge">قاعة محفوظة في سجل القسم ومطابقة للسجل الرسمي.</small>:null}
+    {!value.roomId&&historicalRooms.length?<small className="location-history-badge">يتوفر {historicalRooms.length} من قاعات سجل القسم لهذا المبنى.</small>:null}
+    {restrictedHistoricalRooms.length?<small className="location-history-review-badge">{restrictedHistoricalRooms.length} من الاستخدامات التاريخية تحتاج استعارة معتمدة قبل الحجز.</small>:null}
     {locationPending?<small className="location-pending-badge">بانتظار تثبيت القاعة</small>:null}
     {showRaw&&(value.sourceBuildingText||value.sourceRoomText)&&((value.sourceBuildingText||"")!==value.AdRoomCode||(value.sourceRoomText||"")!==value.AdRoomHall)?<small className="location-source-value">القيمة المقروءة: {[value.sourceBuildingText,value.sourceRoomText].filter(Boolean).join("/")}</small>:null}
   </div>;

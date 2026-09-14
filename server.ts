@@ -248,12 +248,37 @@ async function provisionBranchSiteLocationsFromAuthority(
   if(newBuildings.length||newRooms.length)invalidateLocationRegistry();
   return {buildings:newBuildings.map(item=>item.officialCode),rooms:newRooms.map(item=>`${item.buildingCode}/${item.canonicalCode}`)};
 }
+type DepartmentRoomReference={building:string;hall:string};
+
+/**
+ * A department-history string becomes usable only after BOTH halves resolve to
+ * one active, confirmed Master Registry pair. History may widen a department's
+ * picker, but it never creates a building/room or accepts an ambiguous alias.
+ */
+function confirmedDepartmentRoomIds(
+  registry:{buildings:MasterBuilding[];rooms:MasterRoom[]},
+  entries:readonly DepartmentRoomReference[],
+  collegeId:number,
+){
+  const ids=new Set<string>();
+  for(const entry of entries){
+    const building=resolveBuilding(registry,entry.building,{collegeId});
+    if(building.status!=="CONFIRMED"||!building.value||building.value.active===false||building.value.confidence!=="CONFIRMED")continue;
+    const room=resolveRoom(registry,entry.hall,building.value.id,{collegeId});
+    if(room.status!=="CONFIRMED"||!room.value||room.value.active===false||room.value.confidence!=="CONFIRMED")continue;
+    ids.add(room.value.id);
+  }
+  return ids;
+}
+
 async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:number){
-  const [registry,colleges]=await Promise.all([readLocationRegistry(),Repository.getColleges()]);
+  const [registry,colleges,pinnedDepartmentRooms]=await Promise.all([readLocationRegistry(),Repository.getColleges(),Repository.getPinnedDepartmentRooms(collegeId,sectionId)]);
+  const pinnedRoomIds=confirmedDepartmentRoomIds(registry,pinnedDepartmentRooms,collegeId);
   /* الموقع داخل الفرع نفسه ليس خارج النطاق: قاعة الجهراء تبقى قابلة للتعديل
      والحفظ من القسم نفسه، بينما فرع آخر (بنين مقابل بنات) يظل مرفوضاً. */
   const branchRoot=collegeBranchRoot(colleges as any,collegeId);
-  let check=locationPreflight(row,registry,{collegeId,sectionId,branchRoot});
+  const directoryApprovedRoom=Boolean(row?.roomId&&pinnedRoomIds.has(String(row.roomId)));
+  let check=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:directoryApprovedRoom});
   const blocking=check.issues.filter(issue=>issue.severity==="high");
   if(blocking.length&&blocking.every(issue=>issue.type==="room_scope")&&check.canonical&&await hallBarterAllowsRoomUse({...row,...check.canonical},collegeId,sectionId)){
     check=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:true});
@@ -2678,6 +2703,11 @@ async function roomOwnership(roomCodeRaw:unknown,roomHallRaw:unknown,collegeId:n
      already do — so ownership, the scope notice and the barter gate finally
      agree with the lists the user sees. */
   if(isSharedRoom(room.value)||room.value.sectionIds.length===0||room.value.sectionIds.includes(sectionId))return null;
+  /* A room explicitly kept in this department's directory is an intentional
+     scheduling entitlement, not an accidental cross-department pick. Keep the
+     warning/gate aligned with the same rule used by Add/Edit save. */
+  const pinnedDepartmentRooms=await Repository.getPinnedDepartmentRooms(collegeId,sectionId);
+  if(confirmedDepartmentRoomIds(registry,pinnedDepartmentRooms,collegeId).has(room.value.id))return null;
   const ownerSectionId=Number(room.value.primarySectionIds?.[0]||room.value.sectionIds[0]||0);
   if(!ownerSectionId)return null;
   const [section,college]=await Promise.all([Repository.getSectionById(ownerSectionId),Repository.getCollegeById(Number(room.value.collegeIds?.[0]||collegeId))]);
@@ -4860,13 +4890,12 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
   });
 });
 
-/** Compatibility read for old consumers. Rooms now come only from the confirmed Master Registry; ordinary users cannot pin or create rooms. */
+/** Complete department room history for suggestion/import consumers. Writes remain Master-Registry only. */
 app.get("/api/department-rooms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const registry=await readLocationRegistry();
-  const buildingById=new Map(registry.buildings.filter(b=>b.active&&b.confidence==="CONFIRMED").map(b=>[b.id,b]));
-  const rooms=registry.rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&buildingById.has(room.buildingId)&&(!room.collegeIds.length||room.collegeIds.includes(collegeId))&&room.sectionIds.includes(sectionId)).map(room=>({building:buildingById.get(room.buildingId)!.officialCode,hall:room.canonicalCode,buildingId:room.buildingId,roomId:room.id,shared:room.shared})).sort((a,b)=>a.building.localeCompare(b.building,"en",{numeric:true})||a.hall.localeCompare(b.hall,"en",{numeric:true}));
+  const rooms=(await Repository.getDepartmentRooms(collegeId,sectionId))
+    .sort((a,b)=>a.building.localeCompare(b.building,"en",{numeric:true})||a.hall.localeCompare(b.hall,"en",{numeric:true}));
   res.json({rooms});
 });
 app.post("/api/department-rooms", requirePermission(7), async (_req: AuthenticatedRequest, res: Response) => {
@@ -4885,6 +4914,9 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
    * وحدها، فلا يتغيّر شيء في شاشات الإضافة والتعديل اليومية.
    */
   const includeBranchSites=String(req.query.branchSites||"")==="1";
+  /* Add/Edit asks for the department directory explicitly. Import keeps its
+     own Authority-document path and therefore pays none of this history cost. */
+  const includeDepartmentHistory=String(req.query.departmentHistory||"")==="1"&&Boolean(collegeId&&sectionId);
   const branchSectionIds=new Set<number>([sectionId].filter(Boolean));
   /* ── ما يُملأ أولاً يُعرَّف أولاً ──────────────────────────────────────────
    * كان هذا التعريف تحت الحلقة التي تملؤه. والمترجم يسكت — النداء داخل دالة —
@@ -4911,6 +4943,14 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   };
   const registry=await readLocationRegistry();
   const confirmedRooms=registry.rooms.filter(r=>r.active&&r.confidence==="CONFIRMED");
+  const [departmentHistory,pinnedDepartmentRooms]=includeDepartmentHistory
+    ?await Promise.all([Repository.getDepartmentRooms(collegeId,sectionId),Repository.getPinnedDepartmentRooms(collegeId,sectionId)])
+    :[[] as DepartmentRoomReference[],[] as DepartmentRoomReference[]];
+  /* Only confirmed Master Registry identities survive this bridge. A stale
+     historical spelling may be displayed elsewhere, but never becomes a room
+     option by itself. */
+  const departmentHistoryRoomIds=confirmedDepartmentRoomIds(registry,departmentHistory,collegeId);
+  const pinnedDepartmentRoomIds=confirmedDepartmentRoomIds(registry,pinnedDepartmentRooms,collegeId);
   let borrowedRoomIds:string[]=[];
   if(termId&&collegeId&&sectionId){
     const requests=await Repository.getHallBarterRequests(termId);
@@ -4931,6 +4971,9 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
     if(!sectionId)return true;
     if(room.sectionIds.some(id=>branchSectionIds.has(Number(id))))return true;
     if(borrowedSet.has(room.id))return true;
+    /* Add/Edit may see the department's historical directory even when an old
+       room-section relation was not migrated into MasterRoom.sectionIds. */
+    if(includeDepartmentHistory&&departmentHistoryRoomIds.has(room.id))return true;
     return room.sectionIds.length===0&&inBranch(buildingCodeById.get(room.buildingId));
   });
   const eligibleBuildingIds=new Set(eligibleRooms.map(room=>room.buildingId));
@@ -4963,19 +5006,29 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
    * section table to the browser to resolve two of them would be the wrong
    * trade. The names of the OTHER departments are resolved here, per room. */
   const sectionNameById=new Map((await Repository.getSections()).map(item=>[Number(item.AdSectionId),String(item.AdSectionName||"")]));
-  const rooms=eligibleRooms.filter(room=>ids.has(room.buildingId)).map(room=>({
-    ...room,
-    /* القاعة المستعارة تقول من صاحبها: «S27» وحدها لا تخبر المستعير في
-       قاعة مَن يجلس، ومن حقّ صاحبها أن يُذكر اسمه في مختار من استعارها. */
-    borrowedFrom:borrowedSet.has(room.id)
-      ? room.sectionIds.filter(id=>!sectionId||Number(id)!==sectionId).map(id=>sectionNameById.get(Number(id))||"").filter(Boolean).join(" · ")
-      : "",
-    shared:isSharedRoom(room),
-    sharedConfidence:isSharedRoom(room)?"CONFIRMED":room.sharedConfidence,
-    sharedWith:isSharedRoom(room)
-      ? room.sectionIds.filter(id=>!sectionId||Number(id)!==sectionId).map(id=>sectionNameById.get(Number(id))||"").filter(Boolean)
-      : [],
-  }));
+  const rooms=eligibleRooms.filter(room=>ids.has(room.buildingId)).map(room=>{
+    const shared=isSharedRoom(room);
+    const fromDepartmentHistory=departmentHistoryRoomIds.has(room.id);
+    const pinnedForDepartment=pinnedDepartmentRoomIds.has(room.id);
+    /* Mere historical use is shown, but it does not silently defeat another
+       department's current ownership. An explicit directory pin, a shared
+       room, or an approved barter window remains selectable. */
+    const historyNeedsBorrowing=Boolean(fromDepartmentHistory&&!pinnedForDepartment&&!borrowedSet.has(room.id)&&!shared&&room.sectionIds.length&&sectionId&&!room.sectionIds.includes(sectionId));
+    return {
+      ...room,
+      fromDepartmentHistory,pinnedForDepartment,historyNeedsBorrowing,
+      /* القاعة المستعارة تقول من صاحبها: «S27» وحدها لا تخبر المستعير في
+         قاعة مَن يجلس، ومن حقّ صاحبها أن يُذكر اسمه في مختار من استعارها. */
+      borrowedFrom:borrowedSet.has(room.id)
+        ? room.sectionIds.filter(id=>!sectionId||Number(id)!==sectionId).map(id=>sectionNameById.get(Number(id))||"").filter(Boolean).join(" · ")
+        : "",
+      shared,
+      sharedConfidence:shared?"CONFIRMED":room.sharedConfidence,
+      sharedWith:shared
+        ? room.sectionIds.filter(id=>!sectionId||Number(id)!==sectionId).map(id=>sectionNameById.get(Number(id))||"").filter(Boolean)
+        : [],
+    };
+  });
   res.json({version:LOCATION_MIGRATION_VERSION,buildings:openBuildings,rooms,borrowedRoomIds,pendingRoomCode:PENDING_ROOM});
 });
 app.get("/api/location-registry/pending", requirePermission(7), async (req:AuthenticatedRequest,res:Response)=>{

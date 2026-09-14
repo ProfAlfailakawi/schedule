@@ -4038,8 +4038,8 @@ export const Repository = {
     return unique;
   },
 
-  /** Complete room history for a department, plus rooms explicitly pinned by it. */
-  getDepartmentRooms: async (collegeId: number, sectionId: number): Promise<Array<{ building: string; hall: string }>> => {
+  /** Rooms deliberately retained in the department directory for future scheduling. */
+  getPinnedDepartmentRooms: async (collegeId: number, sectionId: number): Promise<Array<{ building: string; hall: string }>> => {
     const scopeKey = `${collegeId}:${sectionId}`;
     let pinned: Array<{ building: string; hall: string }> = [];
     if (firestoreDb && !demoSandboxContext.getStore()) {
@@ -4048,7 +4048,22 @@ export const Repository = {
     } else {
       pinned = (db.departmentRooms || []).find(row => row.scopeKey === scopeKey)?.rooms || [];
     }
-    const historical = await Repository.getSchedulesByScope({ collegeId, sectionId });
+    const byKey = new Map<string, { building: string; hall: string }>();
+    for (const item of pinned) {
+      const clean = { building: String(item?.building || "").trim().slice(0, 50), hall: String(item?.hall || "").trim().slice(0, 50) };
+      if (!clean.building || !clean.hall) continue;
+      const key = `${clean.building.toLocaleLowerCase()}:${clean.hall.toLocaleLowerCase()}`;
+      if (!byKey.has(key)) byKey.set(key, clean);
+    }
+    return [...byKey.values()];
+  },
+
+  /** Complete room history for a department, plus rooms explicitly pinned by it. */
+  getDepartmentRooms: async (collegeId: number, sectionId: number): Promise<Array<{ building: string; hall: string }>> => {
+    const [pinned, historical] = await Promise.all([
+      Repository.getPinnedDepartmentRooms(collegeId, sectionId),
+      Repository.getSchedulesByScope({ collegeId, sectionId }),
+    ]);
     const byKey = new Map<string, { building: string; hall: string }>();
     for (const item of [...historical.map(row => ({ building: String(row.AdRoomCode || "").trim(), hall: String(row.AdRoomHall || "").trim() })), ...pinned]) {
       if (!item.building || !item.hall) continue;
