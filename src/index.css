@@ -131,3 +131,31 @@
 }
 .location-code-preview.invalid{color:var(--danger,#b54747);background:color-mix(in srgb,var(--danger,#b54747) 8%,transparent)}
 
+
+/* سجل المواقع على سطح المكتب: نموذج المبنى يعيش داخل عمود المباني نفسه.
+   الكود الكامل وزر الإضافة لا يجوز أن يخرجا إلى لوحة التفاصيل مهما ضاق العمود. */
+@media (min-width:901px){
+  .location-create-building{
+    grid-template-columns:minmax(0,1fr) auto!important;
+    width:100%!important;max-width:100%!important;min-width:0!important;
+  }
+  .location-create-building>select{grid-column:1/-1;min-width:0!important;max-width:100%!important;width:100%!important}
+  .location-create-building>input{grid-column:1;min-width:0!important;max-width:100%!important;width:100%!important}
+  .location-create-building>.btn{grid-column:2;min-width:max-content!important;max-width:100%!important}
+  .location-create-building>.location-code-preview{
+    grid-column:1/-1;min-width:0!important;max-width:100%!important;width:100%!important;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:start;
+  }
+}
+
+/* عند اكتشاف أن PDF لقسم آخر، يظهر حل واحد واضح بدل رسالة رفض ميتة. */
+.transfer-scope-fix{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;
+  margin:0 0 12px;padding:12px 14px;border:1px solid color-mix(in srgb,var(--accent,#16745f) 24%,var(--line,#e5e7eb));
+  border-radius:14px;background:color-mix(in srgb,var(--accent,#16745f) 6%,var(--surface,#fff));
+}
+.transfer-scope-fix>svg{width:19px;height:19px;color:var(--accent,#16745f)}
+.transfer-scope-fix>div{min-width:0}.transfer-scope-fix strong,.transfer-scope-fix small{display:block}
+.transfer-scope-fix strong{font-size:.92rem}.transfer-scope-fix small{margin-top:3px;color:var(--muted-text,#667085);line-height:1.55}
+.transfer-scope-fix .btn{white-space:nowrap}
+@media(max-width:720px){.transfer-scope-fix{grid-template-columns:auto minmax(0,1fr)}.transfer-scope-fix .btn{grid-column:1/-1;width:100%}}

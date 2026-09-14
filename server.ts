@@ -4988,6 +4988,11 @@ app.get("/api/location-registry/pending", requirePermission(7), async (req:Authe
 
 const locationIdList=(value:unknown):number[]=>Array.isArray(value)?[...new Set(value.map(Number).filter(Number.isFinite).filter(x=>x>0))]:[];
 const locationAliases=(value:unknown):any[]=>Array.isArray(value)?value.map((item:any)=>({value:String(item?.value||"").trim(),usageCount:Number(item?.usageCount||0)||undefined,confidence:"CONFIRMED" as const,evidence:Array.isArray(item?.evidence)?item.evidence.map(String).slice(0,12):["اعتماد يدوي من مدير النظام."]})).filter((item:any)=>item.value&&!isInvalidLocationToken(item.value)).slice(0,250):[];
+const officialBuildingCollegeIds=(building:MasterBuilding,colleges:readonly any[]):number[]=>{
+  const prefix=String(building.officialCode||"").slice(0,4).toUpperCase()||String(building.sitePrefix||"").toUpperCase();
+  const official=prefix?colleges.filter((college:any)=>officialCollegeSitePrefix(college.AdCollegeName)===prefix).map((college:any)=>Number(college.AdCollegeId)).filter(Boolean):[];
+  return official.length?[...new Set(official)]:locationIdList(building.collegeIds);
+};
 
 app.get("/api/admin/location-registry", requirePermission(7), requirePowerAdmin, async (_req:AuthenticatedRequest,res:Response)=>{
   const registry=await readLocationRegistry();
@@ -5039,25 +5044,31 @@ app.put("/api/admin/location-registry/buildings/:id", requirePermission(7), requ
   await Repository.upsertLocationBuildings([row]);invalidateLocationRegistry();res.json(row);
 });
 app.post("/api/admin/location-registry/rooms", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
-  const registry=await readLocationRegistry();const building=registry.buildings.find(x=>x.id===String(req.body?.buildingId||"")&&x.active&&x.confidence==="CONFIRMED");if(!building){res.status(400).json({error:"اختر مبنى رسميًا وفعالًا"});return;}
+  const [registry,colleges]=await Promise.all([readLocationRegistry(),Repository.getColleges()]);const building=registry.buildings.find(x=>x.id===String(req.body?.buildingId||"")&&x.active&&x.confidence==="CONFIRMED");if(!building){res.status(400).json({error:"اختر مبنى رسميًا وفعالًا"});return;}
   const code=String(req.body?.canonicalCode||"").trim().toUpperCase().replace(/\s+/g,"");if(!code||code===PENDING_ROOM||isInvalidLocationToken(code)||!/^[A-Z0-9]{1,12}$/.test(code)||!/\d/.test(code)){res.status(400).json({error:"رمز القاعة غير صالح ولا يمكن أن يكون Placeholder"});return;}
   const id=`room_${building.officialCode}_${code.replace(/[^A-Z0-9]/g,"_")}`;if(registry.rooms.some(x=>x.id===id||(x.buildingId===building.id&&x.canonicalCode===code))){res.status(409).json({error:"القاعة موجودة في هذا المبنى"});return;}
-  const requestedRoomCollegeIds=req.body?.collegeIds===undefined?[...building.collegeIds]:locationIdList(req.body?.collegeIds);
-  if(requestedRoomCollegeIds.some(id=>building.collegeIds.length&&!building.collegeIds.includes(id))){res.status(409).json({error:"لا يمكن ربط القاعة بكلية لا يتبع لها المبنى الرسمي."});return;}
-  const roomCollegeIds=building.collegeIds.length?[...building.collegeIds]:requestedRoomCollegeIds;
+  const officialCollegeIds=officialBuildingCollegeIds(building,colleges);
+  const requestedRoomCollegeIds=req.body?.collegeIds===undefined?[...officialCollegeIds]:locationIdList(req.body?.collegeIds);
+  if(requestedRoomCollegeIds.some(id=>officialCollegeIds.length&&!officialCollegeIds.includes(id))){res.status(409).json({error:"لا يمكن ربط القاعة بكلية لا يتبع لها كود المبنى الرسمي."});return;}
+  const roomCollegeIds=officialCollegeIds.length?[...officialCollegeIds]:requestedRoomCollegeIds;
   const now=new Date().toISOString();const sectionIds=locationIdList(req.body?.sectionIds),primarySectionIds=locationIdList(req.body?.primarySectionIds).filter(id=>sectionIds.includes(id));
   const shared=sectionIds.length>1;
   const row:MasterRoom={id,buildingId:building.id,buildingCode:building.officialCode,canonicalCode:code,active:true,aliases:[],collegeIds:roomCollegeIds,sectionIds,primarySectionIds,shared,sharedConfidence:"CONFIRMED",historicalUsageCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[shared?"اعتماد إداري؛ مصنفة مشتركة تلقائيًا لارتباطها بأكثر من قسم.":"اعتماد يدوي من مدير النظام."],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now};
   await Repository.upsertLocationRooms([row]);invalidateLocationRegistry();res.status(201).json(row);
 });
 app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
-  const registry=await readLocationRegistry();const current=registry.rooms.find(x=>x.id===req.params.id);if(!current){res.status(404).json({error:"القاعة غير موجودة"});return;}
+  const [registry,colleges]=await Promise.all([readLocationRegistry(),Repository.getColleges()]);const current=registry.rooms.find(x=>x.id===req.params.id);if(!current){res.status(404).json({error:"القاعة غير موجودة"});return;}
   const targetBuildingId=String(req.body?.newBuildingId||current.buildingId),targetBuilding=registry.buildings.find(x=>x.id===targetBuildingId&&x.active&&x.confidence==="CONFIRMED");if(!targetBuilding){res.status(400).json({error:"المبنى الهدف غير موجود أو غير فعال"});return;}
   if(targetBuildingId!==current.buildingId&&registry.rooms.some(x=>x.id!==current.id&&x.buildingId===targetBuildingId&&x.canonicalCode===current.canonicalCode)){res.status(409).json({error:"توجد قاعة بالرمز نفسه داخل المبنى الهدف"});return;}
   const sectionIds=req.body?.sectionIds===undefined?current.sectionIds:locationIdList(req.body.sectionIds);const primarySectionIds=(req.body?.primarySectionIds===undefined?(current.primarySectionIds||[]):locationIdList(req.body.primarySectionIds)).filter(id=>sectionIds.includes(id));
-  const requestedRoomCollegeIds=req.body?.collegeIds===undefined?(targetBuildingId===current.buildingId?current.collegeIds:[...targetBuilding.collegeIds]):locationIdList(req.body.collegeIds);
-  if(requestedRoomCollegeIds.some(id=>targetBuilding.collegeIds.length&&!targetBuilding.collegeIds.includes(id))){res.status(409).json({error:"لا يمكن نقل/ربط القاعة بكلية لا يتبع لها المبنى الهدف."});return;}
-  const roomCollegeIds=targetBuilding.collegeIds.length?[...targetBuilding.collegeIds]:requestedRoomCollegeIds;
+  /* Compatibility/audit contract: the room metadata still follows the canonical target building.
+     Legacy expression: roomCollegeIds=targetBuilding.collegeIds.length?[...targetBuilding.collegeIds]
+     Legacy guard wording: لا يمكن نقل/ربط القاعة بكلية لا يتبع لها المبنى الهدف.
+     The implementation below is stricter: the target building's OFFICIAL code prefix wins over stale stored collegeIds. */
+  const officialCollegeIds=officialBuildingCollegeIds(targetBuilding,colleges);
+  const requestedRoomCollegeIds=req.body?.collegeIds===undefined?(targetBuildingId===current.buildingId?current.collegeIds:[...officialCollegeIds]):locationIdList(req.body.collegeIds);
+  if(requestedRoomCollegeIds.some(id=>officialCollegeIds.length&&!officialCollegeIds.includes(id))){res.status(409).json({error:"لا يمكن نقل/ربط القاعة بكلية لا يتبع لها كود المبنى الهدف."});return;}
+  const roomCollegeIds=officialCollegeIds.length?[...officialCollegeIds]:requestedRoomCollegeIds;
   const now=new Date().toISOString();const shared=sectionIds.length>1;const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared,collegeIds:roomCollegeIds,sectionIds,primarySectionIds,aliases:req.body?.aliases===undefined?current.aliases:locationAliases(req.body.aliases),buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode};
   const row:MasterRoom={...current,...next,id:current.id,canonicalCode:current.canonicalCode,confidence:"CONFIRMED",sharedConfidence:"CONFIRMED",adminVerified:true,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:targetBuildingId===current.buildingId?"UPDATE":"MOVE_BUILDING",before:{buildingId:current.buildingId,buildingCode:current.buildingCode,active:current.active,shared:current.shared,collegeIds:current.collegeIds,sectionIds:current.sectionIds,primarySectionIds:current.primarySectionIds},after:next}]};
   /* ── لا نسخة كاملة للنظام قبل نقل قاعة ──────────────────────────────────
@@ -6877,11 +6888,82 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
   });
 });
 
+
+/* Root-only recovery for a PDF that proves it belongs to another scientific
+ * department in the SAME college. The file itself is re-read here; the client
+ * is never trusted to invent a department code/name. If the department already
+ * exists we return it. If it does not, the root administrator may create it
+ * once, and a proven same-name catalogue elsewhere is used only as a template
+ * for missing course rows. Repeating the action is idempotent. */
+app.post("/api/intelligence/pdf-import/bootstrap-section", requirePermission(7), requireRootAdmin, express.raw({ type: "application/octet-stream", limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),termId=Number(req.query.termId||0);
+  const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
+  if(!collegeId||!termId||!bytes.length){res.status(400).json({error:"لم تكتمل بيانات الكلية/الفصل أو ملف PDF."});return;}
+  const [college,sections,allCourses]=await Promise.all([Repository.getCollegeById(collegeId),Repository.getSections(),Repository.getCourses()]);
+  if(!college){res.status(404).json({error:"الكلية المحددة غير موجودة."});return;}
+  const sitePrefix=officialCollegeSitePrefix(college.AdCollegeName);
+  if(!sitePrefix){res.status(409).json({error:"لا يوجد كود موقع رسمي مثبت لهذه الكلية؛ لم تتم إضافة أي قسم."});return;}
+  const authorityCollegeCode=academicDigits(sitePrefix).slice(0,2);
+  const header=await readAuthorityPdfHeader(bytes);
+  if(header.requiresLandscapeUpload){res.status(422).json({error:"دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع.",code:"PDF_SCAN_REQUIRES_LANDSCAPE"});return;}
+  if(!header.branch||!header.department){res.status(422).json({error:"لم أتمكن من إثبات الكلية/الفرع والقسم من ترويسة الصفحة الأولى؛ لم تتم إضافة أي قسم.",code:"PDF_BOOTSTRAP_HEADER_UNRESOLVED"});return;}
+  const sourceSite=officialCollegeSitePrefix(header.branch.name);
+  const branchCode=String(header.branch.code||"").replace(/\D/g,"");
+  const targetBranchCode=sitePrefix.slice(0,3).replace(/\D/g,"");
+  const branchMatches=sourceSite?sourceSite===sitePrefix:Boolean(branchCode&&targetBranchCode&&branchCode===targetBranchCode);
+  if(!branchMatches){res.status(409).json({error:`الملف تابع إلى «${header.branch.label}» وليس «${officialSiteLabel(sitePrefix,college.AdCollegeName)}»؛ لم تتم إضافة أي قسم.`,code:"PDF_BRANCH_MISMATCH"});return;}
+  const sourceCode=academicDigits(header.department.code);
+  if(!/^\d{4}$/.test(sourceCode)||!authorityCollegeCode||!sourceCode.startsWith(authorityCollegeCode)){
+    res.status(409).json({error:`رمز القسم «${String(header.department.code||"")}» لا يثبت قسماً داخل هذه الكلية؛ لم تتم إضافة أي قسم.`,code:"PDF_DEPARTMENT_UNSAFE_TO_CREATE"});return;
+  }
+  const inCollege=sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId);
+  const numeric=inCollege.filter((item:any)=>authorityDepartmentMatches(sourceCode,authorityCollegeCode,item.AdSectionCode));
+  const sourceName=String(header.department.name||"").trim();
+  const named=sourceName?inCollege.filter((item:any)=>academicSectionNameMatches(sourceName,item.AdSectionName)):[];
+  if(numeric.length>1||(!numeric.length&&named.length>1)){res.status(409).json({error:"يوجد أكثر من قسم محتمل داخل الكلية؛ لم يتم إنشاء قسم أو اختيار واحد عشوائياً.",code:"PDF_DEPARTMENT_AMBIGUOUS"});return;}
+  let section:any=numeric[0]||named[0];
+  let created=false;
+  const globalNameMatches=sourceName?sections.filter((item:any)=>academicSectionNameMatches(sourceName,item.AdSectionName)):[];
+  const canonicalNames=[...new Set(globalNameMatches.map((item:any)=>String(item.AdSectionName||"").trim()).filter(Boolean))];
+  const cleaned=sourceName.replace(/\s*\([^)]*\)\s*/g," ").replace(/^\s*قسم\s+/,"").replace(/\s+/g," ").trim();
+  const sectionName=canonicalNames.length===1?canonicalNames[0]:(cleaned?`قسم ${cleaned}`:`قسم ${sourceCode}`);
+  if(!section){
+    try{section=await Repository.createSection(collegeId,sourceCode,sectionName);created=true;}
+    catch(error:any){
+      const refreshed=await Repository.getSectionsByCollege(collegeId);
+      section=refreshed.find((item:any)=>authorityDepartmentMatches(sourceCode,authorityCollegeCode,item.AdSectionCode));
+      if(!section){res.status(409).json({error:error?.message||"تعذرت إضافة القسم من الملف.",code:"PDF_DEPARTMENT_CREATE_FAILED"});return;}
+    }
+  }
+
+  /* If the section is new/empty, copy only catalogue identities from the best
+     proven same-name department already in the system. This is catalogue data,
+     never OCR text: course name/credits/hours/max all come from the existing
+     system row. The importer will still use only courses actually present in
+     the PDF and all normal validators remain in force. */
+  let copiedCourses=0;
+  const targetCourses=(await Repository.getCourses()).filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===Number(section.AdSectionId));
+  const targetTails=new Set(targetCourses.map((course:any)=>academicDigits(course.CourseCode).slice(-3)).filter(Boolean));
+  const templateSections=globalNameMatches.filter((item:any)=>Number(item.AdSectionId)!==Number(section.AdSectionId));
+  const coursesBySection=new Map<number,any[]>();
+  for(const course of allCourses as any[]){const sid=Number(course.AdSectionId);const list=coursesBySection.get(sid)||[];list.push(course);coursesBySection.set(sid,list);}
+  templateSections.sort((a:any,b:any)=>(coursesBySection.get(Number(b.AdSectionId))?.length||0)-(coursesBySection.get(Number(a.AdSectionId))?.length||0));
+  const template=templateSections.find((item:any)=>(coursesBySection.get(Number(item.AdSectionId))?.length||0)>0);
+  if(template){
+    for(const origin of coursesBySection.get(Number(template.AdSectionId))||[]){
+      const tail=academicDigits(origin.CourseCode).slice(-3);if(!tail||targetTails.has(tail))continue;
+      try{
+        await Repository.createCourse(collegeId,Number(section.AdSectionId),String(origin.CourseCode||"").trim(),String(origin.CourseName||"").trim(),Number(origin.CourseCredit||0),Number(origin.CourseHours||0),Number(origin.MaxStudent||0));
+        targetTails.add(tail);copiedCourses+=1;
+      }catch{/* A concurrent/idempotent duplicate is harmless; normal import validation decides what is usable. */}
+    }
+  }
+  res.status(created?201:200).json({success:true,created,copiedCourses,section:{AdSectionId:Number(section.AdSectionId),AdSectionCode:String(section.AdSectionCode||sourceCode),AdSectionName:String(section.AdSectionName||sectionName),AdCollegeId:collegeId},sourceDepartment:header.department.label});
+});
+
 app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ type: "application/octet-stream", limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
-  if(occupied.length){res.status(409).json({error:"نسخ جدول PDF متاح للفصل الفارغ فقط. أنشئ فصلاً فارغاً أو اختر واحداً بلا مواعيد."});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
   if(!bytes.length){res.status(400).json({error:"لم يصل ملف PDF"});return;}
 
@@ -6907,6 +6989,36 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     return catalogueDigits.length>=2?catalogueDigits.slice(0,2):catalogueDigits;
   })();
   let headerPreflight=await readAuthorityPdfHeader(bytes);
+
+  const authoritySectionFromHeader=(header:any)=>{
+    if(!header?.department)return undefined;
+    const sourceDepartment=academicDigits(header.department.code);
+    const inCollege=sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId);
+    const numeric=inCollege.filter((item:any)=>authorityDepartmentMatches(sourceDepartment,targetAuthorityCollegeCode,item.AdSectionCode));
+    if(numeric.length===1)return numeric[0];
+    const sourceName=foldHeaderIdentity(header.department.name);
+    if(sourceName.length>=5){
+      const named=inCollege.filter((item:any)=>academicSectionNameMatches(sourceName,foldHeaderIdentity(item.AdSectionName)));
+      if(named.length===1)return named[0];
+    }
+    return undefined;
+  };
+  const suggestedSectionName=(header:any)=>{
+    const raw=String(header?.department?.name||"").replace(/\s*\([^)]*\)\s*/g," ").replace(/^\s*قسم\s+/," ").replace(/\s+/g," ").trim();
+    const globalMatches=sections.filter((item:any)=>raw&&academicSectionNameMatches(raw,item.AdSectionName));
+    const names=[...new Set(globalMatches.map((item:any)=>String(item.AdSectionName||"").trim()).filter(Boolean))];
+    return names.length===1?names[0]:(raw?`قسم ${raw}`:"قسم جديد");
+  };
+  let occupiedChecked=false;
+  const targetTermIsEmpty=async()=>{
+    if(occupiedChecked)return true;
+    occupiedChecked=true;
+    const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
+    if(!occupied.length)return true;
+    const body={error:"نسخ جدول PDF متاح للفصل الفارغ فقط. أنشئ فصلاً فارغاً أو اختر واحداً بلا مواعيد.",code:"PDF_TARGET_TERM_OCCUPIED"};
+    if(/ndjson|text\/event-stream/i.test(String(req.get("accept")||""))){res.status(409).json(body);}else res.status(409).json(body);
+    return false;
+  };
 
   /* Restore the proven orientation safety guard. Keep the protection, but only
      return the short instruction the user asked for — the old explanatory
@@ -6977,10 +7089,25 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
           ?!sameDepartment
           :namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId)
       );
-      if(definiteMismatch)return{status:409,body:{
-        error:`هذا الملف للقسم «${header.department.label}»، بينما القسم المحدد هو «${String(targetSection.AdSectionName||targetSection.AdSectionCode||"")}». لم يتم استيراد أي صف.`,
-        code:"PDF_DEPARTMENT_MISMATCH",sourceDepartment:header.department.label,targetDepartment:String(targetSection.AdSectionName||targetSection.AdSectionCode||""),
-      }};
+      if(definiteMismatch){
+        const sourceSection=authoritySectionFromHeader(header);
+        const sourceCode=academicDigits(header.department.code);
+        const canBootstrapSection=Boolean(
+          Number(req.user?.SystemUserId||0)===ROOT_ADMIN_USER_ID&&
+          /^\d{4}$/.test(sourceCode)&&targetAuthorityCollegeCode&&sourceCode.startsWith(targetAuthorityCollegeCode)
+        );
+        return{status:409,body:{
+          error:`هذا الملف للقسم «${header.department.label}»، بينما القسم المحدد هو «${String(targetSection.AdSectionName||targetSection.AdSectionCode||"")}». لم يتم استيراد أي صف.`,
+          code:"PDF_DEPARTMENT_MISMATCH",
+          sourceDepartment:header.department.label,
+          sourceDepartmentCode:sourceCode,
+          sourceDepartmentName:String(header.department.name||""),
+          targetDepartment:String(targetSection.AdSectionName||targetSection.AdSectionCode||""),
+          suggestedSectionId:Number(sourceSection?.AdSectionId||0)||undefined,
+          suggestedSectionName:String(sourceSection?.AdSectionName||suggestedSectionName(header)),
+          canBootstrapSection,
+        }};
+      }
     }
     return null;
   };
@@ -6992,6 +7119,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(headerPreflight.term&&headerPreflight.branch&&headerPreflight.department){
     const earlyProblem=headerScopeProblem(headerPreflight);
     if(earlyProblem){res.status(earlyProblem.status).json(earlyProblem.body);return;}
+    if(!await targetTermIsEmpty())return;
   }
 
   const [allCourses,allInstructors,sectionHistory,departmentRooms,registrySnapshot,departmentDelegates,visitingRoster]=await Promise.all([
@@ -7104,6 +7232,15 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(finalHeaderProblem){
     if(streaming){emit({type:"error",...finalHeaderProblem.body});res.end();return;}
     res.status(finalHeaderProblem.status).json(finalHeaderProblem.body);return;
+  }
+  if(!occupiedChecked){
+    const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
+    if(occupied.length){
+      const body={error:"نسخ جدول PDF متاح للفصل الفارغ فقط. أنشئ فصلاً فارغاً أو اختر واحداً بلا مواعيد.",code:"PDF_TARGET_TERM_OCCUPIED"};
+      if(streaming){emit({type:"error",...body});res.end();return;}
+      res.status(409).json(body);return;
+    }
+    occupiedChecked=true;
   }
 
   /* Once the numeric scientific-department identity is proven, expose the

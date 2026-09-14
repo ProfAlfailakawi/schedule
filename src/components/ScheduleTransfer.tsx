@@ -41,12 +41,13 @@ interface Props {
   /** Every term, so the roster can be started from another one. */
   terms: Array<{ AdTermId: number; AdTermName: string }>;
   onChanged: () => void;
+  onSectionChange?: (sectionId: number) => void;
   onClose: () => void;
 }
 
 type Tab = "export" | "import" | "publish" | "retire" | "visiting";
 
-export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onClose }: Props) {
+export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onSectionChange, onClose }: Props) {
   useDialogDismiss(true, onClose);
   const [tab, setTab] = useState<Tab>("export");
   const [busy, setBusy] = useState(false);
@@ -85,6 +86,11 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const [plantedCourses, setPlantedCourses] = useState<string[]>([]);
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
   const [readProgress, setReadProgress] = useState<{ pct: number; message: string } | null>(null);
+  /* A PDF can prove that the open selector points at the wrong department.
+     Keep that recovery explicit: the root admin may resolve/create the proven
+     section, then the SAME file is retried under that section. */
+  const [importSectionId, setImportSectionId] = useState(0);
+  const [pdfScopeFix, setPdfScopeFix] = useState<any>(null);
   /* The quick-edit course picker needs the department's catalogue; fetched once
      the first time a PDF preview opens, never on plain Excel imports. */
   const [deptCourses, setDeptCourses] = useState<any[]>([]);
@@ -250,6 +256,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   };
 
   const scopeReady = Boolean(collegeId && sectionId && termId);
+  const activeImportSectionId = importSectionId || sectionId;
   /* موقع الفرع (الجهراء/الفحيحيل) لا يستورد لنفسه: الجدول المعتمد يصدر ملفاً
    * واحداً من كلية الأساس ويوزّعه النظام على المواقع. فإن فُتح تبويب الاستيراد
    * على فرع، يُوجَّه المستخدم إلى الأساس بدل أن يستورد لموقعٍ واحد. */
@@ -301,7 +308,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       /* A name the reviewer picked by hand is settled. Cross-department
          teaching is legitimate, so it is visible — never a blocker. */
       const instructorChosenByHand = row.importEvidence?.instructor?.source === "MANUAL";
-      if (!Number(row.AdInstructorId)||(!instructorChosenByHand&&!departmentIds.includes(Number(row.AdInstructorId))&&!roster.includes(Number(row.AdInstructorId)))) issues.add(`الصف ${n}: أستاذ المقرر غير محدد أو غير مثبت ضمن القسم/منتدبي الفصل الحالي.`);
+      if (!Number(row.AdInstructorId)||(importKind!=="authority-pdf"&&!instructorChosenByHand&&!departmentIds.includes(Number(row.AdInstructorId))&&!roster.includes(Number(row.AdInstructorId)))) issues.add(`الصف ${n}: أستاذ المقرر غير محدد أو غير مثبت ضمن القسم/منتدبي الفصل الحالي.`);
     });
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds, roster]);
@@ -353,7 +360,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         authoritySectionCodeLooksPlausible(row.SCode) &&
         hasDays(row) && start >= 0 && end > start &&
         row.buildingId && (row.roomId || row.locationStatus === "PENDING_ROOM") &&
-        Number(row.AdInstructorId) && (departmentIds.includes(Number(row.AdInstructorId)) || roster.includes(Number(row.AdInstructorId)))
+        Number(row.AdInstructorId)
       );
     };
     const ready = rows.filter(rowReady).length;
@@ -492,6 +499,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   const readExcel = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
+    setImportSectionId(0); setPdfScopeFix(null);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishReceipt(null);
     setBusy(true);
     try {
@@ -529,7 +537,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       ? `قراءة أدق للصفحات ${troubledPages.join("، ")}`
       : "قراءة أدق عبر Smart Import" });
     try {
-      const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId),mime:file.type||"application/octet-stream"});
+      const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(activeImportSectionId),termId:String(termId),mime:file.type||"application/octet-stream"});
       if(troubledPages.length)query.set("pages",troubledPages.join(","));
       /* Naming the rows that still have blanks makes the answer small, and a
          small answer is a fast one — the model transcribes a few cells instead
@@ -616,12 +624,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     setSmartProposal(null);
     setSmartPicked(new Set());
   };
-  const readPdf = async (file: File) => {
-    setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
+  const readPdf = async (file: File, targetSectionId = sectionId) => {
+    setError(null); setPdfScopeFix(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(file);
     setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
     try {
-      const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId)});
+      const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(targetSectionId),termId:String(termId)});
       const response=await fetch(`/api/intelligence/pdf-import?${query}`,{
         method:"POST",
         headers:{"Content-Type":"application/octet-stream","Accept":"application/x-ndjson","x-file-name":encodeURIComponent(file.name)},
@@ -632,7 +640,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
          advances page by page instead of the button simply freezing. */
       const reader=response.body?.getReader();
       const decoder=new TextDecoder();
-      let buffer="",data:any=null,failure="";
+      let buffer="",data:any=null,failure:any=null;
       if(reader)for(;;){
         const {value,done}=await reader.read();
         if(done)break;
@@ -658,17 +666,25 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
             setReadProgress({pct,message:String(event.message||fallback)});
           }
           else if(event.type==="done")data=event.result;
-          else if(event.type==="error")failure=event.error;
+          else if(event.type==="error")failure=event;
         }
       }
-      if(failure)throw new Error(failure);
+      const offerScopeFix=(problem:any)=>{
+        if(problem?.code!=="PDF_DEPARTMENT_MISMATCH"||!problem?.canBootstrapSection)return false;
+        setPdfScopeFix({...problem,file,targetSectionId});
+        setError(null);
+        return true;
+      };
+      if(failure){if(offerScopeFix(failure))return;throw new Error(String(failure?.error||failure||"تعذرت قراءة PDF"));}
       if(!data){const rest=buffer.trim();if(rest){try{const tail=JSON.parse(rest);data=tail.result||tail;}catch{/* no trailing json */}}}
       /* A refusal (an occupied term, a permission wall) arrives as one plain
-         JSON object with no newline. It used to be swallowed into an empty
-         preview — zero rows, zero message. An error object IS the message. */
-      if(data&&(data as any).error&&!(data as any).rows)throw new Error((data as any).error);
+         JSON object with no newline. Structured department mismatch stays on
+         screen as an actionable recovery instead of a dead-end sentence. */
+      if(data&&(data as any).error&&!(data as any).rows){if(offerScopeFix(data))return;throw new Error((data as any).error);}
       if(!data)throw new Error("تعذرت قراءة PDF");
       const scannedRows=assignAuthoritySections(Array.isArray(data.rows)?data.rows:[]);
+      setImportSectionId(targetSectionId);
+      setPdfScopeFix(null);
       setXlsxPreview({
         ...data,
         rows:scannedRows,
@@ -680,10 +696,31 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       if(!deptCourses.length){
         try{
           const all=await (await fetch("/api/courses")).json();
-          if(Array.isArray(all))setDeptCourses(all.filter((c:any)=>Number(c.AdCollegeId)===collegeId&&Number(c.AdSectionId)===sectionId));
+          if(Array.isArray(all))setDeptCourses(all.filter((c:any)=>Number(c.AdCollegeId)===collegeId&&Number(c.AdSectionId)===targetSectionId));
         }catch{/* the picker simply lists nothing until a retry */}
       }
     }catch(e:any){setError(e.message||"تعذرت قراءة PDF");}finally{setBusy(false);setReadProgress(null);}
+  };
+
+  const resolvePdfDepartment = async () => {
+    const fix=pdfScopeFix;if(!fix?.file)return;
+    setBusy(true);setError(null);
+    try{
+      const query=new URLSearchParams({collegeId:String(collegeId),termId:String(termId)});
+      const response=await fetch(`/api/intelligence/pdf-import/bootstrap-section?${query}`,{
+        method:"POST",headers:{"Content-Type":"application/octet-stream","x-file-name":encodeURIComponent(fix.file.name)},body:await fix.file.arrayBuffer(),
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.error||"تعذرت إضافة القسم من ملف PDF");
+      const nextSectionId=Number(data?.section?.AdSectionId||0);
+      if(!nextSectionId)throw new Error("تمت معالجة القسم لكن لم يصل رقم القسم الجديد.");
+      setImportSectionId(nextSectionId);
+      onSectionChange?.(nextSectionId);
+      setPdfScopeFix(null);
+      setDeptCourses([]);
+      await readPdf(fix.file,nextSectionId);
+    }catch(e:any){setError(e?.message||"تعذرت معالجة قسم ملف PDF");}
+    finally{setBusy(false);}
   };
 
   const publishImportedDraft=async(id:string)=>{
@@ -740,7 +777,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          collegeId, sectionId, termId,
+          collegeId, sectionId:activeImportSectionId, termId,
           source: "import",
           name: `${importKind==="authority-pdf"?"نسخة PDF المعتمدة":"استيراد النموذج"} — ${xlsxPreview.fileName || ""}`.trim(),
           rows: xlsxPreview.rows,
@@ -796,6 +833,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     /* A new file starts a new review. Anything the sharper reading proposed for
        the previous file would otherwise still be on screen, offering cells that
        belong to a table that is no longer here. */
+    setImportSectionId(0); setPdfScopeFix(null);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishReceipt(null);
     if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") { await readPdf(file); return; }
     if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
@@ -949,6 +987,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
             <strong>دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع</strong>
           </div>
         ) : <p className="transfer-error"><AlertTriangle />{error}</p> : null}
+        {tab==="import"&&pdfScopeFix?
+          <div className="transfer-scope-fix" role="alert">
+            <Building2 aria-hidden="true" />
+            <div><strong>الملف يخص «{pdfScopeFix.suggestedSectionName||pdfScopeFix.sourceDepartment}»</strong><small>{pdfScopeFix.suggestedSectionId?"القسم موجود بالفعل في هذه الكلية؛ سأنقلك إليه وأعيد قراءة الملف نفسه.":"القسم غير موجود في هذه الكلية. يمكن للمدير الرئيسي إضافته من ترويسة الملف الموثقة ثم إعادة الاستيراد تلقائياً."}</small></div>
+            <PrimaryButton type="button" onClick={()=>void resolvePdfDepartment()} disabled={busy}><Plus/>{pdfScopeFix.suggestedSectionId?"فتح القسم الصحيح وإعادة الاستيراد":"إضافة القسم وإعادة الاستيراد"}</PrimaryButton>
+          </div>:null}
 
         <div className="transfer-body">
           {tab === "export" ? (

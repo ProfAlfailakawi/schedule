@@ -14,7 +14,7 @@ const empty:Payload={buildings:[],rooms:[],reviewCases:[],runs:[],health:{},pend
 async function json(url:string,init?:RequestInit){const r=await fetch(url,{...init,headers:{"Content-Type":"application/json",...(init?.headers||{})}});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||"تعذر تنفيذ العملية");return data;}
 const aliases=(items:any[]|undefined)=>Array.isArray(items)?items.map(item=>String(item?.value||"").trim()).filter(Boolean):[];
 const intersects=(a:number[],b:number[])=>a.some(id=>b.includes(id));
-const buildingPrefix=(building:MasterBuilding)=>String(building.sitePrefix||building.officialCode.slice(0,4)||"").trim().toUpperCase();
+const buildingPrefix=(building:MasterBuilding)=>String(building.officialCode?.slice(0,4)||building.sitePrefix||"").trim().toUpperCase();
 const migrationLabel=(key:string)=>({scanned:"تم فحصها",verified:"موثقة",buildingChanged:"تم توحيد المبنى",roomChanged:"تم توحيد القاعة",review:"تحتاج مراجعة",invalid:"Placeholder تاريخي",unchanged:"بدون تغيير"} as Record<string,string>)[key]||key;
 const reviewKindLabel=(kind:string)=>({BUILDING:"مبنى",ROOM:"قاعة",PAIR:"مبنى/قاعة",SWAPPED_FIELDS:"احتمال تبديل الحقول",UNKNOWN_PREFIX:"كود موقع غير معروف",CROSS_BUILDING_ROOM_CODE:"رمز قاعة في أكثر من مبنى"} as Record<string,string>)[kind]||kind;
 
@@ -85,10 +85,21 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   },[data.rooms]);
 
   const buildingCollegeIds=(building:MasterBuilding)=>{
+    const prefix=buildingPrefix(building);
+    /* A confirmed official building code is the physical identity of the site.
+       Historical room links may contain stale cross-college associations (for
+       example a boys 021T building once referenced by a girls row). When the
+       prefix is known, it outranks those old usage links so the college filter
+       can never show the opposite-gender building. Unknown legacy buildings
+       still fall back to their stored/room associations. */
+    if(prefix){
+      const officialIds=data.colleges
+        .filter(college=>officialCollegeSitePrefix(college.AdCollegeName)===prefix)
+        .map(college=>Number(college.AdCollegeId)).filter(Boolean);
+      if(officialIds.length)return [...new Set(officialIds)];
+    }
     const ids=new Set<number>((building.collegeIds||[]).map(Number).filter(Boolean));
     for(const room of roomIdsByBuilding.get(building.id)||[])for(const id of room.collegeIds||[])if(Number(id))ids.add(Number(id));
-    const prefix=buildingPrefix(building);
-    if(prefix)for(const college of data.colleges)if(officialCollegeSitePrefix(college.AdCollegeName)===prefix)ids.add(Number(college.AdCollegeId));
     return [...ids];
   };
   const buildingSectionIds=(building:MasterBuilding)=>{
@@ -197,7 +208,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
       <Surface className="location-admin-detail">{current?<><div className="location-admin-title"><div><div className="location-detail-kicker">{officialSiteLabel(buildingPrefix(current),current.siteName||current.branchName)}</div><h2 dir="ltr">{current.officialCode}</h2><p>مبنى {buildingNumberLabel(current)} · {current.roomCount} قاعة · {current.historicalUsageCount} استخدام تاريخي</p></div><div className="location-admin-actions"><SecondaryButton type="button" data-guide-ignore="إضافة قاعة للمبنى" disabled={demoReadOnly} onClick={()=>{setNewRoom({buildingId:current.id,canonicalCode:""});setShowRoomCreate(v=>!v);}}><Plus/>{showRoomCreate?"إغلاق":"قاعة جديدة"}</SecondaryButton><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={demoReadOnly} onClick={()=>setEditEntity({kind:"building",id:current.id,title:current.officialCode,active:current.active,siteName:officialSiteLabel(buildingPrefix(current),current.siteName||current.branchName),branchName:current.branchName||"",description:current.description||"",collegeIds:[...buildingCollegeIds(current)],sectionIds:[...buildingSectionIds(current)]})}>إدارة المبنى</PrimaryButton></div></div>
         <div className="location-meta-grid"><div><small>الموقع الرسمي</small><strong>{officialSiteLabel(buildingPrefix(current),current.siteName||current.branchName)}</strong></div><div><small>الكليات المرتبطة</small><strong>{buildingCollegeIds(current).map(collegeName).join("، ")||"—"}</strong></div><div><small>الأقسام المستخدمة</small><strong>{buildingSectionIds(current).map(sectionName).join("، ")||"—"}</strong></div><div><small>الصيغ التاريخية</small><strong dir="ltr">{aliases(current.aliases).join(" · ")||"لا توجد"}</strong></div></div>
         {aliases(current.aliases).length?<div className="location-alias-help"><Info/><span>{aliases(current.aliases).length} صيغة تاريخية محفوظة لهذا المبنى.</span></div>:null}
-        {showRoomCreate?<div className="location-inline-form location-create-room"><input autoFocus placeholder="رمز القاعة، مثال F06" value={newRoom.buildingId===current.id?newRoom.canonicalCode:""} onFocus={()=>setNewRoom(v=>({...v,buildingId:current.id}))} onChange={e=>setNewRoom({buildingId:current.id,canonicalCode:e.target.value.toUpperCase().replace(/\s+/g,"")})}/><span className="location-derived-note">تُحدد «مشتركة» تلقائيًا من الأقسام المرتبطة.</span><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={!newRoom.canonicalCode||busy||demoReadOnly} onClick={async()=>{const ok=await mutate("/api/admin/location-registry/rooms",{method:"POST",body:JSON.stringify({...newRoom,buildingId:current.id})},"تمت إضافة القاعة");if(ok){setNewRoom({buildingId:current.id,canonicalCode:""});setShowRoomCreate(false);}}}><Plus/>إضافة قاعة</PrimaryButton></div>:null}
+        {showRoomCreate?<div className="location-inline-form location-create-room"><input autoFocus placeholder="رمز القاعة، مثال F06" value={newRoom.buildingId===current.id?newRoom.canonicalCode:""} onFocus={()=>setNewRoom(v=>({...v,buildingId:current.id}))} onChange={e=>setNewRoom({buildingId:current.id,canonicalCode:e.target.value.toUpperCase().replace(/\s+/g,"")})}/><span className="location-derived-note">تُحدد «مشتركة» تلقائيًا من الأقسام المرتبطة.</span><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={!newRoom.canonicalCode||busy||demoReadOnly} onClick={async()=>{const inheritedSections=sectionFilter?[sectionFilter]:[];const inheritedColleges=selectedCollegeIds.length?[...selectedCollegeIds]:buildingCollegeIds(current);const ok=await mutate("/api/admin/location-registry/rooms",{method:"POST",body:JSON.stringify({...newRoom,buildingId:current.id,collegeIds:inheritedColleges,sectionIds:inheritedSections,primarySectionIds:inheritedSections})},"تمت إضافة القاعة وربطها بالنطاق الحالي");if(ok){setNewRoom({buildingId:current.id,canonicalCode:""});setShowRoomCreate(false);}}}><Plus/>إضافة قاعة</PrimaryButton></div>:null}
         <div className="location-room-table">{rooms.map(room=><div key={room.id}><div className="location-room-code"><strong dir="ltr">{room.canonicalCode}</strong><span>{room.shared?<Badge>مشتركة</Badge>:null}{!room.active?<Badge>غير فعالة</Badge>:null}</span></div><small>{room.historicalUsageCount} استخدام · {room.sectionIds.map(sectionName).join("، ")||"غير مخصصة لقسم"}</small><div className="location-room-actions"><SecondaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={demoReadOnly} onClick={()=>setEditEntity({kind:"room",id:room.id,title:`${current.officialCode} / ${room.canonicalCode}`,active:room.active,newBuildingId:room.buildingId,collegeIds:[...room.collegeIds],sectionIds:[...room.sectionIds],primarySectionIds:[...(room.primarySectionIds||[])]})}>إدارة</SecondaryButton></div></div>)}</div>
       </>:<div className="location-empty-state"><Building2/><strong>اختر مبنى من القائمة</strong><span>ستظهر قاعاته وإدارته هنا.</span></div>}</Surface>
     </div></>:null}

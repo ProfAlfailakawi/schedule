@@ -548,4 +548,37 @@ ok('213 the location registry phone layout overrides the late desktop important 
    and '.location-admin-columns{grid-template-columns:minmax(0,1fr)!important' in index_css)
 
 
+
+ok('214 an official building code/prefix outranks stale metadata and room usage when filtering by college, so a boys building cannot leak into the girls list',
+   'building.officialCode?.slice(0,4)||building.sitePrefix' in location_admin
+   and 'if(officialIds.length)return [...new Set(officialIds)]' in location_admin
+   and 'Historical room links may contain stale cross-college associations' in location_admin)
+
+ok('215 a room created while a department filter is active inherits that college/department immediately, so it remains visible after reload',
+   'const inheritedSections=sectionFilter?[sectionFilter]:[]' in location_admin
+   and 'primarySectionIds:inheritedSections' in location_admin
+   and 'تمت إضافة القاعة وربطها بالنطاق الحالي' in location_admin)
+
+ok('216 the desktop building-create form is bounded by the buildings panel instead of spilling its code/button into the detail pane',
+   'سجل المواقع على سطح المكتب: نموذج المبنى يعيش داخل عمود المباني نفسه' in index_css
+   and '.location-create-building>select{grid-column:1/-1' in index_css
+   and '.location-create-building>.location-code-preview{' in index_css)
+
+transfer_src=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
+schedules_src=(ROOT/'src/components/Schedules.tsx').read_text()
+ok('217 a PDF department mismatch is actionable for root admin: the same file can resolve/create the proven section and retry under that section',
+   '/api/intelligence/pdf-import/bootstrap-section' in server
+   and 'canBootstrapSection' in server
+   and 'PDF_DEPARTMENT_AMBIGUOUS' in server
+   and 'const resolvePdfDepartment = async () =>' in transfer_src
+   and 'إضافة القسم وإعادة الاستيراد' in transfer_src
+   and 'readPdf(fix.file,nextSectionId)' in transfer_src)
+
+ok('218 resolving the PDF department also moves the live schedule selector, and draft saving uses that effective section rather than the stale original selector',
+   'onSectionChange?: (sectionId: number) => void' in transfer_src
+   and 'const activeImportSectionId = importSectionId || sectionId' in transfer_src
+   and 'sectionId:activeImportSectionId' in transfer_src
+   and 'onSectionChange={(nextSectionId) =>' in schedules_src
+   and 'setFilterSection(nextSectionId)' in schedules_src)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

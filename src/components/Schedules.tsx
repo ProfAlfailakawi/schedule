@@ -11933,6 +11933,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             setLiveFeedSerial(serial => serial + 1);
             void loadWorkspace(filterCollege, filterSection, filterTerm);
           }}
+          onSectionChange={(nextSectionId) => {
+            /* A PDF header can prove another department in the same college.
+               When the root admin resolves/creates it from the import sheet,
+               move the live workspace to that proven section too — no hidden
+               import into a department different from the selector on screen. */
+            setFilterSection(nextSectionId);
+            setLiveFeedSerial(serial => serial + 1);
+          }}
           onClose={() => setTransferOpen(false)}
         />
       ) : null}
