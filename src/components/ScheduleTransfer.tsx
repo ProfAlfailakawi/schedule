@@ -991,7 +991,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           <div className="transfer-scope-fix" role="alert">
             <Building2 aria-hidden="true" />
             <div><strong>الملف يخص «{pdfScopeFix.suggestedSectionName||pdfScopeFix.sourceDepartment}»</strong><small>{pdfScopeFix.suggestedSectionId?"القسم موجود بالفعل في هذه الكلية؛ سأنقلك إليه وأعيد قراءة الملف نفسه.":"القسم غير موجود في هذه الكلية. يمكن للمدير الرئيسي إضافته من ترويسة الملف الموثقة ثم إعادة الاستيراد تلقائياً."}</small></div>
-            <PrimaryButton type="button" onClick={()=>void resolvePdfDepartment()} disabled={busy}><Plus/>{pdfScopeFix.suggestedSectionId?"فتح القسم الصحيح وإعادة الاستيراد":"إضافة القسم وإعادة الاستيراد"}</PrimaryButton>
+            <PrimaryButton type="button" data-guide-ignore="تصحيح نطاق استيراد جدول الـ PDF أو إنشاء القسم المطابق من ترويسة الملف ثم إعادة الاستيراد تلقائياً" onClick={()=>void resolvePdfDepartment()} disabled={busy}><Plus/>{pdfScopeFix.suggestedSectionId?"فتح القسم الصحيح وإعادة الاستيراد":"إضافة القسم وإعادة الاستيراد"}</PrimaryButton>
           </div>:null}
 
         <div className="transfer-body">
