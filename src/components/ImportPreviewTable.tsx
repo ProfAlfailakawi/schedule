@@ -88,7 +88,7 @@ const readableCourseEvidence = (value: unknown) => {
 };
 
 export default function ImportPreviewTable({
-  rows, courses, instructors, departmentIds = [], visitingIds = [], visitingPeople = [], departmentRooms = [],
+  rows, courses, instructors, departmentIds = [], visitingIds = [], visitingPeople = [], matchedPeople = [], departmentRooms = [],
   collegeId = 0, sectionId = 0, termId = 0, rowIssues = {}, onRows,
 }: {
   rows: ImportRow[];
@@ -97,6 +97,9 @@ export default function ImportPreviewTable({
   departmentIds?: number[];
   visitingIds?: Iterable<number>;
   visitingPeople?: AdInstructor[];
+  /** من طابقهم الخادم فعلاً لهذه القراءة: للعرض وحده. لا يدخلون قائمة الاختيار
+      ولا يُحسبون من أهل القسم، فيبقى من كان خارجه كهرمانياً للمراجعة. */
+  matchedPeople?: AdInstructor[];
   departmentRooms?: DepartmentRoom[];
   collegeId?: number;
   sectionId?: number;
@@ -120,8 +123,8 @@ export default function ImportPreviewTable({
   // visiting instructor can show the badge even when that person is not part of
   // the department's ordinary instructor picker. Picker behaviour is unchanged.
   const displayInstructors = useMemo(() => [...new Map(
-    [...pickerInstructors, ...visitingPeople].map(person => [Number(person.AdInstructorId), person] as const),
-  ).values()], [pickerInstructors, visitingPeople]);
+    [...pickerInstructors, ...visitingPeople, ...matchedPeople].map(person => [Number(person.AdInstructorId), person] as const),
+  ).values()], [pickerInstructors, visitingPeople, matchedPeople]);
   const instructorById = useMemo(() => new Map(displayInstructors.map(person => [Number(person.AdInstructorId), person])), [displayInstructors]);
   const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], value => Number(value)).filter(Boolean)), [visitingIds]);
 
@@ -329,7 +332,7 @@ export default function ImportPreviewTable({
             const cellTitle = (key: EvidenceKey) => [evidenceTitle(row, key), ...notesFor(key)].filter(Boolean).join(" · ") || undefined;
             const unplacedNotes = notes.filter(note => !importIssueField(note));
             const outsideNote = !missing.instructor(row) && !notesFor("instructor").length && instructorOutsideDepartment(row)
-              ? "هذا الأستاذ ليس ضمن أساتذة القسم أو منتدبي الفصل — راجع الاختيار إن لم يكن مقصوداً."
+              ? "هذا الأستاذ ليس ضمن أساتذة القسم أو منتدبي الفصل — سجّله عضواً في القسم أو اختره يدوياً إن كان مقصوداً."
               : "";
             return (
               <React.Fragment key={`${row.referenceNumber || "row"}-${index}`}>

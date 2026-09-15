@@ -7726,8 +7726,21 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const diagnostic=recognized.pageDiagnostics.find((item:any)=>Number(item.page)===page);
     return{page,rows:pageRows.length,ready:pageReady,review:Math.max(0,pageRows.length-pageReady),suspicious:Boolean(diagnostic?.suspicious),diagnostic};
   });
+  /* ── الشاشة لا يجوز أن تكذّب المطابقة ──────────────────────────────────
+     كان الخادم يطابق الاسم على مستوى سجل الجامعة ويثبّت هويته في الصف، بينما
+     تبني الشاشة قائمة العرض من أساتذة القسم وحدهم. فالهوية التي طابقها الخادم
+     فعلاً لا تُوجد في خريطة العرض، فيظهر الصف أحمر بوسم «غير محسوم» وتحته سبب
+     النجاح نفسه: «هوية واحدة مؤكدة من سجل النظام». لذلك تُرسل مع النتيجة أسماء
+     من رُبطوا فعلاً: عرضٌ فقط، لا يوسّع قائمة الاختيار ولا يمنح أحداً عضوية
+     القسم — ومن كان خارج القسم يبقى كهرمانياً للمراجعة كما هو، لكن باسمه
+     الرسمي من النظام لا بنصّ OCR. */
+  const resolvedInstructors=[...new Map((rows as any[])
+    .map(row=>Number(row.AdInstructorId)||0).filter(id=>id>0)
+    .map(id=>[id,allInstructors.find((person:any)=>Number(person.AdInstructorId)===id)])
+    .filter(([,person])=>Boolean(person)) as Array<[number,any]>).values()]
+    .map((person:any)=>({AdInstructorId:Number(person.AdInstructorId),AdInstructorName:String(person.AdInstructorName||""),AdInstructorCivil:String(person.AdInstructorCivil||"")}));
   const result={
-    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,pageSummaries,
+    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,pageSummaries,resolvedInstructors,
     fileName:fileName.slice(0,180),
     pages:recognized.pageCount,confidence:recognized.confidence,
     legibility:recognized.legibility,
