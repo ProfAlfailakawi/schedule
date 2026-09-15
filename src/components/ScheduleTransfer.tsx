@@ -1344,6 +1344,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         visitingIds={roster}
                         visitingPeople={directoryPeople as any}
                         matchedPeople={(Array.isArray(xlsxPreview.resolvedInstructors) ? xlsxPreview.resolvedInstructors : []) as any}
+                        affiliatedIds={Array.isArray(xlsxPreview.departmentInstructorIds) ? xlsxPreview.departmentInstructorIds : []}
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}

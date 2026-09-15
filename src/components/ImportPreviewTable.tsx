@@ -88,7 +88,7 @@ const readableCourseEvidence = (value: unknown) => {
 };
 
 export default function ImportPreviewTable({
-  rows, courses, instructors, departmentIds = [], visitingIds = [], visitingPeople = [], matchedPeople = [], departmentRooms = [],
+  rows, courses, instructors, departmentIds = [], visitingIds = [], visitingPeople = [], matchedPeople = [], affiliatedIds = [], departmentRooms = [],
   collegeId = 0, sectionId = 0, termId = 0, rowIssues = {}, onRows,
 }: {
   rows: ImportRow[];
@@ -100,6 +100,9 @@ export default function ImportPreviewTable({
   /** من طابقهم الخادم فعلاً لهذه القراءة: للعرض وحده. لا يدخلون قائمة الاختيار
       ولا يُحسبون من أهل القسم، فيبقى من كان خارجه كهرمانياً للمراجعة. */
   matchedPeople?: AdInstructor[];
+  /** أهل القسم كما يعرّفهم قانون النشر على الخادم: مواقع الفرع كلها ومعها
+      احتياط الكلية للقسم بلا تاريخ. الشاشة تقرأ التعريف ولا تخترعه. */
+  affiliatedIds?: number[];
   departmentRooms?: DepartmentRoom[];
   collegeId?: number;
   sectionId?: number;
@@ -196,7 +199,8 @@ export default function ImportPreviewTable({
     ...departmentIds.map(Number),
     ...Array.from(visitingIdSet),
     ...visitingPeople.map(person => Number(person.AdInstructorId)),
-  ].filter(Boolean)), [departmentIds, visitingIdSet, visitingPeople]);
+    ...affiliatedIds.map(Number),
+  ].filter(Boolean)), [departmentIds, visitingIdSet, visitingPeople, affiliatedIds]);
   const instructorOutsideDepartment = (row: ImportRow) => {
     const id=Number(row.AdInstructorId)||0;
     if(!id || !instructorById.has(id))return false;
