@@ -348,7 +348,10 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [importKind, collegeId, sectionId, termId, previewRowsSignature, xlsxPreview?.rows]);
 
-  const termConflictsFresh = Boolean(termConflicts && termConflicts.signature === previewRowsSignature);
+  /* الفحص المسبق خاص بجدول PDF المعتمد؛ استيراد ملف Excel لا يمرّ به أصلاً،
+     فلا يجوز أن ينتظر جواباً لن يأتي ويبقى بلا زر نشر إلى الأبد. */
+  const termConflictsFresh = importKind !== "authority-pdf"
+    || Boolean(termConflicts && termConflicts.signature === previewRowsSignature);
 
   /* ── التعارض يُرى قبل الضغط، لا بعده ───────────────────────────────────────
    *

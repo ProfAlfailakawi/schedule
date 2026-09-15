@@ -127,7 +127,12 @@ transfer=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
 # التعارض مع بقية أقسام الفصل قد أجاب عن هذه الصفوف بالذات. الوعد ثم الرفض بعد
 # الضغط ليس مراجعة، فالانتظار لحظةً هو الشكل الصحيح للقاعدة لا تخفيفها.
 ok('61 transfer publish is hidden and hard-disabled for any unresolved preview note while a saved Authority baseline may publish zero live rows', 'const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0)' in transfer and '{importReady && termConflictsFresh ? (' in transfer and 'disabled={busy || !importReady}' in transfer and 'previewIssues: importBlockingIssues' in transfer and 'if (!importReady)' in transfer)
-ok('61b transfer publish waits for the term-wide conflict preflight instead of promising then being refused', '/api/schedules/import-preflight' in transfer and 'termConflictsFresh = Boolean(termConflicts && termConflicts.signature === previewRowsSignature)' in transfer and 'import-preflight' in server and 'blockingImportConflicts(' in server)
+# الانتظار خاص بجدول PDF المعتمد: استيراد Excel لا يمرّ بالفحص المسبق أصلاً،
+# فلو شمله الشرط لبقي بلا زر نشر إلى الأبد.
+ok('61b transfer publish waits for the term-wide conflict preflight, and only for the Authority PDF path', '/api/schedules/import-preflight' in transfer and 'importKind !== "authority-pdf"\n    || Boolean(termConflicts && termConflicts.signature === previewRowsSignature)' in transfer and 'import-preflight' in server and 'blockingImportConflicts(' in server)
+# المعرّف السالب يبقى مع الصف بعد حذف ما قبله، فلا يساوي موضعه. العلامة تُقرأ
+# من الترتيب الحالي وإلا وقعت على صف بريء بينما يُمنع النشر بسبب لا يُرى.
+ok('61c preflight conflict positions come from the current row order, never from decoding the negative id', 'const positionById=new Map<number,number>()' in server and 'positionById.get(Number(id))' in server and 'return value<0?-value-1:null' not in server)
 ok('62 draft backend rejects unresolved preview notes', 'لا يمكن حفظ المسودة أو نشرها قبل معالجة جميع ملاحظات المعاينة.' in server and 'previewIssues.length' in server)
 ok('63 pending room never waives the required building', 'building: (row: ImportRow) => !row.buildingId,' in imp)
 doc_ocr=(ROOT/'src/utils/documentOcr.ts').read_text()
