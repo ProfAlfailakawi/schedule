@@ -3525,7 +3525,7 @@ export type ParsedScheduleRow={
  * - «هيئة…» maps only to the system's own «هيئة تدريسية» identity;
  * - ambiguous names stay blank. The PDF spelling is never saved as a new name.
  */
-type InstructorIdentityMatch={person:AdInstructor;method:"EXACT_FULL"|"FACULTY_IDENTITY"|"COURSE_TWO_NAME"|"DEPARTMENT_TWO_NAME"|"GLOBAL_THREE_NAME";score:number;matchedTokens:number};
+type InstructorIdentityMatch={person:AdInstructor;method:"EXACT_FULL"|"FACULTY_IDENTITY"|"COURSE_ONE_NAME"|"DEPARTMENT_ONE_NAME"|"COURSE_TWO_NAME"|"DEPARTMENT_TWO_NAME"|"GLOBAL_SOLE_TWO_NAME"|"GLOBAL_THREE_NAME";score:number;matchedTokens:number};
 
 function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):InstructorIdentityMatch|undefined{
   const clean=(value:string)=>fold(value)
@@ -3556,12 +3556,22 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
     preferred:Boolean(preferredIds?.has(Number(person.AdInstructorId))),
   })).filter(item=>item.normalized&&item.tokens.length);
 
-  /* «هيئة» is an explicit system identity, not a fuzzy person-name query. */
+  /* «هيئة» is an explicit system identity, not a fuzzy person-name query.
+     Several departments keep their own «هيئة تدريسية» placeholder, so the
+     university-wide list is deliberately narrowed before it is called
+     ambiguous: this course's own history first, then this department, then a
+     single university-wide record. Uniqueness is counted by instructor id, not
+     by row, so two catalogue entries for the SAME person no longer read as a
+     tie and no longer leave the cell blank. */
   if(/^هيئه(?:\s|$)/.test(rawClean)){
     const faculty=catalogue.filter(item=>item.normalized==="هيئه تدريسيه"||item.normalized.startsWith("هيئه تدريسيه "));
-    const preferred=faculty.filter(item=>item.preferred);
-    if(preferred.length===1)return{person:preferred[0].person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2};
-    return faculty.length===1?{person:faculty[0].person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2}:undefined;
+    const sole=(pool:typeof faculty)=>{
+      const ids=new Set(pool.map(item=>Number(item.person.AdInstructorId)));
+      return ids.size===1?pool[0]:undefined;
+    };
+    const inCourse=coursePreferredIds?.size?faculty.filter(item=>coursePreferredIds.has(Number(item.person.AdInstructorId))):[];
+    const hit=sole(inCourse)||sole(faculty.filter(item=>item.preferred))||sole(faculty);
+    return hit?{person:hit.person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2}:undefined;
   }
   if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
 
@@ -3607,7 +3617,7 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
   };
   const commonExact=(candidate:string[],observed:string[])=>[...new Set(candidate.filter(token=>observed.includes(token)))].length;
 
-  const choose=(pool:typeof catalogue,allowTwo:boolean)=>{
+  const choose=(pool:typeof catalogue,allowTwo:boolean,soleOnly=false,allowNear=false)=>{
     const ranked=pool.map(item=>{
       const forward=orderedEvidence(item.tokens,rawTokens);
       const reverse=orderedEvidence(rawTokens,item.tokens);
@@ -3615,6 +3625,12 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
       const exactCommon=commonExact(item.tokens,rawTokens);
       const first=item.tokens[0],last=item.tokens[item.tokens.length-1];
       const firstHit=rawTokens.some(token=>tokenEqual(first,token));
+      /* ── الاسم الأول قد يصله OCR ناقص حرفاً واحداً ─────────────────────────
+         «عبدالله حسن» تُطبع أحياناً «بدالله حسن»: العين وحدها ضاعت. كان هذا
+         يُسقط الصف كاملاً لأن الاسم الأول كان يُشترط مطابقته حرفياً. يُقبل
+         الآن جذعاً (فرق حرف واحد) بشرط أن يكون اسم آخر قد طابق حرفياً، فلا
+         تُبنى هوية من الضجيج وحده. */
+      const firstStemHit=rawTokens.some(token=>stemEqual(first,token));
       const lastHit=rawTokens.some(token=>stemEqual(last,token));
       /* Three ordered names are strong evidence even when the printed family
          name is cut at the cell edge. Two names are accepted only in the
@@ -3622,31 +3638,68 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
          evidence. This restores the old high hit-rate without saving OCR text. */
       const threeProof=ordered.total>=3&&ordered.exactCount>=2;
       const twoExactProof=allowTwo&&exactCommon>=2&&ordered.total>=2;
-      const firstLastProof=allowTwo&&item.tokens.length>=2&&firstHit&&lastHit&&ordered.total>=2;
-      const qualified=threeProof||twoExactProof||firstLastProof;
+      const firstLastProof=allowTwo&&item.tokens.length>=2&&(firstHit||(firstStemHit&&ordered.exactCount>=1))&&lastHit&&ordered.total>=2;
+      /* ── اسمان مطبوعان وأحدهما ناقص حرفاً ──────────────────────────────────
+         «عبدالله حسن الرشيدي» تُطبع «بدالله حسن»: اسم العائلة مقصوص عند حافة
+         الخانة، والاسم الأول فقد حرفاً واحداً. لا يبقى برهان حرفيّ كامل لاسمين،
+         فكان الصف يسقط. يُقبل هذا الشكل داخل نطاق القسم/المقرر وحده، وبشرط اسم
+         واحد على الأقل مطابق حرفياً وترتيب محفوظ — ويظل مرهوناً بأن يبقى مرشح
+         واحد بلا منازع، وإلا فالخانة فارغة. */
+      const twoNearProof=allowNear&&ordered.total>=2&&ordered.exactCount>=1&&ordered.stemCount>=1;
+      const qualified=threeProof||twoExactProof||firstLastProof||twoNearProof;
       const score=qualified?(ordered.total*100+ordered.exactCount*20+exactCommon*10+(firstHit?3:0)+(lastHit?3:0)-ordered.stemCount):0;
       return{item,qualified,score,ordered,exactCommon};
     }).filter(entry=>entry.qualified).sort((a,b)=>b.score-a.score||b.exactCommon-a.exactCommon||b.item.tokens.length-a.item.tokens.length);
     if(!ranked.length)return undefined;
+    const distinct=new Set(ranked.map(entry=>Number(entry.item.person.AdInstructorId)));
+    if(soleOnly&&distinct.size>1)return undefined;
     const top=ranked[0],runner=ranked[1];
-    if(runner&&runner.score===top.score)return undefined;
+    if(runner&&runner.score===top.score&&Number(runner.item.person.AdInstructorId)!==Number(top.item.person.AdInstructorId))return undefined;
     return top;
+  };
+
+  /* ── اسم واحد مطبوع في خانة الأستاذ ────────────────────────────────────────
+     الجدول المعتمد يكتب أحياناً اسماً أولاً وحده («إقبال»). كان يُترك فارغاً
+     دائماً لأن كل البراهين تبدأ من اسمين، فأستاذة موجودة أصلاً في القسم كانت
+     تسقط من الاستيراد بلا سبب. يُقبل الاسم المفرد داخل نطاق المقرر أو القسم
+     فقط، ومطابقةً حرفية كاملة للرمز، وبشرط ألا يحمله سوى شخص واحد في ذلك
+     النطاق — أي أن النظام لا يختار، بل يقرأ نتيجة وحيدة. */
+  const soleByToken=(pool:typeof catalogue)=>{
+    if(rawTokens.length!==1)return undefined;
+    const token=rawTokens[0];
+    if(token.length<3)return undefined;
+    const hits=pool.filter(item=>item.tokens.some(candidate=>tokenEqual(candidate,token)));
+    const ids=new Set(hits.map(item=>Number(item.person.AdInstructorId)));
+    return ids.size===1?hits[0]:undefined;
   };
 
   /* Course history is a tie-breaker, never identity by itself. Two-name proof is
      allowed here only when the printed tokens leave ONE existing system person
      among instructors who have actually taught this canonical course. */
   const coursePool=coursePreferredIds?.size?catalogue.filter(item=>coursePreferredIds.has(Number(item.person.AdInstructorId))):[];
-  const courseHit=coursePool.length?choose(coursePool,true):undefined;
+  const courseHit=coursePool.length?choose(coursePool,true,false,true):undefined;
   if(courseHit)return{person:courseHit.item.person,method:"COURSE_TWO_NAME",score:99,matchedTokens:courseHit.ordered.total};
 
   const preferred=catalogue.filter(item=>item.preferred);
-  const preferredHit=preferred.length?choose(preferred,true):undefined;
+  const preferredHit=preferred.length?choose(preferred,true,false,true):undefined;
   if(preferredHit)return{person:preferredHit.item.person,method:"DEPARTMENT_TWO_NAME",score:98,matchedTokens:preferredHit.ordered.total};
+
+  const courseSingle=coursePool.length?soleByToken(coursePool):undefined;
+  if(courseSingle)return{person:courseSingle.person,method:"COURSE_ONE_NAME",score:95,matchedTokens:1};
+  const preferredSingle=preferred.length?soleByToken(preferred):undefined;
+  if(preferredSingle)return{person:preferredSingle.person,method:"DEPARTMENT_ONE_NAME",score:94,matchedTokens:1};
+
   /* Outside the department, require three-name proof; two-name university-wide
      matches are deliberately left blank unless the FULL identity matched above. */
   const globalHit=choose(catalogue,false);
-  return globalHit?{person:globalHit.item.person,method:"GLOBAL_THREE_NAME",score:96,matchedTokens:globalHit.ordered.total}:undefined;
+  if(globalHit)return{person:globalHit.item.person,method:"GLOBAL_THREE_NAME",score:96,matchedTokens:globalHit.ordered.total};
+  /* ── اسمان خارج القسم ──────────────────────────────────────────────────────
+     القسم الذي لا تاريخ له في النظام (فصل جديد، قسم حديث) كان يفقد كل اسم
+     ثنائي لأن نطاق التفضيل يولد فارغاً، فيظهر الجدول كله أحمر. يُقبل الاسمان
+     على مستوى الجامعة فقط حين لا ينطبقان إلا على شخص واحد لا ثاني له — مرشّح
+     وحيد مؤهل، لا «الأعلى درجة» بين متزاحمين. */
+  const solePairHit=choose(catalogue,true,true);
+  return solePairHit?{person:solePairHit.item.person,method:"GLOBAL_SOLE_TWO_NAME",score:93,matchedTokens:solePairHit.ordered.total}:undefined;
 }
 
 function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):AdInstructor|undefined{

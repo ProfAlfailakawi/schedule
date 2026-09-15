@@ -152,15 +152,23 @@ export default function ImportPreviewTable({
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
     room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
+    /* ── الأحمر يعني «لا أحد»، لا «ليس من عندنا» ───────────────────────────
+       كان الصف يُصبغ بالأحمر لمجرد أن الأستاذ المرتبط غير مسجَّل في تاريخ
+       القسم، فظهر جدول القسم الإسلامي كله كأنه خطأ بينما كل أسمائه مقروءة
+       ومرتبطة فعلاً. الخطأ الحقيقي الوحيد هنا هو خانة بلا هوية؛ أما الهوية
+       الثابتة من خارج القسم فهي مراجعة (كهرماني) لا منع، والحفظ لا يعترض
+       عليها أصلاً. */
     instructor: (row: ImportRow) => {
       const id=Number(row.AdInstructorId)||0;
-      if(!id || !instructorById.has(id))return true;
-      /* Choosing a colleague by hand is a decision, not a failed match. Teaching
-         across departments is legitimate — the picker already says so — and the
-         cell must stop shouting once a person has settled it. */
-      if(row.importEvidence?.instructor?.source==="MANUAL")return false;
-      return departmentIds.length>0&&!departmentIds.includes(id)&&!visitingIdSet.has(id);
+      return !id || !instructorById.has(id);
     },
+  };
+  /** هوية مثبتة لكنها خارج أساتذة القسم/المنتدبين: تُعرض للمراجعة لا كخطأ. */
+  const instructorOutsideDepartment = (row: ImportRow) => {
+    const id=Number(row.AdInstructorId)||0;
+    if(!id || !instructorById.has(id))return false;
+    if(row.importEvidence?.instructor?.source==="MANUAL")return false;
+    return departmentIds.length>0&&!departmentIds.includes(id)&&!visitingIdSet.has(id);
   };
   const patchManual = (index:number,key:EvidenceKey,values:Partial<ImportRow>) => onRows(rows.map((row,at)=>{
     if(at!==index)return row;
@@ -290,6 +298,9 @@ export default function ImportPreviewTable({
             const cellClass = (key: EvidenceKey, bad: boolean) => evidenceClass(row, key, bad || notesFor(key).length > 0);
             const cellTitle = (key: EvidenceKey) => [evidenceTitle(row, key), ...notesFor(key)].filter(Boolean).join(" · ") || undefined;
             const unplacedNotes = notes.filter(note => !importIssueField(note));
+            const outsideNote = !missing.instructor(row) && !notesFor("instructor").length && instructorOutsideDepartment(row)
+              ? "هذا الأستاذ ليس ضمن أساتذة القسم أو منتدبي الفصل — راجع الاختيار إن لم يكن مقصوداً."
+              : "";
             return (
               <React.Fragment key={`${row.referenceNumber || "row"}-${index}`}>
                 <tr className={open ? "is-editing" : ""}>
@@ -368,7 +379,7 @@ export default function ImportPreviewTable({
                       <span dir="ltr">{row.locationStatus === "PENDING_ROOM" ? "بانتظار تثبيت القاعة" : (row.AdRoomHall || "—")}</span>
                     )}
                   </td>
-                  <td className={cellClass("instructor",missing.instructor(row))} title={cellTitle("instructor")}>
+                  <td className={outsideNote?"import-cell-review":cellClass("instructor",missing.instructor(row))} title={[cellTitle("instructor"),outsideNote].filter(Boolean).join(" · ")||undefined}>
                     {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : "—")}
                   </td>
                   <td className="import-row-tools">
