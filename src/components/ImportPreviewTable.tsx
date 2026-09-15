@@ -174,12 +174,19 @@ export default function ImportPreviewTable({
   const unlinkedLabel = (row: ImportRow) =>
     row.importEvidence?.instructor?.method === "UNREGISTERED" ? "غير مسجّل" : "غير محسوم";
 
-  /** هوية مثبتة لكنها خارج أساتذة القسم/المنتدبين: تُعرض للمراجعة لا كخطأ. */
+  /** هوية مثبتة لكنها خارج أساتذة القسم/المنتدبين: تُعرض للمراجعة لا كخطأ.
+      وقوائم أهل القسم ثلاث لا واحدة: تاريخه، ومنتدبو الفصل، ودليله اليدوي
+      الذي يصل عبر visitingPeople — من سُجّل عضواً للتوّ لا يُوسم غريباً. */
+  const departmentAffiliated = useMemo(() => new Set([
+    ...departmentIds.map(Number),
+    ...Array.from(visitingIdSet),
+    ...visitingPeople.map(person => Number(person.AdInstructorId)),
+  ].filter(Boolean)), [departmentIds, visitingIdSet, visitingPeople]);
   const instructorOutsideDepartment = (row: ImportRow) => {
     const id=Number(row.AdInstructorId)||0;
     if(!id || !instructorById.has(id))return false;
     if(row.importEvidence?.instructor?.source==="MANUAL")return false;
-    return departmentIds.length>0&&!departmentIds.includes(id)&&!visitingIdSet.has(id);
+    return departmentAffiliated.size>0&&!departmentAffiliated.has(id);
   };
   const patchManual = (index:number,key:EvidenceKey,values:Partial<ImportRow>) => onRows(rows.map((row,at)=>{
     if(at!==index)return row;
