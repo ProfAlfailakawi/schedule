@@ -209,6 +209,18 @@ const soleVariant = bindGeminiRowsToCatalogue(
   [{ AdInstructorId: 91, AdInstructorName: "إقبال عبد العزيز المطوع" }],
 );
 assert.equal(soleVariant[0].AdInstructorId, 91);
+/* شخصان بنفس الرموز وترتيبين مختلفين: مفتاح الترتيب الموحّد يراهما التباساً،
+   فلا يجوز أن يسبقه مفتاح آخر وحيد فيربط ما يرفضه المطابق الأصلي. */
+const flippedCollision = bindGeminiRowsToCatalogue(
+  [{ AdCourseId: 0, AdInstructorId: 0, sourceInstructorText: "عبدالله رجب الأنصاري" }],
+  [],
+  [
+    { AdInstructorId: 94, AdInstructorName: "عبدالله رجب الأنصاري" },
+    { AdInstructorId: 95, AdInstructorName: "الأنصاري عبدالله رجب" },
+  ],
+);
+assert.equal(flippedCollision[0].AdInstructorId, 0);
+
 const latin = bindGeminiRowsToCatalogue(
   [{ AdCourseId: 0, AdInstructorId: 0, sourceInstructorText: "John Smith" }],
   [],

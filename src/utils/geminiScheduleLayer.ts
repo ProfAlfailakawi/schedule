@@ -166,13 +166,17 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
       instructorByName.set(key, bucket);
     });
   });
+  /* المفاتيح المتكافئة تُجمع كلها قبل الحكم، لا تُقرأ واحداً فواحداً.
+     قراءتها بالترتيب كانت تعيد أول مفتاح وحيد وتتجاوز التباساً يراه مفتاح
+     آخر — شخصان بنفس الرموز وترتيبين مختلفين — فيربط النموذج ما يرفض المطابق
+     الأصلي ربطه. قاعدة واحدة للطرفين: هوية واحدة أو لا ربط. */
   const soleByWrittenName = (written: string) => {
+    const ids = new Set<number>();
     for (const key of instructorNameKeys(written)) {
       const bucket = instructorByName.get(key);
-      if (bucket && bucket.size === 1) return instructorById.get([...bucket][0]);
-      if (bucket && bucket.size > 1) return undefined;
+      if (bucket) bucket.forEach(id => ids.add(id));
     }
-    return undefined;
+    return ids.size === 1 ? instructorById.get([...ids][0]) : undefined;
   };
   return rows.map(row => {
     const course = courseById.get(Number(row.AdCourseId)) || courseByCode.get(asciiDigits(row.sourceCourseCode || row.courseCode || "").trim().toLowerCase());
