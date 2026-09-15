@@ -2533,12 +2533,10 @@ app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: Authentic
 
   const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0);
   const scoped = Boolean(collegeId && sectionId && isScopeAllowed(req, collegeId, sectionId));
+  /* الضمّ ذرّي: إضافتان متزامنتان لا تمحو إحداهما عضوَ الأخرى. */
   const enrol = async (instructorId: number) => {
     if (!scoped) return;
-    const directory = await Repository.getDepartmentDelegates(collegeId, sectionId);
-    if (!directory.includes(Number(instructorId))) {
-      await Repository.saveDepartmentDelegates(collegeId, sectionId, [...directory, Number(instructorId)]);
-    }
+    await Repository.addDepartmentDelegate(collegeId, sectionId, Number(instructorId));
   };
 
   const exists = await Repository.getInstructorByCivil(AdInstructorCivil);
@@ -4885,7 +4883,8 @@ app.post("/api/department-delegates/instructor", requirePermission(7), async (re
   if(!person) person=await Repository.createInstructor(civil,name,"");
   const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
   if(directory.includes(Number(person.AdInstructorId))){res.status(409).json({error:"هذا المنتدب موجود بالفعل في قائمة هذا القسم.",person});return;}
-  const instructorIds=await Repository.saveDepartmentDelegates(collegeId,sectionId,[...directory,Number(person.AdInstructorId)]);
+  await Repository.addDepartmentDelegate(collegeId,sectionId,Number(person.AdInstructorId));
+  const instructorIds=await Repository.getDepartmentDelegates(collegeId,sectionId);
   let roster:number[]|undefined;
   if(termId){const current=await Repository.getVisitingRoster(collegeId,sectionId,termId);roster=await Repository.saveVisitingRoster(collegeId,sectionId,termId,[...current,Number(person.AdInstructorId)]);}
   res.status(201).json({person,instructorIds,roster});

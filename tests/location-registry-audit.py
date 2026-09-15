@@ -143,11 +143,16 @@ ok('61b transfer publish waits for the term-wide conflict preflight, and only fo
 _law=(ROOT/'src/utils/instructorIdentity.ts').read_text()
 ok('96d the identity law folds every orthographic variant including spaces', 'ؤ' in _law and 'ئ' in _law and 'replace(/ء/g, "")' in _law and '[ىی]' in _law and 'instructorSpacelessKey' in _law and 'يي+$' in _law and 'token === "عبد" || token === "ال"' in _law)
 ok('96e every instructor-name comparison imports the shared law, no local copies', 'from "../utils/instructorIdentity"' in (ROOT/'src/components/InstructorPicker.tsx').read_text() and 'from "./instructorIdentity"' in (ROOT/'src/utils/geminiScheduleLayer.ts').read_text() and 'from "./instructorIdentity"' in (ROOT/'src/utils/authorityScanRecovery.ts').read_text() and 'foldInstructorText' in server and 'instructorCleanName' in server)
-ok('96b quick-add from a department context enrols the person into the manual department directory', 'const scoped = Boolean(collegeId && sectionId && isScopeAllowed(req, collegeId, sectionId))' in server and 'saveDepartmentDelegates(collegeId, sectionId, [...directory, Number(instructorId)])' in server and 'existing: true' in server and 'collegeId, sectionId })' in (ROOT/'src/components/InstructorPicker.tsx').read_text())
+# الضمّ صار ذرّياً (arrayUnion) بعد ملاحظة مراجعة: إضافتان متزامنتان كانتا
+# تمحو إحداهما عضوَ الأخرى بكتابة المصفوفة كاملة. الحارس يتبع الشكل الأشدّ.
+ok('96b quick-add from a department context enrols the person into the manual department directory', 'const scoped = Boolean(collegeId && sectionId && isScopeAllowed(req, collegeId, sectionId))' in server and 'addDepartmentDelegate(collegeId, sectionId, Number(instructorId))' in server and 'existing: true' in server and 'collegeId, sectionId })' in (ROOT/'src/components/InstructorPicker.tsx').read_text() and 'FieldValue.arrayUnion' in (ROOT/'src/db/repository.ts').read_text())
 paged=(ROOT/'src/components/PagedImportPreview.tsx').read_text()
 # المعاينة تشفي نفسها بقانون الهوية المشترك: مطابقة حرفية وحيدة داخل نطاق
 # القسم فقط، وتعميم حسمٍ واحد على كل الصفوف الحاملة لنفس الاسم، والخلاف يبطله.
 ok('96c the preview self-heals with the shared identity law, department-scoped and dispute-aware', 'uniqueExactIdentityMatch' in paged and 'instructorIdentityKey' in paged and 'disputed' in paged and 'DEPARTMENT_DIRECTORY' in paged and 'from "../utils/instructorIdentity"' in paged)
+# ربط الآلة يحمل نسبته ويُنقض عند الخلاف، والمتقاعد/المجاز لا يُربط تلقائياً،
+# والتعميم ليس مصدر قرار — وإلا شهد القرار على نفسه ولم يُنقض أبداً.
+ok('96f machine links carry provenance, yield to disputes, and never pick inactive staff', 'NAME_PROPAGATION' in paged and 'DISPUTED_NAME' in paged and 'evidence?.method === "NAME_PROPAGATION"' in paged and '"retired"' in paged and '"sabbatical"' in paged and 'addDepartmentDelegate' in server)
 ok('61d transfer never dereferences absent preflight data', 'termConflicts!' not in transfer and '(termConflicts?.issues || [])' in transfer and '(termConflictsFresh && termConflicts?.notes) || {}' in transfer)
 # المعرّف السالب يبقى مع الصف بعد حذف ما قبله، فلا يساوي موضعه. العلامة تُقرأ
 # من الترتيب الحالي وإلا وقعت على صف بريء بينما يُمنع النشر بسبب لا يُرى.

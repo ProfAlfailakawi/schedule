@@ -52,8 +52,9 @@ export function instructorIdentityTokens(value: string) {
   const out: string[] = [];
   for (let i = 0; i < source.length; i++) {
     let token = source[i];
-    /* «عبد» و«ال» شظيتان تلتصقان بما بعدهما: انشطارهما مسافةً لا يغيّر الاسم. */
-    while ((token === "عبد" || token === "ال") && i + 1 < source.length && source[i + 1].length >= 2) {
+    /* «عبد» و«ال» و«ابو» و«بو» شظايا تلتصق بما بعدها: انشطارها مسافةً لا
+       يغيّر الاسم — «عبد الاله» و«بو حمد» و«ابو العلا» كأزواجها الملتصقة. */
+    while ((token === "عبد" || token === "ال" || token === "ابو" || token === "بو") && i + 1 < source.length && source[i + 1].length >= 2) {
       token = `${token}${source[i + 1]}`;
       i++;
     }
