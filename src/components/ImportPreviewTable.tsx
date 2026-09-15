@@ -170,9 +170,15 @@ export default function ImportPreviewTable({
      للعرض فقط، لا يُحفظ ولا يصير هوية. */
   const readInstructorText = (row: ImportRow) =>
     String(row.sourceInstructorText || row.importEvidence?.instructor?.raw || "").trim().slice(0, 60);
-  /** «غير مسجّل» علاجه تسجيل الشخص، و«غير محسوم» علاجه اختياره: وسمان لا وسم. */
-  const unlinkedLabel = (row: ImportRow) =>
-    row.importEvidence?.instructor?.method === "UNREGISTERED" ? "غير مسجّل" : "غير محسوم";
+  /** ثلاثة وسوم لثلاثة علاجات: «غير مسجّل» علاجه تسجيل الشخص، و«مسجّل أكثر
+      من مرة» علاجه حذف المكرر أو اختيار السجل الصحيح، و«غير محسوم» علاجه
+      الاختيار — والتلميح يسمّي المرشحين بأسمائهم وأرقامهم. */
+  const unlinkedLabel = (row: ImportRow) => {
+    const method = row.importEvidence?.instructor?.method;
+    if (method === "UNREGISTERED") return "غير مسجّل";
+    if (method === "DUPLICATE_REGISTRATION") return "مسجّل أكثر من مرة";
+    return "غير محسوم";
+  };
 
   /** هوية مثبتة لكنها خارج أساتذة القسم/المنتدبين: تُعرض للمراجعة لا كخطأ.
       وقوائم أهل القسم ثلاث لا واحدة: تاريخه، ومنتدبو الفصل، ودليله اليدوي

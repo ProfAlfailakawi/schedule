@@ -57,7 +57,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { instructorCleanName, foldInstructorText } from "./src/utils/instructorIdentity";
+import { instructorCleanName, foldInstructorText, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
@@ -7511,12 +7511,30 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const canonicalCourse=importCourseById.get(Number(row.AdCourseId||0));
     row.AdCourseName=canonicalCourse?String(canonicalCourse.CourseName||""):"";
   }
-  /* ── «لم يُربط» له سببان لا سبب واحد ──────────────────────────────────────
-     أن يكون الشخص غير مسجّل في النظام بتاتاً، أو أن يكون السجل يحتمل أكثر من
-     مرشّح. العلاج مختلف تماماً — تسجيلٌ مقابل اختيار — فتقول الخانة أيّهما هو
-     بدل أن تترك المراجع يبحث عن خطأ قراءة لا وجود له. */
-  const unresolvedInstructorOutcome=(row:any)=>
-    instructorRegistryOutcome(String(row?.sourceInstructorText||""),instructors as any);
+  /* ── «لم يُربط» يقول لماذا، بالأسماء لا بالحكم وحده ─────────────────────────
+     ثلاثة أسباب لا سبب واحد، وعلاجاتها مختلفة تماماً:
+     مسجّلٌ أكثر من مرة (سجلّان مختلفان بنفس الاسم المطويّ — النظام يرفض
+     الاختيار بين «شخصين»، والعلاج حذف المكرر أو اختيار السجل الصحيح)؛ أو
+     ملتبس بمرشح قريب؛ أو غير مسجّل بهذا الاسم أصلاً. الحكم المجرد «غير محسوم»
+     ترك المنسّق يحدّق في خانة لا تقول أياً منها — فتُسمّى المرشحون بأسمائهم
+     وأرقامهم المدنية، بنفس الظهور المتاح له في قائمة الاختيار أصلاً. */
+  const civilOf=(person:any)=>String(person?.AdInstructorCivil||"").trim();
+  const describeCandidate=(person:any)=>`«${String(person?.AdInstructorName||"").trim()}»${civilOf(person)?` (${civilOf(person)})`:""}`;
+  const unresolvedInstructorDiagnosis=(row:any):{method:string;reason:string}=>{
+    const written=String(row?.sourceInstructorText||"");
+    const {exact,partial}=registryCandidatesFor(written,instructors as any);
+    if(exact.length>=2){
+      return{method:"DUPLICATE_REGISTRATION",reason:`هذا الاسم مسجّل ${exact.length===2?"مرتين":`${exact.length} مرات`} بسجلات مختلفة: ${exact.map(describeCandidate).join("، ")}. النظام لا يختار بين سجلّين — احذف المكرر من شاشة الأساتذة أو اختر السجل الصحيح من القائمة.`};
+    }
+    if(exact.length===1){
+      return{method:"AMBIGUOUS",reason:`الأقرب في السجل: ${describeCandidate(exact[0])} — اختره من القائمة إن كان المقصود.`};
+    }
+    if(partial.length){
+      return{method:"UNREGISTERED",reason:`لا أحد في السجل بهذا الاسم كاملاً. الأقرب جزئياً: ${partial.map(describeCandidate).join("، ")} — إن كان أحدهم المقصود فاختره، وإلا أضِف الاسم برقمه المدني.`};
+    }
+    return{method:"UNREGISTERED",reason:"الاسم مقروء، لكن لا يوجد في سجل الأساتذة شخص بهذا الاسم. أضِفه من قائمة أستاذ المقرر برقمه المدني، أو اختر زميلاً مسجّلاً."};
+  };
+  const unresolvedInstructorOutcome=(row:any)=>unresolvedInstructorDiagnosis(row).method;
 
   const geometryRows=recognized.pageDiagnostics.reduce((sum:any,page:any)=>sum+Number(page.extractedRows||0),0);
   if(geometryRows>=3&&parsed.rows.length<Math.ceil(geometryRows*.7)){
@@ -7578,7 +7596,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",score:sectionMatchesSource?100:(authoritySectionConfirmed?96:0),source:sectionMatchesSource?readSource:(authoritySectionConfirmed?"PRESERVED_CANONICAL":"UNRESOLVED"),method:sectionMatchesSource?"EXACT_SECTION_CELL":(authoritySectionConfirmed?"PRESERVED_SECTION_VALUE":"UNRESOLVED"),derived:Boolean(authoritySectionConfirmed&&!sectionMatchesSource),reason:sectionMatchesSource?"رقم الشعبة محفوظ كما طُبع في خلية الشعبة بالمستند دون إعادة ترقيم":(authoritySectionConfirmed?"حُفظ رقم الشعبة الموجود دون توليد تسلسل جديد":"تعذر إثبات رقم الشعبة من المصدر؛ تُترك للمراجعة بدلاً من اختراع قيمة"),evidence:sectionMatchesSource?["خلية الشعبة الأصلية","لا إعادة ترقيم حسب ترتيب الصفوف"]:(authoritySectionConfirmed?["قيمة شعبة محفوظة كما وصلت للمحلل"]:["لا توليد 501/502 عند غياب الشعبة"])},
       days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?"CONFIRMED":"UNRESOLVED",score:activeDayKeys.length?100:0,source:fieldSource("fsunday","fmonday","ftuesday","fwednesday","fthursday"),method:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_DAYS",derived:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"),reason:activeDayKeys.length?(fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة":"أيام المحاضرة قُرئت من خلية الأيام نفسها"):"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
       time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?"CONFIRMED":"UNRESOLVED",score:timeConfirmed?100:0,source:fieldSource("fstarttime","fendtime"),method:fieldDerived("fstarttime","fendtime")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_TIME_PAIR",derived:fieldDerived("fstarttime","fendtime"),reason:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"خلية الوقت كانت ناقصة؛ استعيدت من تطابق تاريخي فريد مع تطبيع HH:MM فقط":"زوج الوقت مثبت من خلية الوقت نفسها"):"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
-      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:fieldSource("AdInstructorId"),method:fieldDerived("AdInstructorId")?"HISTORICAL_UNIQUE_FINGERPRINT":(Number(row.AdInstructorId)?(instructorMethod||"SYSTEM_UNIQUE"):unresolvedInstructorOutcome(row)),derived:fieldDerived("AdInstructorId")||Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"اسم الأستاذ لم يُحسم من OCR؛ استعيدت الهوية فقط من بصمة صف تاريخية غير ملتبسة":"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء"):(unresolvedInstructorOutcome(row)==="UNREGISTERED"?"الاسم مقروء، لكن لا يوجد في سجل الأساتذة شخص بهذا الاسم. أضِفه من قائمة أستاذ المقرر برقمه المدني، أو اختر زميلاً مسجّلاً.":"الاسم مقروء، لكن سجل الأساتذة يحتمل أكثر من شخص به ولم يُحسم واحد. اختر الأستاذ من القائمة."),evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
+      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:fieldSource("AdInstructorId"),method:fieldDerived("AdInstructorId")?"HISTORICAL_UNIQUE_FINGERPRINT":(Number(row.AdInstructorId)?(instructorMethod||"SYSTEM_UNIQUE"):unresolvedInstructorOutcome(row)),derived:fieldDerived("AdInstructorId")||Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"اسم الأستاذ لم يُحسم من OCR؛ استعيدت الهوية فقط من بصمة صف تاريخية غير ملتبسة":"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء"):unresolvedInstructorDiagnosis(row).reason,evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
       building:{raw:sourceBuildingRaw,normalized:token,confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomCode"),method:fieldDerived("AdRoomCode")?"HISTORICAL_UNIQUE_FINGERPRINT":"REGISTRY_PENDING",derived:fieldDerived("AdRoomCode"),reason:fieldDerived("AdRoomCode")?"خلية المبنى كانت فارغة؛ استعيد رمزها من بصمة صف تاريخية غير ملتبسة":"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
       room:{raw:sourceRoomRaw,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomHall"),method:fieldDerived("AdRoomHall")?"HISTORICAL_UNIQUE_FINGERPRINT":"BUILDING_BOUND_ROOM_PENDING",derived:fieldDerived("AdRoomHall"),reason:fieldDerived("AdRoomHall")?"خلية القاعة كانت فارغة؛ استعيدت من بصمة صف تاريخية غير ملتبسة":(rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر"),evidence:["خلية القاعة الأصلية"]},
     };

@@ -1,5 +1,5 @@
 import type { FSchedule } from "../types";
-import { instructorIdentityKey, instructorSpacelessKey } from "./instructorIdentity";
+import { instructorIdentityKey, instructorSortedKey, instructorSpacelessKey } from "./instructorIdentity";
 import { normalizeClock } from "./scheduleTime";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./naturalQuery";
 
@@ -153,7 +153,7 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
     const raw = String(name || "").trim().toLowerCase();
     const keys = new Set<string>();
     const identity = instructorIdentityKey(raw);
-    if (identity) { keys.add(identity); keys.add(instructorSpacelessKey(raw)); }
+    if (identity) { keys.add(identity); keys.add(instructorSpacelessKey(raw)); keys.add(instructorSortedKey(raw)); }
     if (raw) keys.add(raw);
     return [...keys].filter(Boolean);
   };
