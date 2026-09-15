@@ -417,6 +417,34 @@ assert.equal(uniqueExactIdentityMatch("هيئة تدريسية",[...enrolled,{Ad
 // شخصان مختلفان بنفس الاسم: لا اختيار.
 assert.equal(uniqueExactIdentityMatch("هيئة تدريسية",[...enrolled,{AdInstructorId:73,AdInstructorName:"هيئة تدريسية"}] as any),undefined);
 
+/* ── كل ما يتقلب به رسم الاسم العربي، حالةً حالة ─────────────────────────────
+   «إقبال» في السجل و«اقبال» في الورقة أوقفت قسماً كاملاً. القانون يطوي كل
+   هذه الفروق — وحتى المسافات — على الجانبين، والمحرك الحقيقي هو المُختبَر. */
+const spellingRegistry:any[]=[
+  {AdInstructorId:81,AdInstructorName:"د. إقبال عبد العزيز المطوع"},
+  {AdInstructorId:82,AdInstructorName:"ألاء خالد البصيلى"},
+  {AdInstructorId:83,AdInstructorName:"د. مؤمن رئيف يحيى"},
+];
+const spelled=(printed:string)=>parseScheduleTable(
+  [namedPage(printed,"50001")],courses,spellingRegistry,new Set(),
+  {authorityDepartmentCode:"0101",sequentialSections:true}).rows[0].AdInstructorId;
+// همزة الألف الساقطة + «عبد العزيز» الملتصقة.
+assert.equal(spelled("اقبال عبدالعزيز المطوع"),81);
+// المسافة الساقطة في غير موضعها لا تصنع شخصاً جديداً.
+assert.equal(spelled("اقبال عبدالعزيزالمطوع"),81);
+assert.equal(spelled("اقبالعبدالعزيز المطوع"),81);
+// «ال» المشطورة عن العائلة، والألف المقصورة، والهمزة المفردة الساقطة.
+assert.equal(spelled("الاء خالد ال بصيلي"),82);
+assert.equal(spelled("آلاء خالد البصيلي"),82);
+// ؤ=و، ئ=ي، و«يحيى»/«يحي».
+assert.equal(spelled("مومن رييف يحي"),83);
+// وبحث القائمة يجد ما تجده المطابقة: الحكم واحد.
+assert.equal(uniqueExactIdentityMatch("اقبال عبدالعزيز المطوع",spellingRegistry)?.AdInstructorId,81);
+assert.equal(uniqueExactIdentityMatch("الاء خالد ال بصيلي",spellingRegistry)?.AdInstructorId,82);
+// والالتباس الحقيقي يبقى التباساً: شخصان مختلفان بنفس الاسم المطويّ لا يُختار بينهما.
+assert.equal(uniqueExactIdentityMatch("اقبال عبدالعزيز المطوع",
+  [...spellingRegistry,{AdInstructorId:84,AdInstructorName:"إقبال عبدالعزيز المطوع"}] as any),undefined);
+
 /* Native generated PDF geometry: location comes only from its real x-range, so
    seat/capacity welds can never become Building. Instructor is taken from the
    leftmost identity cell as one complete phrase. */
@@ -568,6 +596,7 @@ console.log(JSON.stringify({ passed: 70, checks: [
   "outside the department a university-wide pair must be two exact tokens",
   "an unlinked instructor cell says whether the person is unregistered or merely undecided",
   "the shared identity law resolves a unique exact department member and refuses everything else",
+  "hamza seats, ؤ/ئ, dropped lone hamza, ى/ة, يحيى/يحي, split ال, and stray spaces never hide an identity",
   "«هيئة تدريسية» is settled by the department when the university holds several",
   "graduation proof requires the official study-plan/graduation-sheet signature",
   "graduation proof reads the civil ID from the official sheet",
