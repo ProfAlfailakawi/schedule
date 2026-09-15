@@ -145,6 +145,9 @@ ok('96d the identity law folds every orthographic variant including spaces', 'ؤ
 ok('96e every instructor-name comparison imports the shared law, no local copies', 'from "../utils/instructorIdentity"' in (ROOT/'src/components/InstructorPicker.tsx').read_text() and 'from "./instructorIdentity"' in (ROOT/'src/utils/geminiScheduleLayer.ts').read_text() and 'from "./instructorIdentity"' in (ROOT/'src/utils/authorityScanRecovery.ts').read_text() and 'foldInstructorText' in server and 'instructorCleanName' in server)
 # الضمّ صار ذرّياً (arrayUnion) بعد ملاحظة مراجعة: إضافتان متزامنتان كانتا
 # تمحو إحداهما عضوَ الأخرى بكتابة المصفوفة كاملة. الحارس يتبع الشكل الأشدّ.
+# وأول سجل صريح يرث ما كانت القراءة تعطيه من كشوف الفصول التاريخية: إنشاؤه
+# بعضوٍ واحد كان يمحو كل مندوب موروث دفعةً واحدة وبلا أثر.
+ok('96g the first explicit delegate directory inherits the legacy roster members', 'const seed = doc.exists ? [] : await Repository.getDepartmentDelegates(collegeId, sectionId)' in (ROOT/'src/db/repository.ts').read_text() and 'FieldValue.arrayUnion(...[...new Set([...seed.map(Number).filter(Boolean), id])])' in (ROOT/'src/db/repository.ts').read_text())
 ok('96b quick-add from a department context enrols the person into the manual department directory', 'const scoped = Boolean(collegeId && sectionId && isScopeAllowed(req, collegeId, sectionId))' in server and 'addDepartmentDelegate(collegeId, sectionId, Number(instructorId))' in server and 'existing: true' in server and 'collegeId, sectionId })' in (ROOT/'src/components/InstructorPicker.tsx').read_text() and 'FieldValue.arrayUnion' in (ROOT/'src/db/repository.ts').read_text())
 paged=(ROOT/'src/components/PagedImportPreview.tsx').read_text()
 # المعاينة تشفي نفسها بقانون الهوية المشترك: مطابقة حرفية وحيدة داخل نطاق

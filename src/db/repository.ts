@@ -4035,16 +4035,28 @@ export const Repository = {
     const scopeKey = `${collegeId}:${sectionId}`;
     const id = Number(instructorId);
     if (!Number.isFinite(id) || id <= 0) return;
+    /* ── أول سجل صريح يرث ما كان يُقرأ قبله ──────────────────────────────────
+     * قبل وجود الدليل الدائم، كان مندوبو القسم يُقرأون من كشوف الفصول
+     * التاريخية. وهذه القراءة تتوقف عند أول سجل صريح. فضمُّ عضوٍ إلى قسمٍ لا
+     * سجل صريح له كان يُنشئ السجل بعضوٍ واحد — فيختفي كل من وُرث من الكشوف
+     * دفعةً واحدة وبلا أثر.
+     * فحين لا سجل، يُبذَر الضمّ بما كانت القراءة تعطيه. والاتحاد يبقى ذرّياً
+     * وجمعياً: سباقٌ بين طلبين يضيف كلٌّ بذرته وعضوه، والنتيجة تجمعهما.
+     * ودليلٌ صريح فارغ قرارٌ مقصود من شاشة الإدارة، فلا يُبذَر فوقه شيء. */
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      await firestoreDb.collection("departmentDelegates").doc(scopeKey.replace(/:/g, "_")).set({
+      const ref = firestoreDb.collection("departmentDelegates").doc(scopeKey.replace(/:/g, "_"));
+      const doc = await ref.get();
+      const seed = doc.exists ? [] : await Repository.getDepartmentDelegates(collegeId, sectionId);
+      await ref.set({
         id: scopeKey, scopeKey, collegeId, sectionId,
-        instructorIds: FieldValue.arrayUnion(id),
+        instructorIds: FieldValue.arrayUnion(...[...new Set([...seed.map(Number).filter(Boolean), id])]),
         updatedAt: new Date().toISOString(),
       }, { merge: true });
       return;
     }
     const existing = (db.departmentDelegates || []).find(item => item.scopeKey === scopeKey);
-    const unique = [...new Set([...(existing?.instructorIds || []), id].map(Number).filter(Boolean))];
+    const seed = existing ? (existing.instructorIds || []) : await Repository.getDepartmentDelegates(collegeId, sectionId);
+    const unique = [...new Set([...seed, id].map(Number).filter(Boolean))];
     const row: DepartmentDelegateDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, instructorIds: unique, updatedAt: new Date().toISOString() };
     db.departmentDelegates = [...(db.departmentDelegates || []).filter(item => item.scopeKey !== scopeKey), row];
     saveDatabase();
