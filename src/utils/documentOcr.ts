@@ -3567,7 +3567,10 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
   /* المساواة بلا مسافات طريقٌ حرفي ثالث: مسافة سقطت في غير موضعها — «اقبال
      عبدالعزيزالمطوع» — لا تصنع شخصاً جديداً. مساواةٌ كاملة فقط، لا احتواء. */
   const spacelessRaw=rawTokens.join("");
-  const exact=catalogue.filter(item=>normalizedRaw===item.normalized||haystack.includes(` ${item.normalized} `)||item.tokens.join("")===spacelessRaw);
+  /* والترتيب المقلوب («الأنصاري عبدالله رجب» في سجل قديم يُدخل العائلة أولاً)
+     مساواةُ مجموعةٍ كاملة، لا احتواء. */
+  const sortedRaw=[...rawTokens].sort().join(" ");
+  const exact=catalogue.filter(item=>normalizedRaw===item.normalized||haystack.includes(` ${item.normalized} `)||item.tokens.join("")===spacelessRaw||[...item.tokens].sort().join(" ")===sortedRaw);
   const exactIds=new Set(exact.map(item=>Number(item.person.AdInstructorId)));
   if(exactIds.size===1)return{person:exact[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,exact[0].tokens.length)};
   const preferredExact=exact.filter(item=>item.preferred);

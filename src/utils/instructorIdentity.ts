@@ -70,6 +70,11 @@ export const instructorIdentityKey = (value: string) => instructorIdentityTokens
 /** الاسم بلا مسافات إطلاقاً: الحَكَم الأخير حين تسقط المسافات في غير مواضعها —
  *  «اقبالعبدالعزيز المطوع» و«اقبال عبدالعزيزالمطوع» سواء. للمساواة الكاملة
  *  فقط، لا للاحتواء: الاحتواء بلا حدود كلمات يبتلع الأسماء القصيرة. */
+/** الاسم بترتيبٍ موحّد: بعض السجلات القديمة تُدخل العائلة أولاً
+ *  («الأنصاري عبدالله رجب»)، والشخص هو الشخص. مجموعة الرموز الكاملة نفسها
+ *  بأي ترتيب = هوية واحدة — للمساواة الكاملة فقط، كسابقتها. */
+export const instructorSortedKey = (value: string) => [...instructorIdentityTokens(value)].sort().join(" ");
+
 export const instructorSpacelessKey = (value: string) => instructorIdentityTokens(value).join("");
 
 /**
@@ -89,11 +94,15 @@ export function uniqueExactIdentityMatch<T extends { AdInstructorId: number | st
   const printed = instructorIdentityKey(raw);
   if (!printed) return undefined;
   const printedSpaceless = printed.replace(/ /g, "");
+  const printedSorted = instructorSortedKey(raw);
   const haystack = ` ${printed} `;
   const hits = people.filter(person => {
-    const key = instructorIdentityKey(String(person?.AdInstructorName || ""));
+    const name = String(person?.AdInstructorName || "");
+    const key = instructorIdentityKey(name);
     if (!key) return false;
-    return key === printed || haystack.includes(` ${key} `) || key.replace(/ /g, "") === printedSpaceless;
+    return key === printed || haystack.includes(` ${key} `)
+      || key.replace(/ /g, "") === printedSpaceless
+      || instructorSortedKey(name) === printedSorted;
   });
   const ids = new Set(hits.map(person => Number(person.AdInstructorId)));
   return ids.size === 1 ? hits[0] : undefined;
@@ -110,6 +119,46 @@ export function uniqueExactIdentityMatch<T extends { AdInstructorId: number | st
  * «مرشّح» هنا: من يشترك مع الاسم المطبوع في اسمين صريحين على الأقل — أو اسم
  * واحد إن كان المطبوع اسماً واحداً، لأنه كل ما طُبع — أو من يساويه كاملاً
  * بلا مسافات. */
+/**
+ * من في السجل يشبه هذا الاسم؟ — الجواب بالأسماء لا بالحكم وحده.
+ *
+ * «غير محسوم» بلا تفصيل تركت المنسّق يحدّق في خانة لا تقول لماذا: هل الشخص
+ * مسجّل مرتين فيرفض النظام الاختيار بين «شخصين»؟ أم غائب أصلاً والوسم جاء من
+ * مشاركة عابرة مع أسماء آخرين؟ العلاجان مختلفان تماماً — حذف مكرر مقابل
+ * تسجيل — فتُسمّى المرشحون تسميةً، مع درجة القرب: مطابقة تامة (سجلات مكررة
+ * لأشخاص مختلفين بنفس الاسم المطويّ) أو مشاركة جزئية.
+ */
+export function registryCandidatesFor<T extends { AdInstructorId: number | string; AdInstructorName: string }>(
+  raw: string,
+  instructors: T[],
+  limit = 4,
+): { exact: T[]; partial: T[] } {
+  const printed = instructorIdentityTokens(raw);
+  const empty = { exact: [] as T[], partial: [] as T[] };
+  if (!printed.length) return empty;
+  const printedSet = new Set(printed);
+  const printedKey = printed.join(" ");
+  const printedSpaceless = printed.join("");
+  const haystack = ` ${printedKey} `;
+  const needed = printed.length >= 2 ? 2 : 1;
+  const exact: T[] = []; const partial: T[] = [];
+  const seen = new Set<number>();
+  for (const person of instructors) {
+    const id = Number(person?.AdInstructorId);
+    if (!id || seen.has(id)) continue;
+    const tokens = instructorIdentityTokens(String(person?.AdInstructorName || ""));
+    if (!tokens.length) continue;
+    const key = tokens.join(" ");
+    const isExact = key === printedKey || haystack.includes(` ${key} `) || tokens.join("") === printedSpaceless
+      || [...tokens].sort().join(" ") === [...printed].sort().join(" ");
+    const shared = tokens.filter(token => printedSet.has(token)).length;
+    if (isExact) { seen.add(id); exact.push(person); }
+    else if (shared >= needed) { seen.add(id); partial.push(person); }
+    if (exact.length >= limit && partial.length >= limit) break;
+  }
+  return { exact: exact.slice(0, limit), partial: partial.slice(0, limit) };
+}
+
 export function instructorRegistryOutcome(
   raw: string,
   instructors: Array<{ AdInstructorId: number | string; AdInstructorName: string }>,

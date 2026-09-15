@@ -425,6 +425,9 @@ const spellingRegistry:any[]=[
   {AdInstructorId:82,AdInstructorName:"ألاء خالد البصيلى"},
   {AdInstructorId:83,AdInstructorName:"د. مؤمن رئيف يحيى"},
 ];
+const spelled_flipped=()=>parseScheduleTable(
+  [namedPage("المطوع اقبال عبدالعزيز","50002")],courses,spellingRegistry,new Set(),
+  {authorityDepartmentCode:"0101",sequentialSections:true}).rows[0].AdInstructorId;
 const spelled=(printed:string)=>parseScheduleTable(
   [namedPage(printed,"50001")],courses,spellingRegistry,new Set(),
   {authorityDepartmentCode:"0101",sequentialSections:true}).rows[0].AdInstructorId;
@@ -449,6 +452,11 @@ assert.equal(spelled("مومن رييف يحي"),83);
   assert.equal(uniqueExactIdentityMatch("محمد بو حمد",compound)?.AdInstructorId,86);
   assert.equal(uniqueExactIdentityMatch("خالد ابو العلا",compound)?.AdInstructorId,87);
 }
+// والاسم المقلوب الترتيب — سجل قديم يُدخل العائلة أولاً — هو الشخص نفسه:
+// مساواة المجموعة الكاملة، لا الاحتواء.
+assert.equal(uniqueExactIdentityMatch("عبدالله رجب الأنصاري",
+  [{AdInstructorId:88,AdInstructorName:"الأنصاري عبدالله رجب"}] as any)?.AdInstructorId,88);
+assert.equal(spelled_flipped(),81);
 // وبحث القائمة يجد ما تجده المطابقة: الحكم واحد.
 assert.equal(uniqueExactIdentityMatch("اقبال عبدالعزيز المطوع",spellingRegistry)?.AdInstructorId,81);
 assert.equal(uniqueExactIdentityMatch("الاء خالد ال بصيلي",spellingRegistry)?.AdInstructorId,82);
