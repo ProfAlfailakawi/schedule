@@ -363,6 +363,10 @@ assert.equal(readName("د. إقبال",new Set()),0);
 assert.equal(readName("د. فهد عامر",new Set()),31);
 assert.equal(readName("د. فهد عامر",new Set(),
   [...namedStaff,{AdInstructorId:35,AdInstructorName:"د. فهد عامر العجمي"}]),0);
+// وخارج القسم لا يُقبل جذع ولا حرف ناقص: «فهد المط» لا تثبّت «فهد عامر المطيري».
+assert.equal(readName("د. فهد المط",new Set()),0);
+// بينما تبقى مقبولة داخل نطاق القسم، حيث «فهد» مطابق حرفياً والقائمة قصيرة.
+assert.equal(readName("د. فهد المط",new Set([31])),31);
 
 // «هيئة تدريسية» تُحسم من نطاق القسم حين تتعدد سجلات الجامعة.
 const facultyStaff:any[]=[
@@ -520,6 +524,7 @@ console.log(JSON.stringify({ passed: 70, checks: [
   "a single missing letter in the first name still resolves inside the department only",
   "a lone printed first name resolves only when one department person carries it",
   "two printed names resolve university-wide only when exactly one person qualifies",
+  "outside the department a university-wide pair must be two exact tokens",
   "«هيئة تدريسية» is settled by the department when the university holds several",
   "graduation proof requires the official study-plan/graduation-sheet signature",
   "graduation proof reads the civil ID from the official sheet",

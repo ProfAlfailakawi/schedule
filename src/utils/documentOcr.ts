@@ -3617,7 +3617,7 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
   };
   const commonExact=(candidate:string[],observed:string[])=>[...new Set(candidate.filter(token=>observed.includes(token)))].length;
 
-  const choose=(pool:typeof catalogue,allowTwo:boolean,soleOnly=false,allowNear=false)=>{
+  const choose=(pool:typeof catalogue,allowTwo:boolean,soleOnly=false,allowNear=false,exactPairOnly=false)=>{
     const ranked=pool.map(item=>{
       const forward=orderedEvidence(item.tokens,rawTokens);
       const reverse=orderedEvidence(rawTokens,item.tokens);
@@ -3638,7 +3638,7 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
          evidence. This restores the old high hit-rate without saving OCR text. */
       const threeProof=ordered.total>=3&&ordered.exactCount>=2;
       const twoExactProof=allowTwo&&exactCommon>=2&&ordered.total>=2;
-      const firstLastProof=allowTwo&&item.tokens.length>=2&&(firstHit||(firstStemHit&&ordered.exactCount>=1))&&lastHit&&ordered.total>=2;
+      const firstLastProof=allowTwo&&!exactPairOnly&&item.tokens.length>=2&&(firstHit||(firstStemHit&&ordered.exactCount>=1))&&lastHit&&ordered.total>=2;
       /* ── اسمان مطبوعان وأحدهما ناقص حرفاً ──────────────────────────────────
          «عبدالله حسن الرشيدي» تُطبع «بدالله حسن»: اسم العائلة مقصوص عند حافة
          الخانة، والاسم الأول فقد حرفاً واحداً. لا يبقى برهان حرفيّ كامل لاسمين،
@@ -3698,7 +3698,7 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
      ثنائي لأن نطاق التفضيل يولد فارغاً، فيظهر الجدول كله أحمر. يُقبل الاسمان
      على مستوى الجامعة فقط حين لا ينطبقان إلا على شخص واحد لا ثاني له — مرشّح
      وحيد مؤهل، لا «الأعلى درجة» بين متزاحمين. */
-  const solePairHit=choose(catalogue,true,true);
+  const solePairHit=choose(catalogue,true,true,false,true);
   return solePairHit?{person:solePairHit.item.person,method:"GLOBAL_SOLE_TWO_NAME",score:93,matchedTokens:solePairHit.ordered.total}:undefined;
 }
 

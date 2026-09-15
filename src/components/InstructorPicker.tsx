@@ -36,6 +36,10 @@ interface Props {
   departmentIds: number[];
   /** Delegates explicitly selected to teach in the open term. */
   visitingIds?: Iterable<number>;
+  /** شاشات القراءة والتقارير تختار أستاذاً ولا تُنشئ واحداً: تُخفي الزر بدل
+      أن تقود المستخدم إلى نموذج سيرفضه الخادم. الافتراضي هو السماح، فشاشات
+      بناء الجدول لا تتغير. */
+  canCreate?: boolean;
   onCreated?: (instructor: Instructor) => void;
   onSelected?: (instructor: Instructor) => void;
   collegeId?: number;
@@ -60,7 +64,7 @@ const fold = (value: string) =>
 const withoutTitles = (value: string) =>
   fold(value).replace(/^(?:ا?د|ا|م|أ|prof|dr|mr|ms)\s+/g, "").trim();
 
-export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
+export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -282,7 +286,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
             )}
           </div>
 
-          {adding ? (
+          {!canCreate ? null : adding ? (
             <div className="instructor-new">
               <strong>أستاذ جديد</strong>
               <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="الاسم الكامل" aria-label="اسم الأستاذ" />

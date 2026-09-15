@@ -1390,6 +1390,23 @@ function inferAuthorityBranchCode(draft:any,rows:any[]){
   return[...votes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
 }
 
+/* ── نطاق أساتذة القسم الذي لا تاريخ له ──────────────────────────────────────
+ *
+ * كل ما يعرفه النظام عن «أساتذة القسم» مشتقّ من جداول سابقة. والقسم الذي
+ * يستورد جدوله الأول لا جدول له بعد، فنطاقه يولد فارغاً — وعندها لا يبقى شيء
+ * تُقاس عليه هوية، لا في المطابقة ولا في التحقق قبل الحفظ.
+ *
+ * فحين — وحين فقط — يكون نطاق القسم نفسه خالياً، يتسع إلى أساتذة الكلية،
+ * مقروئين من جداول أقسامها الأخرى. القراءة واحدة يستعملها الطرفان، فلا يمكن
+ * أن يقبل أحدهما اسماً يرفضه الآخر: كان ذلك سيُظهر الاسم في المعاينة ثم يمنع
+ * حفظه بحجة أنه «غير مثبت ضمن القسم»، وهو أسوأ من ترك الخانة فارغة. */
+async function collegeFallbackInstructorIds(collegeId: number): Promise<number[]> {
+  const collegeHistory = await Repository.getSchedulesByScope({ collegeId });
+  return [...new Set((collegeHistory as any[])
+    .map(row => Number(row.AdInstructorId || 0))
+    .filter(id => Number.isFinite(id) && id > 0))];
+}
+
 async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean } = {}) {
   const termId = Number(rows[0]?.AdTermId || 0);
   const checkConflicts = options.checkConflicts !== false;
@@ -1419,6 +1436,16 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
   const departmentInstructorIds=new Set<number>(departmentPools.flatMap(pool=>[
     ...pool.history.map((row:any)=>Number(row.AdInstructorId||0)),...pool.delegates.map(Number),...pool.roster.map(Number),
   ]).filter((id:number)=>id>0));
+  /* الشرط هنا هو شرط المطابقة حرفاً بحرف: خلوّ نطاق القسم المستهدف نفسه — لا
+     مجموع أقسام الفرع — وإلا لقبل أحد الطرفين ما يرفضه الآخر. */
+  if(options.requireDepartmentInstructor){
+    const baseIndex=departmentScopes.findIndex(scope=>scope.collegeId===collegeId&&scope.sectionId===sectionId);
+    const basePool=baseIndex>=0?departmentPools[baseIndex]:undefined;
+    const baseIds=basePool?[
+      ...basePool.history.map((row:any)=>Number(row.AdInstructorId||0)),...basePool.delegates.map(Number),...basePool.roster.map(Number),
+    ].filter((id:number)=>Number.isFinite(id)&&id>0):[];
+    if(!baseIds.length)for(const id of await collegeFallbackInstructorIds(collegeId))departmentInstructorIds.add(id);
+  }
   const errors: string[] = [];
   for (let index=0; index<rows.length; index+=1) {
     const row=rows[index];
@@ -2444,9 +2471,13 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
  * الشاشة مخصصة لإدارة النظام الرئيسية» بعد أن يكون قد كتب الاسم والرقم المدني.
  * زميل جديد التحق بالقسم لا يجوز أن يكون طريقاً مسدوداً في منتصف الجدول.
  *
- * الإنشاء وحده هو ما فُتح، وبنفس تحققات شاشة الإدارة: رقم مدني صحيح ولا تكرار.
- * التعديل والحذف يبقيان لإدارة النظام، لأنهما يمسّان سجلات قائمة وارتباطاتها. */
-app.post("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: Request, res: Response) => {
+ * الإنشاء وحده هو ما فُتح، ولصلاحية بناء الجدول (٧) وحدها إلى جانب شاشة إدارة
+ * الأساتذة (٣) — وهي الصلاحية الوحيدة بين صلاحيات الجدول التي تكتب أصلاً. أما
+ * ٨ و٩ و١٠ و١٤ و١٦ و١٧ فشاشات قراءة وتقارير: قراءتها لدليل الأساتذة لا تعني
+ * حقاً في إنشاء سجل جديد يحمل رقماً مدنياً ويبقى في الجامعة كلها.
+ * وبنفس تحققات شاشة الإدارة: رقم مدني صحيح ولا تكرار. التعديل والحذف يبقيان
+ * لإدارة النظام، لأنهما يمسّان سجلات قائمة وارتباطاتها. */
+app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: Request, res: Response) => {
   const { AdInstructorCivil, AdInstructorName, AdInstructorMobile } = req.body;
   if (!AdInstructorCivil || !String(AdInstructorName || "").trim()) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
@@ -7204,6 +7235,17 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     ...departmentDelegates.map(Number),
     ...visitingRoster.map(Number),
   ].filter((id:number)=>Number.isFinite(id)&&id>0));
+  /* ── القسم الذي يستورد جدوله الأول ────────────────────────────────────────
+     كل ما يعرفه النظام عن «أساتذة القسم» مشتقّ من جداول سابقة، وهذه الشاشة لا
+     تعمل إلا على فصل فارغ. فالقسم الذي لا جدول له في النظام بعد يدخل الاستيراد
+     بنطاق تفضيل فارغ، وعندها تسقط كل البراهين التي تتكئ عليه — الاسم المفرد
+     والاسم الناقص حرفاً — ويخرج الجدول كله بخانات أستاذ فارغة.
+     حين لا يكون للقسم تاريخ بعد، يتسع النطاق إلى أساتذة الكلية نفسها: نطاق
+     حقيقي محدود يُقرأ من جداول أقسامها الأخرى، لا الجامعة كلها. والقسم الذي
+     له تاريخ لا يتغير سلوكه إطلاقاً، فهذا المسار لا يُقرأ عنده أصلاً. */
+  if(!preferredInstructorIds.size){
+    for(const id of await collegeFallbackInstructorIds(collegeId))preferredInstructorIds.add(id);
+  }
   const instructors=allInstructors;
   /* A course-specific roster is only a tie-breaker for NAME evidence. It never
      creates identity by itself: the observed PDF still has to prove two/three
