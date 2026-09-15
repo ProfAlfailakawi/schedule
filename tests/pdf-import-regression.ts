@@ -457,6 +457,28 @@ assert.equal(spelled("مومن رييف يحي"),83);
 assert.equal(uniqueExactIdentityMatch("عبدالله رجب الأنصاري",
   [{AdInstructorId:88,AdInstructorName:"الأنصاري عبدالله رجب"}] as any)?.AdInstructorId,88);
 assert.equal(spelled_flipped(),81);
+/* ── المساواة لا تُزاحَم بالاحتواء على مستوى الجامعة ─────────────────────────
+   سجل الجامعة يحوي آلاف الأسماء، وفيه حتماً اسمٌ أقصر يقع داخل اسم أطول
+   («رجب الأنصاري» داخل «عبدالله رجب الأنصاري»). كان ذلك يجعل للمطبوع مرشحين
+   فيسقط أقوى برهان — المساواة التامة — إلى برهان عالمي أضعف يشترط تفرّداً بين
+   الآلاف. المساواة تُقرأ أولاً وحدها. */
+{
+  const big:any[]=[
+    {AdInstructorId:95,AdInstructorName:"عبد الله رجب الأنصاري"},
+    {AdInstructorId:96,AdInstructorName:"رجب الأنصاري"},
+    {AdInstructorId:97,AdInstructorName:"عبدالله رجب"},
+  ];
+  const read=parseScheduleTable(
+    [namedPage("عبدالله رجب الأنصاري","50003")],courses,big,new Set(),
+    {authorityDepartmentCode:"0101",sequentialSections:true}).rows[0];
+  assert.equal(read.AdInstructorId,95);
+  assert.equal(read.instructorMatchMethod,"EXACT_FULL");
+  // والاحتواء يبقى عاملاً حين لا مساواة: عائلة مقصوصة عند حافة الخانة.
+  assert.equal(parseScheduleTable(
+    [namedPage("رجب الأنصاري الكندري","50004")],courses,[big[1]],new Set(),
+    {authorityDepartmentCode:"0101",sequentialSections:true}).rows[0].AdInstructorId,96);
+}
+
 // وبحث القائمة يجد ما تجده المطابقة: الحكم واحد.
 assert.equal(uniqueExactIdentityMatch("اقبال عبدالعزيز المطوع",spellingRegistry)?.AdInstructorId,81);
 assert.equal(uniqueExactIdentityMatch("الاء خالد ال بصيلي",spellingRegistry)?.AdInstructorId,82);
@@ -616,6 +638,7 @@ console.log(JSON.stringify({ passed: 70, checks: [
   "an unlinked instructor cell says whether the person is unregistered or merely undecided",
   "the shared identity law resolves a unique exact department member and refuses everything else",
   "hamza seats, ؤ/ئ, dropped lone hamza, ى/ة, يحيى/يحي, split ال, and stray spaces never hide an identity",
+  "full equality outranks containment, so a shorter registry name cannot demote an exact university-scale match",
   "«هيئة تدريسية» is settled by the department when the university holds several",
   "graduation proof requires the official study-plan/graduation-sheet signature",
   "graduation proof reads the civil ID from the official sheet",
