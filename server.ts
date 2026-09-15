@@ -7738,7 +7738,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     .map(row=>Number(row.AdInstructorId)||0).filter(id=>id>0)
     .map(id=>[id,allInstructors.find((person:any)=>Number(person.AdInstructorId)===id)])
     .filter(([,person])=>Boolean(person)) as Array<[number,any]>).values()]
-    .map((person:any)=>({AdInstructorId:Number(person.AdInstructorId),AdInstructorName:String(person.AdInstructorName||""),AdInstructorCivil:String(person.AdInstructorCivil||"")}));
+    .map((person:any)=>({AdInstructorId:Number(person.AdInstructorId),AdInstructorName:String(person.AdInstructorName||"")}));
   const result={
     rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,pageSummaries,resolvedInstructors,
     fileName:fileName.slice(0,180),
