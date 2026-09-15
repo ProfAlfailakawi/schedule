@@ -190,6 +190,32 @@ const bound = bindGeminiRowsToCatalogue(
 assert.equal(bound[0].AdInstructorId, 0);
 assert.equal(bound[0].AdCourseId, 1);   // the real course code still binds
 
+/* بعد ملاحظتَي مراجعة على مفاتيح الأسماء:
+   شخصان مختلفان يطويان إلى نفس الاسم لا يُختار بينهما — التقاط الأخير صمتاً
+   يضع هوية حقيقية خلف تخمين؛ والاسم اللاتيني الصرف يبقى قابلاً للربط رغم أن
+   قانون الهوية العربي يعيده فارغاً. */
+const collision = bindGeminiRowsToCatalogue(
+  [{ AdCourseId: 0, AdInstructorId: 0, sourceInstructorText: "اقبال عبدالعزيز المطوع" }],
+  [],
+  [
+    { AdInstructorId: 91, AdInstructorName: "إقبال عبد العزيز المطوع" },
+    { AdInstructorId: 92, AdInstructorName: "اقبال عبدالعزيز المطوع" },
+  ],
+);
+assert.equal(collision[0].AdInstructorId, 0);
+const soleVariant = bindGeminiRowsToCatalogue(
+  [{ AdCourseId: 0, AdInstructorId: 0, sourceInstructorText: "اقبال عبدالعزيز المطوع" }],
+  [],
+  [{ AdInstructorId: 91, AdInstructorName: "إقبال عبد العزيز المطوع" }],
+);
+assert.equal(soleVariant[0].AdInstructorId, 91);
+const latin = bindGeminiRowsToCatalogue(
+  [{ AdCourseId: 0, AdInstructorId: 0, sourceInstructorText: "John Smith" }],
+  [],
+  [{ AdInstructorId: 93, AdInstructorName: "John Smith" }],
+);
+assert.equal(latin[0].AdInstructorId, 93);
+
 /* «هيئة تدريسية» may be exactly what the Authority page prints — a correct
    reading of "not assigned yet". It still names nobody, so it fills nothing;
    but it is reported, because silence would leave the row unexplained. */

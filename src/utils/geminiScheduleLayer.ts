@@ -138,14 +138,42 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
   const courseById = new Map(courses.map((course: any) => [Number(course.AdCourseId), course]));
   const courseByCode = new Map(courses.map((course: any) => [asciiDigits(course.CourseCode).trim().toLowerCase(), course]));
   const instructorById = new Map(instructors.map((person: any) => [Number(person.AdInstructorId), person]));
-  const instructorByCivil = new Map(instructors.map((person: any) => [asciiDigits(person.AdInstructorCivil).trim(), person]));
+  /* الرقم الفارغ ليس هوية: إدراجه مفتاحاً كان يربط أي صف بلا رقم مدني بآخر
+     شخص بلا رقم في السجل — التقاطة عشوائية خلف مفتاح "". */
+  const instructorByCivil = new Map(instructors
+    .filter((person: any) => asciiDigits(person.AdInstructorCivil).trim())
+    .map((person: any) => [asciiDigits(person.AdInstructorCivil).trim(), person]));
   /* الاسم مفتاحاً بقانون الهوية المشترك — همزات الألف والألقاب والمسافات لا
-     تفصل بين اسم النموذج واسم السجل — وبنسخة بلا مسافات للحَكَم الأخير. */
-  const instructorByName = new Map(instructors.flatMap((person: any) => {
-    const key = instructorIdentityKey(String(person.AdInstructorName || ""));
-    if (!key) return [] as Array<[string, any]>;
-    return [[key, person], [instructorSpacelessKey(String(person.AdInstructorName || "")), person]] as Array<[string, any]>;
-  }));
+     تفصل بين اسم النموذج واسم السجل — وبنسخة بلا مسافات، وبالاسم اللاتيني
+     الخام لمن لا عربية في اسمه (القانون العربي يعيده فارغاً فيسقط من الخريطة).
+     وكل مفتاح يجمع كل أصحابه: شخصان مختلفان يطويان إلى نفس الاسم لا يُختار
+     بينهما — التقاط الأخير صمتاً كان يضع هوية حقيقية خلف تخمين. */
+  const instructorByName = new Map<string, Set<number>>();
+  const instructorNameKeys = (name: string) => {
+    const raw = String(name || "").trim().toLowerCase();
+    const keys = new Set<string>();
+    const identity = instructorIdentityKey(raw);
+    if (identity) { keys.add(identity); keys.add(instructorSpacelessKey(raw)); }
+    if (raw) keys.add(raw);
+    return [...keys].filter(Boolean);
+  };
+  instructors.forEach((person: any) => {
+    const id = Number(person.AdInstructorId);
+    if (!id) return;
+    instructorNameKeys(String(person.AdInstructorName || "")).forEach(key => {
+      const bucket = instructorByName.get(key) || new Set<number>();
+      bucket.add(id);
+      instructorByName.set(key, bucket);
+    });
+  });
+  const soleByWrittenName = (written: string) => {
+    for (const key of instructorNameKeys(written)) {
+      const bucket = instructorByName.get(key);
+      if (bucket && bucket.size === 1) return instructorById.get([...bucket][0]);
+      if (bucket && bucket.size > 1) return undefined;
+    }
+    return undefined;
+  };
   return rows.map(row => {
     const course = courseById.get(Number(row.AdCourseId)) || courseByCode.get(asciiDigits(row.sourceCourseCode || row.courseCode || "").trim().toLowerCase());
     /* «هيئة تدريسية» and its cousins are how a model says "somebody" — never a
@@ -153,10 +181,10 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
        it would put a real id behind a guess, so placeholders bind to no one. */
     const writtenName = String(row.sourceInstructorText || row.instructorName || "").trim();
     const instructor = instructorById.get(Number(row.AdInstructorId))
-      || instructorByCivil.get(asciiDigits(row.instructorCivil || row.sourceInstructorCivil || ""))
-      || (writtenName && !PLACEHOLDER.test(writtenName)
-        ? (instructorByName.get(instructorIdentityKey(writtenName)) || instructorByName.get(instructorSpacelessKey(writtenName)))
-        : undefined);
+      || (asciiDigits(row.instructorCivil || row.sourceInstructorCivil || "").trim()
+        ? instructorByCivil.get(asciiDigits(row.instructorCivil || row.sourceInstructorCivil || "").trim())
+        : undefined)
+      || (writtenName && !PLACEHOLDER.test(writtenName) ? soleByWrittenName(writtenName) : undefined);
     return {
       ...row,
       AdCourseId: Number(course?.AdCourseId || row.AdCourseId || 0),
