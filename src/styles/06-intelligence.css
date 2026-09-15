@@ -4280,6 +4280,7 @@ button.twin-delta{width:100%}
 
 /* Import identity micro-badges: informative, never visually louder than the name. */
 .import-instructor-name{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.transfer-preflight-wait{margin:0;padding:8px 12px;border-radius:10px;border:1px dashed color-mix(in srgb,var(--ink) 18%,var(--line));background:color-mix(in srgb,var(--ink) 3%,var(--surface));color:color-mix(in srgb,var(--ink) 66%,transparent);font-size:12px}
 .import-instructor-unlinked>span{opacity:.72;font-style:italic}
 .import-instructor-unlinked>small{display:inline-flex;align-items:center;min-height:18px;padding:0 6px;border-radius:999px;border:1px dashed color-mix(in srgb,var(--ink) 22%,var(--line));color:color-mix(in srgb,var(--ink) 58%,transparent);font-size:9px;font-weight:700;line-height:1}
 .import-visiting-badge{display:inline-flex;align-items:center;min-height:18px;padding:0 6px;border-radius:999px;border:1px solid color-mix(in srgb,var(--brass) 28%,var(--line));background:color-mix(in srgb,var(--brass) 7%,var(--surface));color:color-mix(in srgb,var(--brass) 78%,var(--ink));font-size:9px;font-weight:750;line-height:1}

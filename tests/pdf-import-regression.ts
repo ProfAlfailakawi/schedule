@@ -381,6 +381,12 @@ assert.equal(readName("هيئة تدريسية",new Set(),facultyStaff),0);
    أو سجل يحتمل أكثر من مرشّح (علاجه اختيار واحد). الرسالة الواحدة كانت تخفي
    الفرق، فيبحث المراجع عن خطأ قراءة لا وجود له. */
 assert.equal(instructorRegistryOutcome("عبدالله رجب الأنصاري",namedStaff),"UNREGISTERED");
+// الاسم المفرد لا يبلغ عتبة الاسمين أبداً، فكان يُقال لصاحبه «اختر من القائمة»
+// ولا أحد في القائمة يحمله. عتبته اسم واحد لأنه كل ما طُبع.
+assert.equal(instructorRegistryOutcome("إقبال",
+  [{AdInstructorId:60,AdInstructorName:"سالم محمد العتيبي"}] as any),"UNREGISTERED");
+assert.equal(instructorRegistryOutcome("إقبال",
+  [{AdInstructorId:61,AdInstructorName:"إقبال محمد الصباح"}] as any),"AMBIGUOUS");
 // اشتراك في اسم شائع واحد ليس شبه هوية: يبقى «غير مسجّل».
 assert.equal(instructorRegistryOutcome("خالد سعد الهاجري",
   [{AdInstructorId:50,AdInstructorName:"خالد يوسف العنزي"}] as any),"UNREGISTERED");
