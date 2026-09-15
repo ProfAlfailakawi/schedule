@@ -136,6 +136,13 @@ ok('61b transfer publish waits for the term-wide conflict preflight, and only fo
 # «موجود عندنا للقسم» حقيقة يسجّلها النظام لحظة الإضافة، لا استنتاجاً من جداول
 # منشورة: الإضافة من سياق قسم تُدرِج العضو في دليل القسم اليدوي الذي تقرأه
 # المطابقة وبوابة النشر، ورقمٌ مدني موجود يُضمّ ويُعاد كاختيار بدل أن يُرفض.
+# قانون الهوية يطوي كل تقلبات الرسم — الهمزات وؤ/ئ والهمزة المفردة وى/ة
+# والفارسية ی/ک و«ال» المشطورة والمسافات — ولا نسخة محلية منه في أي موضع
+# يقارن أسماء الأساتذة: البحث والمطابقة وطبقة Gemini والاسترجاع والمقارنة
+# كلها تستورده، فلا يجد أحدها اسماً يعمى عنه الآخر.
+_law=(ROOT/'src/utils/instructorIdentity.ts').read_text()
+ok('96d the identity law folds every orthographic variant including spaces', 'ؤ' in _law and 'ئ' in _law and 'replace(/ء/g, "")' in _law and '[ىی]' in _law and 'instructorSpacelessKey' in _law and 'يي+$' in _law and 'token === "عبد" || token === "ال"' in _law)
+ok('96e every instructor-name comparison imports the shared law, no local copies', 'from "../utils/instructorIdentity"' in (ROOT/'src/components/InstructorPicker.tsx').read_text() and 'from "./instructorIdentity"' in (ROOT/'src/utils/geminiScheduleLayer.ts').read_text() and 'from "./instructorIdentity"' in (ROOT/'src/utils/authorityScanRecovery.ts').read_text() and 'foldInstructorText' in server and 'instructorCleanName' in server)
 ok('96b quick-add from a department context enrols the person into the manual department directory', 'const scoped = Boolean(collegeId && sectionId && isScopeAllowed(req, collegeId, sectionId))' in server and 'saveDepartmentDelegates(collegeId, sectionId, [...directory, Number(instructorId)])' in server and 'existing: true' in server and 'collegeId, sectionId })' in (ROOT/'src/components/InstructorPicker.tsx').read_text())
 paged=(ROOT/'src/components/PagedImportPreview.tsx').read_text()
 # المعاينة تشفي نفسها بقانون الهوية المشترك: مطابقة حرفية وحيدة داخل نطاق

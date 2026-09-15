@@ -57,6 +57,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
+import { instructorCleanName, foldInstructorText } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
@@ -1319,15 +1320,11 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       }
       return normalizeEmpty(value);
     };
-    const cleanInstructor=(val:unknown)=>{
-      const folded=foldHeaderIdentity(val);
-      return folded
-        .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|بروفيسور|د|ا|م)\s+)+/g,"")
-        .replace(/\b(?:منتدب|مساعد|محاضر)\b/g,"")
-        .replace(/عبد\s+/g,"عبد")
-        .replace(/\s+/g," ")
-        .trim();
-    };
+    /* قانون الهوية المشترك، مع كلمات الصفة التي يلحقها تقرير المقارنة وحده. */
+    const cleanInstructor=(val:unknown)=>instructorCleanName(String(val??""))
+      .replace(/(?:^|\s)(?:منتدب|مساعد|محاضر)(?=\s|$)/g," ")
+      .replace(/\s+/g," ")
+      .trim();
     const sameInstructorIdentity=()=>{
       if(comparable("AdInstructorId",source.AdInstructorId)===comparable("AdInstructorId",next.AdInstructorId))return true;
       const names=options.instructorNameById;
@@ -2431,10 +2428,12 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
 
   // If query is provided, search across the university instructors catalog
   if (query) {
-    const fold = (value: string) => String(value || "")
-      .replace(/[ً-ْـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
-      .replace(/[^ء-ي0-9a-zA-Z ]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+    /* قانون هوية الاسم المشترك نفسه الذي تحكم به مطابقة الاستيراد — همزات
+       الألف، ى=ي، ؤ=و، ئ=ي، الهمزة الساقطة، وحتى المسافات: البحث يجب أن يجد
+       كل من تجده المطابقة، وإلا وقف المستخدم أمام «لا نتيجة» لشخص موجود. */
+    const fold = foldInstructorText;
     const needle = fold(query);
+    const needleSpaceless = needle.replace(/ /g, "");
     /* ── الرقم المدني يُطابَق كاملاً أو لا يُطابَق ──────────────────────────
      *
      * The name is matched by substring, as a search should be. The civil id
@@ -2454,6 +2453,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
     const filtered = allInstructors.filter(person => {
       const name = fold(person.AdInstructorName);
       if (name.includes(needle)) return true;
+      if (needleSpaceless.length >= 4 && name.replace(/ /g, "").includes(needleSpaceless)) return true;
       const civil = String(person.AdInstructorCivil || "").trim();
       return Boolean(digits) && digits.length === civil.length && digits === civil;
     });

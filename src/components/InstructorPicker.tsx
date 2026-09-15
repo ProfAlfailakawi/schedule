@@ -3,6 +3,7 @@ import { Check, CircleDot, Plus, Search, UserRound, X } from "lucide-react";
 import { byArabic } from "../utils/sorting";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
+import { instructorCleanName } from "../utils/instructorIdentity";
 
 /**
  * Choosing who teaches this, out of thousands.
@@ -53,21 +54,12 @@ interface Props {
   disabled?: boolean;
 }
 
-/** Arabic names differ in ways that should never hide a match. */
-const fold = (value: string) =>
-  String(value || "")
-    .replace(/[ً-ْـ]/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/[^ء-ي0-9a-zA-Z ]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-
-/** Titles are written inconsistently, so they never take part in matching. */
-const withoutTitles = (value: string) =>
-  fold(value).replace(/^(?:ا?د|ا|م|أ|prof|dr|mr|ms)\s+/g, "").trim();
+/** قانون هوية الاسم المشترك نفسه الذي تحكم به مطابقة الاستيراد: همزات الألف،
+    ى=ي، ة=ه، ؤ=و، ئ=ي، الهمزة الساقطة، الألقاب — البحث هنا يجب أن يجد كل من
+    تجده المطابقة، وإلا وقف المستخدم أمام قائمة «لا نتيجة» لشخص موجود. */
+const withoutTitles = instructorCleanName;
+/** والمسافات نفسها لا تحجب: «عبد العزيز» يجد «عبدالعزيز». */
+const spaceless = (value: string) => value.replace(/ /g, "");
 
 export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, suggestedName = "", onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
   const [open, setOpen] = useState(false);
@@ -165,7 +157,8 @@ export default function InstructorPicker({ value, onChange, instructors, departm
         if (name.startsWith(needle)) score = 0;
         else if (name.includes(needle)) score = 1;
         else if (civil.includes(needle)) score = 2;
-        else if (needle.split(" ").every(part => name.includes(part))) score = 3;
+        else if (spaceless(name).includes(spaceless(needle))) score = 3;
+        else if (needle.split(" ").every(part => name.includes(part))) score = 4;
         if (score < 0) return null;
         // Someone already teaching here outranks an equal match elsewhere.
         const inDepartment = departmentRank.has(person.AdInstructorId) ? 0 : 1;

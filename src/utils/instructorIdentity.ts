@@ -1,11 +1,15 @@
 /**
- * هوية اسم الأستاذ — قانون واحد للطرفين.
+ * هوية اسم الأستاذ — قانون واحد للطرفين، يطوي كل ما يختلف به الاسم العربي.
  *
- * المطابقة على الخادم، والحسم داخل المعاينة، وشاشات الاختيار: كلها كانت تعيد
- * كتابة نفس التطبيع (الألقاب، همزات الألف، عبد+الاسم، أرقام العرض) كلٌّ في
- * موضعه. نسختان من قانون واحد تفترقان مع الوقت، فيقرأ الخادم اسماً لا يراه
- * المتصفح — ويقف المستخدم أمام خانة «غير محسوم» لشخص يراه أمامه في القائمة.
- * فالقانون هنا، ويستورده الجميع.
+ * «إقبال» في السجل و«اقبال» في الورقة شخص واحد. وكذلك «عبد العزيز»/«عبدالعزيز»،
+ * و«البصيلي»/«البصيلى»، و«يحيى»/«يحي»، و«مؤمن»/«مومن»، و«فائزة»/«فايزه»،
+ * و«آلاء»/«ألاء»/«الاء» — وحتى المسافات نفسها: كلمة انشطرت تحت القلم الضوئي
+ * أو التصقت تحت الأصابع لا تصنع شخصاً جديداً.
+ *
+ * المطابقة على الخادم، والحسم داخل المعاينة، وبحث القوائم: كانت كلٌّ تعيد
+ * كتابة تطبيعها الناقص في موضعها، فيقرأ طرفٌ اسماً لا يراه الآخر — ويقف
+ * المنسّق أمام «غير محسوم» لشخص يراه أمامه في القائمة. القانون هنا وحده،
+ * ويستورده الجميع.
  */
 
 const stripPresentation = (value: string) => String(value || "")
@@ -13,32 +17,48 @@ const stripPresentation = (value: string) => String(value || "")
      them back into ordinary letters before any comparison. */
   .normalize("NFKC")
   /* Bidi-control glyphs are layout instructions, not text. */
-  .replace(/[‎‏‪-‮⁦-⁩]/g, "");
+  .replace(/[‎‏‪-‮⁦-⁩‌‍﻿]/g, "");
 
-/** حروف الاسم وحدها: بلا تشكيل، همزات الألف على صورة واحدة، ى=ي، ة=ه. */
+/** حروف الاسم وحدها، مطويّةً على كل ما يتقلب به الرسم:
+ *  همزات الألف على صورة واحدة، ى=ي، ة=ه، ؤ=و، ئ=ي، والهمزة المفردة تسقط
+ *  (تسقط من الورقة أصلاً: «آلاء» تُطبع «الا»)، والحروف الفارسية التي تتسرب
+ *  من لوحات المفاتيح (ی، ک، ھ) على رسمها العربي. */
 export const foldInstructorText = (value: string) => stripPresentation(value)
   .replace(/[ً-ْـ]/g, "")
-  .replace(/[أإآٱ]/g, "ا")
-  .replace(/ى/g, "ي")
-  .replace(/ة/g, "ه")
+  .replace(/[أإآٱٲٳ]/g, "ا")
+  .replace(/[ىی]/g, "ي")
+  .replace(/ؤ/g, "و")
+  .replace(/ئ/g, "ي")
+  .replace(/ء/g, "")
+  .replace(/[ةۃ]/g, "ه")
+  .replace(/ک/g, "ك")
+  .replace(/ھ/g, "ه")
   .replace(/[^ء-يa-zA-Z0-9 ]/g, " ")
   .replace(/\s+/g, " ")
   .trim()
   .toLowerCase();
 
-/** الألقاب عرضٌ لا هوية: «أ.د.» و«د.» و«الدكتور» تُكتب ولا تُقارن. */
+/** الألقاب عرضٌ لا هوية: «أ.د.» و«د.» و«الدكتور» و«Dr» تُكتب ولا تُقارن. */
 export const instructorCleanName = (value: string) => foldInstructorText(value)
-  .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|بروفيسور|د|ا|م)\s+)+/g, " ")
+  .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|بروفيسور|د|ا|م|prof|dr|mr|ms)\s+)+/g, " ")
   .replace(/\s+/g, " ")
   .trim();
 
-/** «عبد الله» و«عبدالله» اسم واحد: يُدمجان رمزاً واحداً على الجانبين. */
+/** «عبد الله» و«عبدالله» اسم واحد، و«ال أنصاري» المشطورة هي «الأنصاري»،
+ *  و«يحيى» بعد طيّ الألف المقصورة هي «يحي». يُبنى الاسم رموزَ هويةٍ تُدمج
+ *  فيها هذه الشظايا قبل أي مقارنة. */
 export function instructorIdentityTokens(value: string) {
   const source = instructorCleanName(value).split(/\s+/).filter(token => /[ء-ي]/.test(token) && token.length >= 2);
   const out: string[] = [];
   for (let i = 0; i < source.length; i++) {
-    if (source[i] === "عبد" && i + 1 < source.length && source[i + 1].length >= 2) { out.push(`عبد${source[i + 1]}`); i++; continue; }
-    out.push(source[i]);
+    let token = source[i];
+    /* «عبد» و«ال» شظيتان تلتصقان بما بعدهما: انشطارهما مسافةً لا يغيّر الاسم. */
+    while ((token === "عبد" || token === "ال") && i + 1 < source.length && source[i + 1].length >= 2) {
+      token = `${token}${source[i + 1]}`;
+      i++;
+    }
+    /* «يحيى» تصير «يحيي» بعد طيّ ى=ي؛ الياء المضعّفة في آخر الرمز واحدة. */
+    out.push(token.replace(/يي+$/, "ي"));
   }
   return out;
 }
@@ -46,11 +66,18 @@ export function instructorIdentityTokens(value: string) {
 /** الاسم بعد كل التطبيع، جاهزاً للمقارنة الحرفية أو كمفتاح تجميع. */
 export const instructorIdentityKey = (value: string) => instructorIdentityTokens(value).join(" ");
 
+/** الاسم بلا مسافات إطلاقاً: الحَكَم الأخير حين تسقط المسافات في غير مواضعها —
+ *  «اقبالعبدالعزيز المطوع» و«اقبال عبدالعزيزالمطوع» سواء. للمساواة الكاملة
+ *  فقط، لا للاحتواء: الاحتواء بلا حدود كلمات يبتلع الأسماء القصيرة. */
+export const instructorSpacelessKey = (value: string) => instructorIdentityTokens(value).join("");
+
 /**
  * مطابقة حرفية كاملة لا ثاني لها.
  *
- * تعادل قاعدة EXACT_FULL في محرك الاستيراد: اسم السجل يساوي المطبوع كاملاً،
- * أو يرد كاملاً داخله (اسم رابع مقصوص عند حافة الخانة لا يُسقط الهوية).
+ * تقبل ثلاثة طرق كلها حرفية:
+ * ١) الاسمان متساويان رمزاً برمز؛
+ * ٢) اسم السجل وارد كاملاً داخل المطبوع (اسم رابع مقصوص عند حافة الخانة)؛
+ * ٣) الاسمان متساويان بعد إسقاط المسافات كلها.
  * وتُحسب الوحدانية بهوية الشخص لا بعدد السجلات، فسجلان مكرران لنفس الشخص
  * ليسا التباساً. أكثر من شخص واحد ⇦ لا اختيار، والخانة تبقى للمراجع.
  */
@@ -60,10 +87,12 @@ export function uniqueExactIdentityMatch<T extends { AdInstructorId: number | st
 ): T | undefined {
   const printed = instructorIdentityKey(raw);
   if (!printed) return undefined;
+  const printedSpaceless = printed.replace(/ /g, "");
   const haystack = ` ${printed} `;
   const hits = people.filter(person => {
     const key = instructorIdentityKey(String(person?.AdInstructorName || ""));
-    return Boolean(key) && (key === printed || haystack.includes(` ${key} `));
+    if (!key) return false;
+    return key === printed || haystack.includes(` ${key} `) || key.replace(/ /g, "") === printedSpaceless;
   });
   const ids = new Set(hits.map(person => Number(person.AdInstructorId)));
   return ids.size === 1 ? hits[0] : undefined;
@@ -78,7 +107,8 @@ export function uniqueExactIdentityMatch<T extends { AdInstructorId: number | st
  * فيقضي المراجع وقته يبحث عن خطأ قراءة لا وجود له.
  *
  * «مرشّح» هنا: من يشترك مع الاسم المطبوع في اسمين صريحين على الأقل — أو اسم
- * واحد إن كان المطبوع اسماً واحداً، لأنه كل ما طُبع. */
+ * واحد إن كان المطبوع اسماً واحداً، لأنه كل ما طُبع — أو من يساويه كاملاً
+ * بلا مسافات. */
 export function instructorRegistryOutcome(
   raw: string,
   instructors: Array<{ AdInstructorId: number | string; AdInstructorName: string }>,
@@ -86,10 +116,13 @@ export function instructorRegistryOutcome(
   const printed = instructorIdentityTokens(raw);
   if (!printed.length) return "AMBIGUOUS";
   const printedSet = new Set(printed);
-  const shared = (person: { AdInstructorName: string }) => {
-    const tokens = instructorIdentityTokens(person?.AdInstructorName || "");
-    return tokens.filter(token => printedSet.has(token)).length;
-  };
+  const printedSpaceless = printed.join("");
   const needed = printed.length >= 2 ? 2 : 1;
-  return instructors.some(person => shared(person) >= needed) ? "AMBIGUOUS" : "UNREGISTERED";
+  const candidate = (person: { AdInstructorName: string }) => {
+    const tokens = instructorIdentityTokens(person?.AdInstructorName || "");
+    if (!tokens.length) return false;
+    if (tokens.join("") === printedSpaceless) return true;
+    return tokens.filter(token => printedSet.has(token)).length >= needed;
+  };
+  return instructors.some(candidate) ? "AMBIGUOUS" : "UNREGISTERED";
 }

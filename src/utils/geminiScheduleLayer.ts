@@ -1,4 +1,5 @@
 import type { FSchedule } from "../types";
+import { instructorIdentityKey, instructorSpacelessKey } from "./instructorIdentity";
 import { normalizeClock } from "./scheduleTime";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./naturalQuery";
 
@@ -138,7 +139,13 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
   const courseByCode = new Map(courses.map((course: any) => [asciiDigits(course.CourseCode).trim().toLowerCase(), course]));
   const instructorById = new Map(instructors.map((person: any) => [Number(person.AdInstructorId), person]));
   const instructorByCivil = new Map(instructors.map((person: any) => [asciiDigits(person.AdInstructorCivil).trim(), person]));
-  const instructorByName = new Map(instructors.map((person: any) => [String(person.AdInstructorName || "").trim().toLowerCase(), person]));
+  /* الاسم مفتاحاً بقانون الهوية المشترك — همزات الألف والألقاب والمسافات لا
+     تفصل بين اسم النموذج واسم السجل — وبنسخة بلا مسافات للحَكَم الأخير. */
+  const instructorByName = new Map(instructors.flatMap((person: any) => {
+    const key = instructorIdentityKey(String(person.AdInstructorName || ""));
+    if (!key) return [] as Array<[string, any]>;
+    return [[key, person], [instructorSpacelessKey(String(person.AdInstructorName || "")), person]] as Array<[string, any]>;
+  }));
   return rows.map(row => {
     const course = courseById.get(Number(row.AdCourseId)) || courseByCode.get(asciiDigits(row.sourceCourseCode || row.courseCode || "").trim().toLowerCase());
     /* «هيئة تدريسية» and its cousins are how a model says "somebody" — never a
@@ -147,7 +154,9 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
     const writtenName = String(row.sourceInstructorText || row.instructorName || "").trim();
     const instructor = instructorById.get(Number(row.AdInstructorId))
       || instructorByCivil.get(asciiDigits(row.instructorCivil || row.sourceInstructorCivil || ""))
-      || (writtenName && !PLACEHOLDER.test(writtenName) ? instructorByName.get(writtenName.toLowerCase()) : undefined);
+      || (writtenName && !PLACEHOLDER.test(writtenName)
+        ? (instructorByName.get(instructorIdentityKey(writtenName)) || instructorByName.get(instructorSpacelessKey(writtenName)))
+        : undefined);
     return {
       ...row,
       AdCourseId: Number(course?.AdCourseId || row.AdCourseId || 0),

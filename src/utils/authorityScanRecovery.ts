@@ -1,3 +1,4 @@
+import { instructorIdentityKey } from "./instructorIdentity";
 /**
  * Conservative recovery for image-only, multi-page Authority timetable scans.
  *
@@ -39,17 +40,9 @@ const boolFlag = (value: unknown) => {
 };
 const daySignature = (row: Row) => DAY_KEYS.map((key, index) => boolFlag(row?.[key]) ? String(index + 1) : "").filter(Boolean).join("");
 
-const foldName = (value: unknown) => String(value ?? "")
-  .normalize("NFKC")
-  .replace(/[ً-ْـ]/g, "")
-  .replace(/[إأآٱ]/g, "ا")
-  .replace(/ى/g, "ي")
-  .replace(/ة/g, "ه")
-  .replace(/[^ء-يA-Za-z0-9 ]/g, " ")
-  .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|بروفيسور|د|ا|م)\s+)+/g, "")
-  .replace(/عبد\s+/g, "عبد")
-  .replace(/\s+/g, " ")
-  .trim()
+/* قانون هوية الاسم المشترك: هذه المقارنة كانت بنسخة محلية تجهل ؤ/ئ/الهمزة
+   الساقطة والمسافات الشاردة، فتحجب استرجاعاً مشروعاً أو تخلط بين اسمين. */
+const foldName = (value: unknown) => instructorIdentityKey(String(value ?? ""))
   .toLowerCase();
 
 const consensus = <T>(values: T[], key: (value: T) => string): T | undefined => {
