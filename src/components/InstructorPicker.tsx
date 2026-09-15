@@ -192,8 +192,11 @@ export default function InstructorPicker({ value, onChange, instructors, departm
     if (!name || !civil) { setError("الاسم والرقم المدني مطلوبان."); return; }
     const check = validateCivilId(civil);
     if (!check.isValid) { setError(check.message || "الرقم المدني غير صحيح."); return; }
-    if (instructors.some(x => String(x.AdInstructorCivil || "") === civil)) {
-      setError("هذا الرقم المدني مسجّل بالفعل.");
+    /* الرقم المدني قد يكون مسجّلاً خارج قائمة القسم المعروضة، فيُفحص كل ما
+       قرأته هذه القائمة — القسم والبحث الأوسع — قبل إرسال طلب سيُرفض. */
+    const already = [...knownInstructors, ...wider].find(x => String(x.AdInstructorCivil || "").trim() === civil);
+    if (already) {
+      setError(`هذا الرقم المدني مسجّل بالفعل باسم «${already.AdInstructorName}» — ابحث عنه بالرقم المدني واختره.`);
       return;
     }
     setBusy(true);

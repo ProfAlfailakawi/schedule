@@ -2437,7 +2437,16 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   res.json(sortArabicNamed(instructors, row => row.AdInstructorName));
 });
 
-app.post("/api/instructors", requirePermission(3), async (req: Request, res: Response) => {
+/* ── الإضافة السريعة أثناء بناء الجدول ────────────────────────────────────────
+ *
+ * قائمة أستاذ المقرر تعرض «إضافة أستاذ جديد» في شاشات الجدول والاستيراد، لكن
+ * الحفظ كان محجوزاً لشاشة إدارة الأساتذة وحدها، فيقابل المنسّق رسالة «هذه
+ * الشاشة مخصصة لإدارة النظام الرئيسية» بعد أن يكون قد كتب الاسم والرقم المدني.
+ * زميل جديد التحق بالقسم لا يجوز أن يكون طريقاً مسدوداً في منتصف الجدول.
+ *
+ * الإنشاء وحده هو ما فُتح، وبنفس تحققات شاشة الإدارة: رقم مدني صحيح ولا تكرار.
+ * التعديل والحذف يبقيان لإدارة النظام، لأنهما يمسّان سجلات قائمة وارتباطاتها. */
+app.post("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: Request, res: Response) => {
   const { AdInstructorCivil, AdInstructorName, AdInstructorMobile } = req.body;
   if (!AdInstructorCivil || !String(AdInstructorName || "").trim()) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
@@ -2454,7 +2463,9 @@ app.post("/api/instructors", requirePermission(3), async (req: Request, res: Res
   // Duplicate Check
   const exists = await Repository.getInstructorByCivil(AdInstructorCivil);
   if (exists) {
-    res.status(400).json({ error: "تم التسجيل من قبل" });
+    // Naming the existing record turns a dead end into the next step: search by
+    // the civil id and pick the person who is already there.
+    res.status(400).json({ error: `هذا الرقم المدني مسجّل بالفعل باسم «${String(exists.AdInstructorName || "").trim()}» — ابحث عنه بالرقم المدني واختره.` });
     return;
   }
 

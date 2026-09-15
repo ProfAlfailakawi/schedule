@@ -328,6 +328,50 @@ assert.equal(instructorParsed.rows[2].AdInstructorId,25);
 assert.equal(instructorParsed.rows[3].AdInstructorId,26);
 assert.equal(instructorParsed.rows[4].AdInstructorId,27);
 
+/* ── أسماء الجدول المعتمد كما تُطبع فعلاً ──────────────────────────────────────
+   ثلاث حالات كانت تُفرغ خانة الأستاذ بلا سبب حقيقي، فيظهر جدول القسم أحمر
+   كاملاً رغم أن كل أسمائه مسجّلة في النظام:
+   1) «بدالله حسن» — العين وحدها ضاعت من الاسم الأول؛
+   2) «إقبال» — اسم أول وحده، وكل البراهين كانت تبدأ من اسمين؛
+   3) «فهد عامر» — اسمان في قسم بلا تاريخ سابق، فنطاق التفضيل يولد فارغاً.
+   وفي كل حالة يبقى الشرط واحداً: نتيجة وحيدة لا ثاني لها، وإلا فالخانة فارغة. */
+const namedStaff:any[]=[
+  {AdInstructorId:31,AdInstructorName:"د. فهد عامر المطيري"},
+  {AdInstructorId:32,AdInstructorName:"د. عبدالله حسن الرشيدي"},
+  {AdInstructorId:33,AdInstructorName:"د. إقبال محمد الصباح"},
+];
+const namedPage=(text:string,reference:string):OcrPage=>
+  ({rows:[],gridRows:[{...gridRows[0],reference,instructorText:text}]} as any);
+const readName=(text:string,preferred?:Set<number>,catalogue:any[]=namedStaff)=>
+  parseScheduleTable([namedPage(text,"30001")],courses,catalogue,preferred,
+    {authorityDepartmentCode:"0101",sequentialSections:true}).rows[0].AdInstructorId;
+
+// 1) حرف مفقود من الاسم الأول لا يُسقط الهوية داخل القسم، لأن «حسن» طابق حرفياً.
+assert.equal(readName("د. بدالله حسن",new Set([32])),32);
+// وخارج القسم لا يكفي هذا الجذع وحده لصناعة هوية.
+assert.equal(readName("د. بدالله حسن",new Set()),0);
+
+// 2) اسم أول وحده يُقبل داخل القسم حين لا يحمله سواه.
+assert.equal(readName("د. إقبال",new Set([33])),33);
+// ويبقى فارغاً إذا حمله اثنان، ولو كانا كلاهما من القسم.
+assert.equal(readName("د. إقبال",new Set([33,34]),
+  [...namedStaff,{AdInstructorId:34,AdInstructorName:"د. إقبال يوسف العنزي"}]),0);
+// ولا يُقبل خارج نطاق القسم أبداً.
+assert.equal(readName("د. إقبال",new Set()),0);
+
+// 3) اسمان في قسم بلا تاريخ: يُقبلان فقط حين لا ينطبقان إلا على شخص واحد.
+assert.equal(readName("د. فهد عامر",new Set()),31);
+assert.equal(readName("د. فهد عامر",new Set(),
+  [...namedStaff,{AdInstructorId:35,AdInstructorName:"د. فهد عامر العجمي"}]),0);
+
+// «هيئة تدريسية» تُحسم من نطاق القسم حين تتعدد سجلات الجامعة.
+const facultyStaff:any[]=[
+  {AdInstructorId:41,AdInstructorName:"هيئة تدريسية"},
+  {AdInstructorId:42,AdInstructorName:"هيئة تدريسية"},
+];
+assert.equal(readName("هيئة تدريسية",new Set([42]),facultyStaff),42);
+assert.equal(readName("هيئة تدريسية",new Set(),facultyStaff),0);
+
 /* Native generated PDF geometry: location comes only from its real x-range, so
    seat/capacity welds can never become Building. Instructor is taken from the
    leftmost identity cell as one complete phrase. */
@@ -473,6 +517,10 @@ console.log(JSON.stringify({ passed: 70, checks: [
   "an ambiguous room can never invent a building",
   "عبد الله/عبدالله compound-name spelling is canonicalized before instructor matching",
   "two/three department name tokens still return only a system instructor identity",
+  "a single missing letter in the first name still resolves inside the department only",
+  "a lone printed first name resolves only when one department person carries it",
+  "two printed names resolve university-wide only when exactly one person qualifies",
+  "«هيئة تدريسية» is settled by the department when the university holds several",
   "graduation proof requires the official study-plan/graduation-sheet signature",
   "graduation proof reads the civil ID from the official sheet",
   "graduation proof reads required units only from the labelled sheet summary",
