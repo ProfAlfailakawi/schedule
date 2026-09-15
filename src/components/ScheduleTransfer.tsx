@@ -348,10 +348,15 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [importKind, collegeId, sectionId, termId, previewRowsSignature, xlsxPreview?.rows]);
 
+  /* ── «عندنا جواب» و«لا ننتظر جواباً» ليسا شيئاً واحداً ──────────────────────
+     خلطهما في راية واحدة جعل مسار Excel يقول إن لديه نتائج فحصٍ لم يُجرَ أصلاً،
+     فتُقرأ حقول من `null` وتسقط الشاشة كلها — وهي أسوأ من العيب الذي كان يُراد
+     إصلاحه. فرايتان: واحدة تقول إن البيانات حاضرة وتخصّ هذه الصفوف بالذات،
+     وأخرى تقول إن بوابة النشر لم تعد تنتظر شيئاً. */
+  const termConflictsFresh = Boolean(termConflicts && termConflicts.signature === previewRowsSignature);
   /* الفحص المسبق خاص بجدول PDF المعتمد؛ استيراد ملف Excel لا يمرّ به أصلاً،
      فلا يجوز أن ينتظر جواباً لن يأتي ويبقى بلا زر نشر إلى الأبد. */
-  const termConflictsFresh = importKind !== "authority-pdf"
-    || Boolean(termConflicts && termConflicts.signature === previewRowsSignature);
+  const publishGateSatisfied = importKind !== "authority-pdf" || termConflictsFresh;
 
   /* ── التعارض يُرى قبل الضغط، لا بعده ───────────────────────────────────────
    *
@@ -424,7 +429,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     /* حجز مزدوج لأستاذ أو قاعة يمنع النشر عند الخادم، فيمنع ظهور زر النشر هنا
        أيضاً. زرٌّ يظهر ثم يُرفض هو وعدٌ كاذب، لا مراجعة. */
     previewConflicts.issues.forEach(issue => issues.add(issue));
-    if (termConflictsFresh) termConflicts!.issues.forEach(issue => issues.add(issue));
+    if (termConflictsFresh) (termConflicts?.issues || []).forEach(issue => issues.add(issue));
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds, roster, previewConflicts, termConflicts, termConflictsFresh]);
   /* Server notes arrive as «السطر N: …» against the whole draft. They are moved
@@ -449,7 +454,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
      قبله. المراجع لا يعنيه من اكتشف التعارض. */
   const previewRowIssues = useMemo(() => {
     const merged: Record<string, string[]> = { ...serverRowIssues };
-    const live = [previewConflicts.notes, termConflictsFresh ? termConflicts!.notes : {}];
+    const live = [previewConflicts.notes, (termConflictsFresh && termConflicts?.notes) || {}];
     live.forEach(source => Object.keys(source).forEach(key => {
       merged[key] = [...new Set([...(merged[key] || []), ...source[key]])];
     }));
@@ -1400,10 +1405,10 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         </div>
                       ) : null}
                       <div className="transfer-import-commit">
-                        {importReady && !termConflictsFresh ? (
+                        {importReady && !publishGateSatisfied ? (
                           <p className="transfer-preflight-wait" role="status">جارٍ فحص التعارض مع بقية الأقسام في هذا الفصل…</p>
                         ) : null}
-                        {importReady && termConflictsFresh ? (
+                        {importReady && publishGateSatisfied ? (
                           <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady}>
                             {busy ? "يجهّز…" : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                           </PrimaryButton>
