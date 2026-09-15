@@ -4123,9 +4123,14 @@ app.post("/api/schedules/import-preflight", requirePermission(7), async (req: Au
     rows,termRows as any[],collegeId,sectionId,
     branchOwnScopes(colleges as any,sections as any,collegeId,sectionId),
   );
-  /* المعرّف السالب موضعٌ في المعاينة؛ الموجب موعد محفوظ خارج المسودة، ولا موضع
-     له على الشاشة فيُقال للمراجع إنه من خارج القسم. */
-  const positionOf=(id:unknown)=>{const value=Number(id);return value<0?-value-1:null;};
+  /* ── الموضع يُقرأ من الترتيب الحالي، لا من المعرّف ──────────────────────────
+     المعرّفات السالبة تُمنح مرة واحدة ثم تبقى مع الصف، فحذف صف من المعاينة
+     يترك الباقين بمعرّفات لم تعد تساوي مواضعهم: الصف ذو المعرّف ‎-3 يصير ثالثاً
+     بعد أن كان رابعاً. فكّ المعرّف حسابياً كان يضع العلامة على صف بريء — أو
+     خارج الجدول كله — بينما يُمنع النشر بسبب لا يراه أحد. */
+  const positionById=new Map<number,number>();
+  rows.forEach((row:any,index:number)=>{const id=Number(row?.id);if(Number.isFinite(id))positionById.set(id,index);});
+  const positionOf=(id:unknown)=>{const at=positionById.get(Number(id));return at===undefined?null:at;};
   res.json({conflicts:conflicts.slice(0,60).map((item:any)=>({
     type:String(item?.type||""),message:String(item?.message||""),detail:String(item?.detail||""),
     rowIndex:positionOf(item?.rowId),otherIndex:positionOf(item?.otherId),
