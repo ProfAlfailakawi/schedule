@@ -75,7 +75,8 @@ import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
-import { type ImportRow } from "./ImportPreviewTable";
+import { importRowKey, type ImportRow } from "./ImportPreviewTable";
+import { findConflicts } from "../utils/scheduleIntelligence";
 import PagedImportPreview from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
 import { roomIdentityKey } from "../utils/locationRegistry";
@@ -1779,6 +1780,29 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setTab("history");
     }
   };
+
+  /* الملاحظة عن الصف تُصبغ خليته، لا سطراً تحت الجدول. هذه الشاشة كانت تحسب
+     التعارض في قائمة الملاحظات ولا تمرّر شيئاً إلى الجدول، فتبقى كل الخلايا
+     خضراء بينما القائمة تقول إن هناك حجزاً مزدوجاً. */
+  const importRowIssues = useMemo(() => {
+    const rows = Array.isArray(importPreview?.rows) ? importPreview.rows as ImportRow[] : [];
+    const byRow: Record<string, string[]> = {};
+    if (rows.length < 2) return byRow;
+    const staged = rows.map((row, index) => ({ ...row, id: index + 1, AdTermId: termId })) as any[];
+    findConflicts(staged, staged)
+      .filter(item => item.severity === "high" || item.type === "duplicate")
+      .forEach(item => {
+        const pair: Array<[number, number]> = [[Number(item.rowId), Number(item.otherId)], [Number(item.otherId), Number(item.rowId)]];
+        pair.forEach(([at, partner]) => {
+          const row = rows[at - 1];
+          if (!row) return;
+          const key = importRowKey(row);
+          const text = `${item.message} مع الصف ${partner.toLocaleString("ar-KW-u-nu-latn")}`;
+          byRow[key] = [...new Set([...(byRow[key] || []), text])];
+        });
+      });
+    return byRow;
+  }, [importPreview?.rows, termId]);
 
   const importBlockingIssues = useMemo(() => {
     if (!importPreview) return [] as string[];
@@ -5137,6 +5161,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   instructors={instructors as any}
                   departmentIds={importInstructorIds}
                   visitingIds={importVisitingIds}
+                  rowIssues={importRowIssues}
                   departmentRooms={importDepartmentRooms}
                   collegeId={collegeId}
                   sectionId={sectionId}

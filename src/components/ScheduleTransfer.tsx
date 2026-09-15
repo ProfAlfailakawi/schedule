@@ -6,6 +6,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
+import { findConflicts } from "../utils/scheduleIntelligence";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
@@ -281,6 +282,45 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   ), [departmentIds, instructors]);
   const sortedTerms = useMemo(() => sortTermsNewest(terms), [terms]);
 
+  /* ── التعارض يُرى قبل الضغط، لا بعده ───────────────────────────────────────
+   *
+   * فحص المعاينة كان يسأل عن اكتمال كل صف وحده — مقرر، شعبة، أيام، وقت، مبنى،
+   * قاعة، أستاذ — ولا يسأل قط عن علاقة صفين ببعضهما. فجدول فيه أستاذ محجوز
+   * مرتين أو قاعة محجوزة مرتين كان يبدو نظيفاً تماماً، ويظهر زر «تعبئة ونشرها»
+   * كأن كل شيء تمّ، حتى إذا ضُغط ردّ الخادم بالرفض وعندها فقط احمرّت الخلايا.
+   *
+   * الفحص نفسه الذي يرفض به الخادم يُقرأ هنا — `findConflicts` ذاتها، لا نسخة
+   * منها — فلا يمكن أن يرى أحدهما تعارضاً يعمى عنه الآخر. والنتيجة تسقط على
+   * الخليتين معاً وعلى الصفين كليهما، لأن الحجز المزدوج ليس خطأ صفٍّ واحد.
+   *
+   * وللصفوف هنا لا معرّفات بعد — لم تُحفظ — فتُعطى أرقام سطورها في المعاينة،
+   * وهي نفسها الأرقام التي يراها المراجع في العمود الأول. */
+  const previewConflicts = useMemo((): { notes: Record<string, string[]>; issues: string[] } => {
+    const empty = { notes: {} as Record<string, string[]>, issues: [] as string[] };
+    if (importKind !== "authority-pdf") return empty;
+    const rows = Array.isArray(xlsxPreview?.rows) ? xlsxPreview.rows as ImportRow[] : [];
+    if (rows.length < 2) return empty;
+    const staged = rows.map((row, index) => ({ ...row, id: index + 1, AdTermId: termId })) as any[];
+    const blocking = findConflicts(staged, staged)
+      .filter(item => item.severity === "high" || item.type === "duplicate");
+    const notes: Record<string, string[]> = {};
+    const issues: string[] = [];
+    const place = (at: number, partner: number, message: string) => {
+      const row = rows[at - 1];
+      if (!row) return;
+      const key = importRowKey(row);
+      const text = `${message} مع الصف ${partner.toLocaleString("ar-KW-u-nu-latn")}`;
+      notes[key] = [...new Set([...(notes[key] || []), text])];
+    };
+    blocking.forEach(item => {
+      const a = Number(item.rowId), b = Number(item.otherId);
+      place(a, b, item.message);
+      place(b, a, item.message);
+      issues.push(`الصفان ${a.toLocaleString("ar-KW-u-nu-latn")} و${b.toLocaleString("ar-KW-u-nu-latn")}: ${item.message}.`);
+    });
+    return { notes, issues: [...new Set(issues)] };
+  }, [importKind, xlsxPreview?.rows, termId]);
+
   const importBlockingIssues = useMemo(() => {
     if (!xlsxPreview) return [] as string[];
     const sourceIssues=(Array.isArray(xlsxPreview.issues) ? xlsxPreview.issues : []).map((item: unknown) => String(item || "").trim()).filter(Boolean);
@@ -310,8 +350,11 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       const instructorChosenByHand = row.importEvidence?.instructor?.source === "MANUAL";
       if (!Number(row.AdInstructorId)||(importKind!=="authority-pdf"&&!instructorChosenByHand&&!departmentIds.includes(Number(row.AdInstructorId))&&!roster.includes(Number(row.AdInstructorId)))) issues.add(`الصف ${n}: أستاذ المقرر غير محدد أو غير مثبت ضمن القسم/منتدبي الفصل الحالي.`);
     });
+    /* حجز مزدوج لأستاذ أو قاعة يمنع النشر عند الخادم، فيمنع ظهور زر النشر هنا
+       أيضاً. زرٌّ يظهر ثم يُرفض هو وعدٌ كاذب، لا مراجعة. */
+    previewConflicts.issues.forEach(issue => issues.add(issue));
     return [...issues];
-  }, [xlsxPreview, importKind, departmentIds, roster]);
+  }, [xlsxPreview, importKind, departmentIds, roster, previewConflicts]);
   /* Server notes arrive as «السطر N: …» against the whole draft. They are moved
      onto the rows they name so the table can colour the offending cell, instead
      of printing the same sentence five times under a table that looks fine. */
@@ -330,6 +373,16 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     });
     return byRow;
   }, [xlsxPreview]);
+  /* الخلية الحمراء واحدة سواء جاء سببها من الخادم بعد رفضٍ أو من الفحص الحيّ
+     قبله. المراجع لا يعنيه من اكتشف التعارض. */
+  const previewRowIssues = useMemo(() => {
+    const merged: Record<string, string[]> = { ...serverRowIssues };
+    Object.keys(previewConflicts.notes).forEach(key => {
+      merged[key] = [...new Set([...(merged[key] || []), ...previewConflicts.notes[key]])];
+    });
+    return merged;
+  }, [serverRowIssues, previewConflicts]);
+
   const unplacedSaveIssues = useMemo(() => {
     const notes = Array.isArray(xlsxPreview?.saveIssues) ? xlsxPreview.saveIssues : [];
     return [...new Set(notes.map((note: unknown) => String(note || "").trim()).filter((note: string) => note && !/^السطر\s+\d+\s*:/.test(note)))] as string[];
@@ -1215,7 +1268,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}
-                        rowIssues={serverRowIssues}
+                        rowIssues={previewRowIssues}
                         onRows={next => setXlsxPreview((prev: any) => {
                           if(!prev)return prev;
                           // The visual lock is the first guard; this is the one
@@ -1233,10 +1286,10 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                           marks the cell in red is noise the reviewer has to read
                           five times to learn one thing. Only what cannot be
                           placed on a cell is written out here. */}
-                      {Object.keys(serverRowIssues).length ? (
+                      {Object.keys(previewRowIssues).length ? (
                         <p className="transfer-row-issues-note" role="alert">
                           <AlertTriangle />
-                          {`${countOf(Object.keys(serverRowIssues).length, AR.row)} بحاجة إلى مراجعة · الخلايا المعنية مظللة بالأحمر داخل الجدول.`}
+                          {`${countOf(Object.keys(previewRowIssues).length, AR.row)} بحاجة إلى مراجعة · الخلايا المعنية مظللة بالأحمر داخل الجدول.`}
                         </p>
                       ) : null}
                       {unplacedSaveIssues.length ? (
@@ -1269,7 +1322,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                           <AlertTriangle aria-hidden="true" />
                           <div>
                             <strong>{error}</strong>
-                            {Object.keys(serverRowIssues).length ? <small>الخلايا المعنية مظللة بالأحمر داخل الجدول أعلاه.</small> : null}
+                            {Object.keys(previewRowIssues).length ? <small>الخلايا المعنية مظللة بالأحمر داخل الجدول أعلاه.</small> : null}
                           </div>
                         </div>
                       ) : null}

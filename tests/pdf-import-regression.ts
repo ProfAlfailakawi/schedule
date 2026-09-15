@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, instructorRegistryOutcome, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { fairShareByOwner } from "../src/utils/hallBarterFairness.ts";
@@ -376,6 +376,21 @@ const facultyStaff:any[]=[
 assert.equal(readName("هيئة تدريسية",new Set([42]),facultyStaff),42);
 assert.equal(readName("هيئة تدريسية",new Set(),facultyStaff),0);
 
+/* ── لماذا لم تُربط الخانة؟ ───────────────────────────────────────────────────
+   للفشل سببان علاجهما مختلف: شخص لا وجود له في سجل الأساتذة (علاجه تسجيله)،
+   أو سجل يحتمل أكثر من مرشّح (علاجه اختيار واحد). الرسالة الواحدة كانت تخفي
+   الفرق، فيبحث المراجع عن خطأ قراءة لا وجود له. */
+assert.equal(instructorRegistryOutcome("عبدالله رجب الأنصاري",namedStaff),"UNREGISTERED");
+// اشتراك في اسم شائع واحد ليس شبه هوية: يبقى «غير مسجّل».
+assert.equal(instructorRegistryOutcome("خالد سعد الهاجري",
+  [{AdInstructorId:50,AdInstructorName:"خالد يوسف العنزي"}] as any),"UNREGISTERED");
+// اسمان صريحان مشتركان يجعلان السجل محتملاً، فالعلاج اختيار لا تسجيل.
+assert.equal(instructorRegistryOutcome("طلال فهيد ماطر",
+  [{AdInstructorId:51,AdInstructorName:"طلال فهيد العجمي"}] as any),"AMBIGUOUS");
+// والتطبيع نفسه على الجانبين: «عبد العزيز» و«عبدالعزيز» اسم واحد.
+assert.equal(instructorRegistryOutcome("اقبال عبد العزيز المطوع",
+  [{AdInstructorId:52,AdInstructorName:"د. اقبال عبدالعزيز المطوع"}] as any),"AMBIGUOUS");
+
 /* Native generated PDF geometry: location comes only from its real x-range, so
    seat/capacity welds can never become Building. Instructor is taken from the
    leftmost identity cell as one complete phrase. */
@@ -525,6 +540,7 @@ console.log(JSON.stringify({ passed: 70, checks: [
   "a lone printed first name resolves only when one department person carries it",
   "two printed names resolve university-wide only when exactly one person qualifies",
   "outside the department a university-wide pair must be two exact tokens",
+  "an unlinked instructor cell says whether the person is unregistered or merely undecided",
   "«هيئة تدريسية» is settled by the department when the university holds several",
   "graduation proof requires the official study-plan/graduation-sheet signature",
   "graduation proof reads the civil ID from the official sheet",
