@@ -1390,6 +1390,23 @@ function inferAuthorityBranchCode(draft:any,rows:any[]){
   return[...votes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
 }
 
+/* ── نطاق أساتذة القسم الذي لا تاريخ له ──────────────────────────────────────
+ *
+ * كل ما يعرفه النظام عن «أساتذة القسم» مشتقّ من جداول سابقة. والقسم الذي
+ * يستورد جدوله الأول لا جدول له بعد، فنطاقه يولد فارغاً — وعندها لا يبقى شيء
+ * تُقاس عليه هوية، لا في المطابقة ولا في التحقق قبل الحفظ.
+ *
+ * فحين — وحين فقط — يكون نطاق القسم نفسه خالياً، يتسع إلى أساتذة الكلية،
+ * مقروئين من جداول أقسامها الأخرى. القراءة واحدة يستعملها الطرفان، فلا يمكن
+ * أن يقبل أحدهما اسماً يرفضه الآخر: كان ذلك سيُظهر الاسم في المعاينة ثم يمنع
+ * حفظه بحجة أنه «غير مثبت ضمن القسم»، وهو أسوأ من ترك الخانة فارغة. */
+async function collegeFallbackInstructorIds(collegeId: number): Promise<number[]> {
+  const collegeHistory = await Repository.getSchedulesByScope({ collegeId });
+  return [...new Set((collegeHistory as any[])
+    .map(row => Number(row.AdInstructorId || 0))
+    .filter(id => Number.isFinite(id) && id > 0))];
+}
+
 async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean } = {}) {
   const termId = Number(rows[0]?.AdTermId || 0);
   const checkConflicts = options.checkConflicts !== false;
@@ -1419,6 +1436,16 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
   const departmentInstructorIds=new Set<number>(departmentPools.flatMap(pool=>[
     ...pool.history.map((row:any)=>Number(row.AdInstructorId||0)),...pool.delegates.map(Number),...pool.roster.map(Number),
   ]).filter((id:number)=>id>0));
+  /* الشرط هنا هو شرط المطابقة حرفاً بحرف: خلوّ نطاق القسم المستهدف نفسه — لا
+     مجموع أقسام الفرع — وإلا لقبل أحد الطرفين ما يرفضه الآخر. */
+  if(options.requireDepartmentInstructor){
+    const baseIndex=departmentScopes.findIndex(scope=>scope.collegeId===collegeId&&scope.sectionId===sectionId);
+    const basePool=baseIndex>=0?departmentPools[baseIndex]:undefined;
+    const baseIds=basePool?[
+      ...basePool.history.map((row:any)=>Number(row.AdInstructorId||0)),...basePool.delegates.map(Number),...basePool.roster.map(Number),
+    ].filter((id:number)=>Number.isFinite(id)&&id>0):[];
+    if(!baseIds.length)for(const id of await collegeFallbackInstructorIds(collegeId))departmentInstructorIds.add(id);
+  }
   const errors: string[] = [];
   for (let index=0; index<rows.length; index+=1) {
     const row=rows[index];
@@ -7217,11 +7244,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      حقيقي محدود يُقرأ من جداول أقسامها الأخرى، لا الجامعة كلها. والقسم الذي
      له تاريخ لا يتغير سلوكه إطلاقاً، فهذا المسار لا يُقرأ عنده أصلاً. */
   if(!preferredInstructorIds.size){
-    const collegeHistory=await Repository.getSchedulesByScope({collegeId});
-    for(const row of collegeHistory as any[]){
-      const id=Number(row.AdInstructorId||0);
-      if(Number.isFinite(id)&&id>0)preferredInstructorIds.add(id);
-    }
+    for(const id of await collegeFallbackInstructorIds(collegeId))preferredInstructorIds.add(id);
   }
   const instructors=allInstructors;
   /* A course-specific roster is only a tie-breaker for NAME evidence. It never
