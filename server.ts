@@ -1433,7 +1433,39 @@ async function collegeFallbackInstructorIds(collegeId: number): Promise<number[]
     .filter(id => Number.isFinite(id) && id > 0))];
 }
 
-async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean } = {}) {
+/* ── قائمة أهل القسم قانون واحد لا قراءتان ────────────────────────────────
+   كانت الشاشة تبني «أهل القسم» من نطاق القسم وحده، بينما يقرؤها قانون النشر
+   من مواقع الفرع كلها ومعها احتياط الكلية للقسم الذي لا تاريخ له بعد. فمن
+   يقبله الحفظ كان يُوسم في المعاينة غريباً عن القسم: إنذار كاذب على جدول
+   صحيح تماماً. القائمة تُحسب هنا مرة واحدة، ويقرأ منها الطرفان. */
+async function departmentInstructorIdSet(
+  allColleges: any[], allSections: any[], collegeId: number, sectionId: number, termId: number,
+): Promise<Set<number>> {
+  const scopes = branchOwnScopes(allColleges as any, allSections as any, collegeId, sectionId);
+  const pools = await Promise.all(scopes.map(async scope => {
+    const [history, delegates, roster] = await Promise.all([
+      Repository.getSchedulesByScope({ collegeId: scope.collegeId, sectionId: scope.sectionId }),
+      Repository.getDepartmentDelegates(scope.collegeId, scope.sectionId),
+      Repository.getVisitingRoster(scope.collegeId, scope.sectionId, termId),
+    ]);
+    return { history, delegates, roster };
+  }));
+  const idsOf = (pool: { history: any[]; delegates: any[]; roster: any[] }) => [
+    ...pool.history.map((row: any) => Number(row.AdInstructorId || 0)),
+    ...pool.delegates.map(Number), ...pool.roster.map(Number),
+  ].filter((id: number) => Number.isFinite(id) && id > 0);
+  const ids = new Set<number>(pools.flatMap(idsOf));
+  /* الاحتياط يُقاس بخلوّ نطاق القسم المستهدف نفسه — لا مجموع أقسام الفرع —
+     وإلا لقبل أحد الطرفين ما يرفضه الآخر. */
+  const baseIndex = scopes.findIndex(scope => scope.collegeId === collegeId && scope.sectionId === sectionId);
+  const basePool = baseIndex >= 0 ? pools[baseIndex] : undefined;
+  if (!basePool || !idsOf(basePool).length) {
+    for (const id of await collegeFallbackInstructorIds(collegeId)) ids.add(id);
+  }
+  return ids;
+}
+
+async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean; departmentInstructorIds?:Set<number> } = {}) {
   const termId = Number(rows[0]?.AdTermId || 0);
   const checkConflicts = options.checkConflicts !== false;
   /* القسم الواحد يُدرَّس في مواقع الفرع الثلاثة، ومن يدرّس في الجهراء عضو في
@@ -1444,32 +1476,17 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
   const departmentScopes = options.requireDepartmentInstructor
     ? branchOwnScopes(allColleges as any, allSections as any, collegeId, sectionId)
     : [];
-  const [courses, instructors, currentSchedules, registry,departmentPools] = await Promise.all([
+  const [courses, instructors, currentSchedules, registry] = await Promise.all([
     Repository.getCourses(), Repository.getInstructors(), Repository.getSchedulesByScope({ termId }), readLocationRegistry(),
-    Promise.all(departmentScopes.map(async scope=>{
-      const [history,delegates,roster]=await Promise.all([
-        Repository.getSchedulesByScope({collegeId:scope.collegeId,sectionId:scope.sectionId}),
-        Repository.getDepartmentDelegates(scope.collegeId,scope.sectionId),
-        Repository.getVisitingRoster(scope.collegeId,scope.sectionId,termId),
-      ]);
-      return {history,delegates,roster};
-    })),
   ]);
   const courseById = new Map(courses.map(course => [course.AdCourseId, course]));
   const instructorIds = new Set(instructors.map(instructor => instructor.AdInstructorId));
-  const departmentInstructorIds=new Set<number>(departmentPools.flatMap(pool=>[
-    ...pool.history.map((row:any)=>Number(row.AdInstructorId||0)),...pool.delegates.map(Number),...pool.roster.map(Number),
-  ]).filter((id:number)=>id>0));
-  /* الشرط هنا هو شرط المطابقة حرفاً بحرف: خلوّ نطاق القسم المستهدف نفسه — لا
-     مجموع أقسام الفرع — وإلا لقبل أحد الطرفين ما يرفضه الآخر. */
-  if(options.requireDepartmentInstructor){
-    const baseIndex=departmentScopes.findIndex(scope=>scope.collegeId===collegeId&&scope.sectionId===sectionId);
-    const basePool=baseIndex>=0?departmentPools[baseIndex]:undefined;
-    const baseIds=basePool?[
-      ...basePool.history.map((row:any)=>Number(row.AdInstructorId||0)),...basePool.delegates.map(Number),...basePool.roster.map(Number),
-    ].filter((id:number)=>Number.isFinite(id)&&id>0):[];
-    if(!baseIds.length)for(const id of await collegeFallbackInstructorIds(collegeId))departmentInstructorIds.add(id);
-  }
+  /* لقطة واحدة لعضوية القسم لكل طلب: من حسبها قبل النداء يمرّرها، فلا تُقرأ
+     مرتين ولا يقع الحكم على قائمتين مختلفتين إن تغيّر الدليل بينهما. */
+  const departmentInstructorIds = options.departmentInstructorIds
+    ?? (options.requireDepartmentInstructor
+      ? await departmentInstructorIdSet(allColleges as any, allSections as any, collegeId, sectionId, termId)
+      : new Set<number>());
   const errors: string[] = [];
   for (let index=0; index<rows.length; index+=1) {
     const row=rows[index];
@@ -7687,7 +7704,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
   }
   const rows=assignAuthoritySections(safeDraftRows(parsed.rows,collegeId,sectionId,termId));
-  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true}):[];
+  /* لقطة واحدة تُقرأ مرة: يحكم بها فحص النشر وتُرسل هي نفسها إلى المعاينة. */
+  const [scopeColleges,scopeSections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+  const departmentMembership=await departmentInstructorIdSet(scopeColleges as any,scopeSections as any,collegeId,sectionId,termId);
+  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true,departmentInstructorIds:departmentMembership}):[];
   /* Conflict errors and structural errors block publishing until resolved */
   const parserNotes=[...new Set(parsed.issues)];
   const blocking=[...new Set([
@@ -7734,13 +7754,16 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      من رُبطوا فعلاً: عرضٌ فقط، لا يوسّع قائمة الاختيار ولا يمنح أحداً عضوية
      القسم — ومن كان خارج القسم يبقى كهرمانياً للمراجعة كما هو، لكن باسمه
      الرسمي من النظام لا بنصّ OCR. */
+  /* ومعها قائمة أهل القسم كما يقرؤها قانون النشر نفسه، فلا تجتهد الشاشة في
+     تعريف «أهل القسم» وتنذر على من يقبله الحفظ أصلاً. */
+  const departmentInstructorIds=[...departmentMembership];
   const resolvedInstructors=[...new Map((rows as any[])
     .map(row=>Number(row.AdInstructorId)||0).filter(id=>id>0)
     .map(id=>[id,allInstructors.find((person:any)=>Number(person.AdInstructorId)===id)])
     .filter(([,person])=>Boolean(person)) as Array<[number,any]>).values()]
     .map((person:any)=>({AdInstructorId:Number(person.AdInstructorId),AdInstructorName:String(person.AdInstructorName||"")}));
   const result={
-    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,pageSummaries,resolvedInstructors,
+    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,pageSummaries,resolvedInstructors,departmentInstructorIds,
     fileName:fileName.slice(0,180),
     pages:recognized.pageCount,confidence:recognized.confidence,
     legibility:recognized.legibility,
