@@ -40,6 +40,11 @@ interface Props {
       أن تقود المستخدم إلى نموذج سيرفضه الخادم. الافتراضي هو السماح، فشاشات
       بناء الجدول لا تتغير. */
   canCreate?: boolean;
+  /** الاسم كما طُبع في المصدر، حين تُفتح القائمة على خانة لم تُربط بعد.
+      المراجع أمامه تسعة أسماء عربية كاملة مقروءة أصلاً؛ إعادةُ كتابتها حرفاً
+      بحرف عملٌ اخترعناه له. يُملأ نموذج الإضافة به، فلا يبقى عليه إلا الرقم
+      المدني — وهو وحده ما لا تحمله الورقة. */
+  suggestedName?: string;
   onCreated?: (instructor: Instructor) => void;
   onSelected?: (instructor: Instructor) => void;
   collegeId?: number;
@@ -64,7 +69,7 @@ const fold = (value: string) =>
 const withoutTitles = (value: string) =>
   fold(value).replace(/^(?:ا?د|ا|م|أ|prof|dr|mr|ms)\s+/g, "").trim();
 
-export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
+export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, suggestedName = "", onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -299,9 +304,9 @@ export default function InstructorPicker({ value, onChange, instructors, departm
               </div>
             </div>
           ) : (
-            <button type="button" className="instructor-add" onClick={() => { setAdding(true); setNewName(query.trim()); }}>
+            <button type="button" className="instructor-add" onClick={() => { setAdding(true); setNewName(query.trim() || suggestedName.trim()); }}>
               <Plus aria-hidden="true" />
-              إضافة أستاذ جديد{query.trim() ? ` باسم «${query.trim()}»` : ""}
+              إضافة أستاذ جديد{(query.trim() || suggestedName.trim()) ? ` باسم «${query.trim() || suggestedName.trim()}»` : ""}
             </button>
           )}
         </div>

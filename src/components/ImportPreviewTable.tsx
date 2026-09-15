@@ -170,6 +170,9 @@ export default function ImportPreviewTable({
      للعرض فقط، لا يُحفظ ولا يصير هوية. */
   const readInstructorText = (row: ImportRow) =>
     String(row.sourceInstructorText || row.importEvidence?.instructor?.raw || "").trim().slice(0, 60);
+  /** «غير مسجّل» علاجه تسجيل الشخص، و«غير محسوم» علاجه اختياره: وسمان لا وسم. */
+  const unlinkedLabel = (row: ImportRow) =>
+    row.importEvidence?.instructor?.method === "UNREGISTERED" ? "غير مسجّل" : "غير محسوم";
 
   /** هوية مثبتة لكنها خارج أساتذة القسم/المنتدبين: تُعرض للمراجعة لا كخطأ. */
   const instructorOutsideDepartment = (row: ImportRow) => {
@@ -388,7 +391,7 @@ export default function ImportPreviewTable({
                     )}
                   </td>
                   <td className={outsideNote?"import-cell-review":cellClass("instructor",missing.instructor(row))} title={[cellTitle("instructor"),outsideNote].filter(Boolean).join(" · ")||undefined}>
-                    {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : (readInstructorText(row) ? <span className="import-instructor-name import-instructor-unlinked"><span>{readInstructorText(row)}</span><small>غير مرتبط</small></span> : "—"))}
+                    {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} suggestedName={readInstructorText(row)} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : (readInstructorText(row) ? <span className="import-instructor-name import-instructor-unlinked"><span>{readInstructorText(row)}</span><small>{unlinkedLabel(row)}</small></span> : "—"))}
                   </td>
                   <td className="import-row-tools">
                     <button type="button" data-guide-ignore="تحرير صف داخل معاينة الاستيراد قبل أي حفظ" className={open ? "confirm" : ""} title={open ? "تم" : "تعديل سريع"} onClick={() => open ? setEditing(null) : beginEdit(index)}>{open ? <Check /> : <Pencil />}</button>
