@@ -123,7 +123,11 @@ courses_src=(ROOT/'src/components/Courses.tsx').read_text()
 ok('59 courses type import restored for CI', 'import type { AdSection } from "../types";' in courses_src)
 ok('60 course inspector shows public code not internal id', '<b>{selected.CourseCode || "—"}</b>' in courses_src)
 transfer=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
-ok('61 transfer publish is hidden and hard-disabled for any unresolved preview note while a saved Authority baseline may publish zero live rows', 'const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0)' in transfer and '{importReady ? (' in transfer and 'disabled={busy || !importReady}' in transfer and 'previewIssues: importBlockingIssues' in transfer and 'if (!importReady)' in transfer)
+# النشر يبقى مخفياً ومعطّلاً كما كان، ويضيف الآن شرطاً ثالثاً: أن يكون فحص
+# التعارض مع بقية أقسام الفصل قد أجاب عن هذه الصفوف بالذات. الوعد ثم الرفض بعد
+# الضغط ليس مراجعة، فالانتظار لحظةً هو الشكل الصحيح للقاعدة لا تخفيفها.
+ok('61 transfer publish is hidden and hard-disabled for any unresolved preview note while a saved Authority baseline may publish zero live rows', 'const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0)' in transfer and '{importReady && termConflictsFresh ? (' in transfer and 'disabled={busy || !importReady}' in transfer and 'previewIssues: importBlockingIssues' in transfer and 'if (!importReady)' in transfer)
+ok('61b transfer publish waits for the term-wide conflict preflight instead of promising then being refused', '/api/schedules/import-preflight' in transfer and 'termConflictsFresh = Boolean(termConflicts && termConflicts.signature === previewRowsSignature)' in transfer and 'import-preflight' in server and 'blockingImportConflicts(' in server)
 ok('62 draft backend rejects unresolved preview notes', 'لا يمكن حفظ المسودة أو نشرها قبل معالجة جميع ملاحظات المعاينة.' in server and 'previewIssues.length' in server)
 ok('63 pending room never waives the required building', 'building: (row: ImportRow) => !row.buildingId,' in imp)
 doc_ocr=(ROOT/'src/utils/documentOcr.ts').read_text()
@@ -270,7 +274,10 @@ smart_guide=(ROOT/'src/components/SmartGuide.tsx').read_text()
 shell_css=(ROOT/'src/styles/03-shell.css').read_text()
 ok('130p the guide confirmation sits ABOVE the guide panel instead of trapped behind it', '.guide-preview-backdrop{position:fixed;inset:0;z-index:2300' in shell_css and '.smart-guide{\n  position:fixed;left:18px;top:18px;bottom:18px;z-index:2200' in shell_css)
 ok('130q a handover banner ends when the screen resolves it, and can never outlive its purpose', 'if (!tourActiveRef.current) finishHandoffToScreen();' in smart_guide and 'finishHandoffRef.current?.();' in smart_guide and '}, 12000);' in smart_guide)
-ok('130r re-importing one document never conflicts with the copies it is about to replace at the other sites', 'const ownScopes=new Set<string>' in server and 'departmentScopes.map(scope=>`${scope.collegeId}:${scope.sectionId}`)' in server)
+# القاعدة نفسها لم تتغير، لكنها انتقلت إلى `blockingImportConflicts` كي تقرأها
+# بوابة النشر والفحص المسبق من موضع واحد: نسختان منها كانتا ستفترقان، فتقول
+# المعاينة «مضبوط» عن جدول يرفضه الحفظ — وهو العيب الذي جاء الفحص ليزيله.
+ok('130r re-importing one document never conflicts with the copies it is about to replace at the other sites', 'const ownScopes=new Set<string>' in server and 'ownScopeList.map(scope=>`${scope.collegeId}:${scope.sectionId}`)' in server and 'function branchOwnScopes(' in server and 'branchOwnScopes(allColleges as any, allSections as any, collegeId, sectionId)' in server)
 ok('130s a site building is offered even before a hall of this department is recorded under it', 'inBranch(building.officialCode))&&' in server and 'inBranch(buildingCodeById.get(room.buildingId))' in server)
 ok('130t the site opening covers OTHER sites only, so the picker never becomes every building of the branch', 'const otherSitePrefixes=new Set<string>();' in server and "prefix&&prefix!==basePrefix)otherSitePrefixes.add(prefix)" in server)
 ok('130u a building number is written with its site whenever the list holds more than one site', 'const multiSite=bySite.size>1;' in (ROOT/'src/components/LocationPicker.tsx').read_text() and '<optgroup key={prefix} label={officialSiteLabel(prefix)}>' in (ROOT/'src/components/LocationPicker.tsx').read_text())

@@ -1390,6 +1390,35 @@ function inferAuthorityBranchCode(draft:any,rows:any[]){
   return[...votes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
 }
 
+/** مواقع الفرع التي يملكها هذا القسم: يُدرَّس في أكثر من موقع، وحجزه في أيّها
+    حجزُه هو، لا حجز طرف آخر. */
+function branchOwnScopes(colleges:any[],sections:any[],collegeId:number,sectionId:number){
+  return siblingBranchScopes({colleges,sections,baseCollegeId:collegeId,baseSectionId:sectionId})
+    .map(scope=>({collegeId:scope.collegeId,sectionId:scope.sectionId}))
+    .concat([{collegeId,sectionId}])
+    .filter((scope,index,list)=>list.findIndex(item=>item.collegeId===scope.collegeId&&item.sectionId===scope.sectionId)===index);
+}
+
+/** ── قاعدة التعارض التي تمنع النشر، في موضع واحد ─────────────────────────────
+ *
+ * تُقرأ من بوابة النشر ومن الفحص المسبق معاً. لو نُسخت لكانت المعاينة تقول
+ * «كل شيء مضبوط» عن جدول يرفضه الحفظ — وهو العيب نفسه الذي جاء هذا الفحص
+ * ليزيله، فلا يجوز أن يُعاد إنتاجه في نسختين تفترقان مع الوقت.
+ *
+ * الصفوف المعروضة لم تُحفظ بعد فلا معرّفات لها، و`safeDraftRows` يعطيها معرّفات
+ * سالبة كي لا تصطدم بمعرّفات صفوف الفصل الحقيقية فيُقرأ تعارضٌ حقيقي على أنه
+ * الصف نفسه. */
+function blockingImportConflicts(
+  targetRows:any[],termRows:any[],collegeId:number,sectionId:number,
+  ownScopeList:Array<{collegeId:number;sectionId:number}>,
+){
+  const ownScopes=new Set<string>([`${collegeId}:${sectionId}`,...ownScopeList.map(scope=>`${scope.collegeId}:${scope.sectionId}`)]);
+  const external=termRows.filter(item=>!ownScopes.has(`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`));
+  const universe=[...external,...targetRows];
+  return findConflicts(targetRows as any,universe as any)
+    .filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+}
+
 /* ── نطاق أساتذة القسم الذي لا تاريخ له ──────────────────────────────────────
  *
  * كل ما يعرفه النظام عن «أساتذة القسم» مشتقّ من جداول سابقة. والقسم الذي
@@ -1416,9 +1445,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
   const [allColleges, allSections] = await Promise.all([Repository.getColleges(), Repository.getSections()]);
   const branchRoot = collegeBranchRoot(allColleges as any, collegeId);
   const departmentScopes = options.requireDepartmentInstructor
-    ? (siblingBranchScopes({colleges:allColleges as any,sections:allSections as any,baseCollegeId:collegeId,baseSectionId:sectionId}).map(scope=>({collegeId:scope.collegeId,sectionId:scope.sectionId}))
-       .concat([{collegeId,sectionId}])
-       .filter((scope,index,list)=>list.findIndex(item=>item.collegeId===scope.collegeId&&item.sectionId===scope.sectionId)===index))
+    ? branchOwnScopes(allColleges as any, allSections as any, collegeId, sectionId)
     : [];
   const [courses, instructors, currentSchedules, registry,departmentPools] = await Promise.all([
     Repository.getCourses(), Repository.getInstructors(), Repository.getSchedulesByScope({ termId }), readLocationRegistry(),
@@ -1501,10 +1528,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
      * ويرفض الصف بحجّة «حجز مزدوج لأستاذ المقرر»، والحقيقة أنه يتعارض مع نفسه
      * قبل أن يُستبدل. ومواقع القسم كلها ستُستبدل بهذه العملية نفسها، فلا تدخل
      * فحص التعارض. أما بقية الأقسام فتبقى كما هي: حجزها حقيقي ويُحترم. */
-    const ownScopes=new Set<string>([`${collegeId}:${sectionId}`,...departmentScopes.map(scope=>`${scope.collegeId}:${scope.sectionId}`)]);
-    const external = currentSchedules.filter(item => !ownScopes.has(`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`));
-    const universe = [...external, ...rows];
-    const conflicts = findConflicts(rows as any, universe as any).filter((item:any) => item.severity === "high" || item.type === "duplicate");
+    const conflicts = blockingImportConflicts(rows, currentSchedules, collegeId, sectionId, departmentScopes);
     conflicts.slice(0, 20).forEach((item:any) => errors.push(item.message || item.detail || "يوجد تعارض يمنع الاعتماد"));
   }
   return [...new Set(errors)].slice(0, 30);
@@ -4069,6 +4093,43 @@ app.get("/api/hall-barter/inbox", requirePermission(7), async (req: Authenticate
   const oldest=pending.reduce((max,request)=>{const created=Date.parse(String(request.createdAt||""));return Number.isFinite(created)?Math.min(max,created):max;},Date.now());
   const oldestDays=pending.length?Math.max(0,Math.floor((Date.now()-oldest)/86400000)):0;
   res.json({pending:pending.length,oldestDays});
+});
+
+/**
+ * ── ما سيرفضه الحفظ، يُقال قبل الضغط ────────────────────────────────────────
+ *
+ * معاينة الاستيراد تملك صفوفها وحدها، فلا ترى حجزاً في قاعة يستعملها قسم آخر
+ * في الفصل نفسه. وبوابة النشر ترى الفصل كله، فترفض. فيظهر زر «تعبئة ونشرها»
+ * كأن كل شيء تمّ، ثم يُرفض بعد الضغط — وهو وعدٌ كاذب لا مراجعة.
+ *
+ * هذه النقطة تُجري فحص التعارض نفسه الذي تُجريه البوابة، على الكون نفسه (الفصل
+ * كله عدا مواقع القسم التي ستُستبدل بهذه العملية)، وبالدالة نفسها لا بنسخة
+ * منها. الصفوف تصل غير محفوظة فتمرّ على `safeDraftRows` كما تمرّ عند الحفظ.
+ *
+ * قراءة محضة: لا تكتب شيئاً، وتُعيد أزواج التعارض بمواضع صفوفها في المعاينة.
+ */
+app.post("/api/schedules/import-preflight", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
+  if(!collegeId||!sectionId||!termId){res.status(400).json({error:"حدد الكلية والقسم والفصل."});return;}
+  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  let rows:any[];
+  try{rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);}
+  catch(error:any){res.status(400).json({error:String(error?.message||"تعذّر فحص الصفوف")});return;}
+  if(!rows.length){res.json({conflicts:[]});return;}
+  const [colleges,sections,termRows]=await Promise.all([
+    Repository.getColleges(),Repository.getSections(),Repository.getSchedulesByScope({termId}),
+  ]);
+  const conflicts=blockingImportConflicts(
+    rows,termRows as any[],collegeId,sectionId,
+    branchOwnScopes(colleges as any,sections as any,collegeId,sectionId),
+  );
+  /* المعرّف السالب موضعٌ في المعاينة؛ الموجب موعد محفوظ خارج المسودة، ولا موضع
+     له على الشاشة فيُقال للمراجع إنه من خارج القسم. */
+  const positionOf=(id:unknown)=>{const value=Number(id);return value<0?-value-1:null;};
+  res.json({conflicts:conflicts.slice(0,60).map((item:any)=>({
+    type:String(item?.type||""),message:String(item?.message||""),detail:String(item?.detail||""),
+    rowIndex:positionOf(item?.rowId),otherIndex:positionOf(item?.otherId),
+  }))});
 });
 
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });

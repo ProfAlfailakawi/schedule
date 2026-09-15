@@ -1807,8 +1807,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const importBlockingIssues = useMemo(() => {
     if (!importPreview) return [] as string[];
     const rows = Array.isArray(importPreview.rows) ? importPreview.rows as ImportRow[] : [];
-    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows)])];
-  }, [importPreview]);
+    /* ما يُصبغ بالأحمر يجب أن يمنع النشر. فحص الأزواج هنا يعرف تعارض الأستاذ
+       والقاعة فقط، بينما يرفض الخادم كذلك الموعدين المتطابقين لنفس المقرر
+       والشعبة. فكان الجدول يحمرّ والزر يبقى مفعّلاً حتى يرفضه الخادم. */
+    return [...new Set([
+      ...(Array.isArray(importPreview.issues) ? importPreview.issues : []),
+      ...validateImportRowsLocally(rows),
+      ...Object.values(importRowIssues).flat(),
+    ])];
+  }, [importPreview, importRowIssues]);
   const importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0);
 
   const scopedCourses = useMemo(

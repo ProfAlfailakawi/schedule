@@ -3719,13 +3719,17 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
  * ذلك اشتراكٌ عابر في اسم شائع، لا شبهُ هوية. */
 export function instructorRegistryOutcome(raw:string,instructors:AdInstructor[]):"UNREGISTERED"|"AMBIGUOUS"{
   const printed=instructorIdentityTokens(raw);
-  if(printed.length<2)return "AMBIGUOUS";
+  if(!printed.length)return "AMBIGUOUS";
   const printedSet=new Set(printed);
-  const hasRival=instructors.some(person=>{
+  const shared=(person:AdInstructor)=>{
     const tokens=instructorIdentityTokens(person?.AdInstructorName||"");
-    return tokens.filter(token=>printedSet.has(token)).length>=2;
-  });
-  return hasRival?"AMBIGUOUS":"UNREGISTERED";
+    return tokens.filter(token=>printedSet.has(token)).length;
+  };
+  /* الاسم المفرد لا يبلغ عتبة الاسمين أبداً، فكان يُحكم عليه دائماً بالالتباس
+     ويُقال لصاحبه «اختر من القائمة» ولا أحد في القائمة. عتبته اسم واحد لأنه
+     كل ما طُبع: إن لم يحمله أحد في السجل فالشخص غير مسجّل، لا ملتبس. */
+  const needed=printed.length>=2?2:1;
+  return instructors.some(person=>shared(person)>=needed)?"AMBIGUOUS":"UNREGISTERED";
 }
 
 function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):AdInstructor|undefined{

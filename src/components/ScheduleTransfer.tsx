@@ -282,6 +282,74 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   ), [departmentIds, instructors]);
   const sortedTerms = useMemo(() => sortTermsNewest(terms), [terms]);
 
+  /* ── وما لا تراه المعاينة وحدها ─────────────────────────────────────────────
+   *
+   * الفحص الحيّ أعلاه يقارن صفوف المسودة ببعضها، وهو كل ما تملكه الشاشة. لكن
+   * قاعةً يستعملها قسم آخر في الفصل نفسه حجزٌ حقيقي لا تراه المسودة، وبوابة
+   * النشر تراه وترفض. فيبقى الزر ظاهراً حتى يُضغط ثم يُرفض.
+   *
+   * فتُسأل نقطة `import-preflight` — تُجري فحص البوابة نفسه على الفصل كله —
+   * وتُستأنف عند كل تعديل، فلا تبقى ملاحظة قديمة عن صف أُصلح أو حُذف. وحتى
+   * يصل جوابها عن الصفوف الحالية بالذات لا يُعرض زر النشر: قاعدة «لا يظهر إلا
+   * وكل شيء مضبوط» تعني الانتظار لحظةً، لا الوعد ثم الرفض. */
+  const previewRowsSignature = useMemo(() => {
+    if (importKind !== "authority-pdf") return "";
+    const rows = Array.isArray(xlsxPreview?.rows) ? xlsxPreview.rows as ImportRow[] : [];
+    return JSON.stringify(rows.map(row => [
+      row.AdCourseId, row.SCode, row.AdInstructorId, row.roomId || row.AdRoomHall, row.buildingId || row.AdRoomCode,
+      row.fstarttime, row.fendtime, row.fsunday, row.fmonday, row.ftuesday, row.fwednesday, row.fthursday,
+    ]));
+  }, [importKind, xlsxPreview?.rows]);
+  const [termConflicts, setTermConflicts] = useState<{ signature: string; notes: Record<string, string[]>; issues: string[] } | null>(null);
+
+  useEffect(() => {
+    if (importKind !== "authority-pdf" || !collegeId || !sectionId || !termId) { setTermConflicts(null); return; }
+    const rows = Array.isArray(xlsxPreview?.rows) ? xlsxPreview.rows as ImportRow[] : [];
+    if (!rows.length) { setTermConflicts({ signature: previewRowsSignature, notes: {}, issues: [] }); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/schedules/import-preflight", {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          body: JSON.stringify({ collegeId, sectionId, termId, rows }),
+        });
+        if (!response.ok) throw new Error("preflight");
+        const data = await response.json();
+        const list = Array.isArray(data?.conflicts) ? data.conflicts : [];
+        const notes: Record<string, string[]> = {};
+        const issues: string[] = [];
+        const label = (at: number) => (at + 1).toLocaleString("ar-KW-u-nu-latn");
+        list.forEach((item: any) => {
+          const message = String(item?.message || "تعارض يمنع النشر");
+          const here = Number.isInteger(item?.rowIndex) ? Number(item.rowIndex) : null;
+          const there = Number.isInteger(item?.otherIndex) ? Number(item.otherIndex) : null;
+          /* الطرف الآخر إمّا صف في المسودة فيُسمّى برقمه، وإمّا موعد محفوظ لقسم
+             آخر لا رقم له هنا — وهو بالضبط ما كانت الشاشة تعجز عن قوله. */
+          const partner = there !== null ? `مع الصف ${label(there)}` : "مع موعد قائم خارج هذا القسم";
+          [here, there].forEach(at => {
+            if (at === null) return;
+            const row = rows[at];
+            if (!row) return;
+            const key = importRowKey(row);
+            const other = at === here ? partner : (here !== null ? `مع الصف ${label(here)}` : partner);
+            notes[key] = [...new Set([...(notes[key] || []), `${message} ${other}`])];
+          });
+          if (here !== null) issues.push(`الصف ${label(here)}: ${message} ${partner}.`);
+          else issues.push(`${message} ${partner}.`);
+        });
+        setTermConflicts({ signature: previewRowsSignature, notes, issues: [...new Set(issues)] });
+      } catch (fault: any) {
+        if (fault?.name === "AbortError") return;
+        /* تعذّر الفحص لا يحبس المستخدم إلى الأبد: تعود الشاشة إلى فحصها المحلي،
+           والبوابة على الخادم تبقى الحارس الأخير الذي لا يُتجاوز. */
+        setTermConflicts({ signature: previewRowsSignature, notes: {}, issues: [] });
+      }
+    }, 500);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [importKind, collegeId, sectionId, termId, previewRowsSignature, xlsxPreview?.rows]);
+
+  const termConflictsFresh = Boolean(termConflicts && termConflicts.signature === previewRowsSignature);
+
   /* ── التعارض يُرى قبل الضغط، لا بعده ───────────────────────────────────────
    *
    * فحص المعاينة كان يسأل عن اكتمال كل صف وحده — مقرر، شعبة، أيام، وقت، مبنى،
@@ -353,8 +421,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     /* حجز مزدوج لأستاذ أو قاعة يمنع النشر عند الخادم، فيمنع ظهور زر النشر هنا
        أيضاً. زرٌّ يظهر ثم يُرفض هو وعدٌ كاذب، لا مراجعة. */
     previewConflicts.issues.forEach(issue => issues.add(issue));
+    if (termConflictsFresh) termConflicts!.issues.forEach(issue => issues.add(issue));
     return [...issues];
-  }, [xlsxPreview, importKind, departmentIds, roster, previewConflicts]);
+  }, [xlsxPreview, importKind, departmentIds, roster, previewConflicts, termConflicts, termConflictsFresh]);
   /* Server notes arrive as «السطر N: …» against the whole draft. They are moved
      onto the rows they name so the table can colour the offending cell, instead
      of printing the same sentence five times under a table that looks fine. */
@@ -377,11 +446,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
      قبله. المراجع لا يعنيه من اكتشف التعارض. */
   const previewRowIssues = useMemo(() => {
     const merged: Record<string, string[]> = { ...serverRowIssues };
-    Object.keys(previewConflicts.notes).forEach(key => {
-      merged[key] = [...new Set([...(merged[key] || []), ...previewConflicts.notes[key]])];
-    });
+    const live = [previewConflicts.notes, termConflictsFresh ? termConflicts!.notes : {}];
+    live.forEach(source => Object.keys(source).forEach(key => {
+      merged[key] = [...new Set([...(merged[key] || []), ...source[key]])];
+    }));
     return merged;
-  }, [serverRowIssues, previewConflicts]);
+  }, [serverRowIssues, previewConflicts, termConflicts, termConflictsFresh]);
 
   const unplacedSaveIssues = useMemo(() => {
     const notes = Array.isArray(xlsxPreview?.saveIssues) ? xlsxPreview.saveIssues : [];
@@ -1327,7 +1397,10 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         </div>
                       ) : null}
                       <div className="transfer-import-commit">
-                        {importReady ? (
+                        {importReady && !termConflictsFresh ? (
+                          <p className="transfer-preflight-wait" role="status">جارٍ فحص التعارض مع بقية الأقسام في هذا الفصل…</p>
+                        ) : null}
+                        {importReady && termConflictsFresh ? (
                           <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady}>
                             {busy ? "يجهّز…" : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                           </PrimaryButton>
