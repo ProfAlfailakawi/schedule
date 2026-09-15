@@ -1465,7 +1465,7 @@ async function departmentInstructorIdSet(
   return ids;
 }
 
-async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean } = {}) {
+async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean; departmentInstructorIds?:Set<number> } = {}) {
   const termId = Number(rows[0]?.AdTermId || 0);
   const checkConflicts = options.checkConflicts !== false;
   /* القسم الواحد يُدرَّس في مواقع الفرع الثلاثة، ومن يدرّس في الجهراء عضو في
@@ -1481,9 +1481,12 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
   ]);
   const courseById = new Map(courses.map(course => [course.AdCourseId, course]));
   const instructorIds = new Set(instructors.map(instructor => instructor.AdInstructorId));
-  const departmentInstructorIds = options.requireDepartmentInstructor
-    ? await departmentInstructorIdSet(allColleges as any, allSections as any, collegeId, sectionId, termId)
-    : new Set<number>();
+  /* لقطة واحدة لعضوية القسم لكل طلب: من حسبها قبل النداء يمرّرها، فلا تُقرأ
+     مرتين ولا يقع الحكم على قائمتين مختلفتين إن تغيّر الدليل بينهما. */
+  const departmentInstructorIds = options.departmentInstructorIds
+    ?? (options.requireDepartmentInstructor
+      ? await departmentInstructorIdSet(allColleges as any, allSections as any, collegeId, sectionId, termId)
+      : new Set<number>());
   const errors: string[] = [];
   for (let index=0; index<rows.length; index+=1) {
     const row=rows[index];
@@ -7701,7 +7704,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
   }
   const rows=assignAuthoritySections(safeDraftRows(parsed.rows,collegeId,sectionId,termId));
-  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true}):[];
+  /* لقطة واحدة تُقرأ مرة: يحكم بها فحص النشر وتُرسل هي نفسها إلى المعاينة. */
+  const [scopeColleges,scopeSections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+  const departmentMembership=await departmentInstructorIdSet(scopeColleges as any,scopeSections as any,collegeId,sectionId,termId);
+  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true,departmentInstructorIds:departmentMembership}):[];
   /* Conflict errors and structural errors block publishing until resolved */
   const parserNotes=[...new Set(parsed.issues)];
   const blocking=[...new Set([
@@ -7750,9 +7756,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      الرسمي من النظام لا بنصّ OCR. */
   /* ومعها قائمة أهل القسم كما يقرؤها قانون النشر نفسه، فلا تجتهد الشاشة في
      تعريف «أهل القسم» وتنذر على من يقبله الحفظ أصلاً. */
-  const departmentInstructorIds=[...await departmentInstructorIdSet(
-    await Repository.getColleges() as any, await Repository.getSections() as any, collegeId, sectionId, termId,
-  )];
+  const departmentInstructorIds=[...departmentMembership];
   const resolvedInstructors=[...new Map((rows as any[])
     .map(row=>Number(row.AdInstructorId)||0).filter(id=>id>0)
     .map(id=>[id,allInstructors.find((person:any)=>Number(person.AdInstructorId)===id)])
