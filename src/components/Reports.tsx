@@ -1650,6 +1650,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 instructors={instructorOptions}
                 departmentIds={departmentInstructorIds}
                 visitingIds={visitingIds}
+                canCreate={false}
                 collegeId={filters.collegeId}
                 sectionId={filters.sectionId}
                 termId={filters.termId}
