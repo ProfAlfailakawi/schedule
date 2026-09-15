@@ -304,7 +304,12 @@ export default function InstructorPicker({ value, onChange, instructors, departm
               </div>
             </div>
           ) : (
-            <button type="button" className="instructor-add" onClick={() => { setAdding(true); setNewName(query.trim() || suggestedName.trim()); }}>
+            <button
+              type="button"
+              className="instructor-add"
+              data-guide-ignore="يفتح نموذج تسجيل أستاذ داخل نفس القائمة؛ اختيار الأستاذ نفسه موثق في schedule.action.change-instructor، والتسجيل خطوة فرعية لا رحلة مستقلة"
+              onClick={() => { setAdding(true); setNewName(query.trim() || suggestedName.trim()); }}
+            >
               <Plus aria-hidden="true" />
               إضافة أستاذ جديد{(query.trim() || suggestedName.trim()) ? ` باسم «${query.trim() || suggestedName.trim()}»` : ""}
             </button>
