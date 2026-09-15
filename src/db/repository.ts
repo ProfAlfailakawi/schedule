@@ -4025,6 +4025,31 @@ export const Repository = {
     return [...legacy];
   },
 
+  /* ── الانضمام للدليل ذرّيّ، لا قراءة-فتعديل-فكتابة ─────────────────────────
+   * إضافتان سريعتان متزامنتان لنفس القسم كانتا تقرآن الدليل نفسه ثم تكتب كل
+   * منهما مصفوفتها الكاملة، فتمحو الأخيرةُ عضوَ الأولى بصمت. الضمّ هنا اتحادُ
+   * مصفوفةٍ على الخادم نفسه — لا يمحو أحدٌ أحداً، وإعادة ضمّ عضوٍ موجود لا
+   * تفعل شيئاً. أما الاستبدال الكامل فيبقى لشاشة إدارة الدليل وحدها، حيث
+   * القائمة الكاملة هي القرار المقصود. */
+  addDepartmentDelegate: async (collegeId: number, sectionId: number, instructorId: number): Promise<void> => {
+    const scopeKey = `${collegeId}:${sectionId}`;
+    const id = Number(instructorId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("departmentDelegates").doc(scopeKey.replace(/:/g, "_")).set({
+        id: scopeKey, scopeKey, collegeId, sectionId,
+        instructorIds: FieldValue.arrayUnion(id),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      return;
+    }
+    const existing = (db.departmentDelegates || []).find(item => item.scopeKey === scopeKey);
+    const unique = [...new Set([...(existing?.instructorIds || []), id].map(Number).filter(Boolean))];
+    const row: DepartmentDelegateDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, instructorIds: unique, updatedAt: new Date().toISOString() };
+    db.departmentDelegates = [...(db.departmentDelegates || []).filter(item => item.scopeKey !== scopeKey), row];
+    saveDatabase();
+  },
+
   saveDepartmentDelegates: async (collegeId: number, sectionId: number, instructorIds: number[]): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}`;
     const unique = [...new Set(instructorIds.map(Number).filter(Boolean))];

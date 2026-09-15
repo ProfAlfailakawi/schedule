@@ -438,6 +438,17 @@ assert.equal(spelled("الاء خالد ال بصيلي"),82);
 assert.equal(spelled("آلاء خالد البصيلي"),82);
 // ؤ=و، ئ=ي، و«يحيى»/«يحي».
 assert.equal(spelled("مومن رييف يحي"),83);
+// وكل شظايا الاسم الملتصقة، لا «عبد» وحدها: «عبد الاله» بهمزتيها، و«بو»/«ابو».
+{
+  const compound:any[]=[
+    {AdInstructorId:85,AdInstructorName:"د. عبد الإله سعد المطيري"},
+    {AdInstructorId:86,AdInstructorName:"محمد بوحمد"},
+    {AdInstructorId:87,AdInstructorName:"خالد ابوالعلا"},
+  ];
+  assert.equal(uniqueExactIdentityMatch("عبدالاله سعد المطيري",compound)?.AdInstructorId,85);
+  assert.equal(uniqueExactIdentityMatch("محمد بو حمد",compound)?.AdInstructorId,86);
+  assert.equal(uniqueExactIdentityMatch("خالد ابو العلا",compound)?.AdInstructorId,87);
+}
 // وبحث القائمة يجد ما تجده المطابقة: الحكم واحد.
 assert.equal(uniqueExactIdentityMatch("اقبال عبدالعزيز المطوع",spellingRegistry)?.AdInstructorId,81);
 assert.equal(uniqueExactIdentityMatch("الاء خالد ال بصيلي",spellingRegistry)?.AdInstructorId,82);

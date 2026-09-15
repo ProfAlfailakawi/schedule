@@ -94,29 +94,82 @@ export default function PagedImportPreview({
   const readIdentity = (row: ImportRow) =>
     instructorIdentityKey(String(row.sourceInstructorText || row.importEvidence?.instructor?.raw || ""));
   const linked = (row: ImportRow) => Number(row.AdInstructorId) > 0;
+  /* ربطٌ صنعته الآلة هنا — تعميماً أو مطابقةَ دليلٍ — يحمل نسبته معه، فيبقى
+     قابلاً للنقض حين يتغيّر قرار الإنسان. ربطُ الإنسان والخادم لا يُمسّ. */
+  const machineLinked = (row: ImportRow) => {
+    const proof: any = row.importEvidence?.instructor;
+    return proof?.method === "NAME_PROPAGATION" || proof?.source === "DEPARTMENT_DIRECTORY";
+  };
+  /* المتقاعد والمجاز يحتفظان بمواعيدهما القائمة ولا يُعرضان لجديدة — القاعدة
+     نفسها التي تحكم قائمة الاختيار تحكم الربط التلقائي، وإلا نُشر جدول باسم
+     من غادر. */
+  const activePeople = useMemo(() => departmentPeople.filter((person: any) =>
+    person?.AdInstructorStatus !== "retired" && person?.AdInstructorStatus !== "sabbatical"), [departmentPeople]);
 
   useEffect(() => {
     if (!rows.length) return;
-    /* قرارات قائمة: الاسم المقروء ⇦ هوية الشخص المحسومة. خلافٌ على اسم واحد
-       يمحوه من التعميم. */
+    /* قرارات قائمة: الاسم المقروء ⇦ هوية الشخص المحسومة. مصدر القرار إنسانٌ
+       أو مطابقةُ الخادم أو مطابقةُ الدليل — أما التعميم فليس مصدراً، وإلا
+       صار القرار شاهداً على نفسه ولم يُنقض أبداً. */
     const settled = new Map<string, { id: number; evidence: any }>();
     const disputed = new Set<string>();
     rows.forEach(row => {
       if (!linked(row)) return;
+      const evidence: any = row.importEvidence?.instructor;
+      if (evidence?.method === "NAME_PROPAGATION") return;
       const key = readIdentity(row);
       if (!key) return;
       const prior = settled.get(key);
       if (prior && prior.id !== Number(row.AdInstructorId)) { disputed.add(key); return; }
-      const evidence = row.importEvidence?.instructor;
       if (!prior || (evidence?.source === "MANUAL" && prior.evidence?.source !== "MANUAL")) {
         settled.set(key, { id: Number(row.AdInstructorId), evidence });
       }
     });
     let changed = false;
     const healed = rows.map(row => {
-      if (linked(row)) return row;
       const key = readIdentity(row);
       if (!key) return row;
+      /* ── نقض ما صنعته الآلة حين تبدّل القرار ─────────────────────────────
+         الاسم صار محسوماً بشخصين مختلفين ⇦ كل ربط آلي له يعود خانةً مفتوحة،
+         فالخلاف للمراجع لا للآلة. والاسم الذي بقي قراره واحداً لكنه تغيّر ⇦
+         الروابط الآلية تتبعه، لأن القرار عن الاسم لا عن الصف. */
+      if (linked(row) && machineLinked(row)) {
+        if (disputed.has(key)) {
+          changed = true;
+          return {
+            ...row,
+            AdInstructorId: 0,
+            importEvidence: {
+              ...(row.importEvidence || {}),
+              instructor: {
+                raw: String(row.sourceInstructorText || ""),
+                confidence: "UNRESOLVED", score: 0, derived: false,
+                source: "", method: "DISPUTED_NAME",
+                reason: "الاسم المقروء نفسه رُبط بشخصين مختلفين في هذه المسودة؛ احسم هذا الصف بنفسك.",
+              },
+            },
+          } as ImportRow;
+        }
+        const decision = settled.get(key);
+        if (decision && decision.id !== Number(row.AdInstructorId)) {
+          changed = true;
+          return {
+            ...row,
+            AdInstructorId: decision.id,
+            importEvidence: {
+              ...(row.importEvidence || {}),
+              instructor: {
+                ...(decision.evidence || {}),
+                method: "NAME_PROPAGATION",
+                raw: String(row.sourceInstructorText || decision.evidence?.raw || ""),
+                reason: "الاسم المقروء نفسه حُسم في صف آخر من هذه المسودة؛ القرار عن الاسم لا عن الصف.",
+              },
+            },
+          } as ImportRow;
+        }
+        return row;
+      }
+      if (linked(row)) return row;
       const decision = !disputed.has(key) ? settled.get(key) : undefined;
       if (decision) {
         changed = true;
@@ -127,13 +180,14 @@ export default function PagedImportPreview({
             ...(row.importEvidence || {}),
             instructor: {
               ...(decision.evidence || {}),
+              method: "NAME_PROPAGATION",
               raw: String(row.sourceInstructorText || decision.evidence?.raw || ""),
               reason: "الاسم المقروء نفسه حُسم في صف آخر من هذه المسودة؛ القرار عن الاسم لا عن الصف.",
             },
           },
         } as ImportRow;
       }
-      const person = departmentPeople.length ? uniqueExactIdentityMatch(key, departmentPeople) : undefined;
+      const person = activePeople.length && !disputed.has(key) ? uniqueExactIdentityMatch(key, activePeople) : undefined;
       if (!person) return row;
       changed = true;
       return {
@@ -152,7 +206,7 @@ export default function PagedImportPreview({
     });
     if (changed) onRows(healed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, departmentPeople]);
+  }, [rows, activePeople]);
 
   const mergePageRows = (nextPageRows: ImportRow[]) => {
     const stamped = nextPageRows.map(row => ({ ...row, sourcePage: activePage }));
