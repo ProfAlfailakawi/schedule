@@ -1,6 +1,10 @@
 import type { AdCourse, AdInstructor } from "../types";
 import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "./authorityAcademicCodes";
 import { OFFICIAL_COLLEGE_SITE_PREFIXES } from "./locationCollegePrefixes";
+import { instructorCleanName, instructorIdentityTokens } from "./instructorIdentity";
+/* قانون هوية الاسم يعيش في وحدته المشتركة كي تقرأه المعاينة أيضاً؛ يُعاد
+   تصديره هنا لأن الخادم والاختبارات تعرفه من هذا الملف. */
+export { instructorRegistryOutcome, uniqueExactIdentityMatch, instructorIdentityKey } from "./instructorIdentity";
 
 const toAscii=(value:string)=>String(value||"")
   /* Generated Authority PDFs often store Arabic as Presentation Forms
@@ -3527,28 +3531,6 @@ export type ParsedScheduleRow={
  */
 type InstructorIdentityMatch={person:AdInstructor;method:"EXACT_FULL"|"FACULTY_IDENTITY"|"COURSE_ONE_NAME"|"DEPARTMENT_ONE_NAME"|"COURSE_TWO_NAME"|"DEPARTMENT_TWO_NAME"|"GLOBAL_SOLE_TWO_NAME"|"GLOBAL_THREE_NAME";score:number;matchedTokens:number};
 
-/** التطبيع المشترك للأسماء: الألقاب عرضٌ لا هوية، و«عبد الله»/«عبدالله» اسم
-    واحد على الجانبين. تُقرأ من مكان واحد كي لا تفترق قواعد المطابقة عن قواعد
-    التشخيص فيقول أحدهما «غير مسجّل» بينما يرى الآخر مرشّحاً. */
-const instructorCleanName=(value:string)=>fold(value)
-  /* Titles are presentation only. fold() removes punctuation first, so
-     «أ.د.» -> «ا د», «د.» -> «د», and «أ.» -> «ا». */
-  .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|بروفيسور|د|ا|م)\s+)+/g," ")
-  .replace(/\s+/g," ").trim();
-
-/* Authority/system spellings alternate constantly between «عبد الله» and
-   «عبدالله» (same for عبدالرحمن/عبد العزيز/عبد اللطيف...). Canonicalize the
-   pair as ONE identity token on both sides before comparing names. */
-function instructorIdentityTokens(value:string){
-  const source=instructorCleanName(value).split(/\s+/).filter(token=>/[ء-ي]/.test(token)&&token.length>=2);
-  const out:string[]=[];
-  for(let i=0;i<source.length;i++){
-    if(source[i]==="عبد"&&i+1<source.length&&source[i+1].length>=2){out.push(`عبد${source[i+1]}`);i++;continue;}
-    out.push(source[i]);
-  }
-  return out;
-}
-
 function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):InstructorIdentityMatch|undefined{
   const clean=instructorCleanName,identityTokens=instructorIdentityTokens;
   const rawClean=clean(raw),rawTokens=identityTokens(raw);
@@ -3705,31 +3687,6 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
      وحيد مؤهل، لا «الأعلى درجة» بين متزاحمين. */
   const solePairHit=choose(catalogue,true,true,false,true);
   return solePairHit?{person:solePairHit.item.person,method:"GLOBAL_SOLE_TWO_NAME",score:93,matchedTokens:solePairHit.ordered.total}:undefined;
-}
-
-/** هل لهذا الاسم المطبوع أصلٌ في سجل الأساتذة؟
- *
- * فشل المطابقة له معنيان مختلفان تماماً أمام المراجع:
- * إمّا أن السجل لا يعرف هذا الشخص بتاتاً — وحينها العلاج تسجيله، لا تصحيح
- * قراءة — وإمّا أن السجل يعرف أشخاصاً يشبهون الاسم ولم يحسم بينهم، وحينها
- * العلاج اختيار واحد منهم. الرسالة الواحدة «غير مرتبط» كانت تخفي الفرق،
- * فيقضي المراجع وقته يبحث عن خطأ قراءة لا وجود له.
- *
- * «مرشّح» هنا: من يشترك مع الاسم المطبوع في اسمين صريحين على الأقل. أقلّ من
- * ذلك اشتراكٌ عابر في اسم شائع، لا شبهُ هوية. */
-export function instructorRegistryOutcome(raw:string,instructors:AdInstructor[]):"UNREGISTERED"|"AMBIGUOUS"{
-  const printed=instructorIdentityTokens(raw);
-  if(!printed.length)return "AMBIGUOUS";
-  const printedSet=new Set(printed);
-  const shared=(person:AdInstructor)=>{
-    const tokens=instructorIdentityTokens(person?.AdInstructorName||"");
-    return tokens.filter(token=>printedSet.has(token)).length;
-  };
-  /* الاسم المفرد لا يبلغ عتبة الاسمين أبداً، فكان يُحكم عليه دائماً بالالتباس
-     ويُقال لصاحبه «اختر من القائمة» ولا أحد في القائمة. عتبته اسم واحد لأنه
-     كل ما طُبع: إن لم يحمله أحد في السجل فالشخص غير مسجّل، لا ملتبس. */
-  const needed=printed.length>=2?2:1;
-  return instructors.some(person=>shared(person)>=needed)?"AMBIGUOUS":"UNREGISTERED";
 }
 
 function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):AdInstructor|undefined{

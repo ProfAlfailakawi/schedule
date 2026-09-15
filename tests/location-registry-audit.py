@@ -133,6 +133,14 @@ ok('61 transfer publish is hidden and hard-disabled for any unresolved preview n
 # جعل مسار Excel يدّعي نتائج فحصٍ لم يُجرَ، فتُقرأ حقول من null وتسقط الشاشة.
 ok('61b transfer publish waits for the term-wide conflict preflight, and only for the Authority PDF path', '/api/schedules/import-preflight' in transfer and 'const termConflictsFresh = Boolean(termConflicts && termConflicts.signature === previewRowsSignature)' in transfer and 'const publishGateSatisfied = importKind !== "authority-pdf" || termConflictsFresh' in transfer and '{importReady && publishGateSatisfied ? (' in transfer and 'import-preflight' in server and 'blockingImportConflicts(' in server)
 # ولا يُقرأ من termConflicts إلا عبر وصول آمن، فلا تسقط الشاشة إن اختلّت الراية.
+# «موجود عندنا للقسم» حقيقة يسجّلها النظام لحظة الإضافة، لا استنتاجاً من جداول
+# منشورة: الإضافة من سياق قسم تُدرِج العضو في دليل القسم اليدوي الذي تقرأه
+# المطابقة وبوابة النشر، ورقمٌ مدني موجود يُضمّ ويُعاد كاختيار بدل أن يُرفض.
+ok('96b quick-add from a department context enrols the person into the manual department directory', 'const scoped = Boolean(collegeId && sectionId && isScopeAllowed(req, collegeId, sectionId))' in server and 'saveDepartmentDelegates(collegeId, sectionId, [...directory, Number(instructorId)])' in server and 'existing: true' in server and 'collegeId, sectionId })' in (ROOT/'src/components/InstructorPicker.tsx').read_text())
+paged=(ROOT/'src/components/PagedImportPreview.tsx').read_text()
+# المعاينة تشفي نفسها بقانون الهوية المشترك: مطابقة حرفية وحيدة داخل نطاق
+# القسم فقط، وتعميم حسمٍ واحد على كل الصفوف الحاملة لنفس الاسم، والخلاف يبطله.
+ok('96c the preview self-heals with the shared identity law, department-scoped and dispute-aware', 'uniqueExactIdentityMatch' in paged and 'instructorIdentityKey' in paged and 'disputed' in paged and 'DEPARTMENT_DIRECTORY' in paged and 'from "../utils/instructorIdentity"' in paged)
 ok('61d transfer never dereferences absent preflight data', 'termConflicts!' not in transfer and '(termConflicts?.issues || [])' in transfer and '(termConflictsFresh && termConflicts?.notes) || {}' in transfer)
 # المعرّف السالب يبقى مع الصف بعد حذف ما قبله، فلا يساوي موضعه. العلامة تُقرأ
 # من الترتيب الحالي وإلا وقعت على صف بريء بينما يُمنع النشر بسبب لا يُرى.
@@ -199,7 +207,10 @@ ok('93 room OCR correction is constrained to confirmed room inside already resol
 ok('94 alternate-site course cue is informational and restored beside the course name', 'courseSiteLabel' in server and 'import-course-site-note' in preview and '<MapPin />' in preview)
 ok('95 same-branch 012J/012F site cue does not become a blocking cross-branch mismatch', 'sameAuthorityBranch' in server and 'row.courseSiteLabel=sourceSiteLabel' in server and 'sourceSitePrefix!==targetSitePrefix&&!sameAuthorityBranch' in server)
 ok('96 distinctive confirmed room may rescue a damaged building only when the room fingerprint is unique', 'resolveBuildingFromUniqueRoom' in location_registry and 'UNIQUE_ROOM_FINGERPRINT' in location_registry and 'Ambiguous rooms' in location_registry and 'resolveAuthorityLocation(registry' in server)
-ok('97 instructor identity canonicalizes spaced/unspaced عبد names and keeps two-name proof department-only', 'Authority/system spellings alternate constantly between «عبد الله» and' in doc_ocr and 'const twoExactProof=allowTwo' in doc_ocr and 'const globalHit=choose(catalogue,false)' in doc_ocr)
+# قانون تطبيع الأسماء انتقل إلى وحدته المشتركة كي تقرأه المعاينة أيضاً؛ الحارس
+# يتبعه إلى موضعه الجديد ويثبّت أن المحرك يستورده من هناك لا من نسخة محلية.
+identity_util=(ROOT/'src/utils/instructorIdentity.ts').read_text()
+ok('97 instructor identity canonicalizes spaced/unspaced عبد names and keeps two-name proof department-only', '«عبد الله» و«عبدالله» اسم واحد' in identity_util and 'from "./instructorIdentity"' in doc_ocr and 'const twoExactProof=allowTwo' in doc_ocr and 'const globalHit=choose(catalogue,false)' in doc_ocr)
 ok('98 authority location grammar has one central resolver', 'export function resolveAuthorityLocation' in location_registry and server.count('resolveAuthorityLocation(registry') >= 1)
 ok('99 import evidence covers all seven canonical fields', all(key in server for key in ['course:{raw:', 'section:{raw:', 'days:{raw:', 'time:{raw:', 'instructor:{raw:', 'building:{raw:', 'room:{raw:']))
 ok('100 provenance survives preview and carries source/method/score', 'score?: number; source?: string; method?: string; derived?: boolean' in preview and 'evidenceTitle' in preview)

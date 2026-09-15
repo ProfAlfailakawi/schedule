@@ -201,10 +201,11 @@ export default function InstructorPicker({ value, onChange, instructors, departm
     if (!name || !civil) { setError("الاسم والرقم المدني مطلوبان."); return; }
     const check = validateCivilId(civil);
     if (!check.isValid) { setError(check.message || "الرقم المدني غير صحيح."); return; }
-    /* الرقم المدني قد يكون مسجّلاً خارج قائمة القسم المعروضة، فيُفحص كل ما
-       قرأته هذه القائمة — القسم والبحث الأوسع — قبل إرسال طلب سيُرفض. */
+    /* برقم مدني مسجّل مسبقاً: داخل نطاق قسمٍ يضمّه الخادم إلى القسم ويعيده
+       كاختيار، فلا يُسدّ الطريق هنا. وبلا نطاق يبقى الفحص المحلي أسرع من طلبٍ
+       سيُرفض بنفس الرسالة. */
     const already = [...knownInstructors, ...wider].find(x => String(x.AdInstructorCivil || "").trim() === civil);
-    if (already) {
+    if (already && !(collegeId && sectionId)) {
       setError(`هذا الرقم المدني مسجّل بالفعل باسم «${already.AdInstructorName}» — ابحث عنه بالرقم المدني واختره.`);
       return;
     }
@@ -213,7 +214,9 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       const response = await fetch("/api/instructors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: newMobile.trim() })
+        /* النطاق يرافق الإضافة كي تُسجَّل العضوية في دليل القسم لا سجلاً
+           جامعياً عائماً: هذا ما يجعل «موجود عندنا» حقيقة تعرفها المطابقة. */
+        body: JSON.stringify({ AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: newMobile.trim(), collegeId, sectionId })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر إضافة الأستاذ");

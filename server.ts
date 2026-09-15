@@ -2469,10 +2469,14 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
     // «يدرّس هذا الفصل» must make a delegate selectable before their first row
     // exists. Merge the term roster into the ordinary scoped staff list.
     const rosterIds = collegeId && termId ? await Repository.getVisitingRoster(collegeId, sectionId, termId) : [];
-    const rosterPeople = rosterIds.length
-      ? (await Repository.getInstructors()).filter(person => rosterIds.includes(Number(person.AdInstructorId)))
+    /* دليل القسم اليدوي جزء من «أساتذة القسم» قبل أول جدول يُنشر: من سجّله
+       المنسّق عضواً يجب أن يظهر هنا فوراً، لا بعد أول نشر يشتقّ منه التاريخ. */
+    const directoryIds = collegeId ? await Repository.getDepartmentDelegates(collegeId, sectionId) : [];
+    const manualIds = [...new Set([...rosterIds, ...directoryIds].map(Number).filter(Boolean))];
+    const manualPeople = manualIds.length
+      ? (await Repository.getInstructors()).filter(person => manualIds.includes(Number(person.AdInstructorId)))
       : [];
-    const merged = [...new Map([...allDeptHistorical, ...termScoped, ...rosterPeople].map(person => [Number(person.AdInstructorId), person])).values()];
+    const merged = [...new Map([...allDeptHistorical, ...termScoped, ...manualPeople].map(person => [Number(person.AdInstructorId), person])).values()];
     res.json(sortArabicNamed(merged, row => row.AdInstructorName));
     return;
   }
@@ -2501,7 +2505,19 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
  * حقاً في إنشاء سجل جديد يحمل رقماً مدنياً ويبقى في الجامعة كلها.
  * وبنفس تحققات شاشة الإدارة: رقم مدني صحيح ولا تكرار. التعديل والحذف يبقيان
  * لإدارة النظام، لأنهما يمسّان سجلات قائمة وارتباطاتها. */
-app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: Request, res: Response) => {
+/* ── «موجود عندنا للقسم» تصير حقيقة يعرفها النظام ────────────────────────────
+ *
+ * كل ما يعرفه النظام عن انتماء أستاذ إلى قسم كان مشتقاً من جداول منشورة، فلا
+ * وجود له قبل أول نشر. أضاف المنسّق زملاءه واحداً واحداً وهو يرى أنهم «عندنا
+ * في القسم»، والنظام لا يرى إلا سجلات جامعية عائمة: فالاسم الشائع لا يجد
+ * نطاقاً يُحسم فيه، و«هيئة تدريسية» تضيع بين نسخ الجامعة، وتبقى الخانات
+ * «غير محسوم» عن أشخاص أمامه في القائمة.
+ *
+ * فالإضافة من سياق قسمٍ تسجّل العضوية في دليل القسم اليدوي نفسه الذي تقرأه
+ * مطابقة الاستيراد وبوابة النشر — عضوية معلنة، لا مشتقة. ورقم مدني مسجّل
+ * مسبقاً لم يعد طريقاً مسدوداً: صاحبه يُضمّ إلى القسم ويُعاد كاختيار، لأن
+ * «أريده عندنا» مطلبٌ مشروع لشخص موجود، لا محاولة تكرار له. */
+app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: AuthenticatedRequest, res: Response) => {
   const { AdInstructorCivil, AdInstructorName, AdInstructorMobile } = req.body;
   if (!AdInstructorCivil || !String(AdInstructorName || "").trim()) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
@@ -2515,9 +2531,23 @@ app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: Request, 
     return;
   }
 
-  // Duplicate Check
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0);
+  const scoped = Boolean(collegeId && sectionId && isScopeAllowed(req, collegeId, sectionId));
+  const enrol = async (instructorId: number) => {
+    if (!scoped) return;
+    const directory = await Repository.getDepartmentDelegates(collegeId, sectionId);
+    if (!directory.includes(Number(instructorId))) {
+      await Repository.saveDepartmentDelegates(collegeId, sectionId, [...directory, Number(instructorId)]);
+    }
+  };
+
   const exists = await Repository.getInstructorByCivil(AdInstructorCivil);
   if (exists) {
+    if (scoped) {
+      await enrol(Number(exists.AdInstructorId));
+      res.json({ ...exists, existing: true });
+      return;
+    }
     // Naming the existing record turns a dead end into the next step: search by
     // the civil id and pick the person who is already there.
     res.status(400).json({ error: `هذا الرقم المدني مسجّل بالفعل باسم «${String(exists.AdInstructorName || "").trim()}» — ابحث عنه بالرقم المدني واختره.` });
@@ -2525,6 +2555,7 @@ app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: Request, 
   }
 
   const newIns = await Repository.createInstructor(AdInstructorCivil, AdInstructorName, AdInstructorMobile || "");
+  await enrol(Number(newIns.AdInstructorId));
   res.status(201).json(newIns);
 });
 

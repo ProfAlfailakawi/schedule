@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, instructorRegistryOutcome, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { uniqueExactIdentityMatch, authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, instructorRegistryOutcome, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { fairShareByOwner } from "../src/utils/hallBarterFairness.ts";
@@ -397,6 +397,26 @@ assert.equal(instructorRegistryOutcome("طلال فهيد ماطر",
 assert.equal(instructorRegistryOutcome("اقبال عبد العزيز المطوع",
   [{AdInstructorId:52,AdInstructorName:"د. اقبال عبدالعزيز المطوع"}] as any),"AMBIGUOUS");
 
+/* ── المطابقة الحرفية الوحيدة داخل نطاق القسم ────────────────────────────────
+   قانون الهوية نفسه الذي تحكم به المطابقة على الخادم، مصدَّر للمعاينة كي تشفي
+   خاناتها بعد تسجيل الأعضاء دون إعادة رفع الملف. سجلان مكرران لنفس الشخص ليسا
+   التباساً؛ شخصان مختلفان التباسٌ لا يُختار فيه. */
+const enrolled:any[]=[
+  {AdInstructorId:71,AdInstructorName:"د. عبدالله حسن الرشيدي"},
+  {AdInstructorId:72,AdInstructorName:"هيئة تدريسية"},
+];
+assert.equal(uniqueExactIdentityMatch("عبدالله حسن الرشيدي",enrolled)?.AdInstructorId,71);
+// اسم عائلة مقصوص عند حافة الخانة: اسم السجل وارد كاملاً داخل المطبوع؟ لا —
+// المطبوع أقصر؛ يبقى بلا ربط تلقائي، فالحسم للمراجع.
+assert.equal(uniqueExactIdentityMatch("عبدالله حسن",enrolled),undefined);
+// الألقاب و«عبد الله»/«عبدالله» لا تحجب المطابقة.
+assert.equal(uniqueExactIdentityMatch("أ.د. عبد الله حسن الرشيدي",enrolled)?.AdInstructorId,71);
+assert.equal(uniqueExactIdentityMatch("هيئة تدريسية",enrolled)?.AdInstructorId,72);
+// سجلان مكرران لنفس الشخص (نفس المعرف) ليسا التباساً.
+assert.equal(uniqueExactIdentityMatch("هيئة تدريسية",[...enrolled,{AdInstructorId:72,AdInstructorName:"هيئة تدريسية"}] as any)?.AdInstructorId,72);
+// شخصان مختلفان بنفس الاسم: لا اختيار.
+assert.equal(uniqueExactIdentityMatch("هيئة تدريسية",[...enrolled,{AdInstructorId:73,AdInstructorName:"هيئة تدريسية"}] as any),undefined);
+
 /* Native generated PDF geometry: location comes only from its real x-range, so
    seat/capacity welds can never become Building. Instructor is taken from the
    leftmost identity cell as one complete phrase. */
@@ -547,6 +567,7 @@ console.log(JSON.stringify({ passed: 70, checks: [
   "two printed names resolve university-wide only when exactly one person qualifies",
   "outside the department a university-wide pair must be two exact tokens",
   "an unlinked instructor cell says whether the person is unregistered or merely undecided",
+  "the shared identity law resolves a unique exact department member and refuses everything else",
   "«هيئة تدريسية» is settled by the department when the university holds several",
   "graduation proof requires the official study-plan/graduation-sheet signature",
   "graduation proof reads the civil ID from the official sheet",
