@@ -7208,6 +7208,21 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     ...departmentDelegates.map(Number),
     ...visitingRoster.map(Number),
   ].filter((id:number)=>Number.isFinite(id)&&id>0));
+  /* ── القسم الذي يستورد جدوله الأول ────────────────────────────────────────
+     كل ما يعرفه النظام عن «أساتذة القسم» مشتقّ من جداول سابقة، وهذه الشاشة لا
+     تعمل إلا على فصل فارغ. فالقسم الذي لا جدول له في النظام بعد يدخل الاستيراد
+     بنطاق تفضيل فارغ، وعندها تسقط كل البراهين التي تتكئ عليه — الاسم المفرد
+     والاسم الناقص حرفاً — ويخرج الجدول كله بخانات أستاذ فارغة.
+     حين لا يكون للقسم تاريخ بعد، يتسع النطاق إلى أساتذة الكلية نفسها: نطاق
+     حقيقي محدود يُقرأ من جداول أقسامها الأخرى، لا الجامعة كلها. والقسم الذي
+     له تاريخ لا يتغير سلوكه إطلاقاً، فهذا المسار لا يُقرأ عنده أصلاً. */
+  if(!preferredInstructorIds.size){
+    const collegeHistory=await Repository.getSchedulesByScope({collegeId});
+    for(const row of collegeHistory as any[]){
+      const id=Number(row.AdInstructorId||0);
+      if(Number.isFinite(id)&&id>0)preferredInstructorIds.add(id);
+    }
+  }
   const instructors=allInstructors;
   /* A course-specific roster is only a tie-breaker for NAME evidence. It never
      creates identity by itself: the observed PDF still has to prove two/three
