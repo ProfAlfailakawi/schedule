@@ -3570,8 +3570,18 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
   /* والترتيب المقلوب («الأنصاري عبدالله رجب» في سجل قديم يُدخل العائلة أولاً)
      مساواةُ مجموعةٍ كاملة، لا احتواء. */
   const sortedRaw=[...rawTokens].sort().join(" ");
-  const exact=catalogue.filter(item=>normalizedRaw===item.normalized||haystack.includes(` ${item.normalized} `)||item.tokens.join("")===spacelessRaw||[...item.tokens].sort().join(" ")===sortedRaw);
-  const exactIds=new Set(exact.map(item=>Number(item.person.AdInstructorId)));
+  /* ── المساواة تسبق الاحتواء، ولا تُزاحَم به ────────────────────────────────
+     الاحتواء قاعدةٌ لاسم عائلة قُصّ عند حافة الخانة: اسم السجل يرد كاملاً
+     داخل المطبوع. لكنه على مستوى جامعةٍ بآلاف الأسماء يصطاد الأقصر داخل
+     الأطول — «رجب الأنصاري» يقع داخل «عبدالله رجب الأنصاري» — فيصير للاسم
+     مرشحان، ويسقط أقوى برهان لدينا (المساواة التامة) إلى برهانٍ عالميٍّ أضعف
+     يشترط تفرّداً بين الآلاف. المساواة التامة تُقرأ أولاً وحدها؛ فإن حسمت
+     شخصاً واحداً فهو هو، ولا يُنظر في الاحتواء أصلاً. */
+  const equalIds=(pool:typeof catalogue)=>new Set(pool.map(item=>Number(item.person.AdInstructorId)));
+  const equals=catalogue.filter(item=>normalizedRaw===item.normalized||item.tokens.join("")===spacelessRaw||[...item.tokens].sort().join(" ")===sortedRaw);
+  if(equalIds(equals).size===1)return{person:equals[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,equals[0].tokens.length)};
+  const exact=equals.length?equals:catalogue.filter(item=>haystack.includes(` ${item.normalized} `));
+  const exactIds=equalIds(exact);
   if(exactIds.size===1)return{person:exact[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,exact[0].tokens.length)};
   const preferredExact=exact.filter(item=>item.preferred);
   if(preferredExact.length===1)return{person:preferredExact[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,preferredExact[0].tokens.length)};
