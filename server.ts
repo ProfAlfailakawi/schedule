@@ -1507,8 +1507,19 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
        the matcher from reaching outside the department on its own; it must not
        overrule a human who chose a colleague from the register on purpose. */
     const instructorChosenByHand=String((row as any)?.importEvidence?.instructor?.source||"")==="MANUAL";
+    /* ── الاسم الكامل المطابق حرفاً هوية، لا تخمين ──────────────────────────
+       عضوية القسم في هذا النظام مستنتجة لا مُسجَّلة: تُقرأ من جداول سابقة ومن
+       انتداب ودليل يدوي. فالقسم الذي لا يحمل تاريخه إلا بعض أساتذته يجعل بقية
+       أهله «من خارج القسم»، فيُمنع نشر جدول صحيح تماماً بحجّة مطابقة على
+       مستوى الجامعة — بينما يمرّ الصف نفسه بلا اعتراض إذا ضغط المراجع على
+       اسمٍ هو الاسم ذاته.
+       المطابقة الكاملة تشترط أصلاً أن يساوي الاسم المطبوع اسم شخص واحد لا
+       ثاني له في سجل النظام بعد التطبيع؛ وأي تعدّد يُرفض قبل أن يصل هنا. فهي
+       برهان هوية بذاتها، لا استنتاج من نطاق. أما المطابقات الأضعف — اسم مفرد،
+       تعميم، جوار — فتبقى محكومة بنطاق القسم كما كانت. */
+    const instructorProvenByFullName=["EXACT_FULL","FACULTY_IDENTITY"].includes(String((row as any)?.importEvidence?.instructor?.method||""));
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
-    else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
+    else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!instructorProvenByFullName&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
     if(options.requireDepartmentInstructor){
       const authoritySection=normalizeAuthoritySectionCode(row.SCode);
       if(!authoritySectionCodeLooksPlausible(authoritySection))errors.push(`السطر ${index + 1}: رقم الشعبة في جدول PDF غير صالح أو لم يُقرأ من المصدر`);
