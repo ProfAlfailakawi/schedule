@@ -41,7 +41,6 @@ interface Props {
       أن تقود المستخدم إلى نموذج سيرفضه الخادم. الافتراضي هو السماح، فشاشات
       بناء الجدول لا تتغير. */
   canCreate?: boolean;
-  departmentOnly?: boolean;
   /** الاسم كما طُبع في المصدر، حين تُفتح القائمة على خانة لم تُربط بعد.
       المراجع أمامه تسعة أسماء عربية كاملة مقروءة أصلاً؛ إعادةُ كتابتها حرفاً
       بحرف عملٌ اخترعناه له. يُملأ نموذج الإضافة به، فلا يبقى عليه إلا الرقم
@@ -62,7 +61,7 @@ const withoutTitles = instructorCleanName;
 /** والمسافات نفسها لا تحجب: «عبد العزيز» يجد «عبدالعزيز». */
 const spaceless = (value: string) => value.replace(/ /g, "");
 
-export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, departmentOnly = false, suggestedName = "", onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
+export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, suggestedName = "", onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -112,7 +111,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
   const [wider, setWider] = useState<Instructor[]>([]);
   useEffect(() => {
     const needle = query.trim();
-    if (departmentOnly || needle.length < 2) { setWider([]); return; }
+    if (needle.length < 2) { setWider([]); return; }
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams({ q: needle, limit: "40" });
@@ -124,7 +123,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
         .catch(() => undefined);
     }, 120);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query, collegeId, termId, departmentOnly]);
+  }, [query, collegeId, termId]);
 
   const effectiveDepartmentIds = useMemo(() => {
     const rosterIds = departmentRoster.map(person => Number(person.AdInstructorId)).filter(Boolean);
@@ -148,8 +147,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       // instructor list; keep that compatibility without widening a known section.
       return sectionId ? [] : knownInstructors.filter(p => !isHidden(p));
     }
-    const pool = [...new Map([...knownInstructors, ...wider].map(person => [person.AdInstructorId, person])).values()]
-      .filter(person => !departmentOnly || departmentRank.has(Number(person.AdInstructorId)) || visitingSet.has(Number(person.AdInstructorId)));
+    const pool = [...new Map([...knownInstructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
     const scored = pool
       .map(person => {
         if (isHidden(person)) return null;
@@ -175,7 +173,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
         byArabic(a.person.AdInstructorName, b.person.AdInstructorName))
       .slice(0, 40)
       .map(x => x.person);
-  }, [query, knownInstructors, wider, effectiveDepartmentIds, byId, departmentRank, sectionId, departmentOnly, visitingSet]);
+  }, [query, knownInstructors, wider, effectiveDepartmentIds, byId, departmentRank, sectionId]);
 
   useEffect(() => {
     if (!open) return;
@@ -261,7 +259,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
             ) : null}
           </label>
 
-          {!query ? <p className="instructor-scope">{departmentOnly ? "أساتذة هذا القسم فقط" : "أساتذة هذا القسم — اكتب للبحث خارج القسم"}</p> : null}
+          {!query ? <p className="instructor-scope">أساتذة هذا القسم — اكتب للبحث خارج القسم</p> : null}
 
           <div className="instructor-results" hidden={adding}>
             {results.length ? results.map(person => (

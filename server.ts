@@ -1416,19 +1416,53 @@ function blockingImportConflicts(
     .filter((item:any)=>item.severity==="high"||item.type==="duplicate");
 }
 
-/** نفس قائمة القسم المعروضة، دون توسيع إلى الكلية أو الجامعة. */
+/* ── نطاق أساتذة القسم الذي لا تاريخ له ──────────────────────────────────────
+ *
+ * كل ما يعرفه النظام عن «أساتذة القسم» مشتقّ من جداول سابقة. والقسم الذي
+ * يستورد جدوله الأول لا جدول له بعد، فنطاقه يولد فارغاً — وعندها لا يبقى شيء
+ * تُقاس عليه هوية، لا في المطابقة ولا في التحقق قبل الحفظ.
+ *
+ * فحين — وحين فقط — يكون نطاق القسم نفسه خالياً، يتسع إلى أساتذة الكلية،
+ * مقروئين من جداول أقسامها الأخرى. القراءة واحدة يستعملها الطرفان، فلا يمكن
+ * أن يقبل أحدهما اسماً يرفضه الآخر: كان ذلك سيُظهر الاسم في المعاينة ثم يمنع
+ * حفظه بحجة أنه «غير مثبت ضمن القسم»، وهو أسوأ من ترك الخانة فارغة. */
+async function collegeFallbackInstructorIds(collegeId: number): Promise<number[]> {
+  const collegeHistory = await Repository.getSchedulesByScope({ collegeId });
+  return [...new Set((collegeHistory as any[])
+    .map(row => Number(row.AdInstructorId || 0))
+    .filter(id => Number.isFinite(id) && id > 0))];
+}
+
+/* ── قائمة أهل القسم قانون واحد لا قراءتان ────────────────────────────────
+   كانت الشاشة تبني «أهل القسم» من نطاق القسم وحده، بينما يقرؤها قانون النشر
+   من مواقع الفرع كلها ومعها احتياط الكلية للقسم الذي لا تاريخ له بعد. فمن
+   يقبله الحفظ كان يُوسم في المعاينة غريباً عن القسم: إنذار كاذب على جدول
+   صحيح تماماً. القائمة تُحسب هنا مرة واحدة، ويقرأ منها الطرفان. */
 async function departmentInstructorIdSet(
-  _allColleges: any[], _allSections: any[], collegeId: number, sectionId: number, termId: number,
+  allColleges: any[], allSections: any[], collegeId: number, sectionId: number, termId: number,
 ): Promise<Set<number>> {
-  const [history, delegates, roster] = await Promise.all([
-    Repository.getInstructorsByScope(sectionId, 0),
-    Repository.getDepartmentDelegates(collegeId, sectionId),
-    Repository.getVisitingRoster(collegeId, sectionId, termId),
-  ]);
-  return new Set([
-    ...history.map(person => Number(person.AdInstructorId)),
-    ...delegates.map(Number), ...roster.map(Number),
-  ].filter(id => Number.isFinite(id) && id > 0));
+  const scopes = branchOwnScopes(allColleges as any, allSections as any, collegeId, sectionId);
+  const pools = await Promise.all(scopes.map(async scope => {
+    const [history, delegates, roster] = await Promise.all([
+      Repository.getSchedulesByScope({ collegeId: scope.collegeId, sectionId: scope.sectionId }),
+      Repository.getDepartmentDelegates(scope.collegeId, scope.sectionId),
+      Repository.getVisitingRoster(scope.collegeId, scope.sectionId, termId),
+    ]);
+    return { history, delegates, roster };
+  }));
+  const idsOf = (pool: { history: any[]; delegates: any[]; roster: any[] }) => [
+    ...pool.history.map((row: any) => Number(row.AdInstructorId || 0)),
+    ...pool.delegates.map(Number), ...pool.roster.map(Number),
+  ].filter((id: number) => Number.isFinite(id) && id > 0);
+  const ids = new Set<number>(pools.flatMap(idsOf));
+  /* الاحتياط يُقاس بخلوّ نطاق القسم المستهدف نفسه — لا مجموع أقسام الفرع —
+     وإلا لقبل أحد الطرفين ما يرفضه الآخر. */
+  const baseIndex = scopes.findIndex(scope => scope.collegeId === collegeId && scope.sectionId === sectionId);
+  const basePool = baseIndex >= 0 ? pools[baseIndex] : undefined;
+  if (!basePool || !idsOf(basePool).length) {
+    for (const id of await collegeFallbackInstructorIds(collegeId)) ids.add(id);
+  }
+  return ids;
 }
 
 async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean; departmentInstructorIds?:Set<number> } = {}) {
@@ -1468,8 +1502,24 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     }
     const course = courseById.get(Number(row.AdCourseId));
     if (!course || course.AdCollegeId !== collegeId || course.AdSectionId !== sectionId) errors.push(`السطر ${index + 1}: المقرر غير صالح للقسم المحدد`);
+    /* A person the reviewer picked by hand in the preview is a decision, not a
+       university-wide name match. The department-membership rule exists to stop
+       the matcher from reaching outside the department on its own; it must not
+       overrule a human who chose a colleague from the register on purpose. */
+    const instructorChosenByHand=String((row as any)?.importEvidence?.instructor?.source||"")==="MANUAL";
+    /* ── الاسم الكامل المطابق حرفاً هوية، لا تخمين ──────────────────────────
+       عضوية القسم في هذا النظام مستنتجة لا مُسجَّلة: تُقرأ من جداول سابقة ومن
+       انتداب ودليل يدوي. فالقسم الذي لا يحمل تاريخه إلا بعض أساتذته يجعل بقية
+       أهله «من خارج القسم»، فيُمنع نشر جدول صحيح تماماً بحجّة مطابقة على
+       مستوى الجامعة — بينما يمرّ الصف نفسه بلا اعتراض إذا ضغط المراجع على
+       اسمٍ هو الاسم ذاته.
+       المطابقة الكاملة تشترط أصلاً أن يساوي الاسم المطبوع اسم شخص واحد لا
+       ثاني له في سجل النظام بعد التطبيع؛ وأي تعدّد يُرفض قبل أن يصل هنا. فهي
+       برهان هوية بذاتها، لا استنتاج من نطاق. أما المطابقات الأضعف — اسم مفرد،
+       تعميم، جوار — فتبقى محكومة بنطاق القسم كما كانت. */
+    const instructorProvenByFullName=["EXACT_FULL","FACULTY_IDENTITY"].includes(String((row as any)?.importEvidence?.instructor?.method||""));
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
-    else if(options.requireDepartmentInstructor&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ ليس ضمن قائمة القسم الحالي؛ اختر أستاذاً من قائمة القسم`);
+    else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!instructorProvenByFullName&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
     if(options.requireDepartmentInstructor){
       const authoritySection=normalizeAuthoritySectionCode(row.SCode);
       if(!authoritySectionCodeLooksPlausible(authoritySection))errors.push(`السطر ${index + 1}: رقم الشعبة في جدول PDF غير صالح أو لم يُقرأ من المصدر`);
@@ -7300,8 +7350,27 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   let registry=registrySnapshot as {buildings:MasterBuilding[];rooms:MasterRoom[]};
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
 
-  const preferredInstructorIds = await departmentInstructorIdSet([], [], collegeId, sectionId, termId);
-  const instructors = allInstructors.filter(person => preferredInstructorIds.has(Number(person.AdInstructorId)));
+  /* Department history/delegates/visitors remain useful review evidence, but
+     automatic instructor identity is stricter than roster membership: the PDF
+     name must equal one unique system name after title removal only. No fuzzy or
+     abbreviated university-wide match may create an instructor ID. */
+  const preferredInstructorIds=new Set<number>([
+    ...sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)),
+    ...departmentDelegates.map(Number),
+    ...visitingRoster.map(Number),
+  ].filter((id:number)=>Number.isFinite(id)&&id>0));
+  /* ── القسم الذي يستورد جدوله الأول ────────────────────────────────────────
+     كل ما يعرفه النظام عن «أساتذة القسم» مشتقّ من جداول سابقة، وهذه الشاشة لا
+     تعمل إلا على فصل فارغ. فالقسم الذي لا جدول له في النظام بعد يدخل الاستيراد
+     بنطاق تفضيل فارغ، وعندها تسقط كل البراهين التي تتكئ عليه — الاسم المفرد
+     والاسم الناقص حرفاً — ويخرج الجدول كله بخانات أستاذ فارغة.
+     حين لا يكون للقسم تاريخ بعد، يتسع النطاق إلى أساتذة الكلية نفسها: نطاق
+     حقيقي محدود يُقرأ من جداول أقسامها الأخرى، لا الجامعة كلها. والقسم الذي
+     له تاريخ لا يتغير سلوكه إطلاقاً، فهذا المسار لا يُقرأ عنده أصلاً. */
+  if(!preferredInstructorIds.size){
+    for(const id of await collegeFallbackInstructorIds(collegeId))preferredInstructorIds.add(id);
+  }
+  const instructors=allInstructors;
   /* A course-specific roster is only a tie-breaker for NAME evidence. It never
      creates identity by itself: the observed PDF still has to prove two/three
      ordered name tokens and the remaining system candidate must be unique. */
@@ -7449,7 +7518,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      overwritten. */
   const instructorNameById=new Map(allInstructors.map((item:any)=>[Number(item.AdInstructorId),String(item.AdInstructorName||"")]));
   const scanHistoryRecovery=(recognized.pageCount>1&&headerPreflight.source==="scan")
-    ?recoverAuthorityScanRowsFromHistory(parsed.rows as any[],sectionHistory.filter(row => preferredInstructorIds.has(Number(row.AdInstructorId))) as any[],instructorNameById)
+    ?recoverAuthorityScanRowsFromHistory(parsed.rows as any[],sectionHistory as any[],instructorNameById)
     :{recoveredRows:0,recoveredCells:0,rowFields:new Map<number,string[]>()};
   if(scanHistoryRecovery.recoveredRows){
     /* Course identity may have been the missing cropped cell. Re-run ONLY the

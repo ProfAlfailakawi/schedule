@@ -67,7 +67,8 @@ export default function PagedImportPreview({
    *
    * ١) اسم مقروء يطابق حرفياً — بقانون الهوية المشترك نفسه الذي تحكم به
    *    المطابقة على الخادم — شخصاً واحداً لا ثاني له من أعضاء هذا القسم
-   *    (تاريخه ودليله اليدوي ومنتدبيه)، يُربط به. نطاق القسم وحده: لا تُعمّم هوية خارج قائمة القسم.
+   *    (تاريخه ودليله اليدوي ومنتدبيه)، يُربط به. نطاق القسم وحده: الجامعة
+   *    كلها تبقى للخادم ولقرار المراجع، فلا يُنتَج هنا ما كان الخادم يرفضه.
    *
    * ٢) صفٌّ حسمه المراجع أو المطابقة يُعمَّم على كل صفٍّ آخر لم يُحسم ويحمل
    *    الاسم المقروء نفسه. القرار عن الاسم لا عن الصف. وإن اختُلف — الاسم
@@ -92,13 +93,7 @@ export default function PagedImportPreview({
 
   const readIdentity = (row: ImportRow) =>
     instructorIdentityKey(String(row.sourceInstructorText || row.importEvidence?.instructor?.raw || ""));
-  const allowedInstructorIds = new Set([
-    ...(tableProps.departmentIds || []), ...(tableProps.affiliatedIds || []),
-    ...Array.from(tableProps.visitingIds || []),
-    ...(tableProps.visitingPeople || []).map(person => person.AdInstructorId),
-    ...departmentPeople.map(person => person.AdInstructorId),
-  ].map(Number));
-  const linked = (row: ImportRow) => allowedInstructorIds.has(Number(row.AdInstructorId));
+  const linked = (row: ImportRow) => Number(row.AdInstructorId) > 0;
   /* ربطٌ صنعته الآلة هنا — تعميماً أو مطابقةَ دليلٍ — يحمل نسبته معه، فيبقى
      قابلاً للنقض حين يتغيّر قرار الإنسان. ربطُ الإنسان والخادم لا يُمسّ. */
   const machineLinked = (row: ImportRow) => {

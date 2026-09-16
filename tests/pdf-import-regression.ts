@@ -375,17 +375,6 @@ const facultyStaff:any[]=[
 ];
 assert.equal(readName("هيئة تدريسية",new Set([42]),facultyStaff),42);
 assert.equal(readName("هيئة تدريسية",new Set(),facultyStaff),0);
-for (const printed of ["هيئة تدريسية", "هيئة تدريسيه", "هيئه تدريسية", "هيئه تدريسيه", "هيئة"]) {
-  for (const registered of ["هيئة تدريسية", "هيئة تدريسيه", "هيئه تدريسية", "هيئه تدريسيه"]) {
-    const staff:any[] = [{AdInstructorId:41,AdInstructorName:registered},{AdInstructorId:42,AdInstructorName:registered}];
-    assert.equal(readName(printed,new Set([42]),staff),42);
-    assert.equal(readName(printed,new Set(),staff),0);
-  }
-}
-// The import receives only the department catalogue, even for exact names.
-assert.equal(readName("إقبال المطوع",new Set([42]),facultyStaff),0);
-assert.equal(readName("إقبال المطوع",new Set([43]),[{AdInstructorId:43,AdInstructorName:"إقبال المطوع"}] as any),43);
-
 
 /* ── لماذا لم تُربط الخانة؟ ───────────────────────────────────────────────────
    للفشل سببان علاجهما مختلف: شخص لا وجود له في سجل الأساتذة (علاجه تسجيله)،

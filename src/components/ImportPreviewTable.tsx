@@ -201,13 +201,18 @@ export default function ImportPreviewTable({
     ...visitingPeople.map(person => Number(person.AdInstructorId)),
     ...affiliatedIds.map(Number),
   ].filter(Boolean)), [departmentIds, visitingIdSet, visitingPeople, affiliatedIds]);
+  /** الاسم الكامل المطابق حرفاً لشخص واحد في سجل النظام برهان هوية لا استنتاج
+      نطاق: الحفظ يقبله، فلا تصبغه الشاشة للمراجعة. تبقى نسبته مكتوبة بجانبه. */
+  const provenByFullName = (row: ImportRow) =>
+    ["EXACT_FULL","FACULTY_IDENTITY"].includes(String(row.importEvidence?.instructor?.method || ""));
   const instructorOutsideRegister = (row: ImportRow) => {
     const id=Number(row.AdInstructorId)||0;
     if(!id || !instructorById.has(id))return false;
-    return !departmentAffiliated.has(id);
+    if(row.importEvidence?.instructor?.source==="MANUAL")return false;
+    return departmentAffiliated.size>0&&!departmentAffiliated.has(id);
   };
   const instructorOutsideDepartment = (row: ImportRow) =>
-    instructorOutsideRegister(row);
+    instructorOutsideRegister(row) && !provenByFullName(row);
   const patchManual = (index:number,key:EvidenceKey,values:Partial<ImportRow>) => onRows(rows.map((row,at)=>{
     if(at!==index)return row;
     const prior=row.importEvidence?.[key]||{};
@@ -337,7 +342,7 @@ export default function ImportPreviewTable({
             const cellTitle = (key: EvidenceKey) => [evidenceTitle(row, key), ...notesFor(key)].filter(Boolean).join(" · ") || undefined;
             const unplacedNotes = notes.filter(note => !importIssueField(note));
             const outsideNote = !missing.instructor(row) && !notesFor("instructor").length && instructorOutsideDepartment(row)
-              ? "هذا الأستاذ ليس ضمن قائمة القسم — اختر أستاذاً من قائمة القسم."
+              ? "هذا الأستاذ ليس ضمن أساتذة القسم أو منتدبي الفصل — اضغط «تثبيت» إن كان هو المقصود، أو اختر غيره من القائمة."
               : "";
             return (
               <React.Fragment key={`${row.referenceNumber || "row"}-${index}`}>
@@ -418,7 +423,7 @@ export default function ImportPreviewTable({
                     )}
                   </td>
                   <td className={outsideNote?"import-cell-review":cellClass("instructor",missing.instructor(row))} title={[cellTitle("instructor"),outsideNote].filter(Boolean).join(" · ")||undefined}>
-                    {open ? <span className="import-instructor-editor"><InstructorPicker departmentOnly canCreate={false} value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} suggestedName={readInstructorText(row)} departmentIds={[...departmentAffiliated]} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : (readInstructorText(row) ? <span className="import-instructor-name import-instructor-unlinked"><span className="import-unlinked-head"><span>{readInstructorText(row)}</span><small>{unlinkedLabel(row)}</small></span>{unlinkedReason(row) ? <em className="import-unlinked-why">{unlinkedReason(row)}</em> : null}</span> : "—"))}
+                    {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} suggestedName={readInstructorText(row)} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}{instructorOutsideRegister(row) && provenByFullName(row) ? <small className="import-registry-badge" title="الاسم المطبوع طابق حرفاً اسم شخص واحد في سجل النظام؛ لا يظهر في قوائم هذا القسم بعد.">من سجل النظام</small> : null}{outsideNote ? <button type="button" data-guide-ignore="تثبيت هوية مطابَقة داخل معاينة الاستيراد قبل أي حفظ" className="import-instructor-confirm" title="تثبيت هذا الأستاذ لهذا الصف" onClick={() => patchManual(index, "instructor", { AdInstructorId: Number(row.AdInstructorId) })}>تثبيت</button> : null}</span> : (readInstructorText(row) ? <span className="import-instructor-name import-instructor-unlinked"><span className="import-unlinked-head"><span>{readInstructorText(row)}</span><small>{unlinkedLabel(row)}</small></span>{unlinkedReason(row) ? <em className="import-unlinked-why">{unlinkedReason(row)}</em> : null}</span> : "—"))}
                   </td>
                   <td className="import-row-tools">
                     <button type="button" data-guide-ignore="تحرير صف داخل معاينة الاستيراد قبل أي حفظ" className={open ? "confirm" : ""} title={open ? "تم" : "تعديل سريع"} onClick={() => open ? setEditing(null) : beginEdit(index)}>{open ? <Check /> : <Pencil />}</button>
