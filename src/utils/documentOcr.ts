@@ -3550,8 +3550,8 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
      single university-wide record. Uniqueness is counted by instructor id, not
      by row, so two catalogue entries for the SAME person no longer read as a
      tie and no longer leave the cell blank. */
-  if(/^هيئه(?:\s|$)/.test(rawClean)){
-    const faculty=catalogue.filter(item=>item.normalized==="هيئه تدريسيه"||item.normalized.startsWith("هيئه تدريسيه "));
+  if(/^هييه(?:\s|$)/.test(rawClean)){
+    const faculty=catalogue.filter(item=>item.normalized===clean("هيئة تدريسية")||item.normalized.startsWith(`${clean("هيئة تدريسية")} `));
     const sole=(pool:typeof faculty)=>{
       const ids=new Set(pool.map(item=>Number(item.person.AdInstructorId)));
       return ids.size===1?pool[0]:undefined;
@@ -3560,7 +3560,7 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
     const hit=sole(inCourse)||sole(faculty.filter(item=>item.preferred))||sole(faculty);
     return hit?{person:hit.person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2}:undefined;
   }
-  if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
+  if(/عضو\s*هييه|شاغر|منتدب/.test(rawClean))return undefined;
 
   const normalizedRaw=rawTokens.join(" ");
   const haystack=` ${normalizedRaw} `;
