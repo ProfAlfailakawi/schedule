@@ -4137,6 +4137,38 @@ export const Repository = {
 
   // Every instructor who is a delegate in any roster, so the staff screen can
   // mark them with a «منتدب» badge (Note 1).
+  /* ── لمن هذا المنتدب؟ ──────────────────────────────────────────────────
+     «منتدب» وسمٌ بلا نسب: لا يقول من القسم الذي أدرجه، فيبقى أمام الإدارة
+     اسمٌ معلّق. الانتساب مسجَّل فعلاً في دليل كل قسم وفي روستر كل فصل، لكنه
+     لم يكن يُقرأ إلا قسماً قسماً. تُقرأ القائمتان مرة واحدة هنا فيُعرف لكل
+     شخص من ضمّه ومن أين. */
+  getDelegateAffiliations: async (): Promise<Array<{ collegeId: number; sectionId: number; instructorIds: number[]; kind: "directory" | "roster"; termId?: number }>> => {
+    const rows: Array<{ collegeId: number; sectionId: number; instructorIds: number[]; kind: "directory" | "roster"; termId?: number }> = [];
+    const push = (collegeId: unknown, sectionId: unknown, ids: unknown, kind: "directory" | "roster", termId?: unknown) => {
+      const college = Number(collegeId || 0), section = Number(sectionId || 0);
+      const instructorIds = (Array.isArray(ids) ? ids : []).map(Number).filter(id => Number.isFinite(id) && id > 0);
+      if (college && section && instructorIds.length) rows.push({ collegeId: college, sectionId: section, instructorIds, kind, termId: Number(termId || 0) || undefined });
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const [rosters, directories] = await Promise.all([
+        firestoreDb.collection("visitingRosters").get(), firestoreDb.collection("departmentDelegates").get(),
+      ]);
+      rosters.docs.forEach(doc => { const row = doc.data() as VisitingRoster; push(row.collegeId, row.sectionId, row.instructorIds, "roster", (row as any).termId); });
+      directories.docs.forEach(doc => {
+        const row = doc.data() as DepartmentDelegateDirectory;
+        const [college, section] = String((row as any).scopeKey || doc.id).split(/[:_]/);
+        push((row as any).collegeId ?? college, (row as any).sectionId ?? section, row.instructorIds, "directory");
+      });
+      return rows;
+    }
+    (db.visitingRosters || []).forEach(row => push(row.collegeId, row.sectionId, row.instructorIds, "roster", (row as any).termId));
+    (db.departmentDelegates || []).forEach(row => {
+      const [college, section] = String(row.scopeKey || "").split(":");
+      push((row as any).collegeId ?? college, (row as any).sectionId ?? section, row.instructorIds, "directory");
+    });
+    return rows;
+  },
+
   getAllDelegateInstructorIds: async (): Promise<number[]> => {
     const set = new Set<number>();
     if (firestoreDb && !demoSandboxContext.getStore()) {
