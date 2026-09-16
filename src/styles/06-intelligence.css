@@ -4282,6 +4282,7 @@ button.twin-delta{width:100%}
 .import-instructor-name{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 /* هوية مثبتة من سجل النظام لكنها خارج أساتذة القسم: قرار الإنسان في نقرة
    واحدة بدل فتح محرّر الصف وإعادة اختيار الاسم نفسه. */
+.import-registry-badge{border:1px solid color-mix(in srgb,currentColor 25%,transparent);border-radius:999px;padding:0 8px;font-size:.68rem;opacity:.75}
 .import-instructor-confirm{border:1px solid var(--accent,#0b7285);background:transparent;color:var(--accent,#0b7285);border-radius:999px;padding:1px 10px;font-size:.72rem;font-weight:600;cursor:pointer;line-height:1.6}
 .import-instructor-confirm:hover{background:var(--accent,#0b7285);color:#fff}
 .transfer-preflight-wait{margin:0;padding:8px 12px;border-radius:10px;border:1px dashed color-mix(in srgb,var(--ink) 18%,var(--line));background:color-mix(in srgb,var(--ink) 3%,var(--surface));color:color-mix(in srgb,var(--ink) 66%,transparent);font-size:12px}
