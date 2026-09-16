@@ -42,6 +42,9 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     [delegateIds, setDelegateIds] = useState<Set<number>>(new Set());
   type Affiliation = { collegeId: number; sectionId: number; section: string; college: string };
   const [affiliations, setAffiliations] = useState<Record<string, { delegate: Affiliation[]; teaching: Affiliation[] }>>({});
+  type ScopeDetail = Affiliation & { rows?: number; terms?: string[] };
+  const [detail, setDetail] = useState<{ instructorId: number; teaching: ScopeDetail[]; delegate: ScopeDetail[] } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
@@ -183,7 +186,22 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     }
   };
   useEffect(() => setVisibleLimit(160), [query]);
+  useEffect(() => {
+    if (!selectedId) { setDetail(null); return; }
+    const controller = new AbortController();
+    setDetailLoading(true);
+    fetch(`/api/instructors/${selectedId}/affiliation`, { signal: controller.signal })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setDetail({ instructorId: Number(d.instructorId), teaching: d.teaching || [], delegate: d.delegate || [] }); })
+      .catch(() => undefined)
+      .finally(() => setDetailLoading(false));
+    return () => controller.abort();
+  }, [selectedId]);
   const affiliationOf = (id: number) => affiliations[String(id)] || { delegate: [], teaching: [] };
+  /* البطاقة تكتفي بالفصل الأحدث لتبقى القائمة خفيفة، أما البطاقة المفتوحة
+     فتسأل عن سجل هذا الشخص كله باستعلام واحد على معرّفه. */
+  const scopeText = (items: ScopeDetail[]) =>
+    items.map(item => [item.section, item.college].filter(Boolean).join(" · ")).filter(Boolean);
   const affiliationLabel = (items: Affiliation[]) =>
     items.map(item => [item.section, item.college].filter(Boolean).join(" · ")).filter(Boolean);
   /* القسم الذي ضمّه يُكتب بجانب الوسم لا في شاشة أخرى: من يقرأ السطر يعرف
@@ -396,12 +414,18 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   <b dir="ltr">{selected.AdInstructorMobile || "—"}</b>
                 </article>
                 <article>
-                  <span>يدرّس في</span>
-                  <b>{affiliationLabel(affiliationOf(selected.AdInstructorId).teaching).join(" ، ") || "لا تدريس في الفصل الأحدث"}</b>
+                  <span>الأقسام التي درّس فيها</span>
+                  <b>{detailLoading && detail?.instructorId !== selected.AdInstructorId
+                    ? "جارٍ القراءة…"
+                    : (scopeText(detail?.instructorId === selected.AdInstructorId ? detail.teaching : []).join(" ، ")
+                      || affiliationLabel(affiliationOf(selected.AdInstructorId).teaching).join(" ، ")
+                      || "لا جدول مسجّل في أي فصل")}</b>
                 </article>
                 <article>
                   <span>منتدب لدى</span>
-                  <b>{affiliationLabel(affiliationOf(selected.AdInstructorId).delegate).join(" ، ") || "لا انتداب مسجّل"}</b>
+                  <b>{scopeText(detail?.instructorId === selected.AdInstructorId ? detail.delegate : []).join(" ، ")
+                    || affiliationLabel(affiliationOf(selected.AdInstructorId).delegate).join(" ، ")
+                    || "لا انتداب مسجّل"}</b>
                 </article>
               </div>
               <div className="inspector-actions">
