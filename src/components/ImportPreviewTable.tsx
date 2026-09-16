@@ -204,7 +204,7 @@ export default function ImportPreviewTable({
   /** هوية فريدة في سجل النظام كله برهانٌ بذاته لا استنتاجُ نطاق: الحفظ يقبلها،
       فتُعرض كبقية الأسماء تماماً — لا صبغة مراجعة ولا وسم يميّزها. */
   const provenByFullName = (row: ImportRow) =>
-    ["EXACT_FULL","FACULTY_IDENTITY","GLOBAL_THREE_NAME","GLOBAL_SOLE_TWO_NAME"].includes(String(row.importEvidence?.instructor?.method || ""));
+    ["EXACT_FULL","FACULTY_IDENTITY","GLOBAL_SOLE_TWO_NAME"].includes(String(row.importEvidence?.instructor?.method || ""));
   const instructorOutsideRegister = (row: ImportRow) => {
     const id=Number(row.AdInstructorId)||0;
     if(!id || !instructorById.has(id))return false;

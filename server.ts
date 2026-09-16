@@ -1513,13 +1513,15 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
        أهله «من خارج القسم»، فيُمنع نشر جدول صحيح تماماً بحجّة مطابقة على
        مستوى الجامعة — بينما يمرّ الصف نفسه بلا اعتراض إذا ضغط المراجع على
        اسمٍ هو الاسم ذاته.
-       البراهين المقبولة هنا تشترك كلها في شرط واحد: تفرّد على مستوى سجل
-       النظام كله — مساواة الاسم الكامل، وهوية «هيئة تدريسية» المسجّلة، وبرهان
-       ثلاثة أسماء مرتبة، وبرهان اسمين مرتبين لا يطابقان إلا شخصاً واحداً في
-       الجامعة. أي تعدّد يُرفض قبل أن يصل إلى هنا، فهذه براهين هوية بذاتها لا
-       استنتاج من نطاق. أما ما يتكئ على النطاق — اسم مفرد، تعميم، جوار —
-       فيبقى محكوماً بعضوية القسم كما كان. */
-    const instructorProvenByFullName=["EXACT_FULL","FACULTY_IDENTITY","GLOBAL_THREE_NAME","GLOBAL_SOLE_TWO_NAME"].includes(String((row as any)?.importEvidence?.instructor?.method||""));
+       الشرط الجامع لما يُقبل هنا ليس قوة البرهان بل وحدة النتيجة: ألّا يبقى
+       في السجل كله سوى مرشّح واحد مؤهل. مساواة الاسم الكامل، وهوية «هيئة
+       تدريسية» المسجّلة، وبرهان اسمين مرتبين لا يؤهّل سواهما أحداً في الجامعة
+       — كلها تُرجع شخصاً أو لا شيء.
+       وبرهان الأسماء الثلاثة ليس منها: فهو يختار الأعلى درجة بين مؤهّلين
+       متزاحمين ولا يشترط وحدتهم، فاسمٌ ثالث مشابه بحرف واحد قد يخسر السباق
+       دون أن يُبطل النتيجة. فيبقى محكوماً بعضوية القسم، كما يبقى ما يتكئ على
+       النطاق أصلاً — اسم مفرد، تعميم، جوار. */
+    const instructorProvenByFullName=["EXACT_FULL","FACULTY_IDENTITY","GLOBAL_SOLE_TWO_NAME"].includes(String((row as any)?.importEvidence?.instructor?.method||""));
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
     else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!instructorProvenByFullName&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
     if(options.requireDepartmentInstructor){
