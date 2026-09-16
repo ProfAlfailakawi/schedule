@@ -3531,7 +3531,7 @@ export type ParsedScheduleRow={
  */
 type InstructorIdentityMatch={person:AdInstructor;method:"EXACT_FULL"|"FACULTY_IDENTITY"|"COURSE_ONE_NAME"|"DEPARTMENT_ONE_NAME"|"COURSE_TWO_NAME"|"DEPARTMENT_TWO_NAME"|"GLOBAL_SOLE_TWO_NAME"|"GLOBAL_THREE_NAME";score:number;matchedTokens:number};
 
-function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):InstructorIdentityMatch|undefined{
+export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):InstructorIdentityMatch|undefined{
   const clean=instructorCleanName,identityTokens=instructorIdentityTokens;
   const rawClean=clean(raw),rawTokens=identityTokens(raw);
   if(!rawClean||!rawTokens.length)return undefined;
@@ -3550,8 +3550,14 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
      single university-wide record. Uniqueness is counted by instructor id, not
      by row, so two catalogue entries for the SAME person no longer read as a
      tie and no longer leave the cell blank. */
-  if(/^هيئه(?:\s|$)/.test(rawClean)){
-    const faculty=catalogue.filter(item=>item.normalized==="هيئه تدريسيه"||item.normalized.startsWith("هيئه تدريسيه "));
+  /* ── لا تُكتب صورة الاسم المطوَّع بخط اليد ──────────────────────────────
+     كان هذا الفرع يقارن بنصّ «هيئه تدريسيه» مكتوباً حرفياً، بينما التطبيع
+     نفسه يحوّل الهمزة على نبرة إلى ياء: «هيئة تدريسية» تصير «هييه تدريسيه».
+     فلم يطابق الشرط شيئاً قطّ، ومات مسار الهوية كله بصمت مهما كتب المستند.
+     الصيغة تُشتقّ الآن من الاسم نفسه بالقانون نفسه، فلا تنفصل عنه أبداً. */
+  const facultyKey=identityTokens("هيئة تدريسية").join(" ");
+  if(rawClean===facultyKey||rawClean.startsWith(`${facultyKey} `)||rawTokens[0]===identityTokens("هيئة")[0]){
+    const faculty=catalogue.filter(item=>item.normalized===facultyKey||item.normalized.startsWith(`${facultyKey} `));
     const sole=(pool:typeof faculty)=>{
       const ids=new Set(pool.map(item=>Number(item.person.AdInstructorId)));
       return ids.size===1?pool[0]:undefined;
@@ -3560,7 +3566,7 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
     const hit=sole(inCourse)||sole(faculty.filter(item=>item.preferred))||sole(faculty);
     return hit?{person:hit.person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2}:undefined;
   }
-  if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
+  if(rawClean.includes(`عضو ${identityTokens("هيئة")[0]}`)||/شاغر|منتدب/.test(rawClean))return undefined;
 
   const normalizedRaw=rawTokens.join(" ");
   const haystack=` ${normalizedRaw} `;

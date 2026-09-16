@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { uniqueExactIdentityMatch, authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, instructorRegistryOutcome, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { matchInstructorIdentity, uniqueExactIdentityMatch, authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, instructorRegistryOutcome, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { fairShareByOwner } from "../src/utils/hallBarterFairness.ts";
@@ -715,3 +715,24 @@ assert.match(branchSplit.unplaced[0].siteLabel, /بنين/);
 
 /* قسم لا نظير له في الموقع الآخر لا يُلحق بقسم آخر لمجرد التقارب. */
 assert.equal(resolveBranchScope("012J", { ...branchContext, baseSectionId: 91 }), undefined);
+
+
+/* ── «هيئة تدريسية» تُكتب بألف صورة، وهويتها واحدة ─────────────────────────
+   التطبيع يحوّل الهمزة على نبرة إلى ياء، فصار المكتوب حرفياً في الشرط
+   («هيئه تدريسيه») لا يساوي ما ينتجه التطبيع («هييه تدريسيه») أبداً: مسار
+   الهوية كله كان ميتاً مهما كتب المستند. تُشتقّ الصيغة الآن من الاسم نفسه. */
+const facultyRegistry = [
+  { AdInstructorId: 900, AdInstructorCivil: "", AdInstructorName: "هيئة تدريسية", AdInstructorMobile: "" },
+  { AdInstructorId: 901, AdInstructorCivil: "", AdInstructorName: "إقبال عبدالعزيز المطوع", AdInstructorMobile: "" },
+] as any;
+for (const spelling of ["هيئة تدريسية", "هيئه تدريسيه", "هيئة تدريسيه", "هيئه تدريسية", "د. هيئة تدريسية"]) {
+  const hit = matchInstructorIdentity(spelling, facultyRegistry);
+  assert.equal(hit?.person.AdInstructorId, 900, `faculty placeholder: ${spelling}`);
+  assert.equal(hit?.method, "FACULTY_IDENTITY");
+}
+/* واسمان مرتبان لا يطابقان إلا شخصاً واحداً في السجل كله هوية، لا تخمين. */
+const twoName = matchInstructorIdentity("إقبال المطوع", facultyRegistry);
+assert.equal(twoName?.person.AdInstructorId, 901);
+assert.equal(twoName?.method, "GLOBAL_SOLE_TWO_NAME");
+/* والاسم الكامل بأي رسم يبقى مساواة تامة. */
+assert.equal(matchInstructorIdentity("اقبال عبد العزيز المطوع", facultyRegistry)?.method, "EXACT_FULL");

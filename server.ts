@@ -1513,11 +1513,13 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
        أهله «من خارج القسم»، فيُمنع نشر جدول صحيح تماماً بحجّة مطابقة على
        مستوى الجامعة — بينما يمرّ الصف نفسه بلا اعتراض إذا ضغط المراجع على
        اسمٍ هو الاسم ذاته.
-       المطابقة الكاملة تشترط أصلاً أن يساوي الاسم المطبوع اسم شخص واحد لا
-       ثاني له في سجل النظام بعد التطبيع؛ وأي تعدّد يُرفض قبل أن يصل هنا. فهي
-       برهان هوية بذاتها، لا استنتاج من نطاق. أما المطابقات الأضعف — اسم مفرد،
-       تعميم، جوار — فتبقى محكومة بنطاق القسم كما كانت. */
-    const instructorProvenByFullName=["EXACT_FULL","FACULTY_IDENTITY"].includes(String((row as any)?.importEvidence?.instructor?.method||""));
+       البراهين المقبولة هنا تشترك كلها في شرط واحد: تفرّد على مستوى سجل
+       النظام كله — مساواة الاسم الكامل، وهوية «هيئة تدريسية» المسجّلة، وبرهان
+       ثلاثة أسماء مرتبة، وبرهان اسمين مرتبين لا يطابقان إلا شخصاً واحداً في
+       الجامعة. أي تعدّد يُرفض قبل أن يصل إلى هنا، فهذه براهين هوية بذاتها لا
+       استنتاج من نطاق. أما ما يتكئ على النطاق — اسم مفرد، تعميم، جوار —
+       فيبقى محكوماً بعضوية القسم كما كان. */
+    const instructorProvenByFullName=["EXACT_FULL","FACULTY_IDENTITY","GLOBAL_THREE_NAME","GLOBAL_SOLE_TWO_NAME"].includes(String((row as any)?.importEvidence?.instructor?.method||""));
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
     else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!instructorProvenByFullName&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
     if(options.requireDepartmentInstructor){
