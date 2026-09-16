@@ -40,6 +40,8 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     // Note 2: retired / sabbatical status. Note 1: which instructors are delegates.
     [status, setStatus] = useState<"" | "retired" | "sabbatical">(""),
     [delegateIds, setDelegateIds] = useState<Set<number>>(new Set());
+  type Affiliation = { collegeId: number; sectionId: number; section: string; college: string };
+  const [affiliations, setAffiliations] = useState<Record<string, { delegate: Affiliation[]; teaching: Affiliation[] }>>({});
   const load = async () => {
     setLoading(true);
     try {
@@ -63,6 +65,12 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     fetch("/api/delegates")
       .then(r => (r.ok ? r.json() : { instructorIds: [] }))
       .then(d => setDelegateIds(new Set((d.instructorIds || []).map(Number))))
+      .catch(() => undefined);
+    /* «منتدب» بلا نسب اسمٌ معلّق. النسبة تُقرأ من دليل كل قسم ومن جدول الفصل
+       الأحدث، فيُعرف لكل شخص من ضمّه وأين يدرّس فعلاً. */
+    fetch("/api/instructor-affiliations")
+      .then(r => (r.ok ? r.json() : { affiliations: {} }))
+      .then(d => setAffiliations(d?.affiliations && typeof d.affiliations === "object" ? d.affiliations : {}))
       .catch(() => undefined);
   }, []);
   const back = () => {
@@ -175,6 +183,18 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     }
   };
   useEffect(() => setVisibleLimit(160), [query]);
+  const affiliationOf = (id: number) => affiliations[String(id)] || { delegate: [], teaching: [] };
+  const affiliationLabel = (items: Affiliation[]) =>
+    items.map(item => [item.section, item.college].filter(Boolean).join(" · ")).filter(Boolean);
+  /* القسم الذي ضمّه يُكتب بجانب الوسم لا في شاشة أخرى: من يقرأ السطر يعرف
+     تبعية الاسم فوراً، ومن لا انتساب له يُقال عنه ذلك صراحةً. */
+  const homeLabel = (id: number) => {
+    const { delegate, teaching } = affiliationOf(id);
+    const teach = affiliationLabel(teaching), sent = affiliationLabel(delegate);
+    if (teach.length) return `يدرّس في ${teach.join(" ، ")}`;
+    if (sent.length) return `منتدب لدى ${sent.join(" ، ")}`;
+    return "";
+  };
   const filtered = useMemo(() => {
       const q = query.trim().toLowerCase();
       const base = q
@@ -326,15 +346,11 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                       {x.AdInstructorName}
                       {x.AdInstructorStatus === "retired" ? <span className="staff-badge is-retired">متقاعد</span>
                         : x.AdInstructorStatus === "sabbatical" ? <span className="staff-badge is-sabbatical">متفرّغ</span> : null}
-                      {delegateIds.has(x.AdInstructorId) ? <span className="staff-badge is-delegate">منتدب</span> : null}
+                      {delegateIds.has(x.AdInstructorId) ? <span className="staff-badge is-delegate" title={affiliationLabel(affiliationOf(x.AdInstructorId).delegate).join(" ، ") || "قسم الانتداب غير مسجّل"}>منتدب</span> : null}
                       {activeId === x.AdInstructorId ? <span className="sr-only">، محدد</span> : null}
                     </>
                   )}
-                  subtitle={
-                    x.AdInstructorMobile
-                      ? `هاتف ${x.AdInstructorMobile}`
-                      : "لا يوجد رقم هاتف مسجل"
-                  }
+                  subtitle={[homeLabel(x.AdInstructorId), x.AdInstructorMobile ? `هاتف ${x.AdInstructorMobile}` : "لا يوجد رقم هاتف مسجل"].filter(Boolean).join(" · ")}
                   meta={
                     <MetaPill
                       label="الرقم المدني"
@@ -378,6 +394,14 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                 <article>
                   <span>رقم الهاتف</span>
                   <b dir="ltr">{selected.AdInstructorMobile || "—"}</b>
+                </article>
+                <article>
+                  <span>يدرّس في</span>
+                  <b>{affiliationLabel(affiliationOf(selected.AdInstructorId).teaching).join(" ، ") || "لا تدريس في الفصل الأحدث"}</b>
+                </article>
+                <article>
+                  <span>منتدب لدى</span>
+                  <b>{affiliationLabel(affiliationOf(selected.AdInstructorId).delegate).join(" ، ") || "لا انتداب مسجّل"}</b>
                 </article>
               </div>
               <div className="inspector-actions">

@@ -4873,6 +4873,47 @@ app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 1
 });
 
 // A delegate badge is global to the person, but department directories are not.
+/** ── لكل اسم نسبه ──────────────────────────────────────────────────────────
+ *  «منتدب» وحده لا يقول لمن، فتبقى الإدارة أمام اسم بلا قسم. وأعضاء هيئة
+ *  التدريس في هذا النظام لا يحملون قسماً في سجلهم أصلاً: انتماؤهم مستنتج من
+ *  عملهم ومن أدلة الأقسام. فتُجمع هنا نسبتان صريحتان لكل شخص، كلٌّ باسم قسمها:
+ *  «انتداب» من دليل القسم أو روستر الفصل، و«تدريس» من جدول الفصل الأحدث —
+ *  استعلام واحد مفهرس، لا مسحٌ لتاريخ الجامعة كله.
+ */
+app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
+  const [affiliations, sections, colleges, latestRows] = await Promise.all([
+    Repository.getDelegateAffiliations(), Repository.getSections(), Repository.getColleges(),
+    latestTermId ? Repository.getSchedulesByScope({ termId: latestTermId }) : Promise.resolve([] as any[]),
+  ]);
+  const sectionName = new Map((sections as any[]).map(item => [Number(item.AdSectionId), String(item.AdSectionName || "")]));
+  const collegeName = new Map((colleges as any[]).map(item => [Number(item.AdCollegeId), String(item.AdCollegeName || "")]));
+  const byInstructor = new Map<number, { delegate: Map<string, any>; teaching: Map<string, any> }>();
+  const slot = (id: number) => {
+    let entry = byInstructor.get(id);
+    if (!entry) { entry = { delegate: new Map(), teaching: new Map() }; byInstructor.set(id, entry); }
+    return entry;
+  };
+  const place = (id: number, collegeId: number, sectionId: number, kind: "delegate" | "teaching") => {
+    if (!id || !sectionId) return;
+    const key = `${collegeId}:${sectionId}`;
+    slot(id)[kind].set(key, {
+      collegeId, sectionId,
+      section: sectionName.get(sectionId) || "",
+      college: collegeName.get(collegeId) || "",
+    });
+  };
+  for (const row of affiliations) for (const id of row.instructorIds) place(id, row.collegeId, row.sectionId, "delegate");
+  for (const row of latestRows as any[]) place(Number(row.AdInstructorId || 0), Number(row.AdCollegeId || 0), Number(row.AdSectionId || 0), "teaching");
+  res.json({
+    termId: latestTermId,
+    affiliations: Object.fromEntries([...byInstructor].map(([id, entry]) => [id, {
+      delegate: [...entry.delegate.values()], teaching: [...entry.teaching.values()],
+    }])),
+  });
+});
+
 app.get("/api/delegates", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
   res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() });
 });
