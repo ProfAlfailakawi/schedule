@@ -11887,16 +11887,20 @@ async function startServer() {
       const sub = req.path.slice("/landing/".length);
       // req.path is not dot-segment normalized, so a request such as
       // /landing/../../server.ts would otherwise escape the landing directory
-      // and serve arbitrary files. Reject any traversal or absolute path up
-      // front, then resolve the candidate and require that it stays strictly
-      // inside the landing base directory before serving it (defense in depth).
-      const landingBase = path.resolve(process.cwd(), isProduction ? "dist/landing" : "public/landing");
-      const normalizedSub = path.normalize(sub);
-      const hasTraversal = sub.includes("..") || normalizedSub.startsWith("..") || path.isAbsolute(sub) || sub.includes("\0");
-      const subFile = path.resolve(landingBase, normalizedSub);
-      const isContained = subFile === landingBase || subFile.startsWith(landingBase + path.sep);
-      if (!hasTraversal && isContained && fs.existsSync(subFile) && fs.statSync(subFile).isFile()) {
-        return res.sendFile(subFile);
+      // and serve arbitrary files. Guard the filesystem access directly on the
+      // request value: reject any ".." segment, absolute path or NUL byte, then
+      // still require the resolved candidate to stay inside the landing base
+      // directory before serving it (defense in depth).
+      if (!sub.includes("..") && !sub.includes("\0") && !path.isAbsolute(sub)) {
+        const landingBase = path.resolve(process.cwd(), isProduction ? "dist/landing" : "public/landing");
+        const subFile = path.resolve(landingBase, sub);
+        if (
+          (subFile === landingBase || subFile.startsWith(landingBase + path.sep)) &&
+          fs.existsSync(subFile) &&
+          fs.statSync(subFile).isFile()
+        ) {
+          return res.sendFile(subFile);
+        }
       }
     }
 
