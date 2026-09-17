@@ -374,7 +374,11 @@ const facultyStaff:any[]=[
   {AdInstructorId:42,AdInstructorName:"هيئة تدريسية"},
 ];
 assert.equal(readName("هيئة تدريسية",new Set([42]),facultyStaff),42);
-assert.equal(readName("هيئة تدريسية",new Set(),facultyStaff),0);
+/* وخارج نطاق القسم لا تبقى الخانة فارغة: «هيئة تدريسية» معنى واحد يتشاركه
+   الجميع — تُكتب حين لا يكون للشعبة اسم دكتور ثابت — وتقارير القسم تبقى قسمه
+   لأن الصف يحمل قسمه لا الشخص. فتعدّد السجلات تكرارُ معنى لا التباسُ شخصين،
+   ويُؤخذ أقدمها قاعدةً ثابتة بين القراءات. */
+assert.equal(readName("هيئة تدريسية",new Set(),facultyStaff),41);
 
 /* ── لماذا لم تُربط الخانة؟ ───────────────────────────────────────────────────
    للفشل سببان علاجهما مختلف: شخص لا وجود له في سجل الأساتذة (علاجه تسجيله)،
@@ -736,3 +740,19 @@ assert.equal(twoName?.person.AdInstructorId, 901);
 assert.equal(twoName?.method, "GLOBAL_SOLE_TWO_NAME");
 /* والاسم الكامل بأي رسم يبقى مساواة تامة. */
 assert.equal(matchInstructorIdentity("اقبال عبد العزيز المطوع", facultyRegistry)?.method, "EXACT_FULL");
+
+
+/* ── تعدّد سجلات «هيئة تدريسية» تكرارُ معنى لا التباسُ أشخاص ────────────────
+   الخانة تُملأ بأقدم سجل قاعدةً ثابتة، ويبقى نطاق القسم مقدَّماً عليه. */
+const duplicatedPlaceholders = [
+  { AdInstructorId: 940, AdInstructorCivil: "", AdInstructorName: "هيئة تدريسية", AdInstructorMobile: "" },
+  { AdInstructorId: 905, AdInstructorCivil: "", AdInstructorName: "هيئه تدريسيه", AdInstructorMobile: "" },
+  { AdInstructorId: 970, AdInstructorCivil: "", AdInstructorName: "هيئة تدريسية", AdInstructorMobile: "" },
+] as any;
+assert.equal(matchInstructorIdentity("هيئة تدريسية", duplicatedPlaceholders)?.person.AdInstructorId, 905);
+assert.equal(matchInstructorIdentity("هيئة تدريسية", duplicatedPlaceholders)?.method, "FACULTY_IDENTITY");
+/* وسجلّ القسم يسبق الأقدم دائماً. */
+assert.equal(
+  matchInstructorIdentity("هيئه تدريسيه", duplicatedPlaceholders, new Set([970]))?.person.AdInstructorId,
+  970,
+);
