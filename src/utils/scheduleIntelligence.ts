@@ -78,6 +78,19 @@ export interface ConflictOptions {
   /** Minutes a hall needs between two lectures. Zero means the rule is unset. */
   doorwayMinutes?:number;
   /**
+   * ── «هيئة تدريسية» لا تُحجز مرتين ─────────────────────────────────────────
+   *
+   * الحجز المزدوج قاعدة عن شخص: جسدٌ واحد لا يكون في قاعتين في الساعة نفسها.
+   * لكن «هيئة تدريسية» ليست شخصاً، بل معنى واحد تتشاركه الجامعة كلها حين لا
+   * يكون للشعبة اسم مدرّس ثابت. فمحاضرتان تحملانها ليستا تعارضاً، ولا شيء
+   * يُصلحه المنسّق — والنتيجة خانة حمراء دائمة على جدول صحيح، لأن أقساماً أخرى
+   * نشرت شعبها بالمعنى نفسه في الفصل نفسه.
+   *
+   * تُمرَّر معرّفات هذه السجلات هنا فتُستثنى من قاعدة الأستاذ وحدها؛ أما القاعة
+   * والشعبة المكرّرة والطلاب فتبقى محسوبة كما هي.
+   */
+  placeholderInstructorIds?:Iterable<number>;
+  /**
    * ── تعارض الطالب ──────────────────────────────────────────────────────────
    *
    * The third kind of double booking, and the commonest complaint in any
@@ -207,6 +220,11 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     const bucket=index.get(key);
     if(bucket) bucket.push(at); else index.set(key,[at]);
   };
+  const placeholderInstructors=new Set<number>(Array.from<number>(options?.placeholderInstructorIds??[]).map(value=>Number(value)).filter(Boolean));
+  const personalInstructor=(row:FSchedule)=>{
+    const id=Number(row.AdInstructorId||0);
+    return id>0&&!placeholderInstructors.has(id)?id:0;
+  };
   const byDayInstructor=new Map<string,number[]>();
   const byDayRoom=new Map<string,number[]>();
   const byDayCourse=new Map<string,number[]>();
@@ -216,7 +234,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     const place=roomKey(other);
     for(const day of dayKeys){
       if(!other[day]) continue;
-      if(other.AdInstructorId) push(byDayInstructor,`${String(day)}|${other.AdInstructorId}`,at);
+      if(personalInstructor(other)) push(byDayInstructor,`${String(day)}|${other.AdInstructorId}`,at);
       if(place) push(byDayRoom,`${String(day)}|${place}`,at);
       if(wantCohort) push(byDayCourse,`${String(day)}|${other.AdCourseId}`,at);
     }
@@ -229,7 +247,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     const place=roomKey(row);
     for(const day of dayKeys){
       if(!row[day]) continue;
-      if(row.AdInstructorId) take(byDayInstructor.get(`${String(day)}|${row.AdInstructorId}`));
+      if(personalInstructor(row)) take(byDayInstructor.get(`${String(day)}|${row.AdInstructorId}`));
       if(place) take(byDayRoom.get(`${String(day)}|${place}`));
       if(wantCohort) for(const partner of partners.get(row.AdCourseId)||[]) take(byDayCourse.get(`${String(day)}|${partner}`));
     }
@@ -261,7 +279,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
       if(byPair.has(pair)) continue;
 
       const reasons:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">=[];
-      if(clashing && row.AdInstructorId && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
+      if(clashing && personalInstructor(row) && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
       if(clashing && sameRoom) reasons.push("room");
       if(twin) reasons.push("duplicate");
       if(cohort) reasons.push("cohort");
@@ -378,6 +396,12 @@ export function outsideScopeClashes(scopeRows:FSchedule[], allRows:FSchedule[], 
 /** The original exhaustive sweep. Kept as the reference the parity test proves against. */
 export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedule[], options?:ConflictOptions):ConflictInsight[] {
   const doorway=Math.max(0,Number(options?.doorwayMinutes||0));
+  /* المسار الشامل يقرأ القاعدة نفسها: «هيئة تدريسية» ليست شخصاً يُحجز مرتين. */
+  const placeholderInstructors=new Set<number>(Array.from<number>(options?.placeholderInstructorIds??[]).map(value=>Number(value)).filter(Boolean));
+  const personalInstructor=(row:FSchedule)=>{
+    const id=Number(row.AdInstructorId||0);
+    return id>0&&!placeholderInstructors.has(id)?id:0;
+  };
   const byPair=new Map<string,ConflictInsight>();
   for(const row of targetRows){
     for(const other of allRows){
@@ -403,7 +427,7 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
       if(byPair.has(pair)) continue;
 
       const reasons:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">=[];
-      if(clashing && row.AdInstructorId && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
+      if(clashing && personalInstructor(row) && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
       if(clashing && sameRoom) reasons.push("room");
       if(twin) reasons.push("duplicate");
       if(cohort) reasons.push("cohort");

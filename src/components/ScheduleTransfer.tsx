@@ -5,6 +5,7 @@ import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
+import { instructorIdentityTokens } from "../utils/instructorIdentity";
 import SchedulePublish from "./SchedulePublish";
 import { findConflicts } from "../utils/scheduleIntelligence";
 import { sortByName } from "../utils/sorting";
@@ -377,7 +378,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     const rows = Array.isArray(xlsxPreview?.rows) ? xlsxPreview.rows as ImportRow[] : [];
     if (rows.length < 2) return empty;
     const staged = rows.map((row, index) => ({ ...row, id: index + 1, AdTermId: termId })) as any[];
-    const blocking = findConflicts(staged, staged)
+    /* «هيئة تدريسية» معنى مشترك لا شخص: صفّان يحملانها ليسا حجزاً مزدوجاً. */
+    const placeholderHead = instructorIdentityTokens("هيئة")[0];
+    const placeholderIds = new Set([...instructors, ...directoryPeople, ...((xlsxPreview?.resolvedInstructors || []) as any[])]
+      .filter(person => instructorIdentityTokens(String(person?.AdInstructorName || ""))[0] === placeholderHead)
+      .map(person => Number(person.AdInstructorId)).filter(Boolean));
+    const blocking = findConflicts(staged, staged, { placeholderInstructorIds: placeholderIds })
       .filter(item => item.severity === "high" || item.type === "duplicate");
     const notes: Record<string, string[]> = {};
     const issues: string[] = [];

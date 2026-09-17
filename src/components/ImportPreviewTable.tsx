@@ -7,6 +7,7 @@ import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { expectedMinutesForDay, type DayKey as RegulationDayKey } from "../utils/scheduleRegulations";
 import { cleanBuildingCode, cleanHallCode } from "../utils/cleanRoom";
 import { roomIdentityKey } from "../utils/locationRegistry";
+import { instructorIdentityTokens } from "../utils/instructorIdentity";
 import { authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
 
 /**
@@ -129,6 +130,10 @@ export default function ImportPreviewTable({
     [...pickerInstructors, ...visitingPeople, ...matchedPeople].map(person => [Number(person.AdInstructorId), person] as const),
   ).values()], [pickerInstructors, visitingPeople, matchedPeople]);
   const instructorById = useMemo(() => new Map(displayInstructors.map(person => [Number(person.AdInstructorId), person])), [displayInstructors]);
+  /* «هيئة تدريسية» ليست شخصاً، فمحاضرتان تحملانها ليستا حجزاً مزدوجاً. */
+  const placeholderIds = useMemo(() => new Set(displayInstructors
+    .filter(person => instructorIdentityTokens(String(person.AdInstructorName || ""))[0] === instructorIdentityTokens("هيئة")[0])
+    .map(person => Number(person.AdInstructorId))), [displayInstructors]);
   const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], value => Number(value)).filter(Boolean)), [visitingIds]);
 
   const normalizedRooms = useMemo(() => [...new Map(departmentRooms
@@ -273,7 +278,7 @@ export default function ImportPreviewTable({
     const notes: ConflictNote[] = [];
     rows.forEach((other, at) => {
       if (at === editing || !daysOverlap(row, other) || !timeOverlap(row, other)) return;
-      if (row.AdInstructorId && Number(row.AdInstructorId) === Number(other.AdInstructorId)) {
+      if (row.AdInstructorId && !placeholderIds.has(Number(row.AdInstructorId)) && Number(row.AdInstructorId) === Number(other.AdInstructorId)) {
         notes.push({ type: "instructor", severity: "high", message: "تعارض أستاذ", detail: `${instructorById.get(Number(row.AdInstructorId))?.AdInstructorName || "الأستاذ"} مرتبط أيضاً بالصف ${(at + 1).toLocaleString("ar-KW-u-nu-latn")} · ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}.` });
       }
       if (roomIdentityKey(row as any) && roomIdentityKey(row as any) === roomIdentityKey(other as any)) {
@@ -281,7 +286,7 @@ export default function ImportPreviewTable({
       }
     });
     return notes;
-  }, [editing, rows, instructorById]);
+  }, [editing, rows, instructorById, placeholderIds]);
 
   useEffect(() => {
     if (editing === null || !rows[editing] || !collegeId || !sectionId || !termId) { setServerConflicts([]); return; }
