@@ -4882,6 +4882,37 @@ app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 1
  *  «انتداب» من دليل القسم أو روستر الفصل، و«تدريس» من جدول الفصل الأحدث —
  *  استعلام واحد مفهرس، لا مسحٌ لتاريخ الجامعة كله.
  */
+/** نسبة شخص واحد عبر كل الفصول: استعلام مفهرس على معرّفه وحده، يُسأل عند فتح
+ *  بطاقته لا عند عرض القائمة — فالقائمة تبقى خفيفة والسجل يبقى كاملاً. */
+app.get("/api/instructors/:id/affiliation", requireAnyPermission([3, 7]), async (req: AuthenticatedRequest, res: Response) => {
+  const instructorId = Number(req.params.id || 0);
+  if (!instructorId) { res.status(400).json({ error: "معرّف الأستاذ غير صالح" }); return; }
+  const [scopes, sections, colleges, terms, directories] = await Promise.all([
+    Repository.getInstructorTeachingScopes(instructorId), Repository.getSections(), Repository.getColleges(),
+    Repository.getTerms(), Repository.getDelegateAffiliations(),
+  ]);
+  const sectionName = new Map((sections as any[]).map(item => [Number(item.AdSectionId), String(item.AdSectionName || "")]));
+  const collegeName = new Map((colleges as any[]).map(item => [Number(item.AdCollegeId), String(item.AdCollegeName || "")]));
+  const termName = new Map((terms as any[]).map(item => [Number(item.AdTermId), String(item.AdTermName || "")]));
+  const delegate = new Map<string, any>();
+  for (const row of directories) {
+    if (!row.instructorIds.includes(instructorId)) continue;
+    delegate.set(`${row.collegeId}:${row.sectionId}`, {
+      collegeId: row.collegeId, sectionId: row.sectionId,
+      section: sectionName.get(row.sectionId) || "", college: collegeName.get(row.collegeId) || "",
+    });
+  }
+  res.json({
+    instructorId,
+    teaching: scopes.map(scope => ({
+      collegeId: scope.collegeId, sectionId: scope.sectionId,
+      section: sectionName.get(scope.sectionId) || "", college: collegeName.get(scope.collegeId) || "",
+      rows: scope.rows, terms: scope.termIds.map(id => termName.get(id) || String(id)).filter(Boolean),
+    })),
+    delegate: [...delegate.values()],
+  });
+});
+
 app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
   const terms = await Repository.getTerms();
   const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);

@@ -3178,6 +3178,39 @@ export const Repository = {
     return db.schedules.some(row => row.AdTermId === termId);
   },
 
+  /* ── أين درّس هذا الأستاذ فعلاً، في كل الفصول ────────────────────────────
+     نسبة الفصل الأحدث وحدها تترك أغلب السجل بلا قسم: من لم يُسند إليه شيء هذا
+     الفصل يظهر بلا انتماء وكأنه غريب عن الجامعة. والتاريخ كله لا يُمسح لأجل
+     قائمة — يُسأل عن شخص واحد باستعلام مفهرس على معرّفه، وتُقرأ الأقسام من
+     مقرراته لا من حقول مكرّرة قد تغيب في الصفوف القديمة. */
+  getInstructorTeachingScopes: async (instructorId: number): Promise<Array<{ collegeId: number; sectionId: number; rows: number; termIds: number[] }>> => {
+    const id = Number(instructorId || 0);
+    if (!id) return [];
+    const rows: Array<{ AdCourseId?: unknown; AdTermId?: unknown }> = firestoreDb && !demoSandboxContext.getStore()
+      ? (await firestoreDb.collection("schedules").where("AdInstructorId", "==", id).get()).docs.map(doc => doc.data() as any)
+      : (db.schedules || []).filter(row => Number(row.AdInstructorId) === id) as any[];
+    if (!rows.length) return [];
+    const [courses, sections] = await Promise.all([Repository.getCourses(), Repository.getSections()]);
+    const courseById = new Map(courses.map(course => [Number(course.AdCourseId), course]));
+    const collegeOf = new Map(sections.map(section => [Number(section.AdSectionId), Number(section.AdCollegeId)]));
+    const scopes = new Map<string, { collegeId: number; sectionId: number; rows: number; termIds: Set<number> }>();
+    for (const row of rows) {
+      const course = courseById.get(Number(row.AdCourseId || 0));
+      const sectionId = Number(course?.AdSectionId || 0);
+      if (!sectionId) continue;
+      const collegeId = Number(course?.AdCollegeId || collegeOf.get(sectionId) || 0);
+      const key = `${collegeId}:${sectionId}`;
+      const entry = scopes.get(key) || { collegeId, sectionId, rows: 0, termIds: new Set<number>() };
+      entry.rows += 1;
+      const termId = Number(row.AdTermId || 0);
+      if (termId) entry.termIds.add(termId);
+      scopes.set(key, entry);
+    }
+    return [...scopes.values()]
+      .map(entry => ({ collegeId: entry.collegeId, sectionId: entry.sectionId, rows: entry.rows, termIds: [...entry.termIds].sort((a, b) => b - a) }))
+      .sort((a, b) => b.rows - a.rows);
+  },
+
   hasSchedulesForInstructor: async (instructorId: number): Promise<boolean> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("schedules").where("AdInstructorId", "==", instructorId).limit(1).get();
