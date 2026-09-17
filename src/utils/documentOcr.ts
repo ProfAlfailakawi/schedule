@@ -3557,7 +3557,13 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
      الصيغة تُشتقّ الآن من الاسم نفسه بالقانون نفسه، فلا تنفصل عنه أبداً. */
   const facultyKey=identityTokens("هيئة تدريسية").join(" ");
   if(rawClean===facultyKey||rawClean.startsWith(`${facultyKey} `)||rawTokens[0]===identityTokens("هيئة")[0]){
-    const faculty=catalogue.filter(item=>item.normalized===facultyKey||item.normalized.startsWith(`${facultyKey} `));
+    /* ── السجل يكتبها كما يشاء: «هيئة تدريسية»، «هيئة التدريس»، «هيئة تدريس» ──
+       المقارنة بالعبارة كاملة تشترط أن يكتب السجل ما يكتبه المستند حرفاً بحرف،
+       وهو شرطٌ لا يُوفى: القسم سجّلها مرة بصيغة والوثيقة تطبعها بأخرى، فتبقى
+       الخانة فارغة رغم أن المعنى واحد لا ثاني له. وكلمة «هيئة» لا تبدأ بها
+       أسماء الناس، فصدرُها وحده يكفي للتعرّف على السجل. */
+    const facultyHead=identityTokens("هيئة")[0];
+    const faculty=catalogue.filter(item=>item.normalized===facultyKey||item.normalized.startsWith(`${facultyKey} `)||item.tokens[0]===facultyHead);
     const sole=(pool:typeof faculty)=>{
       const ids=new Set(pool.map(item=>Number(item.person.AdInstructorId)));
       return ids.size===1?pool[0]:undefined;
