@@ -8,6 +8,35 @@
 > (تخطٍّ صريح موصوف للاختبارات المعتمدة على اللقطة الخاصة). البنود 1 و3 و8 ما زالت
 > مؤجّلة وتحتاج قرار المالك؛ التفاصيل أدناه.
 
+---
+
+## FIXED (2026-09-17) — Path traversal / arbitrary file read on `/landing/*` — **HIGH**
+
+- **File/line:** `server.ts:11886` (the `/landing/` sub-asset handler inside the
+  landing middleware at `server.ts:11876`).
+- **Severity:** HIGH — unauthenticated arbitrary file read. This middleware runs
+  **before** the `/api` auth stack and serves the public landing page, so no
+  session is required to reach it.
+- **The bug:** the handler computed
+  `const sub = req.path.slice("/landing/".length)` and then
+  `path.join(process.cwd(), "…/landing", sub)` and `res.sendFile`d the result if
+  it existed. Express does **not** dot-segment-normalize `req.path` (verified:
+  a raw request to `/landing/../../server.ts` yields `req.path ===
+  "/landing/../../server.ts"`), so `sub` could be `../../server.ts` and
+  `path.join(cwd, "public/landing", "../../server.ts")` resolves to
+  `<repo>/server.ts`. `fs.existsSync`/`isFile` passed and the file was sent —
+  giving any anonymous caller read access to source, `.env`-adjacent files, service
+  account material, etc. (Browsers normalize `..`, but `curl --path-as-is` / any
+  raw HTTP client does not.)
+- **The fix (minimal, backwards-compatible):** resolve the candidate against a
+  fixed base directory with `path.resolve` and require containment
+  (`subFile === landingBase || subFile.startsWith(landingBase + path.sep)`) before
+  serving. Legitimate assets (which never contain `..`) resolve inside the base and
+  are served unchanged; traversal attempts fall through to the landing shell.
+  Verified: the exact payload above now returns `contained === false`.
+- **Validation:** `npx tsc --noEmit` → exit 0 (no new type errors); behavioral
+  proof of both the vuln and the fix run with the real `express`.
+
 ## 0) تدوير كلمة سر المدير القديمة — **إجراء مالك عاجل (اكتُشف 2026-09-11)**
 - كانت كلمة سر حساب `admin` الحقيقية مكتوبة نصاً صريحاً في أربعة ملفات مُلتزَمة:
   `tests/run-tests.ts`، `tests/credential-audit.ts`، `docs/LEGACY_PARITY_MATRIX.md`، `docs/FIRESTORE_IMPORT.md`.

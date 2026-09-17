@@ -11885,8 +11885,13 @@ async function startServer() {
     // Sub-assets under /landing/ (e.g. css/js/images)
     if (req.path.startsWith("/landing/") && req.path.length > "/landing/".length) {
       const sub = req.path.slice("/landing/".length);
-      const subFile = path.join(process.cwd(), isProduction ? "dist/landing" : "public/landing", sub);
-      if (fs.existsSync(subFile) && fs.statSync(subFile).isFile()) {
+      // req.path is not dot-segment normalized, so a request such as
+      // /landing/../../server.ts would otherwise escape the landing directory
+      // and serve arbitrary files. Resolve the candidate and require that it
+      // stays strictly inside the landing base directory before serving it.
+      const landingBase = path.resolve(process.cwd(), isProduction ? "dist/landing" : "public/landing");
+      const subFile = path.resolve(landingBase, sub);
+      if ((subFile === landingBase || subFile.startsWith(landingBase + path.sep)) && fs.existsSync(subFile) && fs.statSync(subFile).isFile()) {
         return res.sendFile(subFile);
       }
     }
