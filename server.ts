@@ -11887,11 +11887,15 @@ async function startServer() {
       const sub = req.path.slice("/landing/".length);
       // req.path is not dot-segment normalized, so a request such as
       // /landing/../../server.ts would otherwise escape the landing directory
-      // and serve arbitrary files. Resolve the candidate and require that it
-      // stays strictly inside the landing base directory before serving it.
+      // and serve arbitrary files. Reject any traversal or absolute path up
+      // front, then resolve the candidate and require that it stays strictly
+      // inside the landing base directory before serving it (defense in depth).
       const landingBase = path.resolve(process.cwd(), isProduction ? "dist/landing" : "public/landing");
-      const subFile = path.resolve(landingBase, sub);
-      if ((subFile === landingBase || subFile.startsWith(landingBase + path.sep)) && fs.existsSync(subFile) && fs.statSync(subFile).isFile()) {
+      const normalizedSub = path.normalize(sub);
+      const hasTraversal = sub.includes("..") || normalizedSub.startsWith("..") || path.isAbsolute(sub) || sub.includes("\0");
+      const subFile = path.resolve(landingBase, normalizedSub);
+      const isContained = subFile === landingBase || subFile.startsWith(landingBase + path.sep);
+      if (!hasTraversal && isContained && fs.existsSync(subFile) && fs.statSync(subFile).isFile()) {
         return res.sendFile(subFile);
       }
     }
