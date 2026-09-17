@@ -57,7 +57,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { instructorCleanName, foldInstructorText, registryCandidatesFor } from "./src/utils/instructorIdentity";
+import { instructorCleanName, foldInstructorText, instructorIdentityTokens, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
@@ -7446,6 +7446,17 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(!preferredInstructorIds.size){
     for(const id of await collegeFallbackInstructorIds(collegeId))preferredInstructorIds.add(id);
   }
+  /* ── نطاق المطابقة هو نطاق النشر نفسه ─────────────────────────────────────
+     القسم الواحد يُدرَّس في مواقع الفرع الثلاثة، وقانون النشر يقرأ أهله من
+     المواقع كلها. لكن المطابقة كانت تقرأ نطاق هذا الموقع وحده، فيضيق عليها
+     ما يتسع عند الحفظ: سجل «هيئة تدريسية» المسجّل باسم القسم في موقع آخر لا
+     يُرى، ويخرج الاسم غير محسوم رغم أنه مسجّل عند القسم نفسه. تُقرأ اللقطة
+     مرة واحدة هنا، فيتطابق ما يراه المطابق وما يقبله النشر وما تعرضه
+     المعاينة. */
+  const departmentMembership=await departmentInstructorIdSet(
+    await Repository.getColleges() as any, await Repository.getSections() as any, collegeId, sectionId, termId,
+  );
+  for(const id of departmentMembership)preferredInstructorIds.add(id);
   const instructors=allInstructors;
   /* A course-specific roster is only a tie-breaker for NAME evidence. It never
      creates identity by itself: the observed PDF still has to prove two/three
@@ -7626,6 +7637,23 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const describeCandidate=(person:any)=>`«${String(person?.AdInstructorName||"").trim()}»${civilOf(person)?` (${civilOf(person)})`:""}`;
   const unresolvedInstructorDiagnosis=(row:any):{method:string;reason:string}=>{
     const written=String(row?.sourceInstructorText||"");
+    /* ── «هيئة تدريسية» ليست شخصاً، بل سجلّ يملكه كل قسم لنفسه ───────────────
+       حين تُطبع في خانة الأستاذ ولا يُحسم شيء، فالسبب ليس غموض اسم: إما أن
+       القسم لا سجلّ له بهذا المعنى، أو أن عدة أقسام تحمل سجلات متشابهة ولا
+       يجوز للنظام أن ينسب صفوف هذا القسم إلى سجلّ قسم آخر. ويُقال ذلك صراحةً
+       بدل رسالة «أضِفه برقمه المدني» التي لا تنطبق على سجلّ بلا شخص. */
+    const placeholderKey=instructorIdentityTokens("هيئة تدريسية").join(" ");
+    const writtenKey=instructorIdentityTokens(written).join(" ");
+    if(writtenKey===placeholderKey||writtenKey.startsWith(`${placeholderKey} `)){
+      const records=(instructors as any[]).filter(person=>{
+        const key=instructorIdentityTokens(String(person.AdInstructorName||"")).join(" ");
+        return key===placeholderKey||key.startsWith(`${placeholderKey} `);
+      });
+      const mine=records.filter(person=>departmentMembership.has(Number(person.AdInstructorId)));
+      if(!records.length)return{method:"UNREGISTERED",reason:"«هيئة تدريسية» ليست شخصاً بل سجلّ يملكه القسم. لا يوجد في النظام سجلّ بهذا المعنى بعد، فاختر أستاذاً فعلياً للصف أو اترك الشعبة للمراجعة."};
+      if(mine.length>1)return{method:"DUPLICATE_REGISTRATION",reason:`سجلّ «هيئة تدريسية» مكرّر داخل هذا القسم: ${mine.map(describeCandidate).join("، ")}. احذف المكرر من شاشة الأساتذة أو اختر السجل الصحيح.`};
+      return{method:"AMBIGUOUS",reason:`«هيئة تدريسية» مسجّلة في النظام ${records.length===1?"مرة واحدة لقسم آخر":`${records.length} مرات لأقسام أخرى`}، ولا سجلّ لهذا القسم بعد. النظام لا ينسب صفوفك إلى سجلّ قسم آخر من تلقائه — اختر السجل المقصود من القائمة مرة واحدة، فيصير بعدها من أهل قسمك.`};
+    }
     const {exact,partial}=registryCandidatesFor(written,instructors as any);
     if(exact.length>=2){
       return{method:"DUPLICATE_REGISTRATION",reason:`هذا الاسم مسجّل ${exact.length===2?"مرتين":`${exact.length} مرات`} بسجلات مختلفة: ${exact.map(describeCandidate).join("، ")}. النظام لا يختار بين سجلّين — احذف المكرر من شاشة الأساتذة أو اختر السجل الصحيح من القائمة.`};
@@ -7791,9 +7819,6 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
   }
   const rows=assignAuthoritySections(safeDraftRows(parsed.rows,collegeId,sectionId,termId));
-  /* لقطة واحدة تُقرأ مرة: يحكم بها فحص النشر وتُرسل هي نفسها إلى المعاينة. */
-  const [scopeColleges,scopeSections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
-  const departmentMembership=await departmentInstructorIdSet(scopeColleges as any,scopeSections as any,collegeId,sectionId,termId);
   const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true,departmentInstructorIds:departmentMembership}):[];
   /* Conflict errors and structural errors block publishing until resolved */
   const parserNotes=[...new Set(parsed.issues)];
