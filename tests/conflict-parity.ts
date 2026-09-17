@@ -151,5 +151,28 @@ compare("لا أهداف", [], corpus(30));
 compare("لا كون", corpus(10), []);
 compare("كلاهما فارغ", [], []);
 
+// ── 11 · «هيئة تدريسية» معنى مشترك لا جسد يُحجز مرتين ─────────────────────
+{
+  const shared = 777;
+  const rows = [1, 2, 3].map((n, at) => ({
+    id: n, AdTermId: 10, AdCourseId: 100 + n, SCode: `50${n}`, AdInstructorId: shared,
+    AdRoomCode: `01${n}B`, AdRoomHall: `0${n}`, fstarttime: "08:00", fendtime: "09:00",
+    fsunday: true, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+    AdCollegeId: 1, AdSectionId: 1 + at * 0,
+  })) as unknown as FSchedule[];
+  compare("سجلّ مشترك في مواعيد متداخلة", rows, rows, { placeholderInstructorIds: [shared] });
+  checks += 1;
+  const exempt = findConflicts(rows, rows, { placeholderInstructorIds: [shared] });
+  if (exempt.some(item => item.type === "instructor")) fail("سجلّ «هيئة تدريسية»", "حُسبت المواعيد حجزاً مزدوجاً رغم استثنائها");
+  checks += 1;
+  const person = findConflicts(rows, rows);
+  if (!person.some(item => item.type === "instructor")) fail("أستاذ حقيقي", "لم يُكتشف الحجز المزدوج بعد رفع الاستثناء");
+  // القاعة تبقى محسوبة: نفس السجلّ في القاعة نفسها تعارضٌ حقيقي.
+  const sameRoom = rows.map(row => ({ ...row, AdRoomCode: "011B", AdRoomHall: "01" })) as FSchedule[];
+  checks += 1;
+  const roomHit = findConflicts(sameRoom, sameRoom, { placeholderInstructorIds: [shared] });
+  if (!roomHit.some(item => item.type === "room")) fail("قاعة واحدة", "استثناء الأستاذ ابتلع تعارض القاعة");
+}
+
 console.log(`\n${failures ? "\x1b[31m" : "\x1b[32m"}برهان تكافؤ كشف التعارض: ${checks - failures}/${checks} حالة متطابقة تماماً\x1b[0m`);
 if (failures) { console.error("الفهرسة لا تطابق المسح الشامل — لا تُعتمد."); process.exit(1); }

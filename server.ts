@@ -1405,14 +1405,31 @@ function branchOwnScopes(colleges:any[],sections:any[],collegeId:number,sectionI
  * الصفوف المعروضة لم تُحفظ بعد فلا معرّفات لها، و`safeDraftRows` يعطيها معرّفات
  * سالبة كي لا تصطدم بمعرّفات صفوف الفصل الحقيقية فيُقرأ تعارضٌ حقيقي على أنه
  * الصف نفسه. */
+/* ── معرّفات «هيئة تدريسية» في السجل ──────────────────────────────────────────
+   سجلٌّ اسمه هذا ليس شخصاً بل معنى تتشاركه الجامعة: تُكتب حين لا يكون للشعبة
+   اسم مدرّس ثابت. فلا يُقاس عليه الحجز المزدوج، وإلا صار كل قسمين استعملاه في
+   ساعة واحدة «تعارضاً» لا يملك أحد إصلاحه. وكلمة «هيئة» لا يُسمّى بها الناس،
+   فصدرُ الاسم وحده يعرّف السجل مهما كتبت بقيته. */
+function placeholderInstructorIds(instructors: Array<{ AdInstructorId?: unknown; AdInstructorName?: unknown }>): Set<number> {
+  const head = instructorIdentityTokens("هيئة")[0];
+  const ids = new Set<number>();
+  for (const person of instructors || []) {
+    const tokens = instructorIdentityTokens(String(person?.AdInstructorName || ""));
+    const id = Number(person?.AdInstructorId || 0);
+    if (id > 0 && tokens[0] === head) ids.add(id);
+  }
+  return ids;
+}
+
 function blockingImportConflicts(
   targetRows:any[],termRows:any[],collegeId:number,sectionId:number,
   ownScopeList:Array<{collegeId:number;sectionId:number}>,
+  placeholderIds?:Set<number>,
 ){
   const ownScopes=new Set<string>([`${collegeId}:${sectionId}`,...ownScopeList.map(scope=>`${scope.collegeId}:${scope.sectionId}`)]);
   const external=termRows.filter(item=>!ownScopes.has(`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`));
   const universe=[...external,...targetRows];
-  return findConflicts(targetRows as any,universe as any)
+  return findConflicts(targetRows as any,universe as any,{placeholderInstructorIds:placeholderIds})
     .filter((item:any)=>item.severity==="high"||item.type==="duplicate");
 }
 
@@ -1557,7 +1574,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
      * ويرفض الصف بحجّة «حجز مزدوج لأستاذ المقرر»، والحقيقة أنه يتعارض مع نفسه
      * قبل أن يُستبدل. ومواقع القسم كلها ستُستبدل بهذه العملية نفسها، فلا تدخل
      * فحص التعارض. أما بقية الأقسام فتبقى كما هي: حجزها حقيقي ويُحترم. */
-    const conflicts = blockingImportConflicts(rows, currentSchedules, collegeId, sectionId, departmentScopes);
+    const conflicts = blockingImportConflicts(rows, currentSchedules, collegeId, sectionId, departmentScopes, placeholderInstructorIds(instructors as any));
     conflicts.slice(0, 20).forEach((item:any) => errors.push(item.message || item.detail || "يوجد تعارض يمنع الاعتماد"));
   }
   return [...new Set(errors)].slice(0, 30);
@@ -3452,7 +3469,8 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const all=termRowsRaw.map(item=>canonicalizeHistoricalLocationForRuntime(item,registry)).filter(item=>item.id!==excludeId);
   const style=await departmentStyle(candidate);
   const raw=findConflicts([candidateCanonical],all,{doorwayMinutes:style.doorway,
-    cohortPairs:style.cohort,cohortSize:style.cohortSize});
+    cohortPairs:style.cohort,cohortSize:style.cohortSize,
+    placeholderInstructorIds:placeholderInstructorIds(await Repository.getInstructors() as any)});
 
   /* ── مَن يقف في المكان الآخر ────────────────────────────────────────────
    *
@@ -4177,12 +4195,13 @@ app.post("/api/schedules/import-preflight", requirePermission(7), async (req: Au
   try{rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);}
   catch(error:any){res.status(400).json({error:String(error?.message||"تعذّر فحص الصفوف")});return;}
   if(!rows.length){res.json({conflicts:[]});return;}
-  const [colleges,sections,termRows]=await Promise.all([
-    Repository.getColleges(),Repository.getSections(),Repository.getSchedulesByScope({termId}),
+  const [colleges,sections,termRows,allInstructors]=await Promise.all([
+    Repository.getColleges(),Repository.getSections(),Repository.getSchedulesByScope({termId}),Repository.getInstructors(),
   ]);
   const conflicts=blockingImportConflicts(
     rows,termRows as any[],collegeId,sectionId,
     branchOwnScopes(colleges as any,sections as any,collegeId,sectionId),
+    placeholderInstructorIds(allInstructors as any),
   );
   /* ── الموضع يُقرأ من الترتيب الحالي، لا من المعرّف ──────────────────────────
      المعرّفات السالبة تُمنح مرة واحدة ثم تبقى مع الصف، فحذف صف من المعاينة
