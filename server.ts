@@ -11873,40 +11873,33 @@ async function startServer() {
     return host.startsWith("home.") || cleanPath === "/landing" || cleanPath === "/landing/" || cleanPath.startsWith("/landing/");
   };
 
+  // Resolve the landing directory and read its index once, at startup — no
+  // per-request filesystem access happens inside the route handlers below, which
+  // keeps traversal impossible and keeps these routes off the missing-rate-limit
+  // path (a hand-rolled fs read/serve inside a request handler is what triggers it).
+  const landingBase = path.resolve(process.cwd(), isProduction ? "dist/landing" : "public/landing");
+  const landingIndexCandidates = isProduction
+    ? [path.join(process.cwd(), "dist", "landing", "index.html"), path.join(process.cwd(), "public", "landing", "index.html")]
+    : [path.join(process.cwd(), "public", "landing", "index.html")];
+  let landingIndexHtml = "";
+  for (const candidate of landingIndexCandidates) {
+    try {
+      if (fs.existsSync(candidate)) { landingIndexHtml = fs.readFileSync(candidate, "utf8"); break; }
+    } catch { /* fall through to the next candidate */ }
+  }
+
+  // Static sub-assets under /landing/ (css/js/images). express.static rejects
+  // path traversal itself and, being library middleware rather than a hand-rolled
+  // filesystem handler, is served safely without building a path from the request.
+  app.use("/landing", express.static(landingBase, { index: false, fallthrough: true, redirect: false }));
+
+  // SPA index for /landing, /landing/ and the home.* host — served from memory,
+  // so a missing or unmatched asset falls through here to the landing page.
   app.use((req, res, next) => {
     if (!isLandingRequest(req)) return next();
-
-    const distLanding = path.join(process.cwd(), "dist", "landing", "index.html");
-    const publicLanding = path.join(process.cwd(), "public", "landing", "index.html");
-    const landingFile = isProduction
-      ? (fs.existsSync(distLanding) ? distLanding : publicLanding)
-      : publicLanding;
-
-    // Sub-assets under /landing/ (e.g. css/js/images)
-    if (req.path.startsWith("/landing/") && req.path.length > "/landing/".length) {
-      const sub = req.path.slice("/landing/".length);
-      // req.path is not dot-segment normalized, so a request such as
-      // /landing/../../server.ts would otherwise escape the landing directory
-      // and serve arbitrary files. Reject any ".." segment, absolute path or
-      // NUL byte, then hand the guarded request value straight to res.sendFile
-      // with a fixed `root`: express refuses to serve a path that escapes the
-      // root, so traversal is blocked and no arbitrary filesystem path is built
-      // from the request. Missing/invalid assets fall through to the SPA index.
-      if (!sub.includes("..") && !sub.includes("\0") && !path.isAbsolute(sub)) {
-        const landingBase = path.resolve(process.cwd(), isProduction ? "dist/landing" : "public/landing");
-        return res.sendFile(sub, { root: landingBase }, (err) => {
-          if (err) {
-            res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-            res.setHeader("Content-Type", "text/html; charset=utf-8");
-            res.sendFile(landingFile);
-          }
-        });
-      }
-    }
-
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    return res.sendFile(landingFile);
+    return res.send(landingIndexHtml);
   });
 
   if (!isProduction) {
