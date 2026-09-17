@@ -3563,7 +3563,18 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
       return ids.size===1?pool[0]:undefined;
     };
     const inCourse=coursePreferredIds?.size?faculty.filter(item=>coursePreferredIds.has(Number(item.person.AdInstructorId))):[];
-    const hit=sole(inCourse)||sole(faculty.filter(item=>item.preferred))||sole(faculty);
+    /* ── «هيئة تدريسية» معنى واحد، لا أشخاص متعددون ─────────────────────────
+       حين لا يكون للشعبة اسم دكتور ثابت يُكتب هذا المعنى في خانة الأستاذ. فهو
+       هوية واحدة يتشاركها الجميع، وتقارير القسم تبقى قسمه لأن الصف نفسه يحمل
+       قسمه لا الشخص. ولذلك تعدّد السجلات هنا ليس التباساً بين شخصين — وهو
+       الحالة التي يجب أن تُترك للإنسان — بل تكرارٌ لمعنى واحد. فبعد نطاق
+       المقرر ثم نطاق القسم، يُؤخذ أقدم سجل (الأصغر معرّفاً) قاعدةً ثابتة لا
+       تتغيّر بين قراءتين، ولا تُترك الخانة فارغة لأن الإدارة لم تدمج نسخاً
+       متطابقة الاسم بعد. */
+    const canonical=(pool:typeof faculty)=>pool.length
+      ?[...pool].sort((a,b)=>Number(a.person.AdInstructorId)-Number(b.person.AdInstructorId))[0]
+      :undefined;
+    const hit=sole(inCourse)||sole(faculty.filter(item=>item.preferred))||canonical(faculty.filter(item=>item.preferred))||canonical(faculty);
     return hit?{person:hit.person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2}:undefined;
   }
   if(rawClean.includes(`عضو ${identityTokens("هيئة")[0]}`)||/شاغر|منتدب/.test(rawClean))return undefined;
