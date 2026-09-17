@@ -7645,9 +7645,11 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const placeholderKey=instructorIdentityTokens("هيئة تدريسية").join(" ");
     const writtenKey=instructorIdentityTokens(written).join(" ");
     if(writtenKey===placeholderKey||writtenKey.startsWith(`${placeholderKey} `)){
+      const placeholderHead=instructorIdentityTokens("هيئة")[0];
       const records=(instructors as any[]).filter(person=>{
-        const key=instructorIdentityTokens(String(person.AdInstructorName||"")).join(" ");
-        return key===placeholderKey||key.startsWith(`${placeholderKey} `);
+        const tokens=instructorIdentityTokens(String(person.AdInstructorName||""));
+        const key=tokens.join(" ");
+        return key===placeholderKey||key.startsWith(`${placeholderKey} `)||tokens[0]===placeholderHead;
       });
       const mine=records.filter(person=>departmentMembership.has(Number(person.AdInstructorId)));
       if(!records.length)return{method:"UNREGISTERED",reason:"«هيئة تدريسية» ليست شخصاً بل سجلّ يملكه القسم. لا يوجد في النظام سجلّ بهذا المعنى بعد، فاختر أستاذاً فعلياً للصف أو اترك الشعبة للمراجعة."};

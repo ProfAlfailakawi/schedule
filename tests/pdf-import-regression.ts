@@ -756,3 +756,18 @@ assert.equal(
   matchInstructorIdentity("هيئه تدريسيه", duplicatedPlaceholders, new Set([970]))?.person.AdInstructorId,
   970,
 );
+
+
+/* صيغة السجل ليست شرطاً على المستند: «هيئة التدريس» و«هيئة تدريس» و«هيئة
+   تدريسية» معنى واحد، وكلمة «هيئة» لا يُسمّى بها الناس. */
+for (const registered of ["هيئة التدريس", "هيئة تدريس", "هيئه تدريسيه", "هيئة تدريسية بالقسم"]) {
+  const registry = [{ AdInstructorId: 811, AdInstructorCivil: "", AdInstructorName: registered, AdInstructorMobile: "" }] as any;
+  const hit = matchInstructorIdentity("هيئة تدريسية", registry);
+  assert.equal(hit?.person.AdInstructorId, 811, `registry spelling: ${registered}`);
+  assert.equal(hit?.method, "FACULTY_IDENTITY");
+}
+/* ولا يبتلع هذا الباب اسم شخص: «هيفاء» ليست «هيئة». */
+assert.equal(
+  matchInstructorIdentity("هيئة تدريسية", [{ AdInstructorId: 812, AdInstructorCivil: "", AdInstructorName: "هيفاء سالم", AdInstructorMobile: "" }] as any),
+  undefined,
+);
