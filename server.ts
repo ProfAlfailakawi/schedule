@@ -1848,7 +1848,7 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
  * «admin» يعيد عرض المدير (المستخدم الجذر) الذي يملك كل الشاشات — وهو مدخل
  * البيئة. وهو مقصورٌ على البيئة التجريبية: لا رفعَ صلاحيةٍ في جلسةٍ حقيقية.
  */
-app.post("/api/demo/role", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/demo/role", rateLimitPublic, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
   if (!sessionId) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }

@@ -114,6 +114,8 @@ check(state.scheduleComments.some(c => c.origin === "department"), "ملاحظة
 
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 check(server.includes('app.post("/api/demo/role"'), "الخادم يفتح مسار تبديل الصفة");
+check(server.includes('app.post("/api/demo/role", rateLimitPublic,'),
+  "ومسارُ التبديل محدودُ المعدّل — لا يُترك مساراً مصادَقاً بلا حدّ");
 check(server.includes("Repository.createSession(sessionId, targetId, DEMO_SESSION_TTL_MS)"),
   "التبديل يعيد ربط الجلسة بحساب الصفة المطلوبة");
 check(server.includes("if (!Repository.isDemoRequest())") && server.slice(server.indexOf('app.post("/api/demo/role"')).includes("isDemoRequest"),
