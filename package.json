@@ -7,7 +7,7 @@
     "dev": "node scripts/stamp-build.mjs --ensure && tsx server.ts",
     "build": "npm run verify:pwa && npm run audit:brand && npm run audit:guide && npm run test:guide && npm run test:guide:perf && node scripts/stamp-build.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node scripts/stamp-sw.mjs",
     "start": "NODE_ENV=production node dist/server.cjs",
-    "test": "npm run test:roles && npm run test:approval && npm run test:changes && npm run test:report-approval && npm run test:locations && npm run test:pdf-import && npm run test:gemini-layer && npm run test:conflicts && npm run test:behavior && npm run test:data && npm run test:credentials && npm run test:parity",
+    "test": "npm run test:roles && npm run test:approval && npm run test:changes && npm run test:report-approval && npm run test:approval-integrity && npm run test:locations && npm run test:pdf-import && npm run test:gemini-layer && npm run test:conflicts && npm run test:behavior && npm run test:data && npm run test:credentials && npm run test:parity",
     "test:behavior": "tsx tests/run-tests.ts",
     "test:data": "python3 tests/legacy-data-audit.py",
     "test:credentials": "tsx tests/credential-audit.ts",
@@ -33,7 +33,8 @@
     "test:roles": "tsx tests/role-guard-audit.ts",
     "test:approval": "tsx tests/approval-workflow-audit.ts",
     "test:changes": "tsx tests/schedule-changes-audit.ts",
-    "test:report-approval": "tsx tests/report-approval-audit.ts"
+    "test:report-approval": "tsx tests/report-approval-audit.ts",
+    "test:approval-integrity": "tsx tests/approval-integrity-audit.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.7.1",

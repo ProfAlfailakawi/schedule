@@ -3951,15 +3951,44 @@ export const Repository = {
    */
   getScheduleCommentsByScope: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleComment[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      /**
+       * الترتيب عند قاعدة البيانات، لا بعد القصّ.
+       *
+       * القصُّ بحدٍّ أعلى ثم الترتيب في الذاكرة يعني أن أيَّ ألفٍ تصل هي التي
+       * تُرتَّب — بترتيب المفاتيح لا بترتيب الزمن. وعلى هذه القائمة يُبنى عدُّ
+       * الملاحظات الذي يمنع الإرسال ويسمح به، فقصٌّ عشوائيٌّ فيها يعني قراراً
+       * عشوائياً. فليكن الترتيب أولاً، ثم يقع الحدّ على الأحدث.
+       */
       const snap = await firestoreDb.collection("scheduleComments")
         .where("AdCollegeId", "==", Number(collegeId))
         .where("AdSectionId", "==", Number(sectionId))
         .where("AdTermId", "==", Number(termId))
-        .limit(1000).get();
-      return snap.docs.map(doc => doc.data() as ScheduleComment).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        .orderBy("createdAt", "desc")
+        .limit(2000).get();
+      return snap.docs.map(doc => doc.data() as ScheduleComment);
     }
     return (db.scheduleComments || [])
       .filter(row => Number(row.AdCollegeId) === Number(collegeId) && Number(row.AdSectionId) === Number(sectionId) && Number(row.AdTermId) === Number(termId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  /**
+   * ملاحظات الفصل كله، لكل الأقسام.
+   *
+   * صندوق وارد التسجيل يعرض عدّاد الملاحظات لكل قسمٍ في الكلية قبل أن يُفتح
+   * قسمٌ واحد. وقراءتُه قسماً قسماً تعني رحلةً لكل قسم في كل فتحةِ شاشة، وهي
+   * شاشةٌ تُفتح عشرين مرّةً في اليوم. فيُقرأ الفصل مرّةً ويُوزَّع في الذاكرة.
+   */
+  getScheduleCommentsForTerm: async (termId: number): Promise<ScheduleComment[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("scheduleComments")
+        .where("AdTermId", "==", Number(termId))
+        .orderBy("createdAt", "desc")
+        .limit(5000).get();
+      return snap.docs.map(doc => doc.data() as ScheduleComment);
+    }
+    return (db.scheduleComments || [])
+      .filter(row => Number(row.AdTermId) === Number(termId))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
@@ -3971,7 +4000,23 @@ export const Repository = {
     return (db.scheduleComments || []).find(row => row.id === id);
   },
 
-  updateScheduleComment: async (id: string, fields: Partial<ScheduleComment>): Promise<ScheduleComment | undefined> => {
+  /**
+   * ── المسح فعلٌ مقصود، لا غيابُ قيمة ───────────────────────────────────────
+   *
+   * كانت هذه الدالّة تُسقط كل حقلٍ قيمتُه `undefined` قبل الكتابة — وهو صوابٌ
+   * لنداءٍ يريد أن يترك حقلاً كما هو، وخطأٌ تامٌّ لنداءٍ يريد أن يمحوه. والنداء
+   * الذي يمحو موجودٌ فعلاً: إصرارُ التسجيل على ملاحظةٍ ردّ عليها القسم يمحو
+   * الردّ لتعود الخانة برتقاليةً تنتظر. فكان الردّ يبقى، وتبقى الخانة رماديةً
+   * إلى الأبد، ويُعدّ الإصرارُ قبولاً في كل عدٍّ بعده.
+   *
+   * فصار المحوُ يُطلب صراحةً بقائمة أسماء، ويبقى `undefined` معناه «لا تمسّ».
+   * والفرق بين النيّتين لا يُستنتج من شكل القيمة؛ يُقال.
+   */
+  updateScheduleComment: async (
+    id: string,
+    fields: Partial<ScheduleComment>,
+    clearFields: Array<keyof ScheduleComment> = [],
+  ): Promise<ScheduleComment | undefined> => {
     const clean: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(fields)) if (value !== undefined) clean[key] = value;
     if (firestoreDb && !demoSandboxContext.getStore()) {
@@ -3979,13 +4024,17 @@ export const Repository = {
       const doc = await ref.get();
       if (!doc.exists) return undefined;
       const updated = { ...(doc.data() as ScheduleComment), ...clean } as ScheduleComment;
+      for (const key of clearFields) delete updated[key];
+      /* كتابةٌ كاملة لا دمج: الدمج لا يحذف مفتاحاً، والحذف هو المقصود هنا. */
       await ref.set(updated);
       return updated;
     }
     if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
     const index = db.scheduleComments.findIndex(row => row.id === id);
     if (index === -1) return undefined;
-    db.scheduleComments[index] = { ...db.scheduleComments[index], ...clean } as ScheduleComment;
+    const merged = { ...db.scheduleComments[index], ...clean } as ScheduleComment;
+    for (const key of clearFields) delete merged[key];
+    db.scheduleComments[index] = merged;
     saveDatabase();
     return db.scheduleComments[index];
   },

@@ -44,6 +44,44 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "_comment": "ملاحظات قسمٍ في فصل، الأحدث أولاً. الترتيب عند قاعدة البيانات لا بعد القصّ: على هذه القائمة يُبنى عدُّ الملاحظات الذي يمنع إرسال الجدول ويسمح به.",
+      "collectionGroup": "scheduleComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "AdCollegeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "AdSectionId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "AdTermId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "_comment": "ملاحظات الفصل كله لصندوق وارد التسجيل: قراءةٌ واحدة تُوزَّع على الأقسام، بدل رحلةٍ لكل قسم في كل فتحةِ شاشة.",
+      "collectionGroup": "scheduleComments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "AdTermId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

@@ -563,7 +563,18 @@ export default function AdminUsers({
         setForms(d[0]);
         setPerms(d[1]);
       }
+      /**
+       * النطاقات تُقرأ في شاشة المستخدمين أيضاً، لا في شاشة النطاقات وحدها.
+       *
+       * صفةُ العميد نطاقُها كليةٌ كاملة، وحقلُ الكليات في نموذج التعديل يُملأ
+       * من هذه الصفوف. فلو لم تُقرأ هنا لفُتح نموذجُ عميدٍ بكلياتٍ فارغة —
+       * وحفظٌ واحد بعده يمحو نطاقه كلّه دون أن يقصد أحد.
+       */
       if (mode === "scopes") setAssigns(await api("/api/user-scopes"));
+      /* وفي شاشة المستخدمين تُقرأ بتسامح: حسابٌ يدير المستخدمين ولا يملك شاشة
+         النطاقات يبقى قادراً على عمله، ويفقد ملءَ حقل الكليات وحده — لا
+         الشاشة كلها. */
+      if (mode === "users") setAssigns(await api("/api/user-scopes").catch(() => []));
       if (mode === "audit") setLogs(await api("/api/audit-logs?limit=500"));
     } catch (e: any) {
       setError(e.message);

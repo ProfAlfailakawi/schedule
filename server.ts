@@ -1095,6 +1095,25 @@ function isScopeAllowed(req: AuthenticatedRequest, collegeId: number, sectionId:
   if (sectionId === 0) {
     return req.scopes.some(s => s.AdCollegeId === collegeId);
   }
+  /**
+   * ── «الكلية كلها»: صفٌّ واحد بقسم صفر ───────────────────────────────────
+   *
+   * صفوف النطاق تُكتب دائماً بقسمٍ حقيقي — شاشة النطاقات ترفض الصفر صراحةً —
+   * فالصفر لم يكن له معنى في هذا الجدول، وهذه الدالّة لم تكن تعرفه: كانت تطلب
+   * تطابقاً حرفياً على رقم القسم، فصفٌّ بقسمٍ صفر لا يُجيز قسماً واحداً.
+   *
+   * والصفات التي نطاقها كليةٌ كاملة — العميد ومساعده وعمداء التسجيل — تحتاج
+   * أن تقرأ كل أقسام كليتها، بما يُنشأ منها غداً. فكتابةُ صفٍّ لكل قسم كانت
+   * ستشيخ عند أول قسمٍ جديد، ويعود المدير ليضيفه يدوياً.
+   *
+   * فصار الصفر يعني «الكلية كلها» — لكن لهذه الصفات وحدها. والقيد مقصود: صفٌّ
+   * بقسمٍ صفر قد يكون موجوداً في بيانات سنواتٍ مضت لحسابٍ لا علاقة له بهذا،
+   * وتوسيعُ صلاحيته لأنه صادف الشكلَ نفسه توسيعٌ صامت لا يقبله أحد.
+   */
+  const scopeMode = roleDefinition(req.user.Role).scopeMode;
+  if (scopeMode === "college" || scopeMode === "allColleges") {
+    if (req.scopes.some(s => s.AdCollegeId === collegeId && Number(s.AdSectionId) === 0)) return true;
+  }
   return req.scopes.some(s => s.AdCollegeId === collegeId && s.AdSectionId === sectionId);
 }
 
@@ -4637,6 +4656,17 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     if (!isScopeAllowed(req, row.AdCollegeId, row.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
     originals.push(row);
   }
+  /* النقل الجماعي يمسّ عدّة صفوفٍ وربّما عدّة أقسام: يكفي قفلُ واحدٍ منها
+     للمنع، ويُقرأ كلُّ نطاقٍ مرّةً لا مرّةً لكل صفّ. */
+  const touchedScopes = new Map<string, { collegeId: number; sectionId: number; termId: number }>();
+  for (const row of originals) {
+    touchedScopes.set(`${row.AdCollegeId}:${row.AdSectionId}:${row.AdTermId}`,
+      { collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId), termId: Number(row.AdTermId) });
+  }
+  for (const scope of touchedScopes.values()) {
+    const moveLock = await scheduleLockRefusal(scope.collegeId, scope.sectionId, scope.termId);
+    if (moveLock) { res.status(409).json({ error: moveLock, code: "schedule-locked" }); return; }
+  }
   const movedIds = new Set(originals.map(r => r.id));
   const candidates = rawMoves.map((move: any, index: number) => {
     const fields: any = {};
@@ -4696,6 +4726,10 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
       return sentence ? `${before?.AdCourseName || `موعد ${row.id}`}: ${sentence}` : "";
     })
     .filter(Boolean).join(" || ") || undefined;
+  /* النقل الجماعي تعديلٌ كأيِّ تعديل: جدولٌ مقبولٌ يعود جولةً جديدة بعده. */
+  for (const scope of touchedScopes.values()) {
+    await noteScheduleMutation(req, scope.collegeId, scope.sectionId, scope.termId, { kind: "edit" });
+  }
   res.json({ success: true, rows: updated });
 });
 
@@ -4809,6 +4843,14 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل قبل الاستيراد." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (!incoming.length) { res.status(400).json({ error: "الملف لا يحتوي مواعيد." }); return; }
+  /* المعاينة مفتوحةٌ دائماً — قراءةُ ملفٍّ ليست كتابةً على الجدول. والكتابة
+     وحدها هي ما يحكمه القفل والموعد. */
+  if (commit) {
+    const importLock = await scheduleLockRefusal(collegeId, sectionId, termId);
+    if (importLock) { res.status(409).json({ error: importLock, code: "schedule-locked" }); return; }
+    const importDeadline = await wholesaleRefusal(collegeId, sectionId, termId, { kind: "import" });
+    if (importDeadline) { res.status(409).json({ error: importDeadline, code: "deadline-wholesale" }); return; }
+  }
 
   const [courses, instructors, existing, registry] = await Promise.all([
     Repository.getCourses(), Repository.getInstructors(),
@@ -4921,7 +4963,14 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
 
   let added = 0;
   for (const row of ready) {
-    try { await Repository.createSchedule(row); added += 1; }
+    try {
+      const created = await Repository.createSchedule(row);
+      added += 1;
+      /* كل صفٍّ يصل الجدول من هنا كأيِّ صفٍّ يُضاف باليد: إن كان بعد توقيع
+         رئيس القسم فهو ينتظر إقراره، وإن كان الجدول مقبولاً فقد عاد جولةً
+         جديدة. والاستيراد لم يكن يقول شيئاً من ذلك، فكان السجلّ يشيخ بصمت. */
+      await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: created });
+    }
     catch (error) { rejected.push({ line: 0, reason: error instanceof Error ? error.message : "تعذر الحفظ", label: row.SCode }); }
   }
   res.json({ preview: false, added, rejected, planted });
@@ -5534,6 +5583,12 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: 
   if (!fromId || !termId || !collegeId || !sectionId) { res.status(400).json({ error: "حدد الأستاذ والفصل." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (fromId === toId) { res.status(400).json({ error: "اختر أستاذاً بديلاً مختلفاً." }); return; }
+  if (commit) {
+    /* استبدالُ أستاذٍ تعديلٌ جزئي، فالموعد لا يمنعه. لكنه تعديلٌ على كل حال،
+       فلا يمرّ وجدولُ القسم بين يدي التسجيل. */
+    const replaceLock = await scheduleLockRefusal(collegeId, sectionId, termId);
+    if (replaceLock) { res.status(409).json({ error: replaceLock, code: "schedule-locked" }); return; }
+  }
 
   const [scopeRows, termRows, instructors] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
@@ -5564,6 +5619,7 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: 
   const toName = toId ? (instructors.find(i => Number(i.AdInstructorId) === toId)?.AdInstructorName || `أستاذ ${toId}`) : "بلا أستاذ";
   const undoVersion = await captureScopeVersion(req, collegeId, sectionId, termId, `قبل استبدال الأستاذ: ${fromName} ← ${toName}`, "manual");
   for (const row of rows) await Repository.updateSchedule(row.id, { AdInstructorId: toId || 0 } as any);
+  if (rows.length) await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "edit" });
   res.json({ preview: false, moved: rows.length, cleared: !toId, compatible: true, undoVersionId: undoVersion?.id });
 });
 
@@ -8159,8 +8215,12 @@ async function noteScheduleMutation(
         }] };
       }
     }
-    /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد. */
-    if (change.kind === "delete" && change.row) {
+    /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد.
+       والشرط قبل البناء لا بعده: بناءُ كائنٍ جديد في كل حذفٍ يجعل فحص التغيير
+       في الأسفل صادقاً دائماً، فتُكتب وثيقةُ الاعتماد ويُبعث تاريخُها في كل
+       حذفِ موعدٍ ولو لم يتغيّر فيها شيء. */
+    if (change.kind === "delete" && change.row
+        && next.pendingAdditions.some(item => Number(item.scheduleId) === Number(change.row.id))) {
       next = { ...next, pendingAdditions: next.pendingAdditions.filter(item => Number(item.scheduleId) !== Number(change.row.id)) };
     }
 
@@ -8202,12 +8262,15 @@ async function wholesaleRefusal(collegeId: number, sectionId: number, termId: nu
   return describeWholesaleRefusal(action, deadline);
 }
 
-/** التعارض المادّي وحده — لا اللائحة — هو ما يُحصى هنا. */
-async function blockingConflictCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
-  const [scopeRows, termRows] = await Promise.all([
-    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
-    Repository.getSchedulesByScope({ termId }),
-  ]);
+/**
+ * التعارض المادّي وحده — لا اللائحة — هو ما يُحصى هنا.
+ *
+ * والعدّ مفصولٌ عن القراءة عمداً: صندوق وارد التسجيل يسأل هذا السؤال عن كل
+ * قسمٍ في الكلية دفعةً واحدة، فلو حملت الدالّة قراءتَها معها لقرأت جدول الفصل
+ * كاملاً مرّةً لكل قسم — عشرين قراءةً كاملة لشاشةٍ تُفتح عشرين مرّةً في اليوم.
+ * فتُقرأ مرّةً في الأعلى، وتُمرَّر.
+ */
+function countBlockingConflicts(scopeRows: any[], termRows: any[]): number {
   const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
   const seen = new Set<string>();
   let count = 0;
@@ -8221,6 +8284,15 @@ async function blockingConflictCount(collegeId: number, sectionId: number, termI
     count += 1;
   }
   return count;
+}
+
+/** السؤال عن قسمٍ واحد، حين لا يكون في اليد جدولُ الفصل أصلاً. */
+async function blockingConflictCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
+  const [scopeRows, termRows] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getSchedulesByScope({ termId }),
+  ]);
+  return countBlockingConflicts(scopeRows, termRows);
 }
 
 /** الملاحظات اللائحية الظاهرة وقت التوقيع — تُسجَّل ولا تمنع. */
@@ -8417,8 +8489,18 @@ app.post("/api/approvals/submit", requireAuth, async (req: AuthenticatedRequest,
   await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const deadline = await readDeadlineFor(approval, termId);
-    const openNotes = (await Repository.getScheduleCommentsByScope(collegeId, sectionId, termId))
-      .filter((note: any) => note.origin === "registrar" && !note.resolved && !note.rebuttal).length;
+    /* ── «عُولجت» تُحسب، ولا تُقرأ من علَم ──────────────────────────────────
+     *
+     * حالة الملاحظة مشتقّةٌ من القيمة الحاضرة في الخانة، لا مخزّنةٌ في صفّها:
+     * فإن تغيّرت الخانة فقد عُولجت، وإن لم تتغيّر فهي تنتظر. ولا شيء في هذا
+     * النظام يرفع علَم `resolved` عن ملاحظةٍ عالجها القسم — ولا ينبغي، لأن
+     * علَماً يُرفع يدوياً يمكن أن يُرفع بلا معالجة.
+     *
+     * فالعدّ هنا من الحالة المحسوبة نفسها التي يراها الطرفان على الشاشة. وقراءة
+     * العلَم بدلاً منها كانت ستُبقي كل ملاحظةٍ «مفتوحة» إلى الأبد: يعالجها
+     * القسم فلا يُسمح له بإعادة الإرسال، ولا سبيل أمامه إلى إغلاقها. */
+    const openNotes = (await notesWithState(collegeId, sectionId, termId))
+      .filter(note => note.origin === "registrar" && note.state === "open").length;
     const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline });
     if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
 
@@ -8447,9 +8529,9 @@ app.post("/api/approvals/return", requireAuth, async (req: AuthenticatedRequest,
   await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
     if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
-    const notes = (await Repository.getScheduleCommentsByScope(collegeId, sectionId, termId))
-      .filter((note: any) => note.origin === "registrar" && !note.resolved);
-    const openNow = notes.filter((note: any) => Number(note.round || 1) === approval.currentRound).length;
+    const notes = await notesWithState(collegeId, sectionId, termId);
+    const openNow = notes.filter(note =>
+      note.origin === "registrar" && note.state === "open" && Number(note.round || 1) === approval.currentRound).length;
     if (openNow <= 0) { res.status(409).json({ error: "لا يُرجَع جدولٌ بلا ملاحظة. اكتب ملاحظةً واحدةً على الأقل." }); return; }
 
     const actor = approvalActor(req);
@@ -8650,9 +8732,13 @@ app.post("/api/schedule-notes", requireAuth, async (req: AuthenticatedRequest, r
 
   const value = noteFieldValue(row, field);
   if (existing) {
-    const updated = await Repository.updateScheduleComment(existing.id, {
-      text: text || existing.text, valueAtNote: value, rebuttal: undefined, rebuttalVerdict: undefined,
-    });
+    /* نقرةٌ ثانية على الخانة نفسها تصحيحٌ للنصّ، وتُعيد الملاحظة إلى أوّلها:
+       قيمةُ الخانة تُلتقط من جديد، وما كان من ردٍّ أو قرارٍ عليه يُمحى. */
+    const updated = await Repository.updateScheduleComment(
+      existing.id,
+      { text: text || existing.text, valueAtNote: value },
+      ["rebuttal", "rebuttalVerdict"],
+    );
     res.json({ note: updated, replaced: true });
     return;
   }
@@ -8685,14 +8771,18 @@ app.post("/api/schedule-notes/:id/rebut", requireAuth, async (req: Authenticated
   if (signatureStage(req.user?.Role) === null && !isPowerUser(req)) { res.status(403).json({ error: "الردّ على الملاحظة من القسم." }); return; }
   const text = String(req.body?.text || "").trim().slice(0, 600);
   if (text.length < 3) { res.status(400).json({ error: "اكتب سبب الإبقاء. ردٌّ بلا سببٍ لا يفيد التسجيل." }); return; }
-  const updated = await Repository.updateScheduleComment(note.id, {
-    rebuttal: {
-      text, at: new Date().toISOString(),
-      SystemUserId: Number(req.user?.SystemUserId || 0),
-      userName: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+  const updated = await Repository.updateScheduleComment(
+    note.id,
+    {
+      rebuttal: {
+        text, at: new Date().toISOString(),
+        SystemUserId: Number(req.user?.SystemUserId || 0),
+        userName: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+      },
     },
-    rebuttalVerdict: undefined,
-  });
+    /* ردٌّ جديد يُلغي قراراً سابقاً عليه: الملاحظة تعود إلى انتظار التسجيل. */
+    ["rebuttalVerdict"],
+  );
   res.locals.auditChanges = `ردّ القسم على ملاحظة: ${text.slice(0, 80)}`;
   res.json({ note: updated });
 });
@@ -8709,7 +8799,9 @@ app.post("/api/schedule-notes/:id/verdict", requireAuth, async (req: Authenticat
   const updated = verdict === "accepted"
     ? await Repository.updateScheduleComment(note.id, { rebuttalVerdict: "accepted", resolved: true })
     /* الإصرار يمحو الردّ: الخانة تعود برتقاليةً تنتظر، لا رماديةً أُجيب عنها. */
-    : await Repository.updateScheduleComment(note.id, { rebuttalVerdict: "insisted", rebuttal: undefined, valueAtNote: note.valueAtNote });
+    /* الإصرار يمحو الردّ فعلاً. وكان يُمرَّر `undefined` فيُسقَط قبل الكتابة،
+       فيبقى الردّ وتبقى الخانة رماديةً إلى الأبد ويُقرأ الإصرارُ قبولاً. */
+    : await Repository.updateScheduleComment(note.id, { rebuttalVerdict: "insisted" }, ["rebuttal"]);
   res.locals.auditChanges = verdict === "accepted" ? "قبول تبرير القسم" : "إصرار التسجيل على التغيير";
   res.json({ note: updated });
 });
@@ -8801,12 +8893,41 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
   const visible = [...approvals, ...silent]
     .filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
 
-  const rows = await Promise.all(visible.map(async approval => {
-    const [blocking, notes, scheduleRows] = await Promise.all([
-      blockingConflictCount(approval.AdCollegeId, approval.AdSectionId, termId),
-      notesWithState(approval.AdCollegeId, approval.AdSectionId, termId),
-      Repository.getSchedulesByScope({ collegeId: approval.AdCollegeId, sectionId: approval.AdSectionId, termId }),
-    ]);
+  /* ── ثلاث قراءات للفصل كله، لا ثلاثٌ لكل قسم ────────────────────────────
+   *
+   * هذه الشاشة تُفتح على كليةٍ فيها عشرون قسماً، عشرين مرّةً في اليوم. وسؤالُها
+   * عن كل قسم ثلاثة: مواعيده، وموانعه، وملاحظاته. فلو سُئل قسماً قسماً لقُرئ
+   * جدول الفصل كاملاً عشرين مرّة في كل فتحة.
+   *
+   * فيُقرأ الفصل كله ثلاث مرّات — مرّةً للمواعيد ومرّةً للملاحظات ومرّةً
+   * للمقارنة — ثم يُوزَّع على الأقسام في الذاكرة. والعدد ثابتٌ مهما كثرت
+   * الأقسام، وهو ما طُلب صراحةً: الأقسام كثيرة.
+   */
+  const [allTermRows, allNotes] = await Promise.all([
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getScheduleCommentsForTerm(termId),
+  ]);
+  const rowsByScope = new Map<string, any[]>();
+  for (const row of allTermRows as any[]) {
+    const key = `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`;
+    const list = rowsByScope.get(key);
+    if (list) list.push(row); else rowsByScope.set(key, [row]);
+  }
+  const rowById = new Map((allTermRows as any[]).map(row => [Number(row.id), row]));
+  const notesByScope = new Map<string, any[]>();
+  for (const note of allNotes) {
+    const key = `${Number(note.AdCollegeId)}:${Number(note.AdSectionId)}`;
+    const list = notesByScope.get(key);
+    if (list) list.push(note); else notesByScope.set(key, [note]);
+  }
+
+  const rows = visible.map(approval => {
+    const key = `${approval.AdCollegeId}:${approval.AdSectionId}`;
+    const scheduleRows = rowsByScope.get(key) || [];
+    const blocking = countBlockingConflicts(scheduleRows, allTermRows as any[]);
+    const notes = (notesByScope.get(key) || [])
+      .filter(note => note.origin === "registrar" || note.origin === "department")
+      .map(note => ({ ...note, state: noteState(note, rowById.get(Number(note.scheduleId))) }));
     const deadline = readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today);
     return {
       collegeId: approval.AdCollegeId,
@@ -8828,7 +8949,7 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
       priority: inboxPriority(approval, blocking),
       updatedAt: approval.updatedAt,
     };
-  }));
+  });
 
   rows.sort((a, b) => a.priority - b.priority
     || b.blockingConflicts - a.blockingConflicts
@@ -8866,9 +8987,21 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const requestedRound = Number(req.query.round || 0);
   const round = requestedRound > 0 && requestedRound <= approval.currentRound ? requestedRound : approval.currentRound;
 
-  /* أساس المقارنة: النسخة التي رآها التسجيل في الجولة السابقة لهذه. */
-  const priorRound = approval.rounds.filter(item => item.number < round).sort((a, b) => b.number - a.number)[0];
-  const baselineVersionId = priorRound?.reviewedVersionId;
+  /**
+   * ── أساس المقارنة: آخر نسخةٍ رآها التسجيل فعلاً ─────────────────────────
+   *
+   * لا «الجولة السابقة» بالترقيم. فليست كل جولةٍ تحمل نسخة: الجولة التي تُفتح
+   * تلقائياً حين يعدّل القسم جدولاً مقبولاً تُنشأ بلا نسخةٍ محفوظة — لأنها لم
+   * تبدأ بإرسالٍ من أحد.
+   *
+   * والأخذ بالجولة السابقة وحدها كان يقع على تلك الجولة فيجد يداً فارغة، فيُقارن
+   * الجدول بالعدم: كلُّ صفٍّ «مضاف»، والموظّف الذي فتح التقرير ليرى ما تحرّك
+   * يجد جدولاً كاملاً مطلوباً منه أن يقرأه من أوّله. فيُمسح إلى الوراء حتى
+   * تُوجد نسخة.
+   */
+  const baselineVersionId = approval.rounds
+    .filter(item => item.number < round && item.reviewedVersionId)
+    .sort((a, b) => b.number - a.number)[0]?.reviewedVersionId;
 
   const [baselineVersion, live, instructors, courses, notes] = await Promise.all([
     baselineVersionId ? Repository.getScheduleVersionById(baselineVersionId) : Promise.resolve(undefined),
@@ -9879,8 +10012,11 @@ async function applyRoleTemplate(userId: number, role: AcademicRole, requested: 
   if (definition.scopeMode === "college") {
     const collegeIds = (requested.collegeIds || []).map(Number).filter(id => Number.isFinite(id) && id > 0);
     const assigns = Array.from(new Set(collegeIds)).map(collegeId => ({ AdCollegeId: collegeId, AdSectionId: 0 }));
-    await Repository.saveUserAssigns(userId, assigns);
-    return { formIds: definition.formIds, scopeCount: assigns.length };
+    /* قائمةٌ فارغة لا تُقرأ «امحُ نطاقه». محو النطاق يُترك لشاشة النطاقات، التي
+       تفعله صفّاً صفّاً وبقصدٍ ظاهر — لا لحفظٍ لم يُذكر فيه نطاقٌ أصلاً. */
+    if (assigns.length) await Repository.saveUserAssigns(userId, assigns);
+    const current = await Repository.getUserAssigns(userId);
+    return { formIds: definition.formIds, scopeCount: current.length };
   }
 
   // section: الكلية والقسم كما هو الحال اليوم
@@ -9888,6 +10024,14 @@ async function applyRoleTemplate(userId: number, role: AcademicRole, requested: 
   if (assigns) await Repository.saveUserAssigns(userId, assigns);
   const current = await Repository.getUserAssigns(userId);
   return { formIds: definition.formIds, scopeCount: current.length };
+}
+
+/** النطاق وحده، حين تبقى الصفة كما هي وتتغيّر كلياتُها. */
+async function applyRoleScopeOnly(userId: number, role: AcademicRole, collegeIds: unknown): Promise<void> {
+  const ids = Array.isArray(collegeIds) ? collegeIds.map(Number).filter(id => Number.isFinite(id) && id > 0) : [];
+  if (!ids.length) return;   // قائمةٌ فارغة لا تعني «امحُ نطاقه»
+  if (roleDefinition(role).scopeMode !== "college") return;
+  await Repository.saveUserAssigns(userId, Array.from(new Set(ids)).map(collegeId => ({ AdCollegeId: collegeId, AdSectionId: 0 })));
 }
 
 /** قائمة الأدوار كما تُعرض في شاشة المستخدمين. مصدرها الوحيد هو وحدة الأدوار. */
@@ -10047,13 +10191,28 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
     fields.SystemUserPassVault = Repository.encryptPasswordForVault(password);
   }
 
+  const before = await Repository.getUserById(id);
   try {
     const updated = await Repository.updateUser(id, fields);
-    /* تغيير الصفة يُعيد كتابة القالب. وهذا مقصود: الصفة هي القرار، والشاشات
-       والنطاق أثرٌ لها — فلا يبقى للعميد السابق بابُ تعديلٍ من صفةٍ قديمة. */
-    if (isAcademicRole(Role) && Role !== "standard") {
+    /**
+     * ── القالب يُكتب عند تغيير الصفة، لا عند كل حفظ ───────────────────────
+     *
+     * القالب يُعيد كتابة شاشات الحساب ونطاقه كاملين. وهذا صوابٌ حين تتغيّر
+     * الصفة — فالصفة هي القرار، والشاشات أثرٌ لها، ولا يجوز أن يبقى للعميد
+     * السابق بابُ تعديلٍ من صفةٍ قديمة.
+     *
+     * وهو تخريبٌ حين لا تتغيّر. كل الحسابات القائمة رُحّلت إلى «رئيس لجنة»،
+     * وشاشةُ المستخدمين تُرسل الصفة في كل حفظ — فإيقافُ حسابٍ أو تغييرُ كلمة
+     * سرّه كان سيمحو كل شاشةٍ مُنحت له يدوياً خارج قالب صفته، بصمت، ودون أن
+     * يطلب أحدٌ ذلك.
+     */
+    const roleChanged = isAcademicRole(Role) && Role !== (before as any)?.Role;
+    if (roleChanged && Role !== "standard") {
       await applyRoleTemplate(id, Role, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
       res.locals.auditChanges = `الصفة: «${roleLabel(Role)}»`;
+    } else if (isAcademicRole(Role) && roleDefinition(Role).scopeMode === "college" && Array.isArray(collegeIds)) {
+      /* الصفة كما هي وتغيّرت كلياتُها: يُكتب النطاق وحده، ولا تُمسّ الشاشات. */
+      await applyRoleScopeOnly(id, Role, collegeIds);
     } else if (Array.isArray(assigns)) {
       await Repository.saveUserAssigns(id, sanitizeAssigns(assigns));
     }
@@ -10104,7 +10263,10 @@ app.delete("/api/permissions/:id", requirePermission(12), async (req: Request, r
 
 // --- USER COLLEGE & SECTION ASSIGN (AdCollegeUserAssign) API ---
 
-app.get("/api/user-scopes", requirePermission(15), async (_req: Request, res: Response) => {
+/* قراءة النطاقات تلزم شاشةَ المستخدمين كما تلزم شاشةَ النطاقات: نموذجُ تعديل
+   العميد يُملأ منها، ومن يملك إدارة الحسابات يحتاج أن يرى نطاق الحساب الذي
+   يعدّله. والكتابة تبقى على صلاحية النطاقات وحدها. */
+app.get("/api/user-scopes", requireAnyPermission([11, 15]), async (_req: Request, res: Response) => {
   res.json(await Repository.getCollegeUserAssigns());
 });
 

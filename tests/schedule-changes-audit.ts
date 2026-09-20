@@ -123,8 +123,32 @@ check(server.includes('return noteFieldValue(row, field) !== String(note.valueAt
 check(server.includes('app.post("/api/schedule-notes/:id/rebut"'), "ردّ القسم على الملاحظة له مسار");
 check(server.includes("اكتب سبب الإبقاء"), "الردّ بلا سببٍ مرفوض");
 check(server.includes('app.post("/api/schedule-notes/:id/verdict"'), "قرار التسجيل على الردّ له مسار");
-check(server.includes('rebuttalVerdict: "insisted", rebuttal: undefined'),
+/* المحو يُطلب بقائمة أسماء لا بقيمةٍ غائبة: تمريرُ `undefined` كان يُسقَط قبل
+   الكتابة، فيبقى الردّ وتبقى الخانة رماديةً إلى الأبد. */
+check(server.includes('{ rebuttalVerdict: "insisted" }, ["rebuttal"]'),
   "الإصرار يمحو الردّ: الخانة تعود برتقاليةً تنتظر، لا رماديةً أُجيب عنها");
+
+/* ── الدورة تُغلق فعلاً ───────────────────────────────────────────────────
+ *
+ * أخطرُ خللٍ ممكنٍ في هذا الباب ليس رسالةً خاطئة: هو أن يعالج القسم كل
+ * الملاحظات فلا يُسمح له بإعادة الإرسال، ولا سبيل أمامه إلى إغلاقها. فتقف
+ * الدورة عند أول جولة، ويعود الطرفان إلى الهاتف.
+ *
+ * والسبب الوحيد الذي يوقعها فيه: أن يُعدّ المفتوحُ من علَمٍ مخزّن لا من
+ * الحالة المحسوبة. ولذلك يُحرس العدّ هنا صراحةً. */
+const submitAt = server.indexOf('app.post("/api/approvals/submit"');
+const submitBody = server.slice(submitAt, submitAt + 3000);
+check(submitBody.includes("await notesWithState("),
+  "عدّ الملاحظات قبل الإرسال من الحالة المحسوبة");
+check(submitBody.includes('note.state === "open"'),
+  "المفتوح وحده يمنع الإرسال: ما عُولج لا يُحسب");
+check(!submitBody.includes("!note.resolved"),
+  "لا يُقرأ علَم `resolved`: لا شيء يرفعه عن ملاحظةٍ عالجها القسم، فقراءته تقفل الدورة إلى الأبد");
+
+const returnAt = server.indexOf('app.post("/api/approvals/return"');
+const returnBody = server.slice(returnAt, returnAt + 3000);
+check(returnBody.includes("await notesWithState("), "والإرجاع يعدّ بالمقياس نفسه");
+check(!returnBody.includes("!note.resolved"), "ولا يقرأ العلَم هو أيضاً");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);
