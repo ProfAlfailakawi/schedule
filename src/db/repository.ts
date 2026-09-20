@@ -9,6 +9,7 @@ import type { Firestore, WriteBatch } from "firebase-admin/firestore";
 import { gzipSync, gunzipSync } from "zlib";
 import { defaultPrivateDirectory, isCloudRunRuntime, materializePackagedSnapshotOnce, packagedSnapshotPath, readJsonSnapshot } from "./snapshot";
 import {
+  ScheduleApproval,
   SystemUser,
   FormName,
   FormSecurity,
@@ -208,6 +209,7 @@ interface DBState {
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
   scheduleShareLinks?: ScheduleShareLink[];
+  scheduleApprovals?: ScheduleApproval[];
   hallBarterRequests?: HallBarterRequest[];
   scheduleWeekExceptions?: ScheduleWeekException[];
   locationBuildings?: MasterBuilding[];
@@ -226,7 +228,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
@@ -797,6 +799,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.scheduleDecisionMemories)) db.scheduleDecisionMemories = [];
       if (!Array.isArray(db.campusMobilityProfiles)) db.campusMobilityProfiles = [];
       if (!Array.isArray(db.scheduleShareLinks)) db.scheduleShareLinks = [];
+      if (!Array.isArray(db.scheduleApprovals)) db.scheduleApprovals = [];
     } catch (e) {
       throw new Error(`تعذر قراءة ملف البيانات المحلية؛ تم إيقاف التشغيل لحماية البيانات: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -2590,6 +2593,34 @@ export const Repository = {
     return newTerm;
   },
 
+  /**
+   * موعد تسليم الجداول للفصل.
+   *
+   * دالّةٌ مستقلّة لحقلٍ واحد، لأن من يضعه — رئيس التسجيل — لا يعدّل اسم
+   * الفصل ولا تقويمه، وإجبارُه على تمرير الاسم ليغيّر تاريخاً كان سيجعل نسيانَ
+   * تمريره إعادةَ تسميةٍ لا يقصدها أحد. وتاريخٌ فارغ يرفع الموعد بدل أن يكتب
+   * قيمةً مستحيلة: رفعُ القيد قرارٌ واردٌ كوضعه.
+   */
+  setTermSubmissionDeadline: async (id: number, deadline: string | undefined): Promise<AdTerm> => {
+    invalidateReference(REFERENCE_KEYS.terms);
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const docRef = firestoreDb.collection("terms").doc(`term_${id}`);
+      const doc = await docRef.get();
+      if (!doc.exists) throw new Error("الفصل الدراسي غير موجود");
+      const updated = { ...(doc.data() as AdTerm) };
+      if (deadline) updated.AdTermSubmissionDeadline = deadline;
+      else delete updated.AdTermSubmissionDeadline;
+      await docRef.set(updated);
+      return updated;
+    }
+    const index = db.terms.findIndex(row => row.AdTermId === id);
+    if (index === -1) throw new Error("الفصل الدراسي غير موجود");
+    if (deadline) db.terms[index].AdTermSubmissionDeadline = deadline;
+    else delete db.terms[index].AdTermSubmissionDeadline;
+    saveDatabase();
+    return db.terms[index];
+  },
+
   updateTerm: async (id: number, name: string, dates?: { start?: string; weeks?: number; closed?: boolean }): Promise<AdTerm> => {
     invalidateReference(REFERENCE_KEYS.terms);
     const calendar = termCalendarFields(dates);
@@ -2597,7 +2628,20 @@ export const Repository = {
       const docRef = firestoreDb.collection("terms").doc(`term_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("الفصل الدراسي غير موجود");
-      const updated = { AdTermId: id, AdTermName: name, ...calendar };
+      /**
+       * ── ما لا تعرفه هذه الدالّة تحفظه ولا تمحوه ─────────────────────────
+       *
+       * الكتابة هنا استبدالٌ كامل للوثيقة، لا دمج. وكانت الوثيقة لا تحمل غير
+       * الاسم والتقويم، فلم يكن للاستبدال ضحية. أمّا الآن فعليها موعد تسليم
+       * الجداول — وتصحيحُ حرفٍ في اسم الفصل كان سيمحوه بصمت، فيسقط القيد عن
+       * كل الأقسام ولا يظهر ذلك في أي شاشة.
+       *
+       * فما لا يذكره هذا النداء صراحةً يُنقل كما هو.
+       */
+      const previous = doc.data() as AdTerm;
+      const updated: AdTerm = { ...previous, AdTermId: id, AdTermName: name, ...calendar };
+      if (!calendar.AdTermStart) delete updated.AdTermStart;
+      if (!calendar.AdTermWeeks) delete updated.AdTermWeeks;
       await docRef.set(updated);
       return updated;
     }
@@ -3771,6 +3815,65 @@ export const Repository = {
     return (db.scheduleShareLinks || []).filter(row => row.scopeKey === scopeKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
+  /* ══════════════════════════════════════════════════════════════════════
+     سجلّ الاعتماد
+     ══════════════════════════════════════════════════════════════════════
+
+     وثيقةٌ واحدة لكل قسمٍ في فصلٍ واحد، مفتاحها scopeKey نفسه الذي تُحفظ به
+     النسخ منذ سنوات. ولا تُنشأ إلا عند أول توقيع: «قيد الإعداد» هي الحالة
+     الضمنية لكل قسمٍ لم يبدأ الدورة، فلا يُكتب لها صفٌّ في قاعدة البيانات —
+     لأن كتابة سجلٍّ لكل قسمٍ في كل فصلٍ ليقول «لم يبدأ بعد» هي ضجيجٌ يُخزَّن،
+     لا معلومة.                                                              */
+
+  getScheduleApproval: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleApproval | undefined> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("scheduleApprovals").doc(scopeKey.replace(/:/g, "_")).get();
+      return doc.exists ? (doc.data() as ScheduleApproval) : undefined;
+    }
+    return (db.scheduleApprovals || []).find(row => row.scopeKey === scopeKey);
+  },
+
+  /**
+   * سجلّات الاعتماد لفصلٍ كامل، بكلية أو بغيرها.
+   *
+   * هذه هي القراءة التي يقوم عليها ميزان الأقسام عند العميد وصندوق الوارد عند
+   * التسجيل: حالةُ كل قسمٍ دفعةً واحدة، لا استعلامٌ لكل قسمٍ على حدة — فكليةٌ
+   * فيها عشرون قسماً كانت ستكلّف عشرين رحلةً إلى قاعدة البيانات في كل فتحة
+   * شاشة.
+   */
+  getScheduleApprovalsForTerm: async (termId: number, collegeId?: number): Promise<ScheduleApproval[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      let query = firestoreDb.collection("scheduleApprovals").where("AdTermId", "==", Number(termId));
+      if (collegeId) query = query.where("AdCollegeId", "==", Number(collegeId));
+      const snap = await query.get();
+      return snap.docs.map(doc => doc.data() as ScheduleApproval);
+    }
+    return (db.scheduleApprovals || []).filter(row =>
+      Number(row.AdTermId) === Number(termId) && (!collegeId || Number(row.AdCollegeId) === Number(collegeId)));
+  },
+
+  /**
+   * حفظٌ كامل للسجلّ، لا دمجٌ جزئي.
+   *
+   * كل مُعدِّلٍ لهذا السجلّ يقرؤه أولاً ثم يكتبه كاملاً، لأن حالاته مترابطة:
+   * التوقيع يغيّر الحالة والتواقيع معاً، والإرجاع يغيّر الحالة والجولة
+   * والتواقيع في نفس اللحظة. ودمجُ حقلٍ حقلاً كان سيسمح بحالةٍ نصفُها من
+   * قرارٍ ونصفُها من قرارٍ آخر.
+   */
+  saveScheduleApproval: async (approval: ScheduleApproval): Promise<ScheduleApproval> => {
+    const row: ScheduleApproval = { ...approval, updatedAt: new Date().toISOString() };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleApprovals").doc(row.scopeKey.replace(/:/g, "_")).set(row);
+      return row;
+    }
+    if (!Array.isArray(db.scheduleApprovals)) db.scheduleApprovals = [];
+    const index = db.scheduleApprovals.findIndex(item => item.scopeKey === row.scopeKey);
+    if (index === -1) db.scheduleApprovals.push(row); else db.scheduleApprovals[index] = row;
+    saveDatabase();
+    return row;
+  },
+
   getShareLink: async (id: string): Promise<ScheduleShareLink | undefined> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleShareLinks").doc(id).get();
@@ -3838,6 +3941,71 @@ export const Repository = {
    * Deliberately scoped and deliberately unresolved-only: this is a tray, and a
    * tray that also shows what has been dealt with stops being read.
    */
+  /**
+   * ملاحظات نطاقٍ كامل — قسمٌ في فصل.
+   *
+   * القراءة القائمة كانت بالموعد الواحد، لأن الملاحظة كانت تأتي من بطاقة
+   * أستاذٍ عن موعدٍ بعينه. أمّا مراجعة التسجيل فتقرأ القسم كله دفعةً واحدة:
+   * صندوقُ الوارد يعرض «٥ خانات في ٤ صفوف» قبل أن يفتح الموظّف صفّاً واحداً،
+   * وقراءةُ ذلك موعداً موعداً كانت ستكلّف رحلةً لكل صفٍّ في الجدول.
+   */
+  getScheduleCommentsByScope: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleComment[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("scheduleComments")
+        .where("AdCollegeId", "==", Number(collegeId))
+        .where("AdSectionId", "==", Number(sectionId))
+        .where("AdTermId", "==", Number(termId))
+        .limit(1000).get();
+      return snap.docs.map(doc => doc.data() as ScheduleComment).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return (db.scheduleComments || [])
+      .filter(row => Number(row.AdCollegeId) === Number(collegeId) && Number(row.AdSectionId) === Number(sectionId) && Number(row.AdTermId) === Number(termId))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  getScheduleCommentById: async (id: string): Promise<ScheduleComment | undefined> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("scheduleComments").doc(id).get();
+      return doc.exists ? (doc.data() as ScheduleComment) : undefined;
+    }
+    return (db.scheduleComments || []).find(row => row.id === id);
+  },
+
+  updateScheduleComment: async (id: string, fields: Partial<ScheduleComment>): Promise<ScheduleComment | undefined> => {
+    const clean: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(fields)) if (value !== undefined) clean[key] = value;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleComments").doc(id);
+      const doc = await ref.get();
+      if (!doc.exists) return undefined;
+      const updated = { ...(doc.data() as ScheduleComment), ...clean } as ScheduleComment;
+      await ref.set(updated);
+      return updated;
+    }
+    if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
+    const index = db.scheduleComments.findIndex(row => row.id === id);
+    if (index === -1) return undefined;
+    db.scheduleComments[index] = { ...db.scheduleComments[index], ...clean } as ScheduleComment;
+    saveDatabase();
+    return db.scheduleComments[index];
+  },
+
+  deleteScheduleComment: async (id: string): Promise<boolean> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleComments").doc(id);
+      const doc = await ref.get();
+      if (!doc.exists) return false;
+      await ref.delete();
+      return true;
+    }
+    if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
+    const before = db.scheduleComments.length;
+    db.scheduleComments = db.scheduleComments.filter(row => row.id !== id);
+    if (db.scheduleComments.length === before) return false;
+    saveDatabase();
+    return true;
+  },
+
   getStaffInbox: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleComment[]> => {
     const keep = (row: ScheduleComment) =>
       row.source === "staff-card" && !row.resolved &&

@@ -16,10 +16,16 @@ import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, confli
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase } from "./src/types";
+import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
+import {
+  APPROVAL_STATUS_LABEL, canSign, canSubmit, describeWholesaleRefusal, emptyApproval,
+  isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
+  type DeadlineState, type WholesaleAction,
+} from "./src/utils/approvalWorkflow";
+import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
   isAcademicRole, isReadOnlyRole, isViewerOnlyRole, roleDefinition, roleLabel, signatureStage,
@@ -6038,6 +6044,11 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
   const blockingSave=conflicts.filter((c:any)=>!c.soft);
   if(blockingSave.length){res.status(409).json({error:blockingSave[0].message||"يوجد تعارض يمنع الحفظ",issues:blockingSave});return;}
 
+  /* القفل يُقرأ بعد أن يثبت أن الطلب صحيحٌ في ذاته: ردُّ «الجدول عند التسجيل»
+     على طلبٍ ناقص الحقول يخفي الخطأ الحقيقي خلف خطأٍ إجرائي. */
+  const addLock = await scheduleLockRefusal(collegeId, sectionId, termId);
+  if (addLock) { res.status(409).json({ error: addLock, code: "schedule-locked" }); return; }
+
   await captureScopeVersion(req, collegeId, sectionId, termId, "قبل إضافة موعد دراسي", "manual");
 
   const newSched = await Repository.createSchedule({
@@ -6070,6 +6081,8 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
     sourceOrder: Math.max(1_000_000, Date.now()),
     fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday })
   });
+
+  await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: newSched });
 
   res.status(201).json(newSched);
 });
@@ -6133,6 +6146,12 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   const blockingEdit=conflicts.filter((c:any)=>!c.soft);
   if(blockingEdit.length){res.status(409).json({error:blockingEdit[0].message||"يوجد تعارض يمنع التعديل",issues:blockingEdit});return;}
 
+  /* النطاقان معاً: نقلُ موعدٍ من قسمٍ مُرسَلٍ إلى آخر يمسّ الجدولين، فيكفي
+     قفلُ أحدهما للمنع. */
+  const editLock = await scheduleLockRefusal(existing.AdCollegeId, existing.AdSectionId, existing.AdTermId)
+    || await scheduleLockRefusal(collegeId, sectionId, termId);
+  if (editLock) { res.status(409).json({ error: editLock, code: "schedule-locked" }); return; }
+
   try {
     await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
     if (existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId) {
@@ -6167,6 +6186,11 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
     req.body?.rev === undefined || req.body?.rev === null ? undefined : Number(req.body.rev));
     // Hand the audit trail the sentence describing what actually moved.
     res.locals.auditChanges = describeScheduleChange(existing, updated) || undefined;
+    await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "edit", row: updated });
+    if (existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId) {
+      /* الموعد غادر جدوله الأصلي: ذلك الجدول تغيّر أيضاً، ولو بالنقصان. */
+      await noteScheduleMutation(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, { kind: "delete", row: existing });
+    }
     res.json(updated);
   } catch (e: any) {
     if (e instanceof ScheduleRevisionConflict) {
@@ -6198,11 +6222,14 @@ app.delete("/api/schedules/:id", requirePermission(7), async (req: Authenticated
     return;
   }
   if (sched) {
+    const deleteLock = await scheduleLockRefusal(sched.AdCollegeId, sched.AdSectionId, sched.AdTermId);
+    if (deleteLock) { res.status(409).json({ error: deleteLock, code: "schedule-locked" }); return; }
     await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
     // A deletion has no "after", so the record keeps what was standing there.
     res.locals.auditChanges = `حُذف: ${sched.AdCourseName || "موعد"} · شعبة ${sched.SCode} · ${formatScheduleTimeRange(sched.fstarttime, sched.fendtime)} · ${sched.AdRoomCode}/${sched.AdRoomHall}`;
   }
   await Repository.deleteSchedule(id);
+  if (sched) await noteScheduleMutation(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, { kind: "delete", row: sched });
   res.json({ success: true });
 });
 
@@ -6256,6 +6283,8 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
 
   const targetRows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId: targetTermId });
   if(targetRows.length){res.status(409).json({error:"يوجد جدول بالفعل في الفصل المستهدف"});return;}
+  const copyRefusal = await wholesaleRefusal(collegeId, sectionId, targetTermId, { kind: "copy-term" });
+  if (copyRefusal) { res.status(409).json({ error: copyRefusal, code: "deadline-wholesale" }); return; }
   const undoVersion = await captureScopeVersion(req, collegeId, sectionId, targetTermId, "قبل نسخ الفصل الدراسي", "copy");
   const written = await Repository.replaceScheduleScope(collegeId, sectionId, targetTermId, copiedRows as FSchedule[]);
   res.json({ success: true, count: written.length, message: "تم نسخ الفصل الدراسي بالقيم الرسمية للمباني والقاعات", undoVersion: undoVersion ? { id: undoVersion.id, label: undoVersion.label } : null });
@@ -8060,6 +8089,441 @@ app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), asyn
 /* The Authority-PDF report belongs to the normal inquiry/report centre. It is
    scoped by the header selections and always compares the latest imported
    baseline with the timetable as it exists right now. */
+/* ══════════════════════════════════════════════════════════════════════════
+   دورة الاعتماد
+   ══════════════════════════════════════════════════════════════════════════
+
+   كل ما يلي يقرأ قراره من `utils/approvalWorkflow` ولا يخترع قاعدةً لنفسه.
+   والسبب أن هذه القواعد اتُّفق عليها واحدةً واحدة، وكلٌّ منها كانت تحتمل غير
+   ما استقرّت عليه — فلو تفرّقت بين المسارات لاختلفت نسخةٌ منها عن أخرى عند
+   أول تعديل، ولما ظهر الاختلاف في أي شاشة.
+
+   وهذه المسارات هي البابُ الضيّق الوحيد الذي يمرّ منه صاحب الصفة القارئة:
+   لأن الملاحظة والتوقيع والإرجاع ليست تعديلاً على الجدول، بل الطريقة التي
+   يشارك بها من لا يملك أن يمسّ صفّاً.                                       */
+
+/**
+ * ── القفل بعد الإرسال، والفتح بعد القبول ────────────────────────────────────
+ *
+ * جدولٌ عند التسجيل لا يُعدَّل: الطرف الآخر يقرؤه الآن، وتغييرُه تحت يده يجعل
+ * ملاحظته على شيءٍ لم يعد موجوداً.
+ *
+ * أمّا بعد القبول فالتعديل مفتوح — لكنه لا يمرّ صامتاً. القسم الذي يكتشف خطأً
+ * بعد القبول يعدّله فيعود جدوله إلى «عند التسجيل» جولةً جديدة تلقائياً، فيرى
+ * التسجيل ما تغيّر وحده. والبديل — أن يطلب القسم فتحاً يدوياً من المدير في كل
+ * مرّة — كان سيدفع الجميع إلى إصلاح الأخطاء خارج النظام.
+ *
+ * تُعيد الدالّة رسالة المنع إن وُجد مانع، و `null` إن جاز المضيّ.
+ */
+async function scheduleLockRefusal(collegeId: number, sectionId: number, termId: number): Promise<string | null> {
+  const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
+  if (!approval) return null;
+  if (approval.status === "submitted") {
+    return "الجدول عند التسجيل الآن وينتظر قراره. التعديل يُفتح متى قُبل أو أُرجع بملاحظات.";
+  }
+  return null;
+}
+
+/**
+ * ما بعد التعديل: إعادة فتح جولة، وتسجيل ما أُضيف بعد التوقيع.
+ *
+ * تُستدعى بعد نجاح التعديل لا قبله، لأنها تصف ما وقع فعلاً. وهي صامتةٌ عند
+ * الفشل عمداً: لا يجوز أن يُبطِل عجزُ سجلٍّ إداريٍّ عن الكتابة حفظَ موعدٍ
+ * دراسيٍّ صحيح.
+ */
+async function noteScheduleMutation(
+  req: AuthenticatedRequest,
+  collegeId: number, sectionId: number, termId: number,
+  change: { kind: "add" | "edit" | "delete"; row?: any },
+): Promise<void> {
+  try {
+    const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
+    if (!approval) return;
+    let next: ScheduleApproval = approval;
+
+    /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
+       خانةً في صفٍّ وافق عليه، وإضافةُ شعبةٍ تُنشئ التزاماً لم يره أصلاً. */
+    const headSignature = next.signatures.find(item => item.stage === "head");
+    if (change.kind === "add" && headSignature && change.row) {
+      const already = next.pendingAdditions.some(item => Number(item.scheduleId) === Number(change.row.id));
+      if (!already) {
+        next = { ...next, pendingAdditions: [...next.pendingAdditions, {
+          scheduleId: Number(change.row.id),
+          courseId: Number(change.row.AdCourseId || 0),
+          courseName: String(change.row.AdCourseName || ""),
+          sectionCode: String(change.row.SCode || ""),
+          addedAt: new Date().toISOString(),
+          addedBy: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+        }] };
+      }
+    }
+    /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد. */
+    if (change.kind === "delete" && change.row) {
+      next = { ...next, pendingAdditions: next.pendingAdditions.filter(item => Number(item.scheduleId) !== Number(change.row.id)) };
+    }
+
+    if (next.status === "accepted") {
+      const roundNumber = next.currentRound + 1;
+      next = {
+        ...next,
+        status: "submitted",
+        currentRound: roundNumber,
+        rounds: [...next.rounds, {
+          number: roundNumber,
+          submittedAt: new Date().toISOString(),
+          submittedBy: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+        }].sort((a, b) => a.number - b.number),
+      };
+    }
+
+    if (next !== approval) await Repository.saveScheduleApproval(next);
+  } catch (error) {
+    console.error("[approval] تعذّر تحديث سجلّ الاعتماد بعد تعديل الجدول:", error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * ── التسليم الشامل بعد الموعد ───────────────────────────────────────────────
+ *
+ * ما يُمنع بعد الموعد هو نوعُ الفعل لا حجمه: استيرادُ ملفٍّ ونسخُ فصلٍ
+ * يستبدلان الجدول كله بحكم تعريفهما، والحذفُ الجماعي يُقاس بالنسبة لا بالعدد —
+ * لأن عشرين صفّاً في قسمٍ صغير هي جدوله كله، وفي قسمٍ كبير تصحيحٌ عادي.
+ *
+ * وتبقى التعديلات الجزئية مفتوحةً بعد الموعد كما قبله، لأن القاعة تتغيّر
+ * والأستاذ يعتذر ولا ينتظر أيٌّ منهما تاريخاً في تقويم.
+ */
+async function wholesaleRefusal(collegeId: number, sectionId: number, termId: number, action: WholesaleAction): Promise<string | null> {
+  if (!isWholesaleChange(action)) return null;
+  const approval = await readApproval(collegeId, sectionId, termId);
+  const deadline = await readDeadlineFor(approval, termId);
+  if (!deadline.past) return null;
+  return describeWholesaleRefusal(action, deadline);
+}
+
+/** التعارض المادّي وحده — لا اللائحة — هو ما يُحصى هنا. */
+async function blockingConflictCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
+  const [scopeRows, termRows] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getSchedulesByScope({ termId }),
+  ]);
+  const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
+  const seen = new Set<string>();
+  let count = 0;
+  for (const item of findConflicts(scopeRows as any, termRows as any)) {
+    if (item.severity !== "high" && item.type !== "duplicate") continue;
+    const a = Number(item.rowId), b = Number(item.otherId);
+    if (!ownIds.has(a) && !ownIds.has(b)) continue;
+    const key = [Math.min(a, b), Math.max(a, b), item.type].join(":");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    count += 1;
+  }
+  return count;
+}
+
+/** الملاحظات اللائحية الظاهرة وقت التوقيع — تُسجَّل ولا تمنع. */
+async function regulationNoticeCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
+  try {
+    const [rows, courses, instructors] = await Promise.all([
+      Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+      Repository.getCourses(),
+      Repository.getInstructors(),
+    ]);
+    const findings = reviewSchedule({
+      rows: rows as any,
+      courses: new Map(courses.map((row: any) => [Number(row.AdCourseId), row])),
+      instructors: new Map(instructors.map((row: any) => [Number(row.AdInstructorId), row])),
+    });
+    return findings.filter(item => item.approvalEffect !== "block").length;
+  } catch {
+    /* اللائحة معيارٌ يُعرض، لا شرطُ حفظ. فإن تعذّر حسابها لا يُمنع التوقيع —
+       يُسجَّل صفراً، ويبقى القرار لمن يوقّع. */
+    return 0;
+  }
+}
+
+/** السجلّ كما هو، أو سجلٌّ فارغٌ لقسمٍ لم يبدأ الدورة. */
+async function readApproval(collegeId: number, sectionId: number, termId: number): Promise<ScheduleApproval> {
+  const stored = await Repository.getScheduleApproval(collegeId, sectionId, termId);
+  return stored || emptyApproval(collegeId, sectionId, termId);
+}
+
+/** الموعد الساري لهذا القسم: تمديده إن وُجد، وإلا موعد فصله. */
+async function readDeadlineFor(approval: ScheduleApproval, termId: number): Promise<DeadlineState> {
+  const term = await Repository.getTermById(termId);
+  return readDeadline({
+    termDeadline: (term as any)?.AdTermSubmissionDeadline,
+    extensionUntil: approval.extensionUntil,
+    extensionReason: approval.extensionReason,
+  }, new Date().toISOString().slice(0, 10));
+}
+
+function approvalActor(req: AuthenticatedRequest) {
+  return {
+    id: Number(req.user?.SystemUserId || 0),
+    name: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+    role: req.user?.Role,
+  };
+}
+
+/** قراءة حالة الاعتماد لقسمٍ واحد، بالموعد والملاحظات والتعارضات معه. */
+app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const approval = await readApproval(collegeId, sectionId, termId);
+  const [deadline, blocking, notices] = await Promise.all([
+    readDeadlineFor(approval, termId),
+    blockingConflictCount(collegeId, sectionId, termId),
+    regulationNoticeCount(collegeId, sectionId, termId),
+  ]);
+  res.json({
+    approval,
+    deadline,
+    blockingConflicts: blocking,
+    regulationNotices: notices,
+    statusLabel: APPROVAL_STATUS_LABEL[approval.status],
+    lastReviewedVersionId: lastReviewedVersionId(approval),
+  });
+});
+
+/**
+ * حالات فصلٍ كاملٍ دفعةً واحدة.
+ *
+ * هذه القراءة هي ما يجعل «ميزان الأقسام» يعرف حالة الاعتماد بلا استعلامٍ لكل
+ * قسم، وما يبني صندوق الوارد عند التسجيل. والنطاق يُطبَّق هنا كما يُطبَّق في
+ * كل مكان: العميد يرى كليته، والتسجيل يرى ما عُيِّن له.
+ */
+app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const termId = Number(req.query.termId || 0);
+  const collegeId = Number(req.query.collegeId || 0) || undefined;
+  if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
+  const [rows, term] = await Promise.all([
+    Repository.getScheduleApprovalsForTerm(termId, collegeId),
+    Repository.getTermById(termId),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
+  const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
+  const visible = rows.filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
+  res.json({
+    termDeadline,
+    approvals: visible.map(row => ({
+      ...row,
+      statusLabel: APPROVAL_STATUS_LABEL[row.status],
+      deadline: readDeadline({ termDeadline, extensionUntil: row.extensionUntil, extensionReason: row.extensionReason }, today),
+    })),
+  });
+});
+
+/**
+ * التوقيع.
+ *
+ * مشدودٌ إلى نسخةٍ بعينها: تُلتقط النسخة أولاً، ثم يُكتب التوقيع عليها. فإن
+ * تغيّر الجدول بعدها عُرف ما تغيّر، لا مجرّد أنه تغيّر.
+ */
+app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+
+  const actor = approvalActor(req);
+  const stage = signatureStage(actor.role);
+  if (!stage) { res.status(403).json({ error: "التوقيع لرئيس لجنة الجدول ولرئيس القسم العلمي فقط." }); return; }
+
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+    const blocking = await blockingConflictCount(collegeId, sectionId, termId);
+    const verdict = canSign(approval, stage, { blockingConflicts: blocking, rowCount: rows.length });
+    if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
+
+    const notices = await regulationNoticeCount(collegeId, sectionId, termId);
+    const version = await captureScopeVersion(req, collegeId, sectionId, termId, `توقيع ${roleLabel(actor.role)}`, "manual");
+    const at = new Date().toISOString();
+    const signature: ScheduleApprovalSignature = {
+      stage,
+      SystemUserId: actor.id,
+      userName: actor.name,
+      roleLabel: roleLabel(actor.role),
+      at,
+      versionId: version?.id,
+      rowCount: rows.length,
+      regulationNoticeCount: notices,
+      verifyCode: verificationCode(String(version?.id || `${collegeId}:${sectionId}:${termId}`), actor.id, at),
+    };
+    const next: ScheduleApproval = { ...approval, signatures: [...approval.signatures.filter(item => item.stage !== stage), signature] };
+    next.status = statusAfterSignature(next);
+    const saved = await Repository.saveScheduleApproval(next);
+    res.locals.auditChanges = `توقيع ${signature.roleLabel} على ${rows.length} موعداً، برمز ${signature.verifyCode}`;
+    res.json({ approval: saved, signature, regulationNotices: notices });
+  });
+});
+
+/**
+ * سحب توقيعٍ أثبته صاحبه.
+ *
+ * التوقيع قرارٌ، والقرار يُراجَع. لكن الرجوع عنه لا يكون إلا لمن أثبته
+ * بنفسه — لا يسحب رئيس القسم توقيع اللجنة ولا العكس — ولا بعد أن يصير
+ * الجدول عند التسجيل، لأن الطرف الآخر بنى عليه عمله.
+ */
+app.post("/api/approvals/withdraw", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const actor = approvalActor(req);
+  const stage = signatureStage(actor.role);
+  if (!stage) { res.status(403).json({ error: "سحب التوقيع لمن أثبته وحده." }); return; }
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    if (approval.status === "submitted") { res.status(409).json({ error: "الجدول عند التسجيل. لا يُسحب توقيعٌ بنى عليه الطرف الآخر عمله." }); return; }
+    const mine = approval.signatures.find(item => item.stage === stage);
+    if (!mine) { res.status(409).json({ error: "لا يوجد توقيعٌ لك على هذا الجدول." }); return; }
+    /* سحبُ توقيع اللجنة يُسقط توقيع رئيس القسم معه: الترتيب جزءٌ من المعنى،
+       وتوقيعُ رئيس قسمٍ فوق لجنةٍ سحبت توقيعها لا يقول شيئاً. */
+    const dropped = stage === "committee" ? [] : approval.signatures.filter(item => item.stage === "committee");
+    const next: ScheduleApproval = { ...approval, signatures: dropped };
+    next.status = statusAfterSignature(next);
+    const saved = await Repository.saveScheduleApproval(next);
+    res.locals.auditChanges = `سحب توقيع ${roleLabel(actor.role)}`;
+    res.json({ approval: saved });
+  });
+});
+
+/** إقرار رئيس القسم بالشُّعب المضافة بعد توقيعه. ضغطةٌ واحدة، لا توقيعٌ جديد. */
+app.post("/api/approvals/acknowledge-additions", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (signatureStage(req.user?.Role) !== "head") { res.status(403).json({ error: "الإقرار على الشُّعب المضافة لرئيس القسم العلمي وحده." }); return; }
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    if (!approval.pendingAdditions.length) { res.json({ approval }); return; }
+    const count = approval.pendingAdditions.length;
+    const saved = await Repository.saveScheduleApproval({ ...approval, pendingAdditions: [] });
+    res.locals.auditChanges = `إقرار رئيس القسم على ${count} شعبةً أُضيفت بعد اعتماده`;
+    res.json({ approval: saved, acknowledged: count });
+  });
+});
+
+/** الإرسال للتسجيل. يفتح جولةً جديدة ويقفل التعديل حتى يقبل التسجيل أو يُرجع. */
+app.post("/api/approvals/submit", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (!signatureStage(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "الإرسال للتسجيل من القسم: لجنة الجدول أو رئيس القسم." }); return; }
+
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    const deadline = await readDeadlineFor(approval, termId);
+    const openNotes = (await Repository.getScheduleCommentsByScope(collegeId, sectionId, termId))
+      .filter((note: any) => note.origin === "registrar" && !note.resolved && !note.rebuttal).length;
+    const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline });
+    if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
+
+    const actor = approvalActor(req);
+    const version = await captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual");
+    const roundNumber = approval.currentRound + 1;
+    const rounds = [...approval.rounds.filter(round => round.number !== roundNumber), {
+      number: roundNumber,
+      submittedAt: new Date().toISOString(),
+      submittedBy: actor.name,
+      reviewedVersionId: version?.id,
+    }].sort((a, b) => a.number - b.number);
+    const saved = await Repository.saveScheduleApproval({ ...approval, status: "submitted", currentRound: roundNumber, rounds });
+    res.locals.auditChanges = `إرسال الجدول إلى التسجيل — الجولة ${roundNumber}`;
+    res.json({ approval: saved, round: roundNumber });
+  });
+});
+
+/** إرجاع الجدول للقسم بملاحظات. يفتح القفل، ولا يُبطل التوقيعين. */
+app.post("/api/approvals/return", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (!canReviewSubmissions(req.user?.Role)) { res.status(403).json({ error: "الإرجاع للتسجيل وحده." }); return; }
+
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
+    const notes = (await Repository.getScheduleCommentsByScope(collegeId, sectionId, termId))
+      .filter((note: any) => note.origin === "registrar" && !note.resolved);
+    const openNow = notes.filter((note: any) => Number(note.round || 1) === approval.currentRound).length;
+    if (openNow <= 0) { res.status(409).json({ error: "لا يُرجَع جدولٌ بلا ملاحظة. اكتب ملاحظةً واحدةً على الأقل." }); return; }
+
+    const actor = approvalActor(req);
+    const rounds = approval.rounds.map(round => round.number === approval.currentRound
+      ? { ...round, returnedAt: new Date().toISOString(), returnedBy: actor.name, returnedNoteCount: openNow }
+      : round);
+    const saved = await Repository.saveScheduleApproval({ ...approval, status: "returned", rounds });
+    res.locals.auditChanges = `إرجاع الجدول للقسم مع ${openNow} ملاحظةً — الجولة ${approval.currentRound}`;
+    res.json({ approval: saved, returnedNoteCount: openNow });
+  });
+});
+
+/** قبول التسجيل. المانع الوحيد تعارضٌ مادّي؛ واللائحة تُعرض ولا تمنع. */
+app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (!canReviewSubmissions(req.user?.Role)) { res.status(403).json({ error: "القبول للتسجيل وحده." }); return; }
+
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
+    const blocking = await blockingConflictCount(collegeId, sectionId, termId);
+    if (blocking > 0) {
+      res.status(409).json({ error: `لا يُقبل جدولٌ فيه ${blocking} تعارضٌ مادّي. أرجِعه للقسم لمعالجته.`, code: "blocking-conflicts" });
+      return;
+    }
+    const actor = approvalActor(req);
+    const rounds = approval.rounds.map(round => round.number === approval.currentRound
+      ? { ...round, acceptedAt: new Date().toISOString(), acceptedBy: actor.name }
+      : round);
+    const saved = await Repository.saveScheduleApproval({ ...approval, status: "accepted", rounds });
+    res.locals.auditChanges = `قبول الجدول نهائياً — الجولة ${approval.currentRound}`;
+    res.json({ approval: saved });
+  });
+});
+
+/** موعد تسليم الفصل. حقلٌ واحد، بيد رئيس التسجيل وحده، يظهر لكل قسم. */
+app.post("/api/approvals/deadline", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canManageDeadline(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "موعد التسليم يضعه رئيس التسجيل." }); return; }
+  const termId = Number(req.body?.termId || 0);
+  const deadline = String(req.body?.deadline || "").trim();
+  if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
+  if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) { res.status(400).json({ error: "التاريخ يُكتب هكذا: 2026-10-15" }); return; }
+  const term = await Repository.getTermById(termId);
+  if (!term) { res.status(404).json({ error: "الفصل غير موجود" }); return; }
+  /* تاريخٌ فارغ يرفع الموعد بدل أن يكتب قيمةً مستحيلة: رفعُ القيد قرارٌ وارد
+     كما وضعُه، ولا ينبغي أن يُجبَر صاحبه على حيلة. */
+  await Repository.setTermSubmissionDeadline(termId, deadline || undefined);
+  res.locals.auditChanges = deadline ? `موعد تسليم الجداول: ${deadline}` : "رُفع موعد تسليم الجداول";
+  res.json({ termId, deadline: deadline || null });
+});
+
+/** تمديدٌ لقسمٍ بعينه. ضغطتان من صندوق الوارد، بسببٍ يُحفظ ويُعرض. */
+app.post("/api/approvals/extension", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canManageDeadline(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "التمديد يمنحه رئيس التسجيل." }); return; }
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  const until = String(req.body?.until || "").trim();
+  const reason = String(req.body?.reason || "").trim().slice(0, 240);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (until && !/^\d{4}-\d{2}-\d{2}$/.test(until)) { res.status(400).json({ error: "التاريخ يُكتب هكذا: 2026-10-22" }); return; }
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    const actor = approvalActor(req);
+    const saved = await Repository.saveScheduleApproval({
+      ...approval,
+      extensionUntil: until || undefined,
+      extensionReason: until ? (reason || undefined) : undefined,
+      extensionBy: until ? actor.name : undefined,
+      extensionAt: until ? new Date().toISOString() : undefined,
+    });
+    res.locals.auditChanges = until ? `تمديد تسليم القسم إلى ${until}${reason ? ` — ${reason}` : ""}` : "إلغاء تمديد التسليم";
+    res.json({ approval: saved });
+  });
+});
+
 app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
   if(!collegeId||!sectionId||!termId){res.status(400).json({error:"اختر الفصل والكلية والقسم أولاً."});return;}
@@ -8176,6 +8640,16 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   if(draft.importLayout==="authority-pdf"&&!await verifyPdfImportReceipt(draft.importReceipt||"",{collegeId:draft.AdCollegeId,sectionId:draft.AdSectionId,termId:draft.AdTermId})){
     res.status(409).json({error:"شهادة مطابقة ترويسة PDF غائبة أو غير صالحة لهذه المسودة؛ أوقف النشر وأعد الاستيراد. لا يمكن تجاوز فحص الفصل والكلية والقسم.",code:"PDF_IMPORT_RECEIPT_INVALID"});return;
+  }
+
+  const publishLock = await scheduleLockRefusal(draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  if (publishLock) { res.status(409).json({ error: publishLock, code: "schedule-locked" }); return; }
+
+  /* النشر من مسودةٍ مستوردة هو الاستيراد نفسه واصلاً إلى الجدول: هنا يُقاس
+     بالموعد، لا عند رفع الملف — فقد يُرفع الملف قبل الموعد ويُنشر بعده. */
+  if (draft.source === "import" || draft.importLayout === "authority-pdf") {
+    const importRefusal = await wholesaleRefusal(draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, { kind: "import" });
+    if (importRefusal) { res.status(409).json({ error: importRefusal, code: "deadline-wholesale" }); return; }
   }
 
   let publishRows=draft.importLayout==="authority-pdf"
@@ -8363,7 +8837,7 @@ app.get("/api/intelligence/versions/compare", requirePermission(7), async (req: 
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
 });
 app.post("/api/intelligence/versions/:id/restore", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="restore"){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
+  if(req.get("x-schedule-confirm")!=="restore"){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
 });
 
 app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -8824,7 +9298,7 @@ app.get("/api/intelligence/safety-net", requirePermission(7), async (req: Authen
 });
 
 app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="decision-undo"){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
+  if(req.get("x-schedule-confirm")!=="decision-undo"){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
 });
 
 
