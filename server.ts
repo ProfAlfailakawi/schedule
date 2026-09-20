@@ -13910,7 +13910,15 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
     const link = await Repository.createShareLink({
       AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
       label: `طلب جدول — ${instructorId}`,
-      expiresAt: new Date(Date.now() + REQUEST_LINK_DAYS * 86400000).toISOString(),
+      /* ── الصلاحيةُ تتبع الموعدَ المُعلَن ────────────────────────────────
+       * كانت ثابتةً بـ21 يوماً والموعدُ يُكتب بحرّية. فمن كتب موعداً أبعدَ
+       * منها رأى أساتذتُه «انتهت صلاحية هذا الرابط» قبل الموعد الذي وعدهم
+       * به — ولا شيءَ في الشاشة يقول لماذا. فتُشتقّ من الموعد نفسِه، ولا
+       * تنزل عن الحدّ الأدنى حتى لا يُغلق رابطُ موعدٍ قريبٍ لحظةَ انتهائه. */
+      expiresAt: new Date(Math.max(
+        Date.parse(`${closesAt}T23:59:59.999Z`) + 86400000,
+        Date.now() + REQUEST_LINK_DAYS * 86400000,
+      )).toISOString(),
       SystemUserId: Number(req.user?.SystemUserId || 0),
       userName: String(req.user?.UserName || ""),
       showInstructors: false,
@@ -14795,6 +14803,18 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   }
   if (resolved.link.kind === "staff") {
     res.send(staffCardPage(resolved.link.id, esc(resolved.link.label || "بطاقة الأستاذ"), publicPageNonce(res)));
+    return;
+  }
+  /* ── رابطُ الطلب له بابُه وحدَه ───────────────────────────────────────────
+   *
+   * كان هذا البابُ يُعالج «بطاقة الأستاذ» ثم يسقط بما سواها إلى جدول القسم
+   * كاملاً — ومنه رابطُ الطلب. فمن نسخه من هنا أو فتحه بهذا المسار يرى جدولَ
+   * القسم كلَّه بدل نموذج صاحبه: تسريبٌ لا يشتكي منه أحد، لأن الصفحةَ تُفتح
+   * وتعمل.
+   *
+   * والتحويلُ لا المنعُ: الرمزُ رمزُ صاحبه، وإنما أُخطئ في بابه. */
+  if (resolved.link.kind === "request") {
+    res.redirect(302, `/r/${encodeURIComponent(resolved.link.id)}`);
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);

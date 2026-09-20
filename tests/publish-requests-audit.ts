@@ -59,5 +59,44 @@ check(publish.includes("أرسلها وتابعها في «وارد الأسات
 check(/\.share-kind\{[^}]*auto-fit/.test(details.replace(/\s+/g, "")),
   "وتتّسع الأبوابُ الثلاثةُ في صفٍّ واحد، بلا عددٍ مكتوبٍ يلزم تغييرُه عند الرابع");
 
+/* ── ثلاثُ ملاحظاتٍ من مراجعةٍ آلية ─────────────────────────────────────── */
+
+/* ١) رمزُ الطلب كان يُفتح من باب القراءة. البابُ يُعالج «بطاقة الأستاذ» ثم
+      يسقط بما سواها إلى جدول القسم كاملاً — ومنه رمزُ الطلب. فمن نسخه من
+      قائمة الروابط أو فتحه بهذا المسار يرى جدولَ القسم كلَّه بدل نموذج
+      صاحبه: تسريبٌ لا يشتكي منه أحد، لأن الصفحةَ تُفتح وتعمل. */
+check(server.includes('if (resolved.link.kind === "request") {')
+  && server.includes('res.redirect(302, `/r/${encodeURIComponent(resolved.link.id)}`);'),
+  "ورمزُ الطلب يُردّ إلى بابه، فلا يُفتح على جدول القسم");
+/* والترتيبُ شرط: تحويلٌ بعد بناء الجدول لا يمنع بناءه. ويُقاس داخل بابه
+   وحدَه، فـ`buildSharePayload` تُستدعى في ثلاثة مواضعَ في الملفّ. */
+const staffDoor = server.slice(server.indexOf('app.get("/s/:token"'));
+check(staffDoor.indexOf('res.redirect(302, `/r/${encodeURIComponent(resolved.link.id)}`);')
+  < staffDoor.indexOf("const payload = await buildSharePayload(resolved.link);"),
+  "ويُردّ قبل أن يُبنى جدولُ القسم، لا بعده");
+/* وحارسٌ ثانٍ في الشاشة: لا تُعرض أصلاً، فلا تأخذ أزرارَ القائمة التي تبني
+   `/s/`. */
+check(publish.includes('link.kind !== "survey" && link.kind !== "request"'),
+  "ولا تُعرض روابطُ الطلب في قائمة روابط النشر");
+
+/* ٢) الصلاحيةُ كانت ثابتةً بـ٢١ يوماً والموعدُ يُكتب بحرّية. فمن كتب موعداً
+      أبعدَ منها رأى أساتذتُه «انتهت صلاحية هذا الرابط» قبل الموعد الذي
+      وعدهم به، ولا شيءَ في الشاشة يقول لماذا. */
+check(server.includes("expiresAt: new Date(Math.max(")
+  && server.includes("Date.parse(`${closesAt}T23:59:59.999Z`) + 86400000,"),
+  "وصلاحيةُ الرمز تتبع الموعدَ المُعلَن، فلا يُغلق قبل ما وُعد به");
+check(server.includes("Date.now() + REQUEST_LINK_DAYS * 86400000,"),
+  "ولا تنزل عن الحدّ الأدنى، فلا يُغلق رابطُ موعدٍ قريبٍ لحظةَ انتهائه");
+
+/* ٣) «أُصدر ١٢ رابطاً» كانت تبقى بعد إغلاق اللوحة وفتحِها على نطاقٍ آخر، أو
+      بعد إنشاء رابط قراءةٍ عادي — فتُقرأ خبراً عن الفعل الجاري وهي خبرٌ عن
+      فعلٍ مضى. */
+check(publish.includes("useEffect(() => { setIssued(null); }, [open, collegeId, sectionId, termId, kind]);"),
+  "ونتيجةُ الإصدار تُمحى عند تغيّر النطاق أو النوع أو إعادة الفتح");
+check(publish.includes("setCreatedId(data.id);\n      setIssued(null);"),
+  "وعند إنشاء رابطٍ من نوعٍ آخر");
+check(publish.includes("setIssued({ created: rows.length - reissued, reissued });\n      setCreatedId(null);"),
+  "والعكسُ كذلك، فلا يُعرض خبران عن فعلين");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

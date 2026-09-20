@@ -111,6 +111,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     if (open) void load();
   }, [open, collegeId, sectionId, termId]);
 
+  /* ── ولا تبقى نتيجةُ الإصدار معلّقةً على فعلٍ آخر ─────────────────────────
+   * «أُصدر ١٢ رابطاً» كانت تبقى بعد إغلاق اللوحة وفتحِها على نطاقٍ آخر، أو
+   * بعد إنشاء رابط قراءةٍ عادي — فتُقرأ خبراً عن الفعل الجاري وهي خبرٌ عن
+   * فعلٍ مضى، ويظنّ المنسّقُ أنه أرسل لهذا القسم وقد أرسل لغيره. */
+  useEffect(() => { setIssued(null); }, [open, collegeId, sectionId, termId, kind]);
+
   /**
    * إصدارُ روابط الرغبات.
    *
@@ -134,6 +140,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
          يظنُّ القسمُ أنه أرسل لعشرين وقد أرسل لثلاثة. */
       const reissued = rows.filter(row => row.reissued).length;
       setIssued({ created: rows.length - reissued, reissued });
+      setCreatedId(null);
       setStep("links");
     } catch (e: any) {
       setError(e.message);
@@ -155,6 +162,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
       const data = await readReply(response, "تعذر إنشاء الرابط");
       setLinks(current => [data, ...current]);
       setCreatedId(data.id);
+      setIssued(null);
       setStep("links");
     } catch (e: any) {
       setError(e.message);
@@ -229,7 +237,16 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     window.setTimeout(() => setCopied(current => (current === id ? null : current)), 1800);
   };
 
-  const publicationLinks = links.filter(link => link.kind !== "survey");
+  /* ── ما يُعرض في هذه القائمة ────────────────────────────────────────────
+   *
+   * روابطُ الطلب ليست منها، وإن كانت في المخزن نفسه: هي رابطٌ لكلِّ أستاذٍ
+   * على حدة يُرسل من «وارد الأساتذة»، لا رابطٌ واحدٌ يُنسخ من هنا. وعرضُها
+   * كان يعطيها أزرارَ هذه القائمة — نسخٌ ورمزٌ وتقويم — وكلُّها تبني `/s/`،
+   * فينسخ المنسّقُ رابطاً يُفتح على جدول القسم كاملاً بدل نموذج صاحبه.
+   *
+   * وبابُ `/s/` صار يردّ رمزَ الطلب إلى بابه، فالحارسان اثنان: هنا لا تُعرض،
+   * وهناك لا تُفتح. */
+  const publicationLinks = links.filter(link => link.kind !== "survey" && link.kind !== "request");
   const active = publicationLinks.filter(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now());
 
   /**
