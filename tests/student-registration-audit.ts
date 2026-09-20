@@ -27,6 +27,7 @@ const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 const repo = fs.readFileSync(path.join(process.cwd(), "src/db/repository.ts"), "utf8");
 const types = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8");
 const screen = fs.readFileSync(path.join(process.cwd(), "src/components/StudentRegistration.tsx"), "utf8");
+const inboxScreen = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
 
 /* ── رقمُ الحالة ────────────────────────────────────────────────────────── */
 
@@ -146,6 +147,24 @@ check(repo.includes("firestoreDb.runTransaction(async transaction => {"),
   "وكتابةُ الحالة معاملةٌ واحدة، فلا يمحو قرارٌ قراراً");
 check(repo.includes("const doc = await transaction.get(ref);") && repo.includes("transaction.set(ref, merged);"),
   "تقرأ وتكتب داخلها، فمن يخسر السباقَ يُعاد دمجُه");
+
+
+/* ── اسمُ النطاق يُقرأ من حقله ─────────────────────────────────────────── */
+
+/* الخادمُ يرسل الأسماء في `AdCollegeName` و`AdSectionName` (انظر
+   `clientScopeDetails`). وقراءتُها باسمٍ مخترعٍ لا تُخطئ بصوتٍ مسموع: تسقط
+   إلى البديل فتظهر «كلية ٥» مكان اسم الكلية — ويبدو للناظر كأن الحساب يحمل
+   نطاقاتٍ ليست له. */
+check(server.includes("AdCollegeName: collegeById.get(collegeId)"),
+  "الخادمُ يرسل اسم الكلية في `AdCollegeName`");
+check(server.includes("AdSectionName: sectionName ?? sectionById.get(sectionId)"),
+  "واسمَ القسم في `AdSectionName`");
+for (const [file, source] of [["StudentRegistration", screen], ["InstructorInbox", inboxScreen]] as const) {
+  check(source.includes("scope.AdCollegeName ||"), `و${file} تقرأ الكلية من حقلها`);
+  check(source.includes("scope.AdSectionName ||"), `و${file} تقرأ القسم من حقله`);
+  check(!/scope\.(CollegeName|SectionName)\b/.test(source),
+    `ولا تقرأ ${file} باسمٍ لا يرسله الخادم`);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
