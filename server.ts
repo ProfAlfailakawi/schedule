@@ -13279,7 +13279,7 @@ function showProofUpload(message){var upload=document.getElementById("proofUploa
 function acceptVerifiedProof(d,reused){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus"),options=document.getElementById("graduateOptions");proofEligible=!!d.eligible;proofToken=d.proofToken||"";if(upload)upload.hidden=true;if(example)example.hidden=true;if(title)title.textContent=reused?"تم التحقق مسبقًا":"تم التحقق من صحيفة التخرج";if(lead)lead.textContent=reused?"لا حاجة لرفع الصحيفة مرة أخرى لهذا الفصل والقسم.":"تم اعتماد بيانات الصحيفة لهذه الجلسة.";if(status){status.className="proof-status "+(reused?"reused":"ok");status.textContent=d.message||"تم التحقق، ويمكنك متابعة الطلب."}if(options){options.hidden=false;wireGraduateDetails()}refreshGraduateSubmit()}
 function checkPriorGraduateProof(){if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
 function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
-function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}rememberIdentity();identityLocked=true;host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.</p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
+function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}rememberIdentity();identityLocked=true;host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
 fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
 }
@@ -14074,6 +14074,179 @@ ${resolved.error}</body></html>`);
     return;
   }
   res.type("text/html; charset=utf-8").send(instructorRequestPage(resolved.link.id, publicPageNonce(res)));
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   «حالة طلبي» — البابُ الذي يُغني عن الوقوف عند المكتب
+   ══════════════════════════════════════════════════════════════════════════
+
+   الطالب يعبّئ الاستبيان فيصله رقمُ حالة، ثم يصمت النظام. فيأتي. وأكثرُ
+   الزحمة في أسبوع التسجيل ليست عن مقعدٍ ولا عن تعارض: هي سؤالٌ واحد — «وصل
+   طلبي أو لا؟» — لا يملك الطالبُ طريقاً إلى جوابه إلا المجيء.
+
+   هذه الصفحةُ هي الجواب. تفتح بالرابط نفسه الذي عبّأ منه، ويتعرّف عليها
+   بالرقم المدني كما في بقيّة الأبواب، فيرى ما أرسله ورقمَ حالته وتاريخه.
+
+   وما لا تفعله مقصودٌ كفعلها:
+
+   - **لا تَعِد بما لا تعرفه.** لا تقول «مقعدُك محجوز» ولا «سُجّلت»: النظام
+     لا يعرف ذلك، والقسمُ يسلّم التسجيلَ يدوياً إلى اليوم. تقول ما جرى فعلاً:
+     وصل الطلب، ومتى، وبأيّ مقرّرات. وادّعاءُ ما بعدها يصنع زحمةً أسوأ حين
+     يكتشف الطالبُ أنه غير مسجَّل.
+
+   - **لا تكشف أحداً.** تُقرأ ببصمة الرقم المدني كما يُكتب بها، فالصفحةُ لا
+     تعرف اسماً ولا تعرضه. ومن لا طلبَ له يُقال له ذلك، لا «الرقم خطأ»:
+     الفرقُ بينهما يكشف من عبّأ ومن لم يعبّئ لمن يجرّب أرقاماً.
+
+   - **ولا تُفتح بالمحاولة.** حدُّ المحاولات نفسُه المفروضُ على بطاقة الأستاذ:
+     عشرُ محاولاتٍ في النافذة، ثم انتظار.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response) => {
+  const token = String(req.params.token || "");
+  const resolved = await resolveShareToken(token);
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
+  if (!staffLookupAllowed(`mycase:${token}`, req.ip || "unknown")) {
+    res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
+    return;
+  }
+
+  const civil = String(req.body?.civil || "").replace(/\D/g, "");
+  if (civil.length !== 12 || !validateCivilId(civil)) {
+    res.status(400).json({ error: "أدخل الرقم المدني من 12 رقماً كما في بطاقتك." });
+    return;
+  }
+
+  const fingerprint = await surveyFingerprint(civil);
+  const [needs, courses, terms] = await Promise.all([
+    Repository.getStudentNeeds(Number(resolved.link.AdCollegeId), 0, Number(resolved.link.AdTermId)),
+    Repository.getCourses(),
+    Repository.getTerms(),
+  ]);
+  const mine = (needs as any[]).find(need =>
+    String(need?.fingerprint || "") === fingerprint
+    && Number(need?.surveySectionId || need?.AdSectionId || 0) === Number(resolved.link.AdSectionId));
+
+  res.setHeader("Cache-Control", "no-store");
+  if (!mine) {
+    /* «لا طلبَ لك» لا «الرقم خطأ»: التفريقُ بينهما يكشف لمن يجرّب أرقاماً من
+       عبّأ الاستبيان ومن لم يعبّئه. */
+    res.json({ found: false, term: String((terms as any[]).find(row => Number(row.AdTermId) === Number(resolved.link.AdTermId))?.AdTermName || "") });
+    return;
+  }
+
+  const nameOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
+  const codeOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseCode || "")]));
+  res.json({
+    found: true,
+    /* الرقمُ نفسه الذي أُعطي له لحظةَ الإرسال، مشتقٌّ من معرّف السجلّ لا
+       مولَّدٌ من جديد — فلو اختلفا لظنّ أنه أرسل مرّتين. */
+    caseRef: String(mine.id).slice(0, 8).toUpperCase(),
+    submittedAt: String(mine.createdAt || ""),
+    requestType: String(mine.requestType || "new-course"),
+    term: String((terms as any[]).find(row => Number(row.AdTermId) === Number(mine.AdTermId))?.AdTermName || ""),
+    courses: (Array.isArray(mine.courseIds) ? mine.courseIds : []).map((id: any) => ({
+      code: codeOf.get(Number(id)) || "",
+      name: nameOf.get(Number(id)) || `مقرر ${id}`,
+    })),
+  });
+});
+
+/**
+ * صفحةُ «حالة طلبي».
+ *
+ * منفصلةٌ عن صفحة الاستبيان عن قصد: تلك تُملأ مرّةً، وهذه تُفتح مرّاتٍ في
+ * أسبوع التسجيل. ودمجُهما كان يعني أن يمرّ من يريد السؤالَ وحده على خطوات
+ * التعبئة كلها ليصل إلى سطرٍ واحد.
+ */
+function studentCaseStatusPage(token: string, nonce: string): string {
+  return `<!doctype html><html lang="ar" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>حالة طلبي</title>
+<style>
+:root{--ink:#16281f;--muted:#5d6f66;--line:#dde5e0;--bg:#f4f7f5;--ok:#2e7d5b;--bad:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,"Segoe UI",Tahoma,sans-serif}
+.wrap{max-width:520px;margin:0 auto;padding:22px 16px}
+h1{font-size:21px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 20px}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:7px}
+input{width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);font:inherit;
+font-size:17px;background:#fff;text-align:center;letter-spacing:.06em}
+button{width:100%;margin-top:11px;padding:14px;border-radius:12px;border:0;background:var(--ok);
+color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}
+button:disabled{opacity:.55;cursor:not-allowed}
+.err{background:#fdeceb;color:var(--bad);padding:11px 13px;border-radius:11px;margin-top:13px;font-size:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:18px}
+.ref{font-size:25px;font-weight:800;letter-spacing:.09em;text-align:center;margin:0 0 4px}
+.reflabel{text-align:center;color:var(--muted);font-size:12px;margin:0 0 15px}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;justify-content:space-between;gap:11px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}
+li:first-child{border-top:0}
+li small{color:var(--muted);flex:none}
+.note{margin-top:15px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
+</style></head><body><div class="wrap">
+<h1>حالة طلبي</h1>
+<p class="sub">أدخل رقمك المدني لترى ما أرسلتَه إلى القسم.</p>
+<label for="civil">الرقم المدني</label>
+<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="············">
+<button id="go" type="button">اعرض حالتي</button>
+<div id="out"></div>
+</div>
+<script nonce="${nonce}">(function(){
+var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),
+go=document.getElementById("go"),out=document.getElementById("out");
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
+return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+/* الأرقام العربية تُقبل كما تُكتب: من يكتب «٢٩٠…» أدخل رقمه، لا خطأً. */
+function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){
+return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}
+function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
+d.toLocaleDateString("ar-KW",{year:"numeric",month:"long",day:"numeric"})}
+function fail(m){out.innerHTML='<div class="err">'+esc(m)+'</div>'}
+function show(d){
+ if(!d.found){out.innerHTML='<div class="card"><div class="empty">'+
+  'لا يوجد طلبٌ مسجّلٌ بهذا الرقم في '+esc(d.term||"هذا الفصل")+'.<br>'+
+  'إن كنت قد عبّأت الاستبيان من رابطٍ آخر، افتح ذلك الرابط.</div></div>';return}
+ out.innerHTML='<div class="card"><p class="ref">'+esc(d.caseRef)+'</p>'+
+  '<p class="reflabel">رقم حالتك · '+esc(d.term)+'</p>'+
+  '<ul>'+(d.courses||[]).map(function(c){
+   return '<li><span>'+esc(c.name)+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
+  '<p class="note">وصل طلبك إلى القسم يوم '+esc(dt(d.submittedAt))+'.<br>'+
+  'هذه حالةُ طلبك عند القسم، وليست تسجيلاً في النظام الأكاديمي. '+
+  'وإذا غيّرت اختيارك، افتح رابط الاستبيان وأرسل من جديد فيُحدَّث طلبك.</p></div>'}
+function run(){
+ var civil=digits(box.value);
+ if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");
+ go.disabled=true;go.textContent="يقرأ…";out.innerHTML="";
+ fetch("/api/public/survey/"+encodeURIComponent(TOKEN)+"/my-case",{method:"POST",
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:civil})})
+ .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
+ .then(function(x){go.disabled=false;go.textContent="اعرض حالتي";
+  if(!x.ok)return fail(x.d.error||"تعذّر القراءة");show(x.d)})
+ .catch(function(){go.disabled=false;go.textContent="اعرض حالتي";fail("تعذّر الاتصال.")})}
+go.onclick=run;
+box.addEventListener("keydown",function(e){if(e.key==="Enter")run()});
+})();</script></body></html>`;
+}
+
+/** بابُ «حالة طلبي». الرابطُ نفسه الذي عبّأ منه الطالب، بمسارٍ آخر. */
+app.get("/m/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token || ""));
+  res.setHeader("Cache-Control", "no-store");
+  if ("error" in resolved || resolved.link.kind !== "survey") {
+    const message = "error" in resolved ? resolved.error : "هذا الرابط ليس استبياناً";
+    const status = "error" in resolved ? resolved.status : 404;
+    res.status(status).type("text/html; charset=utf-8").send(
+      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title></head>
+<body style="font:16px system-ui;padding:40px;text-align:center;color:#16281f">${message}</body></html>`);
+    return;
+  }
+  res.type("text/html; charset=utf-8").send(studentCaseStatusPage(resolved.link.id, publicPageNonce(res)));
 });
 
 app.get("/q/:token", async (req: Request, res: Response) => {
