@@ -32,6 +32,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     [civil, setCivil] = useState(""),
     [name, setName] = useState(""),
     [mobile, setMobile] = useState(""),
+    [teachingLoad, setTeachingLoad] = useState(""),
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
@@ -86,6 +87,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       setName("");
       setMobile("");
       setStatus("");
+      setTeachingLoad("");
       setMode("create");
       setError(null);
     },
@@ -95,6 +97,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       setName(x.AdInstructorName || "");
       setMobile(x.AdInstructorMobile || "");
       setStatus(x.AdInstructorStatus === "retired" || x.AdInstructorStatus === "sabbatical" ? x.AdInstructorStatus : "");
+      setTeachingLoad(Number(x.AdInstructorLoad) > 0 ? String(x.AdInstructorLoad) : "");
       setMode("edit");
       setError(null);
     };
@@ -149,6 +152,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
               AdInstructorName: name.trim(),
               AdInstructorMobile: mobile.trim(),
               AdInstructorStatus: status || null,
+              AdInstructorLoad: teachingLoad.trim() ? Number(teachingLoad) : null,
             }),
           },
         ),
@@ -286,6 +290,21 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   onChange={(e) => {
                     setMobile(numericText(e.target.value).slice(0, 8));
                   }}
+                />
+              </Field>
+              {/* ── النصاب ──────────────────────────────────────────────────
+                  الساعاتُ التي يُتوقّع أن يحملها هذا الأستاذ في الفصل. وهو
+                  القيدُ الذي كان غائباً حين صار الأستاذُ يطلب مقرّراً بنفسه:
+                  لا شيء كان يقول «هذا يتجاوز نصابك» قبل أن يُرسل الطلب.
+
+                  ويبقى اختيارياً: أستاذٌ بلا نصابٍ مسجّل لا يُفرض عليه رقمٌ
+                  مخترع، ويُترك القيدُ صامتاً كما كان. */}
+              <Field label="النصاب" hint="اختياري — ساعاتٌ معتمدة. يُترك فارغاً فلا يُقيَّد به أحد.">
+                <input
+                  inputMode="numeric"
+                  value={teachingLoad}
+                  placeholder="مثال: 12"
+                  onChange={(e) => setTeachingLoad(numericText(e.target.value).slice(0, 2))}
                 />
               </Field>
               <Field label="الحالة">

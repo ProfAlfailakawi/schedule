@@ -138,6 +138,7 @@ import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
 import { AR, countOf } from "../utils/arabicCount";
+import { handoffNotice, takeHandoff, type RequestHandoff } from "../utils/requestHandoff";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
 import { claimWarmStart } from "../utils/warmStart";
 import { pickHistoricalDayModel, type HistoricalTimeModel } from "../utils/advancedIntelligence";
@@ -175,7 +176,17 @@ interface Props {
   onNavigate?: (view:string) => void;
 }
 type EditorMode = "index" | "create" | "edit";
-type CreateSeed = { day?: DayKey; start?: string; end?: string; roomCode?: string; roomHall?: string };
+type CreateSeed = {
+  day?: DayKey; start?: string; end?: string; roomCode?: string; roomHall?: string;
+  /* ── بذرةٌ من وارد الأساتذة ────────────────────────────────────────────────
+     الأستاذ يطلب مقرّراً جديداً، والقاعةُ والشعبةُ ليستا من اختياره. فكان
+     الوارد يقول له «افتحها في الورشة» ويقف — وهو طريقٌ مسدودٌ يتركُ المنسّقَ
+     يعيد كتابةَ ما قرأه للتوّ. هذه الحقولُ تحمل ما قاله الأستاذ فعلاً،
+     ويبقى ما لم يقله فارغاً ينتظر قرار القسم. */
+  courseId?: number; instructorId?: number;
+  collegeId?: number; sectionId?: number; termId?: number;
+  days?: DayKey[];
+};
 type DecisionFingerprint = { summary: string; before: string; after: string; place: string; quality: string; count: number; when: number };
 /**
  * Run this after the thing the reader is actually waiting for.
@@ -2702,6 +2713,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     setDecisionFingerprint(payload);
   }, []);
 
+  /** الطلبُ الذي جاءت منه الإضافةُ المفتوحة، إن جاءت من وارد الأساتذة. */
+  const pendingHandoff = useRef<RequestHandoff | null>(null);
+
   const openCreate = (seed?: CreateSeed) => {
       if (showMobileReadOnlyGate()) return;
       setError(null);
@@ -2725,6 +2739,37 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       if (seed?.day) {
         days.forEach(day => { (next as any)[day.key] = day.key === seed.day; });
       }
+      /* أيامٌ كاملةٌ من طلب أستاذ: يختار أكثر من يوم، فلا تُقصّ إلى واحد. */
+      if (seed?.days?.length) {
+        days.forEach(day => { (next as any)[day.key] = seed.days!.includes(day.key as DayKey); });
+      }
+      /* النطاقُ والمقرّرُ والأستاذ من الطلب، حين جاءت البذرةُ منه. ولا تُبذر
+         قاعةٌ ولا شعبة: هما قرارُ القسم، وبذرُهما بقيمةٍ افتراضيةٍ يُنتج صفّاً
+         ناقصاً يكتشفه أحدٌ بعد شهر. */
+      if (seed?.collegeId) next.AdCollegeId = seed.collegeId;
+      if (seed?.sectionId) next.AdSectionId = seed.sectionId;
+      if (seed?.termId) next.AdTermId = seed.termId;
+      if (seed?.instructorId) next.AdInstructorId = seed.instructorId;
+      if (seed?.courseId) {
+        next.AdCourseId = seed.courseId;
+        /* ── وما لم يقله الأستاذُ يبقى فارغاً ──────────────────────────────
+         *
+         * النموذجُ يرث آخِرَ ما حُفظ — ومنه المبنى والقاعةُ ورقمُ الشعبة —
+         * وهو تسهيلٌ صحيحٌ لمن يضيف مواعيدَ متتابعةً بيده. لكنه هنا نقيضُ
+         * المقصود: إضافةٌ جاءت من طلب أستاذٍ يُفترض أن تنتظر قرارَ القسم في
+         * قاعتها، فتُفتح وقاعةُ موعدٍ سابقٍ لا علاقة لها بها مكتوبةٌ فيها،
+         * فتُحفظ هناك سهواً.
+         *
+         * فتُمحى كلُّها: القرارُ الذي لم يُتَّخذ يُعرض فارغاً، لا مملوءاً
+         * بقيمةٍ ورثها النموذجُ من عملٍ آخر.
+         */
+        next.AdRoomCode = "";
+        next.AdRoomHall = "";
+        next.roomId = undefined;
+        next.buildingId = undefined;
+        next.locationStatus = undefined;
+        next.SCode = "";
+      }
       // Location is never seeded from a raw string. The user selects a canonical registry record below.
       if (seed?.start) {
         next.fstarttime = seed.start;
@@ -2738,7 +2783,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         next.fendtime = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(seed.start) + (seed.day ? expectedMinutesForDay(seed.day as RegDayKey) : 50)));
       }
       setForm(next);
-      setCourseName("");
+      setCourseName(seed?.courseId ? (courseById.get(Number(seed.courseId))?.CourseName || "") : "");
       setEditId(null);
       setEditor("create");
     },
@@ -4020,6 +4065,36 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       void openContext(row);
     }
   }, [mode, rows.length]);
+  /* ── بذرةٌ من وارد الأساتذة ───────────────────────────────────────────────
+   *
+   * إضافةٌ طلبها أستاذ: المقرّرُ والأيامُ والوقتُ من طلبه، والشعبةُ والقاعةُ
+   * قرارُ القسم. فيُفتح النموذجُ نصفَ ممتلئ، ويُقال للمنسّق من أين جاء —
+   * فنموذجٌ ممتلئٌ بلا تفسير يجعل القارئ يظنّ أنه فتحه بنفسه ونسي.
+   *
+   * ويُنتظر الكتالوجُ لا الصفوف: البذرةُ تحمل مقرّراً يُعرض باسمه، وفتحُها
+   * قبل وصول أسماء المقرّرات يُظهر النموذجَ برقمٍ بلا اسم. أما الصفوفُ فقد
+   * تكون فارغةً بحقّ — قسمٌ لم يُبنَ جدولُه بعد هو أوّلُ من يحتاج هذا.
+   */
+  useEffect(() => {
+    if (mode !== "schedule" || !courses.length) return;
+    const handoff = takeHandoff();
+    if (!handoff) return;
+    /* يُحتفظ به حتى يُحفظ الصفُّ فيُسجَّل القرار: بذرةٌ تُزرع ولا يُسجَّل
+       قرارُها تترك البندَ معلّقاً في وارد الأساتذة إلى الأبد، وزرُّه يُنشئ
+       الإضافةَ نفسَها مرّةً بعد مرّة. */
+    pendingHandoff.current = handoff;
+    openCreate({
+      courseId: handoff.courseId,
+      instructorId: handoff.instructorId,
+      collegeId: handoff.collegeId,
+      sectionId: handoff.sectionId,
+      termId: handoff.termId,
+      days: handoff.days as DayKey[],
+      start: handoff.start,
+      end: handoff.end,
+    });
+    setMessage(handoffNotice(handoff));
+  }, [mode, courses.length]);
   useEffect(() => {
     setSolutions([]);
     if (
@@ -4250,6 +4325,33 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             [{ method: "DELETE", url: `/api/schedules/${createdId}` }],
           );
         }
+      }
+      /* ── إغلاقُ البند الذي جاءت منه هذه الإضافة ────────────────────────
+       *
+       * الحفظُ وقع فعلاً، فيُسجَّل القرارُ بعده ومعه معرّفُ الصفّ الذي أنتجه.
+       * وترتيبُهما هو المهمّ: قرارٌ يُسجَّل قبل الحفظ يقول للأستاذ إن طلبه
+       * نُفِّذ وقد لا يكون — وهو الحارسُ نفسُه المفروض في الخادم.
+       *
+       * وإخفاقُ التسجيل لا يُسقط الحفظ: الصفُّ في الجدول، والبندُ يبقى
+       * معلّقاً في الوارد ليُغلق بيد المنسّق. وإخفاءُ الخطأ هنا أسوأ من
+       * إظهاره، لأن البندَ سيبدو منتهياً وليس كذلك.
+       */
+      const handoff = pendingHandoff.current;
+      const createdRowId = Number(saved?.id || 0);
+      /* ويُشترط أن يكون المحفوظُ هو المطلوبَ نفسَه: من يفتح البذرةَ ثم يتركها
+         ويضيف موعداً آخرَ بيده كان سيُغلق بها بندَ الأستاذ على صفٍّ لا يخصّه. */
+      const matchesHandoff = Boolean(handoff)
+        && Number(form.AdCourseId || 0) === Number(handoff!.courseId)
+        && Number(form.AdTermId || 0) === Number(handoff!.termId)
+        && Number(form.AdInstructorId || 0) === Number(handoff!.instructorId);
+      if (handoff && matchesHandoff && editor !== "edit" && createdRowId) {
+        pendingHandoff.current = null;
+        void fetch(`/api/instructor-requests/${handoff.requestId}/decide`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemIndex: handoff.itemIndex, state: "fixed", scheduleId: createdRowId }),
+        }).catch(() => undefined);
       }
       rememberSave(form);
       markChanged(editor === "edit" ? editId : Number(saved?.id || 0) || null);

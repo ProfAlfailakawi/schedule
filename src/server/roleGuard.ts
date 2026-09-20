@@ -13,7 +13,18 @@
 import { isReadOnlyRole, isViewerOnlyRole, roleDefinition } from "../utils/academicRoles";
 
 /** مسارات دورة الاعتماد: البابُ الضيّق الذي يمرّ منه القارئ دون أن يمسّ جدولاً. */
-export const APPROVAL_WRITE_PREFIXES = ["/approvals", "/schedule-notes"] as const;
+/**
+ * المسارات التي تكتبها صفاتُ «القراءة» لأن الكتابة فيها هي عملُها.
+ *
+ * صفةُ التسجيل `readOnly` لأنها لا تبني جدولاً — لا لأنها لا تفعل شيئاً. وهي
+ * توقّع على دورة الاعتماد، وتعلّق على الخانات، وتقول الآن أين وصل كلُّ مقرّرٍ
+ * طلبه طالب. هذه الثلاثةُ أقوالُها لا تعديلاتٌ على الجدول، ولذلك تُذكر هنا
+ * بأعيانها ولا تُفتح الكتابةُ عليها كلّها.
+ *
+ * ويبقى حارسُ «صفةِ العرض الصرف» فوق هذا: العميدُ ووكيلُه وعميدُ التسجيل
+ * يقرؤون ولا يكتبون، حتى في هذه المسارات.
+ */
+export const APPROVAL_WRITE_PREFIXES = ["/approvals", "/schedule-notes", "/student-registration"] as const;
 
 /** ما ليس تعديلاً على بيانات: الدخول والخروج والنبض والحضور. */
 export const SESSION_WRITE_PATHS = new Set([

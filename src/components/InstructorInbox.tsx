@@ -37,6 +37,7 @@ import {
 } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { reachAboutCard } from "../utils/reachInstructor";
+import { putHandoff } from "../utils/requestHandoff";
 import { currentTermId } from "../utils/termSequence";
 import type {
   AdTerm, FSchedule, InstructorRequest, InstructorRequestItem, InstructorRequestRejectReason,
@@ -45,6 +46,8 @@ import type {
 interface Props {
   scopes: Array<{ AdCollegeId: number; AdSectionId: number; CollegeName?: string; SectionName?: string }>;
   powerAdmin?: boolean;
+  /** يفتح ورشة الجدول. تحتاجه الإضافةُ وحدها، ولا تفعل الشاشةُ شيئاً بدونه. */
+  onNavigate?: (view: string) => void;
 }
 
 interface InboxRequest extends InstructorRequest {
@@ -259,11 +262,11 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
                   <PrimaryButton
                     type="button"
                     data-guide-target="requests.action.fix"
-                    disabled={busyKey === key || item.verdict === "conflict" || (item.action !== "delete" && !current && item.action !== "add")}
+                    disabled={busyKey === key || item.verdict === "conflict" || (item.action === "change" && !current)}
                     onClick={() => onDecide(index, "fixed", { current })}
                     title={item.verdict === "conflict" ? "لا يُثبَّت بندٌ متعارض — عالجه أو ارفضه" : undefined}
                   >
-                    {busyKey === key ? "يحفظ…" : "ثبّت"}
+                    {busyKey === key ? "يحفظ…" : item.action === "add" ? "افتحها في الورشة" : "ثبّت"}
                   </PrimaryButton>
                   <SecondaryButton type="button" data-guide-target="requests.action.reject" onClick={() => setRejecting(index)}>
                     ارفض
@@ -292,7 +295,7 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
 
 /* ── الشاشة ─────────────────────────────────────────────────────────────── */
 
-export default function InstructorInbox({ scopes, powerAdmin = false }: Props) {
+export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
   const [collegeId, setCollegeId] = useState(0);
@@ -402,10 +405,30 @@ export default function InstructorInbox({ scopes, powerAdmin = false }: Props) {
           });
           scheduleId = Number(saved?.id || item.rowId);
         } else if (item.action === "add") {
-          /* الإضافةُ تحتاج قاعةً ومبنىً وشعبة، وليس شيءٌ منها من اختيار
-             الأستاذ. فتُفتح في الورشة حيث تُختار هذه كلُّها، ولا تُخترع هنا
-             بقيمٍ افتراضية تُنتج صفّاً ناقصاً يكتشفه أحدٌ بعد شهر. */
-          throw new Error("الإضافة تُفتح في ورشة الجدول لاختيار الشعبة والقاعة، ثم تُثبَّت من هناك.");
+          /* ── الإضافة ───────────────────────────────────────────────────────
+             تحتاج شعبةً وقاعةً ومبنى، وليس شيءٌ منها من اختيار الأستاذ — فلا
+             تُثبَّت من هنا كما تُثبَّت نقلةُ موعدٍ قائم، ولا تُخترع لها قيمٌ
+             افتراضيةٌ تُنتج صفّاً ناقصاً يكتشفه أحدٌ بعد شهر.
+
+             وكانت تقف عند رسالةٍ تقول «افتحها في الورشة» — وهو طريقٌ مسدودٌ
+             يترك المنسّقَ يعيد كتابةَ ما قرأه للتوّ. فصارت تحمله إليها ومعه ما
+             قاله الأستاذ: المقرّر والأيام والوقت، ويبقى قرارُه هو فارغاً. */
+          const slots = item.slots || [];
+          putHandoff({
+            requestId: row.id,
+            itemIndex: index,
+            instructorId: Number(row.AdInstructorId),
+            instructorName: row.instructorName,
+            courseId: Number(item.after?.courseId || 0),
+            collegeId: Number(row.AdCollegeId),
+            sectionId: Number(row.AdSectionId),
+            termId: Number(row.AdTermId),
+            days: slots.map(slot => slot.day) as any,
+            start: slots[0]?.start || "",
+            end: slots[0]?.end || "",
+          });
+          onNavigate?.("schedules");
+          return;
         }
       }
       await request(`/api/instructor-requests/${row.id}/decide`, {

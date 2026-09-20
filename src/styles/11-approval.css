@@ -652,3 +652,52 @@
   .request-actions{flex-direction:column}
   .request-actions .btn{width:100%}
 }
+
+/* ==========================================================================
+   كشفُ التسجيل — الطرفان على ورقةٍ واحدة
+   --------------------------------------------------------------------------
+   يشارك بطاقةَ الوارد شكلَها عن قصد: من يفتح الشاشتين في اليوم نفسه لا يتعلّم
+   لغتين. وما يفترق هو ما يختلف فعلاً — صفُّ المقرّر هنا يحمل حالةً وثلاثةَ
+   أزرار، لا «كان» و«طلب».
+   ========================================================================== */
+
+.registration-readonly{
+  display:flex;align-items:center;gap:8px;margin:0;
+  padding:var(--s3) var(--s4);border-radius:var(--r-lg);
+  background:var(--surface-2);border:1px dashed var(--line);
+  color:var(--muted);font-size:var(--t-sm);
+}
+.registration-readonly svg{width:15px;height:15px;flex:none}
+
+.registration-count{color:var(--muted);font-size:var(--t-xs);flex:none}
+
+.registration-course{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);border-top:1px solid var(--line);
+  border-inline-start:3px solid transparent;
+}
+.registration-course:first-child{border-top:0}
+/* اللونُ على الحافّة لا على الخلفية: يدلّ ولا يصرخ، ويبقى الاسمُ مقروءاً. */
+.registration-course[data-state="registered"]{border-inline-start-color:var(--ok,#2e7d5b)}
+.registration-course[data-state="rejected"]{border-inline-start-color:var(--danger,#b3261e)}
+
+.registration-course-name{flex:1 1 180px;min-width:0;display:flex;flex-direction:column;gap:1px}
+.registration-course-name strong{font-size:var(--t-base);font-weight:700}
+.registration-course-name small{color:var(--muted);font-size:var(--t-xs)}
+
+.registration-course-state{flex:1 1 150px;min-width:0;display:flex;flex-direction:column;gap:1px}
+.registration-course-state>span{font-size:var(--t-sm);color:var(--muted)}
+.registration-course-state>span[data-state="registered"]{color:var(--ok,#2e7d5b);font-weight:700}
+.registration-course-state>span[data-state="rejected"]{color:var(--danger,#b3261e);font-weight:700}
+.registration-course-state em{font-style:normal;font-size:var(--t-xs);color:var(--muted-2)}
+
+.registration-course-actions{display:flex;gap:6px;flex:none}
+.registration-course-actions .changes-chip{display:inline-flex;align-items:center;gap:5px}
+.registration-course-actions .changes-chip svg{width:12px;height:12px}
+.registration-course-actions .changes-chip:disabled{opacity:.5;cursor:not-allowed}
+
+@media (max-width:640px){
+  .registration-course{align-items:stretch}
+  .registration-course-actions{width:100%}
+  .registration-course-actions .changes-chip{flex:1;justify-content:center}
+}

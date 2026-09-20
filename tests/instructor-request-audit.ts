@@ -12,7 +12,7 @@
  */
 
 import {
-  describeRequest, endForRequest, judgeRequest, rowFromRequest,
+  describeRequest, endForRequest, judgeRequest, rowFromRequest, weeklyLoadOf,
   type RequestedRow, type VerdictContext,
 } from "../src/utils/instructorRequestVerdict";
 import { roomKeyOf } from "../src/utils/locationRegistry";
@@ -304,6 +304,63 @@ const secondAdd = judgeRequest(
 check(!secondAdd.sendable, "إضافتان على الساعة نفسها تتعارضان");
 check(rowFromRequest({ rowId: null, tempId: -7, action: "add", AdCourseId: 1, days: ["fsunday"], start: "08:00" }, {}).id === -7,
   "والهويّةُ المؤقّتة تصل إلى الصفّ المبنيّ");
+
+
+/* ── النصاب ────────────────────────────────────────────────────────────── */
+
+/* القيدُ الذي كان غائباً: اللائحةُ تقول أين يقع الموعد، والقاعةُ تقول أيمكن،
+   ولا شيء كان يقول «هذا يتجاوز نصابك» قبل أن يُرسل الطلب. */
+const threeHourCourses = new Map([
+  [100, course(100, 3)], [200, course(200, 3)], [300, course(300, 3)], [400, course(400, 3)],
+]);
+const fourRows = [
+  row({ id: 1, AdCourseId: 100, SCode: "01" }),
+  row({ id: 2, AdCourseId: 200, SCode: "01", fstarttime: "09:00", fendtime: "09:50" }),
+  row({ id: 3, AdCourseId: 300, SCode: "01", fstarttime: "11:00", fendtime: "11:50" }),
+  row({ id: -1, AdCourseId: 400, SCode: "01", fstarttime: "12:00", fendtime: "12:50" }),
+];
+const addAsk = (): RequestedRow =>
+  ({ rowId: null, tempId: -1, action: "add", AdCourseId: 400, days: ["fsunday"], start: "12:00" });
+
+check(weeklyLoadOf(fourRows, threeHourCourses) === 12, "النصابُ مجموعُ الساعات المعتمدة لما يُدرَّس");
+/* والشعبةُ الواحدة تُعدّ مرّةً: مقرّرٌ له صفّان بالشعبة نفسها ساعاتُه ساعاتُه. */
+check(weeklyLoadOf([...fourRows, row({ id: 9, AdCourseId: 100, SCode: "01" })], threeHourCourses) === 12,
+  "وصفّان لشعبةٍ واحدةٍ لا يُضاعفانها");
+check(weeklyLoadOf([...fourRows, row({ id: 9, AdCourseId: 100, SCode: "02" })], threeHourCourses) === 15,
+  "وشعبتان من مقرّرٍ واحدٍ نصابان");
+
+const overLoad = judgeRequest(addAsk(), context({
+  courses: threeHourCourses, allRows: [], instructorRowsAfter: fourRows,
+  instructorLoad: 9,
+}));
+check(!overLoad.sendable, "إضافةٌ تتجاوز النصاب تُمنع");
+check(overLoad.reasons.some(reason => reason.source === "load"), "ويُسمّى السببُ باسمه");
+check(overLoad.reasons.some(reason => reason.text.includes("9")), "ويُقال النصابُ المسجّل، فلا يُمنع بلا رقم");
+
+check(judgeRequest(addAsk(), context({
+  courses: threeHourCourses, allRows: [], instructorRowsAfter: fourRows, instructorLoad: 12,
+})).sendable, "وبلوغُ النصاب تماماً ليس تجاوزاً");
+
+/* غيابُ النصاب ليس صفراً: أستاذٌ لا نصابَ مسجّلٌ له لا يُمنع برقمٍ مخترع. */
+check(judgeRequest(addAsk(), context({
+  courses: threeHourCourses, allRows: [], instructorRowsAfter: fourRows,
+})).sendable, "وأستاذٌ بلا نصابٍ مسجّل لا يُقيَّد برقمٍ مخترع");
+check(judgeRequest(addAsk(), context({
+  courses: threeHourCourses, allRows: [], instructorRowsAfter: fourRows, instructorLoad: null,
+})).sendable, "و«لا نصاب» صراحةً كغيابه");
+
+/* ويُقاس على الإضافة وحدَها: نقلُ محاضرةٍ لا يغيّر ساعاتِ المقرّر، وحذفُها
+   يُنقصها، والإبقاءُ لا يُحاسَب عليه أحد. */
+check(judgeRequest(ask({ rowId: 1 }), context({
+  courses: threeHourCourses, allRows: [row({ id: 1, AdCourseId: 100 })],
+  instructorRowsAfter: fourRows, instructorLoad: 3,
+})).reasons.every(reason => reason.source !== "load"), "والنقلُ لا يُحاسَب على النصاب");
+check(judgeRequest(ask({ action: "keep" }), context({
+  courses: threeHourCourses, instructorRowsAfter: fourRows, instructorLoad: 3,
+})).sendable, "والإبقاءُ كذلك");
+check(judgeRequest(ask({ action: "delete" }), context({
+  courses: threeHourCourses, instructorRowsAfter: fourRows, instructorLoad: 3,
+})).sendable, "والحذفُ يُنقص النصاب فلا يُمنع به");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

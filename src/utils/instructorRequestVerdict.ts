@@ -54,7 +54,7 @@ export type RequestDayKey = DayKey;
 export type RequestVerdictKind = "clear" | "exception" | "conflict";
 
 /** من أين جاء السبب. الأول وحده يُنسب إلى قرار ١٩١٣/٢٠١٦. */
-export type RequestReasonSource = "regulation" | "instructor" | "room" | "cohort" | "window" | "shape";
+export type RequestReasonSource = "regulation" | "instructor" | "room" | "cohort" | "window" | "shape" | "load";
 
 export interface RequestReason {
   source: RequestReasonSource;
@@ -139,6 +139,13 @@ export interface VerdictContext {
   previousRows?: FSchedule[];
   /** نافذة الطلبات: خارجَها لا يُقبل شيء. */
   windowOpen?: boolean;
+  /**
+   * نصابُ الأستاذ بالساعات المعتمدة.
+   *
+   * غيابُه ليس صفراً: أستاذٌ لا نصابَ مسجّلٌ له لا يُفرض عليه رقمٌ مخترع،
+   * ويبقى القيدُ صامتاً كما كان قبل أن يوجد.
+   */
+  instructorLoad?: number | null;
 }
 
 const dayLabel = (day: DayKey) => DAY_NAMES[DAY_KEYS.indexOf(day)];
@@ -259,6 +266,32 @@ function cohortClash(courseId: number, days: DayKey[], start: string, end: strin
     if (from < toMinutes(row.fendtime) && toMinutes(row.fstarttime) < to) return true;
   }
   return false;
+}
+
+
+/**
+ * نصابُ الأستاذ من صفوفه: مجموعُ الساعات المعتمدة لما يدرّسه.
+ *
+ * يُحسب بالساعات لا بالدقائق عن قصد. النصابُ في اللوائح ساعاتٌ معتمدة، ومحاولةُ
+ * اشتقاقه من الدقائق تُنتج رقماً لا يطابق ما يكتبه القسمُ بيده: ثلاثُ ساعاتٍ
+ * هي ١٥٠ دقيقةً على سُلّمٍ و١٦٠ على آخر، وكلاهما «ثلاث».
+ *
+ * والشعبةُ الواحدة تُعدّ مرّةً: مقرّرٌ له صفّان في جدولٍ واحدٍ بالشعبة نفسها
+ * ساعاتُه ساعاتُه، لا ضعفُها.
+ */
+export function weeklyLoadOf(rows: FSchedule[], courses: Map<number, AdCourse>): number {
+  const seen = new Set<string>();
+  let hours = 0;
+  for (const row of rows) {
+    const courseId = Number(row.AdCourseId || 0);
+    if (!courseId) continue;
+    const key = `${courseId}|${String(row.SCode ?? "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const course = courses.get(courseId);
+    hours += Number(course?.CourseHours || course?.CourseCredit || 0);
+  }
+  return hours;
 }
 
 /**
@@ -404,6 +437,23 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
     /* لا يُسمّى المقرّرُ الآخر: الأستاذ لا يحتاج اسمه ليغيّر وقته، وتسميتُه
        تكشف جدولَ قسمٍ آخر لمن لا شأن له به. */
     reasons.push({ source: "cohort", text: "يتقاطع هذا الوقت مع مقرّرٍ يشترك فيه طلبتك.", blocking: true });
+  }
+
+  /* ── النصاب ───────────────────────────────────────────────────────────── */
+  /* يُقاس على الإضافة وحدَها: نقلُ محاضرةٍ لا يغيّر ساعاتِ المقرّر، وحذفُها
+     يُنقصها، والإبقاءُ لا يُحاسَب عليه أحد. فالإضافةُ هي ما يزيد النصاب.
+
+     وغيابُ النصاب ليس صفراً: أستاذٌ لا نصابَ مسجّلٌ له لا يُمنع برقمٍ مخترع. */
+  const declared = Number(context.instructorLoad || 0);
+  if (request.action === "add" && declared > 0) {
+    const after = weeklyLoadOf(afterRows, context.courses);
+    if (after > declared) {
+      reasons.push({
+        source: "load",
+        text: `يتجاوز هذا نصابك: ${countOf(after, AR.hour)} مقابل ${declared} مسجّلة.`,
+        blocking: true,
+      });
+    }
   }
 
   /* ── القاعة ───────────────────────────────────────────────────────────── */
