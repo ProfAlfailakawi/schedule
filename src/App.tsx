@@ -529,6 +529,10 @@ export default function App() {
     [sessionRole, setSessionRole] = useState<SessionRole>(DEFAULT_SESSION_ROLE),
     [scopes, setScopes] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
+  /* ── صفات البيئة التجريبية ─────────────────────────────────────────────────
+   * قائمةُ الصفات التي يبدّل بينها شريط الديمو، والصفةُ الحاضرة الآن. تصل من
+   * الخادم مع حمولة الجلسة، وتغيب تماماً خارج البيئة التجريبية. */
+  const [demoInfo, setDemoInfo] = useState<{ roles: Array<{ role: string; label: string }>; activeRole: string } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideContext, setGuideContext] = useState<any>(null);
   const [guideHint, setGuideHint] = useState<{ key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
@@ -1217,6 +1221,7 @@ export default function App() {
             }
           }
           setDataMode(data.data || null);
+          setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin") } : null);
         }
       } catch {
         setHealth(navigator.onLine ? "reconnecting" : "offline");
@@ -1471,6 +1476,7 @@ export default function App() {
     permissions: number[];
     scopes: any[];
     data?: { mode: string; real: boolean };
+    demo?: { roles?: Array<{ role: string; label: string }>; activeRole?: string };
   }) => {
     setUser(data.user);
     try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
@@ -1478,6 +1484,7 @@ export default function App() {
     setScopes(data.scopes || []);
     const role: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
     setSessionRole(role);
+    setDemoInfo(data.demo && Array.isArray(data.demo.roles) ? { roles: data.demo.roles, activeRole: String(data.demo.activeRole || "admin") } : null);
     setDataMode(data.data || null);
     const landingView = landingViewFor(role);
     setActiveView(landingView);
@@ -1497,6 +1504,19 @@ export default function App() {
     if (!user?.IsDemo) return;
     if (!window.confirm("إعادة البيئة التجريبية إلى حالتها الأصلية؟ ستُحذف تعديلات هذه الجلسة فقط.")) return;
     const response = await fetch("/api/demo/reset", { method: "POST" });
+    if (!response.ok) return;
+    await forgetCachedReads();
+    window.location.assign("/");
+  };
+  /* تبديل الصفة المعروضة في البيئة التجريبية. إعادةُ التحميل مقصودة: الصفة
+     تُبنى عليها القائمةُ والشاشةُ الافتتاحية عند الإقلاع، فتبديلٌ في منتصف
+     العمر يترك نصفَ واجهةٍ من صفةٍ ونصفَها من أخرى — كما في المنتج الحقيقي. */
+  const switchDemoRole = async (role: string) => {
+    if (!user?.IsDemo || role === demoInfo?.activeRole) return;
+    const response = await fetch("/api/demo/role", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
     if (!response.ok) return;
     await forgetCachedReads();
     window.location.assign("/");
@@ -2266,6 +2286,22 @@ export default function App() {
         {user.IsDemo ? (
           <div className="demo-rail-chip" role="status" aria-label="بيئة Demo معزولة">
             <FlaskConical aria-hidden="true" /><span>DEMO</span><i aria-hidden="true" />
+            {demoInfo && demoInfo.roles.length ? (
+              <label className="demo-role-switch" title="جرّب النظام بصفةٍ مختلفة">
+                <span className="demo-role-switch-label">الصفة</span>
+                <select
+                  value={demoInfo.activeRole}
+                  onChange={(e) => void switchDemoRole(e.target.value)}
+                  aria-label="اختر الصفة المعروضة في البيئة التجريبية"
+                  data-guide-ignore="مبدّل صفات خاص ببيئة Demo يعرض شاشة كل صفة ببياناتها الوهمية، ولا يمثل رفع صلاحية في النظام الحقيقي"
+                >
+                  <option value="admin">عرض المدير — كل الشاشات</option>
+                  {demoInfo.roles.map(row => (
+                    <option key={row.role} value={row.role}>{row.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <button type="button" onClick={resetDemo} title="إعادة البيئة التجريبية" aria-label="إعادة البيئة التجريبية" data-guide-ignore="إجراء خاص ببيئة Demo يعيد البيانات المصطنعة فقط ولا يمثل ميزة تشغيلية في النظام الحقيقي"><RefreshCw /></button>
           </div>
         ) : null}

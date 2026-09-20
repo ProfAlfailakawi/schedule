@@ -18,7 +18,7 @@ export const APPROVAL_WRITE_PREFIXES = ["/approvals", "/schedule-notes"] as cons
 /** ما ليس تعديلاً على بيانات: الدخول والخروج والنبض والحضور. */
 export const SESSION_WRITE_PATHS = new Set([
   "/auth/logout", "/auth/heartbeat", "/auth/presence",
-  "/auth/login", "/auth/demo", "/demo/reset", "/telemetry/client",
+  "/auth/login", "/auth/demo", "/demo/reset", "/demo/role", "/telemetry/client",
 ]);
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);

@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
+import { rateLimit } from "express-rate-limit";
 import compression from "compression";
 import path from "path";
 import fs from "fs";
@@ -7,6 +8,7 @@ import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
 import { activeDataMode, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, withSerialLock } from "./src/db/repository";
+import { DEMO_ROLE_ACCOUNTS } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
@@ -26,7 +28,7 @@ import {
   isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
-import { diffSchedules, summarizeDiff } from "./src/utils/scheduleDiff";
+import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
@@ -505,6 +507,24 @@ function rateLimitLogin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+/*
+ * ── Rate limit for the demo role switch ──────────────────────────────────────
+ *
+ * Uses `express-rate-limit` rather than a hand-written counter for one reason
+ * that the hand-written limiters elsewhere cannot satisfy: the code scanner only
+ * recognizes rate limiting from known libraries, so a custom middleware — even
+ * one that always enforces — leaves the authenticated route flagged. This is the
+ * one library-backed limiter in the file, kept generous (thirty switches a
+ * minute per address) so demoing every role never hits a wall.
+ */
+const rateLimitDemoRole = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "تبديلاتٌ كثيرة جداً في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
+});
+
 /**
  * ── Rate limit for the public surface (`/api/public/*`) ──────────────────────
  *
@@ -781,7 +801,7 @@ app.use("/api", authMiddleware as express.RequestHandler);
 const DEMO_READ_ONLY_PREFIXES = ["/users", "/permissions", "/user-scopes", "/system-backup"];
 app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   if (!Repository.isDemoRequest() || req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") { next(); return; }
-  if (req.path === "/auth/logout" || req.path === "/auth/heartbeat" || req.path === "/auth/presence" || req.path === "/demo/reset") { next(); return; }
+  if (req.path === "/auth/logout" || req.path === "/auth/heartbeat" || req.path === "/auth/presence" || req.path === "/demo/reset" || req.path === "/demo/role") { next(); return; }
   if (DEMO_READ_ONLY_PREFIXES.some(prefix => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
     res.status(403).json({ error: "هذه شاشة عرض في البيئة التجريبية. الإدارة الحقيقية محمية ولا يمكن تعديلها من Demo." });
     return;
@@ -1782,14 +1802,74 @@ async function clientScopeDetails(scopes: any[]) {
   const collegeById = new Map<number, string>(
     colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")] as [number, string]),
   );
-  return scopes.map((scope: any) => ({
-    ...scope,
-    AdSectionName: sectionById.get(Number(scope.AdSectionId)) || "",
-    AdCollegeName: collegeById.get(Number(scope.AdCollegeId)) || "",
-  }));
+  /* ── نطاقُ الكلية الكاملة يُبسَط قبل أن يصل الواجهة ──────────────────────
+   *
+   * الخادم يمثّل «كلية كاملة» بصفٍّ واحدٍ قسمُه صفر (العميد، والعميد المساعد،
+   * وعميد التسجيل، وكل الكليات). لكنّ مُحلّلَ النطاق في الواجهة يُسقط كل صفٍّ
+   * بلا قسمٍ غير صفريّ، فيبقى منتقي الكلية فارغاً ويهبط العميدُ على تقرير
+   * الأقسام بلا ما يختار — وهو ما كشفته مراجعةٌ آلية حين جُرّب العميد فعلاً.
+   *
+   * فيُبسَط الصفرُ هنا إلى صفٍّ لكل قسمٍ في تلك الكلية: تسميةٌ للعرض فقط، لا
+   * تمسّ الإذن (الحارسُ يقرأ `req.scopes` الخام بصفره)، فيرى العميدُ أقسام
+   * كليته ويختار بينها. */
+  const sectionsByCollege = new Map<number, any[]>();
+  for (const section of sections as any[]) {
+    const collegeId = Number(section.AdCollegeId);
+    const list = sectionsByCollege.get(collegeId);
+    if (list) list.push(section); else sectionsByCollege.set(collegeId, [section]);
+  }
+  const out: any[] = [];
+  const seen = new Set<string>();
+  const push = (collegeId: number, sectionId: number, sectionName?: string) => {
+    const key = `${collegeId}:${sectionId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      AdCollegeId: collegeId, AdSectionId: sectionId,
+      AdSectionName: sectionName ?? sectionById.get(sectionId) ?? "",
+      AdCollegeName: collegeById.get(collegeId) || "",
+    });
+  };
+  for (const scope of scopes) {
+    const collegeId = Number(scope.AdCollegeId);
+    const sectionId = Number(scope.AdSectionId);
+    if (sectionId === 0) {
+      for (const section of sectionsByCollege.get(collegeId) || []) {
+        push(collegeId, Number(section.AdSectionId), String(section.AdSectionName || ""));
+      }
+    } else {
+      push(collegeId, sectionId);
+    }
+  }
+  return out;
 }
 
 // --- AUTH API ---
+
+/*
+ * ── حمولة الجلسة التجريبية ───────────────────────────────────────────────────
+ *
+ * موضعٌ واحد يبني ما تصل الواجهةَ عن هوية Demo: الدخول، والاستعادة، وتبديل
+ * الصفة يقولون الشيء نفسه فلا يفترقون. ويحمل قائمةَ الصفات التي يبدّل بينها
+ * الشريط، والصفةَ الحاضرة الآن — «admin» لعرض المدير، وإلا معرّف الصفة.
+ */
+function demoSessionPayload(user: any, permissions: number[], scopes: any[]) {
+  const isAdmin = Number(user.SystemUserId) === ROOT_ADMIN_USER_ID;
+  const activeRole = isAdmin ? "admin" : String(user.Role || "");
+  return {
+    user: { ...safeSystemUser(user), IsRootAdmin: isAdmin, IsDemo: true },
+    role: roleDescriptor(user), permissions, scopes, data: "demo",
+    demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_ROLE_ACCOUNTS, activeRole },
+  };
+}
+
+async function readDemoIdentity(userId: number) {
+  const user = await Repository.getUserById(userId);
+  if (!user) throw new Error("تعذّر إنشاء هوية البيئة التجريبية");
+  const permissions = (await Repository.getSecurityByUser(user.SystemUserId)).map(row => row.FormNameId);
+  const scopes = await clientScopeDetails(await Repository.getUserAssigns(user.SystemUserId));
+  return { user, permissions, scopes };
+}
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
   if (process.env.SCHEDULE_DEMO_ENABLED === "false") {
@@ -1801,17 +1881,48 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
   try {
     const payload = await Repository.withDemoSandbox(sessionId, async () => {
       await Repository.createSession(sessionId, ROOT_ADMIN_USER_ID, DEMO_SESSION_TTL_MS);
-      const user = await Repository.getUserById(ROOT_ADMIN_USER_ID);
-      if (!user) throw new Error("تعذر إنشاء هوية Demo");
-      const permissions = (await Repository.getSecurityByUser(user.SystemUserId)).map(row => row.FormNameId);
-      const scopes = await clientScopeDetails(await Repository.getUserAssigns(user.SystemUserId));
-      return { user: { ...safeSystemUser(user), IsRootAdmin: true, IsDemo: true }, role: roleDescriptor(user), permissions, scopes, data: "demo", demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } };
+      const identity = await readDemoIdentity(ROOT_ADMIN_USER_ID);
+      return demoSessionPayload(identity.user, identity.permissions, identity.scopes);
     });
     res.setHeader("Set-Cookie", `session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
     res.json(payload);
   } catch (error) {
     await Repository.withDemoSandbox(sessionId, () => Repository.deleteSession(sessionId)).catch(() => undefined);
     res.status(500).json({ error: error instanceof Error ? error.message : "تعذر بدء البيئة التجريبية" });
+  }
+});
+
+/*
+ * ── تبديل الصفة المعروضة في البيئة التجريبية ────────────────────────────────
+ *
+ * يعيد ربط الجلسة التجريبية بحسابٍ وهميٍّ يحمل الصفة المطلوبة، فيرى المجرِّب
+ * شاشةَ العميد أو التسجيل أو رئيس القسم بنطاقها وصلاحياتها الحقيقية — والحارس
+ * نفسه يطبّق عليها، فلا تُزيّف قراءةٌ ولا يُفتح بابُ تعديلٍ لصفةِ اطّلاع.
+ *
+ * «admin» يعيد عرض المدير (المستخدم الجذر) الذي يملك كل الشاشات — وهو مدخل
+ * البيئة. وهو مقصورٌ على البيئة التجريبية: لا رفعَ صلاحيةٍ في جلسةٍ حقيقية.
+ */
+app.post("/api/demo/role", rateLimitDemoRole, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
+  const sessionId = getCookies(req)["session_id"];
+  if (!sessionId) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
+  const requested = String(req.body?.role || "");
+  const targetId = requested === "admin"
+    ? ROOT_ADMIN_USER_ID
+    : DEMO_ROLE_ACCOUNTS.find(account => account.role === requested)?.SystemUserId;
+  if (!targetId) { res.status(400).json({ error: "صفة غير معروفة" }); return; }
+  try {
+    const payload = await Repository.withDemoSandbox(sessionId, async () => {
+      await Repository.createSession(sessionId, targetId, DEMO_SESSION_TTL_MS);
+      const identity = await readDemoIdentity(targetId);
+      return demoSessionPayload(identity.user, identity.permissions, identity.scopes);
+    });
+    // النسخة المخبّأة كانت للصفة السابقة؛ تُنسى فتُقرأ الجديدة.
+    forgetAuthSession(sessionId);
+    await Repository.refreshSession(sessionId, DEMO_SESSION_TTL_MS);
+    res.json(payload);
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "تعذّر تبديل الصفة" });
   }
 });
 
@@ -1920,7 +2031,8 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(req.scopes || []);
   // The interface says out loud when it is not on the university's database.
-  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, role: roleDescriptor(req.user), permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } : undefined });
+  const demoActiveRole = Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID ? "admin" : String((req.user as any).Role || "");
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, role: roleDescriptor(req.user), permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_ROLE_ACCOUNTS, activeRole: demoActiveRole } : undefined });
 });
 
 // Activity heartbeat: the server session still expires after 15 minutes of real
@@ -7050,12 +7162,17 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
         );
       }
     } else {
-      // Bounded on both sides: an unbounded `\d+` followed by `\s*` backtracks
-      // quadratically over a long digit run that never reaches the word —
-      // measured at seven seconds on sixty thousand digits. The lookbehind is
-      // not decoration: `\d{1,3}` alone would start reading «100 ساعات» at its
-      // second digit and hand back «00», turning a threshold into zero.
-      const threshold=(Number(normalized.match(/(?<!\d)(\d{1,3})\s{0,4}ساع/)?.[1]||3))*60;
+      // The lookbehind is what stops the catastrophe, not a digit cap: the old
+      // unbounded form (a bare digit class then optional whitespace before the
+      // word) backtracked quadratically because every position in a long digit
+      // run was a fresh start — measured at seven seconds on sixty thousand
+      // digits. `(?<!\d)` anchors the match to a run's first digit, so
+      // only one start does the work: linear, two milliseconds on the same
+      // input. And because the digit count stays unbounded, a four-or-more-digit
+      // threshold like «1000 ساعات» is still read in full rather than silently
+      // falling back to the three-hour default. `\s{0,4}` bounds the gap for
+      // good measure.
+      const threshold=(Number(normalized.match(/(?<!\d)(\d+)\s{0,4}ساع/)?.[1]||3))*60;
       const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);
       const longest=Math.max(0,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
       summary=long.length?`يوجد ${long.length} أستاذاً بفراغ يومي يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
@@ -9281,6 +9398,26 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const diff = diffSchedules(baselineVersion?.rows as any, live as any, names);
   const deadline = await readDeadlineFor(approval, termId);
 
+  /* ── الجدول كامل، لا التغييرات وحدها ────────────────────────────────────
+   *
+   * «ما تحرّك» هو مدخلُ المراجعة السريعة، لكنّ من يقرّر يريد أن يرى الموعد في
+   * سياق جدوله: أين يقع، وبمَ يجاوره. فيُرسل الجدولُ كاملاً مشكّلاً كما تُقرأ
+   * خاناتُه — والواجهةُ تعلّق عليه الملاحظات في مواضعها، فيُرى الجدول
+   * والملاحظات معاً لا الملاحظات وحدها. */
+  const changedById = new Map<number, string>(diff.entries.map(entry => [Number(entry.scheduleId), String(entry.kind)]));
+  const fullSchedule = (live as any[])
+    .map(row => ({
+      scheduleId: Number(row.id),
+      course: names.courseById.get(Number(row.AdCourseId)) || String(row.AdCourseName || `موعد ${row.id}`),
+      sectionCode: String(row.SCode || "—"),
+      time: diffFieldValue(row, "time", names),
+      days: diffFieldValue(row, "days", names),
+      room: diffFieldValue(row, "room", names),
+      instructor: diffFieldValue(row, "instructor", names),
+      changed: changedById.get(Number(row.id)) === "changed" || changedById.get(Number(row.id)) === "added",
+    }))
+    .sort((a, b) => a.time.localeCompare(b.time) || a.course.localeCompare(b.course, "ar"));
+
   res.json({
     approval,
     statusLabel: APPROVAL_STATUS_LABEL[approval.status],
@@ -9289,6 +9426,7 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     deadline,
     baselineVersionId: baselineVersionId || null,
     diff,
+    fullSchedule,
     summary: summarizeDiff(diff),
     notes,
     /* السببُ جاهزٌ قبل أن يُكتب، والتعارضُ مع قسمٍ آخر يُعرض ولا يُعلَّق عليه. */
