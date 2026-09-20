@@ -185,7 +185,7 @@ check(server.includes('const previousWide = roleDefinition(previousRole).scopeMo
 
 const copyAt = server.indexOf('app.post("/api/schedules/copy"');
 const copyBody = server.slice(copyAt, copyAt + 4200);
-check(copyBody.includes("scheduleLockRefusal(collegeId, sectionId, targetTermId)"), "ونسخُ الفصل يقرؤه أيضاً");
+check(copyBody.includes("scheduleLockRefusal(req,collegeId, sectionId, targetTermId)"), "ونسخُ الفصل يقرؤه أيضاً");
 check(copyBody.includes("noteScheduleMutation"), "ويُبلّغ عمّا كتبه");
 
 /* ── ١١) الاستيراد يُبلّغ دفعةً واحدة ───────────────────────────────────── */
@@ -273,8 +273,8 @@ check(server.includes("const movedScope = existing.AdCollegeId !== collegeId"),
  * يدي التسجيل كان يُستبدل جدولُه كاملاً وهو يُقرأ. */
 const publishAt = server.indexOf('app.post("/api/intelligence/drafts/:id/publish"');
 const publishBody = server.slice(publishAt, publishAt + 22000);
-check(publishBody.includes("const groupLock = await scheduleLockRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId);")
-   || publishBody.includes("const groupLock=await scheduleLockRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId);"),
+check(publishBody.includes("const groupLock = await scheduleLockRefusal(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId);")
+   || publishBody.includes("const groupLock=await scheduleLockRefusal(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId);"),
   "النشر يقرأ قفل كل موقعٍ يكتب فيه");
 check(publishBody.includes("const groupDeadline=await wholesaleRefusal(group.scope.collegeId"),
   "وموعدَ كل موقعٍ كذلك");

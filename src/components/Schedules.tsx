@@ -28,6 +28,7 @@ import {
   Timer,
   Hourglass,
   CopyPlus,
+  Lock,
   Layers,
   Palette,
   Printer,
@@ -5425,6 +5426,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     [terms, filterTerm],
   );
 
+  /* ── الفصلُ المُجمَّد ────────────────────────────────────────────────────
+   *
+   * غيرُ «المنتهي» أعلاه. ذاك مشتقٌّ ولو لم يُعلنه أحد — كلُّ فصلٍ ليس الأحدثَ
+   * منتهٍ عنده — وهو صالحٌ لإخفاء أدواتٍ لا معنى لها في الماضي.
+   *
+   * وهذا هو العلَمُ الصريحُ وحدَه: ما ضغط عليه المنسّقُ بيده في شاشة الفصول.
+   * وهو الذي يمنع الكتابةَ في الخادم، فيقرؤه هنا بالقاعدة نفسِها — وإلا قال
+   * الشريطُ «مجمَّد» عن فصلٍ يُقبل فيه الحفظ، أو سكت عن فصلٍ يُردّ فيه. */
+  const termFrozen = useMemo(() => {
+    const term = terms.find(row => Number(row.AdTermId) === Number(filterTerm));
+    return term?.AdTermClosed === true && approvalStage !== "committee";
+  }, [terms, filterTerm, approvalStage]);
+
   /**
    * Whether the live "now" line belongs on this board.
    *
@@ -9573,6 +9587,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               </ul>
             </div>
             <button type="button" onClick={() => setMobileViewGate(null)}>فهمت · متابعة العرض</button>
+          </div>
+        </div>
+      ) : null}
+      {/* ── فصلٌ انتهى ────────────────────────────────────────────────────
+          يُقال قبل المحاولة لا بعدها: من يكتشف المنعَ عند الحفظ يكون قد أعاد
+          بناءَ موعدٍ كاملاً في نموذجٍ لن يُقبل. ولا يُخفى شيء — القراءةُ
+          والطباعةُ والاستعلامُ كما هي. */}
+      {termFrozen ? (
+        <div className="pending-room-notice no-print" data-tone="frozen">
+          <div>
+            <Lock aria-hidden="true" />
+            <span>انتهى هذا الفصل. جدولُه محفوظٌ للاطّلاع والتقارير، و<b>لجنةُ الجدول</b> وحدَها تعمل فيه.</span>
           </div>
         </div>
       ) : null}
