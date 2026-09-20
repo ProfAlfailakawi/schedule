@@ -7,6 +7,7 @@ import {
   Command,
   Compass,
   CopyPlus,
+  FileDiff,
   FileSearch,
   FileText,
   FlaskConical,
@@ -103,6 +104,7 @@ const About = safeLazy(loadAbout);
 /* The welcome stage is a first-run surface: it must not sit in the payload
    every returning user downloads. */
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
+const ScheduleChanges = safeLazy(() => import("./components/ScheduleChanges"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
@@ -120,6 +122,7 @@ type View =
   | "schedules"
   | "scheduleCopy"
   | "intelligence"
+  | "scheduleChanges"
   | ReportMode
   | AdminMode
   | "about";
@@ -132,7 +135,31 @@ interface SessionUser {
   AdInstructorId?: number;
   IsRootAdmin?: boolean;
   IsDemo?: boolean;
+  Role?: string;
 }
+
+/**
+ * الصفة كما تصل من الخادم.
+ *
+ * الواجهة لا تحرس شيئاً — الحارس على الخادم — لكنها تحتاج أن تعرف الصفة لتخفي
+ * ما لا يعمل: زرّ حفظٍ لمن لا يحفظ، وشاشةٌ لا تخصّ صاحبها. وإخفاءُ ما لا يعمل
+ * ليس أماناً، هو احترامٌ لوقت من ينظر إلى الشاشة.
+ */
+interface SessionRole {
+  id: string;
+  label: string;
+  readOnly: boolean;
+  landing: "balance" | "changes" | "schedules" | "dashboard";
+  canReview: boolean;
+  canManageDeadline: boolean;
+  signatureStage: "committee" | "head" | null;
+  viewerOnly: boolean;
+}
+const DEFAULT_SESSION_ROLE: SessionRole = {
+  id: "committeeChair", label: "رئيس لجنة الجدول", readOnly: false,
+  landing: "schedules", canReview: false, canManageDeadline: false,
+  signatureStage: "committee", viewerOnly: false,
+};
 interface SearchHit {
   id: number | string;
   kind: "schedule" | "instructor" | "course" | "room";
@@ -226,6 +253,7 @@ const pathByView: Record<View, string> = {
   audit: "/System/AuditLog",
   locations: "/System/Locations",
   backup: "/System/Backup",
+  scheduleChanges: "/FSchedule/Changes",
   about: "/Public/Aboutus",
 };
 const viewByPath = new Map(
@@ -464,6 +492,7 @@ export default function App() {
   useEffect(() => { installClientTelemetry(); telemetryBreadcrumb("فتح التطبيق"); }, []);
   const [user, setUser] = useState<SessionUser | null>(null),
     [permissions, setPermissions] = useState<number[]>([]),
+    [sessionRole, setSessionRole] = useState<SessionRole>(DEFAULT_SESSION_ROLE),
     [scopes, setScopes] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -489,6 +518,28 @@ export default function App() {
     window.addEventListener("focus", onFocus);
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
   }, [user?.SystemUserId, permissions]);
+  /**
+   * ── شارة تغييرات الجدول ────────────────────────────────────────────────
+   *
+   * رقمٌ واحد على الأيقونة، لا مركزُ إشعارات. للتسجيل: كم جدولاً ينتظر
+   * قراره. وللقسم: كم ملاحظةً وصلته ولم تُعالَج. وهو كل ما اتُّفق عليه —
+   * لا بريدٌ ولا إشعارُ دفع، لأن من يدخل النظام يومياً يكفيه رقمٌ يراه.
+   */
+  const [changesBadge, setChangesBadge] = useState(0);
+  useEffect(() => {
+    if (!user || !(sessionRole.canReview || sessionRole.signatureStage)) { setChangesBadge(0); return; }
+    let alive = true;
+    const read = () => fetch("/api/approvals/badge", { credentials: "include" })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => { if (alive && data) setChangesBadge(Number(data.count || 0)); })
+      .catch(() => undefined);
+    void read();
+    const timer = window.setInterval(read, 120000);
+    const onFocus = () => void read();
+    window.addEventListener("focus", onFocus);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
+  }, [user?.SystemUserId, sessionRole.id]);
+
   /**
    * ── الشاشات الثقيلة تُحمَّل قبل أن تُطلب ──────────────────────────────────
    *
@@ -1111,6 +1162,7 @@ export default function App() {
             Array.isArray(data.permissions) ? data.permissions : [],
           );
           setScopes(Array.isArray(data.scopes) ? data.scopes : []);
+          setSessionRole(data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE);
           setDataMode(data.data || null);
         }
       } catch {
@@ -1362,6 +1414,7 @@ export default function App() {
   };
   const login = (data: {
     user: SessionUser;
+    role?: Partial<SessionRole>;
     permissions: number[];
     scopes: any[];
     data?: { mode: string; real: boolean };
@@ -1370,9 +1423,18 @@ export default function App() {
     try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
     setPermissions(data.permissions || []);
     setScopes(data.scopes || []);
+    const role: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
+    setSessionRole(role);
     setDataMode(data.data || null);
-    setActiveView("dashboard");
-    window.history.replaceState({}, "", pathByView.dashboard);
+    /* كل صفةٍ تفتح على شاشتها مباشرةً: العميد على ميزان الأقسام، والتسجيل على
+       الوارد، والقسم على جدوله. ولوحةُ البداية لمن لا شاشةَ تخصّه. */
+    const landingView: View =
+      role.landing === "changes" ? "scheduleChanges"
+      : role.landing === "balance" ? "reportDepartment"
+      : role.landing === "schedules" ? "schedules"
+      : "dashboard";
+    setActiveView(landingView);
+    window.history.replaceState({}, "", pathByView[landingView] || pathByView.dashboard);
   };
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -1380,6 +1442,7 @@ export default function App() {
     setUser(null);
     setPermissions([]);
     setScopes([]);
+    setSessionRole(DEFAULT_SESSION_ROLE);
     setActiveView("dashboard");
     window.history.replaceState({}, "", "/");
   };
@@ -1508,7 +1571,7 @@ export default function App() {
         );
       case "schedules":
         return hasPerm(7) ? (
-          <Schedules mode="schedule" user={user} scopes={scopes} permissions={permissions} onNavigate={(view) => go(view as View)} />
+          <Schedules mode="schedule" user={user} scopes={scopes} permissions={permissions} signatureStage={sessionRole.signatureStage} onNavigate={(view) => go(view as View)} />
         ) : (
           unauthorized()
         );
@@ -1522,6 +1585,25 @@ export default function App() {
       case "intelligence":
         return hasPerm(7) ? (
           <IntelligenceWorkspace user={user} scopes={scopes} />
+        ) : (
+          unauthorized()
+        );
+      case "scheduleChanges":
+        /* الشاشة لمن يشارك في الدورة: التسجيل يراجع، والقسم يردّ. أمّا أدوار
+           العرض الصرف فيكفيها عمود الاعتماد في ميزان الأقسام — وشاشةٌ لا يفعل
+           فيها صاحبها شيئاً هي ضجيجٌ في القائمة لا خدمة. */
+        return sessionRole.canReview || sessionRole.signatureStage ? (
+          <ScheduleChanges
+            role={{
+              id: sessionRole.id,
+              canReview: sessionRole.canReview,
+              canManageDeadline: sessionRole.canManageDeadline,
+              signatureStage: sessionRole.signatureStage,
+            }}
+            scope={scopes.length === 1 && scopes[0]?.AdSectionId
+              ? { collegeId: Number(scopes[0].AdCollegeId), sectionId: Number(scopes[0].AdSectionId) }
+              : null}
+          />
         ) : (
           unauthorized()
         );
@@ -2167,7 +2249,17 @@ export default function App() {
                 label="الاستعلامات والتقارير"
               />
             ) : null}
-            {allowed.schedule ? (
+            {sessionRole.canReview || sessionRole.signatureStage ? (
+              <NavButton
+                activeView={activeView}
+                onGo={go}
+                view="scheduleChanges"
+                icon={<FileDiff />}
+                label="تغييرات الجدول"
+                badge={changesBadge}
+              />
+            ) : null}
+            {allowed.schedule && !sessionRole.readOnly ? (
               <NavButton
                 activeView={activeView}
                 onGo={go}

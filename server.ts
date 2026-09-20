@@ -15,16 +15,18 @@ import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
+import { currentTermId } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase } from "./src/types";
+import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import {
-  APPROVAL_STATUS_LABEL, canSign, canSubmit, describeWholesaleRefusal, emptyApproval,
+  APPROVAL_STATUS_LABEL, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
+import { diffSchedules, summarizeDiff } from "./src/utils/scheduleDiff";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
@@ -8521,6 +8523,380 @@ app.post("/api/approvals/extension", requireAuth, async (req: AuthenticatedReque
     });
     res.locals.auditChanges = until ? `تمديد تسليم القسم إلى ${until}${reason ? ` — ${reason}` : ""}` : "إلغاء تمديد التسليم";
     res.json({ approval: saved });
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   الملاحظة على الخانة
+   ══════════════════════════════════════════════════════════════════════════
+
+   موظّف التسجيل لا يكتب «راجع الموعد رقم ٤١٨»: هو ينقر على القاعة نفسها.
+   والخانة تحمل ثلاث معلومات دفعةً واحدة — أيُّ صفّ، وأيُّ حقل، وما القيمة
+   المرفوضة — فيسقط الشرح من الطرفين: لا الموظّف يصف أين المشكلة، ولا اللجنة
+   تبحث عنها.
+
+   وثلاثُ حالاتٍ للخانة، تُقرأ باللون قبل أن تُقرأ بالنصّ: برتقاليٌّ ينتظر،
+   وأخضرُ تغيّر، ورماديٌّ ردّت عليه اللجنة. والحالة تُحسب من القيمة الحاضرة لا
+   تُخزَّن — فلا يمكن أن تقول الخانة «عُولجت» وهي على حالها.                 */
+
+const NOTE_FIELDS: ScheduleNoteField[] = ["time", "days", "room", "instructor", "sectionCode", "course", "row"];
+const NOTE_FIELD_LABEL: Record<ScheduleNoteField, string> = {
+  time: "الوقت", days: "الأيام", room: "القاعة", instructor: "أستاذ المقرر",
+  sectionCode: "رقم الشعبة", course: "المقرر", row: "الموعد كاملاً",
+};
+
+/**
+ * القيمة التي تحملها الخانة الآن.
+ *
+ * هي أساسُ كل شيء بعدها: تُحفظ لحظة الملاحظة، وتُقارن بما صار إليه الصفّ فتقول
+ * الحالة. ولذلك تُشتقّ من مكانٍ واحد — لو اختلفت صيغةُ القراءة عن صيغة الكتابة
+ * لظهرت كل خانةٍ متغيّرةً وهي لم تُمسّ.
+ */
+function noteFieldValue(row: any, field: ScheduleNoteField): string {
+  if (!row) return "";
+  switch (field) {
+    case "time": return `${normalizeClock(String(row.fstarttime || ""))}-${normalizeClock(String(row.fendtime || ""))}`;
+    case "days": return legacyFDetail(row);
+    case "room": return `${String(row.AdRoomCode || "")}/${String(row.AdRoomHall || "")}`;
+    case "instructor": return String(Number(row.AdInstructorId || 0));
+    case "sectionCode": return String(row.SCode || "");
+    case "course": return String(Number(row.AdCourseId || 0));
+    case "row": return [
+      normalizeClock(String(row.fstarttime || "")), normalizeClock(String(row.fendtime || "")),
+      legacyFDetail(row), String(row.AdRoomCode || ""), String(row.AdRoomHall || ""),
+      String(Number(row.AdInstructorId || 0)), String(row.SCode || ""), String(Number(row.AdCourseId || 0)),
+    ].join("|");
+  }
+}
+
+/** حالة الملاحظة، محسوبةً من الواقع لا مقروءةً من علَم. */
+function noteState(note: ScheduleComment, row: any): "open" | "changed" | "answered" | "removed" {
+  if (!row) return "removed";
+  if (note.rebuttal) return "answered";
+  const field = (note.field || "row") as ScheduleNoteField;
+  return noteFieldValue(row, field) !== String(note.valueAtNote ?? "") ? "changed" : "open";
+}
+
+/** الملاحظات مع حالتها الحيّة، لكل من يعرضها. */
+async function notesWithState(collegeId: number, sectionId: number, termId: number) {
+  const [notes, rows] = await Promise.all([
+    Repository.getScheduleCommentsByScope(collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+  ]);
+  const byId = new Map(rows.map((row: any) => [Number(row.id), row]));
+  return notes
+    .filter(note => note.origin === "registrar" || note.origin === "department")
+    .map(note => {
+      const row = byId.get(Number(note.scheduleId));
+      const field = (note.field || "row") as ScheduleNoteField;
+      return {
+        ...note,
+        field,
+        fieldLabel: NOTE_FIELD_LABEL[field],
+        state: noteState(note, row),
+        valueNow: row ? noteFieldValue(row, field) : undefined,
+      };
+    });
+}
+
+/** ملاحظات القسم في فصل، بحالتها. يقرؤها التسجيل واللجنة ورئيس القسم سواء. */
+app.get("/api/schedule-notes", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const notes = await notesWithState(collegeId, sectionId, termId);
+  res.json({
+    notes,
+    open: notes.filter(note => note.state === "open").length,
+    changed: notes.filter(note => note.state === "changed").length,
+    answered: notes.filter(note => note.state === "answered").length,
+  });
+});
+
+/**
+ * ملاحظةٌ بنقرة.
+ *
+ * النصّ اختياريّ عمداً: الخانة نفسها هي الرسالة في أغلب الحالات، وإلزامُ
+ * الموظّف بجملةٍ لكل خانةٍ في عشرين قسماً هو ما يجعله يترك النظام ويتصل
+ * بالهاتف.
+ */
+app.post("/api/schedule-notes", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const scheduleId = Number(req.body?.scheduleId || 0);
+  const field = String(req.body?.field || "row") as ScheduleNoteField;
+  const text = String(req.body?.text || "").trim().slice(0, 600);
+  if (!NOTE_FIELDS.includes(field)) { res.status(400).json({ error: "الخانة المختارة غير معروفة" }); return; }
+  const row = await Repository.getScheduleById(scheduleId);
+  if (!row) { res.status(404).json({ error: "الموعد غير موجود" }); return; }
+  if (!isScopeAllowed(req, row.AdCollegeId, row.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+
+  const fromRegistrar = canReviewSubmissions(req.user?.Role);
+  const fromDepartment = signatureStage(req.user?.Role) !== null;
+  if (!fromRegistrar && !fromDepartment && !isPowerUser(req)) {
+    res.status(403).json({ error: "الملاحظات للتسجيل وللقسم." });
+    return;
+  }
+  const origin: "registrar" | "department" = fromRegistrar ? "registrar" : "department";
+
+  const approval = await readApproval(row.AdCollegeId, row.AdSectionId, row.AdTermId);
+  /* الملاحظة تُنسب إلى الجولة الجارية. والجولة صفرٌ قبل أول إرسال، فتُقرأ ١:
+     ملاحظةٌ كُتبت قبل الإرسال تنتمي إلى أول جولةٍ ستأتي، لا إلى «لا جولة». */
+  const round = Math.max(1, approval.currentRound);
+
+  /* خانةٌ واحدة، ملاحظةٌ واحدة. النقر مرّتين على القاعة نفسها تصحيحٌ للنصّ،
+     لا ملاحظتان تُعالَج إحداهما وتبقى الأخرى معلّقة بلا سبب. */
+  const existing = (await Repository.getScheduleCommentsByScope(row.AdCollegeId, row.AdSectionId, row.AdTermId))
+    .find(note => Number(note.scheduleId) === scheduleId && (note.field || "row") === field
+      && note.origin === origin && !note.resolved && Number(note.round || 1) === round);
+
+  const value = noteFieldValue(row, field);
+  if (existing) {
+    const updated = await Repository.updateScheduleComment(existing.id, {
+      text: text || existing.text, valueAtNote: value, rebuttal: undefined, rebuttalVerdict: undefined,
+    });
+    res.json({ note: updated, replaced: true });
+    return;
+  }
+
+  const created = await Repository.createScheduleComment({
+    SystemUserId: Number(req.user?.SystemUserId || 0),
+    userName: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+    scheduleId,
+    AdCollegeId: row.AdCollegeId, AdSectionId: row.AdSectionId, AdTermId: row.AdTermId,
+    /* بلا نصّ، الخانة هي الرسالة. والنصّ الافتراضي يقولها صراحةً بدل أن تصل
+       اللجنةَ ملاحظةٌ فارغة لا تعرف ماذا تفعل بها. */
+    text: text || `راجِع ${NOTE_FIELD_LABEL[field]}`,
+    field, valueAtNote: value, round, origin,
+  });
+  res.locals.auditChanges = `ملاحظة على ${NOTE_FIELD_LABEL[field]} — موعد ${scheduleId}`;
+  res.status(201).json({ note: created, replaced: false });
+});
+
+/**
+ * ردّ اللجنة: «أبقيها كما هي، لهذا السبب».
+ *
+ * السبب إلزاميّ هنا وحده. رفضٌ بلا سببٍ يدفع الطرفين إلى الهاتف، فتضيع الحجّة
+ * خارج النظام — وهي أوّل ما يُطلب حين يُسأل أحدهما بعد شهرين.
+ */
+app.post("/api/schedule-notes/:id/rebut", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const note = await Repository.getScheduleCommentById(String(req.params.id));
+  if (!note) { res.status(404).json({ error: "الملاحظة غير موجودة" }); return; }
+  if (!isScopeAllowed(req, note.AdCollegeId, note.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (note.origin !== "registrar") { res.status(409).json({ error: "الردّ يكون على ملاحظات التسجيل." }); return; }
+  if (signatureStage(req.user?.Role) === null && !isPowerUser(req)) { res.status(403).json({ error: "الردّ على الملاحظة من القسم." }); return; }
+  const text = String(req.body?.text || "").trim().slice(0, 600);
+  if (text.length < 3) { res.status(400).json({ error: "اكتب سبب الإبقاء. ردٌّ بلا سببٍ لا يفيد التسجيل." }); return; }
+  const updated = await Repository.updateScheduleComment(note.id, {
+    rebuttal: {
+      text, at: new Date().toISOString(),
+      SystemUserId: Number(req.user?.SystemUserId || 0),
+      userName: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+    },
+    rebuttalVerdict: undefined,
+  });
+  res.locals.auditChanges = `ردّ القسم على ملاحظة: ${text.slice(0, 80)}`;
+  res.json({ note: updated });
+});
+
+/** قرار التسجيل على ردّ اللجنة: يقبل التبرير فتنتهي، أو يُصرّ فتعود برتقالية. */
+app.post("/api/schedule-notes/:id/verdict", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const note = await Repository.getScheduleCommentById(String(req.params.id));
+  if (!note) { res.status(404).json({ error: "الملاحظة غير موجودة" }); return; }
+  if (!isScopeAllowed(req, note.AdCollegeId, note.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (!canReviewSubmissions(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "القرار على الردّ للتسجيل." }); return; }
+  if (!note.rebuttal) { res.status(409).json({ error: "لا يوجد ردٌّ من القسم على هذه الملاحظة." }); return; }
+  const verdict = String(req.body?.verdict || "");
+  if (verdict !== "accepted" && verdict !== "insisted") { res.status(400).json({ error: "القرار إمّا قبولٌ للتبرير وإمّا إصرارٌ على التغيير." }); return; }
+  const updated = verdict === "accepted"
+    ? await Repository.updateScheduleComment(note.id, { rebuttalVerdict: "accepted", resolved: true })
+    /* الإصرار يمحو الردّ: الخانة تعود برتقاليةً تنتظر، لا رماديةً أُجيب عنها. */
+    : await Repository.updateScheduleComment(note.id, { rebuttalVerdict: "insisted", rebuttal: undefined, valueAtNote: note.valueAtNote });
+  res.locals.auditChanges = verdict === "accepted" ? "قبول تبرير القسم" : "إصرار التسجيل على التغيير";
+  res.json({ note: updated });
+});
+
+/** حذف ملاحظةٍ كتبها صاحبها قبل الإرجاع. تراجعٌ عن نقرة، لا أكثر. */
+app.delete("/api/schedule-notes/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const note = await Repository.getScheduleCommentById(String(req.params.id));
+  if (!note) { res.status(404).json({ error: "الملاحظة غير موجودة" }); return; }
+  if (!isScopeAllowed(req, note.AdCollegeId, note.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (Number(note.SystemUserId) !== Number(req.user?.SystemUserId) && !isPowerUser(req)) {
+    res.status(403).json({ error: "تُحذف الملاحظة ممّن كتبها." });
+    return;
+  }
+  await Repository.deleteScheduleComment(note.id);
+  res.locals.auditChanges = "حذف ملاحظة";
+  res.json({ success: true });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   تغييرات الجدول: صندوق الوارد وتقرير الجولة
+   ══════════════════════════════════════════════════════════════════════════
+
+   أيقونةٌ واحدة جديدة، وهي الوحيدة في هذا العمل كله. وسبب استحقاقها أنها
+   ليست استعلاماً بل مكانَ عمل: الموظّف يفتحها ليقرّر، لا ليقرأ.
+
+   ووجهها يختلف بالصفة من المصدر نفسه: التسجيل يرى الأقسام الواردة كلها،
+   والقسم يرى نفسه. لا شاشتان تُبنيان مرّتين وتفترقان عند أول تعديل.        */
+
+/**
+ * ── الشارة ──────────────────────────────────────────────────────────────────
+ *
+ * رقمٌ واحد على الأيقونة. للتسجيل: كم جدولاً ينتظر قراره. وللقسم: كم ملاحظةً
+ * وصلته ولم تُعالَج. لا مركزَ إشعاراتٍ ولا بريد — من يدخل النظام يومياً يكفيه
+ * رقمٌ يراه، ومن لا يدخله لا يُوقظه بريدٌ أيضاً.
+ *
+ * والنداء رخيص عمداً: يُقرأ كل دقيقتين ومع كل عودةٍ إلى التبويب، فلا يجوز أن
+ * يقرأ جداول الكلية كلها ليكتب رقماً.
+ */
+app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
+  if (!termId) { res.json({ count: 0 }); return; }
+
+  const approvals = (await Repository.getScheduleApprovalsForTerm(termId))
+    .filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
+
+  if (canReviewSubmissions(req.user?.Role)) {
+    res.json({ count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" });
+    return;
+  }
+  if (signatureStage(req.user?.Role)) {
+    let open = 0;
+    for (const approval of approvals) {
+      if (approval.status !== "returned" && !approval.pendingAdditions.length) continue;
+      const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
+      open += notes.filter(note => note.origin === "registrar" && note.state === "open").length;
+      open += approval.pendingAdditions.length;
+    }
+    res.json({ count: open, kind: "notes" });
+    return;
+  }
+  res.json({ count: 0 });
+});
+
+/** سطرُ قسمٍ في صندوق الوارد: حالته وموعده وملاحظاته وموانعه في نداءٍ واحد. */
+app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const termId = Number(req.query.termId || 0);
+  if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
+
+  const [approvals, term, colleges, sections] = await Promise.all([
+    Repository.getScheduleApprovalsForTerm(termId),
+    Repository.getTermById(termId),
+    Repository.getColleges(),
+    Repository.getSections(),
+  ]);
+  const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  const collegeName = new Map(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const sectionName = new Map(sections.map((row: any) => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
+
+  /* الأقسام التي لم تبدأ الدورة بعد لا سجلَّ لها — وهي أهمّ ما يريد رئيس
+     التسجيل أن يراه قرب الموعد. فتُبنى صفوفها هنا من سجلّ الأقسام نفسه، بدل
+     أن يُكتب لكل قسمٍ في كل فصلٍ سجلٌّ يقول «لم يبدأ». */
+  const started = new Set(approvals.map(row => `${row.AdCollegeId}:${row.AdSectionId}`));
+  const silent = sections
+    .filter((row: any) => !started.has(`${row.AdCollegeId}:${row.AdSectionId}`))
+    .map((row: any) => emptyApproval(Number(row.AdCollegeId), Number(row.AdSectionId), termId));
+
+  const visible = [...approvals, ...silent]
+    .filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
+
+  const rows = await Promise.all(visible.map(async approval => {
+    const [blocking, notes, scheduleRows] = await Promise.all([
+      blockingConflictCount(approval.AdCollegeId, approval.AdSectionId, termId),
+      notesWithState(approval.AdCollegeId, approval.AdSectionId, termId),
+      Repository.getSchedulesByScope({ collegeId: approval.AdCollegeId, sectionId: approval.AdSectionId, termId }),
+    ]);
+    const deadline = readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today);
+    return {
+      collegeId: approval.AdCollegeId,
+      sectionId: approval.AdSectionId,
+      collegeName: collegeName.get(Number(approval.AdCollegeId)) || "",
+      sectionName: sectionName.get(Number(approval.AdSectionId)) || "",
+      status: approval.status,
+      statusLabel: APPROVAL_STATUS_LABEL[approval.status],
+      round: approval.currentRound,
+      rowCount: scheduleRows.length,
+      blockingConflicts: blocking,
+      openNotes: notes.filter(note => note.state === "open").length,
+      answeredNotes: notes.filter(note => note.state === "answered").length,
+      pendingAdditions: approval.pendingAdditions.length,
+      deadline,
+      /* متأخّر: انقضى موعده ولم يُسلّم بعد. حالةٌ تُحسب ولا تُخزَّن، لأنها
+         تتغيّر بمرور اليوم لا بفعل أحد. */
+      late: deadline.past && approval.currentRound === 0,
+      priority: inboxPriority(approval, blocking),
+      updatedAt: approval.updatedAt,
+    };
+  }));
+
+  rows.sort((a, b) => a.priority - b.priority
+    || b.blockingConflicts - a.blockingConflicts
+    || a.collegeName.localeCompare(b.collegeName, "ar")
+    || a.sectionName.localeCompare(b.sectionName, "ar"));
+
+  res.json({
+    termDeadline,
+    rows,
+    totals: {
+      waiting: rows.filter(row => row.status === "submitted").length,
+      returned: rows.filter(row => row.status === "returned").length,
+      accepted: rows.filter(row => row.status === "accepted").length,
+      late: rows.filter(row => row.late).length,
+    },
+  });
+});
+
+/**
+ * تقرير التغييرات لقسمٍ واحد.
+ *
+ * أساس المقارنة هو آخر نسخةٍ رآها التسجيل، لا ملفُّ الاعتماد الأصلي — وهذا
+ * هو الفرق كله. فالموظّف في الجولة الثالثة يرى ما تحرّك منذ أن أرجع هو، لا
+ * الجدولَ كله من أوّله للمرّة الثالثة.
+ */
+app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+
+  const approval = await readApproval(collegeId, sectionId, termId);
+  /* الجولة المطلوبة تُقرأ من الطلب ليُفتح الشريط الزمني، وتُقصر على ما وقع
+     فعلاً: رقمٌ خارج المدى يعيد الجولة الجارية بدل أن يردّ خطأً عن شيءٍ لا
+     يملك الناظر أن يصلحه. */
+  const requestedRound = Number(req.query.round || 0);
+  const round = requestedRound > 0 && requestedRound <= approval.currentRound ? requestedRound : approval.currentRound;
+
+  /* أساس المقارنة: النسخة التي رآها التسجيل في الجولة السابقة لهذه. */
+  const priorRound = approval.rounds.filter(item => item.number < round).sort((a, b) => b.number - a.number)[0];
+  const baselineVersionId = priorRound?.reviewedVersionId;
+
+  const [baselineVersion, live, instructors, courses, notes] = await Promise.all([
+    baselineVersionId ? Repository.getScheduleVersionById(baselineVersionId) : Promise.resolve(undefined),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getInstructors(),
+    Repository.getCourses(),
+    notesWithState(collegeId, sectionId, termId),
+  ]);
+
+  const names = {
+    instructorById: new Map(instructors.map((row: any) => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
+    courseById: new Map(courses.map((row: any) => [Number(row.AdCourseId), String(row.CourseName || row.CourseCode || "")])),
+  };
+  const diff = diffSchedules(baselineVersion?.rows as any, live as any, names);
+  const deadline = await readDeadlineFor(approval, termId);
+
+  res.json({
+    approval,
+    statusLabel: APPROVAL_STATUS_LABEL[approval.status],
+    round,
+    rounds: approval.rounds,
+    deadline,
+    baselineVersionId: baselineVersionId || null,
+    diff,
+    summary: summarizeDiff(diff),
+    notes,
+    blockingConflicts: await blockingConflictCount(collegeId, sectionId, termId),
+    regulationNotices: await regulationNoticeCount(collegeId, sectionId, termId),
   });
 });
 

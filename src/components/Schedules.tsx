@@ -83,6 +83,7 @@ import {
 } from "../types";
 import LivingScheduleLayer from "./LivingScheduleLayer";
 import HallBarterBoard, { type HallBarterReservationView } from "./HallBarterBoard";
+import ApprovalBar from "./ApprovalBar";
 import LocationPicker from "./LocationPicker";
 import DaySubstitute from "./DaySubstitute";
 import MeetingSlots from "./MeetingSlots";
@@ -169,6 +170,8 @@ interface Props {
   user: any;
   scopes?: any[];
   permissions?: number[];
+  /** مرحلة التوقيع التي يملكها صاحب الحساب في دورة الاعتماد، إن ملك واحدة. */
+  signatureStage?: "committee" | "head" | null;
   onNavigate?: (view:string) => void;
 }
 type EditorMode = "index" | "create" | "edit";
@@ -780,7 +783,7 @@ function ScheduleLegendScroller({
   );
 }
 
-export default function Schedules({ mode, user, scopes = [], permissions = [], onNavigate }: Props) {
+export default function Schedules({ mode, user, scopes = [], permissions = [], signatureStage: approvalStage = null, onNavigate }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
   /** Where a press began, so a drag is never mistaken for a tap. */
@@ -9796,6 +9799,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           </div>
         </div>
       </Surface>
+      {/* ── شريط الاعتماد ───────────────────────────────────────────────────
+          يقف تحت أدوات الجدول وفوقه: أوّل ما تقع عليه العين بعد اختيار
+          القسم، وآخرُ ما يُقرأ قبل النظر في المواعيد. ولا يرسم شيئاً حين
+          لا ينتظر صاحبه شيء — فالهدوء هو الحال الطبيعية لا الاستثناء. */}
+      {mode === "schedule" && filterCollege && filterSection && filterTerm ? (
+        <ApprovalBar
+          collegeId={filterCollege}
+          sectionId={filterSection}
+          termId={filterTerm}
+          signatureStage={approvalStage}
+          onChanged={() => setLiveFeedSerial(value => value + 1)}
+        />
+      ) : null}
       <ScheduleExperienceLayer
         experience={experience}
         isPowerAdmin={isPowerAdmin}
