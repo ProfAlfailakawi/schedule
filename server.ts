@@ -9403,6 +9403,29 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const diff = diffSchedules(baselineVersion?.rows as any, live as any, names);
   const deadline = await readDeadlineFor(approval, termId);
 
+  /* ── الصفُّ يُقرأ بالشكل الذي يقرؤه الناسُ كلَّ يوم ─────────────────────
+   *
+   * «مواعيد القسم» في ورشة الجدول هي الصورةُ التي تعوّدتها العينُ في هذا
+   * النظام: رقمُ المقرّر ثم اسمُه ثم شعبتُه، وتحته أستاذُه وأيامُه، ثم الوقتُ
+   * والمكان. وشاشةُ التغييرات كانت تعرض اسمَ المقرّر ورقمَ الشعبة وحدهما،
+   * فيقرأ الموظّفُ «تغيّرت القاعة» ولا يعرف في أيِّ موعدٍ من الأسبوع.
+   *
+   * فيُرسل الصفُّ كاملاً مشكّلاً مرّةً واحدة، ويلبس الطرفان — ما تحرّك
+   * والجدولُ كامل — الشكلَ نفسه. */
+  const courseCodeById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseCode || "")]));
+  const asDisplayRow = (row: any) => ({
+    scheduleId: Number(row.id),
+    courseCode: courseCodeById.get(Number(row.AdCourseId)) || "",
+    course: names.courseById.get(Number(row.AdCourseId)) || String(row.AdCourseName || `موعد ${row.id}`),
+    sectionCode: String(row.SCode || "—"),
+    time: diffFieldValue(row, "time", names),
+    days: diffFieldValue(row, "days", names),
+    room: diffFieldValue(row, "room", names),
+    instructor: diffFieldValue(row, "instructor", names),
+  });
+  /* وللمحذوف يُشكَّل صفُّه كما كان قبل الحذف — وهو ما يحمله `entry.row` أصلاً. */
+  const diffForClient = { ...diff, entries: diff.entries.map(entry => ({ ...entry, display: asDisplayRow(entry.row) })) };
+
   /* ── الجدول كامل، لا التغييرات وحدها ────────────────────────────────────
    *
    * «ما تحرّك» هو مدخلُ المراجعة السريعة، لكنّ من يقرّر يريد أن يرى الموعد في
@@ -9412,13 +9435,7 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const changedById = new Map<number, string>(diff.entries.map(entry => [Number(entry.scheduleId), String(entry.kind)]));
   const fullSchedule = (live as any[])
     .map(row => ({
-      scheduleId: Number(row.id),
-      course: names.courseById.get(Number(row.AdCourseId)) || String(row.AdCourseName || `موعد ${row.id}`),
-      sectionCode: String(row.SCode || "—"),
-      time: diffFieldValue(row, "time", names),
-      days: diffFieldValue(row, "days", names),
-      room: diffFieldValue(row, "room", names),
-      instructor: diffFieldValue(row, "instructor", names),
+      ...asDisplayRow(row),
       changed: changedById.get(Number(row.id)) === "changed" || changedById.get(Number(row.id)) === "added",
     }))
     .sort((a, b) => a.time.localeCompare(b.time) || a.course.localeCompare(b.course, "ar"));
@@ -9430,7 +9447,7 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     rounds: approval.rounds,
     deadline,
     baselineVersionId: baselineVersionId || null,
-    diff,
+    diff: diffForClient,
     fullSchedule,
     summary: summarizeDiff(diff),
     notes,

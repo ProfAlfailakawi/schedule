@@ -244,8 +244,22 @@ check(changes.includes("terms.length > 1 && (active || !termId)"),
 
 /* ── ٩) الجدول كامل مع الملاحظات، لا الملاحظات وحدها ───────────────────────
  * أهمُّ ما طلبه القسم: أن يرى جدولَه كلَّه والملاحظات في مواضعها. */
-check(changes.includes('view === "full"') && changes.includes('className="changes-full"'),
+check(changes.includes('view === "full"') && changes.includes('className="changes-full agenda-list"'),
   "شاشةٌ تعرض الجدول كاملاً");
+/* ── وبالشكل الذي يقرؤه الناسُ كلَّ يوم ────────────────────────────────────
+ * «مواعيد القسم» في ورشة الجدول هي الشكلُ المستقرّ الذي يستعمله الجميع. وكانت
+ * هذه الشاشةُ تعرض اسمَ المقرّر ورقمَ الشعبة وحدهما، فيقرأ الموظّفُ «تغيّرت
+ * القاعة» ولا يعرف في أيِّ موعدٍ من الأسبوع ولا من يُدرّسه. */
+check(changes.includes("function ScheduleRowCard("),
+  "وللصفّ مُصيّرٌ واحد، يلبسه الطرفان — ما تحرّك والجدولُ كامل");
+check(changes.includes('<article className="agenda-card changes-row"'),
+  "وهو `agenda-card` بأصنافه نفسِها، لا شكلٌ يشبهه فيفترق عنه عند أول تحسين");
+check(changes.includes('<div className="agenda-index">') && changes.includes('className="code-chip"')
+  && changes.includes('<div className="agenda-time"') && changes.includes('<div className="agenda-place"'),
+  "فيه الرقمُ ورمزُ المقرّر والوقتُ والمكان، كما هناك");
+/* والخادم يرسل الصفَّ مشكّلاً مرّةً واحدة للطرفين: اشتقاقان يفترقان يوماً. */
+check(server.includes("const asDisplayRow = (row: any) => ({") && server.includes("courseCode:"),
+  "والخادمُ يشكّله مرّةً واحدةً للطرفين، فلا اشتقاقان يفترقان");
 check(changes.includes('className="changes-view-toggle"'),
   "وتبديلٌ بين «ما تحرّك» و«الجدول كامل»");
 check(changes.includes("rowExtras(row.scheduleId, true,") && changes.includes("rowExtras(entry.scheduleId,"),

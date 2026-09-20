@@ -15,8 +15,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, CalendarRange, Check, ChevronLeft, ClipboardList, Clock3, CornerUpLeft,
-  FileDiff, Inbox, MessageSquarePlus, Scale, Search, Send, ShieldCheck, Trash2, X,
+  AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, ChevronLeft, ClipboardList, Clock3,
+  CornerUpLeft, FileDiff, Inbox, MapPin, MessageSquarePlus, Scale, Search, Send, ShieldCheck, Trash2,
+  UsersRound, X,
 } from "lucide-react";
 import ApprovalBar from "./ApprovalBar";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
@@ -48,13 +49,24 @@ interface NoteRow {
 }
 
 interface DiffChange { field: DiffFieldKey; label: string; before: string; after: string }
-interface DiffEntry { kind: "added" | "removed" | "changed"; scheduleId: number; row: any; changes: DiffChange[] }
 
-/** صفٌّ من الجدول الكامل، مشكّلٌ كما تُقرأ خاناتُه — القسم يريد رؤية الجدول كله لا التغييرات وحدها. */
-interface FullRow {
-  scheduleId: number; course: string; sectionCode: string;
-  time: string; days: string; room: string; instructor: string; changed: boolean;
+/**
+ * صفُّ موعدٍ مشكّلٌ كما تُقرأ خاناتُه.
+ *
+ * شكلٌ واحدٌ يصل من الخادم للطرفين — «ما تحرّك» و«الجدول كامل» — فيُعرضان
+ * بمُصيّرٍ واحد. وهو نفسُه شكلُ «مواعيد القسم» في ورشة الجدول: الصورةُ التي
+ * تعوّدتها العينُ في هذا النظام، وليس لشاشة التغييرات أن تخترع لنفسها غيرها.
+ */
+interface DisplayRow {
+  scheduleId: number; courseCode: string; course: string; sectionCode: string;
+  time: string; days: string; room: string; instructor: string;
 }
+interface DiffEntry {
+  kind: "added" | "removed" | "changed";
+  scheduleId: number; row: any; changes: DiffChange[];
+  display: DisplayRow;
+}
+interface FullRow extends DisplayRow { changed: boolean }
 
 interface ChangeReport {
   approval: { status: ScheduleApprovalStatus; currentRound: number; pendingAdditions: any[]; signatures: any[] };
@@ -429,6 +441,56 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
 
 const KIND_LABEL: Record<DiffEntry["kind"], string> = { added: "مضاف", removed: "محذوف", changed: "معدّل" };
 
+/**
+ * ── صفُّ الموعد، بالشكل الذي يقرؤه الناسُ كلَّ يوم ──────────────────────────
+ *
+ * «مواعيد القسم» في ورشة الجدول هي الشكلُ المستقرّ في هذا النظام، ويستعمله
+ * الجميع: رقمٌ متسلسل، ثم رمزُ المقرّر واسمُه وشعبتُه، وتحتها أستاذُه وأيامُه،
+ * ثم الوقتُ والمكان كلٌّ بأيقونته.
+ *
+ * وشاشةُ التغييرات كانت تعرض اسمَ المقرّر ورقمَ الشعبة وحدهما، فيقرأ موظّفُ
+ * التسجيل «تغيّرت القاعة» ولا يعرف في أيِّ موعدٍ من الأسبوع، ولا من يُدرّسه.
+ * فلبست الشكلَ نفسَه بأصنافه نفسِها — لا شكلاً يشبهه: ما يتحسّن هناك يتحسّن
+ * هنا، ولا تفترق شاشتان تعرضان الشيءَ نفسَه.
+ */
+function ScheduleRowCard({ row, index, kind, tag, children }: {
+  row: DisplayRow;
+  index: number;
+  kind?: DiffEntry["kind"];
+  /** كلمةٌ تُقال فوق الصفّ: «معدّل»، أو «تحرّك» في الجدول الكامل. */
+  tag?: string;
+  children?: React.ReactNode;
+  /* الأصنافُ الصريحةُ في هذا الملفّ تُعلن مفتاحَها، وإلا رفضه المترجم. */
+  key?: React.Key;
+}) {
+  return (
+    <article className="agenda-card changes-row" data-kind={kind}>
+      <div className="agenda-index">{String(index + 1).padStart(2, "0")}</div>
+      <div className="agenda-core">
+        <div className="agenda-title-row">
+          {tag ? <span className="changes-kind">{tag}</span> : null}
+          <span className="code-chip">{row.courseCode || "—"}</span>
+          <strong>{row.course}</strong>
+          <Badge tone="neutral">شعبة {row.sectionCode}</Badge>
+        </div>
+        <div className="agenda-sub">
+          <span><UsersRound aria-hidden="true" />{row.instructor || "بدون أستاذ"}</span>
+          <span><CalendarDays aria-hidden="true" />{row.days || "بدون أيام"}</span>
+        </div>
+      </div>
+      <div className="agenda-time" title="الوقت">
+        <Clock3 aria-hidden="true" />
+        <strong dir="ltr">{row.time || "—"}</strong>
+      </div>
+      <div className="agenda-place" title="المكان">
+        <MapPin aria-hidden="true" />
+        <strong>{row.room || "—"}</strong>
+      </div>
+      {children ? <div className="changes-row-extra">{children}</div> : null}
+    </article>
+  );
+}
+
 /** ما اصطدم فيه الموعدان: القاعة، أو الأستاذ، أو الموعد نفسه. */
 const CROSS_KIND_LABEL: Record<string, string> = {
   room: "القاعة", instructor: "أستاذ المقرر", duplicate: "موعدٌ مطابق",
@@ -742,37 +804,34 @@ function Report({ termId, scope, role, onBack }: {
         (report.fullSchedule || []).length === 0 ? (
           <EmptyState title="لا مواعيد" detail="لا مواعيد محفوظة في جدول هذا القسم بعد." />
         ) : (
-          <div className="changes-full" role="table" aria-label="الجدول كامل">
-            {(report.fullSchedule || []).map(row => (
-              <article key={`full:${row.scheduleId}`} className="changes-entry" data-kind={row.changed ? "changed" : undefined}>
-                <header>
-                  {row.changed ? <span className="changes-kind">تحرّك</span> : null}
-                  <strong>{row.course}</strong>
-                  <small>شعبة {row.sectionCode}</small>
-                </header>
-                <dl className="changes-fields changes-fields-full">
-                  <div><dt>الوقت</dt><dd><b>{row.time}</b></dd></div>
-                  <div><dt>الأيام</dt><dd><b>{row.days}</b></dd></div>
-                  <div><dt>القاعة</dt><dd><b>{row.room}</b></dd></div>
-                  <div><dt>أستاذ المقرر</dt><dd><b>{row.instructor}</b></dd></div>
-                </dl>
+          <div className="changes-full agenda-list" role="table" aria-label="الجدول كامل">
+            {(report.fullSchedule || []).map((row, index) => (
+              <ScheduleRowCard
+                key={`full:${row.scheduleId}`}
+                row={row}
+                index={index}
+                kind={row.changed ? "changed" : undefined}
+                tag={row.changed ? "تحرّك" : undefined}
+              >
                 {rowExtras(row.scheduleId, true, "room")}
-              </article>
+              </ScheduleRowCard>
             ))}
           </div>
         )
       ) : report.diff.entries.length === 0 ? (
         <EmptyState title="لم يتغيّر شيء" detail="لا فرق بين هذا الجدول وما راجعتَه آخر مرّة — انظر «الجدول كامل» لرؤية المواعيد كلها." />
       ) : (
-        <div className="changes-table" role="table" aria-label="تغييرات الجدول">
-          {report.diff.entries.map(entry => (
-            <article key={`${entry.kind}:${entry.scheduleId}`} className="changes-entry" data-kind={entry.kind}>
-              <header>
-                <span className="changes-kind">{KIND_LABEL[entry.kind]}</span>
-                <strong>{entry.row?.AdCourseName || `موعد ${entry.scheduleId}`}</strong>
-                <small>شعبة {entry.row?.SCode || "—"}</small>
-              </header>
-
+        <div className="changes-table agenda-list" role="table" aria-label="تغييرات الجدول">
+          {report.diff.entries.map((entry, index) => (
+            <ScheduleRowCard
+              key={`${entry.kind}:${entry.scheduleId}`}
+              row={entry.display}
+              index={index}
+              kind={entry.kind}
+              tag={KIND_LABEL[entry.kind]}
+            >
+              {/* «من ماذا إلى ماذا» تحت الصفّ نفسِه: الصفُّ يقول أيَّ موعدٍ هو،
+                  وهذه تقول ما الذي تحرّك فيه. */}
               {entry.kind === "changed" ? (
                 <dl className="changes-fields">
                   {entry.changes.map(change => (
@@ -789,7 +848,7 @@ function Report({ termId, scope, role, onBack }: {
               ) : null}
 
               {rowExtras(entry.scheduleId, entry.kind !== "removed", entry.changes?.[0]?.field || "room")}
-            </article>
+            </ScheduleRowCard>
           ))}
         </div>
       )}
