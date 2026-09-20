@@ -184,17 +184,31 @@
 .changes-summary small{color:var(--muted);font-size:.83rem;margin-inline-start:auto}
 
 /* ── اللائحة: مطويّة حتى تُطلب ─────────────────────────────────────────── */
-.changes-regulations{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.changes-regulations{
+  border:1px solid color-mix(in srgb,var(--warning) 22%,var(--line));
+  border-inline-start:4px solid var(--warning);
+  border-radius:var(--r-md);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--warning-soft) 72%,var(--surface)),var(--surface));
+}
 .changes-regulations>button{
   inline-size:100%;display:flex;align-items:center;gap:10px;
   padding:11px 15px;border:0;background:transparent;font:inherit;color:inherit;text-align:start;cursor:pointer;
 }
-.changes-regulations>button svg{inline-size:16px;block-size:16px;color:var(--warning);flex:none}
+.changes-regulations>button svg{
+  inline-size:18px;block-size:18px;color:var(--warning);flex:none;
+  padding:5px;box-sizing:content-box;border-radius:12px;
+  background:color-mix(in srgb,var(--warning-soft) 72%,var(--surface));
+}
 .changes-regulations>button span{font-weight:700;font-size:.9rem}
-.changes-regulations>button small{color:var(--muted);font-size:.8rem;margin-inline-start:auto}
+.changes-regulations>button small{
+  color:var(--warning);
+  font-size:.8rem;font-weight:700;margin-inline-start:auto;
+  padding:4px 10px;border-radius:999px;
+  background:color-mix(in srgb,var(--warning-soft) 82%,var(--surface));
+}
 .changes-regulations p{
   margin:0;padding:0 15px 14px;color:var(--muted);
-  font-size:.86rem;line-height:1.85;border-block-start:1px solid var(--line);padding-block-start:12px;
+  font-size:.86rem;line-height:1.85;border-block-start:1px solid color-mix(in srgb,var(--warning) 18%,var(--line));padding-block-start:12px;
 }
 
 /* ── الجولات السابقة ───────────────────────────────────────────────────── */

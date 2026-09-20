@@ -3513,6 +3513,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       Number(a.id) - Number(b.id),
     );
   }, [displayRows, courseById]);
+  const schedulePrintRows = useMemo(() => {
+    const firstDay = (row: FSchedule) => {
+      const index = days.findIndex(day => Boolean((row as any)[day.key]));
+      return index < 0 ? days.length : index;
+    };
+    return filteredRows.slice().sort((a, b) =>
+      firstDay(a) - firstDay(b) ||
+      mins(a.fstarttime) - mins(b.fstarttime) ||
+      byArabic(
+        a.AdCourseName || courseById.get(a.AdCourseId)?.CourseName || "",
+        b.AdCourseName || courseById.get(b.AdCourseId)?.CourseName || "",
+      ) ||
+      Number(a.id) - Number(b.id),
+    );
+  }, [filteredRows, courseById]);
   /**
    * The shapes this course is allowed to take.
    *
@@ -5429,9 +5444,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    */
   /** A finished term keeps its schedule, but loses the tools that only make
    *  sense while teaching is still ahead. */
+  const newestTermId = useMemo(
+    () => (terms || []).reduce(
+      (best, term) => (Number(term?.AdTermId || 0) > best ? Number(term.AdTermId || 0) : best),
+      0,
+    ),
+    [terms],
+  );
   const termIsRunning = useMemo(
-    () => Number(filterTerm) > 0 && Number(filterTerm) === currentTermId(terms as any[]),
-    [terms, filterTerm],
+    () => Number(filterTerm) > 0 && (
+      Number(filterTerm) === currentTermId(terms as any[]) ||
+      Number(filterTerm) === newestTermId
+    ),
+    [terms, filterTerm, newestTermId],
   );
   const selectedTermClosed = useMemo(
     () => !termIsRunning && isTermClosed(terms.find(term => term.AdTermId === filterTerm), terms),
@@ -12160,7 +12185,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           hand as every other sheet the program produces. */}
       {!reviewOpen ? (
         <PrintPortal>
-          <div className="schedule-print print-report print-wide">
+          <div className="schedule-print print-report print-wide print-query-report print-query-list-report">
         <PrintLetterhead
           title="الجدول الدراسي"
           scope={[
@@ -12193,7 +12218,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((s, i) => (
+            {schedulePrintRows.map((s, i) => (
               <tr key={s.id}>
                 <td>{i + 1}</td>
                 <td className="print-wrap">

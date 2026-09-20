@@ -8317,6 +8317,24 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .hall-barter-log-window,.hall-barter-log-date{grid-column:1/-1;white-space:normal}
 }
 
+/* آخر كلمة في بطاقات الأسبوع: لا يخرج اسم المقرر أو الوقت من الإطار مهما
+   تغيّرت كثافة اليوم. */
+.week-title,
+.week-who,
+.week-when,
+.week-when i{
+  min-inline-size:0;
+  max-inline-size:100%;
+  letter-spacing:0 !important;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
+.week-when{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+.week-when i{display:inline-block;font-style:normal}
+
 /* فصلٌ انتهى: خبرٌ لا تحذير. الجدولُ كما هو يُقرأ ويُطبع، وإنما أُغلق بابُ
    الكتابة — فلا يُصرخ بالأحمر على شيءٍ لم يُخطئ فيه أحد. */
 .pending-room-notice[data-tone="frozen"]{

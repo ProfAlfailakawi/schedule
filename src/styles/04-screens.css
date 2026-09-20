@@ -2112,6 +2112,19 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .vault-contents-note{margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
 .vault-chips{margin-top:var(--s2)}
 
+/* إدارة البيانات: الاسم معلومة هوية لا زينة مقتطعة. */
+.master-list strong,
+.master-list small{
+  min-inline-size:0;
+  max-inline-size:100%;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:normal;
+  letter-spacing:0 !important;
+}
+
 /* ── ما يعمل وما لا يعمل على الهاتف ─────────────────────────────────────────
    A state, a limit and a way out. Three marks so the reader finds the one that
    applies to them without reading past the two that do not. */

@@ -1806,6 +1806,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 collegeId={filters.collegeId}
                 sectionId={filters.sectionId}
                 termId={filters.termId}
+                strictDepartmentOnly
               />
             </Field>
             <Field label="المبنى">
@@ -2222,7 +2223,19 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 const from = minutes(row.fstarttime), to = minutes(row.fendtime);
                 const dayOk = roomDay === "week" || Boolean((row as any)[DAYS[roomDay as number].flag]);
                 return dayOk && from < roomPick.point + 60 && to > roomPick.point;
-              }).sort((a, b) => a.fstarttime.localeCompare(b.fstarttime));
+              }).sort((a, b) => {
+                const firstDay = (row: FSchedule) => {
+                  const index = DAYS.findIndex(day => Boolean((row as any)[day.flag]));
+                  return index < 0 ? DAYS.length : index;
+                };
+                return firstDay(a) - firstDay(b) ||
+                  minutes(a.fstarttime) - minutes(b.fstarttime) ||
+                  String(a.AdCourseName || courseById.get(a.AdCourseId)?.CourseName || "").localeCompare(
+                    String(b.AdCourseName || courseById.get(b.AdCourseId)?.CourseName || ""),
+                    "ar",
+                  ) ||
+                  Number(a.id) - Number(b.id);
+              });
               return (
                 <>
                 <div className="query-detail-backdrop no-print" onMouseDown={() => setRoomPick(null)} aria-hidden="true" />
