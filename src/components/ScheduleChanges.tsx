@@ -455,16 +455,40 @@ const KIND_LABEL: Record<DiffEntry["kind"], string> = { added: "مضاف", remov
  * فلبست الشكلَ نفسَه بأصنافه نفسِها — لا شكلاً يشبهه: ما يتحسّن هناك يتحسّن
  * هنا، ولا تفترق شاشتان تعرضان الشيءَ نفسَه.
  */
-function ScheduleRowCard({ row, index, kind, tag, children }: {
+function ScheduleRowCard({ row, index, kind, tag, changes, children }: {
   row: DisplayRow;
   index: number;
   kind?: DiffEntry["kind"];
   /** كلمةٌ تُقال فوق الصفّ: «معدّل»، أو «تحرّك» في الجدول الكامل. */
   tag?: string;
+  /** ما تحرّك في هذا الصفّ، ليُعلَّم كلُّ تغييرٍ في خانته هو. */
+  changes?: DiffChange[];
   children?: React.ReactNode;
   /* الأصنافُ الصريحةُ في هذا الملفّ تُعلن مفتاحَها، وإلا رفضه المترجم. */
   key?: React.Key;
 }) {
+  /* ── وأين وقع التغييرُ بالضبط ─────────────────────────────────────────
+   *
+   * قائمةٌ تحت الصفّ تقول «القاعة: من ١٢٠ إلى ١٢٤» تجعل القارئ يقرأ الصفَّ
+   * مرّةً ثم يقرأ القائمةَ مرّةً ثم يربط بينهما بعينه. وهو ربطٌ يُخطئ فيه من
+   * يراجع عشرين قسماً.
+   *
+   * فالتغييرُ يُعلَّم في خانته نفسِها: القديمُ مشطوبٌ والجديدُ بعده، في
+   * الموضع الذي يقرأ فيه القارئُ تلك القيمةَ أصلاً. فلا ربطَ ولا انتقال.
+   */
+  const moved = new Map((changes || []).map(change => [change.field, change]));
+  const Cell = ({ field, children: fallback }: { field: DiffFieldKey; children: React.ReactNode }) => {
+    const change = moved.get(field);
+    if (!change) return <>{fallback}</>;
+    return (
+      <span className="changes-moved" title={`${change.label}: من ${change.before} إلى ${change.after}`}>
+        <s>{change.before}</s>
+        <ArrowRight aria-hidden="true" />
+        <b>{change.after}</b>
+      </span>
+    );
+  };
+
   return (
     <article className="agenda-card changes-row" data-kind={kind}>
       <div className="agenda-index">{String(index + 1).padStart(2, "0")}</div>
@@ -472,21 +496,27 @@ function ScheduleRowCard({ row, index, kind, tag, children }: {
         <div className="agenda-title-row">
           {tag ? <span className="changes-kind">{tag}</span> : null}
           <span className="code-chip">{row.courseCode || "—"}</span>
-          <strong>{row.course}</strong>
-          <Badge tone="neutral">شعبة {row.sectionCode}</Badge>
+          <strong><Cell field="course">{row.course}</Cell></strong>
+          <Badge tone="neutral">شعبة <Cell field="sectionCode">{row.sectionCode}</Cell></Badge>
         </div>
         <div className="agenda-sub">
-          <span><UsersRound aria-hidden="true" />{row.instructor || "بدون أستاذ"}</span>
-          <span><CalendarDays aria-hidden="true" />{row.days || "بدون أيام"}</span>
+          <span data-changed={moved.has("instructor") || undefined}>
+            <UsersRound aria-hidden="true" />
+            <Cell field="instructor">{row.instructor || "بدون أستاذ"}</Cell>
+          </span>
+          <span data-changed={moved.has("days") || undefined}>
+            <CalendarDays aria-hidden="true" />
+            <Cell field="days">{row.days || "بدون أيام"}</Cell>
+          </span>
         </div>
       </div>
-      <div className="agenda-time" title="الوقت">
+      <div className="agenda-time" title="الوقت" data-changed={moved.has("time") || undefined}>
         <Clock3 aria-hidden="true" />
-        <strong dir="ltr">{row.time || "—"}</strong>
+        <strong dir="ltr"><Cell field="time">{row.time || "—"}</Cell></strong>
       </div>
-      <div className="agenda-place" title="المكان">
+      <div className="agenda-place" title="المكان" data-changed={moved.has("room") || undefined}>
         <MapPin aria-hidden="true" />
-        <strong>{row.room || "—"}</strong>
+        <strong><Cell field="room">{row.room || "—"}</Cell></strong>
       </div>
       {children ? <div className="changes-row-extra">{children}</div> : null}
     </article>
@@ -840,24 +870,8 @@ function Report({ termId, scope, role, onBack }: {
               index={index}
               kind={entry.kind}
               tag={KIND_LABEL[entry.kind]}
+              changes={entry.kind === "changed" ? entry.changes : undefined}
             >
-              {/* «من ماذا إلى ماذا» تحت الصفّ نفسِه: الصفُّ يقول أيَّ موعدٍ هو،
-                  وهذه تقول ما الذي تحرّك فيه. */}
-              {entry.kind === "changed" ? (
-                <dl className="changes-fields">
-                  {entry.changes.map(change => (
-                    <div key={change.field}>
-                      <dt>{change.label}</dt>
-                      <dd>
-                        <s>{change.before}</s>
-                        <ArrowRight aria-hidden="true" />
-                        <b>{change.after}</b>
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              ) : null}
-
               {rowExtras(entry.scheduleId, entry.kind !== "removed", entry.changes?.[0]?.field || "room")}
             </ScheduleRowCard>
           ))}

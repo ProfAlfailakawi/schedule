@@ -215,5 +215,35 @@ check(server.includes("const guardedSections = courseOwnerSection ? [courseOwner
 check(server.includes("for (const section of guardedSections) {"),
   "وحين لا يُعرف مالكُه يُسأل عن كلِّ قسمٍ يملك الطلب، ويكفي واحدٌ لم يوقّع ليُمنع");
 
+/* ── ما يراه صاحبُ الصلاحية الكاملة ──────────────────────────────────────
+ *
+ * قوائمُ الكلية والقسم كانت تُبنى من نطاق الحساب وحدَه. وهو صوابٌ لمن له
+ * نطاق، وخطأٌ لمن لا نطاقَ له لأن له الكلَّ: صاحبُ الصلاحية الكاملة كان يرى
+ * الكليتين المسندتين إليه فقط، ويظنّ أن النظام لا يعرف غيرهما.
+ *
+ * والقاعدةُ مستقرّةٌ في الشاشات القديمة: الكتالوجُ كاملاً لمن له الكلّ،
+ * ومُصفّىً بالنطاق لمن سواه.
+ */
+const inboxSrc = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
+const regSrc = fs.readFileSync(path.join(process.cwd(), "src/components/StudentRegistration.tsx"), "utf8");
+const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
+
+for (const [name, src] of [["وارد الأساتذة", inboxSrc], ["كشف التسجيل", regSrc]] as const) {
+  check(src.includes('const [colleges, sections] = await Promise.all([request("/api/colleges"), request("/api/sections")]);'),
+    `${name}: يقرأ الكتالوجَ كاملاً لمن له الكلّ`);
+  /* ولا يُقرأ إلا لمن يحتاجه: من له نطاقٌ يكفيه نطاقُه، ورحلتان إضافيتان في
+     كل فتحةِ شاشةٍ ثمنٌ بلا مقابل. */
+  check(src.includes('if (!powerAdmin) { setCatalog(null); return; }'),
+    `${name}: ولا يقرؤه لمن له نطاق`);
+  /* ومن له الكلُّ لا يُختار له شيء: اختيارُ أوّلِ كليةٍ يُخفي عنه البقيّةَ
+     خلف قراءةٍ بدأت بلا طلبه. */
+  check(src.includes("if (collegeId || powerAdmin || !scopes.length) return;"),
+    `${name}: ولا يُختار لصاحب الكلِّ نطاقٌ من تلقائه`);
+  check(src.includes("}, [scopes, catalog]);") && src.includes("}, [scopes, collegeId, catalog]);"),
+    `${name}: والقائمتان تتبعان الكتالوجَ حين يوجد`);
+}
+check(appSrc.includes("<StudentRegistration scopes={scopes} powerAdmin={isPowerAdmin} />"),
+  "والصفةُ تصل كشفَ التسجيل، وإلا بقي الإصلاحُ معطّلاً في شاشةٍ لا تعرفه");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
