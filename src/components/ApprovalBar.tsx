@@ -128,7 +128,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           </small>
         </div>
         {forHead ? (
-          <PrimaryButton type="button" disabled={busy} onClick={() => void act("/api/approvals/acknowledge-additions")}>
+          <PrimaryButton type="button" data-guide-ignore="إقرار رئيس القسم بالشُّعب المضافة — ضغطةٌ واحدة، لا توقيعٌ جديد" disabled={busy} onClick={() => void act("/api/approvals/acknowledge-additions")}>
             {busy ? "يحفظ…" : "موافق"}
           </PrimaryButton>
         ) : null}
@@ -187,22 +187,22 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {/* اللائحة تُعرض ولا تمنع: عدّادٌ صغير يُفتح عند الضغط، بجانب الزرّ
             لا فوقه — فالقرار لصاحب التوقيع، والعلم به يُسجَّل معه. */}
         {regulationNotices > 0 && canSignNow ? (
-          <button type="button" className="approval-sign-notices" onClick={() => setShowNotices(value => !value)}>
+          <button type="button" className="approval-sign-notices" data-guide-ignore="فتح عدّاد الملاحظات اللائحية — عرضٌ لا فعل، واللائحة لا تمنع" onClick={() => setShowNotices(value => !value)}>
             <Scale aria-hidden="true" /> {regulationNotices} ملاحظةً لائحية
           </button>
         ) : null}
         {canSignNow ? (
-          <PrimaryButton type="button" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
+          <PrimaryButton type="button" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد الجدول" : "توقيع لجنة الجدول"}
           </PrimaryButton>
         ) : null}
         {mine && !readyToSubmit ? (
-          <SecondaryButton type="button" disabled={busy} onClick={() => void act("/api/approvals/withdraw")}>
+          <SecondaryButton type="button" data-guide-ignore="سحب توقيعٍ أثبته صاحبه قبل الإرسال — تراجعٌ عن فعلٍ مسجّل" disabled={busy} onClick={() => void act("/api/approvals/withdraw")}>
             سحب توقيعي
           </SecondaryButton>
         ) : null}
         {readyToSubmit ? (
-          <PrimaryButton type="button" disabled={busy} onClick={() => void act("/api/approvals/submit")}>
+          <PrimaryButton type="button" data-guide-target="approval.action.submit" disabled={busy} onClick={() => void act("/api/approvals/submit")}>
             <Send aria-hidden="true" /> {busy ? "يرسل…" : "إرسال إلى التسجيل"}
           </PrimaryButton>
         ) : null}

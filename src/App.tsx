@@ -324,6 +324,7 @@ function NavButton({
   activeView,
   onGo,
   badge = 0,
+  "data-guide-ignore": _guideIgnore,
 }: {
   view: View;
   icon: React.ReactNode;
@@ -334,6 +335,14 @@ function NavButton({
   onGo: (view: View) => void;
   /** عدد يستحق قراراً — نقطة تنبض على الأيقونة، لا رقمٌ يزحم السطر. */
   badge?: number;
+  /**
+   * سببُ استثناء موضع الاستدعاء من تدقيق المرشد.
+   *
+   * يُقرأ من المصدر ولا يُصيَّر — وهذا مقصود: الزرّ نفسه يحمل
+   * `data-guide-target` فهو مسجّلٌ لا مُستثنى، وعنصرٌ يحمل الاثنين معاً
+   * تناقض. المستثنى هو موضعُ الاستدعاء في القائمة، لا الزرّ الذي يخرج منه.
+   */
+  "data-guide-ignore"?: string;
 }) {
   const on = active ?? activeView === view;
   const visibleText = view === "dashboard" ? "" : (visualLabel ?? label);
@@ -341,6 +350,9 @@ function NavButton({
     <button
       type="button"
       className={`side-nav-link ${on ? "active" : ""}`}
+      /* كل وجهةٍ في القائمة هي ميزةٌ مسجّلة باسم `page.<view>`، فيعرف المرشد
+         أين يشير حين يُسأل «وين ألقى كذا؟» بدل أن يصف الطريق بالكلام. */
+      data-guide-target={`page.${view}`}
       aria-current={on ? "page" : undefined}
       aria-label={label}
       title={label}
@@ -1614,6 +1626,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1625,6 +1638,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1636,6 +1650,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1647,6 +1662,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1658,6 +1674,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1669,6 +1686,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1680,6 +1698,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1691,6 +1710,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1702,6 +1722,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1713,6 +1734,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -2257,6 +2279,9 @@ export default function App() {
                 icon={<FileDiff />}
                 label="تغييرات الجدول"
                 badge={changesBadge}
+                /* الوجهة نفسها مسجّلة في المرشد باسم `page.scheduleChanges`،
+                   وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.scheduleChanges"
               />
             ) : null}
             {allowed.schedule && !sessionRole.readOnly ? (

@@ -840,6 +840,101 @@
     border-top:.8pt solid #8d9792 !important;
     height:0 !important;
   }
+  /* ── التوقيع المثبَت ─────────────────────────────────────────────────────
+     خانةٌ وُقّعت في النظام لا تُترك خطّاً: تحمل اسم من وقّع، وتاريخه، ورمزاً
+     يُطابَق به بعد شهرين في ملفٍّ فيه ثلاث نسخ من الجدول نفسه.
+
+     والخطّ يبقى فوق الاسم عمداً — لا يُلغى. لأن العرف الورقي يطلب إمضاءً
+     باليد فوق المطبوع، والنظام يشهد على الاعتماد ولا ينوب عن اليد. */
+  .print-comprehensive-signatures [data-signed]{gap:2mm !important}
+  .print-comprehensive-signatures .print-signed{
+    display:block !important;
+    font-style:normal !important;
+    text-align:center !important;
+    border-top:.8pt solid #4c5652 !important;
+    padding-top:1.4mm !important;
+  }
+  .print-comprehensive-signatures .print-signed b{
+    display:block !important;
+    font-size:7.4pt !important;
+    font-weight:750 !important;
+    color:#131817 !important;
+  }
+  .print-comprehensive-signatures .print-signed small{
+    display:block !important;
+    font-size:6pt !important;
+    color:#5b6660 !important;
+    margin-top:.5mm !important;
+    letter-spacing:.01em !important;
+  }
+  /* ── نسخة غير معتمدة ────────────────────────────────────────────────────
+     مائلةً خلف الجدول لا فوقه: تُقرأ من بعيد ولا تحجب رقماً. ورماديةً
+     فاتحة، لأن علامةً تُفسد قراءة الوثيقة تدفع الناس إلى طباعتها من مكانٍ
+     آخر — فتُهزم العلامة بنفسها.
+
+     وعلى كل صفحة، لا على الأولى: صفحةٌ واحدة تخرج من الرزمة بلا علامة
+     تُبطل الاحتياط كله. */
+  .print-comprehensive-page{position:relative !important}
+  .print-unapproved-mark{
+    position:absolute !important;
+    inset:0 !important;
+    display:grid !important;
+    place-items:center !important;
+    transform:rotate(-24deg) !important;
+    font-size:44pt !important;
+    font-weight:800 !important;
+    letter-spacing:.06em !important;
+    color:rgba(151,60,56,.085) !important;
+    pointer-events:none !important;
+    z-index:0 !important;
+  }
+  .print-comprehensive-page>*:not(.print-unapproved-mark){position:relative !important;z-index:1 !important}
+  /* سطر الحال تحت العنوان: جملةٌ واحدة تقول أين تقف الورقة من الدورة. */
+  .print-approval-line{
+    margin:.6mm 0 0 !important;
+    font-size:7pt !important;
+    font-weight:700 !important;
+    color:#5b6660 !important;
+  }
+  .print-approval-line[data-status="accepted"]{color:#25684a !important}
+  .print-approval-line[data-status="returned"]{color:#8d6413 !important}
+  /* ── ملحق التغييرات ─────────────────────────────────────────────────────
+     يبدأ صفحةً جديدة دائماً: ملحقٌ يلتصق بذيل الجدول يُقرأ امتداداً له، وهو
+     وثيقةٌ ثانية لها عنوانها وتواقيعها.
+
+     وأربعة أعمدة لا ستّة: ما تغيّر يُكتب جملةً في خانةٍ واحدة — «القاعة: أ/١٠١
+     ← أ/٢٠٥» — بدل عمودٍ لكل خانةٍ ممكنة يبقى خمسةُ أسداسه فارغاً في كل سطر. */
+  .print-changes-appendix{break-before:page !important;page-break-before:always !important}
+  .print-changes-summary{
+    margin:2mm 0 2.5mm !important;
+    font-size:8pt !important;
+    font-weight:650 !important;
+    color:#3b4441 !important;
+  }
+  .print-changes-grid{display:grid !important;font-size:7.4pt !important}
+  .print-changes-head,.print-changes-row{
+    display:grid !important;
+    grid-template-columns:14mm minmax(30mm,1fr) 14mm minmax(50mm,1.6fr) !important;
+    gap:1.5mm !important;
+    padding:1.1mm 1mm !important;
+    border-bottom:.4pt solid #d7dcd8 !important;
+    align-items:baseline !important;
+  }
+  .print-changes-head{
+    font-weight:800 !important;
+    color:#4c5652 !important;
+    border-bottom:.9pt solid #8d9792 !important;
+  }
+  .print-changes-row{break-inside:avoid !important}
+  .print-changes-kind{font-weight:750 !important}
+  /* اللون في الطباعة رمادياتٌ لا ألوان: الطابعات في الأقسام أحاديةُ اللون في
+     الغالب، وبطاقةٌ حمراء تخرج منها رمادياً باهتاً لا يُميَّز عن غيره. فالنوع
+     يُقال بالكلمة أولاً، واللون زيادةٌ لمن طبع ملوّناً. */
+  .print-changes-row[data-kind="added"] .print-changes-kind{color:#25684a !important}
+  .print-changes-row[data-kind="removed"] .print-changes-kind{color:#973c38 !important}
+  .print-changes-row[data-kind="changed"] .print-changes-kind{color:#8d6413 !important}
+  .print-changes-detail{display:grid !important;gap:.6mm !important}
+  .print-changes-detail b{font-weight:750 !important;color:#4c5652 !important}
   /* ── شكل القسم كله قبل تفصيله ──────────────────────────────────────────
      سطر واحد في أول صفحة من وثيقة تضم مواقع الفرع: أسماء المواقع وحجم كل
      واحد. يقرؤه المستلم قبل أن يقلب الصفحات فيعرف ما بين يديه. لا وجود له

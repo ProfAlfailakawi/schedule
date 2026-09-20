@@ -446,3 +446,25 @@
 @media print{
   .changes-term-picker,.changes-deadline-surface,.approval-sign-notices{display:none !important}
 }
+
+/* ── عمود الاعتماد في ميزان الأقسام ────────────────────────────────────
+   إضافة العميد كلها: عمودٌ واحد في جدولٍ يقرؤه أصلاً. لا لوحةَ قيادةٍ
+   ثانية تقول الشيء نفسه وتفترق عنه عند أول تعديل.                       */
+.balance-approval{white-space:nowrap}
+.balance-approval small{
+  display:block;margin-block-start:3px;
+  color:var(--muted);font-size:.74rem;
+}
+
+/* الشارة على الورق: الألوان تخرج رماديةً من طابعاتٍ أحاديّة، فالحال تُقال
+   بالكلمة أولاً، وتبقى النقطة حدّاً يفصل لا معنىً يُحمَل. */
+@media print{
+  .approval-chip{
+    border:.4pt solid #8d9792 !important;
+    background:transparent !important;
+    color:#131817 !important;
+    padding:.4mm 1.4mm !important;
+    font-size:6.6pt !important;
+  }
+  .approval-chip::before{display:none !important}
+}

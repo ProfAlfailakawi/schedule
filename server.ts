@@ -10382,7 +10382,18 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
  * side. It reads the whole term once and derives every row from that, so the
  * page costs one read rather than one per department.
  */
-app.get("/api/reports/department-balance", requirePermission(14), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+/**
+ * ── ميزان الأقسام ───────────────────────────────────────────────────────────
+ *
+ * كان مقصوراً على الإدارة الرئيسية وحدها، لأنه القراءة التي ترى الأقسام كلها
+ * في جدولٍ واحد. وهو بالضبط ما يحتاجه العميد ولا يحتاج غيره: سؤاله — «هل
+ * سلّمت الأقسام؟ ومن تأخّر؟» — صفٌّ واحد لكل قسم، وهذا الجدول صفٌّ لكل قسم.
+ *
+ * فبدل بناء لوحةٍ ثانية تقول الشيء نفسه وتفترق عنه عند أول تعديل، فُتح هذا —
+ * محكوماً بالنطاق كغيره: العميد يرى كليته، وعميد التسجيل يرى الجميع، ومن لا
+ * نطاق له لا يرى شيئاً. والإدارة الرئيسية تبقى كما كانت، ترى الكل.
+ */
+app.get("/api/reports/department-balance", requirePermission(14), async (req: AuthenticatedRequest, res: Response) => {
   let termId = Number(req.query.termId || 0);
   const terms = await Repository.getTerms();
   if (!termId) termId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
@@ -10393,6 +10404,9 @@ app.get("/api/reports/department-balance", requirePermission(14), requirePowerAd
   const collegeById = new Map(colleges.map(item => [item.AdCollegeId, item]));
   const bySection = new Map<number, FSchedule[]>();
   for (const row of termRows) {
+    /* النطاق يُطبَّق على التجميع لا على النتيجة: قسمٌ خارج نطاق القارئ لا
+       يدخل الحساب أصلاً، فلا تتسرّب أعدادُه إلى مجاميع الأسفل. */
+    if (!isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))) continue;
     const list = bySection.get(Number(row.AdSectionId));
     if (list) list.push(row); else bySection.set(Number(row.AdSectionId), [row]);
   }

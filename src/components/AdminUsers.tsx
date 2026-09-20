@@ -1467,6 +1467,7 @@ export default function AdminUsers({
                 <button
                   type="button"
                   key={u.SystemUserId}
+                  data-guide-ignore="اختيار حسابٍ من القائمة لعرض تفاصيله — تنقّل لا فعل"
                   className={
                     selected?.SystemUserId === u.SystemUserId ? "active" : ""
                   }

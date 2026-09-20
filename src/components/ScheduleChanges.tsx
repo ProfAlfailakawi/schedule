@@ -190,7 +190,7 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
         <div className="changes-inbox">
           {visible.map(row => (
             <div key={`${row.collegeId}:${row.sectionId}`} className="changes-inbox-row" data-status={row.status} data-late={row.late || undefined}>
-              <button type="button" className="changes-inbox-open" onClick={() => onOpen(row)}>
+              <button type="button" className="changes-inbox-open" data-guide-ignore="فتح قسمٍ من الوارد — تنقّل لا فعل، والفعل داخله مسجّل" onClick={() => onOpen(row)}>
                 <div className="changes-inbox-title">
                   <strong>{row.sectionName || `قسم ${row.sectionId}`}</strong>
                   <small>{row.collegeName}</small>
@@ -209,7 +209,7 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
                 <ChevronLeft aria-hidden="true" />
               </button>
               {canExtend ? (
-                <button type="button" className="changes-extend" onClick={() => { setExtending(row); setExtendUntil(row.deadline.extensionUntil || ""); setExtendReason(row.deadline.extensionReason || ""); }}>
+                <button type="button" className="changes-extend" data-guide-target="changes.action.deadline" onClick={() => { setExtending(row); setExtendUntil(row.deadline.extensionUntil || ""); setExtendReason(row.deadline.extensionReason || ""); }}>
                   تمديد
                 </button>
               ) : null}
@@ -223,7 +223,7 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
           <div className="changes-extend-card">
             <header>
               <strong>تمديد تسليم «{extending.sectionName}»</strong>
-              <button type="button" onClick={() => setExtending(null)} aria-label="إغلاق"><X /></button>
+              <button type="button" data-guide-ignore="إغلاق الورقة المنبثقة — لا يغيّر شيئاً" onClick={() => setExtending(null)} aria-label="إغلاق"><X /></button>
             </header>
             <label>
               <span>حتى تاريخ</span>
@@ -235,8 +235,8 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
             </label>
             <div className="changes-extend-actions">
               {/* تاريخٌ فارغ يرفع التمديد: القرار بالرفع واردٌ كالقرار بالمنح. */}
-              <SecondaryButton type="button" onClick={() => { setExtendUntil(""); }}>إلغاء التمديد</SecondaryButton>
-              <PrimaryButton type="button" disabled={busy} onClick={submitExtension}>
+              <SecondaryButton type="button" data-guide-ignore="تفريغ حقل التاريخ داخل الورقة — الحفظ هو ما يُنفّذ، وهو مسجّل" onClick={() => { setExtendUntil(""); }}>إلغاء التمديد</SecondaryButton>
+              <PrimaryButton type="button" data-guide-target="changes.action.deadline" disabled={busy} onClick={submitExtension}>
                 {busy ? "يحفظ…" : extendUntil ? "منح التمديد" : "رفع التمديد"}
               </PrimaryButton>
             </div>
@@ -340,7 +340,7 @@ function Report({ termId, scope, role, onBack }: {
   return (
     <div className="changes-report">
       {onBack ? (
-        <button type="button" className="changes-back" onClick={onBack}>
+        <button type="button" className="changes-back" data-guide-ignore="عودة إلى الوارد — تنقّل لا فعل" onClick={onBack}>
           <ArrowRight aria-hidden="true" /> عودة إلى الوارد
         </button>
       ) : null}
@@ -370,7 +370,7 @@ function Report({ termId, scope, role, onBack }: {
           تزاحم التقرير بما لا يوقف أحداً. */}
       {report.regulationNotices > 0 ? (
         <div className="changes-regulations" data-open={showRegulations || undefined}>
-          <button type="button" onClick={() => setShowRegulations(v => !v)}>
+          <button type="button" data-guide-ignore="طيّ بطاقة اللوائح وفتحها — عرضٌ لا فعل" onClick={() => setShowRegulations(v => !v)}>
             <Scale aria-hidden="true" />
             <span>{report.regulationNotices} ملاحظةً لائحية</span>
             <small>تُعرض ولا تمنع الاعتماد</small>
@@ -392,7 +392,7 @@ function Report({ termId, scope, role, onBack }: {
 
       {report.rounds.length > 1 ? (
         <div className="changes-rounds" data-open={showRounds || undefined}>
-          <button type="button" onClick={() => setShowRounds(v => !v)}>
+          <button type="button" data-guide-ignore="طيّ الجولات السابقة وفتحها — عرضٌ لا فعل" onClick={() => setShowRounds(v => !v)}>
             <ClipboardList aria-hidden="true" /> الجولات السابقة ({report.rounds.length - 1})
           </button>
           {showRounds ? (
@@ -403,7 +403,7 @@ function Report({ termId, scope, role, onBack }: {
                   {round.submittedAt ? <span>أُرسلت {arabicDate(round.submittedAt)}{round.submittedBy ? ` — ${round.submittedBy}` : ""}</span> : null}
                   {round.returnedAt ? <span>أُرجعت {arabicDate(round.returnedAt)} بـ{round.returnedNoteCount || 0} ملاحظة</span> : null}
                   {round.acceptedAt ? <span>قُبلت {arabicDate(round.acceptedAt)}{round.acceptedBy ? ` — ${round.acceptedBy}` : ""}</span> : null}
-                  <button type="button" onClick={() => { setShowRounds(false); void load(round.number); }}>اعرض تغييراتها</button>
+                  <button type="button" data-guide-ignore="عرض تغييرات جولةٍ سابقة — قراءةٌ لا فعل" onClick={() => { setShowRounds(false); void load(round.number); }}>اعرض تغييراتها</button>
                 </li>
               ))}
             </ol>
@@ -450,6 +450,7 @@ function Report({ termId, scope, role, onBack }: {
                         <button
                           key={field}
                           type="button"
+                          data-guide-target="changes.action.note"
                           data-state={existing?.state}
                           onClick={() => { setNoteDraft({ scheduleId: entry.scheduleId, field }); setNoteText(existing?.text || ""); }}
                         >
@@ -475,14 +476,14 @@ function Report({ termId, scope, role, onBack }: {
                         ) : null}
                         <div className="changes-note-actions">
                           {!isRegistrar && note.origin === "registrar" && note.state === "open" ? (
-                            <button type="button" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
+                            <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
                           ) : null}
                           {isRegistrar && note.state === "answered" ? (
                             <>
-                              <button type="button" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "accepted" }, "قُبل تبرير القسم")}>
+                              <button type="button" data-guide-ignore="قبول تبرير القسم على ملاحظةٍ واحدة — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "accepted" }, "قُبل تبرير القسم")}>
                                 <Check aria-hidden="true" /> مقبول
                               </button>
-                              <button type="button" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "insisted" }, "أُعيدت الملاحظة")}>
+                              <button type="button" data-guide-ignore="إعادة ملاحظةٍ واحدة إلى الانتظار — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "insisted" }, "أُعيدت الملاحظة")}>
                                 لا زلت أطلب التغيير
                               </button>
                             </>
@@ -506,10 +507,10 @@ function Report({ termId, scope, role, onBack }: {
             {handledNotes ? ` · ${handledNotes} عُولجت` : ""}
             {answeredNotes ? ` · ${answeredNotes} بانتظار قرارك` : ""}
           </span>
-          <SecondaryButton type="button" disabled={busy || openNotes === 0} onClick={() => void act("/api/approvals/return", undefined, "أُرجع الجدول للقسم")}>
+          <SecondaryButton type="button" data-guide-target="changes.action.return" disabled={busy || openNotes === 0} onClick={() => void act("/api/approvals/return", undefined, "أُرجع الجدول للقسم")}>
             <CornerUpLeft aria-hidden="true" /> إرجاع للقسم
           </SecondaryButton>
-          <PrimaryButton type="button" disabled={busy || report.blockingConflicts > 0} onClick={() => void act("/api/approvals/accept", undefined, "اعتُمد الجدول")}>
+          <PrimaryButton type="button" data-guide-target="changes.action.accept" disabled={busy || report.blockingConflicts > 0} onClick={() => void act("/api/approvals/accept", undefined, "اعتُمد الجدول")}>
             <ShieldCheck aria-hidden="true" /> قبول نهائي
           </PrimaryButton>
         </div>
@@ -520,15 +521,15 @@ function Report({ termId, scope, role, onBack }: {
           <div className="changes-extend-card">
             <header>
               <strong>ملاحظة على {DIFF_FIELD_LABEL[noteDraft.field as DiffFieldKey] || "الموعد"}</strong>
-              <button type="button" onClick={() => setNoteDraft(null)} aria-label="إغلاق"><X /></button>
+              <button type="button" data-guide-ignore="إغلاق الورقة المنبثقة — لا يغيّر شيئاً" onClick={() => setNoteDraft(null)} aria-label="إغلاق"><X /></button>
             </header>
             <label>
               <span>النصّ <small>اختياري — الخانة نفسها هي الرسالة</small></span>
               <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder={`راجِع ${DIFF_FIELD_LABEL[noteDraft.field as DiffFieldKey] || "الموعد"}`} autoFocus />
             </label>
             <div className="changes-extend-actions">
-              <SecondaryButton type="button" onClick={() => setNoteDraft(null)}>إلغاء</SecondaryButton>
-              <PrimaryButton type="button" disabled={busy} onClick={saveNote}>
+              <SecondaryButton type="button" data-guide-ignore="إلغاء كتابة الملاحظة — لا يغيّر شيئاً" onClick={() => setNoteDraft(null)}>إلغاء</SecondaryButton>
+              <PrimaryButton type="button" data-guide-target="changes.action.note" disabled={busy} onClick={saveNote}>
                 <MessageSquarePlus aria-hidden="true" /> {busy ? "يحفظ…" : "أثبِت الملاحظة"}
               </PrimaryButton>
             </div>
@@ -541,7 +542,7 @@ function Report({ termId, scope, role, onBack }: {
           <div className="changes-extend-card">
             <header>
               <strong>إبقاء {rebutting.fieldLabel} كما هي</strong>
-              <button type="button" onClick={() => setRebutting(null)} aria-label="إغلاق"><X /></button>
+              <button type="button" data-guide-ignore="إغلاق الورقة المنبثقة — لا يغيّر شيئاً" onClick={() => setRebutting(null)} aria-label="إغلاق"><X /></button>
             </header>
             <p className="changes-rebut-hint">
               السبب مطلوبٌ هنا وحده: ردٌّ بلا سببٍ يدفع الطرفين إلى الهاتف، فتضيع الحجّة خارج النظام.
@@ -551,8 +552,8 @@ function Report({ termId, scope, role, onBack }: {
               <input value={rebutText} onChange={(e) => setRebutText(e.target.value)} placeholder="القاعة مخصّصة للمختبر بقرار القسم" autoFocus />
             </label>
             <div className="changes-extend-actions">
-              <SecondaryButton type="button" onClick={() => setRebutting(null)}>إلغاء</SecondaryButton>
-              <PrimaryButton type="button" disabled={busy || rebutText.trim().length < 3} onClick={saveRebuttal}>
+              <SecondaryButton type="button" data-guide-ignore="إلغاء الردّ — لا يغيّر شيئاً" onClick={() => setRebutting(null)}>إلغاء</SecondaryButton>
+              <PrimaryButton type="button" data-guide-ignore="إرسال ردّ القسم على ملاحظةٍ واحدة — لا يمسّ الجدول" disabled={busy || rebutText.trim().length < 3} onClick={saveRebuttal}>
                 {busy ? "يحفظ…" : "أرسل الردّ"}
               </PrimaryButton>
             </div>
@@ -603,7 +604,7 @@ function DeadlineControl({ term, onSaved }: { term: AdTerm; onSaved: () => void 
         <input type="date" value={value} onChange={(e) => { setValue(e.target.value); setSaved(false); }} />
       </label>
       {dirty ? (
-        <PrimaryButton type="button" disabled={busy} onClick={save}>
+        <PrimaryButton type="button" data-guide-target="changes.action.deadline" disabled={busy} onClick={save}>
           {busy ? "يحفظ…" : value ? "أثبِت الموعد" : "ارفع الموعد"}
         </PrimaryButton>
       ) : saved ? (
