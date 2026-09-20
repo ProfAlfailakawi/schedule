@@ -79,8 +79,16 @@ for (const door of [
 /* من يكتشف المنعَ عند الحفظ يكون قد أعاد بناءَ موعدٍ كاملاً في نموذجٍ لن
    يُقبل. */
 check(workspace.includes("const termFrozen = useMemo(() => {")
-  && workspace.includes('return term?.AdTermClosed === true && approvalStage !== "committee";'),
+  && workspace.includes("return term?.AdTermClosed === true && !committeeEligible;"),
   "والشاشةُ تقرأ القاعدةَ نفسَها التي يقرؤها الخادم");
+/* ── ولا تقرؤها من صفةٍ يُسقط إليها الغياب ──────────────────────────────
+ * `signatureStage` تسقط إلى «لجنة» حين لا تُعرف الصفة، والخادمُ لا يقبل ذلك.
+ * فلو بُني الشريطُ عليها لما رآه صاحبُ حسابٍ بلا صفةٍ مكتوبة — وحسابُ الإدارة
+ * الجذر منهم — ثم يُردّ عند الحفظ بلا أن يفهم لماذا: منعٌ بلا تفسير. */
+check(server.includes("committeeEligible: isAcademicRole(user?.Role) && signatureStage(user?.Role) === \"committee\","),
+  "والخادمُ يرسل الصفةَ المكتوبةَ صريحةً، لا يتركها تُستنتج");
+check(workspace.includes("committeeEligible = false,"),
+  "والشاشةُ تفترض الأسوأ حين لا تصلها، فتُحذّر ولا تسكت");
 check(workspace.includes('data-tone="frozen"') && workspace.includes("انتهى هذا الفصل."),
   "وتقولها قبل أن يُبنى موعدٌ لن يُحفظ");
 /* ولا يُخفى شيء: القراءةُ والطباعةُ والاستعلامُ كما هي. */

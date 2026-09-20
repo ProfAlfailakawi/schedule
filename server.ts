@@ -2018,6 +2018,16 @@ function roleDescriptor(user: any) {
     watchesInbox: watchesInbox(definition.id),
     canAnnotate: canAnnotateCells(definition.id),
     signatureStage: signatureStage(definition.id),
+    /* ── صفةٌ مكتوبةٌ، لا صفةٌ يُسقط إليها الغياب ─────────────────────────
+     *
+     * `definition` هي الصفةُ بعد السقوط إلى الافتراضيّ، فحسابٌ بلا صفةٍ
+     * مكتوبة يُقرأ «رئيس لجنة الجدول». وذلك مقبولٌ فيما تُستعمل له أعلاه —
+     * وصفٌ ولافتة — وغيرُ مقبولٍ حيث يُبنى عليه منعٌ أو إذن.
+     *
+     * وتجميدُ الفصل المنتهي يُبنى عليه: الخادمُ يشترط صفةً مكتوبةً، فلو قرأت
+     * الشاشةُ `signatureStage` وحدَها لظنّت صاحبَ الحساب لجنةً فلا تُحذّره،
+     * ثم يُردّ عند الحفظ بلا أن يفهم لماذا. فتُرسل الحقيقةُ صريحةً. */
+    committeeEligible: isAcademicRole(user?.Role) && signatureStage(user?.Role) === "committee",
     viewerOnly: isViewerOnlyRole(definition.id),
   };
 }
