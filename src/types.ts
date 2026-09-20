@@ -930,7 +930,26 @@ export interface InstructorRequest {
   timeline: InstructorRequestEvent[];
   createdAt: string;
   submittedAt?: string;
+  /**
+   * توقيعُ الأستاذ.
+   *
+   * ضغطةُ «أرسل» وحدَها لا تُثبت شيئاً: الرابطُ يصل في واتساب، ويُعاد توجيهه،
+   * ويُفتح من هاتفٍ ليس هاتفَه. فيُطلب رقمُه المدنيُّ عند الإرسال، ويُطابَق
+   * بسجلّه — وهو الشيءُ الذي لا يعرفه عنه غيرُه.
+   *
+   * ولا يُحفظ الرقمُ نفسُه: بصمتُه تُثبت أنه هو ولا تكشف رقمَه، ورمزٌ قصيرٌ
+   * يُطبع على الورقة فيُطابَق بعد شهرين بورقةٍ في ملفّ.
+   */
+  signature?: InstructorRequestSignature;
   updatedAt: string;
+}
+
+export interface InstructorRequestSignature {
+  at: string;
+  /** بصمةُ الرقم المدني. تُثبت أنه هو، ولا تكشف رقمَه. */
+  fingerprint: string;
+  /** ستّةُ محارفَ تُطبع وتُطابَق. */
+  verifyCode: string;
 }
 
 export interface SchedulePublication {

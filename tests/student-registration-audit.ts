@@ -77,9 +77,9 @@ check(server.includes("isScopeAllowed(req, Number(need.AdCollegeId), candidate)"
 /* السؤالُ يمرّ على كلِّ قسمٍ في الكلية ويقف عند أوّلِ قسمٍ يملك الطلبَ وهو في
    نطاق الحساب — لا على قسمٍ واحدٍ يُختار للطلب سلفاً. و`find` تُعيد ذلك القسمَ
    نفسَه لأن حارسَ التوقيع بعدها يحتاج أن يعرف أيَّ جدولٍ يسأل عنه. */
-check(server.includes("const owningSectionInScope ="),
+check(server.includes("const owningSectionsInScope ="),
   "ويُسأل عن كلِّ قسمٍ يملك الطلبَ في نطاق الحساب، لا عن قسمٍ واحدٍ يُختار له");
-check(server.includes("if (!owningSectionInScope) {"),
+check(server.includes("if (!owningSectionsInScope.length) {"),
   "ومن لا يملكه أيُّ قسمٍ في نطاقه يُردّ");
 check(server.includes("const canWriteRegistration"), "ومن يكتب معرَّفٌ في موضعٍ واحد");
 check(server.includes("هذا الكشف للقراءة بصفتك."), "ومن لا يكتب يُقال له ذلك، لا يُترك يضغط بلا أثر");
@@ -200,6 +200,20 @@ check(server.includes("if (isFullySigned(approval)) return null;"),
   "والشرطُ التوقيعان معاً، يُقرآن من `approvalWorkflow` لا من قاعدةٍ تُخترع هنا");
 check((server.match(/registrarBlockReason\(/g) || []).length >= 3,
   "ويُسأل عند القراءة وعند الكتابة كلتيهما، فلا يُكتب فيما لا يُقرأ");
+
+/* ── والسؤالُ عن قسم المقرّر المطلوب بعينه ───────────────────────────────
+ * الطلبُ القديم يجمع مقرّرَين لقسمين، وموظّفٌ نطاقُه يشملهما كان يُسأل عن
+ * جدول أحدهما ويكتب في مقرّر الآخر: يمرّ على قسمٍ لم يوقّع لأن شريكه وقّع.
+ * ولذلك يُقرأ المقرّرُ قبل الحرس لا بعده. */
+check(server.indexOf("هذا المقرّر ليس ضمن طلب الطالب.") < server.indexOf("const courseOwnerSection ="),
+  "والمقرّرُ يُقرأ قبل الحرس، فيُسأل عن قسمه هو");
+check(server.includes("const guardedSections = courseOwnerSection ? [courseOwnerSection] : owningSectionsInScope;"),
+  "وعن قسمه وحدَه حين يُعرف");
+/* ولا يُستعار توقيعُ قسمٍ عن قسم: مقرّرٌ يتيمٌ زال من الكتالوج كان لقسمٍ لم
+   يوقّع كان يمرّ بتوقيع شريكه في الطلب — حارسٌ قائمٌ في ظاهره، مخروقٌ في
+   الحالة التي وُضع لها. */
+check(server.includes("for (const section of guardedSections) {"),
+  "وحين لا يُعرف مالكُه يُسأل عن كلِّ قسمٍ يملك الطلب، ويكفي واحدٌ لم يوقّع ليُمنع");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

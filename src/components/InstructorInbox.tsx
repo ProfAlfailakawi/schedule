@@ -29,7 +29,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, MailQuestion,
-  MessageSquare, Send, ShieldAlert, X,
+  MessageSquare, Send, ShieldAlert, ShieldCheck, X,
 } from "lucide-react";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import {
@@ -211,6 +211,21 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
           <strong>{row.instructorName}</strong>
           <small>{countOf(items.length, AR.change)}{row.submittedAt ? ` · ${arabicDate(row.submittedAt)}` : ""}</small>
         </div>
+        {/* ── من وقّعه ────────────────────────────────────────────────────
+            الرابطُ يصل في واتساب ويُعاد توجيهه، فضغطةُ «أرسل» وحدَها لا تُثبت
+            أن صاحبه هو من أرسل. وقد صار الإرسالُ يُطابِق رقمَه المدنيَّ
+            بسجلّه، فيُقال ذلك هنا برمزه — وهو ما يُطابَق به الطلبُ بعد شهرين
+            إن أُنكر. وطلبٌ قديمٌ أُرسل قبل هذا لا يحمل توقيعاً، ويُقال ذلك
+            صراحةً بدل أن يُفترض. */}
+        {row.signature?.verifyCode ? (
+          <span className="request-signed" title={`وقّعه صاحبه بالرقم المدني — ${arabicDate(row.signature.at)}`}>
+            <ShieldCheck aria-hidden="true" />موقَّع <code>{row.signature.verifyCode}</code>
+          </span>
+        ) : row.submittedAt ? (
+          <span className="request-signed" data-missing="true" title="أُرسل قبل أن يصير الإرسال توقيعاً">
+            <ShieldAlert aria-hidden="true" />بلا توقيع
+          </span>
+        ) : null}
         {row.status === "settled" ? <Badge tone="success">انتهى</Badge> : null}
       </header>
 
