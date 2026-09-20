@@ -98,5 +98,31 @@ check(publish.includes("setCreatedId(data.id);\n      setIssued(null);"),
 check(publish.includes("setIssued({ created: rows.length - reissued, reissued });\n      setCreatedId(null);"),
   "والعكسُ كذلك، فلا يُعرض خبران عن فعلين");
 
+/* ── والمرشدُ يعرف البابَ الثالث ──────────────────────────────────────────
+ * السؤالُ الذي جاء منه هذا العمل كان «وين الدكتور يقدر يعدل؟». فباباً يُضاف
+ * ولا يعرفه المرشدُ يترك السؤالَ قائماً لمن يسأله بعد. */
+const guide = fs.readFileSync(path.join(process.cwd(), "src/guide/smartGuide.ts"), "utf8");
+check(guide.includes('id:"schedule.publish.requests"'),
+  "وللبابِ الثالث تعريفٌ في المرشد");
+check(guide.includes("وين يعدل الدكتور"),
+  "ويُعثر عليه بالسؤال الذي يُسأل به فعلاً");
+check(guide.includes("وبطاقةُ الأستاذ بجانبه للاطّلاع وحده، وهي موضعُ الخلط"),
+  "ويُفرَّق صراحةً عن بطاقة الاطّلاع، وهي موضعُ الخلط");
+/* ── وهدفُ الخطوة هو العنصرُ الذي تتكلّم عنه ────────────────────────────
+ * المرشدُ يستبدل أولَ اسمٍ بين قوسين في نصّ الخطوة باسمِ هدفها الحيّ
+ * (`hydrateGuideSteps`). فخطوةٌ تقول «اختر رغبات الأساتذة» وهدفُها زرُّ النشر
+ * الخارجيُّ تصير «اختر نشر» — نقيضُ ما وُضعت له، وأسوأُ من غيابها. */
+check(publish.includes('data-guide-target="schedule.publish.requests"'),
+  "ولزرِّ الرغبات هدفٌ خاصٌّ به في الشاشة");
+check(guide.includes('{target:"schedule.publish.requests",text:"هذا هو «رغبات الأساتذة»'),
+  "والخطوةُ التي تسمّيه تُشير إليه هو، فلا يُستبدل اسمُه باسم غيره");
+/* والخطوةُ التي لا تسمّي عنصراً لا تحمل قوسين أصلاً، فلا يُقحَم فيها اسمٌ. */
+check(!/\{target:"schedule\.publish",text:"[^"]*«/.test(guide.slice(guide.indexOf('id:"schedule.publish.requests"'))),
+  "وما لا تسمّيه لا تضع فيه قوسين، فلا يُقحَم اسمُ الزرّ الخارجيّ");
+/* ووصفُ «نشر» نفسُه صار يذكر الأبوابَ الثلاثة، فلا يقرأ القارئُ «رابط قراءة»
+   فيظنّ أن لا تعديلَ هناك. */
+check(guide.includes("ورغباتُ الأساتذة — وهو الوحيد الذي يُعدَّل منه"),
+  "ووصفُ النشر نفسُه يذكر الأبوابَ الثلاثة");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

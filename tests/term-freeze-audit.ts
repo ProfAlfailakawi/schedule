@@ -113,5 +113,41 @@ check(editDoor.indexOf("const frozenSource = await scheduleLockRefusal(")
 check(editDoor.includes("const editLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);"),
   "ويبقى قفلُ الوجهة في موضعه، فلا يُقرأ قبل أن تُعرف");
 
+/* ── ودورةُ رغبات الأساتذة تتبع التجميدَ كلَّها ────────────────────────────
+ *
+ * الجدولُ محروس، لكنّ الدورةَ التي تكتب فيه كانت تمرّ بجانبه: تُصدَر عشرون
+ * رابطاً، ويفتحها أصحابُها ويكتبون رغباتهم ويرسلونها، ثم لا يستطيع القسمُ
+ * تثبيتَ شيءٍ منها. فيقف الجميعُ ينتظرون قراراً لا يمكن أن يقع — وهو أسوأُ من
+ * بابٍ لا يُفتح، لأن أحداً لا يعرف أنه مغلق.
+ */
+const issueDoor = server.slice(
+  server.indexOf('app.post("/api/instructor-requests/issue"'),
+  server.indexOf('app.get("/api/instructor-requests"'),
+);
+check(issueDoor.includes("const issueLock = await scheduleLockRefusal(req, collegeId, sectionId, termId);"),
+  "فلا تُصدَر روابطُ رغباتٍ على فصلٍ مجمَّد");
+/* والحارسُ قبل إنشاء الروابط، لا بعده: رابطٌ أُنشئ ثم رُدّ الطلبُ يبقى في
+   المخزن ويصل صاحبَه. */
+check(issueDoor.indexOf("const issueLock") < issueDoor.indexOf("createShareLink"),
+  "ويُسأل قبل أن يُنشأ رابطٌ واحد");
+
+const decideDoor = server.slice(
+  server.indexOf('app.post("/api/instructor-requests/:id/decide"'),
+  server.indexOf('app.post("/api/public/request/:token"'),
+);
+check(decideDoor.includes("const decideLock = await scheduleLockRefusal("),
+  "ولا يُثبَّت طلبٌ ولا يُرفض على فصلٍ مجمَّد");
+
+/* والأستاذُ يُقال له بلفظٍ يخصّه: هو لا يعرف «لجنة الجدول» ولا شأنَ له بها،
+   وإنما يحتاج أن يعرف أن البابَ أُغلق وأن عليه مراجعة قسمه. */
+const publicDoor = server.slice(
+  server.indexOf('app.post("/api/public/request/:token"'),
+  server.indexOf("function instructorRequestPage"),
+);
+check(publicDoor.includes("closedTerm?.AdTermClosed === true"),
+  "ولا يُقبل إرسالُ أستاذٍ على فصلٍ مجمَّد، ولو كانت نافذتُه مفتوحةً بتاريخها");
+check(publicDoor.includes("راجع قسمك إن كان لديك ما يلزم."),
+  "ويُقال له بلفظٍ يخصّه، لا بلفظٍ عن لجنةٍ لا شأنَ له بها");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
