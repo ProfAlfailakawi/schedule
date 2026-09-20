@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
+import { rateLimit } from "express-rate-limit";
 import compression from "compression";
 import path from "path";
 import fs from "fs";
@@ -509,29 +510,20 @@ function rateLimitLogin(req: Request, res: Response, next: NextFunction) {
 /*
  * ── Rate limit for the demo role switch ──────────────────────────────────────
  *
- * Modelled on `rateLimitLogin`, not on `rateLimitPublic`: the public limiter has
- * an env kill-switch (`PUBLIC_RATE_LIMIT_MAX <= 0` calls next()), so a static
- * analyzer cannot prove the route is always limited and keeps flagging it. This
- * one always enforces, like the login limiter, but with a generous ceiling —
- * switching through every role in a live demo must never hit a wall.
+ * Uses `express-rate-limit` rather than a hand-written counter for one reason
+ * that the hand-written limiters elsewhere cannot satisfy: the code scanner only
+ * recognizes rate limiting from known libraries, so a custom middleware — even
+ * one that always enforces — leaves the authenticated route flagged. This is the
+ * one library-backed limiter in the file, kept generous (thirty switches a
+ * minute per address) so demoing every role never hits a wall.
  */
-const demoRoleSwitches = new Map<string, { count: number; windowStart: number }>();
-function rateLimitDemoRole(req: Request, res: Response, next: NextFunction) {
-  const ip = req.ip || "unknown";
-  const now = Date.now();
-  const seen = demoRoleSwitches.get(ip);
-  if (!seen || now - seen.windowStart >= 60000) {
-    demoRoleSwitches.set(ip, { count: 1, windowStart: now });
-    next();
-    return;
-  }
-  seen.count += 1;
-  if (seen.count > 30) {
-    res.status(429).json({ error: "تبديلاتٌ كثيرة جداً في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." });
-    return;
-  }
-  next();
-}
+const rateLimitDemoRole = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "تبديلاتٌ كثيرة جداً في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
+});
 
 /**
  * ── Rate limit for the public surface (`/api/public/*`) ──────────────────────
