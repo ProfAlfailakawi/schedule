@@ -12557,12 +12557,12 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
      يملك هذا الطلبَ يستطيع أن يكتب فيه — فلا يُعرض ما لا يُكتب فيه، ولا
      يُكتب فيما لا يُعرض. */
   const allCourses = await Repository.getCourses() as any[];
-  const owningSectionInScope = (await Repository.getSections() as any[])
+  const owningSectionsInScope = (await Repository.getSections() as any[])
     .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
     .map(row => Number(row.AdSectionId))
-    .find(candidate => sectionOwnsNeed(need, allCourses, candidate)
+    .filter(candidate => sectionOwnsNeed(need, allCourses, candidate)
       && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
-  if (!owningSectionInScope) {
+  if (!owningSectionsInScope.length) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
   }
@@ -12584,13 +12584,22 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
    * وقّع، أو يُمنع عن قسمٍ وقّع لأن شريكه لم يوقّع. ولذلك يُقرأ المقرّرُ قبل
    * هذا الحرس لا بعده.
    *
-   * وإن لم يُعرف مالكُ المقرّر — وهو حالُ سجلٍّ قديمٍ زال مقرّره من الكتالوج —
-   * رجع السؤالُ إلى القسم الذي أجاز القراءة، فلا يُفتح البابُ بلا حارس. */
-  const courseOwnerSection = (allCourses.find(row => Number(row.AdCourseId) === courseId)?.AdSectionId ?? 0) as number;
-  const guardedSection = Number(courseOwnerSection) || owningSectionInScope;
-  const writeBlocked = await registrarBlockReason(
-    req, Number(need.AdCollegeId), guardedSection, Number(need.AdTermId || 0));
-  if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
+   * **وإن لم يُعرف مالكُ المقرّر** — وهو حالُ سجلٍّ قديمٍ زال مقرّره من
+   * الكتالوج — فلا يُستعار توقيعُ قسمٍ عن قسم. وكان السؤالُ يرجع إلى القسم
+   * الذي أجاز القراءة وحده، فمقرّرٌ يتيمٌ كان لقسمٍ لم يوقّع يمرّ بتوقيع
+   * شريكه في الطلب: حارسٌ قائمٌ في ظاهره، مخروقٌ في الحالة التي وُضع لها.
+   *
+   * فالسؤالُ عن كلِّ قسمٍ يملك هذا الطلبَ في نطاق الحساب، ويكفي واحدٌ لم
+   * يوقّع ليُمنع. وهو لا يُضيّق على الطلب ذي القسم الواحد — فقسمُه هو نفسُه
+   * — ولا يُطلق يداً على طلبٍ لقسمين أحدُهما لم يوقّع. */
+  const courseOwnerSection = Number(
+    allCourses.find(row => Number(row.AdCourseId) === courseId)?.AdSectionId ?? 0);
+  const guardedSections = courseOwnerSection ? [courseOwnerSection] : owningSectionsInScope;
+  for (const section of guardedSections) {
+    const writeBlocked = await registrarBlockReason(
+      req, Number(need.AdCollegeId), section, Number(need.AdTermId || 0));
+    if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
+  }
 
   const state = String(req.body?.state || "");
   if (!STUDENT_COURSE_STATES.has(state)) { res.status(400).json({ error: "حالةٌ غير معروفة." }); return; }
