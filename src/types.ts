@@ -1,3 +1,5 @@
+import type { AcademicRole } from "./utils/academicRoles";
+
 export interface SystemUser {
   SystemUserId: number;
   Name: string;
@@ -10,6 +12,17 @@ export interface SystemUser {
   IsDeleted?: boolean;
   // Optional link used by the modern personal dashboard. Existing legacy users remain valid without it.
   AdInstructorId?: number;
+  /**
+   * ── الدور الأكاديمي ────────────────────────────────────────────────────────
+   *
+   * بُعدٌ فوق FormSecurity، لا بديلٌ عنه: الشاشة تقول «أين يدخل»، والدور يقول
+   * «بماذا يدخل» — أيكتب أم يقرأ، وأين يقف من دورة اعتماد الجدول.
+   *
+   * اختياريّ عمداً: عشر سنوات من الحسابات سبقته. وكلُّ حسابٍ بلا دور يُقرأ
+   * «رئيس لجنة» — وهو ما تفعله هذه الحسابات فعلاً اليوم — فلا يتغيّر سلوك أحد
+   * يوم التحديث. انظر `utils/academicRoles`.
+   */
+  Role?: AcademicRole;
 }
 
 export interface FormName {
@@ -53,6 +66,17 @@ export interface AdTerm {
    * "open" and offering room-borrowing on a term that ended years ago.
    */
   AdTermClosed?: boolean;
+  /**
+   * ── آخر موعد لتسليم الجداول ───────────────────────────────────────────────
+   *
+   * يضعه رئيس التسجيل مرة واحدة للفصل، كـ YYYY-MM-DD، فيظهر صريحاً لكل قسم
+   * ولكل عميد. قبله: الجدول يُسلَّم كاملاً بتوقيعيه. بعده: لا يُستورد ملف، ولا
+   * يُنسخ فصل، ولا يُحذف الجدول جملةً — وتبقى التعديلات الجزئية مفتوحة، لأن
+   * القاعة تتغيّر والأستاذ يعتذر بعد الموعد كما قبله.
+   *
+   * اختياريّ: فصلٌ بلا موعد هو فصلٌ بلا قيد، وهذا هو حال كل فصل قديم.
+   */
+  AdTermSubmissionDeadline?: string;
 }
 
 export interface AdCollege {
@@ -551,7 +575,36 @@ export interface ScheduleComment {
    *  real answer too. */
   fromDate?: string;
   toDate?: string;
+  /**
+   * ── ملاحظة على الخانة، لا على الصف ────────────────────────────────────────
+   *
+   * موظّف التسجيل لا يكتب «راجع الموعد رقم ٤١٨»؛ هو ينقر على القاعة نفسها.
+   * والخانة تحمل ثلاث معلومات دفعةً واحدة: أيُّ صفّ، وأيُّ حقل، وما القيمة
+   * المرفوضة — فتسقط الحاجة إلى شرحٍ من الطرفين.
+   *
+   * كلها اختيارية: الملاحظات القديمة، وملاحظات بطاقة الأستاذ، لا خانة لها،
+   * وتبقى تُقرأ وتُحلّ كما كانت تماماً.
+   */
+  field?: ScheduleNoteField;
+  /** القيمة كما كانت لحظة كتابة الملاحظة، ليُعرف لاحقاً أتغيّرت أم لا. */
+  valueAtNote?: string;
+  /** رقم الجولة التي كُتبت فيها. الجولة الأولى هي ١. */
+  round?: number;
+  /** من أي جهة: التسجيل، أو القسم، أو بطاقة الأستاذ. */
+  origin?: "registrar" | "department";
+  /**
+   * ردّ اللجنة حين ترى الملاحظة غير صحيحة.
+   *
+   * «أبقيها كما هي، لهذا السبب» — والسبب إلزاميّ هنا وحده، لأن رفضاً بلا سبب
+   * يدفع الطرفين إلى الهاتف، فتضيع الحجّة خارج النظام.
+   */
+  rebuttal?: { text: string; at: string; SystemUserId: number; userName: string };
+  /** قرار التسجيل على ردّ اللجنة في الجولة التالية. */
+  rebuttalVerdict?: "accepted" | "insisted";
 }
+
+/** الحقول التي يجوز أن تُعلَّق عليها ملاحظةٌ بالنقر. */
+export type ScheduleNoteField = "time" | "days" | "room" | "instructor" | "sectionCode" | "course" | "row";
 
 
 export type ScheduleConstraintType = "instructor_latest_end" | "instructor_day_off" | "department_day_off" | "course_room" | "max_instructor_gap" | "room_doorway";
@@ -702,5 +755,104 @@ export interface DepartmentRoomDirectory {
   collegeId: number;
   sectionId: number;
   rooms: Array<{ building: string; hall: string }>;
+  updatedAt: string;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   دورة اعتماد الجدول
+   ══════════════════════════════════════════════════════════════════════════
+
+   الجدول في هذا النظام كان حقيقةً واحدة: صفوفٌ محفوظة. وهذه الإضافة تجعل له
+   سيرةً أيضاً — من وقّعه، ومتى أُرسل، وكم مرّة عاد، وعلى أيّ خانةٍ اختلف
+   الطرفان. السيرة تُحفظ بجانب الصفوف ولا تمسّها، فكل ما كان يعمل قبلها يعمل
+   بعدها بلا فرق.                                                            */
+
+/**
+ * حالة القسم في فصلٍ واحد.
+ *
+ * «قيد الإعداد» هي الحالة الضمنية لكل قسم لم يبدأ الدورة بعد — ولذلك لا يُنشأ
+ * سجلّ لها إطلاقاً. أول توقيعٍ هو ما يُنشئ السجل.
+ */
+export type ScheduleApprovalStatus =
+  | "drafting"    // قيد الإعداد
+  | "committee"   // موقّع من لجنة الجدول
+  | "head"        // موقّع من رئيس القسم — جاهز للإرسال
+  | "submitted"   // عند التسجيل
+  | "returned"    // مُرجَع بملاحظات
+  | "accepted";   // معتمد
+
+/** توقيعٌ واحد، مشدودٌ إلى نسخةٍ بعينها من الجدول. */
+export interface ScheduleApprovalSignature {
+  stage: "committee" | "head";
+  SystemUserId: number;
+  userName: string;
+  /** اسم الدور كما يُطبع في الوثيقة: «رئيس لجنة الجدول» أو «رئيس القسم العلمي». */
+  roleLabel: string;
+  at: string;
+  /** النسخة التي وُقّعت. بها يُعرف ما أُضيف بعد التوقيع. */
+  versionId?: string;
+  /** عدد الصفوف لحظة التوقيع — الدليل الرخيص على أن شيئاً أُضيف. */
+  rowCount: number;
+  /**
+   * عدد الملاحظات اللائحية التي كانت ظاهرة وقت التوقيع.
+   *
+   * اللائحة لا تمنع، لكنها لا تُنسى: يُطبع مع التوقيع «وقّع مع علمه بكذا
+   * ملاحظة لائحية»، فيبقى القرار للموقّع وتبقى المسؤولية موثّقة.
+   */
+  regulationNoticeCount?: number;
+  /** رمز تحقّق قصير يُطبع في الوثيقة ويُشتقّ من النسخة الموقّعة. */
+  verifyCode: string;
+}
+
+/** جولةٌ واحدة بين القسم والتسجيل: تبدأ بإرجاع، وتنتهي بإعادة إرسال. */
+export interface ScheduleApprovalRound {
+  number: number;
+  /** من أرسل، ومتى. */
+  submittedAt?: string;
+  submittedBy?: string;
+  /** من أرجع، ومتى، وبكم ملاحظة. */
+  returnedAt?: string;
+  returnedBy?: string;
+  returnedNoteCount?: number;
+  /** من قبِل، ومتى. */
+  acceptedAt?: string;
+  acceptedBy?: string;
+  /** النسخة التي رآها التسجيل في هذه الجولة — أساس المقارنة للجولة التالية. */
+  reviewedVersionId?: string;
+}
+
+/**
+ * صفٌّ أُضيف بعد التوقيع وينتظر إقرار رئيس القسم.
+ *
+ * التوقيع مرّة واحدة، وكلُّ تعديلٍ بعده يمرّ — إلا إضافة شعبة أو مقرر، فهي
+ * وحدها ما لم يره رئيس القسم حين وقّع. والإقرار ضغطةٌ واحدة، لا توقيعٌ جديد.
+ */
+export interface ScheduleAdditionPending {
+  scheduleId: number;
+  courseId: number;
+  courseName?: string;
+  sectionCode?: string;
+  addedAt: string;
+  addedBy: string;
+}
+
+/** سجلّ الاعتماد لقسمٍ واحد في فصلٍ واحد. مفتاحه scopeKey نفسه المستعمل في النسخ. */
+export interface ScheduleApproval {
+  id: string;
+  scopeKey: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdTermId: number;
+  status: ScheduleApprovalStatus;
+  signatures: ScheduleApprovalSignature[];
+  rounds: ScheduleApprovalRound[];
+  /** الجولة الجارية. الإرسال الأول هو الجولة ١. */
+  currentRound: number;
+  pendingAdditions: ScheduleAdditionPending[];
+  /** تمديدٌ خاصّ بهذا القسم يتجاوز موعد الفصل، بسببه ومن منحه. */
+  extensionUntil?: string;
+  extensionReason?: string;
+  extensionBy?: string;
+  extensionAt?: string;
   updatedAt: string;
 }

@@ -19,6 +19,12 @@ import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine,
 import type { FSchedule, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
+import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
+import {
+  ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
+  isAcademicRole, isReadOnlyRole, isViewerOnlyRole, roleDefinition, roleLabel, signatureStage,
+  type AcademicRole,
+} from "./src/utils/academicRoles";
 import { AR, countOf } from "./src/utils/arabicCount";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
@@ -772,6 +778,38 @@ app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) =
     return;
   }
   next();
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   حارس الأدوار: نقطة واحدة، لا مئة
+   ══════════════════════════════════════════════════════════════════════════
+
+   هذا الخادم ملفٌّ واحد فيه مئة وثمانية عشر مساراً يكتب. ولو استُوثق الدور في
+   كل واحدٍ منها لكان النسيان في واحدٍ فقط كافياً ليُفتح للعميد بابُ تعديلٍ لا
+   يعلم به أحد — والباب الذي يُنسى مرّة يُنسى ثانيةً مع كل مسارٍ جديد.
+
+   فالحارس هنا، مرّةً واحدة، على مدخل ‎/api‎ كله، بنفس النمط الذي يحمي به
+   النظام بيئته التجريبية أصلاً: أيُّ طلبٍ ليس قراءةً، من دورٍ قارئ، يُرفض —
+   مهما كانت الشاشات في FormSecurity، ومهما فُعل بأزرار الواجهة.
+
+   وله بابٌ ضيّق واحد: مسارات دورة الاعتماد. لأن الملاحظة والتوقيع والإرجاع
+   والقبول ليست تعديلاً على الجدول؛ هي الطريقة التي يشارك بها القارئ دون أن
+   يمسّ صفاً واحداً. وحتى هذا الباب مقسومٌ بالدور: من يوقّع ليس من يُرجع، ومن
+   يمدّد ليس من يعلّق — والتفصيل في كل مسارٍ على حدة.
+
+   أمّا أدوار العرض الصرف — العميد والعميد المساعد وعميد التسجيل — فلا تمرّ من
+   هذا الباب أصلاً: لا تكتب شيئاً البتّة، ولا حتى ملاحظة.                     */
+
+app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  const verdict = roleWriteDecision({
+    method: req.method,
+    path: req.path,
+    authenticated: Boolean(req.user),
+    powerUser: Boolean(req.user) && isPowerUser(req),
+    role: req.user?.Role,
+  });
+  if (verdict.allowed) { next(); return; }
+  res.status(403).json(readOnlyRefusal(req.user?.Role));
 });
 
 type ApiPerformanceSample = { at:number; path:string; method:string; durationMs:number; status:number; userId:number; collegeId:number; sectionId:number; termId:number };
@@ -1696,7 +1734,7 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
       if (!user) throw new Error("تعذر إنشاء هوية Demo");
       const permissions = (await Repository.getSecurityByUser(user.SystemUserId)).map(row => row.FormNameId);
       const scopes = await clientScopeDetails(await Repository.getUserAssigns(user.SystemUserId));
-      return { user: { ...safeSystemUser(user), IsRootAdmin: true, IsDemo: true }, permissions, scopes, data: "demo", demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } };
+      return { user: { ...safeSystemUser(user), IsRootAdmin: true, IsDemo: true }, role: roleDescriptor(user), permissions, scopes, data: "demo", demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } };
     });
     res.setHeader("Set-Cookie", `session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
     res.json(payload);
@@ -1762,7 +1800,7 @@ app.post("/api/auth/login", rateLimitLogin, async (req: Request, res: Response) 
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(await Repository.getUserAssigns(user.SystemUserId));
 
-  res.json({ user: { ...safeUser, IsRootAdmin: Number(user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: false }, permissions, scopes, data: activeDataMode() });
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: false }, role: roleDescriptor(user), permissions, scopes, data: activeDataMode() });
 });
 
 app.post("/api/auth/logout", async (req: AuthenticatedRequest, res: Response) => {
@@ -1778,6 +1816,27 @@ app.post("/api/auth/logout", async (req: AuthenticatedRequest, res: Response) =>
   res.json({ success: true });
 });
 
+/**
+ * وصف الصفة كما تصل الواجهة.
+ *
+ * الواجهة لا تحرس شيئاً — الحارس على الخادم — لكنها تحتاج أن تعرف الصفة لتخفي
+ * ما لا يُستعمل: زرّ الحفظ لمن لا يحفظ، وشاشةٌ لا تخصّ صاحبها. إخفاءُ ما لا
+ * يعمل ليس أماناً، هو احترامٌ لوقت من ينظر إلى الشاشة.
+ */
+function roleDescriptor(user: any) {
+  const definition = roleDefinition(user?.Role);
+  return {
+    id: definition.id,
+    label: definition.label,
+    readOnly: definition.readOnly,
+    landing: definition.landing,
+    canReview: canReviewSubmissions(definition.id),
+    canManageDeadline: canManageDeadline(definition.id),
+    signatureStage: signatureStage(definition.id),
+    viewerOnly: isViewerOnlyRole(definition.id),
+  };
+}
+
 app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) {
     res.json({ user: null });
@@ -1788,7 +1847,7 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(req.scopes || []);
   // The interface says out loud when it is not on the university's database.
-  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } : undefined });
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, role: roleDescriptor(req.user), permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } : undefined });
 });
 
 // Activity heartbeat: the server session still expires after 15 minutes of real
@@ -8932,6 +8991,63 @@ app.get("/api/admin-instructor-options", requirePermission(11), async (_req: Req
 
 // --- ADMIN SYSTEM USERS API ---
 
+/**
+ * ── قالب الدور: الشاشات والنطاق بلا تعيينٍ يدوي ─────────────────────────────
+ *
+ * إعطاء العميد حساباً كان يعني قبل هذا: فتح شاشة الصلاحيات، وتذكّر أن ١٤ هو
+ * تقرير القسم، ثم فتح شاشة النطاقات، ثم إضافة صفٍّ لكل قسمٍ في الكلية — قسماً
+ * قسماً، وكلما أُنشئ قسمٌ جديد يعود المدير ليضيفه. عشرون خطوة، وخطأٌ واحدٌ
+ * فيها يفتح للعميد شاشةَ تعديل.
+ *
+ * صار القالب يفعلها: يُختار الدور، فتُكتب شاشاته ويُكتب نطاقه في عملية واحدة.
+ * و«الكلية كلها» تُكتب صفّاً واحداً بقسم صفر — وهي صيغةٌ يفهمها النظام منذ
+ * سنوات: `isScopeAllowed` تُجيز بها كل قسمٍ في الكلية، بما يُنشأ منها غداً.
+ *
+ * الأدوار ذات النطاق اليدوي — موظف التسجيل والمستخدم العادي — تأخذ شاشاتها
+ * ويبقى نطاقها كما عيّنه المدير، فلا يمحو القالب عملاً مقصوداً.
+ */
+async function applyRoleTemplate(userId: number, role: AcademicRole, requested: { collegeIds?: number[]; assigns?: Array<{ AdCollegeId: number; AdSectionId: number }> }): Promise<{ formIds: number[]; scopeCount: number }> {
+  const definition = roleDefinition(role);
+  await Repository.saveSecurityByUser(userId, definition.formIds);
+
+  if (definition.scopeMode === "manual") {
+    const assigns = Array.isArray(requested.assigns) ? requested.assigns : undefined;
+    if (assigns) await Repository.saveUserAssigns(userId, assigns);
+    const current = await Repository.getUserAssigns(userId);
+    return { formIds: definition.formIds, scopeCount: current.length };
+  }
+
+  if (definition.scopeMode === "allColleges") {
+    /* «كل الكليات» ليست قائمةً تُحفظ مرّة ثم تشيخ: تُقرأ من سجلّ الكليات وقت
+       الحفظ، وتُعاد كتابتها كلما حُفظ الحساب، فتلحق كليةٌ أُنشئت بعده. */
+    const colleges = await Repository.getColleges();
+    const assigns = colleges.map(college => ({ AdCollegeId: Number(college.AdCollegeId), AdSectionId: 0 }));
+    await Repository.saveUserAssigns(userId, assigns);
+    return { formIds: definition.formIds, scopeCount: assigns.length };
+  }
+
+  if (definition.scopeMode === "college") {
+    const collegeIds = (requested.collegeIds || []).map(Number).filter(id => Number.isFinite(id) && id > 0);
+    const assigns = Array.from(new Set(collegeIds)).map(collegeId => ({ AdCollegeId: collegeId, AdSectionId: 0 }));
+    await Repository.saveUserAssigns(userId, assigns);
+    return { formIds: definition.formIds, scopeCount: assigns.length };
+  }
+
+  // section: الكلية والقسم كما هو الحال اليوم
+  const assigns = Array.isArray(requested.assigns) ? requested.assigns : undefined;
+  if (assigns) await Repository.saveUserAssigns(userId, assigns);
+  const current = await Repository.getUserAssigns(userId);
+  return { formIds: definition.formIds, scopeCount: current.length };
+}
+
+/** قائمة الأدوار كما تُعرض في شاشة المستخدمين. مصدرها الوحيد هو وحدة الأدوار. */
+app.get("/api/roles", requireAuth, (_req: Request, res: Response) => {
+  res.json(ACADEMIC_ROLES.map(role => ({
+    id: role.id, label: role.label, hint: role.hint, readOnly: role.readOnly,
+    scopeMode: role.scopeMode, formIds: role.formIds, landing: role.landing, order: role.order,
+  })));
+});
+
 app.get("/api/users", requirePermission(11), async (req: Request, res: Response) => {
   const usersList = (await Repository.getUsers()).filter(user => !user.IsDeleted);
   /**
@@ -8956,7 +9072,11 @@ app.get("/api/users", requirePermission(11), async (req: Request, res: Response)
 });
 
 app.post("/api/users", requirePermission(11), async (req: Request, res: Response) => {
-  const { Name, SystemUserLogin, password, IsAdminUser, IsActive, IsLocked, AdInstructorId } = req.body;
+  const { Name, SystemUserLogin, password, IsAdminUser, IsActive, IsLocked, AdInstructorId, Role, collegeIds, assigns } = req.body;
+  if (Role !== undefined && Role !== null && Role !== "" && !isAcademicRole(Role)) {
+    res.status(400).json({ error: "الصفة المختارة غير معروفة" });
+    return;
+  }
   if (!Name || !SystemUserLogin || !password) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
     return;
@@ -8975,7 +9095,8 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
     IsActive: IsActive !== undefined ? !!IsActive : true,
     IsLocked: !!IsLocked,
     IsDeleted: false,
-    AdInstructorId: Number(AdInstructorId) || 0
+    AdInstructorId: Number(AdInstructorId) || 0,
+    Role: isAcademicRole(Role) ? Role : DEFAULT_MIGRATION_ROLE
   });
   /* A new department used to start with nothing at all: an account that logs in
      to an empty rail and waits for somebody to remember to tick a box. Form 7
@@ -8983,9 +9104,36 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
      — and every route a scheduler needs accepts it. So it is granted on
      creation, and the account works the first time it signs in. Anything beyond
      it is still a deliberate decision on the permissions screen. */
-  await Repository.createSecurity(newUser.SystemUserId, DECISION_CENTRE_FORM_ID);
+  /* الصفة تحمل قالبها: شاشاتها ونطاقها يُكتبان في اللحظة نفسها، فيعمل الحساب
+     من أول دخول. والمستخدم العادي وحده يبقى على الأساس القديم — مركز الذكاء —
+     حتى لا يتغيّر ما كان يحدث قبل هذه الإضافة. */
+  const createdRole: AcademicRole = isAcademicRole(Role) ? Role : DEFAULT_MIGRATION_ROLE;
+  if (createdRole === "standard") {
+    await Repository.createSecurity(newUser.SystemUserId, DECISION_CENTRE_FORM_ID);
+    if (Array.isArray(assigns)) await Repository.saveUserAssigns(newUser.SystemUserId, sanitizeAssigns(assigns));
+  } else {
+    await applyRoleTemplate(newUser.SystemUserId, createdRole, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
+  }
+  res.locals.auditChanges = `حساب جديد بصفة «${roleLabel(createdRole)}»`;
   res.status(201).json({ ...safeSystemUser(newUser), HasPassword: true });
 });
+
+/** تنقية صفوف النطاق الواردة من الشاشة قبل حفظها. */
+function sanitizeAssigns(input: unknown): Array<{ AdCollegeId: number; AdSectionId: number }> {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const rows: Array<{ AdCollegeId: number; AdSectionId: number }> = [];
+  for (const item of input) {
+    const collegeId = Number((item as any)?.AdCollegeId || 0);
+    const sectionId = Number((item as any)?.AdSectionId || 0);
+    if (!Number.isFinite(collegeId) || collegeId <= 0) continue;
+    const key = `${collegeId}:${sectionId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ AdCollegeId: collegeId, AdSectionId: Number.isFinite(sectionId) && sectionId > 0 ? sectionId : 0 });
+  }
+  return rows;
+}
 
 /**
  * ── مركز الذكاء لكل الأقسام ─────────────────────────────────────────────────
@@ -9018,9 +9166,13 @@ app.post("/api/users/grant-decision-centre", requirePermission(11), requirePower
 
 app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
-  const { Name, SystemUserLogin, password, IsAdminUser, IsActive, IsLocked, AdInstructorId } = req.body;
+  const { Name, SystemUserLogin, password, IsAdminUser, IsActive, IsLocked, AdInstructorId, Role, collegeIds, assigns } = req.body;
   if (!Name || !SystemUserLogin) {
     res.status(400).json({ error: "جميع الحقول الأساسية مطلوبة" });
+    return;
+  }
+  if (Role !== undefined && Role !== null && Role !== "" && !isAcademicRole(Role)) {
+    res.status(400).json({ error: "الصفة المختارة غير معروفة" });
     return;
   }
 
@@ -9038,6 +9190,7 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
     IsLocked: !!IsLocked,
     AdInstructorId: Number(AdInstructorId) || 0
   };
+  if (isAcademicRole(Role)) (fields as any).Role = Role;
 
   if (password && password.trim() !== "") {
     fields.SystemUserPass = Repository.hashPassword(password);
@@ -9046,6 +9199,14 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
 
   try {
     const updated = await Repository.updateUser(id, fields);
+    /* تغيير الصفة يُعيد كتابة القالب. وهذا مقصود: الصفة هي القرار، والشاشات
+       والنطاق أثرٌ لها — فلا يبقى للعميد السابق بابُ تعديلٍ من صفةٍ قديمة. */
+    if (isAcademicRole(Role) && Role !== "standard") {
+      await applyRoleTemplate(id, Role, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
+      res.locals.auditChanges = `الصفة: «${roleLabel(Role)}»`;
+    } else if (Array.isArray(assigns)) {
+      await Repository.saveUserAssigns(id, sanitizeAssigns(assigns));
+    }
     res.json({ ...safeSystemUser(updated), HasPassword: Boolean(String(updated.SystemUserPass || "").trim()) });
   } catch (e: any) {
     res.status(404).json({ error: e.message });
@@ -11780,6 +11941,37 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 
 // --- VITE DEV SERVER OR STATIC SERVING ---
 
+/**
+ * ── ترحيل الحسابات القائمة إلى «رئيس لجنة الجدول» ───────────────────────────
+ *
+ * يوم يُضاف بُعد الدور، تكون كل الحسابات الموجودة بلا دور. ولو قُرئ غيابُ
+ * الدور «مستخدماً عادياً» لاختلف سلوك النظام على من يستعمله اليوم، ولو قُرئ
+ * دوراً قارئاً لتوقّف بناء الجداول في الكلية كلها صباح التحديث.
+ *
+ * والحقيقة أبسط من الاحتمالين: كل حسابٍ قائمٍ اليوم يبني جدولاً ويرسله — أي
+ * أنه «رئيس لجنة» بالتعريف. فيُكتب له ذلك مرّةً واحدة، صراحةً في السجلّ، بدل
+ * أن يُستنتج عند كل قراءة.
+ *
+ * والعملية محايدة بالتكرار: حسابٌ له دورٌ لا يُمسّ، فإعادة التشغيل لا تُعيد
+ * كتابة شيء. وحساب الإدارة الرئيسي يبقى خارجها — هو من يوزّع الأدوار، لا من
+ * توزَّع عليه.
+ */
+async function migrateLegacyAccountsToCommitteeRole(): Promise<void> {
+  try {
+    const users = await Repository.getUsers();
+    const pending = users.filter(user => !user.IsDeleted && !isAcademicRole((user as any).Role) && Number(user.SystemUserId) !== ROOT_ADMIN_USER_ID);
+    if (!pending.length) return;
+    for (const user of pending) {
+      await Repository.updateUser(Number(user.SystemUserId), { Role: DEFAULT_MIGRATION_ROLE });
+    }
+    console.log(`[roles] رُحّل ${pending.length} حساباً قائماً إلى صفة «${roleLabel(DEFAULT_MIGRATION_ROLE)}».`);
+  } catch (error) {
+    /* الترحيل راحةٌ لا شرط: غيابُ الدور يُقرأ «رئيس لجنة» في كل موضع على أي
+       حال، فلا يجوز أن يمنع فشلُه إقلاعَ الخادم. */
+    console.error("[roles] تعذّر ترحيل صفات الحسابات القائمة:", error instanceof Error ? error.message : error);
+  }
+}
+
 async function startServer() {
   // Wait for the data layer before accepting any requests. In Firestore mode this also
   // completes the one-time import of the verified legacy snapshot when the target is empty.
@@ -11832,6 +12024,8 @@ async function startServer() {
     // The guard registered at load reads this; the shell keeps serving.
     databaseDown = databaseFailure;
   }
+
+  if (!databaseFailure) await migrateLegacyAccountsToCommitteeRole();
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {
