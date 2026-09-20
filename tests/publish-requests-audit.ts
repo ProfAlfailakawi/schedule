@@ -98,5 +98,20 @@ check(publish.includes("setCreatedId(data.id);\n      setIssued(null);"),
 check(publish.includes("setIssued({ created: rows.length - reissued, reissued });\n      setCreatedId(null);"),
   "والعكسُ كذلك، فلا يُعرض خبران عن فعلين");
 
+/* ── والمرشدُ يعرف البابَ الثالث ──────────────────────────────────────────
+ * السؤالُ الذي جاء منه هذا العمل كان «وين الدكتور يقدر يعدل؟». فباباً يُضاف
+ * ولا يعرفه المرشدُ يترك السؤالَ قائماً لمن يسأله بعد. */
+const guide = fs.readFileSync(path.join(process.cwd(), "src/guide/smartGuide.ts"), "utf8");
+check(guide.includes('id:"schedule.publish.requests"'),
+  "وللبابِ الثالث تعريفٌ في المرشد");
+check(guide.includes("وين يعدل الدكتور"),
+  "ويُعثر عليه بالسؤال الذي يُسأل به فعلاً");
+check(guide.includes("لا «بطاقة الأستاذ»، فتلك للاطّلاع وحده"),
+  "ويُفرَّق صراحةً عن بطاقة الاطّلاع، وهي موضعُ الخلط");
+/* ووصفُ «نشر» نفسُه صار يذكر الأبوابَ الثلاثة، فلا يقرأ القارئُ «رابط قراءة»
+   فيظنّ أن لا تعديلَ هناك. */
+check(guide.includes("ورغباتُ الأساتذة — وهو الوحيد الذي يُعدَّل منه"),
+  "ووصفُ النشر نفسُه يذكر الأبوابَ الثلاثة");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
