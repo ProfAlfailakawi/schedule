@@ -199,11 +199,13 @@ check(changes.includes("changes-cross"), "ويُعرض تحت صفّه");
 check(changes.includes("بمقايضة القاعات بين القسمين، لا بملاحظةٍ على هذا الصفّ"),
   "ويقول أين بابُه: المقايضةُ القائمة، لا صندوقُ الملاحظات");
 
-/* ── ٥) الشارة حيث يعمل صاحبها ──────────────────────────────────────────── */
-check(appSrc.includes("badge={barterPending + (sessionRole.signatureStage ? changesBadge : 0)}"),
-  "شارةُ القسم على جدوله، حيث يعالج ملاحظاته");
-check(appSrc.includes("badge={sessionRole.signatureStage ? 0 : changesBadge}"),
-  "وشارةُ التسجيل على وارده، فلا تُعدّ مرّتين");
+/* ── ٥) نقطةٌ واحدة، معنىً واحد ─────────────────────────────────────────
+ * نقطةُ الجدول تخصّ مقايضة القاعات منذ قبل هذا العمل. وجمعُ عدّاد الملاحظات
+ * إليها كان يجعلها تقول شيئين لا يُفرَّق بينهما. فبقيت لصاحبها، وعدّادُ
+ * الملاحظات على أيقونته — ومعه شريطُ الاعتماد فوق الجدول يقول الخبر بنصّه. */
+check(appSrc.includes("badge={barterPending}"), "نقطةُ المقايضة بقيت لمعناها وحده");
+check(appSrc.includes("badge={changesBadge}"), "وعدّادُ الملاحظات على أيقونة تغييرات الجدول");
+check(appSrc.includes("const opensChangesScreen ="), "وهي مفتوحةٌ لكل من يشارك في الدورة، فيصله عدّاده");
 
 /* ── ٦) ما طُلب وما فُعل ────────────────────────────────────────────────── */
 check(server.includes("changedRowCount = moved.counts.added + moved.counts.removed + moved.counts.changed;"),

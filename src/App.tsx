@@ -2294,11 +2294,13 @@ export default function App() {
                 view="schedules"
                 icon={<CalendarDays />}
                 label="الجدول الدراسي"
-                /* ── الشارة حيث يعمل صاحبها ──────────────────────────────
-                   القسمُ يعالج ملاحظاته في جدوله، فتقف شارتُه هنا مع شارة
-                   مقايضة القاعات. والتسجيلُ يعالجها في واردِه، فشارتُه هناك.
-                   وشارةٌ في غير موضع العمل تُقرأ مرّةً ثم تُهمَل. */
-                badge={barterPending + (sessionRole.signatureStage ? changesBadge : 0)}
+                /* ── نقطةٌ واحدة، معنىً واحد ───────────────────────────────
+                   هذه النقطة تخصّ مقايضة القاعات منذ قبل هذا العمل. وجمعُ
+                   عدّاد ملاحظات التسجيل إليها كان يجعلها تقول شيئين لا
+                   يُفرَّق بينهما: أطلبُ مقايضةٍ ينتظر، أم ملاحظةٌ وصلت؟
+                   فبقيت لصاحبها، وعدّادُ الملاحظات على أيقونته هو — ومعه
+                   شريطُ الاعتماد فوق الجدول يقول الخبر بنصّه. */
+                badge={barterPending}
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.schedules"
               />
             ) : null}
@@ -2319,7 +2321,7 @@ export default function App() {
                 view="scheduleChanges"
                 icon={<FileDiff />}
                 label="تغييرات الجدول"
-                badge={sessionRole.signatureStage ? 0 : changesBadge}
+                badge={changesBadge}
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.scheduleChanges`،
                    وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.scheduleChanges"
