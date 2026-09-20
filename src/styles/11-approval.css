@@ -731,3 +731,16 @@
 /* سطرُ الأساس تحت الملخّص: يُقال حين لا يكون الأساسُ نسخةَ جولةٍ سابقة، فلا
    يُقرأ «كلُّ صفٍّ مضاف» على أنه خبرٌ عن الجدول وهو خبرٌ عن المقارنة. */
 .changes-baseline-note{color:var(--muted);font-size:.8rem;line-height:1.55}
+
+/* ── من وقّع الطلب ────────────────────────────────────────────────────────
+   الرابطُ يصل في واتساب ويُعاد توجيهه، فضغطةُ «أرسل» وحدَها لا تُثبت صاحبَها.
+   والرمزُ هنا هو ما يُطابَق به الطلبُ بعد شهرين إن أُنكر. */
+.request-signed{
+  display:inline-flex;align-items:center;gap:6px;flex:none;
+  padding:3px 10px;border-radius:var(--r-full);
+  background:var(--success-soft);color:var(--success);
+  font-size:.76rem;font-weight:700;
+}
+.request-signed svg{inline-size:13px;block-size:13px}
+.request-signed code{font-family:var(--font-mono);letter-spacing:.04em}
+.request-signed[data-missing="true"]{background:var(--surface-3);color:var(--muted)}

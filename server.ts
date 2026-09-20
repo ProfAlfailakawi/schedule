@@ -19,7 +19,7 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { currentTermId } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
+import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
@@ -13707,6 +13707,11 @@ function requestSnapshot(row: any, courseName: string, withRoom: boolean): Instr
 function stripForInstructor(request: InstructorRequest) {
   return {
     ...request,
+    /* والتوقيعُ يصل بتاريخه ورمزه، لا ببصمته: البصمةُ تُطابَق في الخادم ولا
+       تُعرض، وإرسالُها إلى المتصفّح يجعلها رقماً يُجرَّب عليه. */
+    signature: request.signature
+      ? { at: request.signature.at, verifyCode: request.signature.verifyCode, fingerprint: "" }
+      : undefined,
     items: (request.items || []).map(item => {
       const { roomCandidates, ...rest } = item;
       return {
@@ -14127,6 +14132,38 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
     return;
   }
 
+  /* ── التوقيع ─────────────────────────────────────────────────────────────
+   *
+   * ضغطةُ «أرسل» وحدَها لا تُثبت شيئاً. الرابطُ يصل في واتساب، ويُعاد توجيهه
+   * إلى مجموعةٍ أو زميل، ويُفتح من هاتفٍ ليس هاتفَه — فيصل القسمَ طلبٌ باسمه
+   * لم يكتبه. وهو ما يُنكره عند أوّل خلاف، ولا شيء في السجلّ يردّ عليه.
+   *
+   * فيُطلب رقمُه المدنيُّ عند الإرسال ويُطابَق بسجلّه: الشيءُ الذي لا يعرفه
+   * عنه غيرُه. وحينئذٍ تصير الضغطةُ توقيعاً.
+   *
+   * ولا يُحفظ الرقمُ نفسُه — بصمتُه تكفي لإثبات أنه هو — ويُحدُّ التخمينُ
+   * بالحدّ نفسِه المفروض على بطاقة الأستاذ وحالة الطالب، وإلا صار البابُ
+   * مجرَّبا عليه بالأرقام.
+   */
+  if (!staffLookupAllowed(`request:${resolved.request.id}`, req.ip || "unknown")) {
+    res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
+    return;
+  }
+  const civil = asciiDigits(req.body?.civil).replace(/\D/g, "");
+  const civilCheck = validateCivilId(civil);
+  if (!civilCheck.isValid) {
+    res.status(400).json({ error: civilCheck.message || "اكتب رقمك المدني كاملاً." });
+    return;
+  }
+  const signer = (await Repository.getInstructors() as any[])
+    .find(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
+  /* والجوابُ واحدٌ سواءٌ أخطأ الرقمَ أم لم يكن في سجلّه رقمٌ أصلاً: التفريقُ
+     بينهما يقول لمن يجرّب أيُّ الأساتذة مسجَّلٌ رقمُه. */
+  if (!signer?.AdInstructorCivil || String(signer.AdInstructorCivil).replace(/\D/g, "") !== civil) {
+    res.status(403).json({ error: "الرقم المدني لا يطابق صاحب هذا الرابط." });
+    return;
+  }
+
   const sent = Array.isArray(req.body?.items) ? (req.body.items as any[]) : null;
   if (!sent) { res.status(400).json({ error: "لم يصل شيء." }); return; }
   if (sent.length > 200) { res.status(400).json({ error: "عدد البنود أكبر من المعقول." }); return; }
@@ -14201,12 +14238,20 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
   }
 
   const at = new Date().toISOString();
+  /* ورمزُ التحقّق يُشتقّ كما يُشتقّ رمزُ توقيع الجدول: من الطلب وصاحبه ولحظته
+     — فورقةٌ في ملفٍّ بعد شهرين تُطابَق بنسخةٍ في النظام، لا تشبه غيرَها. */
+  const signature: InstructorRequestSignature = {
+    at,
+    fingerprint: await surveyFingerprint(civil),
+    verifyCode: verificationCode(resolved.request.id, Number(resolved.request.AdInstructorId), at),
+  };
   const changed = items.filter(item => item.action !== "keep").length;
   const saved = await Repository.saveInstructorRequest({
     ...resolved.request,
     items: judged.items,
     status: "submitted",
     submittedAt: at,
+    signature,
     timeline: [
       ...(resolved.request.timeline || []),
       { kind: "submitted", at, detail: String(changed) },
@@ -14284,6 +14329,10 @@ textarea[data-show="1"]{display:block}
 font:inherit;font-size:16px;font-weight:700;cursor:pointer}
 .send button:disabled{opacity:.5;cursor:not-allowed}
 .err{background:#fdeceb;color:var(--bad);padding:11px 13px;border-radius:11px;margin-bottom:12px;font-size:14px}
+label.sign{display:flex;align-items:center;gap:10px;justify-content:center;margin:0 0 8px;font-size:13px;color:var(--muted)}
+label.sign input{inline-size:170px;padding:11px;border-radius:11px;border:1px solid var(--line);font:inherit;
+font-size:16px;letter-spacing:.08em;text-align:center;direction:ltr;background:#fff}
+.signnote{margin:0 0 12px;font-size:12.5px;color:var(--muted2);line-height:1.6;text-align:center}
 .tl{list-style:none;margin:20px 0 0;padding:0;border-top:1px solid var(--line);padding-top:14px}
 .tl li{display:flex;gap:10px;padding:7px 0;font-size:13px;color:var(--muted)}
 .tl li b{color:var(--ink);font-weight:700}
@@ -14294,7 +14343,7 @@ font-size:30px;line-height:58px;margin:0 auto 14px}
 @media print{.pick,.edit,.send,.alts{display:none!important}}
 </style></head><body><div class="wrap" id="host">يفتح جدولك…</div>
 <script nonce="${nonce}">(function(){
-var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[];
+var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[],signCivil="";
 var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
 var LONG={fmonday:80,fwednesday:80},SHORT=50;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
@@ -14350,7 +14399,13 @@ function paint(){
   }
   h+='</div>';
  });
- if(open)h+='<div class="send"><button type="button" id="send">أرسل الطلب إلى القسم</button></div>';
+ /* التوقيع: حقلٌ واحدٌ فوق الزرّ، وجملةٌ تقول ما يعنيه الضغط. ولا يُقال
+    «تحقّق من هويتك» — يُقال إنه توقيع، لأنه توقيع. */
+ if(open)h+='<div class="send"><label class="sign"><span>رقمك المدني</span>'+
+  '<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" '+
+  'placeholder="١٢ رقماً" value="'+esc(signCivil)+'"></label>'+
+  '<p class="signnote">بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.</p>'+
+  '<button type="button" id="send">أرسل الطلب إلى القسم</button></div>';
  h+='<ul class="tl">'+(r.timeline||[]).map(function(e){
   return '<li><b>'+esc(EVENTS[e.kind]||e.kind)+'</b><time>'+esc(dt(e.at))+'</time></li>'}).join("")+'</ul>';
  host.innerHTML=h;
@@ -14389,19 +14444,30 @@ function check(i){
  .catch(function(){});
 }
 function submit(){
+ var field=document.getElementById("civil");
+ /* الأرقامُ العربيةُ تُقبل كما تُكتب على لوحة الهاتف. */
+ var civil=(field&&field.value||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\D/g,"");
+ signCivil=civil;
+ if(civil.length!==12){
+  document.getElementById("err").innerHTML='<div class="err">اكتب رقمك المدني كاملاً — ١٢ رقماً — فهو توقيعك على الطلب.</div>';
+  if(field)field.focus();window.scrollTo(0,document.body.scrollHeight);return}
  var send=document.getElementById("send");send.disabled=true;send.textContent="يرسل…";
  fetch("/api/public/request/"+encodeURIComponent(TOKEN),{method:"POST",
   headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({items:state.map(function(it){return{rowId:it.rowId,action:it.action,
+  body:JSON.stringify({civil:civil,items:state.map(function(it){return{rowId:it.rowId,action:it.action,
    days:it.action==="change"?it.days:[],start:it.action==="change"?it.start:"",excuse:it.excuse}})})})
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){
   if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
    document.getElementById("err").innerHTML='<div class="err">'+esc(x.d.error||"تعذّر الإرسال")+'</div>';
    window.scrollTo(0,0);return}
+  var code=x.d.request&&x.d.request.signature&&x.d.request.signature.verifyCode||"";
   host.innerHTML='<div class="done"><div class="tick">✓</div><h1>وصل طلبك إلى القسم</h1>'+
    '<p class="sub">'+(x.d.changed?esc(String(x.d.changed))+" تعديلاً":"بلا تعديلات")+
-   ' · يمكنك فتح الرابط نفسه لمتابعة ما ثُبّت وما رُفض.</p></div>';window.scrollTo(0,0)})
+   ' · يمكنك فتح الرابط نفسه لمتابعة ما ثُبّت وما رُفض.</p>'+
+   /* رمزُ التوقيع يُعطى لصاحبه: هو ما يُطابَق به طلبُه بعد شهرين. */
+   (code?'<p class="sub">رمز توقيعك: <b dir="ltr">'+esc(code)+'</b></p>':'')+
+   '</div>';window.scrollTo(0,0)})
  .catch(function(){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
   document.getElementById("err").innerHTML='<div class="err">تعذّر الاتصال.</div>'});
 }
