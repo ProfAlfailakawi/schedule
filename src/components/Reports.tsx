@@ -1446,8 +1446,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     if (!invoked) window.print();
 
     /* If a browser no-ops the print command, don't leave live updates paused —
-       but leave the sheet exactly as the printer sees it. */
-    window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
+       but leave the sheet exactly as the printer sees it.
+
+       وملحقُ التغييرات يُرفع هنا أيضاً: متصفّحٌ ابتلع أمر الطباعة لا يبعث
+       `afterprint` ولا يُخفي الصفحة، فلا شيء بعدها يرفع الملحق — فيبقى مركَّباً
+       ويخرج مع أول طباعةٍ شاملةٍ بعده لم تطلبه. والسمات تبقى كما هي عمداً، كما
+       يقول التعليق أعلاه؛ الملحقُ ليس سمةً على الجذر بل عقدةٌ في الوثيقة. */
+    window.setTimeout(() => {
+      if (!leftForPrint && !resumed) { openReportEvents(); setChangesAppendix(null); }
+    }, 2500);
   };
 
   useEffect(() => {

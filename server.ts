@@ -8418,16 +8418,25 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const approval = await readApproval(collegeId, sectionId, termId);
-  const [deadline, blocking, notices] = await Promise.all([
+  const [deadline, blocking, notices, notes, rows] = await Promise.all([
     readDeadlineFor(approval, termId),
     blockingConflictCount(collegeId, sectionId, termId),
     regulationNoticeCount(collegeId, sectionId, termId),
+    notesWithState(collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
   ]);
   res.json({
     approval,
     deadline,
     blockingConflicts: blocking,
     regulationNotices: notices,
+    /* ── ما يمنع الإرسال يُقال قبل الضغط ────────────────────────────────────
+     * كانت الملاحظات المعلّقة تُفحص عند الإرسال وحده، فيضغط القسم الزرَّ
+     * ويُردّ. والرسالةُ صحيحةٌ ومفهومة، لكنّ الأصحّ أن يُقال له قبل أن يمدّ
+     * يده — فالزرُّ الذي يُرفض دائماً ليس زرّاً. */
+    openRegistrarNotes: notes.filter(note => note.origin === "registrar" && note.state === "open").length,
+    /* وعددُ المواعيد: لا يُوقَّع على جدولٍ فارغ، فلا يُعرض زرُّ توقيعٍ عليه. */
+    rowCount: rows.length,
     statusLabel: APPROVAL_STATUS_LABEL[approval.status],
     lastReviewedVersionId: lastReviewedVersionId(approval),
   });

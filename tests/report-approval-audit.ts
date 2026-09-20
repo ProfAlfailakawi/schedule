@@ -148,6 +148,35 @@ check(!bar.includes('if (status === "returned") {'),
 check(bar.includes("const readyToSubmit ="), "وشرطُ الإرسال محسوبٌ مرّةً لكل الحالات");
 check(bar.includes("refreshSignal"), "والشريط يسمع ما يقع في الجدول تحته");
 
+/* ── شروطُ الشريط تُطابق شروطَ الخادم حرفاً بحرف ────────────────────────────
+ *
+ * كل شرطٍ في الخادم لا يقابله شرطٌ في الشريط يُنتج أحدَ خطأين: زرٌّ يُرفض
+ * دائماً، أو فعلٌ يقبله الخادم ولا يجد له الناظرُ زرّاً. والثاني أخطر — لأن
+ * الأول يُخبر صاحبَه، والثاني يقف صامتاً.
+ */
+const signGates = ["!mine", "!locked", "hasRows", 'signatureStage === "committee" || Boolean(committee)'];
+for (const gate of signGates) {
+  check(bar.includes(gate), `شرطُ التوقيع يقابل شرط الخادم: ${gate}`);
+}
+check(bar.includes("openNotes === 0") && bar.includes("pendingAdditions === 0") && bar.includes("!pastDeadline"),
+  "وشرطُ الإرسال يقابل شروطه الثلاثة: لا ملاحظةً معلّقة، ولا إضافةً تنتظر، ولا موعداً انقضى");
+check(bar.includes("const firstSubmission = Number(approval.currentRound || 0) === 0;"),
+  "والموعدُ يمنع التسليم الأول وحده، كما في الخادم: الجولات تمرّ");
+check(bar.includes("انقضى موعد التسليم — يلزم تمديدٌ من رئيس التسجيل"),
+  "ويُقال السببُ في مكان الزرّ لا بعد ضغطه");
+
+/* السحب متاحٌ حتى يُرسَل: من وقّع خطأً لا يُترك بلا مخرجٍ إلا الإرسال. */
+check(bar.includes("{mine && !locked ? (") && !bar.includes("mine && !readyToSubmit && !locked"),
+  "وسحبُ التوقيع متاحٌ حتى الإرسال، لا حتى يوقّع الطرفُ الآخر");
+check(bar.includes("readyToSubmit && (signatureStage || powerAdmin)"),
+  "والإدارة الرئيسية تُرسل حيث يسمح الخادم");
+check(bar.includes("{committee || head ? ("),
+  "والتواقيع تُعرض حين يكون الجدول عند التسجيل: هي اللحظة التي يُسأل فيها «مَن وقّع؟»");
+check(bar.includes("headMustAcknowledge ? \"أُضيفت شُعبٌ بعد اعتمادك\""),
+  "وما يُطلب من الناظر يتقدّم على ما يُخبَر به");
+check(bar.includes("بتاريخ ${arabicDate(round.acceptedAt)} — ` : \"\"}أيُّ تعديلٍ"),
+  "ولا شرطةَ شاردةً حين يغيب التاريخ");
+
 const changes = fs.readFileSync(path.join(process.cwd(), "src/components/ScheduleChanges.tsx"), "utf8");
 check(changes.includes("setReport(null);\n      setError(e.message);"),
   "وتقريرٌ أخفقت قراءتُه لا يبقى معروضاً تحت رأس قسمٍ آخر");

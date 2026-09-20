@@ -468,3 +468,11 @@
   }
   .approval-chip::before{display:none !important}
 }
+
+/* السبب في مكان الزرّ: من مُنع يعرف لماذا قبل أن يمدّ يده، لا بعدها. */
+.approval-blocked{
+  display:inline-flex;align-items:center;
+  padding:5px 12px;border-radius:var(--r-full);
+  background:var(--warning-soft);color:var(--warning);
+  font-size:.82rem;font-weight:650;
+}
