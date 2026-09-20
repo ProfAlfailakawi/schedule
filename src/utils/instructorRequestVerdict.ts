@@ -47,6 +47,9 @@ import type { CourseNature } from "./courseNature";
 /** ما يطلبه الأستاذ في صفٍّ واحد. */
 export type RequestAction = "keep" | "change" | "delete" | "add";
 
+/** اليومُ كما يُخزَّن في الصفّ. مُصدَّرٌ ليستعمله الخادمُ في التحقّق من المُرسَل. */
+export type RequestDayKey = DayKey;
+
 /** حُكمُ النظام: يمضي، أو يحتاج استثناءً، أو لا يجوز. */
 export type RequestVerdictKind = "clear" | "exception" | "conflict";
 

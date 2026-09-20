@@ -19,7 +19,7 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { currentTermId } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase } from "./src/types";
+import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
@@ -42,6 +42,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { readDemandRepairs } from "./src/utils/demandRepair";
+import { endForRequest, judgeRequest, type RequestDayKey } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
@@ -13282,6 +13283,499 @@ function submit(){var send=document.getElementById("send"),reasonEl=host.querySe
 fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   طلباتُ الأساتذة على مسوّداتهم
+   ══════════════════════════════════════════════════════════════════════════
+
+   القسم ينسخ الجدول من فصلٍ ماضٍ ثم يرسله للأساتذة، أو يرسله ثم ينسخ. وفي
+   الحالتين يفتح الأستاذُ رابطَه فيرى مسوّدةَ جدوله هو — لا جدولَ القسم ولا
+   جدولَ زميل — فيقول «أبقِه» أو «عدّله» أو «احذفه» أو «أضف».
+
+   وثلاثةُ حدودٍ تُفرَض هنا في الخادم، لا في الصفحة، لأن الصفحةَ عند صاحبها:
+
+   ١) الرابطُ هو الهويّة. لا حساب، ولا رقمٌ مدنيٌّ يُسأل عنه، ولا طريقَ من
+      رابطٍ إلى طلبِ غيره. وما يُقرأ ويُكتب محدودٌ بالسجلّ الذي يشير إليه.
+
+   ٢) القاعةُ لا تُرسَل. مهما حسب النظامُ من مرشّحاتٍ للقسم، فما يغادر إلى
+      صفحة الأستاذ قيمةٌ منطقيةٌ واحدة: متاحٌ أو لا. تجريدُها يقع في
+      `stripForInstructor` وحدها، فلا موضعَ آخرَ يمكن أن ينساه.
+
+   ٣) الحكمُ يُعاد حسابُه في الخادم دائماً. ما يصل من الصفحة يومٌ وبدايةٌ
+      واختيار؛ وأيُّ حُكمٍ يصحبه يُطرح ويُعاد بناؤه من الجدول الحقيقي، وإلا
+      لأرسل من يعرف كيف يُعدّل الطلبَ حُكماً يقول «خالٍ من التعارض».
+
+   ولا شيء هنا يكتب في جدول. التثبيتُ يمرّ بمسارات الحفظ نفسها التي يستعملها
+   المنسّق بيده (`/api/schedules`)، فيرث التحقّقَ والنسخَ والتدقيقَ وتقريرَ
+   التغييرات كما هي؛ وهذا المسار يسجّل القرارَ بعدها فقط.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const REQUEST_LINK_DAYS = 21;
+
+/** نافذةٌ مفتوحةٌ الآن؟ يُقاس بالخادم لا بساعة المتصفّح. */
+const requestWindowOpen = (request: InstructorRequest): boolean => {
+  const now = Date.now();
+  const opens = Date.parse(request.window?.opensAt || "");
+  const closes = Date.parse(request.window?.closesAt || "");
+  if (Number.isFinite(opens) && now < opens) return false;
+  if (Number.isFinite(closes) && now > closes) return false;
+  return request.status !== "settled";
+};
+
+const dayKeysOf = (row: any): RequestDayKey[] =>
+  (["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as RequestDayKey[]).filter(key => Boolean(row?.[key]));
+
+const DAY_LETTERS: Record<RequestDayKey, string> = {
+  fsunday: "الأحد", fmonday: "الاثنين", ftuesday: "الثلاثاء", fwednesday: "الأربعاء", fthursday: "الخميس",
+};
+
+/** لقطةُ صفٍّ كما تُقرأ. */
+function requestSnapshot(row: any, courseName: string, withRoom: boolean): InstructorRequestSnapshot {
+  return {
+    courseId: Number(row.AdCourseId || 0),
+    courseName,
+    sectionCode: String(row.SCode || ""),
+    days: dayKeysOf(row).map(key => DAY_LETTERS[key]).join(" · "),
+    time: `${row.fstarttime || ""} – ${row.fendtime || ""}`,
+    ...(withRoom ? { room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") } : {}),
+  };
+}
+
+/**
+ * يُجرّد الطلبَ ممّا لا يخصّ الأستاذ قبل أن يغادر الخادم.
+ *
+ * موضعٌ واحدٌ لهذا التجريد عن قصد: لو تكرّر في كل مسارٍ لنسيه أحدُها يوماً،
+ * وكشفُ قاعةٍ خطأٌ لا يُكتشف بالنظر إلى الشاشة.
+ */
+function stripForInstructor(request: InstructorRequest) {
+  return {
+    ...request,
+    items: (request.items || []).map(item => {
+      const { roomCandidates, ...rest } = item;
+      return {
+        ...rest,
+        /* «كان» تحمل قاعتَه هو — وهي قاعتُه يعرفها — و«طلب» لا تحملها أبداً. */
+        after: rest.after ? { ...rest.after, room: undefined } : rest.after,
+        /* القرارُ يصل كما هو: سببُه وبدائلُه من حقّه. أما أسماءُ من قرّر فتبقى
+           صفةً لا اسماً، وهي تُكتب كذلك أصلاً. */
+      };
+    }),
+  };
+}
+
+/** يقرأ الرابط ويعيد السجلّ، أو الخطأَ بحالته. */
+async function resolveRequestLink(token: string) {
+  const link = await Repository.getShareLink(String(token || ""));
+  if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 } as const;
+  if (link.kind !== "request") return { error: "هذا الرابط ليس طلبَ جدول", status: 404 } as const;
+  if (link.expiresAt && Date.parse(link.expiresAt) < Date.now()) return { error: "انتهت صلاحية هذا الرابط", status: 410 } as const;
+  const request = await Repository.getInstructorRequestByLink(link.id);
+  if (!request) return { error: "لا يوجد طلبٌ مرتبطٌ بهذا الرابط", status: 404 } as const;
+  return { link, request } as const;
+}
+
+/**
+ * يبني سياقَ الحكم من الجدول الحقيقي.
+ *
+ * يُقرأ الفصلُ كلُّه مرّةً واحدةً لكل نداء، لا مرّةً لكل بند: طلبٌ فيه عشرةُ
+ * بنودٍ كان سيقرأ الجدولَ عشراً، وأساتذةٌ خمسون يفتحون روابطهم في يومٍ واحد.
+ */
+async function buildRequestContext(request: InstructorRequest) {
+  const [allRows, courses, instructors, needs] = await Promise.all([
+    Repository.getSchedulesByScope({ termId: Number(request.AdTermId) }),
+    Repository.getCourses(),
+    Repository.getInstructors(),
+    Repository.getStudentNeeds(Number(request.AdCollegeId), Number(request.AdSectionId), Number(request.AdTermId)).catch(() => []),
+  ]);
+  const scopeRows = (allRows as any[]).filter(row =>
+    Number(row.AdCollegeId) === Number(request.AdCollegeId) && Number(row.AdSectionId) === Number(request.AdSectionId));
+  const demand = readStudentDemand(needs as any[], courses as any[]);
+  /* سُلّمُ البدايات يُجمع من أنماط القسم كلها بلا تكرار: الأحد والثلاثاء
+     والخميس نمطٌ، والاثنين والأربعاء نمطٌ آخر، ولكلٍّ سُلّمُه. وأخذُ أحدهما
+     وحده كان يُخفي نصفَ ما يدرّس به القسم فعلاً. */
+  const rhythm = learnRhythm(scopeRows as any[]);
+  const ladder = [...new Set(rhythm.patterns.flatMap(pattern => pattern.ladder))];
+  const roomKeys = [...new Set((scopeRows as any[]).map(row => roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall)).filter(Boolean))];
+  return {
+    allRows: allRows as any[],
+    scopeRows,
+    courses: new Map((courses as any[]).map(row => [Number(row.AdCourseId), row])),
+    instructors: new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), row])),
+    cohortPairs: cohortPairs(demand),
+    knownRoomKeys: roomKeys,
+    startLadder: ladder,
+  };
+}
+
+/**
+ * يُعيد حساب حُكم كل بند من الجدول الحقيقي.
+ *
+ * يُستدعى عند كل قراءةٍ وكل إرسال، لأن الجدول يتحرّك تحت الطلب: وقتٌ كان
+ * متاحاً يومَ فُتح الرابط قد يكون أُخذ قبل أن يضغط الأستاذ إرسال، وحُكمٌ
+ * محفوظٌ من أمس يكذب بصمت.
+ */
+async function judgeRequestItems(request: InstructorRequest): Promise<InstructorRequest> {
+  const context = await buildRequestContext(request);
+  const open = requestWindowOpen(request);
+  const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
+
+  const items = (request.items || []).map(item => {
+    const slot = item.slots?.[0];
+    const days = (item.slots || []).map(entry => entry.day as RequestDayKey);
+    const verdict = judgeRequest({
+      rowId: item.rowId,
+      action: item.action,
+      AdCourseId: Number(item.after?.courseId || item.before?.courseId || 0),
+      days: days.length ? days : [],
+      start: slot?.start || "",
+    }, {
+      instructorId: Number(request.AdInstructorId),
+      allRows: context.allRows,
+      instructorRowsAfter: mine,
+      courses: context.courses,
+      instructors: context.instructors,
+      cohortPairs: context.cohortPairs,
+      knownRoomKeys: context.knownRoomKeys,
+      startLadder: context.startLadder,
+      windowOpen: open,
+    });
+    return {
+      ...item,
+      verdict: verdict.kind,
+      reasons: verdict.reasons,
+      roomCandidates: verdict.roomCandidates,
+      nearestTimes: verdict.nearestTimes.map(entry => ({ day: entry.day, start: entry.start, end: entry.end })),
+    } as InstructorRequestItem;
+  });
+
+  return { ...request, items };
+}
+
+/* ── إصدارُ الروابط ──────────────────────────────────────────────────────── */
+
+app.post("/api/instructor-requests/issue", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0);
+  const sectionId = Number(req.body?.sectionId || 0);
+  const termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الكلية والقسم والفصل." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "هذا القسم خارج نطاقك." }); return; }
+
+  const closesAt = String(req.body?.closesAt || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(closesAt) || Number.isNaN(Date.parse(closesAt))) {
+    res.status(400).json({ error: "اكتب تاريخ إغلاق الطلبات." });
+    return;
+  }
+  /* نافذةٌ انتهت قبل أن تبدأ ليست نافذة: الأساتذة يفتحون رابطاً مغلقاً ولا
+     يعرفون لماذا، ويتّصلون بالقسم — وهو ما بُني الرابطُ ليُغنيَ عنه. */
+  if (Date.parse(`${closesAt}T23:59:59`) < Date.now()) {
+    res.status(400).json({ error: "تاريخ الإغلاق في الماضي." });
+    return;
+  }
+  const opensAt = new Date().toISOString();
+  const source = req.body?.source === "previous-term" ? "previous-term" : "draft";
+
+  /* المصدر: جدولُ هذا الفصل حين يكون منسوخاً، وجدولُ الفصل السابق حين يُرسَل
+     الرابطُ قبل النسخ. الصفحةُ واحدةٌ والمصدرُ يختلف، ويُقال للأستاذ أيُّهما. */
+  const sourceTermId = source === "previous-term"
+    ? Number(req.body?.previousTermId || 0) || termId
+    : termId;
+  const [rows, courses, existing] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId }),
+    Repository.getCourses(),
+    Repository.getInstructorRequests(collegeId, sectionId, termId),
+  ]);
+  const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
+  const already = new Map(existing.map(row => [Number(row.AdInstructorId), row]));
+
+  const byInstructor = new Map<number, any[]>();
+  for (const row of rows as any[]) {
+    const id = Number(row.AdInstructorId || 0);
+    if (!id) continue;
+    const list = byInstructor.get(id);
+    if (list) list.push(row); else byInstructor.set(id, [row]);
+  }
+
+  const issued: Array<{ instructorId: number; linkId: string; reissued: boolean }> = [];
+  for (const [instructorId, own] of byInstructor) {
+    /* أستاذٌ له رابطٌ في هذا الفصل لا يُعطى ثانياً: رابطان يعنيان طلبين،
+       وطلبان يعنيان أن أحدهما سيُقرأ ويُهمل الآخر بلا أن يعرف صاحبُه. */
+    if (already.has(instructorId)) {
+      issued.push({ instructorId, linkId: already.get(instructorId)!.linkId, reissued: true });
+      continue;
+    }
+    const link = await Repository.createShareLink({
+      AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
+      label: `طلب جدول — ${instructorId}`,
+      expiresAt: new Date(Date.now() + REQUEST_LINK_DAYS * 86400000).toISOString(),
+      SystemUserId: Number(req.user?.SystemUserId || 0),
+      userName: String(req.user?.UserName || ""),
+      showInstructors: false,
+      kind: "request",
+      AdInstructorId: instructorId,
+    } as any);
+
+    await Repository.createInstructorRequest({
+      AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
+      AdInstructorId: instructorId,
+      linkId: link.id,
+      window: { opensAt, closesAt: `${closesAt}T23:59:59.999Z` },
+      source,
+      status: "sent",
+      items: own.map(row => ({
+        rowId: Number(row.id),
+        action: "keep" as const,
+        before: requestSnapshot(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), true),
+        slots: dayKeysOf(row).map(day => ({ day, start: String(row.fstarttime || ""), end: String(row.fendtime || "") })),
+      })),
+      timeline: [{ kind: "link-created", at: opensAt, by: "القسم" }],
+    });
+    issued.push({ instructorId, linkId: link.id, reissued: false });
+  }
+
+  res.json({ issued, total: issued.length, fresh: issued.filter(row => !row.reissued).length });
+});
+
+/* ── وارِدُ القسم ────────────────────────────────────────────────────────── */
+
+app.get("/api/instructor-requests", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الكلية والقسم والفصل." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "هذا القسم خارج نطاقك." }); return; }
+
+  const [stored, instructors] = await Promise.all([
+    Repository.getInstructorRequests(collegeId, sectionId, termId),
+    Repository.getInstructors(),
+  ]);
+  const nameOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
+  const mobileOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorMobile || "")]));
+
+  const judged = await Promise.all(stored.map(row => judgeRequestItems(row)));
+  const rows = judged.map(request => ({
+    ...request,
+    instructorName: nameOf.get(Number(request.AdInstructorId)) || `أستاذ ${request.AdInstructorId}`,
+    instructorMobile: mobileOf.get(Number(request.AdInstructorId)) || "",
+    /* البنودُ التي تحمل قراراً هي ما يُنظر إليه؛ وما أبقاه الأستاذ كما هو
+       يُعدّ ولا يُفتح. */
+    changedCount: (request.items || []).filter(item => item.action !== "keep").length,
+  }));
+
+  const totals = {
+    sent: rows.length,
+    answered: rows.filter(row => row.status !== "sent").length,
+    unchanged: rows.filter(row => row.status !== "sent" && row.changedCount === 0).length,
+    changed: rows.filter(row => row.changedCount > 0).length,
+    unopened: rows.filter(row => !row.linkOpenedAt).length,
+    settled: rows.filter(row => row.status === "settled").length,
+  };
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ rows, totals });
+});
+
+/* ── قرارُ القسم على بند ─────────────────────────────────────────────────── */
+
+app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
+  if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (!isScopeAllowed(req, Number(stored.AdCollegeId), Number(stored.AdSectionId))) {
+    res.status(403).json({ error: "هذا القسم خارج نطاقك." });
+    return;
+  }
+
+  const index = Number(req.body?.itemIndex);
+  const item = (stored.items || [])[index];
+  if (!item) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }
+
+  const state = req.body?.state === "fixed" ? "fixed" : req.body?.state === "rejected" ? "rejected" : null;
+  if (!state) { res.status(400).json({ error: "القرار إمّا تثبيتٌ أو رفض." }); return; }
+
+  /* الرفضُ بلا سببٍ يدفع الأستاذَ إلى الهاتف، فتضيع الحجّة خارج النظام —
+     وهي القاعدة نفسها المفروضة على ردّ اللجنة على ملاحظة التسجيل. */
+  const reasonCode = String(req.body?.reasonCode || "");
+  const allowedReasons = new Set(["room", "instructor", "regulation", "cohort", "load", "department", "other"]);
+  if (state === "rejected" && !allowedReasons.has(reasonCode)) {
+    res.status(400).json({ error: "اختر سبب الرفض." });
+    return;
+  }
+
+  const alternatives = Array.isArray(req.body?.alternatives)
+    ? (req.body.alternatives as any[]).slice(0, 3).map(entry => ({
+        day: String(entry?.day || ""), start: String(entry?.start || ""), end: String(entry?.end || ""),
+      })).filter(entry => entry.day && entry.start && entry.end)
+    : [];
+
+  const now = new Date().toISOString();
+  const by = roleLabel(req.user?.Role) || "القسم";
+  const items = [...(stored.items || [])];
+  items[index] = {
+    ...item,
+    decision: {
+      state,
+      ...(state === "rejected" ? { reasonCode: reasonCode as any } : {}),
+      note: String(req.body?.note || "").trim().slice(0, 400) || undefined,
+      alternatives: alternatives.length ? (alternatives as any) : undefined,
+      decidedBy: by,
+      decidedAt: now,
+      /* الصفُّ الذي أنتجه الحفظُ يمرّ من الشاشة: هي التي استدعت مسارَ الحفظ،
+         وهذا المسار يسجّل الأثرَ ولا يُنشئه. */
+      ...(Number(req.body?.scheduleId) ? { scheduleId: Number(req.body.scheduleId) } : {}),
+    },
+  };
+
+  const timeline = [...(stored.timeline || []), {
+    kind: (state === "fixed" ? "item-fixed" : "item-rejected") as InstructorRequestEventKind,
+    at: now, by, itemIndex: index,
+    detail: state === "rejected" ? reasonCode : undefined,
+  }];
+  if (alternatives.length) timeline.push({ kind: "alternative-offered" as InstructorRequestEventKind, at: now, by, itemIndex: index });
+
+  const decided = items.every(entry => entry.action === "keep" || entry.decision?.state === "fixed" || entry.decision?.state === "rejected");
+  if (decided) timeline.push({ kind: "settled" as InstructorRequestEventKind, at: now, by });
+
+  const saved = await Repository.saveInstructorRequest({
+    ...stored, items, timeline,
+    status: decided ? "settled" : "in-review",
+  });
+  res.json(await judgeRequestItems(saved));
+});
+
+/* ── بابُ الأستاذ ────────────────────────────────────────────────────────── */
+
+app.get("/api/public/request/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveRequestLink(String(req.params.token || ""));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+
+  /* أولُ فتحٍ يُسجَّل مرّةً واحدة. وهو لا يقول «وصلت الرسالة» — يقول «فُتح
+     الرابط»، وهذا كلُّ ما يعرفه النظام بصدق. */
+  let request = resolved.request;
+  if (!request.linkOpenedAt) {
+    const at = new Date().toISOString();
+    request = await Repository.saveInstructorRequest({
+      ...request, linkOpenedAt: at,
+      timeline: [...(request.timeline || []), { kind: "link-opened", at }],
+    });
+  }
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+
+  const [instructors, terms, courses] = await Promise.all([
+    Repository.getInstructors(), Repository.getTerms(), Repository.getCourses(),
+  ]);
+  const person = (instructors as any[]).find(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
+  const term = (terms as any[]).find(row => Number(row.AdTermId) === Number(request.AdTermId));
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    request: stripForInstructor(await judgeRequestItems(request)),
+    instructorName: String(person?.AdInstructorName || ""),
+    termName: String(term?.AdTermName || ""),
+    windowOpen: requestWindowOpen(request),
+    /* مقرّراتُ القسم وحدها: الإضافةُ تُختار من كتالوجه لا من الجامعة كلها. */
+    courses: (courses as any[])
+      .filter(row => Number(row.AdSectionId) === Number(request.AdSectionId))
+      .map(row => ({ id: Number(row.AdCourseId), name: String(row.CourseName || ""), code: String(row.CourseCode || "") })),
+  });
+});
+
+app.post("/api/public/request/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveRequestLink(String(req.params.token || ""));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (!requestWindowOpen(resolved.request)) {
+    res.status(403).json({ error: "انتهت مدّة استقبال الطلبات لهذا الفصل." });
+    return;
+  }
+
+  const sent = Array.isArray(req.body?.items) ? (req.body.items as any[]) : null;
+  if (!sent) { res.status(400).json({ error: "لم يصل شيء." }); return; }
+  if (sent.length > 200) { res.status(400).json({ error: "عدد البنود أكبر من المعقول." }); return; }
+
+  /* البنودُ تُعاد بناؤها من المخزون لا من المُرسَل: ما يُقبل من الصفحة أربعةُ
+     حقولٍ لا غير — ما طُلب، وأيُّ مقرّر، وأيُّ أيام، وأيُّ بداية. ولو قُبل
+     الباقي لأرسل من يعرف كيف يُعدّل الطلبَ لقطةً تقول ما لم يكن. */
+  const before = new Map((resolved.request.items || []).map(item => [String(item.rowId ?? `add:${item.action}`), item]));
+  const courses = await Repository.getCourses();
+  const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
+  const sectionCourses = new Set((courses as any[])
+    .filter(row => Number(row.AdSectionId) === Number(resolved.request.AdSectionId))
+    .map(row => Number(row.AdCourseId)));
+
+  const items: InstructorRequestItem[] = [];
+  for (const entry of sent) {
+    const action = ["keep", "change", "delete", "add"].includes(String(entry?.action)) ? String(entry.action) : "keep";
+    const rowId = entry?.rowId == null ? null : Number(entry.rowId);
+    const stored = rowId == null ? undefined : before.get(String(rowId));
+    /* صفٌّ لا يخصّ هذا الطلب لا يُقبل ولو أُرسل معرّفُه: البابُ يفتح على جدول
+       صاحبه، لا على كل جدولٍ يعرف رقمه. */
+    if (rowId != null && !stored) { res.status(400).json({ error: "أحد المواعيد ليس ضمن جدولك." }); return; }
+
+    const courseId = action === "add" ? Number(entry?.courseId || 0) : Number(stored?.before?.courseId || 0);
+    if (action === "add" && !sectionCourses.has(courseId)) {
+      res.status(400).json({ error: "المقرّر المضاف ليس من مقرّرات قسمك." });
+      return;
+    }
+
+    const days = Array.isArray(entry?.days)
+      ? (entry.days as any[]).map(String).filter((day): day is RequestDayKey =>
+          ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day))
+      : [];
+    const start = /^\d{1,2}:\d{2}$/.test(String(entry?.start || "")) ? String(entry.start) : "";
+    const end = start && days.length ? endForRequest(days, start) : "";
+
+    items.push({
+      rowId,
+      action: action as any,
+      before: stored?.before,
+      after: action === "keep" || action === "delete" ? stored?.before : {
+        courseId,
+        courseName: courseName.get(courseId) || "",
+        sectionCode: String(stored?.before?.sectionCode || ""),
+        days: days.map(day => DAY_LETTERS[day]).join(" · "),
+        time: `${start} – ${end}`,
+      },
+      slots: days.map(day => ({ day, start, end: endForRequest([day], start) })),
+      excuse: String(entry?.excuse || "").trim().slice(0, 400) || undefined,
+      /* القرارُ السابق يُحفظ: أستاذٌ يعيد الإرسال لا يمحو ما ثبّته القسم. */
+      decision: stored?.decision,
+    });
+  }
+
+  const judged = await judgeRequestItems({ ...resolved.request, items });
+
+  /* الحدُّ الذي يجعل الحُكمَ حُكماً: ما مُنع لا يُقبل، ولو وصل من صفحةٍ تقول
+     إنه سليم. والسببُ يُعاد إلى صاحبه ليعرف أيَّ بندٍ يُصلح. */
+  const blocked = judged.items.findIndex(item => item.verdict === "conflict");
+  if (blocked >= 0) {
+    res.status(400).json({
+      error: judged.items[blocked].reasons?.find(reason => reason.blocking)?.text || "أحد البنود لا يمكن إرساله.",
+      itemIndex: blocked,
+    });
+    return;
+  }
+  /* والاستثناءُ بلا سببٍ مكتوبٍ ليس استثناءً — هو طلبٌ بلا حجّة. */
+  const unexcused = judged.items.findIndex(item => item.verdict === "exception" && !item.excuse);
+  if (unexcused >= 0) {
+    res.status(400).json({ error: "اكتب سبب الاستثناء للبند المُعلَّم بالأصفر.", itemIndex: unexcused });
+    return;
+  }
+
+  const at = new Date().toISOString();
+  const changed = items.filter(item => item.action !== "keep").length;
+  const saved = await Repository.saveInstructorRequest({
+    ...resolved.request,
+    items: judged.items,
+    status: "submitted",
+    submittedAt: at,
+    timeline: [
+      ...(resolved.request.timeline || []),
+      { kind: "submitted", at, detail: String(changed) },
+      { kind: "received", at, by: "القسم" },
+    ],
+  });
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ request: stripForInstructor(saved), changed });
+});
 
 app.get("/q/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
