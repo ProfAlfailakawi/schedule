@@ -61,7 +61,7 @@ const request = async (url: string, init?: RequestInit) => {
 const arabicDate = (iso?: string) => {
   if (!iso) return "";
   const date = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW", { year: "numeric", month: "long", day: "numeric" });
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
 export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, onChanged }: Props) {

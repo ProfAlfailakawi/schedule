@@ -3087,7 +3087,39 @@ function approvalScopeLine(approval?: PrintApproval | null): string {
   return approval.statusLabel;
 }
 
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix }: {
+/**
+ * ── الورقةُ تقول من وقّعها، أيّاً كانت ─────────────────────────────────────
+ *
+ * كانت خاناتُ التوقيع وعلامةُ «نسخة غير معتمدة» في التقرير الشامل وحده. وما
+ * سواه — نتائجُ الاستعلام، والأسبوع، والقاعات، والأساتذة — يخرج من الطابعة
+ * ورقةً بمواعيدَ بلا قائلٍ ولا حال: تُوزَّع على الأساتذة، وتُبنى عليها قرارات،
+ * ولا شيء فيها يقول إنها مسوّدةٌ قد تتغيّر غداً، ولا من أقرّها إن أُقرّت.
+ *
+ * وهذا الغلافُ يجعل ذلك خاصّيةَ الطباعة نفسِها لا خاصّيةَ نوعٍ منها: كلُّ ورقةٍ
+ * تحمل ختمَها وتواقيعها. والشاملُ يُستثنى لأنه يحملهما في كل صفحةٍ من صفحاته
+ * أصلاً، فإضافتُهما إليه تكرار.
+ */
+function PrintSheet(props: React.ComponentProps<typeof PrintSheetBody>) {
+  const { kind, approval } = props;
+  if (!kind) return null;
+  if (kind === "comprehensive" || kind === "comprehensive-branch") return <PrintSheetBody {...props} />;
+  return (
+    <div className="print-sheet-attested" data-approved={approval?.status === "accepted" ? "true" : undefined}>
+      {approval && approval.status !== "accepted" ? (
+        <div className="print-unapproved-mark" aria-hidden="true">نسخة غير معتمدة</div>
+      ) : null}
+      <PrintSheetBody {...props} />
+      <footer className="print-sheet-attestation">
+        {approval ? (
+          <p className="print-approval-line" data-status={approval.status}>{approvalScopeLine(approval)}</p>
+        ) : null}
+        <PrintSignatures approval={approval} />
+      </footer>
+    </div>
+  );
+}
+
+function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;

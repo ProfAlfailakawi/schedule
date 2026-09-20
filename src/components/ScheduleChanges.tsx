@@ -115,7 +115,7 @@ const arabicDate = (iso?: string) => {
   if (!iso) return "";
   const date = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("ar-KW", { year: "numeric", month: "long", day: "numeric" });
+  return date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
 /** سطرُ الموعد المتبقّي. يقوله بالأيام لأن الأيام هي ما يُخطَّط به. */

@@ -889,6 +889,21 @@
     z-index:0 !important;
   }
   .print-comprehensive-page>*:not(.print-unapproved-mark){position:relative !important;z-index:1 !important}
+
+  /* ── الختمُ والتواقيعُ على كل ورقةٍ تُطبع ────────────────────────────────
+     كانا في التقرير الشامل وحده. وغلافُ `print-sheet-attested` يحملهما إلى
+     ما سواه: الختمُ ممدودٌ على الورقة كلها خلف محتواها، والتواقيعُ شريطٌ
+     واحدٌ في ذيلها لا يُقطع بين صفحتين. */
+  .print-sheet-attested{position:relative !important}
+  .print-sheet-attested>*:not(.print-unapproved-mark){position:relative !important;z-index:1 !important}
+  .print-sheet-attestation{
+    margin-top:5mm !important;
+    padding-top:3mm !important;
+    border-top:.6pt solid #cbd4d0 !important;
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+  }
+  .print-sheet-attestation .print-approval-line{margin:0 0 2.5mm !important;text-align:center !important}
   /* سطر الحال تحت العنوان: جملةٌ واحدة تقول أين تقف الورقة من الدورة. */
   .print-approval-line{
     margin:.6mm 0 0 !important;

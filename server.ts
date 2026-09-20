@@ -25,7 +25,7 @@ import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
-  isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
+  isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
@@ -12364,6 +12364,26 @@ const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "con
  * يقرأ الطلبات نفسها التي يقرؤها مركزُ الذكاء، بالقاعدة نفسها في نسبة الطلب
  * إلى قسم الاستبيان — فما يراه الطرفان واحدٌ حرفاً بحرف.
  */
+/**
+ * ── لا يصل التسجيلَ شيءٌ قبل التوقيعين ──────────────────────────────────────
+ *
+ * قاعدةُ القسم: الجدولُ وما يتبعه لا يُعرض على التسجيل حتى يوقّعه رئيسُ لجنة
+ * الجدول ورئيسُ القسم معاً. والجدولُ نفسُه محروسٌ بهذا في `canSubmit`؛ وكشفُ
+ * طلبات الطلبة كان بابه الثاني مفتوحاً — يقرؤه موظّفُ التسجيل قبل أن يوقّع
+ * أحد، فيبني على مسوّدةٍ قد تتغيّر كلُّها غداً.
+ *
+ * والحرسُ على القارئ من جهة التسجيل وحده: القسمُ يُعدّ كشفَه ويراه قبل
+ * التوقيع، فذلك عملُه لا كشفُ غيره.
+ */
+async function registrarBlockReason(
+  req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number,
+): Promise<string | null> {
+  if (!isRegistrarRole(req.user?.Role)) return null;
+  const approval = await readApproval(collegeId, sectionId, termId);
+  if (isFullySigned(approval)) return null;
+  return "لم يُوقَّع جدولُ هذا القسم بعد من لجنة الجدول ورئيس القسم، ولا يُعرض على التسجيل قبل ذلك.";
+}
+
 app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -12372,6 +12392,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
+  const blocked = await registrarBlockReason(req, collegeId, sectionId, termId);
+  if (blocked) { res.status(409).json({ error: blocked, code: "not-signed" }); return; }
 
   const [allTermNeeds, courses, sections] = await Promise.all([
     Repository.getStudentNeeds(collegeId, 0, termId),
@@ -12449,15 +12471,21 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
      يملك هذا الطلبَ يستطيع أن يكتب فيه — فلا يُعرض ما لا يُكتب فيه، ولا
      يُكتب فيما لا يُعرض. */
   const allCourses = await Repository.getCourses() as any[];
-  const ownedByScope = (await Repository.getSections() as any[])
+  const owningSectionInScope = (await Repository.getSections() as any[])
     .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
     .map(row => Number(row.AdSectionId))
-    .some(candidate => sectionOwnsNeed(need, allCourses, candidate)
+    .find(candidate => sectionOwnsNeed(need, allCourses, candidate)
       && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
-  if (!ownedByScope) {
+  if (!owningSectionInScope) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
   }
+  /* ولا يُكتب فيما لا يُقرأ: موظّفُ التسجيل لا يقول قولاً في طلبٍ لقسمٍ لم
+     يوقّع جدولَه بعد — وإلا مرّ الحرسُ على العرض وحده وبقي البابُ مفتوحاً
+     لمن يُرسل الطلبَ مباشرةً بلا شاشة. */
+  const writeBlocked = await registrarBlockReason(
+    req, Number(need.AdCollegeId), owningSectionInScope, Number(need.AdTermId || 0));
+  if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
 
   const courseId = Number(req.body?.courseId || 0);
   if (!courseId || !(need.courseIds || []).map(Number).includes(courseId)) {
@@ -14172,7 +14200,7 @@ var m=0;days.forEach(function(d){m=Math.max(m,LONG[d]||SHORT)});return clock(min
 function fmtDays(days){return days.map(function(d){
 var f=DAYS.filter(function(x){return x[0]===d})[0];return f?f[1]:d}).join(" · ")}
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
-d.toLocaleDateString("ar-KW",{month:"long",day:"numeric"})+" "+d.toLocaleTimeString("ar-KW",{hour:"2-digit",minute:"2-digit"})}
+d.toLocaleDateString("ar-KW-u-nu-latn",{month:"long",day:"numeric"})+" "+d.toLocaleTimeString("ar-KW-u-nu-latn",{hour:"2-digit",minute:"2-digit"})}
 var EVENTS={"link-created":"أُنشئ الرابط","link-opened":"فُتح الرابط","submitted":"أرسلتَ طلبك",
 "received":"استلمه القسم","item-fixed":"ثُبّت بند","item-rejected":"رُفض بند",
 "alternative-offered":"عُرض عليك بديل","alternative-chosen":"اخترتَ بديلاً","settled":"أُغلق الطلب",
@@ -14489,7 +14517,7 @@ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){
 return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
-d.toLocaleDateString("ar-KW",{year:"numeric",month:"long",day:"numeric"})}
+d.toLocaleDateString("ar-KW-u-nu-latn",{year:"numeric",month:"long",day:"numeric"})}
 function fail(m){out.innerHTML='<div class="err">'+esc(m)+'</div>'}
 function show(d){
  if(!d.found){out.innerHTML='<div class="card"><div class="empty">'+
