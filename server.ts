@@ -10195,8 +10195,27 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
   /* الصفة تحمل قالبها: شاشاتها ونطاقها يُكتبان في اللحظة نفسها، فيعمل الحساب
      من أول دخول. والمستخدم العادي وحده يبقى على الأساس القديم — مركز الذكاء —
      حتى لا يتغيّر ما كان يحدث قبل هذه الإضافة. */
+  /**
+   * ── صفةٌ اختِيرت تحمل قالبها، وصفةٌ لم تُذكر لا تفرضه ────────────────────
+   *
+   * من اختار الصفة في الشاشة طلب قالبها: شاشاتُه ونطاقُه يُكتبان في العملية
+   * نفسها، وهو المقصود — ألّا يُعيَّن الحسابُ شاشةً شاشة.
+   *
+   * ومن أنشأ حساباً من خارج الشاشة ولم يذكر صفةً فهو على العقد القديم: شاشةٌ
+   * واحدة هي مركز الذكاء، وما بعدها قرارٌ صريحٌ من شاشة الصلاحيات. وفرضُ
+   * القالب عليه كان سيمنحه سبع شاشاتٍ لم يطلبها أحد، بصمت، في كل حسابٍ
+   * يُنشأ بنداءٍ برمجي.
+   *
+   * والصفة تُخزَّن في الحالين — فالحارس يحتاجها ليعرف أيكتب صاحبُها أم يقرأ —
+   * وإنما يختلف ما يُكتب معها.
+   */
   const createdRole: AcademicRole = isAcademicRole(Role) ? Role : DEFAULT_MIGRATION_ROLE;
-  await applyRoleTemplate(newUser.SystemUserId, createdRole, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
+  if (isAcademicRole(Role)) {
+    await applyRoleTemplate(newUser.SystemUserId, createdRole, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
+  } else {
+    await Repository.createSecurity(newUser.SystemUserId, DECISION_CENTRE_FORM_ID);
+    if (Array.isArray(assigns)) await Repository.saveUserAssigns(newUser.SystemUserId, sanitizeAssigns(assigns));
+  }
   res.locals.auditChanges = `حساب جديد بصفة «${roleLabel(createdRole)}»`;
   res.status(201).json({ ...safeSystemUser(newUser), HasPassword: true });
 });
@@ -10324,8 +10343,19 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
        */
       const previousWide = roleDefinition(previousRole).scopeMode;
       const nextWide = roleDefinition(Role).scopeMode;
-      const keepsWideRows = nextWide === "college" || nextWide === "allColleges";
-      if ((previousWide === "college" || previousWide === "allColleges") && !keepsWideRows) {
+      /**
+       * صفوفُ «الكلية كلها» تُشتقّ من الصفة، فهي جوابُها لا ملكُ الحساب.
+       *
+       * وكان الشرط يعدّ «كليةً واحدة» و«كلَّ الكليات» شيئاً واحداً، فيُبقي
+       * صفوفَهما عند الانتقال بينهما. وهما ليسا واحداً: الثانية صفٌّ لكل كليةٍ
+       * في الجامعة. فرئيسُ تسجيلٍ يُنزَّل عميداً لكليةٍ واحدة كان يحتفظ
+       * بالجامعة كلها — وهو نفسُ البابِ الذي أُغلق في الأضيق وبقي في الأوسع.
+       *
+       * فالقاعدة: تبدّلُ نوعِ الاشتقاق يُسقط ما اشتُقّ. وبقاؤه على حاله يُبقيه
+       * — فالعميد يصير مساعداً دون أن يفقد كليته، ولو لم يُذكر في الحفظ.
+       */
+      const derivesWideRows = (mode: string) => mode === "college" || mode === "allColleges";
+      if (derivesWideRows(previousWide) && previousWide !== nextWide) {
         const stale = await Repository.getUserAssigns(id);
         const kept = stale.filter(row => Number(row.AdSectionId) > 0);
         if (kept.length !== stale.length) {

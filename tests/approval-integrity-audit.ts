@@ -223,14 +223,27 @@ const roleChangeAt = server.indexOf("const roleChanged = isAcademicRole(Role) &&
 const roleChangeBody = server.slice(roleChangeAt, roleChangeAt + 3000);
 check(roleChangeBody.includes("if (roleChanged) {") && !roleChangeBody.includes('if (roleChanged && Role !== "standard")'),
   "النزول إلى «مستخدم عادي» يُعيد كتابة القالب كغيره");
-check(roleChangeBody.includes('(previousWide === "college" || previousWide === "allColleges") && !keepsWideRows'),
-  "والتنظيف يشمل صفاتِ كل الكليات كما يشمل صفاتِ الكلية الواحدة");
-check(roleChangeBody.includes("const keepsWideRows ="),
-  "ويُبقي الصفوف حين تحتاجها الصفةُ الجديدة");
+/* «كليةٌ واحدة» و«كلُّ الكليات» ليستا شيئاً واحداً: الثانية صفٌّ لكل كليةٍ في
+   الجامعة. فرئيسُ تسجيلٍ يُنزَّل عميداً لكليةٍ واحدة كان يحتفظ بالجامعة كلها —
+   وهو نفسُ البابِ الذي أُغلق في الأضيق وبقي في الأوسع. */
+check(roleChangeBody.includes("derivesWideRows(previousWide) && previousWide !== nextWide"),
+  "تبدّلُ نوعِ الاشتقاق يُسقط ما اشتُقّ، ولو كان الاثنان واسعين");
+check(roleChangeBody.includes("const derivesWideRows ="),
+  "ويُبقي الصفوف حين لا يتبدّل النوع: العميد يصير مساعداً دون أن يفقد كليته");
+
+const adminUsersSrc = fs.readFileSync(path.join(process.cwd(), "src/components/AdminUsers.tsx"), "utf8");
+check(adminUsersSrc.includes('roleDefinition(storedRole).scopeMode === "college"'),
+  "والشاشة لا تملأ حقل الكليات من صفةٍ تكتب صفّاً لكل كليةٍ في الجامعة");
+check(adminUsersSrc.includes('item.readOnly ? " — للاطّلاع" : " — يعدّل"'),
+  "وقائمةُ الصفات تسمّي الكاتبين كما تسمّي القارئين: الكتابةُ ليست الحالَ الصامتة");
 check(roleChangeBody.includes("roleLabel(previousRole)"), "والسجلّ يقول من أيّ صفةٍ إلى أيّها");
-check(server.includes("await applyRoleTemplate(newUser.SystemUserId, createdRole,")
-   && !server.includes('if (createdRole === "standard") {'),
-  "وإنشاءُ الحساب يمرّ من القالب نفسه: لكل صفةٍ قالبٌ، وإن كان أضيقَ القوالب");
+/* والصفةُ المختارة تحمل قالبها، والصفةُ التي لم تُذكر لا تفرضه: حسابٌ يُنشأ
+   بنداءٍ برمجيٍّ بلا صفة يبقى على العقد القديم — شاشةٌ واحدة — ولا يُمنح سبعاً
+   لم يطلبها أحد. */
+check(server.includes("if (isAcademicRole(Role)) {\n    await applyRoleTemplate(newUser.SystemUserId, createdRole,"),
+  "الصفة المختارة تحمل قالبها عند الإنشاء");
+check(server.includes("await Repository.createSecurity(newUser.SystemUserId, DECISION_CENTRE_FORM_ID);"),
+  "ومن لم يذكر صفةً يبقى على العقد القديم: شاشةٌ واحدة وما بعدها قرارٌ صريح");
 
 /* ── ١٥) كتابةُ سجلّ الاعتماد على طابورٍ واحد ──────────────────────────── */
 

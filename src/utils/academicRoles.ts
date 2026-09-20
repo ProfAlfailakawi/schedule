@@ -139,7 +139,7 @@ export const ACADEMIC_ROLES: AcademicRoleDefinition[] = [
   {
     id: "standard",
     label: "مستخدم عادي",
-    hint: "بلا قالب: الشاشات والنطاق يعيّنهما المدير يدوياً كما كان.",
+    hint: "يعدّل الجدول، وتُعيَّن شاشاته ونطاقه يدوياً. ليست هذه صفةَ تجريدٍ من الصلاحيات — لسحب القدرة على التعديل اختر صفةً للاطّلاع.",
     readOnly: false,
     formIds: [SCHEDULE_WORKSPACE],
     scopeMode: "manual",

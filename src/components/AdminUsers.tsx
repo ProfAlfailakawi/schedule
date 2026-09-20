@@ -706,12 +706,22 @@ export default function AdminUsers({
     setIsActive(u.IsActive);
     setIsLocked(u.IsLocked);
     setLinkedInstructor(Number(u.AdInstructorId || 0));
-    setRole((u.Role as AcademicRole) || "committeeChair");
-    /* الكليات تُقرأ من نطاق الحساب القائم: صفوف القسم صفر هي «الكلية كلها». */
+    const storedRole = (u.Role as AcademicRole) || "committeeChair";
+    setRole(storedRole);
+    /**
+     * الكليات تُقرأ من نطاق الحساب القائم — لكن من صفةٍ كليتُها واحدة فقط.
+     *
+     * صفوفُ «القسم صفر» تعني «الكلية كلها» في الحالين، لكنّ صفةَ كلِّ الكليات
+     * تكتب صفّاً لكل كليةٍ في الجامعة. فلو مُلئ منها حقلُ الكليات عند تحويل
+     * رئيس تسجيلٍ إلى عميد، لظهرت الجامعةُ كلها مختارةً في نموذجه — ولكتبها
+     * الحفظُ نطاقاً لعميدٍ كليتُه واحدة، دون أن يُلاحظ أحد.
+     */
     setRoleColleges(
-      assigns
-        .filter((row) => row.SystemUserId === u.SystemUserId && !row.AdSectionId)
-        .map((row) => Number(row.AdCollegeId)),
+      roleDefinition(storedRole).scopeMode === "college"
+        ? assigns
+            .filter((row) => row.SystemUserId === u.SystemUserId && !row.AdSectionId)
+            .map((row) => Number(row.AdCollegeId))
+        : [],
     );
     setPage("edit");
   };
@@ -936,7 +946,10 @@ export default function AdminUsers({
                     .map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.label}
-                        {item.readOnly ? " — للاطّلاع" : ""}
+                        {/* الفرق الذي يجب أن يُقرأ قبل الاختيار لا بعده: أيكتب
+                            صاحبُ هذه الصفة أم يقرأ. وقائمةٌ تسمّي القارئين ولا
+                            تسمّي الكاتبين تترك الكتابةَ هي الحالَ الصامتة. */}
+                        {item.readOnly ? " — للاطّلاع" : " — يعدّل"}
                       </option>
                     ))}
                 </select>
