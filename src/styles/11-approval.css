@@ -476,3 +476,28 @@
   background:var(--warning-soft);color:var(--warning);
   font-size:.82rem;font-weight:650;
 }
+
+/* ── تعارضٌ مع قسمٍ آخر ─────────────────────────────────────────────────
+   يُعرض ولا يُعلَّق عليه: الملاحظة تذهب لصاحب الصفّ، ومن لا يملك تعديلَه لا
+   يُطالَب بمعالجة ملاحظةٍ عليه. فلا يُرسم كملاحظةٍ لئلّا يُنتظر منه ما لا
+   يُنتظر — سطرٌ مائلُ الحافّة، خبرٌ لا صندوق.                             */
+.changes-cross{
+  display:flex;align-items:flex-start;gap:9px;
+  padding:8px 12px;border-radius:var(--r-sm);
+  background:var(--info-soft);
+  border-inline-start:3px solid var(--info);
+}
+.changes-cross svg{inline-size:15px;block-size:15px;flex:none;color:var(--info);margin-block-start:2px}
+.changes-cross strong{display:block;font-size:.86rem;font-weight:700;color:var(--info)}
+.changes-cross small{display:block;margin-block-start:2px;color:var(--muted);font-size:.8rem;line-height:1.65}
+
+/* مصدرُ الملاحظة: ملاحظةُ التسجيل تمنع الإرسال، وملاحظةُ القسم لا تمنع. */
+.changes-note-field em{font-style:normal;font-weight:600;opacity:.8}
+
+/* خانةٌ اختلف عليها الطرفان ثلاثاً: إعلامٌ لا إجبار، فلا يُصرخ به. */
+.changes-note-stuck{color:var(--warning) !important;font-weight:650}
+
+@media print{ .changes-cross{background:transparent !important;border-inline-start-color:#999 !important} }
+
+/* ملاحظةٌ حُسمت: تبقى في مكانها للحجّة، وتُخفت لأنها لم تعد تنتظر أحداً. */
+.changes-notes [data-state="resolved"]{border-inline-start-color:var(--line-strong);opacity:.72}

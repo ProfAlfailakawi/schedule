@@ -125,8 +125,10 @@ check(server.includes("اكتب سبب الإبقاء"), "الردّ بلا سب
 check(server.includes('app.post("/api/schedule-notes/:id/verdict"'), "قرار التسجيل على الردّ له مسار");
 /* المحو يُطلب بقائمة أسماء لا بقيمةٍ غائبة: تمريرُ `undefined` كان يُسقَط قبل
    الكتابة، فيبقى الردّ وتبقى الخانة رماديةً إلى الأبد. */
-check(server.includes('{ rebuttalVerdict: "insisted" }, ["rebuttal"]'),
+check(server.includes('rebuttalVerdict: "insisted",') && server.includes('}, ["rebuttal"]);'),
   "الإصرار يمحو الردّ: الخانة تعود برتقاليةً تنتظر، لا رماديةً أُجيب عنها");
+check(server.includes("insistCount: Number(note.insistCount || 0) + 1"),
+  "ويُعدّ: الخلافُ الذي تكرّر ثلاثاً لم يعد خلافاً على قاعة");
 
 /* ── الدورة تُغلق فعلاً ───────────────────────────────────────────────────
  *
@@ -149,6 +151,72 @@ const returnAt = server.indexOf('app.post("/api/approvals/return"');
 const returnBody = server.slice(returnAt, returnAt + 3000);
 check(returnBody.includes("await notesWithState("), "والإرجاع يعدّ بالمقياس نفسه");
 check(!returnBody.includes("!note.resolved"), "ولا يقرأ العلَم هو أيضاً");
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ما بقي من الخطة، بنداً بنداً
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const changes = fs.readFileSync(path.join(process.cwd(), "src/components/ScheduleChanges.tsx"), "utf8");
+const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
+const roles = fs.readFileSync(path.join(process.cwd(), "src/utils/academicRoles.ts"), "utf8");
+
+/* ── ١) رئيس القسم يعلّق ولا يعدّل ───────────────────────────────────────
+ * أوّلُ ما طُلب في هذا العمل. وكانت الخاناتُ تُفتح لمن يقرّر، فبقي من يعلّق
+ * بلا باب: يرى ملاحظات التسجيل ولا يملك أن يكتب واحدة. */
+check(roles.includes("export function canAnnotateCells"), "التعليق على الخانة صفةٌ قائمة بذاتها");
+check(changes.includes("const canAnnotate = role.canAnnotate;"), "والشاشة تقرؤها");
+check(changes.includes("{canAnnotate && entry.kind !== \"removed\" ? ("),
+  "وتفتح الخانات لمن يعلّق، لا لمن يقرّر");
+check(!changes.includes("{isRegistrar && entry.kind !== \"removed\" ? ("),
+  "فلم يبقَ بابٌ مقفلٌ في وجه رئيس القسم");
+check(server.includes("if (!canAnnotateCells(req.user?.Role) && !isPowerUser(req))"),
+  "والخادم يقرأ الإذن من الدالّة نفسها: لا يُفتح في إحداهما ما يُقفل في الأخرى");
+check(changes.includes('note.origin === "department" ? <em> · من القسم</em>'),
+  "ومصدرُ الملاحظة يُقال: ملاحظةُ التسجيل تمنع الإرسال، وملاحظةُ القسم لا تمنع");
+
+/* ── ٢) عميد التسجيل يفتح الوارد ولا يقرّر فيه ──────────────────────────── */
+check(roles.includes("export function watchesInbox"), "فتحُ الوارد صفةٌ قائمة بذاتها");
+check(/registrarDean/.test(roles.slice(roles.indexOf("export function watchesInbox"), roles.indexOf("export function watchesInbox") + 400)),
+  "وعميدُ التسجيل منها");
+check(appSrc.includes("const opensChangesScreen ="), "والشاشة تُفتح بمن يقرّر أو يعلّق أو يطّلع");
+check(!appSrc.includes("sessionRole.canReview || sessionRole.signatureStage ? ("),
+  "لا بمن يقرّر وحده");
+check(server.includes("canReviewSubmissions(req.user?.Role) || watchesInbox(req.user?.Role)"),
+  "وعدّادُ الوارد يصله كما يصل موظّفيه");
+
+/* ── ٣) السببُ جاهزٌ قبل أن يُكتب ───────────────────────────────────────── */
+check(server.includes("async function noteSuggestions"), "النظام يقترح سببَ الملاحظة مما يعرفه");
+check(server.includes('put(ownId, "room", `القاعة محجوزة في هذا الوقت'), "من فاحص التعارضات");
+check(server.includes("const findings = reviewSchedule({"), "ومن فاحص اللائحة");
+check(changes.includes("report.suggestions?.[`${entry.scheduleId}:${field}`]"),
+  "ويُملأ في الصندوق: اقتراحٌ لا حكم، يُمحى إن شاء ويُكتب غيره");
+
+/* ── ٤) المقرر المشترك: يُعرض ولا يُعلَّق عليه ──────────────────────────── */
+check(server.includes("async function crossScopeClashes"), "التعارضُ مع قسمٍ آخر يُحسب");
+check(server.includes("visible: Boolean(req.user?.IsAdminUser || isScopeAllowed("),
+  "وتفاصيلُ الموعد المقابل لا تخرج إلى من ليس في نطاقه");
+check(changes.includes("changes-cross"), "ويُعرض تحت صفّه");
+check(changes.includes("بمقايضة القاعات بين القسمين، لا بملاحظةٍ على هذا الصفّ"),
+  "ويقول أين بابُه: المقايضةُ القائمة، لا صندوقُ الملاحظات");
+
+/* ── ٥) الشارة حيث يعمل صاحبها ──────────────────────────────────────────── */
+check(appSrc.includes("badge={barterPending + (sessionRole.signatureStage ? changesBadge : 0)}"),
+  "شارةُ القسم على جدوله، حيث يعالج ملاحظاته");
+check(appSrc.includes("badge={sessionRole.signatureStage ? 0 : changesBadge}"),
+  "وشارةُ التسجيل على وارده، فلا تُعدّ مرّتين");
+
+/* ── ٦) ما طُلب وما فُعل ────────────────────────────────────────────────── */
+check(server.includes("changedRowCount = moved.counts.added + moved.counts.removed + moved.counts.changed;"),
+  "كلُّ جولةٍ تحمل عدد الصفوف التي تحرّكت رداً على ملاحظاتها");
+check(server.includes("/* عددٌ يُعرض، لا شرطٌ يُحتسب: تعذّره لا يمنع الإرسال. */"),
+  "وحسابُه لا يمنع إرسالاً");
+check(changes.includes("فتحرّك ${round.changedRowCount} صفّاً"),
+  "ويُقرأ في الشريط الزمني بجانب ما طُلب");
+
+/* ── ٧) خلافٌ لم يُحسم ──────────────────────────────────────────────────── */
+check(changes.includes('Number(note.insistCount || 0) >= 3'), "الخانةُ المختلَف عليها ثلاثاً تُعلَن");
+check(changes.includes("إعلامٌ لرئيس القسم، ولا شيء يقف عليه"),
+  "إعلاماً لا إجباراً: لا شيء في النظام يقف عليه");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);

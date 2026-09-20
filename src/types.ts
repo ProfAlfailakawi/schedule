@@ -601,6 +601,14 @@ export interface ScheduleComment {
   rebuttal?: { text: string; at: string; SystemUserId: number; userName: string };
   /** قرار التسجيل على ردّ اللجنة في الجولة التالية. */
   rebuttalVerdict?: "accepted" | "insisted";
+  /**
+   * كم مرّةً أصرّ التسجيل على هذه الخانة بعد ردٍّ من القسم.
+   *
+   * خانةٌ يُصرّ عليها طرفٌ ويردّ عليها الآخر ثلاث مرّات ليست خلافاً على قاعة؛
+   * هي خلافٌ لم يُحسم، ومكانُه فوق مستوى الاثنين. فيُعدّ صراحةً ليُعرض لرئيس
+   * القسم — إعلاماً لا إجباراً، فلا شيء في النظام يقف عليه.
+   */
+  insistCount?: number;
 }
 
 /** الحقول التي يجوز أن تُعلَّق عليها ملاحظةٌ بالنقر. */
@@ -814,6 +822,14 @@ export interface ScheduleApprovalRound {
   returnedAt?: string;
   returnedBy?: string;
   returnedNoteCount?: number;
+  /**
+   * كم صفّاً تحرّك رداً على ملاحظات هذه الجولة.
+   *
+   * يُحسب لحظةَ إعادة الإرسال بمقارنة الجدول بالنسخة التي رآها التسجيل، فيقرأ
+   * الشريطُ الزمني «أُرجعت بأربع ملاحظات، فتحرّك خمسة صفوف» — وهو ما يُقاس به
+   * الردّ: عددُ الملاحظات يقول ما طُلب، وعددُ الصفوف يقول ما فُعل.
+   */
+  changedRowCount?: number;
   /** من قبِل، ومتى. */
   acceptedAt?: string;
   acceptedBy?: string;

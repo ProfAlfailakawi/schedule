@@ -152,14 +152,23 @@ interface SessionRole {
   landing: "balance" | "changes" | "schedules" | "dashboard";
   canReview: boolean;
   canManageDeadline: boolean;
+  /** يفتح صندوق الوارد — ولو لم يقرّر فيه، كعميد التسجيل. */
+  watchesInbox: boolean;
+  /** يعلّق على الخانات: التسجيل والقسم كلاهما. */
+  canAnnotate: boolean;
   signatureStage: "committee" | "head" | null;
   viewerOnly: boolean;
 }
 const DEFAULT_SESSION_ROLE: SessionRole = {
   id: "committeeChair", label: "رئيس لجنة الجدول", readOnly: false,
   landing: "schedules", canReview: false, canManageDeadline: false,
+  watchesInbox: false, canAnnotate: true,
   signatureStage: "committee", viewerOnly: false,
 };
+
+/** من تُفتح له شاشة تغييرات الجدول: من يقرّر فيها، أو يعلّق، أو يطّلع عليها. */
+const opensChangesScreen = (role: SessionRole) =>
+  role.canReview || role.watchesInbox || role.canAnnotate || Boolean(role.signatureStage);
 interface SearchHit {
   id: number | string;
   kind: "schedule" | "instructor" | "course" | "room";
@@ -552,7 +561,7 @@ export default function App() {
    */
   const [changesBadge, setChangesBadge] = useState(0);
   useEffect(() => {
-    if (!user || !(sessionRole.canReview || sessionRole.signatureStage)) { setChangesBadge(0); return; }
+    if (!user || !opensChangesScreen(sessionRole)) { setChangesBadge(0); return; }
     let alive = true;
     const read = () => fetch("/api/approvals/badge", { credentials: "include" })
       .then(response => (response.ok ? response.json() : null))
@@ -1630,12 +1639,13 @@ export default function App() {
         /* الشاشة لمن يشارك في الدورة: التسجيل يراجع، والقسم يردّ. أمّا أدوار
            العرض الصرف فيكفيها عمود الاعتماد في ميزان الأقسام — وشاشةٌ لا يفعل
            فيها صاحبها شيئاً هي ضجيجٌ في القائمة لا خدمة. */
-        return sessionRole.canReview || sessionRole.signatureStage ? (
+        return opensChangesScreen(sessionRole) ? (
           <ScheduleChanges
             role={{
               id: sessionRole.id,
               canReview: sessionRole.canReview,
               canManageDeadline: sessionRole.canManageDeadline,
+              canAnnotate: sessionRole.canAnnotate,
               signatureStage: sessionRole.signatureStage,
             }}
             scope={scopes.length === 1 && scopes[0]?.AdSectionId
@@ -2284,7 +2294,12 @@ export default function App() {
                 view="schedules"
                 icon={<CalendarDays />}
                 label="الجدول الدراسي"
-                badge={barterPending}
+                /* ── الشارة حيث يعمل صاحبها ──────────────────────────────
+                   القسمُ يعالج ملاحظاته في جدوله، فتقف شارتُه هنا مع شارة
+                   مقايضة القاعات. والتسجيلُ يعالجها في واردِه، فشارتُه هناك.
+                   وشارةٌ في غير موضع العمل تُقرأ مرّةً ثم تُهمَل. */
+                badge={barterPending + (sessionRole.signatureStage ? changesBadge : 0)}
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.schedules"
               />
             ) : null}
             {smartSearchView || smartReportView ? (
@@ -2297,14 +2312,14 @@ export default function App() {
                 label="الاستعلامات والتقارير"
               />
             ) : null}
-            {sessionRole.canReview || sessionRole.signatureStage ? (
+            {opensChangesScreen(sessionRole) ? (
               <NavButton
                 activeView={activeView}
                 onGo={go}
                 view="scheduleChanges"
                 icon={<FileDiff />}
                 label="تغييرات الجدول"
-                badge={changesBadge}
+                badge={sessionRole.signatureStage ? 0 : changesBadge}
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.scheduleChanges`،
                    وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.scheduleChanges"

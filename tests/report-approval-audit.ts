@@ -130,8 +130,12 @@ check(app.includes("if (!viewByPath.has(window.location.pathname.toLowerCase()))
   "وتُطبَّق عند استعادة الجلسة لا عند الدخول وحده");
 check(app.includes("const landing = landingViewFor(restoredRole);"),
   "ومن فتح عنواناً بعينه أراده، فلا يُنقل عنه");
-check(app.includes("sessionRole.canReview || sessionRole.signatureStage ? ("),
+/* الشاشة تُفتح لمن يقرّر فيها أو يعلّق أو يطّلع عليها — لا لمن يقرّر وحده.
+   فعميدُ التسجيل سؤالُه هو الوارد نفسه، ورئيسُ القسم يعلّق فيه. */
+check(app.includes("const opensChangesScreen ="),
   "أيقونة تغييرات الجدول لمن يشارك في الدورة: شاشةٌ لا يفعل فيها صاحبها شيئاً ضجيجٌ في القائمة");
+check(app.includes("role.canReview || role.watchesInbox || role.canAnnotate || Boolean(role.signatureStage)"),
+  "والمشاركةُ ثلاثةُ أبواب: قرارٌ أو تعليقٌ أو اطّلاع");
 /* «للاطّلاع» تعني أنه لا يكتب، لا أنه لا يعمل: رئيسُ القسم صفةٌ للاطّلاع،
    لكنّ توقيعه لا يقع إلا في شاشة الجدول. */
 check(app.includes("allowed.schedule && !sessionRole.viewerOnly"),

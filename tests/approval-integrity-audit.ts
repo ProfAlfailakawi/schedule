@@ -75,7 +75,8 @@ check(repository.includes("clearFields: Array<keyof ScheduleComment> = []"),
   "المحو يُطلب بقائمة أسماء، لا بقيمةٍ غائبة");
 check(repository.includes("for (const key of clearFields) delete updated[key];"), "ويُنفَّذ على النسخة السحابية");
 check(repository.includes("for (const key of clearFields) delete merged[key];"), "وعلى النسخة المحلّية");
-check(server.includes('{ rebuttalVerdict: "insisted" }, ["rebuttal"]'), "والإصرار يمحو الردّ فعلاً");
+check(server.includes('rebuttalVerdict: "insisted",') && server.includes('}, ["rebuttal"]);'),
+  "والإصرار يمحو الردّ فعلاً");
 check(!server.includes("rebuttal: undefined"), "ولم يبقَ نداءٌ يظنّ أن الغياب محو");
 
 /* ── ٣) القفل والموعد على كل بابٍ يكتب ───────────────────────────────────
@@ -262,6 +263,51 @@ check(server.includes('movedScope ? { kind: "add", row: updated } : { kind: "edi
   "شعبةٌ انتقلت إلى قسمٍ بعد توقيع رئيسه تُسجَّل في انتظار إقراره");
 check(server.includes("const movedScope = existing.AdCollegeId !== collegeId"),
   "والقسمُ الذي غادرته يُبلَّغ أيضاً: يتغيّر ولو بالنقصان");
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ما كشفته مراجعةٌ آلية على الطلب
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── النشرُ يكتب على ثلاثة أقسام، والقفل كان يُقرأ على واحد ───────────────
+ * وثيقةُ الاعتماد الواحدة تحمل مواقع الفرع الثلاثة. فقسمٌ شقيقٌ جدولُه بين
+ * يدي التسجيل كان يُستبدل جدولُه كاملاً وهو يُقرأ. */
+const publishAt = server.indexOf('app.post("/api/intelligence/drafts/:id/publish"');
+const publishBody = server.slice(publishAt, publishAt + 22000);
+check(publishBody.includes("const groupLock = await scheduleLockRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId);")
+   || publishBody.includes("const groupLock=await scheduleLockRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId);"),
+  "النشر يقرأ قفل كل موقعٍ يكتب فيه");
+check(publishBody.includes("const groupDeadline=await wholesaleRefusal(group.scope.collegeId"),
+  "وموعدَ كل موقعٍ كذلك");
+const groupsAt = publishBody.indexOf("const groups=split.groups.map");
+const lockAt = publishBody.indexOf("const groupLock");
+const writeAt = publishBody.indexOf("Repository.replaceScheduleScope(group.scope");
+check(groupsAt !== -1 && lockAt > groupsAt && lockAt < writeAt,
+  "والفحص بعد بناء المجموعات وقبل أول كتابة: النشر يقع كلُّه أو لا يقع");
+check(publishBody.includes('noteScheduleMutation(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,{kind:"add"'),
+  "وكلُّ موقعٍ يُبلّغ سجلَّ اعتماده هو، لا سجلَّ موقع المسودة");
+
+/* ── الاسترجاع يستبدل الجدول كله ولا يُعلم أحداً ─────────────────────────── */
+check((server.match(/noteScheduleMutation\(req,version\.AdCollegeId/g) || []).length === 2,
+  "الاسترجاع والتراجع يُبلّغان سجلَّ الاعتماد: جدولٌ مقبولٌ استُبدل يعود جولةً جديدة");
+
+/* ── الملاحظةُ المحسومة ليست ملاحظةً تنتظر ───────────────────────────────
+ * قبولُ التبرير يُغلق الملاحظة ويُبقي نصَّ الردّ للحجّة. وقراءةُ الردّ وحدها
+ * كانت تُبقيها «أُجيب عنها» أبداً: يعدّها الوارد ردّاً ينتظر قراراً، وتُعرض
+ * أزرارُ القرار على قرارٍ اتُّخذ. */
+const noteStateAt = server.indexOf("function noteState");
+const noteStateBody = server.slice(noteStateAt, noteStateAt + 1400);
+check(noteStateBody.indexOf('note.resolved || note.rebuttalVerdict === "accepted"') < noteStateBody.indexOf("if (note.rebuttal) return"),
+  "الحسمُ يُقرأ قبل الردّ");
+check(noteStateBody.includes('return "resolved"'), "وللمحسومة حالٌ تخصّها");
+
+/* ── «كل الكليات» إذنٌ لا لقطة ───────────────────────────────────────────
+ * كان يُكتب صفّاً لكل كليةٍ موجودة يوم الحفظ، فكليةٌ أُنشئت بعده لا صفَّ لها —
+ * ويُردّ عنها رئيسُ التسجيل بصمت، وشاشتُه تعده بأن اللاحق مشمول. */
+check(scopeBody.includes('roleDefinition(req.user.Role).scopeMode === "allColleges") return true;'),
+  "صفةُ كلِّ الكليات إذنٌ بنفسها، فلا يشيخ حكمُها بشيخوخة صفوفها");
+const wildcardAt = scopeBody.indexOf('scopeMode === "allColleges") return true');
+check(wildcardAt !== -1 && wildcardAt < scopeBody.indexOf("if (!req.scopes) return false;"),
+  "ويُقرأ قبل الصفوف، فلا يقف عند غيابها");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);

@@ -212,3 +212,31 @@ export function isViewerOnlyRole(value: unknown): boolean {
   const id = roleDefinition(value).id;
   return id === "dean" || id === "viceDean" || id === "registrarDean";
 }
+
+/**
+ * من يفتح صندوق الوارد.
+ *
+ * ليست هي «من يقرّر فيه». عميدُ التسجيل لا يعلّق ولا يقبل ولا يُرجع — لكنّ
+ * سؤاله هو الوارد نفسه: كم جدولاً وصل، وكم عاد، وكم تأخّر. فيراه كما يراه
+ * موظّفوه، وتغيب عنه أزرارُهم.
+ */
+export function watchesInbox(value: unknown): boolean {
+  const id = roleDefinition(value).id;
+  return id === "registrarHead" || id === "registrarStaff" || id === "registrarDean";
+}
+
+/**
+ * من يعلّق على خانة.
+ *
+ * التسجيلُ والقسم كلاهما. وهذا أوّلُ ما طُلب في هذا العمل: «رئيس القسم ممكن
+ * يحطّ ملاحظات، بس ما يقدر يعدّل ولا يضيف ولا يحذف». فالملاحظة ليست تعديلاً
+ * على الجدول؛ هي الطريقة التي يشارك بها من لا يملك أن يمسّ صفّاً.
+ *
+ * وتُفرَّق الملاحظتان بمصدرهما لا بمن كتبها: ملاحظةُ التسجيل تمنع الإرسال حتى
+ * تُعالَج أو يُردّ عليها، وملاحظةُ القسم ملاحظةٌ داخلية لا تمنع شيئاً.
+ */
+export function canAnnotateCells(value: unknown): boolean {
+  const id = roleDefinition(value).id;
+  return id === "registrarHead" || id === "registrarStaff"
+    || id === "departmentHead" || id === "committeeChair";
+}
