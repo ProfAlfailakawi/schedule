@@ -9413,8 +9413,14 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
    * غيّر أستاذَ سادسٍ كان يُعرض للتسجيل «معدَّلٌ واحد»، والحذوفُ الخمسةُ لا
    * أثر لها: مراجعةٌ تبدو صحيحةً وهي ناقصة، وذلك أسوأُ من مراجعةٍ تبدو ناقصة.
    *
-   * فالمرساةُ لحظةُ آخِرِ نظرةٍ للتسجيل: إرجاعُ الجولة السابقة أو قبولُها، وإلا
-   * فإرسالُ هذه الجولة.
+   * فالمرساةُ لحظةُ آخِرِ نظرةٍ للتسجيل: إرجاعُ هذه الجولة أو قبولُها إن كان
+   * التسجيلُ قد نظر فيها وردّها، وإلا فإرجاعُ الجولة السابقة أو قبولُها.
+   *
+   * **والإرسالُ ليس نظرة.** ولو جُعل مرساةً لانكسرت أولُ مراجعةٍ: القسمُ يعدّل
+   * ويوقّع قبل الإرسال وبعده، فتُلتقط نُسَخ، ويختار البحثُ إحداها أساساً —
+   * فيُعرض على التسجيل «تعديلٌ واحدٌ منذ الإرسال» بدل الجدول كلِّه، وهو أولُ
+   * مرّةٍ يراه فيها. فإن لم يكن التسجيلُ قد نظر قطّ فلا أساسَ أصلاً، وكلُّ
+   * صفٍّ مضافٌ — وهو الصوابُ لا العطل.
    *
    * **واللقطةُ تحفظ ما كان قبل التعديل، وتُنشأ لحظةَ التعديل.** وهذا يقلب
    * جهةَ البحث، وقد أخطأتُها أوّلَ مرّة: كلُّ لقطةٍ لهذه الجولة أحدثُ من
@@ -9438,12 +9444,16 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     const previousRound = approval.rounds
       .filter(item => item.number < round)
       .sort((a, b) => b.number - a.number)[0];
-    const anchorAt = previousRound?.returnedAt || previousRound?.acceptedAt || currentRound?.submittedAt
-      || history.find(item => item.id === currentRoundVersionId)?.createdAt;
+    /* آخِرُ نظرةٍ للتسجيل، لا آخِرُ إرسالٍ من القسم. وغيابُها يعني أنه لم ينظر
+       بعد، فلا أساسَ يُخترع له. */
+    const lastLookAt = currentRound?.returnedAt || currentRound?.acceptedAt
+      || previousRound?.returnedAt || previousRound?.acceptedAt;
     /* ونسخةُ الجولة نفسِها تُستثنى، وإلا قُورنت الجولةُ بنفسها فخرجت بلا
        فرقٍ دائماً. */
-    const after = history.filter(item => item.id !== currentRoundVersionId
-      && (!anchorAt || String(item.createdAt) >= String(anchorAt)));
+    const after = lastLookAt
+      ? history.filter(item => item.id !== currentRoundVersionId
+          && String(item.createdAt) >= String(lastLookAt))
+      : [];
     const fallback = after[after.length - 1];
     if (fallback) {
       baselineVersion = await Repository.getScheduleVersionById(fallback.id);
@@ -12556,18 +12566,31 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
   }
-  /* ولا يُكتب فيما لا يُقرأ: موظّفُ التسجيل لا يقول قولاً في طلبٍ لقسمٍ لم
-     يوقّع جدولَه بعد — وإلا مرّ الحرسُ على العرض وحده وبقي البابُ مفتوحاً
-     لمن يُرسل الطلبَ مباشرةً بلا شاشة. */
-  const writeBlocked = await registrarBlockReason(
-    req, Number(need.AdCollegeId), owningSectionInScope, Number(need.AdTermId || 0));
-  if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
-
   const courseId = Number(req.body?.courseId || 0);
   if (!courseId || !(need.courseIds || []).map(Number).includes(courseId)) {
     res.status(400).json({ error: "هذا المقرّر ليس ضمن طلب الطالب." });
     return;
   }
+
+  /* ── ولا يُكتب فيما لا يُقرأ ─────────────────────────────────────────────
+   *
+   * موظّفُ التسجيل لا يقول قولاً في مقرّرٍ لقسمٍ لم يوقّع جدولَه بعد — وإلا
+   * مرّ الحرسُ على العرض وحده وبقي البابُ مفتوحاً لمن يُرسل الطلبَ مباشرةً
+   * بلا شاشة.
+   *
+   * **والسؤالُ عن قسم المقرّر المطلوب بعينه، لا عن أوّلِ قسمٍ يملك الطلب.**
+   * فالطلبُ القديم قد يجمع مقرّرَين لقسمين، وموظّفٌ نطاقُه يشملهما كان يُسأل
+   * عن جدول أحدهما ويكتب في مقرّر الآخر: يمرّ على قسمٍ لم يوقّع لأن شريكه
+   * وقّع، أو يُمنع عن قسمٍ وقّع لأن شريكه لم يوقّع. ولذلك يُقرأ المقرّرُ قبل
+   * هذا الحرس لا بعده.
+   *
+   * وإن لم يُعرف مالكُ المقرّر — وهو حالُ سجلٍّ قديمٍ زال مقرّره من الكتالوج —
+   * رجع السؤالُ إلى القسم الذي أجاز القراءة، فلا يُفتح البابُ بلا حارس. */
+  const courseOwnerSection = (allCourses.find(row => Number(row.AdCourseId) === courseId)?.AdSectionId ?? 0) as number;
+  const guardedSection = Number(courseOwnerSection) || owningSectionInScope;
+  const writeBlocked = await registrarBlockReason(
+    req, Number(need.AdCollegeId), guardedSection, Number(need.AdTermId || 0));
+  if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
 
   const state = String(req.body?.state || "");
   if (!STUDENT_COURSE_STATES.has(state)) { res.status(400).json({ error: "حالةٌ غير معروفة." }); return; }

@@ -28,9 +28,28 @@ check(reports.includes("function PrintSheetBody("),
   "جسمُ الورقة انفصل عن غلافها، فلا يُكرَّر الختمُ في اثني عشر فرعاً");
 check(reports.includes("function PrintSheet(props: React.ComponentProps<typeof PrintSheetBody>)"),
   "والغلافُ يأخذ ما يأخذه الجسم نفسُه، فلا يفترقان عند أول حقلٍ يُضاف");
-check(reports.includes('<footer className="print-sheet-attestation">')
-  && reports.includes("<PrintSignatures approval={approval} />"),
-  "وكلُّ ورقةٍ تحمل خاناتِ توقيعها");
+check(reports.includes('<footer className="print-sheet-attestation">'),
+  "وكلُّ ورقةٍ تحمل توقيعَها");
+/* ── وعلى كلِّ صفحةٍ ماديّة، لا على أُولاها ───────────────────────────────
+ * هذه الأوراق تُقسَّم صفحاتٍ صريحة. ووضعُ الختم والتوقيع مرّةً واحدةً في ذيل
+ * المُصيّر يترك الصفحاتِ الأولى بلا علامةٍ ولا توقيع — وهي التي تُصوَّر
+ * وتُوزَّع وحدَها، فتُبطل الاحتياط كلَّه.
+ *
+ * والثابتُ في الطباعة يتكرّر على كلِّ صفحةٍ ماديّة. قِيس ذلك: طُبعت ورقةٌ بلا
+ * محتوىً البتّة على ثلاث صفحات، فحملت الصفحاتُ الثلاثُ النصَّ نفسَه. */
+check(/\.print-sheet-attested\.print-unapproved-mark\{[^}]*position:fixed/.test(printCss.replace(/\s+/g, "")),
+  "والختمُ ثابتٌ، فيتكرّر على كلِّ صفحةٍ تخرج");
+check(/\.print-sheet-attestation\{[^}]*position:fixed/.test(printCss.replace(/\s+/g, "")),
+  "والتوقيعُ كذلك");
+/* وشريطٌ واحدٌ صغير، لا كتلةُ تواقيعَ بارتفاع ١٦ ملّيمتراً تُزاحم آخِرَ صفوف
+   الصفحة أو تنزل وحدَها إلى صفحةٍ تاليةٍ فارغة. */
+check(/\.print-sheet-attested\.print-explicit-page\{[^}]*padding-block-end/.test(printCss.replace(/\s+/g, "")),
+  "ويُحجز له موضعُه في كلِّ صفحة، فلا يركب على آخِرِ صفٍّ فيها");
+/* والمضمونُ هو هو: من وقّع، ومتى، وبأيِّ رمزٍ يُطابَق بعد شهرين. */
+check(reports.includes("{committee.verifyCode}") && reports.includes("{head.verifyCode}"),
+  "ويحمل الاسمَ والتاريخَ ورمزَ التحقّق");
+check(reports.includes("بلا توقيعٍ مُثبَت"),
+  "وما لم يُوقَّع يُقال فيه ذلك، فلا يُقرأ فراغُ الشريط سهواً");
 check(reports.includes('<div className="print-unapproved-mark" aria-hidden="true">نسخة غير معتمدة</div>'),
   "وما لم يُعتمد يُقال على وجهه، لا في حاشيةٍ تُقصّ");
 
@@ -38,8 +57,7 @@ check(reports.includes('<div className="print-unapproved-mark" aria-hidden="true
 check(reports.includes('if (kind === "comprehensive" || kind === "comprehensive-branch") return <PrintSheetBody {...props} />;'),
   "والشاملُ وحدَه يُستثنى، فهو يحملهما في كل صفحةٍ من صفحاته");
 
-check(printCss.includes(".print-sheet-attestation{") && /\.print-sheet-attestation\{[^}]*break-inside:avoid/.test(printCss),
-  "وشريطُ التواقيع لا يُقطع بين صفحتين، فلا يخرج توقيعٌ بلا اسمه");
+
 
 /* ── الأرقامُ لاتينيةٌ في كل موضع ─────────────────────────────────────────
  *

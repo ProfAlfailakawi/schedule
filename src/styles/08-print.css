@@ -890,20 +890,43 @@
   }
   .print-comprehensive-page>*:not(.print-unapproved-mark){position:relative !important;z-index:1 !important}
 
-  /* ── الختمُ والتواقيعُ على كل ورقةٍ تُطبع ────────────────────────────────
-     كانا في التقرير الشامل وحده. وغلافُ `print-sheet-attested` يحملهما إلى
-     ما سواه: الختمُ ممدودٌ على الورقة كلها خلف محتواها، والتواقيعُ شريطٌ
-     واحدٌ في ذيلها لا يُقطع بين صفحتين. */
+  /* ── الختمُ والتوقيعُ على كلِّ ورقةٍ ماديّةٍ تخرج ──────────────────────────
+     كانا في التقرير الشامل وحده، فأُضيفا إلى ما سواه. ثم تبيّن أن وضعَهما
+     مرّةً واحدةً في ذيل المُصيّر لا يكفي: هذه الأوراق تُقسَّم صفحاتٍ صريحة،
+     فتخرج الصفحاتُ الأولى بلا علامةٍ ولا توقيع — وهي التي تُصوَّر وتُوزَّع
+     وحدَها، فتُبطل الاحتياط كلَّه.
+     والثابتُ في الطباعة يتكرّر على كلِّ صفحةٍ ماديّة، وهو ما تحتاجه ورقةٌ لا
+     يعرف مُصيّرُها كم صفحةً ستصير. */
   .print-sheet-attested{position:relative !important}
-  .print-sheet-attested>*:not(.print-unapproved-mark){position:relative !important;z-index:1 !important}
-  .print-sheet-attestation{
-    margin-top:5mm !important;
-    padding-top:3mm !important;
-    border-top:.6pt solid #cbd4d0 !important;
-    break-inside:avoid !important;
-    page-break-inside:avoid !important;
+  .print-sheet-attested .print-unapproved-mark{
+    position:fixed !important;
+    inset:0 !important;
   }
-  .print-sheet-attestation .print-approval-line{margin:0 0 2.5mm !important;text-align:center !important}
+  /* والشريطُ سطرٌ واحدٌ صغير لا كتلةُ تواقيع: تلك بارتفاع ١٦ ملّيمتراً تُزاحم
+     آخِرَ صفوف الصفحة أو تنزل وحدَها إلى صفحةٍ تاليةٍ فارغة. */
+  .print-sheet-attestation{
+    position:fixed !important;
+    inset-inline:0 !important;
+    inset-block-end:0 !important;
+    display:flex !important;
+    align-items:baseline !important;
+    justify-content:center !important;
+    flex-wrap:nowrap !important;
+    gap:4mm !important;
+    padding-block-start:1.2mm !important;
+    border-top:.5pt solid #cbd4d0 !important;
+    background:#fff !important;
+    font-size:6.4pt !important;
+    color:#5b6660 !important;
+    white-space:nowrap !important;
+    overflow:hidden !important;
+  }
+  .print-sheet-attestation b{font-weight:750 !important;color:#4c5652 !important}
+  .print-sheet-attestation b[data-status="accepted"]{color:#25684a !important}
+  .print-sheet-attestation b[data-status="returned"]{color:#8d6413 !important}
+  /* ويُحجز له موضعُه في كلِّ صفحةٍ منطقية — وهي صفحةٌ ماديّةٌ واحدة بحكم
+     `break-inside:avoid-page` — فلا يركب الشريطُ على آخِرِ صفٍّ فيها. */
+  .print-sheet-attested .print-explicit-page{padding-block-end:8mm !important}
   /* سطر الحال تحت العنوان: جملةٌ واحدة تقول أين تقف الورقة من الدورة. */
   .print-approval-line{
     margin:.6mm 0 0 !important;

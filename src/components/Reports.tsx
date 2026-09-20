@@ -3103,17 +3103,27 @@ function PrintSheet(props: React.ComponentProps<typeof PrintSheetBody>) {
   const { kind, approval } = props;
   if (!kind) return null;
   if (kind === "comprehensive" || kind === "comprehensive-branch") return <PrintSheetBody {...props} />;
+  const committee = approval?.signatures.find(item => item.stage === "committee");
+  const head = approval?.signatures.find(item => item.stage === "head");
   return (
     <div className="print-sheet-attested" data-approved={approval?.status === "accepted" ? "true" : undefined}>
+      {/* ── على كلِّ ورقةٍ تخرج، لا على أُولاها ─────────────────────────────
+          هذه الأوراق تُرقَّم صفحاتٍ، وصفحةٌ واحدةٌ تخرج من الرزمة بلا علامةٍ
+          ولا توقيعٍ تُبطل الاحتياط كلَّه: هي التي تُصوَّر وتُوزَّع وحدَها.
+          والثابتُ في الطباعة يتكرّر على كل صفحةٍ ماديّة، وهو ما تحتاجه ورقةٌ
+          لا يعرف مُصيّرُها كم صفحةً ستصير. */}
       {approval && approval.status !== "accepted" ? (
         <div className="print-unapproved-mark" aria-hidden="true">نسخة غير معتمدة</div>
       ) : null}
       <PrintSheetBody {...props} />
+      {/* وشريطٌ واحدٌ صغير، لا كتلةُ تواقيعَ بارتفاع ١٦ ملّيمتراً: تلك تُزاحم
+          آخِرَ صفوف الصفحة أو تنزل وحدَها إلى صفحةٍ تاليةٍ فارغة. والمضمونُ
+          هو هو — من وقّع، ومتى، وبأيِّ رمزٍ يُطابَق. */}
       <footer className="print-sheet-attestation">
-        {approval ? (
-          <p className="print-approval-line" data-status={approval.status}>{approvalScopeLine(approval)}</p>
-        ) : null}
-        <PrintSignatures approval={approval} />
+        {approval ? <b data-status={approval.status}>{approvalScopeLine(approval)}</b> : null}
+        {committee ? <span>لجنة الجدول: {committee.userName} · {printStamp(committee.at)} · {committee.verifyCode}</span> : null}
+        {head ? <span>رئيس القسم: {head.userName} · {printStamp(head.at)} · {head.verifyCode}</span> : null}
+        {!committee && !head ? <span>بلا توقيعٍ مُثبَت</span> : null}
       </footer>
     </div>
   );
