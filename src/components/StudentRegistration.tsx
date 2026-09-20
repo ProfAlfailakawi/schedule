@@ -27,7 +27,15 @@ import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, StudentCourseRejectReason, StudentCourseStateValue } from "../types";
 
 interface Props {
-  scopes: Array<{ AdCollegeId: number; AdSectionId: number; CollegeName?: string; SectionName?: string }>;
+  /**
+   * نطاقُ الحساب كما يرسله الخادم.
+   *
+   * الأسماءُ تصل في `AdCollegeName` و`AdSectionName` — وهي أسماءُ الحقول في
+   * `clientScopeDetails`، لا أسماءٌ تُخمَّن. وقراءتُها باسمٍ آخر لا تُخطئ
+   * بصوتٍ مسموع: تسقط إلى البديل فتظهر «كلية ٥» مكان اسم الكلية، ويبدو
+   * كأن الحساب يحمل نطاقاتٍ ليست له.
+   */
+  scopes: Array<{ AdCollegeId: number; AdSectionId: number; AdCollegeName?: string; AdSectionName?: string }>;
 }
 
 interface CaseCourse {
@@ -174,7 +182,7 @@ export default function StudentRegistration({ scopes }: Props) {
     const seen = new Map<number, string>();
     for (const scope of scopes) {
       const id = Number(scope.AdCollegeId);
-      if (id && !seen.has(id)) seen.set(id, String(scope.CollegeName || `كلية ${id}`));
+      if (id && !seen.has(id)) seen.set(id, String(scope.AdCollegeName || `كلية ${id}`));
     }
     return [...seen].map(([value, label]) => ({ value, label }));
   }, [scopes]);
@@ -184,7 +192,7 @@ export default function StudentRegistration({ scopes }: Props) {
     for (const scope of scopes) {
       if (collegeId && Number(scope.AdCollegeId) !== collegeId) continue;
       const id = Number(scope.AdSectionId);
-      if (id && !seen.has(id)) seen.set(id, String(scope.SectionName || `قسم ${id}`));
+      if (id && !seen.has(id)) seen.set(id, String(scope.AdSectionName || `قسم ${id}`));
     }
     return [...seen].map(([value, label]) => ({ value, label }));
   }, [scopes, collegeId]);

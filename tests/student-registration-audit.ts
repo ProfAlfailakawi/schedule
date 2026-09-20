@@ -27,6 +27,7 @@ const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 const repo = fs.readFileSync(path.join(process.cwd(), "src/db/repository.ts"), "utf8");
 const types = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8");
 const screen = fs.readFileSync(path.join(process.cwd(), "src/components/StudentRegistration.tsx"), "utf8");
+const inboxScreen = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
 
 /* ── رقمُ الحالة ────────────────────────────────────────────────────────── */
 
@@ -71,8 +72,10 @@ check(server.includes("هذا المقرّر ليس ضمن طلب الطالب."
 
 /* ── النطاق والصفة ─────────────────────────────────────────────────────── */
 
-check(server.includes("isScopeAllowed(req, Number(need.AdCollegeId), needSection)"),
+check(server.includes("isScopeAllowed(req, Number(need.AdCollegeId), candidate)"),
   "والنطاقُ يُحرس عند الكتابة أيضاً: المعرّفُ يرسله المتصفّح ولا يُصدَّق لوصوله");
+check(server.includes("const ownedByScope ="),
+  "ويُسأل عن كلِّ قسمٍ يملك الطلبَ في نطاق الحساب، لا عن قسمٍ واحدٍ يُختار له");
 check(server.includes("const canWriteRegistration"), "ومن يكتب معرَّفٌ في موضعٍ واحد");
 check(server.includes("هذا الكشف للقراءة بصفتك."), "ومن لا يكتب يُقال له ذلك، لا يُترك يضغط بلا أثر");
 
@@ -134,11 +137,22 @@ check(server.includes("if (isViewerOnlyRole(role)) return false;"),
 /* ٢) القراءةُ والكتابةُ كانتا تنسبان السجلَّ القديم إلى قسمين مختلفين: القراءةُ
       إلى مالك المقرّرات، والكتابةُ إلى قسم الطالب. فطالبٌ من قسمٍ آخرَ طلب
       مقرّراً من هذا القسم يظهر في كشفه ولا تستطيع لجنتُه أن تكتب فيه. */
-check(server.includes("const needSurveySection = "), "ونسبةُ الطلب إلى قسمه اشتقاقٌ واحد");
-check((server.match(/needSurveySection\(/g) || []).length === 2,
-  "تقرأ به الشاشةُ وتكتب به — موضعان لا ثالثَ لهما، فلا يُعرض ما لا يُكتب فيه");
+check(server.includes("const sectionOwnsNeed = "), "ونسبةُ الطلب إلى قسمه قاعدةٌ واحدة");
+check((server.match(/sectionOwnsNeed\(/g) || []).length === 2,
+  "تقرأ بها الشاشةُ وتكتب بها — موضعان لا ثالثَ لهما، فلا يُعرض ما لا يُكتب فيه");
 check(!server.includes("Number(need.surveySectionId || need.AdSectionId || 0);"),
   "ولم يبقَ الاشتقاقُ القديمُ في مسار الكتابة");
+
+/* والطلبُ القديم يُنسب إلى **كلِّ** قسمٍ يملك مقرّراً من مقرّراته، لا إلى
+   أوّلِهم. وهو موضعٌ كسرتُه ثم أصلحتُه: «أولُ مالك» كان يُخفي طلبَ طالبٍ
+   طلب مقرّراً من قسمين عن ثانيهما بصمت — فيرى القسمُ عدداً أقلّ ولا يعرف
+   لماذا، ولا شيء في الشاشة يقول إن طلباً سقط. */
+check(server.includes("courses.some(row => Number(row.AdSectionId) === sectionId"),
+  "والقديمُ يخصّ كلَّ قسمٍ يملك مقرّراً من المطلوب");
+check(!/for \(const id of need\.courseIds \|\| \[\]\) \{[\s\S]{0,120}return section;/.test(server),
+  "ولم يبقَ «أولُ مالكٍ» الذي كان يُخفي الطلبَ عن ثانيهما");
+check(server.includes("const anyKnownOwner") && server.includes("!anyKnownOwner"),
+  "وطلبٌ لا يُعرف مالكُ أيٍّ من مقرّراته يبقى عند قسم صاحبه، فلا يضيع بلا قسم");
 
 /* ٣) قراران في لحظةٍ واحدةٍ كان أحدُهما يمحو الآخر: كلٌّ يقرأ الوثيقةَ ثم
       يكتبها كاملة. والشاشةُ تسمح به لأنها تُعطّل المقرّرَ المشغولَ وحدَه. */
@@ -146,6 +160,24 @@ check(repo.includes("firestoreDb.runTransaction(async transaction => {"),
   "وكتابةُ الحالة معاملةٌ واحدة، فلا يمحو قرارٌ قراراً");
 check(repo.includes("const doc = await transaction.get(ref);") && repo.includes("transaction.set(ref, merged);"),
   "تقرأ وتكتب داخلها، فمن يخسر السباقَ يُعاد دمجُه");
+
+
+/* ── اسمُ النطاق يُقرأ من حقله ─────────────────────────────────────────── */
+
+/* الخادمُ يرسل الأسماء في `AdCollegeName` و`AdSectionName` (انظر
+   `clientScopeDetails`). وقراءتُها باسمٍ مخترعٍ لا تُخطئ بصوتٍ مسموع: تسقط
+   إلى البديل فتظهر «كلية ٥» مكان اسم الكلية — ويبدو للناظر كأن الحساب يحمل
+   نطاقاتٍ ليست له. */
+check(server.includes("AdCollegeName: collegeById.get(collegeId)"),
+  "الخادمُ يرسل اسم الكلية في `AdCollegeName`");
+check(server.includes("AdSectionName: sectionName ?? sectionById.get(sectionId)"),
+  "واسمَ القسم في `AdSectionName`");
+for (const [file, source] of [["StudentRegistration", screen], ["InstructorInbox", inboxScreen]] as const) {
+  check(source.includes("scope.AdCollegeName ||"), `و${file} تقرأ الكلية من حقلها`);
+  check(source.includes("scope.AdSectionName ||"), `و${file} تقرأ القسم من حقله`);
+  check(!/scope\.(CollegeName|SectionName)\b/.test(source),
+    `ولا تقرأ ${file} باسمٍ لا يرسله الخادم`);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
