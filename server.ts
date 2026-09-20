@@ -12333,16 +12333,26 @@ const grantedPermissions = async (req: AuthenticatedRequest): Promise<number[]> 
  * طلب مقرّراً من هذا القسم يظهر في كشفه ولا تستطيع لجنتُه أن تكتب فيه — كشفٌ
  * يُعرض ولا يُعمل به.
  */
-const needSurveySection = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
-                           courses: Array<{ AdCourseId: number; AdSectionId: number }>): number => {
+const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
+                         courses: Array<{ AdCourseId: number; AdSectionId: number }>,
+                         sectionId: number): boolean => {
+  /* الطلبُ الحديث يحمل قسمَ استبياره صراحةً، فهو وحده الحَكَم. */
   const declared = Number(need.surveySectionId || 0);
-  if (declared) return declared;
-  const owner = new Map(courses.map(row => [Number(row.AdCourseId), Number(row.AdSectionId)]));
-  for (const id of need.courseIds || []) {
-    const section = owner.get(Number(id));
-    if (section) return section;
-  }
-  return Number(need.AdSectionId || 0);
+  if (declared) return declared === sectionId;
+
+  /* والقديمُ — وهو ما كُتب قبل وجود ذلك الحقل — يُنسب إلى **كلِّ** قسمٍ يملك
+     مقرّراً من مقرّراته المطلوبة. وهذا مقصودٌ ولا يُختصر إلى واحد: طالبٌ طلب
+     مقرّراً من الإسلامية وآخرَ من اللغة العربية يخصّ القسمين معاً، وكلٌّ
+     منهما يحتاج أن يراه ليقرّر في مقرّره هو.
+     واختصارُه إلى «أولِ مالك» يُخفي الطلبَ عن القسم الثاني بصمت. */
+  const owned = courses.some(row => Number(row.AdSectionId) === sectionId
+    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
+  if (owned) return true;
+
+  /* ولو لم يُعرف مالكُ أيٍّ من مقرّراته — مقرّرٌ حُذف من الكتالوج مثلاً — فلا
+     يضيع الطلبُ بلا قسم: يبقى عند قسم صاحبه. */
+  const anyKnownOwner = courses.some(row => (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
+  return !anyKnownOwner && Number(need.AdSectionId || 0) === sectionId;
 };
 
 const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "registered", "rejected"]);
@@ -12371,7 +12381,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
   /* القاعدةُ نفسُها التي يستعملها مركزُ الذكاء: الطلبُ لقسم الاستبيان الذي
      استقبله، ويُستردّ للسجلّات القديمة من ملكيّة مقرّراتها. */
   const needs = (allTermNeeds as any[]).filter(need =>
-    needSurveySection(need, courses as any[]) === sectionId);
+    sectionOwnsNeed(need, courses as any[], sectionId));
 
   const courseById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), row]));
   const sectionNameById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
@@ -12435,8 +12445,16 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
   if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
   /* النطاقُ يُحرس هنا أيضاً: المعرّفُ يُرسله المتصفّح، ولا يُصدَّق لأنه وصل.
      وبالاشتقاق نفسِه الذي تقرأ به الشاشةُ، وإلا عُرض ما لا يُكتب فيه. */
-  const needSection = needSurveySection(need, await Repository.getCourses() as any[]);
-  if (!isScopeAllowed(req, Number(need.AdCollegeId), needSection)) {
+  /* الكتابةُ تُحرس بالقاعدة نفسها التي تُعرض بها: أيُّ قسمٍ في نطاق الحساب
+     يملك هذا الطلبَ يستطيع أن يكتب فيه — فلا يُعرض ما لا يُكتب فيه، ولا
+     يُكتب فيما لا يُعرض. */
+  const allCourses = await Repository.getCourses() as any[];
+  const ownedByScope = (await Repository.getSections() as any[])
+    .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
+    .map(row => Number(row.AdSectionId))
+    .some(candidate => sectionOwnsNeed(need, allCourses, candidate)
+      && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
+  if (!ownedByScope) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
   }
