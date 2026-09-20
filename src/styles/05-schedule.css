@@ -8307,3 +8307,13 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .hall-barter-log-row{grid-template-columns:auto minmax(0,1fr) auto;gap:6px}
   .hall-barter-log-window,.hall-barter-log-date{grid-column:1/-1;white-space:normal}
 }
+
+/* فصلٌ انتهى: خبرٌ لا تحذير. الجدولُ كما هو يُقرأ ويُطبع، وإنما أُغلق بابُ
+   الكتابة — فلا يُصرخ بالأحمر على شيءٍ لم يُخطئ فيه أحد. */
+.pending-room-notice[data-tone="frozen"]{
+  border-color:var(--line-strong);
+  background:var(--surface-2);
+  color:var(--muted);
+}
+.pending-room-notice[data-tone="frozen"] svg{color:var(--muted)}
+.pending-room-notice[data-tone="frozen"] b{color:var(--ink);font-weight:750}

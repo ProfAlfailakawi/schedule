@@ -1,0 +1,109 @@
+/**
+ * ── فصلٌ انتهى لا يُعدَّل ────────────────────────────────────────────────────
+ *
+ * كانت علامةُ «منتهٍ» تُعرض ولا تمنع شيئاً: تُقرأ في شاشة الفصول وفي عنوان
+ * الجدول، ثم يُحفظ فيه ما شاء من شاء. فالمقرّرُ الذي انتهى وسُلّمت درجاتُه
+ * يمكن أن يتغيّر وقتُه بعد شهرين، ولا يعرف أحدٌ أن ما يقرؤه اليومَ ليس ما جرى
+ * في حينه — وهو أخطرُ ما يقع في سجلٍّ أكاديميّ: لا يشتكي منه أحد.
+ *
+ * ولجنةُ الجدول تعمل فيه: هي التي تجرّب وتصحّح. ومن سواها يقرأ ويطبع ويستعلم.
+ */
+
+import fs from "fs";
+import path from "path";
+
+let passed = 0, failed = 0;
+function check(condition: boolean, name: string) {
+  if (condition) { passed++; console.log(`\x1b[32m✓ ${name}\x1b[0m`); }
+  else { failed++; console.log(`\x1b[31m✗ ${name}\x1b[0m`); }
+}
+
+const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+const workspace = fs.readFileSync(path.join(process.cwd(), "src/components/Schedules.tsx"), "utf8");
+
+/* ── الحارسُ واحدٌ، في الموضع الذي يمرّ به كلُّ تعديل ──────────────────── */
+
+const guard = server.slice(
+  server.indexOf("async function scheduleLockRefusal("),
+  server.indexOf("async function noteScheduleMutation("),
+);
+check(guard.length > 300, "حارسُ التعديل مقروءٌ للتدقيق");
+check(guard.includes("req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number,"),
+  "ويعرف من يطلب، لا النطاقَ وحدَه — فالمنعُ يختلف بالصفة");
+check(guard.includes('term?.AdTermClosed === true && !isCommittee'),
+  "وفصلٌ انتهى لا يُعدَّل إلا من لجنة الجدول");
+/* ── واللجنةُ تُعرف بصفتها المكتوبة، لا بالافتراض ──────────────────────────
+ * `signatureStage` تسقط إلى `committeeChair` حين لا تُعرف الصفة، فحسابٌ بلا
+ * صفةٍ مكتوبة يُقرأ «لجنة». وحسابُ الإدارة الجذر من هؤلاء عن قصد — الترحيلُ
+ * يستثنيه — فكان يمرّ من فوق التجميد كلِّه بلا أن يرفع العلامة، ويسقط معه
+ * البابُ الظاهرُ المسجَّل الذي وُضع ليكون الطريقَ الوحيد. */
+check(guard.includes("const isCommittee = isAcademicRole(role) && signatureStage(role) === \"committee\";"),
+  "وتُشترط صفةٌ مكتوبةٌ صراحةً، فلا يمرّ حسابٌ بلا صفةٍ لأن الغيابَ يسقط إلى اللجنة");
+check(guard.includes("انتهى هذا الفصل."),
+  "ويُقال السببُ بلفظه، لا «غير مسموح»");
+
+/* والعلَمُ الصريحُ وحدَه: `isTermClosed` تعدّ كلَّ فصلٍ ليس الأحدثَ منتهياً،
+   فالأخذُ بها هنا يُجمّد عشرَ سنواتٍ من الفصول دفعةً واحدة، ولم يُطلب ذلك. */
+check(!guard.includes("isTermClosed("),
+  "ولا يُجمَّد فصلٌ لم يُعلنه أحد، فالعلَمُ الصريحُ وحدَه يمنع");
+
+/* والترتيبُ شرط: قفلُ الفصل قبل قفل الإرسال، فالمنتهي ممنوعٌ في كل حال. */
+check(guard.indexOf("AdTermClosed") < guard.indexOf("getScheduleApproval"),
+  "ويُسأل عن الفصل أولاً، فلا يمرّ منتهٍ لأن جدوله غيرُ مُرسَل");
+
+/* ── وكلُّ بابٍ يكتب يمرّ به ──────────────────────────────────────────── */
+
+/* كان ثلاثةُ أبوابٍ تكتب بلا حارسٍ أصلاً: استثناءُ الأسبوع إضافةً وحذفاً.
+   وإلغاءُ محاضرةٍ في فصلٍ منتهٍ تغييرٌ لما جرى فعلاً. */
+for (const door of [
+  'app.post("/api/schedules"',
+  'app.put("/api/schedules/:id"',
+  'app.delete("/api/schedules/:id"',
+  'app.post("/api/schedules/move-batch"',
+  'app.post("/api/schedules/import"',
+  'app.post("/api/schedules/replace-instructor"',
+  'app.post("/api/schedules/copy"',
+  'app.post("/api/schedules/:id/exceptions"',
+  'app.delete("/api/schedules/:id/exceptions/:exceptionId"',
+]) {
+  const at = server.indexOf(door);
+  /* وجسمُ المسار ينتهي عند المسار الذي يليه: نافذةٌ ثابتةُ الطول تبتلع حارسَ
+     جارِه، فيمرّ بابٌ مفتوحٌ على أنه محروس. */
+  const next = server.indexOf("\napp.", at + 1);
+  const body = server.slice(at, next > at ? next : server.length);
+  check(at > 0 && body.includes("scheduleLockRefusal(req,"), `${door} يمرّ بالحارس`);
+}
+
+/* ── ويُقال قبل المحاولة، لا بعدها ────────────────────────────────────── */
+
+/* من يكتشف المنعَ عند الحفظ يكون قد أعاد بناءَ موعدٍ كاملاً في نموذجٍ لن
+   يُقبل. */
+check(workspace.includes("const termFrozen = useMemo(() => {")
+  && workspace.includes('return term?.AdTermClosed === true && approvalStage !== "committee";'),
+  "والشاشةُ تقرأ القاعدةَ نفسَها التي يقرؤها الخادم");
+check(workspace.includes('data-tone="frozen"') && workspace.includes("انتهى هذا الفصل."),
+  "وتقولها قبل أن يُبنى موعدٌ لن يُحفظ");
+/* ولا يُخفى شيء: القراءةُ والطباعةُ والاستعلامُ كما هي. */
+check(workspace.includes('<b>لجنةُ الجدول</b>'),
+  "وتقول من يعمل فيه، فلا يبحث القارئُ عمّن يسأل");
+
+/* ── ويُقال السببُ الحقيقيُّ أولاً ────────────────────────────────────────
+ * كان تعديلُ موعدٍ في فصلٍ مجمَّدٍ يُردّ برسالةٍ عن حقلٍ ناقصٍ أو تعارضٍ في
+ * قاعة، فيُصلح القارئُ ما ليس بعطل ثم يُردّ ثانيةً بالسبب الحقيقيّ. والرسالةُ
+ * الأولى ليست خطأً في ذاتها، لكنها تُرسله في طريقٍ لا يُوصل. */
+const editDoor = server.slice(
+  server.indexOf('app.put("/api/schedules/:id"'),
+  server.indexOf('app.delete("/api/schedules/:id"'),
+);
+check(editDoor.indexOf("const frozenSource = await scheduleLockRefusal(")
+  < editDoor.indexOf("الرجاء إدخال الحقول المطلوبة بالأحمر"),
+  "وقفلُ الصفّ القائم يُسأل قبل التحقّق من الحقول");
+check(editDoor.indexOf("const frozenSource = await scheduleLockRefusal(")
+  < editDoor.indexOf("يوجد تعارض يمنع التعديل"),
+  "وقبل التحقّق من التعارضات");
+/* وقفلُ النطاق المنقول إليه يبقى بعدُ، فهو لا يُعرف قبل قراءة حقول الوجهة. */
+check(editDoor.includes("const editLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);"),
+  "ويبقى قفلُ الوجهة في موضعه، فلا يُقرأ قبل أن تُعرف");
+
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);
