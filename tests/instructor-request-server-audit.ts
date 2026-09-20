@@ -1,0 +1,133 @@
+/**
+ * ── تدقيق دورة طلب الأستاذ في الخادم ────────────────────────────────────────
+ *
+ * ما يلي حدودٌ اتُّفق عليها صراحةً، وكلُّ واحدٍ منها من النوع الذي لا يُكتشف
+ * خرقُه بالنظر إلى الشاشة: قاعةٌ تسرّبت إلى صفحة الأستاذ تبدو سطراً عادياً،
+ * وقرارٌ مسجّلٌ بلا أثرٍ في الجدول يبدو قراراً ناجحاً، ورابطٌ يفتح جدولَ غيره
+ * يبدو رابطاً يعمل. فتُثبَّت هنا نصّاً، لأن الاختبار الحيّ لا يمرّ على كل
+ * مسارٍ في كل تعديل.
+ *
+ * وهو تدقيقُ مصدرٍ لا تدقيقُ سلوك: يقول «القاعدة مكتوبة»، ولا يقول «جُرّبت».
+ * والسلوكُ نفسُه جُرّب حيّاً على خادمٍ يعمل ببيانات تجريبية، وما لم يُجرَّب
+ * منه مذكورٌ في وصف طلب الدمج بلا تجميل.
+ */
+
+import fs from "fs";
+import path from "path";
+
+let passed = 0, failed = 0;
+function check(condition: boolean, name: string) {
+  if (condition) { passed++; console.log(`\x1b[32m✓ ${name}\x1b[0m`); }
+  else { failed++; console.log(`\x1b[31m✗ ${name}\x1b[0m`); }
+}
+
+const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+const types = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8");
+const repo = fs.readFileSync(path.join(process.cwd(), "src/db/repository.ts"), "utf8");
+const inbox = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
+
+/* ── المسارات ───────────────────────────────────────────────────────────── */
+
+check(server.includes('app.post("/api/instructor-requests/issue"'), "إصدارُ الروابط له مسار");
+check(server.includes('app.get("/api/instructor-requests"'), "وارِدُ القسم له مسار");
+check(server.includes('app.post("/api/instructor-requests/:id/decide"'), "قرارُ القسم له مسار");
+check(server.includes('app.get("/api/public/request/:token"'), "بابُ الأستاذ يُقرأ");
+check(server.includes('app.post("/api/public/request/:token"'), "ويُرسَل منه");
+check(server.includes('app.post("/api/public/request/:token/check"'), "والموضعُ يُفحص قبل الإرسال");
+check(server.includes('app.get("/r/:token"'), "وللأستاذ صفحةٌ يفتحها من هاتفه");
+
+/* ── الرابطُ هو الهويّة ─────────────────────────────────────────────────── */
+
+check(server.includes('if (link.kind !== "request")'), "رابطٌ من نوعٍ آخر لا يفتح طلباً");
+check(server.includes("link.revoked"), "ورابطٌ موقوفٌ لا يُفتح");
+check(server.includes("انتهت صلاحية هذا الرابط"), "ورابطٌ انتهت مدّتُه لا يُفتح");
+check(server.includes("getInstructorRequestByLink"), "والطلبُ يُقرأ بالرابط، لا برقمٍ يُرسله صاحبُه");
+/* أخطرُ ما في بابٍ بلا حساب: أن يُرسَل معرّفُ موعدٍ لا يخصّ صاحبَ الرابط. */
+check(server.includes("أحد المواعيد ليس ضمن جدولك."), "وموعدٌ ليس ضمن الطلب يُردّ ولو أُرسل معرّفُه");
+check(server.includes("هذا الموعد ليس ضمن جدولك."), "وكذلك في الفحص، لا في الإرسال وحده");
+check(server.includes("المقرّر المضاف ليس من مقرّرات قسمك."), "والمقرّرُ المضاف من كتالوج القسم وحده");
+check(!server.includes('app.get("/api/public/request/:token", requireAuth'), "ولا حسابَ يُطلب: الرابطُ هو المفتاح");
+
+/* ── القاعةُ لا تغادر ──────────────────────────────────────────────────── */
+
+check(server.includes("function stripForInstructor"), "تجريدُ ما لا يخصّ الأستاذ في دالّةٍ واحدة");
+check(server.includes("const { roomCandidates, ...rest } = item;"), "والمرشّحاتُ تُنزع نزعاً، لا تُستثنى بالنسيان");
+check(/after: rest\.after \? \{ \.\.\.rest\.after, room: undefined \}/.test(server),
+  "و«طلب» لا تحمل قاعةً أبداً");
+check(server.includes("stripForInstructor(await judgeRequestItems(request))"), "والقراءةُ تمرّ بالتجريد");
+check(server.includes("stripForInstructor(saved)"), "والإرسالُ كذلك — لا مخرجَ بلا تجريد");
+/* مسارُ الفحص يخاطب صفحةَ الأستاذ أيضاً، فلا يُرسل مرشّحاته. */
+check(!/\/check[\s\S]{0,3000}roomCandidates: verdict\.roomCandidates/.test(server),
+  "ومسارُ الفحص لا يرسل مرشّحاتِ القاعات");
+
+/* ── الحكمُ يُعاد حسابُه في الخادم ─────────────────────────────────────── */
+
+check(server.includes("async function judgeRequestItems"), "الحكمُ يُبنى في الخادم");
+check(server.includes("const judged = await judgeRequestItems({ ...resolved.request, items });"),
+  "ويُعاد بناؤه على ما وصل، لا يُقبل ما يصحبه");
+check(server.includes('item.verdict === "conflict"') && server.includes("itemIndex: blocked"),
+  "وما مُنع لا يُقبل، ويُقال أيُّ بندٍ هو");
+check(server.includes("اكتب سبب الاستثناء"), "والاستثناءُ بلا حجّةٍ ليس استثناءً");
+check(server.includes("windowOpen: open") || server.includes("windowOpen: requestWindowOpen"),
+  "والنافذةُ تُقاس بالخادم لا بساعة المتصفّح");
+check(server.includes("انتهت مدّة استقبال الطلبات لهذا الفصل."), "وخارجَها لا يُقبل إرسال");
+
+/* ── «ثُبّت» لا تُقال إلا إذا وقعت ─────────────────────────────────────── */
+
+check(server.includes("الجدول لا يطابق ما طُلب بعد."), "قرارُ التثبيت يُصدَّق بالجدول نفسه");
+check(server.includes("لم يُحذف الموعد من الجدول بعد."), "والحذفُ يُصدَّق بغياب الصفّ");
+check(server.includes("await Repository.getScheduleById(Number(item.rowId))"),
+  "والتصديقُ قراءةٌ حيّة، لا لقطةٌ قد تكون شاخت");
+/* الشاشةُ ترتّب الخطوتين، لكنها ليست الحارس: نداءٌ مباشرٌ كان يكتب «ثُبّت»
+   والجدولُ لم يتحرّك، فيقرأ الأستاذ أن طلبه نُفِّذ وهو لم يُنفَّذ. */
+check(server.includes('if (state === "fixed" && item.action !== "add")'),
+  "والحارسُ في الخادم، لا في الشاشة وحدها");
+check(server.includes("اختر سبب الرفض."), "والرفضُ بلا سببٍ مرفوض");
+check(server.includes('allowedReasons'), "والأسبابُ قائمةٌ مغلقةٌ تُعدّ عبر الفصول");
+
+/* ── لا يُكتب في الجدول من هنا ─────────────────────────────────────────── */
+
+const decideRoute = server.slice(
+  server.indexOf('app.post("/api/instructor-requests/:id/decide"'),
+  server.indexOf('app.get("/api/public/request/:token"')
+);
+check(decideRoute.length > 200, "مسارُ القرار مقروءٌ للتدقيق");
+check(!/Repository\.(createSchedule|updateSchedule|deleteSchedule)\b/.test(decideRoute),
+  "ومسارُ القرار لا يكتب في الجدول: التثبيتُ يمرّ بمسار الحفظ نفسه");
+check(inbox.includes('`/api/schedules/${item.rowId}`') && inbox.includes('method: "PUT"'),
+  "والشاشةُ تستدعي مسارَ الحفظ الحقيقي، فترث تحقّقَه وتقريرَ تغييراته");
+check(inbox.includes("الإضافة تُفتح في ورشة الجدول"),
+  "والإضافةُ تُفتح في الورشة: قاعةٌ وشعبةٌ ليستا من اختيار الأستاذ، ولا تُخترعان");
+
+/* ── النطاق ────────────────────────────────────────────────────────────── */
+
+check((server.match(/isScopeAllowed\(req, collegeId, sectionId\)/g) || []).length >= 2,
+  "ولا يُصدر ولا يُقرأ وارِدُ قسمٍ خارج نطاق الحساب");
+check(server.includes("isScopeAllowed(req, Number(stored.AdCollegeId), Number(stored.AdSectionId))"),
+  "ولا يُقرَّر في طلبٍ خارج النطاق");
+check(server.includes("تاريخ الإغلاق في الماضي."),
+  "ونافذةٌ انتهت قبل أن تبدأ تُردّ: رابطٌ مغلقٌ بلا سببٍ يُعيد الأستاذ إلى الهاتف");
+
+/* ── السجلّ ────────────────────────────────────────────────────────────── */
+
+check(types.includes("export interface InstructorRequest"), "للطلب كيانٌ معرَّف");
+check(types.includes("ليس مخزناً موازياً للجدول"), "ومكتوبٌ فيه أنه ليس مخزناً موازياً");
+check(types.includes("InstructorRequestEvent"), "وله خطٌّ زمنيٌّ يقرؤه صاحبُه");
+check(repo.includes('collection("instructorRequests")'), "وله مجموعةٌ في المخزن");
+check(repo.includes("getInstructorRequestByLink"), "تُقرأ بالرابط");
+
+/* ── صفحةُ الأستاذ ─────────────────────────────────────────────────────── */
+
+const page = server.slice(server.indexOf("function instructorRequestPage"), server.indexOf('app.get("/r/:token"'));
+check(page.includes("مسودة · غير معتمدة · لا تُعتبر تكليفاً"),
+  "الصفحةُ تحمل حالتَها: الصورةُ تُرسل وتُقرأ اعتماداً إن لم تحملها");
+check(page.includes("@media print"), "وتبقى الحالةُ في الطباعة");
+check(!/قاعة|AdRoomCode|AdRoomHall|roomCandidates/.test(page.replace(/مدّةُ المحاضرة/g, "")),
+  "ولا اسمَ قاعةٍ في الصفحة كلها");
+check(page.includes("ينتهي ") && page.includes("مدّةُ المحاضرة من اللائحة"),
+  "والنهايةُ تُعرض محسوبةً ولا تُسأل");
+check(page.includes('fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check"'),
+  "والحكمُ يُسأل عنه الخادمُ عند كل تغيير");
+
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

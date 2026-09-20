@@ -13544,9 +13544,10 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الكلية والقسم والفصل." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "هذا القسم خارج نطاقك." }); return; }
 
-  const [stored, instructors] = await Promise.all([
+  const [stored, instructors, scopeRows] = await Promise.all([
     Repository.getInstructorRequests(collegeId, sectionId, termId),
     Repository.getInstructors(),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
   ]);
   const nameOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
   const mobileOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorMobile || "")]));
@@ -13570,8 +13571,13 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
     settled: rows.filter(row => row.status === "settled").length,
   };
 
+  /* الصفوفُ الحاليّة تُرسل كاملةً مع الوارد، لا ليُعرض منها شيء، بل ليبني
+     الزرُّ «ثبّت» حمولةَ الحفظ من الصفّ الحقيقي ثم يغيّر فيه اليومَ والوقت
+     وحدَهما. والحفظُ بعدها هو مسارُ `/api/schedules` نفسه بكل تحقّقه وتدقيقه
+     وتقريرِ تغييراته — فلا يُكتب في الجدول من هنا، ولا يُعاد بناءُ صفٍّ من
+     لقطةٍ نصّية قد تكون شاخت. */
   res.setHeader("Cache-Control", "no-store");
-  res.json({ rows, totals });
+  res.json({ rows, totals, currentRows: scopeRows });
 });
 
 /* ── قرارُ القسم على بند ─────────────────────────────────────────────────── */
@@ -13605,6 +13611,37 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
         day: String(entry?.day || ""), start: String(entry?.start || ""), end: String(entry?.end || ""),
       })).filter(entry => entry.day && entry.start && entry.end)
     : [];
+
+  /* ── «ثُبّت» لا تُقال إلا إذا وقعت ────────────────────────────────────────
+   *
+   * التثبيتُ خطوتان: حفظٌ حقيقيٌّ عبر `/api/schedules`، ثم تسجيلُ القرار هنا.
+   * والشاشةُ تُرتّبهما فلا تسجّل إن أخفق الحفظ — لكن الشاشةَ ليست الحارس. أيُّ
+   * نداءٍ مباشرٍ لهذا المسار كان يستطيع أن يكتب «ثُبّت» والجدولُ لم يتحرّك،
+   * فيقرأ الأستاذُ في خطّه الزمنيّ أن طلبه نُفِّذ وهو لم يُنفَّذ. وكذبةٌ كهذه
+   * لا تُكتشف بالنظر إلى الشاشة: كلُّ شيءٍ فيها يبدو سليماً.
+   *
+   * فيُسأل الجدولُ نفسُه قبل التسجيل. الحذفُ يُصدَّق بغياب الصفّ، والتعديلُ
+   * بمطابقة أيامه ووقته لما طُلب. وما لم يُصدَّق يُردّ بسببه، فيعرف المنسّق
+   * أن عليه إعادة الحفظ لا إعادة الضغط.
+   */
+  if (state === "fixed" && item.action !== "add") {
+    const live = item.rowId == null ? undefined : await Repository.getScheduleById(Number(item.rowId));
+    if (item.action === "delete") {
+      if (live) { res.status(409).json({ error: "لم يُحذف الموعد من الجدول بعد. احذفه أولاً ثم سجّل القرار." }); return; }
+    } else {
+      if (!live) { res.status(409).json({ error: "لم يعد هذا الموعد موجوداً في الجدول." }); return; }
+      const want = item.slots || [];
+      const wantDays = new Set(want.map(slot => String(slot.day)));
+      const sameDays = (["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const)
+        .every(day => Boolean((live as any)[day]) === wantDays.has(day));
+      const sameTime = String(live.fstarttime) === String(want[0]?.start || "")
+        && String(live.fendtime) === String(want[0]?.end || "");
+      if (!sameDays || !sameTime) {
+        res.status(409).json({ error: "الجدول لا يطابق ما طُلب بعد. احفظ التعديل أولاً ثم سجّل القرار." });
+        return;
+      }
+    }
+  }
 
   const now = new Date().toISOString();
   const by = roleLabel(req.user?.Role) || "القسم";
@@ -13775,6 +13812,268 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
 
   res.setHeader("Cache-Control", "no-store");
   res.json({ request: stripForInstructor(saved), changed });
+});
+
+/**
+ * ── صفحةُ الأستاذ ───────────────────────────────────────────────────────────
+ *
+ * تُبنى في الخادم كبقيّة الأبواب العامة، لا في حزمة التطبيق: الأستاذ يفتحها
+ * من واتساب على هاتفه مرّةً أو مرّتين في الفصل، وتحميلُ تطبيقٍ كاملٍ لأجل
+ * ذلك ثمنٌ يدفعه هو بلا مقابل.
+ *
+ * وما فيها مقصودٌ كما هو:
+ *   - شارةُ «مسودة، غير معتمدة» فوق كل شيء، وتبقى في الطباعة وفي لقطة الشاشة،
+ *     لأن الصورةَ تُرسل إلى غيره وتُقرأ اعتماداً إن لم تحمل حالتَها.
+ *   - يكتب البدايةَ ويختار أيامَه، ولا يُسأل عن النهاية: اللائحةُ تعرفها.
+ *   - لا اسمَ قاعةٍ في الصفحة كلها. «الوقت متاح» أو «غير متاح» ومعه بدائل.
+ *   - خطٌّ زمنيٌّ لطلبه هو: متى أُنشئ الرابط، ومتى فُتح، ومتى أرسل، وما ثُبّت
+ *     وما رُفض ولماذا. فلا يُقال بعدها «أنتم ما سويتوا شيئاً»، ولا يُقال له
+ *     «أرسلنا» وهو لم يفتح.
+ */
+function instructorRequestPage(token: string, nonce: string): string {
+  return `<!doctype html><html lang="ar" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>جدولي — طلب تعديل</title>
+<style>
+:root{--ink:#16281f;--muted:#5d6f66;--muted2:#8a9a92;--line:#dde5e0;--bg:#f4f7f5;--card:#fff;
+--ok:#2e7d5b;--warn:#b8860b;--bad:#b3261e;--accent:#2e7d5b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,"Segoe UI",Tahoma,sans-serif;
+-webkit-text-size-adjust:100%}
+.wrap{max-width:720px;margin:0 auto;padding:16px}
+.state{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;
+background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-weight:700;font-size:14px;margin-bottom:14px}
+.state[data-approved="1"]{background:#e8f5ee;border-color:#bfe3d0;color:var(--ok)}
+h1{font-size:20px;margin:0 0 2px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.card[data-act="delete"]{opacity:.62}
+.row-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:6px}
+.row-head b{font-size:16px}
+.row-head small{color:var(--muted);font-size:12px}
+.now{color:var(--muted);font-size:13px;margin:0 0 10px}
+.pick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.pick button{flex:1;min-width:72px;padding:9px 6px;border-radius:11px;border:1px solid var(--line);
+background:#fff;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.pick button[aria-pressed=true]{border-color:var(--accent);background:#eef6f1;color:var(--ink);font-weight:700}
+.edit{border-top:1px dashed var(--line);padding-top:10px;margin-top:4px}
+.days{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px}
+.days button{flex:1;min-width:52px;padding:8px 4px;border-radius:10px;border:1px solid var(--line);
+background:#fff;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.days button[aria-pressed=true]{border-color:var(--accent);background:#eef6f1;color:var(--ink);font-weight:700}
+label.time{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+label.time input{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);font:inherit;background:#fff}
+.ends{font-size:13px;color:var(--muted2);margin:7px 0 0}
+.verdict{margin:9px 0 0;font-size:13px;padding:9px 11px;border-radius:11px;display:none}
+.verdict[data-tone=ok]{display:block;background:#e8f5ee;color:var(--ok)}
+.verdict[data-tone=warn]{display:block;background:#fff8e1;color:#7a5c00}
+.verdict[data-tone=bad]{display:block;background:#fdeceb;color:var(--bad)}
+.alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.alts button{padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;
+font:inherit;font-size:13px;cursor:pointer}
+textarea{width:100%;margin-top:9px;padding:10px;border-radius:10px;border:1px solid var(--line);
+font:inherit;font-size:14px;min-height:58px;background:#fff;display:none}
+textarea[data-show="1"]{display:block}
+.send{position:sticky;bottom:0;padding:14px 0 18px;background:linear-gradient(transparent,var(--bg) 24%)}
+.send button{width:100%;padding:15px;border-radius:14px;border:0;background:var(--accent);color:#fff;
+font:inherit;font-size:16px;font-weight:700;cursor:pointer}
+.send button:disabled{opacity:.5;cursor:not-allowed}
+.err{background:#fdeceb;color:var(--bad);padding:11px 13px;border-radius:11px;margin-bottom:12px;font-size:14px}
+.tl{list-style:none;margin:20px 0 0;padding:0;border-top:1px solid var(--line);padding-top:14px}
+.tl li{display:flex;gap:10px;padding:7px 0;font-size:13px;color:var(--muted)}
+.tl li b{color:var(--ink);font-weight:700}
+.tl time{color:var(--muted2);font-size:12px;flex:none}
+.done{text-align:center;padding:44px 18px}
+.done .tick{width:58px;height:58px;border-radius:50%;background:var(--ok);color:#fff;
+font-size:30px;line-height:58px;margin:0 auto 14px}
+@media print{.pick,.edit,.send,.alts{display:none!important}}
+</style></head><body><div class="wrap" id="host">يفتح جدولك…</div>
+<script nonce="${nonce}">(function(){
+var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[];
+var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
+var LONG={fmonday:80,fwednesday:80},SHORT=50;
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
+return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function mins(t){var p=String(t||"0:0").split(":");return (+p[0]||0)*60+(+p[1]||0)}
+function clock(m){m=Math.min(m,20*60);return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")}
+/* النهاية تُحسب كما تحسبها اللائحة في الخادم بالضبط. وهي تُعرض هنا راحةً
+   للقارئ لا حُكماً: الخادمُ يعيد حسابها ولا يقبل ما تقوله الصفحة. */
+function endOf(days,start){if(!days.length||!start)return "";
+var m=0;days.forEach(function(d){m=Math.max(m,LONG[d]||SHORT)});return clock(mins(start)+m)}
+function fmtDays(days){return days.map(function(d){
+var f=DAYS.filter(function(x){return x[0]===d})[0];return f?f[1]:d}).join(" · ")}
+function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
+d.toLocaleDateString("ar-KW",{month:"long",day:"numeric"})+" "+d.toLocaleTimeString("ar-KW",{hour:"2-digit",minute:"2-digit"})}
+var EVENTS={"link-created":"أُنشئ الرابط","link-opened":"فُتح الرابط","submitted":"أرسلتَ طلبك",
+"received":"استلمه القسم","item-fixed":"ثُبّت بند","item-rejected":"رُفض بند",
+"alternative-offered":"عُرض عليك بديل","alternative-chosen":"اخترتَ بديلاً","settled":"أُغلق الطلب",
+"schedule-approved":"اعتُمد الجدول"};
+function paint(){
+ if(!data){host.innerHTML='<div class="err">تعذّر فتح الرابط.</div>';return}
+ var r=data.request,open=data.windowOpen,approved=r.status==="settled";
+ var h='<div class="state" data-approved="'+(approved?"1":"0")+'">'+
+  (approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
+  '<h1>جدولك — '+esc(data.instructorName)+'</h1>'+
+  '<p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+
+  (open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p><div id="err"></div>';
+ state.forEach(function(it,i){
+  var b=it.before||{};
+  h+='<div class="card" data-act="'+it.action+'">'+
+   '<div class="row-head"><b>'+esc(b.courseName||"مقرر")+'</b>'+
+   (b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+'</div>'+
+   '<p class="now">'+esc(b.days||"")+' · '+esc(b.time||"")+'</p>';
+  if(open){
+   h+='<div class="pick">'+
+    '<button type="button" data-i="'+i+'" data-a="keep" aria-pressed="'+(it.action==="keep")+'">كما هو</button>'+
+    '<button type="button" data-i="'+i+'" data-a="change" aria-pressed="'+(it.action==="change")+'">عدّل</button>'+
+    '<button type="button" data-i="'+i+'" data-a="delete" aria-pressed="'+(it.action==="delete")+'">احذف</button>'+
+   '</div>';
+   if(it.action==="change"){
+    h+='<div class="edit"><div class="days">';
+    DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+
+     (it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
+    h+='</div><label class="time"><span>يبدأ</span>'+
+     '<input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label>'+
+     '<p class="ends">'+(it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم والبداية")+'</p>'+
+     '<div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'">'+esc(it.note||"")+
+     (it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){
+      return '<button type="button" data-i="'+i+'" data-alt="'+esc(a.day+"|"+a.start)+'">'+
+       fmtDays([a.day])+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div>'+
+     '<textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" '+
+     'placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>';
+   }
+  }
+  h+='</div>';
+ });
+ if(open)h+='<div class="send"><button type="button" id="send">أرسل الطلب إلى القسم</button></div>';
+ h+='<ul class="tl">'+(r.timeline||[]).map(function(e){
+  return '<li><b>'+esc(EVENTS[e.kind]||e.kind)+'</b><time>'+esc(dt(e.at))+'</time></li>'}).join("")+'</ul>';
+ host.innerHTML=h;
+ wire();
+}
+function wire(){
+ host.querySelectorAll("[data-a]").forEach(function(el){el.onclick=function(){
+  var i=+el.dataset.i,it=state[i];it.action=el.dataset.a;
+  if(it.action==="change"&&!it.days.length){
+   it.days=(it.slots||[]).map(function(s){return s.day});it.start=(it.slots||[])[0]?it.slots[0].start:""}
+  paint();check(i)}});
+ host.querySelectorAll("[data-day]").forEach(function(el){el.onclick=function(){
+  var i=+el.dataset.i,it=state[i],d=el.dataset.day,at=it.days.indexOf(d);
+  if(at>=0)it.days.splice(at,1);else it.days.push(d);paint();check(i)}});
+ host.querySelectorAll("[data-start]").forEach(function(el){el.onchange=function(){
+  var i=+el.dataset.i;state[i].start=el.value;paint();check(i)}});
+ host.querySelectorAll("[data-alt]").forEach(function(el){el.onclick=function(){
+  var i=+el.dataset.i,p=el.dataset.alt.split("|");state[i].days=[p[0]];state[i].start=p[1];paint();check(i)}});
+ host.querySelectorAll("[data-excuse]").forEach(function(el){el.oninput=function(){
+  state[+el.dataset.i].excuse=el.value}});
+ var send=document.getElementById("send");if(send)send.onclick=submit;
+}
+/* الحكمُ يُسأل عنه الخادمُ عند كل تغيير: هو وحده يرى الجدول كاملاً، والصفحةُ
+   ترى جدولَ صاحبها. وهي تعرض ما يقوله ولا تقرّر شيئاً بنفسها. */
+var pending=0;
+function check(i){
+ var it=state[i];if(it.action!=="change"||!it.days.length||!it.start){it.tone="";it.note="";it.alts=[];return}
+ var seq=++pending;
+ fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check",{method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({rowId:it.rowId,action:it.action,days:it.days,start:it.start})})
+ .then(function(r){return r.json()}).then(function(d){
+  if(seq!==pending)return;
+  it.tone=d.kind==="clear"?"ok":d.kind==="exception"?"warn":"bad";
+  it.note=d.headline||"";it.alts=d.nearestTimes||[];paint()})
+ .catch(function(){});
+}
+function submit(){
+ var send=document.getElementById("send");send.disabled=true;send.textContent="يرسل…";
+ fetch("/api/public/request/"+encodeURIComponent(TOKEN),{method:"POST",
+  headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({items:state.map(function(it){return{rowId:it.rowId,action:it.action,
+   days:it.action==="change"?it.days:[],start:it.action==="change"?it.start:"",excuse:it.excuse}})})})
+ .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
+ .then(function(x){
+  if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
+   document.getElementById("err").innerHTML='<div class="err">'+esc(x.d.error||"تعذّر الإرسال")+'</div>';
+   window.scrollTo(0,0);return}
+  host.innerHTML='<div class="done"><div class="tick">✓</div><h1>وصل طلبك إلى القسم</h1>'+
+   '<p class="sub">'+(x.d.changed?esc(String(x.d.changed))+" تعديلاً":"بلا تعديلات")+
+   ' · يمكنك فتح الرابط نفسه لمتابعة ما ثُبّت وما رُفض.</p></div>';window.scrollTo(0,0)})
+ .catch(function(){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
+  document.getElementById("err").innerHTML='<div class="err">تعذّر الاتصال.</div>'});
+}
+fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
+ return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){
+ if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذّر فتح الرابط")+'</div>';return}
+ data=x.d;
+ state=(data.request.items||[]).map(function(it){return{rowId:it.rowId,action:it.action||"keep",
+  before:it.before,slots:it.slots||[],days:[],start:"",excuse:it.excuse||"",tone:"",note:"",alts:[]}});
+ paint()}).catch(function(){host.innerHTML='<div class="err">تعذّر الاتصال. تحقّق من الإنترنت.</div>'});
+})();</script></body></html>`;
+}
+
+/**
+ * فحصُ موضعٍ واحدٍ قبل الإرسال.
+ *
+ * الصفحةُ تسأل عند كل تغيير، فيُقاس على الجدول الحقيقي لحظتَها: وقتٌ كان
+ * متاحاً حين فُتح الرابط قد يكون أُخذ الآن. ولا يكتب شيئاً — سؤالٌ وجواب.
+ */
+app.post("/api/public/request/:token/check", async (req: Request, res: Response) => {
+  const resolved = await resolveRequestLink(String(req.params.token || ""));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+
+  const rowId = req.body?.rowId == null ? null : Number(req.body.rowId);
+  const known = (resolved.request.items || []).find(item => item.rowId === rowId);
+  if (rowId != null && !known) { res.status(400).json({ error: "هذا الموعد ليس ضمن جدولك." }); return; }
+
+  const days = Array.isArray(req.body?.days)
+    ? (req.body.days as any[]).map(String).filter((day): day is RequestDayKey =>
+        ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day))
+    : [];
+  const start = /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "";
+
+  const context = await buildRequestContext(resolved.request);
+  const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
+  const verdict = judgeRequest({
+    rowId,
+    action: "change",
+    AdCourseId: Number(known?.before?.courseId || 0),
+    days, start,
+  }, {
+    instructorId: Number(resolved.request.AdInstructorId),
+    allRows: context.allRows,
+    instructorRowsAfter: mine,
+    courses: context.courses,
+    instructors: context.instructors,
+    cohortPairs: context.cohortPairs,
+    knownRoomKeys: context.knownRoomKeys,
+    startLadder: context.startLadder,
+    windowOpen: requestWindowOpen(resolved.request),
+  });
+
+  res.setHeader("Cache-Control", "no-store");
+  /* القاعاتُ المرشّحة لا تُرسل: هذا المسار يخاطب صفحةَ الأستاذ. */
+  res.json({
+    kind: verdict.kind,
+    headline: verdict.headline,
+    computedEnd: verdict.computedEnd,
+    roomAvailable: verdict.roomAvailable,
+    nearestTimes: verdict.nearestTimes.map(slot => ({ day: slot.day, start: slot.start, end: slot.end })),
+  });
+});
+
+/** بابُ الأستاذ. رابطٌ واحدٌ لشخصٍ واحد، ولا شيء خلفه إلا جدولُه هو. */
+app.get("/r/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveRequestLink(String(req.params.token || ""));
+  res.setHeader("Cache-Control", "no-store");
+  if ("error" in resolved) {
+    res.status(resolved.status).type("text/html; charset=utf-8").send(
+      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title></head>
+<body style="font:16px system-ui;padding:40px;text-align:center;color:#16281f">
+${resolved.error}</body></html>`);
+    return;
+  }
+  res.type("text/html; charset=utf-8").send(instructorRequestPage(resolved.link.id, publicPageNonce(res)));
 });
 
 app.get("/q/:token", async (req: Request, res: Response) => {
