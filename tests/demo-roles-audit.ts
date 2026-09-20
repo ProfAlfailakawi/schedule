@@ -65,6 +65,19 @@ const dept = DEMO_ROLE_ACCOUNTS.find(a => a.role === "departmentHead")!;
 check(assignsByUser(dept.SystemUserId).some(a => a.AdSectionId > 0),
   "رئيس القسم على قسمٍ بعينه");
 
+// موظّف التسجيل: أقسامٌ حقيقية لا صفر — وإلا لم يُطابق `isScopeAllowed` فيبقى وارده فارغاً.
+const staff = DEMO_ROLE_ACCOUNTS.find(a => a.role === "registrarStaff")!;
+const staffAssigns = assignsByUser(staff.SystemUserId);
+check(staffAssigns.length > 0 && staffAssigns.every(a => a.AdSectionId > 0),
+  "موظف التسجيل على أقسامٍ حقيقية لا صفراً — فيرى واردَه كرئيس التسجيل");
+check(new Set(staffAssigns.map(a => a.AdCollegeId)).size >= 2, "وعلى أكثر من كلية");
+
+// رئيس القسم: يقرأ ولا يبني — بلا ورشة تعديل، ومدخلُه شاشةُ التغييرات.
+check(!roleDefinition("departmentHead").formIds.includes(7),
+  "رئيس القسم بلا شاشة الورشة (٧): لا أزرارَ إضافةٍ أو تعديلٍ أو حذف");
+check(roleDefinition("departmentHead").landing === "changes",
+  "ويفتح على «تغييرات الجدول» حيث يعلّق ويوقّع");
+
 for (const account of DEMO_ROLE_ACCOUNTS) {
   if (isViewerOnlyRole(account.role)) {
     check(roleDefinition(account.role).readOnly, `«${account.label}» صفةُ اطّلاع، لا تكتب`);

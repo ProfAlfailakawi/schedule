@@ -118,12 +118,16 @@ export const ACADEMIC_ROLES: AcademicRoleDefinition[] = [
   },
   {
     id: "departmentHead",
+    // ── لا شاشةَ تعديلٍ لرئيس القسم ──────────────────────────────────────────
+    // رئيسُ القسم يقرأ ولا يعدّل: لا يفتح ورشةَ الجدول (SCHEDULE_WORKSPACE) التي
+    // تحمل أزرارَ الإضافة والتعديل والحذف — اللجنةُ من يبني. وبابُه شاشةُ
+    // «تغييرات الجدول»: يرى جدولَه كاملاً، ويعلّق، ويوقّع من شريط الاعتماد فيها.
     label: "رئيس القسم العلمي",
-    hint: "جدول قسمه قراءةً: ملاحظات وتوقيع واعتماد الإضافات، بلا تعديل.",
+    hint: "جدول قسمه قراءةً: ملاحظات وتوقيع واعتماد الإضافات، بلا تعديل ولا حذف.",
     readOnly: true,
-    formIds: [SCHEDULE_WORKSPACE, REPORT_DEPARTMENT],
+    formIds: [REPORT_DEPARTMENT],
     scopeMode: "section",
-    landing: "schedules",
+    landing: "changes",
     order: 6,
   },
   {

@@ -13502,6 +13502,35 @@ async function migrateLegacyAccountsToCommitteeRole(): Promise<void> {
   }
 }
 
+/*
+ * ── مصالحةُ صلاحيات رؤساء الأقسام ─────────────────────────────────────────────
+ *
+ * صار رئيسُ القسم لا يملك شاشةَ الورشة (٧): يقرأ ويعلّق ويوقّع، ولا يعدّل. لكنّ
+ * الحسابات المُنشأة قبل هذا التغيير تحمل صفَّ `FormSecurity` للشاشة ٧ من القالب
+ * القديم، والواجهةُ تشتقّ `allowed.schedule` منه — وحفظُ الحساب لا يُعيد تطبيق
+ * القالب إلا عند تغيّر الصفة. فتبقى الورشةُ مفتوحةً لهم على نشرةٍ مُحدَّثة.
+ *
+ * فتُزال الشاشةُ ٧ عن كل حساب صفتُه «رئيس قسم» عند الإقلاع — محايدةٌ بالتكرار،
+ * ولا تمسّ صلاحياته الأخرى، ولا يمنع فشلُها الإقلاع.
+ */
+const SCHEDULE_WORKSPACE_FORM_ID = 7;
+async function reconcileDepartmentHeadPermissions(): Promise<void> {
+  try {
+    const users = await Repository.getUsers();
+    let changed = 0;
+    for (const user of users) {
+      if (user.IsDeleted || String((user as any).Role) !== "departmentHead") continue;
+      const perms = (await Repository.getSecurityByUser(Number(user.SystemUserId))).map(row => Number(row.FormNameId));
+      if (!perms.includes(SCHEDULE_WORKSPACE_FORM_ID)) continue;
+      await Repository.saveSecurityByUser(Number(user.SystemUserId), perms.filter(id => id !== SCHEDULE_WORKSPACE_FORM_ID));
+      changed++;
+    }
+    if (changed) console.log(`[roles] أُزيلت شاشةُ الورشة عن ${changed} حساب «رئيس قسم» — يقرأ ولا يعدّل.`);
+  } catch (error) {
+    console.error("[roles] تعذّرت مصالحةُ صلاحيات رؤساء الأقسام:", error instanceof Error ? error.message : error);
+  }
+}
+
 async function startServer() {
   // Wait for the data layer before accepting any requests. In Firestore mode this also
   // completes the one-time import of the verified legacy snapshot when the target is empty.
@@ -13556,6 +13585,7 @@ async function startServer() {
   }
 
   if (!databaseFailure) await migrateLegacyAccountsToCommitteeRole();
+  if (!databaseFailure) await reconcileDepartmentHeadPermissions();
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {

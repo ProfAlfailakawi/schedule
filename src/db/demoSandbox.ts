@@ -151,9 +151,13 @@ function demoAssignsFor(role: AcademicRole): Array<{ AdCollegeId: number; AdSect
     case "allColleges": return colleges.map(c => ({ AdCollegeId: c.AdCollegeId, AdSectionId: 0 }));
     // كلية كاملة: كلية العلوم بأقسامها، بضغطةٍ واحدة لا قسماً قسماً.
     case "college": return [{ AdCollegeId: DEMO_MASTER_STAGE.collegeId, AdSectionId: 0 }];
-    // النطاق اليدويّ يختلف بحاملِه: موظّف التسجيل على كليتين، والمستخدم العادي على قسمه.
+    // النطاق اليدويّ صفوفٌ بأقسامٍ حقيقية — شاشةُ النطاقات ترفض الصفر صراحةً،
+    // و`isScopeAllowed` لا يفسّر الصفرَ «كليةً كاملة» إلا للصفات الكلّية. فموظّف
+    // التسجيل يُعطى أقسامَ كليّتيه صفّاً صفّاً (فيرى واردَها كرئيس التسجيل، لكن
+    // ضمن نطاقه)، والمستخدم العادي قسمَه.
     case "manual": return role === "registrarStaff"
-      ? [{ AdCollegeId: 1, AdSectionId: 0 }, { AdCollegeId: 2, AdSectionId: 0 }]
+      ? sections.filter(s => s.AdCollegeId === 1 || s.AdCollegeId === 2)
+          .map(s => ({ AdCollegeId: s.AdCollegeId, AdSectionId: s.AdSectionId }))
       : [{ AdCollegeId: DEMO_MASTER_STAGE.collegeId, AdSectionId: DEMO_MASTER_STAGE.sectionId }];
     // قسمه: قسم علوم الحاسب — مسرحُ دورة الاعتماد في هذه البيئة.
     case "section": return [{ AdCollegeId: DEMO_MASTER_STAGE.collegeId, AdSectionId: DEMO_MASTER_STAGE.sectionId }];
