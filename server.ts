@@ -9407,21 +9407,36 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
    * مقبولاً تُنشأ بلا نسخةٍ محفوظة، لأنها لم تبدأ بإرسالٍ من أحد. فقسمٌ
    * جولاتُه كلُّها من هذا النوع لا يملك أساساً أبداً.
    *
-   * والنُّسَخُ تُلتقط عند كلِّ تعديلٍ على أيّ حال. فإن لم تحمل الجولاتُ أساساً،
-   * يُؤخذ أحدثُ ما التُقط قبل نسخةِ هذه الجولة — وهو أقربُ ما يملكه النظامُ
-   * إلى «ما رآه التسجيل آخر مرّة». وإن لم يوجد شيءٌ البتّة فهي أولُ مراجعةٍ
-   * حقاً، ويُقال ذلك صراحةً بدل أن يُفهم من كثرة «المضاف».
+   * والنُّسَخُ تُلتقط عند كلِّ تعديلٍ على أيّ حال، فيُؤخذ الأساسُ منها.
+   *
+   * **ولحظةُ الأساس هي فتحُ الجولة، لا آخرُ تعديل.** وهذا هو الفرق: النُّسَخُ
+   * تُلتقط عند كلِّ تعديل، فأحدثُها يسبق آخرَ تعديلٍ وحدَه — فقسمٌ حذف خمسة
+   * صفوفٍ ثم غيّر أستاذَ سادس يُعرض للتسجيل «معدَّلٌ واحد»، والحذوفُ الخمسةُ
+   * لا أثر لها. وهو عطلُ البلاغ نفسِه بوجهٍ أخفّ: مراجعةٌ تبدو صحيحةً وهي
+   * ناقصة، وذلك أسوأُ من مراجعةٍ تبدو ناقصة.
+   *
+   * فالمرساةُ لحظةُ آخِرِ نظرةٍ للتسجيل: إرجاعُ الجولة السابقة أو قبولُها، وإلا
+   * فإرسالُ هذه الجولة. ويُؤخذ أحدثُ ما التُقط عندها أو قبلها.
+   *
+   * وإن لم يوجد شيءٌ البتّة فهي أولُ مراجعةٍ حقاً، ويُقال ذلك صراحةً بدل أن
+   * يُفهم من كثرة «المضاف».
    */
-  const currentRoundVersionId = approval.rounds.find(item => item.number === round)?.reviewedVersionId;
+  const currentRound = approval.rounds.find(item => item.number === round);
+  const currentRoundVersionId = currentRound?.reviewedVersionId;
   let baselineVersion = roundBaseline;
   let baselineSource: "round" | "capture" | "none" = roundBaseline ? "round" : "none";
   if (!baselineVersion) {
     const history = await Repository.getScheduleVersions(collegeId, sectionId, termId, 100);
-    const currentAt = history.find(item => item.id === currentRoundVersionId)?.createdAt;
-    /* أقدمُ من نسخةِ الجولة الجارية، وأحدثُ ما دونها — والقائمةُ مرتَّبةٌ
-       تنازلياً، فأوّلُ ما ينطبق هو المطلوب. */
+    const previousRound = approval.rounds
+      .filter(item => item.number < round)
+      .sort((a, b) => b.number - a.number)[0];
+    const anchorAt = previousRound?.returnedAt || previousRound?.acceptedAt || currentRound?.submittedAt
+      || history.find(item => item.id === currentRoundVersionId)?.createdAt;
+    /* عند المرساة أو قبلها، وأحدثُ ما ينطبق — والقائمةُ مرتَّبةٌ تنازلياً،
+       فأوّلُ ما ينطبق هو المطلوب. ونسخةُ الجولة نفسِها تُستثنى، وإلا قُورنت
+       الجولةُ بنفسها فخرجت بلا فرقٍ دائماً. */
     const fallback = history.find(item => item.id !== currentRoundVersionId
-      && (!currentAt || String(item.createdAt) < String(currentAt)));
+      && (!anchorAt || String(item.createdAt) <= String(anchorAt)));
     if (fallback) {
       baselineVersion = await Repository.getScheduleVersionById(fallback.id);
       if (baselineVersion) baselineSource = "capture";

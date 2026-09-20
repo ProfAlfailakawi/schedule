@@ -306,6 +306,14 @@ check(server.includes("await Repository.getScheduleVersions(collegeId, sectionId
   "فإن لم تحمل الجولاتُ نسخةً، يُؤخذ من اللقطات المحفوظة — وهي تُلتقط عند كل تعديل");
 check(server.includes("const fallback = history.find(item => item.id !== currentRoundVersionId"),
   "ولا تُقارن الجولةُ بنسخةِ نفسِها، فتخرج بلا فرقٍ دائماً");
+/* ولحظةُ الأساس فتحُ الجولة لا آخرُ تعديل: النُّسَخُ تُلتقط عند كلِّ تعديل،
+   فأحدثُها يسبق آخرَ تعديلٍ وحدَه — وقسمٌ حذف خمسةَ صفوفٍ ثم غيّر أستاذَ سادس
+   كان يُعرض للتسجيل «معدَّلٌ واحد» والحذوفُ الخمسةُ لا أثر لها. ومراجعةٌ تبدو
+   صحيحةً وهي ناقصة أسوأُ من مراجعةٍ تبدو ناقصة. */
+check(server.includes("previousRound?.returnedAt || previousRound?.acceptedAt || currentRound?.submittedAt"),
+  "والمرساةُ لحظةُ آخِرِ نظرةٍ للتسجيل، لا لحظةُ آخِرِ تعديلٍ للقسم");
+check(server.includes('String(item.createdAt) <= String(anchorAt)'),
+  "ويُؤخذ أحدثُ ما التُقط عندها أو قبلها، فيُرى كلُّ ما تحرّك منذ تلك النظرة");
 check(server.includes("baselineSource,"),
   "والمصدرُ يصل الشاشة");
 check(changes.includes('report.baselineSource === "none"')
