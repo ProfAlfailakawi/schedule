@@ -24,6 +24,7 @@ import {
   Sparkles,
   Sun,
   UsersRound,
+  ClipboardList,
   MailQuestion,
   WandSparkles,
   Wifi,
@@ -107,6 +108,7 @@ const About = safeLazy(loadAbout);
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
 const ScheduleChanges = safeLazy(() => import("./components/ScheduleChanges"));
 const InstructorInbox = safeLazy(() => import("./components/InstructorInbox"));
+const StudentRegistration = safeLazy(() => import("./components/StudentRegistration"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
@@ -126,6 +128,7 @@ type View =
   | "intelligence"
   | "scheduleChanges"
   | "instructorRequests"
+  | "studentRegistration"
   | ReportMode
   | AdminMode
   | "about";
@@ -267,6 +270,7 @@ const pathByView: Record<View, string> = {
   backup: "/System/Backup",
   scheduleChanges: "/FSchedule/Changes",
   instructorRequests: "/FSchedule/InstructorRequests",
+  studentRegistration: "/FSchedule/StudentRegistration",
   about: "/Public/Aboutus",
 };
 /**
@@ -310,6 +314,7 @@ function prefetchView(view: View) {
   else if (searchViews.includes(view as ReportMode) || reportViews.includes(view as ReportMode)) void loadReports();
   else if (adminViews.includes(view as AdminMode)) void loadAdminUsers();
   else if (view === "instructorRequests") void import("./components/InstructorInbox");
+  else if (view === "studentRegistration") void import("./components/StudentRegistration");
   else if (view === "about") void loadAbout();
 }
 
@@ -1689,6 +1694,15 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "studentRegistration":
+        /* الكشفُ يُقرأ من الطرفين ويُكتب من طرفين: التسجيلُ صاحبُ القرار، ومن
+           يبني الجدول يسلّم ويتابع. وصفةُ العرض الصرف لا تفتحه أصلاً — الخادمُ
+           يردّ كتابتَها، وشاشةٌ كلُّ أزرارها مردودة ضجيجٌ في القائمة. */
+        return (hasPerm(7) || hasPerm(14)) && !sessionRole.viewerOnly ? (
+          <StudentRegistration scopes={scopes} />
+        ) : (
+          unauthorized()
+        );
       case "searchInstructor":
         return hasPerm(8) ? (
           <Reports
@@ -2391,6 +2405,22 @@ export default function App() {
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.instructorRequests`،
                    وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.instructorRequests"
+              />
+            ) : null}
+            {/* ── كشفُ التسجيل ──────────────────────────────────────────────
+                آخِرُ حلقةٍ في السلسلة: رغباتُ الأساتذة، ثم دورةُ الاعتماد، ثم
+                تسليمُ الطلبة إلى التسجيل. وهي الشاشةُ الوحيدة التي يكتب فيها
+                الطرفان معاً، فتجاور أختيها ولا تُنفى إلى قائمةٍ أخرى. */}
+            {(allowed.schedule || hasPerm(14)) && !sessionRole.viewerOnly ? (
+              <NavButton
+                activeView={activeView}
+                onGo={go}
+                view="studentRegistration"
+                icon={<ClipboardList />}
+                label="كشف التسجيل"
+                /* الوجهة نفسها مسجّلة في المرشد باسم `page.studentRegistration`،
+                   وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.studentRegistration"
               />
             ) : null}
             {/* ── ورشةُ الجدول لمن يبني ─────────────────────────────────────

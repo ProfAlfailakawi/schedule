@@ -38,6 +38,7 @@ import {
   DepartmentDelegateDirectory,
   DepartmentRoomDirectory,
   StudentNeed,
+  StudentCourseState,
   HallBarterRequest,
   ScheduleWeekException,
   MasterBuilding,
@@ -2228,6 +2229,19 @@ const readCommentsOrdered = async (
 };
 
 
+/**
+ * رقمُ الحالة من معرّف السجلّ.
+ *
+ * اشتقاقٌ واحدٌ يقرؤه كلُّ من يعرض الرقم — الطالبُ عند الإرسال، وصفحةُ حالته،
+ * وكشفُ التسجيل. ولو اشتقّه كلٌّ بطريقته لاختلفوا يوماً، ولوقف الطالبُ أمام
+ * الموظّف برقمٍ لا يجده في كشفه.
+ */
+export const caseRefOf = (id: string): string => String(id).slice(0, 8).toUpperCase();
+
+/** رقمُ الحالة كما يُعرض: الثابتُ المحفوظ، أو المشتقُّ للسجلّات التي سبقته. */
+export const caseRefFor = (need: { id: string; caseRef?: string }): string =>
+  String(need.caseRef || caseRefOf(need.id));
+
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
   /** Lets the server drop any cached identity the moment accounts change. */
@@ -4195,9 +4209,35 @@ export const Repository = {
       return item.fingerprint === row.fingerprint && Number(item.AdTermId) === Number(row.AdTermId)
         && itemSurveySection === rowSurveySection;
     };
+    /* ── ما قاله التسجيلُ لا يمحوه الطالبُ بتغيير رأيه ──────────────────────
+     *
+     * إعادةُ الإرسال تستبدل السجلّ، فكانت حالاتُ المقرّرات تذهب معه: مقرّرٌ
+     * سجّله التسجيلُ أمسِ يعود «لم يُقل فيه شيء» لأن الطالبَ أضاف مقرّراً
+     * آخرَ اليوم. فتُنقل الحالاتُ إلى السجلّ الجديد، ولا يُنقل منها إلا ما
+     * يخصّ مقرّراً ما زال مطلوباً — فمقرّرٌ سحبه الطالبُ لا تبقى له حالة.
+     */
+    const carry = (prior: StudentNeed[]): StudentCourseState[] | undefined => {
+      const wanted = new Set((row.courseIds || []).map(Number));
+      const kept = prior
+        .flatMap(item => item.courseStates || [])
+        .filter(state => wanted.has(Number(state.courseId)));
+      /* أحدثُ قولٍ في كل مقرّر هو قولُه: سجلّان للشخص نفسه لا يجتمعان عادةً،
+         لكن الاحتياط هنا أرخص من حالةٍ قديمةٍ تعلو حديثة. */
+      const newest = new Map<number, StudentCourseState>();
+      for (const state of kept) {
+        const at = newest.get(Number(state.courseId));
+        if (!at || String(state.at) > String(at.at)) newest.set(Number(state.courseId), state);
+      }
+      return newest.size ? [...newest.values()] : undefined;
+    };
+
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("studentNeeds")
         .where("fingerprint", "==", row.fingerprint).limit(20).get();
+      const replaced = snap.docs.map(doc => doc.data() as StudentNeed).filter(sameHand);
+      const inherited = carry(replaced);
+      if (inherited && !row.courseStates) row.courseStates = inherited;
+      row.caseRef = row.caseRef || replaced.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id);
       const batch = firestoreDb.batch();
       snap.docs.filter(doc => sameHand(doc.data() as StudentNeed)).forEach(doc => batch.delete(doc.ref));
       batch.set(firestoreDb.collection("studentNeeds").doc(row.id), row);
@@ -4205,11 +4245,58 @@ export const Repository = {
       return row;
     }
     if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
+    const replacedLocal = db.studentNeeds.filter(sameHand);
+    const inherited = carry(replacedLocal);
+    if (inherited && !row.courseStates) row.courseStates = inherited;
+    row.caseRef = row.caseRef || replacedLocal.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id);
     db.studentNeeds = db.studentNeeds.filter(item => !sameHand(item));
     db.studentNeeds.unshift(row);
     if (db.studentNeeds.length > 20000) db.studentNeeds.length = 20000;
     saveDatabase();
     return row;
+  },
+
+  /**
+   * يكتب حالةَ مقرّرٍ واحدٍ في طلب طالب.
+   *
+   * كتابةٌ موضعيةٌ عن قصد: `saveStudentNeed` تستبدل السجلّ كلَّه ببصمته، وهي
+   * الدلالةُ الصحيحةُ حين يعيد الطالبُ إرساله — وهي الدلالةُ الخطأ تماماً حين
+   * يقول التسجيلُ كلمةً عن مقرّرٍ واحد.
+   *
+   * وأحدثُ قولٍ في المقرّر هو قولُه: الحالةُ تُستبدل ولا تُكدَّس، فلا يقرأ
+   * أحدٌ سجلاًّ يقول «سُجّل» و«رُدّ» معاً.
+   */
+  setStudentCourseState: async (needId: string, next: StudentCourseState): Promise<StudentNeed | undefined> => {
+    const merge = (current: StudentNeed): StudentNeed => ({
+      ...current,
+      courseStates: [
+        ...(current.courseStates || []).filter(state => Number(state.courseId) !== Number(next.courseId)),
+        next,
+      ],
+    });
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("studentNeeds").doc(needId);
+      const doc = await ref.get();
+      if (!doc.exists) return undefined;
+      const merged = merge(doc.data() as StudentNeed);
+      await ref.set(merged);
+      return merged;
+    }
+    if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
+    const at = db.studentNeeds.findIndex(row => row.id === needId);
+    if (at < 0) return undefined;
+    db.studentNeeds[at] = merge(db.studentNeeds[at]);
+    saveDatabase();
+    return db.studentNeeds[at];
+  },
+
+  /** سجلٌّ واحدٌ بمعرّفه. يحتاجه مسارُ الحالة ليتحقّق من نطاقه قبل الكتابة. */
+  getStudentNeedById: async (needId: string): Promise<StudentNeed | undefined> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("studentNeeds").doc(needId).get();
+      return doc.exists ? (doc.data() as StudentNeed) : undefined;
+    }
+    return (db.studentNeeds || []).find(row => row.id === needId);
   },
 
   /** Every answer for one board. The only read the coordinator's side needs. */

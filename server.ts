@@ -7,7 +7,7 @@ import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
-import { activeDataMode, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, withSerialLock } from "./src/db/repository";
+import { activeDataMode, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, withSerialLock , caseRefFor } from "./src/db/repository";
 import { DEMO_ROLE_ACCOUNTS } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
@@ -32,7 +32,7 @@ import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./sr
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
-  canAnnotateCells, isAcademicRole, isReadOnlyRole, isViewerOnlyRole, roleDefinition, roleLabel,
+  canAnnotateCells, isAcademicRole, isReadOnlyRole, isRegistrarRole, isViewerOnlyRole, roleDefinition, roleLabel,
   signatureStage, watchesInbox,
   type AcademicRole,
 } from "./src/utils/academicRoles";
@@ -12129,7 +12129,7 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   });
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
-  res.status(201).json({ name, count: courseIds.length, requestType, caseRef: String(savedNeed.id).slice(0, 8).toUpperCase() });
+  res.status(201).json({ name, count: courseIds.length, requestType, caseRef: caseRefFor(savedNeed) });
 });
 
 /** What the students said, for the department. Never names, only numbers. */
@@ -12268,6 +12268,165 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     // is never the registrar's roll.
     limit: "مبنيّ على من أجاب الاستبيان فقط — ليس بيانات التسجيل.",
   });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   كشفُ التسجيل — الطرفان على ورقةٍ واحدة
+   ══════════════════════════════════════════════════════════════════════════
+
+   القسم يجمع رغبات الطلبة بالاستبيان ثم يسلّمها التسجيلَ يدوياً، والطالبُ
+   بينهما لا يعرف شيئاً. وهذا الكشفُ يضع الثلاثة على ورقةٍ واحدة: التسجيلُ
+   يكتب أين وصل كلُّ مقرّر، والقسمُ يقرأ ما كتبه لحظتَها، والطالبُ يراه في
+   صفحته.
+
+   و**الكشفُ واحدٌ لا اثنان**. هو الطلباتُ نفسُها التي يقرؤها القسم في مركز
+   الذكاء، لا نسخةٌ منها: نسختان تفترقان عند أول تعديل، ثم يختلف الطرفان على
+   أيُّهما الصحيح — وهو بالضبط ما يُفترض أن يُنهيه هذا العمل.
+
+   وثلاثةُ حدود:
+
+   ١) لا يُكتب في جدولٍ ولا في شعبة. الحالةُ قولٌ عن طلب طالبٍ بعينه، لا عن
+      مقعد. النظامُ لا يملك مقاعد ولا يدّعي امتلاكها، والتسجيلُ هو صاحبُها.
+
+   ٢) الكتابةُ للتسجيل ولمن يبني الجدول، لا لكل من يرى الكشف. وصفةُ العرض
+      الصرف تقرأ ولا تكتب، كما في كل مسارٍ آخر.
+
+   ٣) والنطاقُ يُحرس مرّتين: عند قراءة الكشف، وعند الكتابة في سجلٍّ بعينه —
+      لأن معرّفَ السجلّ يُرسله المتصفّح، ولا يُصدَّق لمجرّد أنه وصل.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** من يكتب في الكشف: التسجيلُ ومن يبني الجدول. */
+const canWriteRegistration = (role: unknown, powerUser: boolean): boolean =>
+  Boolean(powerUser) || (!isViewerOnlyRole(role) && (isRegistrarRole(role) || canReviewSubmissions(role) || roleDefinition(role).formIds.includes(7)));
+
+const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "registered", "rejected"]);
+const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "conflict", "closed", "other"]);
+
+/**
+ * الكشف.
+ *
+ * يقرأ الطلبات نفسها التي يقرؤها مركزُ الذكاء، بالقاعدة نفسها في نسبة الطلب
+ * إلى قسم الاستبيان — فما يراه الطرفان واحدٌ حرفاً بحرف.
+ */
+app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId || !isScopeAllowed(req, collegeId, sectionId)) {
+    res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
+    return;
+  }
+
+  const [allTermNeeds, courses, sections] = await Promise.all([
+    Repository.getStudentNeeds(collegeId, 0, termId),
+    Repository.getCourses(),
+    Repository.getSections(),
+  ]);
+  /* القاعدةُ نفسُها التي يستعملها مركزُ الذكاء: الطلبُ لقسم الاستبيان الذي
+     استقبله، ويُستردّ للسجلّات القديمة من ملكيّة مقرّراتها. */
+  const ownedByThisSection = new Set((courses as any[])
+    .filter(row => Number(row.AdSectionId) === sectionId).map(row => Number(row.AdCourseId)));
+  const needs = (allTermNeeds as any[]).filter(need =>
+    Number(need.surveySectionId || 0) === sectionId
+    || (!need.surveySectionId && (need.courseIds || []).some((id: any) => ownedByThisSection.has(Number(id)))));
+
+  const courseById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), row]));
+  const sectionNameById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
+
+  const rows = await Promise.all(needs.map(async need => {
+    const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
+    return {
+      id: String(need.id),
+      /* رقمُ الحالة هو نفسه الذي يحمله الطالب، مشتقٌّ من معرّف السجلّ — فيبحث
+         به موظّفُ التسجيل عمّن يقف أمامه بلا أن يسأله عن رقمه المدني. */
+      caseRef: caseRefFor(need),
+      name: await openStudentIdentity(need.nameCipher),
+      civil: await openStudentIdentity(need.civilCipher),
+      createdAt: String(need.createdAt || ""),
+      requestType: String(need.requestType || "new-course"),
+      studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+      courses: (need.courseIds || []).map((id: any) => {
+        const course: any = courseById.get(Number(id));
+        const state: any = states.get(Number(id));
+        return {
+          id: Number(id),
+          code: String(course?.CourseCode || ""),
+          name: String(course?.CourseName || `مقرر ${id}`),
+          state: String(state?.state || "awaiting-registration"),
+          reasonCode: state?.reasonCode,
+          note: state?.note,
+          by: state?.by,
+          byRole: state?.byRole,
+          at: state?.at,
+          /* «لم يقل أحدٌ شيئاً» يختلف عن «سلّمه القسم وينتظر»: الأولى غيابُ
+             سجلّ، والثانيةُ قولٌ مكتوب. والفرقُ يهمّ من يقرأ. */
+          settled: Boolean(state),
+        };
+      }),
+    };
+  }));
+
+  const every = rows.flatMap(row => row.courses);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    rows: rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
+    canWrite: canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser)),
+    totals: {
+      students: rows.length,
+      courses: every.length,
+      registered: every.filter(course => course.state === "registered").length,
+      rejected: every.filter(course => course.state === "rejected").length,
+      waiting: every.filter(course => course.state !== "registered" && course.state !== "rejected").length,
+    },
+  });
+});
+
+/** قولُ التسجيل في مقرّرٍ واحدٍ من طلب طالب. */
+app.post("/api/student-registration/:id/course-state", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser))) {
+    res.status(403).json({ error: "هذا الكشف للقراءة بصفتك." });
+    return;
+  }
+
+  const need = await Repository.getStudentNeedById(String(req.params.id || ""));
+  if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  /* النطاقُ يُحرس هنا أيضاً: المعرّفُ يُرسله المتصفّح، ولا يُصدَّق لأنه وصل. */
+  const needSection = Number(need.surveySectionId || need.AdSectionId || 0);
+  if (!isScopeAllowed(req, Number(need.AdCollegeId), needSection)) {
+    res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
+    return;
+  }
+
+  const courseId = Number(req.body?.courseId || 0);
+  if (!courseId || !(need.courseIds || []).map(Number).includes(courseId)) {
+    res.status(400).json({ error: "هذا المقرّر ليس ضمن طلب الطالب." });
+    return;
+  }
+
+  const state = String(req.body?.state || "");
+  if (!STUDENT_COURSE_STATES.has(state)) { res.status(400).json({ error: "حالةٌ غير معروفة." }); return; }
+
+  const reasonCode = String(req.body?.reasonCode || "");
+  /* الردُّ بلا سببٍ يُعيد الطالبَ إلى المكتب ليسأل «ليش؟» — وهو ما بُني هذا
+     الكشفُ ليُغنيَ عنه. */
+  if (state === "rejected" && !STUDENT_REJECT_REASONS.has(reasonCode)) {
+    res.status(400).json({ error: "اختر سبب الردّ." });
+    return;
+  }
+
+  const saved = await Repository.setStudentCourseState(need.id, {
+    courseId,
+    state: state as any,
+    ...(state === "rejected" ? { reasonCode: reasonCode as any } : {}),
+    note: String(req.body?.note || "").trim().slice(0, 300) || undefined,
+    by: isRegistrarRole(req.user?.Role) ? "registration" : "department",
+    byRole: roleLabel(req.user?.Role) || undefined,
+    at: new Date().toISOString(),
+  });
+  if (!saved) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, courseStates: saved.courseStates || [] });
 });
 
 /** The department's tray. Empty is the normal state and costs one scoped read. */
@@ -14172,14 +14331,22 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     found: true,
     /* الرقمُ نفسه الذي أُعطي له لحظةَ الإرسال، مشتقٌّ من معرّف السجلّ لا
        مولَّدٌ من جديد — فلو اختلفا لظنّ أنه أرسل مرّتين. */
-    caseRef: String(mine.id).slice(0, 8).toUpperCase(),
+    caseRef: caseRefFor(mine),
     submittedAt: String(mine.createdAt || ""),
     requestType: String(mine.requestType || "new-course"),
     term: String((terms as any[]).find(row => Number(row.AdTermId) === Number(mine.AdTermId))?.AdTermName || ""),
-    courses: (Array.isArray(mine.courseIds) ? mine.courseIds : []).map((id: any) => ({
-      code: codeOf.get(Number(id)) || "",
-      name: nameOf.get(Number(id)) || `مقرر ${id}`,
-    })),
+    courses: (Array.isArray(mine.courseIds) ? mine.courseIds : []).map((id: any) => {
+      const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
+      return {
+        code: codeOf.get(Number(id)) || "",
+        name: nameOf.get(Number(id)) || `مقرر ${id}`,
+        /* ما لم يُقل فيه شيءٌ بعد يبقى بلا حالة، ولا يُسمّى «بانتظار التسجيل»:
+           الانتظارُ قولٌ يقوله القسمُ حين يسلّم، لا حالةٌ تُفترض. */
+        state: state?.state || "",
+        reason: state?.reasonCode || "",
+        note: state?.note || "",
+      };
+    }),
   });
 });
 
@@ -14216,6 +14383,10 @@ ul{list-style:none;margin:0;padding:0}
 li{display:flex;justify-content:space-between;gap:11px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}
 li:first-child{border-top:0}
 li small{color:var(--muted);flex:none}
+li span{display:flex;flex-direction:column;gap:3px}
+.st{font-style:normal;font-size:12px;color:var(--muted)}
+.st[data-s=registered]{color:var(--ok);font-weight:700}
+.st[data-s=rejected]{color:var(--bad);font-weight:700}
 .note{margin-top:15px;font-size:12.5px;color:var(--muted);line-height:1.6}
 .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
 </style></head><body><div class="wrap">
@@ -14229,6 +14400,9 @@ li small{color:var(--muted);flex:none}
 <script nonce="${nonce}">(function(){
 var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),
 go=document.getElementById("go"),out=document.getElementById("out");
+var STATE={"awaiting-registration":"سلّمه القسم للتسجيل","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+var REASON={"no-seat":"لا مقاعد","prerequisite":"متطلّب سابق","level":"المستوى",
+"conflict":"تعارض في جدولك","closed":"الشعبة مغلقة","other":"سبب آخر"};
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
 return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 /* الأرقام العربية تُقبل كما تُكتب: من يكتب «٢٩٠…» أدخل رقمه، لا خطأً. */
@@ -14244,7 +14418,9 @@ function show(d){
  out.innerHTML='<div class="card"><p class="ref">'+esc(d.caseRef)+'</p>'+
   '<p class="reflabel">رقم حالتك · '+esc(d.term)+'</p>'+
   '<ul>'+(d.courses||[]).map(function(c){
-   return '<li><span>'+esc(c.name)+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
+   return '<li><span>'+esc(c.name)+(c.state?'<i class="st" data-s="'+esc(c.state)+'">'+
+    esc(STATE[c.state]||c.state)+(c.reason?' — '+esc(REASON[c.reason]||c.reason):'')+
+    (c.note?' · '+esc(c.note):'')+'</i>':'')+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
   '<p class="note">وصل طلبك إلى القسم يوم '+esc(dt(d.submittedAt))+'.<br>'+
   'هذه حالةُ طلبك عند القسم، وليست تسجيلاً في النظام الأكاديمي. '+
   'وإذا غيّرت اختيارك، افتح رابط الاستبيان وأرسل من جديد فيُحدَّث طلبك.</p></div>'}

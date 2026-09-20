@@ -444,6 +444,52 @@ export interface ClientTelemetryEntry {
  * only in the permission-7 coordinator response; the fingerprint remains the
  * duplicate-prevention key and never leaves the server.
  */
+/* ── حالةُ المقرّر عند التسجيل ───────────────────────────────────────────────
+ *
+ * القسم يجمع رغبات الطلبة بالاستبيان، ثم يسلّمها التسجيلَ يدوياً إلى اليوم.
+ * والطالبُ بينهما لا يعرف شيئاً: أرسل، ثم صمتَ النظام، فجاء يسأل.
+ *
+ * هذه الحالةُ هي الخيط الذي يربط الثلاثة. يكتبها التسجيلُ على الكشف نفسه الذي
+ * يقرؤه القسم — لا على كشفٍ آخرَ يفترق عنه عند أول تعديل — فيراها القسمُ
+ * لحظتَها، ويراها الطالبُ في صفحته.
+ *
+ * **ولا تُكتب على الجدول.** هي قولٌ عن طلب طالبٍ بعينه، لا عن شعبةٍ ولا عن
+ * مقعد. النظام لا يملك مقاعد ولا يدّعي امتلاكها.
+ */
+
+/** أين وصل مقرّرٌ واحدٌ من طلب طالب. */
+export type StudentCourseStateValue =
+  | "awaiting-registration"  // القسم سلّمه، والتسجيل لم يقل شيئاً بعد
+  | "registered"             // التسجيل سجّله
+  | "rejected";              // التسجيل ردّه، ومعه سبب
+
+/**
+ * أسبابُ الردّ، من قائمةٍ مغلقة.
+ *
+ * مغلقةٌ لنفس السبب الذي أُغلقت له أسبابُ رفض طلب الأستاذ: سببٌ حرٌّ لا
+ * يُقارن ولا يُحصى، ويدفع الطالبَ إلى المكتب ليسأل «ليش؟». والسطرُ الحرّ يبقى
+ * لما لا تسعه القائمة — تفصيلُ الحالة لا نوعُها.
+ */
+export type StudentCourseRejectReason =
+  | "no-seat"        // لا مقاعد
+  | "prerequisite"   // متطلّبٌ سابق
+  | "level"          // المستوى
+  | "conflict"       // تعارضٌ في جدوله
+  | "closed"         // الشعبة مغلقة
+  | "other";
+
+export interface StudentCourseState {
+  courseId: number;
+  state: StudentCourseStateValue;
+  reasonCode?: StudentCourseRejectReason;
+  note?: string;
+  /** من كتبها: القسم حين يسلّم، والتسجيل حين يقرّر. */
+  by: "department" | "registration";
+  /** الصفةُ لا الاسم: «موظف التسجيل»، «رئيس لجنة الجدول». */
+  byRole?: string;
+  at: string;
+}
+
 export interface StudentNeed {
   id: string;
   /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
@@ -474,6 +520,25 @@ export interface StudentNeed {
   eligibility?: "eligible" | "ineligible" | "not-checked";
   proofNameMatched?: boolean;
   createdAt: string;
+  /**
+   * أين وصل كلُّ مقرّرٍ طلبه هذا الطالب.
+   *
+   * غيابُها يعني أن أحداً لم يقل شيئاً بعد — وهي الحالة الطبيعية للسجلّات
+   * كلها قبل أن يبدأ التسليم، وللسجلّات القديمة كلها إلى الأبد. فلا يُكتب
+   * صفٌّ ليقول «لا جديد».
+   */
+  courseStates?: StudentCourseState[];
+  /**
+   * رقمُ الحالة كما أُعطي للطالب، ثابتٌ عبر إعادة الإرسال.
+   *
+   * كان يُشتقّ من معرّف السجلّ، والسجلُّ يُستبدل كلّما غيّر الطالبُ رأيه —
+   * فالرقمُ الذي طُلب منه أن يحفظه يتغيّر تحت يده، ويبحث به موظّفُ التسجيل
+   * فلا يجده. فصار يُولَّد مرّةً ويُورَّث.
+   *
+   * اختياريٌّ لأن كلَّ سجلٍّ سابقٍ بلا هذا الحقل: تلك تُقرأ بالاشتقاق القديم
+   * من معرّفها، وهو ما أُعطي لأصحابها فعلاً.
+   */
+  caseRef?: string;
 }
 
 /**
