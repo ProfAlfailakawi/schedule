@@ -7050,7 +7050,12 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
         );
       }
     } else {
-      const threshold=(Number(normalized.match(/(\d+)\s*ساع/)?.[1]||3))*60;
+      // Bounded on both sides: an unbounded `\d+` followed by `\s*` backtracks
+      // quadratically over a long digit run that never reaches the word —
+      // measured at seven seconds on sixty thousand digits. The lookbehind is
+      // not decoration: `\d{1,3}` alone would start reading «100 ساعات» at its
+      // second digit and hand back «00», turning a threshold into zero.
+      const threshold=(Number(normalized.match(/(?<!\d)(\d{1,3})\s{0,4}ساع/)?.[1]||3))*60;
       const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);
       const longest=Math.max(0,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
       summary=long.length?`يوجد ${long.length} أستاذاً بفراغ يومي يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
@@ -9661,7 +9666,7 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: Aut
     disappeared:diff.disappeared.slice(0,80).map(shapeRow),
     moved:diff.moved.slice(0,80).map(entry=>{
       // roomKey joins with a pipe for comparison; a reader wants a slash.
-      const readable=(side:any)=>({...side,room:String(side.room||"").replace("|","/"),instructor:instructorName(side.instructorId)});
+      const readable=(side:any)=>({...side,room:String(side.room||"").replaceAll("|","/"),instructor:instructorName(side.instructorId)});
       return {...shapeRow(entry.row),fields:entry.fields,before:readable(entry.from),after:readable(entry.to)};
     }),
     fromTermName:terms.find(t=>t.AdTermId===fromTermId)?.AdTermName||"",
@@ -13457,7 +13462,11 @@ async function startServer() {
    * or a document path, and that is not a stranger's business.
    */
   app.use((error: any, req: Request, res: Response, _next: NextFunction) => {
-    console.error(`[api-error] ${req.method} ${req.originalUrl}:`, error?.stack || error?.message || error);
+    // The route is passed as an argument, never folded into the first string:
+    // `originalUrl` is whatever a stranger typed, and the first argument to
+    // console.error is a format string — a URL carrying `%s` would otherwise
+    // swallow the error itself and the log would lose what it was written for.
+    console.error("[api-error] %s %s:", req.method, req.originalUrl, error?.stack || error?.message || error);
     if (res.headersSent) { try { res.end(); } catch { /* the socket is already gone */ } return; }
     res.status(500).json({ error: "تعذّر إتمام العملية الآن. حاول مرة أخرى، وإذا تكرر الأمر أبلغ إدارة النظام." });
   });
