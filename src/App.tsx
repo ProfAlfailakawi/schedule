@@ -1690,7 +1690,7 @@ export default function App() {
            القرار في القاعات. وصفةُ العرض الصرف لا تفعل فيه شيئاً، فلا تُعطى
            شاشةً تنتهي عند كل زرٍّ فيها برسالة «ليس من صلاحيتك». */
         return hasPerm(7) ? (
-          <InstructorInbox scopes={scopes} powerAdmin={isPowerAdmin} />
+          <InstructorInbox scopes={scopes} powerAdmin={isPowerAdmin} onNavigate={(view) => go(view as View)} />
         ) : (
           unauthorized()
         );
