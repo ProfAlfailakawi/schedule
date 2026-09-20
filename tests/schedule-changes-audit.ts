@@ -165,7 +165,7 @@ const roles = fs.readFileSync(path.join(process.cwd(), "src/utils/academicRoles.
  * بلا باب: يرى ملاحظات التسجيل ولا يملك أن يكتب واحدة. */
 check(roles.includes("export function canAnnotateCells"), "التعليق على الخانة صفةٌ قائمة بذاتها");
 check(changes.includes("const canAnnotate = role.canAnnotate;"), "والشاشة تقرؤها");
-check(changes.includes("{canAnnotate && entry.kind !== \"removed\" ? ("),
+check(changes.includes("canAnnotate && annotatable ? (") && changes.includes('className="changes-note-add"'),
   "وتفتح الخانات لمن يعلّق، لا لمن يقرّر");
 check(!changes.includes("{isRegistrar && entry.kind !== \"removed\" ? ("),
   "فلم يبقَ بابٌ مقفلٌ في وجه رئيس القسم");
@@ -188,7 +188,7 @@ check(server.includes("canReviewSubmissions(req.user?.Role) || watchesInbox(req.
 check(server.includes("async function noteSuggestions"), "النظام يقترح سببَ الملاحظة مما يعرفه");
 check(server.includes('put(ownId, "room", `القاعة محجوزة في هذا الوقت'), "من فاحص التعارضات");
 check(server.includes("const findings = reviewSchedule({"), "ومن فاحص اللائحة");
-check(changes.includes("report.suggestions?.[`${entry.scheduleId}:${field}`]"),
+check(changes.includes("report.suggestions?.[`${scheduleId}:${field}`]"),
   "ويُملأ في الصندوق: اقتراحٌ لا حكم، يُمحى إن شاء ويُكتب غيره");
 
 /* ── ٤) المقرر المشترك: يُعرض ولا يُعلَّق عليه ──────────────────────────── */
@@ -219,6 +219,34 @@ check(changes.includes("فتحرّك ${round.changedRowCount} صفّاً"),
 check(changes.includes('Number(note.insistCount || 0) >= 3'), "الخانةُ المختلَف عليها ثلاثاً تُعلَن");
 check(changes.includes("إعلامٌ لرئيس القسم، ولا شيء يقف عليه"),
   "إعلاماً لا إجباراً: لا شيء في النظام يقف عليه");
+
+/* ── ٨) بحثٌ سريعٌ وفلترٌ بالحالة في الوارد ─────────────────────────────────
+ * الأقسام كثيرة، فطُلب بحثٌ سريعٌ وفلتر. */
+check(changes.includes('className="changes-search"') && changes.includes('type="search"'),
+  "الوارد فيه بحثٌ سريعٌ بالاسم");
+check(changes.includes('className="changes-filter-chips"') && changes.includes('setStatusFilter('),
+  "وفلترٌ بالحالة بشرائح تحمل أعدادها");
+check(changes.includes('`${row.sectionName} ${row.collegeName}`.includes(needle)'),
+  "والبحثُ يطابق اسمَ القسم والكلية معاً");
+
+/* ── ٩) الجدول كامل مع الملاحظات، لا الملاحظات وحدها ───────────────────────
+ * أهمُّ ما طلبه القسم: أن يرى جدولَه كلَّه والملاحظات في مواضعها. */
+check(changes.includes('view === "full"') && changes.includes('className="changes-full"'),
+  "شاشةٌ تعرض الجدول كاملاً");
+check(changes.includes('className="changes-view-toggle"'),
+  "وتبديلٌ بين «ما تحرّك» و«الجدول كامل»");
+check(changes.includes("rowExtras(row.scheduleId, true,") && changes.includes("rowExtras(entry.scheduleId,"),
+  "والملاحظاتُ تظهر في العرضين معاً، فلا الجدول بلا ملاحظات ولا الملاحظات بلا جدول");
+check(server.includes("const fullSchedule =") && server.includes("fullSchedule,"),
+  "والخادم يرسل الجدول كاملاً مشكّلاً كما تُقرأ خاناتُه");
+
+/* ── ١٠) زرُّ تعليقٍ واحدٍ بدل ستّة أزرار ───────────────────────────────────
+ * الصفُّ من ستّة أزرارٍ لكل موعدٍ كان تلوّثاً بصرياً؛ صار زرّاً واحداً يفتح ورقةً
+ * فيها اختيار الخانة. */
+check(!changes.includes("changes-note-targets"),
+  "لم يبقَ صفُّ الأزرار الستّة الذي يزاحم كل موعد");
+check(changes.includes('<span>الخانة</span>') && changes.includes("Object.keys(DIFF_FIELD_LABEL) as DiffFieldKey[]"),
+  "واختيارُ الخانة انتقل إلى داخل ورقة الملاحظة");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);

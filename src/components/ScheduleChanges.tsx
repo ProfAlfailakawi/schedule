@@ -15,8 +15,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, Check, ChevronLeft, ClipboardList, Clock3, CornerUpLeft,
-  FileDiff, Inbox, MessageSquarePlus, Scale, Send, ShieldCheck, Trash2, X,
+  AlertTriangle, ArrowRight, CalendarRange, Check, ChevronLeft, ClipboardList, Clock3, CornerUpLeft,
+  FileDiff, Inbox, MessageSquarePlus, Scale, Search, Send, ShieldCheck, Trash2, X,
 } from "lucide-react";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
@@ -47,12 +47,19 @@ interface NoteRow {
 interface DiffChange { field: DiffFieldKey; label: string; before: string; after: string }
 interface DiffEntry { kind: "added" | "removed" | "changed"; scheduleId: number; row: any; changes: DiffChange[] }
 
+/** صفٌّ من الجدول الكامل، مشكّلٌ كما تُقرأ خاناتُه — القسم يريد رؤية الجدول كله لا التغييرات وحدها. */
+interface FullRow {
+  scheduleId: number; course: string; sectionCode: string;
+  time: string; days: string; room: string; instructor: string; changed: boolean;
+}
+
 interface ChangeReport {
   approval: { status: ScheduleApprovalStatus; currentRound: number; pendingAdditions: any[]; signatures: any[] };
   statusLabel: string; round: number;
   rounds: Array<{ number: number; submittedAt?: string; submittedBy?: string; returnedAt?: string; returnedBy?: string; returnedNoteCount?: number; changedRowCount?: number; acceptedAt?: string; acceptedBy?: string }>;
   deadline: InboxRow["deadline"];
   diff: { entries: DiffEntry[]; counts: { added: number; removed: number; changed: number; unchanged: number }; firstReview: boolean };
+  fullSchedule?: FullRow[];
   summary: string;
   notes: NoteRow[];
   /** نصٌّ جاهزٌ لكل خانةٍ يعرف النظام سببَ الشكّ فيها، مفتاحه `صف:خانة`. */
@@ -144,7 +151,8 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
   const [rows, setRows] = useState<InboxRow[] | null>(null);
   const [totals, setTotals] = useState<{ waiting: number; returned: number; accepted: number; late: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [onlyPending, setOnlyPending] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<"all" | "submitted" | "returned" | "accepted">("all");
+  const [query, setQuery] = useState("");
   const [extending, setExtending] = useState<InboxRow | null>(null);
   const [extendUntil, setExtendUntil] = useState("");
   const [extendReason, setExtendReason] = useState("");
@@ -161,12 +169,17 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
 
   useEffect(() => { void load(); }, [load]);
 
-  const visible = useMemo(
-    /* المرشّح الوحيد. وكثرةُ المرشّحات في شاشة عملٍ ليست مرونةً، هي قرارٌ
-       إضافيٌّ يُطلب من الموظّف قبل أن يبدأ. */
-    () => (rows || []).filter(row => !onlyPending || row.status !== "accepted"),
-    [rows, onlyPending],
-  );
+  /* بحثٌ سريعٌ بالاسم وفلترٌ بالحالة: الأقسام كثيرة، ومن يبحث عن قسمٍ بعينه لا
+     يمرّ على عشرين بطاقة. الفلتر أربع حالاتٍ لا أكثر — وكثرةُ المرشّحات قرارٌ
+     يُطلب من الموظّف قبل أن يبدأ. */
+  const visible = useMemo(() => {
+    const needle = query.trim();
+    return (rows || []).filter(row => {
+      if (statusFilter !== "all" && row.status !== statusFilter) return false;
+      if (needle && !`${row.sectionName} ${row.collegeName}`.includes(needle)) return false;
+      return true;
+    });
+  }, [rows, statusFilter, query]);
 
   const submitExtension = async () => {
     if (!extending) return;
@@ -187,22 +200,42 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
   return (
     <>
       {error ? <Notice type="error">{error}</Notice> : null}
-      {totals ? (
-        <div className="changes-totals">
-          <span><b>{totals.waiting}</b> بانتظار المراجعة</span>
-          <span><b>{totals.returned}</b> عند القسم</span>
-          <span><b>{totals.accepted}</b> معتمد</span>
-          {totals.late ? <span data-tone="late"><b>{totals.late}</b> متأخّر</span> : null}
+      {/* الفلتر بالحالة: كل شريحةٍ تحمل عددها، فيُقرأ الوضع قبل الضغط. */}
+      <div className="changes-toolbar">
+        <div className="changes-filter-chips" role="group" aria-label="فلترة بالحالة">
+          {([
+            ["all", "الكل", (totals?.waiting || 0) + (totals?.returned || 0) + (totals?.accepted || 0)],
+            ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
+            ["returned", "عند القسم", totals?.returned || 0],
+            ["accepted", "معتمد", totals?.accepted || 0],
+          ] as Array<[typeof statusFilter, string, number]>).map(([value, label, count]) => (
+            <button
+              key={value}
+              type="button"
+              className="changes-chip"
+              data-active={statusFilter === value || undefined}
+              aria-pressed={statusFilter === value}
+              data-guide-ignore="فلترة الوارد بالحالة — عرضٌ لا فعل، ولا يغيّر بيانات"
+              onClick={() => setStatusFilter(value)}
+            >
+              {label}{count ? <b>{count}</b> : null}
+            </button>
+          ))}
         </div>
-      ) : null}
-
-      <label className="changes-filter">
-        <input type="checkbox" checked={onlyPending} onChange={(e) => setOnlyPending(e.target.checked)} />
-        <span>غير المراجَع فقط</span>
-      </label>
+        <label className="changes-search">
+          <Search aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="ابحث باسم القسم أو الكلية"
+            aria-label="ابحث باسم القسم أو الكلية"
+          />
+        </label>
+      </div>
 
       {visible.length === 0 ? (
-        <EmptyState title="لا وارد" detail="لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل." />
+        <EmptyState title={query || statusFilter !== "all" ? "لا نتائج" : "لا وارد"} detail={query || statusFilter !== "all" ? "لا قسمَ يطابق البحث أو الفلتر الحالي." : "لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل."} />
       ) : (
         <div className="changes-inbox">
           {visible.map(row => (
@@ -287,6 +320,9 @@ function Report({ termId, scope, role, onBack }: {
   const [busy, setBusy] = useState(false);
   const [showRounds, setShowRounds] = useState(false);
   const [showRegulations, setShowRegulations] = useState(false);
+  /* «ما تحرّك» مدخلُ المراجعة السريعة، و«الجدول كامل» ما يطلبه القسم: أن يرى
+     جدولَه كلَّه والملاحظات في مواضعها، لا الملاحظات وحدها. */
+  const [view, setView] = useState<"changes" | "full">("changes");
   const [noteDraft, setNoteDraft] = useState<{ scheduleId: number; field: NoteField } | null>(null);
   const [noteText, setNoteText] = useState("");
   const [rebutting, setRebutting] = useState<NoteRow | null>(null);
@@ -316,6 +352,7 @@ function Report({ termId, scope, role, onBack }: {
     setReport(null);
     setShowRounds(false);
     setShowRegulations(false);
+    setView("changes");
     setNoteDraft(null);
     setRebutting(null);
     setMessage(null);
@@ -385,6 +422,85 @@ function Report({ termId, scope, role, onBack }: {
    * القسم يحطّ ملاحظات ولا يعدّل. والقرارُ — قبولاً وإرجاعاً — للتسجيل وحده.
    * فلا يُخلط البابان: كانت الخاناتُ تُفتح لمن يقرّر، فبقي من يعلّق بلا باب. */
   const canAnnotate = role.canAnnotate;
+  const mineOrigin = isRegistrar ? "registrar" : "department";
+  const existingNoteFor = (scheduleId: number, field: NoteField) =>
+    (notesByRow.get(scheduleId) || []).find(note => note.field === field && note.origin === mineOrigin);
+  /* فتحُ ورقة الملاحظة على خانةٍ بعينها: النصُّ الموجود، وإلا ما يعرفه النظام، وإلا فراغ. */
+  const openNote = (scheduleId: number, field: NoteField) => {
+    setNoteDraft({ scheduleId, field });
+    setNoteText(existingNoteFor(scheduleId, field)?.text || report.suggestions?.[`${scheduleId}:${field}`] || "");
+  };
+  /* ملاحظاتٌ وتعارضٌ وزرُّ تعليق — مشتركةٌ بين «ما تحرّك» و«الجدول كامل». */
+  const rowExtras = (scheduleId: number, annotatable: boolean, defaultField: NoteField) => {
+    const notes = notesByRow.get(scheduleId) || [];
+    return (
+      <>
+        {canAnnotate && annotatable ? (
+          <button type="button" className="changes-note-add" data-guide-target="changes.action.note" onClick={() => openNote(scheduleId, defaultField)}>
+            <MessageSquarePlus aria-hidden="true" /> علّق على خانة
+          </button>
+        ) : null}
+        {(report.crossScope || []).filter(clash => clash.scheduleId === scheduleId).map((clash, index) => (
+          <div className="changes-cross" key={`${clash.scheduleId}:${index}`}>
+            <AlertTriangle aria-hidden="true" />
+            <div>
+              <strong>
+                يتعارض مع «{clash.otherSectionName}»
+                {CROSS_KIND_LABEL[clash.kind] ? ` — ${CROSS_KIND_LABEL[clash.kind]}` : ""}
+              </strong>
+              <small>
+                {clash.visible
+                  ? `${clash.otherCourseName || "موعد"} · شعبة ${clash.otherSectionCode || "—"}`
+                  : "تفاصيل الموعد المقابل خارج نطاقك"}
+                {" — "}معالجتُه بمقايضة القاعات بين القسمين، لا بملاحظةٍ على هذا الصفّ.
+              </small>
+            </div>
+          </div>
+        ))}
+        {notes.length ? (
+          <ul className="changes-notes">
+            {notes.map(note => (
+              <li key={note.id} data-state={note.state}>
+                <span className="changes-note-field">
+                  {note.fieldLabel}
+                  {note.origin === "department" ? <em> · من القسم</em> : null}
+                </span>
+                <p>{note.text}</p>
+                {note.state === "changed" ? <small>عُولجت — تغيّرت الخانة</small> : null}
+                {note.state === "resolved" ? <small>محسومة — قُبل تبرير القسم</small> : null}
+                {Number(note.insistCount || 0) >= 3 ? (
+                  <small className="changes-note-stuck">
+                    اختلف الطرفان على هذه الخانة {note.insistCount} مرّات. إعلامٌ لرئيس القسم، ولا شيء يقف عليه.
+                  </small>
+                ) : null}
+                {note.rebuttal ? (
+                  <blockquote>
+                    <strong>ردّ القسم:</strong> {note.rebuttal.text}
+                    <cite>{note.rebuttal.userName}</cite>
+                  </blockquote>
+                ) : null}
+                <div className="changes-note-actions">
+                  {!isRegistrar && note.origin === "registrar" && note.state === "open" ? (
+                    <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
+                  ) : null}
+                  {isRegistrar && note.state === "answered" ? (
+                    <>
+                      <button type="button" data-guide-ignore="قبول تبرير القسم على ملاحظةٍ واحدة — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "accepted" }, "قُبل تبرير القسم")}>
+                        <Check aria-hidden="true" /> مقبول
+                      </button>
+                      <button type="button" data-guide-ignore="إعادة ملاحظةٍ واحدة إلى الانتظار — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "insisted" }, "أُعيدت الملاحظة")}>
+                        لا زلت أطلب التغيير
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </>
+    );
+  };
 
   return (
     <div className="changes-report">
@@ -433,10 +549,21 @@ function Report({ termId, scope, role, onBack }: {
         </div>
       ) : null}
 
-      <div className="changes-summary">
-        <FileDiff aria-hidden="true" />
-        <strong>{report.summary}</strong>
-        {report.diff.counts.unchanged ? <small>{report.diff.counts.unchanged} موعداً لم يتغيّر</small> : null}
+      <div className="changes-viewbar">
+        <div className="changes-summary">
+          <FileDiff aria-hidden="true" />
+          <strong>{report.summary}</strong>
+          {report.diff.counts.unchanged ? <small>{report.diff.counts.unchanged} موعداً لم يتغيّر</small> : null}
+        </div>
+        {/* تبديلٌ بين ما تحرّك والجدول كامل — القسم يريد رؤية جدوله كله والملاحظات فيه. */}
+        <div className="changes-view-toggle" role="group" aria-label="طريقة العرض">
+          <button type="button" data-active={view === "changes" || undefined} aria-pressed={view === "changes"} data-guide-ignore="تبديل العرض إلى ما تحرّك — عرضٌ لا فعل" onClick={() => setView("changes")}>
+            <FileDiff aria-hidden="true" /> ما تحرّك
+          </button>
+          <button type="button" data-active={view === "full" || undefined} aria-pressed={view === "full"} data-guide-ignore="تبديل العرض إلى الجدول كامل — عرضٌ لا فعل" onClick={() => setView("full")}>
+            <CalendarRange aria-hidden="true" /> الجدول كامل
+          </button>
+        </div>
       </div>
 
       {report.rounds.length > 1 ? (
@@ -466,131 +593,59 @@ function Report({ termId, scope, role, onBack }: {
         </div>
       ) : null}
 
-      {report.diff.entries.length === 0 ? (
-        <EmptyState title="لم يتغيّر شيء" detail="لا فرق بين هذا الجدول وما راجعتَه آخر مرّة." />
+      {view === "full" ? (
+        (report.fullSchedule || []).length === 0 ? (
+          <EmptyState title="لا مواعيد" detail="لا مواعيد محفوظة في جدول هذا القسم بعد." />
+        ) : (
+          <div className="changes-full" role="table" aria-label="الجدول كامل">
+            {(report.fullSchedule || []).map(row => (
+              <article key={`full:${row.scheduleId}`} className="changes-entry" data-kind={row.changed ? "changed" : undefined}>
+                <header>
+                  {row.changed ? <span className="changes-kind">تحرّك</span> : null}
+                  <strong>{row.course}</strong>
+                  <small>شعبة {row.sectionCode}</small>
+                </header>
+                <dl className="changes-fields changes-fields-full">
+                  <div><dt>الوقت</dt><dd><b>{row.time}</b></dd></div>
+                  <div><dt>الأيام</dt><dd><b>{row.days}</b></dd></div>
+                  <div><dt>القاعة</dt><dd><b>{row.room}</b></dd></div>
+                  <div><dt>أستاذ المقرر</dt><dd><b>{row.instructor}</b></dd></div>
+                </dl>
+                {rowExtras(row.scheduleId, true, "room")}
+              </article>
+            ))}
+          </div>
+        )
+      ) : report.diff.entries.length === 0 ? (
+        <EmptyState title="لم يتغيّر شيء" detail="لا فرق بين هذا الجدول وما راجعتَه آخر مرّة — انظر «الجدول كامل» لرؤية المواعيد كلها." />
       ) : (
         <div className="changes-table" role="table" aria-label="تغييرات الجدول">
-          {report.diff.entries.map(entry => {
-            const notes = notesByRow.get(entry.scheduleId) || [];
-            return (
-              <article key={`${entry.kind}:${entry.scheduleId}`} className="changes-entry" data-kind={entry.kind}>
-                <header>
-                  <span className="changes-kind">{KIND_LABEL[entry.kind]}</span>
-                  <strong>{entry.row?.AdCourseName || `موعد ${entry.scheduleId}`}</strong>
-                  <small>شعبة {entry.row?.SCode || "—"}</small>
-                </header>
+          {report.diff.entries.map(entry => (
+            <article key={`${entry.kind}:${entry.scheduleId}`} className="changes-entry" data-kind={entry.kind}>
+              <header>
+                <span className="changes-kind">{KIND_LABEL[entry.kind]}</span>
+                <strong>{entry.row?.AdCourseName || `موعد ${entry.scheduleId}`}</strong>
+                <small>شعبة {entry.row?.SCode || "—"}</small>
+              </header>
 
-                {entry.kind === "changed" ? (
-                  <dl className="changes-fields">
-                    {entry.changes.map(change => (
-                      <div key={change.field}>
-                        <dt>{change.label}</dt>
-                        <dd>
-                          <s>{change.before}</s>
-                          <ArrowRight aria-hidden="true" />
-                          <b>{change.after}</b>
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : null}
-
-                {/* الملاحظة بالنقر على الخانة. والخانات هي خانات الصفّ نفسها،
-                    فلا يحتاج الموظّف أن يصف أين المشكلة — ينقر عليها. */}
-                {canAnnotate && entry.kind !== "removed" ? (
-                  <div className="changes-note-targets" aria-label="علّق على خانة">
-                    {(Object.keys(DIFF_FIELD_LABEL) as DiffFieldKey[]).map(field => {
-                      const mineOrigin = isRegistrar ? "registrar" : "department";
-                      const existing = notes.find(note => note.field === field && note.origin === mineOrigin);
-                      return (
-                        <button
-                          key={field}
-                          type="button"
-                          data-guide-target="changes.action.note"
-                          data-state={existing?.state}
-                          onClick={() => {
-                            setNoteDraft({ scheduleId: entry.scheduleId, field });
-                            /* ما كُتب أوّلاً، وإلا ما يعرفه النظام، وإلا فراغ. */
-                            setNoteText(existing?.text || report.suggestions?.[`${entry.scheduleId}:${field}`] || "");
-                          }}
-                        >
-                          {DIFF_FIELD_LABEL[field]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-
-                {/* ── تعارضٌ مع قسمٍ آخر ──────────────────────────────────
-                    يُعرض ولا يُعلَّق عليه: الملاحظة تذهب لصاحب الصفّ، ومن لا
-                    يملك تعديلَه لا يُطالَب بمعالجة ملاحظةٍ عليه. وبابُ هذا
-                    النوع مقايضةُ القاعات، لا صندوقُ الملاحظات. */}
-                {(report.crossScope || []).filter(clash => clash.scheduleId === entry.scheduleId).map((clash, index) => (
-                  <div className="changes-cross" key={`${clash.scheduleId}:${index}`}>
-                    <AlertTriangle aria-hidden="true" />
-                    <div>
-                      {/* نوعُ التعارض في العنوان: الزوجُ الواحد قد يصطدم على
-                          القاعة وعلى الأستاذ معاً، فيظهر سطران — ولو لم يُقل
-                          نوعُهما لقُرئا تكراراً لا خبرين. */}
-                      <strong>
-                        يتعارض مع «{clash.otherSectionName}»
-                        {CROSS_KIND_LABEL[clash.kind] ? ` — ${CROSS_KIND_LABEL[clash.kind]}` : ""}
-                      </strong>
-                      <small>
-                        {clash.visible
-                          ? `${clash.otherCourseName || "موعد"} · شعبة ${clash.otherSectionCode || "—"}`
-                          : "تفاصيل الموعد المقابل خارج نطاقك"}
-                        {" — "}معالجتُه بمقايضة القاعات بين القسمين، لا بملاحظةٍ على هذا الصفّ.
-                      </small>
+              {entry.kind === "changed" ? (
+                <dl className="changes-fields">
+                  {entry.changes.map(change => (
+                    <div key={change.field}>
+                      <dt>{change.label}</dt>
+                      <dd>
+                        <s>{change.before}</s>
+                        <ArrowRight aria-hidden="true" />
+                        <b>{change.after}</b>
+                      </dd>
                     </div>
-                  </div>
-                ))}
-                {notes.length ? (
-                  <ul className="changes-notes">
-                    {notes.map(note => (
-                      <li key={note.id} data-state={note.state}>
-                        <span className="changes-note-field">
-                          {note.fieldLabel}
-                          {/* مصدرُ الملاحظة يُقال: ملاحظةُ التسجيل تمنع الإرسال،
-                              وملاحظةُ القسم داخليةٌ لا تمنع شيئاً. */}
-                          {note.origin === "department" ? <em> · من القسم</em> : null}
-                        </span>
-                        <p>{note.text}</p>
-                        {note.state === "changed" ? <small>عُولجت — تغيّرت الخانة</small> : null}
-                        {note.state === "resolved" ? <small>محسومة — قُبل تبرير القسم</small> : null}
-                        {Number(note.insistCount || 0) >= 3 ? (
-                          <small className="changes-note-stuck">
-                            اختلف الطرفان على هذه الخانة {note.insistCount} مرّات. إعلامٌ لرئيس القسم، ولا شيء يقف عليه.
-                          </small>
-                        ) : null}
-                        {note.rebuttal ? (
-                          <blockquote>
-                            <strong>ردّ القسم:</strong> {note.rebuttal.text}
-                            <cite>{note.rebuttal.userName}</cite>
-                          </blockquote>
-                        ) : null}
-                        <div className="changes-note-actions">
-                          {!isRegistrar && note.origin === "registrar" && note.state === "open" ? (
-                            <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
-                          ) : null}
-                          {isRegistrar && note.state === "answered" ? (
-                            <>
-                              <button type="button" data-guide-ignore="قبول تبرير القسم على ملاحظةٍ واحدة — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "accepted" }, "قُبل تبرير القسم")}>
-                                <Check aria-hidden="true" /> مقبول
-                              </button>
-                              <button type="button" data-guide-ignore="إعادة ملاحظةٍ واحدة إلى الانتظار — قرارٌ داخل الملاحظة لا على الجدول" disabled={busy} onClick={() => void act(`/api/schedule-notes/${note.id}/verdict`, { verdict: "insisted" }, "أُعيدت الملاحظة")}>
-                                لا زلت أطلب التغيير
-                              </button>
-                            </>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </article>
-            );
-          })}
+                  ))}
+                </dl>
+              ) : null}
+
+              {rowExtras(entry.scheduleId, entry.kind !== "removed", entry.changes?.[0]?.field || "room")}
+            </article>
+          ))}
         </div>
       )}
 
@@ -615,9 +670,26 @@ function Report({ termId, scope, role, onBack }: {
         <div className="changes-extend-sheet" role="dialog" aria-label="ملاحظة على خانة">
           <div className="changes-extend-card">
             <header>
-              <strong>ملاحظة على {DIFF_FIELD_LABEL[noteDraft.field as DiffFieldKey] || "الموعد"}</strong>
+              <strong>ملاحظة على خانة</strong>
               <button type="button" data-guide-ignore="إغلاق الورقة المنبثقة — لا يغيّر شيئاً" onClick={() => setNoteDraft(null)} aria-label="إغلاق"><X /></button>
             </header>
+            {/* اختيار الخانة داخل الورقة — بدل صفٍّ من ستّة أزرارٍ يزاحم كل موعد. */}
+            <label>
+              <span>الخانة</span>
+              <select
+                value={String(noteDraft.field)}
+                onChange={(e) => {
+                  const field = e.target.value as NoteField;
+                  const existing = existingNoteFor(noteDraft.scheduleId, field);
+                  setNoteDraft({ scheduleId: noteDraft.scheduleId, field });
+                  setNoteText(existing?.text || report.suggestions?.[`${noteDraft.scheduleId}:${field}`] || "");
+                }}
+              >
+                {(Object.keys(DIFF_FIELD_LABEL) as DiffFieldKey[]).map(field => (
+                  <option key={field} value={field}>{DIFF_FIELD_LABEL[field]}</option>
+                ))}
+              </select>
+            </label>
             <label>
               <span>النصّ <small>اختياري — الخانة نفسها هي الرسالة</small></span>
               <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder={`راجِع ${DIFF_FIELD_LABEL[noteDraft.field as DiffFieldKey] || "الموعد"}`} autoFocus />

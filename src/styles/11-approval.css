@@ -501,3 +501,37 @@
 
 /* ملاحظةٌ حُسمت: تبقى في مكانها للحجّة، وتُخفت لأنها لم تعد تنتظر أحداً. */
 .changes-notes [data-state="resolved"]{border-inline-start-color:var(--line-strong);opacity:.72}
+
+/* ── شريط الوارد: فلترٌ بالحالة وبحثٌ سريع ──────────────────────────────────
+ * الأقسام كثيرة، فمن يبحث عن قسمٍ بعينه لا يمرّ على البطاقات كلها. */
+.changes-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px}
+.changes-filter-chips{display:flex;flex-wrap:wrap;gap:6px}
+.changes-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:var(--r-full);border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-size:.82rem;font-weight:600;cursor:pointer}
+.changes-chip:hover{border-color:var(--line-strong)}
+.changes-chip>b{font-size:.72rem;font-weight:800;padding:0 6px;border-radius:var(--r-full);background:var(--surface-3);color:var(--ink-2);min-width:18px;text-align:center}
+.changes-chip[data-active]{background:var(--accent-softer);color:var(--accent-ink);border-color:color-mix(in srgb,var(--accent) 30%,transparent)}
+.changes-chip[data-active]>b{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent-ink)}
+.changes-search{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:var(--r-full);border:1px solid var(--line);background:var(--surface-2);min-width:210px;flex:1 1 210px;max-width:320px}
+.changes-search>svg{inline-size:15px;block-size:15px;color:var(--muted);flex:0 0 auto}
+.changes-search>input{flex:1;border:0;background:transparent;color:var(--ink);font-size:.86rem;outline:none;min-width:0}
+
+/* ── شريط العرض: ما تحرّك / الجدول كامل ─────────────────────────────────────
+ * القسم يريد رؤية جدوله كله والملاحظات فيه، لا الملاحظات وحدها. */
+.changes-viewbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between;margin:14px 0 10px}
+.changes-view-toggle{display:inline-flex;gap:4px;padding:3px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2)}
+.changes-view-toggle>button{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:0;border-radius:calc(var(--r-md) - 3px);background:transparent;color:var(--ink-2);font-size:.84rem;font-weight:700;cursor:pointer}
+.changes-view-toggle>button>svg{inline-size:15px;block-size:15px}
+.changes-view-toggle>button[data-active]{background:var(--accent);color:var(--on-accent,#fff)}
+
+/* زرُّ تعليقٍ واحدٍ لكل موعد — بدل صفٍّ من ستّة أزرارٍ كان يزاحم كل بطاقة. */
+.changes-note-add{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:6px 12px;border-radius:var(--r-full);border:1px dashed color-mix(in srgb,var(--accent) 40%,var(--line));background:transparent;color:var(--accent-ink);font-size:.82rem;font-weight:700;cursor:pointer}
+.changes-note-add:hover{background:var(--accent-softer);border-style:solid}
+.changes-note-add>svg{inline-size:15px;block-size:15px}
+
+/* ── الجدول كامل: كل موعدٍ ببطاقةٍ هادئة، والمتحرّك مُعلَّم ─────────────────── */
+.changes-full{display:grid;gap:10px}
+.changes-fields-full{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px 16px}
+.changes-fields-full>div{display:flex;flex-direction:column;gap:2px}
+.changes-fields-full dt{font-size:.72rem;color:var(--muted);font-weight:600}
+.changes-fields-full dd{margin:0;font-size:.9rem;color:var(--ink)}
+.changes-full .changes-entry[data-kind="changed"]{border-inline-start:3px solid color-mix(in srgb,var(--warning) 55%,transparent)}
