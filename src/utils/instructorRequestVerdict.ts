@@ -104,6 +104,14 @@ export interface RequestVerdict {
 export interface RequestedRow {
   /** الصفُّ الأصلي حين يكون تعديلاً أو حذفاً، و`null` حين يكون إضافة. */
   rowId: number | null;
+  /**
+   * هويّةٌ مؤقّتةٌ للإضافة، سالبةٌ وفريدةٌ داخل الحزمة الواحدة.
+   *
+   * الإضافاتُ لا معرّف لها بعد، وكانت كلُّها تحمل `-1`. فإضافتان في حزمةٍ
+   * واحدةٍ على الساعة نفسها كانتا صفّاً واحداً في نظر محرّك التعارض، فيتخطّى
+   * المقارنةَ بينهما ويُجيز الاثنتين.
+   */
+  tempId?: number;
   action: RequestAction;
   AdCourseId: number;
   days: DayKey[];
@@ -152,7 +160,7 @@ export function rowFromRequest(request: RequestedRow, base: Partial<FSchedule>):
   const end = endForRequest(request.days, request.start);
   const row: any = {
     ...base,
-    id: request.rowId ?? -1,
+    id: request.rowId ?? request.tempId ?? -1,
     AdCourseId: request.AdCourseId,
     fstarttime: request.start,
     fendtime: end,
@@ -205,7 +213,7 @@ function instructorFree(instructorId: number, days: DayKey[], start: string, end
  * والبار المطلوب مطلق: لا قاعة مشغولة، ولا الأستاذ محجوز، ولا تقاطعَ مع
  * مقرّرٍ يشترك طلبتُه. موضعٌ يُصلح شيئاً ويكسر آخرَ ليس بديلاً.
  */
-function nearestFree(request: RequestedRow, context: VerdictContext, roomKeys: string[]): RequestSlot[] {
+function nearestFree(request: RequestedRow, context: VerdictContext, roomKeys: string[], week: FSchedule[], identity: number): RequestSlot[] {
   const ladder = (context.startLadder || []).filter(Boolean);
   if (!ladder.length || !request.days.length) return [];
   const current = toMinutes(request.start);
@@ -222,9 +230,9 @@ function nearestFree(request: RequestedRow, context: VerdictContext, roomKeys: s
       if (seen.has(key)) continue;
       seen.add(key);
       if (day === request.days[0] && minutes === current) continue;
-      if (!instructorFree(context.instructorId, [day], start, end, context.allRows, request.rowId)) continue;
-      if (roomKeys.length && !roomKeys.some(roomKey => roomFree(roomKey, [day], start, end, context.allRows, request.rowId))) continue;
-      if (cohortClash(request.AdCourseId, [day], start, end, context, request.rowId)) continue;
+      if (!instructorFree(context.instructorId, [day], start, end, week, identity)) continue;
+      if (roomKeys.length && !roomKeys.some(roomKey => roomFree(roomKey, [day], start, end, week, identity))) continue;
+      if (cohortClash(request.AdCourseId, [day], start, end, week, context.cohortPairs, identity)) continue;
       found.push({ day, dayLabel: dayLabel(day), start, end, distance: Math.abs(minutes - current) });
     }
   }
@@ -234,8 +242,7 @@ function nearestFree(request: RequestedRow, context: VerdictContext, roomKeys: s
 }
 
 /** هل يتقاطع هذا الموضع مع مقرّرٍ يشترك طلبتُه مع هذا المقرّر؟ */
-function cohortClash(courseId: number, days: DayKey[], start: string, end: string, context: VerdictContext, ignoreRowId: number | null): boolean {
-  const pairs = context.cohortPairs;
+function cohortClash(courseId: number, days: DayKey[], start: string, end: string, rows: FSchedule[], pairs: Set<string> | undefined, ignoreRowId: number | null): boolean {
   if (!pairs?.size) return false;
   const partners = new Set<number>();
   for (const entry of pairs) {
@@ -245,7 +252,7 @@ function cohortClash(courseId: number, days: DayKey[], start: string, end: strin
   }
   if (!partners.size) return false;
   const from = toMinutes(start), to = toMinutes(end);
-  for (const row of context.allRows) {
+  for (const row of rows) {
     if (ignoreRowId != null && Number(row.id) === ignoreRowId) continue;
     if (!partners.has(Number(row.AdCourseId))) continue;
     if (!days.some(day => Boolean((row as any)[day]))) continue;
@@ -265,6 +272,28 @@ function cohortClash(courseId: number, days: DayKey[], start: string, end: strin
 export function judgeRequest(request: RequestedRow, context: VerdictContext): RequestVerdict {
   const reasons: RequestReason[] = [];
   const computedEnd = endForRequest(request.days, request.start);
+  /* هويّةُ الصفّ: معرّفُه إن كان قائماً، وإلا هويّتُه المؤقّتة. تُستعمل لتخطّي
+     الصفِّ نفسِه في كل فحص، فلا يتعارض مع ذاته حين يُنقل. */
+  const identity = request.rowId ?? request.tempId ?? -1;
+
+  /* ── الأسبوع الذي يُقاس عليه ───────────────────────────────────────────
+   *
+   * ليس أسبوعَ الفصل كما هو الآن: هو أسبوعُه بعد تطبيق الحزمة كلها على جدول
+   * هذا الأستاذ. والفرقُ ليس تفصيلاً — حزمةٌ تنقل محاضرتين إلى الساعة نفسها
+   * لا تصطدم إحداهما بالأخرى في الأسبوع القديم، لأن أيّاً منهما لم تكن هناك
+   * بعد. فكانتا تمرّان كلتاهما «بلا تعارض»، ويكتشف القسمُ التصادمَ عند
+   * التثبيت أو بعده.
+   *
+   * فتُستبدل صفوفُ هذا الأستاذ بصفوفه بعد الطلب، ويبقى ما لغيره كما هو —
+   * لأن القاعةَ تُشغل من كل مكان، والزميلُ لم يطلب شيئاً.
+   */
+  const afterRows = context.instructorRowsAfter || [];
+  const afterIds = new Set(afterRows.map(row => Number(row.id)));
+  const week: FSchedule[] = [
+    ...context.allRows.filter(row =>
+      !afterIds.has(Number(row.id)) && Number(row.AdInstructorId) !== Number(context.instructorId)),
+    ...afterRows,
+  ];
 
   const verdictOf = (): RequestVerdict => {
     const blocking = reasons.some(reason => reason.blocking);
@@ -295,8 +324,21 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
     reasons.push({ source: "shape", text: "اختر يوماً واحداً على الأقل.", blocking: true });
     return verdictOf();
   }
-  if (!request.start || !computedEnd) {
+  /* الصيغةُ تُتحقَّق قبل القياس: `toMinutes` تقرأ ما ليس وقتاً صفراً، فـ«صباحاً»
+     كانت تصير منتصفَ الليل وتمرّ بقيّةَ الفحوص كأنها موعدٌ صحيح. */
+  if (!/^\d{1,2}:\d{2}$/.test(String(request.start || ""))) {
+    reasons.push({ source: "shape", text: "اكتب وقت البداية بصيغة الساعة والدقيقة.", blocking: true });
+    return verdictOf();
+  }
+  if (!computedEnd) {
     reasons.push({ source: "shape", text: "اكتب وقت البداية.", blocking: true });
+    return verdictOf();
+  }
+  /* واليومُ الدراسيُّ له أوّلٌ كما له آخِر. الفحصُ كان يحرس آخِرَه وحده، فموعدٌ
+     السابعةَ صباحاً يمرّ سليماً — ثم لا يجد البحثُ عن البدائل موضعاً له، لأن
+     سُلّمَ البدايات يبدأ من الثامنة. حَدٌّ واحدٌ يُحرَس من طرفيه. */
+  if (toMinutes(request.start) < SCHEDULE_DAY_START) {
+    reasons.push({ source: "shape", text: "تبدأ المحاضرة قبل بداية اليوم الدراسي.", blocking: true });
     return verdictOf();
   }
   /* يُقاس على النهاية قبل الحدّ لا بعده: `endForRequest` تقصّ ما يتجاوز نهاية
@@ -329,9 +371,10 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
     nature: context.nature,
   }).filter(isDecision1912Finding);
 
-  const touched = new Set(context.instructorRowsAfter
-    .filter(row => Number(row.AdCourseId) === request.AdCourseId)
-    .map(row => Number(row.id)));
+  /* الملاحظةُ تُنسب إلى الصفّ المطلوب وحدَه، لا إلى كل صفٍّ يشاركه رقمَ
+     المقرّر: أستاذٌ يدرّس شعبتين من مقرّرٍ واحد كانت ملاحظةٌ تخصّ شعبةً لم
+     يمسّها تُعلَّق على الشعبة التي عدّلها، فيُطلب منه استثناءٌ عن غير ذنب. */
+  const touched = new Set<number>([identity]);
 
   for (const finding of findings as RegulationFinding[]) {
     /* ملاحظةٌ لا تمسّ هذا الصفَّ ليست حكماً عليه: جدولُ الأستاذ يُراجَع كاملاً
@@ -348,8 +391,8 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
 
   /* ── الأستاذ نفسه ─────────────────────────────────────────────────────── */
   const clashes = findConflicts(
-    [rowFromRequest(request, context.instructorRowsAfter.find(row => Number(row.id) === request.rowId) || { AdInstructorId: context.instructorId })],
-    context.allRows,
+    [rowFromRequest(request, afterRows.find(row => Number(row.id) === identity) || { AdInstructorId: context.instructorId })],
+    week,
     { cohortPairs: context.cohortPairs, placeholderInstructorIds: context.placeholderInstructorIds },
   );
   if (clashes.some(clash => clash.reasons?.includes("instructor") || clash.type === "instructor")) {
@@ -357,7 +400,7 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
   }
 
   /* ── طلبةٌ مشتركون ────────────────────────────────────────────────────── */
-  if (cohortClash(request.AdCourseId, request.days, request.start, computedEnd, context, request.rowId)) {
+  if (cohortClash(request.AdCourseId, request.days, request.start, computedEnd, week, context.cohortPairs, identity)) {
     /* لا يُسمّى المقرّرُ الآخر: الأستاذ لا يحتاج اسمه ليغيّر وقته، وتسميتُه
        تكشف جدولَ قسمٍ آخر لمن لا شأن له به. */
     reasons.push({ source: "cohort", text: "يتقاطع هذا الوقت مع مقرّرٍ يشترك فيه طلبتك.", blocking: true });
@@ -365,7 +408,7 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
 
   /* ── القاعة ───────────────────────────────────────────────────────────── */
   const roomKeys = (context.knownRoomKeys || []).filter(Boolean);
-  const candidates = roomKeys.filter(key => roomFree(key, request.days, request.start, computedEnd, context.allRows, request.rowId));
+  const candidates = roomKeys.filter(key => roomFree(key, request.days, request.start, computedEnd, week, identity));
   const roomAvailable = roomKeys.length ? candidates.length > 0 : null;
   if (roomAvailable === false) {
     reasons.push({ source: "room", text: "لا تتوفّر قاعةٌ في هذا الوقت.", blocking: true });
@@ -374,7 +417,7 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
   const verdict = verdictOf();
   verdict.roomAvailable = roomAvailable;
   verdict.roomCandidates = candidates;
-  verdict.nearestTimes = verdict.sendable ? [] : nearestFree(request, context, roomKeys);
+  verdict.nearestTimes = verdict.sendable ? [] : nearestFree(request, context, roomKeys, week, identity);
   if (!verdict.sendable && verdict.nearestTimes.length) {
     verdict.headline = `${verdict.headline} أقربُ الأوقات المتاحة: ${verdict.nearestTimes.map(slot => `${slot.dayLabel} ${slot.start}`).join(" · ")}`;
   }

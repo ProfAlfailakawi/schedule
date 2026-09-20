@@ -13419,11 +13419,41 @@ async function judgeRequestItems(request: InstructorRequest): Promise<Instructor
   const open = requestWindowOpen(request);
   const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
 
-  const items = (request.items || []).map(item => {
+  /* ── جدولُ الأستاذ بعد الحزمة، لا قبلها ────────────────────────────────
+   *
+   * الحكمُ يُقاس على ما سيكون، لا على ما هو كائن: حزمةٌ تنقل محاضرتين إلى
+   * الساعة نفسها لا تصطدم إحداهما بالأخرى في الجدول القديم، لأن أيّاً منهما
+   * لم تكن هناك بعد. فتُبنى صفوفُه بعد الطلب مرّةً واحدةً للحزمة كلها، ثم
+   * يُقاس كلُّ بندٍ عليها — فيرى البندُ إخوتَه.
+   *
+   * والإضافةُ تأخذ هويّةً مؤقّتةً سالبةً فريدة، لأن إضافتين بلا معرّفٍ كانتا
+   * صفّاً واحداً في نظر محرّك التعارض فيتخطّى المقارنةَ بينهما.
+   */
+  const tempIdFor = (index: number) => -(index + 1);
+  const rowsAfter: any[] = [];
+  for (const [index, item] of (request.items || []).entries()) {
+    if (item.action === "delete") continue;
+    const original = mine.find(row => Number(row.id) === Number(item.rowId));
+    if (item.action === "keep") { if (original) rowsAfter.push(original); continue; }
+    const slots = item.slots || [];
+    const days = new Set(slots.map(slot => String(slot.day)));
+    const base = original || { AdInstructorId: Number(request.AdInstructorId) };
+    rowsAfter.push({
+      ...base,
+      id: item.rowId ?? tempIdFor(index),
+      AdCourseId: Number(item.after?.courseId || item.before?.courseId || 0),
+      fsunday: days.has("fsunday"), fmonday: days.has("fmonday"), ftuesday: days.has("ftuesday"),
+      fwednesday: days.has("fwednesday"), fthursday: days.has("fthursday"),
+      fstarttime: slots[0]?.start || "", fendtime: slots[0]?.end || "",
+    });
+  }
+
+  const items = (request.items || []).map((item, index) => {
     const slot = item.slots?.[0];
     const days = (item.slots || []).map(entry => entry.day as RequestDayKey);
     const verdict = judgeRequest({
       rowId: item.rowId,
+      tempId: tempIdFor(index),
       action: item.action,
       AdCourseId: Number(item.after?.courseId || item.before?.courseId || 0),
       days: days.length ? days : [],
@@ -13431,7 +13461,7 @@ async function judgeRequestItems(request: InstructorRequest): Promise<Instructor
     }, {
       instructorId: Number(request.AdInstructorId),
       allRows: context.allRows,
-      instructorRowsAfter: mine,
+      instructorRowsAfter: rowsAfter,
       courses: context.courses,
       instructors: context.instructors,
       cohortPairs: context.cohortPairs,

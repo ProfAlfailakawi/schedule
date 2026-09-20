@@ -205,7 +205,12 @@ const busyLadder = [
   row({ id: 40, AdInstructorId: OTHER, AdCourseId: 200, AdRoomCode: "أ", AdRoomHall: "101", fstarttime: "10:00", fendtime: "10:50" }),
   row({ id: 41, AdCourseId: 200, AdRoomCode: "ب", AdRoomHall: "201", fstarttime: "09:00", fendtime: "09:50" }),
 ];
-const alternatives = judgeRequest(ask(), context({ allRows: busyLadder, knownRoomKeys: [ROOM_A] }));
+/* `instructorRowsAfter` صارت حاملةً للمعنى: هي جدولُ الأستاذ بعد الحزمة، فما
+   لم يُذكر فيها ليس له. فتُذكر محاضرتُه التاسعةَ التي لم يطلب تغييرها. */
+const alternatives = judgeRequest(ask(), context({
+  allRows: busyLadder, knownRoomKeys: [ROOM_A],
+  instructorRowsAfter: [row({ id: 1 }), row({ id: 41, AdCourseId: 200, AdRoomCode: "ب", AdRoomHall: "201", fstarttime: "09:00", fendtime: "09:50" })],
+}));
 check(!alternatives.nearestTimes.some(slot => slot.start === "09:00"),
   "ولا يُقترح وقتٌ الأستاذُ نفسه مشغولٌ فيه");
 
@@ -236,6 +241,69 @@ const line = describeRequest([free, taken, mixedDays]);
 check(line.includes("بلا تعارض") && line.includes("يحتاج استثناءً") && line.includes("متعارض"),
   "والسطرُ يفصل الأصنافَ الثلاثة");
 check(/^\S*\s*3|ثلاث/.test(line) || line.includes("3"), "ويبدأ بالعدد الكلّي، فلا رقمَ بلا قاعدته");
+
+
+/* ── أربعةُ أعطالٍ كشفتها مراجعةٌ آلية على العمل نفسه ───────────────────── */
+
+/* ١) اليومُ الدراسيُّ له أوّلٌ كما له آخِر. كان الفحصُ يحرس آخِرَه وحده، فموعدٌ
+      السابعةَ صباحاً يمرّ سليماً — ثم لا يجد البحثُ عن البدائل موضعاً له، لأن
+      سُلّمَ البدايات يبدأ من الثامنة. */
+check(!judgeRequest(ask({ start: "07:00" }), context()).sendable,
+  "موعدٌ قبل بداية اليوم الدراسي يُمنع");
+check(judgeRequest(ask({ start: "07:00" }), context()).reasons.some(r => r.text.includes("قبل بداية اليوم")),
+  "ويُقال السببُ صراحة");
+check(judgeRequest(ask({ start: "08:00" }), context()).sendable, "وأوّلُ اليوم نفسُه مقبول");
+
+/* والصيغةُ تُتحقَّق قبل القياس: `toMinutes` تقرأ ما ليس وقتاً صفراً، فنصٌّ
+   حرٌّ كان يصير منتصفَ الليل ويمرّ بقيّةَ الفحوص كأنه موعدٌ صحيح. */
+check(!judgeRequest(ask({ start: "صباحاً" as any }), context()).sendable, "ونصٌّ ليس وقتاً يُردّ");
+check(!judgeRequest(ask({ start: "8" as any }), context()).sendable, "ورقمٌ بلا دقائق يُردّ");
+
+/* ٢) الملاحظةُ اللائحية تُنسب إلى الصفّ المطلوب وحدَه: أستاذٌ يدرّس شعبتين من
+      مقرّرٍ واحد كانت ملاحظةٌ تخصّ شعبةً لم يمسّها تُعلَّق على التي عدّلها. */
+const twoSections = [
+  row({ id: 1, SCode: "01", fstarttime: "10:00", fendtime: "10:50" }),
+  row({ id: 2, SCode: "02", fstarttime: "12:00", fendtime: "12:50" }),
+];
+const onlyOther = judgeRequest(ask({ rowId: 1 }), context({ allRows: twoSections, instructorRowsAfter: twoSections }));
+check(onlyOther.reasons.every(reason => reason.source !== "regulation" || (reason.article || "").length > 0),
+  "كلُّ ملاحظةٍ لائحيةٍ تحمل مادّتها");
+
+/* ٣) الحزمةُ تُقاس على نفسها: نقلُ محاضرتين إلى الساعة نفسها لا يصطدم في
+      الجدول القديم، لأن أيّاً منهما لم تكن هناك بعد. */
+const packageAfter = [
+  row({ id: 1, fstarttime: "10:00", fendtime: "10:50" }),
+  row({ id: 2, AdCourseId: 200, fstarttime: "10:00", fendtime: "10:50" }),
+];
+const packageBefore = [
+  row({ id: 1, fstarttime: "08:00", fendtime: "08:50" }),
+  row({ id: 2, AdCourseId: 200, fstarttime: "12:00", fendtime: "12:50" }),
+];
+const inPackage = judgeRequest(ask({ rowId: 1 }), context({
+  allRows: packageBefore, instructorRowsAfter: packageAfter,
+}));
+check(!inPackage.sendable, "بندٌ يصطدم ببندٍ آخرَ في حزمته يُمنع");
+check(inPackage.reasons.some(reason => reason.source === "instructor"),
+  "ويُقال إنه تعارضٌ مع محاضرةٍ أخرى له");
+
+/* وصفُّه هو لا يُحسب تعارضاً مع نفسه في الأسبوع الجديد. */
+const aloneAfter = [row({ id: 1, fstarttime: "10:00", fendtime: "10:50" })];
+check(judgeRequest(ask({ rowId: 1 }), context({ allRows: [row({ id: 1 })], instructorRowsAfter: aloneAfter })).sendable,
+  "والصفُّ لا يتعارض مع نسخته الجديدة");
+
+/* ٤) إضافتان في حزمةٍ واحدةٍ هويّتان لا هويّةٌ واحدة: بلا ذلك كانتا صفّاً
+      واحداً في نظر محرّك التعارض، فيتخطّى المقارنةَ بينهما ويُجيز الاثنتين. */
+const twoAdds = [
+  row({ id: -1, AdCourseId: 100, fstarttime: "10:00", fendtime: "10:50" }),
+  row({ id: -2, AdCourseId: 200, fstarttime: "10:00", fendtime: "10:50" }),
+];
+const secondAdd = judgeRequest(
+  { rowId: null, tempId: -2, action: "add", AdCourseId: 200, days: ["fsunday"], start: "10:00" },
+  context({ allRows: [], instructorRowsAfter: twoAdds }),
+);
+check(!secondAdd.sendable, "إضافتان على الساعة نفسها تتعارضان");
+check(rowFromRequest({ rowId: null, tempId: -7, action: "add", AdCourseId: 1, days: ["fsunday"], start: "08:00" }, {}).id === -7,
+  "والهويّةُ المؤقّتة تصل إلى الصفّ المبنيّ");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

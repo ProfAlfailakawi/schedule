@@ -129,5 +129,23 @@ check(page.includes("ينتهي ") && page.includes("مدّةُ المحاضرة
 check(page.includes('fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check"'),
   "والحكمُ يُسأل عنه الخادمُ عند كل تغيير");
 
+
+/* ── الحزمةُ تُقاس على نفسها ────────────────────────────────────────────── */
+
+/* الحكمُ يُقاس على ما سيكون لا على ما هو كائن: حزمةٌ تنقل محاضرتين إلى الساعة
+   نفسها لا تصطدم إحداهما بالأخرى في الجدول القديم، لأن أيّاً منهما لم تكن
+   هناك بعد. فتُبنى صفوفُ الأستاذ بعد الطلب مرّةً واحدةً ثم يُقاس كلُّ بندٍ
+   عليها. */
+check(server.includes("const rowsAfter: any[] = [];") && server.includes("instructorRowsAfter: rowsAfter"),
+  "جدولُ الأستاذ بعد الحزمة يُبنى ويُقاس عليه، لا على الجدول القديم");
+check(server.includes('if (item.action === "delete") continue;'),
+  "والمحذوفُ يغيب عن الأسبوع الجديد");
+/* إضافتان بلا معرّفٍ كانتا صفّاً واحداً في نظر محرّك التعارض، فيتخطّى
+   المقارنةَ بينهما ويُجيز الاثنتين على الساعة نفسها. */
+check(server.includes("const tempIdFor = (index: number) => -(index + 1);"),
+  "وكلُّ إضافةٍ تأخذ هويّةً مؤقّتةً فريدةً في حزمتها");
+check(server.includes("id: item.rowId ?? tempIdFor(index)") && server.includes("tempId: tempIdFor(index)"),
+  "والهويّةُ نفسُها تُستعمل في الصفّ وفي الحكم، فلا يفترقان");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
