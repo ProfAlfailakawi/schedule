@@ -7108,12 +7108,17 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
         );
       }
     } else {
-      // Bounded on both sides: an unbounded `\d+` followed by `\s*` backtracks
-      // quadratically over a long digit run that never reaches the word —
-      // measured at seven seconds on sixty thousand digits. The lookbehind is
-      // not decoration: `\d{1,3}` alone would start reading «100 ساعات» at its
-      // second digit and hand back «00», turning a threshold into zero.
-      const threshold=(Number(normalized.match(/(?<!\d)(\d{1,3})\s{0,4}ساع/)?.[1]||3))*60;
+      // The lookbehind is what stops the catastrophe, not a digit cap: the old
+      // unbounded form (a bare digit class then optional whitespace before the
+      // word) backtracked quadratically because every position in a long digit
+      // run was a fresh start — measured at seven seconds on sixty thousand
+      // digits. `(?<!\d)` anchors the match to a run's first digit, so
+      // only one start does the work: linear, two milliseconds on the same
+      // input. And because the digit count stays unbounded, a four-or-more-digit
+      // threshold like «1000 ساعات» is still read in full rather than silently
+      // falling back to the three-hour default. `\s{0,4}` bounds the gap for
+      // good measure.
+      const threshold=(Number(normalized.match(/(?<!\d)(\d+)\s{0,4}ساع/)?.[1]||3))*60;
       const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);
       const longest=Math.max(0,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
       summary=long.length?`يوجد ${long.length} أستاذاً بفراغ يومي يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
