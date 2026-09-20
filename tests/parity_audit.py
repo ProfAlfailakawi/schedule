@@ -80,7 +80,7 @@ check('requirePermission(11)' in server and 'requirePermission(12)' in server an
 check('requireAnyPermission([7, 8, 9, 10, 14, 16, 17])' in server,'schedule/report dataset permission gate preserved')
 # صار الحرسُ أضيقَ لا أوسع: `isPowerAdmin && hasPerm(7) && user.IsRootAdmin`.
 # فيُثبَّت القائمُ اليوم، وهو يفي بما كان يفي به الرقمُ الصريح وزيادة.
-check('user.IsRootAdmin' in app and 'scheduleCopy' in app,'CopySchedule UI restricted to legacy primary admin')
+check('isPowerAdmin && hasPerm(7) && user.IsRootAdmin' in app,'CopySchedule UI restricted to legacy primary admin')
 check('req.user.SystemUserId !== 1' in server,'CopySchedule API restricted to legacy primary admin')
 # زرُّ التنقّل انتقل إلى `NavButton`، والضغطةُ ما زالت واحدةً مباشرة.
 check('onClick={() => onGo(view)}' in app,'navigation is direct single-click')
@@ -157,7 +157,8 @@ check('db.json.gz' in snapshot and 'gunzipSync' in snapshot,'compressed legacy s
 # تغيّر العقدُ هنا عمداً: صارت هناك خدمةُ تجربةٍ على Cloud Run تعمل بصناديق
 # معزولةٍ في الذاكرة، فلا تُرقّى إلى Firestore ولا يُفتح لها شيءٌ من بيانات
 # العمل. وتثبيتُ «الترقيةِ دائماً» كان سيُناقض تلك الخدمة.
-check('isCloudRunRuntime()' in repo and 'requestedMode' in repo and 'Firestore' in repo,'Cloud Run mode is explicit: demo stays isolated, business data stays durable')
+check('const mode: "demo" | "firestore" = requestedMode;' in repo,'data mode follows the asked-for mode, never a hard-coded constant')
+check('isCloudRunRuntime() && mode === "demo"' in repo,'Cloud Run demo service announces its isolated sandboxes')
 check('/tmp' in snapshot and 'schedule-private' in snapshot,'Cloud Run temporary private path is explicit')
 check('gunzipSync' in migration,'Firestore migration accepts compressed snapshot directly')
 check('await initDatabase();' in server and 'startServer().catch' in server,'server waits for database initialization before listening')
@@ -172,7 +173,10 @@ check('living-experience-tools' in living,'advanced schedule tools remain availa
 check('الفصل السابق' in decision and 'القرار الأهم الآن' in decision and 'بصمة القسم' in decision,'no advanced decision function was removed')
 for forbidden in ['SEMESTER GENESIS','DECISION SAFETY NET','MEETING INTELLIGENCE','CONFLICT TOPOLOGY','Decision Memory','FAIRNESS ENGINE','FRAGILITY MAP','ROOM INTELLIGENCE','What‑If','Undo بلغة','Living Report','WHY ENGINE','WHY NOT?','ONE‑MINUTE BRIEF','Decision Safety Net']:
     check(forbidden not in all_client,f'visible technical label removed/localized: {forbidden}')
-check('var(--font);' not in all_css,'invalid legacy font variable removed')
+# يُرفض الرمزُ نفسُه لا صيغةُ سطرٍ بعينها: `var(--font)}` و`var(--font) !important`
+# كلاهما CSS صالحٌ ويسقط إلى خطّ المتصفّح الافتراضي. و`var(--font-ui)` لا يحوي
+# هذه السلسلةَ أصلاً لأن القوسَ يلي «font» مباشرةً فيها.
+check('var(--font)' not in all_css,'invalid legacy font variable removed')
 check('var(--font-ui)' in all_css,'valid UI font token used')
 # عنوانُ لوحة العمل الضخم زال مع إعادة تصميم الشاشة، فلم يبقَ ما يُقاس. وما
 # كان يحرسه العقدُ — ألّا يعود عنوانٌ بحجم الملصقات — يحرسه غيابُه نفسُه.
