@@ -87,5 +87,23 @@ check(workspace.includes('data-tone="frozen"') && workspace.includes("انتهى
 check(workspace.includes('<b>لجنةُ الجدول</b>'),
   "وتقول من يعمل فيه، فلا يبحث القارئُ عمّن يسأل");
 
+/* ── ويُقال السببُ الحقيقيُّ أولاً ────────────────────────────────────────
+ * كان تعديلُ موعدٍ في فصلٍ مجمَّدٍ يُردّ برسالةٍ عن حقلٍ ناقصٍ أو تعارضٍ في
+ * قاعة، فيُصلح القارئُ ما ليس بعطل ثم يُردّ ثانيةً بالسبب الحقيقيّ. والرسالةُ
+ * الأولى ليست خطأً في ذاتها، لكنها تُرسله في طريقٍ لا يُوصل. */
+const editDoor = server.slice(
+  server.indexOf('app.put("/api/schedules/:id"'),
+  server.indexOf('app.delete("/api/schedules/:id"'),
+);
+check(editDoor.indexOf("const frozenSource = await scheduleLockRefusal(")
+  < editDoor.indexOf("الرجاء إدخال الحقول المطلوبة بالأحمر"),
+  "وقفلُ الصفّ القائم يُسأل قبل التحقّق من الحقول");
+check(editDoor.indexOf("const frozenSource = await scheduleLockRefusal(")
+  < editDoor.indexOf("يوجد تعارض يمنع التعديل"),
+  "وقبل التحقّق من التعارضات");
+/* وقفلُ النطاق المنقول إليه يبقى بعدُ، فهو لا يُعرف قبل قراءة حقول الوجهة. */
+check(editDoor.includes("const editLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);"),
+  "ويبقى قفلُ الوجهة في موضعه، فلا يُقرأ قبل أن تُعرف");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

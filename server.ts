@@ -6337,6 +6337,21 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
     AdRoomHall
   } = req.body;
 
+  /* ── ويُقال «انتهى الفصل» قبل «أكمل الحقول» ─────────────────────────────
+   *
+   * يُقرأ الصفُّ القائم ويُسأل عن قفله أوّلَ شيء، قبل التحقّق من الحقول
+   * والتعارضات. لأن من يعدّل موعداً في فصلٍ مجمَّدٍ كان يُردّ أولاً برسالةٍ
+   * عن حقلٍ ناقصٍ أو تعارضٍ في قاعة، فيُصلح ما ليس بعطل، ثم يُردّ ثانيةً
+   * بالسبب الحقيقيّ. والرسالةُ الأولى ليست خطأً في ذاتها، لكنها تُرسل القارئَ
+   * في طريقٍ لا يُوصل.
+   *
+   * وقفلُ النطاق المنقول إليه يبقى في موضعه بعدُ، لأنه لا يُعرف قبل أن
+   * تُقرأ حقولُ الوجهة. */
+  const existing = await Repository.getScheduleById(id);
+  if (!existing) { res.status(404).json({ error: "الجدول غير موجود" }); return; }
+  const frozenSource = await scheduleLockRefusal(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId);
+  if (frozenSource) { res.status(409).json({ error: frozenSource, code: "schedule-locked" }); return; }
+
   if (!AdCollegeId || !AdSectionId || !AdTermId || !AdCourseId || !SCode || !AdInstructorId || !fstarttime || !fendtime || !req.body?.buildingId || (!req.body?.roomId && req.body?.locationStatus !== PENDING_ROOM)) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
     return;
@@ -6348,8 +6363,6 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   const payloadIssues=schedulePayloadIssues(req.body);
   if(payloadIssues.length){res.status(400).json({error:payloadIssues[0],issues:payloadIssues.map(message=>({type:"validation",severity:"high",message}))});return;}
 
-  const existing = await Repository.getScheduleById(id);
-  if (!existing) { res.status(404).json({ error: "الجدول غير موجود" }); return; }
   const collegeId = parseInt(AdCollegeId), sectionId = parseInt(AdSectionId), termId = parseInt(AdTermId), courseId = parseInt(AdCourseId), instructorId = parseInt(AdInstructorId);
   if (existing.sourceOrder !== undefined && Number(existing.sourceOrder) < 1_000_000 && Number(existing.AdCourseId) !== courseId) {
     res.status(409).json({
@@ -6378,8 +6391,9 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
 
   /* النطاقان معاً: نقلُ موعدٍ من قسمٍ مُرسَلٍ إلى آخر يمسّ الجدولين، فيكفي
      قفلُ أحدهما للمنع. */
-  const editLock = await scheduleLockRefusal(req,existing.AdCollegeId, existing.AdSectionId, existing.AdTermId)
-    || await scheduleLockRefusal(req,collegeId, sectionId, termId);
+  /* والنطاقُ المنقول إليه: نقلُ موعدٍ إلى جدولٍ مُرسَلٍ أو فصلٍ منتهٍ يمسّه
+     كما يمسّ مصدرَه، فيكفي قفلُ أحدهما للمنع. ومصدرُه سُئل أعلاه قبل كل شيء. */
+  const editLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);
   if (editLock) { res.status(409).json({ error: editLock, code: "schedule-locked" }); return; }
 
   try {
