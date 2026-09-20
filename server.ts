@@ -6279,9 +6279,15 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
     req.body?.rev === undefined || req.body?.rev === null ? undefined : Number(req.body.rev));
     // Hand the audit trail the sentence describing what actually moved.
     res.locals.auditChanges = describeScheduleChange(existing, updated) || undefined;
-    await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "edit", row: updated });
-    if (existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId) {
-      /* الموعد غادر جدوله الأصلي: ذلك الجدول تغيّر أيضاً، ولو بالنقصان. */
+    const movedScope = existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId;
+    /* ── الموعد المنتقل إضافةٌ عند وجهته، لا تعديلاً ──────────────────────
+     * كان يُبلَّغ القسمُ المستقبِل بـ«تعديل»، فلا يُسجَّل في انتظار الإقرار.
+     * لكنّ شعبةً ظهرت في جدوله بعد توقيع رئيسه هي بالضبط ما وُجدت قائمةُ
+     * الانتظار من أجله: التزامٌ لم يره حين وقّع. والقسمُ الذي غادرته يتغيّر
+     * أيضاً، ولو بالنقصان. */
+    await noteScheduleMutation(req, collegeId, sectionId, termId,
+      movedScope ? { kind: "add", row: updated } : { kind: "edit", row: updated });
+    if (movedScope) {
       await noteScheduleMutation(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, { kind: "delete", row: existing });
     }
     res.json(updated);
@@ -8234,61 +8240,77 @@ async function noteScheduleMutation(
   change: { kind: "add" | "edit" | "delete"; row?: any; rows?: any[] },
 ): Promise<void> {
   try {
-    const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
-    if (!approval) return;
-    let next: ScheduleApproval = approval;
+    /**
+     * ── على الطابور نفسه الذي تقف عليه قرارات الاعتماد ────────────────────
+     *
+     * هذه الدالّة تقرأ وثيقة الاعتماد ثم تكتبها كاملة. وكل قرارٍ في الدورة —
+     * توقيعٌ وإرسالٌ وإقرار — يفعل ذلك تحت قفلٍ باسم النطاق، وكانت هي وحدها
+     * خارجه.
+     *
+     * والضرر ليس نظرياً: رئيس القسم يضغط «موافق» على الشُّعب المضافة فتُكتب
+     * القائمة فارغة، واستيرادٌ كان قد قرأ الوثيقة قبلها بلحظة يكتبها فتعود
+     * القائمة كما كانت — أو ينعكس الترتيب فتُمحى شعبةٌ سُجّلت للتوّ، ويُرسل
+     * الجدول وفيه التزامٌ لم يره رئيس القسم.
+     *
+     * فصارت على الطابور نفسه. والقفل بالمفتاح ذاته، فلا طابوران لشيءٍ واحد.
+     */
+    await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+      const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
+      if (!approval) return;
+      let next: ScheduleApproval = approval;
 
-    /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
-       خانةً في صفٍّ وافق عليه، وإضافةُ شعبةٍ تُنشئ التزاماً لم يره أصلاً. */
-    const headSignature = next.signatures.find(item => item.stage === "head");
-    const addedRows = change.kind === "add" ? (change.rows || (change.row ? [change.row] : [])) : [];
-    if (headSignature && addedRows.length) {
-      const known = new Set(next.pendingAdditions.map(item => Number(item.scheduleId)));
-      const addedBy = String(req.user?.Name || req.user?.SystemUserLogin || "");
-      const at = new Date().toISOString();
-      const fresh = addedRows
-        .filter(row => row && !known.has(Number(row.id)))
-        .map(row => ({
-          scheduleId: Number(row.id),
-          courseId: Number(row.AdCourseId || 0),
-          courseName: String(row.AdCourseName || ""),
-          sectionCode: String(row.SCode || ""),
-          addedAt: at,
-          addedBy,
-        }));
-      /* ── السجلّ يبقى مقروءاً ──────────────────────────────────────────────
-       * السطر الذي يراه رئيس القسم يعدّ الشُّعب ويسمّيها. واستيرادُ ثلاثمئة
-       * صفٍّ بعد توقيعه ليس «شُعباً أُضيفت بعد اعتمادك»، هو جدولٌ آخر — ولا
-       * يُقرأ بعدّه شعبةً شعبة. فيُحفظ منه ما يُقرأ، ويبقى المنعُ قائماً على
-       * أي حال: وجودُ واحدةٍ يكفي لإيقاف الإرسال حتى يُقرّ. */
-      if (fresh.length) {
-        next = { ...next, pendingAdditions: [...next.pendingAdditions, ...fresh].slice(0, 60) };
+      /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
+         خانةً في صفٍّ وافق عليه، وإضافةُ شعبةٍ تُنشئ التزاماً لم يره أصلاً. */
+      const headSignature = next.signatures.find(item => item.stage === "head");
+      const addedRows = change.kind === "add" ? (change.rows || (change.row ? [change.row] : [])) : [];
+      if (headSignature && addedRows.length) {
+        const known = new Set(next.pendingAdditions.map(item => Number(item.scheduleId)));
+        const addedBy = String(req.user?.Name || req.user?.SystemUserLogin || "");
+        const at = new Date().toISOString();
+        const fresh = addedRows
+          .filter(row => row && !known.has(Number(row.id)))
+          .map(row => ({
+            scheduleId: Number(row.id),
+            courseId: Number(row.AdCourseId || 0),
+            courseName: String(row.AdCourseName || ""),
+            sectionCode: String(row.SCode || ""),
+            addedAt: at,
+            addedBy,
+          }));
+        /* ── السجلّ يبقى مقروءاً ──────────────────────────────────────────────
+         * السطر الذي يراه رئيس القسم يعدّ الشُّعب ويسمّيها. واستيرادُ ثلاثمئة
+         * صفٍّ بعد توقيعه ليس «شُعباً أُضيفت بعد اعتمادك»، هو جدولٌ آخر — ولا
+         * يُقرأ بعدّه شعبةً شعبة. فيُحفظ منه ما يُقرأ، ويبقى المنعُ قائماً على
+         * أي حال: وجودُ واحدةٍ يكفي لإيقاف الإرسال حتى يُقرّ. */
+        if (fresh.length) {
+          next = { ...next, pendingAdditions: [...next.pendingAdditions, ...fresh].slice(0, 60) };
+        }
       }
-    }
-    /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد.
-       والشرط قبل البناء لا بعده: بناءُ كائنٍ جديد في كل حذفٍ يجعل فحص التغيير
-       في الأسفل صادقاً دائماً، فتُكتب وثيقةُ الاعتماد ويُبعث تاريخُها في كل
-       حذفِ موعدٍ ولو لم يتغيّر فيها شيء. */
-    if (change.kind === "delete" && change.row
-        && next.pendingAdditions.some(item => Number(item.scheduleId) === Number(change.row.id))) {
-      next = { ...next, pendingAdditions: next.pendingAdditions.filter(item => Number(item.scheduleId) !== Number(change.row.id)) };
-    }
+      /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد.
+         والشرط قبل البناء لا بعده: بناءُ كائنٍ جديد في كل حذفٍ يجعل فحص التغيير
+         في الأسفل صادقاً دائماً، فتُكتب وثيقةُ الاعتماد ويُبعث تاريخُها في كل
+         حذفِ موعدٍ ولو لم يتغيّر فيها شيء. */
+      if (change.kind === "delete" && change.row
+          && next.pendingAdditions.some(item => Number(item.scheduleId) === Number(change.row.id))) {
+        next = { ...next, pendingAdditions: next.pendingAdditions.filter(item => Number(item.scheduleId) !== Number(change.row.id)) };
+      }
 
-    if (next.status === "accepted") {
-      const roundNumber = next.currentRound + 1;
-      next = {
-        ...next,
-        status: "submitted",
-        currentRound: roundNumber,
-        rounds: [...next.rounds, {
-          number: roundNumber,
-          submittedAt: new Date().toISOString(),
-          submittedBy: String(req.user?.Name || req.user?.SystemUserLogin || ""),
-        }].sort((a, b) => a.number - b.number),
-      };
-    }
+      if (next.status === "accepted") {
+        const roundNumber = next.currentRound + 1;
+        next = {
+          ...next,
+          status: "submitted",
+          currentRound: roundNumber,
+          rounds: [...next.rounds, {
+            number: roundNumber,
+            submittedAt: new Date().toISOString(),
+            submittedBy: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+          }].sort((a, b) => a.number - b.number),
+        };
+      }
 
-    if (next !== approval) await Repository.saveScheduleApproval(next);
+      if (next !== approval) await Repository.saveScheduleApproval(next);
+    });
   } catch (error) {
     console.error("[approval] تعذّر تحديث سجلّ الاعتماد بعد تعديل الجدول:", error instanceof Error ? error.message : error);
   }
@@ -10174,12 +10196,7 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
      من أول دخول. والمستخدم العادي وحده يبقى على الأساس القديم — مركز الذكاء —
      حتى لا يتغيّر ما كان يحدث قبل هذه الإضافة. */
   const createdRole: AcademicRole = isAcademicRole(Role) ? Role : DEFAULT_MIGRATION_ROLE;
-  if (createdRole === "standard") {
-    await Repository.createSecurity(newUser.SystemUserId, DECISION_CENTRE_FORM_ID);
-    if (Array.isArray(assigns)) await Repository.saveUserAssigns(newUser.SystemUserId, sanitizeAssigns(assigns));
-  } else {
-    await applyRoleTemplate(newUser.SystemUserId, createdRole, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
-  }
+  await applyRoleTemplate(newUser.SystemUserId, createdRole, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
   res.locals.auditChanges = `حساب جديد بصفة «${roleLabel(createdRole)}»`;
   res.status(201).json({ ...safeSystemUser(newUser), HasPassword: true });
 });
@@ -10285,19 +10302,38 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
        ترحيلُ حسابٍ عند الإقلاع. */
     const previousRole = roleDefinition((before as any)?.Role).id;
     const roleChanged = isAcademicRole(Role) && Role !== previousRole;
-    if (roleChanged && Role !== "standard") {
-      /* ── النزول عن صفةِ كليةٍ يأخذ صفوفَها معه ──────────────────────────
-       * صفّ «الكلية كلها» لا يُجيز أقساماً إلا لصفاتها، فالنزول يُبطل مفعولَه.
-       * لكنه يبقى صفّاً في السجلّ: يُقرأ «له شيءٌ في هذه الكلية» في كل سؤالٍ
-       * عن الكلية نفسها، فيبقى للعميد السابق بابٌ على مستوى كليته كلها. وصفةٌ
-       * زالت لا ينبغي أن يبقى لها أثرٌ يعمل. */
-      if (roleDefinition(previousRole).scopeMode === "college" && roleDefinition(Role).scopeMode !== "college") {
+    if (roleChanged) {
+      /* ── الصفة التي تزول لا يبقى لها أثرٌ يعمل ─────────────────────────────
+       *
+       * هنا كان بابان مفتوحان، وكلاهما من الشكل نفسه: صفةٌ نُزع عنها اسمُها
+       * وبقيت قدرتُها.
+       *
+       * الأول أن النزول إلى «مستخدم عادي» كان لا يفعل شيئاً البتّة — لا
+       * الشاشات تُعاد كتابتها ولا النطاق يُنظَّف — وهو أشيعُ ما يُفعل حين
+       * يُراد تجريد حسابٍ من صلاحياته. فكان الفعلُ المقصودُ لذلك هو الفعلَ
+       * الوحيد الذي لا يفعله.
+       *
+       * والثاني أن التنظيف كان يعرف صفاتِ الكلية الواحدة ولا يعرف صفاتِ كل
+       * الكليات. وصفوفُ هذه الأخيرة صفٌّ لكل كليةٍ في الجامعة — فالنزول عنها
+       * كان يُبقي لصاحبها باباً على مستوى الجامعة كلها، لا كليةٍ واحدة.
+       *
+       * فصار التنظيف يسبق كل تغيير صفة، ويقيس بما يبقى للصفة الجديدة من حاجة:
+       * صفوفُ «الكلية كلها» تُمحى إلا إن كانت الصفةُ الجديدة تحتاجها، وما عداها
+       * يبقى. وصار القالب يُكتب لكل صفةٍ بما فيها «مستخدم عادي» — فلها قالبٌ
+       * معرَّف أيضاً، وإن كان أضيقَ القوالب.
+       */
+      const previousWide = roleDefinition(previousRole).scopeMode;
+      const nextWide = roleDefinition(Role).scopeMode;
+      const keepsWideRows = nextWide === "college" || nextWide === "allColleges";
+      if ((previousWide === "college" || previousWide === "allColleges") && !keepsWideRows) {
         const stale = await Repository.getUserAssigns(id);
         const kept = stale.filter(row => Number(row.AdSectionId) > 0);
-        if (kept.length !== stale.length) await Repository.saveUserAssigns(id, kept.map(row => ({ AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId) })));
+        if (kept.length !== stale.length) {
+          await Repository.saveUserAssigns(id, kept.map(row => ({ AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId) })));
+        }
       }
       await applyRoleTemplate(id, Role, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
-      res.locals.auditChanges = `الصفة: «${roleLabel(Role)}»`;
+      res.locals.auditChanges = `الصفة: «${roleLabel(previousRole)}» ← «${roleLabel(Role)}»`;
     } else if (isAcademicRole(Role) && roleDefinition(Role).scopeMode === "college" && Array.isArray(collegeIds)) {
       /* الصفة كما هي وتغيّرت كلياتُها: يُكتب النطاق وحده، ولا تُمسّ الشاشات. */
       await applyRoleScopeOnly(id, Role, collegeIds);

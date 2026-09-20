@@ -113,7 +113,8 @@ check(moveBody.includes('noteScheduleMutation(req, scope.collegeId, scope.sectio
  * كل حفظ. فإيقافُ حسابٍ أو تغييرُ كلمة سرّه كان يمحو كلَّ شاشةٍ مُنحت له
  * يدوياً خارج قالب صفته — بصمت، ودون أن يطلب أحد. */
 
-check(server.includes("if (roleChanged && Role !== \"standard\") {"),
+check(server.includes("const roleChanged = isAcademicRole(Role) && Role !== previousRole;")
+   && server.includes("if (roleChanged) {"),
   "القالب يُكتب عند تغيير الصفة لا عند كل حفظ");
 check(server.includes("const before = await Repository.getUserById(id);"), "والصفة السابقة تُقرأ للمقارنة");
 check(server.includes("if (requested.collegeIds === undefined) {"),
@@ -176,7 +177,7 @@ check(server.includes("if (requested.collegeIds === undefined) {"),
   "حفظٌ لم يُذكر فيه نطاق لا يمحوه");
 check(server.includes("if (!Array.isArray(collegeIds)) return;   // غيابٌ لا قرار"),
   "وقائمةٌ فارغة أُرسلت صراحةً سحبٌ يُنفَّذ، لا سهوٌ يُتجاوز");
-check(server.includes('roleDefinition(previousRole).scopeMode === "college" && roleDefinition(Role).scopeMode !== "college"'),
+check(server.includes('const previousWide = roleDefinition(previousRole).scopeMode;'),
   "والنزول عن صفةِ كليةٍ يأخذ صفوفَها معه: صفةٌ زالت لا يبقى لها أثرٌ يعمل");
 
 /* ── ١٠) كل بابٍ يكتب على الجدول يقرأ القفل ─────────────────────────────── */
@@ -210,6 +211,44 @@ check(repository.includes("FAILED_PRECONDITION|requires an index"),
 check(repository.includes("const byNewestComment"), "والترتيب من موضعٍ واحد");
 check(repository.includes('String(b.createdAt || "").localeCompare(String(a.createdAt || ""))'),
   "ويحتمل ملاحظةً بلا تاريخ: النسختان السحابية والمحلّية لا تفترقان عند البيانات الناقصة");
+
+/* ── ١٤) الصفة التي تزول لا يبقى لها أثرٌ يعمل ──────────────────────────
+ *
+ * بابان كانا مفتوحين، وكلاهما من الشكل نفسه: صفةٌ نُزع عنها اسمُها وبقيت
+ * قدرتُها. النزولُ إلى «مستخدم عادي» — وهو أشيعُ ما يُفعل حين يُراد تجريد
+ * حسابٍ — كان لا يفعل شيئاً البتّة. والتنظيفُ كان يعرف صفاتِ الكلية الواحدة
+ * ولا يعرف صفاتِ كل الكليات، وصفوفُ هذه صفٌّ لكل كليةٍ في الجامعة. */
+
+const roleChangeAt = server.indexOf("const roleChanged = isAcademicRole(Role) && Role !== previousRole;");
+const roleChangeBody = server.slice(roleChangeAt, roleChangeAt + 3000);
+check(roleChangeBody.includes("if (roleChanged) {") && !roleChangeBody.includes('if (roleChanged && Role !== "standard")'),
+  "النزول إلى «مستخدم عادي» يُعيد كتابة القالب كغيره");
+check(roleChangeBody.includes('(previousWide === "college" || previousWide === "allColleges") && !keepsWideRows'),
+  "والتنظيف يشمل صفاتِ كل الكليات كما يشمل صفاتِ الكلية الواحدة");
+check(roleChangeBody.includes("const keepsWideRows ="),
+  "ويُبقي الصفوف حين تحتاجها الصفةُ الجديدة");
+check(roleChangeBody.includes("roleLabel(previousRole)"), "والسجلّ يقول من أيّ صفةٍ إلى أيّها");
+check(server.includes("await applyRoleTemplate(newUser.SystemUserId, createdRole,")
+   && !server.includes('if (createdRole === "standard") {'),
+  "وإنشاءُ الحساب يمرّ من القالب نفسه: لكل صفةٍ قالبٌ، وإن كان أضيقَ القوالب");
+
+/* ── ١٥) كتابةُ سجلّ الاعتماد على طابورٍ واحد ──────────────────────────── */
+
+const noteMutAt = server.indexOf("async function noteScheduleMutation");
+const noteMutBody = server.slice(noteMutAt, noteMutAt + 4200);
+check(noteMutBody.includes("withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`"),
+  "تحديثُ السجلّ بعد تعديل الجدول على الطابور نفسه الذي تقف عليه قراراتُ الدورة");
+/* القفل غيرُ قابلٍ لإعادة الدخول، فتداخلُ مفتاحين متطابقين توقّفٌ تام. */
+const approvalLockSites = [...server.matchAll(/withSerialLock\(`approval:/g)].map(m => m.index || 0);
+const nested = approvalLockSites.filter(at => server.slice(at, at + 2600).includes("noteScheduleMutation("));
+check(nested.length === 0, "ولا قفلَ داخل قفلٍ بالمفتاح نفسه: التداخل توقّفٌ تام لا بطء");
+
+/* ── ١٦) الموعد المنتقل إضافةٌ عند وجهته ───────────────────────────────── */
+
+check(server.includes('movedScope ? { kind: "add", row: updated } : { kind: "edit", row: updated }'),
+  "شعبةٌ انتقلت إلى قسمٍ بعد توقيع رئيسه تُسجَّل في انتظار إقراره");
+check(server.includes("const movedScope = existing.AdCollegeId !== collegeId"),
+  "والقسمُ الذي غادرته يُبلَّغ أيضاً: يتغيّر ولو بالنقصان");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);
