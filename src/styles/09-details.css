@@ -1377,7 +1377,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .share-survey-shortcut small{font-size:var(--t-xs);line-height:1.5;color:var(--muted)}
 .share-survey-shortcut>button{
   min-height:38px;padding:0 var(--s3);border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));
-  border-radius:var(--r-sm);background:var(--surface);color:var(--accent-ink);font:650 var(--t-xs)/1 var(--font);white-space:nowrap;
+  border-radius:var(--r-sm);background:var(--surface);color:var(--accent-ink);font:650 var(--t-xs)/1 var(--font-ui);white-space:nowrap;
 }
 .share-survey-shortcut>button:hover:not(:disabled){background:var(--accent-softer)}
 .share-survey-shortcut>button:disabled{opacity:.55}
