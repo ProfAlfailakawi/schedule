@@ -421,3 +421,20 @@ time,[dir="ltr"],bdi{unicode-bidi:isolate;font-variant-numeric:tabular-nums}
 .visual-flow-inline,.visual-metric-flow{display:inline-flex;align-items:center;gap:6px;min-inline-size:0}
 .visual-flow-inline>svg,.visual-metric-flow>svg,.visual-inline-arrow{inline-size:14px;block-size:14px;flex:none;color:var(--muted)}
 .visual-metric-flow>b,.visual-metric-flow>span{font-variant-numeric:tabular-nums}
+
+/* --- من يطلب سكوناً يُعطاه -------------------------------------------------
+   مكوّناتُ الواجهة المكتوبةُ بجافاسكربت تحترم `prefers-reduced-motion` كلٌّ في
+   موضعه، لكن طبقةَ الأنماط لم تكن تحترمه إطلاقاً: عشراتُ الحركات اللانهائية
+   (`infinite`) تظلّ تنبض عند من ضبط نظامَه على تقليل الحركة — ومنهم من يُصيبه
+   ذلك بدوارٍ أو صداعٍ نصفيّ، لا من يجده مزعجاً فحسب.
+   لا تُلغى الحركةُ هنا بل تُختصر إلى لحظةٍ واحدة: تصل كلُّ حركةٍ إلى حالتها
+   النهائية فوراً وتقف. وهذا يوافق ما تقوله `Onboarding.tsx` صراحةً — أن تقليل
+   الحركة ليس انتقاصاً من المشهد، بل عرضٌ لنهايته مباشرة. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.01ms!important;
+  }
+  html{scroll-behavior:auto!important}
+}

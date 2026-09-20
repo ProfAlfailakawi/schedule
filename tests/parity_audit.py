@@ -182,6 +182,9 @@ check('var(--font-ui)' in all_css,'valid UI font token used')
 # كان يحرسه العقدُ — ألّا يعود عنوانٌ بحجم الملصقات — يحرسه غيابُه نفسُه.
 check('clamp(54px,6vw,88px)' not in all_css,'no poster-scale heading returned to the workspace')
 check('.living-command-deck' in all_css,'decision status consolidated into one desktop strip')
+# طبقةُ الأنماط فيها عشراتُ الحركات اللانهائية، ومن ضبط نظامَه على تقليل الحركة
+# قد يُصيبه ذلك بدوارٍ لا بانزعاجٍ فحسب. فيُثبَّت أرضيةُ السكون نفسُها.
+check('@media (prefers-reduced-motion: reduce)' in all_css and 'animation-iteration-count:1!important' in all_css,'reduced-motion request stops every endless animation')
 check((root/'src/components/LivingScheduleScenes.tsx').exists() and (root/'src/components/IntelligenceContextBar.tsx').exists() and (root/'src/components/scheduleWorkspace.ts').exists(),'large workspaces are split into maintainable presentation/helper modules')
 # صفحةُ «عن البرنامج» أُعيد تصميمها ولم تبقَ فيها تلك البطاقات، فالتثبيتُ
 # يصف واجهةً زالت. ويبقى ما يعنينا: ألّا يعود نمطٌ بذلك الاسم بشكلٍ مكسور.
