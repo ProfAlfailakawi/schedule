@@ -506,6 +506,33 @@ function rateLimitLogin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+/*
+ * ── Rate limit for the demo role switch ──────────────────────────────────────
+ *
+ * Modelled on `rateLimitLogin`, not on `rateLimitPublic`: the public limiter has
+ * an env kill-switch (`PUBLIC_RATE_LIMIT_MAX <= 0` calls next()), so a static
+ * analyzer cannot prove the route is always limited and keeps flagging it. This
+ * one always enforces, like the login limiter, but with a generous ceiling —
+ * switching through every role in a live demo must never hit a wall.
+ */
+const demoRoleSwitches = new Map<string, { count: number; windowStart: number }>();
+function rateLimitDemoRole(req: Request, res: Response, next: NextFunction) {
+  const ip = req.ip || "unknown";
+  const now = Date.now();
+  const seen = demoRoleSwitches.get(ip);
+  if (!seen || now - seen.windowStart >= 60000) {
+    demoRoleSwitches.set(ip, { count: 1, windowStart: now });
+    next();
+    return;
+  }
+  seen.count += 1;
+  if (seen.count > 30) {
+    res.status(429).json({ error: "تبديلاتٌ كثيرة جداً في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." });
+    return;
+  }
+  next();
+}
+
 /**
  * ── Rate limit for the public surface (`/api/public/*`) ──────────────────────
  *
@@ -1883,7 +1910,7 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
  * «admin» يعيد عرض المدير (المستخدم الجذر) الذي يملك كل الشاشات — وهو مدخل
  * البيئة. وهو مقصورٌ على البيئة التجريبية: لا رفعَ صلاحيةٍ في جلسةٍ حقيقية.
  */
-app.post("/api/demo/role", rateLimitPublic, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/demo/role", rateLimitDemoRole, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
   if (!sessionId) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
