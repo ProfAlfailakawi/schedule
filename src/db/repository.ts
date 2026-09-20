@@ -2913,22 +2913,27 @@ export const Repository = {
     return newIns;
   },
 
-  updateInstructor: async (id: number, civil: string, name: string, mobile: string, status?: "retired" | "sabbatical" | null): Promise<AdInstructor> => {
+  updateInstructor: async (id: number, civil: string, name: string, mobile: string, status?: "retired" | "sabbatical" | null, load?: number | null): Promise<AdInstructor> => {
     invalidateReference(REFERENCE_KEYS.instructors);
     // Only a real status is stored; anything else clears the field so the record
     // stays clean and an active teacher carries no status at all (Note 2).
     const statusField = status === "retired" || status === "sabbatical" ? { AdInstructorStatus: status } : {};
+    /* والنصابُ كذلك: رقمٌ موجبٌ يُحفظ، وأيُّ شيءٍ آخر يمحوه — فأستاذٌ رُفع
+       نصابُه يعود بلا نصاب، لا بنصابٍ صفر. والفرقُ ليس شكلياً: الصفرُ قيدٌ
+       يمنع كلَّ شيء، والغيابُ قيدٌ صامت. */
+    const loadValue = Number(load);
+    const loadField = Number.isFinite(loadValue) && loadValue > 0 ? { AdInstructorLoad: loadValue } : {};
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("instructors").doc(`instructor_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("الأستاذ غير موجود");
-      const updated: AdInstructor = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile, ...statusField };
+      const updated: AdInstructor = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile, ...statusField, ...loadField };
       await docRef.set(updated);
       return updated;
     }
     const idx = db.instructors.findIndex(i => i.AdInstructorId === id);
     if (idx === -1) throw new Error("الأستاذ غير موجود");
-    db.instructors[idx] = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile, ...statusField };
+    db.instructors[idx] = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile, ...statusField, ...loadField };
     saveDatabase();
     return db.instructors[idx];
   },

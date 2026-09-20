@@ -2856,6 +2856,10 @@ app.put("/api/instructors/:id", requirePermission(3), async (req: Request, res: 
   const { AdInstructorCivil, AdInstructorName, AdInstructorMobile } = req.body;
   const statusRaw = req.body?.AdInstructorStatus;
   const status = statusRaw === "retired" || statusRaw === "sabbatical" ? statusRaw : null;
+  /* النصابُ رقمٌ موجبٌ معقول، أو لا شيء. وحدُّه الأعلى ليس تجميلاً: نصابٌ
+     مكتوبٌ خطأً بأربعة أرقام يجعل القيدَ صامتاً إلى الأبد بلا أن يعرف أحد. */
+  const loadRaw = Number(req.body?.AdInstructorLoad);
+  const load = Number.isFinite(loadRaw) && loadRaw > 0 && loadRaw <= 40 ? loadRaw : null;
   if (!AdInstructorCivil || !String(AdInstructorName || "").trim()) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
     return;
@@ -2874,7 +2878,7 @@ app.put("/api/instructors/:id", requirePermission(3), async (req: Request, res: 
   }
 
   try {
-    const updated = await Repository.updateInstructor(id, AdInstructorCivil, AdInstructorName, AdInstructorMobile || "", status);
+    const updated = await Repository.updateInstructor(id, AdInstructorCivil, AdInstructorName, AdInstructorMobile || "", status, load);
     res.json(updated);
   } catch (e: any) {
     res.status(404).json({ error: e.message });
@@ -13627,6 +13631,7 @@ async function judgeRequestItems(request: InstructorRequest): Promise<Instructor
       knownRoomKeys: context.knownRoomKeys,
       startLadder: context.startLadder,
       windowOpen: open,
+      instructorLoad: Number(context.instructors.get(Number(request.AdInstructorId))?.AdInstructorLoad || 0) || null,
     });
     return {
       ...item,
@@ -14237,6 +14242,7 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
     knownRoomKeys: context.knownRoomKeys,
     startLadder: context.startLadder,
     windowOpen: requestWindowOpen(resolved.request),
+    instructorLoad: Number(context.instructors.get(Number(resolved.request.AdInstructorId))?.AdInstructorLoad || 0) || null,
   });
 
   res.setHeader("Cache-Control", "no-store");
