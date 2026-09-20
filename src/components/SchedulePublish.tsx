@@ -394,7 +394,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   type="button"
                   className={kind === "request" ? "active" : ""}
                   onClick={() => setKind("request")}
-                  data-guide-feature-id="schedule.publish"
+                  /* هدفٌ خاصٌّ به: المرشدُ يستبدل أولَ اسمٍ بين قوسين في نصّ
+                     الخطوة باسمِ هدفها الحيّ. فخطوةٌ تقول «اختر رغبات
+                     الأساتذة» وهدفُها زرُّ النشر الخارجيّ تصير «اختر نشر» —
+                     وهو نقيضُ ما وُضعت له، وأسوأُ من غيابها. */
+                  data-guide-target="schedule.publish.requests"
+                  data-guide-feature-id="schedule.publish.requests"
                   aria-pressed={kind === "request"} title="رغبات الأساتذة"
                 >
                   <MessageSquarePlus aria-hidden="true" />
