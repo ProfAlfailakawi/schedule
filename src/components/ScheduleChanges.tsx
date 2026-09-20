@@ -18,6 +18,7 @@ import {
   AlertTriangle, ArrowRight, CalendarRange, Check, ChevronLeft, ClipboardList, Clock3, CornerUpLeft,
   FileDiff, Inbox, MessageSquarePlus, Scale, Search, Send, ShieldCheck, Trash2, X,
 } from "lucide-react";
+import ApprovalBar from "./ApprovalBar";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
@@ -329,6 +330,8 @@ function Report({ termId, scope, role, onBack }: {
   const [noteText, setNoteText] = useState("");
   const [rebutting, setRebutting] = useState<NoteRow | null>(null);
   const [rebutText, setRebutText] = useState("");
+  /* يُبلِّغ شريطَ الاعتماد أن يُعيد قراءةَ حاله بعد توقيعٍ أو إرسال. */
+  const [approvalSignal, setApprovalSignal] = useState(0);
 
   const load = useCallback(async (round?: number) => {
     setError(null);
@@ -522,6 +525,21 @@ function Report({ termId, scope, role, onBack }: {
           {report.round > 1 ? <Badge tone="info">الجولة {report.round}</Badge> : null}
         </div>
       </header>
+
+      {/* ── شريط الاعتماد لجهة القسم ─────────────────────────────────────────
+          رئيسُ القسم واللجنة يوقّعان ويُرسلان من هنا — لا من ورشة تعديلٍ لا
+          يفتحها رئيسُ القسم أصلاً. أمّا التسجيل (يراجع) فقرارُه شريطُ القبول
+          والإرجاع أسفل الشاشة، لا هذا. */}
+      {role.signatureStage && !isRegistrar ? (
+        <ApprovalBar
+          collegeId={scope.collegeId}
+          sectionId={scope.sectionId}
+          termId={termId}
+          signatureStage={role.signatureStage}
+          refreshSignal={approvalSignal}
+          onChanged={() => { setApprovalSignal(value => value + 1); void load(); }}
+        />
+      ) : null}
 
       <DeadlineStrip deadline={report.deadline} />
       {error ? <Notice type="error">{error}</Notice> : null}

@@ -248,5 +248,22 @@ check(!changes.includes("changes-note-targets"),
 check(changes.includes('<span>الخانة</span>') && changes.includes("Object.keys(DIFF_FIELD_LABEL) as DiffFieldKey[]"),
   "واختيارُ الخانة انتقل إلى داخل ورقة الملاحظة");
 
+/* ── ١١) رئيس القسم واللجنة يوقّعان من شاشة التغييرات، لا من ورشة تعديل ──────
+ * رئيس القسم يقرأ ولا يعدّل: لا ورشةَ له، وشريطُ الاعتماد يُعرض في شاشة
+ * التغييرات لجهة القسم (من يوقّع)، لا للتسجيل (من يقرّر بالقبول والإرجاع). */
+check(changes.includes('import ApprovalBar from "./ApprovalBar"'), "شاشة التغييرات تحمل شريط الاعتماد");
+check(changes.includes("role.signatureStage && !isRegistrar ? ("),
+  "ويُعرض لجهة القسم (من يوقّع) لا للتسجيل (من يقرّر)");
+// كتلةُ تعريف رئيس القسم وحدها: من معرّفه إلى أول `order:` بعده.
+const deptBlock = (() => {
+  const start = roles.indexOf('id: "departmentHead"');
+  const order = roles.indexOf("order:", start);
+  return start >= 0 ? roles.slice(start, order) : "";
+})();
+check(deptBlock.includes('landing: "changes"'), "ورئيس القسم يفتح على شاشة التغييرات");
+// سطرُ الصلاحيات وحده، لا الكتلة كلها (تعليقُها يذكر اسم الشاشة شرحاً).
+const deptFormIds = (deptBlock.match(/formIds:\s*\[[^\]]*\]/) || [""])[0];
+check(deptFormIds && !deptFormIds.includes("SCHEDULE_WORKSPACE"), "ولا يملك شاشة الورشة: لا تعديل ولا حذف");
+
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);
