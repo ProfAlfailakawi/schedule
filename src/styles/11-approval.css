@@ -1,0 +1,503 @@
+/* ==========================================================================
+   SCHEDULE — دورة الاعتماد
+   ==========================================================================
+   طبقةٌ واحدة لكل ما تضيفه دورة الاعتماد: الصفة في شاشة المستخدمين، وشريط
+   الموعد، وصندوق وارد التسجيل، والملاحظة على الخانة، والتوقيع.
+
+   قاعدتان تحكمان كل ما يلي:
+
+   الأولى: لا لونَ جديد. كل ما هنا مبنيٌّ على الرموز القائمة — البرتقالي هو
+   ‎--warning‎، والأخضر ‎--success‎، والأحمر ‎--danger‎ — فتعمل الطبقة في
+   الوضعين الفاتح والداكن بلا سطرٍ واحدٍ إضافي، ولا تنشقّ هوية الشاشة.
+
+   والثانية: ما لا يحتاجه الناظر لا يُرسم. لا ظلالَ زائدة، ولا إطاراتٍ حول كل
+   شيء، ولا حركةَ لمجرّد الحركة. الحالةُ تُقال بلونٍ واحدٍ في مكانها الصحيح.
+   ========================================================================== */
+
+/* ── الصفة في شاشة المستخدمين ─────────────────────────────────────────── */
+.role-select{width:100%;min-height:42px}
+.role-college-pills{flex-wrap:wrap;gap:8px}
+.role-scope-note{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:8px 12px;border-radius:var(--r-full);
+  background:var(--accent-softer);color:var(--accent-ink);
+  font-size:.86rem;font-weight:650;
+}
+.role-scope-note svg{inline-size:16px;block-size:16px}
+
+/* ── شريط موعد التسليم ───────────────────────────────────────────────────
+   سطرٌ واحد فوق الجدول. لا بطاقة، ولا أيقونة كبيرة: الموعد رقمٌ يُقرأ مرّة
+   في اليوم ثم يُنسى، فلا يستحقّ أكثر من سطر. ويتلوّن وحده كلما قرب.        */
+.deadline-strip{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:9px 14px;border-radius:var(--r-md);
+  border:1px solid var(--line);background:var(--surface-2);
+  color:var(--ink-2);font-size:.88rem;
+}
+.deadline-strip svg{inline-size:16px;block-size:16px;flex:none;opacity:.75}
+.deadline-strip strong{color:var(--ink);font-weight:700}
+.deadline-strip[data-tone="near"]{
+  border-color:color-mix(in srgb,var(--warning) 32%,transparent);
+  background:var(--warning-soft);color:var(--warning);
+}
+.deadline-strip[data-tone="near"] strong{color:var(--warning)}
+.deadline-strip[data-tone="past"]{
+  border-color:color-mix(in srgb,var(--danger) 32%,transparent);
+  background:var(--danger-soft);color:var(--danger);
+}
+.deadline-strip[data-tone="past"] strong{color:var(--danger)}
+.deadline-strip .deadline-extension{
+  margin-inline-start:auto;font-size:.8rem;font-weight:650;opacity:.9;
+}
+
+/* ── حالة الاعتماد: شارةٌ واحدة تُستعمل في كل مكان ───────────────────── */
+.approval-chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 10px;border-radius:var(--r-full);
+  font-size:.78rem;font-weight:700;white-space:nowrap;
+  border:1px solid transparent;
+}
+.approval-chip::before{
+  content:"";inline-size:7px;block-size:7px;border-radius:var(--r-full);
+  background:currentColor;flex:none;
+}
+.approval-chip[data-status="drafting"]{background:var(--surface-3);color:var(--muted);border-color:var(--line)}
+.approval-chip[data-status="committee"],
+.approval-chip[data-status="head"]{background:var(--info-soft);color:var(--info);border-color:color-mix(in srgb,var(--info) 26%,transparent)}
+.approval-chip[data-status="submitted"]{background:var(--accent-softer);color:var(--accent-ink);border-color:color-mix(in srgb,var(--accent) 26%,transparent)}
+.approval-chip[data-status="returned"]{background:var(--warning-soft);color:var(--warning);border-color:color-mix(in srgb,var(--warning) 30%,transparent)}
+.approval-chip[data-status="accepted"]{background:var(--success-soft);color:var(--success);border-color:color-mix(in srgb,var(--success) 28%,transparent)}
+.approval-chip[data-status="late"]{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   شاشة تغييرات الجدول
+   ══════════════════════════════════════════════════════════════════════════
+   ثلاثة قرارات تحكم هذه الشاشة كلها:
+
+   الأول: التقرير قائمةُ بطاقات، لا جدولٌ بأعمدة. لأن ما يُعرض ليس صفوفاً
+   متجانسة — بعضها محذوفٌ بلا «بعد»، وبعضها مضافٌ بلا «قبل»، وبعضها معدّلٌ في
+   خانةٍ واحدة من ست. والجدول يُجبرها كلها على شكلٍ واحد فيُفرغ خمسة أعمدة من
+   ستّة، ويجعل الموظّف يمسح بعينه فراغاً ليجد ما تغيّر.
+
+   والثاني: النوع يُقال بشريطٍ جانبيٍّ ملوّن لا بخلفيةٍ كاملة. البطاقة الملوّنة
+   كلها تصرخ، وعشرون منها في صفحةٍ واحدة تُلغي أثر اللون فلا يبقى فرقٌ بين
+   المحذوف والمعدّل.
+
+   والثالث: القرار في الأسفل، ملتصقاً بأسفل النافذة. لأنه يُضغط بعد القراءة
+   لا قبلها، ولأن الموظّف الذي انتهى من عشرين بطاقةً لا يُطلب منه أن يصعد.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.changes-screen{display:grid;gap:16px}
+
+/* ── أعداد الوارد ────────────────────────────────────────────────────────
+   أرقامٌ في سطر، لا بطاقاتٌ بظلال. هي سياقٌ يُلمح لا لوحةُ قيادة تُدرس.   */
+.changes-totals{
+  display:flex;flex-wrap:wrap;gap:8px 20px;align-items:baseline;
+  padding-block-end:12px;margin-block-end:4px;
+  border-block-end:1px solid var(--line);
+  color:var(--muted);font-size:.86rem;
+}
+.changes-totals b{
+  font-size:1.35rem;font-weight:800;color:var(--ink);
+  margin-inline-end:5px;font-variant-numeric:tabular-nums;
+}
+.changes-totals [data-tone="late"] b{color:var(--danger)}
+
+.changes-filter{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:.86rem;font-weight:600;color:var(--ink-2);cursor:pointer;
+}
+
+/* ── صندوق الوارد ──────────────────────────────────────────────────────── */
+.changes-inbox{display:grid;gap:6px;margin-block-start:12px}
+.changes-inbox-row{
+  display:flex;align-items:stretch;gap:0;
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface);overflow:hidden;
+  transition:border-color .16s ease,background .16s ease;
+}
+.changes-inbox-row:hover{border-color:var(--line-strong);background:var(--surface-2)}
+/* الحالة شريطٌ على الحافّة: تُقرأ بالمسح السريع، ولا تُلوّن السطر كله. */
+.changes-inbox-row::before{content:"";inline-size:4px;flex:none;background:var(--line-strong)}
+.changes-inbox-row[data-status="submitted"]::before{background:var(--accent)}
+.changes-inbox-row[data-status="returned"]::before{background:var(--warning)}
+.changes-inbox-row[data-status="accepted"]::before{background:var(--success)}
+.changes-inbox-row[data-late]::before{background:var(--danger)}
+.changes-inbox-row[data-status="accepted"]{opacity:.62}
+.changes-inbox-row[data-status="accepted"]:hover{opacity:1}
+
+.changes-inbox-open{
+  flex:1;display:flex;align-items:center;gap:14px;
+  padding:13px 16px;border:0;background:transparent;
+  font:inherit;color:inherit;text-align:start;cursor:pointer;min-inline-size:0;
+}
+.changes-inbox-open>svg:last-child{inline-size:16px;block-size:16px;opacity:.35;flex:none}
+.changes-inbox-title{display:grid;gap:2px;min-inline-size:0;flex:1}
+.changes-inbox-title strong{font-size:.97rem;font-weight:700}
+.changes-inbox-title small{color:var(--muted);font-size:.8rem}
+.changes-inbox-state{display:flex;align-items:center;gap:8px;flex:none}
+.changes-inbox-state small{color:var(--muted);font-size:.78rem;white-space:nowrap}
+
+/* ── الدوائر الثلاث ──────────────────────────────────────────────────────
+   العدد داخل الدائرة، لا بجانبها: الموظّف يعرف أين المشكلة وكم هي قبل أن
+   يفتح القسم أصلاً — وهذا ما يوفّر عليه فتح ما لا يحتاج فتحه.            */
+.changes-signals{display:flex;align-items:center;gap:5px;flex:none}
+.changes-signals span{
+  inline-size:23px;block-size:23px;border-radius:var(--r-full);
+  display:grid;place-items:center;
+  font-size:.74rem;font-weight:800;font-variant-numeric:tabular-nums;
+  border:1px solid transparent;
+}
+.changes-signals [data-kind="block"]{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
+.changes-signals [data-kind="note"]{background:var(--warning-soft);color:var(--warning);border-color:color-mix(in srgb,var(--warning) 32%,transparent)}
+.changes-signals [data-kind="answered"]{background:var(--surface-3);color:var(--muted);border-color:var(--line-strong)}
+.changes-signals [data-kind="pending"]{background:var(--info-soft);color:var(--info);border-color:color-mix(in srgb,var(--info) 28%,transparent)}
+
+.changes-extend{
+  flex:none;padding-inline:14px;border:0;border-inline-start:1px solid var(--line);
+  background:transparent;color:var(--muted);font:inherit;font-size:.82rem;font-weight:650;cursor:pointer;
+}
+.changes-extend:hover{background:var(--surface-3);color:var(--ink)}
+
+/* ── التقرير ───────────────────────────────────────────────────────────── */
+.changes-report{display:grid;gap:14px}
+.changes-back{
+  justify-self:start;display:inline-flex;align-items:center;gap:7px;
+  padding:6px 12px 6px 14px;border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);color:var(--muted);font:inherit;font-size:.84rem;font-weight:650;cursor:pointer;
+}
+.changes-back:hover{border-color:var(--line-strong);color:var(--ink)}
+.changes-back svg{inline-size:15px;block-size:15px}
+
+.changes-report-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.changes-report-head h2{margin:0;font-size:1.32rem;font-weight:800}
+.changes-report-head p{margin:3px 0 0;color:var(--muted);font-size:.88rem}
+.changes-report-state{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+.changes-summary{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:12px 16px;border-radius:var(--r-md);
+  background:var(--surface-2);border:1px solid var(--line);
+}
+.changes-summary svg{inline-size:17px;block-size:17px;opacity:.6;flex:none}
+.changes-summary strong{font-size:.98rem;font-weight:750}
+.changes-summary small{color:var(--muted);font-size:.83rem;margin-inline-start:auto}
+
+/* ── اللائحة: مطويّة حتى تُطلب ─────────────────────────────────────────── */
+.changes-regulations{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.changes-regulations>button{
+  inline-size:100%;display:flex;align-items:center;gap:10px;
+  padding:11px 15px;border:0;background:transparent;font:inherit;color:inherit;text-align:start;cursor:pointer;
+}
+.changes-regulations>button svg{inline-size:16px;block-size:16px;color:var(--warning);flex:none}
+.changes-regulations>button span{font-weight:700;font-size:.9rem}
+.changes-regulations>button small{color:var(--muted);font-size:.8rem;margin-inline-start:auto}
+.changes-regulations p{
+  margin:0;padding:0 15px 14px;color:var(--muted);
+  font-size:.86rem;line-height:1.85;border-block-start:1px solid var(--line);padding-block-start:12px;
+}
+
+/* ── الجولات السابقة ───────────────────────────────────────────────────── */
+.changes-rounds>button{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:7px 14px;border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);font:inherit;font-size:.84rem;font-weight:650;color:var(--muted);cursor:pointer;
+}
+.changes-rounds>button:hover{border-color:var(--line-strong);color:var(--ink)}
+.changes-rounds>button svg{inline-size:15px;block-size:15px}
+.changes-rounds ol{
+  list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;
+  border-inline-start:2px solid var(--line);padding-inline-start:16px;
+}
+.changes-rounds li{display:grid;gap:3px;font-size:.85rem;color:var(--muted)}
+.changes-rounds li strong{color:var(--ink);font-size:.9rem}
+.changes-rounds li[data-current] strong{color:var(--accent-ink)}
+.changes-rounds li button{
+  justify-self:start;margin-block-start:3px;padding:0;border:0;background:transparent;
+  color:var(--accent);font:inherit;font-size:.82rem;font-weight:650;cursor:pointer;text-decoration:underline;
+  text-underline-offset:3px;
+}
+
+/* ── بطاقات التغيير ────────────────────────────────────────────────────── */
+.changes-table{display:grid;gap:8px}
+.changes-entry{
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface);padding:13px 16px;
+  display:grid;gap:10px;position:relative;overflow:hidden;
+}
+/* النوع بشريطٍ جانبيٍّ لا بخلفيةٍ كاملة: عشرون بطاقةً ملوّنةً تُلغي أثر اللون. */
+.changes-entry::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;inline-size:3px}
+.changes-entry[data-kind="added"]::before{background:var(--success)}
+.changes-entry[data-kind="removed"]::before{background:var(--danger)}
+.changes-entry[data-kind="changed"]::before{background:var(--warning)}
+.changes-entry[data-kind="removed"]{background:var(--surface-2)}
+
+.changes-entry>header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.changes-entry>header strong{font-size:.96rem;font-weight:700}
+.changes-entry>header small{color:var(--muted);font-size:.82rem}
+.changes-kind{
+  padding:2px 9px;border-radius:var(--r-full);
+  font-size:.74rem;font-weight:800;flex:none;
+}
+.changes-entry[data-kind="added"] .changes-kind{background:var(--success-soft);color:var(--success)}
+.changes-entry[data-kind="removed"] .changes-kind{background:var(--danger-soft);color:var(--danger)}
+.changes-entry[data-kind="changed"] .changes-kind{background:var(--warning-soft);color:var(--warning)}
+
+/* ── الخانة المتغيّرة: من ماذا إلى ماذا ────────────────────────────────── */
+.changes-fields{margin:0;display:grid;gap:7px}
+.changes-fields>div{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.changes-fields dt{
+  min-inline-size:88px;flex:none;
+  color:var(--muted);font-size:.83rem;font-weight:650;
+}
+.changes-fields dd{margin:0;display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:.9rem}
+.changes-fields s{color:var(--muted);text-decoration-thickness:1px;opacity:.8}
+.changes-fields svg{inline-size:14px;block-size:14px;opacity:.4;flex:none}
+.changes-fields b{font-weight:750}
+
+/* ── النقر على الخانة ───────────────────────────────────────────────────
+   أزرارٌ بأسماء الخانات نفسها. والموظّف لا يصف أين المشكلة — ينقر عليها. */
+.changes-note-targets{display:flex;flex-wrap:wrap;gap:5px;padding-block-start:3px}
+.changes-note-targets button{
+  padding:4px 11px;border:1px dashed var(--line-strong);border-radius:var(--r-full);
+  background:transparent;color:var(--muted);
+  font:inherit;font-size:.79rem;font-weight:600;cursor:pointer;
+  transition:border-color .14s ease,color .14s ease,background .14s ease;
+}
+.changes-note-targets button:hover{border-style:solid;border-color:var(--warning);color:var(--warning);background:var(--warning-soft)}
+.changes-note-targets [data-state="open"]{border-style:solid;border-color:color-mix(in srgb,var(--warning) 40%,transparent);background:var(--warning-soft);color:var(--warning)}
+.changes-note-targets [data-state="changed"]{border-style:solid;border-color:color-mix(in srgb,var(--success) 36%,transparent);background:var(--success-soft);color:var(--success)}
+.changes-note-targets [data-state="answered"]{border-style:solid;border-color:var(--line-strong);background:var(--surface-3);color:var(--muted)}
+
+/* ── الملاحظات تحت صفّها ───────────────────────────────────────────────── */
+.changes-notes{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.changes-notes li{
+  display:grid;gap:5px;padding:9px 12px;border-radius:var(--r-sm);
+  background:var(--surface-2);border-inline-start:3px solid var(--line-strong);
+}
+.changes-notes [data-state="open"]{border-inline-start-color:var(--warning);background:var(--warning-soft)}
+.changes-notes [data-state="changed"]{border-inline-start-color:var(--success);background:var(--success-soft)}
+.changes-notes [data-state="answered"]{border-inline-start-color:var(--muted-2)}
+.changes-note-field{font-size:.76rem;font-weight:800;color:var(--muted);letter-spacing:.01em}
+.changes-notes p{margin:0;font-size:.88rem;line-height:1.7}
+.changes-notes small{color:var(--muted);font-size:.79rem}
+.changes-notes blockquote{
+  margin:2px 0 0;padding:7px 11px;border-radius:var(--r-xs);
+  background:var(--surface);font-size:.85rem;line-height:1.7;
+}
+.changes-notes blockquote strong{font-weight:750}
+.changes-notes blockquote cite{display:block;margin-block-start:3px;color:var(--muted);font-size:.78rem;font-style:normal}
+.changes-note-actions{display:flex;flex-wrap:wrap;gap:7px}
+.changes-note-actions button{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:4px 11px;border:1px solid var(--line-strong);border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:.79rem;font-weight:650;cursor:pointer;
+}
+.changes-note-actions button:hover{border-color:var(--accent);color:var(--accent)}
+.changes-note-actions button svg{inline-size:13px;block-size:13px}
+.changes-note-actions button:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── شريط القرار ────────────────────────────────────────────────────────
+   ملتصقٌ بالأسفل: يُضغط بعد القراءة، ومن انتهى من عشرين بطاقةً لا يُطلب
+   منه أن يصعد ليقرّر.                                                    */
+.changes-decision{
+  position:sticky;inset-block-end:0;z-index:2;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:13px 16px;margin-block-start:4px;
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface);box-shadow:var(--shadow-md);
+}
+.changes-decision>span{flex:1;min-inline-size:180px;color:var(--muted);font-size:.85rem}
+.changes-decision .btn{flex:none}
+.changes-decision svg{inline-size:15px;block-size:15px}
+
+/* ── الورقة المنبثقة ───────────────────────────────────────────────────── */
+.changes-extend-sheet{
+  position:fixed;inset:0;z-index:60;
+  display:grid;place-items:center;padding:20px;
+  background:color-mix(in srgb,#0b1210 46%,transparent);
+  backdrop-filter:blur(2px);
+}
+.changes-extend-card{
+  inline-size:min(430px,100%);display:grid;gap:13px;
+  padding:19px;border-radius:var(--r-lg);
+  background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-lg);
+}
+.changes-extend-card header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.changes-extend-card header strong{font-size:1.02rem;font-weight:750}
+.changes-extend-card header button{
+  border:0;background:transparent;padding:5px;border-radius:var(--r-xs);
+  color:var(--muted);cursor:pointer;display:grid;place-items:center;
+}
+.changes-extend-card header button:hover{background:var(--surface-3);color:var(--ink)}
+.changes-extend-card header svg{inline-size:17px;block-size:17px}
+.changes-extend-card label{display:grid;gap:6px}
+.changes-extend-card label>span{font-size:.85rem;font-weight:700}
+.changes-extend-card label>span small{font-weight:500;color:var(--muted);margin-inline-start:5px}
+.changes-extend-card input{
+  min-block-size:40px;padding:8px 11px;font:inherit;
+  border:1px solid var(--line-strong);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink);
+}
+.changes-extend-card input:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
+.changes-rebut-hint{margin:0;color:var(--muted);font-size:.84rem;line-height:1.75}
+.changes-extend-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+
+/* ── الشاشات الضيّقة ────────────────────────────────────────────────────
+   لا تخطيطَ ثانٍ يُصان مرّتين: ما يضيق يلتفّ، والقرار يبقى في مكانه.    */
+@media (max-width:640px){
+  .changes-inbox-open{flex-wrap:wrap;gap:8px 12px}
+  .changes-inbox-title{flex:1 1 100%}
+  .changes-inbox-open>svg:last-child{display:none}
+  .changes-fields dt{min-inline-size:0}
+  .changes-fields>div{gap:4px 10px}
+  .changes-decision{flex-direction:column;align-items:stretch}
+  .changes-decision .btn{inline-size:100%;justify-content:center}
+  .changes-totals{gap:6px 14px;font-size:.82rem}
+  .changes-totals b{font-size:1.15rem}
+}
+
+/* ── الطباعة ────────────────────────────────────────────────────────────
+   التقرير يُطبع ويُرفق بالورق. فيسقط منه كل ما لا يُضغط على الورق.      */
+@media print{
+  .changes-back,.changes-note-targets,.changes-note-actions,
+  .changes-decision,.changes-extend,.changes-filter,.changes-extend-sheet{display:none !important}
+  .changes-entry{break-inside:avoid;border-color:#999;box-shadow:none}
+  .changes-rounds ol{display:grid !important}
+}
+
+/* ── اختيار الفصل وموعده ────────────────────────────────────────────────
+   الموعد حقلٌ واحد في الشاشة التي يفتحها رئيس التسجيل كل يوم، لا إعدادٌ
+   يُبحث عنه. والزرّ لا يظهر إلا إذا تغيّرت القيمة — فلا يُدعى أحدٌ إلى
+   حفظ ما لم يُعدَّل.                                                      */
+.changes-term-picker{display:inline-flex;align-items:center;gap:8px}
+.changes-term-picker>span{color:var(--muted);font-size:.84rem;font-weight:650}
+.changes-term-picker select{
+  min-block-size:38px;padding:6px 11px;font:inherit;
+  border:1px solid var(--line-strong);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink);
+}
+.changes-deadline-surface{padding:14px 16px}
+.changes-deadline-control{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.changes-deadline-control label{display:grid;gap:6px}
+.changes-deadline-control label>span{font-size:.85rem;font-weight:700}
+.changes-deadline-control input{
+  min-block-size:40px;padding:8px 11px;font:inherit;
+  border:1px solid var(--line-strong);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink);
+}
+.changes-deadline-control input:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
+.changes-deadline-hint{color:var(--muted);font-size:.84rem;padding-block-end:11px}
+.changes-deadline-saved{
+  display:inline-flex;align-items:center;gap:6px;padding-block-end:11px;
+  color:var(--success);font-size:.84rem;font-weight:650;
+}
+.changes-deadline-saved svg{inline-size:15px;block-size:15px}
+
+/* ── سطر الإضافات المنتظِرة، ولوحة توقيع رئيس القسم ────────────────────
+   سطرٌ واحد فوق الجدول، وزرٌّ واحد. ولا يظهر أيٌّ منهما إلا حين يكون
+   مطلوباً فعلاً — فرئيس القسم الذي لا ينتظره شيء لا يرى شيئاً.          */
+.approval-bar{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:12px 16px;border-radius:var(--r-md);
+  border:1px solid var(--line);background:var(--surface);
+}
+.approval-bar[data-tone="pending"]{
+  border-color:color-mix(in srgb,var(--info) 30%,transparent);background:var(--info-soft);
+}
+.approval-bar[data-tone="returned"]{
+  border-color:color-mix(in srgb,var(--warning) 32%,transparent);background:var(--warning-soft);
+}
+.approval-bar[data-tone="locked"]{
+  border-color:color-mix(in srgb,var(--accent) 28%,transparent);background:var(--accent-softer);
+}
+.approval-bar>svg{inline-size:17px;block-size:17px;flex:none;opacity:.8}
+.approval-bar-text{flex:1;min-inline-size:170px;display:grid;gap:2px}
+.approval-bar-text strong{font-size:.92rem;font-weight:750}
+.approval-bar-text small{color:var(--muted);font-size:.82rem}
+.approval-bar[data-tone="returned"] .approval-bar-text small{color:var(--warning)}
+.approval-bar .btn{flex:none}
+
+/* التوقيع: زرٌّ واحد كبير، وعدّادٌ لائحيٌّ صغير بجانبه لا فوقه. */
+.approval-sign{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.approval-sign-notices{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:5px 12px;border-radius:var(--r-full);
+  background:var(--warning-soft);color:var(--warning);
+  font-size:.8rem;font-weight:650;border:0;cursor:pointer;font-family:inherit;
+}
+.approval-sign-notices svg{inline-size:14px;block-size:14px}
+.approval-signed{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.84rem;color:var(--muted)}
+.approval-signed b{color:var(--ink);font-weight:700}
+.approval-signed code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:.8rem;letter-spacing:.06em;
+  padding:1px 7px;border-radius:var(--r-xs);
+  background:var(--surface-3);color:var(--ink-2);
+}
+
+@media (max-width:640px){
+  .changes-deadline-control{align-items:stretch}
+  .changes-deadline-control label{flex:1 1 100%}
+  .approval-bar{align-items:stretch}
+  .approval-bar .btn{inline-size:100%;justify-content:center}
+}
+
+@media print{
+  .changes-term-picker,.changes-deadline-surface,.approval-sign-notices{display:none !important}
+}
+
+/* ── عمود الاعتماد في ميزان الأقسام ────────────────────────────────────
+   إضافة العميد كلها: عمودٌ واحد في جدولٍ يقرؤه أصلاً. لا لوحةَ قيادةٍ
+   ثانية تقول الشيء نفسه وتفترق عنه عند أول تعديل.                       */
+.balance-approval{white-space:nowrap}
+.balance-approval small{
+  display:block;margin-block-start:3px;
+  color:var(--muted);font-size:.74rem;
+}
+
+/* الشارة على الورق: الألوان تخرج رماديةً من طابعاتٍ أحاديّة، فالحال تُقال
+   بالكلمة أولاً، وتبقى النقطة حدّاً يفصل لا معنىً يُحمَل. */
+@media print{
+  .approval-chip{
+    border:.4pt solid #8d9792 !important;
+    background:transparent !important;
+    color:#131817 !important;
+    padding:.4mm 1.4mm !important;
+    font-size:6.6pt !important;
+  }
+  .approval-chip::before{display:none !important}
+}
+
+/* السبب في مكان الزرّ: من مُنع يعرف لماذا قبل أن يمدّ يده، لا بعدها. */
+.approval-blocked{
+  display:inline-flex;align-items:center;
+  padding:5px 12px;border-radius:var(--r-full);
+  background:var(--warning-soft);color:var(--warning);
+  font-size:.82rem;font-weight:650;
+}
+
+/* ── تعارضٌ مع قسمٍ آخر ─────────────────────────────────────────────────
+   يُعرض ولا يُعلَّق عليه: الملاحظة تذهب لصاحب الصفّ، ومن لا يملك تعديلَه لا
+   يُطالَب بمعالجة ملاحظةٍ عليه. فلا يُرسم كملاحظةٍ لئلّا يُنتظر منه ما لا
+   يُنتظر — سطرٌ مائلُ الحافّة، خبرٌ لا صندوق.                             */
+.changes-cross{
+  display:flex;align-items:flex-start;gap:9px;
+  padding:8px 12px;border-radius:var(--r-sm);
+  background:var(--info-soft);
+  border-inline-start:3px solid var(--info);
+}
+.changes-cross svg{inline-size:15px;block-size:15px;flex:none;color:var(--info);margin-block-start:2px}
+.changes-cross strong{display:block;font-size:.86rem;font-weight:700;color:var(--info)}
+.changes-cross small{display:block;margin-block-start:2px;color:var(--muted);font-size:.8rem;line-height:1.65}
+
+/* مصدرُ الملاحظة: ملاحظةُ التسجيل تمنع الإرسال، وملاحظةُ القسم لا تمنع. */
+.changes-note-field em{font-style:normal;font-weight:600;opacity:.8}
+
+/* خانةٌ اختلف عليها الطرفان ثلاثاً: إعلامٌ لا إجبار، فلا يُصرخ به. */
+.changes-note-stuck{color:var(--warning) !important;font-weight:650}
+
+@media print{ .changes-cross{background:transparent !important;border-inline-start-color:#999 !important} }
+
+/* ملاحظةٌ حُسمت: تبقى في مكانها للحجّة، وتُخفت لأنها لم تعد تنتظر أحداً. */
+.changes-notes [data-state="resolved"]{border-inline-start-color:var(--line-strong);opacity:.72}

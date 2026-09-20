@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
+import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
+import type { ScheduleApprovalStatus } from "../types";
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
@@ -67,6 +69,14 @@ interface Props {
   user?: { SystemUserId: number; IsAdminUser?: boolean };
   scopes?: any[];
   availableModes?: ReportMode[];
+  /**
+   * صفة صاحب الحساب.
+   *
+   * لا تحرس شيئاً — النطاق والصلاحيات على الخادم — لكنها تُقصّر القائمة على ما
+   * يعني صاحبها. عشرُ عدساتٍ أمام عميدٍ يسأل سؤالاً واحداً ليست مرونةً، هي
+   * تسعُ نوافذَ يفتحها ليعرف أنها ليست ما أراد.
+   */
+  roleId?: string;
 }
 
 interface Filters {
@@ -119,6 +129,27 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
      else is allowed to see, so it must not appear as a locked door to them. */
   { id: "balance", label: "ميزان الأقسام", hint: "كل أقسام الفصل، قسمٌ في كل سطر", icon: <Landmark /> }
 ];
+
+/**
+ * ── العدسات بحسب الصفة ──────────────────────────────────────────────────────
+ *
+ * ما أُخفي هنا لم يُمنع: الخادم لا يعرف هذه القائمة ولا يحتكم إليها، ومن طرق
+ * مساراً بنفسه فالنطاق هو ما يردّه أو يُجيبه. هذه القائمة تجيب عن سؤالٍ آخر
+ * تماماً: ماذا يفتح هذا الشخص أوّل ما يدخل؟
+ *
+ * والعميد يسأل سؤالاً واحداً — «أين وصلت الأقسام؟» — فيُفتح له ميزان الأقسام
+ * ومعه ما يُكمله: عدالةُ الحمل والمنتدبون. والعميد المساعد يسأل أعمق درجة
+ * فيُزاد الأساتذةُ والقاعات. وأمّا الصفات التي لا تُذكر هنا فترى القائمة
+ * كاملةً كما كانت قبل هذه الإضافة، لأن تقصير القائمة قرارٌ يُتخذ لمن عُرف ما
+ * يريد، لا عقوبةٌ تُعمَّم.
+ */
+const ROLE_LENSES: Record<string, Lens[]> = {
+  dean:           ["balance", "fairness", "visiting"],
+  viceDean:       ["balance", "fairness", "visiting", "instructor", "room", "matrix"],
+  registrarDean:  ["balance", "fairness"],
+  registrarHead:  ["balance", "list", "room", "matrix"],
+  registrarStaff: ["balance", "list", "room"],
+};
 
 const DAYS = [
   { key: "sun" as const, flag: "fsunday" as const, label: "الأحد" },
@@ -345,7 +376,7 @@ function QuerySkeleton() {
   );
 }
 
-export default function Reports({ mode, user, scopes = [] }: Props) {
+export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const prefKey = `schedule-unified-prefs-${user?.SystemUserId || 0}`;
   const workspacePrefKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   let saved: any = {};
@@ -404,6 +435,21 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   }));
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
+  /**
+   * ── حال الاعتماد، للوثيقة الرسمية ──────────────────────────────────────
+   *
+   * تُقرأ مع النطاق لا عند الطباعة: أمر الطباعة يجب أن يكون فورياً — وقراءةٌ
+   * شبكيةٌ بينه وبين ‎window.print()‎ هي ما تجعل المتصفّح يتجاهل الأمر أصلاً،
+   * وهو عطبٌ عانى منه هذا النظام من قبل. فالحال حاضرةٌ قبل أن تُطلب.
+   *
+   * وفشلُ القراءة ليس عائقاً: الوثيقة تُطبع كما كانت دائماً، بخاناتٍ فارغة
+   * وبلا ختم. فتقريرٌ بلا ختمٍ خيرٌ من تقريرٍ لا يُطبع.
+   */
+  const [printApproval, setPrintApproval] = useState<PrintApproval | null>(null);
+  const [changesAppendix, setChangesAppendix] = useState<ChangesAppendix | null>(null);
+  /** حال الاعتماد لكل قسمٍ في الفصل — تُقرأ مرّةً لميزان الأقسام كله. */
+  const [termApprovals, setTermApprovals] = useState<Map<number, { status: ScheduleApprovalStatus; late: boolean; round: number; deadline?: string }> | null>(null);
+  const [appendixBusy, setAppendixBusy] = useState(false);
   const [authorityReport, setAuthorityReport] = useState<AuthorityReport | null>(null);
   /* تقرير التغييرات للقسم كله: تقرير لكل موقع، مرتبة كما تُقرأ — الموقع
      المفتوح أولاً — وتُطبع كوثيقة واحدة بترقيم متصل. */
@@ -448,6 +494,51 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     }));
   }, [prefKey, workspacePrefKey, lens, filters]);
 
+  useEffect(() => {
+    /* نداءٌ واحد لحالات الفصل كله، لا نداءٌ لكل قسم: كليةٌ فيها عشرون قسماً
+       كانت ستكلّف عشرين رحلةً في كل فتحةِ شاشة. ويُقرأ فقط حين تكون العدسة
+       ميزانَ الأقسام — فمن ينظر في القاعات لا شأن له بحال الاعتماد. */
+    if (lens !== "balance" || !filters.termId) { setTermApprovals(null); return; }
+    const controller = new AbortController();
+    const query = new URLSearchParams({ termId: String(filters.termId) });
+    if (filters.collegeId) query.set("collegeId", String(filters.collegeId));
+    fetch(`/api/approvals/term?${query}`, { signal: controller.signal })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => {
+        if (!data?.approvals) { setTermApprovals(null); return; }
+        setTermApprovals(new Map(data.approvals.map((row: any) => [
+          Number(row.AdSectionId),
+          {
+            status: row.status as ScheduleApprovalStatus,
+            late: Boolean(row.deadline?.past) && Number(row.currentRound || 0) === 0,
+            round: Number(row.currentRound || 0),
+            deadline: row.deadline?.effective,
+          },
+        ])));
+      })
+      .catch(() => setTermApprovals(null));
+    return () => controller.abort();
+  }, [lens, filters.termId, filters.collegeId]);
+
+  useEffect(() => {
+    const { collegeId, sectionId, termId } = filters;
+    if (!collegeId || !sectionId || !termId) { setPrintApproval(null); return; }
+    const controller = new AbortController();
+    fetch(`/api/approvals?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { signal: controller.signal })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => {
+        if (!data?.approval) { setPrintApproval(null); return; }
+        setPrintApproval({
+          status: data.approval.status,
+          statusLabel: data.statusLabel || "",
+          round: Number(data.approval.currentRound || 0),
+          signatures: data.approval.signatures || [],
+          acceptedAt: (data.approval.rounds || []).map((round: any) => round.acceptedAt).filter(Boolean).pop(),
+        });
+      })
+      .catch(() => setPrintApproval(null));
+    return () => controller.abort();
+  }, [filters.collegeId, filters.sectionId, filters.termId]);
   useEffect(() => {
     if(!filters.collegeId){ setLocationRegistry({buildings:[],rooms:[]}); return; }
     const controller=new AbortController();
@@ -599,19 +690,33 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
    * the refresh and the reader decides when to take it.
    */
   /* The balance lens exists only for the account that can act on it. */
-  const shownLenses = useMemo(
-    () => LENSES.filter(item => item.id !== "visitingHistory" && (item.id !== "balance" || isPowerAdmin)),
-    [isPowerAdmin],
-  );
+  const shownLenses = useMemo(() => {
+    const allowed = roleId ? ROLE_LENSES[roleId] : undefined;
+    if (allowed) {
+      /* الترتيب ترتيبُ الصفة لا ترتيبُ الجدول الأصلي: أوّلُ ما في القائمة هو
+         ما يُفتح عليه، فيجب أن يكون الجواب لا مقدّمةً له. */
+      return allowed
+        .map(id => LENSES.find(item => item.id === id))
+        .filter((item): item is typeof LENSES[number] => Boolean(item));
+    }
+    return LENSES.filter(item => item.id !== "visitingHistory" && (item.id !== "balance" || isPowerAdmin));
+  }, [isPowerAdmin, roleId]);
+  /* العدسة المختارة قد تكون محفوظةً من صفةٍ سابقة أو من قبل هذه الإضافة:
+     تُردّ إلى أول ما هو متاح بدل أن تُعرض شاشةٌ فارغة بلا سبب ظاهر. */
   useEffect(() => {
-    if (lens !== "balance" || !isPowerAdmin || !filters.termId) return;
+    if (!shownLenses.length) return;
+    if (shownLenses.some(item => item.id === lens)) return;
+    setLens(shownLenses[0].id);
+  }, [shownLenses, lens]);
+  useEffect(() => {
+    if (lens !== "balance" || !filters.termId) return;
     const controller = new AbortController();
     fetch(`/api/reports/department-balance?termId=${filters.termId}`, { signal: controller.signal })
       .then(response => (response.ok ? response.json() : null))
       .then(data => { if (data) { setBalance(data); setError(null); } })
       .catch((e: any) => { if (e?.name !== "AbortError") setError("تعذّر قراءة ميزان الأقسام"); });
     return () => controller.abort();
-  }, [lens, isPowerAdmin, filters.termId, liveNudge]);
+  }, [lens, filters.termId, liveNudge]);
 
   const closeReportEvents = useCallback(() => {
     const source = reportEventsRef.current;
@@ -1233,6 +1338,42 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     return () => { document.removeEventListener("pointerdown", close, true); document.removeEventListener("keydown", close, true); };
   }, [scopeMenu]);
 
+  /**
+   * الوثيقتان معاً.
+   *
+   * الملحق يُجلب أولاً وينتظر — ثم تُطلب الطباعة. والترتيب هنا ليس تفصيلاً:
+   * أمر الطباعة يجب أن يخرج من نفس ضغطة الإصبع، وقراءةٌ شبكيةٌ بينهما تجعل
+   * بعض المتصفّحات تتجاهل الأمر بصمت. فالشبكة تنتهي قبل أن يبدأ الطبع.
+   *
+   * وفشلُ الملحق لا يمنع الشامل: تُطبع الوثيقة الرسمية وحدها، لأن تقريراً
+   * ناقصاً خيرٌ من تقريرٍ لا يخرج.
+   */
+  const printComprehensiveWithChanges = async () => {
+    const { collegeId, sectionId, termId } = filters;
+    if (!collegeId || !sectionId || !termId) { printReport("comprehensive"); return; }
+    setAppendixBusy(true);
+    let appendix: ChangesAppendix | null = null;
+    try {
+      const response = await fetch(`/api/reports/schedule-changes?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`);
+      if (response.ok) {
+        const data = await response.json();
+        appendix = {
+          summary: String(data.summary || ""),
+          round: Number(data.round || 0),
+          firstReview: Boolean(data.diff?.firstReview),
+          counts: data.diff?.counts || { added: 0, removed: 0, changed: 0, unchanged: 0 },
+          entries: data.diff?.entries || [],
+        };
+      }
+    } catch { /* الشامل يُطبع وحده */ }
+    setAppendixBusy(false);
+    flushSync(() => { setChangesAppendix(appendix); });
+    /* والرفع بعدها إلى `printReport` نفسها: هي التي تعرف متى انتهت الطباعة
+       حقّاً — عند `afterprint` أو عند عودة القارئ إلى الصفحة — وقد تعلّمت ذلك
+       من عطبٍ سابقٍ في هذا الملفّ بعينه. ومؤقّتٌ بثانيةٍ ونصف لا يعرفه. */
+    printReport("comprehensive");
+  };
+
   const printReport = (kind: Exclude<PrintKind, null> = lens) => {
     /* Safari/WebKit has a long-standing failure mode where an active EventSource
        can make window.print() silently do nothing. Pause the live schedule stream
@@ -1278,6 +1419,10 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       delete root.dataset.printKind;
       delete root.dataset.printRotate;
       delete root.dataset.printChromium;
+      /* وملحقُ التغييرات معها: هو جزءٌ من الوثيقة المعروضة، ونزعُه أثناء
+         المعاينة يُسقطه من المطبوع أو يُعيد ترتيب الصفحات — وهو العطبُ نفسه
+         الذي وُصف أعلاه، لا عطبٌ آخر. */
+      setChangesAppendix(null);
     };
     const resume = () => {
       if (resumed) return;
@@ -1301,8 +1446,15 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     if (!invoked) window.print();
 
     /* If a browser no-ops the print command, don't leave live updates paused —
-       but leave the sheet exactly as the printer sees it. */
-    window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
+       but leave the sheet exactly as the printer sees it.
+
+       وملحقُ التغييرات يُرفع هنا أيضاً: متصفّحٌ ابتلع أمر الطباعة لا يبعث
+       `afterprint` ولا يُخفي الصفحة، فلا شيء بعدها يرفع الملحق — فيبقى مركَّباً
+       ويخرج مع أول طباعةٍ شاملةٍ بعده لم تطلبه. والسمات تبقى كما هي عمداً، كما
+       يقول التعليق أعلاه؛ الملحقُ ليس سمةً على الجذر بل عقدةٌ في الوثيقة. */
+    window.setTimeout(() => {
+      if (!leftForPrint && !resumed) { openReportEvents(); setChangesAppendix(null); }
+    }, 2500);
   };
 
   useEffect(() => {
@@ -1818,13 +1970,18 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                   حين يُضغط: هذا الموقع أم كل الفروع؟ ولقسم في موقع واحد لا
                   سؤال أصلاً — يطبع مباشرة كما كان. */}
               <div className="query-report-action">
-                <SecondaryButton type="button" data-guide-ignore="طباعة التقرير الشامل بنطاقه المختار داخل مركز الاستعلامات" aria-haspopup={branchSites.length > 1 || undefined} aria-expanded={scopeMenu === "comprehensive" || undefined} onClick={() => branchSites.length > 1 ? setScopeMenu(scopeMenu === "comprehensive" ? null : "comprehensive") : printReport("comprehensive")} disabled={branchBusy} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
-                  <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : "التقرير الشامل"}
+                <SecondaryButton type="button" data-guide-ignore="طباعة التقرير الشامل بنطاقه المختار داخل مركز الاستعلامات" aria-haspopup aria-expanded={scopeMenu === "comprehensive" || undefined} onClick={() => setScopeMenu(scopeMenu === "comprehensive" ? null : "comprehensive")} disabled={branchBusy || appendixBusy} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
+                  <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : appendixBusy ? "يجهّز الملحق…" : "التقرير الشامل"}
                 </SecondaryButton>
                 {scopeMenu === "comprehensive" ? (
                   <div className="query-scope-menu" role="menu">
                     <button type="button" role="menuitem" data-guide-ignore="طباعة التقرير الشامل للموقع المفتوح" onClick={() => { setScopeMenu(null); printReport("comprehensive"); }}>هذا الموقع<small>{collegeName || "—"}</small></button>
-                    <button type="button" role="menuitem" data-guide-ignore="طباعة التقرير الشامل لمواقع الفرع في وثيقة واحدة" onClick={() => { setScopeMenu(null); void printBranchComprehensive(); }}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button>
+                    {/* الوثيقتان معاً: الشامل يعرض الجدول كما هو، والملحق يعرض
+                        كيف وصل إليه. وهي الورقة التي تُحفظ في الملف. */}
+                    <button type="button" role="menuitem" data-guide-ignore="طباعة التقرير الشامل ومعه ملحق التغييرات في وثيقة واحدة" onClick={() => { setScopeMenu(null); void printComprehensiveWithChanges(); }}>مع ملحق التغييرات<small>وثيقة واحدة تُحفظ في الملف</small></button>
+                    {branchSites.length > 1 ? (
+                      <button type="button" role="menuitem" data-guide-ignore="طباعة التقرير الشامل لمواقع الفرع في وثيقة واحدة" onClick={() => { setScopeMenu(null); void printBranchComprehensive(); }}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -2450,6 +2607,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             sort={balanceSort}
             onSort={setBalanceSort}
             num={num}
+            approvals={termApprovals || undefined}
           />
         ) : fairness ? (
           <div className="lens-fairness">
@@ -2496,6 +2654,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           instructorById={instructorById}
           visitingIds={visitingIds}
           siteGroups={branchSiteGroups}
+          approval={printApproval}
+          changesAppendix={changesAppendix}
         />
       </PrintPortal>
       <PrintPortal className="authority-pdf-print-host">
@@ -2566,14 +2726,25 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
  * who carries it, how evenly, and what is still blocking it — and the sorting
  * is the point, because the question is always "which one is the outlier".
  */
-function BalancePanel({ balance, sort, onSort, num }: {
+function BalancePanel({ balance, sort, onSort, num, approvals }: {
   balance: any;
   sort: { key: string; desc: boolean };
   onSort: React.Dispatch<React.SetStateAction<{ key: string; desc: boolean }>>;
   num: (value: number) => string;
+  /**
+   * ── حال الاعتماد، بالقسم ───────────────────────────────────────────────
+   *
+   * هذه هي إضافة العميد كلها: عمودٌ واحد في جدولٍ يقرؤه أصلاً.
+   *
+   * ولم تُبنَ له لوحةٌ خاصّة عمداً. فسؤاله — «هل سلّمت الأقسام؟ ومن تأخّر؟» —
+   * له صفٌّ واحد لكل قسم، وميزان الأقسام صفٌّ واحد لكل قسم. ولوحةٌ ثانية تقول
+   * الشيء نفسه هي شاشةٌ تُصان مرّتين وتفترق عن أختها عند أول تعديل.
+   */
+  approvals?: Map<number, { status: ScheduleApprovalStatus; late: boolean; round: number; deadline?: string }>;
 }) {
   const COLUMNS = [
     { key: "sectionName", label: "القسم العلمي" },
+    ...(approvals ? [{ key: "approval", label: "الاعتماد" }] : []),
     { key: "rows", label: "المواعيد" },
     { key: "instructors", label: "الأساتذة" },
     { key: "rooms", label: "القاعات" },
@@ -2582,14 +2753,35 @@ function BalancePanel({ balance, sort, onSort, num }: {
     { key: "quality", label: "الجودة" },
     { key: "conflicts", label: "موانع" },
   ];
+  /* ترتيبٌ بالحال لا بالاسم: «متأخّر» أولاً لأنه أعجلُ ما في الجدول، ثم ما
+     يُنتظر منه فعل، ثم ما اكتمل. والرقم يخدم الفرز وحده ولا يُعرض. */
+  const APPROVAL_ORDER: Record<string, number> = {
+    late: 0, drafting: 1, committee: 2, head: 3, returned: 4, submitted: 5, accepted: 6,
+  };
+  /* ── فرزٌ لا يبقى معلّقاً على عمودٍ زال ────────────────────────────────
+   * عمودُ الاعتماد لا يظهر إلا حين تُقرأ الحالات، وقد تُخفق القراءة أو تتبدّل
+   * العدسة. وكان الفرزُ يبقى عليه: فتختفي علامةُ الترتيب من كل رأسٍ ظاهر،
+   * ويُعرض الجدول بترتيبٍ لا يُنسب إلى أحد — والقارئُ لا يعرف أن اختياره سقط. */
+  useEffect(() => {
+    if (sort.key === "approval" && !approvals) onSort({ key: "rows", desc: true });
+  }, [approvals, sort.key, onSort]);
+
   const ordered = useMemo(() => {
     const list = [...(balance?.departments || [])];
     const direction = sort.desc ? -1 : 1;
-    return list.sort((a: any, b: any) =>
-      sort.key === "sectionName"
-        ? byArabic(a.sectionName, b.sectionName) * direction
-        : (Number(a[sort.key]) - Number(b[sort.key])) * direction);
-  }, [balance, sort]);
+    return list.sort((a: any, b: any) => {
+      if (sort.key === "sectionName") return byArabic(a.sectionName, b.sectionName) * direction;
+      if (sort.key === "approval") {
+        const rank = (item: any) => {
+          const state = approvals?.get(Number(item.sectionId));
+          if (!state) return APPROVAL_ORDER.drafting;
+          return state.late ? APPROVAL_ORDER.late : (APPROVAL_ORDER[state.status] ?? APPROVAL_ORDER.drafting);
+        };
+        return (rank(a) - rank(b)) * direction;
+      }
+      return (Number(a[sort.key]) - Number(b[sort.key])) * direction;
+    });
+  }, [balance, sort, approvals]);
 
   if (!balance) return <QuerySkeleton />;
   return (
@@ -2631,6 +2823,22 @@ function BalancePanel({ balance, sort, onSort, num }: {
                   <strong>{item.sectionName}</strong>
                   <small>{item.collegeName}</small>
                 </td>
+                {approvals ? (
+                  <td className="balance-approval">
+                    {(() => {
+                      const state = approvals.get(Number(item.sectionId));
+                      if (!state) return <span className="approval-chip" data-status="drafting">قيد الإعداد</span>;
+                      return (
+                        <>
+                          <span className="approval-chip" data-status={state.late ? "late" : state.status}>
+                            {state.late ? "متأخّر عن الموعد" : APPROVAL_STATUS_LABEL[state.status]}
+                          </span>
+                          {state.round > 1 ? <small>الجولة {num(state.round)}</small> : null}
+                        </>
+                      );
+                    })()}
+                  </td>
+                ) : null}
                 <td>{num(item.rows)}</td>
                 <td>{num(item.instructors)}</td>
                 <td>{num(item.rooms)}</td>
@@ -2717,7 +2925,169 @@ function PrintPageMeta({ page, total, college, date }: { page: number; total: nu
   );
 }
 
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups }: {
+/**
+ * ── الختم على الورقة ────────────────────────────────────────────────────────
+ *
+ * خانات التوقيع في هذه الوثيقة كانت فارغةً دائماً: خطٌّ وكلمة، يُوقَّع فوقهما
+ * بالقلم. وهذا يكفي ما دام الموقِّع حاضراً والورقة طازجة — أمّا بعد شهرين، في
+ * ملفٍّ فيه ثلاث نسخٍ من الجدول نفسه، فلا شيء في الورقة يقول أيُّها المعتمدة.
+ *
+ * فالوثيقة تحمل الآن ما يُطابَق به: اسمُ من وقّع، وتاريخُه، ورمزٌ قصير مشتقٌّ
+ * من النسخة التي وُقّعت. ومن يمسك الورقة يستطيع أن يسأل النظام عنها.
+ *
+ * وما لم يُعتمد يقول عن نفسه ذلك: «نسخة غير معتمدة» مائلةً على كل صفحة. لأن
+ * الخطر ليس أن تُطبع نسخةٌ قديمة — الخطر أن تنتشر وهي لا تُميَّز.
+ */
+interface PrintApproval {
+  status: string;
+  statusLabel: string;
+  round: number;
+  signatures: Array<{ stage: "committee" | "head"; userName: string; roleLabel: string; at: string; verifyCode: string; regulationNoticeCount?: number }>;
+  acceptedAt?: string;
+}
+
+/**
+ * ── ملحق التغييرات ──────────────────────────────────────────────────────────
+ *
+ * الوثيقتان اللتان يهتمّ بهما التسجيل والقسم في النهاية اثنتان: الشامل يعرض
+ * الجدول كما هو الآن، والمعدَّل يعرض كيف وصل إلى هذه الصورة. ومن يمسك الأولى
+ * وحدها يعرف ماذا صار، ولا يعرف ماذا كان — وهو السؤال الذي يُطرح حين يختلف
+ * أحدٌ بعد شهرين.
+ *
+ * فيُطبعان وثيقةً واحدة: الشامل أولاً، وهذا خلفه. ورقةٌ واحدة تُوقَّع وتُحفظ
+ * في الملف، وإليها يُرجع.
+ */
+interface ChangesAppendix {
+  summary: string;
+  round: number;
+  firstReview: boolean;
+  counts: { added: number; removed: number; changed: number; unchanged: number };
+  entries: Array<{
+    kind: "added" | "removed" | "changed";
+    scheduleId: number;
+    row: any;
+    changes: Array<{ field: string; label: string; before: string; after: string }>;
+  }>;
+}
+
+const APPENDIX_KIND_LABEL: Record<ChangesAppendix["entries"][number]["kind"], string> = {
+  added: "مضاف", removed: "محذوف", changed: "معدّل",
+};
+
+function PrintChangesAppendix({ appendix, collegeName, sectionName, termName, approval }: {
+  appendix: ChangesAppendix;
+  collegeName: string;
+  sectionName: string;
+  termName: string;
+  approval?: PrintApproval | null;
+}) {
+  return (
+    <section className="print-comprehensive-page print-changes-appendix">
+      <header className="print-comprehensive-classic-head">
+        <div className="print-comprehensive-head-top">
+          <div className="print-comprehensive-title-block">
+            <h1>ملحق: تغييرات الجدول</h1>
+            <p>{sectionName || "—"} — {collegeName || "—"} — {termName || "—"}</p>
+            {appendix.round > 1 ? <p className="print-approval-line">الجولة {appendix.round}</p> : null}
+          </div>
+        </div>
+      </header>
+
+      <p className="print-changes-summary">
+        {appendix.firstReview
+          ? `جدولٌ جديد بـ${appendix.counts.added} موعداً — لا مراجعةَ سابقة يُقارن بها.`
+          : `${appendix.summary}. ولم يتغيّر ${appendix.counts.unchanged} موعداً.`}
+      </p>
+
+      {appendix.entries.length ? (
+        <div className="print-changes-grid" role="table" aria-label="تغييرات الجدول">
+          <div className="print-changes-head" role="row">
+            <div role="columnheader">النوع</div>
+            <div role="columnheader">المقرر</div>
+            <div role="columnheader">الشعبة</div>
+            <div role="columnheader">ما تغيّر</div>
+          </div>
+          {appendix.entries.map(entry => (
+            <div className="print-changes-row" role="row" key={`${entry.kind}:${entry.scheduleId}`} data-kind={entry.kind}>
+              <div role="cell" className="print-changes-kind">{APPENDIX_KIND_LABEL[entry.kind]}</div>
+              <div role="cell" className="print-wrap">{entry.row?.AdCourseName || `موعد ${entry.scheduleId}`}</div>
+              <div role="cell" className="print-ltr">{entry.row?.SCode || "—"}</div>
+              <div role="cell" className="print-wrap print-changes-detail">
+                {entry.changes.length
+                  ? entry.changes.map(change => (
+                      <span key={change.field}>
+                        <b>{change.label}:</b> {change.before} ← {change.after}
+                      </span>
+                    ))
+                  : <span>—</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : <p className="print-empty">لم يتغيّر شيء منذ المراجعة الأخيرة.</p>}
+
+      <footer className="print-comprehensive-page-footer">
+        <PrintSignatures approval={approval} />
+      </footer>
+    </section>
+  );
+}
+
+const SIGNATURE_SLOTS: Array<{ stage: "committee" | "head" | "dean"; label: string }> = [
+  { stage: "committee", label: "توقيع رئيس لجنة الجدول" },
+  { stage: "head", label: "توقيع رئيس القسم العلمي" },
+  { stage: "dean", label: "توقيع العميد" },
+];
+
+const printStamp = (iso?: string) => {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+};
+
+/**
+ * خانات التوقيع: تُملأ بما ثبت، وتبقى خطّاً لما لم يثبت بعد.
+ *
+ * وخانة العميد تبقى خطّاً دائماً عن قصد — العميد لا يوقّع في هذا النظام، هو
+ * يطّلع. فالورقة تحتفظ بخانته كما جرى العرف، ولا يدّعي النظام عنه شيئاً.
+ */
+function PrintSignatures({ approval }: { approval?: PrintApproval | null }) {
+  return (
+    <div className="print-comprehensive-signatures">
+      {SIGNATURE_SLOTS.map(slot => {
+        const signed = slot.stage === "dean" ? undefined : approval?.signatures.find(item => item.stage === slot.stage);
+        return (
+          <div key={slot.stage} data-signed={signed ? "true" : undefined}>
+            <span>{slot.label}</span>
+            {signed ? (
+              <em className="print-signed">
+                <b>{signed.userName}</b>
+                <small>{printStamp(signed.at)} · رمز التحقّق {signed.verifyCode}</small>
+                {signed.regulationNoticeCount
+                  ? <small>وقّع مع علمه بـ{signed.regulationNoticeCount} ملاحظةً لائحية</small>
+                  : null}
+              </em>
+            ) : <i />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** سطر الحال في الترويسة: «معتمد» أو «قيد المراجعة، الجولة ٢». */
+function approvalScopeLine(approval?: PrintApproval | null): string {
+  if (!approval) return "";
+  if (approval.status === "accepted") {
+    return `معتمد من التسجيل${approval.acceptedAt ? ` بتاريخ ${printStamp(approval.acceptedAt)}` : ""}`;
+  }
+  if (approval.status === "submitted") return `قيد مراجعة التسجيل — الجولة ${approval.round}`;
+  if (approval.status === "returned") return `مُرجَع بملاحظات — الجولة ${approval.round}`;
+  return approval.statusLabel;
+}
+
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -2736,6 +3106,16 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   visitingIds: Set<number>;
   /** مواقع الفرع ومواعيد كل منها — تُمرَّر فقط لوثيقة «كل الفروع». */
   siteGroups?: Array<{ site: BranchScope; rows: FSchedule[] }>;
+  /**
+   * حال الاعتماد ساعةَ الطباعة.
+   *
+   * غيابها ليس خطأً: التقارير تُطبع في أي وقت، ومن فصلٍ لم تبدأ فيه الدورة.
+   * وحين تغيب تُطبع الوثيقة كما كانت تماماً — خاناتُ توقيعٍ فارغة، بلا ختمٍ
+   * ولا ادّعاء.
+   */
+  approval?: PrintApproval | null;
+  /** يُطبع خلف الشامل حين يُطلب الاثنان معاً. غيابه هو الحال المعتادة. */
+  changesAppendix?: ChangesAppendix | null;
 }) {
   if (!kind) return null;
 
@@ -2827,7 +3207,19 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             {pages.map((pageRows, pageIndex) => {
               const bookPage = pageIndex + 1;
               return (
-              <section className="print-comprehensive-page" key={`page-${pageIndex + 1}`}>
+              <section
+                className="print-comprehensive-page"
+                key={`page-${pageIndex + 1}`}
+                data-approval={approval?.status || "none"}
+              >
+                {/* ── نسخة غير معتمدة ───────────────────────────────────────
+                    مائلةً على كل صفحة، لا على الأولى وحدها. الخطر ليس أن
+                    تُطبع نسخةٌ قبل اعتمادها — الخطر أن تنتشر وهي لا تُميَّز،
+                    فتُبنى عليها قراراتٌ وتُوزَّع على الأساتذة. وصفحةٌ واحدة
+                    تخرج من الرزمة بلا علامةٍ تُبطل الاحتياط كله. */}
+                {approval && approval.status !== "accepted" ? (
+                  <div className="print-unapproved-mark" aria-hidden="true">نسخة غير معتمدة</div>
+                ) : null}
                 <header className="print-comprehensive-classic-head">
                   <div className="print-comprehensive-head-top">
                     <div className="print-comprehensive-side print-comprehensive-side-right">
@@ -2837,6 +3229,9 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <div className="print-comprehensive-title-block">
                       <h1>تقرير القسم العلمي الشامل</h1>
                       <p>الكلية: {collegeName || "—"}{showSite ? " — كل الفروع" : ""}</p>
+                      {approval ? (
+                        <p className="print-approval-line" data-status={approval.status}>{approvalScopeLine(approval)}</p>
+                      ) : null}
                     </div>
                     <div className="print-comprehensive-side print-comprehensive-side-left">
                       <div><span>الفصل الدراسي</span><strong>{termName || scopeLine || "—"}</strong></div>
@@ -2908,11 +3303,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                 </div>
 
                 <footer className="print-comprehensive-page-footer">
-                  <div className="print-comprehensive-signatures">
-                    <div><span>توقيع رئيس لجنة الجدول</span><i /></div>
-                    <div><span>توقيع رئيس القسم العلمي</span><i /></div>
-                    <div><span>توقيع العميد</span><i /></div>
-                  </div>
+                  <PrintSignatures approval={approval} />
                   <div className="print-comprehensive-legend-stack">
                     <div className="print-comprehensive-legend">
                       {legendItems.map(item => <span key={item}>{item}</span>)}
@@ -2923,6 +3314,15 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
               </section>
               );
             })}
+            {changesAppendix ? (
+              <PrintChangesAppendix
+                appendix={changesAppendix}
+                collegeName={collegeName}
+                sectionName={sectionName}
+                termName={termName || scopeLine}
+                approval={approval}
+              />
+            ) : null}
           </div>
         ) : <p className="print-empty">لا توجد مواعيد ضمن النطاق المحدد.</p>}
       </div>

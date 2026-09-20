@@ -25,6 +25,7 @@ import {
   FormName,
   FormSecurity,
 } from "../types";
+import { ACADEMIC_ROLES, roleDefinition, type AcademicRole } from "../utils/academicRoles";
 
 /* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
    rail beside the users, the scopes and the log. It keeps its own screen and
@@ -41,6 +42,7 @@ interface SafeUser {
   IsActive: boolean;
   IsLocked: boolean;
   AdInstructorId?: number;
+  Role?: AcademicRole;
 }
 interface Props {
   mode: AdminMode;
@@ -191,7 +193,10 @@ export default function AdminUsers({
     [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null),
     [resetPhrase, setResetPhrase] = useState(""),
     [backupMessage, setBackupMessage] = useState<string | null>(null),
-    [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null);
+    [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null),
+    /* الصفة، والكليات التي تُشتقّ منها حين تكون الصفة على مستوى الكلية. */
+    [role, setRole] = useState<AcademicRole>("committeeChair"),
+    [roleColleges, setRoleColleges] = useState<number[]>([]);
   useDialogDismiss(Boolean(backupConfirm) && !backupBusy, () => setBackupConfirm(null));
   useEffect(() => {
     if (!demoReadOnly) return;
@@ -558,7 +563,18 @@ export default function AdminUsers({
         setForms(d[0]);
         setPerms(d[1]);
       }
+      /**
+       * النطاقات تُقرأ في شاشة المستخدمين أيضاً، لا في شاشة النطاقات وحدها.
+       *
+       * صفةُ العميد نطاقُها كليةٌ كاملة، وحقلُ الكليات في نموذج التعديل يُملأ
+       * من هذه الصفوف. فلو لم تُقرأ هنا لفُتح نموذجُ عميدٍ بكلياتٍ فارغة —
+       * وحفظٌ واحد بعده يمحو نطاقه كلّه دون أن يقصد أحد.
+       */
       if (mode === "scopes") setAssigns(await api("/api/user-scopes"));
+      /* وفي شاشة المستخدمين تُقرأ بتسامح: حسابٌ يدير المستخدمين ولا يملك شاشة
+         النطاقات يبقى قادراً على عمله، ويفقد ملءَ حقل الكليات وحده — لا
+         الشاشة كلها. */
+      if (mode === "users") setAssigns(await api("/api/user-scopes").catch(() => []));
       if (mode === "audit") setLogs(await api("/api/audit-logs?limit=500"));
     } catch (e: any) {
       setError(e.message);
@@ -637,6 +653,8 @@ export default function AdminUsers({
     setError(null);
     resetUser();
     setOldPerm(null);
+    setRole("committeeChair");
+    setRoleColleges([]);
     setPermUser(0);
     setPermForm(0);
     setPermSelections([]);
@@ -663,6 +681,10 @@ export default function AdminUsers({
           IsActive: isActive,
           IsLocked: isLocked,
           AdInstructorId: linkedInstructor || undefined,
+          Role: role,
+          /* «الكلية كلها» تُرسل ككليات لا كأقسام: الخادم يكتبها صفّاً واحداً
+             بقسم صفر، فتلحقها الأقسام التي تُنشأ غداً بلا عودة إلى هنا. */
+          collegeIds: roleDefinition(role).scopeMode === "college" ? roleColleges : undefined,
         }),
       });
       const id = editUserId;
@@ -684,6 +706,23 @@ export default function AdminUsers({
     setIsActive(u.IsActive);
     setIsLocked(u.IsLocked);
     setLinkedInstructor(Number(u.AdInstructorId || 0));
+    const storedRole = (u.Role as AcademicRole) || "committeeChair";
+    setRole(storedRole);
+    /**
+     * الكليات تُقرأ من نطاق الحساب القائم — لكن من صفةٍ كليتُها واحدة فقط.
+     *
+     * صفوفُ «القسم صفر» تعني «الكلية كلها» في الحالين، لكنّ صفةَ كلِّ الكليات
+     * تكتب صفّاً لكل كليةٍ في الجامعة. فلو مُلئ منها حقلُ الكليات عند تحويل
+     * رئيس تسجيلٍ إلى عميد، لظهرت الجامعةُ كلها مختارةً في نموذجه — ولكتبها
+     * الحفظُ نطاقاً لعميدٍ كليتُه واحدة، دون أن يُلاحظ أحد.
+     */
+    setRoleColleges(
+      roleDefinition(storedRole).scopeMode === "college"
+        ? assigns
+            .filter((row) => row.SystemUserId === u.SystemUserId && !row.AdSectionId)
+            .map((row) => Number(row.AdCollegeId))
+        : [],
+    );
     setPage("edit");
   };
   const deleteUser = async (id: number) => {
@@ -884,6 +923,71 @@ export default function AdminUsers({
                   required={!editUserId}
                 />
               </Field>
+              {/* ── الصفة ────────────────────────────────────────────────
+                  حقلٌ واحد يختصر عشرين خطوة: اختياره يكتب شاشات الحساب
+                  ونطاقه على الخادم في العملية نفسها. ولذلك يقف هنا قبل كل
+                  شيء آخر — فهو القرار، وما بعده أثرٌ له. */}
+              <Field
+                label="الصفة"
+                required
+                hint={roleDefinition(role).hint}
+              >
+                <select
+                  className="role-select"
+                  value={role}
+                  onChange={(e) => {
+                    const next = e.target.value as AcademicRole;
+                    setRole(next);
+                    if (roleDefinition(next).scopeMode !== "college") setRoleColleges([]);
+                  }}
+                >
+                  {[...ACADEMIC_ROLES]
+                    .sort((a, b) => a.order - b.order)
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                        {/* الفرق الذي يجب أن يُقرأ قبل الاختيار لا بعده: أيكتب
+                            صاحبُ هذه الصفة أم يقرأ. وقائمةٌ تسمّي القارئين ولا
+                            تسمّي الكاتبين تترك الكتابةَ هي الحالَ الصامتة. */}
+                        {item.readOnly ? " — للاطّلاع" : " — يعدّل"}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+              {roleDefinition(role).scopeMode === "college" && (
+                <Field
+                  label="الكلية"
+                  required
+                  hint="تُفتح له كل أقسام الكلية — الموجودة منها والتي تُنشأ لاحقاً."
+                >
+                  <div className="checkbox-row day-pills role-college-pills">
+                    {colleges.map((college) => (
+                      <label key={college.AdCollegeId}>
+                        <input
+                          type="checkbox"
+                          checked={roleColleges.includes(Number(college.AdCollegeId))}
+                          onChange={(e) =>
+                            setRoleColleges((prev) =>
+                              e.target.checked
+                                ? [...prev, Number(college.AdCollegeId)]
+                                : prev.filter((id) => id !== Number(college.AdCollegeId)),
+                            )
+                          }
+                        />
+                        <span>{college.AdCollegeName}</span>
+                      </label>
+                    ))}
+                  </div>
+                </Field>
+              )}
+              {roleDefinition(role).scopeMode === "allColleges" && (
+                <Field label="النطاق" hint="كل الكليات، بما يُضاف منها لاحقاً. لا اختيار هنا.">
+                  <div className="role-scope-note">
+                    <ShieldCheck aria-hidden="true" />
+                    <span>كل كليات الجامعة</span>
+                  </div>
+                </Field>
+              )}
               <Field
                 label="ربط بلوحة أستاذ المقرر"
                 hint="اختياري — لتفعيل اللوحة الشخصية"
@@ -1387,6 +1491,7 @@ export default function AdminUsers({
                 <button
                   type="button"
                   key={u.SystemUserId}
+                  data-guide-ignore="اختيار حسابٍ من القائمة لعرض تفاصيله — تنقّل لا فعل"
                   className={
                     selected?.SystemUserId === u.SystemUserId ? "active" : ""
                   }
@@ -1399,6 +1504,10 @@ export default function AdminUsers({
                     <strong>{u.Name}</strong>
                     <small>@{u.SystemUserLogin}</small>
                   </div>
+                  {/* الصفة قبل الحالة: «من هو» أسبق من «أفعّالٌ هو». */}
+                  <Badge tone={roleDefinition(u.Role).readOnly ? "neutral" : "info"}>
+                    {roleDefinition(u.Role).label}
+                  </Badge>
                   <Badge
                     tone={
                       u.IsLocked ? "danger" : u.IsActive ? "success" : "warning"
@@ -1419,7 +1528,7 @@ export default function AdminUsers({
                     {selected.Name.trim().charAt(0) || "د"}
                   </span>
                   <div>
-                    <small>حساب مسؤول جدول</small>
+                    <small>{roleDefinition(selected.Role).label}</small>
                     <h2>{selected.Name}</h2>
                     <p>@{selected.SystemUserLogin}</p>
                   </div>
@@ -1428,6 +1537,9 @@ export default function AdminUsers({
                   <Badge tone={selected.IsAdminUser ? "info" : "neutral"}>
                     {selected.IsAdminUser ? "مدير" : "مستخدم"}
                   </Badge>
+                  {roleDefinition(selected.Role).readOnly && (
+                    <Badge tone="neutral">للاطّلاع فقط</Badge>
+                  )}
                   <Badge
                     tone={
                       selected.IsLocked

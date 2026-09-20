@@ -7,6 +7,7 @@ import {
   Command,
   Compass,
   CopyPlus,
+  FileDiff,
   FileSearch,
   FileText,
   FlaskConical,
@@ -103,6 +104,7 @@ const About = safeLazy(loadAbout);
 /* The welcome stage is a first-run surface: it must not sit in the payload
    every returning user downloads. */
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
+const ScheduleChanges = safeLazy(() => import("./components/ScheduleChanges"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
@@ -120,6 +122,7 @@ type View =
   | "schedules"
   | "scheduleCopy"
   | "intelligence"
+  | "scheduleChanges"
   | ReportMode
   | AdminMode
   | "about";
@@ -132,7 +135,40 @@ interface SessionUser {
   AdInstructorId?: number;
   IsRootAdmin?: boolean;
   IsDemo?: boolean;
+  Role?: string;
 }
+
+/**
+ * الصفة كما تصل من الخادم.
+ *
+ * الواجهة لا تحرس شيئاً — الحارس على الخادم — لكنها تحتاج أن تعرف الصفة لتخفي
+ * ما لا يعمل: زرّ حفظٍ لمن لا يحفظ، وشاشةٌ لا تخصّ صاحبها. وإخفاءُ ما لا يعمل
+ * ليس أماناً، هو احترامٌ لوقت من ينظر إلى الشاشة.
+ */
+interface SessionRole {
+  id: string;
+  label: string;
+  readOnly: boolean;
+  landing: "balance" | "changes" | "schedules" | "dashboard";
+  canReview: boolean;
+  canManageDeadline: boolean;
+  /** يفتح صندوق الوارد — ولو لم يقرّر فيه، كعميد التسجيل. */
+  watchesInbox: boolean;
+  /** يعلّق على الخانات: التسجيل والقسم كلاهما. */
+  canAnnotate: boolean;
+  signatureStage: "committee" | "head" | null;
+  viewerOnly: boolean;
+}
+const DEFAULT_SESSION_ROLE: SessionRole = {
+  id: "committeeChair", label: "رئيس لجنة الجدول", readOnly: false,
+  landing: "schedules", canReview: false, canManageDeadline: false,
+  watchesInbox: false, canAnnotate: true,
+  signatureStage: "committee", viewerOnly: false,
+};
+
+/** من تُفتح له شاشة تغييرات الجدول: من يقرّر فيها، أو يعلّق، أو يطّلع عليها. */
+const opensChangesScreen = (role: SessionRole) =>
+  role.canReview || role.watchesInbox || role.canAnnotate || Boolean(role.signatureStage);
 interface SearchHit {
   id: number | string;
   kind: "schedule" | "instructor" | "course" | "room";
@@ -226,8 +262,22 @@ const pathByView: Record<View, string> = {
   audit: "/System/AuditLog",
   locations: "/System/Locations",
   backup: "/System/Backup",
+  scheduleChanges: "/FSchedule/Changes",
   about: "/Public/Aboutus",
 };
+/**
+ * ── كل صفةٍ تفتح على شاشتها ─────────────────────────────────────────────────
+ *
+ * العميد على ميزان الأقسام، والتسجيل على الوارد، والقسم على جدوله. ولوحةُ
+ * البداية لمن لا شاشةَ تخصّه.
+ */
+function landingViewFor(role: { landing: string }): View {
+  if (role.landing === "changes") return "scheduleChanges";
+  if (role.landing === "balance") return "reportDepartment";
+  if (role.landing === "schedules") return "schedules";
+  return "dashboard";
+}
+
 const viewByPath = new Map(
   Object.entries(pathByView).map(([view, path]) => [
     path.toLowerCase(),
@@ -296,6 +346,7 @@ function NavButton({
   activeView,
   onGo,
   badge = 0,
+  "data-guide-ignore": _guideIgnore,
 }: {
   view: View;
   icon: React.ReactNode;
@@ -306,6 +357,14 @@ function NavButton({
   onGo: (view: View) => void;
   /** عدد يستحق قراراً — نقطة تنبض على الأيقونة، لا رقمٌ يزحم السطر. */
   badge?: number;
+  /**
+   * سببُ استثناء موضع الاستدعاء من تدقيق المرشد.
+   *
+   * يُقرأ من المصدر ولا يُصيَّر — وهذا مقصود: الزرّ نفسه يحمل
+   * `data-guide-target` فهو مسجّلٌ لا مُستثنى، وعنصرٌ يحمل الاثنين معاً
+   * تناقض. المستثنى هو موضعُ الاستدعاء في القائمة، لا الزرّ الذي يخرج منه.
+   */
+  "data-guide-ignore"?: string;
 }) {
   const on = active ?? activeView === view;
   const visibleText = view === "dashboard" ? "" : (visualLabel ?? label);
@@ -313,6 +372,9 @@ function NavButton({
     <button
       type="button"
       className={`side-nav-link ${on ? "active" : ""}`}
+      /* كل وجهةٍ في القائمة هي ميزةٌ مسجّلة باسم `page.<view>`، فيعرف المرشد
+         أين يشير حين يُسأل «وين ألقى كذا؟» بدل أن يصف الطريق بالكلام. */
+      data-guide-target={`page.${view}`}
       aria-current={on ? "page" : undefined}
       aria-label={label}
       title={label}
@@ -464,6 +526,7 @@ export default function App() {
   useEffect(() => { installClientTelemetry(); telemetryBreadcrumb("فتح التطبيق"); }, []);
   const [user, setUser] = useState<SessionUser | null>(null),
     [permissions, setPermissions] = useState<number[]>([]),
+    [sessionRole, setSessionRole] = useState<SessionRole>(DEFAULT_SESSION_ROLE),
     [scopes, setScopes] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
   const [guideOpen, setGuideOpen] = useState(false);
@@ -489,6 +552,28 @@ export default function App() {
     window.addEventListener("focus", onFocus);
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
   }, [user?.SystemUserId, permissions]);
+  /**
+   * ── شارة تغييرات الجدول ────────────────────────────────────────────────
+   *
+   * رقمٌ واحد على الأيقونة، لا مركزُ إشعارات. للتسجيل: كم جدولاً ينتظر
+   * قراره. وللقسم: كم ملاحظةً وصلته ولم تُعالَج. وهو كل ما اتُّفق عليه —
+   * لا بريدٌ ولا إشعارُ دفع، لأن من يدخل النظام يومياً يكفيه رقمٌ يراه.
+   */
+  const [changesBadge, setChangesBadge] = useState(0);
+  useEffect(() => {
+    if (!user || !opensChangesScreen(sessionRole)) { setChangesBadge(0); return; }
+    let alive = true;
+    const read = () => fetch("/api/approvals/badge", { credentials: "include" })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => { if (alive && data) setChangesBadge(Number(data.count || 0)); })
+      .catch(() => undefined);
+    void read();
+    const timer = window.setInterval(read, 120000);
+    const onFocus = () => void read();
+    window.addEventListener("focus", onFocus);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
+  }, [user?.SystemUserId, sessionRole.id]);
+
   /**
    * ── الشاشات الثقيلة تُحمَّل قبل أن تُطلب ──────────────────────────────────
    *
@@ -1111,6 +1196,26 @@ export default function App() {
             Array.isArray(data.permissions) ? data.permissions : [],
           );
           setScopes(Array.isArray(data.scopes) ? data.scopes : []);
+          const restoredRole: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
+          setSessionRole(restoredRole);
+          /**
+           * ── الشاشة الافتتاحية تصمد أمام إعادة التحميل ───────────────────
+           *
+           * كانت تُطبَّق عند تسجيل الدخول وحده. وأكثرُ ما يفعله الناس ليس
+           * تسجيلَ دخول: هو فتحُ صفحةٍ محفوظة، أو ضغطُ زرّ التحديث. فكان
+           * العميد يُوضع على شاشته مرّةً في اليوم، ويُعاد إلى لوحةٍ ليست له
+           * في كل مرّةٍ بعدها.
+           *
+           * والقيد مقصود: من فتح عنواناً بعينه أراده، فلا يُنقل عنه. وإنما
+           * يُوجَّه من وصل إلى الجذر بلا وجهة.
+           */
+          if (!viewByPath.has(window.location.pathname.toLowerCase())) {
+            const landing = landingViewFor(restoredRole);
+            if (landing !== "dashboard") {
+              setActiveView(landing);
+              window.history.replaceState({}, "", pathByView[landing] || pathByView.dashboard);
+            }
+          }
           setDataMode(data.data || null);
         }
       } catch {
@@ -1362,6 +1467,7 @@ export default function App() {
   };
   const login = (data: {
     user: SessionUser;
+    role?: Partial<SessionRole>;
     permissions: number[];
     scopes: any[];
     data?: { mode: string; real: boolean };
@@ -1370,9 +1476,12 @@ export default function App() {
     try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
     setPermissions(data.permissions || []);
     setScopes(data.scopes || []);
+    const role: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
+    setSessionRole(role);
     setDataMode(data.data || null);
-    setActiveView("dashboard");
-    window.history.replaceState({}, "", pathByView.dashboard);
+    const landingView = landingViewFor(role);
+    setActiveView(landingView);
+    window.history.replaceState({}, "", pathByView[landingView] || pathByView.dashboard);
   };
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
@@ -1380,6 +1489,7 @@ export default function App() {
     setUser(null);
     setPermissions([]);
     setScopes([]);
+    setSessionRole(DEFAULT_SESSION_ROLE);
     setActiveView("dashboard");
     window.history.replaceState({}, "", "/");
   };
@@ -1508,7 +1618,7 @@ export default function App() {
         );
       case "schedules":
         return hasPerm(7) ? (
-          <Schedules mode="schedule" user={user} scopes={scopes} permissions={permissions} onNavigate={(view) => go(view as View)} />
+          <Schedules mode="schedule" user={user} scopes={scopes} permissions={permissions} signatureStage={sessionRole.signatureStage} onNavigate={(view) => go(view as View)} />
         ) : (
           unauthorized()
         );
@@ -1525,6 +1635,26 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "scheduleChanges":
+        /* الشاشة لمن يشارك في الدورة: التسجيل يراجع، والقسم يردّ. أمّا أدوار
+           العرض الصرف فيكفيها عمود الاعتماد في ميزان الأقسام — وشاشةٌ لا يفعل
+           فيها صاحبها شيئاً هي ضجيجٌ في القائمة لا خدمة. */
+        return opensChangesScreen(sessionRole) ? (
+          <ScheduleChanges
+            role={{
+              id: sessionRole.id,
+              canReview: sessionRole.canReview,
+              canManageDeadline: sessionRole.canManageDeadline,
+              canAnnotate: sessionRole.canAnnotate,
+              signatureStage: sessionRole.signatureStage,
+            }}
+            scope={scopes.length === 1 && scopes[0]?.AdSectionId
+              ? { collegeId: Number(scopes[0].AdCollegeId), sectionId: Number(scopes[0].AdSectionId) }
+              : null}
+          />
+        ) : (
+          unauthorized()
+        );
       case "searchInstructor":
         return hasPerm(8) ? (
           <Reports
@@ -1532,6 +1662,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1543,6 +1674,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1554,6 +1686,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1565,6 +1698,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1576,6 +1710,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1587,6 +1722,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1598,6 +1734,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1609,6 +1746,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1620,6 +1758,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -1631,6 +1770,7 @@ export default function App() {
             user={user}
             scopes={scopes}
             availableModes={[...availableSearchModes, ...availableReportModes]}
+            roleId={sessionRole.id}
           />
         ) : (
           unauthorized()
@@ -2154,7 +2294,14 @@ export default function App() {
                 view="schedules"
                 icon={<CalendarDays />}
                 label="الجدول الدراسي"
+                /* ── نقطةٌ واحدة، معنىً واحد ───────────────────────────────
+                   هذه النقطة تخصّ مقايضة القاعات منذ قبل هذا العمل. وجمعُ
+                   عدّاد ملاحظات التسجيل إليها كان يجعلها تقول شيئين لا
+                   يُفرَّق بينهما: أطلبُ مقايضةٍ ينتظر، أم ملاحظةٌ وصلت؟
+                   فبقيت لصاحبها، وعدّادُ الملاحظات على أيقونته هو — ومعه
+                   شريطُ الاعتماد فوق الجدول يقول الخبر بنصّه. */
                 badge={barterPending}
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.schedules"
               />
             ) : null}
             {smartSearchView || smartReportView ? (
@@ -2167,7 +2314,25 @@ export default function App() {
                 label="الاستعلامات والتقارير"
               />
             ) : null}
-            {allowed.schedule ? (
+            {opensChangesScreen(sessionRole) ? (
+              <NavButton
+                activeView={activeView}
+                onGo={go}
+                view="scheduleChanges"
+                icon={<FileDiff />}
+                label="تغييرات الجدول"
+                badge={changesBadge}
+                /* الوجهة نفسها مسجّلة في المرشد باسم `page.scheduleChanges`،
+                   وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.scheduleChanges"
+              />
+            ) : null}
+            {/* ── لا تُخفَ شاشةٌ يعمل فيها صاحبُها ──────────────────────────
+                «للاطّلاع» تعني أنه لا يكتب، لا أنه لا يعمل. ورئيسُ القسم صفةٌ
+                للاطّلاع، لكنّ توقيعه وإقرارَه لا يقعان إلا في شاشة الجدول —
+                فإخفاؤها عنه يقطع عليه طريقه إلى فعلٍ هو وحده يملكه. ومركزُ
+                الذكاء وحده أدواتُ بناءٍ لمن يبني، فيُخفى عمّن لا يبني. */}
+            {allowed.schedule && !sessionRole.viewerOnly ? (
               <NavButton
                 activeView={activeView}
                 onGo={go}
