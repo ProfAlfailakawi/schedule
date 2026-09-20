@@ -4280,12 +4280,24 @@ export const Repository = {
       ],
     });
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      /* ── قراران في لحظةٍ واحدة ──────────────────────────────────────────
+       *
+       * قراءةٌ ثم كتابةٌ ليستا عمليةً واحدة: موظّفان يقرّران في طالبٍ واحدٍ
+       * معاً — أو موظّفٌ واحدٌ ينقر مقرّراً ثانياً قبل أن يعود الأول — فكلٌّ
+       * يقرأ الوثيقةَ نفسَها ثم يكتبها كاملةً، فيمحو الثاني قرارَ الأول بلا
+       * أن يقول شيئاً لأحد. والشاشةُ تسمح به: تُعطّل المقرّرَ المشغولَ وحدَه.
+       *
+       * والمعاملةُ تجعلهما عمليةً واحدة: من يخسر السباقَ يُعاد قراءتُه
+       * ودمجُه، فيبقى القراران.
+       */
       const ref = firestoreDb.collection("studentNeeds").doc(needId);
-      const doc = await ref.get();
-      if (!doc.exists) return undefined;
-      const merged = merge(doc.data() as StudentNeed);
-      await ref.set(merged);
-      return merged;
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        if (!doc.exists) return undefined;
+        const merged = merge(doc.data() as StudentNeed);
+        transaction.set(ref, merged);
+        return merged;
+      });
     }
     if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
     const at = db.studentNeeds.findIndex(row => row.id === needId);

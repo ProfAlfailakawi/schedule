@@ -107,8 +107,39 @@ check(workshop.includes("if (mode !== \"schedule\" || !courses.length) return;")
    يُنتج صفّاً ناقصاً يكتشفه أحدٌ بعد شهر. */
 const seedBlock = workshop.slice(workshop.indexOf("if (seed?.collegeId)"), workshop.indexOf("setForm(next);"));
 check(seedBlock.length > 40, "كتلةُ البذر مقروءةٌ للتدقيق");
-check(!/SCode|AdRoomCode|AdRoomHall|roomId|buildingId/.test(seedBlock),
-  "ولا تُبذر شعبةٌ ولا قاعةٌ ولا مبنى");
+/* ولا قيمةَ تُؤخذ لهما من البذرة: لا تحمل البذرةُ قاعةً أصلاً، ولا تُخترع
+   هنا. وما يظهر من أسمائها في الكتلة محوٌ لما ورثه النموذج، لا بذر. */
+check(!/=\s*seed[?.]*\.(roomCode|roomHall|roomId|buildingId|SCode)/.test(seedBlock),
+  "ولا تُبذر شعبةٌ ولا قاعةٌ ولا مبنى من الطلب");
+
+
+/* ── عطلان من مراجعةٍ آلية على العمل نفسه ──────────────────────────────── */
+
+/* ١) البندُ كان يبقى معلّقاً إلى الأبد. الوارد يحمل البذرةَ وينتقل ولا يسجّل
+      قراراً، والورشةُ تستهلكها ولا تحتفظ بمعرّف الطلب — فالإضافةُ تُحفظ،
+      والبندُ يبقى كما هو، وزرُّه يُنشئها مرّةً بعد مرّة. */
+check(workshop.includes("pendingHandoff.current = handoff;"),
+  "الورشةُ تحتفظ بالطلب حتى يُحفظ الصفّ");
+check(workshop.includes('`/api/instructor-requests/${handoff.requestId}/decide`')
+  && workshop.includes('state: "fixed", scheduleId: createdRowId'),
+  "ثم تسجّل القرارَ ومعه معرّفُ الصفّ الذي أنتجه الحفظ");
+/* وترتيبُهما هو المهمّ: قرارٌ يُسجَّل قبل الحفظ يقول إن الطلب نُفِّذ وقد لا
+   يكون — وهو الحارسُ نفسُه المفروض في الخادم. */
+check(workshop.indexOf("const saved = await fetchJson(url,") < workshop.indexOf("const handoff = pendingHandoff.current;"),
+  "والحفظُ أولاً، ثم القرار");
+/* ومن يفتح البذرةَ ثم يتركها ويضيف موعداً آخرَ بيده كان سيُغلق بها بندَ
+   الأستاذ على صفٍّ لا يخصّه. */
+check(workshop.includes("const matchesHandoff = Boolean(handoff)") && workshop.includes("handoff && matchesHandoff"),
+  "ولا يُغلق البندُ إلا على الصفّ المطلوب نفسِه");
+
+/* ٢) النموذجُ يرث آخِرَ ما حُفظ — ومنه المبنى والقاعةُ ورقمُ الشعبة — فإضافةٌ
+      يُفترض أن تنتظر قرارَ القسم في قاعتها كانت تُفتح وقاعةُ موعدٍ سابقٍ
+      مكتوبةٌ فيها، فتُحفظ هناك سهواً. */
+const clears = workshop.slice(workshop.indexOf("if (seed?.courseId) {"), workshop.indexOf("setForm(next);"));
+check(/next\.AdRoomCode = "";/.test(clears) && /next\.roomId = undefined;/.test(clears)
+  && /next\.buildingId = undefined;/.test(clears),
+  "فتُمحى القاعةُ والمبنى الموروثان عند فتح بذرةِ طلب");
+check(/next\.SCode = "";/.test(clears), "ويُمحى رقمُ الشعبة كذلك، فهو قرارُ القسم");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

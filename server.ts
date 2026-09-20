@@ -12299,9 +12299,51 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
       لأن معرّفَ السجلّ يُرسله المتصفّح، ولا يُصدَّق لمجرّد أنه وصل.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** من يكتب في الكشف: التسجيلُ ومن يبني الجدول. */
-const canWriteRegistration = (role: unknown, powerUser: boolean): boolean =>
-  Boolean(powerUser) || (!isViewerOnlyRole(role) && (isRegistrarRole(role) || canReviewSubmissions(role) || roleDefinition(role).formIds.includes(7)));
+/**
+ * من يكتب في الكشف: التسجيلُ ومن يبني الجدول فعلاً.
+ *
+ * و«فعلاً» هي الكلمة: كان القرارُ يُقاس على قالب الصفة — `roleDefinition(role)
+ * .formIds` — وقالبُ الصفة العاديّة يحوي إذنَ الورشة دائماً. فحسابٌ عاديٌّ
+ * مُنح إذنَ التقارير وحده، ولم يُمنح إذنَ الورشة قطّ، كان يمرّ من هنا ويكتب:
+ * القالبُ يقول ما تفعله الصفةُ عادةً، لا ما مُنحه هذا الحسابُ بعينه.
+ *
+ * فصار يُقاس على `req.permissions` — الأذونات الممنوحة نفسها التي يقرؤها
+ * `requirePermission`. صفةُ التسجيل تكتب بصفتها، ومن سواها يكتب بإذنه.
+ */
+const canWriteRegistration = (role: unknown, powerUser: boolean, granted: number[]): boolean => {
+  if (powerUser) return true;
+  /* صفةُ العرض الصرف تقرأ ولا تكتب، مهما مُنحت من أذونات. */
+  if (isViewerOnlyRole(role)) return false;
+  if (isRegistrarRole(role) || canReviewSubmissions(role)) return true;
+  return granted.includes(7);
+};
+
+/** الأذونات الممنوحة لهذا الحساب، بالفعل لا بالقالب. */
+const grantedPermissions = async (req: AuthenticatedRequest): Promise<number[]> =>
+  req.permissions ?? (req.user
+    ? (await Repository.getSecurityByUser(req.user.SystemUserId)).map(item => Number(item.FormNameId))
+    : []);
+
+/**
+ * قسمُ الاستبيان الذي يملك هذا الطلب.
+ *
+ * اشتقاقٌ واحدٌ للقراءة والكتابة معاً. وكانا يفترقان: القراءةُ تنسب السجلّ
+ * القديم — وهو ما كُتب قبل وجود `surveySectionId` — إلى القسم الذي يملك
+ * مقرّراته المطلوبة، والكتابةُ تسأل عن قسم الطالب نفسه. فطالبٌ من قسمٍ آخرَ
+ * طلب مقرّراً من هذا القسم يظهر في كشفه ولا تستطيع لجنتُه أن تكتب فيه — كشفٌ
+ * يُعرض ولا يُعمل به.
+ */
+const needSurveySection = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
+                           courses: Array<{ AdCourseId: number; AdSectionId: number }>): number => {
+  const declared = Number(need.surveySectionId || 0);
+  if (declared) return declared;
+  const owner = new Map(courses.map(row => [Number(row.AdCourseId), Number(row.AdSectionId)]));
+  for (const id of need.courseIds || []) {
+    const section = owner.get(Number(id));
+    if (section) return section;
+  }
+  return Number(need.AdSectionId || 0);
+};
 
 const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "registered", "rejected"]);
 const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "conflict", "closed", "other"]);
@@ -12328,11 +12370,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
   ]);
   /* القاعدةُ نفسُها التي يستعملها مركزُ الذكاء: الطلبُ لقسم الاستبيان الذي
      استقبله، ويُستردّ للسجلّات القديمة من ملكيّة مقرّراتها. */
-  const ownedByThisSection = new Set((courses as any[])
-    .filter(row => Number(row.AdSectionId) === sectionId).map(row => Number(row.AdCourseId)));
   const needs = (allTermNeeds as any[]).filter(need =>
-    Number(need.surveySectionId || 0) === sectionId
-    || (!need.surveySectionId && (need.courseIds || []).some((id: any) => ownedByThisSection.has(Number(id)))));
+    needSurveySection(need, courses as any[]) === sectionId);
 
   const courseById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), row]));
   const sectionNameById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
@@ -12374,7 +12413,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
   res.setHeader("Cache-Control", "no-store");
   res.json({
     rows: rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
-    canWrite: canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser)),
+    canWrite: canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser), await grantedPermissions(req)),
     totals: {
       students: rows.length,
       courses: every.length,
@@ -12387,15 +12426,16 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
 
 /** قولُ التسجيل في مقرّرٍ واحدٍ من طلب طالب. */
 app.post("/api/student-registration/:id/course-state", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  if (!canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser))) {
+  if (!canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser), await grantedPermissions(req))) {
     res.status(403).json({ error: "هذا الكشف للقراءة بصفتك." });
     return;
   }
 
   const need = await Repository.getStudentNeedById(String(req.params.id || ""));
   if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
-  /* النطاقُ يُحرس هنا أيضاً: المعرّفُ يُرسله المتصفّح، ولا يُصدَّق لأنه وصل. */
-  const needSection = Number(need.surveySectionId || need.AdSectionId || 0);
+  /* النطاقُ يُحرس هنا أيضاً: المعرّفُ يُرسله المتصفّح، ولا يُصدَّق لأنه وصل.
+     وبالاشتقاق نفسِه الذي تقرأ به الشاشةُ، وإلا عُرض ما لا يُكتب فيه. */
+  const needSection = needSurveySection(need, await Repository.getCourses() as any[]);
   if (!isScopeAllowed(req, Number(need.AdCollegeId), needSection)) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
@@ -13818,6 +13858,22 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
    * بمطابقة أيامه ووقته لما طُلب. وما لم يُصدَّق يُردّ بسببه، فيعرف المنسّق
    * أن عليه إعادة الحفظ لا إعادة الضغط.
    */
+  /* الإضافةُ تُصدَّق بوجود صفّها: هي الشيءُ الوحيد الذي لا يُقاس على صفٍّ
+     سابق — لا موضعَ قديمٌ يُطابَق — فيُسأل عن الصفّ الذي أنتجه الحفظُ نفسُه.
+     ولولا ذلك لقال السجلُّ «ثُبّت» بلا أن يُخلق شيء. */
+  if (state === "fixed" && item.action === "add") {
+    const createdId = Number(req.body?.scheduleId || 0);
+    const created = createdId ? await Repository.getScheduleById(createdId) : undefined;
+    if (!created) {
+      res.status(409).json({ error: "لم يُحفظ الموعد الجديد بعد. احفظه في الورشة ثم سجّل القرار." });
+      return;
+    }
+    if (Number(created.AdInstructorId) !== Number(stored.AdInstructorId)
+      || Number(created.AdTermId) !== Number(stored.AdTermId)) {
+      res.status(409).json({ error: "الموعد المحفوظ ليس هو المطلوب في هذا البند." });
+      return;
+    }
+  }
   if (state === "fixed" && item.action !== "add") {
     const live = item.rowId == null ? undefined : await Repository.getScheduleById(Number(item.rowId));
     if (item.action === "delete") {

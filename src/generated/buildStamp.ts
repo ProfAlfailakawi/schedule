@@ -1,2 +1,2 @@
 /** Generated each build by scripts/stamp-build.mjs — do not edit. */
-export const BUILD_STAMP = "20260920140152-yaizk3";
+export const BUILD_STAMP = "20260920141204-nz0pki";

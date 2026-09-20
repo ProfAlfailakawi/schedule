@@ -113,5 +113,39 @@ check(server.includes('state: state?.state || ""'), "وحالةُ المقرّر
 check(server.includes("ولا يُسمّى «بانتظار التسجيل»"), "وما لم يُقل فيه شيءٌ لا يُسمّى انتظاراً");
 check(screen.includes('"لم يُقل فيه شيء بعد"'), "والكشفُ يفرّق بينهما كذلك");
 
+
+/* ── ثلاثةُ أعطالٍ من مراجعةٍ آلية على العمل نفسه ──────────────────────── */
+
+/* ١) الإذنُ كان يُقاس على قالب الصفة لا على ما مُنح فعلاً. وقالبُ الصفة
+      العاديّة يحوي إذنَ الورشة دائماً — فحسابٌ عاديٌّ مُنح إذنَ التقارير
+      وحدَه، ولم يُمنح إذنَ الورشة قطّ، كان يمرّ ويكتب. */
+check(!/roleDefinition\(role\)\.formIds\.includes\(7\)/.test(server),
+  "الإذنُ لا يُقاس على قالب الصفة");
+check(server.includes("const canWriteRegistration = (role: unknown, powerUser: boolean, granted: number[])"),
+  "بل على الأذونات الممنوحة، تُمرَّر صراحةً");
+check(server.includes("return granted.includes(7);"), "ومن سوى التسجيل يكتب بإذنه هو");
+check(server.includes("const grantedPermissions = async (req: AuthenticatedRequest)")
+  && server.includes("req.permissions ??"),
+  "وتُقرأ من مصدر `requirePermission` نفسِه، لا من مصدرٍ ثانٍ يفترق عنه");
+/* وصفةُ العرض الصرف تُردّ قبل كل ذلك، مهما مُنحت. */
+check(server.includes("if (isViewerOnlyRole(role)) return false;"),
+  "وصفةُ العرض الصرف تُردّ ولو مُنحت كلَّ إذن");
+
+/* ٢) القراءةُ والكتابةُ كانتا تنسبان السجلَّ القديم إلى قسمين مختلفين: القراءةُ
+      إلى مالك المقرّرات، والكتابةُ إلى قسم الطالب. فطالبٌ من قسمٍ آخرَ طلب
+      مقرّراً من هذا القسم يظهر في كشفه ولا تستطيع لجنتُه أن تكتب فيه. */
+check(server.includes("const needSurveySection = "), "ونسبةُ الطلب إلى قسمه اشتقاقٌ واحد");
+check((server.match(/needSurveySection\(/g) || []).length === 2,
+  "تقرأ به الشاشةُ وتكتب به — موضعان لا ثالثَ لهما، فلا يُعرض ما لا يُكتب فيه");
+check(!server.includes("Number(need.surveySectionId || need.AdSectionId || 0);"),
+  "ولم يبقَ الاشتقاقُ القديمُ في مسار الكتابة");
+
+/* ٣) قراران في لحظةٍ واحدةٍ كان أحدُهما يمحو الآخر: كلٌّ يقرأ الوثيقةَ ثم
+      يكتبها كاملة. والشاشةُ تسمح به لأنها تُعطّل المقرّرَ المشغولَ وحدَه. */
+check(repo.includes("firestoreDb.runTransaction(async transaction => {"),
+  "وكتابةُ الحالة معاملةٌ واحدة، فلا يمحو قرارٌ قراراً");
+check(repo.includes("const doc = await transaction.get(ref);") && repo.includes("transaction.set(ref, merged);"),
+  "تقرأ وتكتب داخلها، فمن يخسر السباقَ يُعاد دمجُه");
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
