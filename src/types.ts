@@ -710,7 +710,149 @@ export interface ScheduleShareLink {
    * decides which cohort is answering and nobody has to guess anything from a
    * person's name. A boys' survey and a girls' survey are two links.
    */
-  kind?: "department" | "staff" | "survey";
+  /**
+   * "request" is a door for ONE instructor, and it is the only kind that both
+   * shows a person their own draft and accepts a change to it. It is issued per
+   * instructor — never per section — because what it opens is that person's
+   * timetable and nobody else's, and the link IS the identity.
+   */
+  kind?: "department" | "staff" | "survey" | "request";
+  /** صاحبُ الرابط حين يكون `kind === "request"`. لا معنى له في غيره. */
+  AdInstructorId?: number;
+}
+
+/* ── طلبُ الأستاذ على مسوّدة جدوله ───────────────────────────────────────────
+ *
+ * القسم ينسخ الجدول من فصلٍ ماضٍ ثم يرسله للأساتذة، أو يرسله ثم ينسخ — وكلتا
+ * الحالتين تنتهيان إلى شيءٍ واحد: أستاذٌ يفتح مسوّدةَ جدوله فيقول «أبقِه» أو
+ * «عدّله» أو «احذفه» أو «أضف». وهذا السجلّ هو ما يحمل قولَه وردَّ القسم عليه.
+ *
+ * وهو **ليس مخزناً موازياً للجدول**. لا شيء فيه يظهر في جدولٍ ولا في تقرير
+ * تغييرات. حين يُثبَّت بندٌ منه يُنفَّذ عبر مسار الحفظ نفسه الذي يستعمله
+ * المنسّق بيده، فيُسجَّل في `scheduleComments` و`scheduleVersions` كما يُسجَّل
+ * أيُّ تعديل — والجدولُ يبقى مصدرَ الحقيقة الوحيد.
+ */
+
+/** ما يطلبه الأستاذ في صفٍّ واحد. */
+export type InstructorRequestAction = "keep" | "change" | "delete" | "add";
+
+/** حُكمُ النظام المسبق على البند: يمضي، أو يحتاج استثناءً، أو لا يجوز. */
+export type InstructorRequestVerdictKind = "clear" | "exception" | "conflict";
+
+/** قرارُ القسم على البند. */
+export type InstructorRequestDecisionState = "pending" | "fixed" | "rejected";
+
+/**
+ * أسبابُ الرفض، من قائمةٍ مغلقة.
+ *
+ * الرفضُ الحرّ كان يُنتج جملاً لا تُقارن ولا تُحصى، ويدفع الأستاذَ إلى الهاتف
+ * ليسأل «ليش؟». القائمةُ المغلقةُ تجعل السببَ قابلاً للعدّ عبر الفصول، وتترك
+ * السطرَ الحرَّ لما لا تسعه: تفصيلُ الحالة، لا نوعُها.
+ */
+export type InstructorRequestRejectReason =
+  | "room"            // لا قاعةَ مناسبة
+  | "instructor"      // يتعارض مع أستاذٍ آخر
+  | "regulation"      // مخالفةُ لائحة
+  | "cohort"          // يتقاطع مع مقرّرٍ يشترك طلبتُه
+  | "load"            // النصاب
+  | "department"      // قرارُ قسم
+  | "other";
+
+export interface InstructorRequestSlot {
+  day: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
+  start: string;
+  end: string;
+}
+
+/** لقطةُ صفٍّ كما تُقرأ، لا كما تُخزَّن — ليُفهم «كان» و«طلب» بلا فكّ رموز. */
+export interface InstructorRequestSnapshot {
+  courseId: number;
+  courseName: string;
+  sectionCode: string;
+  days: string;
+  time: string;
+  /** القاعة. تُملأ في «كان» وتبقى فارغةً في «طلب»: الأستاذ لا يختار قاعة. */
+  room?: string;
+}
+
+export interface InstructorRequestReason {
+  source: "regulation" | "instructor" | "room" | "cohort" | "window" | "shape";
+  article?: string;
+  text: string;
+  blocking: boolean;
+}
+
+export interface InstructorRequestItem {
+  /** الصفُّ الأصلي، و`null` في الإضافة. */
+  rowId: number | null;
+  action: InstructorRequestAction;
+  before?: InstructorRequestSnapshot;
+  /** ما طلبه الأستاذ. **لا يحمل قاعةً أبداً.** */
+  after?: InstructorRequestSnapshot;
+  /** اليومُ والبدايةُ كما اختارهما، والنهايةُ محسوبةٌ باللائحة. */
+  slots?: InstructorRequestSlot[];
+  verdict?: InstructorRequestVerdictKind;
+  reasons?: InstructorRequestReason[];
+  /** سببُ الاستثناء حين يطلبه النظام. إلزاميٌّ في `exception` وحده. */
+  excuse?: string;
+  /** القاعاتُ المرشّحة — **للقسم وحده**، ولا تُرسل إلى صفحة الأستاذ. */
+  roomCandidates?: string[];
+  /** أقربُ الأوقات المتاحة حين يُمنع الطلب. */
+  nearestTimes?: InstructorRequestSlot[];
+  decision?: {
+    state: InstructorRequestDecisionState;
+    reasonCode?: InstructorRequestRejectReason;
+    note?: string;
+    /** بدائلُ يعرضها القسم فيختار الأستاذ منها. */
+    alternatives?: InstructorRequestSlot[];
+    decidedBy?: string;
+    decidedAt?: string;
+    /** الصفُّ الذي أنتجه التثبيت، ليُربط القرارُ بأثره في الجدول. */
+    scheduleId?: number;
+  };
+  /** البديلُ الذي اختاره الأستاذ بعد الرفض. */
+  chosenAlternative?: InstructorRequestSlot;
+}
+
+/** حدثٌ في حياة الطلب. الأستاذ يراها كلَّها عن طلبه هو، ولا يرى طلبَ غيره. */
+export type InstructorRequestEventKind =
+  | "link-created" | "link-opened" | "submitted" | "received"
+  | "item-fixed" | "item-rejected" | "alternative-offered" | "alternative-chosen"
+  | "settled" | "schedule-approved";
+
+export interface InstructorRequestEvent {
+  kind: InstructorRequestEventKind;
+  at: string;
+  /** الصفةُ لا الاسم حين يكون الفاعلُ من القسم: «المنسّق»، «رئيس القسم». */
+  by?: string;
+  itemIndex?: number;
+  detail?: string;
+}
+
+export type InstructorRequestStatus = "sent" | "submitted" | "in-review" | "settled";
+
+export interface InstructorRequest {
+  id: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdTermId: number;
+  AdInstructorId: number;
+  /** رابطُ هذا الأستاذ وحده. هو المعرّفُ والبابُ معاً. */
+  linkId: string;
+  /** أولُ فتحٍ للرابط. غيابُه يعني أنه لم يُفتح، لا أنه لم يصل. */
+  linkOpenedAt?: string;
+  window: { opensAt: string; closesAt: string };
+  /**
+   * من أين جاءت المسوّدة: من جدولٍ منسوخٍ لهذا الفصل، أو من الفصل السابق حين
+   * يُرسل الرابطُ قبل النسخ. الصفحةُ واحدةٌ والمصدرُ يختلف، ويُقال للأستاذ.
+   */
+  source: "draft" | "previous-term";
+  status: InstructorRequestStatus;
+  items: InstructorRequestItem[];
+  timeline: InstructorRequestEvent[];
+  createdAt: string;
+  submittedAt?: string;
+  updatedAt: string;
 }
 
 export interface SchedulePublication {

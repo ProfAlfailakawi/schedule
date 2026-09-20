@@ -4518,3 +4518,42 @@ button.twin-delta{width:100%}
 @keyframes choreo-row-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:560px){.choreo-chip{padding:5px 10px;font-size:10.5px;max-width:52vw}}
 @media(prefers-reduced-motion:reduce){.choreo-stage{display:none}.genesis-arrival tbody tr{animation:none}}
+
+/* ==========================================================================
+   SCOPE ASK BAR — the reports bar, wherever a screen needs it
+   --------------------------------------------------------------------------
+   الشريط نفسه خارج صفحة التقارير. الأصناف الأصلية (query-bar / query-ask /
+   query-primary-filters / query-more) تحمل الشكل كاملاً، فلا يُعاد هنا شيءٌ
+   منه. الذي يُعاد هو لمساتُ «الواجهة الهادئة» وحدها، لأنها كانت معلّقةً
+   بـ`.visual-minimal.query-page` — أي بمكانٍ واحد — لا بالشريط نفسه.
+
+   يُكتب مرةً واحدةً هنا بدل أن تحمل كلُّ شاشةٍ صنفَ صفحةٍ ليست هي.
+   ========================================================================== */
+
+.visual-minimal .ask-scope-bar,
+.visual-minimal .ask-scope-bar .query-scope,
+.visual-minimal .ask-scope-bar .query-more{border-radius:22px}
+.visual-minimal .ask-scope-bar .query-ask-note{opacity:.82}
+.visual-minimal .ask-scope-bar .query-more .field,
+.visual-minimal .ask-scope-bar .query-primary-filters .field{border-radius:16px}
+.visual-minimal .ask-scope-bar{box-shadow:var(--shadow-xs)}
+.visual-minimal .ask-scope-bar .query-ask{border-radius:18px;min-block-size:52px}
+.visual-minimal .ask-scope-bar .query-ask>svg{inline-size:20px;block-size:20px;color:var(--accent)}
+.visual-minimal .ask-scope-bar .query-primary-filters{gap:8px}
+.visual-minimal .ask-scope-bar .query-primary-filters .field,
+.visual-minimal .ask-scope-bar .query-more .field{padding:9px 10px;border:1px solid var(--line);background:var(--surface-2)}
+.visual-minimal .ask-scope-bar .query-primary-filters .field>label,
+.visual-minimal .ask-scope-bar .query-more .field>label{font-size:.66rem;color:var(--muted);font-weight:740}
+.visual-minimal .ask-scope-bar .query-primary-filters select,
+.visual-minimal .ask-scope-bar .query-more select,
+.visual-minimal .ask-scope-bar .query-more input{background:var(--surface);border-radius:12px}
+
+/* الشرائح حين تجلس داخل الشريط: بين السؤال والمرشّحات، لا فوقهما ولا تحتهما،
+   لأنها تصف ما يُعرض لا ما يُسأل عنه. */
+.ask-scope-bar .ask-scope-chips{
+  display:flex;flex-wrap:wrap;gap:var(--s2);
+  margin-top:var(--s3);
+}
+
+/* حقلٌ يمتدّ على عرض لوحة «المزيد» كلها — الأيام مثلاً. */
+.ask-scope-bar .query-more .field.wide{grid-column:1/-1}

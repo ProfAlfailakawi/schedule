@@ -159,6 +159,7 @@ check(!returnBody.includes("!note.resolved"), "ولا يقرأ العلَم هو
 const changes = fs.readFileSync(path.join(process.cwd(), "src/components/ScheduleChanges.tsx"), "utf8");
 const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
 const roles = fs.readFileSync(path.join(process.cwd(), "src/utils/academicRoles.ts"), "utf8");
+const ask = fs.readFileSync(path.join(process.cwd(), "src/utils/inboxAsk.ts"), "utf8");
 
 /* ── ١) رئيس القسم يعلّق ولا يعدّل ───────────────────────────────────────
  * أوّلُ ما طُلب في هذا العمل. وكانت الخاناتُ تُفتح لمن يقرّر، فبقي من يعلّق
@@ -220,14 +221,26 @@ check(changes.includes('Number(note.insistCount || 0) >= 3'), "الخانةُ ا
 check(changes.includes("إعلامٌ لرئيس القسم، ولا شيء يقف عليه"),
   "إعلاماً لا إجباراً: لا شيء في النظام يقف عليه");
 
-/* ── ٨) بحثٌ سريعٌ وفلترٌ بالحالة في الوارد ─────────────────────────────────
- * الأقسام كثيرة، فطُلب بحثٌ سريعٌ وفلتر. */
-check(changes.includes('className="changes-search"') && changes.includes('type="search"'),
-  "الوارد فيه بحثٌ سريعٌ بالاسم");
+/* ── ٨) سؤالٌ وفلترٌ بالحالة في الوارد ──────────────────────────────────────
+ * الأقسام كثيرة، فطُلب بحثٌ سريعٌ وفلتر. وصار البحثُ سؤالاً بالعربية في
+ * الشريط نفسه الذي فوق مركز الاستعلام — الضمانُ هو هو، وموضعُه تغيّر:
+ * المطابقةُ بالاسم انتقلت إلى `matchesInboxAsk` لتُختبر وحدها في
+ * `inbox-ask-audit`، والشرائحُ نزلت إلى «المزيد» ولم تُلغَ. */
+check(changes.includes("<ScopeAskBar") && changes.includes('askPlaceholder="اسأل'),
+  "الوارد يبدأ بسؤالٍ بالعربية، بالشريط نفسه الذي فوق مركز الاستعلام");
 check(changes.includes('className="changes-filter-chips"') && changes.includes('setStatusFilter('),
   "وفلترٌ بالحالة بشرائح تحمل أعدادها");
-check(changes.includes('`${row.sectionName} ${row.collegeName}`.includes(needle)'),
-  "والبحثُ يطابق اسمَ القسم والكلية معاً");
+check(changes.includes("matchesInboxAsk(row, effective)"),
+  "والبحثُ يطابق اسمَ القسم والكلية معاً — في دالّةٍ نقيّةٍ مُختبرة");
+check(ask.includes("`${row.sectionName || \"\"} ${row.collegeName || \"\"}`"),
+  "والمطابقةُ نفسها تقرأ الاسمين معاً، لا أحدَهما");
+check(ask.includes("words.every(word => haystack.includes(word))"),
+  "وتطابق بالكلمات، فترتيبُ كلمتين لا يُخفي قسماً");
+/* «اختر الفصل» خيارٌ يُنقر، ونقرُه يُفرّغ الفصل فيختفي الشريطُ الذي يحمل
+   قائمته. فلولا منتقي الفصل في ركن العنوان لبقي القارئ أمام شاشةٍ فارغةٍ لا
+   مخرجَ منها إلا إعادة التحميل. */
+check(changes.includes("terms.length > 1 && (active || !termId)"),
+  "ومنتقي الفصل يبقى مطروقاً حين لا فصلَ مختار، فلا تُغلق الشاشةُ على نفسها");
 
 /* ── ٩) الجدول كامل مع الملاحظات، لا الملاحظات وحدها ───────────────────────
  * أهمُّ ما طلبه القسم: أن يرى جدولَه كلَّه والملاحظات في مواضعها. */

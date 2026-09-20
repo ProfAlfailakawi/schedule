@@ -33,6 +33,7 @@ import {
   ScheduleDecisionMemory,
   CampusMobilityProfile,
   ScheduleShareLink,
+  InstructorRequest,
   VisitingRoster,
   DepartmentDelegateDirectory,
   DepartmentRoomDirectory,
@@ -199,6 +200,7 @@ interface DBState {
   scheduleOpenDecisions?: ScheduleOpenDecision[];
   clientTelemetry?: ClientTelemetryEntry[];
   scheduleComments?: ScheduleComment[];
+  instructorRequests?: InstructorRequest[];
   studentNeeds?: StudentNeed[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
@@ -227,7 +229,7 @@ interface LegacySnapshot extends DBState {
 let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
-  clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
+  clientTelemetry: [], scheduleComments: [], instructorRequests: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
   scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
@@ -790,6 +792,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.scheduleOpenDecisions)) db.scheduleOpenDecisions = [];
       if (!Array.isArray(db.clientTelemetry)) db.clientTelemetry = [];
       if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
+      if (!Array.isArray(db.instructorRequests)) db.instructorRequests = [];
       if (!Array.isArray(db.schedulePublications)) db.schedulePublications = [];
       if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
       if (!Array.isArray(db.degreeRules)) db.degreeRules = [];
@@ -2141,7 +2144,7 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
     const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
     replaceCurrentDb({
       users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
-      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
+      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], instructorRequests: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
     });
     saveDatabase();
   }
@@ -3846,6 +3849,70 @@ export const Repository = {
       return snap.docs.map(doc => doc.data() as ScheduleShareLink).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
     return (db.scheduleShareLinks || []).filter(row => row.scopeKey === scopeKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  /* ══════════════════════════════════════════════════════════════════════
+     طلباتُ الأساتذة على مسوّداتهم
+     ══════════════════════════════════════════════════════════════════════
+
+     سجلٌّ لكل أستاذٍ في فصلٍ واحد، ولا يُنشأ إلا حين يُرسَل إليه رابط. وهو
+     ليس مخزناً موازياً للجدول: التثبيتُ منه يمرّ بمسار الحفظ نفسه، فما يظهر
+     في الجدول وفي تقرير التغييرات يأتي من هناك لا من هنا.                   */
+
+  createInstructorRequest: async (entry: Omit<InstructorRequest, "id" | "createdAt" | "updatedAt">): Promise<InstructorRequest> => {
+    const now = new Date().toISOString();
+    const row: InstructorRequest = { ...entry, id: randomUUID(), createdAt: now, updatedAt: now };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("instructorRequests").doc(row.id).set(row);
+      return row;
+    }
+    if (!Array.isArray(db.instructorRequests)) db.instructorRequests = [];
+    db.instructorRequests.unshift(row);
+    saveDatabase();
+    return row;
+  },
+
+  saveInstructorRequest: async (row: InstructorRequest): Promise<InstructorRequest> => {
+    const next: InstructorRequest = { ...row, updatedAt: new Date().toISOString() };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("instructorRequests").doc(next.id).set(next);
+      return next;
+    }
+    if (!Array.isArray(db.instructorRequests)) db.instructorRequests = [];
+    const at = db.instructorRequests.findIndex(item => item.id === next.id);
+    if (at >= 0) db.instructorRequests[at] = next; else db.instructorRequests.unshift(next);
+    saveDatabase();
+    return next;
+  },
+
+  getInstructorRequest: async (id: string): Promise<InstructorRequest | undefined> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("instructorRequests").doc(id).get();
+      return doc.exists ? (doc.data() as InstructorRequest) : undefined;
+    }
+    return (db.instructorRequests || []).find(row => row.id === id);
+  },
+
+  /* البابُ الذي يفتحه الأستاذ: الرابطُ هو المفتاح، ولا شيء غيره يَصله. */
+  getInstructorRequestByLink: async (linkId: string): Promise<InstructorRequest | undefined> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("instructorRequests").where("linkId", "==", linkId).limit(1).get();
+      return snap.empty ? undefined : (snap.docs[0].data() as InstructorRequest);
+    }
+    return (db.instructorRequests || []).find(row => row.linkId === linkId);
+  },
+
+  /* وارِدُ القسم: فصلٌ واحدٌ ونطاقٌ واحدٍ في كل مرّة، كبقيّة الشاشات. */
+  getInstructorRequests: async (collegeId: number, sectionId: number, termId: number): Promise<InstructorRequest[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("instructorRequests").where("AdTermId", "==", termId).limit(2000).get();
+      return snap.docs.map(doc => doc.data() as InstructorRequest)
+        .filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return (db.instructorRequests || [])
+      .filter(row => Number(row.AdTermId) === termId && Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
   /* ══════════════════════════════════════════════════════════════════════

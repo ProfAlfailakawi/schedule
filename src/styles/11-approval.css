@@ -535,3 +535,120 @@
 .changes-fields-full dt{font-size:.72rem;color:var(--muted);font-weight:600}
 .changes-fields-full dd{margin:0;font-size:.9rem;color:var(--ink)}
 .changes-full .changes-entry[data-kind="changed"]{border-inline-start:3px solid color-mix(in srgb,var(--warning) 55%,transparent)}
+
+/* ==========================================================================
+   وارِدُ الأساتذة — الفروقُ وحدها، مرتّبةً كما يُعمل بها
+   --------------------------------------------------------------------------
+   الشاشةُ كلُّها مبنيّةٌ على قاعدةٍ واحدة: لا يُعرض إلا ما يحتاج قراراً. ولذلك
+   ليس فيها جدول، ولا بطاقةَ لمن لم يغيّر شيئاً، ولا لونَ إلا حيث يدلّ اللونُ
+   على فعلٍ مختلف — أخضرُ يُثبَّت بضغطة، وأصفرُ يُقرأ، وأحمرُ يُقرَّر فيه.
+   ========================================================================== */
+
+.request-totals{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s3);
+  padding:var(--s4) var(--s5);text-align:center;
+}
+.request-totals>div{display:flex;flex-direction:column;gap:2px}
+.request-totals b{font-size:var(--t-h2);font-weight:800;color:var(--ink);line-height:1.1}
+.request-totals span{font-size:var(--t-xs);color:var(--muted)}
+
+/* من لم يفتح رابطه: سطرٌ واحد، وكلُّ اسمٍ فيه زرُّ تذكيرٍ يفتح واتساب.
+   الإنسانُ يضغط إرسال — لا شيء هنا يراسل أحداً من تلقائه. */
+.request-silent{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);
+  padding:var(--s3) var(--s4);border:1px dashed var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);font-size:var(--t-sm);color:var(--muted);
+}
+.request-silent>svg{width:16px;height:16px;flex:none}
+.request-silent-links{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.request-remind{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:var(--r-full);
+  background:var(--surface);border:1px solid var(--line);
+  font-size:var(--t-xs);color:var(--ink);text-decoration:none;
+}
+.request-remind:hover{border-color:var(--accent)}
+.request-remind svg{width:12px;height:12px}
+.request-remind[data-blocked]{opacity:.55;cursor:not-allowed}
+
+/* «الجدول كما هو» — اثنان وعشرون اسماً في سطرٍ واحدٍ مطويّ. */
+.request-unchanged{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);
+  width:100%;padding:var(--s3) var(--s4);text-align:start;
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);color:var(--muted);font-size:var(--t-sm);cursor:pointer;
+}
+.request-unchanged:hover{border-color:var(--accent)}
+.request-unchanged svg{width:15px;height:15px;flex:none;transition:transform .16s var(--ease)}
+.request-unchanged svg[data-open]{transform:rotate(180deg)}
+.request-unchanged em{flex-basis:100%;font-style:normal;color:var(--muted-2);font-size:var(--t-xs)}
+
+.request-deck{display:flex;flex-direction:column;gap:var(--s4)}
+.request-card{
+  border:1px solid var(--line);border-radius:var(--r-xl);
+  background:var(--surface);overflow:hidden;
+}
+.request-card-head{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);background:var(--surface-2);
+}
+.request-card-head strong{display:block;font-size:var(--t-h4)}
+.request-card-head small{color:var(--muted);font-size:var(--t-xs)}
+
+.request-items{display:flex;flex-direction:column}
+.request-item{
+  padding:var(--s4);border-top:1px solid var(--line);
+  border-inline-start:3px solid transparent;
+}
+.request-item:first-child{border-top:0}
+/* اللونُ على الحافّة لا على الخلفية: يدلّ ولا يصرخ، ويبقى النصُّ مقروءاً. */
+.request-item[data-verdict="clear"]{border-inline-start-color:var(--ok,#2e7d5b)}
+.request-item[data-verdict="exception"]{border-inline-start-color:var(--warn,#b8860b)}
+.request-item[data-verdict="conflict"]{border-inline-start-color:var(--danger,#b3261e)}
+.request-item[data-decided]{opacity:.7}
+
+.request-item-head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);margin-bottom:var(--s3)}
+.request-item-head strong{font-size:var(--t-base)}
+.request-item-head small{color:var(--muted);font-size:var(--t-xs)}
+
+.request-diff{display:flex;flex-direction:column;gap:4px;margin:0}
+.request-diff>div{display:flex;align-items:baseline;gap:var(--s3)}
+.request-diff dt{
+  flex:none;min-width:42px;font-size:var(--t-xs);color:var(--muted);font-weight:700;
+}
+.request-diff dd{margin:0;font-size:var(--t-sm);color:var(--ink)}
+
+.request-excuse{
+  display:flex;align-items:flex-start;gap:6px;margin:var(--s3) 0 0;
+  font-size:var(--t-xs);color:var(--muted);
+}
+.request-excuse svg{width:13px;height:13px;flex:none;margin-top:2px}
+
+.request-reasons{list-style:none;margin:var(--s3) 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.request-reasons li{
+  display:flex;align-items:flex-start;gap:6px;
+  font-size:var(--t-xs);color:var(--muted);
+}
+.request-reasons li[data-blocking]{color:var(--danger,#b3261e)}
+.request-reasons svg{width:13px;height:13px;flex:none;margin-top:2px}
+
+.request-rooms{margin:var(--s2) 0 0;font-size:var(--t-xs);color:var(--muted-2)}
+
+.request-actions{display:flex;gap:var(--s2);margin-top:var(--s4)}
+.request-actions .btn{min-height:38px}
+
+.request-decided{
+  display:flex;align-items:center;gap:6px;margin:var(--s3) 0 0;
+  font-size:var(--t-xs);color:var(--muted);
+}
+.request-decided svg{width:13px;height:13px;flex:none}
+.request-decided[data-state="fixed"]{color:var(--ok,#2e7d5b)}
+
+.request-alternatives{display:flex;flex-direction:column;gap:var(--s2)}
+.request-alternatives>span{font-size:var(--t-xs);color:var(--muted);font-weight:700}
+
+@media (max-width:640px){
+  .request-totals{grid-template-columns:1fr;text-align:start}
+  .request-actions{flex-direction:column}
+  .request-actions .btn{width:100%}
+}

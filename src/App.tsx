@@ -24,6 +24,7 @@ import {
   Sparkles,
   Sun,
   UsersRound,
+  MailQuestion,
   WandSparkles,
   Wifi,
   WifiOff,
@@ -105,6 +106,7 @@ const About = safeLazy(loadAbout);
    every returning user downloads. */
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
 const ScheduleChanges = safeLazy(() => import("./components/ScheduleChanges"));
+const InstructorInbox = safeLazy(() => import("./components/InstructorInbox"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
@@ -123,6 +125,7 @@ type View =
   | "scheduleCopy"
   | "intelligence"
   | "scheduleChanges"
+  | "instructorRequests"
   | ReportMode
   | AdminMode
   | "about";
@@ -263,6 +266,7 @@ const pathByView: Record<View, string> = {
   locations: "/System/Locations",
   backup: "/System/Backup",
   scheduleChanges: "/FSchedule/Changes",
+  instructorRequests: "/FSchedule/InstructorRequests",
   about: "/Public/Aboutus",
 };
 /**
@@ -305,6 +309,7 @@ function prefetchView(view: View) {
   else if (academicViews.includes(view as AcademicTab)) void loadAcademicConsole();
   else if (searchViews.includes(view as ReportMode) || reportViews.includes(view as ReportMode)) void loadReports();
   else if (adminViews.includes(view as AdminMode)) void loadAdminUsers();
+  else if (view === "instructorRequests") void import("./components/InstructorInbox");
   else if (view === "about") void loadAbout();
 }
 
@@ -1675,6 +1680,15 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "instructorRequests":
+        /* وارِدُ الأساتذة لمن يبني الجدول: هو الذي يثبّت ويرفض، وهو صاحبُ
+           القرار في القاعات. وصفةُ العرض الصرف لا تفعل فيه شيئاً، فلا تُعطى
+           شاشةً تنتهي عند كل زرٍّ فيها برسالة «ليس من صلاحيتك». */
+        return hasPerm(7) ? (
+          <InstructorInbox scopes={scopes} powerAdmin={isPowerAdmin} />
+        ) : (
+          unauthorized()
+        );
       case "searchInstructor":
         return hasPerm(8) ? (
           <Reports
@@ -2361,6 +2375,22 @@ export default function App() {
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.scheduleChanges`،
                    وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.scheduleChanges"
+              />
+            ) : null}
+            {/* ── رغباتُ الأساتذة ───────────────────────────────────────────
+                لمن يبني الجدول وحده: هو من يثبّت ويرفض ويقرّر في القاعات.
+                وهي تجاور «تغييرات الجدول» لأنهما دورتان متتابعتان — الأساتذةُ
+                أولاً، ثم التسجيل — لا شاشتان متباعدتان في قائمةٍ واحدة. */}
+            {allowed.schedule && !sessionRole.viewerOnly ? (
+              <NavButton
+                activeView={activeView}
+                onGo={go}
+                view="instructorRequests"
+                icon={<MailQuestion />}
+                label="رغبات الأساتذة"
+                /* الوجهة نفسها مسجّلة في المرشد باسم `page.instructorRequests`،
+                   وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.instructorRequests"
               />
             ) : null}
             {/* ── ورشةُ الجدول لمن يبني ─────────────────────────────────────
