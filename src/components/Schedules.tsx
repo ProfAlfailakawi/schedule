@@ -174,6 +174,14 @@ interface Props {
   permissions?: number[];
   /** مرحلة التوقيع التي يملكها صاحب الحساب في دورة الاعتماد، إن ملك واحدة. */
   signatureStage?: "committee" | "head" | null;
+  /**
+   * هل صفةُ اللجنة مكتوبةٌ في الحساب؟
+   *
+   * `signatureStage` تسقط إلى «لجنة» حين لا تُعرف الصفة، والخادمُ لا يقبل ذلك
+   * في تجميد الفصل المنتهي. فلو بُني الشريطُ عليها لَمَا رآه صاحبُ حسابٍ بلا
+   * صفة — ثم يُردّ عند الحفظ بلا أن يفهم لماذا.
+   */
+  committeeEligible?: boolean;
   onNavigate?: (view:string) => void;
 }
 type EditorMode = "index" | "create" | "edit";
@@ -795,7 +803,7 @@ function ScheduleLegendScroller({
   );
 }
 
-export default function Schedules({ mode, user, scopes = [], permissions = [], signatureStage: approvalStage = null, onNavigate }: Props) {
+export default function Schedules({ mode, user, scopes = [], permissions = [], signatureStage: approvalStage = null, committeeEligible = false, onNavigate }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
   /** Where a press began, so a drag is never mistaken for a tap. */
@@ -5436,8 +5444,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    * الشريطُ «مجمَّد» عن فصلٍ يُقبل فيه الحفظ، أو سكت عن فصلٍ يُردّ فيه. */
   const termFrozen = useMemo(() => {
     const term = terms.find(row => Number(row.AdTermId) === Number(filterTerm));
-    return term?.AdTermClosed === true && approvalStage !== "committee";
-  }, [terms, filterTerm, approvalStage]);
+    /* وبالقاعدة التي يحرس بها الخادمُ نفسُه: صفةٌ مكتوبة، لا صفةٌ يُسقط
+       إليها الغياب. */
+    return term?.AdTermClosed === true && !committeeEligible;
+  }, [terms, filterTerm, committeeEligible]);
 
   /**
    * Whether the live "now" line belongs on this board.

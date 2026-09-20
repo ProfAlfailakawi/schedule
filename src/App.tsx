@@ -163,13 +163,22 @@ interface SessionRole {
   /** يعلّق على الخانات: التسجيل والقسم كلاهما. */
   canAnnotate: boolean;
   signatureStage: "committee" | "head" | null;
+  /**
+   * صفةُ اللجنة مكتوبةً، لا مُسقَطاً إليها.
+   *
+   * `signatureStage` تُحسب من الصفة بعد سقوطها إلى الافتراضيّ، فحسابٌ بلا
+   * صفةٍ مكتوبة يُقرأ «لجنة». وهذا هو الحقُّ الذي يبني عليه الخادمُ منعَه في
+   * الفصل المنتهي — فمن قرأ ذاك وحدَه لم يُحذّر صاحبَه، ثم رآه يُردّ عند
+   * الحفظ بلا أن يفهم لماذا.
+   */
+  committeeEligible: boolean;
   viewerOnly: boolean;
 }
 const DEFAULT_SESSION_ROLE: SessionRole = {
   id: "committeeChair", label: "رئيس لجنة الجدول", readOnly: false,
   landing: "schedules", canReview: false, canManageDeadline: false,
   watchesInbox: false, canAnnotate: true,
-  signatureStage: "committee", viewerOnly: false,
+  signatureStage: "committee", committeeEligible: false, viewerOnly: false,
 };
 
 /** من تُفتح له شاشة تغييرات الجدول: من يقرّر فيها، أو يعلّق، أو يطّلع عليها. */
@@ -1648,7 +1657,7 @@ export default function App() {
         );
       case "schedules":
         return hasPerm(7) ? (
-          <Schedules mode="schedule" user={user} scopes={scopes} permissions={permissions} signatureStage={sessionRole.signatureStage} onNavigate={(view) => go(view as View)} />
+          <Schedules mode="schedule" user={user} scopes={scopes} permissions={permissions} signatureStage={sessionRole.signatureStage} committeeEligible={sessionRole.committeeEligible} onNavigate={(view) => go(view as View)} />
         ) : (
           unauthorized()
         );
