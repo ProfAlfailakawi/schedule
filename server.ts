@@ -8547,12 +8547,14 @@ async function wholesaleRefusal(collegeId: number, sectionId: number, termId: nu
  */
 function countBlockingConflicts(scopeRows: any[], termRows: any[]): number {
   const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
+  const scopeOf = new Map(termRows.map((row: any) => [Number(row.id), `${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] as const));
   const seen = new Set<string>();
   let count = 0;
   for (const item of findConflicts(scopeRows as any, termRows as any)) {
     if (item.severity !== "high" && item.type !== "duplicate") continue;
     const a = Number(item.rowId), b = Number(item.otherId);
     if (!ownIds.has(a) && !ownIds.has(b)) continue;
+    if (item.type === "instructor" && scopeOf.get(a) !== scopeOf.get(b)) continue;
     const key = [Math.min(a, b), Math.max(a, b), item.type].join(":");
     if (seen.has(key)) continue;
     seen.add(key);
@@ -9083,6 +9085,7 @@ async function crossScopeClashes(req: AuthenticatedRequest, collegeId: number, s
     for (const clash of outsideScopeClashes(scopeRows as any, termRows as any)) {
       const other = clash.other as any;
       if (!other) continue;
+      if (clash.conflict.type === "instructor") continue;
       if (Number(other.AdSectionId) === sectionId && Number(other.AdCollegeId) === collegeId) continue;
       const key = `${clash.ownId}:${clash.otherId}`;
       if (seen.has(key)) continue;
@@ -9552,6 +9555,10 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   ];
   const namedDays = (row: any) =>
     SHOW_DAYS.filter(([key]) => Boolean(row?.[key])).map(([, label]) => label).join(" - ");
+  const firstDayOrder = (row: any) => {
+    const index = SHOW_DAYS.findIndex(([key]) => Boolean(row?.[key]));
+    return index < 0 ? 99 : index;
+  };
   const asDisplayRow = (row: any) => ({
     scheduleId: Number(row.id),
     courseCode: courseCodeById.get(Number(row.AdCourseId)) || "",
@@ -9561,9 +9568,19 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     days: namedDays(row) || "بدون أيام",
     room: diffFieldValue(row, "room", names),
     instructor: diffFieldValue(row, "instructor", names),
+    dayOrder: firstDayOrder(row),
+    startMinutes: timeToMinutes(String(row.fstarttime || "")),
   });
   /* وللمحذوف يُشكَّل صفُّه كما كان قبل الحذف — وهو ما يحمله `entry.row` أصلاً. */
-  const diffForClient = { ...diff, entries: diff.entries.map(entry => ({ ...entry, display: asDisplayRow(entry.row) })) };
+  const diffForClient = {
+    ...diff,
+    entries: diff.entries
+      .map(entry => ({ ...entry, display: asDisplayRow(entry.row) }))
+      .sort((a, b) =>
+        (a.display.dayOrder ?? 99) - (b.display.dayOrder ?? 99)
+        || (a.display.startMinutes ?? 99999) - (b.display.startMinutes ?? 99999)
+        || a.display.course.localeCompare(b.display.course, "ar")),
+  };
 
   /* ── الجدول كامل، لا التغييرات وحدها ────────────────────────────────────
    *
@@ -9576,8 +9593,12 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     .map(row => ({
       ...asDisplayRow(row),
       changed: changedById.get(Number(row.id)) === "changed" || changedById.get(Number(row.id)) === "added",
+      changeKind: changedById.get(Number(row.id)) || undefined,
     }))
-    .sort((a, b) => a.time.localeCompare(b.time) || a.course.localeCompare(b.course, "ar"));
+    .sort((a, b) =>
+      (a.dayOrder ?? 99) - (b.dayOrder ?? 99)
+      || (a.startMinutes ?? 99999) - (b.startMinutes ?? 99999)
+      || a.course.localeCompare(b.course, "ar"));
 
   res.json({
     approval,

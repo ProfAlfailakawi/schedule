@@ -1687,7 +1687,7 @@ export default function App() {
               canAnnotate: sessionRole.canAnnotate,
               signatureStage: sessionRole.signatureStage,
             }}
-            scope={scopes.length === 1 && scopes[0]?.AdSectionId
+            scope={scopes.length === 1 && scopes[0]?.AdSectionId && !["departmentHead", "dean", "viceDean"].includes(sessionRole.id)
               ? { collegeId: Number(scopes[0].AdCollegeId), sectionId: Number(scopes[0].AdSectionId) }
               : null}
           />

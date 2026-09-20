@@ -52,6 +52,8 @@ interface Props {
   sectionId?: number;
   termId?: number;
   disabled?: boolean;
+  /** يقصر البحث والاختيار على هيئة القسم، مع السماح للمنتدبين المحددين صراحة. */
+  strictDepartmentOnly?: boolean;
 }
 
 /** قانون هوية الاسم المشترك نفسه الذي تحكم به مطابقة الاستيراد: همزات الألف،
@@ -61,7 +63,7 @@ const withoutTitles = instructorCleanName;
 /** والمسافات نفسها لا تحجب: «عبد العزيز» يجد «عبدالعزيز». */
 const spaceless = (value: string) => value.replace(/ /g, "");
 
-export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, suggestedName = "", onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
+export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, canCreate = true, suggestedName = "", onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled, strictDepartmentOnly = false }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -147,7 +149,9 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       // instructor list; keep that compatibility without widening a known section.
       return sectionId ? [] : knownInstructors.filter(p => !isHidden(p));
     }
-    const pool = [...new Map([...knownInstructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
+    const pool = strictDepartmentOnly
+      ? knownInstructors.filter(person => departmentRank.has(person.AdInstructorId) || visitingSet.has(person.AdInstructorId))
+      : [...new Map([...knownInstructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
     const scored = pool
       .map(person => {
         if (isHidden(person)) return null;
@@ -173,7 +177,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
         byArabic(a.person.AdInstructorName, b.person.AdInstructorName))
       .slice(0, 40)
       .map(x => x.person);
-  }, [query, knownInstructors, wider, effectiveDepartmentIds, byId, departmentRank, sectionId]);
+  }, [query, knownInstructors, wider, effectiveDepartmentIds, byId, departmentRank, sectionId, strictDepartmentOnly, visitingSet]);
 
   useEffect(() => {
     if (!open) return;
@@ -259,7 +263,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
             ) : null}
           </label>
 
-          {!query ? <p className="instructor-scope">أساتذة هذا القسم — اكتب للبحث خارج القسم</p> : null}
+          {!query ? <p className="instructor-scope">أساتذة هذا القسم فقط</p> : null}
 
           <div className="instructor-results" hidden={adding}>
             {results.length ? results.map(person => (

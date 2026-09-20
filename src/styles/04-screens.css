@@ -949,9 +949,9 @@
   content:"";position:absolute;inset-block:0;inset-inline-end:0;width:3px;background:var(--accent);
 }
 .master-list>button>div,.master-list>article>div{min-width:0}
-.master-list strong,.master-list small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.master-list strong{font-size:var(--t-h4);font-weight:600}
-.master-list small{margin-top:2px;color:var(--muted);font-size:var(--t-sm)}
+.master-list strong,.master-list small{display:block;min-width:0;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
+.master-list strong{font-size:var(--t-h4);font-weight:650;line-height:1.45}
+.master-list small{margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.45}
 .master-list .record-card-meta{margin-top:var(--s2)}
 .master-filter-stack{padding:var(--s4);display:grid;gap:var(--s2);border-bottom:1px solid var(--line)}
 

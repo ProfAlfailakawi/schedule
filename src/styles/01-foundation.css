@@ -162,9 +162,9 @@
    * الاسم يظهر في خمسة مواضع عبر خمس ورقات أنماط بترتيب تحميل ثابت. رموز
    * لا محدِّد مشترك: الرمز لا يُلغى بملف لاحق، وكل قاعدة تبقى في مكانها.
    * المقاس وحده يختلف بحسب السطح، وهو التسلسل المقصود. */
-  --brand-word-family:var(--font-mono);
-  --brand-word-weight:600;
-  --brand-word-track:.28em;
+  --brand-word-family:var(--font-ui);
+  --brand-word-weight:650;
+  --brand-word-track:0;
 
   --ease:cubic-bezier(.22,.7,.24,1);
   --ease-out:cubic-bezier(.16,1,.3,1);

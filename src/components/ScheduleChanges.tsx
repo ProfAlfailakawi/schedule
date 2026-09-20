@@ -60,13 +60,14 @@ interface DiffChange { field: DiffFieldKey; label: string; before: string; after
 interface DisplayRow {
   scheduleId: number; courseCode: string; course: string; sectionCode: string;
   time: string; days: string; room: string; instructor: string;
+  dayOrder?: number; startMinutes?: number;
 }
 interface DiffEntry {
   kind: "added" | "removed" | "changed";
   scheduleId: number; row: any; changes: DiffChange[];
   display: DisplayRow;
 }
-interface FullRow extends DisplayRow { changed: boolean }
+interface FullRow extends DisplayRow { changed: boolean; changeKind?: DiffEntry["kind"] }
 
 interface ChangeReport {
   approval: { status: ScheduleApprovalStatus; currentRound: number; pendingAdditions: any[]; signatures: any[] };
@@ -551,6 +552,20 @@ function Report({ termId, scope, role, onBack }: {
   const [rebutText, setRebutText] = useState("");
   /* يُبلِّغ شريطَ الاعتماد أن يُعيد قراءةَ حاله بعد توقيعٍ أو إرسال. */
   const [approvalSignal, setApprovalSignal] = useState(0);
+  const sortedDiffEntries = useMemo(() => {
+    const kindOrder: Record<DiffEntry["kind"], number> = { added: 0, changed: 1, removed: 2 };
+    return [...(report?.diff.entries || [])].sort((a, b) =>
+      (a.display.dayOrder ?? 99) - (b.display.dayOrder ?? 99) ||
+      (a.display.startMinutes ?? 99999) - (b.display.startMinutes ?? 99999) ||
+      kindOrder[a.kind] - kindOrder[b.kind] ||
+      a.display.course.localeCompare(b.display.course, "ar")
+    );
+  }, [report?.diff.entries]);
+  const sortedFullSchedule = useMemo(() => [...(report?.fullSchedule || [])].sort((a, b) =>
+    (a.dayOrder ?? 99) - (b.dayOrder ?? 99) ||
+    (a.startMinutes ?? 99999) - (b.startMinutes ?? 99999) ||
+    a.course.localeCompare(b.course, "ar")
+  ), [report?.fullSchedule]);
 
   const load = useCallback(async (round?: number) => {
     setError(null);
@@ -765,9 +780,13 @@ function Report({ termId, scope, role, onBack }: {
       {message ? <Notice type="success">{message}</Notice> : null}
 
       {report.blockingConflicts > 0 ? (
-        <Notice type="error">
-          <AlertTriangle aria-hidden="true" /> {blockingConflictPhrase(report.blockingConflicts)} يمنع الاعتماد. لا يُقبل الجدول قبل معالجته.
-        </Notice>
+        <div className="approval-blocked" role="alert">
+          <span className="approval-blocked-icon"><AlertTriangle aria-hidden="true" /></span>
+          <div>
+            <strong>{blockingConflictPhrase(report.blockingConflicts)} يمنع الاعتماد.</strong>
+            <p>لا يُقبل الجدول قبل معالجته.</p>
+          </div>
+        </div>
       ) : null}
 
       {/* اللائحة تُعرض ولا تمنع: بطاقةٌ مطويّة تُفتح عند الحاجة، لا قائمةٌ
@@ -842,28 +861,28 @@ function Report({ termId, scope, role, onBack }: {
       ) : null}
 
       {view === "full" ? (
-        (report.fullSchedule || []).length === 0 ? (
+        sortedFullSchedule.length === 0 ? (
           <EmptyState title="لا مواعيد" detail="لا مواعيد محفوظة في جدول هذا القسم بعد." />
         ) : (
           <div className="changes-full agenda-list" role="table" aria-label="الجدول كامل">
-            {(report.fullSchedule || []).map((row, index) => (
+            {sortedFullSchedule.map((row, index) => (
               <ScheduleRowCard
                 key={`full:${row.scheduleId}`}
                 row={row}
                 index={index}
-                kind={row.changed ? "changed" : undefined}
-                tag={row.changed ? "تحرّك" : undefined}
+                kind={row.changeKind}
+                tag={row.changeKind ? KIND_LABEL[row.changeKind] : undefined}
               >
                 {rowExtras(row.scheduleId, true, "room")}
               </ScheduleRowCard>
             ))}
           </div>
         )
-      ) : report.diff.entries.length === 0 ? (
+      ) : sortedDiffEntries.length === 0 ? (
         <EmptyState title="لم يتغيّر شيء" detail="لا فرق بين هذا الجدول وما راجعتَه آخر مرّة — انظر «الجدول كامل» لرؤية المواعيد كلها." />
       ) : (
         <div className="changes-table agenda-list" role="table" aria-label="تغييرات الجدول">
-          {report.diff.entries.map((entry, index) => (
+          {sortedDiffEntries.map((entry, index) => (
             <ScheduleRowCard
               key={`${entry.kind}:${entry.scheduleId}`}
               row={entry.display}

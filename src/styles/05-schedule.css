@@ -2509,22 +2509,31 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   z-index:5;
 }
 .week-title{
-  font-size:11.5px;line-height:1.3;font-weight:650;
-  letter-spacing:-.1px;
+  min-inline-size:0;max-inline-size:100%;
+  font-size:11.5px;line-height:1.35;font-weight:650;
+  letter-spacing:0;
   padding-inline-end:0;
+  overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+  overflow-wrap:anywhere;word-break:normal;
 }
-.week-who{font-size:10px;opacity:.78}
-.week-when{font-size:10px;gap:5px}
+.week-who{
+  min-inline-size:0;max-inline-size:100%;
+  font-size:10px;line-height:1.35;opacity:.78;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.week-when{min-inline-size:0;max-inline-size:100%;font-size:10px;gap:5px;overflow:hidden}
 .week-when time{font-weight:600}
 /* The room reads as a small held chip — it is the third dimension of this
    screen now, not an afterthought behind the clock. */
 .week-when i{
   font-style:normal;
+  max-inline-size:100%;
   padding:0 4px;border-radius:4px;
   background:color-mix(in srgb,var(--edge) 12%,transparent);
   color:color-mix(in srgb,var(--label) 78%,transparent);
   font:600 10px/1.5 var(--font-mono);
   letter-spacing:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 /* The catalogue stamp leaves the title's corner for the opposite one, where
    nothing begins. It was printing itself over the first word of every Arabic

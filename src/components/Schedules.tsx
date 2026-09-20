@@ -5429,9 +5429,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    */
   /** A finished term keeps its schedule, but loses the tools that only make
    *  sense while teaching is still ahead. */
-  const selectedTermClosed = useMemo(
-    () => isTermClosed(terms.find(term => term.AdTermId === filterTerm), terms),
+  const termIsRunning = useMemo(
+    () => Number(filterTerm) > 0 && Number(filterTerm) === currentTermId(terms as any[]),
     [terms, filterTerm],
+  );
+  const selectedTermClosed = useMemo(
+    () => !termIsRunning && isTermClosed(terms.find(term => term.AdTermId === filterTerm), terms),
+    [terms, filterTerm, termIsRunning],
   );
 
   /* ── الفصلُ المُجمَّد ────────────────────────────────────────────────────
@@ -5462,11 +5466,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    * The window arithmetic itself moved to utils/termSequence, which is where
    * the rest of the product asks the same question.
    */
-  const termIsRunning = useMemo(
-    () => Number(filterTerm) > 0 && Number(filterTerm) === currentTermId(terms as any[]),
-    [terms, filterTerm],
-  );
-
   /**
    * Which column, if any, is today.
    *
@@ -8463,16 +8462,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     onSelected={(person) => {
                       setInstructors((current: any[]) =>
                         mergeById(current, [person], row => Number(row.AdInstructorId), row => row.AdInstructorName));
-                      if (!departmentInstructorIds.includes(Number(person.AdInstructorId))) {
-                        // Deliberately a warning only. Cross-department teaching
-                        // is legitimate; the picker should make it visible, not
-                        // make it impossible.
-                        setMessage(`تنبيه فقط: الأستاذ ${person.AdInstructorName} من خارج قائمة أعضاء هيئة تدريس هذا القسم. يمكنك المتابعة والحفظ.`);
-                      }
                     }}
                     collegeId={Number(form.AdCollegeId) || filterCollege}
                     sectionId={Number(form.AdSectionId) || filterSection}
                     termId={Number(form.AdTermId) || filterTerm}
+                    strictDepartmentOnly
                   />
                   </div>
                   {/* The civil ID already sits inside the picker beneath the

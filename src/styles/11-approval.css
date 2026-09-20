@@ -513,11 +513,23 @@
 
 /* السبب في مكان الزرّ: من مُنع يعرف لماذا قبل أن يمدّ يده، لا بعدها. */
 .approval-blocked{
-  display:inline-flex;align-items:center;
-  padding:5px 12px;border-radius:var(--r-full);
-  background:var(--warning-soft);color:var(--warning);
-  font-size:.82rem;font-weight:650;
+  display:flex;align-items:center;gap:14px;
+  padding:16px 18px;border-radius:var(--r-lg);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--danger-soft) 82%,#fff),var(--surface));
+  color:var(--danger);
+  border:1px solid color-mix(in srgb,var(--danger) 26%,var(--line));
+  border-inline-start:5px solid var(--danger);
+  box-shadow:0 18px 44px -34px color-mix(in srgb,var(--danger) 55%,transparent);
 }
+.approval-blocked-icon{
+  inline-size:42px;block-size:42px;border-radius:14px;
+  display:grid;place-items:center;flex:none;
+  background:color-mix(in srgb,var(--danger-soft) 70%,var(--surface));
+  color:var(--danger);
+}
+.approval-blocked-icon svg{inline-size:22px;block-size:22px}
+.approval-blocked strong{display:block;color:var(--danger);font-size:1rem;font-weight:820;line-height:1.35}
+.approval-blocked p{margin:3px 0 0;color:var(--muted);font-size:.88rem;line-height:1.7}
 
 /* ── تعارضٌ مع قسمٍ آخر ─────────────────────────────────────────────────
    يُعرض ولا يُعلَّق عليه: الملاحظة تذهب لصاحب الصفّ، ومن لا يملك تعديلَه لا
