@@ -42,6 +42,29 @@ check(roleDefinition("dean").scopeMode === "college" && roleDefinition("registra
 check(roleDefinition("committeeChair").scopeMode === "section" && roleDefinition("standard").scopeMode === "manual",
   "وصفاتُ القسم لا تناله");
 
+/* الحارسان يجيبان من موضعٍ واحد. وافتراقُهما لا يُرفَض طلباً بل يُفرِغ شاشة:
+   العميد يمرّ من الحارس فلا يُردّ، ثم تُصفّى بياناته فتخرج فارغة — شاشةٌ تفتح
+   بلا شيءٍ ولا رسالةٍ ولا سببٍ ظاهر، وهو أعسرُ ما يُشخَّص. */
+const filterAt = server.indexOf("function filterByScope");
+const filterBody = server.slice(filterAt, filterAt + 1600);
+check(filterBody.includes("isScopeAllowed(req, Number(item.AdCollegeId), Number(item.AdSectionId))"),
+  "تصفيةُ النطاق تسأل الحارس نفسه، فلا تفترق عنه");
+check(!filterBody.includes("s.AdSectionId === item.AdSectionId"),
+  "ولم يبقَ منطقُ نطاقٍ ثانٍ يُصان وحده");
+
+/* حسابٌ بلا صفةٍ يُقرأ «رئيس لجنة» في كل موضع، فحفظُه بها ليس تغييراً. وقراءةُ
+   القيمة الخام كانت تجعله تغييراً فيُعاد كتابة القالب وتُمحى شاشاته — وهو بابٌ
+   يُفتح كلّما تعذّر ترحيلُ حسابٍ عند الإقلاع. */
+check(server.includes("const previousRole = roleDefinition((before as any)?.Role).id;"),
+  "المقارنة على الصفة المحلولة لا على القيمة المخزّنة");
+check(server.includes("const roleChanged = isAcademicRole(Role) && Role !== previousRole;"),
+  "وتغييرُ الصفة وحده يُعيد كتابة القالب");
+
+const createAt = server.indexOf('app.post("/api/users"');
+const createBody = server.slice(createAt, createAt + 3000);
+check(createBody.includes("applyRoleTemplate(newUser.SystemUserId, createdRole"),
+  "والحساب الجديد يأخذ قالبه كاملاً: لا حساب يُنشأ بلا شاشة");
+
 /* ── ٢) المحو فعلٌ مقصود ──────────────────────────────────────────────────
  *
  * تمرير `undefined` ليمحو حقلاً كان يُسقَط قبل الكتابة، فيبقى الحقل. وأثرُه:
@@ -90,7 +113,7 @@ check(moveBody.includes('noteScheduleMutation(req, scope.collegeId, scope.sectio
  * كل حفظ. فإيقافُ حسابٍ أو تغييرُ كلمة سرّه كان يمحو كلَّ شاشةٍ مُنحت له
  * يدوياً خارج قالب صفته — بصمت، ودون أن يطلب أحد. */
 
-check(server.includes('const roleChanged = isAcademicRole(Role) && Role !== (before as any)?.Role;'),
+check(server.includes("if (roleChanged && Role !== \"standard\") {"),
   "القالب يُكتب عند تغيير الصفة لا عند كل حفظ");
 check(server.includes("const before = await Repository.getUserById(id);"), "والصفة السابقة تُقرأ للمقارنة");
 check(server.includes("if (assigns.length) await Repository.saveUserAssigns(userId, assigns);"),

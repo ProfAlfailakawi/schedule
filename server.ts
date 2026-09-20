@@ -1118,13 +1118,25 @@ function isScopeAllowed(req: AuthenticatedRequest, collegeId: number, sectionId:
 }
 
 // Filter arrays based on allowed user scopes
+/**
+ * ── سؤالٌ واحد، جوابٌ واحد ──────────────────────────────────────────────────
+ *
+ * هذه الدالّة وأختُها `isScopeAllowed` تسألان الشيء نفسه: أيرى هذا الحسابُ هذا
+ * القسم؟ وكانتا تجيبان بمنطقين منفصلين متطابقين — فلمّا تعلّمت إحداهما أن صفّاً
+ * بقسمٍ صفر يعني الكلية كلها، بقيت الأخرى لا تعرفه.
+ *
+ * وأثرُ الافتراق ليس رفضاً ظاهراً بل أسوأ منه: العميد يمرّ من الحارس فلا يُردّ،
+ * ثم تُصفّى بياناتُه هنا فتخرج فارغة. شاشةٌ تفتح بلا شيء، بلا رسالة، بلا سبب
+ * ظاهر — وهو أعسرُ ما يُشخَّص.
+ *
+ * فصار الجواب من موضعٍ واحد. وأيُّ قاعدةِ نطاقٍ تُضاف غداً تُكتب مرّةً وتسري
+ * على الاثنتين.
+ */
 function filterByScope<T extends { AdCollegeId: number; AdSectionId: number }>(req: AuthenticatedRequest, list: T[]): T[] {
   if (!req.user) return [];
   if (req.user.IsAdminUser) return list;
   if (!req.scopes) return [];
-  return list.filter(item =>
-    req.scopes!.some(s => s.AdCollegeId === item.AdCollegeId && s.AdSectionId === item.AdSectionId)
-  );
+  return list.filter(item => isScopeAllowed(req, Number(item.AdCollegeId), Number(item.AdSectionId)));
 }
 
 // Legacy FSchedule.fdetail stores weekday numbers, not display names:
@@ -10206,7 +10218,13 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
      * سرّه كان سيمحو كل شاشةٍ مُنحت له يدوياً خارج قالب صفته، بصمت، ودون أن
      * يطلب أحدٌ ذلك.
      */
-    const roleChanged = isAcademicRole(Role) && Role !== (before as any)?.Role;
+    /* المقارنة على الصفة المحلولة لا على القيمة المخزّنة: حسابٌ بلا صفةٍ
+       يُقرأ «رئيس لجنة» في كل موضعٍ من هذا النظام، فحفظُه بهذه الصفة نفسها
+       ليس تغييراً. وقراءةُ القيمة الخام كانت تجعله تغييراً فتُعاد كتابة
+       القالب، فتُمحى شاشاتُه الممنوحة يدوياً — وهو بابٌ يُفتح كلّما تعذّر
+       ترحيلُ حسابٍ عند الإقلاع. */
+    const previousRole = roleDefinition((before as any)?.Role).id;
+    const roleChanged = isAcademicRole(Role) && Role !== previousRole;
     if (roleChanged && Role !== "standard") {
       await applyRoleTemplate(id, Role, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
       res.locals.auditChanges = `الصفة: «${roleLabel(Role)}»`;
