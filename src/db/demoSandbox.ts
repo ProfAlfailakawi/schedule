@@ -193,8 +193,16 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
     // خانتان تغيّرتا منذ ما رآه التسجيل: قاعةٌ ووقت — فيُقرآن «معدّلَين».
     baseline[0].AdRoomHall = "999";
     baseline[1].fstarttime = "07:00"; baseline[1].fendtime = "08:15";
-    // صفٌّ كان في نسخة التسجيل وحُذف بعدها — فيُقرأ «محذوفاً».
+    // صفٌّ في الجدول الحيّ ليس في نسخة التسجيل — فيُقرأ «مضافاً».
     baseline.pop();
+    // صفٌّ كان في نسخة التسجيل وحُذف بعدها — يجب أن يبقى في الأساس ويغيب عن
+    // الحيّ ليُقرأ «محذوفاً»؛ فيُوضع في الأساس وحده بمعرّفٍ لا وجود له في الحيّ.
+    const removedId = Math.max(0, ...schedules.map(r => Number(r.id))) + 1;
+    baseline.push({
+      ...structuredClone(stage[0]), id: removedId,
+      AdCourseName: "مادةٌ أُلغيت بعد المراجعة", SCode: "09",
+      fstarttime: "16:00", fendtime: "17:15", AdRoomCode: "A", AdRoomHall: "101",
+    });
     const versionId = "demo-ver-cs-round1";
     versions.push({
       id: versionId, scopeKey: "1:1:1", createdAt: iso(9), rowCount: baseline.length,

@@ -1783,11 +1783,46 @@ async function clientScopeDetails(scopes: any[]) {
   const collegeById = new Map<number, string>(
     colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")] as [number, string]),
   );
-  return scopes.map((scope: any) => ({
-    ...scope,
-    AdSectionName: sectionById.get(Number(scope.AdSectionId)) || "",
-    AdCollegeName: collegeById.get(Number(scope.AdCollegeId)) || "",
-  }));
+  /* ── نطاقُ الكلية الكاملة يُبسَط قبل أن يصل الواجهة ──────────────────────
+   *
+   * الخادم يمثّل «كلية كاملة» بصفٍّ واحدٍ قسمُه صفر (العميد، والعميد المساعد،
+   * وعميد التسجيل، وكل الكليات). لكنّ مُحلّلَ النطاق في الواجهة يُسقط كل صفٍّ
+   * بلا قسمٍ غير صفريّ، فيبقى منتقي الكلية فارغاً ويهبط العميدُ على تقرير
+   * الأقسام بلا ما يختار — وهو ما كشفته مراجعةٌ آلية حين جُرّب العميد فعلاً.
+   *
+   * فيُبسَط الصفرُ هنا إلى صفٍّ لكل قسمٍ في تلك الكلية: تسميةٌ للعرض فقط، لا
+   * تمسّ الإذن (الحارسُ يقرأ `req.scopes` الخام بصفره)، فيرى العميدُ أقسام
+   * كليته ويختار بينها. */
+  const sectionsByCollege = new Map<number, any[]>();
+  for (const section of sections as any[]) {
+    const collegeId = Number(section.AdCollegeId);
+    const list = sectionsByCollege.get(collegeId);
+    if (list) list.push(section); else sectionsByCollege.set(collegeId, [section]);
+  }
+  const out: any[] = [];
+  const seen = new Set<string>();
+  const push = (collegeId: number, sectionId: number, sectionName?: string) => {
+    const key = `${collegeId}:${sectionId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      AdCollegeId: collegeId, AdSectionId: sectionId,
+      AdSectionName: sectionName ?? sectionById.get(sectionId) ?? "",
+      AdCollegeName: collegeById.get(collegeId) || "",
+    });
+  };
+  for (const scope of scopes) {
+    const collegeId = Number(scope.AdCollegeId);
+    const sectionId = Number(scope.AdSectionId);
+    if (sectionId === 0) {
+      for (const section of sectionsByCollege.get(collegeId) || []) {
+        push(collegeId, Number(section.AdSectionId), String(section.AdSectionName || ""));
+      }
+    } else {
+      push(collegeId, sectionId);
+    }
+  }
+  return out;
 }
 
 // --- AUTH API ---

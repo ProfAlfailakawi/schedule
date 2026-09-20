@@ -204,7 +204,9 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
       <div className="changes-toolbar">
         <div className="changes-filter-chips" role="group" aria-label="فلترة بالحالة">
           {([
-            ["all", "الكل", (totals?.waiting || 0) + (totals?.returned || 0) + (totals?.accepted || 0)],
+            // «الكل» يعدّ كل بطاقةٍ معروضة — فيها «قيد الإعداد» للأقسام التي لم
+            // تبدأ بعد — لا الحالاتِ الثلاث وحدها، فلا يقول ٣ ويعرض ٥.
+            ["all", "الكل", (rows || []).length],
             ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
             ["returned", "عند القسم", totals?.returned || 0],
             ["accepted", "معتمد", totals?.accepted || 0],
