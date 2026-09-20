@@ -137,5 +137,13 @@ check(serverSource.includes('app.use("/api", (req: AuthenticatedRequest, res: Re
 check(serverSource.includes("migrateLegacyAccountsToCommitteeRole"), "ترحيل الحسابات القائمة مُستدعى عند الإقلاع");
 check(/if \(!databaseFailure\) await migrateLegacyAccountsToCommitteeRole\(\);/.test(serverSource), "الترحيل لا يعمل على قاعدةٍ لم تُقلع");
 
+/* ── مصالحةُ رؤساء الأقسام: نزعُ شاشة الورشة عن الحسابات القائمة ──────────────
+ * تغييرُ القالب وحده لا يكفي: الحسابُ القائم يحمل الشاشة ٧ محفوظةً، وحفظُه لا
+ * يُعيد القالب إلا عند تغيّر الصفة. فتُنزع عند الإقلاع. */
+check(serverSource.includes("async function reconcileDepartmentHeadPermissions"), "مصالحةُ صلاحيات رؤساء الأقسام معرَّفة");
+check(/if \(!databaseFailure\) await reconcileDepartmentHeadPermissions\(\);/.test(serverSource), "وتُستدعى عند الإقلاع على قاعدةٍ مُقلِعة");
+check(/String\(\(user as any\)\.Role\) !== "departmentHead"/.test(serverSource) && serverSource.includes("filter(id => id !== SCHEDULE_WORKSPACE_FORM_ID)"),
+  "تنزع الشاشة ٧ عن رؤساء الأقسام وحدهم، وتبقي بقيةَ صلاحياتهم");
+
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);
