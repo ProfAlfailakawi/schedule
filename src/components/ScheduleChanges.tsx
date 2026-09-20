@@ -74,6 +74,8 @@ interface ChangeReport {
   rounds: Array<{ number: number; submittedAt?: string; submittedBy?: string; returnedAt?: string; returnedBy?: string; returnedNoteCount?: number; changedRowCount?: number; acceptedAt?: string; acceptedBy?: string }>;
   deadline: InboxRow["deadline"];
   diff: { entries: DiffEntry[]; counts: { added: number; removed: number; changed: number; unchanged: number }; firstReview: boolean };
+  /** من أين تبدأ المقارنة: نسخةُ جولةٍ سابقة، أم آخرُ لقطةٍ محفوظة، أم لا شيء. */
+  baselineSource?: "round" | "capture" | "none";
   fullSchedule?: FullRow[];
   summary: string;
   notes: NoteRow[];
@@ -761,6 +763,15 @@ function Report({ termId, scope, role, onBack }: {
           <FileDiff aria-hidden="true" />
           <strong>{report.summary}</strong>
           {report.diff.counts.unchanged ? <small>{report.diff.counts.unchanged} موعداً لم يتغيّر</small> : null}
+          {/* ── من أين تبدأ المقارنة ──────────────────────────────────────
+              «كلُّ صفٍّ مضاف» تعني أحد أمرين لا ثالثَ لهما: جدولٌ جديدٌ فعلاً،
+              أو أساسٌ لم يُوجد فقُورن الجدولُ بالعدم. والفرقُ بينهما هو الفرقُ
+              بين مراجعةٍ صحيحةٍ ومراجعةٍ ضائعة، فلا يُترك ليُستنتج. */}
+          {report.baselineSource === "none" ? (
+            <small className="changes-baseline-note">أولُ مراجعةٍ لهذا القسم — لا نسخةَ سابقةَ يُقارَن بها، فكلُّ موعدٍ يُعرض مضافاً.</small>
+          ) : report.baselineSource === "capture" ? (
+            <small className="changes-baseline-note">لم تحمل الجولاتُ السابقة نسخةً محفوظة، فالمقارنةُ من آخر لقطةٍ للجدول قبل هذه الجولة.</small>
+          ) : null}
         </div>
         {/* تبديلٌ بين ما تحرّك والجدول كامل — القسم يريد رؤية جدوله كله والملاحظات فيه. */}
         <div className="changes-view-toggle" role="group" aria-label="طريقة العرض">

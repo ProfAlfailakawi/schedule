@@ -727,3 +727,7 @@
   .registration-course-actions{width:100%}
   .registration-course-actions .changes-chip{flex:1;justify-content:center}
 }
+
+/* سطرُ الأساس تحت الملخّص: يُقال حين لا يكون الأساسُ نسخةَ جولةٍ سابقة، فلا
+   يُقرأ «كلُّ صفٍّ مضاف» على أنه خبرٌ عن الجدول وهو خبرٌ عن المقارنة. */
+.changes-baseline-note{color:var(--muted);font-size:.8rem;line-height:1.55}

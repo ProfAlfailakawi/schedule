@@ -292,5 +292,25 @@ check(deptBlock.includes('landing: "changes"'), "ورئيس القسم يفتح 
 const deptFormIds = (deptBlock.match(/formIds:\s*\[[^\]]*\]/) || [""])[0];
 check(deptFormIds && !deptFormIds.includes("SCHEDULE_WORKSPACE"), "ولا يملك شاشة الورشة: لا تعديل ولا حذف");
 
+/* ── ١٠) أساسٌ لا يسقط إلى العدم ──────────────────────────────────────────
+ *
+ * حين لا تُوجد نسخةُ جولةٍ سابقة كان التقريرُ يقارن الجدولَ بلا شيء: كلُّ صفٍّ
+ * «مضاف»، ولا معدَّلٌ ولا محذوفٌ البتّة. وليست حالاً نادرة — الجولةُ التي تُفتح
+ * تلقائياً حين يعدّل القسمُ جدولاً مقبولاً تُنشأ بلا نسخة، فقسمٌ جولاتُه كلُّها
+ * من هذا النوع لا يملك أساساً أبداً، ويقرأ موظّفُ التسجيل جدولاً كاملاً وقد
+ * تحرّك فيه صفّان. */
+check(server.includes("let baselineVersion = roundBaseline;")
+  && server.includes('let baselineSource: "round" | "capture" | "none"'),
+  "وللمقارنة أساسٌ يُسمّى مصدرُه، لا أساسٌ يغيب بصمت");
+check(server.includes("await Repository.getScheduleVersions(collegeId, sectionId, termId, 100)"),
+  "فإن لم تحمل الجولاتُ نسخةً، يُؤخذ من اللقطات المحفوظة — وهي تُلتقط عند كل تعديل");
+check(server.includes("const fallback = history.find(item => item.id !== currentRoundVersionId"),
+  "ولا تُقارن الجولةُ بنسخةِ نفسِها، فتخرج بلا فرقٍ دائماً");
+check(server.includes("baselineSource,"),
+  "والمصدرُ يصل الشاشة");
+check(changes.includes('report.baselineSource === "none"')
+  && changes.includes('report.baselineSource === "capture"'),
+  "والشاشةُ تقول من أين تبدأ المقارنة، فلا يُقرأ «كلُّ صفٍّ مضاف» خبراً عن الجدول وهو خبرٌ عن المقارنة");
+
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);

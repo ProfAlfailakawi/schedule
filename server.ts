@@ -9382,12 +9382,12 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
    * يجد جدولاً كاملاً مطلوباً منه أن يقرأه من أوّله. فيُمسح إلى الوراء حتى
    * تُوجد نسخة.
    */
-  const baselineVersionId = approval.rounds
+  const roundBaselineId = approval.rounds
     .filter(item => item.number < round && item.reviewedVersionId)
     .sort((a, b) => b.number - a.number)[0]?.reviewedVersionId;
 
-  const [baselineVersion, live, instructors, courses, notes, suggestions, crossScope] = await Promise.all([
-    baselineVersionId ? Repository.getScheduleVersionById(baselineVersionId) : Promise.resolve(undefined),
+  const [roundBaseline, live, instructors, courses, notes, suggestions, crossScope] = await Promise.all([
+    roundBaselineId ? Repository.getScheduleVersionById(roundBaselineId) : Promise.resolve(undefined),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
     Repository.getInstructors(),
     Repository.getCourses(),
@@ -9395,6 +9395,39 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     noteSuggestions(collegeId, sectionId, termId),
     crossScopeClashes(req, collegeId, sectionId, termId),
   ]);
+
+  /**
+   * ── أساسٌ لا يسقط إلى العدم ──────────────────────────────────────────────
+   *
+   * حين لا تُوجد نسخةُ جولةٍ سابقة، كان التقرير يقارن الجدولَ بلا شيء: فيصير
+   * كلُّ صفٍّ «مضاف»، ولا يظهر معدَّلٌ ولا محذوفٌ البتّة. وهذا ما يراه موظّفُ
+   * التسجيل: جدولٌ كامل يُطلب منه أن يقرأه من أوّله، وقد تحرّك فيه صفّان.
+   *
+   * وليس ذلك حالاً نادرة: الجولةُ التي تُفتح تلقائياً حين يعدّل القسمُ جدولاً
+   * مقبولاً تُنشأ بلا نسخةٍ محفوظة، لأنها لم تبدأ بإرسالٍ من أحد. فقسمٌ
+   * جولاتُه كلُّها من هذا النوع لا يملك أساساً أبداً.
+   *
+   * والنُّسَخُ تُلتقط عند كلِّ تعديلٍ على أيّ حال. فإن لم تحمل الجولاتُ أساساً،
+   * يُؤخذ أحدثُ ما التُقط قبل نسخةِ هذه الجولة — وهو أقربُ ما يملكه النظامُ
+   * إلى «ما رآه التسجيل آخر مرّة». وإن لم يوجد شيءٌ البتّة فهي أولُ مراجعةٍ
+   * حقاً، ويُقال ذلك صراحةً بدل أن يُفهم من كثرة «المضاف».
+   */
+  const currentRoundVersionId = approval.rounds.find(item => item.number === round)?.reviewedVersionId;
+  let baselineVersion = roundBaseline;
+  let baselineSource: "round" | "capture" | "none" = roundBaseline ? "round" : "none";
+  if (!baselineVersion) {
+    const history = await Repository.getScheduleVersions(collegeId, sectionId, termId, 100);
+    const currentAt = history.find(item => item.id === currentRoundVersionId)?.createdAt;
+    /* أقدمُ من نسخةِ الجولة الجارية، وأحدثُ ما دونها — والقائمةُ مرتَّبةٌ
+       تنازلياً، فأوّلُ ما ينطبق هو المطلوب. */
+    const fallback = history.find(item => item.id !== currentRoundVersionId
+      && (!currentAt || String(item.createdAt) < String(currentAt)));
+    if (fallback) {
+      baselineVersion = await Repository.getScheduleVersionById(fallback.id);
+      if (baselineVersion) baselineSource = "capture";
+    }
+  }
+  const baselineVersionId = baselineVersion?.id || null;
 
   const names = {
     instructorById: new Map(instructors.map((row: any) => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
@@ -9446,7 +9479,10 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     round,
     rounds: approval.rounds,
     deadline,
-    baselineVersionId: baselineVersionId || null,
+    baselineVersionId,
+    /* من أين تبدأ المقارنة: نسخةُ جولةٍ سابقة، أم آخرُ لقطةٍ محفوظة، أم لا
+       شيء. والشاشةُ تقول ذلك للقارئ بدل أن يستنتجه من كثرة «المضاف». */
+    baselineSource,
     diff: diffForClient,
     fullSchedule,
     summary: summarizeDiff(diff),
