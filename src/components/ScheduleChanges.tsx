@@ -19,6 +19,8 @@ import {
   FileDiff, Inbox, MessageSquarePlus, Scale, Search, Send, ShieldCheck, Trash2, X,
 } from "lucide-react";
 import ApprovalBar from "./ApprovalBar";
+import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
+import { EMPTY_INBOX_ASK, matchesInboxAsk, parseInboxAsk, type InboxAsk, type InboxAskSignal } from "../utils/inboxAsk";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
@@ -148,12 +150,27 @@ export function ApprovalChip({ status, late }: { status: ScheduleApprovalStatus;
 
 /* ── صندوق الوارد ───────────────────────────────────────────────────────── */
 
-function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: InboxRow) => void; canExtend: boolean; key?: React.Key }) {
+function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
+  termId: number;
+  terms: AdTerm[];
+  onTermChange: (termId: number) => void;
+  onOpen: (row: InboxRow) => void;
+  canExtend: boolean;
+  key?: React.Key;
+}) {
   const [rows, setRows] = useState<InboxRow[] | null>(null);
   const [totals, setTotals] = useState<{ waiting: number; returned: number; accepted: number; late: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "submitted" | "returned" | "accepted">("all");
-  const [query, setQuery] = useState("");
+  const [ask, setAsk] = useState("");
+  /* الجملة تُقرأ عند الإرسال لا عند كل حرف: قارئٌ يكتب «متأخر» حرفاً حرفاً
+     يمرّ على «م» و«مت» و«متأ»، ولو فُلتِر عند كلٍّ منها لرقصت الشاشة تحت يده. */
+  const [parsed, setParsed] = useState<InboxAsk>(EMPTY_INBOX_ASK);
+  const [collegeId, setCollegeId] = useState(0);
+  const [sectionId, setSectionId] = useState(0);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [lateOnly, setLateOnly] = useState(false);
+  const [signalFilters, setSignalFilters] = useState<InboxAskSignal[]>([]);
   const [extending, setExtending] = useState<InboxRow | null>(null);
   const [extendUntil, setExtendUntil] = useState("");
   const [extendReason, setExtendReason] = useState("");
@@ -170,17 +187,70 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
 
   useEffect(() => { void load(); }, [load]);
 
-  /* بحثٌ سريعٌ بالاسم وفلترٌ بالحالة: الأقسام كثيرة، ومن يبحث عن قسمٍ بعينه لا
-     يمرّ على عشرين بطاقة. الفلتر أربع حالاتٍ لا أكثر — وكثرةُ المرشّحات قرارٌ
-     يُطلب من الموظّف قبل أن يبدأ. */
-  const visible = useMemo(() => {
-    const needle = query.trim();
-    return (rows || []).filter(row => {
-      if (statusFilter !== "all" && row.status !== statusFilter) return false;
-      if (needle && !`${row.sectionName} ${row.collegeName}`.includes(needle)) return false;
-      return true;
-    });
-  }, [rows, statusFilter, query]);
+  /* الكليات والأقسام تُبنى من الوارد نفسه، لا من قراءةٍ ثانية: الشاشة لا تعرض
+     قسماً ليس في وارِدها، فقائمةٌ تحوي ما لا يُعرض تَعِد بنتائجَ لا توجد. */
+  const collegeOptions = useMemo(() => {
+    const seen = new Map<number, string>();
+    for (const row of rows || []) if (!seen.has(row.collegeId)) seen.set(row.collegeId, row.collegeName || `كلية ${row.collegeId}`);
+    return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, "ar"));
+  }, [rows]);
+
+  const sectionOptions = useMemo(() => {
+    const seen = new Map<number, string>();
+    for (const row of rows || []) {
+      if (collegeId && row.collegeId !== collegeId) continue;
+      if (!seen.has(row.sectionId)) seen.set(row.sectionId, row.sectionName || `قسم ${row.sectionId}`);
+    }
+    return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, "ar"));
+  }, [rows, collegeId]);
+
+  /* الجملة والمرشّحات مصدرٌ واحد: ما تفهمه الجملة يُضاف إلى ما اختاره القارئ
+     بيده، ولا يمحوه. من كتب «متأخر» ثم ضغط «فيه موانع» يريد الاثنين. */
+  const effective: InboxAsk = useMemo(() => ({
+    ...parsed,
+    status: statusFilter !== "all" ? statusFilter : parsed.status,
+    lateOnly: lateOnly || parsed.lateOnly,
+    signals: [...new Set([...parsed.signals, ...signalFilters])],
+  }), [parsed, statusFilter, lateOnly, signalFilters]);
+
+  const visible = useMemo(() => (rows || []).filter(row => {
+    if (collegeId && row.collegeId !== collegeId) return false;
+    if (sectionId && row.sectionId !== sectionId) return false;
+    return matchesInboxAsk(row, effective);
+  }), [rows, collegeId, sectionId, effective]);
+
+  /* عددُ ما هو نشطٌ داخل «المزيد» وحدَه — الكلية والقسم والفصل ظاهرةٌ بأعينها
+     فوقه، وعدُّها مرّتين يقول للقارئ إن شيئاً مخفيّاً وليس كذلك. */
+  const activeMoreCount = (statusFilter !== "all" ? 1 : 0) + (lateOnly ? 1 : 0) + signalFilters.length;
+
+  const toggleSignal = (signal: InboxAskSignal) =>
+    setSignalFilters(current => current.includes(signal) ? current.filter(item => item !== signal) : [...current, signal]);
+
+  const clearAll = () => {
+    setParsed(EMPTY_INBOX_ASK); setStatusFilter("all"); setLateOnly(false);
+    setSignalFilters([]); setCollegeId(0); setSectionId(0);
+  };
+
+  const askNote = ask.trim()
+    ? (parsed.understood || parsed.text
+        ? parsed.note
+        : "لم أفهم هذه الجملة. جرّب: «متأخر وفيه موانع» أو اسم القسم.")
+    : null;
+
+  const selects: ScopeAskSelect[] = [
+    {
+      key: "college", label: "الكلية", value: collegeId, placeholder: "كل الكليات",
+      options: collegeOptions,
+    },
+    {
+      key: "section", label: "القسم", value: sectionId, placeholder: "كل الأقسام",
+      options: sectionOptions, disabled: sectionOptions.length === 0,
+    },
+    {
+      key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل",
+      options: terms.map(row => ({ value: row.AdTermId, label: row.AdTermName })),
+    },
+  ];
 
   const submitExtension = async () => {
     if (!extending) return;
@@ -201,44 +271,99 @@ function Inbox_({ termId, onOpen, canExtend }: { termId: number; onOpen: (row: I
   return (
     <>
       {error ? <Notice type="error">{error}</Notice> : null}
-      {/* الفلتر بالحالة: كل شريحةٍ تحمل عددها، فيُقرأ الوضع قبل الضغط. */}
-      <div className="changes-toolbar">
-        <div className="changes-filter-chips" role="group" aria-label="فلترة بالحالة">
-          {([
-            // «الكل» يعدّ كل بطاقةٍ معروضة — فيها «قيد الإعداد» للأقسام التي لم
-            // تبدأ بعد — لا الحالاتِ الثلاث وحدها، فلا يقول ٣ ويعرض ٥.
-            ["all", "الكل", (rows || []).length],
-            ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
-            ["returned", "عند القسم", totals?.returned || 0],
-            ["accepted", "معتمد", totals?.accepted || 0],
-          ] as Array<[typeof statusFilter, string, number]>).map(([value, label, count]) => (
-            <button
-              key={value}
-              type="button"
-              className="changes-chip"
-              data-active={statusFilter === value || undefined}
-              aria-pressed={statusFilter === value}
-              data-guide-ignore="فلترة الوارد بالحالة — عرضٌ لا فعل، ولا يغيّر بيانات"
-              onClick={() => setStatusFilter(value)}
-            >
-              {label}{count ? <b>{count}</b> : null}
-            </button>
-          ))}
-        </div>
-        <label className="changes-search">
-          <Search aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="ابحث باسم القسم أو الكلية"
-            aria-label="ابحث باسم القسم أو الكلية"
-          />
-        </label>
-      </div>
+      {/* الشريط نفسه الذي فوق مركز الاستعلام: سؤالٌ بالعربية أولاً، ثم الكلية
+          والقسم والفصل، وما زاد عليها مطويٌّ خلف «المزيد». الشرائحُ لم تُلغَ —
+          نزلت إلى داخله، لأنها تصف ما يُعرض لا ما يُسأل عنه. */}
+      <ScopeAskBar
+        idPrefix="changes-inbox"
+        label="نطاق الوارد"
+        ask={ask}
+        onAskChange={value => { setAsk(value); if (!value.trim()) setParsed(EMPTY_INBOX_ASK); }}
+        onAskSubmit={value => setParsed(parseInboxAsk(value))}
+        askPlaceholder="اسأل: الأقسام المتأخرة اللي عندها موانع"
+        askNote={askNote}
+        onClear={clearAll}
+        selects={selects}
+        onSelect={(key, value) => {
+          const id = Number(value) || 0;
+          if (key === "college") { setCollegeId(id); setSectionId(0); }
+          else if (key === "section") setSectionId(id);
+          else onTermChange(id);
+        }}
+        moreOpen={moreOpen}
+        onToggleMore={() => setMoreOpen(open => !open)}
+        activeMoreCount={activeMoreCount}
+        more={
+          <>
+            <div className="field wide">
+              <label>الحالة</label>
+              <div className="changes-filter-chips" role="group" aria-label="فلترة بالحالة">
+                {([
+                  // «الكل» يعدّ كل بطاقةٍ معروضة — فيها «قيد الإعداد» للأقسام التي لم
+                  // تبدأ بعد — لا الحالاتِ الثلاث وحدها، فلا يقول ٣ ويعرض ٥.
+                  ["all", "الكل", (rows || []).length],
+                  ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
+                  ["returned", "عند القسم", totals?.returned || 0],
+                  ["accepted", "معتمد", totals?.accepted || 0],
+                ] as Array<[typeof statusFilter, string, number]>).map(([value, label, count]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className="changes-chip"
+                    data-active={statusFilter === value || undefined}
+                    aria-pressed={statusFilter === value}
+                    data-guide-ignore="فلترة الوارد بالحالة — عرضٌ لا فعل، ولا يغيّر بيانات"
+                    onClick={() => setStatusFilter(value)}
+                  >
+                    {label}{count ? <b>{count}</b> : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="field wide">
+              <label>ما الذي يستحق الانتباه</label>
+              <div className="changes-filter-chips" role="group" aria-label="فلترة بما يستحق الانتباه">
+                {([
+                  ["late", "متأخّر عن الموعد", totals?.late || 0],
+                  ["blocking", "فيه موانع", 0],
+                  ["openNotes", "ملاحظات مفتوحة", 0],
+                  ["answered", "ردود تنتظر قرارك", 0],
+                  ["pendingAdditions", "شُعب تنتظر رئيس القسم", 0],
+                ] as Array<[string, string, number]>).map(([value, label, count]) => {
+                  const on = value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal);
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      className="changes-chip"
+                      data-active={on || undefined}
+                      aria-pressed={on}
+                      data-guide-ignore="فلترة الوارد بالإشارات — عرضٌ لا فعل، ولا يغيّر بيانات"
+                      onClick={() => value === "late" ? setLateOnly(flag => !flag) : toggleSignal(value as InboxAskSignal)}
+                    >
+                      {label}{count ? <b>{count}</b> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        }
+      />
+
 
       {visible.length === 0 ? (
-        <EmptyState title={query || statusFilter !== "all" ? "لا نتائج" : "لا وارد"} detail={query || statusFilter !== "all" ? "لا قسمَ يطابق البحث أو الفلتر الحالي." : "لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل."} />
+        <EmptyState
+          title={(rows || []).length ? "لا نتائج" : "لا وارد"}
+          detail={(rows || []).length
+            ? "لا قسمَ يطابق السؤال أو المرشّحات الحالية."
+            : "لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل."}
+          action={(rows || []).length ? (
+            <SecondaryButton type="button" data-guide-ignore="مسح المرشّحات — عرضٌ لا فعل" onClick={() => { setAsk(""); clearAll(); }}>
+              امسح المرشّحات
+            </SecondaryButton>
+          ) : undefined}
+        />
       ) : (
         <div className="changes-inbox">
           {visible.map(row => (
@@ -842,8 +967,12 @@ export default function ScheduleChanges({ role, scope }: Props) {
       <PageTitle
         eyebrow={<><Inbox aria-hidden="true" /> دورة الاعتماد</>}
         subtitle="ما تحرّك منذ المراجعة الأخيرة، لا الجدول كله"
+        /* الفصل نزل إلى شريط السؤال مع الكلية والقسم: ثلاثتُها تحدّد نطاقاً
+           واحداً، ففصلُها عن أختيها في ركن العنوان يجعل القارئ يبحث عن نطاقه
+           في موضعين. ويبقى هنا حين يُفتح تقريرُ قسمٍ بعينه، لأن الشريط عندها
+           لا يُعرض أصلاً. */
         action={
-          terms.length > 1 ? (
+          terms.length > 1 && active ? (
             <label className="changes-term-picker">
               <span>الفصل</span>
               <select value={termId || ""} onChange={(e) => setTermId(Number(e.target.value) || 0)}>
@@ -872,7 +1001,14 @@ export default function ScheduleChanges({ role, scope }: Props) {
         <Report key={reloadKey} termId={termId} scope={active} role={role} onBack={opened ? () => setOpened(null) : undefined} />
       ) : (
         <Surface>
-          <Inbox_ key={reloadKey} termId={termId} canExtend={role.canManageDeadline} onOpen={(row) => setOpened({ collegeId: row.collegeId, sectionId: row.sectionId, collegeName: row.collegeName, sectionName: row.sectionName })} />
+          <Inbox_
+            key={reloadKey}
+            termId={termId}
+            terms={terms}
+            onTermChange={(id) => setTermId(id)}
+            canExtend={role.canManageDeadline}
+            onOpen={(row) => setOpened({ collegeId: row.collegeId, sectionId: row.sectionId, collegeName: row.collegeName, sectionName: row.sectionName })}
+          />
         </Surface>
       )}
     </div>
