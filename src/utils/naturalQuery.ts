@@ -40,7 +40,13 @@ const ROOM_CODE = /([؀-ۿ]{1,3}|[A-Za-z]{1,3})\s*[-‑–]\s*(\d{1,4})/;
 // An edit, not a question: "انقل 101 إلى 11:00", "نقل 344 الاثنين 9". The course
 // code is the number that follows the verb; the destination is a time and/or day.
 const MOVE_WORDS = /(انقل|نقل|حرّك|حرك|رحّل|رحل)/;
-const MOVE_CODE = /(?:انقل|نقل|حرّك|حرك|رحّل|رحل)\s*(?:مقرر|الماد[ةه]|ماد[ةه]|شعب[ةه])?\s*(\d{2,4})/;
+// The space before the optional noun lives inside the optional group. Written
+// as `\s*(?:noun)?\s*`, two runs of whitespace sit side by side with only an
+// optional token between them, and a long run of spaces can be split between
+// them in as many ways as it is long — quadratic backtracking on a sentence
+// that never reaches a number. Inside the group there is only one way to read
+// it.
+const MOVE_CODE = /(?:انقل|نقل|حرّك|حرك|رحّل|رحل)(?:\s*(?:مقرر|الماد[ةه]|ماد[ةه]|شعب[ةه]))?\s*(\d{2,4})/;
 
 /** Arabic-Indic and Persian digits behave like ASCII digits everywhere here. */
 export function toEnglishDigits(value: string): string {
