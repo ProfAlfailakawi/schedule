@@ -11,7 +11,7 @@
 import fs from "fs";
 import path from "path";
 import {
-  APPROVAL_STATUS_LABEL, WHOLESALE_DELETE_RATIO, canSign, canSubmit, currentRound, daysBetween,
+  APPROVAL_STATUS_LABEL, WHOLESALE_DELETE_RATIO, blockingConflictPhrase, canSign, canSubmit, currentRound, daysBetween,
   describeWholesaleRefusal, emptyApproval, inboxPriority, isFullySigned, isWholesaleChange,
   lastReviewedVersionId, needsHeadAcknowledgement, readDeadline, signatureOf, statusAfterSignature,
   verificationCode,
@@ -63,6 +63,22 @@ const conflicted = canSign(base(), "committee", { blockingConflicts: 3, rowCount
 check(conflicted.ok === false && conflicted.code === "blocking-conflicts", "التعارض المادّي يمنع التوقيع");
 check(conflicted.ok === false && conflicted.message.includes("اللائحية لا تمنع"),
   "رسالة المنع تُفرّق بين التعارض واللائحة: القرار اللائحي لصاحب التوقيع");
+
+/* ── «خمسة تعارضات مادّي» ──────────────────────────────────────────────────
+ *
+ * العدُّ العربي يُغيّر صيغة المعدود، والوصفُ يتبع المعدود. فجمعُ عددٍ صحيحٍ إلى
+ * وصفٍ مفردٍ ثابت يُنتج ما لا يُقرأ — وهذه الجملة بالذات أكثرُ ما يُقرأ في هذه
+ * الدورة: هي التي تقف في وجه التوقيع وتُقال لرئيس القسم.
+ *
+ * ولم يُظهرها اختبارٌ ولا مترجم؛ ظهرت أوّلَ ما شُغّل النظام. */
+check(blockingConflictPhrase(1) === "تعارض مادّي واحد", "الواحد يُقرأ مفرداً");
+check(blockingConflictPhrase(2) === "تعارضان مادّيان", "والاثنان مثنّى، والوصف يتبعهما");
+check(blockingConflictPhrase(5).includes("تعارضات مادّية"), "وجمعُ القلّة يجرّ وصفَه إلى الجمع");
+check(blockingConflictPhrase(11).includes("تعارضاً مادّياً"), "وما جاوز العشرة يُنصب هو ووصفُه");
+for (const count of [1, 2, 3, 5, 10, 11, 25, 100]) {
+  check(!/تعارضات مادّي\b/.test(blockingConflictPhrase(count)) && !/تعارضاً مادّي\b/.test(blockingConflictPhrase(count)),
+    `ولا يفترق الوصفُ عن موصوفه عند ${count}`);
+}
 
 /* هذه هي القاعدة التي صُحّحت بعد المراجعة: اللائحة معيارٌ يُحتجّ به، لا بوّابة. */
 for (const notices of [1, 5, 20, 100]) {

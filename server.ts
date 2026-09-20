@@ -22,7 +22,7 @@ import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQue
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import {
-  APPROVAL_STATUS_LABEL, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
+  APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
@@ -8637,7 +8637,7 @@ app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest,
     if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
     const blocking = await blockingConflictCount(collegeId, sectionId, termId);
     if (blocking > 0) {
-      res.status(409).json({ error: `لا يُقبل جدولٌ فيه ${blocking} تعارضٌ مادّي. أرجِعه للقسم لمعالجته.`, code: "blocking-conflicts" });
+      res.status(409).json({ error: `لا يُقبل جدولٌ فيه ${blockingConflictPhrase(blocking)}. أرجِعه للقسم لمعالجته.`, code: "blocking-conflicts" });
       return;
     }
     const actor = approvalActor(req);

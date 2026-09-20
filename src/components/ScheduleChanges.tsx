@@ -19,7 +19,7 @@ import {
   FileDiff, Inbox, MessageSquarePlus, Scale, Send, ShieldCheck, Trash2, X,
 } from "lucide-react";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
+import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
@@ -383,7 +383,7 @@ function Report({ termId, scope, role, onBack }: {
 
       {report.blockingConflicts > 0 ? (
         <Notice type="error">
-          <AlertTriangle aria-hidden="true" /> {report.blockingConflicts} تعارضٌ مادّي يمنع الاعتماد. لا يُقبل الجدول قبل معالجته.
+          <AlertTriangle aria-hidden="true" /> {blockingConflictPhrase(report.blockingConflicts)} يمنع الاعتماد. لا يُقبل الجدول قبل معالجته.
         </Notice>
       ) : null}
 

@@ -16,7 +16,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CornerUpLeft, Scale, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
-import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
+import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
 interface DeadlineShape {
@@ -252,7 +252,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
       {blockingConflicts > 0 && canSignNow ? (
         <Notice type="error">
-          {blockingConflicts} تعارضٌ مادّي يمنع الاعتماد. أمّا الملاحظات اللائحية فلا تمنع التوقيع.
+          {blockingConflictPhrase(blockingConflicts)} يمنع الاعتماد. أمّا الملاحظات اللائحية فلا تمنع التوقيع.
         </Notice>
       ) : null}
       {showNotices ? (

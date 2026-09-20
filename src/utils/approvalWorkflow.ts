@@ -22,6 +22,25 @@ import type {
 } from "../types";
 import { AR, countOf } from "./arabicCount";
 
+/**
+ * ── «خمسة تعارضات مادّي» ────────────────────────────────────────────────────
+ *
+ * العدُّ العربي يُغيّر صيغة المعدود، والوصفُ يتبع المعدود. فجمعُ عددٍ صحيحٍ إلى
+ * وصفٍ مفردٍ ثابت يُنتج ما لا يُقرأ — وهذه الجملةُ بالذات أكثرُ ما يُقرأ في هذه
+ * الدورة: هي التي تقف في وجه التوقيع وتُقال لرئيس القسم.
+ *
+ * فالوصفُ داخلٌ في المعدود، يتبعه في صيغته كما يقتضي اللسان.
+ */
+const BLOCKING_CONFLICT = {
+  one: "تعارض مادّي", two: "تعارضان مادّيان",
+  few: "تعارضات مادّية", many: "تعارضاً مادّياً",
+} as const;
+
+/** «تعارضٌ مادّي» أو «خمسة تعارضات مادّية» — من موضعٍ واحد لكل من يقولها. */
+export function blockingConflictPhrase(count: number): string {
+  return countOf(count, BLOCKING_CONFLICT);
+}
+
 export const APPROVAL_STATUS_LABEL: Record<ScheduleApprovalStatus, string> = {
   drafting: "قيد الإعداد",
   committee: "موقّع من اللجنة",
@@ -97,7 +116,7 @@ export function canSign(
   if (context.blockingConflicts > 0) {
     return {
       ok: false, code: "blocking-conflicts",
-      message: `يوجد ${countOf(context.blockingConflicts, AR.conflict)} مادّي يمنع الاعتماد. `
+      message: `يوجد ${blockingConflictPhrase(context.blockingConflicts)} يمنع الاعتماد. `
         + "الملاحظات اللائحية لا تمنع، أمّا التعارض فلا يُوقَّع عليه.",
     };
   }
