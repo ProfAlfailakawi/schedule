@@ -4790,7 +4790,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .schedule-guide-card{width:min(720px,100%);display:grid;gap:18px;padding:22px;border:1px solid var(--line);border-radius:28px;background:var(--surface);box-shadow:var(--shadow-lg)}
 .schedule-guide-card>header{display:grid;grid-template-columns:auto 1fr auto;gap:13px;align-items:center}.schedule-guide-card>header>div{display:grid;gap:2px}.schedule-guide-card>header small{color:var(--muted);font-size:var(--t-xs)}.schedule-guide-card>header strong{font-size:var(--t-lg)}.schedule-guide-card>header button{border:0;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer}.schedule-guide-mark{width:44px;height:44px;border-radius:16px;display:grid;place-items:center;color:var(--accent);background:var(--accent-softer)}
 .schedule-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.schedule-guide-grid article{display:flex;gap:11px;align-items:center;min-width:0;padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2)}.schedule-guide-grid article>svg{width:19px;height:19px;flex:none;color:var(--accent)}.schedule-guide-grid article>span{display:grid;gap:2px;min-width:0}.schedule-guide-grid article strong{font-size:var(--t-sm)}.schedule-guide-grid article small{color:var(--muted);font-size:var(--t-xs);white-space:normal;line-height:1.55}
-.schedule-guide-card>footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:2px}.schedule-guide-card>footer>span{color:var(--muted);font-size:var(--t-xs);line-height:1.6}.schedule-guide-card>footer>button{border:0;border-radius:999px;background:var(--accent);color:var(--accent-contrast);padding:10px 18px;font:650 var(--t-xs)/1 var(--font);cursor:pointer;white-space:nowrap}
+.schedule-guide-card>footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:2px}.schedule-guide-card>footer>span{color:var(--muted);font-size:var(--t-xs);line-height:1.6}.schedule-guide-card>footer>button{border:0;border-radius:999px;background:var(--accent);color:var(--accent-contrast);padding:10px 18px;font:650 var(--t-xs)/1 var(--font-ui);cursor:pointer;white-space:nowrap}
 .schedule-ops-strip{display:flex;align-items:center;flex-wrap:wrap;gap:7px;min-height:24px}.schedule-ops-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:10px}.schedule-ops-pill svg{width:13px;height:13px}.schedule-ops-pill b{font-weight:600;color:var(--ink-2)}.schedule-ops-pill.ok{border-color:color-mix(in srgb,var(--success) 28%,var(--line));background:color-mix(in srgb,var(--success-soft) 64%,var(--surface))}.schedule-ops-pill.warn{border-color:color-mix(in srgb,var(--warning) 30%,var(--line));background:color-mix(in srgb,var(--warning-soft) 60%,var(--surface))}.schedule-ops-pill.protected svg{color:var(--success)}
 
 /* Context intelligence is deliberately four compact facts, not a second
@@ -4809,7 +4809,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .historical-time-dialog{width:min(470px,100%);display:grid;gap:16px;padding:22px;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:26px;background:linear-gradient(180deg,var(--surface),var(--surface-2));box-shadow:0 28px 90px rgba(15,23,42,.24)}
 .historical-time-dialog header{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:12px}.historical-time-dialog header>span{width:42px;height:42px;border-radius:15px;display:grid;place-items:center;background:var(--accent-softer);color:var(--accent)}.historical-time-dialog header svg{width:20px;height:20px}.historical-time-dialog header div{display:grid;gap:2px}.historical-time-dialog header small{font-size:10px;color:var(--muted)}.historical-time-dialog header strong{font-size:var(--t-sm)}
 .historical-time-compare{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;padding:15px;border-radius:18px;background:var(--surface-3);font-variant-numeric:tabular-nums}.historical-time-compare b,.historical-time-compare strong{font-size:clamp(20px,4vw,28px);text-align:center}.historical-time-compare b{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}.historical-time-compare strong{color:var(--accent)}.historical-time-compare svg{width:18px;height:18px;color:var(--muted)}
-.historical-time-dialog p{margin:0;color:var(--muted);font-size:var(--t-xs);line-height:1.8}.historical-time-dialog p b{color:var(--ink)}.historical-time-dialog footer{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}.historical-time-dialog footer button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;background:var(--surface);color:var(--ink);font:650 var(--t-xs)/1 var(--font);cursor:pointer}.historical-time-dialog footer button.primary{border-color:var(--accent);background:var(--accent);color:var(--accent-contrast)}
+.historical-time-dialog p{margin:0;color:var(--muted);font-size:var(--t-xs);line-height:1.8}.historical-time-dialog p b{color:var(--ink)}.historical-time-dialog footer{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}.historical-time-dialog footer button{border:1px solid var(--line);border-radius:999px;padding:10px 15px;background:var(--surface);color:var(--ink);font:650 var(--t-xs)/1 var(--font-ui);cursor:pointer}.historical-time-dialog footer button.primary{border-color:var(--accent);background:var(--accent);color:var(--accent-contrast)}
 
 /* Rooms uses the week visual language: one legend, one drag answer, one physics. */
 .rooms-legend{margin:var(--s3) 0 var(--s4);background:color-mix(in srgb,var(--surface-2) 70%,transparent);border-color:color-mix(in srgb,var(--line-strong) 58%,var(--line));}
@@ -4829,7 +4829,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .context-life-details-grid .context-life-wide{grid-column:1/-1}
 .context-life-details-grid .context-life-wide strong{overflow:visible;text-overflow:clip;white-space:normal;direction:ltr;unicode-bidi:isolate}
 .context-life-details-grid section>div>strong[dir="ltr"]{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums lining-nums}
-.context-life-details-grid header b[dir="ltr"]{direction:ltr;unicode-bidi:isolate}.context-life-details-grid header b span{font-family:var(--font);font-weight:650}
+.context-life-details-grid header b[dir="ltr"]{direction:ltr;unicode-bidi:isolate}.context-life-details-grid header b span{font-family:var(--font-ui);font-weight:650}
 
 /* Rooms now borrows the week's exact interaction language.
    Empty slots invite creation only at rest; the moment a lecture is lifted,
@@ -7258,7 +7258,7 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
 .context-tabs button{
   min-height:36px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
   border:0;border-radius:11px;background:transparent;color:var(--muted);
-  font:650 11px/1 var(--font);cursor:pointer;
+  font:650 11px/1 var(--font-ui);cursor:pointer;
 }
 .context-tabs button svg{width:14px;height:14px}
 .context-tabs button.active{background:var(--surface);color:var(--ink);box-shadow:0 4px 16px rgba(20,45,38,.06)}
@@ -7283,7 +7283,7 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
   position:absolute;z-index:120;inset-block-start:-24px;
   inset-inline:0;margin-inline:auto;width:fit-content;
   padding:4px 8px;border-radius:999px;
-  background:var(--accent);color:var(--accent-contrast);font:750 10px/1 var(--font);
+  background:var(--accent);color:var(--accent-contrast);font:750 10px/1 var(--font-ui);
   box-shadow:0 8px 22px rgba(20,45,38,.18);pointer-events:none;white-space:nowrap;
 }
 

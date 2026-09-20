@@ -2661,7 +2661,7 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
 .mobile-desktop-gate{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:color-mix(in srgb,#06110e 54%,transparent);backdrop-filter:blur(8px)}
 .mobile-desktop-gate-card{width:min(92vw,440px);display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s3);align-items:start;padding:22px;border:1px solid color-mix(in srgb,var(--accent) 32%,var(--line));border-radius:24px;background:var(--surface);box-shadow:0 24px 80px rgba(0,0,0,.24)}
 .mobile-desktop-gate-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:14px;background:var(--accent-softer);color:var(--accent)}.mobile-desktop-gate-icon svg{width:22px;height:22px}
-.mobile-desktop-gate-card strong{display:block;font-size:18px}.mobile-desktop-gate-card p{margin:6px 0 0;color:var(--muted);font-size:13px;line-height:1.75}.mobile-desktop-gate-card>button{grid-column:1/-1;min-height:44px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-contrast);font:700 14px/1 var(--font);cursor:pointer}
+.mobile-desktop-gate-card strong{display:block;font-size:18px}.mobile-desktop-gate-card p{margin:6px 0 0;color:var(--muted);font-size:13px;line-height:1.75}.mobile-desktop-gate-card>button{grid-column:1/-1;min-height:44px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-contrast);font:700 14px/1 var(--font-ui);cursor:pointer}
 
 @media screen and (max-width:900px){
   .room-intelligence .intel-rank-list,.professor-intelligence .professor-load-list,.spatial-risk-list{grid-template-columns:1fr}
