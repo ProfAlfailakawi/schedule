@@ -30,8 +30,15 @@ const guard = server.slice(
 check(guard.length > 300, "حارسُ التعديل مقروءٌ للتدقيق");
 check(guard.includes("req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number,"),
   "ويعرف من يطلب، لا النطاقَ وحدَه — فالمنعُ يختلف بالصفة");
-check(guard.includes('term?.AdTermClosed === true && signatureStage(req.user?.Role) !== "committee"'),
+check(guard.includes('term?.AdTermClosed === true && !isCommittee'),
   "وفصلٌ انتهى لا يُعدَّل إلا من لجنة الجدول");
+/* ── واللجنةُ تُعرف بصفتها المكتوبة، لا بالافتراض ──────────────────────────
+ * `signatureStage` تسقط إلى `committeeChair` حين لا تُعرف الصفة، فحسابٌ بلا
+ * صفةٍ مكتوبة يُقرأ «لجنة». وحسابُ الإدارة الجذر من هؤلاء عن قصد — الترحيلُ
+ * يستثنيه — فكان يمرّ من فوق التجميد كلِّه بلا أن يرفع العلامة، ويسقط معه
+ * البابُ الظاهرُ المسجَّل الذي وُضع ليكون الطريقَ الوحيد. */
+check(guard.includes("const isCommittee = isAcademicRole(role) && signatureStage(role) === \"committee\";"),
+  "وتُشترط صفةٌ مكتوبةٌ صراحةً، فلا يمرّ حسابٌ بلا صفةٍ لأن الغيابَ يسقط إلى اللجنة");
 check(guard.includes("انتهى هذا الفصل."),
   "ويُقال السببُ بلفظه، لا «غير مسموح»");
 

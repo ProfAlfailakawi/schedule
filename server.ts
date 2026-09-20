@@ -8382,8 +8382,19 @@ async function scheduleLockRefusal(
    * ولجنةُ الجدول تعمل فيه: هي التي تجرّب وتصحّح. ومن سواها يقرأ ويطبع
    * ويستعلم — ولا يكتب. ومن أراد فتحَه يرفع العلامةَ من شاشة الفصول، وذلك
    * فعلٌ ظاهرٌ مسجَّل، لا بابٌ خلفيّ. */
+  /* ── واللجنةُ تُعرف بصفتها المكتوبة، لا بالافتراض ────────────────────────
+   *
+   * `signatureStage` تسقط إلى صفةٍ افتراضيةٍ حين لا تُعرف الصفة — وهي
+   * `committeeChair` — فحسابٌ بلا صفةٍ مكتوبة يُقرأ «لجنة». وحسابُ الإدارة
+   * الجذر من هؤلاء عن قصد: الترحيلُ يستثنيه من إسناد الصفات. فكان يمرّ من
+   * فوق هذا التجميد كلِّه بلا أن يرفع العلامة، ويسقط معه البابُ الظاهرُ
+   * المسجَّل الذي وُضع ليكون الطريقَ الوحيد.
+   *
+   * فالشرطُ صفةٌ مكتوبةٌ صراحةً، لا صفةٌ يُسقط إليها الغياب. */
+  const role = req.user?.Role;
+  const isCommittee = isAcademicRole(role) && signatureStage(role) === "committee";
   const term = (await Repository.getTerms()).find(row => Number(row.AdTermId) === Number(termId));
-  if (term?.AdTermClosed === true && signatureStage(req.user?.Role) !== "committee") {
+  if (term?.AdTermClosed === true && !isCommittee) {
     return "انتهى هذا الفصل. جدولُه محفوظٌ للاطّلاع والتقارير، ولجنةُ الجدول وحدَها تعمل فيه.";
   }
 
