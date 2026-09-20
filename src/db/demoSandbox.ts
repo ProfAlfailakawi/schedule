@@ -40,6 +40,11 @@ export interface DemoSandboxState {
   auditLogs: any[]; scheduleVersions: any[]; scheduleDrafts: any[]; scheduleOpenDecisions: any[]; clientTelemetry: any[];
   scheduleComments: any[]; studentNeeds: any[]; schedulePublications: any[]; scheduleConstraints: any[]; visitingRosters: any[]; departmentDelegates: any[]; departmentRooms: any[];
   scheduleDecisionMemories: any[]; campusMobilityProfiles: any[]; scheduleShareLinks: any[]; hallBarterRequests: any[];
+  /* دورة الاعتماد تعمل في البيئة التجريبية كما تعمل في الحقيقية: المدير يجرّب
+     الدورة كاملةً — توقيعاً وإرسالاً وإرجاعاً وقبولاً — بحساباتٍ وهمية قبل أن
+     يسلّم العميدَ حسابَه. ومجموعةٌ غائبةٌ هنا تعني شاشةً تنكسر في التجربة
+     وحدها، وهو أسوأ موضعٍ ينكسر فيه شيء: حيث يُختبر. */
+  scheduleApprovals: any[];
 }
 
 function syntheticInstructors(): AdInstructor[] {
@@ -128,6 +133,6 @@ export function createDemoSandboxState(): DemoSandboxState {
     schedules: syntheticSchedules(courses), rooms,
     auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [],
     studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [],
-    campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [],
+    campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: [],
   };
 }
