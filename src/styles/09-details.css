@@ -436,7 +436,10 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 }
 
 /* Which kind of link is being made — chosen before anything else about it. */
-.share-kind{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+/* ثلاثةُ أبوابٍ لا اثنان، فالعمودان الثابتان يتركان الثالثَ وحيداً بعرض
+   نصف الورقة. والمقاسُ الأدنى يُبقيها صفّاً واحداً حيث تتّسع، وينزل بها
+   إلى سطرين حيث لا تتّسع، بلا عددٍ مكتوبٍ يلزم تغييرُه عند البابِ الرابع. */
+.share-kind{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s2)}
 .share-kind button{
   min-width:0;
   display:grid;justify-items:start;gap:2px;

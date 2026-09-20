@@ -36,6 +36,14 @@ interface Props {
    * كأن الحساب يحمل نطاقاتٍ ليست له.
    */
   scopes: Array<{ AdCollegeId: number; AdSectionId: number; AdCollegeName?: string; AdSectionName?: string }>;
+  /**
+   * صاحبُ الصلاحية الكاملة لا نطاقَ له لأن له الكلّ.
+   *
+   * وبناءُ القوائم من النطاق وحدَه كان يُريه الكليتين المسندتين إليه فقط،
+   * فيظنّ أن النظام لا يعرف غيرهما. والقاعدةُ مستقرّةٌ في الشاشات القديمة:
+   * الكتالوجُ كاملاً لمن له الكلّ، ومُصفّىً بالنطاق لمن سواه.
+   */
+  powerAdmin?: boolean;
 }
 
 interface CaseCourse {
@@ -135,7 +143,7 @@ function RejectSheet({ course, busy, onClose, onSubmit }: {
 
 /* ── الشاشة ─────────────────────────────────────────────────────────────── */
 
-export default function StudentRegistration({ scopes }: Props) {
+export default function StudentRegistration({ scopes, powerAdmin = false }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
   const [collegeId, setCollegeId] = useState(0);
@@ -147,6 +155,24 @@ export default function StudentRegistration({ scopes }: Props) {
   const [ask, setAsk] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<{ row: CaseRow; course: CaseCourse } | null>(null);
+  const [catalog, setCatalog] = useState<{
+    colleges: Array<{ AdCollegeId: number; AdCollegeName: string }>;
+    sections: Array<{ AdSectionId: number; AdCollegeId: number; AdSectionName: string }>;
+  } | null>(null);
+
+  /* ولا يُقرأ الكتالوجُ إلا لمن يحتاجه: من له نطاقٌ يكفيه نطاقُه. */
+  useEffect(() => {
+    if (!powerAdmin) { setCatalog(null); return; }
+    void (async () => {
+      try {
+        const [colleges, sections] = await Promise.all([request("/api/colleges"), request("/api/sections")]);
+        setCatalog({
+          colleges: Array.isArray(colleges) ? colleges : (colleges.colleges || []),
+          sections: Array.isArray(sections) ? sections : (sections.sections || []),
+        });
+      } catch { setCatalog(null); }
+    })();
+  }, [powerAdmin]);
 
   useEffect(() => {
     void (async () => {
@@ -160,10 +186,11 @@ export default function StudentRegistration({ scopes }: Props) {
   }, []);
 
   useEffect(() => {
-    if (collegeId || !scopes.length) return;
+    /* ومن له الكلُّ لا يُختار له شيء. */
+    if (collegeId || powerAdmin || !scopes.length) return;
     setCollegeId(Number(scopes[0].AdCollegeId) || 0);
     if (scopes.length === 1) setSectionId(Number(scopes[0].AdSectionId) || 0);
-  }, [scopes, collegeId]);
+  }, [scopes, collegeId, powerAdmin]);
 
   const load = useCallback(async () => {
     if (!collegeId || !sectionId || !termId) { setRows(null); return; }
@@ -179,15 +206,28 @@ export default function StudentRegistration({ scopes }: Props) {
   useEffect(() => { void load(); }, [load]);
 
   const collegeOptions = useMemo(() => {
+    if (catalog) {
+      return catalog.colleges
+        .map(row => ({ value: Number(row.AdCollegeId), label: String(row.AdCollegeName || `كلية ${row.AdCollegeId}`) }))
+        .filter(item => item.value)
+        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    }
     const seen = new Map<number, string>();
     for (const scope of scopes) {
       const id = Number(scope.AdCollegeId);
       if (id && !seen.has(id)) seen.set(id, String(scope.AdCollegeName || `كلية ${id}`));
     }
     return [...seen].map(([value, label]) => ({ value, label }));
-  }, [scopes]);
+  }, [scopes, catalog]);
 
   const sectionOptions = useMemo(() => {
+    if (catalog) {
+      return catalog.sections
+        .filter(row => !collegeId || Number(row.AdCollegeId) === collegeId)
+        .map(row => ({ value: Number(row.AdSectionId), label: String(row.AdSectionName || `قسم ${row.AdSectionId}`) }))
+        .filter(item => item.value)
+        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    }
     const seen = new Map<number, string>();
     for (const scope of scopes) {
       if (collegeId && Number(scope.AdCollegeId) !== collegeId) continue;
@@ -195,7 +235,7 @@ export default function StudentRegistration({ scopes }: Props) {
       if (id && !seen.has(id)) seen.set(id, String(scope.AdSectionName || `قسم ${id}`));
     }
     return [...seen].map(([value, label]) => ({ value, label }));
-  }, [scopes, collegeId]);
+  }, [scopes, collegeId, catalog]);
 
   /* رقمُ الحالة أولاً، ثم الاسم، ثم الرقم المدني: هذا ترتيبُ ما يحمله من يقف
      أمام الموظّف. والمطابقةُ بلا حساسيةٍ لحالة الأحرف لأن الرقم يُكتب كيفما

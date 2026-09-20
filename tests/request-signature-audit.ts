@@ -38,8 +38,14 @@ check(route.includes('const civil = asciiDigits(req.body?.civil)'),
   "الإرسالُ يقرأ الرقمَ المدني");
 check(route.includes("validateCivilId(civil)"),
   "ويُتحقَّق من صحّته بالخوارزمية الكويتية، فلا يمرّ رقمٌ مخترع");
-check(route.includes('String(signer.AdInstructorCivil).replace(/\\D/g, "") !== civil'),
+check(route.includes("const storedCivil = asciiDigits(signer?.AdInstructorCivil)")
+  && route.includes("if (!storedCivil || storedCivil !== civil)"),
   "ويُطابَق بسجلّ صاحب الرابط نفسِه — وهو ما يجعله توقيعاً");
+/* والرقمُ المخزونُ يُطبَّع كما يُطبَّع المُرسَل: سجلٌّ كُتب بأرقامٍ عربيةٍ أو
+   فارسية — وبابُ الأساتذة يقبلها — كان يُمحى كلُّه فلا يطابق شيئاً أبداً،
+   وصاحبُه يدخل رقمَه الصحيح فيُردّ مرّةً بعد مرّة. */
+check(!/String\(signer\.AdInstructorCivil\)\.replace/.test(route),
+  "ولا يُقارَن رقمٌ مخزونٌ بلا تطبيع");
 
 /* والترتيبُ شرط: حارسٌ بعد الحفظ ليس حارساً. */
 check(route.indexOf("لا يطابق صاحب هذا الرابط") < route.indexOf("saveInstructorRequest"),

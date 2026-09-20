@@ -254,6 +254,27 @@ check(changes.includes("function ScheduleRowCard("),
   "وللصفّ مُصيّرٌ واحد، يلبسه الطرفان — ما تحرّك والجدولُ كامل");
 check(changes.includes('<article className="agenda-card changes-row"'),
   "وهو `agenda-card` بأصنافه نفسِها، لا شكلٌ يشبهه فيفترق عنه عند أول تحسين");
+/* ── وأين وقع التغييرُ بالضبط ─────────────────────────────────────────────
+ * قائمةٌ تحت الصفّ تقول «القاعة: من ١٢٠ إلى ١٢٤» تجعل القارئ يقرأ الصفَّ ثم
+ * القائمةَ ثم يربط بينهما بعينه — وهو ربطٌ يُخطئ فيه من يراجع عشرين قسماً في
+ * كل جولة. فالتغييرُ يُعلَّم في خانته نفسِها، حيث يقرأ القارئُ تلك القيمة. */
+check(changes.includes('<span className="changes-moved"'),
+  "والتغييرُ يُعلَّم في خانته: القديمُ مشطوبٌ والجديدُ بعده");
+check(changes.includes('const moved = new Map((changes || []).map(change => [change.field, change]));'),
+  "وكلُّ خانةٍ تسأل عن نفسها، فلا يُعلَّم ما لم يتحرّك");
+check(!changes.includes('<dl className="changes-fields">'),
+  "ولم تبقَ القائمةُ المكرّرةُ تحته، فلا يُقرأ الشيءُ مرّتين");
+check(changes.includes('data-changed={moved.has("time") || undefined}')
+  && changes.includes('data-changed={moved.has("room") || undefined}')
+  && changes.includes('data-changed={moved.has("days") || undefined}')
+  && changes.includes('data-changed={moved.has("instructor") || undefined}'),
+  "والخاناتُ الأربعُ تُلمَّح، فتجدها العينُ قبل أن تقرأ");
+/* والأيامُ بأسمائها: «ح ث» اختصارٌ يعرفه من وضعه. */
+check(server.includes('const namedDays = (row: any) =>') && server.includes('["fsunday", "الأحد"]'),
+  "والأيامُ بأسمائها كما تُقرأ في الجدول الدراسيّ نفسِه");
+check(server.includes('days: namedDays(row) || "بدون أيام",'),
+  "وتصل الشاشةَ كذلك");
+
 check(changes.includes('<div className="agenda-index">') && changes.includes('className="code-chip"')
   && changes.includes('<div className="agenda-time"') && changes.includes('<div className="agenda-place"'),
   "فيه الرقمُ ورمزُ المقرّر والوقتُ والمكان، كما هناك");

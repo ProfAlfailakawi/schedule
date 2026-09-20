@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpLeft, CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
+import { ArrowUpLeft, CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, MessageSquarePlus, QrCode, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
@@ -13,10 +13,20 @@ interface ShareLink {
   revoked?: boolean;
   views: number;
   showInstructors: boolean;
-  kind?: "department" | "staff" | "survey";
+  kind?: "department" | "staff" | "survey" | "request";
 }
 
-type Kind = "department" | "staff";
+/**
+ * ── ثلاثةُ أبوابٍ لا اثنان ──────────────────────────────────────────────────
+ *
+ * كان هنا بابان، وكلاهما قراءةٌ فقط: جدولُ القسم، وبطاقةُ الأستاذ. فمن فتح
+ * «نشر» بحثاً عن البابِ الذي يعدّل منه الأستاذُ جدولَه لم يجده — لأنه لم يكن
+ * موجوداً في الواجهة أصلاً، وإن كان مسارُه في الخادم كاملاً.
+ *
+ * و«رغبات الأساتذة» هو البابُ الثالث: لكلِّ أستاذٍ رابطُه هو، يفتح فيه جدوله
+ * ويطلب تعديله، ولا يرى جدول غيره. والقرارُ يبقى للقسم.
+ */
+type Kind = "department" | "staff" | "request";
 type PublishStep = "kind" | "options" | "links";
 
 interface Props {
@@ -77,6 +87,10 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     [error, setError] = useState<string | null>(null),
     [step, setStep] = useState<PublishStep>("kind"),
     [createdId, setCreatedId] = useState<string | null>(null),
+    /* بابُ الرغبات لا يُقاس بالأيام بل بتاريخٍ يُكتب: الأستاذُ يقرأ «آخر موعد
+       ٢٠٢٦-١٠-٠٥» ولا يقرأ «٣٠ يوماً من متى». */
+    [closesAt, setClosesAt] = useState(""),
+    [issued, setIssued] = useState<{ created: number; reissued: number } | null>(null),
     [qr, setQr] = useState<{ id: string; svg: string } | null>(null);
 
   const scoped = Boolean(collegeId && sectionId && termId);
@@ -97,7 +111,46 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     if (open) void load();
   }, [open, collegeId, sectionId, termId]);
 
+  /* ── ولا تبقى نتيجةُ الإصدار معلّقةً على فعلٍ آخر ─────────────────────────
+   * «أُصدر ١٢ رابطاً» كانت تبقى بعد إغلاق اللوحة وفتحِها على نطاقٍ آخر، أو
+   * بعد إنشاء رابط قراءةٍ عادي — فتُقرأ خبراً عن الفعل الجاري وهي خبرٌ عن
+   * فعلٍ مضى، ويظنّ المنسّقُ أنه أرسل لهذا القسم وقد أرسل لغيره. */
+  useEffect(() => { setIssued(null); }, [open, collegeId, sectionId, termId, kind]);
+
+  /**
+   * إصدارُ روابط الرغبات.
+   *
+   * ليس رابطاً واحداً يُنسخ، بل رابطٌ لكل أستاذٍ في الجدول — ولذلك لا يمرّ
+   * بـ`/api/share` ولا يظهر في قائمة الروابط: يُصدَر ويُتابَع في «وارد
+   * الأساتذة»، ويُرسل لكلِّ أستاذٍ رابطُه من هناك.
+   */
+  const issueRequests = async () => {
+    if (!closesAt) { setError("اكتب آخر موعدٍ لاستقبال الطلبات."); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/instructor-requests/issue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId, closesAt, source: "draft" }),
+      });
+      const data = await readReply(response, "تعذر إصدار الروابط");
+      const rows: Array<{ reissued?: boolean }> = data?.issued || [];
+      /* والفرقُ يُقال: مُصدَرٌ جديدٌ ومُعادٌ صاحبُه يحمل رابطَه من قبل. فلا
+         يظنُّ القسمُ أنه أرسل لعشرين وقد أرسل لثلاثة. */
+      const reissued = rows.filter(row => row.reissued).length;
+      setIssued({ created: rows.length - reissued, reissued });
+      setCreatedId(null);
+      setStep("links");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const create = async () => {
+    if (kind === "request") { await issueRequests(); return; }
     setBusy(true);
     setError(null);
     try {
@@ -109,6 +162,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
       const data = await readReply(response, "تعذر إنشاء الرابط");
       setLinks(current => [data, ...current]);
       setCreatedId(data.id);
+      setIssued(null);
       setStep("links");
     } catch (e: any) {
       setError(e.message);
@@ -183,7 +237,16 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     window.setTimeout(() => setCopied(current => (current === id ? null : current)), 1800);
   };
 
-  const publicationLinks = links.filter(link => link.kind !== "survey");
+  /* ── ما يُعرض في هذه القائمة ────────────────────────────────────────────
+   *
+   * روابطُ الطلب ليست منها، وإن كانت في المخزن نفسه: هي رابطٌ لكلِّ أستاذٍ
+   * على حدة يُرسل من «وارد الأساتذة»، لا رابطٌ واحدٌ يُنسخ من هنا. وعرضُها
+   * كان يعطيها أزرارَ هذه القائمة — نسخٌ ورمزٌ وتقويم — وكلُّها تبني `/s/`،
+   * فينسخ المنسّقُ رابطاً يُفتح على جدول القسم كاملاً بدل نموذج صاحبه.
+   *
+   * وبابُ `/s/` صار يردّ رمزَ الطلب إلى بابه، فالحارسان اثنان: هنا لا تُعرض،
+   * وهناك لا تُفتح. */
+  const publicationLinks = links.filter(link => link.kind !== "survey" && link.kind !== "request");
   const active = publicationLinks.filter(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now());
 
   /**
@@ -326,6 +389,18 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   <span>بطاقة الأستاذ</span>
                   <small>كل أستاذ يرى جدوله برقمه المدني</small>
                 </button>
+                {/* البابُ الثالث، وهو الوحيدُ الذي يُعدَّل منه. */}
+                <button
+                  type="button"
+                  className={kind === "request" ? "active" : ""}
+                  onClick={() => setKind("request")}
+                  data-guide-feature-id="schedule.publish"
+                  aria-pressed={kind === "request"} title="رغبات الأساتذة"
+                >
+                  <MessageSquarePlus aria-hidden="true" />
+                  <span>رغبات الأساتذة</span>
+                  <small>كل أستاذ يفتح جدوله ويطلب تعديله — والقرار لكم</small>
+                </button>
               </div>
               <div className="share-step-actions">
                 <PrimaryButton type="button" onClick={() => setStep("options")}>
@@ -343,9 +418,25 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               <header className="share-step-head">
                 <small>الخطوة 2 من 3</small>
                 <h3 id="publish-step-options-title">مدة الرابط وما سيظهر فيه</h3>
-                <p>{kind === "department" ? "رابط قراءة عام للجدول ضمن الصلاحية المحددة." : "مدخل واحد آمن يفتح لكل أستاذ بطاقته فقط."}</p>
+                <p>{kind === "department"
+                  ? "رابط قراءة عام للجدول ضمن الصلاحية المحددة."
+                  : kind === "request"
+                    ? "يُصدَر لكل أستاذٍ رابطُه هو. لا يرى جدول غيره، ولا يختار قاعةً — القرار لكم."
+                    : "مدخل واحد آمن يفتح لكل أستاذ بطاقته فقط."}</p>
               </header>
               <div className="share-compose">
+                {kind === "request" ? (
+                  /* موعدٌ يُكتب لا مدّةٌ تُحسب: الأستاذُ يقرأ تاريخاً، لا
+                     «ثلاثين يوماً من متى». */
+                  <label className="share-closes">
+                    <span>آخر موعد لاستقبال الطلبات</span>
+                    <input
+                      type="date"
+                      value={closesAt}
+                      onChange={event => setClosesAt(event.target.value)}
+                    />
+                  </label>
+                ) : (
                 <div className="share-days" role="group" aria-label="مدة الصلاحية">
                   {DAY_CHOICES.map(choice => (
                     <button
@@ -360,25 +451,35 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                     </button>
                   ))}
                 </div>
+                )}
                 {kind === "department" ? (
                   <label className="share-toggle">
                     <input type="checkbox" checked={showInstructors} onChange={event => setShowInstructors(event.target.checked)} />
                     <span>إظهار أسماء الأساتذة</span>
                   </label>
+                ) : kind === "request" ? (
+                  <p className="share-kind-note">لكل أستاذٍ رابطُه وحده. تُتابع من فتح ومن أرسل في «وارد الأساتذة».</p>
                 ) : (
                   <p className="share-kind-note">رابط واحد يكفي القسم كله — لا حسابات ولا كلمات سر.</p>
                 )}
               </div>
               <dl className="share-choice-summary" aria-label="ملخص إعداد الرابط">
-                <div><dt>النوع</dt><dd>{kind === "department" ? "جدول القسم" : "بطاقات الأساتذة"}</dd></div>
-                <div><dt>الصلاحية</dt><dd>{days.toLocaleString("ar-KW-u-nu-latn")} يوم</dd></div>
+                <div><dt>النوع</dt><dd>{kind === "department" ? "جدول القسم" : kind === "request" ? "رغبات الأساتذة" : "بطاقات الأساتذة"}</dd></div>
+                <div><dt>الصلاحية</dt><dd>{kind === "request" ? (closesAt || "—") : `${days.toLocaleString("ar-KW-u-nu-latn")} يوم`}</dd></div>
                 {kind === "department" ? <div><dt>الأساتذة</dt><dd>{showInstructors ? "تظهر أسماؤهم" : "مخفية أسماؤهم"}</dd></div> : null}
               </dl>
               <div className="share-step-actions">
                 <SecondaryButton type="button" onClick={() => setStep("kind")}>رجوع</SecondaryButton>
-                <PrimaryButton type="button" onClick={create} disabled={busy}>
+                <PrimaryButton
+                  type="button"
+                  data-guide-target="schedule.publish"
+                  onClick={create}
+                  disabled={busy || (kind === "request" && !closesAt)}
+                >
                   <Link2 />
-                  {busy ? "ينشئ الرابط…" : "إنشاء الرابط"}
+                  {busy
+                    ? (kind === "request" ? "يُصدر الروابط…" : "ينشئ الرابط…")
+                    : (kind === "request" ? "إصدار روابط الأساتذة" : "إنشاء الرابط")}
                 </PrimaryButton>
               </div>
             </section>
@@ -399,6 +500,21 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   <Check aria-hidden="true" /> تم إنشاء الرابط وأصبح جاهزاً للنسخ.
                 </p>
               ) : null}
+              {/* روابطُ الرغبات لا تظهر في القائمة أسفلَه: هي رابطٌ لكلِّ أستاذٍ
+                  على حدة، لا رابطٌ واحدٌ يُنسخ. فيُقال ما وقع، ويُدلُّ على
+                  موضع متابعته. */}
+              {issued ? (
+                <p className="share-created" role="status">
+                  <Check aria-hidden="true" />
+                  {issued.created
+                    ? `أُصدر ${issued.created.toLocaleString("ar-KW-u-nu-latn")} رابطاً جديداً`
+                    : "لم يُصدَر رابطٌ جديد"}
+                  {issued.reissued
+                    ? ` · ${issued.reissued.toLocaleString("ar-KW-u-nu-latn")} أستاذاً يحملون روابطهم من قبل`
+                    : ""}
+                  {" — أرسلها وتابعها في «وارد الأساتذة»."}
+                </p>
+              ) : null}
               <div className="share-list" role="list" aria-live="polite">
                 {publicationLinks.length ? (
                   publicationLinks.map(link => {
@@ -412,8 +528,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                         className={`${dead ? "dead" : "active"} ${createdId === link.id ? "just-created" : ""}`.trim()}
                       >
                         <div className="share-row-lead">
-                          <span className={`share-link-kind kind-${link.kind === "staff" ? "staff" : "department"}`}>
-                            {link.kind === "staff" ? <><IdCard aria-hidden="true" /> بطاقات الأساتذة · كل أستاذ يرى بطاقته</> : <><Users aria-hidden="true" /> جدول القسم · لأي شخص لديه الرابط</>}
+                          <span className={`share-link-kind kind-${link.kind === "staff" ? "staff" : link.kind === "request" ? "request" : "department"}`}>
+                            {link.kind === "staff"
+                              ? <><IdCard aria-hidden="true" /> بطاقات الأساتذة · كل أستاذ يرى بطاقته</>
+                              : link.kind === "request"
+                                ? <><MessageSquarePlus aria-hidden="true" /> رغبات الأساتذة · يفتح جدوله ويطلب تعديله</>
+                                : <><Users aria-hidden="true" /> جدول القسم · لأي شخص لديه الرابط</>}
                           </span>
                           <b dir="ltr">
                             {link.kind === "staff" ? <IdCard aria-label="بطاقة أستاذ" /> : null}

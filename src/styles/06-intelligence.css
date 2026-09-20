@@ -4557,3 +4557,45 @@ button.twin-delta{width:100%}
 
 /* حقلٌ يمتدّ على عرض لوحة «المزيد» كلها — الأيام مثلاً. */
 .ask-scope-bar .query-more .field.wide{grid-column:1/-1}
+
+/* ── أرسل المسوّدات للأساتذة ──────────────────────────────────────────────
+   تُفتح بعد النشر: الجدولُ صار جدولاً، وهذه أنسبُ لحظةٍ لسؤال أصحابه فيه.
+   وهي خطوةٌ تالية لا تنبيهٌ يعترض، فتجلس تحت قائمة المسودات بحدٍّ خفيفٍ
+   يفصلها عنها ولا يصرخ. */
+.draft-issue{
+  margin-block-start:var(--s4);
+  padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface-2);
+  display:grid;gap:var(--s3);
+}
+.draft-issue-head{display:flex;align-items:flex-start;gap:var(--s3)}
+.draft-issue-head>svg{inline-size:18px;block-size:18px;flex:none;opacity:.75;margin-block-start:2px}
+.draft-issue-head>div{flex:1;min-inline-size:0;display:grid;gap:2px}
+.draft-issue-head strong{font-size:.95rem;font-weight:700}
+.draft-issue-head small{color:var(--muted);font-size:.83rem;line-height:1.55}
+.draft-issue-form{display:flex;align-items:flex-end;gap:var(--s3);flex-wrap:wrap}
+.draft-issue-form .field{flex:1;min-inline-size:190px}
+.draft-issue-form .btn{flex:none}
+.draft-issue-done{
+  display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s3);border-radius:var(--r-sm);
+  background:var(--success-soft);color:var(--success);
+  font-size:.87rem;font-weight:650;line-height:1.6;
+}
+.draft-issue-done svg{inline-size:15px;block-size:15px;flex:none}
+@media (max-width:560px){
+  .draft-issue-form{align-items:stretch}
+  .draft-issue-form .btn{inline-size:100%;justify-content:center}
+}
+
+/* موعدُ إغلاق الرغبات: تاريخٌ يُكتب، لا مدّةٌ تُحسب — الأستاذ يقرأ تاريخاً
+   ولا يقرأ «ثلاثين يوماً من متى». */
+.share-closes{display:grid;gap:6px}
+.share-closes>span{color:var(--muted);font-size:.8rem;font-weight:650}
+.share-closes input{
+  min-height:44px;padding:0 var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--ink);font:inherit;
+}
+.share-link-kind.kind-request{background:var(--warning-soft);color:var(--warning)}

@@ -238,6 +238,22 @@
 .changes-row[data-kind="removed"] .agenda-core strong{text-decoration:line-through;text-decoration-thickness:1px}
 /* ما تحرّك في الصفّ، وملاحظاتُه: تحته بعرضه كلّه، لا في خانةٍ من خاناته. */
 .changes-row-extra{grid-column:1/-1;display:grid;gap:9px;padding-block-start:2px}
+/* ── وأين وقع التغييرُ بالضبط ──────────────────────────────────────────────
+   قائمةٌ تحت الصفّ تقول «القاعة: من ١٢٠ إلى ١٢٤» تجعل القارئ يقرأ الصفَّ ثم
+   القائمةَ ثم يربط بينهما بعينه — وهو ربطٌ يُخطئ فيه من يراجع عشرين قسماً.
+   فالتغييرُ يُعلَّم في خانته نفسِها، حيث يقرأ القارئُ تلك القيمةَ أصلاً. */
+.changes-moved{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-inline-size:0}
+.changes-moved s{color:var(--muted);text-decoration-thickness:1px;opacity:.75;font-weight:500}
+.changes-moved svg{inline-size:12px;block-size:12px;opacity:.45;flex:none}
+.changes-moved b{font-weight:750;color:var(--warning)}
+/* والخانةُ المتحرّكةُ تُلمَّح بخلفيةٍ خفيفة: العينُ تجدها قبل أن تقرأ. */
+.changes-row [data-changed]{
+  border-radius:var(--r-sm);
+  background:var(--warning-soft);
+  padding-inline:6px;padding-block:2px;
+  margin-inline:-6px;
+}
+
 @media (max-width:760px){
   .agenda-list .agenda-card{grid-template-columns:28px minmax(0,1fr);row-gap:8px}
   .agenda-list .agenda-time,.agenda-list .agenda-place{grid-column:2}
