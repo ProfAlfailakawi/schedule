@@ -256,6 +256,19 @@ const pathByView: Record<View, string> = {
   scheduleChanges: "/FSchedule/Changes",
   about: "/Public/Aboutus",
 };
+/**
+ * ── كل صفةٍ تفتح على شاشتها ─────────────────────────────────────────────────
+ *
+ * العميد على ميزان الأقسام، والتسجيل على الوارد، والقسم على جدوله. ولوحةُ
+ * البداية لمن لا شاشةَ تخصّه.
+ */
+function landingViewFor(role: { landing: string }): View {
+  if (role.landing === "changes") return "scheduleChanges";
+  if (role.landing === "balance") return "reportDepartment";
+  if (role.landing === "schedules") return "schedules";
+  return "dashboard";
+}
+
 const viewByPath = new Map(
   Object.entries(pathByView).map(([view, path]) => [
     path.toLowerCase(),
@@ -1174,7 +1187,26 @@ export default function App() {
             Array.isArray(data.permissions) ? data.permissions : [],
           );
           setScopes(Array.isArray(data.scopes) ? data.scopes : []);
-          setSessionRole(data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE);
+          const restoredRole: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
+          setSessionRole(restoredRole);
+          /**
+           * ── الشاشة الافتتاحية تصمد أمام إعادة التحميل ───────────────────
+           *
+           * كانت تُطبَّق عند تسجيل الدخول وحده. وأكثرُ ما يفعله الناس ليس
+           * تسجيلَ دخول: هو فتحُ صفحةٍ محفوظة، أو ضغطُ زرّ التحديث. فكان
+           * العميد يُوضع على شاشته مرّةً في اليوم، ويُعاد إلى لوحةٍ ليست له
+           * في كل مرّةٍ بعدها.
+           *
+           * والقيد مقصود: من فتح عنواناً بعينه أراده، فلا يُنقل عنه. وإنما
+           * يُوجَّه من وصل إلى الجذر بلا وجهة.
+           */
+          if (!viewByPath.has(window.location.pathname.toLowerCase())) {
+            const landing = landingViewFor(restoredRole);
+            if (landing !== "dashboard") {
+              setActiveView(landing);
+              window.history.replaceState({}, "", pathByView[landing] || pathByView.dashboard);
+            }
+          }
           setDataMode(data.data || null);
         }
       } catch {
@@ -1438,13 +1470,7 @@ export default function App() {
     const role: SessionRole = data.role ? { ...DEFAULT_SESSION_ROLE, ...data.role } : DEFAULT_SESSION_ROLE;
     setSessionRole(role);
     setDataMode(data.data || null);
-    /* كل صفةٍ تفتح على شاشتها مباشرةً: العميد على ميزان الأقسام، والتسجيل على
-       الوارد، والقسم على جدوله. ولوحةُ البداية لمن لا شاشةَ تخصّه. */
-    const landingView: View =
-      role.landing === "changes" ? "scheduleChanges"
-      : role.landing === "balance" ? "reportDepartment"
-      : role.landing === "schedules" ? "schedules"
-      : "dashboard";
+    const landingView = landingViewFor(role);
     setActiveView(landingView);
     window.history.replaceState({}, "", pathByView[landingView] || pathByView.dashboard);
   };
@@ -2284,7 +2310,12 @@ export default function App() {
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.scheduleChanges"
               />
             ) : null}
-            {allowed.schedule && !sessionRole.readOnly ? (
+            {/* ── لا تُخفَ شاشةٌ يعمل فيها صاحبُها ──────────────────────────
+                «للاطّلاع» تعني أنه لا يكتب، لا أنه لا يعمل. ورئيسُ القسم صفةٌ
+                للاطّلاع، لكنّ توقيعه وإقرارَه لا يقعان إلا في شاشة الجدول —
+                فإخفاؤها عنه يقطع عليه طريقه إلى فعلٍ هو وحده يملكه. ومركزُ
+                الذكاء وحده أدواتُ بناءٍ لمن يبني، فيُخفى عمّن لا يبني. */}
+            {allowed.schedule && !sessionRole.viewerOnly ? (
               <NavButton
                 activeView={activeView}
                 onGo={go}

@@ -9809,6 +9809,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           sectionId={filterSection}
           termId={filterTerm}
           signatureStage={approvalStage}
+          /* ── الشريط يسمع ما يقع في الجدول تحته ──────────────────────────
+             تعديلُ موعدٍ يغيّر سجلَّ الاعتماد على الخادم: جدولٌ مقبول يعود
+             جولةً جديدة، وشعبةٌ تُضاف بعد التوقيع تنتظر إقراراً. وكان الشريط
+             لا يقرأ إلا عند تبدّل القسم أو الفصل — فيبقى يقول «معتمد» بعد أن
+             زال الاعتماد، وهو بالضبط الخبرُ الذي وُجد ليقوله. */
+          refreshSignal={liveFeedSerial}
           onChanged={() => setLiveFeedSerial(value => value + 1)}
         />
       ) : null}

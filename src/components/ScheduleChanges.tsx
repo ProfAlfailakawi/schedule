@@ -274,7 +274,28 @@ function Report({ termId, scope, role, onBack }: {
     try {
       const query = `collegeId=${scope.collegeId}&sectionId=${scope.sectionId}&termId=${termId}${round ? `&round=${round}` : ""}`;
       setReport(await request(`/api/reports/schedule-changes?${query}`));
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) {
+      /**
+       * ── تقريرٌ أخفقت قراءتُه لا يبقى معروضاً ───────────────────────────
+       *
+       * كان الخطأ يُعرض ويبقى تقريرُ القسم السابق تحته. فيقرأ الموظّف تغييرات
+       * قسمٍ ويضغط «قبول» فيذهب القرار إلى قسمٍ آخر — وهو خطأٌ لا يُكتشف إلا
+       * بعد وقوعه، لأن الشاشة كانت متماسكةً تماماً في ظاهرها.
+       */
+      setReport(null);
+      setError(e.message);
+    }
+  }, [scope.collegeId, scope.sectionId, termId]);
+
+  /* وتبدّلُ القسم يُفرغ ما قبله قبل أن تصل القراءة: لا رأسُ قسمٍ فوق تغييرات
+     قسمٍ آخر، ولو للحظة. */
+  useEffect(() => {
+    setReport(null);
+    setShowRounds(false);
+    setShowRegulations(false);
+    setNoteDraft(null);
+    setRebutting(null);
+    setMessage(null);
   }, [scope.collegeId, scope.sectionId, termId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -580,7 +601,12 @@ function DeadlineControl({ term, onSaved }: { term: AdTerm; onSaved: () => void 
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { setValue(term.AdTermSubmissionDeadline || ""); setSaved(false); }, [term.AdTermId, term.AdTermSubmissionDeadline]);
+  /* التاريخ يُعاد ضبطه عند تبدّل الفصل وحده.
+   *
+   * وكان يُعاد عند تبدّل الموعد أيضاً — والحفظُ نفسه هو ما يُبدّله. فرسالةُ
+   * «محفوظ» كانت تُمحى في اللحظة التي تستحقّ أن تظهر فيها، ويبقى الحافظُ بلا
+   * دليلٍ على أن حفظَه وقع. */
+  useEffect(() => { setValue(term.AdTermSubmissionDeadline || ""); setSaved(false); }, [term.AdTermId]);
 
   const save = async () => {
     setBusy(true); setError(null);

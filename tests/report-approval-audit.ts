@@ -121,13 +121,48 @@ check(app.includes("roleId={sessionRole.id}"), "والتطبيق يمرّرها"
 
 /* ── كل صفةٍ تفتح على شاشتها ───────────────────────────────────────────── */
 
-check(app.includes('role.landing === "changes" ? "scheduleChanges"'), "التسجيل يفتح على الوارد");
-check(app.includes('role.landing === "balance" ? "reportDepartment"'), "العميد يفتح على ميزان الأقسام");
-check(app.includes('role.landing === "schedules" ? "schedules"'), "القسم يفتح على جدوله");
+check(app.includes('if (role.landing === "changes") return "scheduleChanges";'), "التسجيل يفتح على الوارد");
+check(app.includes('if (role.landing === "balance") return "reportDepartment";'), "العميد يفتح على ميزان الأقسام");
+check(app.includes('if (role.landing === "schedules") return "schedules";'), "القسم يفتح على جدوله");
+/* والشاشة الافتتاحية تصمد أمام إعادة التحميل: أكثرُ ما يفعله الناس ليس تسجيلَ
+   دخول، هو فتحُ صفحةٍ محفوظة أو ضغطُ زرّ التحديث. */
+check(app.includes("if (!viewByPath.has(window.location.pathname.toLowerCase())) {"),
+  "وتُطبَّق عند استعادة الجلسة لا عند الدخول وحده");
+check(app.includes("const landing = landingViewFor(restoredRole);"),
+  "ومن فتح عنواناً بعينه أراده، فلا يُنقل عنه");
 check(app.includes("sessionRole.canReview || sessionRole.signatureStage ? ("),
   "أيقونة تغييرات الجدول لمن يشارك في الدورة: شاشةٌ لا يفعل فيها صاحبها شيئاً ضجيجٌ في القائمة");
-check(app.includes("allowed.schedule && !sessionRole.readOnly"),
-  "مركز الذكاء يُخفى عن صفات الاطّلاع: أدواتُ بناءٍ لمن لا يبني");
+/* «للاطّلاع» تعني أنه لا يكتب، لا أنه لا يعمل: رئيسُ القسم صفةٌ للاطّلاع،
+   لكنّ توقيعه لا يقع إلا في شاشة الجدول. */
+check(app.includes("allowed.schedule && !sessionRole.viewerOnly"),
+  "مركز الذكاء يُخفى عن العرض الصرف وحده، لا عن كل صفةٍ للاطّلاع");
+
+const bar = fs.readFileSync(path.join(process.cwd(), "src/components/ApprovalBar.tsx"), "utf8");
+/* أخطرُ ما وقع في الواجهة: الجدولُ المُرجَع كان يخرج عند أول حالةٍ برسالةٍ بلا
+   زرّ، فتقف الدورة عند جولتها الأولى — لا لخللٍ في قاعدة، بل لأن الزرّ لم
+   يُرسم في ذلك الفرع. */
+check(bar.includes('status === "returned" ? "إعادة الإرسال إلى التسجيل"'),
+  "الجدول المُرجَع يُعاد إرساله من الشريط نفسه بعد معالجة الملاحظات");
+check(!bar.includes('if (status === "returned") {'),
+  "ولا خروجَ مبكّرٌ يترك حالاً بلا فعل: الخبرُ فوق والفعلُ تحت دائماً");
+check(bar.includes("const readyToSubmit ="), "وشرطُ الإرسال محسوبٌ مرّةً لكل الحالات");
+check(bar.includes("refreshSignal"), "والشريط يسمع ما يقع في الجدول تحته");
+
+const changes = fs.readFileSync(path.join(process.cwd(), "src/components/ScheduleChanges.tsx"), "utf8");
+check(changes.includes("setReport(null);\n      setError(e.message);"),
+  "وتقريرٌ أخفقت قراءتُه لا يبقى معروضاً تحت رأس قسمٍ آخر");
+check(changes.includes("setShowRounds(false);") && changes.includes("}, [scope.collegeId, scope.sectionId, termId]);"),
+  "وتبدّلُ القسم يُفرغ ما قبله قبل أن تصل القراءة");
+check(changes.includes("}, [term.AdTermId]);"),
+  "ورسالةُ «محفوظ» لا يمحوها الحفظُ نفسه");
+
+const reportsSrc = fs.readFileSync(path.join(process.cwd(), "src/components/Reports.tsx"), "utf8");
+check(reportsSrc.includes("setChangesAppendix(null);\n    };"),
+  "وملحقُ التغييرات يُرفع عند انتهاء الطباعة حقّاً، لا بمؤقّت");
+check(!reportsSrc.includes("window.setTimeout(() => setChangesAppendix(null), 1500)"),
+  "فنزعُه أثناء المعاينة يُسقطه من المطبوع");
+check(reportsSrc.includes('if (sort.key === "approval" && !approvals) onSort({ key: "rows", desc: true });'),
+  "وفرزٌ على عمودٍ زال يعود إلى عمودٍ قائم، فلا يُعرض ترتيبٌ لا يُنسب إلى أحد");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);

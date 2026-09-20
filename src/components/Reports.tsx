@@ -1368,10 +1368,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     } catch { /* الشامل يُطبع وحده */ }
     setAppendixBusy(false);
     flushSync(() => { setChangesAppendix(appendix); });
+    /* والرفع بعدها إلى `printReport` نفسها: هي التي تعرف متى انتهت الطباعة
+       حقّاً — عند `afterprint` أو عند عودة القارئ إلى الصفحة — وقد تعلّمت ذلك
+       من عطبٍ سابقٍ في هذا الملفّ بعينه. ومؤقّتٌ بثانيةٍ ونصف لا يعرفه. */
     printReport("comprehensive");
-    /* الملحق يُرفع بعد الطباعة: الضغطة التالية على «التقرير الشامل» وحده
-       يجب ألّا تُخرج معها ورقةً لم تُطلب. */
-    window.setTimeout(() => setChangesAppendix(null), 1500);
   };
 
   const printReport = (kind: Exclude<PrintKind, null> = lens) => {
@@ -1419,6 +1419,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       delete root.dataset.printKind;
       delete root.dataset.printRotate;
       delete root.dataset.printChromium;
+      /* وملحقُ التغييرات معها: هو جزءٌ من الوثيقة المعروضة، ونزعُه أثناء
+         المعاينة يُسقطه من المطبوع أو يُعيد ترتيب الصفحات — وهو العطبُ نفسه
+         الذي وُصف أعلاه، لا عطبٌ آخر. */
+      setChangesAppendix(null);
     };
     const resume = () => {
       if (resumed) return;
@@ -2747,6 +2751,14 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
   const APPROVAL_ORDER: Record<string, number> = {
     late: 0, drafting: 1, committee: 2, head: 3, returned: 4, submitted: 5, accepted: 6,
   };
+  /* ── فرزٌ لا يبقى معلّقاً على عمودٍ زال ────────────────────────────────
+   * عمودُ الاعتماد لا يظهر إلا حين تُقرأ الحالات، وقد تُخفق القراءة أو تتبدّل
+   * العدسة. وكان الفرزُ يبقى عليه: فتختفي علامةُ الترتيب من كل رأسٍ ظاهر،
+   * ويُعرض الجدول بترتيبٍ لا يُنسب إلى أحد — والقارئُ لا يعرف أن اختياره سقط. */
+  useEffect(() => {
+    if (sort.key === "approval" && !approvals) onSort({ key: "rows", desc: true });
+  }, [approvals, sort.key, onSort]);
+
   const ordered = useMemo(() => {
     const list = [...(balance?.departments || [])];
     const direction = sort.desc ? -1 : 1;
