@@ -219,6 +219,30 @@
 }
 
 /* ── بطاقات التغيير ────────────────────────────────────────────────────── */
+/* ── الصفُّ نفسُه الذي في ورشة الجدول ──────────────────────────────────────
+   لا شكلٌ يشبهه: `agenda-card` بأصنافه، محاطاً بإطارٍ واحدٍ للقائمة بدل
+   إطارٍ لكل بطاقة — فيقرأ الموظّف الصفَّ هنا كما يقرؤه هناك، وما يتحسّن في
+   أحدهما يتحسّن في الآخر. */
+.agenda-list{
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface);overflow:hidden;
+}
+.agenda-list .agenda-card{cursor:default}
+/* النوعُ بشريطٍ جانبيٍّ كما كان: عشرون بطاقةً ملوّنةً تُلغي أثر اللون. */
+.changes-row[data-kind]{position:relative}
+.changes-row[data-kind]::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;inline-size:3px}
+.changes-row[data-kind="added"]::before{background:var(--success)}
+.changes-row[data-kind="removed"]::before{background:var(--danger)}
+.changes-row[data-kind="changed"]::before{background:var(--warning)}
+.changes-row[data-kind="removed"]{background:var(--surface-2)}
+.changes-row[data-kind="removed"] .agenda-core strong{text-decoration:line-through;text-decoration-thickness:1px}
+/* ما تحرّك في الصفّ، وملاحظاتُه: تحته بعرضه كلّه، لا في خانةٍ من خاناته. */
+.changes-row-extra{grid-column:1/-1;display:grid;gap:9px;padding-block-start:2px}
+@media (max-width:760px){
+  .agenda-list .agenda-card{grid-template-columns:28px minmax(0,1fr);row-gap:8px}
+  .agenda-list .agenda-time,.agenda-list .agenda-place{grid-column:2}
+}
+
 .changes-table{display:grid;gap:8px}
 .changes-entry{
   border:1px solid var(--line);border-radius:var(--r-md);
@@ -239,9 +263,11 @@
   padding:2px 9px;border-radius:var(--r-full);
   font-size:.74rem;font-weight:800;flex:none;
 }
-.changes-entry[data-kind="added"] .changes-kind{background:var(--success-soft);color:var(--success)}
-.changes-entry[data-kind="removed"] .changes-kind{background:var(--danger-soft);color:var(--danger)}
-.changes-entry[data-kind="changed"] .changes-kind{background:var(--warning-soft);color:var(--warning)}
+.changes-entry[data-kind="added"] .changes-kind,.changes-row[data-kind="added"] .changes-kind{background:var(--success-soft);color:var(--success)}
+.changes-entry[data-kind="removed"] .changes-kind,.changes-row[data-kind="removed"] .changes-kind{background:var(--danger-soft);color:var(--danger)}
+.changes-entry[data-kind="changed"] .changes-kind,.changes-row[data-kind="changed"] .changes-kind{background:var(--warning-soft);color:var(--warning)}
+/* و«تحرّك» في الجدول الكامل: الصفُّ نفسُه بلا نوعٍ يُلوَّن به شريطُه. */
+.changes-row .changes-kind{flex:none}
 
 /* ── الخانة المتغيّرة: من ماذا إلى ماذا ────────────────────────────────── */
 .changes-fields{margin:0;display:grid;gap:7px}
@@ -701,3 +727,7 @@
   .registration-course-actions{width:100%}
   .registration-course-actions .changes-chip{flex:1;justify-content:center}
 }
+
+/* سطرُ الأساس تحت الملخّص: يُقال حين لا يكون الأساسُ نسخةَ جولةٍ سابقة، فلا
+   يُقرأ «كلُّ صفٍّ مضاف» على أنه خبرٌ عن الجدول وهو خبرٌ عن المقارنة. */
+.changes-baseline-note{color:var(--muted);font-size:.8rem;line-height:1.55}

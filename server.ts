@@ -25,7 +25,7 @@ import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
-  isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
+  isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
@@ -9382,12 +9382,12 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
    * يجد جدولاً كاملاً مطلوباً منه أن يقرأه من أوّله. فيُمسح إلى الوراء حتى
    * تُوجد نسخة.
    */
-  const baselineVersionId = approval.rounds
+  const roundBaselineId = approval.rounds
     .filter(item => item.number < round && item.reviewedVersionId)
     .sort((a, b) => b.number - a.number)[0]?.reviewedVersionId;
 
-  const [baselineVersion, live, instructors, courses, notes, suggestions, crossScope] = await Promise.all([
-    baselineVersionId ? Repository.getScheduleVersionById(baselineVersionId) : Promise.resolve(undefined),
+  const [roundBaseline, live, instructors, courses, notes, suggestions, crossScope] = await Promise.all([
+    roundBaselineId ? Repository.getScheduleVersionById(roundBaselineId) : Promise.resolve(undefined),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
     Repository.getInstructors(),
     Repository.getCourses(),
@@ -9396,12 +9396,101 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     crossScopeClashes(req, collegeId, sectionId, termId),
   ]);
 
+  /**
+   * ── أساسٌ لا يسقط إلى العدم ──────────────────────────────────────────────
+   *
+   * حين لا تُوجد نسخةُ جولةٍ سابقة، كان التقرير يقارن الجدولَ بلا شيء: فيصير
+   * كلُّ صفٍّ «مضاف»، ولا يظهر معدَّلٌ ولا محذوفٌ البتّة. وهذا ما يراه موظّفُ
+   * التسجيل: جدولٌ كامل يُطلب منه أن يقرأه من أوّله، وقد تحرّك فيه صفّان.
+   *
+   * وليس ذلك حالاً نادرة: الجولةُ التي تُفتح تلقائياً حين يعدّل القسمُ جدولاً
+   * مقبولاً تُنشأ بلا نسخةٍ محفوظة، لأنها لم تبدأ بإرسالٍ من أحد. فقسمٌ
+   * جولاتُه كلُّها من هذا النوع لا يملك أساساً أبداً.
+   *
+   * والنُّسَخُ تُلتقط عند كلِّ تعديلٍ على أيّ حال، فيُؤخذ الأساسُ منها.
+   *
+   * **ولحظةُ الأساس هي فتحُ الجولة، لا آخرُ تعديل.** فقسمٌ حذف خمسةَ صفوفٍ ثم
+   * غيّر أستاذَ سادسٍ كان يُعرض للتسجيل «معدَّلٌ واحد»، والحذوفُ الخمسةُ لا
+   * أثر لها: مراجعةٌ تبدو صحيحةً وهي ناقصة، وذلك أسوأُ من مراجعةٍ تبدو ناقصة.
+   *
+   * فالمرساةُ لحظةُ آخِرِ نظرةٍ للتسجيل: إرجاعُ هذه الجولة أو قبولُها إن كان
+   * التسجيلُ قد نظر فيها وردّها، وإلا فإرجاعُ الجولة السابقة أو قبولُها.
+   *
+   * **والإرسالُ ليس نظرة.** ولو جُعل مرساةً لانكسرت أولُ مراجعةٍ: القسمُ يعدّل
+   * ويوقّع قبل الإرسال وبعده، فتُلتقط نُسَخ، ويختار البحثُ إحداها أساساً —
+   * فيُعرض على التسجيل «تعديلٌ واحدٌ منذ الإرسال» بدل الجدول كلِّه، وهو أولُ
+   * مرّةٍ يراه فيها. فإن لم يكن التسجيلُ قد نظر قطّ فلا أساسَ أصلاً، وكلُّ
+   * صفٍّ مضافٌ — وهو الصوابُ لا العطل.
+   *
+   * **واللقطةُ تحفظ ما كان قبل التعديل، وتُنشأ لحظةَ التعديل.** وهذا يقلب
+   * جهةَ البحث، وقد أخطأتُها أوّلَ مرّة: كلُّ لقطةٍ لهذه الجولة أحدثُ من
+   * المرساة بالضرورة — لأن التعديل يقع بعد الإرسال أو الإرجاع لا قبله — فطلبُ
+   * «أحدثِ ما التُقط عند المرساة أو قبلها» لا ينطبق عليه شيءٌ أبداً، ويسقط
+   * الأساسُ إلى العدم فيعود البلاغُ كما كان.
+   *
+   * والمطلوبُ أقدمُ لقطةٍ بعد المرساة: هي التي تحمل الحالَ قبل أوّلِ تعديلٍ في
+   * هذه الجولة، أي ما رآه التسجيل آخرَ مرّة بعينه. والقائمةُ مرتَّبةٌ تنازلياً،
+   * فآخرُ ما ينطبق هو المطلوب.
+   *
+   * وإن لم يوجد شيءٌ البتّة فهي أولُ مراجعةٍ حقاً، ويُقال ذلك صراحةً بدل أن
+   * يُفهم من كثرة «المضاف».
+   */
+  const currentRound = approval.rounds.find(item => item.number === round);
+  const currentRoundVersionId = currentRound?.reviewedVersionId;
+  let baselineVersion = roundBaseline;
+  let baselineSource: "round" | "capture" | "none" = roundBaseline ? "round" : "none";
+  if (!baselineVersion) {
+    const history = await Repository.getScheduleVersions(collegeId, sectionId, termId, 100);
+    const previousRound = approval.rounds
+      .filter(item => item.number < round)
+      .sort((a, b) => b.number - a.number)[0];
+    /* آخِرُ نظرةٍ للتسجيل، لا آخِرُ إرسالٍ من القسم. وغيابُها يعني أنه لم ينظر
+       بعد، فلا أساسَ يُخترع له. */
+    const lastLookAt = currentRound?.returnedAt || currentRound?.acceptedAt
+      || previousRound?.returnedAt || previousRound?.acceptedAt;
+    /* ونسخةُ الجولة نفسِها تُستثنى، وإلا قُورنت الجولةُ بنفسها فخرجت بلا
+       فرقٍ دائماً. */
+    const after = lastLookAt
+      ? history.filter(item => item.id !== currentRoundVersionId
+          && String(item.createdAt) >= String(lastLookAt))
+      : [];
+    const fallback = after[after.length - 1];
+    if (fallback) {
+      baselineVersion = await Repository.getScheduleVersionById(fallback.id);
+      if (baselineVersion) baselineSource = "capture";
+    }
+  }
+  const baselineVersionId = baselineVersion?.id || null;
+
   const names = {
     instructorById: new Map(instructors.map((row: any) => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
     courseById: new Map(courses.map((row: any) => [Number(row.AdCourseId), String(row.CourseName || row.CourseCode || "")])),
   };
   const diff = diffSchedules(baselineVersion?.rows as any, live as any, names);
   const deadline = await readDeadlineFor(approval, termId);
+
+  /* ── الصفُّ يُقرأ بالشكل الذي يقرؤه الناسُ كلَّ يوم ─────────────────────
+   *
+   * «مواعيد القسم» في ورشة الجدول هي الصورةُ التي تعوّدتها العينُ في هذا
+   * النظام: رقمُ المقرّر ثم اسمُه ثم شعبتُه، وتحته أستاذُه وأيامُه، ثم الوقتُ
+   * والمكان. وشاشةُ التغييرات كانت تعرض اسمَ المقرّر ورقمَ الشعبة وحدهما،
+   * فيقرأ الموظّفُ «تغيّرت القاعة» ولا يعرف في أيِّ موعدٍ من الأسبوع.
+   *
+   * فيُرسل الصفُّ كاملاً مشكّلاً مرّةً واحدة، ويلبس الطرفان — ما تحرّك
+   * والجدولُ كامل — الشكلَ نفسه. */
+  const courseCodeById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseCode || "")]));
+  const asDisplayRow = (row: any) => ({
+    scheduleId: Number(row.id),
+    courseCode: courseCodeById.get(Number(row.AdCourseId)) || "",
+    course: names.courseById.get(Number(row.AdCourseId)) || String(row.AdCourseName || `موعد ${row.id}`),
+    sectionCode: String(row.SCode || "—"),
+    time: diffFieldValue(row, "time", names),
+    days: diffFieldValue(row, "days", names),
+    room: diffFieldValue(row, "room", names),
+    instructor: diffFieldValue(row, "instructor", names),
+  });
+  /* وللمحذوف يُشكَّل صفُّه كما كان قبل الحذف — وهو ما يحمله `entry.row` أصلاً. */
+  const diffForClient = { ...diff, entries: diff.entries.map(entry => ({ ...entry, display: asDisplayRow(entry.row) })) };
 
   /* ── الجدول كامل، لا التغييرات وحدها ────────────────────────────────────
    *
@@ -9412,13 +9501,7 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const changedById = new Map<number, string>(diff.entries.map(entry => [Number(entry.scheduleId), String(entry.kind)]));
   const fullSchedule = (live as any[])
     .map(row => ({
-      scheduleId: Number(row.id),
-      course: names.courseById.get(Number(row.AdCourseId)) || String(row.AdCourseName || `موعد ${row.id}`),
-      sectionCode: String(row.SCode || "—"),
-      time: diffFieldValue(row, "time", names),
-      days: diffFieldValue(row, "days", names),
-      room: diffFieldValue(row, "room", names),
-      instructor: diffFieldValue(row, "instructor", names),
+      ...asDisplayRow(row),
       changed: changedById.get(Number(row.id)) === "changed" || changedById.get(Number(row.id)) === "added",
     }))
     .sort((a, b) => a.time.localeCompare(b.time) || a.course.localeCompare(b.course, "ar"));
@@ -9429,8 +9512,11 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     round,
     rounds: approval.rounds,
     deadline,
-    baselineVersionId: baselineVersionId || null,
-    diff,
+    baselineVersionId,
+    /* من أين تبدأ المقارنة: نسخةُ جولةٍ سابقة، أم آخرُ لقطةٍ محفوظة، أم لا
+       شيء. والشاشةُ تقول ذلك للقارئ بدل أن يستنتجه من كثرة «المضاف». */
+    baselineSource,
+    diff: diffForClient,
     fullSchedule,
     summary: summarizeDiff(diff),
     notes,
@@ -12364,6 +12450,26 @@ const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "con
  * يقرأ الطلبات نفسها التي يقرؤها مركزُ الذكاء، بالقاعدة نفسها في نسبة الطلب
  * إلى قسم الاستبيان — فما يراه الطرفان واحدٌ حرفاً بحرف.
  */
+/**
+ * ── لا يصل التسجيلَ شيءٌ قبل التوقيعين ──────────────────────────────────────
+ *
+ * قاعدةُ القسم: الجدولُ وما يتبعه لا يُعرض على التسجيل حتى يوقّعه رئيسُ لجنة
+ * الجدول ورئيسُ القسم معاً. والجدولُ نفسُه محروسٌ بهذا في `canSubmit`؛ وكشفُ
+ * طلبات الطلبة كان بابه الثاني مفتوحاً — يقرؤه موظّفُ التسجيل قبل أن يوقّع
+ * أحد، فيبني على مسوّدةٍ قد تتغيّر كلُّها غداً.
+ *
+ * والحرسُ على القارئ من جهة التسجيل وحده: القسمُ يُعدّ كشفَه ويراه قبل
+ * التوقيع، فذلك عملُه لا كشفُ غيره.
+ */
+async function registrarBlockReason(
+  req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number,
+): Promise<string | null> {
+  if (!isRegistrarRole(req.user?.Role)) return null;
+  const approval = await readApproval(collegeId, sectionId, termId);
+  if (isFullySigned(approval)) return null;
+  return "لم يُوقَّع جدولُ هذا القسم بعد من لجنة الجدول ورئيس القسم، ولا يُعرض على التسجيل قبل ذلك.";
+}
+
 app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -12372,6 +12478,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
+  const blocked = await registrarBlockReason(req, collegeId, sectionId, termId);
+  if (blocked) { res.status(409).json({ error: blocked, code: "not-signed" }); return; }
 
   const [allTermNeeds, courses, sections] = await Promise.all([
     Repository.getStudentNeeds(collegeId, 0, termId),
@@ -12449,21 +12557,40 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
      يملك هذا الطلبَ يستطيع أن يكتب فيه — فلا يُعرض ما لا يُكتب فيه، ولا
      يُكتب فيما لا يُعرض. */
   const allCourses = await Repository.getCourses() as any[];
-  const ownedByScope = (await Repository.getSections() as any[])
+  const owningSectionInScope = (await Repository.getSections() as any[])
     .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
     .map(row => Number(row.AdSectionId))
-    .some(candidate => sectionOwnsNeed(need, allCourses, candidate)
+    .find(candidate => sectionOwnsNeed(need, allCourses, candidate)
       && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
-  if (!ownedByScope) {
+  if (!owningSectionInScope) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
   }
-
   const courseId = Number(req.body?.courseId || 0);
   if (!courseId || !(need.courseIds || []).map(Number).includes(courseId)) {
     res.status(400).json({ error: "هذا المقرّر ليس ضمن طلب الطالب." });
     return;
   }
+
+  /* ── ولا يُكتب فيما لا يُقرأ ─────────────────────────────────────────────
+   *
+   * موظّفُ التسجيل لا يقول قولاً في مقرّرٍ لقسمٍ لم يوقّع جدولَه بعد — وإلا
+   * مرّ الحرسُ على العرض وحده وبقي البابُ مفتوحاً لمن يُرسل الطلبَ مباشرةً
+   * بلا شاشة.
+   *
+   * **والسؤالُ عن قسم المقرّر المطلوب بعينه، لا عن أوّلِ قسمٍ يملك الطلب.**
+   * فالطلبُ القديم قد يجمع مقرّرَين لقسمين، وموظّفٌ نطاقُه يشملهما كان يُسأل
+   * عن جدول أحدهما ويكتب في مقرّر الآخر: يمرّ على قسمٍ لم يوقّع لأن شريكه
+   * وقّع، أو يُمنع عن قسمٍ وقّع لأن شريكه لم يوقّع. ولذلك يُقرأ المقرّرُ قبل
+   * هذا الحرس لا بعده.
+   *
+   * وإن لم يُعرف مالكُ المقرّر — وهو حالُ سجلٍّ قديمٍ زال مقرّره من الكتالوج —
+   * رجع السؤالُ إلى القسم الذي أجاز القراءة، فلا يُفتح البابُ بلا حارس. */
+  const courseOwnerSection = (allCourses.find(row => Number(row.AdCourseId) === courseId)?.AdSectionId ?? 0) as number;
+  const guardedSection = Number(courseOwnerSection) || owningSectionInScope;
+  const writeBlocked = await registrarBlockReason(
+    req, Number(need.AdCollegeId), guardedSection, Number(need.AdTermId || 0));
+  if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
 
   const state = String(req.body?.state || "");
   if (!STUDENT_COURSE_STATES.has(state)) { res.status(400).json({ error: "حالةٌ غير معروفة." }); return; }
@@ -14172,7 +14299,7 @@ var m=0;days.forEach(function(d){m=Math.max(m,LONG[d]||SHORT)});return clock(min
 function fmtDays(days){return days.map(function(d){
 var f=DAYS.filter(function(x){return x[0]===d})[0];return f?f[1]:d}).join(" · ")}
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
-d.toLocaleDateString("ar-KW",{month:"long",day:"numeric"})+" "+d.toLocaleTimeString("ar-KW",{hour:"2-digit",minute:"2-digit"})}
+d.toLocaleDateString("ar-KW-u-nu-latn",{month:"long",day:"numeric"})+" "+d.toLocaleTimeString("ar-KW-u-nu-latn",{hour:"2-digit",minute:"2-digit"})}
 var EVENTS={"link-created":"أُنشئ الرابط","link-opened":"فُتح الرابط","submitted":"أرسلتَ طلبك",
 "received":"استلمه القسم","item-fixed":"ثُبّت بند","item-rejected":"رُفض بند",
 "alternative-offered":"عُرض عليك بديل","alternative-chosen":"اخترتَ بديلاً","settled":"أُغلق الطلب",
@@ -14489,7 +14616,7 @@ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){
 return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
-d.toLocaleDateString("ar-KW",{year:"numeric",month:"long",day:"numeric"})}
+d.toLocaleDateString("ar-KW-u-nu-latn",{year:"numeric",month:"long",day:"numeric"})}
 function fail(m){out.innerHTML='<div class="err">'+esc(m)+'</div>'}
 function show(d){
  if(!d.found){out.innerHTML='<div class="card"><div class="empty">'+

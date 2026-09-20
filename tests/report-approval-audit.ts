@@ -52,11 +52,17 @@ check(/\.print-unapproved-mark\{[^}]*position:absolute/.test(printCss.replace(/\
 check(printCss.includes("rgba(151,60,56,.085)"),
   "العلامة باهتةٌ خلف الجدول: علامةٌ تُفسد القراءة تدفع الناس إلى طباعةٍ من مكانٍ آخر");
 
-/* العلامة على كل صفحة: أهمّ ما في هذا الباب. */
-const pageMarkAt = reports.indexOf("print-unapproved-mark");
+/* العلامة على كل صفحة: أهمّ ما في هذا الباب.
+   وتُقاس داخل الشامل وحده، لا بأوّل ذكرٍ لها في الملفّ: صار للورقة غلافٌ يحمل
+   العلامة لكلِّ أوراق الاستعلام، وهو يسبق الشاملَ في الملفّ ولا يُغني عن
+   علامتِه المكرّرة في كل صفحة. */
 const pagesLoopAt = reports.indexOf("pages.map((pageRows, pageIndex)");
-check(pageMarkAt > pagesLoopAt && pagesLoopAt !== -1,
+const pageMarkAt = reports.indexOf("print-unapproved-mark", pagesLoopAt);
+check(pagesLoopAt !== -1 && pageMarkAt > pagesLoopAt,
   "العلامة داخل حلقة الصفحات: صفحةٌ واحدة تخرج بلا علامةٍ تُبطل الاحتياط كله");
+/* وكلُّ ورقةٍ سواه تحملها من غلافها. */
+check(reports.indexOf("print-unapproved-mark") < pagesLoopAt,
+  "وأوراقُ الاستعلام تحملها من غلافها قبل ذلك");
 
 /* ── ملحق التغييرات ────────────────────────────────────────────────────── */
 

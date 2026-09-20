@@ -87,7 +87,7 @@ const REJECT_REASONS: Array<[StudentCourseRejectReason, string]> = [
 const arabicDate = (iso?: string) => {
   if (!iso) return "";
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("ar-KW", { month: "long", day: "numeric" });
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("ar-KW-u-nu-latn", { month: "long", day: "numeric" });
 };
 
 /* ── ورقةُ الردّ ────────────────────────────────────────────────────────── */

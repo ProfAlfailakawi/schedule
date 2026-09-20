@@ -103,7 +103,7 @@ const arabicDate = (iso?: string) => {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("ar-KW", { year: "numeric", month: "long", day: "numeric" });
+  return date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
 /* ── ورقةُ الرفض ────────────────────────────────────────────────────────── */

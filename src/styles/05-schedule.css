@@ -1150,10 +1150,12 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .schedule-form-section>header p{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.5}
 .schedule-time-control{
   display:flex;align-items:center;justify-content:center;
-  /* A time is four digits and a colon, not a paragraph: giving the box a
-     comfortable width and centring it in its cell reads as a deliberate,
-     tidy value instead of a number lost in a wide empty field. */
-  inline-size:100%;max-inline-size:180px;min-inline-size:0;margin-inline:auto;overflow:hidden;
+  /* ── الصندوقُ بقدر الوقت ──────────────────────────────────────────────
+     كان الصندوق يُمدّ إلى عرضٍ ثابتٍ ثم يُتوسَّط في خانته، فصار أربعةُ أرقامٍ
+     ونقطتان تسبح في فراغٍ أوسعَ منها مرّتين، وابتعد العنوانُ عن صندوقه إلى
+     طرف العمود حتى بدا أنه يَعنُونُ شيئاً آخر. فصار الصندوقُ بقدر ما فيه،
+     ويبدأ من حيث يبدأ عنوانُه. */
+  inline-size:fit-content;max-inline-size:100%;min-inline-size:0;margin-inline:0;overflow:hidden;
   min-height:44px;border:1px solid var(--line);border-radius:var(--r-sm);
   background:var(--surface-2);
   transition:border-color .16s var(--ease),box-shadow .16s var(--ease),background .16s var(--ease);
@@ -1192,7 +1194,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .schedule-time-control:focus-within{border-color:var(--accent);background:var(--surface);box-shadow:var(--ring)}
 .schedule-editor .field .schedule-time-control input[type="time"]{
   display:block;box-sizing:border-box;
-  inline-size:100%!important;width:100%!important;max-inline-size:100%!important;max-width:100%!important;
+  inline-size:auto!important;width:auto!important;max-inline-size:100%!important;max-width:100%!important;
   min-inline-size:0!important;min-width:0!important;
   margin:0!important;padding-inline:12px!important;border:0!important;border-radius:0!important;
   background:transparent!important;box-shadow:none!important;outline:0!important;overflow:hidden;

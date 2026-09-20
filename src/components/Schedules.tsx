@@ -373,7 +373,7 @@ const UNDO_BAR_MS = 15_000;
 const UNDO_LOG_LIMIT = 60;
 const isToday = (at: number) => new Date(at).toDateString() === new Date().toDateString();
 const undoClock = (at: number) =>
-  new Date(at).toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit", numberingSystem: "latn" });
+  new Date(at).toLocaleTimeString("ar-KW-u-nu-latn", { hour: "2-digit", minute: "2-digit", numberingSystem: "latn" });
 
 /**
  * One half-hour, in pixels.

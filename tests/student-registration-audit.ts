@@ -74,8 +74,13 @@ check(server.includes("هذا المقرّر ليس ضمن طلب الطالب."
 
 check(server.includes("isScopeAllowed(req, Number(need.AdCollegeId), candidate)"),
   "والنطاقُ يُحرس عند الكتابة أيضاً: المعرّفُ يرسله المتصفّح ولا يُصدَّق لوصوله");
-check(server.includes("const ownedByScope ="),
+/* السؤالُ يمرّ على كلِّ قسمٍ في الكلية ويقف عند أوّلِ قسمٍ يملك الطلبَ وهو في
+   نطاق الحساب — لا على قسمٍ واحدٍ يُختار للطلب سلفاً. و`find` تُعيد ذلك القسمَ
+   نفسَه لأن حارسَ التوقيع بعدها يحتاج أن يعرف أيَّ جدولٍ يسأل عنه. */
+check(server.includes("const owningSectionInScope ="),
   "ويُسأل عن كلِّ قسمٍ يملك الطلبَ في نطاق الحساب، لا عن قسمٍ واحدٍ يُختار له");
+check(server.includes("if (!owningSectionInScope) {"),
+  "ومن لا يملكه أيُّ قسمٍ في نطاقه يُردّ");
 check(server.includes("const canWriteRegistration"), "ومن يكتب معرَّفٌ في موضعٍ واحد");
 check(server.includes("هذا الكشف للقراءة بصفتك."), "ومن لا يكتب يُقال له ذلك، لا يُترك يضغط بلا أثر");
 
@@ -178,6 +183,23 @@ for (const [file, source] of [["StudentRegistration", screen], ["InstructorInbox
   check(!/scope\.(CollegeName|SectionName)\b/.test(source),
     `ولا تقرأ ${file} باسمٍ لا يرسله الخادم`);
 }
+
+
+/* ── لا يصل التسجيلَ شيءٌ قبل التوقيعين ──────────────────────────────────────
+ *
+ * قاعدةُ القسم صريحة: لا يذهب إلى التسجيل شيءٌ — وأوّلَ مرّةٍ بالذات — إلا بعد
+ * توقيع لجنة الجدول ورئيس القسم. والجدولُ نفسُه محروسٌ بذلك في `canSubmit`،
+ * وكشفُ طلبات الطلبة كان بابه الثاني مفتوحاً: يقرؤه موظّفُ التسجيل قبل أن
+ * يوقّع أحد، فيبني على مسوّدة.
+ */
+check(server.includes("async function registrarBlockReason("),
+  "وللتسجيل حارسٌ واحدٌ يقول متى يُمنع");
+check(server.includes("if (!isRegistrarRole(req.user?.Role)) return null;"),
+  "وهو على التسجيل وحده: القسمُ يرى كشفَه وهو يُعدّه، فذلك عملُه");
+check(server.includes("if (isFullySigned(approval)) return null;"),
+  "والشرطُ التوقيعان معاً، يُقرآن من `approvalWorkflow` لا من قاعدةٍ تُخترع هنا");
+check((server.match(/registrarBlockReason\(/g) || []).length >= 3,
+  "ويُسأل عند القراءة وعند الكتابة كلتيهما، فلا يُكتب فيما لا يُقرأ");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

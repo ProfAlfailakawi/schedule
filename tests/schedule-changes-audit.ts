@@ -244,8 +244,22 @@ check(changes.includes("terms.length > 1 && (active || !termId)"),
 
 /* ── ٩) الجدول كامل مع الملاحظات، لا الملاحظات وحدها ───────────────────────
  * أهمُّ ما طلبه القسم: أن يرى جدولَه كلَّه والملاحظات في مواضعها. */
-check(changes.includes('view === "full"') && changes.includes('className="changes-full"'),
+check(changes.includes('view === "full"') && changes.includes('className="changes-full agenda-list"'),
   "شاشةٌ تعرض الجدول كاملاً");
+/* ── وبالشكل الذي يقرؤه الناسُ كلَّ يوم ────────────────────────────────────
+ * «مواعيد القسم» في ورشة الجدول هي الشكلُ المستقرّ الذي يستعمله الجميع. وكانت
+ * هذه الشاشةُ تعرض اسمَ المقرّر ورقمَ الشعبة وحدهما، فيقرأ الموظّفُ «تغيّرت
+ * القاعة» ولا يعرف في أيِّ موعدٍ من الأسبوع ولا من يُدرّسه. */
+check(changes.includes("function ScheduleRowCard("),
+  "وللصفّ مُصيّرٌ واحد، يلبسه الطرفان — ما تحرّك والجدولُ كامل");
+check(changes.includes('<article className="agenda-card changes-row"'),
+  "وهو `agenda-card` بأصنافه نفسِها، لا شكلٌ يشبهه فيفترق عنه عند أول تحسين");
+check(changes.includes('<div className="agenda-index">') && changes.includes('className="code-chip"')
+  && changes.includes('<div className="agenda-time"') && changes.includes('<div className="agenda-place"'),
+  "فيه الرقمُ ورمزُ المقرّر والوقتُ والمكان، كما هناك");
+/* والخادم يرسل الصفَّ مشكّلاً مرّةً واحدة للطرفين: اشتقاقان يفترقان يوماً. */
+check(server.includes("const asDisplayRow = (row: any) => ({") && server.includes("courseCode:"),
+  "والخادمُ يشكّله مرّةً واحدةً للطرفين، فلا اشتقاقان يفترقان");
 check(changes.includes('className="changes-view-toggle"'),
   "وتبديلٌ بين «ما تحرّك» و«الجدول كامل»");
 check(changes.includes("rowExtras(row.scheduleId, true,") && changes.includes("rowExtras(entry.scheduleId,"),
@@ -277,6 +291,48 @@ check(deptBlock.includes('landing: "changes"'), "ورئيس القسم يفتح 
 // سطرُ الصلاحيات وحده، لا الكتلة كلها (تعليقُها يذكر اسم الشاشة شرحاً).
 const deptFormIds = (deptBlock.match(/formIds:\s*\[[^\]]*\]/) || [""])[0];
 check(deptFormIds && !deptFormIds.includes("SCHEDULE_WORKSPACE"), "ولا يملك شاشة الورشة: لا تعديل ولا حذف");
+
+/* ── ١٠) أساسٌ لا يسقط إلى العدم ──────────────────────────────────────────
+ *
+ * حين لا تُوجد نسخةُ جولةٍ سابقة كان التقريرُ يقارن الجدولَ بلا شيء: كلُّ صفٍّ
+ * «مضاف»، ولا معدَّلٌ ولا محذوفٌ البتّة. وليست حالاً نادرة — الجولةُ التي تُفتح
+ * تلقائياً حين يعدّل القسمُ جدولاً مقبولاً تُنشأ بلا نسخة، فقسمٌ جولاتُه كلُّها
+ * من هذا النوع لا يملك أساساً أبداً، ويقرأ موظّفُ التسجيل جدولاً كاملاً وقد
+ * تحرّك فيه صفّان. */
+check(server.includes("let baselineVersion = roundBaseline;")
+  && server.includes('let baselineSource: "round" | "capture" | "none"'),
+  "وللمقارنة أساسٌ يُسمّى مصدرُه، لا أساسٌ يغيب بصمت");
+check(server.includes("await Repository.getScheduleVersions(collegeId, sectionId, termId, 100)"),
+  "فإن لم تحمل الجولاتُ نسخةً، يُؤخذ من اللقطات المحفوظة — وهي تُلتقط عند كل تعديل");
+check(server.includes("history.filter(item => item.id !== currentRoundVersionId"),
+  "ولا تُقارن الجولةُ بنسخةِ نفسِها، فتخرج بلا فرقٍ دائماً");
+/* ولحظةُ الأساس فتحُ الجولة لا آخرُ تعديل: النُّسَخُ تُلتقط عند كلِّ تعديل،
+   فأحدثُها يسبق آخرَ تعديلٍ وحدَه — وقسمٌ حذف خمسةَ صفوفٍ ثم غيّر أستاذَ سادس
+   كان يُعرض للتسجيل «معدَّلٌ واحد» والحذوفُ الخمسةُ لا أثر لها. ومراجعةٌ تبدو
+   صحيحةً وهي ناقصة أسوأُ من مراجعةٍ تبدو ناقصة. */
+check(server.includes('const lastLookAt = currentRound?.returnedAt || currentRound?.acceptedAt')
+  && server.includes("|| previousRound?.returnedAt || previousRound?.acceptedAt;"),
+  "والمرساةُ لحظةُ آخِرِ نظرةٍ للتسجيل، لا لحظةُ آخِرِ تعديلٍ للقسم");
+/* والإرسالُ ليس نظرة. ولو جُعل مرساةً لانكسرت أولُ مراجعة: القسمُ يعدّل ويوقّع
+   قبل الإرسال وبعده فتُلتقط نُسَخ، فيُعرض على التسجيل «تعديلٌ واحدٌ منذ
+   الإرسال» بدل الجدول كلِّه وهو أولُ مرّةٍ يراه فيها. */
+check(!server.includes("|| currentRound?.submittedAt"),
+  "والإرسالُ ليس نظرة، فلا يكون مرساة");
+check(server.includes("const after = lastLookAt"),
+  "ومن لم ينظر إليه التسجيلُ قطُّ لا أساسَ له، وكلُّ صفٍّ مضافٌ — وهو الصواب");
+/* وجهةُ البحث بعد المرساة لا قبلها. واللقطةُ تحفظ ما كان قبل التعديل وتُنشأ
+   لحظةَ التعديل، فكلُّ لقطةٍ لهذه الجولة أحدثُ من المرساة بالضرورة — والبحثُ
+   قبلها لا ينطبق عليه شيءٌ أبداً، فيسقط الأساسُ إلى العدم ويعود البلاغُ كما
+   كان. وقد وقع هذا فعلاً، وأظهره تحقّقٌ سلوكيٌّ على خادمٍ يعمل. */
+check(server.includes('String(item.createdAt) >= String(lastLookAt)'),
+  "والبحثُ بعد المرساة، لأن اللقطةَ تُنشأ لحظةَ التعديل وتحفظ ما قبله");
+check(server.includes("const fallback = after[after.length - 1];"),
+  "ويُؤخذ أقدمُ ما بعدها — حالُ الجدول قبل أوّلِ تعديلٍ في هذه الجولة");
+check(server.includes("baselineSource,"),
+  "والمصدرُ يصل الشاشة");
+check(changes.includes('report.baselineSource === "none"')
+  && changes.includes('report.baselineSource === "capture"'),
+  "والشاشةُ تقول من أين تبدأ المقارنة، فلا يُقرأ «كلُّ صفٍّ مضاف» خبراً عن الجدول وهو خبرٌ عن المقارنة");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);
