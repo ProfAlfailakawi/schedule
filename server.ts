@@ -13925,6 +13925,15 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
   const termId = Number(req.body?.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الكلية والقسم والفصل." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "هذا القسم خارج نطاقك." }); return; }
+  /* ── ولا تُفتح دورةٌ على فصلٍ لا تُغلق فيها ──────────────────────────────
+   *
+   * الرابطُ يُرسل إلى عشرين أستاذاً، فيفتحونه ويكتبون رغباتهم ويرسلونها —
+   * ثم لا يستطيع القسمُ تثبيتَ شيءٍ منها، لأن الجدولَ مجمَّد. فيقف الجميعُ
+   * ينتظرون قراراً لا يمكن أن يقع، وهو أسوأُ من بابٍ لا يُفتح.
+   *
+   * والحارسُ هو نفسُه الذي يحرس الجدول، فلا قاعدةَ ثانيةٌ تفترق عنه. */
+  const issueLock = await scheduleLockRefusal(req, collegeId, sectionId, termId);
+  if (issueLock) { res.status(409).json({ error: issueLock, code: "schedule-locked" }); return; }
 
   const closesAt = String(req.body?.closesAt || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(closesAt) || Number.isNaN(Date.parse(closesAt))) {
@@ -14063,6 +14072,12 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
     res.status(403).json({ error: "هذا القسم خارج نطاقك." });
     return;
   }
+
+  /* والقرارُ في فصلٍ مجمَّدٍ لا يقع: «ثُبّت» يحتاج كتابةً في الجدول وهي
+     ممنوعة، و«رُفض» يُغلق بابَ أستاذٍ على حالٍ لا يملك القسمُ تغييرَها. */
+  const decideLock = await scheduleLockRefusal(
+    req, Number(stored.AdCollegeId), Number(stored.AdSectionId), Number(stored.AdTermId));
+  if (decideLock) { res.status(409).json({ error: decideLock, code: "schedule-locked" }); return; }
 
   const index = Number(req.body?.itemIndex);
   const item = (stored.items || [])[index];
@@ -14210,6 +14225,20 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (!requestWindowOpen(resolved.request)) {
     res.status(403).json({ error: "انتهت مدّة استقبال الطلبات لهذا الفصل." });
+    return;
+  }
+  /* ── وفصلٌ انتهى لا يُطلب فيه ─────────────────────────────────────────────
+   *
+   * قد يُجمَّد الفصلُ بعد إصدار الروابط: فالنافذةُ ما زالت مفتوحةً بتاريخها،
+   * والجدولُ صار لا يُعدَّل. ولو قُبل الطلبُ هنا لوقف صاحبُه ينتظر قراراً لا
+   * يمكن أن يقع، ولا شيءَ يقول له لماذا.
+   *
+   * ويُقال له بلفظٍ يخصّه: هو لا يعرف «لجنة الجدول» ولا شأنَ له بها، وإنما
+   * يحتاج أن يعرف أن البابَ أُغلق وأن عليه مراجعة قسمه. */
+  const closedTerm = (await Repository.getTerms())
+    .find(row => Number(row.AdTermId) === Number(resolved.request.AdTermId));
+  if (closedTerm?.AdTermClosed === true) {
+    res.status(409).json({ error: "انتهى هذا الفصل الدراسي، ولم يعد جدولُه يقبل التعديل. راجع قسمك إن كان لديك ما يلزم." });
     return;
   }
 
