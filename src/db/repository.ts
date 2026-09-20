@@ -2192,6 +2192,39 @@ async function getOrCreateStudentCaseSecret(): Promise<string> {
   return studentCaseSecretCache || created;
 }
 
+/** الأحدث أولاً، ويحتمل ملاحظةً بلا تاريخ — من ترحيلٍ أو نسخةٍ احتياطية. */
+const byNewestComment = (a: ScheduleComment, b: ScheduleComment) =>
+  String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+
+/**
+ * ── الفهرس يُبنى، والعمل لا يقف ──────────────────────────────────────────
+ *
+ * الترتيب عند قاعدة البيانات يحتاج فهرساً مركّباً. وبين لحظة النشر ولحظة
+ * اكتمال بناء الفهرس نافذةٌ تردّ فيها Firestore خطأً صريحاً — وفي تلك
+ * النافذة يسقط صندوق الوارد وتسقط بوّابة الإرسال معه، أي تقف الدورة كلها،
+ * لا الترتيبُ وحده.
+ *
+ * وثمنُ الاحتياط رخيص: تُعاد القراءة بلا ترتيب ويُرتَّب في الذاكرة. أبطأ،
+ * وصحيح، ومؤقّت — يزول أثره من تلقاء نفسه ساعةَ يكتمل الفهرس.
+ */
+const readCommentsOrdered = async (
+  build: (collection: FirebaseFirestore.CollectionReference) => FirebaseFirestore.Query,
+  limit: number,
+): Promise<ScheduleComment[]> => {
+  const collection = firestoreDb!.collection("scheduleComments");
+  try {
+    const snap = await build(collection).orderBy("createdAt", "desc").limit(limit).get();
+    return snap.docs.map(doc => doc.data() as ScheduleComment);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/FAILED_PRECONDITION|requires an index/i.test(message)) throw error;
+    console.warn("[comments] الفهرس المركّب غير جاهز بعد؛ تُقرأ الملاحظات وتُرتَّب في الذاكرة.");
+    const snap = await build(collection).limit(limit).get();
+    return snap.docs.map(doc => doc.data() as ScheduleComment).sort(byNewestComment);
+  }
+};
+
+
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
   /** Lets the server drop any cached identity the moment accounts change. */
@@ -3959,17 +3992,14 @@ export const Repository = {
        * الملاحظات الذي يمنع الإرسال ويسمح به، فقصٌّ عشوائيٌّ فيها يعني قراراً
        * عشوائياً. فليكن الترتيب أولاً، ثم يقع الحدّ على الأحدث.
        */
-      const snap = await firestoreDb.collection("scheduleComments")
+      return readCommentsOrdered(collection => collection
         .where("AdCollegeId", "==", Number(collegeId))
         .where("AdSectionId", "==", Number(sectionId))
-        .where("AdTermId", "==", Number(termId))
-        .orderBy("createdAt", "desc")
-        .limit(2000).get();
-      return snap.docs.map(doc => doc.data() as ScheduleComment);
+        .where("AdTermId", "==", Number(termId)), 2000);
     }
     return (db.scheduleComments || [])
       .filter(row => Number(row.AdCollegeId) === Number(collegeId) && Number(row.AdSectionId) === Number(sectionId) && Number(row.AdTermId) === Number(termId))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort(byNewestComment);
   },
 
   /**
@@ -3981,15 +4011,11 @@ export const Repository = {
    */
   getScheduleCommentsForTerm: async (termId: number): Promise<ScheduleComment[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("scheduleComments")
-        .where("AdTermId", "==", Number(termId))
-        .orderBy("createdAt", "desc")
-        .limit(5000).get();
-      return snap.docs.map(doc => doc.data() as ScheduleComment);
+      return readCommentsOrdered(collection => collection.where("AdTermId", "==", Number(termId)), 5000);
     }
     return (db.scheduleComments || [])
       .filter(row => Number(row.AdTermId) === Number(termId))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort(byNewestComment);
   },
 
   getScheduleCommentById: async (id: string): Promise<ScheduleComment | undefined> => {

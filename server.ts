@@ -1136,7 +1136,27 @@ function filterByScope<T extends { AdCollegeId: number; AdSectionId: number }>(r
   if (!req.user) return [];
   if (req.user.IsAdminUser) return list;
   if (!req.scopes) return [];
-  return list.filter(item => isScopeAllowed(req, Number(item.AdCollegeId), Number(item.AdSectionId)));
+  return list.filter(item => {
+    const sectionId = Number(item.AdSectionId);
+    /**
+     * صفٌّ بقسمٍ صفر ليس سؤالاً عن الكلية.
+     *
+     * لِـ`isScopeAllowed` معنيان للصفر بحسب موضعه: صفرٌ في السؤال يعني «أله
+     * شيءٌ في هذه الكلية؟» وهو سؤالُ شاشةٍ لا سؤالُ صفّ؛ وصفرٌ في صفّ النطاق
+     * يعني «الكلية كلها» لصفاتها وحدها.
+     *
+     * ولمّا صارت التصفية تسأل الحارسَ نفسه، صار صفٌّ بياناتُه ناقصةُ القسم —
+     * من ترحيلٍ قديم أو استيرادٍ بلا قسم — يدخل من باب المعنى الأول: يُسأل عنه
+     * بصفر، فيُجاب «نعم» لكل من له أيُّ شيءٍ في تلك الكلية، أيّاً كانت صفته.
+     * وهذا توسيعٌ لم يُقصد، وليس من عمل هذه الإضافة أن يقع.
+     *
+     * فالصفُّ الناقص يُطلب له تطابقٌ حرفيّ، كما كان قبل التوحيد تماماً.
+     */
+    if (sectionId <= 0) {
+      return req.scopes!.some(s => s.AdCollegeId === Number(item.AdCollegeId) && Number(s.AdSectionId) === 0);
+    }
+    return isScopeAllowed(req, Number(item.AdCollegeId), sectionId);
+  });
 }
 
 // Legacy FSchedule.fdetail stores weekday numbers, not display names:
@@ -4974,17 +4994,20 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
   }
 
   let added = 0;
+  const createdRows: any[] = [];
   for (const row of ready) {
-    try {
-      const created = await Repository.createSchedule(row);
-      added += 1;
-      /* كل صفٍّ يصل الجدول من هنا كأيِّ صفٍّ يُضاف باليد: إن كان بعد توقيع
-         رئيس القسم فهو ينتظر إقراره، وإن كان الجدول مقبولاً فقد عاد جولةً
-         جديدة. والاستيراد لم يكن يقول شيئاً من ذلك، فكان السجلّ يشيخ بصمت. */
-      await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: created });
-    }
+    try { const created = await Repository.createSchedule(row); added += 1; createdRows.push(created); }
     catch (error) { rejected.push({ line: 0, reason: error instanceof Error ? error.message : "تعذر الحفظ", label: row.SCode }); }
   }
+  /* ── مرّةً واحدة للاستيراد كله، لا مرّةً لكل صفّ ──────────────────────────
+   *
+   * كل صفٍّ يصل الجدول من هنا كأيِّ صفٍّ يُضاف باليد: إن كان بعد توقيع رئيس
+   * القسم فهو ينتظر إقراره، وإن كان الجدول مقبولاً فقد عاد جولةً جديدة.
+   *
+   * لكنّ الإبلاغَ صفّاً صفّاً يقرأ وثيقة الاعتماد ويكتبها ثلاثمئة مرّةٍ في
+   * استيرادٍ من ثلاثمئة صفّ — وإعادةُ فتح الجولة تحدث مرّةً واحدة على أي حال،
+   * والباقي رحلاتٌ تُدفع بلا مقابل. فيُبلَّغ عن الدفعة دفعةً واحدة. */
+  if (createdRows.length) await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", rows: createdRows });
   res.json({ preview: false, added, rejected, planted });
 });
 
@@ -6353,10 +6376,14 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
 
   const targetRows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId: targetTermId });
   if(targetRows.length){res.status(409).json({error:"يوجد جدول بالفعل في الفصل المستهدف"});return;}
+  /* وقفلُ الإرسال قبله: الفصل المستهدف قد يكون بين يدي التسجيل الآن. */
+  const copyLock = await scheduleLockRefusal(collegeId, sectionId, targetTermId);
+  if (copyLock) { res.status(409).json({ error: copyLock, code: "schedule-locked" }); return; }
   const copyRefusal = await wholesaleRefusal(collegeId, sectionId, targetTermId, { kind: "copy-term" });
   if (copyRefusal) { res.status(409).json({ error: copyRefusal, code: "deadline-wholesale" }); return; }
   const undoVersion = await captureScopeVersion(req, collegeId, sectionId, targetTermId, "قبل نسخ الفصل الدراسي", "copy");
   const written = await Repository.replaceScheduleScope(collegeId, sectionId, targetTermId, copiedRows as FSchedule[]);
+  await noteScheduleMutation(req, collegeId, sectionId, targetTermId, { kind: "add", rows: written as any[] });
   res.json({ success: true, count: written.length, message: "تم نسخ الفصل الدراسي بالقيم الرسمية للمباني والقاعات", undoVersion: undoVersion ? { id: undoVersion.id, label: undoVersion.label } : null });
 });
 
@@ -8204,7 +8231,7 @@ async function scheduleLockRefusal(collegeId: number, sectionId: number, termId:
 async function noteScheduleMutation(
   req: AuthenticatedRequest,
   collegeId: number, sectionId: number, termId: number,
-  change: { kind: "add" | "edit" | "delete"; row?: any },
+  change: { kind: "add" | "edit" | "delete"; row?: any; rows?: any[] },
 ): Promise<void> {
   try {
     const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
@@ -8214,17 +8241,28 @@ async function noteScheduleMutation(
     /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
        خانةً في صفٍّ وافق عليه، وإضافةُ شعبةٍ تُنشئ التزاماً لم يره أصلاً. */
     const headSignature = next.signatures.find(item => item.stage === "head");
-    if (change.kind === "add" && headSignature && change.row) {
-      const already = next.pendingAdditions.some(item => Number(item.scheduleId) === Number(change.row.id));
-      if (!already) {
-        next = { ...next, pendingAdditions: [...next.pendingAdditions, {
-          scheduleId: Number(change.row.id),
-          courseId: Number(change.row.AdCourseId || 0),
-          courseName: String(change.row.AdCourseName || ""),
-          sectionCode: String(change.row.SCode || ""),
-          addedAt: new Date().toISOString(),
-          addedBy: String(req.user?.Name || req.user?.SystemUserLogin || ""),
-        }] };
+    const addedRows = change.kind === "add" ? (change.rows || (change.row ? [change.row] : [])) : [];
+    if (headSignature && addedRows.length) {
+      const known = new Set(next.pendingAdditions.map(item => Number(item.scheduleId)));
+      const addedBy = String(req.user?.Name || req.user?.SystemUserLogin || "");
+      const at = new Date().toISOString();
+      const fresh = addedRows
+        .filter(row => row && !known.has(Number(row.id)))
+        .map(row => ({
+          scheduleId: Number(row.id),
+          courseId: Number(row.AdCourseId || 0),
+          courseName: String(row.AdCourseName || ""),
+          sectionCode: String(row.SCode || ""),
+          addedAt: at,
+          addedBy,
+        }));
+      /* ── السجلّ يبقى مقروءاً ──────────────────────────────────────────────
+       * السطر الذي يراه رئيس القسم يعدّ الشُّعب ويسمّيها. واستيرادُ ثلاثمئة
+       * صفٍّ بعد توقيعه ليس «شُعباً أُضيفت بعد اعتمادك»، هو جدولٌ آخر — ولا
+       * يُقرأ بعدّه شعبةً شعبة. فيُحفظ منه ما يُقرأ، ويبقى المنعُ قائماً على
+       * أي حال: وجودُ واحدةٍ يكفي لإيقاف الإرسال حتى يُقرّ. */
+      if (fresh.length) {
+        next = { ...next, pendingAdditions: [...next.pendingAdditions, ...fresh].slice(0, 60) };
       }
     }
     /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد.
@@ -8925,7 +8963,18 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
     const list = rowsByScope.get(key);
     if (list) list.push(row); else rowsByScope.set(key, [row]);
   }
-  const rowById = new Map((allTermRows as any[]).map(row => [Number(row.id), row]));
+  /* حالةُ الملاحظة تُقاس بصفوف القسم نفسه، لا بصفوف الفصل كله.
+   *
+   * الصفُّ ينتقل بين الأقسام — تعديلُ الموعد يقبل قسماً جديداً — وملاحظتُه
+   * تبقى منسوبةً إلى قسمها الأول. فلو قيست بصفوف الفصل لوُجد الصفُّ في قسمه
+   * الجديد وقيل «تنتظر»، بينما تقول شاشةُ القسم وبوابةُ الإرسال «زال الصفّ».
+   * وعدّادٌ في الوارد لا يملك القسمُ أن يُنزله هو أسوأ من عدّادٍ خاطئ.
+   */
+  const rowByIdForScope = (key: string) => {
+    const map = new Map<number, any>();
+    for (const row of rowsByScope.get(key) || []) map.set(Number(row.id), row);
+    return map;
+  };
   const notesByScope = new Map<string, any[]>();
   for (const note of allNotes) {
     const key = `${Number(note.AdCollegeId)}:${Number(note.AdSectionId)}`;
@@ -8937,9 +8986,10 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
     const key = `${approval.AdCollegeId}:${approval.AdSectionId}`;
     const scheduleRows = rowsByScope.get(key) || [];
     const blocking = countBlockingConflicts(scheduleRows, allTermRows as any[]);
+    const scopeRowById = rowByIdForScope(key);
     const notes = (notesByScope.get(key) || [])
       .filter(note => note.origin === "registrar" || note.origin === "department")
-      .map(note => ({ ...note, state: noteState(note, rowById.get(Number(note.scheduleId))) }));
+      .map(note => ({ ...note, state: noteState(note, scopeRowById.get(Number(note.scheduleId))) }));
     const deadline = readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today);
     return {
       collegeId: approval.AdCollegeId,
@@ -10022,13 +10072,22 @@ async function applyRoleTemplate(userId: number, role: AcademicRole, requested: 
   }
 
   if (definition.scopeMode === "college") {
-    const collegeIds = (requested.collegeIds || []).map(Number).filter(id => Number.isFinite(id) && id > 0);
+    /* ── الغياب ليس كالفراغ ───────────────────────────────────────────────
+     *
+     * حفظٌ لم يُذكر فيه نطاقٌ أصلاً لا يُقرأ «امحُ نطاقه» — وهذا ما يحمي
+     * الحساب من أن يُفرَّغ بحفظٍ عابر. لكنّ قائمةً فارغةً أُرسلت صراحةً قرارٌ:
+     * مديرٌ أزال كل الكليات عن عميدٍ وحفظ. وخلطُهما كان يجعل سحبَ النطاق
+     * مستحيلاً من هذه الشاشة، والشاشةُ تقول «حُفظ» ولا شيء تغيّر — وهو أسوأ
+     * من رفضٍ صريح.
+     */
+    if (requested.collegeIds === undefined) {
+      const current = await Repository.getUserAssigns(userId);
+      return { formIds: definition.formIds, scopeCount: current.length };
+    }
+    const collegeIds = requested.collegeIds.map(Number).filter(id => Number.isFinite(id) && id > 0);
     const assigns = Array.from(new Set(collegeIds)).map(collegeId => ({ AdCollegeId: collegeId, AdSectionId: 0 }));
-    /* قائمةٌ فارغة لا تُقرأ «امحُ نطاقه». محو النطاق يُترك لشاشة النطاقات، التي
-       تفعله صفّاً صفّاً وبقصدٍ ظاهر — لا لحفظٍ لم يُذكر فيه نطاقٌ أصلاً. */
-    if (assigns.length) await Repository.saveUserAssigns(userId, assigns);
-    const current = await Repository.getUserAssigns(userId);
-    return { formIds: definition.formIds, scopeCount: current.length };
+    await Repository.saveUserAssigns(userId, assigns);
+    return { formIds: definition.formIds, scopeCount: assigns.length };
   }
 
   // section: الكلية والقسم كما هو الحال اليوم
@@ -10040,9 +10099,10 @@ async function applyRoleTemplate(userId: number, role: AcademicRole, requested: 
 
 /** النطاق وحده، حين تبقى الصفة كما هي وتتغيّر كلياتُها. */
 async function applyRoleScopeOnly(userId: number, role: AcademicRole, collegeIds: unknown): Promise<void> {
-  const ids = Array.isArray(collegeIds) ? collegeIds.map(Number).filter(id => Number.isFinite(id) && id > 0) : [];
-  if (!ids.length) return;   // قائمةٌ فارغة لا تعني «امحُ نطاقه»
+  if (!Array.isArray(collegeIds)) return;   // غيابٌ لا قرار
   if (roleDefinition(role).scopeMode !== "college") return;
+  const ids = collegeIds.map(Number).filter(id => Number.isFinite(id) && id > 0);
+  /* وقائمةٌ فارغة أُرسلت صراحةً سحبٌ للنطاق، لا سهوٌ يُتجاوز. */
   await Repository.saveUserAssigns(userId, Array.from(new Set(ids)).map(collegeId => ({ AdCollegeId: collegeId, AdSectionId: 0 })));
 }
 
@@ -10226,6 +10286,16 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
     const previousRole = roleDefinition((before as any)?.Role).id;
     const roleChanged = isAcademicRole(Role) && Role !== previousRole;
     if (roleChanged && Role !== "standard") {
+      /* ── النزول عن صفةِ كليةٍ يأخذ صفوفَها معه ──────────────────────────
+       * صفّ «الكلية كلها» لا يُجيز أقساماً إلا لصفاتها، فالنزول يُبطل مفعولَه.
+       * لكنه يبقى صفّاً في السجلّ: يُقرأ «له شيءٌ في هذه الكلية» في كل سؤالٍ
+       * عن الكلية نفسها، فيبقى للعميد السابق بابٌ على مستوى كليته كلها. وصفةٌ
+       * زالت لا ينبغي أن يبقى لها أثرٌ يعمل. */
+      if (roleDefinition(previousRole).scopeMode === "college" && roleDefinition(Role).scopeMode !== "college") {
+        const stale = await Repository.getUserAssigns(id);
+        const kept = stale.filter(row => Number(row.AdSectionId) > 0);
+        if (kept.length !== stale.length) await Repository.saveUserAssigns(id, kept.map(row => ({ AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId) })));
+      }
       await applyRoleTemplate(id, Role, { collegeIds, assigns: Array.isArray(assigns) ? sanitizeAssigns(assigns) : undefined });
       res.locals.auditChanges = `الصفة: «${roleLabel(Role)}»`;
     } else if (isAcademicRole(Role) && roleDefinition(Role).scopeMode === "college" && Array.isArray(collegeIds)) {

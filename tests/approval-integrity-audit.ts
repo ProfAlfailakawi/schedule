@@ -47,7 +47,7 @@ check(roleDefinition("committeeChair").scopeMode === "section" && roleDefinition
    بلا شيءٍ ولا رسالةٍ ولا سببٍ ظاهر، وهو أعسرُ ما يُشخَّص. */
 const filterAt = server.indexOf("function filterByScope");
 const filterBody = server.slice(filterAt, filterAt + 1600);
-check(filterBody.includes("isScopeAllowed(req, Number(item.AdCollegeId), Number(item.AdSectionId))"),
+check(filterBody.includes("return isScopeAllowed(req, Number(item.AdCollegeId), sectionId);"),
   "تصفيةُ النطاق تسأل الحارس نفسه، فلا تفترق عنه");
 check(!filterBody.includes("s.AdSectionId === item.AdSectionId"),
   "ولم يبقَ منطقُ نطاقٍ ثانٍ يُصان وحده");
@@ -98,7 +98,7 @@ const importBody = server.slice(importAt, importAt + 10000);
 check(importBody.includes('wholesaleRefusal(collegeId, sectionId, termId, { kind: "import" })'),
   "والاستيراد يقرأ الموعد أيضاً: هو التسليم الشامل بعينه");
 check(importBody.includes("if (commit)"), "والمعاينة تبقى مفتوحة: قراءةُ ملفٍّ ليست كتابةً على الجدول");
-check(importBody.includes('noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: created })'),
+check(importBody.includes("createdRows.push(created)"),
   "وكلُّ صفٍّ يصل من الاستيراد يُسجَّل كأيِّ صفٍّ يُضاف باليد");
 
 const moveAt = server.indexOf('app.post("/api/schedules/move-batch"');
@@ -116,8 +116,8 @@ check(moveBody.includes('noteScheduleMutation(req, scope.collegeId, scope.sectio
 check(server.includes("if (roleChanged && Role !== \"standard\") {"),
   "القالب يُكتب عند تغيير الصفة لا عند كل حفظ");
 check(server.includes("const before = await Repository.getUserById(id);"), "والصفة السابقة تُقرأ للمقارنة");
-check(server.includes("if (assigns.length) await Repository.saveUserAssigns(userId, assigns);"),
-  "وقائمةُ كلياتٍ فارغة لا تُقرأ «امحُ نطاقه»");
+check(server.includes("if (requested.collegeIds === undefined) {"),
+  "وحفظٌ لم يُذكر فيه نطاق لا يُقرأ «امحُ نطاقه»");
 check(server.includes("async function applyRoleScopeOnly"), "وتغييرُ الكليات وحدها لا يمسّ الشاشات");
 check(adminUsers.includes('if (mode === "users") setAssigns'),
   "وشاشةُ المستخدمين تقرأ النطاقات: نموذجُ العميد كان يُفتح بكلياتٍ فارغة فيمحوها أول حفظ");
@@ -146,7 +146,7 @@ check(server.includes("&& next.pendingAdditions.some(item => Number(item.schedul
  * يقرأ جدول الفصل كاملاً مرّةً لكل قسم. */
 
 const inboxAt = server.indexOf('app.get("/api/approvals/inbox"');
-const inboxBody = server.slice(inboxAt, inboxAt + 4200);
+const inboxBody = server.slice(inboxAt, inboxAt + 5200);
 check(inboxBody.includes("Repository.getScheduleCommentsForTerm(termId)"), "ملاحظات الفصل تُقرأ مرّةً واحدة");
 check(inboxBody.includes("rowsByScope"), "ومواعيدُه تُوزَّع في الذاكرة");
 check(!inboxBody.includes("await Promise.all(visible.map"), "ولا قراءةَ لكل قسمٍ على حدة");
@@ -159,6 +159,57 @@ const commentIndexes = (indexes.indexes || []).filter((entry: any) => entry.coll
 check(commentIndexes.length === 2, "والفهرسان اللذان يحتاجهما الترتيب معرَّفان");
 check(commentIndexes.some((entry: any) => entry.fields.length === 4), "فهرسُ القسم في فصل");
 check(commentIndexes.some((entry: any) => entry.fields.length === 2), "وفهرسُ الفصل كله");
+
+/* ── ٨) توحيدُ الحارسين لم يُوسّع شيئاً ──────────────────────────────────
+ *
+ * لِـ`isScopeAllowed` معنيان للصفر بحسب موضعه: صفرٌ في السؤال يعني «أله شيءٌ
+ * في هذه الكلية؟»، وصفرٌ في صفّ النطاق يعني «الكلية كلها» لصفاتها وحدها.
+ * ولمّا صارت التصفية تسأل الحارس نفسه، صار صفٌّ ناقصُ القسم يدخل من الباب
+ * الأول فيُرى لكل من له أيُّ شيءٍ في تلك الكلية، أيّاً كانت صفته. */
+
+check(filterBody.includes("if (sectionId <= 0) {"), "الصفُّ ناقصُ القسم يُفحص على حدة");
+check(filterBody.includes('Number(s.AdSectionId) === 0'), "ويُطلب له تطابقٌ حرفيّ كما كان قبل التوحيد");
+
+/* ── ٩) سحبُ النطاق ممكنٌ، والغيابُ ليس كالفراغ ─────────────────────────── */
+
+check(server.includes("if (requested.collegeIds === undefined) {"),
+  "حفظٌ لم يُذكر فيه نطاق لا يمحوه");
+check(server.includes("if (!Array.isArray(collegeIds)) return;   // غيابٌ لا قرار"),
+  "وقائمةٌ فارغة أُرسلت صراحةً سحبٌ يُنفَّذ، لا سهوٌ يُتجاوز");
+check(server.includes('roleDefinition(previousRole).scopeMode === "college" && roleDefinition(Role).scopeMode !== "college"'),
+  "والنزول عن صفةِ كليةٍ يأخذ صفوفَها معه: صفةٌ زالت لا يبقى لها أثرٌ يعمل");
+
+/* ── ١٠) كل بابٍ يكتب على الجدول يقرأ القفل ─────────────────────────────── */
+
+const copyAt = server.indexOf('app.post("/api/schedules/copy"');
+const copyBody = server.slice(copyAt, copyAt + 4200);
+check(copyBody.includes("scheduleLockRefusal(collegeId, sectionId, targetTermId)"), "ونسخُ الفصل يقرؤه أيضاً");
+check(copyBody.includes("noteScheduleMutation"), "ويُبلّغ عمّا كتبه");
+
+/* ── ١١) الاستيراد يُبلّغ دفعةً واحدة ───────────────────────────────────── */
+
+check(importBody.includes('noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", rows: createdRows })'),
+  "الاستيراد يُبلّغ مرّةً لا مرّةً لكل صفّ");
+check(server.includes("slice(0, 60)"),
+  "وسجلُّ الإضافات المنتظِرة يبقى مقروءاً: استيرادُ ثلاثمئة صفٍّ ليس «شُعباً أُضيفت»");
+check(server.includes("change: { kind: \"add\" | \"edit\" | \"delete\"; row?: any; rows?: any[] }"),
+  "والإبلاغ يقبل الدفعة كما يقبل الصفّ");
+
+/* ── ١٢) حالة الملاحظة واحدةٌ في كل شاشة ───────────────────────────────── */
+
+check(inboxBody.includes("rowByIdForScope"),
+  "الوارد يقيس حالة الملاحظة بصفوف قسمها، كما تقيسها شاشة القسم وبوّابة الإرسال");
+check(!inboxBody.includes("rowById.get(Number(note.scheduleId))"),
+  "ولا يقيسها بصفوف الفصل كله: عدّادٌ لا يملك القسمُ أن يُنزله أسوأ من عدّادٍ خاطئ");
+
+/* ── ١٣) الفهرس يُبنى، والعمل لا يقف ───────────────────────────────────── */
+
+check(repository.includes("const readCommentsOrdered"), "قراءةُ الملاحظات تحتمل فهرساً لم يكتمل بناؤه");
+check(repository.includes("FAILED_PRECONDITION|requires an index"),
+  "وتُميّز خطأ الفهرس من غيره، فلا تبتلع عطلاً حقيقياً");
+check(repository.includes("const byNewestComment"), "والترتيب من موضعٍ واحد");
+check(repository.includes('String(b.createdAt || "").localeCompare(String(a.createdAt || ""))'),
+  "ويحتمل ملاحظةً بلا تاريخ: النسختان السحابية والمحلّية لا تفترقان عند البيانات الناقصة");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);
