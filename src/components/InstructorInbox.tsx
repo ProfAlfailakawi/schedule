@@ -330,6 +330,19 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [ask, setAsk] = useState("");
   const [showUnchanged, setShowUnchanged] = useState(false);
+  /* ── ما يراه صاحبُ الصلاحية الكاملة ──────────────────────────────────────
+   *
+   * قوائمُ الكلية والقسم كانت تُبنى من نطاق الحساب وحدَه. وهو صوابٌ لمن له
+   * نطاق، وخطأٌ لمن لا نطاقَ له لأن له الكلَّ: صاحبُ الصلاحية الكاملة كان يرى
+   * الكليتين المسندتين إليه فقط، ويظنّ أن النظام لا يعرف غيرهما.
+   *
+   * والقاعدةُ مستقرّةٌ في الشاشات القديمة: الكتالوجُ كاملاً لمن له الكلّ،
+   * ومُصفّىً بالنطاق لمن سواه. فتُقرأ هنا بالقاعدة نفسِها، لا بقاعدةٍ ثانيةٍ
+   * تشبهها. */
+  const [catalog, setCatalog] = useState<{
+    colleges: Array<{ AdCollegeId: number; AdCollegeName: string }>;
+    sections: Array<{ AdSectionId: number; AdCollegeId: number; AdSectionName: string }>;
+  } | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -342,13 +355,30 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     })();
   }, []);
 
+  /* ولا يُقرأ الكتالوجُ إلا لمن يحتاجه: من له نطاقٌ يكفيه نطاقُه، ورحلتان
+     إضافيتان في كل فتحةِ شاشةٍ ثمنٌ بلا مقابل. */
+  useEffect(() => {
+    if (!powerAdmin) { setCatalog(null); return; }
+    void (async () => {
+      try {
+        const [colleges, sections] = await Promise.all([request("/api/colleges"), request("/api/sections")]);
+        setCatalog({
+          colleges: Array.isArray(colleges) ? colleges : (colleges.colleges || []),
+          sections: Array.isArray(sections) ? sections : (sections.sections || []),
+        });
+      } catch { setCatalog(null); }
+    })();
+  }, [powerAdmin]);
+
   /* النطاقُ الافتراضيُّ نطاقُ الحساب حين يكون واحداً: من له قسمٌ واحدٌ لا
      يُسأل عن قسمه في كل فتحة. */
   useEffect(() => {
-    if (collegeId || !scopes.length) return;
+    /* ومن له الكلُّ لا يُختار له شيء: اختيارُ أوّلِ كليةٍ في الكتالوج يُخفي
+       عنه البقيّةَ خلف قراءةٍ بدأت بلا طلبه. */
+    if (collegeId || powerAdmin || !scopes.length) return;
     setCollegeId(Number(scopes[0].AdCollegeId) || 0);
     if (scopes.length === 1) setSectionId(Number(scopes[0].AdSectionId) || 0);
-  }, [scopes, collegeId]);
+  }, [scopes, collegeId, powerAdmin]);
 
   const load = useCallback(async () => {
     if (!collegeId || !sectionId || !termId) { setRows(null); return; }
@@ -364,15 +394,28 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   useEffect(() => { void load(); }, [load]);
 
   const collegeOptions = useMemo(() => {
+    if (catalog) {
+      return catalog.colleges
+        .map(row => ({ value: Number(row.AdCollegeId), label: String(row.AdCollegeName || `كلية ${row.AdCollegeId}`) }))
+        .filter(item => item.value)
+        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    }
     const seen = new Map<number, string>();
     for (const scope of scopes) {
       const id = Number(scope.AdCollegeId);
       if (id && !seen.has(id)) seen.set(id, String(scope.AdCollegeName || `كلية ${id}`));
     }
     return [...seen].map(([value, label]) => ({ value, label }));
-  }, [scopes]);
+  }, [scopes, catalog]);
 
   const sectionOptions = useMemo(() => {
+    if (catalog) {
+      return catalog.sections
+        .filter(row => !collegeId || Number(row.AdCollegeId) === collegeId)
+        .map(row => ({ value: Number(row.AdSectionId), label: String(row.AdSectionName || `قسم ${row.AdSectionId}`) }))
+        .filter(item => item.value)
+        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    }
     const seen = new Map<number, string>();
     for (const scope of scopes) {
       if (collegeId && Number(scope.AdCollegeId) !== collegeId) continue;
@@ -380,7 +423,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       if (id && !seen.has(id)) seen.set(id, String(scope.AdSectionName || `قسم ${id}`));
     }
     return [...seen].map(([value, label]) => ({ value, label }));
-  }, [scopes, collegeId]);
+  }, [scopes, collegeId, catalog]);
 
   const needle = ask.trim();
   const visible = useMemo(() => (rows || [])

@@ -9479,13 +9479,24 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
    * فيُرسل الصفُّ كاملاً مشكّلاً مرّةً واحدة، ويلبس الطرفان — ما تحرّك
    * والجدولُ كامل — الشكلَ نفسه. */
   const courseCodeById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseCode || "")]));
+  /* ── الأيامُ بأسمائها ──────────────────────────────────────────────────
+     «ح ث» اختصارٌ يعرفه من وضعه. ومن يقرأ الصفَّ ليقرّر فيه يقرأ «الأحد -
+     الثلاثاء» كما يقرؤها في الجدول الدراسيّ نفسِه، بالألفاظ نفسِها من
+     `scheduleDays` لا بألفاظٍ تشبهها. والمقارنةُ تبقى على صيغتها كما هي:
+     هذا عرضٌ، وذاك قياس. */
+  const SHOW_DAYS: Array<[string, string]> = [
+    ["fsunday", "الأحد"], ["fmonday", "الاثنين"], ["ftuesday", "الثلاثاء"],
+    ["fwednesday", "الأربعاء"], ["fthursday", "الخميس"],
+  ];
+  const namedDays = (row: any) =>
+    SHOW_DAYS.filter(([key]) => Boolean(row?.[key])).map(([, label]) => label).join(" - ");
   const asDisplayRow = (row: any) => ({
     scheduleId: Number(row.id),
     courseCode: courseCodeById.get(Number(row.AdCourseId)) || "",
     course: names.courseById.get(Number(row.AdCourseId)) || String(row.AdCourseName || `موعد ${row.id}`),
     sectionCode: String(row.SCode || "—"),
     time: diffFieldValue(row, "time", names),
-    days: diffFieldValue(row, "days", names),
+    days: namedDays(row) || "بدون أيام",
     room: diffFieldValue(row, "room", names),
     instructor: diffFieldValue(row, "instructor", names),
   });
@@ -14159,7 +14170,12 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
     .find(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
   /* والجوابُ واحدٌ سواءٌ أخطأ الرقمَ أم لم يكن في سجلّه رقمٌ أصلاً: التفريقُ
      بينهما يقول لمن يجرّب أيُّ الأساتذة مسجَّلٌ رقمُه. */
-  if (!signer?.AdInstructorCivil || String(signer.AdInstructorCivil).replace(/\D/g, "") !== civil) {
+  /* والرقمُ المخزونُ يُطبَّع كما يُطبَّع المُرسَل: سجلٌّ كُتب بأرقامٍ عربيةٍ أو
+     فارسية — وبابُ الأساتذة يقبلها — كان `\D` يمحوه كلَّه فيصير فارغاً، فلا
+     يطابق شيئاً أبداً. وصاحبُه يدخل رقمَه الصحيح فيُردّ، مرّةً بعد مرّة، بلا
+     سببٍ يظهر له ولا للقسم. */
+  const storedCivil = asciiDigits(signer?.AdInstructorCivil).replace(/\D/g, "");
+  if (!storedCivil || storedCivil !== civil) {
     res.status(403).json({ error: "الرقم المدني لا يطابق صاحب هذا الرابط." });
     return;
   }
@@ -14411,6 +14427,15 @@ function paint(){
  host.innerHTML=h;
  wire();
 }
+/* الأرقامُ كما تُكتب على أيّ لوحة: عربيةً أو فارسيةً أو لاتينية. وكان
+   التحويلُ يعرف العربيةَ وحدَها، فمن لوحتُه فارسيةٌ يرى «اكتب ١٢ رقماً» مهما
+   كتب — وasciiDigits في الخادم تعرف الاثنتين، فافترقت الصفحةُ عنه.
+   (ولا تُكتب هنا أسماءٌ بين علامات الاقتباس المائلة: هذا النصُّ داخل قالبٍ
+   نصّيٍّ في الخادم، وأوّلُ علامةٍ منها تُغلقه.) */
+function digitsOf(v){return String(v||"")
+ .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})
+ .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))})
+ .replace(/\D/g,"")}
 function wire(){
  host.querySelectorAll("[data-a]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i,it=state[i];it.action=el.dataset.a;
@@ -14426,6 +14451,11 @@ function wire(){
   var i=+el.dataset.i,p=el.dataset.alt.split("|");state[i].days=[p[0]];state[i].start=p[1];paint();check(i)}});
  host.querySelectorAll("[data-excuse]").forEach(function(el){el.oninput=function(){
   state[+el.dataset.i].excuse=el.value}});
+ /* ويُحفظ ما كُتب لحظةَ كتابته: كلُّ تعديلٍ على الجدول يعيد الرسم، وكذلك
+    جوابُ الحكم حين يصل متأخّراً — والحقلُ يُبنى من signCivil، فما كُتب ولم
+    يُحفظ يُمحى تحت يده ويُردّ إرسالُه بلا سبب. */
+ var civilBox=document.getElementById("civil");
+ if(civilBox)civilBox.oninput=function(){signCivil=digitsOf(civilBox.value)};
  var send=document.getElementById("send");if(send)send.onclick=submit;
 }
 /* الحكمُ يُسأل عنه الخادمُ عند كل تغيير: هو وحده يرى الجدول كاملاً، والصفحةُ
@@ -14446,7 +14476,7 @@ function check(i){
 function submit(){
  var field=document.getElementById("civil");
  /* الأرقامُ العربيةُ تُقبل كما تُكتب على لوحة الهاتف. */
- var civil=(field&&field.value||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\D/g,"");
+ var civil=digitsOf(field&&field.value||"");
  signCivil=civil;
  if(civil.length!==12){
   document.getElementById("err").innerHTML='<div class="err">اكتب رقمك المدني كاملاً — ١٢ رقماً — فهو توقيعك على الطلب.</div>';
