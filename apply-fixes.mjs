@@ -59,9 +59,13 @@ try {
      1) بطاقتي: الفصل الذي أُصدر له رابط الأستاذ هو الفصل التشغيلي للرابط.
         إنشاء فصل أحدث للتخطيط لا يحوّل بطاقة الفصل المصدر إلى "فصل سابق".
      ------------------------------------------------------------------ */
+  const serverText = read('server.ts');
+  const targetBefore = serverText.includes('liveTermId: sortTermsNewestServer(terms)[0]?.AdTermId || 0,')
+    ? 'liveTermId: sortTermsNewestServer(terms)[0]?.AdTermId || 0,'
+    : 'liveTermId: currentTermId(terms as any),';
   replaceRequired(
     'server.ts',
-    'liveTermId: sortTermsNewestServer(terms)[0]?.AdTermId || 0,',
+    targetBefore,
     'liveTermId: link.AdTermId,',
     'staff-card live term must follow the issued link term',
     { min: 1, max: 1 },

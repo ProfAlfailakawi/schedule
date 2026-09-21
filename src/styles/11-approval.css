@@ -21,7 +21,7 @@
   display:inline-flex;align-items:center;gap:8px;
   padding:8px 12px;border-radius:var(--r-full);
   background:var(--accent-softer);color:var(--accent-ink);
-  font-size:.86rem;font-weight:650;
+  font-size:.86rem;font-weight:600;
 }
 .role-scope-note svg{inline-size:16px;block-size:16px}
 
@@ -47,7 +47,7 @@
 }
 .deadline-strip[data-tone="past"] strong{color:var(--danger)}
 .deadline-strip .deadline-extension{
-  margin-inline-start:auto;font-size:.8rem;font-weight:650;opacity:.9;
+  margin-inline-start:auto;font-size:.8rem;font-weight:600;opacity:.9;
 }
 
 /* ── حالة الاعتماد: شارةٌ واحدة تُستعمل في كل مكان ───────────────────── */
@@ -155,7 +155,7 @@
 
 .changes-extend{
   flex:none;padding-inline:14px;border:0;border-inline-start:1px solid var(--line);
-  background:transparent;color:var(--muted);font:inherit;font-size:.82rem;font-weight:650;cursor:pointer;
+  background:transparent;color:var(--muted);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;
 }
 .changes-extend:hover{background:var(--surface-3);color:var(--ink)}
 
@@ -164,7 +164,7 @@
 .changes-back{
   justify-self:start;display:inline-flex;align-items:center;gap:7px;
   padding:6px 12px 6px 14px;border:1px solid var(--line);border-radius:var(--r-full);
-  background:var(--surface);color:var(--muted);font:inherit;font-size:.84rem;font-weight:650;cursor:pointer;
+  background:var(--surface);color:var(--muted);font:inherit;font-size:.84rem;font-weight:600;cursor:pointer;
 }
 .changes-back:hover{border-color:var(--line-strong);color:var(--ink)}
 .changes-back svg{inline-size:15px;block-size:15px}
@@ -215,7 +215,7 @@
 .changes-rounds>button{
   display:inline-flex;align-items:center;gap:8px;
   padding:7px 14px;border:1px solid var(--line);border-radius:var(--r-full);
-  background:var(--surface);font:inherit;font-size:.84rem;font-weight:650;color:var(--muted);cursor:pointer;
+  background:var(--surface);font:inherit;font-size:.84rem;font-weight:600;color:var(--muted);cursor:pointer;
 }
 .changes-rounds>button:hover{border-color:var(--line-strong);color:var(--ink)}
 .changes-rounds>button svg{inline-size:15px;block-size:15px}
@@ -228,7 +228,7 @@
 .changes-rounds li[data-current] strong{color:var(--accent-ink)}
 .changes-rounds li button{
   justify-self:start;margin-block-start:3px;padding:0;border:0;background:transparent;
-  color:var(--accent);font:inherit;font-size:.82rem;font-weight:650;cursor:pointer;text-decoration:underline;
+  color:var(--accent);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;text-decoration:underline;
   text-underline-offset:3px;
 }
 
@@ -304,7 +304,7 @@
 .changes-fields>div{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .changes-fields dt{
   min-inline-size:88px;flex:none;
-  color:var(--muted);font-size:.83rem;font-weight:650;
+  color:var(--muted);font-size:.83rem;font-weight:600;
 }
 .changes-fields dd{margin:0;display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:.9rem}
 .changes-fields s{color:var(--muted);text-decoration-thickness:1px;opacity:.8}
@@ -347,7 +347,7 @@
 .changes-note-actions button{
   display:inline-flex;align-items:center;gap:5px;
   padding:4px 11px;border:1px solid var(--line-strong);border-radius:var(--r-full);
-  background:var(--surface);color:var(--ink-2);font:inherit;font-size:.79rem;font-weight:650;cursor:pointer;
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:.79rem;font-weight:600;cursor:pointer;
 }
 .changes-note-actions button:hover{border-color:var(--accent);color:var(--accent)}
 .changes-note-actions button svg{inline-size:13px;block-size:13px}
@@ -427,7 +427,7 @@
    يُبحث عنه. والزرّ لا يظهر إلا إذا تغيّرت القيمة — فلا يُدعى أحدٌ إلى
    حفظ ما لم يُعدَّل.                                                      */
 .changes-term-picker{display:inline-flex;align-items:center;gap:8px}
-.changes-term-picker>span{color:var(--muted);font-size:.84rem;font-weight:650}
+.changes-term-picker>span{color:var(--muted);font-size:.84rem;font-weight:600}
 .changes-term-picker select{
   min-block-size:38px;padding:6px 11px;font:inherit;
   border:1px solid var(--line-strong);border-radius:var(--r-sm);
@@ -446,7 +446,7 @@
 .changes-deadline-hint{color:var(--muted);font-size:.84rem;padding-block-end:11px}
 .changes-deadline-saved{
   display:inline-flex;align-items:center;gap:6px;padding-block-end:11px;
-  color:var(--success);font-size:.84rem;font-weight:650;
+  color:var(--success);font-size:.84rem;font-weight:600;
 }
 .changes-deadline-saved svg{inline-size:15px;block-size:15px}
 
@@ -480,7 +480,7 @@
   display:inline-flex;align-items:center;gap:6px;
   padding:5px 12px;border-radius:var(--r-full);
   background:var(--warning-soft);color:var(--warning);
-  font-size:.8rem;font-weight:650;border:0;cursor:pointer;font-family:inherit;
+  font-size:.8rem;font-weight:600;border:0;cursor:pointer;font-family:inherit;
 }
 .approval-sign-notices svg{inline-size:14px;block-size:14px}
 .approval-signed{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.84rem;color:var(--muted)}
@@ -563,7 +563,7 @@
 .changes-note-field em{font-style:normal;font-weight:600;opacity:.8}
 
 /* خانةٌ اختلف عليها الطرفان ثلاثاً: إعلامٌ لا إجبار، فلا يُصرخ به. */
-.changes-note-stuck{color:var(--warning) !important;font-weight:650}
+.changes-note-stuck{color:var(--warning) !important;font-weight:600}
 
 @media print{ .changes-cross{background:transparent !important;border-inline-start-color:#999 !important} }
 

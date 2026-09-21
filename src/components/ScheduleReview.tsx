@@ -585,7 +585,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
       {/* The signed sheet. */}
       <PrintPortal>
         <div className="print-sheet-modal">
-          <div className="print-report print-wide print-review-report">
+          <div className="print-report print-wide print-query-report print-review-report">
             <section className="print-explicit-page print-review-page">
               <PrintLetterhead title={`مراجعة الاعتماد · ${DECISION_1912_LABEL}`} scope={scopeLine} />
               <section className={`print-review-hero tone-${tone}`}>

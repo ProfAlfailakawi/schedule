@@ -49,7 +49,7 @@
 .staff-badge{
   display:inline-flex;align-items:center;
   margin-inline-start:6px;padding:1px 7px;border-radius:999px;
-  font-size:.68rem;font-weight:650;vertical-align:middle;line-height:1.55;
+  font-size:.68rem;font-weight:600;vertical-align:middle;line-height:1.55;
 }
 .staff-badge.is-delegate{background:var(--accent-soft);color:var(--accent-ink)}
 .staff-badge.is-retired{background:color-mix(in srgb,var(--muted) 22%,transparent);color:var(--muted)}
@@ -80,13 +80,13 @@
   box-shadow:var(--shadow-md);
 }
 .render-recovery-bar>div:first-child{min-width:0;display:grid;gap:2px}
-.render-recovery-bar strong{font-size:.9rem;font-weight:650;color:var(--ink)}
+.render-recovery-bar strong{font-size:.9rem;font-weight:600;color:var(--ink)}
 .render-recovery-bar span{font-size:.76rem;color:var(--muted);line-height:1.45}
 .render-recovery-actions{display:flex;align-items:center;gap:8px;flex:none}
 .render-recovery-actions button{
   min-height:36px;display:inline-flex;align-items:center;gap:7px;
   padding:0 12px;border:1px solid var(--line-strong);border-radius:11px;
-  background:var(--surface);color:var(--ink-2);font-size:.78rem;font-weight:560
+  background:var(--surface);color:var(--ink-2);font-size:.78rem;font-weight:600
 }
 .render-recovery-actions button.primary{background:var(--accent);border-color:var(--accent);color:white}
 .render-recovery-actions svg{width:16px;height:16px}
