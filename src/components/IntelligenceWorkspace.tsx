@@ -1566,8 +1566,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
        issued — so a sample row left in by accident fails validation instead of
        importing as somebody. */
     const sample = [
-      ["F10", "B9", "08:00-09:20", "الأحد - الثلاثاء", "300123100006", "اسم دكتور ١", "501", "اسم المقرر الأول", "١٠١"],
-      ["F12", "B9", "11:00-12:20", "الاثنين - الأربعاء", "", "اسم دكتور ٢", "502", "اسم المقرر الثاني", "١٠٢"],
+      ["F10", "B9", "08:00-09:20", "الأحد - الثلاثاء", "300123100006", "اسم دكتور 1", "501", "اسم المقرر الأول", "101"],
+      ["F12", "B9", "11:00-12:20", "الاثنين - الأربعاء", "", "اسم دكتور 2", "502", "اسم المقرر الثاني", "102"],
     ];
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
     (sheet as any)["!cols"] = [{ wch: 9 }, { wch: 9 }, { wch: 13 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 8 }, { wch: 30 }, { wch: 12 }];

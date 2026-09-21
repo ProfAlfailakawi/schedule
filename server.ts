@@ -12951,6 +12951,7 @@ body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
 }
 .since button:hover{border-color:var(--jade);color:var(--jade)}
 .mark{font:600 12px/1 ui-monospace,monospace;letter-spacing:.26em;color:var(--brass)}
+.mark.arabic{font-family:"Plex Arabic","Noto Sans Arabic",Tahoma,sans-serif;letter-spacing:0;line-height:1.4}
 .gate{margin-top:22vh;text-align:center;animation:rise .4s ease both}
 .gate h1{margin:18px 0 6px;font-size:26px;font-weight:600;letter-spacing:0}
 .gate p{margin:0 0 26px;color:var(--dim);font-size:14px;line-height:1.8}
@@ -13104,7 +13105,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   <div class="card" id="card">
     <div class="head">
       <div>
-        <div class="mark">بطاقتي</div>
+        <div class="mark arabic">بطاقتي</div>
         <h1 id="name"></h1>
         <small id="scope"></small>
       </div>
@@ -13153,6 +13154,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   var ascii=function(value){return String(value||"")
     .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})
     .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))});};
+  var friendlyDate=function(value,withTime){var d=new Date(value);if(!value||isNaN(d))return "";var date=d.toLocaleDateString("ar-KW-u-nu-latn",{year:"numeric",month:"long",day:"numeric"});if(!withTime)return date;return date+" · "+d.toLocaleTimeString("ar-KW-u-nu-latn",{hour:"2-digit",minute:"2-digit"})};
   civil.addEventListener("input",function(){var v=ascii(civil.value);if(v!==civil.value)civil.value=v;});
 
   document.getElementById("print").addEventListener("click",function(e){e.preventDefault();window.print()});
@@ -13192,7 +13194,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       return;
     }
     host.innerHTML='<ul class="movement-list">'+list.map(function(m){
-      return '<li class="movement-item t-'+esc(m.tone)+'"><b>'+esc(m.day)+'</b>: '+esc(m.text)+' <small style="display:block;color:var(--dim)">'+esc(m.label)+' · '+esc(m.at)+'</small></li>';
+      return '<li class="movement-item t-'+esc(m.tone)+'"><b>'+esc(m.day)+'</b>: '+esc(m.text)+' <small style="display:block;color:var(--dim)">'+esc(m.label)+' · <bdi>'+esc(friendlyDate(m.at,true))+'</bdi></small></li>';
     }).join("")+'</ul>';
   }
 
@@ -13209,7 +13211,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     if(!host)return;
     host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">استقبل قسمك نافذة طلبات للتعديل على الجدول الدراسي.</p>'+
       links.map(function(l){
-        return '<div class="req-item"><b>'+esc(l.sectionName)+'</b> — '+(l.windowOpen?'نافذة الطلبات مفتوحة حتى '+esc(l.closesAt):'انتهت فترة الطلبات')+
+        return '<div class="req-item"><b>'+esc(l.sectionName)+'</b> — '+(l.windowOpen?'نافذة الطلبات مفتوحة حتى <bdi>'+esc(friendlyDate(l.closesAt,false))+'</bdi>':'انتهت فترة الطلبات')+
           '<br><a class="req-link" href="/r/'+encodeURIComponent(l.linkId)+'" target="_blank">فتح نموذج رغبات الجدول ←</a></div>';
       }).join("")+'</div>';
   }
@@ -13829,6 +13831,44 @@ async function resolveRequestLink(token: string) {
 }
 
 /**
+ * الطلب الذي لم يُرسَل بعد هو نافذة على جدول الأستاذ الحي، لا صورة إصدار
+ * الرابط. قد تضيف اللجنة موعداً ثانياً أو ثالثاً بعد إرسال الرابط؛ إبقاء
+ * اللقطة القديمة كان يخفيه عن الأستاذ، وخصوصاً حين تحمل المواعيد الاسم نفسه.
+ * بعد الإرسال تتوقف المزامنة تماماً حتى يبقى ما وقّعه الأستاذ ثابتاً.
+ */
+async function refreshUnsubmittedInstructorRequest(request: InstructorRequest): Promise<InstructorRequest> {
+  if (request.status !== "sent") return request;
+  const [scopeRows, courses] = await Promise.all([
+    Repository.getSchedulesByScope({
+      collegeId: Number(request.AdCollegeId),
+      sectionId: Number(request.AdSectionId),
+      termId: Number(request.AdTermId),
+    }),
+    Repository.getCoursesBySection(Number(request.AdSectionId)),
+  ]);
+  const own = (scopeRows as any[]).filter(row =>
+    Number(row.AdInstructorId) === Number(request.AdInstructorId));
+  const courseName = new Map((courses as any[]).map(row =>
+    [Number(row.AdCourseId), String(row.CourseName || row.CourseCode || "")]));
+  const nextItems: InstructorRequestItem[] = own.map(row => ({
+    rowId: Number(row.id),
+    action: "keep",
+    before: requestSnapshot(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), true),
+    slots: dayKeysOf(row).map(day => ({
+      day,
+      start: String(row.fstarttime || ""),
+      end: String(row.fendtime || ""),
+    })),
+  }));
+  const shape = (items: InstructorRequestItem[]) => items.map(item => [
+    Number(item.rowId || 0), item.before?.courseId, item.before?.sectionCode,
+    item.slots?.map(slot => `${slot.day}:${slot.start}:${slot.end}`).join("|"),
+  ].join("~")).sort().join("||");
+  if (shape(nextItems) === shape(request.items || [])) return request;
+  return Repository.saveInstructorRequest({ ...request, items: nextItems });
+}
+
+/**
  * يبني سياقَ الحكم من الجدول الحقيقي.
  *
  * يُقرأ الفصلُ كلُّه مرّةً واحدةً لكل نداء، لا مرّةً لكل بند: طلبٌ فيه عشرةُ
@@ -14210,7 +14250,7 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
 
   /* أولُ فتحٍ يُسجَّل مرّةً واحدة. وهو لا يقول «وصلت الرسالة» — يقول «فُتح
      الرابط»، وهذا كلُّ ما يعرفه النظام بصدق. */
-  let request = resolved.request;
+  let request = await refreshUnsubmittedInstructorRequest(resolved.request);
   if (!request.linkOpenedAt) {
     const at = new Date().toISOString();
     request = await Repository.saveInstructorRequest({
@@ -14221,7 +14261,8 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
 
   const [instructors, terms, courses] = await Promise.all([
-    Repository.getInstructors(), Repository.getTerms(), Repository.getCourses(),
+    Repository.getInstructors(), Repository.getTerms(),
+    Repository.getCoursesBySection(Number(request.AdSectionId)),
   ]);
   const person = (instructors as any[]).find(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
   const term = (terms as any[]).find(row => Number(row.AdTermId) === Number(request.AdTermId));
@@ -14233,8 +14274,7 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
     termName: String(term?.AdTermName || ""),
     windowOpen: requestWindowOpen(request),
     /* مقرّراتُ القسم وحدها: الإضافةُ تُختار من كتالوجه لا من الجامعة كلها. */
-    courses: (courses as any[])
-      .filter(row => Number(row.AdSectionId) === Number(request.AdSectionId))
+    courses: sortCoursesByName(courses as any[])
       .map(row => ({ id: Number(row.AdCourseId), name: String(row.CourseName || ""), code: String(row.CourseCode || "") })),
   });
 });
@@ -14442,7 +14482,7 @@ h1{font-size:23px;line-height:1.35;margin:0 0 3px;letter-spacing:-.02em}
 .row-head{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-bottom:4px}.row-head b{font-size:16px}.row-head small,.tag{color:var(--muted);font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--bg)}
 .tag{margin-inline-start:auto;font-weight:700}.tag[data-tone=change]{color:var(--warn);background:var(--warn2)}.tag[data-tone=delete]{color:var(--bad);background:var(--bad2)}.tag[data-tone=add]{color:var(--ok);background:var(--ok2)}
 .now{color:var(--muted);font-size:13px;margin:0 0 11px;direction:rtl}
-.pick{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:4px}
+.pick{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:7px;margin-bottom:4px}
 .pick button{min-height:42px;padding:8px 6px;border-radius:11px;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:13px;cursor:pointer}.pick button:hover{border-color:var(--line2)}
 .pick button[aria-pressed=true]{border-color:var(--accent);background:var(--soft);color:var(--ink);font-weight:700}.pick button[data-a=delete][aria-pressed=true]{border-color:var(--bad);background:var(--bad2);color:var(--bad)}
 .edit{border-top:1px dashed var(--line2);padding-top:12px;margin-top:12px}
@@ -14459,7 +14499,9 @@ label.time input:focus,select:focus,textarea:focus,label.sign input:focus{outlin
 textarea{width:100%;margin-top:9px;padding:11px;border-radius:11px;border:1px solid var(--line);font-size:14px;min-height:68px;background:#fff;display:none;resize:vertical}
 textarea[data-show="1"]{display:block}
 .add-card{border-style:dashed;border-color:#9fc8b5;background:rgba(255,255,255,.72)}.add-card header{margin-bottom:10px}.add-card header b{display:block}.add-card header small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
-.add-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.add-row select{width:100%;min-width:0;padding:11px 12px;border-radius:11px;border:1px solid var(--line);background:#fff;color:var(--ink)}.add-row button{padding:10px 15px;border-radius:11px;background:var(--accent);color:#fff;border:0;font-weight:700;cursor:pointer}
+.add-start{width:100%;min-height:50px;border:0;border-radius:13px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}
+.course-chooser{display:grid;gap:10px}.course-search{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+.course-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:340px;overflow:auto;padding:2px}.course-option{display:grid;gap:2px;min-height:62px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);text-align:start;cursor:pointer}.course-option:hover,.course-option:focus{border-color:var(--accent);background:var(--soft);outline:none}.course-option b{font-size:13px}.course-option small{color:var(--muted);font-size:11.5px;direction:ltr;text-align:start}.chooser-close{justify-self:start;border:0;background:transparent;color:var(--muted);cursor:pointer;padding:4px 0}
 .send{position:sticky;bottom:0;z-index:4;margin:18px -4px 0;padding:20px 4px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 18%)}
 .sendbox{padding:13px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 -8px 28px rgba(22,57,40,.08)}
 .send button{width:100%;padding:14px;border-radius:13px;border:0;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer}
@@ -14472,11 +14514,11 @@ label.sign{display:grid;grid-template-columns:auto minmax(0,190px);align-items:c
 .done{text-align:center;padding:44px 18px}
 .done .tick{width:58px;height:58px;border-radius:50%;background:var(--ok);color:#fff;font-size:30px;line-height:58px;margin:0 auto 14px}
 [hidden]{display:none!important}
-@media(max-width:520px){.wrap{padding:12px 12px 116px}.hero{grid-template-columns:1fr}.readiness{display:flex;align-items:center;justify-content:space-between;text-align:start;padding:8px 12px}.readiness b{font-size:16px}.card{padding:13px}.days{gap:4px}.days button{font-size:11.5px;padding-inline:1px}.add-row{grid-template-columns:1fr}.add-row button{width:100%}.ends{margin-inline-start:0}.activity-item{grid-template-columns:12px minmax(0,1fr)}.activity-item time{grid-column:2}.tabs{top:6px}}
+@media(max-width:520px){.wrap{padding:12px 12px 116px}.hero{grid-template-columns:1fr}.readiness{display:flex;align-items:center;justify-content:space-between;text-align:start;padding:8px 12px}.readiness b{font-size:16px}.card{padding:13px}.days{gap:4px}.days button{font-size:11.5px;padding-inline:1px}.course-options{grid-template-columns:1fr}.ends{margin-inline-start:0}.activity-item{grid-template-columns:12px minmax(0,1fr)}.activity-item time{grid-column:2}.tabs{top:6px}}
 @media print{body{background:#fff}.tabs,.pick,.edit,.send,.alts,.add-card{display:none!important}.wrap{max-width:none;padding:0}.card{box-shadow:none;break-inside:avoid}}
 </style></head><body><div class="wrap" id="host">يفتح جدولك…</div>
 <script nonce="${nonce}">(function(){
-var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[],signCivil="",activeTab="schedule";
+var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[],signCivil="",activeTab="schedule",chooserOpen=false;
 var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
 var LONG={fmonday:80,fwednesday:80},SHORT=50;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
@@ -14520,21 +14562,21 @@ function paint(){
  var h='<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
   '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?blocked+" بنود تحتاج معالجة":"فحص مباشر قبل الإرسال")+'</small></div></div>'+
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div><div id="err"></div>';
- h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'><div class="section-head"><b>مقرراتك الحالية</b><small>اختر الإجراء لكل مقرر</small></div>';
+ h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'><div class="section-head"><b>مواعيدك الحالية</b><small>'+state.filter(function(it){return it.rowId!==null}).length+' مواعيد · كل بطاقة موعد مستقل</small></div>';
  state.forEach(function(it,i){var b=it.before||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
-  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><b>'+esc(b.courseName||"مقرر")+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+tag+'</div><p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>';
-  if(open){if(it.action!=="add")h+='<div class="pick"><button type="button" data-i="'+i+'" data-a="keep" aria-pressed="'+(it.action==="keep")+'">كما هو</button><button type="button" data-i="'+i+'" data-a="change" aria-pressed="'+(it.action==="change")+'">تعديل الموعد</button><button type="button" data-i="'+i+'" data-a="delete" aria-pressed="'+(it.action==="delete")+'">حذف المقرر</button></div>';
+  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(b.courseName||"مقرر")+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+tag+'</div><p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>';
+  if(open){if(it.action!=="add")h+=it.action==="keep"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="change" aria-pressed="false">غيّر هذا الموعد</button><button type="button" data-i="'+i+'" data-a="delete" aria-pressed="false">احذف هذا الموعد</button></div>':it.action==="change"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">إلغاء التعديل</button><button type="button" data-i="'+i+'" data-a="delete">حذف الموعد بدلًا منه</button></div>':'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">تراجع عن الحذف</button></div>';
    else h+='<div class="pick"><button type="button" data-i="'+i+'" data-a="cancel-add">إلغاء الإضافة</button></div>';
    if(it.action==="change"||it.action==="add"){h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
     h+='</div><label class="time"><span>وقت البداية</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم والبداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'">'+esc(it.note||"")+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){return '<button type="button" data-i="'+i+'" data-alt="'+esc(a.day+"|"+a.start)+'">بديل: '+fmtDays([a.day])+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>'}
   }h+='</article>'});
- if(open&&data.courses&&data.courses.length){h+='<div class="card add-card"><header><b>إضافة مقرر جديد</b><small>كل مقررات القسم متاحة، ويُفحص الوقت والموانع قبل الإرسال.</small></header><div class="add-row"><select id="coursePick" aria-label="مقررات القسم"><option value="">اختر مقرراً من القسم…</option>'+data.courses.map(function(c){return '<option value="'+c.id+'">'+esc((c.code?c.code+" · ":"")+(c.name||c.code))+'</option>'}).join("")+'</select><button type="button" id="addCourse">إضافة المقرر</button></div></div>'}
+ if(open&&data.courses&&data.courses.length){h+='<div class="card add-card"><header><b>تريد إضافة موعد جديد؟</b><small>اختر المقرر أولًا، ثم الأيام والوقت. النظام يفحص كل شيء تلقائيًا.</small></header>'+(chooserOpen?'<div class="course-chooser"><input class="course-search" id="courseSearch" type="search" placeholder="اكتب اسم المقرر أو رمزه…" autocomplete="off"><div class="course-options">'+data.courses.map(function(c){return '<button type="button" class="course-option" data-course="'+c.id+'" data-search="'+esc((c.name+" "+c.code).toLowerCase())+'"><b>'+esc(c.name||c.code)+'</b><small>'+esc(c.code||"")+'</small></button>'}).join("")+'</div><button type="button" class="chooser-close" id="closeChooser">إغلاق القائمة</button></div>':'<button type="button" class="add-start" id="openChooser">+ اختر مقررًا وأضف موعدًا</button>')+'</div>'}
  h+='</section><section data-panel="activity" '+(activeTab==="activity"?'':'hidden')+'>'+activityHtml(r)+'</section>';
  /* التوقيع: حقلٌ واحدٌ فوق الزرّ، وجملةٌ تقول ما يعنيه الضغط. ولا يُقال
     «تحقّق من هويتك» — يُقال إنه توقيع، لأنه توقيع. */
  if(open)h+='<div class="send"><div class="sendbox"><label class="sign"><span>رقمك المدني</span>'+
   '<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" '+
-  'placeholder="١٢ رقماً" value="'+esc(signCivil)+'"></label>'+
+  'placeholder="12 رقمًا" value="'+esc(signCivil)+'"></label>'+
   '<p class="signnote">بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.</p>'+
   '<button type="button" id="send" '+(blocked?'disabled':'')+'>'+(blocked?'عالج الموانع قبل الإرسال':'أرسل الطلب إلى القسم')+'</button></div></div>';
  host.innerHTML=h;
@@ -14551,21 +14593,19 @@ function digitsOf(v){return String(v||"")
  .replace(/\D/g,"")}
 function wire(){
  host.querySelectorAll("[data-tab]").forEach(function(el){el.onclick=function(){activeTab=el.dataset.tab||"schedule";paint()}});
- var addBtn=document.getElementById("addCourse");
- if(addBtn){
-  addBtn.onclick=function(){
-   var pick=document.getElementById("coursePick");
-   var cid=Number(pick&&pick.value)||0;
-   if(!cid)return;
+ var openChooser=document.getElementById("openChooser");if(openChooser)openChooser.onclick=function(){chooserOpen=true;paint();var search=document.getElementById("courseSearch");if(search)search.focus()};
+ var closeChooser=document.getElementById("closeChooser");if(closeChooser)closeChooser.onclick=function(){chooserOpen=false;paint()};
+ var courseSearch=document.getElementById("courseSearch");if(courseSearch)courseSearch.oninput=function(){var query=String(courseSearch.value||"").trim().toLowerCase();host.querySelectorAll("[data-course]").forEach(function(option){option.hidden=query&&String(option.dataset.search||"").indexOf(query)<0})};
+ host.querySelectorAll("[data-course]").forEach(function(option){option.onclick=function(){
+   var cid=Number(option.dataset.course)||0;if(!cid)return;
    var found=data.courses.filter(function(c){return c.id===cid})[0];
    state.push({
     rowId:null,action:"add",courseId:cid,
     before:{courseName:found?found.name:"مقرر",sectionCode:""},decision:null,
     slots:[],days:[],start:"",excuse:"",tone:"",note:"",alts:[]
    });
-   paint();
-  };
- }
+   chooserOpen=false;paint();var cards=host.querySelectorAll(".card");var card=cards[cards.length-2];if(card)card.scrollIntoView({behavior:"smooth",block:"center"})
+ }});
  host.querySelectorAll("[data-a]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i,it=state[i],act=el.dataset.a;
   if(act==="cancel-add"){state.splice(i,1);paint();return}
@@ -14613,7 +14653,7 @@ function submit(){
  var civil=digitsOf(field&&field.value||"");
  signCivil=civil;
  if(civil.length!==12){
-  document.getElementById("err").innerHTML='<div class="err">اكتب رقمك المدني كاملاً — ١٢ رقماً — فهو توقيعك على الطلب.</div>';
+  document.getElementById("err").innerHTML='<div class="err">اكتب رقمك المدني كاملاً — 12 رقمًا — فهو توقيعك على الطلب.</div>';
   if(field)field.focus();window.scrollTo(0,document.body.scrollHeight);return}
  var send=document.getElementById("send");send.disabled=true;send.textContent="يرسل…";
  fetch("/api/public/request/"+encodeURIComponent(TOKEN),{method:"POST",

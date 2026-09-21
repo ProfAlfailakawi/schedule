@@ -433,8 +433,8 @@ function Stage({ scene, board }: { scene: string; board: StageBoard }) {
       {/* Act 5 — what ten years of the department's own history says, at the
           moment the decision is being made. */}
       <span className="ob-hint">
-        <b>هذه الساعة لم تُستخدم منذ ٣ فصول</b>
-        <small>٩ فصول شاهدة · قراءة، لا قاعدة</small>
+        <b>هذه الساعة لم تُستخدم منذ 3 فصول</b>
+        <small>9 فصول شاهدة · قراءة، لا قاعدة</small>
       </span>
 
       {/* Act 6 — the published link as the reader meets it: a phone, and the

@@ -987,9 +987,9 @@ export default function LivingScheduleLayer({
                       <small>بداية الفصل</small>
                       <h3>مسودة الفصل، في ثلاث خطوات</h3>
                       <ol className="genesis-steps" aria-label="خطوات بناء المسودة">
-                        <li><b>١</b><span>اختر المصدر</span></li>
-                        <li><b>٢</b><span>أنشئ المسودة</span></li>
-                        <li><b>٣</b><span>راجع قبل النشر</span></li>
+                        <li><b>1</b><span>اختر المصدر</span></li>
+                        <li><b>2</b><span>أنشئ المسودة</span></li>
+                        <li><b>3</b><span>راجع قبل النشر</span></li>
                       </ol>
                     </div>
                   </div>

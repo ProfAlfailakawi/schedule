@@ -141,8 +141,11 @@ check(page.includes("ينتهي ") && page.includes("مدّةُ المحاضرة
   "والنهايةُ تُعرض محسوبةً ولا تُسأل");
 check(page.includes('fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check"'),
   "والحكمُ يُسأل عنه الخادمُ عند كل تغيير");
-check(page.includes('id="coursePick"') && page.includes("data.courses.map(function(c)"),
-  "والإضافةُ تبدأ من قائمة مقرّرات القسم التي أعادها الخادم");
+check(page.includes('id="openChooser"') && page.includes('id="courseSearch"')
+  && page.includes("data.courses.map(function(c)"),
+  "والإضافةُ تبدأ بزرٍ واضح ثم قائمة مقرّرات القسم القابلة للبحث");
+check(page.includes("+ اختر مقررًا وأضف موعدًا") && page.includes('class="course-option"'),
+  "وإضافةُ الموعد لا تبدأ بقائمة هاتفٍ مبهمة، بل بخياراتٍ كبيرة واضحة");
 check(page.includes('data-tab="schedule"') && page.includes('data-tab="activity"')
   && page.includes("function activityHtml(r)"),
   "وللأستاذ تبويبان واضحان: العمل على الجدول وسجل الحركة التفصيلي");
@@ -163,6 +166,11 @@ check(server.includes('const action = req.body?.action === "add" ? "add" : "chan
   "وفحصُ الإضافة في الخادم يبني الصفَّ المطلوب ويفحصه، لا يغيّر اسم العملية فقط");
 check(server.includes('Number(course.AdSectionId) !== Number(resolved.request.AdSectionId)'),
   "وفحصُ الإضافة الحيّ يردّ مقرراً من خارج القسم قبل الحكم");
+check(server.includes("async function refreshUnsubmittedInstructorRequest")
+  && server.includes("Repository.getCoursesBySection(Number(request.AdSectionId))"),
+  "والطلب غير المرسل يتجدد من الجدول الحي ويقرأ كامل مقررات القسم");
+check(page.includes('placeholder="12 رقمًا"') && page.includes("— 12 رقمًا —"),
+  "والرقم المدني يُشرح بالأرقام الإنجليزية المتفق عليها");
 
 /* بطاقةُ الأستاذ للقراءة؛ بابُ التعديل الكامل يظهر كتَبويبٍ واحدٍ حين يكون
    للقسم رابطُ طلبٍ فعّال، بدلاً من زر «أبلغ القسم» تحت كل محاضرة. */
@@ -171,6 +179,8 @@ check(!staffPage.includes("أبلغ القسم") && !staffPage.includes("فهم�
   "بطاقةُ الأستاذ خاليةٌ من زر الإبلاغ ومن إقرار «فهمت» المتكرر");
 check(staffPage.includes("حركة الجدول") && staffPage.includes("function renderRequests(d)"),
   "وفيها تبويبُ حركة الجدول وبابُ طلب التعديل الكامل");
+check(staffPage.includes('ar-KW-u-nu-latn') && staffPage.includes("friendlyDate(m.at,true)"),
+  "وتواريخ الحركة تُعرض مفهومة وبأرقام إنجليزية، لا كسلسلة ISO خام");
 check(server.includes("requestLinks,") && server.includes("Repository.getInstructorRequests"),
   "وبطاقةُ الأستاذ تصل إلى دورة الطلب الموجودة أصلاً، لا نموذجٍ موازٍ جديد");
 
