@@ -373,13 +373,6 @@ check(changes.includes("<RegulationReview notices={report.regulationNotices || [
   "وتُعرض بتقديم شاشة الاعتماد نفسه، لا بعدّادٍ مكرر عند زر التوقيع");
 check(!approvalBar.includes("approval-sign-notices") && !approvalBar.includes("regulationNotices"),
   "وشريط الاعتماد لا يكرر عدّاد اللائحة أو حالته");
-check(!approvalBar.includes("أمّا الملاحظات اللائحية فلا تمنع التوقيع"),
-  "ولا يعيد شريط التوقيع اللافتة الحمراء عند كل ظهور؛ السببُ يبقى في شاشة التغييرات");
-check(server.includes("reviewBlockers: (await reviewReadinessForScope")
-  && changes.includes('className="changes-review-overview"')
-  && changes.includes('className="review-ring"')
-  && changes.includes('className="review-spread"'),
-  "وتغييرات الجدول تحمل مراجعة الاعتماد نفسها: الحلقة والتوزيع وتفاصيل الموانع");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);

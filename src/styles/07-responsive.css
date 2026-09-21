@@ -66,6 +66,26 @@
     border-radius:50%;background:var(--warning);vertical-align:middle;
   }
 
+  .sidebar .side-nav-link{
+    display:grid;
+    grid-template-columns:24px minmax(0,1fr) auto auto;
+    justify-items:start;
+    min-height:48px;
+    padding:0 var(--s4);
+  }
+  .sidebar .side-nav-link>svg:first-child{
+    justify-self:center;
+    align-self:center;
+  }
+  .sidebar .side-nav-link span{
+    justify-self:stretch;
+    text-align:start;
+  }
+  .sidebar .side-nav-link .side-nav-badge,
+  .sidebar .side-nav-link .nav-arrow{
+    align-self:center;
+  }
+
   .sidebar-launcher{display:none}
 
   .app-main{margin-inline-start:0;padding:var(--s6) var(--gutter) var(--s9)}
@@ -340,6 +360,37 @@
   .agenda-time,.agenda-place{display:flex;align-items:baseline;gap:var(--s2)}
   .agenda-time small,.agenda-place small{margin:0}
   .agenda-time strong,.agenda-place strong{margin:0}
+
+  .agenda-list .changes-row{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:
+      "core"
+      "time"
+      "place"
+      "extra";
+    padding:var(--s4);
+    gap:var(--s3);
+  }
+  .agenda-list .changes-row .agenda-index{display:none}
+  .agenda-list .changes-row .agenda-core,
+  .agenda-list .changes-row .agenda-time,
+  .agenda-list .changes-row .agenda-place,
+  .agenda-list .changes-row .changes-row-extra{grid-column:1;min-width:0}
+  .agenda-list .changes-row .changes-row-extra{grid-area:extra}
+  .agenda-list .changes-row .agenda-title-row{gap:var(--s2);align-items:flex-start}
+  .agenda-list .changes-row .agenda-title-row>strong{flex:1 1 100%;min-width:0}
+  .agenda-list .changes-row .agenda-sub{display:grid;gap:var(--s2);margin-top:var(--s3)}
+  .agenda-list .changes-row .agenda-sub span,
+  .agenda-list .changes-row .agenda-time,
+  .agenda-list .changes-row .agenda-place{
+    justify-content:flex-start;
+    text-align:start;
+  }
+  .agenda-list .changes-row .agenda-time strong,
+  .agenda-list .changes-row .agenda-place strong{
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
 
   /* The phone inherits the desktop density arithmetic instead of forcing every
      day back to 220px.  Horizontal travel is preferable to recreating the

@@ -227,6 +227,8 @@ check(server.includes("for (const section of guardedSections) {"),
 const inboxSrc = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
 const regSrc = fs.readFileSync(path.join(process.cwd(), "src/components/StudentRegistration.tsx"), "utf8");
 const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
+const approvalCss = fs.readFileSync(path.join(process.cwd(), "src/styles/11-approval.css"), "utf8");
+const responsiveCss = fs.readFileSync(path.join(process.cwd(), "src/styles/07-responsive.css"), "utf8");
 
 for (const [name, src] of [["وارد الأساتذة", inboxSrc], ["كشف التسجيل", regSrc]] as const) {
   check(src.includes('const [colleges, sections] = await Promise.all([request("/api/colleges"), request("/api/sections")]);'),
@@ -244,6 +246,13 @@ for (const [name, src] of [["وارد الأساتذة", inboxSrc], ["كشف ا�
 }
 check(appSrc.includes("<StudentRegistration scopes={scopes} powerAdmin={isPowerAdmin} />"),
   "والصفةُ تصل كشفَ التسجيل، وإلا بقي الإصلاحُ معطّلاً في شاشةٍ لا تعرفه");
+check(responsiveCss.includes(".sidebar .side-nav-link{")
+  && responsiveCss.includes("grid-template-columns:24px minmax(0,1fr) auto auto"),
+  "وقائمة الهاتف ترتّب مداخل تغييرات الجدول ورغبات الأساتذة وكشف التسجيل في صفٍّ واضح");
+check(approvalCss.includes(".request-card-head{align-items:flex-start;flex-direction:column}")
+  && approvalCss.includes(".request-diff>div{display:grid;grid-template-columns:minmax(54px,auto) minmax(0,1fr)")
+  && approvalCss.includes(".registration-course{align-items:stretch;display:grid"),
+  "وشاشتا رغبات الأساتذة وكشف التسجيل لهما ترتيب هاتف صريح لا يترك البطاقات تتزاحم");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

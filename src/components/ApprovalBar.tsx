@@ -17,7 +17,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CornerUpLeft, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
-import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
+import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
 interface DeadlineShape {
@@ -28,7 +28,7 @@ interface DeadlineShape {
 interface Payload {
   approval: ScheduleApproval;
   deadline: DeadlineShape;
-  blockingConflicts?: number;
+  blockingConflicts: number;
   /** ملاحظاتُ التسجيل التي لم تُعالَج ولم يُردّ عليها: تمنع إعادة الإرسال. */
   openRegistrarNotes: number;
   /** عددُ مواعيد الجدول: لا يُوقَّع على جدولٍ فارغ. */
@@ -100,7 +100,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   if (!state) return null;
 
-  const { approval } = state;
+  const { approval, blockingConflicts } = state;
   const openNotes = Number(state.openRegistrarNotes || 0);
   const status: ScheduleApprovalStatus = approval.status;
   const mine = signatureStage ? approval.signatures.find(item => item.stage === signatureStage) : undefined;
@@ -206,12 +206,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
 
         {canSignNow ? (
-          <PrimaryButton
-            type="button"
-            data-guide-target="approval.action.sign"
-            disabled={busy}
-            onClick={() => void act("/api/approvals/sign")}
-          >
+          <PrimaryButton type="button" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد الجدول" : "توقيع لجنة الجدول"}
           </PrimaryButton>
         ) : null}
@@ -247,6 +242,11 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
       </div>
 
+      {blockingConflicts > 0 && canSignNow ? (
+        <Notice type="error">
+          {blockingConflictPhrase(blockingConflicts)} يمنع الاعتماد. أمّا الملاحظات اللائحية فلا تمنع التوقيع.
+        </Notice>
+      ) : null}
 
       {error ? <Notice type="error">{error}</Notice> : null}
     </div>
