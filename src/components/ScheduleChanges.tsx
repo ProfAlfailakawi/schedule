@@ -556,7 +556,7 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
 
   return (
     <section className={`changes-review-overview ${open ? "open" : ""}`} aria-label="مراجعة الاعتماد">
-      <button type="button" className="changes-review-toggle" onClick={() => setOpen(value => !value)} aria-expanded={open}>
+      <button type="button" className="changes-review-toggle" data-guide-ignore="طيّ ملخص مراجعة الاعتماد وفتحه — عرض فقط ولا يغيّر بيانات" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className={`review-mini-dot tone-${tone}`} aria-hidden="true" />
         <span><strong>مراجعة الاعتماد</strong><small>{blockedCount ? `${blockedCount.toLocaleString("ar-KW-u-nu-latn")} يمنع الاعتماد` : notices.length ? `${notices.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة` : "لا ملاحظات"}</small></span>
         <ChevronDown aria-hidden="true" />
@@ -669,7 +669,7 @@ function ScheduleRowCard({ row, index, kind, tag, changes, children }: {
   };
 
   return (
-    <article id={`schedule-row-${row.scheduleId}`} className="agenda-card changes-row" data-kind={kind}>
+    <article className="agenda-card changes-row" id={`schedule-row-${row.scheduleId}`} data-kind={kind}>
       <div className="agenda-index">{String(index + 1).padStart(2, "0")}</div>
       <div className="agenda-core">
         <div className="agenda-title-row">

@@ -42,7 +42,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { endForRequest, judgeRequest, type RequestDayKey } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
@@ -11476,8 +11476,8 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   const digits = String(civil || "").replace(/\D/g, "");
   if (digits.length < 8) return null;
 
-  const [instructors, courses, colleges, terms] = await Promise.all([
-    Repository.getInstructors(), Repository.getCourses(), Repository.getColleges(), Repository.getTerms()
+  const [instructors, courses, colleges, terms, sections] = await Promise.all([
+    Repository.getInstructors(), Repository.getCourses(), Repository.getColleges(), Repository.getTerms(), Repository.getSections()
   ]);
   const person = instructors.find(row => String(row.AdInstructorCivil || "").replace(/\D/g, "") === digits);
   if (!person) return null;
@@ -11497,7 +11497,55 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     : (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: displayTermId }))
         .filter(row => row.AdInstructorId === person.AdInstructorId);
 
+  const requestSectionIds = [...new Set(rows.map(row => Number(row.AdSectionId || 0)).filter(Boolean))];
+  const requestLists = await Promise.all(requestSectionIds.map(sectionId =>
+    Repository.getInstructorRequests(Number(link.AdCollegeId), sectionId, Number(displayTermId))
+  ));
+  const requestRows = requestLists.flat().filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
+  const requestLinks = (await Promise.all(requestRows.map(async request => {
+    const requestLink = await Repository.getShareLink(request.linkId);
+    if (!requestLink || requestLink.revoked || (requestLink.expiresAt && Date.parse(requestLink.expiresAt) < Date.now())) return null;
+    const windowOpen = requestWindowOpen(request);
+    return {
+      linkId: request.linkId,
+      sectionId: Number(request.AdSectionId),
+      sectionName: sections.find(row => Number(row.AdSectionId) === Number(request.AdSectionId))?.AdSectionName || "القسم",
+      status: request.status,
+      windowOpen,
+      closesAt: request.window?.closesAt || "",
+    };
+  }))).filter(Boolean);
+
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+
+  const movementSections = [...new Set(rows.map(row => Number(row.AdSectionId || 0)).filter(Boolean))];
+  const movementHistory: Array<{ at:string; label:string; tone:"add"|"move"|"room"|"gone"; day:string; text:string }> = [];
+  const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
+  const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
+  const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
+  const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === Number(person.AdInstructorId)).map(row => [Number(row.id),row]));
+  for (const sectionId of movementSections) {
+    const versions = await Repository.getScheduleVersions(Number(link.AdCollegeId), sectionId, Number(displayTermId), 30);
+    const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
+    const liveSection = rows.filter(row => Number(row.AdSectionId) === sectionId);
+    const states = ordered.map(version => ({ at:version.createdAt,label:version.label || "تعديل الجدول",rows:version.rows || [] }));
+    states.push({ at:new Date().toISOString(),label:"الجدول الحالي",rows:liveSection });
+    for (let i=1;i<states.length;i++) {
+      const before=movementShape(states[i-1].rows), after=movementShape(states[i].rows);
+      const at=states[i].at,label=states[i].label;
+      for (const [id,now] of after) {
+        const was=before.get(id);
+        if (!was) { movementHistory.push({at,label,tone:"add",day:movementDay(now),text:`${movementName(now)} أُضيفت ${now.fendtime} - ${now.fstarttime} · ${movementRoom(now)}`}); continue; }
+        if (String(was.fstarttime)!==String(now.fstarttime) || String(was.fendtime)!==String(now.fendtime) || shareDayIndexes(was).join(",")!==shareDayIndexes(now).join(","))
+          movementHistory.push({at,label,tone:"move",day:movementDay(now),text:`${movementName(now)} تغيّر موعدها من ${was.fendtime} - ${was.fstarttime} إلى ${now.fendtime} - ${now.fstarttime}`});
+        if (movementRoom(was)!==movementRoom(now))
+          movementHistory.push({at,label,tone:"room",day:movementDay(now),text:`${movementName(now)} تغيّرت القاعة ${movementRoom(was)} ← ${movementRoom(now)}`});
+      }
+      for (const [id,was] of before) if (!after.has(id))
+        movementHistory.push({at,label,tone:"gone",day:movementDay(was),text:`${movementName(was)} حُذفت من جدولك`});
+    }
+  }
+  movementHistory.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   const shaped = rows
     .map(row => ({
@@ -11550,7 +11598,9 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     rooms: Array.from(new Set(shaped.map(row => `${row.room}/${row.hall}`).filter(value => value !== "/"))),
     longestGap: Math.max(0, ...byDay.flatMap(day => day.gaps.map(gap => gap.minutes))),
     byDay,
-    rows: shaped
+    rows: shaped,
+    requestLinks,
+    movementHistory: movementHistory.slice(0, 100),
   };
 }
 
@@ -12992,33 +13042,17 @@ button.say{
 }
 button.say:hover:not(:disabled){color:var(--jade);border-color:var(--jade)}
 button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
-.sayform{display:grid;gap:8px;margin-block-start:9px;padding-block-start:9px;border-block-start:1px solid var(--line);
-  animation:sub-in .18s cubic-bezier(.2,.8,.3,1) both}
-.saykinds{display:grid;gap:4px}
-/* A radio dot is 15px and nobody's thumb is. The label is the target, so it
-   carries the height instead. */
-.saykinds label{
-  display:flex;align-items:center;gap:9px;min-height:42px;padding-inline:10px;
-  border:1px solid var(--line);border-radius:10px;background:var(--bg);
-  font-size:13px;color:var(--ink);cursor:pointer;
-}
-.saykinds label:has(input:checked){border-color:var(--jade);color:var(--jade)}
-.saykinds input{accent-color:var(--jade);inline-size:15px;block-size:15px}
-.sayform input[type=date],.sayform textarea{
-  inline-size:100%;box-sizing:border-box;padding:9px 10px;border-radius:10px;
-  border:1px solid var(--line);background:var(--bg);color:var(--ink);
-  font:400 13px/1.7 inherit;resize:vertical;
-}
-.saysend{
-  min-height:40px;border-radius:10px;cursor:pointer;
-  background:var(--jade);border:1px solid var(--jade);color:#04100d;font:600 13.5px/1 inherit;
-}
-.saysend:disabled{opacity:.6;cursor:default}
-.saynote,.saydone{margin:0;font-size:11px;line-height:1.8;color:var(--dim)}
-.saydone{color:var(--jade);font-weight:600}
-.saydone span{color:var(--dim);font-weight:400}
-@media (prefers-reduced-motion:reduce){.sayform{animation:none}}
-@media print{button.say,.sayform{display:none !important}}
+.card-tabs{display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.card-tab{padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--dim);font:600 13px/1 inherit;cursor:pointer}
+.card-tab[aria-selected=true]{background:var(--jade);color:#04100d;border-color:var(--jade)}
+.movement-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.movement-item{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:13px;line-height:1.6}
+.movement-item.t-add{border-inline-start:3px solid #38bdf8}
+.movement-item.t-move{border-inline-start:3px solid #f59e0b}
+.movement-item.t-room{border-inline-start:3px solid #a855f7}
+.movement-item.t-gone{border-inline-start:3px solid #ef4444}
+.requests-panel{margin-top:12px;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
+.requests-panel a.req-link{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;background:var(--jade);color:#04100d;font-weight:600;font-size:13.5px;text-decoration:none;margin-top:8px}
 .pastnote{
   margin-block-end:14px;padding:11px 13px;border-radius:12px;
   border:1px solid var(--line);background:color-mix(in srgb,var(--brass) 9%,transparent);
@@ -13041,13 +13075,13 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   @page{size:A4 portrait;margin:12mm 11mm}
   html,body{background:#fff!important;color:#111!important}
   body{padding:0!important;font-family:"Plex Arabic","Noto Sans Arabic",Tahoma,sans-serif!important;font-synthesis:none}
-  .wrap{max-width:none!important}.gate,.tools,.foot,.sub,.since,.term-switch{display:none!important}
+  .wrap{max-width:none!important}.gate,.tools,.foot,.sub,.since,.term-switch,.card-tabs{display:none!important}
   .card{display:block!important;animation:none!important}.head{margin:0 0 12px;padding:0 0 10px;border-bottom:2px solid #222}
   .head h1{font-size:22px!important;letter-spacing:0!important}.head small,.stat span{color:#555!important}
   .stats{grid-template-columns:repeat(4,1fr)!important;gap:6px;margin-bottom:12px}.stat{padding:8px 10px;border-radius:8px}
   .stat b{font-size:18px;letter-spacing:0}.day{break-inside:avoid;border-radius:8px;margin-bottom:8px}
   .day,.stat{border-color:#bbb;background:#fff}.day>h2{padding:8px 10px}.slot{padding:7px 10px}.slot time{color:#111}
-  button.say,.sayform,.pastnote{display:none!important}
+  .pastnote{display:none!important}
   .pub-week{background:#fff;border-radius:0;break-inside:avoid}.pub-week th{color:#111;background:#f0f0ec;border-color:#9aa3a0}
   .pub-week td{border-color:#9aa3a0}.pub-week .wslot b,.pub-week .wslot time{color:#111}.pub-week .wslot small{color:#444}
 }
@@ -13080,8 +13114,20 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       <select id="termPick" aria-label="اختر الفصل الدراسي"></select>
     </div>
     <div class="stats" id="stats"></div>
-    <div id="changes"></div>
-    <div id="days"></div>
+    <div class="card-tabs" role="tablist">
+      <button type="button" class="card-tab" id="tab-week" role="tab" aria-selected="true">الجدول الأسبوعي</button>
+      <button type="button" class="card-tab" id="tab-movement" role="tab" aria-selected="false">حركة الجدول</button>
+      <button type="button" class="card-tab" id="tab-requests" role="tab" aria-selected="false" style="display:none">طلب تعديل الجدول</button>
+    </div>
+    <div id="panel-week">
+      <div id="days"></div>
+    </div>
+    <div id="panel-movement" hidden>
+      <div id="movement"></div>
+    </div>
+    <div id="panel-requests" hidden>
+      <div id="requests"></div>
+    </div>
     <div class="tools">
       <a id="ics" href="#" role="button" aria-expanded="false" aria-controls="sub">إضافة إلى التقويم</a>
       <a href="#" id="print">طباعة</a>
@@ -13136,64 +13182,61 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       .then(function(res){if(pick)pick.disabled=false;if(res.ok)render(res.data,currentCivil);else if(pick)note.textContent=res.data&&res.data.error?res.data.error:"";})
       .catch(function(){if(pick)pick.disabled=false});
   }
-  /**
-   * ما الذي تغيّر منذ آخر زيارة.
-   *
-   * The card already shows a whole week; what an instructor actually wants to
-   * know when they open it again is the one line that changed. Comparing needs
-   * no server and no account: the browser remembers the shape of the week it
-   * last showed THIS person, and the difference is computed here. It is their
-   * own device remembering their own card — nothing is stored about them
-   * anywhere else, and clearing the browser simply means the next visit is a
-   * first visit.
-   */
-  function memoryKey(d,value){return "schedule-card-seen-"+value+"-"+(d.termId||0)}
-  function shapeOf(d){
-    var map={};
-    (d.byDay||[]).forEach(function(day,index){
-      (day.rows||[]).forEach(function(row){
-        map[row.id+"|"+index]={n:row.name,s:row.start,e:row.end,r:(row.room||"")+"/"+(row.hall||""),d:day.name};
-      });
-    });
-    return map;
+
+  function renderMovement(d){
+    var host=document.getElementById("movement");
+    if(!host)return;
+    var list=d.movementHistory||[];
+    if(!list.length){
+      host.innerHTML='<div class="pub-empty">لا توجد حركات مسجلة على جدولك في هذا الفصل.</div>';
+      return;
+    }
+    host.innerHTML='<ul class="movement-list">'+list.map(function(m){
+      return '<li class="movement-item t-'+esc(m.tone)+'"><b>'+esc(m.day)+'</b>: '+esc(m.text)+' <small style="display:block;color:var(--dim)">'+esc(m.label)+' · '+esc(m.at)+'</small></li>';
+    }).join("")+'</ul>';
   }
-  function diffSince(previous,current){
-    var out=[];
-    Object.keys(current).forEach(function(key){
-      var now=current[key],was=previous[key];
-      if(!was){out.push({tone:"add",day:now.d,text:now.n+" أُضيفت "+now.e+" - "+now.s+" · "+now.r});return}
-      if(was.s!==now.s||was.e!==now.e) out.push({tone:"move",day:now.d,text:now.n+" انتقلت "+was.s+" ← "+now.s});
-      if(was.r!==now.r) out.push({tone:"room",day:now.d,text:now.n+" تغيّرت القاعة "+was.r+" ← "+now.r});
-    });
-    Object.keys(previous).forEach(function(key){
-      if(!current[key]) out.push({tone:"gone",day:previous[key].d,text:previous[key].n+" لم تعد في جدولك"});
-    });
-    return out;
+
+  function renderRequests(d){
+    var host=document.getElementById("requests");
+    var tab=document.getElementById("tab-requests");
+    var links=d.requestLinks||[];
+    if(!links.length){
+      if(tab)tab.style.display="none";
+      if(host)host.innerHTML="";
+      return;
+    }
+    if(tab)tab.style.display="";
+    if(!host)return;
+    host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">استقبل قسمك نافذة طلبات للتعديل على الجدول الدراسي.</p>'+
+      links.map(function(l){
+        return '<div class="req-item"><b>'+esc(l.sectionName)+'</b> — '+(l.windowOpen?'نافذة الطلبات مفتوحة حتى '+esc(l.closesAt):'انتهت فترة الطلبات')+
+          '<br><a class="req-link" href="/r/'+encodeURIComponent(l.linkId)+'" target="_blank">فتح نموذج رغبات الجدول ←</a></div>';
+      }).join("")+'</div>';
   }
-  function renderChanges(d,value){
-    var host=document.getElementById("changes");
-    if(!host) return;
-    var key=memoryKey(d,value),current=shapeOf(d),previous=null;
-    try{previous=JSON.parse(localStorage.getItem(key)||"null")}catch(e){previous=null}
-    var remember=function(){try{localStorage.setItem(key,JSON.stringify(current))}catch(e){}};
-    if(!previous){host.innerHTML="";remember();return}
-    var changes=diffSince(previous,current);
-    if(!changes.length){host.innerHTML="";remember();return}
-    host.innerHTML='<div class="since"><strong>تغيّر جدولك منذ آخر زيارة</strong><ul>'+
-      changes.slice(0,8).map(function(c){
-        return '<li class="t-'+c.tone+'"><b>'+esc(c.day)+'</b><span>'+esc(c.text)+'</span></li>';
-      }).join("")+
-      (changes.length>8?'<li class="t-more">و'+ar(changes.length-8)+' تغييراً آخر.</li>':'')+
-      '</ul><button type="button" id="seen">فهمت التغييرات</button></div>';
-    var seen=document.getElementById("seen");
-    if(seen) seen.onclick=function(){remember();host.innerHTML=""};
+
+  var tabWeek=document.getElementById("tab-week");
+  var tabMovement=document.getElementById("tab-movement");
+  var tabRequests=document.getElementById("tab-requests");
+  var pWeek=document.getElementById("panel-week");
+  var pMovement=document.getElementById("panel-movement");
+  var pRequests=document.getElementById("panel-requests");
+
+  function selectTab(which){
+    if(tabWeek)tabWeek.setAttribute("aria-selected",which==="week"?"true":"false");
+    if(tabMovement)tabMovement.setAttribute("aria-selected",which==="movement"?"true":"false");
+    if(tabRequests)tabRequests.setAttribute("aria-selected",which==="requests"?"true":"false");
+    if(pWeek){if(which==="week")pWeek.removeAttribute("hidden");else pWeek.setAttribute("hidden","");}
+    if(pMovement){if(which==="movement")pMovement.removeAttribute("hidden");else pMovement.setAttribute("hidden","");}
+    if(pRequests){if(which==="requests")pRequests.removeAttribute("hidden");else pRequests.setAttribute("hidden","");}
   }
+
+  if(tabWeek)tabWeek.onclick=function(){selectTab("week");};
+  if(tabMovement)tabMovement.onclick=function(){selectTab("movement");};
+  if(tabRequests)tabRequests.onclick=function(){selectTab("requests");};
 
   function render(d,value){
     currentCivil=value;
-    /* تُحسب قبل بناء الصفوف. كانت var live تأتي بعد استعمالها، فترفعها
-       JavaScript بقيمة undefined: تختفي أزرار الإبلاغ حتى في الفصل الجاري،
-       ثم تظهر رسالة «فصل سابق» كذباً. */
+    var currentTerm = { termId: Number(d.termId || 0) };
     var live = Boolean(d.liveTermId) && Number(d.termId) === Number(d.liveTermId);
     document.getElementById("name").textContent=d.name;
     document.getElementById("scope").textContent=d.college||"";
@@ -13209,9 +13252,6 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       ["قاعات",ar(d.rooms.length)]
     ].map(function(x){return '<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'}).join("");
 
-    // The approved five-column week is the whole visual schedule here.
-    // The repeated per-day cards underneath were redundant and made the card
-    // visually noisy, so this view deliberately stops at the table.
     var starts=[];d.byDay.forEach(function(day){day.rows.forEach(function(r){if(starts.indexOf(r.start)<0)starts.push(r.start)})});starts.sort();
     var weekTable='<table class="pub-week"><colgroup><col style="width:52px">'+d.byDay.map(function(){return '<col>'}).join("")+
       '</colgroup><thead><tr><th class="t">الوقت</th>'+d.byDay.map(function(day){return '<th>'+esc(day.name)+'</th>'}).join("")+
@@ -13226,23 +13266,17 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       }).join("")+'</tbody></table>';
     document.getElementById("days").innerHTML=weekTable;
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
-    /* Absence needs a reason. A missing button reads as a fault; one sentence
-       says the term is closed and points at the one that is not. */
     else if(!live) document.getElementById("days").insertAdjacentHTML("afterbegin",
       '<div class="pastnote">فصل سابق — للاطلاع فقط. الإبلاغ وإضافة التقويم متاحان في الفصل الحالي.</div>');
-    renderChanges(d,value);
-    wireNotes(value);
 
-    /* The subscription address. It carries a derived key, never the civil ID,
-       so it is safe to sit in a phone's calendar settings forever. */
-    /* A past term is read, not acted on: no reporting, no subscription. */
+    renderMovement(d);
+    renderRequests(d);
+    selectTab("week");
+
     document.getElementById("ics").style.display = live ? "" : "none";
     if(!live) document.getElementById("sub").setAttribute("hidden","");
 
     var base = "/api/public/ics/"+encodeURIComponent(TOKEN)+"/"+encodeURIComponent(d.calendarKey||"");
-    /* The reminder is the subscriber's own choice and travels inside their own
-       subscription — a department cannot decide to make four hundred phones
-       ring, and a person who wants it does not have to ask anyone. */
     var alarmBox = document.getElementById("subAlarm");
     var feed = base, https = location.origin + base;
     function retune(){
@@ -13252,9 +13286,6 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     }
     alarmBox.onchange = retune;
     var ics = document.getElementById("ics"), panel = document.getElementById("sub");
-    /* webcal: is what tells a phone to SUBSCRIBE rather than to download one
-       frozen copy — the whole difference between a calendar that follows the
-       schedule and a snapshot that quietly goes stale. */
     retune();
     ics.onclick = function(e){
       e.preventDefault();
@@ -13263,78 +13294,6 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       ics.setAttribute("aria-expanded", open ? "true" : "false");
       if(open) panel.scrollIntoView({block:"nearest",behavior:"smooth"});
     };
-    /**
-     * ── الإبلاغ من البطاقة ────────────────────────────────────────────────
-     *
-     * The whole of the inbound channel, in one delegated listener. Every
-     * lecture already carries its own id, so the form is built where it is
-     * needed and thrown away afterwards — nothing is rendered for the ninety
-     * per cent of visits that only want to read the week.
-     */
-    function wireNotes(civil){
-      var open = null;
-      document.getElementById("days").onclick = function(e){
-        var trigger = e.target.closest("button.say");
-        if(!trigger) return;
-        var slot = trigger.closest(".slot"), form = slot.querySelector(".sayform");
-        if(open && open !== form){ open.setAttribute("hidden",""); open.innerHTML="";
-          open.closest(".slot").querySelector("button.say").setAttribute("aria-expanded","false"); }
-        if(!form.hasAttribute("hidden")){
-          form.setAttribute("hidden",""); form.innerHTML=""; open=null;
-          trigger.setAttribute("aria-expanded","false"); return;
-        }
-        form.innerHTML =
-          '<div class="saykinds">'+
-            '<label><input type="radio" name="k'+slot.dataset.lecture+'" value="apology" checked> أعتذر عن هذه المحاضرة</label>'+
-            '<label><input type="radio" name="k'+slot.dataset.lecture+'" value="change"> أحتاج تعديلاً</label>'+
-          '</div>'+
-          /* The date belongs to an apology — «أعتذر عن محاضرة يوم كذا» — and
-             to nothing else. On «أحتاج تعديلاً» it asked for a day the request
-             does not have, so it appears only with the answer that needs it. */
-          '<input type="date" class="sayfrom" aria-label="تاريخ المحاضرة" hidden>'+
-          '<textarea class="saytext" rows="2" maxlength="400" placeholder="سطر واحد يوضّح المطلوب (اختياري للاعتذار)"></textarea>'+
-          '<button type="button" class="saysend">إرسال إلى القسم</button>'+
-          '<p class="saynote">يصل إلى منسّق القسم مرفقاً بهذه المحاضرة. لا يغيّر الجدول بنفسه.</p>';
-        form.removeAttribute("hidden");
-        trigger.setAttribute("aria-expanded","true");
-        open = form;
-        /* The date follows the choice: shown for an apology, gone otherwise. */
-        var when = form.querySelector(".sayfrom");
-        form.querySelectorAll("input[type=radio]").forEach(function(radio){
-          radio.onchange = function(){
-            if(form.querySelector("input[type=radio]:checked").value === "apology") when.removeAttribute("hidden");
-            else { when.setAttribute("hidden",""); when.value = ""; }
-          };
-        });
-        if(form.querySelector("input[type=radio]:checked").value === "apology") when.removeAttribute("hidden");
-
-        form.querySelector(".saysend").onclick = function(){
-          var send = form.querySelector(".saysend"), note = form.querySelector(".saynote");
-          send.disabled = true; note.textContent = "جارٍ الإرسال…";
-          fetch("/api/public/staff/"+encodeURIComponent(TOKEN)+"/note", {
-            method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({
-              civil: civil, scheduleId: Number(slot.dataset.lecture),
-              termId: Number(d.termId || 0),
-              kind: form.querySelector("input[type=radio]:checked").value,
-              fromDate: form.querySelector(".sayfrom").value || undefined,
-              text: form.querySelector(".saytext").value.trim(),
-            })
-          }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
-            .then(function(x){
-              if(!x.ok){ note.textContent = x.d.error || "تعذّر الإرسال."; send.disabled = false; return; }
-              /* The instructor is shown that it landed, so nobody has to phone
-                 the department to ask whether it did. */
-              form.innerHTML = '<p class="saydone">وصل إلى القسم ✓ — <span>'+esc(x.d.text)+'</span></p>';
-              open = null;
-              trigger.setAttribute("aria-expanded","false");
-              trigger.textContent = "أُبلغ القسم";
-              trigger.disabled = true;
-            })
-            .catch(function(){ note.textContent = "تعذّر الإرسال — تحقّق من الاتصال."; send.disabled = false; });
-        };
-      };
-    }
 
     document.getElementById("subCopy").onclick = function(){
       var note = document.getElementById("subNote"), said = "تم نسخ الرابط.";
@@ -14552,12 +14511,18 @@ function paint(){
    (b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+'</div>'+
    '<p class="now">'+esc(b.days||"")+' · '+esc(b.time||"")+'</p>';
   if(open){
-   h+='<div class="pick">'+
-    '<button type="button" data-i="'+i+'" data-a="keep" aria-pressed="'+(it.action==="keep")+'">كما هو</button>'+
-    '<button type="button" data-i="'+i+'" data-a="change" aria-pressed="'+(it.action==="change")+'">عدّل</button>'+
-    '<button type="button" data-i="'+i+'" data-a="delete" aria-pressed="'+(it.action==="delete")+'">احذف</button>'+
-   '</div>';
-   if(it.action==="change"){
+   if(it.action!=="add"){
+    h+='<div class="pick">'+
+     '<button type="button" data-i="'+i+'" data-a="keep" aria-pressed="'+(it.action==="keep")+'">كما هو</button>'+
+     '<button type="button" data-i="'+i+'" data-a="change" aria-pressed="'+(it.action==="change")+'">عدّل</button>'+
+     '<button type="button" data-i="'+i+'" data-a="delete" aria-pressed="'+(it.action==="delete")+'">احذف</button>'+
+    '</div>';
+   }else{
+    h+='<div class="pick">'+
+     '<button type="button" data-i="'+i+'" data-a="cancel-add" style="color:var(--bad)">إلغاء الإضافة</button>'+
+    '</div>';
+   }
+   if(it.action==="change"||it.action==="add"){
     h+='<div class="edit"><div class="days">';
     DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+
      (it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
@@ -14574,6 +14539,14 @@ function paint(){
   }
   h+='</div>';
  });
+ if(open&&data.courses&&data.courses.length){
+  h+='<div class="card"><b>إضافة مقرر من القسم</b>'+
+   '<div style="display:flex;gap:8px;margin-top:8px">'+
+   '<select id="coursePick" style="flex:1;padding:8px;border-radius:10px;border:1px solid var(--line);font:inherit">'+
+   '<option value="">اختر مقرراً…</option>'+
+   data.courses.map(function(c){return '<option value="'+c.id+'">'+esc(c.name||c.code)+'</option>'}).join("")+
+   '</select><button type="button" id="addCourse" style="padding:8px 14px;border-radius:10px;background:var(--accent);color:#fff;border:0;cursor:pointer;font:inherit">إضافة</button></div></div>';
+ }
  /* التوقيع: حقلٌ واحدٌ فوق الزرّ، وجملةٌ تقول ما يعنيه الضغط. ولا يُقال
     «تحقّق من هويتك» — يُقال إنه توقيع، لأنه توقيع. */
  if(open)h+='<div class="send"><label class="sign"><span>رقمك المدني</span>'+
@@ -14596,8 +14569,25 @@ function digitsOf(v){return String(v||"")
  .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))})
  .replace(/\D/g,"")}
 function wire(){
+ var addBtn=document.getElementById("addCourse");
+ if(addBtn){
+  addBtn.onclick=function(){
+   var pick=document.getElementById("coursePick");
+   var cid=Number(pick&&pick.value)||0;
+   if(!cid)return;
+   var found=data.courses.filter(function(c){return c.id===cid})[0];
+   state.push({
+    rowId:null,action:"add",courseId:cid,
+    before:{courseName:found?found.name:"مقرر",sectionCode:""},
+    slots:[],days:[],start:"",excuse:"",tone:"",note:"",alts:[]
+   });
+   paint();
+  };
+ }
  host.querySelectorAll("[data-a]").forEach(function(el){el.onclick=function(){
-  var i=+el.dataset.i,it=state[i];it.action=el.dataset.a;
+  var i=+el.dataset.i,it=state[i],act=el.dataset.a;
+  if(act==="cancel-add"){state.splice(i,1);paint();return}
+  it.action=act;
   if(it.action==="change"&&!it.days.length){
    it.days=(it.slots||[]).map(function(s){return s.day});it.start=(it.slots||[])[0]?it.slots[0].start:""}
   paint();check(i)}});
@@ -14621,11 +14611,11 @@ function wire(){
    ترى جدولَ صاحبها. وهي تعرض ما يقوله ولا تقرّر شيئاً بنفسها. */
 var pending=0;
 function check(i){
- var it=state[i];if(it.action!=="change"||!it.days.length||!it.start){it.tone="";it.note="";it.alts=[];return}
+ var it=state[i];if(it.action!=="change"&&it.action!=="add"||!it.days.length||!it.start){it.tone="";it.note="";it.alts=[];return}
  var seq=++pending;
  fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check",{method:"POST",
   headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({rowId:it.rowId,action:it.action,days:it.days,start:it.start})})
+  body:JSON.stringify({rowId:it.rowId,action:it.action,courseId:it.action==="add"?it.courseId:undefined,days:it.days,start:it.start})})
  .then(function(r){return r.json()}).then(function(d){
   if(seq!==pending)return;
   it.tone=d.kind==="clear"?"ok":d.kind==="exception"?"warn":"bad";
@@ -14644,7 +14634,8 @@ function submit(){
  fetch("/api/public/request/"+encodeURIComponent(TOKEN),{method:"POST",
   headers:{"Content-Type":"application/json"},
   body:JSON.stringify({civil:civil,items:state.map(function(it){return{rowId:it.rowId,action:it.action,
-   days:it.action==="change"?it.days:[],start:it.action==="change"?it.start:"",excuse:it.excuse}})})})
+   courseId:it.action==="add"?it.courseId:undefined,
+   days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})})})
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){
   if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
@@ -14680,9 +14671,20 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   const resolved = await resolveRequestLink(String(req.params.token || ""));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
 
+  const action = req.body?.action === "add" ? "add" : "change";
   const rowId = req.body?.rowId == null ? null : Number(req.body.rowId);
   const known = (resolved.request.items || []).find(item => item.rowId === rowId);
-  if (rowId != null && !known) { res.status(400).json({ error: "هذا الموعد ليس ضمن جدولك." }); return; }
+  if (action !== "add" && rowId != null && !known) { res.status(400).json({ error: "هذا الموعد ليس ضمن جدولك." }); return; }
+
+  const courseId = action === "add" ? Number(req.body?.courseId || 0) : Number(known?.before?.courseId || 0);
+  const context = await buildRequestContext(resolved.request);
+  const course = context.courses.get(courseId);
+  if (action === "add") {
+    if (!course || Number(course.AdSectionId) !== Number(resolved.request.AdSectionId)) {
+      res.status(400).json({ error: "المقرّر المضاف ليس من مقرّرات قسمك." });
+      return;
+    }
+  }
 
   const days = Array.isArray(req.body?.days)
     ? (req.body.days as any[]).map(String).filter((day): day is RequestDayKey =>
@@ -14690,17 +14692,30 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
     : [];
   const start = /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "";
 
-  const context = await buildRequestContext(resolved.request);
+  const base = action === "add" ? {
+    AdCollegeId: resolved.request.AdCollegeId,
+    AdSectionId: resolved.request.AdSectionId,
+    AdTermId: resolved.request.AdTermId,
+    AdInstructorId: resolved.request.AdInstructorId,
+    AdCourseId: courseId,
+  } : (known ? context.allRows.find(r => Number(r.id) === Number(known.rowId)) || {} : {});
+
+  const requested: RequestedRow = {
+    rowId: action === "add" ? null : rowId,
+    action,
+    AdCourseId: courseId,
+    days,
+    start,
+  };
+  const candidate = rowFromRequest(requested, base as any);
+
   const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
-  const verdict = judgeRequest({
-    rowId,
-    action: "change",
-    AdCourseId: Number(known?.before?.courseId || 0),
-    days, start,
-  }, {
+  const instructorRowsAfter = action === "add" ? [...mine, candidate] : mine;
+
+  const verdict = judgeRequest(requested, {
     instructorId: Number(resolved.request.AdInstructorId),
     allRows: context.allRows,
-    instructorRowsAfter: mine,
+    instructorRowsAfter,
     courses: context.courses,
     instructors: context.instructors,
     cohortPairs: context.cohortPairs,

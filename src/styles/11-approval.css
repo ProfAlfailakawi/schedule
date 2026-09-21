@@ -709,6 +709,8 @@
 .request-alternatives>span{font-size:var(--t-xs);color:var(--muted);font-weight:700}
 
 @media (max-width:640px){
+  .request-card-head{align-items:flex-start;flex-direction:column}
+  .request-diff>div{display:grid;grid-template-columns:minmax(54px,auto) minmax(0,1fr)}
   .request-totals{grid-template-columns:1fr;text-align:start}
   .request-actions{flex-direction:column}
   .request-actions .btn{width:100%}
@@ -758,7 +760,7 @@
 .registration-course-actions .changes-chip:disabled{opacity:.5;cursor:not-allowed}
 
 @media (max-width:640px){
-  .registration-course{align-items:stretch}
+  .registration-course{align-items:stretch;display:grid}
   .registration-course-actions{width:100%}
   .registration-course-actions .changes-chip{flex:1;justify-content:center}
 }
