@@ -1,0 +1,162 @@
+name: One-time instructor catalogue repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-instructor-card-catalogue.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch catalogue resolution and regression contracts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_between(path: str, start_marker: str, end_marker: str, replacement: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              file.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
+
+          # 1) بطاقة الأستاذ تقرأ كتالوج القسم نفسه، لا كتالوج الجامعة كله ثم تصفيه.
+          replace_between(
+              "server.ts",
+              "async function instructorRequestSectionCourses(sectionIdValue: unknown) {",
+              "\n}\n\nasync function instructorRequestCourseOptions",
+              '''async function instructorRequestSectionCourses(sectionIdValue: unknown) {
+            const sectionId = Number(sectionIdValue || 0);
+            if (!sectionId) return [] as any[];
+            /* The professor chooses from the department catalogue, not from the rows
+               that happen to be offered this term. `getCoursesBySection` already
+               normalizes legacy numeric/string AdSectionId values; the operational
+               set then removes only courses that are explicitly archived. */
+            const [courses, operationalIds] = await Promise.all([
+              Repository.getCoursesBySection(sectionId),
+              Repository.getOperationalCourseIds(sectionId),
+            ]);
+            return courses.filter(row => operationalIds.has(Number(row.AdCourseId))) as any[];
+          }'''
+          )
+
+          # 2) عضويات الصحائف القديمة قد تحمل AdSectionId كنص؛ اقرأ الشكلين.
+          replace_between(
+              "src/db/repository.ts",
+              "  getCurriculumPlanCourses: async (sectionId: number): Promise<CurriculumPlanCourse[]> => {",
+              "\n\n  getCourseTransitions: async",
+              '''  getCurriculumPlanCourses: async (sectionId: number): Promise<CurriculumPlanCourse[]> => {
+            const sid = Number(sectionId || 0);
+            if (!sid) return [];
+            if (firestoreDb && !demoSandboxContext.getStore()) {
+              const [numericSnap, textSnap] = await Promise.all([
+                firestoreDb.collection("curriculumPlanCourses").where("AdSectionId", "==", sid).get(),
+                firestoreDb.collection("curriculumPlanCourses").where("AdSectionId", "==", String(sid)).get(),
+              ]);
+              const rows = new Map<string, CurriculumPlanCourse>();
+              [...numericSnap.docs, ...textSnap.docs].forEach(doc => {
+                const row = doc.data() as CurriculumPlanCourse;
+                if (Number(row.AdSectionId) === sid) rows.set(String(row.id || doc.id), row);
+              });
+              return [...rows.values()];
+            }
+            if (!Array.isArray(db.curriculumPlanCourses)) db.curriculumPlanCourses = [];
+            return db.curriculumPlanCourses.filter(row => Number(row.AdSectionId) === sid);
+          },'''
+          )
+
+          # 3) لا تجعل نقص metadata يخفي مقرراً حقيقياً من كتالوج القسم.
+          #    لكن المقرر الذي كل عضوياته مؤرشفة يبقى مخفياً كما هو مطلوب.
+          replace_between(
+              "src/db/repository.ts",
+              "  getOperationalCourseIds: async (sectionId:number): Promise<Set<number>> => {",
+              "\n\n  getOperationalCoursesBySection: async",
+              '''  getOperationalCourseIds: async (sectionId:number): Promise<Set<number>> => {
+            const courses=await Repository.getCoursesBySection(sectionId);
+            const plans=await Repository.getCurriculumPlans(sectionId);
+            // Compatibility contract: before setup, every current catalogue course is
+            // active in the transition stage exactly as it is today.
+            if(!plans.length)return new Set(courses.map(row=>Number(row.AdCourseId)));
+            const livePlanIds=new Set(plans.filter(row=>row.status!=="archived").map(row=>row.id));
+            const memberships=await Repository.getCurriculumPlanCourses(sectionId);
+            const planIdsByCourse=new Map<number,string[]>();
+            for(const row of memberships){
+              const courseId=Number(row.AdCourseId);
+              if(!courseId)continue;
+              const planIds=planIdsByCourse.get(courseId)||[];
+              if(!planIds.includes(row.planId))planIds.push(row.planId);
+              planIdsByCourse.set(courseId,planIds);
+            }
+            /* A real catalogue can predate curriculum metadata, and legacy/imported
+               rows may therefore have no membership document at all. Absence of
+               metadata must never make a department course disappear from the
+               professor card or schedule pickers. Explicit archival is different:
+               once a course has memberships and every membership belongs to an
+               archived plan, it is intentionally no longer operational. */
+            return new Set(courses
+              .filter(course=>{
+                const planIds=planIdsByCourse.get(Number(course.AdCourseId))||[];
+                return !planIds.length||planIds.some(planId=>livePlanIds.has(planId));
+              })
+              .map(course=>Number(course.AdCourseId)));
+          },'''
+          )
+
+          # 4) ثبّت العقد في اختبارات الانتقال.
+          p = Path("tests/curriculum-transition-audit.ts")
+          text = p.read_text(encoding="utf-8")
+          old = '''check(repo.includes('livePlanIds')&&repo.includes('row.status!=="archived"'),"المقرر المؤرشف لا يدخل مجموعة التشغيل");'''
+          new = old + '''\ncheck(repo.includes('const planIdsByCourse=new Map<number,string[]>()')&&repo.includes('return !planIds.length||planIds.some(planId=>livePlanIds.has(planId))'),"المقرر الموجود في كتالوج القسم بلا عضوية صحيفة لا يختفي، بينما المؤرشف صراحة يبقى مخفياً");\ncheck(repo.includes('where("AdSectionId", "==", String(sid))'),"عضويات الصحائف القديمة تُقرأ سواء خُزّن رقم القسم كرقم أو كنص");'''
+          assert text.count(old) == 1, "curriculum audit archival assertion not found exactly once"
+          text = text.replace(old, new)
+          text = text.replace(
+              "check(server.includes('async function instructorRequestSectionCourses')&&server.includes('const operationalIds = await Repository.getOperationalCourseIds(sectionId)'),\"رابط الأستاذ لا يعرض مقررات الصحائف المؤرشفة مع الحفاظ على توافق AdSectionId القديم\");",
+              "check(server.includes('async function instructorRequestSectionCourses')&&server.includes('Repository.getCoursesBySection(sectionId)')&&server.includes('Repository.getOperationalCourseIds(sectionId)'),\"رابط الأستاذ يعرض كتالوج القسم التشغيلي كاملاً مع إخفاء المؤرشف فقط\");",
+          )
+          p.write_text(text, encoding="utf-8")
+
+          # 5) حدّث تدقيق دورة الأستاذ ليتحقق من المصدر المقيد بالقسم مباشرة.
+          p = Path("tests/instructor-request-server-audit.ts")
+          text = p.read_text(encoding="utf-8")
+          old = '''check(server.includes("async function instructorRequestSectionCourses")
+            && server.includes("const courses = await Repository.getCourses();")
+            && server.includes("Number(row.AdSectionId) === sectionId")
+            && server.includes("instructorRequestSectionCourses(request.AdSectionId)"),
+            "وبطاقة الأستاذ تبني كتالوج القسم من المرجع الكامل بعد تطبيع AdSectionId، فلا تختفي المقررات القديمة");'''
+          new = '''check(server.includes("async function instructorRequestSectionCourses")
+            && server.includes("Repository.getCoursesBySection(sectionId)")
+            && server.includes("Repository.getOperationalCourseIds(sectionId)")
+            && server.includes("instructorRequestSectionCourses(request.AdSectionId)"),
+            "وبطاقة الأستاذ تقرأ كتالوج القسم الكامل مباشرة، ثم تستبعد المؤرشف أكاديمياً فقط");'''
+          assert text.count(old) == 1, "instructor catalogue audit assertion not found exactly once"
+          p.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+
+      - name: Verify TypeScript
+        run: npm ci && npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify production build
+        run: npm run build
+
+      - name: Commit repair
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.ts src/db/repository.ts tests/curriculum-transition-audit.ts tests/instructor-request-server-audit.ts
+          git diff --cached --check
+          git commit -m "fix(instructor-card): show full department course catalogue"
+          git push origin HEAD:main
