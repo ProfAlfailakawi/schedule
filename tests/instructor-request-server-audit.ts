@@ -25,6 +25,7 @@ const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 const types = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8");
 const repo = fs.readFileSync(path.join(process.cwd(), "src/db/repository.ts"), "utf8");
 const inbox = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
+const verdictSource = fs.readFileSync(path.join(process.cwd(), "src/utils/instructorRequestVerdict.ts"), "utf8");
 
 /* ── المسارات ───────────────────────────────────────────────────────────── */
 
@@ -142,6 +143,18 @@ check(page.includes('fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/ch
   "والحكمُ يُسأل عنه الخادمُ عند كل تغيير");
 check(page.includes('id="coursePick"') && page.includes("data.courses.map(function(c)"),
   "والإضافةُ تبدأ من قائمة مقرّرات القسم التي أعادها الخادم");
+check(page.includes('data-tab="schedule"') && page.includes('data-tab="activity"')
+  && page.includes("function activityHtml(r)"),
+  "وللأستاذ تبويبان واضحان: العمل على الجدول وسجل الحركة التفصيلي");
+check(page.includes('actionName(it.action)') && page.includes('requestedText(it)')
+  && page.includes('decision.state==="fixed"') && page.includes('decision.state==="rejected"'),
+  "وسجل الحركة يشرح الإضافة والتعديل والحذف وقرار القسم على كل بند");
+check(page.includes('var blocked=state.filter(function(it){return it.tone==="bad"||it.tone==="checking"}).length')
+  && page.includes("عالج الموانع قبل الإرسال"),
+  "ومؤشر الجاهزية يمنع الإرسال المرئي ما دام الفحص جارياً أو وجد مانعاً");
+check(page.includes('days:(it.action==="change"||it.action==="add")?(it.slots||[]).map(function(s){return s.day}):[]')
+  && page.includes('decision:it.decision||null'),
+  "والطلب المحفوظ يعود بأيامه ووقته وقراراته، فلا يختفي تفصيل الحركة عند إعادة فتح الرابط");
 check(page.includes('it.action!=="change"&&it.action!=="add"')
   && page.includes('courseId:it.action==="add"?it.courseId:undefined'),
   "والإضافةُ تُفحص كتعديل الوقت نفسه وتُرسل بهوية المقرر");
@@ -170,6 +183,9 @@ check(server.includes("requestLinks,") && server.includes("Repository.getInstruc
    عليها. */
 check(server.includes("const rowsAfter: any[] = [];") && server.includes("instructorRowsAfter: rowsAfter"),
   "جدولُ الأستاذ بعد الحزمة يُبنى ويُقاس عليه، لا على الجدول القديم");
+check(server.includes("const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));")
+  && verdictSource.includes("rows: context.instructorRowsAfter"),
+  "وقاعدة المحاضرات المتتالية تُقاس على جدول صاحب الرابط وحده، لا على زملائه");
 check(server.includes('if (item.action === "delete") continue;'),
   "والمحذوفُ يغيب عن الأسبوع الجديد");
 /* إضافتان بلا معرّفٍ كانتا صفّاً واحداً في نظر محرّك التعارض، فيتخطّى
