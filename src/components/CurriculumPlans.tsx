@@ -48,6 +48,18 @@ const KIND: Record<string, string> = {
   removed: "أُلغي من الصحيفة الجديدة",
 };
 
+/*
+ * This project intentionally omits @types/react. In that setup TypeScript does
+ * not know that `key` is a reserved JSX attribute on custom components, even
+ * though React consumes it correctly at runtime. Keep the workaround local to
+ * the mapped plan cards instead of weakening the shared Surface contract.
+ */
+const PlanSurface = Surface as unknown as (props: {
+  children?: React.ReactNode;
+  className?: string;
+  key?: string | number;
+}) => any;
+
 export default function CurriculumPlans({
   sections,
   initialSectionId,
@@ -87,7 +99,7 @@ export default function CurriculumPlans({
   };
   useEffect(() => { void load(sectionId); }, [sectionId]);
 
-  const courses = useMemo(() => sortByName(data?.courses || [], row => row.CourseName), [data]);
+  const courses = useMemo<AdCourse[]>(() => sortByName<AdCourse>(data?.courses ?? [], row => row.CourseName), [data?.courses]);
   const byId = useMemo(() => new Map(courses.map(course => [Number(course.AdCourseId), course])), [courses]);
   const active = data?.plans.find(plan => plan.status === "active") || null;
   const transitionPlans = data?.plans.filter(plan => plan.status === "transition") || [];
@@ -218,7 +230,7 @@ export default function CurriculumPlans({
             {data.plans.filter(plan => plan.status !== "archived").map(plan => {
               const count = membershipFor(plan.id).length;
               const status = STATUS[plan.status] || STATUS.transition;
-              return <Surface key={plan.id} className={`curriculum-plan-card ${plan.status}`}>
+              return <PlanSurface key={plan.id} className={`curriculum-plan-card ${plan.status}`}>
                 <div className="curriculum-plan-head">
                   <span className="curriculum-plan-icon">{plan.status === "active" ? <CheckCircle2 /> : <Layers3 />}</span>
                   <span className={`curriculum-status ${plan.status}`}>{status.label}</span>
@@ -228,7 +240,7 @@ export default function CurriculumPlans({
                 <div className="curriculum-plan-meta"><b>{count.toLocaleString("ar-KW-u-nu-latn")}</b><span>مقرر</span>{plan.code ? <em>{plan.code}</em> : null}</div>
                 {plan.status === "transition" && !plan.virtual ? <SecondaryButton data-guide-ignore="أرشفة صحيفة أكاديمية بعد فحص الجاهزية" className="curriculum-archive-btn" onClick={() => archivePlan(plan)} disabled={busy}><Archive /> أرشفة الصحيفة</SecondaryButton> : null}
                 {plan.status === "active" ? <SecondaryButton data-guide-ignore="إظهار نموذج إنشاء الجيل التالي من الصحيفة" className="curriculum-archive-btn" onClick={() => setShowNewPlan(v => !v)} disabled={busy}><Plus /> صحيفة أحدث</SecondaryButton> : null}
-              </Surface>;
+              </PlanSurface>;
             })}
             {(!active || showNewPlan) ? <Surface className="curriculum-new-plan">
               <div className="curriculum-new-plan-title"><Plus /><div><strong>{active ? "إنشاء صحيفة أحدث" : "إنشاء الصحيفة الجديدة"}</strong><span>{active ? "تتحول الحالية إلى انتقالية وتبدأ الأحدث فارغة" : "تبدأ فارغة ومهيأة للمقررات الجديدة"}</span></div></div>
