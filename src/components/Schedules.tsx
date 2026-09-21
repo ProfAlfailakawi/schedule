@@ -2239,14 +2239,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
            * certain. A reader with no resolved department still chooses, exactly
            * as before — nothing is guessed on their behalf.
            *
-           * The newest OPEN term, not merely the newest: terms marked ended are
-           * history, and landing a new reader inside a closed one would answer
-           * the wrong question confidently.
+           * The operational current term is resolved by the same explicit
+           * close-state rule used by My Card and the server.
            */
           if (!nextTerm && nextCollege && nextSection) {
             const byNewest = sortTermsNewest(lookup.terms as any[]);
-            const open = byNewest.find(term => !isTermClosed(term as any, lookup.terms as any[]));
-            nextTerm = Number((open || byNewest[0])?.AdTermId || 0);
+            nextTerm = currentTermId(lookup.terms as any[]) || Number(byNewest[0]?.AdTermId || 0);
           }
 
           setFilterCollege(nextCollege);
@@ -5436,27 +5434,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    * Two conditions gate it, and both matter. It is drawn **only in today's
    * column**, because in a weekly grid the other four days are not happening —
    * a rule stretched across all five would say something false about Tuesday.
-   * And it is drawn **only while the term on screen is the term now running**,
+   * And it is drawn **only while the term on screen is the operational current term**,
    * because a line labelled «الآن» over a schedule from 2019 is worse than no
-   * line at all. Where a term carries its start date and length, that is the
-   * test; where it does not — and ten years of terms do not — the newest term
-   * is taken as the current one, which is this department's own convention.
+   * line at all. The same explicit close-state rule drives this screen, My Card,
+   * and the server so a future planning term cannot steal the marker.
    */
   /** A finished term keeps its schedule, but loses the tools that only make
    *  sense while teaching is still ahead. */
-  const newestTermId = useMemo(
-    () => (terms || []).reduce(
-      (best, term) => (Number(term?.AdTermId || 0) > best ? Number(term.AdTermId || 0) : best),
-      0,
-    ),
-    [terms],
-  );
   const termIsRunning = useMemo(
-    () => Number(filterTerm) > 0 && (
-      Number(filterTerm) === currentTermId(terms as any[]) ||
-      Number(filterTerm) === newestTermId
-    ),
-    [terms, filterTerm, newestTermId],
+    () => Number(filterTerm) > 0 && Number(filterTerm) === currentTermId(terms as any[]),
+    [terms, filterTerm],
   );
   const selectedTermClosed = useMemo(
     () => !termIsRunning && isTermClosed(terms.find(term => term.AdTermId === filterTerm), terms),

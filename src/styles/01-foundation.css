@@ -443,7 +443,7 @@ time,[dir="ltr"],bdi{unicode-bidi:isolate;font-variant-numeric:tabular-nums}
 
 /* SCHEDULE_ARABIC_TYPE_RECOVERY
    Arabic joins should not be tightened with Latin headline tracking. */
-html[lang="ar"] body{font-synthesis:none;font-kerning:normal}
+html[lang="ar"],html[lang="ar"] body{font-synthesis:none;font-kerning:normal}
 html[lang="ar"] h1,
 html[lang="ar"] h2,
 html[lang="ar"] h3,

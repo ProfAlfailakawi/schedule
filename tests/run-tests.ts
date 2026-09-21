@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
-import { termWindow, termHasEnded, termIsRunningNow, currentTermId } from "../src/utils/termSequence";
+import { termWindow, termHasEnded, termIsRunningNow, currentTermId, isTermClosed } from "../src/utils/termSequence";
 import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../src/utils/weekVisual";
 import { findConflicts, outsideScopeClashes } from "../src/utils/scheduleIntelligence";
 import { discardParkedMutation, parkedCount, parkedMutations, retryParkedMutation } from "../src/utils/offlineScheduleQueue";
@@ -199,18 +199,28 @@ async function runTests() {
           "ضغط انتهاء الأول ونقل العلم المفتوح للثاني ينقل الفصل الجاري");
         assert(currentTermId([first, summer], at("2026-08-15")) === 9,
           "العلم التشغيلي يسبق التاريخ الافتراضي");
+        assert(currentTermId([first, { ...second, AdTermClosed: false }], at("2026-09-03")) === 9,
+          "إنشاء فصل مستقبلي مفتوح للتخطيط لا يزيح الفصل الجاري");
+        assert(currentTermId([{ ...summer, AdTermClosed: false }, first], at("2026-10-15")) === 9,
+          "علم مفتوح قديم لا يزيح الفصل الذي تقع نافذته الآن");
+        assert(isTermClosed({ ...first, AdTermClosed: true }, [first, second]),
+          "الإغلاق الصريح وحده يجعل الفصل للقراءة فقط");
+        assert(!isTermClosed({ ...first, AdTermClosed: false }, [second, first]),
+          "وجود فصل أحدث لا يغلق الفصل الجاري ضمنياً");
+        assert(currentTermId([first, summer]) !== summer.AdTermId,
+          "رابط فصل قديم لا يحوّله إلى الفصل الجاري");
         assert(currentTermId([{ AdTermId: 3, AdTermName: "فصل قديم" },
                               { AdTermId: 4, AdTermName: "أقدم" }], at("2026-09-03")) === 4,
           "إن غابت العلامة الصريحة يُختار أحدث فصل غير مغلق");
       }
 
-      // فصلٌ انقضى زمنه لا يُراقَب بوصفه «الفصل المعتمد».
+      // لا فصل معتمداً بلا إغلاق صريح.
       const terms = [
         { AdTermId: 9, AdTermName: "الفصل الأول 2026/2027" },
         { AdTermId: 8, AdTermName: "الفصل الصيفي 2025/2026" },
       ] as any[];
       assert(settledTerm(terms).term === null,
-        "لا يُراقَب فصل معتمد انقضى زمنه");
+        "لا يُراقَب فصل معتمد لم يُغلق صراحةً");
     }
 
     // Names cut to card width: honorific + first + last.
@@ -694,12 +704,11 @@ async function runTests() {
   originalLog("\n--- 14. Settled-term drift ---");
   {
     const terms: any[] = [
-      { AdTermId: 1, AdTermName: "خريف 2026" },
+      { AdTermId: 1, AdTermName: "خريف 2026", AdTermClosed: true },
       { AdTermId: 2, AdTermName: "ربيع 2027" },
     ];
-    // The department's own rule: creating the next term is what closes this one.
-    assert(settledTerm([terms[0]]).term === null, "one term alone means nothing is settled yet");
-    assert(settledTerm(terms).term?.AdTermId === 1, "the term before the newest is the settled one");
+    assert(settledTerm([{ ...terms[0], AdTermClosed: false }]).term === null, "an open term is never treated as settled");
+    assert(settledTerm(terms).term?.AdTermId === 1, "the newest explicitly closed term is the settled one");
 
     const at = (id: number, college: number, from: string, to: string): any => ({
       id, AdTermId: 1, AdCollegeId: college, AdSectionId: 1, AdCourseId: id, AdInstructorId: 0, SCode: String(id),

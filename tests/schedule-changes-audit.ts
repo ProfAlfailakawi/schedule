@@ -157,6 +157,7 @@ check(!returnBody.includes("!note.resolved"), "ولا يقرأ العلَم هو
    ══════════════════════════════════════════════════════════════════════════ */
 
 const changes = fs.readFileSync(path.join(process.cwd(), "src/components/ScheduleChanges.tsx"), "utf8");
+const approvalBar = fs.readFileSync(path.join(process.cwd(), "src/components/ApprovalBar.tsx"), "utf8");
 const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
 const roles = fs.readFileSync(path.join(process.cwd(), "src/utils/academicRoles.ts"), "utf8");
 const ask = fs.readFileSync(path.join(process.cwd(), "src/utils/inboxAsk.ts"), "utf8");
@@ -193,8 +194,10 @@ check(changes.includes("report.suggestions?.[`${scheduleId}:${field}`]"),
   "ويُملأ في الصندوق: اقتراحٌ لا حكم، يُمحى إن شاء ويُكتب غيره");
 
 /* ── ٤) عزل القسم: لا تتسرّب تفاصيل قسمٍ آخر ───────────────────────── */
-check(server.includes("async function crossScopeClashes"),
-  "فحص التعارضات بين الأقسام يبقى داخلياً لحماية القاعات");
+check(!server.includes("async function crossScopeClashes"),
+  "لا تُبنى حمولةٌ تفصيلية لقسمٍ آخر ثم تُترك قرب الاستجابة");
+check(server.includes('other ? " مع حجز آخر خارج نطاق القسم"'),
+  "واقتراحُ السبب يذكر وجود الحجز الخارجي بلا اسم مقررٍ أو شعبة");
 check(!/suggestions,\s*crossScope,\s*blockingConflicts/.test(server),
   "تقرير القسم لا يعيد crossScope في الحمولة");
 check(!changes.includes("changes-cross") && !changes.includes("otherSectionName"),
@@ -341,21 +344,31 @@ check(server.includes('const lastLookAt = currentRound?.returnedAt || currentRou
    الإرسال» بدل الجدول كلِّه وهو أولُ مرّةٍ يراه فيها. */
 check(!server.includes("|| currentRound?.submittedAt"),
   "والإرسالُ ليس نظرة، فلا يكون مرساة");
-check(server.includes("const after = lastLookAt"),
-  "ومن لم ينظر إليه التسجيلُ قطُّ لا أساسَ له، وكلُّ صفٍّ مضافٌ — وهو الصواب");
+check(server.includes("const candidates = history.filter")
+  && server.includes("(!lastLookAt || String(item.createdAt) >= String(lastLookAt))"),
+  "ومن لم ينظر إليه التسجيلُ بعدُ يستعمل أقدم لقطة محفوظة بدلاً من المقارنة بالعدم");
 /* وجهةُ البحث بعد المرساة لا قبلها. واللقطةُ تحفظ ما كان قبل التعديل وتُنشأ
    لحظةَ التعديل، فكلُّ لقطةٍ لهذه الجولة أحدثُ من المرساة بالضرورة — والبحثُ
    قبلها لا ينطبق عليه شيءٌ أبداً، فيسقط الأساسُ إلى العدم ويعود البلاغُ كما
    كان. وقد وقع هذا فعلاً، وأظهره تحقّقٌ سلوكيٌّ على خادمٍ يعمل. */
 check(server.includes('String(item.createdAt) >= String(lastLookAt)'),
   "والبحثُ بعد المرساة، لأن اللقطةَ تُنشأ لحظةَ التعديل وتحفظ ما قبله");
-check(server.includes("const fallback = after[after.length - 1];"),
+check(server.includes("const fallback = candidates[candidates.length - 1];"),
   "ويُؤخذ أقدمُ ما بعدها — حالُ الجدول قبل أوّلِ تعديلٍ في هذه الجولة");
 check(server.includes("baselineSource,"),
   "والمصدرُ يصل الشاشة");
 check(changes.includes('report.baselineSource === "none"')
   && changes.includes('report.baselineSource === "capture"'),
   "والشاشةُ تقول من أين تبدأ المقارنة، فلا يُقرأ «كلُّ صفٍّ مضاف» خبراً عن الجدول وهو خبرٌ عن المقارنة");
+
+/* ── ١١) اللائحة في موضع المراجعة نفسه ────────────────────────────────── */
+check(server.includes("regulationNotices: await regulationNoticesForScope"),
+  "وتصل الملاحظات اللائحية بتفاصيلها إلى شاشة التغييرات");
+check(changes.includes("<RegulationReview notices={report.regulationNotices || []} />")
+  && changes.includes('className={`review-finding'),
+  "وتُعرض بتقديم شاشة الاعتماد نفسه، لا بعدّادٍ مكرر عند زر التوقيع");
+check(!approvalBar.includes("approval-sign-notices") && !approvalBar.includes("regulationNotices"),
+  "وشريط الاعتماد لا يكرر عدّاد اللائحة أو حالته");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);

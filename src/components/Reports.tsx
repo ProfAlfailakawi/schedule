@@ -2081,7 +2081,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       </div>
                       <small>
                         <b>{courseById.get(row.AdCourseId)?.CourseCode || "—"}</b>
-                        {[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "—"}
+                        <span className="lens-week-room" dir="ltr">
+                          {[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "—"}
+                        </span>
                       </small>
                     </article>
                   )) : <p>لا مواعيد في هذا اليوم</p>}

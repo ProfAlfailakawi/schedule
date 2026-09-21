@@ -15,8 +15,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, ChevronLeft, ClipboardList, Clock3,
-  CornerUpLeft, FileDiff, Inbox, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
+  AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardList, Clock3,
+  CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
   UsersRound, X,
 } from "lucide-react";
 import ApprovalBar from "./ApprovalBar";
@@ -68,6 +68,11 @@ interface DiffEntry {
   display: DisplayRow;
 }
 interface FullRow extends DisplayRow { changed: boolean; changeKind?: DiffEntry["kind"] }
+interface RegulationNotice {
+  rule: string; article: string; source: string;
+  approvalEffect: "note" | "review";
+  title: string; detail: string; rowIds: number[];
+}
 
 interface ChangeReport {
   approval: { status: ScheduleApprovalStatus; currentRound: number; pendingAdditions: any[]; signatures: any[] };
@@ -83,7 +88,7 @@ interface ChangeReport {
   /** نصٌّ جاهزٌ لكل خانةٍ يعرف النظام سببَ الشكّ فيها، مفتاحه `صف:خانة`. */
   suggestions?: Record<string, string>;
   blockingConflicts: number;
-  regulationNotices: number;
+  regulationNotices: RegulationNotice[];
 }
 
 export interface ScheduleChangesRole {
@@ -433,6 +438,77 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
 const KIND_LABEL: Record<DiffEntry["kind"], string> = { added: "مضاف", removed: "محذوف", changed: "معدّل" };
 
 /**
+ * نفس بطاقات مراجعة الاعتماد، داخل موضع المراجعة الفعلي.
+ *
+ * نستعمل أصناف `review-*` نفسها التي ترسمها ScheduleReview، فلا يصبح للنظام
+ * عرضٌ ثالث للملاحظة اللائحية. المحتوى يصل مفصلاً من فاحص النطاق نفسه، وليس
+ * عداداً يطلب من القارئ أن يبحث عن التفاصيل في شاشة أخرى.
+ */
+function RegulationReview({ notices }: { notices: RegulationNotice[] }) {
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  if (!notices.length) return null;
+  const preview = notices.slice(0, 3).map(item => item.title).join(" · ");
+  return (
+    <section className={`review-quiet changes-regulation-review ${open ? "open" : ""}`}>
+      <button
+        type="button"
+        className="review-quiet-toggle"
+        data-guide-ignore="فتح الملاحظات اللائحية في شاشة تغييرات الجدول — عرض فقط"
+        onClick={() => setOpen(value => !value)}
+        aria-expanded={open}
+      >
+        <span className="review-mark" aria-hidden="true"><CheckCircle2 /></span>
+        <span className="review-copy">
+          <strong>{notices.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظات لا تمنع الاعتماد</strong>
+          <small>{preview}{notices.length > 3 ? ` · و${(notices.length - 3).toLocaleString("ar-KW-u-nu-latn")} غيرها` : ""}</small>
+        </span>
+        <i>{new Set(notices.flatMap(item => item.rowIds)).size.toLocaleString("ar-KW-u-nu-latn")} موعد</i>
+        <ChevronDown aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className="review-quiet-list">
+          {notices.map((notice, index) => {
+            const key = `${notice.rule}:${index}`;
+            const medium = notice.approvalEffect === "review";
+            const isOpen = expanded === key;
+            return (
+              <article key={key} className={`review-finding severity-${medium ? "medium" : "low"} ${isOpen ? "open" : ""}`}>
+                <button
+                  type="button"
+                  data-guide-ignore="فتح تفاصيل ملاحظة لائحية داخل تغييرات الجدول فقط"
+                  onClick={() => setExpanded(current => current === key ? null : key)}
+                  aria-expanded={isOpen}
+                >
+                  <span className="review-mark" aria-hidden="true">{medium ? <Info /> : <CheckCircle2 />}</span>
+                  <span className="review-copy">
+                    <strong>{notice.title}</strong>
+                    <small>{notice.rowIds.length ? `${notice.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد متأثر` : "تنبيه لائحي"}</small>
+                  </span>
+                  <em>{notice.article}</em>
+                  <i>{medium ? "مراجعة لائحية" : "ملاحظة لائحية"}</i>
+                </button>
+                {isOpen ? (
+                  <div className="review-rows">
+                    <div className="review-finding-detail">
+                      <p>{notice.detail}</p>
+                      <div className="review-finding-meta">
+                        <span>{notice.article}</span>
+                        <span>{medium ? "تُراجع ولا تمنع" : "لا تمنع الاعتماد"}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
  * ── صفُّ الموعد، بالشكل الذي يقرؤه الناسُ كلَّ يوم ──────────────────────────
  *
  * «مواعيد القسم» في ورشة الجدول هي الشكلُ المستقرّ في هذا النظام، ويستعمله
@@ -759,14 +835,7 @@ function Report({ termId, scope, role, onBack }: {
         </div>
       ) : null}
 
-      {/* الملاحظة اللائحية في موضع الاعتماد نفسه وبنفس لغة شريط الاعتماد:
-          خبرٌ واضح داخل تغييرات الجدول، لا عدّادٌ مكرر ولا بطاقةٌ ثانية. */}
-      {report.regulationNotices > 0 ? (
-        <Notice type="warning">
-          <strong>{report.regulationNotices} ملاحظةً لائحية.</strong>{" "}
-          اللائحة معيارٌ يُحتجّ به ولا تمنع الاعتماد؛ راجع تفاصيلها مع تغييرات الجدول قبل القرار.
-        </Notice>
-      ) : null}
+      <RegulationReview notices={report.regulationNotices || []} />
 
       <div className="changes-viewbar">
         <div className="changes-summary">

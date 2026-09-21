@@ -1,7 +1,7 @@
 import type { AdTerm, FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
 import { findConflicts, type ConflictInsight } from "./scheduleIntelligence";
-import { termHasEnded } from "./termSequence";
+import { sortTermsNewest } from "./termSequence";
 
 /**
  * ── الجدول يتعفّن بصمت ──────────────────────────────────────────────────────
@@ -62,24 +62,18 @@ export interface DriftReading {
 const ar = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
 
 /**
- * The most recent term that is no longer the newest.
+ * The most recent term explicitly marked as closed.
  *
  * Terms are ordered by id because that is the only ordering the data carries;
  * a name is free text and a start date is optional. A department with exactly
  * one term has nothing settled, which is correct — nothing has been closed yet.
  */
 export function settledTerm(terms: AdTerm[]): { term: AdTerm | null; supersededBy: number } {
-  const ordered = [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId));
-  if (ordered.length < 2) return { term: null, supersededBy: 0 };
-  const candidate = ordered[1];
-  /* فصلٌ انقضى زمنه لا يُراقَب.
-   *
-   * «معتمد» كانت تعني «صار له تالٍ» فقط، فكان الفحص يتكلّم عن فصل انتهى قبل
-   * شهور بينما القارئ في فصل جديد — ولا فائدة من إبلاغه بتعارض في جدول لا
-   * أحد يدرّسه. الحالة التي تستحق القول هي العكس: فصلٌ ما زال يُدرَّس وقد
-   * أُنشئ بعده فصل للتخطيط، ثم انزاح شيء تحته. */
-  if (termHasEnded(candidate)) return { term: null, supersededBy: 0 };
-  return { term: candidate, supersededBy: 1 };
+  const ordered = sortTermsNewest(terms);
+  const candidate = ordered.find(term => term.AdTermClosed === true) || null;
+  if (!candidate) return { term: null, supersededBy: 0 };
+  const index = ordered.findIndex(term => Number(term.AdTermId) === Number(candidate.AdTermId));
+  return { term: candidate, supersededBy: Math.max(0, index) };
 }
 
 /**

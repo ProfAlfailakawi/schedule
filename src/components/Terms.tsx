@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Sparkles, Trash2 } from "lucide-react";
-import { isTermClosed, sortTermsNewest, suggestNextTermName } from "../utils/termSequence";
+import { currentTermId, isTermClosed, sortTermsNewest, suggestNextTermName } from "../utils/termSequence";
 import {
   AddButton,
   EmbeddedAction,
@@ -103,7 +103,9 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ AdTermName: name.trim(),
               AdTermStart: start || undefined, AdTermWeeks: Number(weeks) || undefined,
-              AdTermClosed: closed }),
+              /* إنشاء فصلٍ مستقبلي لا يعلن أنه الجاري. العلم التشغيلي يُكتب
+                 عند تعديل الفصل واختيار حالته صراحةً. */
+              AdTermClosed: mode === "edit" ? closed : undefined }),
           },
         ),
         d = await r.json();
@@ -148,7 +150,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     ),
     selected =
       filtered.find((x) => x.AdTermId === selectedId) || filtered[0] || null,
-    activeId = selected?.AdTermId ?? null;
+    activeId = selected?.AdTermId ?? null,
+    liveId = currentTermId(items);
   const editorDrawer = mode !== "index" ? (
       <CatalogFormDrawer onClose={back} label={mode === "create" ? "إنشاء فصل جديد" : "تعديل بيانات الفصل"}>
         <PageTitle
@@ -273,8 +276,12 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                       {activeId === x.AdTermId ? <span className="sr-only">، محدد</span> : null}
                     </>
                   )}
-                  subtitle={isTermClosed(x, items) ? "فصل منتهٍ · للقراءة والتقارير" : "الفصل الجاري · مرجع الجداول"}
-                  meta={<MetaPill label="الحالة" value={isTermClosed(x, items) ? "منتهٍ" : "جارٍ"} />}
+                  subtitle={isTermClosed(x, items)
+                    ? "فصل منتهٍ · للقراءة والتقارير"
+                    : Number(x.AdTermId) === liveId
+                      ? "الفصل الجاري · مرجع الجداول"
+                      : "فصل غير منتهٍ · جاهز للتخطيط"}
+                  meta={<MetaPill label="الحالة" value={isTermClosed(x, items) ? "منتهٍ" : Number(x.AdTermId) === liveId ? "جارٍ" : "غير منتهٍ"} />}
                 />
               ))}
             </RecordDeck>

@@ -82,7 +82,8 @@
       #boot{
         position:fixed;inset:0;z-index:99999;display:grid;place-items:center;
         background:radial-gradient(circle at 50% 42%,rgba(47,133,116,.10),transparent 44%),#f2f3ef;
-        color:#171c1a;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;
+        color:#171c1a;font-family:"Plex Arabic",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
+        font-synthesis:none;
         opacity:1;transition:opacity .24s ease,background .34s ease,color .34s ease;
       }
       /* الليلي لا يُطبَّق إلا بعد أول رسم (‎.settled‎)، فيصير تحوّلاً لا حالةً
@@ -124,9 +125,9 @@
       #boot-card{display:none;max-width:440px;padding:30px;text-align:center;line-height:1.8}
       #boot.failed #boot-splash{display:none}
       #boot.failed #boot-card{display:block}
-      #boot-card h1{margin:0 0 10px;font-size:19px;font-weight:650}
+      #boot-card h1{margin:0 0 10px;font-size:19px;font-weight:600}
       #boot-card p{margin:0 0 20px;font-size:14px;opacity:.72}
-      #boot-card button{min-height:44px;padding:0 22px;border:0;border-radius:11px;cursor:pointer;background:#1f6b5c;color:#fff;font:inherit;font-weight:650}
+      #boot-card button{min-height:44px;padding:0 22px;border:0;border-radius:11px;cursor:pointer;background:#1f6b5c;color:#fff;font:inherit;font-weight:600}
       #boot-card small{display:block;margin-top:14px;font-size:11px;opacity:.45;direction:ltr}
 
       /* بلا حركة: الحالة النهائية كاملةً، حاضرة دفعةً واحدة. */
@@ -227,7 +228,7 @@
       </div>
     </div>
     <noscript>
-      <div style="padding:32px;text-align:center;font-family:system-ui,sans-serif">
+      <div style="padding:32px;text-align:center;font-family:'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none">
         هذا البرنامج يحتاج تفعيل JavaScript في المتصفح.
       </div>
     </noscript>

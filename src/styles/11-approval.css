@@ -474,15 +474,8 @@
 .approval-bar[data-tone="returned"] .approval-bar-text small{color:var(--warning)}
 .approval-bar .btn{flex:none}
 
-/* التوقيع: زرٌّ واحد كبير، وعدّادٌ لائحيٌّ صغير بجانبه لا فوقه. */
+/* التوقيع: زرٌّ واحد واضح. وتفاصيل اللائحة في شاشة تغييرات الجدول. */
 .approval-sign{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.approval-sign-notices{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:5px 12px;border-radius:var(--r-full);
-  background:var(--warning-soft);color:var(--warning);
-  font-size:.8rem;font-weight:600;border:0;cursor:pointer;font-family:inherit;
-}
-.approval-sign-notices svg{inline-size:14px;block-size:14px}
 .approval-signed{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.84rem;color:var(--muted)}
 .approval-signed b{color:var(--ink);font-weight:700}
 .approval-signed code{
@@ -500,7 +493,7 @@
 }
 
 @media print{
-  .changes-term-picker,.changes-deadline-surface,.approval-sign-notices{display:none !important}
+  .changes-term-picker,.changes-deadline-surface{display:none !important}
 }
 
 /* ── عمود الاعتماد في ميزان الأقسام ────────────────────────────────────

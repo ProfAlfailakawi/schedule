@@ -8573,7 +8573,7 @@ async function blockingConflictCount(collegeId: number, sectionId: number, termI
 }
 
 /** الملاحظات اللائحية الظاهرة وقت التوقيع — تُسجَّل ولا تمنع. */
-async function regulationNoticeCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
+async function regulationNoticesForScope(collegeId: number, sectionId: number, termId: number) {
   try {
     const [rows, courses, instructors] = await Promise.all([
       Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
@@ -8585,12 +8585,27 @@ async function regulationNoticeCount(collegeId: number, sectionId: number, termI
       courses: new Map(courses.map((row: any) => [Number(row.AdCourseId), row])),
       instructors: new Map(instructors.map((row: any) => [Number(row.AdInstructorId), row])),
     });
-    return findings.filter(item => item.approvalEffect !== "block").length;
+    const ownIds = new Set(rows.map((row: any) => Number(row.id)));
+    return findings
+      .filter(item => item.approvalEffect !== "block")
+      .map(item => ({
+        rule: String(item.rule || ""),
+        article: String(item.article || ""),
+        source: item.source,
+        approvalEffect: item.approvalEffect,
+        title: String(item.title || "ملاحظة لائحية"),
+        detail: String(item.detail || ""),
+        rowIds: item.rowIds.map(Number).filter(id => ownIds.has(id)),
+      }));
   } catch {
     /* اللائحة معيارٌ يُعرض، لا شرطُ حفظ. فإن تعذّر حسابها لا يُمنع التوقيع —
        يُسجَّل صفراً، ويبقى القرار لمن يوقّع. */
-    return 0;
+    return [];
   }
+}
+
+async function regulationNoticeCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
+  return (await regulationNoticesForScope(collegeId, sectionId, termId)).length;
 }
 
 /** السجلّ كما هو، أو سجلٌّ فارغٌ لقسمٍ لم يبدأ الدورة. */
@@ -9033,7 +9048,15 @@ async function noteSuggestions(collegeId: number, sectionId: number, termId: num
       const ownId = ownIds.has(Number(item.rowId)) ? Number(item.rowId) : Number(item.otherId);
       if (!ownIds.has(ownId)) continue;
       const other = byId.get(Number(item.rowId) === ownId ? Number(item.otherId) : Number(item.rowId));
-      const withWhom = other ? ` مع ${String(other.AdCourseName || "موعد آخر")} شعبة ${String(other.SCode || "—")}` : "";
+      const sameScope = other
+        && Number(other.AdCollegeId) === collegeId
+        && Number(other.AdSectionId) === sectionId;
+      /* اكتشاف التعارض يستعمل جدول الفصل كله، لكن النص الخارج لقسمٍ واحد لا
+         يسمّي مقرر القسم الآخر أو شعبته. داخل القسم نفسه تبقى التفاصيل مفيدة
+         ومشروعة، وخارجه تكفي حقيقة وجود حجز مقابل. */
+      const withWhom = sameScope
+        ? ` مع ${String(other.AdCourseName || "موعد آخر")} شعبة ${String(other.SCode || "—")}`
+        : other ? " مع حجز آخر خارج نطاق القسم" : "";
       if (item.type === "room") put(ownId, "room", `القاعة محجوزة في هذا الوقت${withWhom}`);
       else if (item.type === "instructor") put(ownId, "instructor", `أستاذ المقرر محجوز في هذا الوقت${withWhom}`);
       else if (item.type === "duplicate") put(ownId, "sectionCode", `موعدٌ مطابقٌ تماماً لنفس المقرر والشعبة${withWhom}`);
@@ -9058,55 +9081,6 @@ async function noteSuggestions(collegeId: number, sectionId: number, termId: num
     /* الاقتراحُ راحةٌ لا شرط: تعذّرُه يترك الصندوق فارغاً ولا يمنع الملاحظة. */
   }
   return Object.fromEntries(suggestions);
-}
-
-/**
- * ── التعارض مع قسمٍ آخر: يُعرض ولا يُعلَّق عليه ─────────────────────────────
- *
- * المقرر المشترك وقاعةُ المبنى الواحد تجعلان صفَّ قسمٍ يصطدم بصفِّ قسمٍ آخر.
- * والملاحظةُ تذهب إلى صاحب الصفّ وحده — فمن لا يملك تعديلَ الصفّ لا يُطالَب
- * بمعالجة ملاحظةٍ عليه.
- *
- * لكنّ القسم الآخر يُعلَم: يرى الاصطدام باسم القسم المقابل، ويرى أن بابه
- * مقايضةُ القاعات لا الملاحظة. وهي موجودةٌ في هذا النظام منذ قبل هذا العمل.
- */
-async function crossScopeClashes(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number) {
-  try {
-    const [scopeRows, termRows, sections, colleges] = await Promise.all([
-      Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
-      Repository.getSchedulesByScope({ termId }),
-      Repository.getSections(),
-      Repository.getColleges(),
-    ]);
-    const sectionName = new Map<number, string>(sections.map((row: any) => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
-    const collegeName = new Map<number, string>(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
-    const seen = new Set<string>();
-    const rows: any[] = [];
-    for (const clash of outsideScopeClashes(scopeRows as any, termRows as any)) {
-      const other = clash.other as any;
-      if (!other) continue;
-      if (clash.conflict.type === "instructor") continue;
-      if (Number(other.AdSectionId) === sectionId && Number(other.AdCollegeId) === collegeId) continue;
-      const key = `${clash.ownId}:${clash.otherId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      rows.push({
-        scheduleId: clash.ownId,
-        kind: clash.conflict.type,
-        message: clash.conflict.message,
-        otherSectionName: sectionName.get(Number(other.AdSectionId)) || `قسم ${other.AdSectionId}`,
-        otherCollegeName: collegeName.get(Number(other.AdCollegeId)) || "",
-        otherCourseName: String(other.AdCourseName || ""),
-        otherSectionCode: String(other.SCode || ""),
-        /* ما يراه من لا يملك القسم الآخر: الاسمُ والاصطدام، لا تفاصيلُ جدولٍ
-           خارج نطاقه. */
-        visible: Boolean(req.user?.IsAdminUser || isScopeAllowed(req, Number(other.AdCollegeId), Number(other.AdSectionId))),
-      });
-    }
-    return rows.slice(0, 40);
-  } catch {
-    return [];
-  }
 }
 
 /** ملاحظات القسم في فصل، بحالتها. يقرؤها التسجيل واللجنة ورئيس القسم سواء. */
@@ -9514,11 +9488,12 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
       || previousRound?.returnedAt || previousRound?.acceptedAt;
     /* ونسخةُ الجولة نفسِها تُستثنى، وإلا قُورنت الجولةُ بنفسها فخرجت بلا
        فرقٍ دائماً. */
-    const after = lastLookAt
-      ? history.filter(item => item.id !== currentRoundVersionId
-          && String(item.createdAt) >= String(lastLookAt))
-      : [];
-    const fallback = after[after.length - 1];
+    const candidates = history.filter(item => item.id !== currentRoundVersionId
+      && (!lastLookAt || String(item.createdAt) >= String(lastLookAt)));
+    /* القائمة أحدثُ أولاً، لذلك آخر مرشح هو لقطة ما قبل أول تعديل. وفي أول
+       جولة لا تُخترع مرساة من `submittedAt`: نأخذ أقدم لقطة فعلية متاحة، كي
+       لا يتحول الجدول كله إلى «مضاف» لمجرد غياب نسخة جولة سابقة. */
+    const fallback = candidates[candidates.length - 1];
     if (fallback) {
       baselineVersion = await Repository.getScheduleVersionById(fallback.id);
       if (baselineVersion) baselineSource = "capture";
@@ -9622,7 +9597,7 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     /* السببُ الجاهز لا يحمل أي اسم أو تفاصيل من قسمٍ آخر. */
     suggestions,
     blockingConflicts: await blockingConflictCount(collegeId, sectionId, termId),
-    regulationNotices: await regulationNoticeCount(collegeId, sectionId, termId),
+    regulationNotices: await regulationNoticesForScope(collegeId, sectionId, termId),
   });
 });
 
@@ -11505,12 +11480,9 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     termId: displayTermId,
     // Newest first, so the instructor can pin any semester from the card (Idea 2).
     availableTerms: sortTermsNewestServer(terms).map(t => ({ id: t.AdTermId, name: t.AdTermName })),
-    /* Only the newest term is LIVE. An older one is a record: reporting an
-       apology against a semester that has ended asks the department to act on
-       something already past, and subscribing a phone to it fills a calendar
-       with lectures that will never happen again. Both are offered on the
-       current term alone. */
-    liveTermId: link.AdTermId,
+    /* الفصل التشغيلي يأتي من حالة الفصول، لا من الرابط. رابطٌ قديم يظل باباً
+       آمناً لبطاقة صاحبه، لكنه لا يجعل فصله جارياً إلى الأبد. */
+    liveTermId: currentTermId(terms as any),
     expiresAt: link.expiresAt,
     // The subscription key. Handed out only here — after the card has already
     // established who is holding it — so the civil ID never reaches a URL.
@@ -11684,13 +11656,20 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
 
-  const [instructors, courses] = await Promise.all([Repository.getInstructors(), Repository.getCourses()]);
+  const [instructors, courses, terms] = await Promise.all([
+    Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(),
+  ]);
   // The key names the instructor: whoever it verifies against is the owner.
   const person = instructors.find(row => calendarKey(token, row.AdInstructorId) === String(req.params.key || ""));
   if (!person) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
 
+  const liveTermId = currentTermId(terms as any);
+  if (!liveTermId) {
+    res.status(409).type("text/plain; charset=utf-8").send("لا يوجد فصل جارٍ متاح للتقويم");
+    return;
+  }
   const collegeRows = await Repository.getSchedulesByScope({
-    collegeId: resolved.link.AdCollegeId, termId: resolved.link.AdTermId,
+    collegeId: resolved.link.AdCollegeId, termId: liveTermId,
   });
   const rows = collegeRows.filter(row => row.AdInstructorId === person.AdInstructorId);
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
@@ -11699,7 +11678,7 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   /* The personal feed follows the person, not the paper: a date they are absent
      from (cancelled, or handed to a colleague) leaves THEIR calendar, and a
      date they cover for someone else enters it as a single day. */
-  const exceptions = await Repository.getScheduleWeekExceptions(Number(resolved.link.AdTermId));
+  const exceptions = await Repository.getScheduleWeekExceptions(liveTermId);
   const goneDates = new Map<number, string[]>();
   for (const entry of exceptions) {
     if (!goneDates.has(entry.scheduleId)) goneDates.set(entry.scheduleId, []);
@@ -11723,7 +11702,7 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
     })
     .filter(Boolean) as CalendarSingle[];
 
-  await sendCalendar(req, res, `جدول ${person.AdInstructorName || "الأستاذ"}`, resolved.link.AdTermId, rows.map(row => {
+  await sendCalendar(req, res, `جدول ${person.AdInstructorName || "الأستاذ"}`, liveTermId, rows.map(row => {
     const course = courseById.get(row.AdCourseId);
     return {
       id: row.id,
@@ -11774,8 +11753,12 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
   }
 
   const body = (req.body || {}) as Record<string, unknown>;
-  const card = await buildStaffCard(resolved.link, String(body.civil || ""));
+  const card = await buildStaffCard(resolved.link, String(body.civil || ""), Number(body.termId || 0));
   if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  if (!card.liveTermId || Number(card.termId) !== Number(card.liveTermId)) {
+    res.status(409).json({ error: "هذا الفصل للاطلاع فقط. اختر الفصل الجاري للإبلاغ." });
+    return;
+  }
 
   const scheduleId = Number(body.scheduleId || 0);
   const lecture = card.rows.find(row => row.id === scheduleId);
@@ -12840,9 +12823,6 @@ function staffCardPage(token: string, label: string, nonce: string): string {
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 *,*::before,*::after{box-sizing:border-box}
 :root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
 body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
@@ -12865,7 +12845,7 @@ body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
 .since button:hover{border-color:var(--jade);color:var(--jade)}
 .mark{font:600 12px/1 ui-monospace,monospace;letter-spacing:.26em;color:var(--brass)}
 .gate{margin-top:22vh;text-align:center;animation:rise .4s ease both}
-.gate h1{margin:18px 0 6px;font-size:26px;font-weight:600;letter-spacing:-.02em}
+.gate h1{margin:18px 0 6px;font-size:26px;font-weight:600;letter-spacing:0}
 .gate p{margin:0 0 26px;color:var(--dim);font-size:14px;line-height:1.8}
 .field{display:flex;gap:10px;max-width:380px;margin:0 auto}
 input{flex:1;min-width:0;height:52px;padding:0 16px;border:1px solid var(--line);border-radius:14px;
@@ -12881,7 +12861,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
 .card{display:none;animation:rise .45s ease both}
 .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:22px 0 20px;
   padding-bottom:18px;border-bottom:1px solid var(--line)}
-.head h1{margin:6px 0 0;font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:-.03em;line-height:1.2}
+.head h1{margin:6px 0 0;font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:0;line-height:1.2}
 .head small{display:block;color:var(--dim);font-size:13px}
 .term-switch{display:flex;align-items:center;gap:10px;margin:0 0 20px;flex-wrap:wrap}
 .term-switch label{color:var(--dim);font-size:12px;font-weight:600}
@@ -12988,12 +12968,12 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 /* The approved report table — the same five-column week the reports print,
    so the professor's shared card and the official sheet read as one family. */
 .pub-week{width:100%;margin:0 0 18px;border-collapse:collapse;table-layout:fixed;background:var(--card);border-radius:16px;overflow:hidden}
-.pub-week th{padding:9px 4px;text-align:center;font-size:12px;font-weight:650;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.pub-week th{padding:9px 4px;text-align:center;font-size:12px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
 .pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
 .pub-week th.t{width:52px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);vertical-align:top;padding-top:9px}
 .pub-week .wslot{display:block;padding:8px 9px;border-bottom:1px dashed var(--line)}
 .pub-week .wslot:last-child{border-bottom:0}
-.pub-week .wslot b{display:block;font-size:12px;font-weight:650;line-height:1.35}
+.pub-week .wslot b{display:block;font-size:12px;font-weight:600;line-height:1.35}
 .pub-week .wslot time{display:block;margin-top:2px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);direction:ltr}
 .pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:10.5px}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -13151,6 +13131,10 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 
   function render(d,value){
     currentCivil=value;
+    /* تُحسب قبل بناء الصفوف. كانت var live تأتي بعد استعمالها، فترفعها
+       JavaScript بقيمة undefined: تختفي أزرار الإبلاغ حتى في الفصل الجاري،
+       ثم تظهر رسالة «فصل سابق» كذباً. */
+    var live = Boolean(d.liveTermId) && Number(d.termId) === Number(d.liveTermId);
     document.getElementById("name").textContent=d.name;
     document.getElementById("scope").textContent=d.college||"";
     var termPick=document.getElementById("termPick");
@@ -13212,7 +13196,6 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     /* The subscription address. It carries a derived key, never the civil ID,
        so it is safe to sit in a phone's calendar settings forever. */
     /* A past term is read, not acted on: no reporting, no subscription. */
-    var live = !d.liveTermId || Number(d.termId) === Number(d.liveTermId);
     document.getElementById("ics").style.display = live ? "" : "none";
     if(!live) document.getElementById("sub").setAttribute("hidden","");
 
@@ -13292,6 +13275,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
             method:"POST", headers:{"Content-Type":"application/json"},
             body: JSON.stringify({
               civil: civil, scheduleId: Number(slot.dataset.lecture),
+              termId: Number(d.termId || 0),
               kind: form.querySelector("input[type=radio]:checked").value,
               fromDate: form.querySelector(".sayfrom").value || undefined,
               text: form.querySelector(".saytext").value.trim(),
@@ -13357,9 +13341,6 @@ function surveyPage(token: string, label: string, nonce: string): string {
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 :root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f;--cohort-rgb:105,192,168}
 *{box-sizing:border-box}
 body[data-cohort="boys"]{--jade:#71a9d6;--cohort-rgb:113,169,214}
@@ -13367,13 +13348,13 @@ body[data-cohort="girls"]{--jade:#c18bab;--cohort-rgb:193,139,171}
 body{margin:0;min-height:100dvh;background:
   radial-gradient(circle at 88% 0%,rgba(var(--cohort-rgb),.10),transparent 34%),
   var(--bg);color:var(--ink);
-  font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
+  font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;
   -webkit-text-size-adjust:100%;padding:22px 16px 40px}
 .wrap{max-inline-size:640px;margin-inline:auto}
 .kicker{font:600 11px/1 system-ui;letter-spacing:.22em;color:var(--brass);text-transform:uppercase}
 h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .sub{margin:0 0 12px;font-size:13.5px;color:var(--dim);line-height:1.85}
-.sub b{color:var(--ink);font-weight:650}
+.sub b{color:var(--ink);font-weight:600}
 /* «هذا ليس تسجيلاً» — أهم سطر في الصفحة أثناء أسبوع التسجيل، فيجب أن يُقرأ
    بوضوح ولا يصرخ: إطار هادئ بلون النحاس، لا لافتة حمراء. */
 .warn-line{
@@ -13470,7 +13451,7 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .fold-head{
   inline-size:100%;display:flex;align-items:center;gap:9px;
   padding:13px 14px;border:0;background:transparent;color:var(--ink);
-  font:inherit;font-size:14.5px;font-weight:650;cursor:pointer;text-align:start;
+  font:inherit;font-size:14.5px;font-weight:600;cursor:pointer;text-align:start;
 }
 .fold-name{flex:1;min-inline-size:0;direction:ltr;unicode-bidi:isolate;text-align:start}
 .fold-count{
@@ -13693,10 +13674,7 @@ function arCourses(n){
 
 function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}
-@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:800;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:800;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:800;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:800;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
 </style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسـمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
 (function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,identityMemoryKey="schedule-student-identity-"+TOKEN;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
@@ -14445,8 +14423,8 @@ function instructorRequestPage(token: string, nonce: string): string {
 :root{--ink:#16281f;--muted:#5d6f66;--muted2:#8a9a92;--line:#dde5e0;--bg:#f4f7f5;--card:#fff;
 --ok:#2e7d5b;--warn:#b8860b;--bad:#b3261e;--accent:#2e7d5b}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,"Segoe UI",Tahoma,sans-serif;
--webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.65 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
+font-synthesis:none;font-kerning:normal;-webkit-text-size-adjust:100%}
 .wrap{max-width:720px;margin:0 auto;padding:16px}
 .state{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;
 background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-weight:700;font-size:14px;margin-bottom:14px}
@@ -14710,8 +14688,8 @@ app.get("/r/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) {
     res.status(resolved.status).type("text/html; charset=utf-8").send(
       `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title></head>
-<body style="font:16px system-ui;padding:40px;text-align:center;color:#16281f">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
+<body style="font:400 16px/1.7 'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none;padding:40px;text-align:center;color:#16281f">
 ${resolved.error}</body></html>`);
     return;
   }
@@ -14818,7 +14796,7 @@ function studentCaseStatusPage(token: string, nonce: string): string {
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 :root{--ink:#16281f;--muted:#5d6f66;--line:#dde5e0;--bg:#f4f7f5;--ok:#2e7d5b;--bad:#b3261e}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,"Segoe UI",Tahoma,sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.65 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}
 .wrap{max-width:520px;margin:0 auto;padding:22px 16px}
 h1{font-size:21px;margin:0 0 4px}
 .sub{color:var(--muted);font-size:13px;margin:0 0 20px}
@@ -14901,8 +14879,8 @@ app.get("/m/:token", async (req: Request, res: Response) => {
     const status = "error" in resolved ? resolved.status : 404;
     res.status(status).type("text/html; charset=utf-8").send(
       `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title></head>
-<body style="font:16px system-ui;padding:40px;text-align:center;color:#16281f">${message}</body></html>`);
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
+<body style="font:400 16px/1.7 'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none;padding:40px;text-align:center;color:#16281f">${message}</body></html>`);
     return;
   }
   res.type("text/html; charset=utf-8").send(studentCaseStatusPage(resolved.link.id, publicPageNonce(res)));
@@ -14915,7 +14893,7 @@ app.get("/q/:token", async (req: Request, res: Response) => {
   const esc = (value: string) => String(value || "").replace(/[&<>"']/g,
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
   if ("error" in resolved) {
-    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
+    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
     return;
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content=width=device-width,initial-scale=1><title>SCHEDULE</title><link rel=icon href=/schedule-icon.svg type=image/svg+xml><link rel=apple-touch-icon href=/schedule-icon-192.png></head><body><p dir=rtl>هذا الرابط ليس استبياناً.</p></body></html>"); return; }
@@ -14931,7 +14909,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   // the page instead of showing it. Set the header outright.
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   if ("error" in resolved) {
-    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
+    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
     return;
   }
   if (resolved.link.kind === "staff") {
@@ -15004,11 +14982,11 @@ app.get("/s/:token", async (req: Request, res: Response) => {
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 :root{--bg:#0a100f;--card:#121a18;--line:#212b28;--ink:#eef2ee;--muted:#93a09a;--accent:#69c0a8;--brass:#d0a663}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-size:15px;line-height:1.6;font-synthesis:none;font-kerning:normal;-webkit-font-smoothing:antialiased}
 .wrap{max-width:760px;margin:0 auto;padding:24px 18px 56px}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:18px;border-bottom:1px solid var(--line)}
 .mark{font:600 12px/1 system-ui;letter-spacing:.24em;color:var(--brass)}
-h1{margin:18px 0 4px;font-size:26px;font-weight:600;letter-spacing:-.02em}
+h1{margin:18px 0 4px;font-size:26px;font-weight:600;letter-spacing:0}
 .sub{color:var(--muted);font-size:14px}
 .tools{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 8px}
 .tools a{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 16px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);text-decoration:none;font-size:14px;font-weight:600}
@@ -15029,13 +15007,13 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
    lectures stacked inside in time order. Nothing is positioned, so nothing
    can overlap. */
 .pub-week{width:100%;margin-top:26px;border-collapse:collapse;table-layout:fixed;background:var(--card);border-radius:14px;overflow:hidden}
-.pub-week th{padding:10px 6px;text-align:center;font-size:12.5px;font-weight:650;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.pub-week th{padding:10px 6px;text-align:center;font-size:12.5px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
 .pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
 .pub-week th.t{width:58px;font:600 11px/1.4 ui-monospace,Menlo,monospace;color:var(--accent);vertical-align:top;padding-top:10px}
 .pub-week tbody th.t{background:rgba(255,255,255,.02)}
 .pub-week .slot{display:block;padding:9px 10px;border-bottom:1px dashed var(--line)}
 .pub-week .slot:last-child{border-bottom:0}
-.pub-week .slot b{display:block;font-size:12.5px;font-weight:650;line-height:1.35}
+.pub-week .slot b{display:block;font-size:12.5px;font-weight:600;line-height:1.35}
 .pub-week .slot small{display:block;margin-top:1px;font:600 10px/1.4 ui-monospace,Menlo,monospace;color:var(--brass)}
 .pub-week .slot time{display:block;margin-top:2px;font:600 11px/1.4 ui-monospace,Menlo,monospace;color:var(--accent);white-space:nowrap}
 .pub-week .slot time+time{color:var(--muted);margin-top:0}

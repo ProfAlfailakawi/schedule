@@ -20,6 +20,7 @@ function check(condition: boolean, name: string) {
 
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 const workspace = fs.readFileSync(path.join(process.cwd(), "src/components/Schedules.tsx"), "utf8");
+const termSequence = fs.readFileSync(path.join(process.cwd(), "src/utils/termSequence.ts"), "utf8");
 
 /* ── الحارسُ واحدٌ، في الموضع الذي يمرّ به كلُّ تعديل ──────────────────── */
 
@@ -148,6 +149,22 @@ check(publicDoor.includes("closedTerm?.AdTermClosed === true"),
   "ولا يُقبل إرسالُ أستاذٍ على فصلٍ مجمَّد، ولو كانت نافذتُه مفتوحةً بتاريخها");
 check(publicDoor.includes("راجع قسمك إن كان لديك ما يلزم."),
   "ويُقال له بلفظٍ يخصّه، لا بلفظٍ عن لجنةٍ لا شأنَ له بها");
+
+/* ── وبطاقة الأستاذ تتبع الفصل التشغيلي نفسه ───────────────────────────── */
+check(termSequence.includes("return term.AdTermClosed === true;")
+  && !termSequence.includes("return termHasEnded(term"),
+  "والإغلاق الصريح هو الحقيقة الوحيدة للقراءة فقط");
+check(server.includes("liveTermId: currentTermId(terms as any)")
+  && !server.includes("liveTermId: link.AdTermId"),
+  "ورابطٌ قديم لا يجعل فصله جارياً في بطاقة الأستاذ");
+check(server.includes("Number(card.termId) !== Number(card.liveTermId)")
+  && server.includes("هذا الفصل للاطلاع فقط. اختر الفصل الجاري للإبلاغ."),
+  "والخادم يرفض الإبلاغ من فصل سابق ولو جرى استدعاء المسار مباشرة");
+check(server.indexOf("var live = Boolean(d.liveTermId)") < server.indexOf("var starts=[];d.byDay"),
+  "وتُحسب حالة الفصل قبل بناء أزرار الإبلاغ في البطاقة");
+check(server.includes("termId: Number(d.termId || 0)")
+  && server.includes("termId: liveTermId"),
+  "والإبلاغ يحمل الفصل المعروض بينما اشتراك التقويم يتبع الفصل الجاري");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

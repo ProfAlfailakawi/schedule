@@ -70,21 +70,6 @@ export function sortTermsNewest<T extends { AdTermId?: number; AdTermName?: stri
 }
 
 /**
- * Is this term over?
- *
- * A coordinator can say so outright, and that answer always wins. But ten years
- * of terms exist that pre-date the flag entirely, and treating "nobody said" as
- * "still running" is the wrong default: it offered room-borrowing between
- * departments on a term that finished in 2018, where nothing can be borrowed
- * because nothing is scheduled any more.
- *
- * So an unmarked term is judged by its position: the newest term in the list is
- * the live one, and everything behind it has been overtaken. The list is already
- * sorted newest-first everywhere it is served, but the order is verified here
- * rather than assumed — a caller passing an arbitrary array still gets a right
- * answer.
- */
-/**
  * ── التقويم الأكاديمي الافتراضي ────────────────────────────────────────────
  *
  * عشر سنوات من الفصول تحمل اسماً فقط: «الفصل الأول 2026/2027». لا تاريخ بداية
@@ -174,32 +159,33 @@ export function termIsRunningNow(
 /**
  * أي فصل نحن فيه الآن.
  *
- * الجواب هو الفصل الذي **لم تنتهِ نافذته بعد وأقربها انتهاءً**. لا شيء غيره.
- *
- * البديل الذي كان مستعملاً — «الأحدث رقماً» — يكسر في الحالة التي بُني لها
- * فحص «الفصل المعتمد» نفسه: أن يُنشأ الفصل التالي مبكراً للتخطيط بينما الحالي
- * ما زال يُدرَّس. عندها يصير الفصل الذي يبدأ في فبراير «الأحدث»، فيأخذ خط
- * «الآن» ويفقده الفصل الذي يُدرَّس فعلاً — ساعتان كلتاهما كاذبة.
- *
- * وهذه القاعدة تُغلق الفجوة بين الفصول أيضاً: في منتصف أغسطس لم يبدأ الفصل
- * الأول بعد بحسب العادة، لكن أقرب نهاية قادمة هي نهايته، فهو الجواب. الفصول
- * تُغطّي السنة بلا ثقوب، وهو ما يعنيه «يزيد شوي وينقص شوي» عملياً: النهاية
- * هي الحدّ، والبداية تتبعها.
- *
- * فصول بلا نافذة (اسم لا يُحلَّل) لا تشارك؛ وإن لم يكن لأيٍّ منها نافذة رجعنا
- * إلى الأحدث رقماً، لأن جواباً تقريبياً خير من لا جواب.
+ * الجواب التشغيلي هو أقدم فصل معلن صراحةً أنه غير منتهٍ. لذلك لا يزيح فصلٌ
+ * مستقبلي أُنشئ للتخطيط الفصلَ الذي يُدرَّس الآن. بعد إغلاقه صراحةً ينتقل
+ * الاختيار إلى المفتوح التالي. والرجوع إلى الأحدث غير المغلق يخص البيانات
+ * القديمة التي لا تحمل العلامة بعد.
  */
 export function currentTermId(
   terms: ReadonlyArray<{ AdTermId?: number; AdTermName?: string;
                          AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean }>,
-  _now: number = Date.now(),
+  now: number = Date.now(),
 ): number {
   /* «الجاري» قرارٌ تشغيلي، لا تخمينٌ من التاريخ. إذا أثبت المنسّق أن فصلاً
      غير منتهٍ (`AdTermClosed === false`) فهو الجاري حتى يضغط «انتهى هذا
      الفصل». هذا يمنع بطاقة الأستاذ وشاشات العمل من تحويل الفصل الأول الجاري
      إلى «سابق» لمجرد أن تقويماً افتراضياً تجاوز يوماً تقريبياً. */
   const ordered = sortTermsNewest(terms);
-  const declaredOpen = ordered.find(term => term.AdTermClosed === false);
+  /* قد يُنشأ الفصل التالي للتخطيط قبل إنهاء الجاري. وإذا حفظت شاشة الفصول
+     كليهما بعلم `false` فلا يجوز للأحدث أن يزيح الجاري. أقدم فصل أُعلن صراحةً
+     أنه غير منتهٍ يبقى التشغيلي حتى يُغلق؛ بعد إغلاقه ينتقل الاختيار إلى
+     المفتوح التالي. */
+  const declaredOpenTerms = ordered.filter(term => term.AdTermClosed === false);
+  /* إذا بقي علم false خطأً على فصل تاريخي، ووجد بين المفتوحة فصل تقع نافذته
+     الآن، فهو المرشح الأدق. هذه مفاضلة بين فصول كلها غير مغلقة صراحةً؛ لا
+     تجعل التاريخ أي فصلٍ مغلقاً ولا تنقل الحالي إلى المستقبل تلقائياً. */
+  const runningDeclared = declaredOpenTerms.find(term => termIsRunningNow(term, now));
+  const declaredOpen = runningDeclared || declaredOpenTerms
+    .sort((a, b) => termChronology(a) - termChronology(b)
+      || Number(a.AdTermId || 0) - Number(b.AdTermId || 0))[0];
   if (declaredOpen) return Number(declaredOpen.AdTermId || 0);
   const notClosed = ordered.find(term => term.AdTermClosed !== true);
   return Number(notClosed?.AdTermId || 0);
@@ -211,17 +197,9 @@ export function isTermClosed(
   allTerms: ReadonlyArray<{ AdTermId?: number }> = [],
 ): boolean {
   if (!term) return false;
-  /* ما أعلنه المنسّق صراحةً يسبق كل شيء. */
-  if (typeof term.AdTermClosed === "boolean") return term.AdTermClosed;
-  /* ثم الزمن: فصلٌ انقضى زمنه منتهٍ وإن لم يُنشأ بعده فصل. هذا ما كان يجعل
-     النظام يعامل فصلاً انتهى في ديسمبر كأنه جارٍ طوال يناير — إلى أن يتذكّر
-     أحدهم إنشاء الفصل التالي. */
-  if (termHasEnded(term as Parameters<typeof termWindow>[0])) return true;
-  if (!allTerms.length) return false;
-  const newestId = allTerms.reduce(
-    (best, row) => (Number(row?.AdTermId || 0) > best ? Number(row?.AdTermId || 0) : best),
-    0,
-  );
-  if (!newestId) return false;
-  return Number(term.AdTermId || 0) !== newestId;
+  void allTerms;
+  /* الانتهاء حالة تشغيلية يعلنها صاحب الصلاحية. التاريخ، ووجود فصل أحدث،
+     وترتيب المعرّفات معلومات مساعدة للتقويم والفرز فقط، ولا تحوّل الجدول إلى
+     سجل للقراءة وحدها. */
+  return term.AdTermClosed === true;
 }
