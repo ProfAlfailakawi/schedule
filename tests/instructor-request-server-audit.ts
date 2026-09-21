@@ -169,6 +169,11 @@ check(server.includes('Number(course.AdSectionId) !== Number(resolved.request.Ad
 check(server.includes("async function refreshUnsubmittedInstructorRequest")
   && server.includes("Repository.getCoursesBySection(Number(request.AdSectionId))"),
   "والطلب غير المرسل يتجدد من الجدول الحي ويقرأ كامل مقررات القسم");
+check(server.includes("async function instructorRequestCourseOptions")
+  && server.includes("authorityDraftForScope(Number(request.AdCollegeId)")
+  && server.includes("authorityDraft.baselineRows || []")
+  && server.includes("(baseline as any[]).forEach"),
+  "وقائمة الإضافة تُستخرج كاملةً من الجدول الأصلي المعتمد، لا مما نُسخ إلى جدول العمل");
 check(repo.includes('.where("AdSectionId", "==", sectionId)')
   && repo.includes('.where("AdSectionId", "==", String(sectionId))')
   && repo.includes("[...numericSnap.docs, ...textSnap.docs]"),

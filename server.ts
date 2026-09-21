@@ -13869,6 +13869,46 @@ async function refreshUnsubmittedInstructorRequest(request: InstructorRequest): 
 }
 
 /**
+ * قائمة الإضافة تأتي أولاً من الجدول الأصلي المعتمد للقسم، لا من الصفوف التي
+ * وصلت إلى جدول العمل بعد النسخ. قد ينسخ المنسّق مقرراً واحداً فقط، بينما
+ * يحتوي أصل الهيئة على عشرات المقررات؛ الاعتماد على الحاضر يجعل البقية
+ * تختفي. ندمج الأصل مع الكتالوج احتياطاً، ونوحّد المقرر بهويته ثم برمزه واسمه.
+ */
+async function instructorRequestCourseOptions(request: InstructorRequest) {
+  const [catalogue, authorityDraft] = await Promise.all([
+    Repository.getCoursesBySection(Number(request.AdSectionId)),
+    authorityDraftForScope(Number(request.AdCollegeId), Number(request.AdSectionId), Number(request.AdTermId)),
+  ]);
+  const baseline = authorityDraft
+    ? await authorityBaselineForScope(
+        authorityDraft.baselineRows || [], authorityDraft,
+        Number(request.AdCollegeId), Number(request.AdSectionId),
+      )
+    : [];
+  const catalogueById = new Map((catalogue as any[]).map(row => [Number(row.AdCourseId), row]));
+  const options = new Map<string, { id: number; name: string; code: string }>();
+  const add = (idValue: unknown, nameValue: unknown, codeValue: unknown) => {
+    const id = Number(idValue || 0);
+    const name = String(nameValue || "").trim();
+    const code = String(codeValue || "").trim();
+    if (!id || !name) return;
+    const key = id ? `id:${id}` : `text:${code.toLowerCase()}|${name.toLowerCase()}`;
+    options.set(key, { id, name, code });
+  };
+  /* الأصل أولاً: منه نستخرج جميع المقررات، لا المواعيد التي نُسخت فقط. */
+  (baseline as any[]).forEach(row => {
+    const catalogueRow = catalogueById.get(Number(row.AdCourseId));
+    add(
+      row.AdCourseId,
+      row.AdCourseName || row.CourseName || catalogueRow?.CourseName,
+      row.CourseCode || row.AdCourseCode || catalogueRow?.CourseCode,
+    );
+  });
+  (catalogue as any[]).forEach(row => add(row.AdCourseId, row.CourseName, row.CourseCode));
+  return [...options.values()].sort((a, b) => courseNameCollator.compare(a.name, b.name));
+}
+
+/**
  * يبني سياقَ الحكم من الجدول الحقيقي.
  *
  * يُقرأ الفصلُ كلُّه مرّةً واحدةً لكل نداء، لا مرّةً لكل بند: طلبٌ فيه عشرةُ
@@ -14262,7 +14302,7 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
 
   const [instructors, terms, courses] = await Promise.all([
     Repository.getInstructors(), Repository.getTerms(),
-    Repository.getCoursesBySection(Number(request.AdSectionId)),
+    instructorRequestCourseOptions(request),
   ]);
   const person = (instructors as any[]).find(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
   const term = (terms as any[]).find(row => Number(row.AdTermId) === Number(request.AdTermId));
@@ -14274,8 +14314,7 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
     termName: String(term?.AdTermName || ""),
     windowOpen: requestWindowOpen(request),
     /* مقرّراتُ القسم وحدها: الإضافةُ تُختار من كتالوجه لا من الجامعة كلها. */
-    courses: sortCoursesByName(courses as any[])
-      .map(row => ({ id: Number(row.AdCourseId), name: String(row.CourseName || ""), code: String(row.CourseCode || "") })),
+    courses,
   });
 });
 
