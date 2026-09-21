@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BookOpen, Building2, Clock3, Trash2, Users } from "lucide-react";
+import { BookOpen, Building2, GraduationCap, Trash2 } from "lucide-react";
 import { sortByName, byArabic } from "../utils/sorting";
+import CurriculumPlans from "./CurriculumPlans";
 import { decimalText, numericText } from "../utils/digits";
 import type { AdSection } from "../types";
 import {
@@ -44,12 +45,13 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
     [submitting, setSubmitting] = useState(false),
-    [visibleLimit, setVisibleLimit] = useState(160);
+    [visibleLimit, setVisibleLimit] = useState(160),
+    [curriculumOpen, setCurriculumOpen] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
       const [a, b, c] = await Promise.all([
-        fetch("/api/courses"),
+        fetch("/api/courses?operational=1"),
         fetch("/api/colleges"),
         fetch("/api/sections"),
       ]);
@@ -377,13 +379,16 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     <div className={`content-stack library-page catalog-inspector-page visual-minimal ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
         <EmbeddedAction slot={actionSlot}>
-          <AddButton onClick={create}>إنشاء مقرر</AddButton>
+          <div className="course-head-actions">
+            <SecondaryButton data-guide-ignore="إدارة أكاديمية متخصصة للصحائف؛ لا تغيّر الجدول مباشرة" onClick={() => setCurriculumOpen(true)}><GraduationCap /> الصحائف الأكاديمية</SecondaryButton>
+            <AddButton onClick={create}>إنشاء مقرر</AddButton>
+          </div>
         </EmbeddedAction>
       ) : (
         <PageTitle
           eyebrow="المكتبة الأكاديمية"
           subtitle="المكتبة والتفاصيل في لوحة واحدة"
-          action={<AddButton onClick={create}>إنشاء مقرر</AddButton>}
+          action={<div className="course-head-actions"><SecondaryButton data-guide-ignore="إدارة أكاديمية متخصصة للصحائف؛ لا تغيّر الجدول مباشرة" onClick={() => setCurriculumOpen(true)}><GraduationCap /> الصحائف الأكاديمية</SecondaryButton><AddButton onClick={create}>إنشاء مقرر</AddButton></div>}
         >
           المقررات الدراسية
         </PageTitle>
@@ -518,6 +523,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
         </aside>
       </div>
       {editorDrawer}
+      {curriculumOpen ? <CurriculumPlans sections={sections} initialSectionId={listSection || Number(selected?.AdSectionId || 0)} onClose={() => setCurriculumOpen(false)} onChanged={() => void load()} /> : null}
     </div>
   );
 }

@@ -2356,7 +2356,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     if (!form.AdSectionId) return;
     if (formCourses.length) return;
     let alive = true;
-    void fetch(`/api/courses?sectionId=${Number(form.AdSectionId)}`, { credentials: "include" })
+    void fetch(`/api/courses?sectionId=${Number(form.AdSectionId)}&operational=1`, { credentials: "include" })
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         if (!alive || !Array.isArray(data) || !data.length) return;

@@ -811,7 +811,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     if(filters.termId)rows=rows.filter(r=>Number(r.AdTermId)===Number(filters.termId));
     if(omit!=="instructor"&&filters.instructorId)rows=rows.filter(r=>Number(r.AdInstructorId)===Number(filters.instructorId));
     if(omit!=="course"&&filters.courseId)rows=rows.filter(r=>Number(r.AdCourseId)===Number(filters.courseId));
-    if(omit!=="course"&&filters.courseCode.trim())rows=rows.filter(r=>(courseById.get(r.AdCourseId)?.CourseCode||"")===filters.courseCode.trim());
+    if(omit!=="course"&&filters.courseCode.trim())rows=rows.filter(r=>(r.CourseCodeSnapshot||courseById.get(r.AdCourseId)?.CourseCode||"")===filters.courseCode.trim());
     if(omit!=="building"&&filters.building)rows=rows.filter(r=>rowMatchesBuilding(r,filters.building));
     if(omit!=="room"&&filters.hall)rows=rows.filter(r=>rowMatchesRoom(r,filters.hall));
     /* Arithmetic, not alphabetical: an unpadded «9:00» stored years ago sorts
@@ -898,7 +898,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         return rowCourse ? courseIdentityKey(rowCourse) === chosenIdentity : Number(s.AdCourseId) === Number(filters.courseId);
       });
     }
-    if (filters.courseCode.trim()) rows = rows.filter(s => (courseById.get(s.AdCourseId)?.CourseCode || "") === filters.courseCode.trim());
+    if (filters.courseCode.trim()) rows = rows.filter(s => (s.CourseCodeSnapshot || courseById.get(s.AdCourseId)?.CourseCode || "") === filters.courseCode.trim());
     const chosenDays = DAYS.filter(day => filters[day.key]);
     if (chosenDays.length) rows = rows.filter(s => chosenDays.some(day => (s as any)[day.flag]));
     return rows.sort((a, b) =>
@@ -2037,9 +2037,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 >
                   <span className="lens-index">{String(index + 1).padStart(2, "0")}</span>
                   <div className="lens-main">
-                    <strong>{course?.CourseName || row.AdCourseName}</strong>
+                    <strong>{row.CourseNameSnapshot || row.AdCourseName || course?.CourseName}</strong>
                     <div className="lens-tags">
-                      <span className="code-chip">{course?.CourseCode || "—"}</span>
+                      <span className="code-chip">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</span>
                       <span>{row.SCode}</span>
                       <span className="report-instructor-with-badge"><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                     </div>
@@ -2080,7 +2080,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                         <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                       </div>
                       <small>
-                        <b>{courseById.get(row.AdCourseId)?.CourseCode || "—"}</b>
+                        <b>{row.CourseCodeSnapshot || courseById.get(row.AdCourseId)?.CourseCode || "—"}</b>
                         <span className="lens-week-room" dir="ltr">
                           {[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "—"}
                         </span>
@@ -2136,7 +2136,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                               <span key={row.id} className="matrix-slot">
                                 <b>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</b>
                                 <em className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</em>
-                                <i dir="ltr">{courseById.get(row.AdCourseId)?.CourseCode || "—"} · {row.SCode}</i>
+                                <i dir="ltr">{row.CourseCodeSnapshot || courseById.get(row.AdCourseId)?.CourseCode || "—"} · {row.SCode}</i>
                               </span>
                             ))}
                           </td>
@@ -2332,7 +2332,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                     <div className="group-rows" id={`query-visiting-group-${group.id}`}>
                       {group.rows.map(row => (
                         <div key={row.id}>
-                          <span className="code-chip">{courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
+                          <span className="code-chip">{row.CourseCodeSnapshot || courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
                           <span>{courseById.get(row.AdCourseId)?.CourseName || row.AdCourseName}</span>
                           <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                           <small>{dayText(row)} · {row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</small>
@@ -2539,7 +2539,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   <div className="group-rows" id={`query-instructor-group-${group.id}`}>
                     {group.rows.map(row => (
                       <div key={row.id}>
-                        <span className="code-chip">{courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
+                        <span className="code-chip">{row.CourseCodeSnapshot || courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
                         <span>{row.AdCourseName}</span>
                         <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                         <small>{dayText(row)}</small>
@@ -2598,9 +2598,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                               aria-expanded={selectedResultId === row.id}
                               aria-controls="query-result-detail-panel"
                             >
-                              <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
+                              <strong>{row.CourseNameSnapshot || row.AdCourseName || course?.CourseName || "—"}</strong>
                               <div>
-                                <span className="code-chip">{course?.CourseCode || "—"}</span>
+                                <span className="code-chip">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</span>
                                 <span>شعبة {row.SCode || "—"}</span>
                               </div>
                               <small className="report-instructor-with-badge">{instructor?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</small>
@@ -3192,7 +3192,16 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     comprehensive: "تقرير الجدول الشامل",
     "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
   };
-  const courseOf = (row: FSchedule) => courseById.get(row.AdCourseId);
+  const courseOf = (row: FSchedule) => {
+    const current = courseById.get(row.AdCourseId);
+    if (!current && !row.AdCourseName && !row.CourseNameSnapshot && !row.CourseCodeSnapshot) return undefined;
+    return {
+      ...(current || {}),
+      AdCourseId: Number(row.AdCourseId),
+      CourseName: row.CourseNameSnapshot || row.AdCourseName || current?.CourseName || "",
+      CourseCode: row.CourseCodeSnapshot || current?.CourseCode || "",
+    } as AdCourse;
+  };
   const instructorOf = (row: FSchedule) => instructorById.get(row.AdInstructorId);
   const instructorPrintName = (row: FSchedule) => `${instructorOf(row)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(row.AdInstructorId) ? " · منتدب" : ""}`;
   const issued = new Date();
@@ -3341,7 +3350,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                           {/* الموقع بطاقة بجانب اسم المقرر لا عموداً: العمود
                               يضيّق الجدول الرسمي كله لأجل كلمة. */}
                           <div role="cell" className="print-wrap print-course-name">
-                            {course?.CourseName || row.AdCourseName || "—"}
+                            {row.CourseNameSnapshot || row.AdCourseName || course?.CourseName || "—"}
                             {showSite && siteOfRow.get(row) ? <span className="print-site-chip">{siteOfRow.get(row)}</span> : null}
                           </div>
                           <div role="cell" className="num print-course-units">{course ? course.CourseCredit : "—"}</div>
@@ -3406,8 +3415,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                   <article key={row.id}>
                     <span className="print-list-index">{String(serial).padStart(2, "0")}</span>
                     <div className="print-list-core">
-                      <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
-                      <span><bdi className="print-ltr">{course?.CourseCode || "—"}</bdi><i>شعبة {row.SCode || "—"}</i><em>{instructorPrintName(row)}</em></span>
+                      <strong>{row.CourseNameSnapshot || row.AdCourseName || course?.CourseName || "—"}</strong>
+                      <span><bdi className="print-ltr">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</bdi><i>شعبة {row.SCode || "—"}</i><em>{instructorPrintName(row)}</em></span>
                     </div>
                     <time className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                     <span className="print-ltr print-list-room">{placeOfRow(row)}</span>

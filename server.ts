@@ -2924,9 +2924,162 @@ const sortCoursesByName = <T extends { CourseName?: unknown }>(rows: T[]): T[] =
  */
 app.get("/api/courses", requireAnyPermission([6, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = req.query.sectionId ? parseInt(req.query.sectionId as string) : undefined;
-  let courses = sectionId ? await Repository.getCoursesBySection(sectionId) : await Repository.getCourses();
+  const operational = String(req.query.operational || "") === "1";
+  let courses = sectionId
+    ? (operational ? await Repository.getOperationalCoursesBySection(sectionId) : await Repository.getCoursesBySection(sectionId))
+    : await Repository.getCourses();
   courses = filterByScope(req, courses);
+  if(operational&&!sectionId){
+    const sectionIds=[...new Set(courses.map(course=>Number(course.AdSectionId)).filter(Boolean))];
+    const sets=await Promise.all(sectionIds.map(async sid=>[sid,await Repository.getOperationalCourseIds(sid)] as const));
+    const bySection=new Map(sets);
+    courses=courses.filter(course=>bySection.get(Number(course.AdSectionId))?.has(Number(course.AdCourseId)));
+  }
   res.json(sortCoursesByName(courses));
+});
+
+async function curriculumOverview(sectionId:number){
+  const [section,courses,plans,memberships,transitions]=await Promise.all([
+    Repository.getSectionById(sectionId),Repository.getCoursesBySection(sectionId),Repository.getCurriculumPlans(sectionId),Repository.getCurriculumPlanCourses(sectionId),Repository.getCourseTransitions(sectionId),
+  ]);
+  if(!section)return null;
+  if(!plans.length){
+    const virtualId=`virtual:${sectionId}`;
+    const virtual={id:virtualId,AdCollegeId:section.AdCollegeId,AdSectionId:sectionId,name:"الصحيفة الحالية",code:"CURRENT",status:"transition",virtual:true,createdAt:""};
+    return{section,plans:[virtual],memberships:courses.map(course=>({id:`${virtualId}_${course.AdCourseId}`,planId:virtualId,AdCollegeId:section.AdCollegeId,AdSectionId:sectionId,AdCourseId:course.AdCourseId,createdAt:""})),transitions,courses,operationalCourseIds:courses.map(course=>course.AdCourseId),bootstrap:true};
+  }
+  const livePlanIds=new Set(plans.filter(plan=>plan.status!=="archived").map(plan=>plan.id));
+  const operationalCourseIds=[...new Set(memberships.filter(row=>livePlanIds.has(row.planId)).map(row=>Number(row.AdCourseId)))];
+  return{section,plans,memberships,transitions,courses,operationalCourseIds,bootstrap:false};
+}
+
+app.get("/api/curriculum/sections/:sectionId", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const sectionId=Number(req.params.sectionId||0),section=await Repository.getSectionById(sectionId);
+  if(!section){res.status(404).json({error:"القسم العلمي غير موجود"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,section.AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const overview=await curriculumOverview(sectionId);res.json(overview);
+});
+
+app.post("/api/curriculum/plans", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const sectionId=Number(req.body?.AdSectionId||0),section=await Repository.getSectionById(sectionId);
+  const name=cleanText(req.body?.name,TEXT_LIMIT.name),code=cleanText(req.body?.code,TEXT_LIMIT.code);
+  if(!section||!name){res.status(400).json({error:"حدد القسم واكتب اسم الصحيفة"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,section.AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const plan=await Repository.createCurriculumPlan({collegeId:section.AdCollegeId,sectionId,name,code,by:String(req.user.Name||"")});
+  res.status(201).json({plan,overview:await curriculumOverview(sectionId)});
+});
+
+app.post("/api/curriculum/plans/:planId/courses", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const courseId=Number(req.body?.AdCourseId||0),course=await Repository.getCourseById(courseId);
+  if(!course){res.status(404).json({error:"المقرر غير موجود"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,course.AdCollegeId,course.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  try{const membership=await Repository.addCourseToCurriculumPlan(String(req.params.planId||""),course,String(req.user.Name||""));res.status(201).json({membership,overview:await curriculumOverview(course.AdSectionId)});}catch(error:any){res.status(400).json({error:String(error?.message||"تعذر إضافة المقرر إلى الصحيفة")});}
+});
+
+app.delete("/api/curriculum/plans/:planId/courses/:courseId", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const course=await Repository.getCourseById(Number(req.params.courseId||0));
+  if(!course){res.status(404).json({error:"المقرر غير موجود"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,course.AdCollegeId,course.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const planId=String(req.params.planId||"");
+  const [plans,memberships,terms]=await Promise.all([Repository.getCurriculumPlans(course.AdSectionId),Repository.getCurriculumPlanCourses(course.AdSectionId),Repository.getTerms()]);
+  const plan=plans.find(row=>row.id===planId);
+  if(!plan||plan.status==="archived"){res.status(400).json({error:"الصحيفة غير متاحة للتعديل"});return;}
+
+  /* Removing a membership is an operational change, not just catalogue tidying.
+     If this is the last live curriculum that carries the course, hiding it while
+     it is already offered in the newest term would make the timetable contain a
+     course that none of its pickers can see. Keep that impossible state out. */
+  const otherLivePlanIds=new Set(plans.filter(row=>row.id!==planId&&row.status!=="archived").map(row=>row.id));
+  const remainsOperational=memberships.some(row=>Number(row.AdCourseId)===Number(course.AdCourseId)&&otherLivePlanIds.has(row.planId));
+  if(!remainsOperational){
+    const latestTermId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);
+    const rows=latestTermId?await Repository.getSchedulesByScope({sectionId:course.AdSectionId,termId:latestTermId}):[];
+    if(rows.some(row=>Number(row.AdCourseId)===Number(course.AdCourseId))){
+      res.status(409).json({error:"لا يمكن إزالة المقرر من آخر صحيفة فعالة له وهو مطروح في أحدث فصل. أزل الطرح أو اربطه بصحيفة فعالة أخرى أولاً."});
+      return;
+    }
+  }
+  await Repository.removeCourseFromCurriculumPlan(planId,course.AdCourseId);res.json({success:true,overview:await curriculumOverview(course.AdSectionId)});
+});
+
+app.post("/api/curriculum/transitions", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const sectionId=Number(req.body?.AdSectionId||0),section=await Repository.getSectionById(sectionId);
+  if(!section){res.status(404).json({error:"القسم غير موجود"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,section.AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const plans=await Repository.getCurriculumPlans(sectionId),fromPlanId=String(req.body?.fromPlanId||""),toPlanId=String(req.body?.toPlanId||"");
+  const fromCourseId=Number(req.body?.fromCourseId||0),toCourseId=Number(req.body?.toCourseId||0)||undefined;
+  const kind=String(req.body?.kind||"");
+  const kinds=new Set(["renumbered","renamed","renumbered-renamed","replaced","removed"]);
+  if(!plans.some(row=>row.id===fromPlanId)||!plans.some(row=>row.id===toPlanId)||!fromCourseId||!kinds.has(kind)){res.status(400).json({error:"بيانات علاقة الانتقال غير مكتملة"});return;}
+  if(kind!=="removed"&&!toCourseId){res.status(400).json({error:"اختر المقرر المقابل في الصحيفة الجديدة"});return;}
+  const [fromCourse,toCourse,memberships]=await Promise.all([Repository.getCourseById(fromCourseId),toCourseId?Repository.getCourseById(toCourseId):Promise.resolve(undefined),Repository.getCurriculumPlanCourses(sectionId)]);
+  if(!fromCourse||Number(fromCourse.AdSectionId)!==sectionId||(toCourseId&&(!toCourse||Number(toCourse.AdSectionId)!==sectionId))){res.status(400).json({error:"المقرر لا يتبع القسم المحدد"});return;}
+  if(!memberships.some(row=>row.planId===fromPlanId&&Number(row.AdCourseId)===fromCourseId)){res.status(400).json({error:"المقرر القديم لا يتبع الصحيفة الانتقالية المحددة"});return;}
+  if(toCourseId&&!memberships.some(row=>row.planId===toPlanId&&Number(row.AdCourseId)===toCourseId)){res.status(400).json({error:"المقرر الجديد لا يتبع الصحيفة الحالية المحددة"});return;}
+  /* One old course has one meaning in a specific generation jump. Re-saving it
+     is an edit (upsert), not a second competing relationship. This keeps the
+     transition map deterministic for reports, archive checks and future tooling. */
+  const existingTransitions=await Repository.getCourseTransitions(sectionId);
+  for(const existing of existingTransitions.filter(row=>row.fromPlanId===fromPlanId&&row.toPlanId===toPlanId&&Number(row.fromCourseId)===fromCourseId)){
+    await Repository.deleteCourseTransition(existing.id);
+  }
+  const transition=await Repository.saveCourseTransition({AdCollegeId:section.AdCollegeId,AdSectionId:sectionId,fromPlanId,toPlanId,fromCourseId,toCourseId,kind:kind as any,note:cleanText(req.body?.note,300)||undefined,createdBy:String(req.user.Name||"")||undefined});
+  res.status(201).json({transition,overview:await curriculumOverview(sectionId)});
+});
+
+app.delete("/api/curriculum/transitions/:id", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const id=String(req.params.id||""),transition=await Repository.getCourseTransitionById(id);
+  if(!transition){res.status(404).json({error:"علاقة الانتقال غير موجودة"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,transition.AdCollegeId,transition.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  await Repository.deleteCourseTransition(id);res.json({success:true});
+});
+
+async function curriculumArchiveReadiness(sectionId:number,planId:string){
+  const section=await Repository.getSectionById(sectionId);
+  if(!section)throw new Error("القسم غير موجود");
+  const [plans,memberships,terms]=await Promise.all([Repository.getCurriculumPlans(sectionId),Repository.getCurriculumPlanCourses(sectionId),Repository.getTerms()]);
+  const plan=plans.find(row=>row.id===planId);
+  if(!plan)throw new Error("الصحيفة غير موجودة");
+  const latestTermId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);
+  const courseIds=new Set(memberships.filter(row=>row.planId===plan.id).map(row=>Number(row.AdCourseId)));
+  const otherLivePlanIds=new Set(plans.filter(row=>row.id!==plan.id&&row.status!=="archived").map(row=>row.id));
+  const sharedElsewhere=new Set(memberships.filter(row=>otherLivePlanIds.has(row.planId)).map(row=>Number(row.AdCourseId)));
+  const oldOnlyCourseIds=new Set([...courseIds].filter(id=>!sharedElsewhere.has(id)));
+  const [currentRows,needs]=await Promise.all([
+    latestTermId?Repository.getSchedulesByScope({sectionId,termId:latestTermId}):Promise.resolve([]),
+    latestTermId?Repository.getStudentNeeds(section.AdCollegeId,0,latestTermId):Promise.resolve([]),
+  ]);
+  const currentOfferings=currentRows.filter(row=>oldOnlyCourseIds.has(Number(row.AdCourseId))).length;
+  const linkedStudentRequests=needs.filter(row=>String(row.curriculumPlanId||"")===plan.id||(row.courseIds||[]).some(id=>oldOnlyCourseIds.has(Number(id)))).length;
+  return{section,plan,readiness:{
+    currentOfferings,linkedStudentRequests,latestTermId,
+    totalCourses:courseIds.size,oldOnlyCourses:oldOnlyCourseIds.size,sharedCourses:courseIds.size-oldOnlyCourseIds.size,
+    ready:currentOfferings===0&&linkedStudentRequests===0,
+  }};
+}
+
+app.get("/api/curriculum/plans/:planId/archive-readiness", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const sectionId=Number(req.query?.sectionId||0),section=await Repository.getSectionById(sectionId);
+  if(!section){res.status(404).json({error:"القسم غير موجود"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,section.AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  try{const result=await curriculumArchiveReadiness(sectionId,String(req.params.planId||""));res.json(result);}catch(error:any){res.status(404).json({error:String(error?.message||"تعذر فحص جاهزية الصحيفة")});}
+});
+
+app.post("/api/curriculum/plans/:planId/archive", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const sectionId=Number(req.body?.AdSectionId||0),section=await Repository.getSectionById(sectionId);
+  if(!section){res.status(404).json({error:"القسم غير موجود"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,section.AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  try{
+    const checked=await curriculumArchiveReadiness(sectionId,String(req.params.planId||""));
+    if(!checked.readiness.ready&&String(req.body?.force||"")!=="1"){
+      res.status(409).json({error:"لا تزال الصحيفة مستخدمة في أحدث فصل. راجع التفاصيل قبل الأرشفة.",readiness:checked.readiness});return;
+    }
+    const archived=await Repository.archiveCurriculumPlan(checked.plan.id,sectionId,String(req.user.Name||""));
+    res.json({archived,readiness:checked.readiness,overview:await curriculumOverview(sectionId)});
+  }catch(error:any){
+    const message=String(error?.message||"تعذر أرشفة الصحيفة");
+    res.status(message.includes("غير موجود")?404:400).json({error:message});
+  }
 });
 
 app.post("/api/courses", requirePermission(6), async (req: AuthenticatedRequest, res: Response) => {
@@ -3005,7 +3158,24 @@ app.put("/api/courses/:id", requirePermission(6), async (req: AuthenticatedReque
 
   const currentCourse = await Repository.getCourseById(id);
   if (!currentCourse) { res.status(404).json({ error: "المقرر الدراسي غير موجود" }); return; }
+  const identityChanged=currentCourse.CourseCode!==CourseCode||currentCourse.CourseName!==CourseName;
+  const academicShapeChanged=Number(currentCourse.CourseCredit)!==Number(CourseCredit)||Number(currentCourse.CourseHours)!==Number(CourseHours);
+  const [curriculumPlans,curriculumMemberships]=await Promise.all([
+    Repository.getCurriculumPlans(Number(currentCourse.AdSectionId)),
+    Repository.getCurriculumPlanCourses(Number(currentCourse.AdSectionId)),
+  ]);
+  const memberPlanIds=new Set(curriculumMemberships.filter(row=>Number(row.AdCourseId)===id).map(row=>row.planId));
+  const belongsToFrozenCurriculum=curriculumPlans.some(plan=>memberPlanIds.has(plan.id)&&plan.status!=="active");
+  if (belongsToFrozenCurriculum&&(identityChanged||academicShapeChanged)) {
+    res.status(409).json({error:"هذا المقرر جزء من صحيفة انتقالية أو مؤرشفة، لذلك جُمّدت هويته الأكاديمية. أنشئ المقرر بصيغته الجديدة ثم اربطه من شاشة الصحائف الأكاديمية."});return;
+  }
+  if (identityChanged && await Repository.hasSchedulesForCourse(id)) {
+    res.status(409).json({error:"هذا المقرر له سجل تدريسي تاريخي؛ لا تغيّر رقمه أو اسمه فوق التاريخ. أنشئ المقرر الجديد ثم اربطه من شاشة الصحائف الأكاديمية."});return;
+  }
   const collegeId = collegeIdInput, sectionId = sectionIdInput;
+  if ((Number(currentCourse.AdSectionId)!==sectionId||Number(currentCourse.AdCollegeId)!==collegeId)&&memberPlanIds.size) {
+    res.status(409).json({error:"لا يمكن نقل مقرر مرتبط بصحيفة أكاديمية إلى قسم آخر. أنشئ مقرراً جديداً في القسم المطلوب حتى يبقى ارتباط الصحيفة سليماً."});return;
+  }
   const targetSection = await Repository.getSectionById(sectionId);
   if (!targetSection || targetSection.AdCollegeId !== collegeId) {
     res.status(400).json({ error: "القسم العلمي المختار لا يتبع الكلية المختارة" });
@@ -3046,6 +3216,13 @@ app.delete("/api/courses/:id", requirePermission(6), async (req: AuthenticatedRe
   if (course && !isScopeAllowed(req, course.AdCollegeId, course.AdSectionId) && !req.user.IsAdminUser) {
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
+  }
+  // Curriculum history is a first-class reference just like timetable history.
+  if (course) {
+    const memberships=await Repository.getCurriculumPlanCourses(course.AdSectionId);
+    if(memberships.some(row=>Number(row.AdCourseId)===id)){
+      res.status(409).json({error:"لا يمكن حذف المقرر لأنه مرتبط بصحيفة أكاديمية. أخرجه من الصحيفة أو اتركه تاريخياً بدلاً من حذفه."});return;
+    }
   }
   // Legacy SQL has FSchedule -> AdCourse FK. Do not silently orphan schedule rows in Firestore.
   if (await Repository.hasSchedulesForCourse(id)) {
@@ -4225,7 +4402,7 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
       ? Repository.getInstructorsByScope(sectionId, termId)
       : (collegeId ? Repository.getInstructorsByScheduleScope({ collegeId, termId }) : Promise.resolve([])),
     sectionId ? Repository.getInstructorsByScope(sectionId, 0) : Promise.resolve([]),
-    sectionId ? Repository.getCoursesBySection(sectionId) : Promise.resolve([]),
+    sectionId ? Repository.getOperationalCoursesBySection(sectionId) : Promise.resolve([]),
     readLiveVisitingRoster(collegeId, sectionId, termId),
   ]);
   const visitingInstructorIds = visitingRoster.instructorIds;
@@ -5071,12 +5248,14 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     }
   }
 
+  const operationalImportIds=await Repository.getOperationalCourseIds(sectionId);
   const ready: any[] = [];
   const rejected: Array<{ line: number; reason: string; label: string }> = [];
   incoming.forEach((entry, index) => {
     const label = `${entry?.courseCode || "?"} · شعبة ${entry?.section || "?"}`;
     const course = courseByCode.get(String(entry?.courseCode || "").trim().toLowerCase());
     if (!course) { rejected.push({ line: index + 1, reason: "رمز المقرر غير موجود في هذا القسم", label }); return; }
+    if(!operationalImportIds.has(Number(course.AdCourseId))){rejected.push({line:index+1,reason:"المقرر مؤرشف أكاديمياً ولا يمكن استيراده إلى جدول حالي",label});return;}
     const instructor = instructorByCivil.get(String(entry?.instructorCivil || "").trim());
     if (!instructor) { rejected.push({ line: index + 1, reason: "الرقم المدني للأستاذ غير مسجّل", label }); return; }
     const key = `${course.AdCourseId}|${String(entry?.section || "").trim()}`;
@@ -5085,6 +5264,7 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     const candidate = {
       AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
       AdCourseId: course.AdCourseId, AdCourseName: course.CourseName,
+      CourseCodeSnapshot:String(course.CourseCode||""),CourseNameSnapshot:String(course.CourseName||""),
       SCode: String(entry?.section || "").trim(),
       AdInstructorId: instructor.AdInstructorId,
       AdRoomCode: String(entry?.building || "").trim(),
@@ -5827,7 +6007,7 @@ app.get("/api/courses/nature", requirePermission(7), async (req: AuthenticatedRe
     res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" });
     return;
   }
-  const courses = await Repository.getCoursesBySection(sectionId);
+  const courses = await Repository.getOperationalCoursesBySection(sectionId);
   const history = await Repository.getScheduleHistoryForCourses(courses.map(course => course.AdCourseId));
   const learned = learnAll(history);
   res.json({
@@ -6273,6 +6453,11 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
   ]);
   if (!section || section.AdCollegeId !== collegeId) { res.status(400).json({ error: "القسم العلمي المختار لا يتبع الكلية المختارة" }); return; }
   if (!course || course.AdCollegeId !== collegeId || course.AdSectionId !== sectionId) { res.status(400).json({ error: "المقرر المختار غير صالح" }); return; }
+  const operationalCourseIds=await Repository.getOperationalCourseIds(sectionId);
+  if(!operationalCourseIds.has(courseId)){res.status(409).json({error:"هذا المقرر مؤرشف أكاديمياً ولا يمكن إضافته إلى جدول جديد. يظهر فقط في السجل التاريخي."});return;}
+  const [curriculumPlans,curriculumMemberships]=await Promise.all([Repository.getCurriculumPlans(sectionId),Repository.getCurriculumPlanCourses(sectionId)]);
+  const memberPlanIds=new Set(curriculumMemberships.filter(row=>Number(row.AdCourseId)===courseId).map(row=>row.planId));
+  const schedulePlan=curriculumPlans.find(row=>row.status==="active"&&memberPlanIds.has(row.id))||curriculumPlans.find(row=>row.status==="transition"&&memberPlanIds.has(row.id));
   if (!term) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
   if (!instructor) { res.status(400).json({ error: "أستاذ المقرر المختار غير صالح" }); return; }
   const locationResult=await canonicalizeLocationForWrite({...req.body,AdCollegeId:collegeId,AdSectionId:sectionId},collegeId,sectionId);
@@ -6297,6 +6482,9 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
     AdTermId: termId,
     AdCourseId: courseId,
     AdCourseName: course.CourseName,
+    CourseCodeSnapshot: String(course.CourseCode || ""),
+    CourseNameSnapshot: String(course.CourseName || ""),
+    CurriculumPlanIdSnapshot: schedulePlan?.id,
     SCode,
     AdInstructorId: instructorId,
     fsunday: !!fsunday,
@@ -6390,6 +6578,11 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   ]);
   if (!section || section.AdCollegeId !== collegeId) { res.status(400).json({ error: "القسم العلمي المختار لا يتبع الكلية المختارة" }); return; }
   if (!course || course.AdCollegeId !== collegeId || course.AdSectionId !== sectionId) { res.status(400).json({ error: "المقرر المختار غير صالح" }); return; }
+  const operationalIdsForEdit=await Repository.getOperationalCourseIds(sectionId);
+  if(Number(existing.AdCourseId)!==courseId&&!operationalIdsForEdit.has(courseId)){res.status(409).json({error:"المقرر البديل مؤرشف أكاديمياً ولا يمكن إسناده إلى موعد حالي."});return;}
+  const [editPlans,editMemberships]=await Promise.all([Repository.getCurriculumPlans(sectionId),Repository.getCurriculumPlanCourses(sectionId)]);
+  const editMemberPlanIds=new Set(editMemberships.filter(row=>Number(row.AdCourseId)===courseId).map(row=>row.planId));
+  const editPlan=editPlans.find(row=>row.status==="active"&&editMemberPlanIds.has(row.id))||editPlans.find(row=>row.status==="transition"&&editMemberPlanIds.has(row.id));
   if (!term) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
   if (!instructor) { res.status(400).json({ error: "أستاذ المقرر المختار غير صالح" }); return; }
   const locationResult=await canonicalizeLocationForWrite({...req.body,AdCollegeId:collegeId,AdSectionId:sectionId},collegeId,sectionId);
@@ -6417,6 +6610,9 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
       AdTermId: termId,
       AdCourseId: courseId,
       AdCourseName: course.CourseName,
+      CourseCodeSnapshot: String(course.CourseCode || ""),
+      CourseNameSnapshot: String(course.CourseName || ""),
+      CurriculumPlanIdSnapshot: editPlan?.id,
       SCode,
       AdInstructorId: instructorId,
       fsunday: !!fsunday,
@@ -6503,9 +6699,11 @@ app.get("/api/schedules/copy-preview", requireAuth, requirePowerAdmin, async (re
   const [source,target,courses,instructors]=await Promise.all([
     Repository.getSchedulesByScope({collegeId,sectionId,termId:fromTermId}),Repository.getSchedulesByScope({collegeId,sectionId,termId:toTermId}),Repository.getCourses(),Repository.getInstructors()
   ]);
-  const sourceIssues=[...new Set(source.flatMap((row:any)=>schedulePayloadIssues(row)))];
+  const operationalIds=await Repository.getOperationalCourseIds(sectionId);
+  const archivedInSource=source.filter(row=>!operationalIds.has(Number(row.AdCourseId)));
+  const sourceIssues=[...new Set([...source.flatMap((row:any)=>schedulePayloadIssues(row)),...(archivedInSource.length?[`يتضمن الفصل ${archivedInSource.length} موعداً لمقررات أصبحت مؤرشفة أكاديمياً ولن تُنسخ إلى فصل جديد.`]:[])])];
   const courseById=new Map(courses.map(item=>[item.AdCourseId,item])); const instructorById=new Map(instructors.map(item=>[item.AdInstructorId,item]));
-  res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:courseById.get(row.AdCourseId)?.CourseCode||"",courseName:courseById.get(row.AdCourseId)?.CourseName||row.AdCourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:formatScheduleTimeRange(row.fstarttime, row.fendtime),room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
+  res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:row.CourseCodeSnapshot||courseById.get(row.AdCourseId)?.CourseCode||"",courseName:row.CourseNameSnapshot||row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:formatScheduleTimeRange(row.fstarttime, row.fendtime),room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
 });
 
 app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -6534,6 +6732,9 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
   if (!sourceTerm || !targetTerm) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
 
   const sourceRows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId });
+  const operationalIdsForCopy=await Repository.getOperationalCourseIds(sectionId);
+  const archivedRows=sourceRows.filter(row=>!operationalIdsForCopy.has(Number(row.AdCourseId)));
+  if(archivedRows.length){res.status(409).json({error:`لا يمكن نسخ الفصل كما هو: ${archivedRows.length} موعداً مرتبط بمقررات مؤرشفة أكاديمياً. أضف بدائلها الحالية يدوياً حتى يبقى الجدول الجديد صحيحاً.`,code:"archived-curriculum-courses"});return;}
   const copiedRows = safeDraftRows(sourceRows, collegeId, sectionId, targetTermId);
   const copyIssues = await validateSmartRows(copiedRows, collegeId, sectionId, { resolveHistorical: true });
   if (copyIssues.length) {
@@ -10036,7 +10237,7 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: Aut
 });
 
 app.post("/api/intelligence/import-preview", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const raw=Array.isArray(req.body?.rows)?req.body.rows:[]; if(!raw.length){res.status(400).json({error:"الملف لا يحتوي صفوفاً قابلة للقراءة"});return;} if(raw.length>450){res.status(400).json({error:"الملف أكبر من الحد الآمن للاستيراد"});return;} const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]); const sectionCourses=courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId); const byCode=new Map(sectionCourses.map(c=>[String(c.CourseCode).trim().toLowerCase(),c])); const byCivil=new Map(instructors.map(i=>[String(i.AdInstructorCivil).trim(),i])); const byName=new Map(instructors.map(i=>[String(i.AdInstructorName).trim().toLowerCase(),i])); const issues:string[]=[]; const rows:any[]=[];
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const raw=Array.isArray(req.body?.rows)?req.body.rows:[]; if(!raw.length){res.status(400).json({error:"الملف لا يحتوي صفوفاً قابلة للقراءة"});return;} if(raw.length>450){res.status(400).json({error:"الملف أكبر من الحد الآمن للاستيراد"});return;} const [courses,instructors,operationalImportIds]=await Promise.all([Repository.getCourses(),Repository.getInstructors(),Repository.getOperationalCourseIds(sectionId)]); const sectionCourses=courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId&&operationalImportIds.has(Number(c.AdCourseId))); const byCode=new Map(sectionCourses.map(c=>[String(c.CourseCode).trim().toLowerCase(),c])); const byCivil=new Map(instructors.map(i=>[String(i.AdInstructorCivil).trim(),i])); const byName=new Map(instructors.map(i=>[String(i.AdInstructorName).trim().toLowerCase(),i])); const issues:string[]=[]; const rows:any[]=[];
   raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=normalizeClock(String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5)),end=normalizeClock(String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5));const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId,{resolveHistorical:true}); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
 });
 
@@ -12154,13 +12355,15 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
      from its own history, newest first. A catalogue entry nobody has taught in
      a decade is not something to ask a student about. */
   const scientificSections=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
-  const sectionOptions=scientificSections.map((section:any)=>{
-    const {taught}=surveyCourseIdsForSection(courses,history,Number(section.AdSectionId));
-    const offered=courses.filter((course:any)=>Number(course.AdSectionId)===Number(section.AdSectionId))
+  const sectionOptions=(await Promise.all(scientificSections.map(async(section:any)=>{
+    const sid=Number(section.AdSectionId),{taught}=surveyCourseIdsForSection(courses,history,sid);
+    const overview=await curriculumOverview(sid);
+    const operational=new Set((overview?.operationalCourseIds||[]).map(Number));
+    const offered=courses.filter((course:any)=>Number(course.AdSectionId)===sid&&operational.has(Number(course.AdCourseId)))
       .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
       .sort((a:any,b:any)=>b.lastTaught-a.lastTaught||String(a.code).localeCompare(String(b.code),"ar"));
     return{id:section.AdSectionId,name:section.AdSectionName,courses:offered};
-  }).sort((a:any,b:any)=>String(a.name).localeCompare(String(b.name),"ar"));
+  }))).sort((a:any,b:any)=>String(a.name).localeCompare(String(b.name),"ar"));
   const offered=sectionOptions.find((section:any)=>Number(section.id)===Number(resolved.link.AdSectionId))?.courses||[];
 
   const sectionName = sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "";
@@ -12343,10 +12546,15 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
      the course being clashed with can belong to any department in the college. */
   const linkSectionId=Number(resolved.link.AdSectionId);
   const { allowed } = surveyCourseIdsForSection(courses, history, linkSectionId);
-  courses.filter((course:any)=>Number(course.AdSectionId)===linkSectionId).forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
+  const operationalLinkIds=await Repository.getOperationalCourseIds(linkSectionId);
+  for(const id of [...allowed])if(!operationalLinkIds.has(Number(id)))allowed.delete(Number(id));
+  courses.filter((course:any)=>Number(course.AdSectionId)===linkSectionId&&operationalLinkIds.has(Number(course.AdCourseId)))
+    .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   if(requestType==="course-conflict"){
-    const collegeSections=new Set(sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId)).map((row:any)=>Number(row.AdSectionId)));
-    courses.filter((course:any)=>collegeSections.has(Number(course.AdSectionId))).forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
+    const collegeSectionIds=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId)).map((row:any)=>Number(row.AdSectionId));
+    const operationalBySection=new Map<number,Set<number>>(await Promise.all(collegeSectionIds.map(async sid=>[sid,await Repository.getOperationalCourseIds(sid)] as [number,Set<number>])));
+    courses.filter((course:any)=>operationalBySection.get(Number(course.AdSectionId))?.has(Number(course.AdCourseId)))
+      .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   }
   const courseIds = [...new Set((Array.isArray(body.courseIds) ? body.courseIds : [])
     .map(value => Number(asciiDigits(value))).filter(id => allowed.has(id)))].slice(0, 12);
@@ -12388,6 +12596,16 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     if(details.length<3){res.status(400).json({error:"اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال"});return;}
   }
 
+  let curriculumPlanId:string|undefined;
+  if(courseIds.length){
+    const [plans,memberships]=await Promise.all([Repository.getCurriculumPlans(linkSectionId),Repository.getCurriculumPlanCourses(linkSectionId)]);
+    const linkCourseIds=courseIds.filter(id=>courses.some((course:any)=>Number(course.AdCourseId)===Number(id)&&Number(course.AdSectionId)===linkSectionId));
+    const requestedPlanId=String(body.curriculumPlanId||"");
+    const candidates=plans.filter(plan=>plan.status!=="archived"&&linkCourseIds.every(id=>memberships.some(row=>row.planId===plan.id&&Number(row.AdCourseId)===Number(id))));
+    const requested=candidates.find(plan=>plan.id===requestedPlanId);
+    curriculumPlanId=(requested||candidates.length===1?requested||candidates[0]:undefined)?.id;
+  }
+
   const savedNeed = await Repository.saveStudentNeed({
     fingerprint: await surveyFingerprint(civil),
     AdCollegeId: resolved.link.AdCollegeId,
@@ -12402,7 +12620,7 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     surveyLinkId: resolved.link.id,
     AdTermId: resolved.link.AdTermId,
     courseIds,
-    requestType,nameCipher:await sealStudentIdentity(name),civilCipher:await sealStudentIdentity(civil),details,
+    requestType,curriculumPlanId,nameCipher:await sealStudentIdentity(name),civilCipher:await sealStudentIdentity(civil),details,
     graduateReason,passedUnits,requiredUnits,degreeUnits,eligibility,proofNameMatched:graduateNameMatched,
   });
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
@@ -12442,7 +12660,8 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     Repository.getTerms().catch(() => []),
     Repository.getSections().catch(() => []),
   ]);
-  const mine = courses.filter(course => Number(course.AdSectionId) === sectionId);
+  const operationalDemandIds=await Repository.getOperationalCourseIds(sectionId);
+  const mine = courses.filter(course => Number(course.AdSectionId) === sectionId && operationalDemandIds.has(Number(course.AdCourseId)));
   const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
   const belongsToSurvey = (need:any) => {
     const explicit = Number(need?.surveySectionId || 0);
@@ -13842,8 +14061,13 @@ async function resolveRequestLink(token: string) {
 async function instructorRequestSectionCourses(sectionIdValue: unknown) {
   const sectionId = Number(sectionIdValue || 0);
   if (!sectionId) return [] as any[];
+  /* Keep the proven legacy compatibility contract: the public card resolves
+     section ownership from the complete cached catalogue after Number()
+     normalization, because old rows may store AdSectionId as text. Then apply
+     the curriculum operational set as a second, independent filter. */
   const courses = await Repository.getCourses();
-  return (courses as any[]).filter(row => Number(row.AdSectionId) === sectionId);
+  const operationalIds = await Repository.getOperationalCourseIds(sectionId);
+  return courses.filter(row => Number(row.AdSectionId) === sectionId && operationalIds.has(Number(row.AdCourseId))) as any[];
 }
 
 /**

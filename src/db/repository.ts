@@ -19,6 +19,9 @@ import {
   AdSection,
   AdInstructor,
   AdCourse,
+  CurriculumPlan,
+  CurriculumPlanCourse,
+  CourseTransition,
   FSchedule,
   AdRoom,
   AuditLogEntry,
@@ -193,6 +196,9 @@ interface DBState {
   sections: AdSection[];
   instructors: AdInstructor[];
   courses: AdCourse[];
+  curriculumPlans?: CurriculumPlan[];
+  curriculumPlanCourses?: CurriculumPlanCourse[];
+  courseTransitions?: CourseTransition[];
   schedules: FSchedule[];
   rooms: AdRoom[];
   auditLogs?: AuditLogEntry[];
@@ -229,7 +235,7 @@ interface LegacySnapshot extends DBState {
 
 let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
-  courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
+  courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
   scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
@@ -280,7 +286,11 @@ function hydrateSchedules(rows: FSchedule[], courses: AdCourse[], sections: AdSe
       // preserves the relational semantics if a course moves to another section/college or is renamed.
       AdSectionId: course.AdSectionId,
       AdCollegeId: course.AdCollegeId,
-      AdCourseName: course.CourseName
+      // Historical schedule rows own their visible academic identity. A later
+      // catalogue rename must never rewrite an old term while it is being read.
+      AdCourseName: schedule.CourseNameSnapshot || schedule.AdCourseName || course.CourseName,
+      CourseCodeSnapshot: schedule.CourseCodeSnapshot || undefined,
+      CourseNameSnapshot: schedule.CourseNameSnapshot || schedule.AdCourseName || undefined
     };
   });
 }
@@ -804,6 +814,9 @@ export async function initDatabase() {
       if (!Array.isArray(db.campusMobilityProfiles)) db.campusMobilityProfiles = [];
       if (!Array.isArray(db.scheduleShareLinks)) db.scheduleShareLinks = [];
       if (!Array.isArray(db.scheduleApprovals)) db.scheduleApprovals = [];
+      if (!Array.isArray(db.curriculumPlans)) db.curriculumPlans = [];
+      if (!Array.isArray(db.curriculumPlanCourses)) db.curriculumPlanCourses = [];
+      if (!Array.isArray(db.courseTransitions)) db.courseTransitions = [];
     } catch (e) {
       throw new Error(`تعذر قراءة ملف البيانات المحلية؛ تم إيقاف التشغيل لحماية البيانات: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -3048,6 +3061,7 @@ export const Repository = {
         transaction.set(courseRef, newCourse);
       });
       invalidateScheduleRelationCache();
+      await Repository.attachCourseToActiveCurriculum(newCourse);
       return newCourse;
     }
     if (db.courses.some(course => course.AdSectionId === sectionId && course.CourseCode === code)) {
@@ -3066,6 +3080,7 @@ export const Repository = {
     };
     db.courses.push(newCourse);
     saveDatabase();
+    await Repository.attachCourseToActiveCurriculum(newCourse);
     return newCourse;
   },
 
@@ -3124,6 +3139,161 @@ export const Repository = {
     }
     db.courses = db.courses.filter(c => c.AdCourseId !== id);
     saveDatabase();
+  },
+
+  // Curriculum plans -------------------------------------------------------
+  getCurriculumPlans: async (sectionId: number): Promise<CurriculumPlan[]> => {
+    const sid = Number(sectionId || 0);
+    if (!sid) return [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("curriculumPlans").where("AdSectionId", "==", sid).get();
+      return snap.docs.map(doc => doc.data() as CurriculumPlan)
+        .sort((a,b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    }
+    if (!Array.isArray(db.curriculumPlans)) db.curriculumPlans = [];
+    return db.curriculumPlans.filter(row => Number(row.AdSectionId) === sid)
+      .sort((a,b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  },
+
+  getCurriculumPlanCourses: async (sectionId: number): Promise<CurriculumPlanCourse[]> => {
+    const sid = Number(sectionId || 0);
+    if (!sid) return [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("curriculumPlanCourses").where("AdSectionId", "==", sid).get();
+      return snap.docs.map(doc => doc.data() as CurriculumPlanCourse);
+    }
+    if (!Array.isArray(db.curriculumPlanCourses)) db.curriculumPlanCourses = [];
+    return db.curriculumPlanCourses.filter(row => Number(row.AdSectionId) === sid);
+  },
+
+  getCourseTransitions: async (sectionId: number): Promise<CourseTransition[]> => {
+    const sid = Number(sectionId || 0);
+    if (!sid) return [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("courseTransitions").where("AdSectionId", "==", sid).get();
+      return snap.docs.map(doc => doc.data() as CourseTransition)
+        .sort((a,b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+    }
+    if (!Array.isArray(db.courseTransitions)) db.courseTransitions = [];
+    return db.courseTransitions.filter(row => Number(row.AdSectionId) === sid)
+      .sort((a,b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  },
+
+  /**
+   * Before the first explicit curriculum exists, the catalogue itself is the
+   * transition plan. The first new plan materializes that exact catalogue as a
+   * historical/transition version and starts the new version EMPTY — important
+   * for departments where most of the new curriculum is genuinely new.
+   */
+  createCurriculumPlan: async (input: { collegeId:number; sectionId:number; name:string; code?:string; by?:string }): Promise<CurriculumPlan> => {
+    const collegeId=Number(input.collegeId), sectionId=Number(input.sectionId);
+    const now=new Date().toISOString();
+    const existing=await Repository.getCurriculumPlans(sectionId);
+    const courses=await Repository.getCoursesBySection(sectionId);
+    const newPlan:CurriculumPlan={
+      id: randomUUID(), AdCollegeId:collegeId, AdSectionId:sectionId,
+      name:String(input.name||"").trim(), code:String(input.code||"").trim()||undefined,
+      status:"active", createdAt:now, createdBy:String(input.by||"")||undefined, activatedAt:now,
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const batch=firestoreDb.batch();
+      if (!existing.length) {
+        const legacy:CurriculumPlan={
+          id:randomUUID(),AdCollegeId:collegeId,AdSectionId:sectionId,
+          name:"الصحيفة السابقة",code:"LEGACY",status:"transition",createdAt:now,createdBy:String(input.by||"")||undefined,
+        };
+        batch.set(firestoreDb.collection("curriculumPlans").doc(legacy.id),legacy);
+        for(const course of courses){
+          const row:CurriculumPlanCourse={id:`${legacy.id}_${course.AdCourseId}`,planId:legacy.id,AdCollegeId:collegeId,AdSectionId:sectionId,AdCourseId:course.AdCourseId,createdAt:now,createdBy:String(input.by||"")||undefined};
+          batch.set(firestoreDb.collection("curriculumPlanCourses").doc(row.id),row);
+        }
+      } else {
+        for(const plan of existing.filter(row=>row.status==="active")) batch.set(firestoreDb.collection("curriculumPlans").doc(plan.id),{status:"transition"},{merge:true});
+      }
+      batch.set(firestoreDb.collection("curriculumPlans").doc(newPlan.id),newPlan);
+      await batch.commit();
+      return newPlan;
+    }
+    if (!Array.isArray(db.curriculumPlans)) db.curriculumPlans=[];
+    if (!Array.isArray(db.curriculumPlanCourses)) db.curriculumPlanCourses=[];
+    if (!existing.length) {
+      const legacy:CurriculumPlan={id:randomUUID(),AdCollegeId:collegeId,AdSectionId:sectionId,name:"الصحيفة السابقة",code:"LEGACY",status:"transition",createdAt:now,createdBy:String(input.by||"")||undefined};
+      db.curriculumPlans.push(legacy);
+      db.curriculumPlanCourses.push(...courses.map(course=>({id:`${legacy.id}_${course.AdCourseId}`,planId:legacy.id,AdCollegeId:collegeId,AdSectionId:sectionId,AdCourseId:course.AdCourseId,createdAt:now,createdBy:String(input.by||"")||undefined})));
+    } else {
+      db.curriculumPlans=db.curriculumPlans.map(plan=>Number(plan.AdSectionId)===sectionId&&plan.status==="active"?{...plan,status:"transition"}:plan);
+    }
+    db.curriculumPlans.push(newPlan); saveDatabase(); return newPlan;
+  },
+
+  addCourseToCurriculumPlan: async (planId:string, course:AdCourse, by=""): Promise<CurriculumPlanCourse> => {
+    const plans=await Repository.getCurriculumPlans(Number(course.AdSectionId));
+    const plan=plans.find(row=>row.id===planId);
+    if(!plan||plan.status==="archived") throw new Error("الصحيفة غير متاحة للتعديل");
+    const row:CurriculumPlanCourse={id:`${planId}_${course.AdCourseId}`,planId,AdCollegeId:Number(course.AdCollegeId),AdSectionId:Number(course.AdSectionId),AdCourseId:Number(course.AdCourseId),createdAt:new Date().toISOString(),createdBy:by||undefined};
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlanCourses").doc(row.id).set(row);return row;}
+    if(!Array.isArray(db.curriculumPlanCourses))db.curriculumPlanCourses=[];
+    const at=db.curriculumPlanCourses.findIndex(item=>item.id===row.id); if(at>=0)db.curriculumPlanCourses[at]=row;else db.curriculumPlanCourses.push(row);saveDatabase();return row;
+  },
+
+  removeCourseFromCurriculumPlan: async (planId:string, courseId:number): Promise<void> => {
+    const id=`${planId}_${Number(courseId)}`;
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlanCourses").doc(id).delete();return;}
+    if(!Array.isArray(db.curriculumPlanCourses))db.curriculumPlanCourses=[];
+    db.curriculumPlanCourses=db.curriculumPlanCourses.filter(row=>row.id!==id);saveDatabase();
+  },
+
+  attachCourseToActiveCurriculum: async (course:AdCourse, by=""): Promise<void> => {
+    const plans=await Repository.getCurriculumPlans(Number(course.AdSectionId));
+    const active=plans.find(row=>row.status==="active");
+    if(active) await Repository.addCourseToCurriculumPlan(active.id,course,by);
+  },
+
+  saveCourseTransition: async (entry:Omit<CourseTransition,"id"|"createdAt">): Promise<CourseTransition> => {
+    const row:CourseTransition={...entry,id:randomUUID(),createdAt:new Date().toISOString()};
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("courseTransitions").doc(row.id).set(row);return row;}
+    if(!Array.isArray(db.courseTransitions))db.courseTransitions=[];db.courseTransitions.push(row);saveDatabase();return row;
+  },
+
+
+  getCourseTransitionById: async (id:string): Promise<CourseTransition | undefined> => {
+    const key=String(id||""); if(!key)return undefined;
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      const doc=await firestoreDb.collection("courseTransitions").doc(key).get();
+      return doc.exists ? doc.data() as CourseTransition : undefined;
+    }
+    if(!Array.isArray(db.courseTransitions))db.courseTransitions=[];
+    return db.courseTransitions.find(row=>row.id===key);
+  },
+
+  deleteCourseTransition: async (id:string): Promise<void> => {
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("courseTransitions").doc(id).delete();return;}
+    if(!Array.isArray(db.courseTransitions))db.courseTransitions=[];db.courseTransitions=db.courseTransitions.filter(row=>row.id!==id);saveDatabase();
+  },
+
+  archiveCurriculumPlan: async (planId:string, sectionId:number, by=""): Promise<CurriculumPlan> => {
+    const plans=await Repository.getCurriculumPlans(sectionId),plan=plans.find(row=>row.id===planId);
+    if(!plan)throw new Error("الصحيفة غير موجودة");
+    if(plan.status==="active")throw new Error("لا يمكن أرشفة الصحيفة الحالية. أنشئ صحيفة أحدث أولاً.");
+    const updated={...plan,status:"archived" as const,archivedAt:new Date().toISOString(),archivedBy:by||undefined};
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);return updated;}
+    if(!Array.isArray(db.curriculumPlans))db.curriculumPlans=[];const at=db.curriculumPlans.findIndex(row=>row.id===planId);if(at<0)throw new Error("الصحيفة غير موجودة");db.curriculumPlans[at]=updated;saveDatabase();return updated;
+  },
+
+  getOperationalCourseIds: async (sectionId:number): Promise<Set<number>> => {
+    const courses=await Repository.getCoursesBySection(sectionId);
+    const plans=await Repository.getCurriculumPlans(sectionId);
+    // Compatibility contract: before setup, every current catalogue course is
+    // active in the transition stage exactly as it is today.
+    if(!plans.length)return new Set(courses.map(row=>Number(row.AdCourseId)));
+    const livePlanIds=new Set(plans.filter(row=>row.status!=="archived").map(row=>row.id));
+    const memberships=await Repository.getCurriculumPlanCourses(sectionId);
+    return new Set(memberships.filter(row=>livePlanIds.has(row.planId)).map(row=>Number(row.AdCourseId)));
+  },
+
+  getOperationalCoursesBySection: async (sectionId:number): Promise<AdCourse[]> => {
+    const [courses,ids]=await Promise.all([Repository.getCoursesBySection(sectionId),Repository.getOperationalCourseIds(sectionId)]);
+    return courses.filter(row=>ids.has(Number(row.AdCourseId)));
   },
 
   // Schedules

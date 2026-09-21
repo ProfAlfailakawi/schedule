@@ -129,6 +129,56 @@ export interface AdCourse {
   MaxStudent: number;
 }
 
+/** Academic curriculum version for one scientific section. */
+export type CurriculumPlanStatus = "active" | "transition" | "archived";
+
+export interface CurriculumPlan {
+  id: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  name: string;
+  code?: string;
+  status: CurriculumPlanStatus;
+  /** True only for the virtual compatibility plan synthesized before first setup. */
+  virtual?: boolean;
+  createdAt: string;
+  createdBy?: string;
+  activatedAt?: string;
+  archivedAt?: string;
+  archivedBy?: string;
+}
+
+export interface CurriculumPlanCourse {
+  id: string;
+  planId: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdCourseId: number;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export type CourseTransitionKind =
+  | "renumbered"
+  | "renamed"
+  | "renumbered-renamed"
+  | "replaced"
+  | "removed";
+
+export interface CourseTransition {
+  id: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  fromPlanId: string;
+  toPlanId: string;
+  fromCourseId: number;
+  toCourseId?: number;
+  kind: CourseTransitionKind;
+  note?: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
 export interface FSchedule {
   id: number;
   AdCollegeId: number;
@@ -136,6 +186,10 @@ export interface FSchedule {
   AdTermId: number;
   AdCourseId: number;
   AdCourseName: string;
+  /** Immutable academic identity as it stood when this appointment was created. */
+  CourseCodeSnapshot?: string;
+  CourseNameSnapshot?: string;
+  CurriculumPlanIdSnapshot?: string;
   SCode: string;
   AdInstructorId: number;
   fsunday: boolean;
@@ -520,6 +574,8 @@ export interface StudentNeed {
    * student's selected/home section for degree-rule checks. */
   studentSectionId?: number;
   AdTermId: number;
+  /** Curriculum version selected/derived for this survey answer when available. */
+  curriculumPlanId?: string;
   /** Every course this student says they need. */
   courseIds: number[];
   requestType?: "new-course" | "course-conflict" | "graduate";
