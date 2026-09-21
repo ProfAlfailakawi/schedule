@@ -3,7 +3,8 @@ import { BookOpen, Building2, GraduationCap, Trash2 } from "lucide-react";
 import { sortByName, byArabic } from "../utils/sorting";
 import CurriculumPlans from "./CurriculumPlans";
 import { decimalText, numericText } from "../utils/digits";
-import type { AdSection, CurriculumPlan } from "../types";
+import type { AdSection } from "../types";
+import type { CurriculumPlan } from "../types";
 import {
   AddButton,
   EmbeddedAction,
