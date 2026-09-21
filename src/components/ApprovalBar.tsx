@@ -14,7 +14,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CornerUpLeft, Scale, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CornerUpLeft, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
@@ -68,7 +68,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [state, setState] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showNotices, setShowNotices] = useState(false);
 
   const load = useCallback(async () => {
     if (!collegeId || !sectionId || !termId) { setState(null); return; }
@@ -101,7 +100,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   if (!state) return null;
 
-  const { approval, blockingConflicts, regulationNotices } = state;
+  const { approval, blockingConflicts } = state;
   const openNotes = Number(state.openRegistrarNotes || 0);
   const status: ScheduleApprovalStatus = approval.status;
   const mine = signatureStage ? approval.signatures.find(item => item.stage === signatureStage) : undefined;
@@ -206,13 +205,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           </PrimaryButton>
         ) : null}
 
-        {/* اللائحة تُعرض ولا تمنع: عدّادٌ صغير بجانب الزرّ لا فوقه. */}
-        {regulationNotices > 0 && canSignNow ? (
-          <button type="button" className="approval-sign-notices" data-guide-ignore="فتح عدّاد الملاحظات اللائحية — عرضٌ لا فعل، واللائحة لا تمنع" onClick={() => setShowNotices(value => !value)}>
-            <Scale aria-hidden="true" /> {regulationNotices} ملاحظةً لائحية
-          </button>
-        ) : null}
-
         {canSignNow ? (
           <PrimaryButton type="button" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد الجدول" : "توقيع لجنة الجدول"}
@@ -255,12 +247,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           {blockingConflictPhrase(blockingConflicts)} يمنع الاعتماد. أمّا الملاحظات اللائحية فلا تمنع التوقيع.
         </Notice>
       ) : null}
-      {showNotices ? (
-        <Notice type="warning">
-          اللائحة معيارٌ يُحتجّ به لا بوّابةٌ تُقفل: تفصيلها في شاشة المراجعة اللائحية،
-          وتُسجَّل مع توقيعك فيُطبع «وقّع مع علمه بـ{regulationNotices} ملاحظةً لائحية».
-        </Notice>
-      ) : null}
+
       {error ? <Notice type="error">{error}</Notice> : null}
     </div>
   );

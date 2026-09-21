@@ -191,25 +191,18 @@ export function termIsRunningNow(
  */
 export function currentTermId(
   terms: ReadonlyArray<{ AdTermId?: number; AdTermName?: string;
-                         AdTermStart?: string; AdTermWeeks?: number }>,
-  now: number = Date.now(),
+                         AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean }>,
+  _now: number = Date.now(),
 ): number {
-  let best = 0;
-  let bestEnd = Infinity;
-  let sawWindow = false;
-  for (const term of terms) {
-    const window = termWindow(term);
-    if (!window) continue;
-    sawWindow = true;
-    if (now >= window.to) continue;          // انقضى
-    if (window.to < bestEnd) { bestEnd = window.to; best = Number(term.AdTermId || 0); }
-  }
-  if (best) return best;
-  if (sawWindow) return 0;                   // كلها انقضت: لا فصل جارٍ
-  return terms.reduce(
-    (top, term) => (Number(term?.AdTermId || 0) > top ? Number(term?.AdTermId || 0) : top),
-    0,
-  );
+  /* «الجاري» قرارٌ تشغيلي، لا تخمينٌ من التاريخ. إذا أثبت المنسّق أن فصلاً
+     غير منتهٍ (`AdTermClosed === false`) فهو الجاري حتى يضغط «انتهى هذا
+     الفصل». هذا يمنع بطاقة الأستاذ وشاشات العمل من تحويل الفصل الأول الجاري
+     إلى «سابق» لمجرد أن تقويماً افتراضياً تجاوز يوماً تقريبياً. */
+  const ordered = sortTermsNewest(terms);
+  const declaredOpen = ordered.find(term => term.AdTermClosed === false);
+  if (declaredOpen) return Number(declaredOpen.AdTermId || 0);
+  const notClosed = ordered.find(term => term.AdTermClosed !== true);
+  return Number(notClosed?.AdTermId || 0);
 }
 
 export function isTermClosed(

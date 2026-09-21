@@ -4599,3 +4599,14 @@ button.twin-delta{width:100%}
   background:var(--surface-2);color:var(--ink);font:inherit;
 }
 .share-link-kind.kind-request{background:var(--warning-soft);color:var(--warning)}
+
+/* WEEK_SCREEN_CONTAINMENT_2026_09_21
+   شاشة العرض الأسبوعية: البطاقة تملك عرضها كاملاً، والنص العربي/اسم الأستاذ
+   يلتف داخلها بدلاً من أن يرسم خارج إطار اليوم. لا نخفي أي معلومة. */
+.lens-week,.lens-week>section,.lens-week>section>div,.lens-week article,.lens-week article>*{min-width:0;max-width:100%}
+.lens-week>section{overflow:hidden}
+.lens-week article{width:100%;overflow:hidden;grid-template-columns:minmax(62px,auto) minmax(0,1fr)}
+.lens-week article strong,.lens-week article>div span,.lens-week article small{overflow-wrap:anywhere;word-break:normal;white-space:normal;text-overflow:clip}
+.lens-week article small{display:flex;flex-wrap:wrap;min-width:0}
+.lens-week article time{min-width:0;max-width:100%;white-space:normal!important;overflow-wrap:anywhere}
+@media screen and (max-width:760px){.lens-week>section{overflow:hidden}.lens-week article{grid-template-columns:minmax(58px,auto) minmax(0,1fr)}}

@@ -16,7 +16,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, ChevronLeft, ClipboardList, Clock3,
-  CornerUpLeft, FileDiff, Inbox, MapPin, MessageSquarePlus, Scale, Search, Send, ShieldCheck, Trash2,
+  CornerUpLeft, FileDiff, Inbox, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
   UsersRound, X,
 } from "lucide-react";
 import ApprovalBar from "./ApprovalBar";
@@ -82,20 +82,8 @@ interface ChangeReport {
   notes: NoteRow[];
   /** نصٌّ جاهزٌ لكل خانةٍ يعرف النظام سببَ الشكّ فيها، مفتاحه `صف:خانة`. */
   suggestions?: Record<string, string>;
-  crossScope?: CrossScopeClash[];
   blockingConflicts: number;
   regulationNotices: number;
-}
-
-interface CrossScopeClash {
-  scheduleId: number;
-  kind: string;
-  message: string;
-  otherSectionName: string;
-  otherCollegeName: string;
-  otherCourseName: string;
-  otherSectionCode: string;
-  visible: boolean;
 }
 
 export interface ScheduleChangesRole {
@@ -542,7 +530,6 @@ function Report({ termId, scope, role, onBack }: {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showRounds, setShowRounds] = useState(false);
-  const [showRegulations, setShowRegulations] = useState(false);
   /* «ما تحرّك» مدخلُ المراجعة السريعة، و«الجدول كامل» ما يطلبه القسم: أن يرى
      جدولَه كلَّه والملاحظات في مواضعها، لا الملاحظات وحدها. */
   const [view, setView] = useState<"changes" | "full">("changes");
@@ -590,7 +577,6 @@ function Report({ termId, scope, role, onBack }: {
   useEffect(() => {
     setReport(null);
     setShowRounds(false);
-    setShowRegulations(false);
     setView("changes");
     setNoteDraft(null);
     setRebutting(null);
@@ -679,23 +665,7 @@ function Report({ termId, scope, role, onBack }: {
             <MessageSquarePlus aria-hidden="true" /> علّق على خانة
           </button>
         ) : null}
-        {(report.crossScope || []).filter(clash => clash.scheduleId === scheduleId).map((clash, index) => (
-          <div className="changes-cross" key={`${clash.scheduleId}:${index}`}>
-            <AlertTriangle aria-hidden="true" />
-            <div>
-              <strong>
-                يتعارض مع «{clash.otherSectionName}»
-                {CROSS_KIND_LABEL[clash.kind] ? ` — ${CROSS_KIND_LABEL[clash.kind]}` : ""}
-              </strong>
-              <small>
-                {clash.visible
-                  ? `${clash.otherCourseName || "موعد"} · شعبة ${clash.otherSectionCode || "—"}`
-                  : "تفاصيل الموعد المقابل خارج نطاقك"}
-                {" — "}معالجتُه بمقايضة القاعات بين القسمين، لا بملاحظةٍ على هذا الصفّ.
-              </small>
-            </div>
-          </div>
-        ))}
+
         {notes.length ? (
           <ul className="changes-notes">
             {notes.map(note => (
@@ -789,22 +759,13 @@ function Report({ termId, scope, role, onBack }: {
         </div>
       ) : null}
 
-      {/* اللائحة تُعرض ولا تمنع: بطاقةٌ مطويّة تُفتح عند الحاجة، لا قائمةٌ
-          تزاحم التقرير بما لا يوقف أحداً. */}
+      {/* الملاحظة اللائحية في موضع الاعتماد نفسه وبنفس لغة شريط الاعتماد:
+          خبرٌ واضح داخل تغييرات الجدول، لا عدّادٌ مكرر ولا بطاقةٌ ثانية. */}
       {report.regulationNotices > 0 ? (
-        <div className="changes-regulations" data-open={showRegulations || undefined}>
-          <button type="button" data-guide-ignore="طيّ بطاقة اللوائح وفتحها — عرضٌ لا فعل" onClick={() => setShowRegulations(v => !v)}>
-            <Scale aria-hidden="true" />
-            <span>{report.regulationNotices} ملاحظةً لائحية</span>
-            <small>تُعرض ولا تمنع الاعتماد</small>
-          </button>
-          {showRegulations ? (
-            <p>
-              اللائحة معيارٌ يُحتجّ به لا بوّابةٌ تُقفل. تظهر هذه الملاحظات في شاشة
-              المراجعة اللائحية بتفصيلها، وتُسجَّل مع التوقيع، ولا تمنع القبول.
-            </p>
-          ) : null}
-        </div>
+        <Notice type="warning">
+          <strong>{report.regulationNotices} ملاحظةً لائحية.</strong>{" "}
+          اللائحة معيارٌ يُحتجّ به ولا تمنع الاعتماد؛ راجع تفاصيلها مع تغييرات الجدول قبل القرار.
+        </Notice>
       ) : null}
 
       <div className="changes-viewbar">

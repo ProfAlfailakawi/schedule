@@ -192,13 +192,13 @@ check(server.includes("const findings = reviewSchedule({"), "ومن فاحص ا�
 check(changes.includes("report.suggestions?.[`${scheduleId}:${field}`]"),
   "ويُملأ في الصندوق: اقتراحٌ لا حكم، يُمحى إن شاء ويُكتب غيره");
 
-/* ── ٤) المقرر المشترك: يُعرض ولا يُعلَّق عليه ──────────────────────────── */
-check(server.includes("async function crossScopeClashes"), "التعارضُ مع قسمٍ آخر يُحسب");
-check(server.includes("visible: Boolean(req.user?.IsAdminUser || isScopeAllowed("),
-  "وتفاصيلُ الموعد المقابل لا تخرج إلى من ليس في نطاقه");
-check(changes.includes("changes-cross"), "ويُعرض تحت صفّه");
-check(changes.includes("بمقايضة القاعات بين القسمين، لا بملاحظةٍ على هذا الصفّ"),
-  "ويقول أين بابُه: المقايضةُ القائمة، لا صندوقُ الملاحظات");
+/* ── ٤) عزل القسم: لا تتسرّب تفاصيل قسمٍ آخر ───────────────────────── */
+check(server.includes("async function crossScopeClashes"),
+  "فحص التعارضات بين الأقسام يبقى داخلياً لحماية القاعات");
+check(!/suggestions,\s*crossScope,\s*blockingConflicts/.test(server),
+  "تقرير القسم لا يعيد crossScope في الحمولة");
+check(!changes.includes("changes-cross") && !changes.includes("otherSectionName"),
+  "واجهة تغييرات الجدول لا تعرض اسم أو تفاصيل قسم آخر");
 
 /* ── ٥) نقطةٌ واحدة، معنىً واحد ─────────────────────────────────────────
  * نقطةُ الجدول تخصّ مقايضة القاعات منذ قبل هذا العمل. وجمعُ عدّاد الملاحظات
@@ -287,6 +287,8 @@ check(changes.includes("rowExtras(row.scheduleId, true,") && changes.includes("r
   "والملاحظاتُ تظهر في العرضين معاً، فلا الجدول بلا ملاحظات ولا الملاحظات بلا جدول");
 check(server.includes("const fullSchedule =") && server.includes("fullSchedule,"),
   "والخادم يرسل الجدول كاملاً مشكّلاً كما تُقرأ خاناتُه");
+check(server.includes("const removedRows = diff.entries") && server.includes("...removedRows"),
+  "والجدول الكامل يحتفظ بالمحذوف ملوّناً مع بقية المقررات");
 
 /* ── ١٠) زرُّ تعليقٍ واحدٍ بدل ستّة أزرار ───────────────────────────────────
  * الصفُّ من ستّة أزرارٍ لكل موعدٍ كان تلوّثاً بصرياً؛ صار زرّاً واحداً يفتح ورقةً

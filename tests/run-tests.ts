@@ -187,27 +187,21 @@ async function runTests() {
         "بلا نافذة لا يُقال إنه منتهٍ");
 
       // ── أي فصل نحن فيه الآن ──────────────────────────────────────────
-      // الجواب: أقرب نافذة لم تنتهِ. لا «الأحدث رقماً».
+      // الجواب التشغيلي: الفصل الذي لم يضغط المنسّق «انتهى» عليه.
       {
-        const first = { AdTermId: 9, AdTermName: "الفصل الأول 2026/2027" };
-        const second = { AdTermId: 10, AdTermName: "الفصل الثاني 2026/2027" };
-        const summer = { AdTermId: 8, AdTermName: "الفصل الصيفي 2025/2026" };
+        const first = { AdTermId: 9, AdTermName: "الفصل الأول 2026/2027", AdTermClosed: false };
+        const second = { AdTermId: 10, AdTermName: "الفصل الثاني 2026/2027", AdTermClosed: true };
+        const summer = { AdTermId: 8, AdTermName: "الفصل الصيفي 2025/2026", AdTermClosed: true };
 
-        // الحالة التي كانت مكسورة: الفصل التالي أُنشئ مبكراً للتخطيط.
-        assert(currentTermId([second, first, summer], at("2026-09-03")) === 9,
-          "الفصل الأول هو الجاري رغم وجود الفصل الثاني الأحدث رقماً");
-        assert(currentTermId([second, first], at("2027-02-10")) === 10,
-          "بعد انتهاء الأول يصير الثاني هو الجاري");
-        // الفجوة بين الفصول: منتصف أغسطس قبل بداية الأول المعتادة.
+        assert(currentTermId([second, first, summer], at("2027-01-15")) === 9,
+          "الفصل الأول يبقى الجاري ما دام معلناً غير منتهٍ، مهما قال التاريخ الافتراضي");
+        assert(currentTermId([{ ...first, AdTermClosed: true }, { ...second, AdTermClosed: false }], at("2026-09-03")) === 10,
+          "ضغط انتهاء الأول ونقل العلم المفتوح للثاني ينقل الفصل الجاري");
         assert(currentTermId([first, summer], at("2026-08-15")) === 9,
-          "لا فجوة بين الفصول: أغسطس ينتمي للفصل الأول القادم");
-        // كلها انقضت.
-        assert(currentTermId([summer], at("2027-01-01")) === 0,
-          "لا فصل جارٍ حين تنقضي كل النوافذ");
-        // بلا نوافذ: نرجع للأحدث رقماً بدل لا شيء.
+          "العلم التشغيلي يسبق التاريخ الافتراضي");
         assert(currentTermId([{ AdTermId: 3, AdTermName: "فصل قديم" },
                               { AdTermId: 4, AdTermName: "أقدم" }], at("2026-09-03")) === 4,
-          "بلا نافذة يُرجَع إلى الأحدث رقماً");
+          "إن غابت العلامة الصريحة يُختار أحدث فصل غير مغلق");
       }
 
       // فصلٌ انقضى زمنه لا يُراقَب بوصفه «الفصل المعتمد».

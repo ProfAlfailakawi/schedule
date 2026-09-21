@@ -258,14 +258,16 @@ body{
   text-rendering:optimizeLegibility;
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
-  font-feature-settings:"ss01","cv01";
+  font-feature-settings:normal;
+  font-kerning:normal;
+  font-synthesis:none;
 }
 
 h1,h2,h3,h4,h5,h6{
   margin:0;
   font-weight:600;
   line-height:1.25;
-  letter-spacing:-.015em;
+  letter-spacing:0;
   color:var(--ink);
 }
 p{margin:0}
