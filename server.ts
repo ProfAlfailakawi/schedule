@@ -13831,6 +13831,22 @@ async function resolveRequestLink(token: string) {
 }
 
 /**
+ * كتالوجُ القسم لبطاقة الأستاذ يجب أن يأتي من الكتالوج الكامل لا من استعلام
+ * Firestore مباشر على AdSectionId. البيانات الموروثة لا تحمل هذا الحقل دائماً
+ * بالنوع النصي نفسه: قد يكون رقماً أو نصاً أو نصاً فيه مسافات. Firestore
+ * يطابق النوع والقيمة حرفياً، فيسقط بعض المقررات من الاستعلام بينما Number
+ * يثبت أنها للقسم نفسه. لذلك نقرأ المرجع الكامل (وهو cached أصلاً) ثم نطبّع
+ * هوية القسم في الذاكرة. هذا المسار عام لبطاقة الأستاذ فقط حتى لا نحوّل كل
+ * قوائم التطبيق الصغيرة إلى مسحٍ كامل للكتالوج.
+ */
+async function instructorRequestSectionCourses(sectionIdValue: unknown) {
+  const sectionId = Number(sectionIdValue || 0);
+  if (!sectionId) return [] as any[];
+  const courses = await Repository.getCourses();
+  return (courses as any[]).filter(row => Number(row.AdSectionId) === sectionId);
+}
+
+/**
  * الطلب الذي لم يُرسَل بعد هو نافذة على جدول الأستاذ الحي، لا صورة إصدار
  * الرابط. قد تضيف اللجنة موعداً ثانياً أو ثالثاً بعد إرسال الرابط؛ إبقاء
  * اللقطة القديمة كان يخفيه عن الأستاذ، وخصوصاً حين تحمل المواعيد الاسم نفسه.
@@ -13844,7 +13860,7 @@ async function refreshUnsubmittedInstructorRequest(request: InstructorRequest): 
       sectionId: Number(request.AdSectionId),
       termId: Number(request.AdTermId),
     }),
-    Repository.getCoursesBySection(Number(request.AdSectionId)),
+    instructorRequestSectionCourses(request.AdSectionId),
   ]);
   const own = (scopeRows as any[]).filter(row =>
     Number(row.AdInstructorId) === Number(request.AdInstructorId));
@@ -13876,7 +13892,7 @@ async function refreshUnsubmittedInstructorRequest(request: InstructorRequest): 
  */
 async function instructorRequestCourseOptions(request: InstructorRequest) {
   const [catalogue, authorityDraft] = await Promise.all([
-    Repository.getCoursesBySection(Number(request.AdSectionId)),
+    instructorRequestSectionCourses(request.AdSectionId),
     authorityDraftForScope(Number(request.AdCollegeId), Number(request.AdSectionId), Number(request.AdTermId)),
   ]);
   const baseline = authorityDraft
@@ -14385,11 +14401,12 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
      حقولٍ لا غير — ما طُلب، وأيُّ مقرّر، وأيُّ أيام، وأيُّ بداية. ولو قُبل
      الباقي لأرسل من يعرف كيف يُعدّل الطلبَ لقطةً تقول ما لم يكن. */
   const before = new Map((resolved.request.items || []).map(item => [String(item.rowId ?? `add:${item.action}`), item]));
-  const courses = await Repository.getCourses();
+  const [courses, departmentCourses] = await Promise.all([
+    Repository.getCourses(),
+    instructorRequestSectionCourses(resolved.request.AdSectionId),
+  ]);
   const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
-  const sectionCourses = new Set((courses as any[])
-    .filter(row => Number(row.AdSectionId) === Number(resolved.request.AdSectionId))
-    .map(row => Number(row.AdCourseId)));
+  const sectionCourses = new Set((departmentCourses as any[]).map(row => Number(row.AdCourseId)));
 
   const items: InstructorRequestItem[] = [];
   for (const entry of sent) {

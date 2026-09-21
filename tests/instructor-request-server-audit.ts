@@ -166,18 +166,22 @@ check(server.includes('const action = req.body?.action === "add" ? "add" : "chan
   "وفحصُ الإضافة في الخادم يبني الصفَّ المطلوب ويفحصه، لا يغيّر اسم العملية فقط");
 check(server.includes('Number(course.AdSectionId) !== Number(resolved.request.AdSectionId)'),
   "وفحصُ الإضافة الحيّ يردّ مقرراً من خارج القسم قبل الحكم");
-check(server.includes("async function refreshUnsubmittedInstructorRequest")
-  && server.includes("Repository.getCoursesBySection(Number(request.AdSectionId))"),
-  "والطلب غير المرسل يتجدد من الجدول الحي ويقرأ كامل مقررات القسم");
+check(server.includes("async function instructorRequestSectionCourses")
+  && server.includes("const courses = await Repository.getCourses();")
+  && server.includes("Number(row.AdSectionId) === sectionId")
+  && server.includes("instructorRequestSectionCourses(request.AdSectionId)"),
+  "وبطاقة الأستاذ تبني كتالوج القسم من المرجع الكامل بعد تطبيع AdSectionId، فلا تختفي المقررات القديمة");
+check(server.includes("async function refreshUnsubmittedInstructorRequest"),
+  "والطلب غير المرسل يتجدد من الجدول الحي");
 check(server.includes("async function instructorRequestCourseOptions")
   && server.includes("authorityDraftForScope(Number(request.AdCollegeId)")
   && server.includes("authorityDraft.baselineRows || []")
   && server.includes("(baseline as any[]).forEach"),
   "وقائمة الإضافة تُستخرج كاملةً من الجدول الأصلي المعتمد، لا مما نُسخ إلى جدول العمل");
-check(repo.includes('.where("AdSectionId", "==", sectionId)')
-  && repo.includes('.where("AdSectionId", "==", String(sectionId))')
-  && repo.includes("[...numericSnap.docs, ...textSnap.docs]"),
-  "وقائمة مقررات القسم تجمع السجلات القديمة النصية والجديدة الرقمية، فلا تختفي الأسماء");
+check(server.includes("const [courses, departmentCourses] = await Promise.all([")
+  && server.includes("instructorRequestSectionCourses(resolved.request.AdSectionId)")
+  && server.includes("const sectionCourses = new Set((departmentCourses as any[]).map"),
+  "والإرسال يتحقق من المقرر باستخدام تطبيع كتالوج القسم نفسه الذي تعتمد عليه الصفحة");
 check(page.includes('placeholder="12 رقمًا"') && page.includes("— 12 رقمًا —"),
   "والرقم المدني يُشرح بالأرقام الإنجليزية المتفق عليها");
 
