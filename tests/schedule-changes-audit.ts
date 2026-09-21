@@ -368,11 +368,20 @@ check(server.includes("authorityDraftForScope(collegeId, sectionId, termId)")
 /* ── ١١) اللائحة في موضع المراجعة نفسه ────────────────────────────────── */
 check(server.includes("regulationNotices: await regulationNoticesForScope"),
   "وتصل الملاحظات اللائحية بتفاصيلها إلى شاشة التغييرات");
-check(changes.includes("<RegulationReview notices={report.regulationNotices || []} />")
+check(changes.includes("<RegulationReview notices={report.regulationNotices || []} onJump={onJump} />")
   && changes.includes('className={`review-finding'),
   "وتُعرض بتقديم شاشة الاعتماد نفسه، لا بعدّادٍ مكرر عند زر التوقيع");
 check(!approvalBar.includes("approval-sign-notices") && !approvalBar.includes("regulationNotices"),
   "وشريط الاعتماد لا يكرر عدّاد اللائحة أو حالته");
+
+check(changes.includes("const [open, setOpen] = useState(false)")
+  && changes.includes('aria-expanded={open}')
+  && changes.includes('onClick={() => onJump(blocker.rowIds)}'),
+  "ومراجعة الاعتماد مغلقة افتراضياً، والملاحظة تنقل إلى الموعد المتأثر");
+check(changes.includes('document.getElementById(`schedule-row-${id}`)')
+  && changes.includes('scrollIntoView({ behavior: "smooth", block: "center" })')
+  && changes.includes('changes-row-focus'),
+  "والانتقال يفتح الجدول الكامل ويقف على السطر نفسه مع إبراز مؤقت");
 
 console.log(`\n${passed} نجحت · ${failed} أخفقت`);
 if (failed > 0) process.exit(1);
