@@ -8340,6 +8340,38 @@ async function authorityBaselineForScope(baseline:any[],draft:{AdCollegeId:numbe
   return [...(mine?mine.rows:[]),...(isDraftScope?split.unplaced.flatMap(entry=>entry.rows):[])];
 }
 
+/**
+ * النسخة المعتمدة التي تخص النطاق، ولو كانت محفوظةً عند موقع شقيق للفرع.
+ *
+ * تقرير PDF وشاشة تغييرات الجدول يجب أن يبدآ من الوثيقة نفسها. إبقاء البحث
+ * داخل مسار التقرير وحده جعل الشاشة تسقط إلى لقطات الجولات، وحين لا تجدها
+ * تقارن بالعدم فتصف الجدول كله بأنه «مضاف». هذه الدالة هي الباب الواحد
+ * للعثور على الوثيقة المعتمدة في الموضعين.
+ */
+async function authorityDraftForScope(collegeId:number,sectionId:number,termId:number){
+  const authorityDrafts=(list:any[])=>list.filter((item:any)=>
+    item.importLayout==="authority-pdf"&&Array.isArray(item.baselineRows)&&item.baselineRows.length
+  );
+  const local=authorityDrafts(await Repository.getScheduleDrafts(collegeId,sectionId,termId));
+  let draft=local.find((item:any)=>item.status==="published")||local[0];
+  if(draft)return draft;
+
+  const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+  const siblings=siblingBranchScopes({colleges:colleges as any,sections:sections as any,baseCollegeId:collegeId,baseSectionId:sectionId})
+    .filter(scope=>!(Number(scope.collegeId)===collegeId&&Number(scope.sectionId)===sectionId));
+  for(const scope of siblings){
+    const candidates=authorityDrafts(await Repository.getScheduleDrafts(scope.collegeId,scope.sectionId,termId));
+    const owned=[] as any[];
+    for(const candidate of candidates){
+      const mine=await authorityBaselineForScope(candidate.baselineRows||[],candidate,collegeId,sectionId);
+      if(mine.length)owned.push(candidate);
+    }
+    draft=owned.find((item:any)=>item.status==="published")||owned[0];
+    if(draft)return draft;
+  }
+  return undefined;
+}
+
 app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
   if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
@@ -9393,9 +9425,10 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
 /**
  * تقرير التغييرات لقسمٍ واحد.
  *
- * أساس المقارنة هو آخر نسخةٍ رآها التسجيل، لا ملفُّ الاعتماد الأصلي — وهذا
- * هو الفرق كله. فالموظّف في الجولة الثالثة يرى ما تحرّك منذ أن أرجع هو، لا
- * الجدولَ كله من أوّله للمرّة الثالثة.
+ * إذا وُجد ملفُّ الهيئة المعتمد فأساس المقارنة ومحركها هما نفسهما في تقرير
+ * PDF الرسمي: مرجع الصف أولاً، ثم أثر الاستيراد الثابت، مع تصنيف المضاف
+ * والمحذوف والمعدّل. لقطات الجولات تبقى بديلاً للفصول القديمة التي لم
+ * تُستورد لها وثيقة معتمدة.
  */
 app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
@@ -9410,7 +9443,7 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const round = requestedRound > 0 && requestedRound <= approval.currentRound ? requestedRound : approval.currentRound;
 
   /**
-   * ── أساس المقارنة: آخر نسخةٍ رآها التسجيل فعلاً ─────────────────────────
+   * ── الأساس الاحتياطي للفصول بلا وثيقة هيئة ─────────────────────────────
    *
    * لا «الجولة السابقة» بالترقيم. فليست كل جولةٍ تحمل نسخة: الجولة التي تُفتح
    * تلقائياً حين يعدّل القسم جدولاً مقبولاً تُنشأ بلا نسخةٍ محفوظة — لأنها لم
@@ -9425,13 +9458,14 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     .filter(item => item.number < round && item.reviewedVersionId)
     .sort((a, b) => b.number - a.number)[0]?.reviewedVersionId;
 
-  const [roundBaseline, live, instructors, courses, notes, suggestions] = await Promise.all([
+  const [roundBaseline, live, instructors, courses, notes, suggestions, authorityDraft] = await Promise.all([
     roundBaselineId ? Repository.getScheduleVersionById(roundBaselineId) : Promise.resolve(undefined),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
     Repository.getInstructors(),
     Repository.getCourses(),
     notesWithState(collegeId, sectionId, termId),
     noteSuggestions(collegeId, sectionId, termId),
+    authorityDraftForScope(collegeId, sectionId, termId),
   ]);
 
   /**
@@ -9476,8 +9510,8 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const currentRound = approval.rounds.find(item => item.number === round);
   const currentRoundVersionId = currentRound?.reviewedVersionId;
   let baselineVersion = roundBaseline;
-  let baselineSource: "round" | "capture" | "none" = roundBaseline ? "round" : "none";
-  if (!baselineVersion) {
+  let baselineSource: "authority" | "round" | "capture" | "none" = authorityDraft ? "authority" : (roundBaseline ? "round" : "none");
+  if (!authorityDraft && !baselineVersion) {
     const history = await Repository.getScheduleVersions(collegeId, sectionId, termId, 100);
     const previousRound = approval.rounds
       .filter(item => item.number < round)
@@ -9499,13 +9533,57 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
       if (baselineVersion) baselineSource = "capture";
     }
   }
-  const baselineVersionId = baselineVersion?.id || null;
+  const baselineVersionId = authorityDraft ? null : (baselineVersion?.id || null);
 
   const names = {
     instructorById: new Map(instructors.map((row: any) => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
     courseById: new Map(courses.map((row: any) => [Number(row.AdCourseId), String(row.CourseName || row.CourseCode || "")])),
   };
-  const diff = diffSchedules(baselineVersion?.rows as any, live as any, names);
+  let diff = diffSchedules(baselineVersion?.rows as any, live as any, names);
+  let authoritySource: { draftId:string; name:string; sourceFileName:string; importedAt?:string; publishedAt?:string|null } | undefined;
+  if(authorityDraft){
+    const scopedBaseline=await authorityBaselineForScope(authorityDraft.baselineRows||[],authorityDraft,collegeId,sectionId);
+    const authorityComparison=buildAuthorityPdfDiff(scopedBaseline,live as any,{
+      instructorNameById:names.instructorById,
+      courseCodeById:new Map((courses as any[]).map(row=>[Number(row.AdCourseId),String(row.CourseCode||"").trim()])),
+    });
+    const rawFieldGroups: Array<["course"|"sectionCode"|"days"|"time"|"room"|"instructor",string[]]> = [
+      ["course",["AdCourseId"]],
+      ["sectionCode",["SCode"]],
+      ["days",["fsunday","fmonday","ftuesday","fwednesday","fthursday"]],
+      ["time",["fstarttime","fendtime"]],
+      ["room",["AdRoomCode","AdRoomHall"]],
+      ["instructor",["AdInstructorId"]],
+    ];
+    const entries=authorityComparison.rows.flatMap((entry:any)=>{
+      if(entry.status==="unchanged")return [];
+      const row=entry.current||entry.source;
+      if(!row)return [];
+      const kind=entry.status==="deleted"?"removed":entry.status;
+      const changes=entry.status==="changed"
+        ?rawFieldGroups.filter(([,fields])=>fields.some(field=>entry.changedFields.includes(field))).map(([field])=>({
+          field,label:{course:"المقرر",sectionCode:"رقم الشعبة",days:"الأيام",time:"الوقت",room:"القاعة",instructor:"أستاذ المقرر"}[field],
+          before:diffFieldValue(entry.source,field,names),after:diffFieldValue(entry.current,field,names),
+        }))
+        :[];
+      return [{kind,scheduleId:Number(row.id),row,changes}];
+    });
+    diff={
+      entries,
+      counts:{
+        added:authorityComparison.counts.added,
+        removed:authorityComparison.counts.deleted,
+        changed:authorityComparison.counts.changed,
+        unchanged:authorityComparison.counts.unchanged,
+      },
+      firstReview:false,
+    };
+    authoritySource={
+      draftId:String(authorityDraft.id),name:String(authorityDraft.name||""),
+      sourceFileName:String(authorityDraft.sourceFileName||"الجدول المعتمد.pdf"),
+      importedAt:authorityDraft.createdAt,publishedAt:authorityDraft.publishedAt||null,
+    };
+  }
   const deadline = await readDeadlineFor(approval, termId);
 
   /* ── الصفُّ يُقرأ بالشكل الذي يقرؤه الناسُ كلَّ يوم ─────────────────────
@@ -9587,9 +9665,10 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     rounds: approval.rounds,
     deadline,
     baselineVersionId,
-    /* من أين تبدأ المقارنة: نسخةُ جولةٍ سابقة، أم آخرُ لقطةٍ محفوظة، أم لا
-       شيء. والشاشةُ تقول ذلك للقارئ بدل أن يستنتجه من كثرة «المضاف». */
+    /* من أين تبدأ المقارنة: وثيقة الهيئة، أو نسخة جولة، أو لقطة محفوظة، أو
+       لا شيء. والشاشة تقول ذلك بدل أن يستنتجه القارئ من كثرة «المضاف». */
     baselineSource,
+    authoritySource,
     diff: diffForClient,
     fullSchedule,
     summary: summarizeDiff(diff),
@@ -9605,29 +9684,7 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
   if(!collegeId||!sectionId||!termId){res.status(400).json({error:"اختر الفصل والكلية والقسم أولاً."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const drafts=await Repository.getScheduleDrafts(collegeId,sectionId,termId);
-  const authorityDrafts=(list:any[])=>list.filter((item:any)=>item.importLayout==="authority-pdf"&&Array.isArray(item.baselineRows)&&item.baselineRows.length);
-  const candidates=authorityDrafts(drafts);
-  let draft=candidates.find((item:any)=>item.status==="published")||candidates[0];
-  /* المستند يُستورد مرة واحدة من أحد مواقع الفرع، وصفوفه تُنشر كل صف في موقعه.
-     فقسم الجهراء قد يكون جدوله منشوراً من نسخة معتمدة استُوردت من الرئيسي، ولا
-     مسودة باسمه. نبحث عندئذٍ في مواقع الفرع الشقيقة عن النسخة التي يخصّه منها
-     صفوف — فيحصل على تقرير تغييراته كأي قسم، دون أن يستورد الملف مرة أخرى. */
-  if(!draft){
-    const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
-    const siblings=siblingBranchScopes({colleges:colleges as any,sections:sections as any,baseCollegeId:collegeId,baseSectionId:sectionId})
-      .filter(scope=>!(Number(scope.collegeId)===collegeId&&Number(scope.sectionId)===sectionId));
-    for(const scope of siblings){
-      const siblingDrafts=authorityDrafts(await Repository.getScheduleDrafts(scope.collegeId,scope.sectionId,termId));
-      const owned=[] as any[];
-      for(const candidate of siblingDrafts){
-        const mine=await authorityBaselineForScope(candidate.baselineRows||[],candidate,collegeId,sectionId);
-        if(mine.length)owned.push(candidate);
-      }
-      draft=owned.find((item:any)=>item.status==="published")||owned[0];
-      if(draft)break;
-    }
-  }
+  const draft=await authorityDraftForScope(collegeId,sectionId,termId);
   if(!draft){res.status(404).json({error:"لا توجد نسخة PDF معتمدة محفوظة لهذا الفصل والقسم بعد."});return;}
   const [live,instructors]=await Promise.all([
     Repository.getSchedulesByScope({collegeId,sectionId,termId}),

@@ -80,8 +80,9 @@ interface ChangeReport {
   rounds: Array<{ number: number; submittedAt?: string; submittedBy?: string; returnedAt?: string; returnedBy?: string; returnedNoteCount?: number; changedRowCount?: number; acceptedAt?: string; acceptedBy?: string }>;
   deadline: InboxRow["deadline"];
   diff: { entries: DiffEntry[]; counts: { added: number; removed: number; changed: number; unchanged: number }; firstReview: boolean };
-  /** من أين تبدأ المقارنة: نسخةُ جولةٍ سابقة، أم آخرُ لقطةٍ محفوظة، أم لا شيء. */
-  baselineSource?: "round" | "capture" | "none";
+  /** من أين تبدأ المقارنة: النسخة المعتمدة، أو نسخة جولة، أو لقطة محفوظة، أو لا شيء. */
+  baselineSource?: "authority" | "round" | "capture" | "none";
+  authoritySource?: { draftId: string; name: string; sourceFileName: string; importedAt?: string; publishedAt?: string | null };
   fullSchedule?: FullRow[];
   summary: string;
   notes: NoteRow[];
@@ -846,7 +847,9 @@ function Report({ termId, scope, role, onBack }: {
               «كلُّ صفٍّ مضاف» تعني أحد أمرين لا ثالثَ لهما: جدولٌ جديدٌ فعلاً،
               أو أساسٌ لم يُوجد فقُورن الجدولُ بالعدم. والفرقُ بينهما هو الفرقُ
               بين مراجعةٍ صحيحةٍ ومراجعةٍ ضائعة، فلا يُترك ليُستنتج. */}
-          {report.baselineSource === "none" ? (
+          {report.baselineSource === "authority" ? (
+            <small className="changes-baseline-note">المقارنة مع النسخة المعتمدة «{report.authoritySource?.sourceFileName || "الجدول المعتمد.pdf"}» — بنفس أساس تقرير تغييرات الجدول الرسمي.</small>
+          ) : report.baselineSource === "none" ? (
             <small className="changes-baseline-note">أولُ مراجعةٍ لهذا القسم — لا نسخةَ سابقةَ يُقارَن بها، فكلُّ موعدٍ يُعرض مضافاً.</small>
           ) : report.baselineSource === "capture" ? (
             <small className="changes-baseline-note">لم تحمل الجولاتُ السابقة نسخةً محفوظة، فالمقارنةُ من آخر لقطةٍ للجدول قبل هذه الجولة.</small>

@@ -115,7 +115,7 @@ check(Object.values(DIFF_FIELD_LABEL).every(label => /[؀-ۿ]/.test(label)), "ك
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 check(server.includes('app.get("/api/reports/schedule-changes"'), "تقرير التغييرات له مسار");
 check(server.includes('app.get("/api/approvals/inbox"'), "صندوق الوارد له مسار");
-check(server.includes("diffSchedules(baselineVersion?.rows"), "المقارنة بآخر نسخةٍ رآها التسجيل، لا بملفّ الاعتماد");
+check(server.includes("diffSchedules(baselineVersion?.rows"), "لقطة الجولة تبقى بديلاً للفصول القديمة التي لا وثيقة هيئة لها");
 check(server.includes("noteFieldValue"), "قيمة الخانة تُلتقط لحظة الملاحظة");
 check(server.includes('function noteState'), "حالة الملاحظة تُحسب من الواقع");
 check(server.includes('return noteFieldValue(row, field) !== String(note.valueAtNote ?? "") ? "changed" : "open";'),
@@ -326,7 +326,7 @@ check(deptFormIds && !deptFormIds.includes("SCHEDULE_WORKSPACE"), "ولا يمل
  * من هذا النوع لا يملك أساساً أبداً، ويقرأ موظّفُ التسجيل جدولاً كاملاً وقد
  * تحرّك فيه صفّان. */
 check(server.includes("let baselineVersion = roundBaseline;")
-  && server.includes('let baselineSource: "round" | "capture" | "none"'),
+  && server.includes('let baselineSource: "authority" | "round" | "capture" | "none"'),
   "وللمقارنة أساسٌ يُسمّى مصدرُه، لا أساسٌ يغيب بصمت");
 check(server.includes("await Repository.getScheduleVersions(collegeId, sectionId, termId, 100)"),
   "فإن لم تحمل الجولاتُ نسخةً، يُؤخذ من اللقطات المحفوظة — وهي تُلتقط عند كل تعديل");
@@ -358,8 +358,12 @@ check(server.includes("const fallback = candidates[candidates.length - 1];"),
 check(server.includes("baselineSource,"),
   "والمصدرُ يصل الشاشة");
 check(changes.includes('report.baselineSource === "none"')
-  && changes.includes('report.baselineSource === "capture"'),
+  && changes.includes('report.baselineSource === "capture"')
+  && changes.includes('report.baselineSource === "authority"'),
   "والشاشةُ تقول من أين تبدأ المقارنة، فلا يُقرأ «كلُّ صفٍّ مضاف» خبراً عن الجدول وهو خبرٌ عن المقارنة");
+check(server.includes("authorityDraftForScope(collegeId, sectionId, termId)")
+  && server.includes("const authorityComparison=buildAuthorityPdfDiff(scopedBaseline,live as any"),
+  "وشاشة تغييرات الجدول تستخدم وثيقة الهيئة ومحرك تقريرها نفسه، فتظهر المحذوفات والتعديلات لا المضاف وحده");
 
 /* ── ١١) اللائحة في موضع المراجعة نفسه ────────────────────────────────── */
 check(server.includes("regulationNotices: await regulationNoticesForScope"),
