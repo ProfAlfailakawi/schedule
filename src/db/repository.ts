@@ -2978,16 +2978,26 @@ export const Repository = {
 
   getCoursesBySection: async (sectionId: number): Promise<AdCourse[]> => scopedCachedReference(`courses:${sectionId}`, async () => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const [snap, sectionDoc] = await Promise.all([
+      /* بعض السجلات القديمة خزّنت رقم القسم كنص، بينما السجلات الجديدة
+         تخزّنه كرقم. Firestore يفرّق بين 12 و"12" في الاستعلام؛ لذلك كان
+         يظهر مقرر واحد جديد وتختفي بقية مقررات القسم القديمة. نقرأ الشكلين
+         ثم نوحّدهما بالمعرّف، كي تتطابق قائمة الإضافة مع كتالوج القسم كله. */
+      const [numericSnap, textSnap, sectionDoc] = await Promise.all([
         firestoreDb.collection("courses").where("AdSectionId", "==", sectionId).get(),
+        firestoreDb.collection("courses").where("AdSectionId", "==", String(sectionId)).get(),
         firestoreDb.collection("sections").doc(`section_${sectionId}`).get()
       ]);
+      const courses = new Map<number, AdCourse>();
+      [...numericSnap.docs, ...textSnap.docs].forEach(doc => {
+        const course = doc.data() as AdCourse;
+        if (Number(course.AdSectionId) === Number(sectionId)) courses.set(Number(course.AdCourseId), course);
+      });
       return sortByName(hydrateCourses(
-        snap.docs.map(doc => doc.data() as AdCourse),
+        [...courses.values()],
         sectionDoc.exists ? [sectionDoc.data() as AdSection] : []
       ), course => course.CourseName);
     }
-    return sortByName(hydrateCourses(db.courses.filter(c => c.AdSectionId === sectionId), db.sections), course => course.CourseName);
+    return sortByName(hydrateCourses(db.courses.filter(c => Number(c.AdSectionId) === Number(sectionId)), db.sections), course => course.CourseName);
   }),
 
   createCourse: async (

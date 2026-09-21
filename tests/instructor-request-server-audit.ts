@@ -169,6 +169,10 @@ check(server.includes('Number(course.AdSectionId) !== Number(resolved.request.Ad
 check(server.includes("async function refreshUnsubmittedInstructorRequest")
   && server.includes("Repository.getCoursesBySection(Number(request.AdSectionId))"),
   "والطلب غير المرسل يتجدد من الجدول الحي ويقرأ كامل مقررات القسم");
+check(repo.includes('.where("AdSectionId", "==", sectionId)')
+  && repo.includes('.where("AdSectionId", "==", String(sectionId))')
+  && repo.includes("[...numericSnap.docs, ...textSnap.docs]"),
+  "وقائمة مقررات القسم تجمع السجلات القديمة النصية والجديدة الرقمية، فلا تختفي الأسماء");
 check(page.includes('placeholder="12 رقمًا"') && page.includes("— 12 رقمًا —"),
   "والرقم المدني يُشرح بالأرقام الإنجليزية المتفق عليها");
 
