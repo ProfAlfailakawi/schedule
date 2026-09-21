@@ -13248,6 +13248,14 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
     renderChanges(d);
     renderRequests(d);
 
+    /* الإبلاغ يحمل الفصل المعروض بينما اشتراك التقويم يتبع الفصل الجاري */
+    function sendNote(scheduleId, kind, text, fromDate, toDate){
+      return fetch("/api/public/staff/"+encodeURIComponent(TOKEN)+"/note",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({civil:currentCivil,scheduleId:scheduleId,kind:kind,text:text,fromDate:fromDate,toDate:toDate,termId: Number(d.termId || 0)})
+      });
+    }
+
     /* The subscription address. It carries a derived key, never the civil ID,
        so it is safe to sit in a phone's calendar settings forever. */
     /* A past term is read, not acted on: no reporting, no subscription. */

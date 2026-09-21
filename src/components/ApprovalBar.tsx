@@ -28,7 +28,7 @@ interface DeadlineShape {
 interface Payload {
   approval: ScheduleApproval;
   deadline: DeadlineShape;
-  blockingConflicts: number;
+  blockingConflicts?: number;
   /** ملاحظاتُ التسجيل التي لم تُعالَج ولم يُردّ عليها: تمنع إعادة الإرسال. */
   openRegistrarNotes: number;
   /** عددُ مواعيد الجدول: لا يُوقَّع على جدولٍ فارغ. */
@@ -100,7 +100,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   if (!state) return null;
 
-  const { approval, blockingConflicts } = state;
+  const { approval } = state;
   const openNotes = Number(state.openRegistrarNotes || 0);
   const status: ScheduleApprovalStatus = approval.status;
   const mine = signatureStage ? approval.signatures.find(item => item.stage === signatureStage) : undefined;
@@ -209,7 +209,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           <PrimaryButton
             type="button"
             data-guide-target="approval.action.sign"
-            disabled={busy || blockingConflicts > 0}
+            disabled={busy}
             onClick={() => void act("/api/approvals/sign")}
           >
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد الجدول" : "توقيع لجنة الجدول"}
