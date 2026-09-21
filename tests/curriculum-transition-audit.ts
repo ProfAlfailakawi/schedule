@@ -24,6 +24,8 @@ check(repo.includes('name:"الصحيفة السابقة"')&&repo.includes('stat
 check(repo.includes('status:"active"')&&repo.includes('db.curriculumPlans.push(newPlan)'),"الصحيفة الجديدة تصبح الحالية");
 check(repo.includes('attachCourseToActiveCurriculum(newCourse)'),"أي مقرر جديد يُلحق تلقائياً بالصحيفة الحالية");
 check(repo.includes('livePlanIds')&&repo.includes('row.status!=="archived"'),"المقرر المؤرشف لا يدخل مجموعة التشغيل");
+check(repo.includes('const planIdsByCourse=new Map<number,string[]>()')&&repo.includes('return !planIds.length||planIds.some(planId=>livePlanIds.has(planId))'),"المقرر الموجود في كتالوج القسم بلا عضوية صحيفة لا يختفي، بينما المؤرشف صراحة يبقى مخفياً");
+check(repo.includes('where("AdSectionId", "==", String(sid))'),"عضويات الصحائف القديمة تُقرأ سواء خُزّن رقم القسم كرقم أو كنص");
 check(repo.includes('schedule.CourseNameSnapshot || schedule.AdCourseName'),"قراءة الجدول التاريخي تفضل الاسم المحفوظ وقت الطرح");
 
 check(server.includes('app.get("/api/curriculum/sections/:sectionId"'),"للصحائف واجهة API إدارية مستقلة");
@@ -32,7 +34,7 @@ check(server.includes('oldOnlyCourseIds'),"فحص الأرشفة يفرّق ال
 check(server.includes('curriculumPlanId')&&server.includes('linkedStudentRequests'),"فحص الأرشفة يراعي الطلبة المرتبطين بالصحيفة عندما تكون المعلومة متاحة");
 check(server.includes('هذا المقرر مؤرشف أكاديمياً ولا يمكن إضافته إلى جدول جديد'),"الحفظ المباشر للجدول يمنع المقرر المؤرشف");
 check(server.includes('code:"archived-curriculum-courses"'),"نسخ فصل قديم لا يعيد المقررات المؤرشفة بصمت");
-check(server.includes('async function instructorRequestSectionCourses')&&server.includes('const operationalIds = await Repository.getOperationalCourseIds(sectionId)'),"رابط الأستاذ لا يعرض مقررات الصحائف المؤرشفة مع الحفاظ على توافق AdSectionId القديم");
+check(server.includes('async function instructorRequestSectionCourses')&&server.includes('Repository.getCoursesBySection(sectionId)')&&server.includes('Repository.getOperationalCourseIds(sectionId)'),"رابط الأستاذ يعرض كتالوج القسم التشغيلي كاملاً مع إخفاء المؤرشف فقط");
 check(server.includes('operationalLinkIds')&&server.includes('surveyCourseIdsForSection'),"استبيان الطالب يطبق فلتر الصحائف على المقررات المتاحة");
 check(server.includes('operationalImportIds'),"الاستيراد لا يستطيع تجاوز الأرشفة");
 check(server.includes('CourseCodeSnapshot: String(course.CourseCode || "")'),"إنشاء الموعد يحفظ رمز المقرر كما كان يوم إنشائه");

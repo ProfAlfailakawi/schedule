@@ -14061,13 +14061,15 @@ async function resolveRequestLink(token: string) {
 async function instructorRequestSectionCourses(sectionIdValue: unknown) {
   const sectionId = Number(sectionIdValue || 0);
   if (!sectionId) return [] as any[];
-  /* Keep the proven legacy compatibility contract: the public card resolves
-     section ownership from the complete cached catalogue after Number()
-     normalization, because old rows may store AdSectionId as text. Then apply
-     the curriculum operational set as a second, independent filter. */
-  const courses = await Repository.getCourses();
-  const operationalIds = await Repository.getOperationalCourseIds(sectionId);
-  return courses.filter(row => Number(row.AdSectionId) === sectionId && operationalIds.has(Number(row.AdCourseId))) as any[];
+  /* The professor chooses from the department catalogue, not from the rows
+     that happen to be offered this term. `getCoursesBySection` already
+     normalizes legacy numeric/string AdSectionId values; the operational
+     set then removes only courses that are explicitly archived. */
+  const [courses, operationalIds] = await Promise.all([
+    Repository.getCoursesBySection(sectionId),
+    Repository.getOperationalCourseIds(sectionId),
+  ]);
+  return courses.filter(row => operationalIds.has(Number(row.AdCourseId))) as any[];
 }
 
 /**

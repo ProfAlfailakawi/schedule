@@ -167,10 +167,10 @@ check(server.includes('const action = req.body?.action === "add" ? "add" : "chan
 check(server.includes('Number(course.AdSectionId) !== Number(resolved.request.AdSectionId)'),
   "وفحصُ الإضافة الحيّ يردّ مقرراً من خارج القسم قبل الحكم");
 check(server.includes("async function instructorRequestSectionCourses")
-  && server.includes("const courses = await Repository.getCourses();")
-  && server.includes("Number(row.AdSectionId) === sectionId")
+  && server.includes("Repository.getCoursesBySection(sectionId)")
+  && server.includes("Repository.getOperationalCourseIds(sectionId)")
   && server.includes("instructorRequestSectionCourses(request.AdSectionId)"),
-  "وبطاقة الأستاذ تبني كتالوج القسم من المرجع الكامل بعد تطبيع AdSectionId، فلا تختفي المقررات القديمة");
+  "وبطاقة الأستاذ تقرأ كتالوج القسم الكامل مباشرة، ثم تستبعد المؤرشف أكاديمياً فقط");
 check(server.includes("async function refreshUnsubmittedInstructorRequest"),
   "والطلب غير المرسل يتجدد من الجدول الحي");
 check(server.includes("async function instructorRequestCourseOptions")

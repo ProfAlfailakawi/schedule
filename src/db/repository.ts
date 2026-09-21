@@ -3156,15 +3156,23 @@ export const Repository = {
   },
 
   getCurriculumPlanCourses: async (sectionId: number): Promise<CurriculumPlanCourse[]> => {
-    const sid = Number(sectionId || 0);
-    if (!sid) return [];
-    if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("curriculumPlanCourses").where("AdSectionId", "==", sid).get();
-      return snap.docs.map(doc => doc.data() as CurriculumPlanCourse);
-    }
-    if (!Array.isArray(db.curriculumPlanCourses)) db.curriculumPlanCourses = [];
-    return db.curriculumPlanCourses.filter(row => Number(row.AdSectionId) === sid);
-  },
+  const sid = Number(sectionId || 0);
+  if (!sid) return [];
+  if (firestoreDb && !demoSandboxContext.getStore()) {
+    const [numericSnap, textSnap] = await Promise.all([
+      firestoreDb.collection("curriculumPlanCourses").where("AdSectionId", "==", sid).get(),
+      firestoreDb.collection("curriculumPlanCourses").where("AdSectionId", "==", String(sid)).get(),
+    ]);
+    const rows = new Map<string, CurriculumPlanCourse>();
+    [...numericSnap.docs, ...textSnap.docs].forEach(doc => {
+      const row = doc.data() as CurriculumPlanCourse;
+      if (Number(row.AdSectionId) === sid) rows.set(String(row.id || doc.id), row);
+    });
+    return [...rows.values()];
+  }
+  if (!Array.isArray(db.curriculumPlanCourses)) db.curriculumPlanCourses = [];
+  return db.curriculumPlanCourses.filter(row => Number(row.AdSectionId) === sid);
+},
 
   getCourseTransitions: async (sectionId: number): Promise<CourseTransition[]> => {
     const sid = Number(sectionId || 0);
@@ -3281,15 +3289,34 @@ export const Repository = {
   },
 
   getOperationalCourseIds: async (sectionId:number): Promise<Set<number>> => {
-    const courses=await Repository.getCoursesBySection(sectionId);
-    const plans=await Repository.getCurriculumPlans(sectionId);
-    // Compatibility contract: before setup, every current catalogue course is
-    // active in the transition stage exactly as it is today.
-    if(!plans.length)return new Set(courses.map(row=>Number(row.AdCourseId)));
-    const livePlanIds=new Set(plans.filter(row=>row.status!=="archived").map(row=>row.id));
-    const memberships=await Repository.getCurriculumPlanCourses(sectionId);
-    return new Set(memberships.filter(row=>livePlanIds.has(row.planId)).map(row=>Number(row.AdCourseId)));
-  },
+  const courses=await Repository.getCoursesBySection(sectionId);
+  const plans=await Repository.getCurriculumPlans(sectionId);
+  // Compatibility contract: before setup, every current catalogue course is
+  // active in the transition stage exactly as it is today.
+  if(!plans.length)return new Set(courses.map(row=>Number(row.AdCourseId)));
+  const livePlanIds=new Set(plans.filter(row=>row.status!=="archived").map(row=>row.id));
+  const memberships=await Repository.getCurriculumPlanCourses(sectionId);
+  const planIdsByCourse=new Map<number,string[]>();
+  for(const row of memberships){
+    const courseId=Number(row.AdCourseId);
+    if(!courseId)continue;
+    const planIds=planIdsByCourse.get(courseId)||[];
+    if(!planIds.includes(row.planId))planIds.push(row.planId);
+    planIdsByCourse.set(courseId,planIds);
+  }
+  /* A real catalogue can predate curriculum metadata, and legacy/imported
+     rows may therefore have no membership document at all. Absence of
+     metadata must never make a department course disappear from the
+     professor card or schedule pickers. Explicit archival is different:
+     once a course has memberships and every membership belongs to an
+     archived plan, it is intentionally no longer operational. */
+  return new Set(courses
+    .filter(course=>{
+      const planIds=planIdsByCourse.get(Number(course.AdCourseId))||[];
+      return !planIds.length||planIds.some(planId=>livePlanIds.has(planId));
+    })
+    .map(course=>Number(course.AdCourseId)));
+},
 
   getOperationalCoursesBySection: async (sectionId:number): Promise<AdCourse[]> => {
     const [courses,ids]=await Promise.all([Repository.getCoursesBySection(sectionId),Repository.getOperationalCourseIds(sectionId)]);
