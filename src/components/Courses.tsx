@@ -389,7 +389,15 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   <Notice
                     type="block"
                     inline
-                    action={<SecondaryButton type="button" onClick={() => setCurriculumProbe(value => value + 1)}>إعادة التحقق</SecondaryButton>}
+                    action={
+                      <SecondaryButton
+                        type="button"
+                        data-guide-ignore="إعادة محاولة قراءة الصحيفة بعد تعذر التحقق؛ لا تنفذ تغييراً أكاديمياً"
+                        onClick={() => setCurriculumProbe(value => value + 1)}
+                      >
+                        إعادة التحقق
+                      </SecondaryButton>
+                    }
                   >
                     تعذر التحقق من الصحيفة الحالية. أوقفنا الحفظ حتى نتأكد من وجهة المقرر بدلاً من تسجيله في صحيفة غير صحيحة.
                   </Notice>
@@ -397,7 +405,15 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   <Notice
                     type="warning"
                     inline
-                    action={<SecondaryButton type="button" onClick={() => openCurriculum(Number(sectionId))}><GraduationCap /> تهيئة الصحيفة الجديدة</SecondaryButton>}
+                    action={
+                      <SecondaryButton
+                        type="button"
+                        data-guide-ignore="إدارة أكاديمية متخصصة للصحائف؛ لا تغيّر الجدول مباشرة"
+                        onClick={() => openCurriculum(Number(sectionId))}
+                      >
+                        <GraduationCap /> تهيئة الصحيفة الجديدة
+                      </SecondaryButton>
+                    }
                   >
                     <strong>لا توجد صحيفة جديدة فعّالة لهذا القسم بعد.</strong>
                     <br />
