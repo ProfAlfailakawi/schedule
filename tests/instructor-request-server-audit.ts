@@ -140,6 +140,26 @@ check(page.includes("ينتهي ") && page.includes("مدّةُ المحاضرة
   "والنهايةُ تُعرض محسوبةً ولا تُسأل");
 check(page.includes('fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check"'),
   "والحكمُ يُسأل عنه الخادمُ عند كل تغيير");
+check(page.includes('id="coursePick"') && page.includes("data.courses.map(function(c)"),
+  "والإضافةُ تبدأ من قائمة مقرّرات القسم التي أعادها الخادم");
+check(page.includes('it.action!=="change"&&it.action!=="add"')
+  && page.includes('courseId:it.action==="add"?it.courseId:undefined'),
+  "والإضافةُ تُفحص كتعديل الوقت نفسه وتُرسل بهوية المقرر");
+check(server.includes('const action = req.body?.action === "add" ? "add" : "change"')
+  && server.includes("const candidate = rowFromRequest(requested, base as any)"),
+  "وفحصُ الإضافة في الخادم يبني الصفَّ المطلوب ويفحصه، لا يغيّر اسم العملية فقط");
+check(server.includes('Number(course.AdSectionId) !== Number(resolved.request.AdSectionId)'),
+  "وفحصُ الإضافة الحيّ يردّ مقرراً من خارج القسم قبل الحكم");
+
+/* بطاقةُ الأستاذ للقراءة؛ بابُ التعديل الكامل يظهر كتَبويبٍ واحدٍ حين يكون
+   للقسم رابطُ طلبٍ فعّال، بدلاً من زر «أبلغ القسم» تحت كل محاضرة. */
+const staffPage = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+check(!staffPage.includes("أبلغ القسم") && !staffPage.includes("فهمت التغييرات"),
+  "بطاقةُ الأستاذ خاليةٌ من زر الإبلاغ ومن إقرار «فهمت» المتكرر");
+check(staffPage.includes("حركة الجدول") && staffPage.includes("function renderRequests(d)"),
+  "وفيها تبويبُ حركة الجدول وبابُ طلب التعديل الكامل");
+check(server.includes("requestLinks,") && server.includes("Repository.getInstructorRequests"),
+  "وبطاقةُ الأستاذ تصل إلى دورة الطلب الموجودة أصلاً، لا نموذجٍ موازٍ جديد");
 
 
 /* ── الحزمةُ تُقاس على نفسها ────────────────────────────────────────────── */

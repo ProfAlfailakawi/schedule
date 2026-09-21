@@ -15,7 +15,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardList, Clock3,
+  AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardCheck, ClipboardList, Clock3,
   CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
   UsersRound, X,
 } from "lucide-react";
@@ -23,8 +23,9 @@ import ApprovalBar from "./ApprovalBar";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EMPTY_INBOX_ASK, matchesInboxAsk, parseInboxAsk, type InboxAsk, type InboxAskSignal } from "../utils/inboxAsk";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
+import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
+import { DECISION_1912_LABEL, regulationScore, type RegulationFinding } from "../utils/scheduleRegulations";
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
 
@@ -74,6 +75,11 @@ interface RegulationNotice {
   title: string; detail: string; rowIds: number[];
 }
 
+interface ReviewBlocker {
+  id: string; type: string; title: string; detail: string; rowIds: number[];
+  subjectKey?: string; subjectLabel?: string;
+}
+
 interface ChangeReport {
   approval: { status: ScheduleApprovalStatus; currentRound: number; pendingAdditions: any[]; signatures: any[] };
   statusLabel: string; round: number;
@@ -90,6 +96,8 @@ interface ChangeReport {
   suggestions?: Record<string, string>;
   blockingConflicts: number;
   regulationNotices: RegulationNotice[];
+  /** نفس الموانع التفصيلية التي تظهر في مراجعة الاعتماد، لا عدّاداً منفصلاً. */
+  reviewBlockers?: ReviewBlocker[];
 }
 
 export interface ScheduleChangesRole {
@@ -507,6 +515,127 @@ function RegulationReview({ notices }: { notices: RegulationNotice[] }) {
       ) : null}
     </section>
   );
+ }
+
+/**
+ * ملخّص الاعتماد نفسه الذي اعتادت عليه نافذة المراجعة، لكن داخل «تغييرات
+ * الجدول»؛ فهذه هي الأيقونة/الشاشة التي يرجع إليها المستخدم لمعرفة السبب.
+ * لا تُعاد الرسالة الحمراء في كل مكان، ولا يُطلب منه أن يفتح نافذة أخرى.
+ */
+function ChangesReviewOverview({ report, scopeLine }: { report: ChangeReport; scopeLine: string }) {
+  const [blockerOpen, setBlockerOpen] = useState<string | null>(null);
+  const blockers = report.reviewBlockers || [];
+  const notices = report.regulationNotices || [];
+  const rowCount = Math.max(0, report.diff.counts.added + report.diff.counts.changed + report.diff.counts.unchanged);
+
+  /* الحلقة تخص قرار 1913/2016 كما في ScheduleReview بالضبط؛ موانع الحفظ
+     منفصلةٌ عنها لأنها ليست درجةً لائحية. */
+  const decisionFindings = useMemo<RegulationFinding[]>(() => notices
+    .filter(item => item.source === "decision-1912")
+    .map(item => ({
+      rule: item.rule,
+      article: item.article,
+      severity: item.approvalEffect === "review" ? "medium" : "low",
+      source: "decision-1912",
+      approvalEffect: item.approvalEffect,
+      title: item.title,
+      detail: item.detail,
+      rowIds: item.rowIds,
+    })), [notices]);
+  const score = useMemo(() => regulationScore(decisionFindings, rowCount), [decisionFindings, rowCount]);
+
+  const spread = useMemo(() => {
+    const state = new Map<number, "high" | "medium" | "low">();
+    const rank = { high: 3, medium: 2, low: 1 } as const;
+    const mark = (ids: number[], level: "high" | "medium" | "low") => {
+      for (const rawId of ids || []) {
+        const id = Number(rawId);
+        if (!id) continue;
+        const current = state.get(id);
+        if (!current || rank[level] > rank[current]) state.set(id, level);
+      }
+    };
+    blockers.forEach(item => mark(item.rowIds, "high"));
+    notices.forEach(item => mark(item.rowIds, item.approvalEffect === "review" ? "medium" : "low"));
+    const counts = { high: 0, medium: 0, low: 0 };
+    state.forEach(level => { counts[level] += 1; });
+    const flagged = counts.high + counts.medium + counts.low;
+    return { ...counts, clean: Math.max(0, rowCount - flagged), total: Math.max(1, rowCount) };
+  }, [blockers, notices, rowCount]);
+  const share = (value: number) => `${(value / spread.total) * 100}%`;
+  const blockedCount = Math.max(blockers.length, report.blockingConflicts || 0);
+  const tone = blockedCount ? "danger" : score >= 85 ? "good" : "warn";
+  const ringLength = 2 * Math.PI * 26;
+  const hasFindings = blockers.length > 0 || notices.length > 0;
+
+  return (
+    <section className="changes-review-overview" aria-label="مراجعة الاعتماد">
+      <header className={`review-head tone-${tone}`}>
+        <svg className="review-ring" viewBox="0 0 64 64" role="img" aria-label={`مطابقة ${DECISION_1912_LABEL} ${score} من 100`}>
+          <circle className="ring-track" cx="32" cy="32" r="26" />
+          <circle className="ring-value" cx="32" cy="32" r="26" strokeDasharray={`${(score / 100) * ringLength} ${ringLength}`} />
+          <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
+          <text x="32" y="45" className="ring-unit">/ 100</text>
+        </svg>
+        <div className="review-title">
+          <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
+          <h2>{blockedCount ? "يوجد ما يمنع الاعتماد" : notices.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
+          <p>{scopeLine}</p>
+        </div>
+      </header>
+
+      <div className="review-spread" role="img" aria-label="توزيع المواعيد حسب الملاحظات">
+        <div className="spread-bar">
+          {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} title={`${spread.high} يمنع`} /> : null}
+          {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} title={`${spread.medium} يراجَع`} /> : null}
+          {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={`${spread.low} ملاحظة`} /> : null}
+          {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
+        </div>
+        <div className="spread-keys">
+          <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
+          <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
+          <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>
+          <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
+        </div>
+      </div>
+
+      <div className="review-body">
+        {blockers.map((blocker, index) => {
+          const key = blocker.id || `blocker-${index}`;
+          const isOpen = blockerOpen === key;
+          return (
+            <article key={key} className={`review-finding severity-high ${isOpen ? "open" : ""}`}>
+              <button type="button" data-guide-ignore="فتح تفاصيل مانع الاعتماد داخل تغييرات الجدول فقط" onClick={() => setBlockerOpen(current => current === key ? null : key)} aria-expanded={isOpen}>
+                <span className="review-mark" aria-hidden="true"><AlertTriangle /></span>
+                <span className="review-copy">
+                  <strong>{blocker.title || "يوجد مانع اعتماد"}</strong>
+                  <small>{blocker.subjectLabel || (blocker.rowIds.length ? `${blocker.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد متأثر` : "يحتاج معالجة قبل الاعتماد")}</small>
+                </span>
+                <em>موانع الحفظ</em>
+                <i>يمنع الاعتماد</i>
+              </button>
+              {isOpen ? (
+                <div className="review-rows">
+                  <div className="review-finding-detail">
+                    <p>{blocker.detail || "راجع الموعد قبل الاعتماد."}</p>
+                    <div className="review-finding-meta"><span>موانع الحفظ</span><span>يحتاج معالجة قبل الاعتماد</span></div>
+                  </div>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+        <RegulationReview notices={report.regulationNotices || []} />
+        {!hasFindings ? (
+          <div className="review-clear">
+            <CheckCircle2 />
+            <strong>لا ملاحظات</strong>
+            <span>لا توجد موانع حفظ، ولا تنبيهات لائحية ظاهرة ضمن النطاق الذي يفحصه النظام.</span>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
 }
 
 /**
@@ -595,9 +724,10 @@ const CROSS_KIND_LABEL: Record<string, string> = {
   doorway: "زمنُ الانتقال", cohort: "دفعةُ الطلبة",
 };
 
-function Report({ termId, scope, role, onBack }: {
+function Report({ termId, termName, scope, role, onBack }: {
   key?: React.Key;
   termId: number;
+  termName?: string;
   scope: { collegeId: number; sectionId: number; collegeName?: string; sectionName?: string };
   role: ScheduleChangesRole;
   onBack?: () => void;
@@ -826,17 +956,10 @@ function Report({ termId, scope, role, onBack }: {
       {error ? <Notice type="error">{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
 
-      {report.blockingConflicts > 0 ? (
-        <div className="approval-blocked" role="alert">
-          <span className="approval-blocked-icon"><AlertTriangle aria-hidden="true" /></span>
-          <div>
-            <strong>{blockingConflictPhrase(report.blockingConflicts)} يمنع الاعتماد.</strong>
-            <p>لا يُقبل الجدول قبل معالجته.</p>
-          </div>
-        </div>
-      ) : null}
-
-      <RegulationReview notices={report.regulationNotices || []} />
+      <ChangesReviewOverview
+        report={report}
+        scopeLine={[termName, scope.collegeName, scope.sectionName].filter(Boolean).join(" · ") || `قسم ${scope.sectionId}`}
+      />
 
       <div className="changes-viewbar">
         <div className="changes-summary">
@@ -1138,7 +1261,7 @@ export default function ScheduleChanges({ role, scope }: Props) {
       {!termId ? (
         <EmptyState title="اختر الفصل" detail="تُعرض تغييرات الجداول لفصلٍ واحد في كل مرّة." />
       ) : active ? (
-        <Report key={reloadKey} termId={termId} scope={active} role={role} onBack={opened ? () => setOpened(null) : undefined} />
+        <Report key={reloadKey} termId={termId} termName={term?.AdTermName || ""} scope={active} role={role} onBack={opened ? () => setOpened(null) : undefined} />
       ) : (
         <Surface>
           <Inbox_

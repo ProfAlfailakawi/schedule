@@ -206,7 +206,13 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
 
         {canSignNow ? (
-          <PrimaryButton type="button" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
+          <PrimaryButton
+            type="button"
+            data-guide-target="approval.action.sign"
+            disabled={busy || blockingConflicts > 0}
+            title={blockingConflicts > 0 ? `${blockingConflictPhrase(blockingConflicts)} يمنع التوقيع — التفاصيل في «تغييرات الجدول».` : undefined}
+            onClick={() => void act("/api/approvals/sign")}
+          >
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد الجدول" : "توقيع لجنة الجدول"}
           </PrimaryButton>
         ) : null}
@@ -242,11 +248,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
       </div>
 
-      {blockingConflicts > 0 && canSignNow ? (
-        <Notice type="error">
-          {blockingConflictPhrase(blockingConflicts)} يمنع الاعتماد. أمّا الملاحظات اللائحية فلا تمنع التوقيع.
-        </Notice>
-      ) : null}
 
       {error ? <Notice type="error">{error}</Notice> : null}
     </div>
