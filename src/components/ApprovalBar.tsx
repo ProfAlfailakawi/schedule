@@ -17,7 +17,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CornerUpLeft, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
-import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
+import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
 interface DeadlineShape {
@@ -210,7 +210,6 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             type="button"
             data-guide-target="approval.action.sign"
             disabled={busy || blockingConflicts > 0}
-            title={blockingConflicts > 0 ? `${blockingConflictPhrase(blockingConflicts)} يمنع التوقيع — التفاصيل في «تغييرات الجدول».` : undefined}
             onClick={() => void act("/api/approvals/sign")}
           >
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد الجدول" : "توقيع لجنة الجدول"}
