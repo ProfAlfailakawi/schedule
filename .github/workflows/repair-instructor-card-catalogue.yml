@@ -31,12 +31,21 @@ jobs:
               end = text.index(end_marker, start)
               file.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
 
-          # 1) بطاقة الأستاذ تقرأ كتالوج القسم نفسه، لا كتالوج الجامعة كله ثم تصفيه.
-          replace_between(
-              "server.ts",
-              "async function instructorRequestSectionCourses(sectionIdValue: unknown) {",
-              "\n}\n\nasync function instructorRequestCourseOptions",
-              '''async function instructorRequestSectionCourses(sectionIdValue: unknown) {
+          # 1) بطاقة الأستاذ تقرأ كتالوج القسم نفسه، لا مقررات الفصل الحالي.
+          p = Path("server.ts")
+          text = p.read_text(encoding="utf-8")
+          old = '''async function instructorRequestSectionCourses(sectionIdValue: unknown) {
+            const sectionId = Number(sectionIdValue || 0);
+            if (!sectionId) return [] as any[];
+            /* Keep the proven legacy compatibility contract: the public card resolves
+               section ownership from the complete cached catalogue after Number()
+               normalization, because old rows may store AdSectionId as text. Then apply
+               the curriculum operational set as a second, independent filter. */
+            const courses = await Repository.getCourses();
+            const operationalIds = await Repository.getOperationalCourseIds(sectionId);
+            return courses.filter(row => Number(row.AdSectionId) === sectionId && operationalIds.has(Number(row.AdCourseId))) as any[];
+          }'''
+          new = '''async function instructorRequestSectionCourses(sectionIdValue: unknown) {
             const sectionId = Number(sectionIdValue || 0);
             if (!sectionId) return [] as any[];
             /* The professor chooses from the department catalogue, not from the rows
@@ -49,7 +58,8 @@ jobs:
             ]);
             return courses.filter(row => operationalIds.has(Number(row.AdCourseId))) as any[];
           }'''
-          )
+          assert text.count(old) == 1, "instructorRequestSectionCourses block not found exactly once"
+          p.write_text(text.replace(old, new), encoding="utf-8")
 
           # 2) عضويات الصحائف القديمة قد تحمل AdSectionId كنص؛ اقرأ الشكلين.
           replace_between(
@@ -76,8 +86,8 @@ jobs:
           },'''
           )
 
-          # 3) لا تجعل نقص metadata يخفي مقرراً حقيقياً من كتالوج القسم.
-          #    لكن المقرر الذي كل عضوياته مؤرشفة يبقى مخفياً كما هو مطلوب.
+          # 3) نقص metadata لا يخفي مقرراً حقيقياً من كتالوج القسم.
+          #    لكن المقرر المرتبط حصرياً بصحيفة مؤرشفة يبقى مخفياً.
           replace_between(
               "src/db/repository.ts",
               "  getOperationalCourseIds: async (sectionId:number): Promise<Set<number>> => {",
@@ -120,11 +130,10 @@ jobs:
           new = old + '''\ncheck(repo.includes('const planIdsByCourse=new Map<number,string[]>()')&&repo.includes('return !planIds.length||planIds.some(planId=>livePlanIds.has(planId))'),"المقرر الموجود في كتالوج القسم بلا عضوية صحيفة لا يختفي، بينما المؤرشف صراحة يبقى مخفياً");\ncheck(repo.includes('where("AdSectionId", "==", String(sid))'),"عضويات الصحائف القديمة تُقرأ سواء خُزّن رقم القسم كرقم أو كنص");'''
           assert text.count(old) == 1, "curriculum audit archival assertion not found exactly once"
           text = text.replace(old, new)
-          text = text.replace(
-              "check(server.includes('async function instructorRequestSectionCourses')&&server.includes('const operationalIds = await Repository.getOperationalCourseIds(sectionId)'),\"رابط الأستاذ لا يعرض مقررات الصحائف المؤرشفة مع الحفاظ على توافق AdSectionId القديم\");",
-              "check(server.includes('async function instructorRequestSectionCourses')&&server.includes('Repository.getCoursesBySection(sectionId)')&&server.includes('Repository.getOperationalCourseIds(sectionId)'),\"رابط الأستاذ يعرض كتالوج القسم التشغيلي كاملاً مع إخفاء المؤرشف فقط\");",
-          )
-          p.write_text(text, encoding="utf-8")
+          old_link = "check(server.includes('async function instructorRequestSectionCourses')&&server.includes('const operationalIds = await Repository.getOperationalCourseIds(sectionId)'),\"رابط الأستاذ لا يعرض مقررات الصحائف المؤرشفة مع الحفاظ على توافق AdSectionId القديم\");"
+          new_link = "check(server.includes('async function instructorRequestSectionCourses')&&server.includes('Repository.getCoursesBySection(sectionId)')&&server.includes('Repository.getOperationalCourseIds(sectionId)'),\"رابط الأستاذ يعرض كتالوج القسم التشغيلي كاملاً مع إخفاء المؤرشف فقط\");"
+          assert text.count(old_link) == 1, "curriculum audit instructor assertion not found exactly once"
+          p.write_text(text.replace(old_link, new_link), encoding="utf-8")
 
           # 5) حدّث تدقيق دورة الأستاذ ليتحقق من المصدر المقيد بالقسم مباشرة.
           p = Path("tests/instructor-request-server-audit.ts")
