@@ -12948,6 +12948,9 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
 .gap i{flex:none;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.7}
 .gap time{font:600 12px/1 ui-monospace,monospace;direction:ltr}
 .tools{display:flex;gap:10px;margin:22px 0 8px}
+/* The compact staff card now ends visually at the weekly table. The per-day
+   duplicate cards are gone, and no secondary controls are left hanging below. */
+#days~.tools,#days~.sub,#days~.foot{display:none!important}
 .tools a{flex:1;height:48px;display:grid;place-items:center;border:1px solid var(--line);border-radius:14px;
   background:var(--card);color:var(--ink);font-size:14px;font-weight:600;text-decoration:none}
 /* The subscription panel. It stays closed until asked for, because most people
@@ -13206,9 +13209,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       ["قاعات",ar(d.rooms.length)]
     ].map(function(x){return '<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'}).join("");
 
-    // The approved five-column week first — the report everyone recognises —
-    // then the per-day detail with its waiting-gap annotations underneath.
-    // Days across the top, starting hours down the right edge — the paper shape.
+    // The approved five-column week is the whole visual schedule here.
+    // The repeated per-day cards underneath were redundant and made the card
+    // visually noisy, so this view deliberately stops at the table.
     var starts=[];d.byDay.forEach(function(day){day.rows.forEach(function(r){if(starts.indexOf(r.start)<0)starts.push(r.start)})});starts.sort();
     var weekTable='<table class="pub-week"><colgroup><col style="width:52px">'+d.byDay.map(function(){return '<col>'}).join("")+
       '</colgroup><thead><tr><th class="t">الوقت</th>'+d.byDay.map(function(day){return '<th>'+esc(day.name)+'</th>'}).join("")+
@@ -13221,27 +13224,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
           }).join("")+'</td>';
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
-    document.getElementById("days").innerHTML=weekTable+d.byDay.filter(function(day){return day.rows.length}).map(function(day){
-      // The gap sits where it happens — between the two lectures it separates.
-      var body=day.rows.map(function(row,i){
-        var lead="";
-        if(i>0){
-          var before=day.gaps.filter(function(g){return g.to===row.start});
-          if(before.length){
-            lead='<div class="gap"><i></i>فراغ <time>'+esc(before[0].to)+' - '+esc(before[0].from)+'</time> · '+ar(before[0].minutes)+' دقيقة</div>';
-          }
-        }
-        /* The slot gains one quiet affordance and nothing else. It is a
-           button that opens a form, not a form — a card opened to read a week
-           must not become a wall of inputs. */
-        return lead+'<div class="slot" data-lecture="'+row.id+'"><strong>'+esc(row.name||row.code)+'</strong>'+
-               '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
-               '<small>'+[row.code,row.section&&("شعبة "+row.section),(row.room||row.hall)&&(esc(row.room)+"/"+esc(row.hall))].filter(Boolean).join(" · ")+'</small>'+
-               (live ? '<button type="button" class="say" data-say="'+row.id+'" aria-expanded="false">أبلغ القسم</button>' : '')+
-               '<div class="sayform" hidden></div></div>';
-      }).join("");
-      return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.to+" - "+day.span.from:"")+'</em></h2>'+body+'</section>';
-    }).join("");
+    document.getElementById("days").innerHTML=weekTable;
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
     /* Absence needs a reason. A missing button reads as a fault; one sentence
        says the term is closed and points at the one that is not. */
