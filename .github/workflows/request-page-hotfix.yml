@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   repair:
-    if: github.actor != 'github-actions[bot]'
+    if: ${{ github.actor != 'github-actions[bot]' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -24,57 +24,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Apply root repair
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          server_path = Path('server.ts')
-          text = server_path.read_text()
-          start_marker = 'async function instructorRequestCourseOptions(request: InstructorRequest): Promise<InstructorRequestCourseOption[]> {'
-          start = text.index(start_marker)
-          build = text.index('async function buildRequestContext(request: InstructorRequest)', start)
-          comment = text.rfind('\n/**', start, build)
-          if comment <= start:
-              raise SystemExit('could not locate end of instructorRequestCourseOptions')
-
-          replacement = '''async function instructorRequestCourseOptions(request: InstructorRequest): Promise<InstructorRequestCourseOption[]> {
-            const scopes = await instructorRequestDepartmentScopes(request);
-            const groups = await Promise.all(scopes.map(async scope => {
-              /* Opening the professor request must stay cheap. The operational
-               * catalogue is already the source of truth for additions; rebuilding
-               * historical authority baselines for every sibling college made the
-               * public page wait on several heavyweight reads before it could paint. */
-              const catalogue = await instructorRequestSectionCourses(scope.sectionId);
-              return (catalogue as any[]).map(row => ({
-                id: Number(row.AdCourseId || 0),
-                name: String(row.CourseName || row.AdCourseName || "").trim(),
-                code: String(row.CourseCode || row.AdCourseCode || "").trim(),
-                collegeId: scope.collegeId,
-                collegeName: scope.collegeName,
-                sectionId: scope.sectionId,
-              })).filter(option => option.id && option.name);
-            }));
-            const options = new Map<string, InstructorRequestCourseOption>();
-            groups.flat().forEach(option => options.set(`${option.collegeId}:${option.sectionId}:${option.id}`, option));
-            return [...options.values()].sort((a, b) =>
-              a.collegeId === b.collegeId
-                ? courseNameCollator.compare(a.name, b.name)
-                : arabicUiCollator.compare(a.collegeName, b.collegeName));
-          }
-'''
-          text = text[:start] + replacement + text[comment:]
-          server_path.write_text(text)
-
-          audit_path = Path('tests/instructor-request-cross-college-audit.ts')
-          audit = audit_path.read_text()
-          guard = '''\nconst courseOptionBlock = server.slice(\n  server.indexOf("async function instructorRequestCourseOptions"),\n  server.indexOf("async function buildRequestContext", server.indexOf("async function instructorRequestCourseOptions")),\n);\ncheck(!courseOptionBlock.includes("authorityDraftForScope") && !courseOptionBlock.includes("authorityBaselineForScope"),\n  "فتح رابط الأستاذ لا يعيد بناء تاريخ الجداول لكل كلية قبل عرض الصفحة");\ncheck(courseOptionBlock.includes("instructorRequestSectionCourses(scope.sectionId)"),\n  "خيارات الإضافة تأتي مباشرة من الكتالوج التشغيلي لكل كلية");\n'''
-          needle = '\nconsole.log(`\\nCross-college instructor request audit:'
-          if guard.strip() not in audit:
-              pos = audit.index(needle)
-              audit = audit[:pos] + guard + audit[pos:]
-              audit_path.write_text(audit)
-          PY
+        run: python3 scripts/request-page-hotfix.py
       - name: Install dependencies
         run: npm ci
       - name: Targeted request regression
@@ -88,10 +38,10 @@ jobs:
       - name: Commit verified repair
         shell: bash
         run: |
-          rm -f .github/workflows/request-page-hotfix.yml
+          rm -f .github/workflows/request-page-hotfix.yml scripts/request-page-hotfix.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server.ts tests/instructor-request-cross-college-audit.ts .github/workflows/request-page-hotfix.yml
+          git add server.ts tests/instructor-request-cross-college-audit.ts .github/workflows/request-page-hotfix.yml scripts/request-page-hotfix.py
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
