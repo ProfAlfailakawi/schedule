@@ -11686,7 +11686,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   // Security gate: the instructor must actually appear in the link's OWN term, so
   // a wrong number and "teaches nothing" stay one indistinguishable 404 at the
   // door. Only after passing may they pin another term (Idea 2).
-  const linkRows = (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: link.AdTermId }))
+  const linkRows = (await Repository.getSchedulesByScope({ termId: link.AdTermId }))
     .filter(row => row.AdInstructorId === person.AdInstructorId);
   if (!linkRows.length) return null;
 
@@ -11695,13 +11695,19 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   const displayTermId = requestedTermId && terms.some(t => t.AdTermId === requestedTermId) ? requestedTermId : link.AdTermId;
   const rows = displayTermId === link.AdTermId
     ? linkRows
-    : (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: displayTermId }))
+    : (await Repository.getSchedulesByScope({ termId: displayTermId }))
         .filter(row => row.AdInstructorId === person.AdInstructorId);
 
-  const requestSectionIds = [...new Set(rows.map(row => Number(row.AdSectionId || 0)).filter(Boolean))];
-  const requestLists = await Promise.all(requestSectionIds.map(sectionId =>
-    Repository.getInstructorRequests(Number(link.AdCollegeId), sectionId, Number(displayTermId))
-  ));
+  // Every request remains attached to the lecture's real college + section.
+// A link issued by one campus must never hide requests from another campus.
+const requestScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
+for (const row of rows) {
+  const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
+  if (collegeId && sectionId) requestScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
+}
+const requestLists = await Promise.all([...requestScopeMap.values()].map(scope =>
+  Repository.getInstructorRequests(scope.collegeId, scope.sectionId, Number(displayTermId))
+));
   const requestRows = requestLists.flat().filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
   const requestLinks = (await Promise.all(requestRows.map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
@@ -11719,16 +11725,21 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
 
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
 
-  const movementSections = [...new Set(rows.map(row => Number(row.AdSectionId || 0)).filter(Boolean))];
+  const movementScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
+for (const row of rows) {
+  const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
+  if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
+}
+
   const movementHistory: Array<{ at:string; label:string; tone:"add"|"move"|"room"|"gone"; day:string; text:string }> = [];
   const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
   const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
   const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
   const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === Number(person.AdInstructorId)).map(row => [Number(row.id),row]));
-  for (const sectionId of movementSections) {
-    const versions = await Repository.getScheduleVersions(Number(link.AdCollegeId), sectionId, Number(displayTermId), 30);
-    const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
-    const liveSection = rows.filter(row => Number(row.AdSectionId) === sectionId);
+  for (const scope of movementScopeMap.values()) {
+  const versions = await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, Number(displayTermId), 30);
+  const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
+  const liveSection = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);
     const states = ordered.map(version => ({ at:version.createdAt,label:version.label || "تعديل الجدول",rows:version.rows || [] }));
     states.push({ at:new Date().toISOString(),label:"الجدول الحالي",rows:liveSection });
     for (let i=1;i<states.length;i++) {
@@ -11754,6 +11765,8 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
       code: courseById.get(row.AdCourseId)?.CourseCode || "",
       name: row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "",
       section: row.SCode || "",
+      college: colleges.find(item => Number(item.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeName || "",
+      department: sections.find(item => Number(item.AdSectionId) === Number(row.AdSectionId))?.AdSectionName || "",
       start: row.fstarttime, end: row.fendtime,
       days: shareDayIndexes(row),
       room: row.AdRoomCode || "", hall: row.AdRoomHall || ""
@@ -11779,9 +11792,12 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     };
   });
 
+  const teachingColleges = [...new Set(shaped.map(row => row.college).filter(Boolean))];
+
   return {
     name: person.AdInstructorName || "",
-    college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",
+    college: teachingColleges.length > 1 ? "كل مواقعك" : (teachingColleges[0] || colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || ""),
+    colleges: teachingColleges,
     term: terms.find(row => row.AdTermId === displayTermId)?.AdTermName || "",
     termId: displayTermId,
     // Newest first, so the instructor can pin any semester from the card (Idea 2).
@@ -11964,8 +11980,8 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
 
-  const [instructors, courses, terms] = await Promise.all([
-    Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(),
+  const [instructors, courses, terms, colleges] = await Promise.all([
+    Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(), Repository.getColleges(),
   ]);
   // The key names the instructor: whoever it verifies against is the owner.
   const person = instructors.find(row => calendarKey(token, row.AdInstructorId) === String(req.params.key || ""));
@@ -11976,11 +11992,10 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
     res.status(409).type("text/plain; charset=utf-8").send("لا يوجد فصل جارٍ متاح للتقويم");
     return;
   }
-  const collegeRows = await Repository.getSchedulesByScope({
-    collegeId: resolved.link.AdCollegeId, termId: liveTermId,
-  });
-  const rows = collegeRows.filter(row => row.AdInstructorId === person.AdInstructorId);
-  const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+  const termRows = await Repository.getSchedulesByScope({ termId: liveTermId });
+const rows = termRows.filter(row => row.AdInstructorId === person.AdInstructorId);
+const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+const collegeById = new Map(colleges.map(row => [Number(row.AdCollegeId), row]));
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
 
   /* The personal feed follows the person, not the paper: a date they are absent
@@ -11992,7 +12007,7 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
     if (!goneDates.has(entry.scheduleId)) goneDates.set(entry.scheduleId, []);
     goneDates.get(entry.scheduleId)!.push(entry.date);
   }
-  const rowById = new Map(collegeRows.map(row => [Number(row.id), row]));
+  const rowById = new Map(termRows.map(row => [Number(row.id), row]));
   const coverSingles = exceptions
     .filter(entry => entry.kind === "cover" && Number(entry.coverInstructorId) === person.AdInstructorId)
     .map(entry => {
@@ -12004,7 +12019,7 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
         date: entry.date,
         start: covered.fstarttime, end: covered.fendtime,
         title: `تغطية: ${covered.AdCourseName || course?.CourseName || "محاضرة"}${covered.SCode ? ` · شعبة ${covered.SCode}` : ""}`,
-        room: [covered.AdRoomCode, covered.AdRoomHall].filter(Boolean).join(" / "),
+        room: [collegeById.get(Number(covered.AdCollegeId))?.AdCollegeName, covered.AdRoomCode, covered.AdRoomHall].filter(Boolean).join(" / "),
         description: "تغطية ليوم واحد بطلب من القسم.",
       };
     })
@@ -12016,7 +12031,7 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
       id: row.id,
       title: [course?.CourseCode, row.AdCourseName || course?.CourseName].filter(Boolean).join(" · "),
       code: course?.CourseCode || "", section: row.SCode || "",
-      room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),
+      room: [collegeById.get(Number(row.AdCollegeId))?.AdCollegeName, row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),
       start: row.fstarttime, end: row.fendtime,
       days: shareDayIndexes(row), revision: Number(row.rev || 0),
       cancelledDates: goneDates.get(Number(row.id)),
@@ -13481,7 +13496,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
               '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
-              '<small>'+[row.code,(row.room||row.hall)&&(esc(row.room||"")+"/"+esc(row.hall||""))].filter(Boolean).join(" · ")+'</small></span>';
+              '<small>'+[row.code,row.college,row.department,(row.room||row.hall)&&((row.room||"")+"/"+(row.hall||""))].filter(Boolean).map(esc).join(" · ")+'</small></span>';
           }).join("")+'</td>';
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
