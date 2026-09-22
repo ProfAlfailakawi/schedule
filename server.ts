@@ -15067,7 +15067,7 @@ function submit(){
   body:JSON.stringify({civil:civil,items:state.map(function(it){return{rowId:it.rowId,action:it.action,
    courseId:it.action==="add"?it.courseId:undefined,
    collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,
-   days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})})})})
+   days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})})})
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){
   if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
