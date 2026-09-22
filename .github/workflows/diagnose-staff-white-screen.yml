@@ -27,7 +27,7 @@ jobs:
           from pathlib import Path
           s=Path('server.ts').read_text(encoding='utf-8')
           a=s.index('function instructorRequestPage')
-          b=s.index('app.get("/r/:token"',a)
+          b=s.index('app.post("/api/public/request/:token/check"',a)
           fn=s[a:b]
           Path('/tmp/render-request.ts').write_text("import fs from 'fs';\n"+fn+"\nfs.writeFileSync('/tmp/request.html', instructorRequestPage('diagnostic-token','nonce123'));\n",encoding='utf-8')
       - name: Execute page renderer
