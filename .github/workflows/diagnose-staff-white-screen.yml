@@ -1,0 +1,54 @@
+name: Diagnose staff card white screen
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-staff-white-screen.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Inspect staff card source
+        shell: python
+        run: |
+          from pathlib import Path
+          s=Path('server.ts').read_text(encoding='utf-8')
+          for name,start_marker,end_marker in [
+            ('BUILD_STAFF_CARD','async function buildStaffCard','app.get("/api/share"'),
+            ('STAFF_CARD_PAGE','function staffCardPage','function surveyPage'),
+            ('PUBLIC_STAFF_ROUTE','app.post("/api/public/staff/','app.get("/api/public/ics/')]:
+            a=s.find(start_marker); b=s.find(end_marker,a+1)
+            print(f'===== {name} {a}..{b} =====')
+            print(s[a:b])
+            print(f'===== END {name} =====')
+      - name: Check inline browser script syntax
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          s=Path('server.ts').read_text(encoding='utf-8')
+          a=s.index('function staffCardPage'); b=s.index('function surveyPage',a)
+          p=s[a:b]
+          scripts=re.findall(r'<script[^>]*>([\s\S]*?)</script>',p)
+          print('inline scripts found:',len(scripts))
+          for i,script in enumerate(scripts):
+            Path(f'/tmp/staff-inline-{i}.js').write_text(script,encoding='utf-8')
+            print(f'WROTE /tmp/staff-inline-{i}.js {len(script)} chars')
+      - name: Parse extracted inline scripts
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(/tmp/staff-inline-*.js)
+          if [ ${#files[@]} -eq 0 ]; then echo 'No literal inline scripts extracted'; exit 0; fi
+          for f in "${files[@]}"; do echo "CHECK $f"; node --check "$f"; done
