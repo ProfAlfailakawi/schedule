@@ -1,4 +1,4 @@
-name: Diagnose instructor request white screen
+name: Repair instructor request page
 
 on:
   push:
@@ -8,39 +8,82 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  repair:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - name: Install runner dependencies
-        run: npm ci --ignore-scripts
-      - name: Render actual instructor request page
+          cache: npm
+      - name: Patch the real browser syntax defect
         shell: python
         run: |
           from pathlib import Path
-          s=Path('server.ts').read_text(encoding='utf-8')
-          a=s.index('function instructorRequestPage')
-          b=s.index('app.post("/api/public/request/:token/check"',a)
-          fn=s[a:b]
-          Path('/tmp/render-request.ts').write_text("import fs from 'fs';\n"+fn+"\nfs.writeFileSync('/tmp/request.html', instructorRequestPage('diagnostic-token','nonce123'));\n",encoding='utf-8')
-      - name: Execute page renderer
-        run: npx tsx /tmp/render-request.ts
-      - name: Extract rendered inline script
-        shell: python
+          p=Path('server.ts')
+          s=p.read_text(encoding='utf-8')
+          bad='excuse:it.excuse}})})})})'
+          good='excuse:it.excuse}})})})'
+          count=s.count(bad)
+          if count != 1:
+              raise SystemExit(f'expected exactly one broken request serialization tail, found {count}')
+          p.write_text(s.replace(bad,good,1),encoding='utf-8')
+      - name: Add permanent rendered-browser regression
+        shell: bash
         run: |
-          from pathlib import Path
-          import re
-          html=Path('/tmp/request.html').read_text(encoding='utf-8')
-          scripts=re.findall(r'<script[^>]*>([\s\S]*?)</script>',html)
-          if len(scripts)!=1: raise SystemExit(f'EXPECTED_ONE_SCRIPT_GOT_{len(scripts)}')
-          Path('/tmp/request-rendered.js').write_text(scripts[0],encoding='utf-8')
-          print('RENDERED_SCRIPT_BYTES='+str(len(scripts[0].encode('utf-8'))))
-      - name: Parse actual rendered browser script
-        run: node --check /tmp/request-rendered.js
+          cat > tests/request-page-browser-syntax-audit.mjs <<'EOF'
+          import fs from 'node:fs';
+          import vm from 'node:vm';
+
+          const server = fs.readFileSync('server.ts', 'utf8');
+          const start = server.indexOf('function instructorRequestPage');
+          const end = server.indexOf('app.post("/api/public/request/:token/check"', start);
+          if (start < 0 || end <= start) throw new Error('تعذر عزل صفحة طلب الأستاذ من المصدر');
+          let fn = server.slice(start, end);
+          fn = fn.replace(
+            'function instructorRequestPage(token: string, nonce: string): string {',
+            'function instructorRequestPage(token, nonce) {'
+          );
+          const sandbox = { html: '' };
+          vm.runInNewContext(`${fn}\nhtml=instructorRequestPage('browser-test-token','nonce123');`, sandbox, { timeout: 1000 });
+          const scripts = [...String(sandbox.html).matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+          if (scripts.length !== 1) throw new Error(`توقعت سكربت متصفح واحداً في صفحة الأستاذ، ووجدت ${scripts.length}`);
+          new vm.Script(scripts[0], { filename: 'instructor-request-inline.js' });
+          console.log('✓ صفحة طلب الأستاذ المولدة تحمل JavaScript صالحاً للمتصفح');
+          EOF
+          node - <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+          p.scripts['test:request-browser-syntax']='node tests/request-page-browser-syntax-audit.mjs';
+          const needle='npm run test:instructor-request-server';
+          if(!p.scripts.test.includes('npm run test:request-browser-syntax')){
+            if(!p.scripts.test.includes(needle)) throw new Error('test chain anchor missing');
+            p.scripts.test=p.scripts.test.replace(needle, needle+' && npm run test:request-browser-syntax');
+          }
+          fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
+          NODE
+      - name: Install dependencies
+        run: npm ci
+      - name: Browser page regression
+        run: npm run test:request-browser-syntax
+      - name: TypeScript check
+        run: npm run lint
+      - name: Full tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Commit verified repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.ts package.json tests/request-page-browser-syntax-audit.mjs
+          git diff --cached --check
+          git commit -m "fix(instructor-request): restore request page browser execution"
+          git push origin HEAD:main
