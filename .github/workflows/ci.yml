@@ -1,4 +1,5 @@
 name: Comprehensive CI
+# Revalidated after the instructor-request cross-college opening repair.
 
 on:
   push:
