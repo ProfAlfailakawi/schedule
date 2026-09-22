@@ -12,7 +12,7 @@ permissions:
 jobs:
   patch-and-verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,187 +23,125 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Apply the scoped staff-card repair
+      - name: Apply institution-wide staff-card repair
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re, textwrap
 
-          server_path = Path('server.ts')
-          text = server_path.read_text(encoding='utf-8')
+          p = Path('server.ts')
+          text = p.read_text(encoding='utf-8')
 
-          def replace_once(old: str, new: str, label: str):
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
-              text = text.replace(old, new, 1)
+          card_start = text.index('async function buildStaffCard')
+          card_end = text.index('app.get("/api/share"', card_start)
+          card = text[card_start:card_end]
 
-          replace_once(
-          ''' * selector: without the link nothing is reachable at all, and with it a person
-           * can reach exactly one card, their own, inside the college that issued it.''',
-          ''' * selector: without the link nothing is reachable at all, and with it a person
-           * can reach exactly one card, their own, across every college/site in that term.
-           * The issuing link opens the door; it never trims a verified instructor back to
-           * the campus or college from which the link happened to be created.''',
-          'staff-card security documentation')
+          def one(src, old, new, label):
+              n = src.count(old)
+              if n != 1:
+                  raise SystemExit(f'{label}: expected 1 literal match, found {n}')
+              return src.replace(old, new, 1)
 
-          replace_once(
-          '''  // Security gate: the instructor must actually appear in the link's OWN term, so
-            // a wrong number and "teaches nothing" stay one indistinguishable 404 at the
-            // door. Only after passing may they pin another term (Idea 2).
-            const linkRows = (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: link.AdTermId }))
-              .filter(row => row.AdInstructorId === person.AdInstructorId);
-            if (!linkRows.length) return null;
+          def one_re(src, pattern, repl, label, flags=0):
+              out, n = re.subn(pattern, repl, src, count=1, flags=flags)
+              if n != 1:
+                  raise SystemExit(f'{label}: expected 1 regex match, found {n}')
+              return out
 
-            // The card covers the college that issued the link, so an instructor teaching
-            // several of its sections sees one complete week rather than a fragment.
-            const displayTermId = requestedTermId && terms.some(t => t.AdTermId === requestedTermId) ? requestedTermId : link.AdTermId;
-            const rows = displayTermId === link.AdTermId
-              ? linkRows
-              : (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: displayTermId }))
-                  .filter(row => row.AdInstructorId === person.AdInstructorId);''',
-          '''  // Security gate: the instructor must actually appear somewhere in the link's
-            // OWN term. A wrong number and "teaches nothing" therefore stay one
-            // indistinguishable 404 at the door. The link is an identity door, not a campus
-            // filter: after the civil ID matches, the card follows that instructor anywhere
-            // they teach in the institution.
-            const linkRows = (await Repository.getSchedulesByScope({ termId: link.AdTermId }))
-              .filter(row => row.AdInstructorId === person.AdInstructorId);
-            if (!linkRows.length) return null;
+          # The staff link is the permission door; after civil-ID identity succeeds,
+          # the personal card follows the instructor across the whole institution.
+          card = one(card,
+              'Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: link.AdTermId })',
+              'Repository.getSchedulesByScope({ termId: link.AdTermId })',
+              'current-term institution-wide lookup')
+          card = one(card,
+              'Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: displayTermId })',
+              'Repository.getSchedulesByScope({ termId: displayTermId })',
+              'selected-term institution-wide lookup')
 
-            // One instructor may teach in Basic Education (girls/Jahra), Commercial Studies,
-            // or any other college in the same term. Show one complete personal week.
-            const displayTermId = requestedTermId && terms.some(t => t.AdTermId === requestedTermId) ? requestedTermId : link.AdTermId;
-            const rows = displayTermId === link.AdTermId
-              ? linkRows
-              : (await Repository.getSchedulesByScope({ termId: displayTermId }))
-                  .filter(row => row.AdInstructorId === person.AdInstructorId);''',
-          'staff-card term-wide schedule lookup')
+          request_pattern = re.compile(r'''  const requestSectionIds = \[\.\.\.new Set\(rows\.map\(row => Number\(row\.AdSectionId \|\| 0\)\)\.filter\(Boolean\)\)\];\n  const requestLists = await Promise\.all\(requestSectionIds\.map\(sectionId =>\n    Repository\.getInstructorRequests\(Number\(link\.AdCollegeId\), sectionId, Number\(displayTermId\)\)\n  \)\);''')
+          request_repl = '''  // Every request remains attached to the lecture's real college + section.
+          // A link issued by one campus must never hide requests from another campus.
+          const requestScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
+          for (const row of rows) {
+            const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
+            if (collegeId && sectionId) requestScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
+          }
+          const requestLists = await Promise.all([...requestScopeMap.values()].map(scope =>
+            Repository.getInstructorRequests(scope.collegeId, scope.sectionId, Number(displayTermId))
+          ));'''
+          card, n = request_pattern.subn(textwrap.dedent(request_repl).rstrip(), card, count=1)
+          if n != 1:
+              raise SystemExit(f'request scopes: expected 1 match, found {n}')
 
-          replace_once(
-          '''  const requestSectionIds = [...new Set(rows.map(row => Number(row.AdSectionId || 0)).filter(Boolean))];
-            const requestLists = await Promise.all(requestSectionIds.map(sectionId =>
-              Repository.getInstructorRequests(Number(link.AdCollegeId), sectionId, Number(displayTermId))
-            ));''',
-          '''  // Requests belong to the lecture's real college + section. Once the card spans
-            // campuses, using the issuing link's college would silently lose requests from
-            // every other place the instructor teaches.
-            const requestScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
-            for (const row of rows) {
-              const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
-              if (collegeId && sectionId) requestScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
-            }
-            const requestLists = await Promise.all([...requestScopeMap.values()].map(scope =>
-              Repository.getInstructorRequests(scope.collegeId, scope.sectionId, Number(displayTermId))
-            ));''',
-          'staff-card request scopes')
+          movement_pattern = re.compile(r'''  const movementSections = \[\.\.\.new Set\(rows\.map\(row => Number\(row\.AdSectionId \|\| 0\)\)\.filter\(Boolean\)\)\];(?P<middle>.*?)  for \(const sectionId of movementSections\) \{\n    const versions = await Repository\.getScheduleVersions\(Number\(link\.AdCollegeId\), sectionId, Number\(displayTermId\), 30\);\n    const ordered = \[\.\.\.versions\]\.sort\(\(a,b\) => Date\.parse\(a\.createdAt\)-Date\.parse\(b\.createdAt\)\);\n    const liveSection = rows\.filter\(row => Number\(row\.AdSectionId\) === sectionId\);''', re.S)
+          m = movement_pattern.search(card)
+          if not m:
+              raise SystemExit('movement scopes: source block not found')
+          movement_repl = '''  const movementScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
+          for (const row of rows) {
+            const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
+            if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
+          }
+          ''' + m.group('middle') + '''  for (const scope of movementScopeMap.values()) {
+            const versions = await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, Number(displayTermId), 30);
+            const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
+            const liveSection = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);'''
+          card = card[:m.start()] + movement_repl + card[m.end():]
 
-          replace_once(
-          '''      linkId: request.linkId,
-                sectionId: Number(request.AdSectionId),
-                sectionName: sections.find(row => Number(row.AdSectionId) === Number(request.AdSectionId))?.AdSectionName || "القسم",''',
-          '''      linkId: request.linkId,
-                collegeId: Number(request.AdCollegeId),
-                collegeName: colleges.find(row => Number(row.AdCollegeId) === Number(request.AdCollegeId))?.AdCollegeName || "",
-                sectionId: Number(request.AdSectionId),
-                sectionName: sections.find(row => Number(row.AdSectionId) === Number(request.AdSectionId))?.AdSectionName || "القسم",''',
-          'staff-card request location metadata')
+          # Carry the real teaching location with every lecture so a merged card stays clear.
+          card = one(card,
+              '      section: row.SCode || "",\n      start: row.fstarttime, end: row.fendtime,',
+              '      section: row.SCode || "",\n      college: colleges.find(item => Number(item.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeName || "",\n      department: sections.find(item => Number(item.AdSectionId) === Number(row.AdSectionId))?.AdSectionName || "",\n      start: row.fstarttime, end: row.fendtime,',
+              'lecture location metadata')
 
-          replace_once(
-          '''  const movementSections = [...new Set(rows.map(row => Number(row.AdSectionId || 0)).filter(Boolean))];
-            const movementHistory: Array<{ at:string; label:string; tone:"add"|"move"|"room"|"gone"; day:string; text:string }> = [];
-            const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
-            const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
-            const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
-            const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === Number(person.AdInstructorId)).map(row => [Number(row.id),row]));
-            for (const sectionId of movementSections) {
-              const versions = await Repository.getScheduleVersions(Number(link.AdCollegeId), sectionId, Number(displayTermId), 30);
-              const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
-              const liveSection = rows.filter(row => Number(row.AdSectionId) === sectionId);''',
-          '''  const movementScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
-            for (const row of rows) {
-              const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
-              if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
-            }
-            const movementHistory: Array<{ at:string; label:string; tone:"add"|"move"|"room"|"gone"; day:string; text:string }> = [];
-            const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
-            const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
-            const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
-            const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === Number(person.AdInstructorId)).map(row => [Number(row.id),row]));
-            for (const scope of movementScopeMap.values()) {
-              const versions = await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, Number(displayTermId), 30);
-              const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
-              const liveSection = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);''',
-          'staff-card movement scopes')
+          card = one(card,
+              '  return {\n    name: person.AdInstructorName || "",\n    college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",',
+              '  const teachingColleges = [...new Set(shaped.map(row => row.college).filter(Boolean))];\n\n  return {\n    name: person.AdInstructorName || "",\n    college: teachingColleges.length > 1 ? "كل مواقعك" : (teachingColleges[0] || colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || ""),\n    colleges: teachingColleges,',
+              'merged-card header scope')
 
-          replace_once(
-          '''      section: row.SCode || "",
-                start: row.fstarttime, end: row.fendtime,
-                days: shareDayIndexes(row),
-                room: row.AdRoomCode || "", hall: row.AdRoomHall || ""''',
-          '''      section: row.SCode || "",
-                college: colleges.find(item => Number(item.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeName || "",
-                department: sections.find(item => Number(item.AdSectionId) === Number(row.AdSectionId))?.AdSectionName || "",
-                start: row.fstarttime, end: row.fendtime,
-                days: shareDayIndexes(row),
-                room: row.AdRoomCode || "", hall: row.AdRoomHall || ""''',
-          'staff-card row location metadata')
+          text = text[:card_start] + card + text[card_end:]
 
-          replace_once(
-          '''  return {
-              name: person.AdInstructorName || "",
-              college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",''',
-          '''  const teachingColleges = [...new Set(shaped.map(row => row.college).filter(Boolean))];
+          # Personal ICS must follow the same person-wide rule as the visible card.
+          cal_start = text.index('app.get("/api/public/ics/:token/:key"')
+          cal_end = text.index('const STAFF_NOTES_PER_DAY', cal_start)
+          cal = text[cal_start:cal_end]
+          cal = one(cal,
+              '  const [instructors, courses, terms] = await Promise.all([\n    Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(),\n  ]);',
+              '  const [instructors, courses, terms, colleges] = await Promise.all([\n    Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(), Repository.getColleges(),\n  ]);',
+              'calendar college references')
+          cal = one_re(cal,
+              r'''  const collegeRows = await Repository\.getSchedulesByScope\(\{\n    collegeId: resolved\.link\.AdCollegeId, termId: liveTermId,\n  \}\);\n  const rows = collegeRows\.filter\(row => row\.AdInstructorId === person\.AdInstructorId\);\n  const courseById = new Map\(courses\.map\(row => \[row\.AdCourseId, row\]\)\);''',
+              '''  const termRows = await Repository.getSchedulesByScope({ termId: liveTermId });
+          const rows = termRows.filter(row => row.AdInstructorId === person.AdInstructorId);
+          const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+          const collegeById = new Map(colleges.map(row => [Number(row.AdCollegeId), row]));''',
+              'calendar term-wide rows')
+          cal = one(cal,
+              '  const rowById = new Map(collegeRows.map(row => [Number(row.id), row]));',
+              '  const rowById = new Map(termRows.map(row => [Number(row.id), row]));',
+              'calendar cover source')
+          cal = one(cal,
+              '        room: [covered.AdRoomCode, covered.AdRoomHall].filter(Boolean).join(" / "),',
+              '        room: [collegeById.get(Number(covered.AdCollegeId))?.AdCollegeName, covered.AdRoomCode, covered.AdRoomHall].filter(Boolean).join(" / "),',
+              'calendar cover location')
+          cal = one(cal,
+              '      room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),',
+              '      room: [collegeById.get(Number(row.AdCollegeId))?.AdCollegeName, row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),',
+              'calendar lecture location')
+          text = text[:cal_start] + cal + text[cal_end:]
 
-            return {
-              name: person.AdInstructorName || "",
-              college: teachingColleges.length > 1 ? "كل مواقعك" : (teachingColleges[0] || colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || ""),
-              colleges: teachingColleges,''',
-          'staff-card top scope label')
+          # The visible card tells the instructor exactly which site/department owns each row.
+          page_start = text.index('function staffCardPage')
+          page_end = text.index('function surveyPage', page_start)
+          page = text[page_start:page_end]
+          old_ui = ''''<small>'+[row.code,(row.room||row.hall)&&(esc(row.room||"")+"/"+esc(row.hall||""))].filter(Boolean).join(" · ")+'</small></span>';'''
+          new_ui = ''''<small>'+[row.code,row.college,row.department,(row.room||row.hall)&&((row.room||"")+"/"+(row.hall||""))].filter(Boolean).map(esc).join(" · ")+'</small></span>';'''
+          page = one(page, old_ui, new_ui, 'visible lecture location')
+          text = text[:page_start] + page + text[page_end:]
 
-          replace_once(
-          '''  const [instructors, courses, terms] = await Promise.all([
-              Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(),
-            ]);''',
-          '''  const [instructors, courses, terms, colleges] = await Promise.all([
-              Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(), Repository.getColleges(),
-            ]);''',
-          'personal calendar reference data')
-
-          replace_once(
-          '''  const collegeRows = await Repository.getSchedulesByScope({
-              collegeId: resolved.link.AdCollegeId, termId: liveTermId,
-            });
-            const rows = collegeRows.filter(row => row.AdInstructorId === person.AdInstructorId);
-            const courseById = new Map(courses.map(row => [row.AdCourseId, row]));''',
-          '''  const termRows = await Repository.getSchedulesByScope({ termId: liveTermId });
-            const rows = termRows.filter(row => row.AdInstructorId === person.AdInstructorId);
-            const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
-            const collegeById = new Map(colleges.map(row => [Number(row.AdCollegeId), row]));''',
-          'personal calendar global rows')
-
-          replace_once(
-          '''  const rowById = new Map(collegeRows.map(row => [Number(row.id), row]));''',
-          '''  const rowById = new Map(termRows.map(row => [Number(row.id), row]));''',
-          'personal calendar coverage source')
-
-          replace_once(
-          '''        room: [covered.AdRoomCode, covered.AdRoomHall].filter(Boolean).join(" / "),''',
-          '''        room: [collegeById.get(Number(covered.AdCollegeId))?.AdCollegeName, covered.AdRoomCode, covered.AdRoomHall].filter(Boolean).join(" / "),''',
-          'calendar cover location')
-
-          replace_once(
-          '''      room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),''',
-          '''      room: [collegeById.get(Number(row.AdCollegeId))?.AdCollegeName, row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),''',
-          'calendar lecture location')
-
-          replace_once(
-          '''              '<small>'+[row.code,(row.room||row.hall)&&(esc(row.room||"")+"/"+esc(row.hall||""))].filter(Boolean).join(" · ")+'</small></span>';''',
-          '''              '<small>'+[row.code,row.college,row.department,(row.room||row.hall)&&((row.room||"")+"/"+(row.hall||""))].filter(Boolean).map(esc).join(" · ")+'</small></span>';''',
-          'staff-card visible location label')
-
-          server_path.write_text(text, encoding='utf-8')
+          p.write_text(text, encoding='utf-8')
 
           test = r'''import fs from "fs";
           import path from "path";
@@ -219,37 +157,36 @@ jobs:
           const calendar = server.slice(server.indexOf('app.get("/api/public/ics/:token/:key"'), server.indexOf("const STAFF_NOTES_PER_DAY"));
           const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
 
-          check(card.includes("Repository.getSchedulesByScope({ termId: link.AdTermId })"), "الرابط يبحث عن الأستاذ في الفصل كله لا في كلية الإصدار");
-          check(card.includes("Repository.getSchedulesByScope({ termId: displayTermId })"), "تبديل الفصل يبقى شاملاً لكل المواقع");
-          check(!card.includes("getSchedulesByScope({ collegeId: link.AdCollegeId, termId:"), "لا يوجد قصّ لجدول الأستاذ على كلية الرابط");
-          check(card.includes("requestScopeMap") && card.includes("getInstructorRequests(scope.collegeId, scope.sectionId"), "طلبات الأستاذ تُقرأ من كلية وقسم كل محاضرة فعلياً");
-          check(card.includes("movementScopeMap") && card.includes("getScheduleVersions(scope.collegeId, scope.sectionId"), "سجل التغييرات يتبع كل موقع فعلي");
-          check(card.includes("college: colleges.find(item => Number(item.AdCollegeId) === Number(row.AdCollegeId))") && card.includes("department:"), "كل محاضرة تحمل اسم موقعها وقسمها");
-          check(card.includes('college: teachingColleges.length > 1 ? "كل مواقعك"'), "رأس البطاقة لا ينسب الجدول المتعدد لموقع واحد");
-          check(page.includes("row.college") && page.includes("row.department") && page.includes(".map(esc)"), "واجهة البطاقة تعرض الموقع والقسم بأمان");
-          check(calendar.includes("Repository.getSchedulesByScope({ termId: liveTermId })"), "تقويم الأستاذ الشخصي يتبع الأستاذ في جميع المواقع");
-          check(!calendar.includes("collegeId: resolved.link.AdCollegeId, termId: liveTermId"), "التقويم لا يعود لتقييد كلية الإصدار");
-          check(calendar.includes("collegeById.get(Number(row.AdCollegeId))?.AdCollegeName"), "موضع التقويم يوضح الكلية/الموقع لكل محاضرة");
+          check(card.includes("Repository.getSchedulesByScope({ termId: link.AdTermId })"), "staff link opens the instructor across the whole term");
+          check(card.includes("Repository.getSchedulesByScope({ termId: displayTermId })"), "term switching remains institution-wide");
+          check(!card.includes("getSchedulesByScope({ collegeId: link.AdCollegeId, termId:"), "issuing college no longer trims the instructor card");
+          check(card.includes("requestScopeMap") && card.includes("getInstructorRequests(scope.collegeId, scope.sectionId"), "requests follow each lecture's real college and section");
+          check(card.includes("movementScopeMap") && card.includes("getScheduleVersions(scope.collegeId, scope.sectionId"), "movement history follows every real teaching scope");
+          check(card.includes("row.college") && card.includes("department:"), "lecture rows carry their teaching location");
+          check(card.includes('teachingColleges.length > 1 ? "كل مواقعك"'), "multi-site card is labelled as all locations");
+          check(page.includes("row.college") && page.includes("row.department") && page.includes(".map(esc)"), "visible timetable identifies site and department safely");
+          check(calendar.includes("Repository.getSchedulesByScope({ termId: liveTermId })"), "personal calendar follows the instructor institution-wide");
+          check(!calendar.includes("collegeId: resolved.link.AdCollegeId, termId: liveTermId"), "personal calendar is not limited to the issuing college");
+          check(calendar.includes("collegeById.get(Number(row.AdCollegeId))?.AdCollegeName"), "calendar location identifies the real college/site");
 
-          console.log(`\nStaff card global scope audit: ${passed} passed, ${failed} failed`);
+          console.log(`\nStaff-card global-scope audit: ${passed} passed, ${failed} failed`);
           process.exit(failed ? 1 : 0);
           '''
-          # The raw string is indented with this Python block; normalize the file.
-          import textwrap
           Path('tests/staff-card-global-scope-audit.ts').write_text(textwrap.dedent(test), encoding='utf-8')
 
           package = Path('package.json')
           pkg = package.read_text(encoding='utf-8')
-          old_test = '"test": "npm run test:hardening && npm run test:demo-roles'
-          new_test = '"test": "npm run test:hardening && npm run test:staff-global && npm run test:demo-roles'
-          if old_test not in pkg:
-              raise SystemExit('package test chain anchor not found')
-          pkg = pkg.replace(old_test, new_test, 1)
-          anchor = '"test:hardening": "tsx tests/input-hardening-audit.ts",'
-          addition = '"test:hardening": "tsx tests/input-hardening-audit.ts",\n    "test:staff-global": "tsx tests/staff-card-global-scope-audit.ts",'
-          if pkg.count(anchor) != 1:
-              raise SystemExit('package script anchor not found exactly once')
-          pkg = pkg.replace(anchor, addition, 1)
+          if '"test:staff-global"' not in pkg:
+              chain_old = '"test": "npm run test:hardening && npm run test:demo-roles'
+              chain_new = '"test": "npm run test:hardening && npm run test:staff-global && npm run test:demo-roles'
+              if pkg.count(chain_old) != 1:
+                  raise SystemExit('package test chain anchor not found exactly once')
+              pkg = pkg.replace(chain_old, chain_new, 1)
+              script_old = '"test:hardening": "tsx tests/input-hardening-audit.ts",'
+              script_new = '"test:hardening": "tsx tests/input-hardening-audit.ts",\n    "test:staff-global": "tsx tests/staff-card-global-scope-audit.ts",'
+              if pkg.count(script_old) != 1:
+                  raise SystemExit('package script anchor not found exactly once')
+              pkg = pkg.replace(script_old, script_new, 1)
           package.write_text(pkg, encoding='utf-8')
           PY
 
@@ -268,7 +205,7 @@ jobs:
       - name: Production build
         run: npm run build
 
-      - name: Commit verified repair and remove diagnostic runner
+      - name: Commit verified repair and remove temporary runner
         shell: bash
         run: |
           git checkout -- src/generated/buildStamp.ts 2>/dev/null || true
