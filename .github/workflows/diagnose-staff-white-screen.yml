@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
-      - name: Extract staff-card browser script
+      - name: Render staff-card browser script
         shell: python
         run: |
           from pathlib import Path
@@ -29,23 +29,17 @@ jobs:
           b=s.index('function surveyPage',a)
           p=s[a:b]
           scripts=re.findall(r'<script[^>]*>([\s\S]*?)</script>',p)
-          if not scripts:
-              raise SystemExit('NO_STAFF_INLINE_SCRIPT')
-          for i,script in enumerate(scripts):
-              Path(f'/tmp/staff-inline-{i}.js').write_text(script,encoding='utf-8')
-          print('STAFF_INLINE_SCRIPTS='+str(len(scripts)))
-      - name: Report exact browser syntax error
+          if len(scripts) != 1:
+              raise SystemExit(f'EXPECTED_ONE_STAFF_INLINE_SCRIPT_GOT_{len(scripts)}')
+          script=scripts[0].replace('${JSON.stringify(token)}','"diagnostic-token"')
+          remains=list(re.finditer(r'\$\{',script))
+          if remains:
+              print('UNRESOLVED_TEMPLATE_EXPRESSIONS='+str(len(remains)))
+              for m in remains[:20]:
+                  print(script[max(0,m.start()-80):m.start()+160].replace('\n',' '))
+              raise SystemExit(2)
+          Path('/tmp/staff-inline-rendered.js').write_text(script,encoding='utf-8')
+          print('STAFF_INLINE_BYTES='+str(len(script.encode('utf-8'))))
+      - name: Parse rendered browser script
         shell: bash
-        run: |
-          set +e
-          failed=0
-          for f in /tmp/staff-inline-*.js; do
-            node --check "$f" >/tmp/node-check.out 2>/tmp/node-check.err
-            rc=$?
-            if [ $rc -ne 0 ]; then
-              failed=1
-              echo "FILE=$f"
-              cat /tmp/node-check.err | tail -n 12
-            fi
-          done
-          exit $failed
+        run: node --check /tmp/staff-inline-rendered.js
