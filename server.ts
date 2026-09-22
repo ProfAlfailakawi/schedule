@@ -14081,6 +14081,10 @@ async function instructorRequestItemsFromPayload(request: InstructorRequest, sen
     if (action === "add" && !allowedOption) {
       throw new Error("المقرّر المضاف ليس من كتالوج قسمك في الكلية المختارة.");
     }
+    const targetScheduleScope = action === "add" ? {
+      AdCollegeId: selectedCollegeId,
+      AdSectionId: selectedSectionId,
+    } : {};
 
     const days = Array.isArray(entry?.days)
       ? (entry.days as any[]).map(String).filter((day): day is RequestDayKey =>
@@ -14096,6 +14100,7 @@ async function instructorRequestItemsFromPayload(request: InstructorRequest, sen
         ? {
             courseId,
             courseName: allowedOption?.name || courseName.get(courseId) || "",
+            ...targetScheduleScope,
             collegeId: allowedOption?.collegeId,
             collegeName: allowedOption?.collegeName,
             sectionId: allowedOption?.sectionId,
@@ -14108,6 +14113,7 @@ async function instructorRequestItemsFromPayload(request: InstructorRequest, sen
         courseId,
         courseName: allowedOption?.name || courseName.get(courseId) || stored?.before?.courseName || "",
         ...(action === "add" && allowedOption ? {
+          ...targetScheduleScope,
           collegeId: allowedOption.collegeId,
           collegeName: allowedOption.collegeName,
           sectionId: allowedOption.sectionId,
