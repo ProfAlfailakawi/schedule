@@ -52,3 +52,22 @@ if guard.strip() not in audit:
     needle = "\nconsole.log(`\\nCross-college instructor request audit:"
     pos = audit.index(needle)
     audit_path.write_text(audit[:pos] + guard + audit[pos:])
+
+server_audit_path = Path("tests/instructor-request-server-audit.ts")
+server_audit = server_audit_path.read_text()
+old = '''check(server.includes("async function instructorRequestCourseOptions")
+  && server.includes("authorityDraftForScope(scope.collegeId, scope.sectionId")
+  && server.includes("authorityDraft.baselineRows || []")
+  && server.includes("(baseline as any[]).forEach"),
+  "وقائمة الإضافة تُستخرج كاملةً من الجدول الأصلي المعتمد، لا مما نُسخ إلى جدول العمل");'''
+new = '''const requestCourseOptionsSource = server.slice(
+  server.indexOf("async function instructorRequestCourseOptions"),
+  server.indexOf("async function buildRequestContext", server.indexOf("async function instructorRequestCourseOptions")),
+);
+check(requestCourseOptionsSource.includes("instructorRequestSectionCourses(scope.sectionId)")
+  && !requestCourseOptionsSource.includes("authorityDraftForScope")
+  && !requestCourseOptionsSource.includes("authorityBaselineForScope"),
+  "وقائمة الإضافة تأتي كاملةً من الكتالوج التشغيلي لكل كلية بلا إعادة بناء التاريخ عند فتح الرابط");'''
+if old not in server_audit:
+    raise SystemExit("could not update instructor request server audit contract")
+server_audit_path.write_text(server_audit.replace(old, new))
