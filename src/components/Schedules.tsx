@@ -450,6 +450,15 @@ const roomIdentity = (buildingRaw: unknown, hallRaw: unknown) => {
 
 const displayRoomBadge = (room: { hall?: string; building?: string; label?: string }) => room.hall || room.building || room.label || "—";
 
+const cleanWeekPlaceLabel = (value: string) => String(value || "")
+  .replace(/[٠-٩۰-۹]/g, digit => String("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹".indexOf(digit) % 10))
+  .replace(/(?:^|[·•\/])\s*[0-9]+\s*[·•-]?\s*كلية\s*/g, match => match.startsWith("/") ? "/" : "")
+  .replace(/(^|[·•\/])\s*كلية\s+/g, "$1")
+  .replace(/\s*[·•]\s*/g, " · ")
+  .replace(/\s{2,}/g, " ")
+  .replace(/^\s*[·•-]\s*/, "")
+  .trim();
+
 const sameRoom = (
   left: { AdRoomCode?: unknown; AdRoomHall?: unknown },
   right: { AdRoomCode?: unknown; AdRoomHall?: unknown },
@@ -6274,7 +6283,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const title = r.AdCourseName || c?.CourseName || code;
     const label = { text: title, shortened: false };
     const who = i?.AdInstructorName || "بدون أستاذ";
-    const place = placeOf(r);
+    const place = cleanWeekPlaceLabel(placeOf(r));
     /* Computed once: the card wears it as colour, and — when the reader has
        asked for it — as a weave keyed to the same number. */
     const cardHue = hueFor(code, title, i?.AdInstructorName, placeOf(r));
@@ -6469,7 +6478,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       return { key: `i:${name}`, label: firstLast(name), hue: courseHue(name, "") };
     }
     if (hueBy === "room") {
-      const place = placeOf(r);
+      const place = cleanWeekPlaceLabel(placeOf(r));
       return { key: `r:${place}`, label: place, hue: courseHue(place, "") };
     }
     const course = courseById.get(r.AdCourseId);

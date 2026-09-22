@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpLeft, CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, MessageSquarePlus, QrCode, Send, Trash2, Users, X } from "lucide-react";
+import { CalendarPlus, Check, Copy, IdCard, Link2, MessageSquarePlus, QrCode, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
@@ -249,19 +249,6 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
   const publicationLinks = links.filter(link => link.kind !== "survey" && link.kind !== "request");
   const active = publicationLinks.filter(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now());
 
-  /**
-   * Student survey is managed in Decision Center. Publishing only carries a
-   * signpost to that exact scene, so there is one source of truth for issuing,
-   * copying and QR management. The current scope is handed over as well.
-   */
-  const openStudentSurveyWorkspace = () => {
-    try {
-      sessionStorage.setItem("schedule-intelligence-tab", "command");
-      sessionStorage.setItem("schedule-intelligence-insight", "students");
-      sessionStorage.setItem("schedule-intelligence-scope", JSON.stringify({ collegeId, sectionId, termId }));
-    } catch {}
-    window.location.assign("/Schedule/Intelligence");
-  };
   const currentStep = PUBLISH_STEPS.findIndex(item => item.id === step);
   const openDialog = () => {
     setStep("kind");
@@ -312,21 +299,6 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                 <h2 id="schedule-publish-title">{scopeLabel || "نشر الجدول"}</h2>
               </div>
             </header>
-
-            <button
-              type="button"
-              className="share-survey-shortcut"
-              aria-label="افتح استبيان الطلبة في مركز الذكاء"
-              onClick={openStudentSurveyWorkspace}
-              disabled={!scoped}
-            >
-              <span className="share-survey-shortcut-icon" aria-hidden="true"><ClipboardList /></span>
-              <span className="share-survey-shortcut-copy">
-                <strong>استبيان الطلبة</strong>
-                <small>اختصار إلى مكانه في مركز الذكاء</small>
-              </span>
-              <ArrowUpLeft className="share-survey-shortcut-arrow" aria-hidden="true" />
-            </button>
 
             {error ? <p className="share-error" role="alert">{error}</p> : null}
 

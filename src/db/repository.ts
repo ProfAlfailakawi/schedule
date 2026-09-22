@@ -4128,16 +4128,20 @@ export const Repository = {
     return (db.instructorRequests || []).find(row => row.linkId === linkId);
   },
 
-  /* وارِدُ القسم: فصلٌ واحدٌ ونطاقٌ واحدٍ في كل مرّة، كبقيّة الشاشات. */
+  /* وارد القسم أو الكلية: sectionId=0 يعني كل أقسام الكلية في الفصل نفسه. */
   getInstructorRequests: async (collegeId: number, sectionId: number, termId: number): Promise<InstructorRequest[]> => {
+    const inScope = (row: InstructorRequest) =>
+      Number(row.AdTermId) === termId &&
+      Number(row.AdCollegeId) === collegeId &&
+      (!sectionId || Number(row.AdSectionId) === sectionId);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("instructorRequests").where("AdTermId", "==", termId).limit(2000).get();
       return snap.docs.map(doc => doc.data() as InstructorRequest)
-        .filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId)
+        .filter(inScope)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
     return (db.instructorRequests || [])
-      .filter(row => Number(row.AdTermId) === termId && Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId)
+      .filter(inScope)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 

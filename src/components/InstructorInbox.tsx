@@ -62,6 +62,7 @@ interface InboxRequest extends InstructorRequest {
   instructorName: string;
   instructorMobile: string;
   changedCount: number;
+  sectionName?: string;
 }
 
 interface Totals {
@@ -209,7 +210,7 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
       <header className="request-card-head">
         <div>
           <strong>{row.instructorName}</strong>
-          <small>{countOf(items.length, AR.change)}{row.submittedAt ? ` · ${arabicDate(row.submittedAt)}` : ""}</small>
+          <small>{row.sectionName ? `${row.sectionName} · ` : ""}{countOf(items.length, AR.change)}{row.submittedAt ? ` · ${arabicDate(row.submittedAt)}` : ""}</small>
         </div>
         {/* ── من وقّعه ────────────────────────────────────────────────────
             الرابطُ يصل في واتساب ويُعاد توجيهه، فضغطةُ «أرسل» وحدَها لا تُثبت
@@ -381,7 +382,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   }, [scopes, collegeId, powerAdmin]);
 
   const load = useCallback(async () => {
-    if (!collegeId || !sectionId || !termId) { setRows(null); return; }
+    if (!collegeId || !termId) { setRows(null); return; }
     setError(null);
     try {
       const data = await request(`/api/instructor-requests?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`);
@@ -509,7 +510,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
 
   const selects: ScopeAskSelect[] = [
     { key: "college", label: "الكلية", value: collegeId, placeholder: "اختر الكلية", options: collegeOptions },
-    { key: "section", label: "القسم", value: sectionId, placeholder: "اختر القسم", options: sectionOptions, disabled: !collegeId },
+    { key: "section", label: "القسم", value: sectionId, placeholder: "كل أقسام الكلية", options: sectionOptions, disabled: !collegeId },
     { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: (terms || []).map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
   ];
 
@@ -543,8 +544,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
 
       {error ? <Notice type="error" onDismiss={() => setError(null)}>{error}</Notice> : null}
 
-      {!collegeId || !sectionId || !termId ? (
-        <EmptyState title="اختر النطاق" detail="يُعرض وارد الأساتذة لقسمٍ واحدٍ في فصلٍ واحد." />
+      {!collegeId || !termId ? (
+        <EmptyState title="اختر النطاق" detail="اختر الكلية والفصل، واترك القسم فارغاً لعرض وارد الكلية كاملاً." />
       ) : !rows ? (
         <MicroLoader label="يقرأ الوارد…" />
       ) : !rows.length ? (
