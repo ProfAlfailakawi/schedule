@@ -1,0 +1,40 @@
+name: Diagnose staff card scope
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-staff-card.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print staff-card server paths
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('server.ts').read_text(encoding='utf-8')
+          lines=text.splitlines()
+          def segment(a,b):
+              s=text.find(a)
+              if s<0:
+                  print('MISSING',a); return
+              e=text.find(b,s+len(a)) if b else -1
+              if e<0: e=min(len(text),s+30000)
+              print('\n===== SEGMENT',a,'=====\n')
+              print(text[s:e])
+          segment('function staffCardPage','function surveyPage')
+          for needle in ['kind === "staff"','kind !== "staff"','AdInstructorCivil','/api/public','staff-card','staffCardPage(']:
+              print('\n===== OCCURRENCES',needle,'=====')
+              for i,line in enumerate(lines,1):
+                  if needle in line:
+                      lo=max(1,i-12); hi=min(len(lines),i+28)
+                      print(f'--- {lo}-{hi} ---')
+                      for n in range(lo,hi+1): print(f'{n}: {lines[n-1]}')
+          PY
