@@ -42,7 +42,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, judgeRequest, type RequestDayKey } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
@@ -14054,6 +14054,76 @@ function stripForInstructor(request: InstructorRequest) {
   };
 }
 
+
+async function instructorRequestItemsFromPayload(request: InstructorRequest, sent: any[]): Promise<InstructorRequestItem[]> {
+  const before = new Map((request.items || []).map(item => [String(item.rowId ?? `add:${item.action}`), item]));
+  const [courses, allowedCourseOptions] = await Promise.all([
+    Repository.getCourses(),
+    instructorRequestCourseOptions(request),
+  ]);
+  const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
+  const allowedCourseMap = new Map(allowedCourseOptions.map(option =>
+    [`${option.collegeId}:${option.sectionId}:${option.id}`, option]));
+
+  const items: InstructorRequestItem[] = [];
+  for (const entry of sent) {
+    const action = ["keep", "change", "delete", "add"].includes(String(entry?.action)) ? String(entry.action) : "keep";
+    const rowId = entry?.rowId == null ? null : Number(entry.rowId);
+    const stored = rowId == null ? undefined : before.get(String(rowId));
+    if (rowId != null && !stored) throw new Error("أحد المواعيد ليس ضمن جدولك.");
+
+    const courseId = action === "add" ? Number(entry?.courseId || 0) : Number(stored?.before?.courseId || 0);
+    const selectedCollegeId = action === "add" ? Number(entry?.collegeId || 0) : Number(request.AdCollegeId);
+    const selectedSectionId = action === "add" ? Number(entry?.sectionId || 0) : Number(request.AdSectionId);
+    const allowedOption = action === "add"
+      ? allowedCourseMap.get(`${selectedCollegeId}:${selectedSectionId}:${courseId}`)
+      : undefined;
+    if (action === "add" && !allowedOption) {
+      throw new Error("المقرّر المضاف ليس من كتالوج قسمك في الكلية المختارة.");
+    }
+
+    const days = Array.isArray(entry?.days)
+      ? (entry.days as any[]).map(String).filter((day): day is RequestDayKey =>
+          ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day))
+      : [];
+    const start = /^\d{1,2}:\d{2}$/.test(String(entry?.start || "")) ? String(entry.start) : "";
+    const end = start && days.length ? endForRequest(days, start) : "";
+
+    items.push({
+      rowId,
+      action: action as any,
+      before: action === "add"
+        ? {
+            courseId,
+            courseName: allowedOption?.name || courseName.get(courseId) || "",
+            collegeId: allowedOption?.collegeId,
+            collegeName: allowedOption?.collegeName,
+            sectionId: allowedOption?.sectionId,
+            sectionCode: "",
+            days: "",
+            time: "",
+          }
+        : stored?.before,
+      after: action === "keep" || action === "delete" ? stored?.before : {
+        courseId,
+        courseName: allowedOption?.name || courseName.get(courseId) || stored?.before?.courseName || "",
+        ...(action === "add" && allowedOption ? {
+          collegeId: allowedOption.collegeId,
+          collegeName: allowedOption.collegeName,
+          sectionId: allowedOption.sectionId,
+        } : {}),
+        sectionCode: String(stored?.before?.sectionCode || ""),
+        days: days.map(day => DAY_LETTERS[day]).join(" · "),
+        time: `${start} – ${end}`,
+      },
+      slots: days.map(day => ({ day, start, end: endForRequest([day], start) })),
+      excuse: String(entry?.excuse || "").trim().slice(0, 400) || undefined,
+      decision: stored?.decision,
+    });
+  }
+  return items;
+}
+
 /** يقرأ الرابط ويعيد السجلّ، أو الخطأَ بحالته. */
 async function resolveRequestLink(token: string) {
   const link = await Repository.getShareLink(String(token || ""));
@@ -14931,14 +15001,18 @@ function actionName(action){return action==="add"?"مضاف":action==="change"?"
 function requestedText(it){
  if(it.action==="delete")return "حذف المقرر من الجدول";
  if(it.action==="change"||it.action==="add")return (it.days.length?fmtDays(it.days):"لم تُحدّد الأيام")+" · "+(it.start?(it.start+" – "+endOf(it.days,it.start)):"لم يُحدّد الوقت");
- return ((it.before||{}).days||"")+" · "+((it.before||{}).time||"")
+ var base=it.before||it.after||{};return (base.days||"")+" · "+(base.time||"")
 }
+function payloadItems(){return state.map(function(it){return{rowId:it.rowId,action:it.action,
+ courseId:it.action==="add"?it.courseId:undefined,
+ collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,
+ days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})}
 function activityHtml(r){
  var changed=state.map(function(it,i){return{it:it,i:i}}).filter(function(x){return x.it.action!=="keep"});
- var rows=changed.map(function(x){var it=x.it,b=it.before||{},decision=it.decision||{};
+ var rows=changed.map(function(x){var it=x.it,b=it.before||it.after||{},decision=it.decision||{};
   var decisionText=decision.state==="fixed"?"ثبّت القسم هذا الطلب":decision.state==="rejected"?"رفض القسم هذا الطلب"+(decision.note?" · "+decision.note:""):"بانتظار إرسال الطلب ومراجعته";
   return '<li class="activity-item" data-kind="'+esc(it.action)+'"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(actionName(it.action))+" · "+esc(b.courseName||"مقرر")+'</b><p>'+esc(requestedText(it))+'</p><div class="decision">'+esc(decisionText)+'</div></div><time>البند '+(x.i+1)+'</time></li>'}).join("");
- var timeline=(r.timeline||[]).slice().reverse().map(function(e){var item=typeof e.itemIndex==="number"?state[e.itemIndex]:null,b=item&&item.before||{};
+ var timeline=(r.timeline||[]).slice().reverse().map(function(e){var item=typeof e.itemIndex==="number"?state[e.itemIndex]:null,b=item&&(item.before||item.after)||{};
   var detail=(item?((b.courseName||"مقرر")+" · "+requestedText(item)):e.detail||"");
   return '<li class="activity-item" data-kind="event"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(EVENTS[e.kind]||e.kind)+'</b>'+(detail?'<p>'+esc(detail)+'</p>':'')+(e.by?'<div class="decision">بواسطة '+esc(e.by)+'</div>':'')+'</div><time>'+esc(dt(e.at))+'</time></li>'}).join("");
  return '<div class="section-head"><b>حركة طلبك</b><small>كل إجراء موثّق بالتفصيل</small></div>'+(rows||timeline?'<ul class="activity-list">'+rows+timeline+'</ul>':'<div class="activity-empty">لا توجد حركة بعد. أي إضافة أو تعديل أو حذف سيظهر هنا فوراً.</div>')
@@ -14953,7 +15027,7 @@ function paint(){
   '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?blocked+" بنود تحتاج معالجة":"فحص مباشر قبل الإرسال")+'</small></div></div>'+
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div><div id="err"></div>';
  h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'><div class="section-head"><b>مواعيدك الحالية</b><small>'+state.filter(function(it){return it.rowId!==null}).length+' مواعيد · كل بطاقة موعد مستقل</small></div>';
- state.forEach(function(it,i){var b=it.before||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
+ state.forEach(function(it,i){var b=it.before||it.after||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
   h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(b.courseName||"مقرر")+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(it.action==="add"&&it.collegeName?'<small>'+esc(it.collegeName)+'</small>':'')+tag+'</div><p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>';
   if(open){if(it.action!=="add")h+=it.action==="keep"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="change" aria-pressed="false">غيّر هذا الموعد</button><button type="button" data-i="'+i+'" data-a="delete" aria-pressed="false">احذف هذا الموعد</button></div>':it.action==="change"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">إلغاء التعديل</button><button type="button" data-i="'+i+'" data-a="delete">حذف الموعد بدلًا منه</button></div>':'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">تراجع عن الحذف</button></div>';
    else h+='<div class="pick"><button type="button" data-i="'+i+'" data-a="cancel-add">إلغاء الإضافة</button></div>';
@@ -15007,7 +15081,7 @@ function wire(){
    var found=data.courses.filter(function(c){return c.id===cid&&Number(c.collegeId)===collegeId&&Number(c.sectionId)===sectionId})[0];if(!found)return;
    state.push({
     rowId:null,action:"add",courseId:cid,collegeId:collegeId,sectionId:sectionId,collegeName:found.collegeName||"",
-    before:{courseName:found.name||"مقرر",sectionCode:""},decision:null,
+    before:{courseName:found.name||"مقرر",sectionCode:""},after:{courseId:cid,courseName:found.name||"مقرر",collegeId:collegeId,collegeName:found.collegeName||"",sectionId:sectionId,sectionCode:"",days:"",time:""},decision:null,
     slots:[],days:[],start:"",excuse:"",tone:"",note:"",alts:[]
    });
    chooserOpen=false;paint();var cards=host.querySelectorAll(".card");var card=cards[cards.length-2];if(card)card.scrollIntoView({behavior:"smooth",block:"center"})
@@ -15033,7 +15107,7 @@ function wire(){
     جوابُ الحكم حين يصل متأخّراً — والحقلُ يُبنى من signCivil، فما كُتب ولم
     يُحفظ يُمحى تحت يده ويُردّ إرسالُه بلا سبب. */
  var civilBox=document.getElementById("civil");
- if(civilBox)civilBox.oninput=function(){signCivil=digitsOf(civilBox.value)};
+ if(civilBox)civilBox.oninput=function(){signCivil=digitsOf(civilBox.value);civilBox.value=signCivil};
  var send=document.getElementById("send");if(send)send.onclick=submit;
 }
 /* الحكمُ يُسأل عنه الخادمُ عند كل تغيير: هو وحده يرى الجدول كاملاً، والصفحةُ
@@ -15044,7 +15118,7 @@ function check(i){
  var seq=(pending[i]||0)+1;pending[i]=seq;it.tone="checking";it.note="يفحص التعارض والموانع على جدولك…";it.alts=[];paint();
  fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check",{method:"POST",
   headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({rowId:it.rowId,action:it.action,courseId:it.action==="add"?it.courseId:undefined,collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,days:it.days,start:it.start})})
+  body:JSON.stringify({itemIndex:i,rowId:it.rowId,action:it.action,courseId:it.action==="add"?it.courseId:undefined,collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,days:it.days,start:it.start,items:payloadItems()})})
  .then(function(r){return r.json()}).then(function(d){
   if(seq!==pending[i]||!state[i])return;
   it.tone=d.kind==="clear"?"ok":d.kind==="exception"?"warn":"bad";
@@ -15064,10 +15138,7 @@ function submit(){
  var send=document.getElementById("send");send.disabled=true;send.textContent="يرسل…";
  fetch("/api/public/request/"+encodeURIComponent(TOKEN),{method:"POST",
   headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({civil:civil,items:state.map(function(it){return{rowId:it.rowId,action:it.action,
-   courseId:it.action==="add"?it.courseId:undefined,
-   collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,
-   days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})})})
+  body:JSON.stringify({civil:civil,items:payloadItems()})})
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){
   if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
@@ -15088,7 +15159,7 @@ fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
  if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذّر فتح الرابط")+'</div>';return}
  data=x.d;
  state=(data.request.items||[]).map(function(it){return{rowId:it.rowId,action:it.action||"keep",
-  before:it.before,slots:it.slots||[],days:(it.action==="change"||it.action==="add")?(it.slots||[]).map(function(s){return s.day}):[],
+  before:it.before||it.after,after:it.after,slots:it.slots||[],days:(it.action==="change"||it.action==="add")?(it.slots||[]).map(function(s){return s.day}):[],
   start:(it.action==="change"||it.action==="add")&&it.slots&&it.slots[0]?it.slots[0].start:"",excuse:it.excuse||"",
   decision:it.decision||null,tone:it.verdict==="clear"?"ok":it.verdict==="exception"?"warn":it.verdict==="conflict"?"bad":"",
   note:it.reasons&&it.reasons.length?it.reasons[0].text:(it.verdict==="clear"?"الوقت متاح":""),alts:it.nearestTimes||[]}});
@@ -15111,72 +15182,38 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   const known = (resolved.request.items || []).find(item => item.rowId === rowId);
   if (action !== "add" && rowId != null && !known) { res.status(400).json({ error: "هذا الموعد ليس ضمن جدولك." }); return; }
 
-  const courseId = action === "add" ? Number(req.body?.courseId || 0) : Number(known?.before?.courseId || 0);
-  const context = await buildRequestContext(resolved.request);
-  const course = context.courses.get(courseId);
-  const selectedCollegeId = action === "add" ? Number(req.body?.collegeId || 0) : Number(resolved.request.AdCollegeId);
-  const selectedSectionId = action === "add" ? Number(req.body?.sectionId || 0) : Number(resolved.request.AdSectionId);
-  if (action === "add") {
-    const allowed = (await instructorRequestCourseOptions(resolved.request)).some(option =>
-      option.id === courseId && option.collegeId === selectedCollegeId && option.sectionId === selectedSectionId);
-    if (!course || !allowed) {
-      res.status(400).json({ error: "المقرّر المضاف ليس من كتالوج قسمك في الكلية المختارة." });
-      return;
-    }
+  const sent = Array.isArray(req.body?.items) ? (req.body.items as any[]) : [{
+    rowId,
+    action,
+    courseId: action === "add" ? Number(req.body?.courseId || 0) : undefined,
+    collegeId: action === "add" ? Number(req.body?.collegeId || 0) : undefined,
+    sectionId: action === "add" ? Number(req.body?.sectionId || 0) : undefined,
+    days: req.body?.days,
+    start: req.body?.start,
+  }];
+  const itemIndex = Number.isInteger(Number(req.body?.itemIndex)) ? Number(req.body.itemIndex) : -1;
+  let draftItems: InstructorRequestItem[];
+  try {
+    draftItems = await instructorRequestItemsFromPayload(resolved.request, sent);
+  } catch (error: any) {
+    res.status(400).json({ error: error?.message || "تعذر فحص هذا البند." });
+    return;
   }
 
-  const days = Array.isArray(req.body?.days)
-    ? (req.body.days as any[]).map(String).filter((day): day is RequestDayKey =>
-        ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day))
-    : [];
-  const start = /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "";
-
-  const base = action === "add" ? {
-    AdCollegeId: selectedCollegeId,
-    AdSectionId: selectedSectionId,
-    AdTermId: resolved.request.AdTermId,
-    AdInstructorId: resolved.request.AdInstructorId,
-    AdCourseId: courseId,
-  } : (known ? context.allRows.find(r => Number(r.id) === Number(known.rowId)) || {} : {});
-
-  const requested: RequestedRow = {
-    rowId: action === "add" ? null : rowId,
-    action,
-    AdCourseId: courseId,
-    days,
-    start,
-  };
-  const candidate = rowFromRequest(requested, base as any);
-
-  const instructorRows = context.allRows.filter(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
-  const instructorRowsAfter = action === "add"
-    ? [...instructorRows, candidate]
-    : instructorRows.map(row => Number(row.id) === Number(rowId) ? candidate : row);
-  const targetCollegeId = action === "add" ? selectedCollegeId : Number((base as any).AdCollegeId || resolved.request.AdCollegeId);
-  const targetSectionId = action === "add" ? selectedSectionId : Number((base as any).AdSectionId || resolved.request.AdSectionId);
-  const rules = await requestRulesForScope(context, targetCollegeId, targetSectionId, Number(resolved.request.AdTermId));
-
-  const verdict = judgeRequest(requested, {
-    instructorId: Number(resolved.request.AdInstructorId),
-    allRows: context.allRows,
-    instructorRowsAfter,
-    courses: context.courses,
-    instructors: context.instructors,
-    cohortPairs: rules.cohortPairs,
-    knownRoomKeys: rules.knownRoomKeys,
-    startLadder: rules.startLadder,
-    windowOpen: requestWindowOpen(resolved.request),
-    instructorLoad: Number(context.instructors.get(Number(resolved.request.AdInstructorId))?.AdInstructorLoad || 0) || null,
-  });
+  const judged = await judgeRequestItems({ ...resolved.request, items: draftItems });
+  const fallbackCourseId = action === "add" ? Number(req.body?.courseId || 0) : Number(known?.before?.courseId || 0);
+  const item = judged.items[itemIndex >= 0 ? itemIndex : 0] || judged.items.find(entry =>
+    action === "add" ? entry.action === "add" && Number(entry.after?.courseId) === fallbackCourseId : Number(entry.rowId) === rowId);
+  if (!item) { res.status(400).json({ error: "تعذر فحص هذا البند." }); return; }
 
   res.setHeader("Cache-Control", "no-store");
   /* القاعاتُ المرشّحة لا تُرسل: هذا المسار يخاطب صفحةَ الأستاذ. */
   res.json({
-    kind: verdict.kind,
-    headline: verdict.headline,
-    computedEnd: verdict.computedEnd,
-    roomAvailable: verdict.roomAvailable,
-    nearestTimes: verdict.nearestTimes.map(slot => ({ day: slot.day, start: slot.start, end: slot.end })),
+    kind: item.verdict || "clear",
+    headline: item.reasons?.[0]?.text || (item.verdict === "conflict" ? "هذا الموعد غير متاح." : item.verdict === "exception" ? "يحتاج سبب استثناء." : "الوقت متاح"),
+    computedEnd: item.slots?.[0]?.end || "",
+    roomAvailable: item.verdict === "conflict" ? false : true,
+    nearestTimes: (item.nearestTimes || []).map(slot => ({ day: slot.day, start: slot.start, end: slot.end })),
   });
 });
 
