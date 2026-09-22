@@ -13470,6 +13470,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   if(tabMovement)tabMovement.onclick=function(){selectTab("movement");};
   if(tabRequests)tabRequests.onclick=function(){selectTab("requests");};
 
+  function visibleCardCollege(value){var name=String(value||"");return /التربية\s*الأساسية.*بنات/.test(name)?"":name}
   function render(d,value){
     currentCivil=value;
     var currentTerm = { termId: Number(d.termId || 0) };
@@ -13496,7 +13497,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
               '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
-              '<small>'+[row.code,row.college,row.department,(row.room||row.hall)&&((row.room||"")+"/"+(row.hall||""))].filter(Boolean).map(esc).join(" · ")+'</small></span>';
+              '<small>'+[row.code,visibleCardCollege(row.college),(row.room||row.hall)&&((row.room||"")+"/"+(row.hall||""))].filter(Boolean).map(esc).join(" · ")+'</small></span>';
           }).join("")+'</td>';
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
@@ -14131,38 +14132,90 @@ async function refreshUnsubmittedInstructorRequest(request: InstructorRequest): 
  * يحتوي أصل الهيئة على عشرات المقررات؛ الاعتماد على الحاضر يجعل البقية
  * تختفي. ندمج الأصل مع الكتالوج احتياطاً، ونوحّد المقرر بهويته ثم برمزه واسمه.
  */
-async function instructorRequestCourseOptions(request: InstructorRequest) {
-  const [catalogue, authorityDraft] = await Promise.all([
-    instructorRequestSectionCourses(request.AdSectionId),
-    authorityDraftForScope(Number(request.AdCollegeId), Number(request.AdSectionId), Number(request.AdTermId)),
-  ]);
-  const baseline = authorityDraft
-    ? await authorityBaselineForScope(
-        authorityDraft.baselineRows || [], authorityDraft,
-        Number(request.AdCollegeId), Number(request.AdSectionId),
-      )
-    : [];
-  const catalogueById = new Map((catalogue as any[]).map(row => [Number(row.AdCourseId), row]));
-  const options = new Map<string, { id: number; name: string; code: string }>();
-  const add = (idValue: unknown, nameValue: unknown, codeValue: unknown) => {
-    const id = Number(idValue || 0);
-    const name = String(nameValue || "").trim();
-    const code = String(codeValue || "").trim();
-    if (!id || !name) return;
-    const key = id ? `id:${id}` : `text:${code.toLowerCase()}|${name.toLowerCase()}`;
-    options.set(key, { id, name, code });
-  };
-  /* الأصل أولاً: منه نستخرج جميع المقررات، لا المواعيد التي نُسخت فقط. */
-  (baseline as any[]).forEach(row => {
-    const catalogueRow = catalogueById.get(Number(row.AdCourseId));
-    add(
-      row.AdCourseId,
-      row.AdCourseName || row.CourseName || catalogueRow?.CourseName,
-      row.CourseCode || row.AdCourseCode || catalogueRow?.CourseCode,
-    );
-  });
-  (catalogue as any[]).forEach(row => add(row.AdCourseId, row.CourseName, row.CourseCode));
-  return [...options.values()].sort((a, b) => courseNameCollator.compare(a.name, b.name));
+type InstructorRequestCourseOption = {
+  id: number;
+  name: string;
+  code: string;
+  collegeId: number;
+  collegeName: string;
+  sectionId: number;
+};
+
+/**
+ * A request link belongs to one department, not to one campus. The same academic
+ * department may exist in Basic Education Girls, Jahra, Commercial Studies, or
+ * another college/site. We resolve those sibling sections by academic identity
+ * and expose only those scopes — never unrelated university departments.
+ */
+async function instructorRequestDepartmentScopes(request: InstructorRequest) {
+  const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const base = (sections as any[]).find(row => Number(row.AdSectionId) === Number(request.AdSectionId));
+  if (!base) return [] as Array<{ collegeId: number; collegeName: string; sectionId: number }>;
+  const collegeNameById = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const scopes = (sections as any[])
+    .filter(row => academicSectionNameMatches(String(row.AdSectionName || ""), String(base.AdSectionName || "")))
+    .map(row => ({
+      collegeId: Number(row.AdCollegeId || 0),
+      collegeName: collegeNameById.get(Number(row.AdCollegeId || 0)) || "",
+      sectionId: Number(row.AdSectionId || 0),
+    }))
+    .filter(scope => scope.collegeId && scope.sectionId);
+  const unique = [...new Map(scopes.map(scope => [`${scope.collegeId}:${scope.sectionId}`, scope])).values()];
+  const defaultCollege = (name: string) => /التربية\s*الأساسية.*بنات/.test(String(name || "")) ? 0 : 1;
+  return unique.sort((a, b) => defaultCollege(a.collegeName) - defaultCollege(b.collegeName)
+    || arabicUiCollator.compare(a.collegeName, b.collegeName));
+}
+
+/**
+ * Full operational catalogue for this academic department across every college
+ * where it exists. The professor chooses the college explicitly, then a course;
+ * the link's issuing college no longer limits what can be requested.
+ */
+async function instructorRequestCourseOptions(request: InstructorRequest): Promise<InstructorRequestCourseOption[]> {
+  const scopes = await instructorRequestDepartmentScopes(request);
+  const groups = await Promise.all(scopes.map(async scope => {
+    const [catalogue, authorityDraft] = await Promise.all([
+      instructorRequestSectionCourses(scope.sectionId),
+      authorityDraftForScope(scope.collegeId, scope.sectionId, Number(request.AdTermId)),
+    ]);
+    const baseline = authorityDraft
+      ? await authorityBaselineForScope(
+authorityDraft.baselineRows || [], authorityDraft,
+scope.collegeId, scope.sectionId,
+        )
+      : [];
+    const catalogueById = new Map((catalogue as any[]).map(row => [Number(row.AdCourseId), row]));
+    const options = new Map<string, InstructorRequestCourseOption>();
+    const add = (idValue: unknown, nameValue: unknown, codeValue: unknown) => {
+      const id = Number(idValue || 0);
+      const name = String(nameValue || "").trim();
+      const code = String(codeValue || "").trim();
+      if (!id || !name) return;
+      options.set(`${scope.collegeId}:${scope.sectionId}:${id}`, {
+        id, name, code,
+        collegeId: scope.collegeId,
+        collegeName: scope.collegeName,
+        sectionId: scope.sectionId,
+      });
+    };
+    /* Baseline rows are useful only while the course is still operational in
+       this scope. An archived-plan course must never reappear through history. */
+    (baseline as any[]).forEach(row => {
+      const catalogueRow = catalogueById.get(Number(row.AdCourseId));
+      if (!catalogueRow) return;
+      add(
+        row.AdCourseId,
+        row.AdCourseName || row.CourseName || catalogueRow.CourseName,
+        row.CourseCode || row.AdCourseCode || catalogueRow.CourseCode,
+      );
+    });
+    (catalogue as any[]).forEach(row => add(row.AdCourseId, row.CourseName, row.CourseCode));
+    return [...options.values()];
+  }));
+  return groups.flat().sort((a, b) =>
+    a.collegeId === b.collegeId
+      ? courseNameCollator.compare(a.name, b.name)
+      : arabicUiCollator.compare(a.collegeName, b.collegeName));
 }
 
 /**
@@ -14198,6 +14251,26 @@ async function buildRequestContext(request: InstructorRequest) {
   };
 }
 
+/** Constraints are local to the college/section where the requested lecture
+ * will live, while instructor clashes remain institution-wide for the term. */
+async function requestRulesForScope(
+  context: Awaited<ReturnType<typeof buildRequestContext>>,
+  collegeId: number,
+  sectionId: number,
+  termId: number,
+) {
+  const scopeRows = context.allRows.filter(row =>
+    Number(row.AdCollegeId) === Number(collegeId) && Number(row.AdSectionId) === Number(sectionId));
+  const needs = await Repository.getStudentNeeds(collegeId, sectionId, termId).catch(() => []);
+  const courseRows = [...context.courses.values()];
+  const demand = readStudentDemand(needs as any[], courseRows as any[]);
+  const rhythm = learnRhythm(scopeRows as any[]);
+  const startLadder = [...new Set(rhythm.patterns.flatMap(pattern => pattern.ladder))];
+  const knownRoomKeys = [...new Set(scopeRows
+    .map(row => roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall))
+    .filter(Boolean))];
+  return { scopeRows, cohortPairs: cohortPairs(demand), startLadder, knownRoomKeys };
+}
 /**
  * يُعيد حساب حُكم كل بند من الجدول الحقيقي.
  *
@@ -14208,6 +14281,7 @@ async function buildRequestContext(request: InstructorRequest) {
 async function judgeRequestItems(request: InstructorRequest): Promise<InstructorRequest> {
   const context = await buildRequestContext(request);
   const open = requestWindowOpen(request);
+  const instructorRows = context.allRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
   const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
 
   /* ── جدولُ الأستاذ بعد الحزمة، لا قبلها ────────────────────────────────
@@ -14221,14 +14295,23 @@ async function judgeRequestItems(request: InstructorRequest): Promise<Instructor
    * صفّاً واحداً في نظر محرّك التعارض فيتخطّى المقارنةَ بينهما.
    */
   const tempIdFor = (index: number) => -(index + 1);
-  const rowsAfter: any[] = [];
+  const requestRowIds = new Set((request.items || []).map(item => Number(item.rowId || 0)).filter(Boolean));
+  const rowsAfter: any[] = instructorRows.filter(row => !requestRowIds.has(Number(row.id)));
   for (const [index, item] of (request.items || []).entries()) {
     if (item.action === "delete") continue;
-    const original = mine.find(row => Number(row.id) === Number(item.rowId));
+    const original = instructorRows.find(row => Number(row.id) === Number(item.rowId));
     if (item.action === "keep") { if (original) rowsAfter.push(original); continue; }
     const slots = item.slots || [];
     const days = new Set(slots.map(slot => String(slot.day)));
-    const base = original || { AdInstructorId: Number(request.AdInstructorId) };
+    const selectedCourse = context.courses.get(Number(item.after?.courseId || item.before?.courseId || 0));
+    const targetCollegeId = Number(item.after?.collegeId || selectedCourse?.AdCollegeId || original?.AdCollegeId || request.AdCollegeId);
+    const targetSectionId = Number(item.after?.sectionId || selectedCourse?.AdSectionId || original?.AdSectionId || request.AdSectionId);
+    const base = original || {
+      AdInstructorId: Number(request.AdInstructorId),
+      AdCollegeId: targetCollegeId,
+      AdSectionId: targetSectionId,
+      AdTermId: Number(request.AdTermId),
+    };
     rowsAfter.push({
       ...base,
       id: item.rowId ?? tempIdFor(index),
@@ -14239,9 +14322,24 @@ async function judgeRequestItems(request: InstructorRequest): Promise<Instructor
     });
   }
 
+  const rulesByScope = new Map<string, Awaited<ReturnType<typeof requestRulesForScope>>>();
+  for (const item of (request.items || [])) {
+    const original = item.rowId == null ? undefined : instructorRows.find(row => Number(row.id) === Number(item.rowId));
+    const selectedCourse = context.courses.get(Number(item.after?.courseId || item.before?.courseId || 0));
+    const collegeId = Number(item.after?.collegeId || selectedCourse?.AdCollegeId || original?.AdCollegeId || request.AdCollegeId);
+    const sectionId = Number(item.after?.sectionId || selectedCourse?.AdSectionId || original?.AdSectionId || request.AdSectionId);
+    const key = `${collegeId}:${sectionId}`;
+    if (!rulesByScope.has(key)) rulesByScope.set(key, await requestRulesForScope(context, collegeId, sectionId, Number(request.AdTermId)));
+  }
+
   const items = (request.items || []).map((item, index) => {
     const slot = item.slots?.[0];
     const days = (item.slots || []).map(entry => entry.day as RequestDayKey);
+    const original = item.rowId == null ? undefined : instructorRows.find(row => Number(row.id) === Number(item.rowId));
+    const selectedCourse = context.courses.get(Number(item.after?.courseId || item.before?.courseId || 0));
+    const targetCollegeId = Number(item.after?.collegeId || selectedCourse?.AdCollegeId || original?.AdCollegeId || request.AdCollegeId);
+    const targetSectionId = Number(item.after?.sectionId || selectedCourse?.AdSectionId || original?.AdSectionId || request.AdSectionId);
+    const rules = rulesByScope.get(`${targetCollegeId}:${targetSectionId}`)!;
     const verdict = judgeRequest({
       rowId: item.rowId,
       tempId: tempIdFor(index),
@@ -14255,9 +14353,9 @@ async function judgeRequestItems(request: InstructorRequest): Promise<Instructor
       instructorRowsAfter: rowsAfter,
       courses: context.courses,
       instructors: context.instructors,
-      cohortPairs: context.cohortPairs,
-      knownRoomKeys: context.knownRoomKeys,
-      startLadder: context.startLadder,
+      cohortPairs: rules.cohortPairs,
+      knownRoomKeys: rules.knownRoomKeys,
+      startLadder: rules.startLadder,
       windowOpen: open,
       instructorLoad: Number(context.instructors.get(Number(request.AdInstructorId))?.AdInstructorLoad || 0) || null,
     });
@@ -14479,9 +14577,15 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
       res.status(409).json({ error: "لم يُحفظ الموعد الجديد بعد. احفظه في الورشة ثم سجّل القرار." });
       return;
     }
+    const expectedCourseId = Number(item.after?.courseId || 0);
+    const expectedCollegeId = Number(item.after?.collegeId || stored.AdCollegeId);
+    const expectedSectionId = Number(item.after?.sectionId || stored.AdSectionId);
     if (Number(created.AdInstructorId) !== Number(stored.AdInstructorId)
-      || Number(created.AdTermId) !== Number(stored.AdTermId)) {
-      res.status(409).json({ error: "الموعد المحفوظ ليس هو المطلوب في هذا البند." });
+      || Number(created.AdTermId) !== Number(stored.AdTermId)
+      || Number(created.AdCourseId) !== expectedCourseId
+      || Number(created.AdCollegeId) !== expectedCollegeId
+      || Number(created.AdSectionId) !== expectedSectionId) {
+      res.status(409).json({ error: "الموعد المحفوظ ليس هو المطلوب في هذا البند أو موقعه." });
       return;
     }
   }
@@ -14570,7 +14674,7 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
     instructorName: String(person?.AdInstructorName || ""),
     termName: String(term?.AdTermName || ""),
     windowOpen: requestWindowOpen(request),
-    /* مقرّراتُ القسم وحدها: الإضافةُ تُختار من كتالوجه لا من الجامعة كلها. */
+    /* مقررات هذا القسم العلمي في كل كليةٍ يوجد فيها؛ الكلية تُختار صراحةً قبل المقرر. */
     courses,
   });
 });
@@ -14642,12 +14746,13 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
      حقولٍ لا غير — ما طُلب، وأيُّ مقرّر، وأيُّ أيام، وأيُّ بداية. ولو قُبل
      الباقي لأرسل من يعرف كيف يُعدّل الطلبَ لقطةً تقول ما لم يكن. */
   const before = new Map((resolved.request.items || []).map(item => [String(item.rowId ?? `add:${item.action}`), item]));
-  const [courses, departmentCourses] = await Promise.all([
+  const [courses, allowedCourseOptions] = await Promise.all([
     Repository.getCourses(),
-    instructorRequestSectionCourses(resolved.request.AdSectionId),
+    instructorRequestCourseOptions(resolved.request),
   ]);
   const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
-  const sectionCourses = new Set((departmentCourses as any[]).map(row => Number(row.AdCourseId)));
+  const allowedCourseMap = new Map(allowedCourseOptions.map(option =>
+    [`${option.collegeId}:${option.sectionId}:${option.id}`, option]));
 
   const items: InstructorRequestItem[] = [];
   for (const entry of sent) {
@@ -14659,8 +14764,13 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
     if (rowId != null && !stored) { res.status(400).json({ error: "أحد المواعيد ليس ضمن جدولك." }); return; }
 
     const courseId = action === "add" ? Number(entry?.courseId || 0) : Number(stored?.before?.courseId || 0);
-    if (action === "add" && !sectionCourses.has(courseId)) {
-      res.status(400).json({ error: "المقرّر المضاف ليس من مقرّرات قسمك." });
+    const selectedCollegeId = action === "add" ? Number(entry?.collegeId || 0) : Number(resolved.request.AdCollegeId);
+    const selectedSectionId = action === "add" ? Number(entry?.sectionId || 0) : Number(resolved.request.AdSectionId);
+    const allowedOption = action === "add"
+      ? allowedCourseMap.get(`${selectedCollegeId}:${selectedSectionId}:${courseId}`)
+      : undefined;
+    if (action === "add" && !allowedOption) {
+      res.status(400).json({ error: "المقرّر المضاف ليس من كتالوج قسمك في الكلية المختارة." });
       return;
     }
 
@@ -14677,7 +14787,12 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
       before: stored?.before,
       after: action === "keep" || action === "delete" ? stored?.before : {
         courseId,
-        courseName: courseName.get(courseId) || "",
+        courseName: allowedOption?.name || courseName.get(courseId) || "",
+        ...(action === "add" && allowedOption ? {
+collegeId: allowedOption.collegeId,
+collegeName: allowedOption.collegeName,
+sectionId: allowedOption.sectionId,
+        } : {}),
         sectionCode: String(stored?.before?.sectionCode || ""),
         days: days.map(day => DAY_LETTERS[day]).join(" · "),
         time: `${start} – ${end}`,
@@ -14797,7 +14912,7 @@ textarea{width:100%;margin-top:9px;padding:11px;border-radius:11px;border:1px so
 textarea[data-show="1"]{display:block}
 .add-card{border-style:dashed;border-color:#9fc8b5;background:rgba(255,255,255,.72)}.add-card header{margin-bottom:10px}.add-card header b{display:block}.add-card header small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .add-start{width:100%;min-height:50px;border:0;border-radius:13px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}
-.course-chooser{display:grid;gap:10px}.course-search{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+.course-chooser{display:grid;gap:10px}.course-college{display:grid;gap:6px}.course-college span{font-size:12px;font-weight:700;color:var(--muted)}.course-college select,.course-search{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);font:inherit}.course-search:disabled{opacity:.55;cursor:not-allowed;background:var(--soft)}
 .course-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:340px;overflow:auto;padding:2px}.course-option{display:grid;gap:2px;min-height:62px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink);text-align:start;cursor:pointer}.course-option:hover,.course-option:focus{border-color:var(--accent);background:var(--soft);outline:none}.course-option b{font-size:13px}.course-option small{color:var(--muted);font-size:11.5px;direction:ltr;text-align:start}.chooser-close{justify-self:start;border:0;background:transparent;color:var(--muted);cursor:pointer;padding:4px 0}
 .send{position:sticky;bottom:0;z-index:4;margin:18px -4px 0;padding:20px 4px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 18%)}
 .sendbox{padding:13px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 -8px 28px rgba(22,57,40,.08)}
@@ -14861,13 +14976,22 @@ function paint(){
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div><div id="err"></div>';
  h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'><div class="section-head"><b>مواعيدك الحالية</b><small>'+state.filter(function(it){return it.rowId!==null}).length+' مواعيد · كل بطاقة موعد مستقل</small></div>';
  state.forEach(function(it,i){var b=it.before||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
-  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(b.courseName||"مقرر")+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+tag+'</div><p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>';
+  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(b.courseName||"مقرر")+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(it.action==="add"&&it.collegeName?'<small>'+esc(it.collegeName)+'</small>':'')+tag+'</div><p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>';
   if(open){if(it.action!=="add")h+=it.action==="keep"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="change" aria-pressed="false">غيّر هذا الموعد</button><button type="button" data-i="'+i+'" data-a="delete" aria-pressed="false">احذف هذا الموعد</button></div>':it.action==="change"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">إلغاء التعديل</button><button type="button" data-i="'+i+'" data-a="delete">حذف الموعد بدلًا منه</button></div>':'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">تراجع عن الحذف</button></div>';
    else h+='<div class="pick"><button type="button" data-i="'+i+'" data-a="cancel-add">إلغاء الإضافة</button></div>';
    if(it.action==="change"||it.action==="add"){h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
     h+='</div><label class="time"><span>وقت البداية</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم والبداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'">'+esc(it.note||"")+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){return '<button type="button" data-i="'+i+'" data-alt="'+esc(a.day+"|"+a.start)+'">بديل: '+fmtDays([a.day])+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>'}
   }h+='</article>'});
- if(open&&data.courses&&data.courses.length){h+='<div class="card add-card"><header><b>تريد إضافة موعد جديد؟</b><small>اختر المقرر أولًا، ثم الأيام والوقت. النظام يفحص كل شيء تلقائيًا.</small></header>'+(chooserOpen?'<div class="course-chooser"><input class="course-search" id="courseSearch" type="search" placeholder="اكتب اسم المقرر أو رمزه…" autocomplete="off"><div class="course-options">'+data.courses.map(function(c){return '<button type="button" class="course-option" data-course="'+c.id+'" data-search="'+esc((c.name+" "+c.code).toLowerCase())+'"><b>'+esc(c.name||c.code)+'</b><small>'+esc(c.code||"")+'</small></button>'}).join("")+'</div><button type="button" class="chooser-close" id="closeChooser">إغلاق القائمة</button></div>':'<button type="button" class="add-start" id="openChooser">+ اختر مقررًا وأضف موعدًا</button>')+'</div>'}
+ if(open&&data.courses&&data.courses.length){
+  var collegeMap={};data.courses.forEach(function(c){if(c.collegeId&&!collegeMap[c.collegeId])collegeMap[c.collegeId]=c.collegeName||("كلية "+c.collegeId)});
+  var collegeOptions=Object.keys(collegeMap).map(function(id){return{id:Number(id),name:collegeMap[id]}});
+  h+='<div class="card add-card"><header><b>تريد إضافة موعد جديد؟</b><small>اختر الكلية أولًا، ثم المقرر والأيام والوقت. القسم والفصل معروفان تلقائيًا.</small></header>'+(chooserOpen?'<div class="course-chooser">'+
+   '<label class="course-college"><span>الكلية</span><select id="courseCollege"><option value="">اختر الكلية أولًا</option>'+collegeOptions.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>'}).join("")+'</select></label>'+
+   '<input class="course-search" id="courseSearch" type="search" placeholder="اكتب اسم المقرر أو رمزه…" autocomplete="off" disabled>'+
+   '<div class="course-options">'+data.courses.map(function(c){return '<button type="button" class="course-option" data-course="'+c.id+'" data-college="'+c.collegeId+'" data-section="'+c.sectionId+'" data-search="'+esc((c.name+" "+c.code).toLowerCase())+'" hidden><b>'+esc(c.name||c.code)+'</b><small>'+esc(c.code||"")+'</small></button>'}).join("")+'</div>'+
+   '<button type="button" class="chooser-close" id="closeChooser">إغلاق القائمة</button></div>':'<button type="button" class="add-start" id="openChooser">+ اختر كلية ومقررًا وأضف موعدًا</button>')+'</div>'
+ }
+
  h+='</section><section data-panel="activity" '+(activeTab==="activity"?'':'hidden')+'>'+activityHtml(r)+'</section>';
  /* التوقيع: حقلٌ واحدٌ فوق الزرّ، وجملةٌ تقول ما يعنيه الضغط. ولا يُقال
     «تحقّق من هويتك» — يُقال إنه توقيع، لأنه توقيع. */
@@ -14892,13 +15016,20 @@ function wire(){
  host.querySelectorAll("[data-tab]").forEach(function(el){el.onclick=function(){activeTab=el.dataset.tab||"schedule";paint()}});
  var openChooser=document.getElementById("openChooser");if(openChooser)openChooser.onclick=function(){chooserOpen=true;paint();var search=document.getElementById("courseSearch");if(search)search.focus()};
  var closeChooser=document.getElementById("closeChooser");if(closeChooser)closeChooser.onclick=function(){chooserOpen=false;paint()};
- var courseSearch=document.getElementById("courseSearch");if(courseSearch)courseSearch.oninput=function(){var query=String(courseSearch.value||"").trim().toLowerCase();host.querySelectorAll("[data-course]").forEach(function(option){option.hidden=query&&String(option.dataset.search||"").indexOf(query)<0})};
+ var courseSearch=document.getElementById("courseSearch"),courseCollege=document.getElementById("courseCollege");
+ function paintCourseChoices(){
+  var collegeId=Number(courseCollege&&courseCollege.value)||0,query=String(courseSearch&&courseSearch.value||"").trim().toLowerCase();
+  if(courseSearch)courseSearch.disabled=!collegeId;
+  host.querySelectorAll("[data-course]").forEach(function(option){option.hidden=!collegeId||Number(option.dataset.college)!==collegeId||(query&&String(option.dataset.search||"").indexOf(query)<0)})
+ }
+ if(courseCollege)courseCollege.onchange=function(){if(courseSearch)courseSearch.value="";paintCourseChoices();if(courseSearch&&!courseSearch.disabled)courseSearch.focus()};
+ if(courseSearch)courseSearch.oninput=paintCourseChoices;paintCourseChoices();
  host.querySelectorAll("[data-course]").forEach(function(option){option.onclick=function(){
-   var cid=Number(option.dataset.course)||0;if(!cid)return;
-   var found=data.courses.filter(function(c){return c.id===cid})[0];
+   var cid=Number(option.dataset.course)||0,collegeId=Number(option.dataset.college)||0,sectionId=Number(option.dataset.section)||0;if(!cid||!collegeId||!sectionId)return;
+   var found=data.courses.filter(function(c){return c.id===cid&&Number(c.collegeId)===collegeId&&Number(c.sectionId)===sectionId})[0];if(!found)return;
    state.push({
-    rowId:null,action:"add",courseId:cid,
-    before:{courseName:found?found.name:"مقرر",sectionCode:""},decision:null,
+    rowId:null,action:"add",courseId:cid,collegeId:collegeId,sectionId:sectionId,collegeName:found.collegeName||"",
+    before:{courseName:found.name||"مقرر",sectionCode:""},decision:null,
     slots:[],days:[],start:"",excuse:"",tone:"",note:"",alts:[]
    });
    chooserOpen=false;paint();var cards=host.querySelectorAll(".card");var card=cards[cards.length-2];if(card)card.scrollIntoView({behavior:"smooth",block:"center"})
@@ -14935,7 +15066,7 @@ function check(i){
  var seq=(pending[i]||0)+1;pending[i]=seq;it.tone="checking";it.note="يفحص التعارض والموانع على جدولك…";it.alts=[];paint();
  fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/check",{method:"POST",
   headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({rowId:it.rowId,action:it.action,courseId:it.action==="add"?it.courseId:undefined,days:it.days,start:it.start})})
+  body:JSON.stringify({rowId:it.rowId,action:it.action,courseId:it.action==="add"?it.courseId:undefined,collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,days:it.days,start:it.start})})
  .then(function(r){return r.json()}).then(function(d){
   if(seq!==pending[i]||!state[i])return;
   it.tone=d.kind==="clear"?"ok":d.kind==="exception"?"warn":"bad";
@@ -14957,7 +15088,8 @@ function submit(){
   headers:{"Content-Type":"application/json"},
   body:JSON.stringify({civil:civil,items:state.map(function(it){return{rowId:it.rowId,action:it.action,
    courseId:it.action==="add"?it.courseId:undefined,
-   days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})})})
+   collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,
+   days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})})})})
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){
   if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
@@ -15004,9 +15136,13 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   const courseId = action === "add" ? Number(req.body?.courseId || 0) : Number(known?.before?.courseId || 0);
   const context = await buildRequestContext(resolved.request);
   const course = context.courses.get(courseId);
+  const selectedCollegeId = action === "add" ? Number(req.body?.collegeId || 0) : Number(resolved.request.AdCollegeId);
+  const selectedSectionId = action === "add" ? Number(req.body?.sectionId || 0) : Number(resolved.request.AdSectionId);
   if (action === "add") {
-    if (!course || Number(course.AdSectionId) !== Number(resolved.request.AdSectionId)) {
-      res.status(400).json({ error: "المقرّر المضاف ليس من مقرّرات قسمك." });
+    const allowed = (await instructorRequestCourseOptions(resolved.request)).some(option =>
+      option.id === courseId && option.collegeId === selectedCollegeId && option.sectionId === selectedSectionId);
+    if (!course || !allowed) {
+      res.status(400).json({ error: "المقرّر المضاف ليس من كتالوج قسمك في الكلية المختارة." });
       return;
     }
   }
@@ -15018,8 +15154,8 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   const start = /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "";
 
   const base = action === "add" ? {
-    AdCollegeId: resolved.request.AdCollegeId,
-    AdSectionId: resolved.request.AdSectionId,
+    AdCollegeId: selectedCollegeId,
+    AdSectionId: selectedSectionId,
     AdTermId: resolved.request.AdTermId,
     AdInstructorId: resolved.request.AdInstructorId,
     AdCourseId: courseId,
@@ -15034,8 +15170,13 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   };
   const candidate = rowFromRequest(requested, base as any);
 
-  const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
-  const instructorRowsAfter = action === "add" ? [...mine, candidate] : mine;
+  const instructorRows = context.allRows.filter(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
+  const instructorRowsAfter = action === "add"
+    ? [...instructorRows, candidate]
+    : instructorRows.map(row => Number(row.id) === Number(rowId) ? candidate : row);
+  const targetCollegeId = action === "add" ? selectedCollegeId : Number((base as any).AdCollegeId || resolved.request.AdCollegeId);
+  const targetSectionId = action === "add" ? selectedSectionId : Number((base as any).AdSectionId || resolved.request.AdSectionId);
+  const rules = await requestRulesForScope(context, targetCollegeId, targetSectionId, Number(resolved.request.AdTermId));
 
   const verdict = judgeRequest(requested, {
     instructorId: Number(resolved.request.AdInstructorId),
@@ -15043,9 +15184,9 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
     instructorRowsAfter,
     courses: context.courses,
     instructors: context.instructors,
-    cohortPairs: context.cohortPairs,
-    knownRoomKeys: context.knownRoomKeys,
-    startLadder: context.startLadder,
+    cohortPairs: rules.cohortPairs,
+    knownRoomKeys: rules.knownRoomKeys,
+    startLadder: rules.startLadder,
     windowOpen: requestWindowOpen(resolved.request),
     instructorLoad: Number(context.instructors.get(Number(resolved.request.AdInstructorId))?.AdInstructorLoad || 0) || null,
   });

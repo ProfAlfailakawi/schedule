@@ -19,7 +19,7 @@ check(card.includes("requestScopeMap") && card.includes("getInstructorRequests(s
 check(card.includes("movementScopeMap") && card.includes("getScheduleVersions(scope.collegeId, scope.sectionId"), "movement history follows every real teaching scope");
 check(card.includes("row.college") && card.includes("department:"), "lecture rows carry their teaching location");
 check(card.includes('teachingColleges.length > 1 ? "كل مواقعك"'), "multi-site card is labelled as all locations");
-check(page.includes("row.college") && page.includes("row.department") && page.includes(".map(esc)"), "visible timetable identifies site and department safely");
+check(page.includes("visibleCardCollege(row.college)") && !page.includes("row.department") && page.includes(".map(esc)"), "visible timetable identifies non-default site without repeating department");
 check(calendar.includes("Repository.getSchedulesByScope({ termId: liveTermId })"), "personal calendar follows the instructor institution-wide");
 check(!calendar.includes("collegeId: resolved.link.AdCollegeId, termId: liveTermId"), "personal calendar is not limited to the issuing college");
 check(calendar.includes("collegeById.get(Number(row.AdCollegeId))?.AdCollegeName"), "calendar location identifies the real college/site");

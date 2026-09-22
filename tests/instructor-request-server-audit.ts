@@ -46,7 +46,7 @@ check(server.includes("getInstructorRequestByLink"), "والطلبُ يُقرأ 
 /* أخطرُ ما في بابٍ بلا حساب: أن يُرسَل معرّفُ موعدٍ لا يخصّ صاحبَ الرابط. */
 check(server.includes("أحد المواعيد ليس ضمن جدولك."), "وموعدٌ ليس ضمن الطلب يُردّ ولو أُرسل معرّفُه");
 check(server.includes("هذا الموعد ليس ضمن جدولك."), "وكذلك في الفحص، لا في الإرسال وحده");
-check(server.includes("المقرّر المضاف ليس من مقرّرات قسمك."), "والمقرّرُ المضاف من كتالوج القسم وحده");
+check(server.includes("المقرّر المضاف ليس من كتالوج قسمك في الكلية المختارة."), "والمقرّر المضاف يجب أن يكون من كتالوج القسم في الكلية المختارة");
 check(!server.includes('app.get("/api/public/request/:token", requireAuth'), "ولا حسابَ يُطلب: الرابطُ هو المفتاح");
 
 /* ── القاعةُ لا تغادر ──────────────────────────────────────────────────── */
@@ -88,7 +88,7 @@ check(server.includes('if (state === "fixed" && item.action !== "add")'),
 check(server.includes('if (state === "fixed" && item.action === "add")'),
   "والإضافةُ لها حارسُها: يُسأل عن الصفّ الذي أنتجه الحفظ");
 check(server.includes("لم يُحفظ الموعد الجديد بعد."), "فبلا صفٍّ لا يُسجَّل تثبيت");
-check(server.includes("الموعد المحفوظ ليس هو المطلوب في هذا البند."),
+check(server.includes("الموعد المحفوظ ليس هو المطلوب في هذا البند أو موقعه."),
   "وصفٌّ لأستاذٍ آخرَ أو فصلٍ آخرَ لا يُغلق به بند");
 check(server.includes("اختر سبب الرفض."), "والرفضُ بلا سببٍ مرفوض");
 check(server.includes('allowedReasons'), "والأسبابُ قائمةٌ مغلقةٌ تُعدّ عبر الفصول");
@@ -144,7 +144,7 @@ check(page.includes('fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/ch
 check(page.includes('id="openChooser"') && page.includes('id="courseSearch"')
   && page.includes("data.courses.map(function(c)"),
   "والإضافةُ تبدأ بزرٍ واضح ثم قائمة مقرّرات القسم القابلة للبحث");
-check(page.includes("+ اختر مقررًا وأضف موعدًا") && page.includes('class="course-option"'),
+check(page.includes("+ اختر كلية ومقررًا وأضف موعدًا") && page.includes('class="course-option"'),
   "وإضافةُ الموعد لا تبدأ بقائمة هاتفٍ مبهمة، بل بخياراتٍ كبيرة واضحة");
 check(page.includes('data-tab="schedule"') && page.includes('data-tab="activity"')
   && page.includes("function activityHtml(r)"),
@@ -164,8 +164,10 @@ check(page.includes('it.action!=="change"&&it.action!=="add"')
 check(server.includes('const action = req.body?.action === "add" ? "add" : "change"')
   && server.includes("const candidate = rowFromRequest(requested, base as any)"),
   "وفحصُ الإضافة في الخادم يبني الصفَّ المطلوب ويفحصه، لا يغيّر اسم العملية فقط");
-check(server.includes('Number(course.AdSectionId) !== Number(resolved.request.AdSectionId)'),
-  "وفحصُ الإضافة الحيّ يردّ مقرراً من خارج القسم قبل الحكم");
+check(server.includes("allowed = (await instructorRequestCourseOptions(resolved.request)).some")
+  && server.includes("option.collegeId === selectedCollegeId")
+  && server.includes("option.sectionId === selectedSectionId"),
+  "وفحص الإضافة الحي يطابق المقرر والكلية والقسم قبل الحكم");
 check(server.includes("async function instructorRequestSectionCourses")
   && server.includes("Repository.getCoursesBySection(sectionId)")
   && server.includes("Repository.getOperationalCourseIds(sectionId)")
@@ -174,14 +176,15 @@ check(server.includes("async function instructorRequestSectionCourses")
 check(server.includes("async function refreshUnsubmittedInstructorRequest"),
   "والطلب غير المرسل يتجدد من الجدول الحي");
 check(server.includes("async function instructorRequestCourseOptions")
-  && server.includes("authorityDraftForScope(Number(request.AdCollegeId)")
+  && server.includes("authorityDraftForScope(scope.collegeId, scope.sectionId")
   && server.includes("authorityDraft.baselineRows || []")
   && server.includes("(baseline as any[]).forEach"),
   "وقائمة الإضافة تُستخرج كاملةً من الجدول الأصلي المعتمد، لا مما نُسخ إلى جدول العمل");
-check(server.includes("const [courses, departmentCourses] = await Promise.all([")
-  && server.includes("instructorRequestSectionCourses(resolved.request.AdSectionId)")
-  && server.includes("const sectionCourses = new Set((departmentCourses as any[]).map"),
-  "والإرسال يتحقق من المقرر باستخدام تطبيع كتالوج القسم نفسه الذي تعتمد عليه الصفحة");
+check(server.includes("const [courses, allowedCourseOptions] = await Promise.all([")
+  && server.includes("const allowedCourseMap = new Map")
+  && server.includes("selectedCollegeId")
+  && server.includes("selectedSectionId"),
+  "والإرسال يتحقق من المقرر والكلية والقسم باستخدام الخيارات نفسها التي تعتمد عليها الصفحة");
 check(page.includes('placeholder="12 رقمًا"') && page.includes("— 12 رقمًا —"),
   "والرقم المدني يُشرح بالأرقام الإنجليزية المتفق عليها");
 
@@ -204,9 +207,9 @@ check(server.includes("requestLinks,") && server.includes("Repository.getInstruc
    نفسها لا تصطدم إحداهما بالأخرى في الجدول القديم، لأن أيّاً منهما لم تكن
    هناك بعد. فتُبنى صفوفُ الأستاذ بعد الطلب مرّةً واحدةً ثم يُقاس كلُّ بندٍ
    عليها. */
-check(server.includes("const rowsAfter: any[] = [];") && server.includes("instructorRowsAfter: rowsAfter"),
+check(server.includes("const rowsAfter: any[] = instructorRows.filter") && server.includes("instructorRowsAfter: rowsAfter"),
   "جدولُ الأستاذ بعد الحزمة يُبنى ويُقاس عليه، لا على الجدول القديم");
-check(server.includes("const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));")
+check(server.includes("const instructorRows = context.allRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));")
   && verdictSource.includes("rows: context.instructorRowsAfter"),
   "وقاعدة المحاضرات المتتالية تُقاس على جدول صاحب الرابط وحده، لا على زملائه");
 check(server.includes('if (item.action === "delete") continue;'),

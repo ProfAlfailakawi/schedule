@@ -902,6 +902,10 @@ export interface InstructorRequestSlot {
 export interface InstructorRequestSnapshot {
   courseId: number;
   courseName: string;
+  /** Target teaching location for a new appointment. Existing rows inherit their own scope. */
+  collegeId?: number;
+  collegeName?: string;
+  sectionId?: number;
   sectionCode: string;
   days: string;
   time: string;
