@@ -14174,45 +14174,23 @@ async function instructorRequestDepartmentScopes(request: InstructorRequest) {
 async function instructorRequestCourseOptions(request: InstructorRequest): Promise<InstructorRequestCourseOption[]> {
   const scopes = await instructorRequestDepartmentScopes(request);
   const groups = await Promise.all(scopes.map(async scope => {
-    const [catalogue, authorityDraft] = await Promise.all([
-      instructorRequestSectionCourses(scope.sectionId),
-      authorityDraftForScope(scope.collegeId, scope.sectionId, Number(request.AdTermId)),
-    ]);
-    const baseline = authorityDraft
-      ? await authorityBaselineForScope(
-authorityDraft.baselineRows || [], authorityDraft,
-scope.collegeId, scope.sectionId,
-        )
-      : [];
-    const catalogueById = new Map((catalogue as any[]).map(row => [Number(row.AdCourseId), row]));
-    const options = new Map<string, InstructorRequestCourseOption>();
-    const add = (idValue: unknown, nameValue: unknown, codeValue: unknown) => {
-      const id = Number(idValue || 0);
-      const name = String(nameValue || "").trim();
-      const code = String(codeValue || "").trim();
-      if (!id || !name) return;
-      options.set(`${scope.collegeId}:${scope.sectionId}:${id}`, {
-        id, name, code,
-        collegeId: scope.collegeId,
-        collegeName: scope.collegeName,
-        sectionId: scope.sectionId,
-      });
-    };
-    /* Baseline rows are useful only while the course is still operational in
-       this scope. An archived-plan course must never reappear through history. */
-    (baseline as any[]).forEach(row => {
-      const catalogueRow = catalogueById.get(Number(row.AdCourseId));
-      if (!catalogueRow) return;
-      add(
-        row.AdCourseId,
-        row.AdCourseName || row.CourseName || catalogueRow.CourseName,
-        row.CourseCode || row.AdCourseCode || catalogueRow.CourseCode,
-      );
-    });
-    (catalogue as any[]).forEach(row => add(row.AdCourseId, row.CourseName, row.CourseCode));
-    return [...options.values()];
+    /* Opening the professor request must stay cheap. The operational catalogue
+     * is already the source of truth for additions; rebuilding historical
+     * authority baselines for every sibling college made the public page wait
+     * on heavyweight history reads before it could paint. */
+    const catalogue = await instructorRequestSectionCourses(scope.sectionId);
+    return (catalogue as any[]).map(row => ({
+      id: Number(row.AdCourseId || 0),
+      name: String(row.CourseName || row.AdCourseName || "").trim(),
+      code: String(row.CourseCode || row.AdCourseCode || "").trim(),
+      collegeId: scope.collegeId,
+      collegeName: scope.collegeName,
+      sectionId: scope.sectionId,
+    })).filter(option => option.id && option.name);
   }));
-  return groups.flat().sort((a, b) =>
+  const options = new Map<string, InstructorRequestCourseOption>();
+  groups.flat().forEach(option => options.set(`${option.collegeId}:${option.sectionId}:${option.id}`, option));
+  return [...options.values()].sort((a, b) =>
     a.collegeId === b.collegeId
       ? courseNameCollator.compare(a.name, b.name)
       : arabicUiCollator.compare(a.collegeName, b.collegeName));

@@ -30,5 +30,14 @@ check(server.includes("expectedCollegeId") && server.includes("expectedSectionId
 check(staffPage.includes("visibleCardCollege") && !staffPage.includes("row.college,row.department"), "بطاقة الأستاذ لا تعرض اسم القسم داخل كل خلية");
 check(staffPage.includes('/التربية\\s*الأساسية.*بنات/'), "التربية الأساسية بنات هي الكلية الصامتة بصريًا فقط");
 
+const courseOptionBlock = server.slice(
+  server.indexOf("async function instructorRequestCourseOptions"),
+  server.indexOf("async function buildRequestContext", server.indexOf("async function instructorRequestCourseOptions")),
+);
+check(!courseOptionBlock.includes("authorityDraftForScope") && !courseOptionBlock.includes("authorityBaselineForScope"),
+  "فتح رابط الأستاذ لا يعيد بناء تاريخ الجداول لكل كلية قبل عرض الصفحة");
+check(courseOptionBlock.includes("instructorRequestSectionCourses(scope.sectionId)"),
+  "خيارات الإضافة تأتي مباشرة من الكتالوج التشغيلي لكل كلية");
+
 console.log(`\nCross-college instructor request audit: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
