@@ -42,7 +42,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { endForRequest, judgeRequest, type RequestDayKey } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
@@ -15188,15 +15188,44 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   const known = (resolved.request.items || []).find(item => item.rowId === rowId);
   if (action !== "add" && rowId != null && !known) { res.status(400).json({ error: "هذا الموعد ليس ضمن جدولك." }); return; }
 
+  const selectedCollegeId = action === "add" ? Number(req.body?.collegeId || 0) : Number(resolved.request.AdCollegeId);
+  const selectedSectionId = action === "add" ? Number(req.body?.sectionId || 0) : Number(resolved.request.AdSectionId);
+  const courseId = action === "add" ? Number(req.body?.courseId || 0) : Number(known?.before?.courseId || 0);
+  if (action === "add") {
+    const allowed = (await instructorRequestCourseOptions(resolved.request)).some(option =>
+      option.id === courseId && option.collegeId === selectedCollegeId && option.sectionId === selectedSectionId);
+    if (!allowed) {
+      res.status(400).json({ error: "المقرّر المضاف ليس من كتالوج قسمك في الكلية المختارة." });
+      return;
+    }
+  }
+
   const sent = Array.isArray(req.body?.items) ? (req.body.items as any[]) : [{
     rowId,
     action,
-    courseId: action === "add" ? Number(req.body?.courseId || 0) : undefined,
-    collegeId: action === "add" ? Number(req.body?.collegeId || 0) : undefined,
-    sectionId: action === "add" ? Number(req.body?.sectionId || 0) : undefined,
+    courseId: action === "add" ? courseId : undefined,
+    collegeId: action === "add" ? selectedCollegeId : undefined,
+    sectionId: action === "add" ? selectedSectionId : undefined,
     days: req.body?.days,
     start: req.body?.start,
   }];
+  const requested: RequestedRow = {
+    rowId: action === "add" ? null : rowId,
+    action,
+    AdCourseId: courseId,
+    days: Array.isArray(req.body?.days) ? (req.body.days as any[]).map(String).filter((day): day is RequestDayKey =>
+      ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day)) : [],
+    start: /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "",
+  };
+  const base = action === "add" ? {
+    AdCollegeId: selectedCollegeId,
+    AdSectionId: selectedSectionId,
+    AdTermId: resolved.request.AdTermId,
+    AdInstructorId: resolved.request.AdInstructorId,
+    AdCourseId: courseId,
+  } : {};
+  const candidate = rowFromRequest(requested, base as any);
+  void candidate;
   const itemIndex = Number.isInteger(Number(req.body?.itemIndex)) ? Number(req.body.itemIndex) : -1;
   let draftItems: InstructorRequestItem[];
   try {
@@ -15207,7 +15236,7 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
   }
 
   const judged = await judgeRequestItems({ ...resolved.request, items: draftItems });
-  const fallbackCourseId = action === "add" ? Number(req.body?.courseId || 0) : Number(known?.before?.courseId || 0);
+  const fallbackCourseId = courseId;
   const item = judged.items[itemIndex >= 0 ? itemIndex : 0] || judged.items.find(entry =>
     action === "add" ? entry.action === "add" && Number(entry.after?.courseId) === fallbackCourseId : Number(entry.rowId) === rowId);
   if (!item) { res.status(400).json({ error: "تعذر فحص هذا البند." }); return; }
