@@ -1,4 +1,4 @@
-name: Diagnose staff card white screen
+name: Diagnose instructor request white screen
 
 on:
   push:
@@ -21,26 +21,26 @@ jobs:
           node-version: "22"
       - name: Install runner dependencies
         run: npm ci --ignore-scripts
-      - name: Render actual staff page
+      - name: Render actual instructor request page
         shell: python
         run: |
           from pathlib import Path
           s=Path('server.ts').read_text(encoding='utf-8')
-          a=s.index('function staffCardPage')
-          b=s.index('function surveyPage',a)
+          a=s.index('function instructorRequestPage')
+          b=s.index('app.get("/r/:token"',a)
           fn=s[a:b]
-          Path('/tmp/render-staff.ts').write_text("import fs from 'fs';\n"+fn+"\nfs.writeFileSync('/tmp/staff.html', staffCardPage('diagnostic-token','بطاقتي','nonce123'));\n",encoding='utf-8')
+          Path('/tmp/render-request.ts').write_text("import fs from 'fs';\n"+fn+"\nfs.writeFileSync('/tmp/request.html', instructorRequestPage('diagnostic-token','nonce123'));\n",encoding='utf-8')
       - name: Execute page renderer
-        run: npx tsx /tmp/render-staff.ts
+        run: npx tsx /tmp/render-request.ts
       - name: Extract rendered inline script
         shell: python
         run: |
           from pathlib import Path
           import re
-          html=Path('/tmp/staff.html').read_text(encoding='utf-8')
+          html=Path('/tmp/request.html').read_text(encoding='utf-8')
           scripts=re.findall(r'<script[^>]*>([\s\S]*?)</script>',html)
           if len(scripts)!=1: raise SystemExit(f'EXPECTED_ONE_SCRIPT_GOT_{len(scripts)}')
-          Path('/tmp/staff-rendered.js').write_text(scripts[0],encoding='utf-8')
+          Path('/tmp/request-rendered.js').write_text(scripts[0],encoding='utf-8')
           print('RENDERED_SCRIPT_BYTES='+str(len(scripts[0].encode('utf-8'))))
       - name: Parse actual rendered browser script
-        run: node --check /tmp/staff-rendered.js
+        run: node --check /tmp/request-rendered.js
