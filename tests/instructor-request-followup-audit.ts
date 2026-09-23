@@ -89,9 +89,10 @@ check((server.match(/decisionStillApplies\(stored, action, days, start\)/g) || [
 /* ── قوالبُ الخادم لا تأكل شرطاتِها ──────────────────────────────────────── */
 
 let eaten = 0;
-for (const match of server.matchAll(/<script/g)) {
-  const end = server.indexOf("</script>", match.index!);
-  const body = server.slice(match.index!, end);
+const lowerServer = server.toLowerCase();
+for (let at = lowerServer.indexOf("<script"); at >= 0; at = lowerServer.indexOf("<script", at + 1)) {
+  const end = lowerServer.indexOf("</script", at);
+  const body = server.slice(at, end < 0 ? undefined : end);
   eaten += (body.match(/(?<!\\)\\[sdwbDSW]/g) || []).length;
 }
 check(eaten === 0, "لا تعبيرَ نمطيَّ في صفحةٍ عامة يفقد شرطتَه المائلة عند التوليد");
@@ -103,7 +104,11 @@ const staffHtml = (() => {
     + "\nthis.html = staffCardPage('t','قسم','n');", sb);
   return String(sb.html);
 })();
-const script = staffHtml.match(/<script[^>]*>([\s\S]*?)<\/script>/)![1];
+/* السكربتُ يُقتطع بالبحث النصّي لا بتعبيرٍ نمطيٍّ لوسوم HTML: هذا اختبارٌ على
+   صفحةٍ نولّدها نحن، والاقتطاعُ بالموضع لا يَعِد بما لا يفعله. */
+const lowerHtml = staffHtml.toLowerCase();
+const scriptOpen = lowerHtml.indexOf(">", lowerHtml.indexOf("<script")) + 1;
+const script = staffHtml.slice(scriptOpen, lowerHtml.indexOf("</script", scriptOpen));
 const fnOf = (name: string) => {
   const at = script.indexOf(`function ${name}(`);
   const body = script.slice(at, script.indexOf("}", script.indexOf("return", at)) + 1);
