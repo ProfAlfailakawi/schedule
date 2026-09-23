@@ -13304,7 +13304,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .pub-week .wslot:last-child{border-bottom:0}
 .pub-week .wslot b{display:block;font-size:12px;font-weight:600;line-height:1.35}
 .pub-week .wslot time{display:block;margin-top:2px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);direction:ltr}
-.pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:10.5px}
+.pub-week .wslot{min-width:0;overflow:hidden}
+.pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:9.5px;font-weight:300;line-height:1.35;opacity:.78;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pub-week .wslot .wroom{font-family:ui-monospace,monospace;font-size:9px;letter-spacing:-.2px;text-align:start}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @media print{
   @page{size:A4 portrait;margin:12mm 11mm}
@@ -13329,7 +13331,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     <h1>بطاقتي</h1>
     <p>${label}<br>اكتب رقمك المدني لعرض جدولك.</p>
     <form class="field" id="form">
-      <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="الرقم المدني" aria-label="الرقم المدني">
+      <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا" aria-label="الرقم المدني">
       <button type="submit" id="go">عرض</button>
     </form>
     <div class="note" id="note" role="status" aria-live="polite"></div>
@@ -13396,7 +13398,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   document.getElementById("form").addEventListener("submit",function(event){
     event.preventDefault();
     var value=ascii(civil.value).replace(/[^0-9]/g,"");
-    if(value.length<8){note.textContent="اكتب الرقم المدني كاملاً.";return}
+    if(value.length!==12){note.textContent="الرقم المدني 12 رقمًا.";return}
     note.textContent="";go.disabled=true;go.textContent="…";
     fetch("/api/public/staff/"+encodeURIComponent(TOKEN),{
       method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:value})
@@ -13436,6 +13438,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     var host=document.getElementById("requests");
     var tab=document.getElementById("tab-requests");
     var links=d.requestLinks||[];
+    requestLinksNow=links;
     if(!links.length){
       if(tab)tab.style.display="none";
       if(host)host.innerHTML="";
@@ -13468,9 +13471,18 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 
   if(tabWeek)tabWeek.onclick=function(){selectTab("week");};
   if(tabMovement)tabMovement.onclick=function(){selectTab("movement");};
-  if(tabRequests)tabRequests.onclick=function(){selectTab("requests");};
+  /* «طلب تعديل الجدول» يفتح النموذج مباشرةً: لا شاشةَ وسيطةً فيها شرحٌ وزرّ.
+     وإن كان للأستاذ أكثرُ من نافذة، تُعرض قائمتُها ليختار. */
+  var requestLinksNow=[];
+  if(tabRequests)tabRequests.onclick=function(){
+    var open=requestLinksNow.filter(function(l){return l.windowOpen});
+    var pick=open.length===1?open[0]:(requestLinksNow.length===1?requestLinksNow[0]:null);
+    if(pick){window.location.href="/r/"+encodeURIComponent(pick.linkId);return;}
+    selectTab("requests");
+  };
 
   function visibleCardCollege(value){var name=String(value||"");return /التربية\s*الأساسية.*بنات/.test(name)?"":name}
+  function shortCardCollege(value){return String(value||"").replace(/^\s*[0-9٠-٩]+\s*[·\-–]?\s*/,"").replace(/^\s*كلية\s+/,"").trim()}
   function render(d,value){
     currentCivil=value;
     var currentTerm = { termId: Number(d.termId || 0) };
@@ -13497,7 +13509,10 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
               '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
-              '<small>'+[row.code,visibleCardCollege(row.college),(row.room||row.hall)&&((row.room||"")+"/"+(row.hall||""))].filter(Boolean).map(esc).join(" · ")+'</small></span>';
+              /* المختصرُ هادئ: لا رقمَ مقرّر ولا كلمةَ «كلية» ولا اسمَ قسم،
+                 والقاعةُ في سطرٍ يُقصّ داخل الخلية فلا يخرج عن حدودها. */
+              [shortCardCollege(visibleCardCollege(row.college))].filter(Boolean).map(esc).map(function(v){return '<small class="wcollege">'+v+'</small>'}).join("")+
+              ((row.room||row.hall)?'<small class="wroom" dir="ltr" title="'+esc((row.room||"")+"/"+(row.hall||""))+'">'+esc((row.room||"")+"/"+(row.hall||""))+'</small>':'')+'</span>';
           }).join("")+'</td>';
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
@@ -13925,7 +13940,7 @@ function checkCivilIdentity(){var civilBox=document.getElementById("civil"),butt
 
 function identity(){step=1;paintProgress();
   if(!identityChecked){
-    host.innerHTML='<div class="step-head"><b>1</b><div><strong>ابدأ بالرقم المدني</strong><span>نتحقق أولاً، ثم نعرض المسار المناسب لك</span></div></div><div class="identity-start"><div class="field full"><label>الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" maxlength="12" autocomplete="off" enterkeyhint="go" value="'+esc(student.civil)+'"><small id="civilHint" class="hint"></small></div><p class="identity-start-note">لن تظهر بقية البيانات قبل التحقق من الرقم المدني. إذا سبق أن أرسلت طلبًا، سنعيد اسمك وقسمك المعتمد تلقائيًا.</p></div><button class="action" id="checkCivil" disabled>التحقق والمتابعة</button><p class="privacy">يُستخدم الرقم المدني للتعرّف على طلبك السابق ومنع تكرار الهوية، ويظهر للمسؤول المخوّل فقط.</p><div id="err"></div>';
+    host.innerHTML='<div class="step-head"><b>1</b><div><strong>ابدأ بالرقم المدني</strong><span>نتحقق أولاً، ثم نعرض المسار المناسب لك</span></div></div><div class="identity-start"><div class="field full"><label>الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="12 رقمًا" style="direction:rtl" value="'+esc(student.civil)+'"><small id="civilHint" class="hint"></small></div><p class="identity-start-note">لن تظهر بقية البيانات قبل التحقق من الرقم المدني. إذا سبق أن أرسلت طلبًا، سنعيد اسمك وقسمك المعتمد تلقائيًا.</p></div><button class="action" id="checkCivil" disabled>التحقق والمتابعة</button><p class="privacy">يُستخدم الرقم المدني للتعرّف على طلبك السابق ومنع تكرار الهوية، ويظهر للمسؤول المخوّل فقط.</p><div id="err"></div>';
     var civilBox=document.getElementById("civil"),hint=document.getElementById("civilHint"),button=document.getElementById("checkCivil");function paintCivil(){civilBox.value=digits(civilBox.value).slice(0,12);var value=civilBox.value;if(!value.length){hint.textContent="";hint.className="hint";button.disabled=true;return}if(value.length<12){hint.textContent="باقي "+(12-value.length)+" رقم";hint.className="hint";button.disabled=true;return}if(civilValid(value)){hint.textContent="رقم مدني صحيح · اضغط للمتابعة";hint.className="hint ok";button.disabled=false}else{hint.textContent="هذا الرقم المدني غير صحيح — راجع أرقام بطاقتك";hint.className="hint bad";button.disabled=true}}civilBox.oninput=paintCivil;civilBox.onkeydown=function(e){if(e.key==="Enter"&&!button.disabled){e.preventDefault();checkCivilIdentity()}};button.onclick=checkCivilIdentity;paintCivil();return;
   }
   var locked=identityLocked;host.innerHTML='<div class="step-head"><b>1</b><div><strong>'+(locked?'بياناتك المتحققة':'أكمل بياناتك')+'</strong><span>'+(locked?'تم العثور على طلب سابق لهذا الرقم المدني':'هذا أول طلب محفوظ لهذا الرقم المدني')+'</span></div></div><div class="fields"><div class="field"><label>الرقم المدني</label><input id="civil" dir="ltr" value="'+esc(student.civil)+'" readonly aria-readonly="true"><small class="hint ok">تم التحقق من الرقم المدني</small></div><div class="field"><label>الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"'+(locked?' readonly aria-readonly="true"':'')+'></div><div class="field full"><label>القسم العلمي</label><select id="section"'+(locked?' disabled aria-disabled="true"':'')+'><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div>'+(locked?'<div class="identity-verified"><span><b>تم التحقق من بياناتك سابقًا.</b> الاسم والرقم المدني والقسم العلمي مثبتة ولا تحتاج إدخالها من جديد.</span><button type="button" class="identity-reset" id="identityReset">رقم مدني آخر</button></div>':'<div class="identity-verified"><span><b>طالب جديد.</b> أكمل الاسم والقسم مرة واحدة، وسيستعيدهما النظام تلقائيًا في طلبك القادم.</span><button type="button" class="identity-reset" id="identityReset">تغيير الرقم المدني</button></div>')+'</div><button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err"></div>';
@@ -14532,14 +14547,26 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الكلية والقسم والفصل." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "هذا القسم خارج نطاقك." }); return; }
+  if (!collegeId || !termId) { res.status(400).json({ error: "اختر الكلية والفصل." }); return; }
+  /* القسمُ اختياري: بلا قسمٍ يُعرض واردُ أقسام الكلية كلها — لكن لا يُعرض
+     منه إلا ما يقع في نطاق الحساب. isScopeAllowed بقسمٍ صفر يقول «له شيءٌ في
+     هذه الكلية»، لا «له الكلية كلها»، فيُصفّى كلُّ طلبٍ بقسمه بعدها. */
+  if (!isScopeAllowed(req, collegeId, sectionId)) {
+    res.status(403).json({ error: sectionId ? "هذا القسم خارج نطاقك." : "هذه الكلية خارج نطاقك." });
+    return;
+  }
 
-  const [stored, instructors, scopeRows] = await Promise.all([
+  const [storedAll, instructors, scopeRowsAll, sections] = await Promise.all([
     Repository.getInstructorRequests(collegeId, sectionId, termId),
     Repository.getInstructors(),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getSections(),
   ]);
+  const inScope = (rowCollegeId: number, rowSectionId: number) =>
+    sectionId ? true : isScopeAllowed(req, rowCollegeId, Number(rowSectionId) || -1);
+  const stored = storedAll.filter(row => inScope(Number(row.AdCollegeId), Number(row.AdSectionId)));
+  const scopeRows = (scopeRowsAll as any[]).filter(row => inScope(Number(row.AdCollegeId ?? collegeId), Number(row.AdSectionId)));
+  const sectionNameOf = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
   const nameOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
   const mobileOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorMobile || "")]));
 
@@ -14548,6 +14575,7 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
     ...request,
     instructorName: nameOf.get(Number(request.AdInstructorId)) || `أستاذ ${request.AdInstructorId}`,
     instructorMobile: mobileOf.get(Number(request.AdInstructorId)) || "",
+    sectionName: sectionNameOf.get(Number(request.AdSectionId)) || "",
     /* البنودُ التي تحمل قراراً هي ما يُنظر إليه؛ وما أبقاه الأستاذ كما هو
        يُعدّ ولا يُفتح. */
     changedCount: (request.items || []).filter(item => item.action !== "keep").length,
@@ -14976,7 +15004,7 @@ textarea[data-show="1"]{display:block}
 label.sign{display:grid;grid-template-columns:auto minmax(0,190px);align-items:center;justify-content:center;gap:10px;margin:0 0 8px;font-size:13px;color:var(--muted)}label.sign input{width:100%;padding:10px;border-radius:11px;border:1px solid var(--line);font-size:16px;letter-spacing:.08em;text-align:center;direction:ltr;background:#fff}
 .signnote{margin:0 0 11px;font-size:11.5px;color:var(--muted2);line-height:1.6;text-align:center}
 .activity-empty{text-align:center;padding:34px 18px;border:1px dashed var(--line2);border-radius:16px;color:var(--muted);font-size:13px;background:var(--card)}
-.activity-list{list-style:none;margin:0;padding:0;display:grid;gap:9px}.activity-item{position:relative;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:start;padding:13px 14px;border:1px solid var(--line);border-radius:15px;background:var(--card)}.activity-dot{width:10px;height:10px;border-radius:50%;margin-top:7px;background:var(--line2);box-shadow:0 0 0 4px var(--bg)}.activity-item[data-kind=add] .activity-dot{background:var(--ok)}.activity-item[data-kind=change] .activity-dot{background:var(--warn)}.activity-item[data-kind=delete] .activity-dot{background:var(--bad)}.activity-main b{display:block;font-size:14px}.activity-main p{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.7}.activity-item time{color:var(--muted2);font-size:11px;white-space:nowrap}.decision{margin-top:7px;padding:7px 9px;border-radius:9px;background:var(--bg);font-size:12px;color:var(--muted)}
+.activity-list{list-style:none;margin:0;padding:0;display:grid;gap:9px}.activity-item{position:relative;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:start;padding:13px 14px;border:1px solid var(--line);border-radius:15px;background:var(--card)}.activity-dot{width:10px;height:10px;border-radius:50%;margin-top:7px;background:var(--line2);box-shadow:0 0 0 4px var(--bg)}.activity-item[data-kind=add] .activity-dot{background:var(--ok)}.activity-item[data-kind=change] .activity-dot{background:var(--warn)}.activity-item[data-kind=delete] .activity-dot{background:var(--bad)}.activity-main b{display:block;font-size:14px}.activity-main p{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.7}.activity-item time{color:var(--muted2);font-size:11px;white-space:nowrap}.decision{margin-top:7px;padding:7px 9px;border-radius:9px;background:var(--bg);font-size:12px;color:var(--muted)}.starts{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:4px 0 10px}.starts button{padding:10px 4px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink,#1d2b24);font:600 13px/1 ui-monospace,monospace;direction:ltr;cursor:pointer}.starts button[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}.course-none{margin:8px 0;padding:10px;border-radius:10px;background:var(--bg);color:var(--muted);font-size:12.5px}.restored{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#eef6f0;border:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.7}.restored button{margin-inline-start:6px;border:0;background:none;color:var(--ok);font-weight:700;text-decoration:underline;cursor:pointer}article.card{scroll-margin-top:84px}.verdict-next{display:block;margin-top:4px;font-size:12px;opacity:.85}.activity-main .activity-meta{font-size:12px;color:var(--muted2)}.activity-meta[data-tone=ok]{color:var(--ok)}.activity-meta[data-tone=warn]{color:var(--warn)}.activity-meta[data-tone=bad]{color:var(--bad)}.decision[data-state=fixed]{color:var(--ok);font-weight:700}.decision[data-state=rejected]{color:var(--bad);font-weight:700}
 .done{text-align:center;padding:44px 18px}
 .done .tick{width:58px;height:58px;border-radius:50%;background:var(--ok);color:#fff;font-size:30px;line-height:58px;margin:0 auto 14px}
 [hidden]{display:none!important}
@@ -14995,6 +15023,11 @@ function clock(m){m=Math.min(m,20*60);return String(Math.floor(m/60)).padStart(2
    للقارئ لا حُكماً: الخادمُ يعيد حسابها ولا يقبل ما تقوله الصفحة. */
 function endOf(days,start){if(!days.length||!start)return "";
 var m=0;days.forEach(function(d){m=Math.max(m,LONG[d]||SHORT)});return clock(mins(start)+m)}
+/* بداياتٌ جاهزة بضغطة: الأحد والثلاثاء والخميس محاضراتٌ قصيرة كل ساعة،
+   والاثنين والأربعاء محاضراتٌ طويلة كل ساعة ونصف. ووقتٌ آخر يبقى متاحاً. */
+function startChoices(days){var long=days.some(function(d){return LONG[d]}),short=days.some(function(d){return !LONG[d]});
+if(long&&!short)return ["08:00","09:30","11:00","12:30","14:00","15:30","17:00","18:30"];
+return ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00"]}
 function fmtDays(days){return days.map(function(d){
 var f=DAYS.filter(function(x){return x[0]===d})[0];return f?f[1]:d}).join(" · ")}
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
@@ -15013,17 +15046,35 @@ function payloadItems(){return state.map(function(it){return{rowId:it.rowId,acti
  courseId:it.action==="add"?it.courseId:undefined,
  collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,
  days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})}
+function courseOf(it){var b=it.before||{},a=it.after||{};return b.courseName||a.courseName||"المقرر"}
+function collegeOf(it){return it.action==="add"?(it.collegeName||(it.after&&it.after.collegeName)||""):""}
+function toneText(it){return it.tone==="ok"?"الوقت متاح":it.tone==="warn"?"يحتاج سبب استثناء":it.tone==="bad"?"يوجد مانع":it.tone==="checking"?"يُفحص الآن…":""}
+function wasText(it){var b=it.before||{};return it.action==="add"?"":((b.days||"")+(b.time?" · "+b.time:""))}
 function activityHtml(r){
  var changed=state.map(function(it,i){return{it:it,i:i}}).filter(function(x){return x.it.action!=="keep"});
- var rows=changed.map(function(x){var it=x.it,b=it.before||it.after||{},decision=it.decision||{};
-  var decisionText=decision.state==="fixed"?"ثبّت القسم هذا الطلب":decision.state==="rejected"?"رفض القسم هذا الطلب"+(decision.note?" · "+decision.note:""):"بانتظار إرسال الطلب ومراجعته";
-  return '<li class="activity-item" data-kind="'+esc(it.action)+'"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(actionName(it.action))+" · "+esc(b.courseName||"مقرر")+'</b><p>'+esc(requestedText(it))+'</p><div class="decision">'+esc(decisionText)+'</div></div><time>البند '+(x.i+1)+'</time></li>'}).join("");
+ var submitted=r.status&&r.status!=="sent";
+ var rows=changed.map(function(x){var it=x.it,decision=it.decision||{},college=collegeOf(it),was=wasText(it),status=toneText(it);
+  var decisionText=decision.state==="fixed"?"قرار القسم: ثُبّت":decision.state==="rejected"?"قرار القسم: رُفض"+(decision.note?" · "+decision.note:""):submitted?"قرار القسم: بانتظار المراجعة":"لم يُرسل بعد — مسودة";
+  return '<li class="activity-item" data-kind="'+esc(it.action)+'"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(actionName(it.action))+" · "+esc(courseOf(it))+'</b>'+
+   (college?'<p class="activity-meta">الكلية: '+esc(college)+'</p>':'')+
+   (was?'<p class="activity-meta">كان: '+esc(was)+'</p>':'')+
+   '<p>'+(it.action==="delete"?'':'المطلوب: ')+esc(requestedText(it))+'</p>'+
+   (status&&it.action!=="delete"?'<p class="activity-meta" data-tone="'+esc(it.tone)+'">الفحص: '+esc(status)+'</p>':'')+
+   '<div class="decision" data-state="'+esc(decision.state||"pending")+'">'+esc(decisionText)+'</div></div><time>البند '+(x.i+1)+'</time></li>'}).join("");
  var timeline=(r.timeline||[]).slice().reverse().map(function(e){var item=typeof e.itemIndex==="number"?state[e.itemIndex]:null,b=item&&(item.before||item.after)||{};
-  var detail=(item?((b.courseName||"مقرر")+" · "+requestedText(item)):e.detail||"");
+  var detail=(item?(actionName(item.action)+" · "+courseOf(item)+(collegeOf(item)?" · "+collegeOf(item):"")+" · "+requestedText(item)):e.detail||"");
   return '<li class="activity-item" data-kind="event"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(EVENTS[e.kind]||e.kind)+'</b>'+(detail?'<p>'+esc(detail)+'</p>':'')+(e.by?'<div class="decision">بواسطة '+esc(e.by)+'</div>':'')+'</div><time>'+esc(dt(e.at))+'</time></li>'}).join("");
  return '<div class="section-head"><b>حركة طلبك</b><small>كل إجراء موثّق بالتفصيل</small></div>'+(rows||timeline?'<ul class="activity-list">'+rows+timeline+'</ul>':'<div class="activity-empty">لا توجد حركة بعد. أي إضافة أو تعديل أو حذف سيظهر هنا فوراً.</div>')
 }
+/* المسودةُ تُحفظ في الجهاز نفسه: أستاذٌ أغلق الصفحة خطأً أو انقطع اتصاله
+   يعود فيجد ما كتبه. ولا يُحفظ الرقمُ المدني أبداً. */
+var restoredDraft=false,dirty=false,DRAFT_KEY="req-draft:"+TOKEN;
+function saveDraft(){try{localStorage.setItem(DRAFT_KEY,JSON.stringify({at:Date.now(),items:payloadItems(),names:state.map(function(it){return{collegeName:it.collegeName||"",before:it.before||null}})}))}catch(e){}}
+function clearDraft(){try{localStorage.removeItem(DRAFT_KEY)}catch(e){}}
+function readDraft(){try{var d=JSON.parse(localStorage.getItem(DRAFT_KEY)||"null");return d&&Date.now()-d.at<14*864e5?d:null}catch(e){return null}}
+window.addEventListener("beforeunload",function(e){if(dirty){e.preventDefault();e.returnValue=""}});
 function paint(){
+ if(data&&data.windowOpen&&state.length){var sig=JSON.stringify(payloadItems());if(paint.last!==undefined&&paint.last!==sig){dirty=true;saveDraft()}paint.last=sig}
  if(!data){host.innerHTML='<div class="err">تعذّر فتح الرابط.</div>';return}
  var r=data.request,open=data.windowOpen,approved=r.status==="settled";
  var changed=state.filter(function(it){return it.action!=="keep"}).length;
@@ -15031,14 +15082,14 @@ function paint(){
  var ready=blocked?"راجع الموانع":changed?changed+" تغييرات جاهزة":"لم تغيّر شيئاً";
  var h='<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
   '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?blocked+" بنود تحتاج معالجة":"فحص مباشر قبل الإرسال")+'</small></div></div>'+
-  '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div><div id="err"></div>';
+  '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
  h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'><div class="section-head"><b>مواعيدك الحالية</b><small>'+state.filter(function(it){return it.rowId!==null}).length+' مواعيد · كل بطاقة موعد مستقل</small></div>';
  state.forEach(function(it,i){var b=it.before||it.after||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
-  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(b.courseName||"مقرر")+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(it.action==="add"&&it.collegeName?'<small>'+esc(it.collegeName)+'</small>':'')+tag+'</div><p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>';
+  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(courseOf(it))+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(collegeOf(it)?'<small>'+esc(collegeOf(it))+'</small>':'')+tag+'</div>'+(it.action==="add"?'<p class="now">'+(it.days.length?esc(fmtDays(it.days)):'اختر الأيام')+' · '+(it.start?esc(it.start+" – "+endOf(it.days,it.start)):'اختر الوقت')+(toneText(it)?' · '+esc(toneText(it)):'')+'</p>':'<p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>');
   if(open){if(it.action!=="add")h+=it.action==="keep"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="change" aria-pressed="false">غيّر هذا الموعد</button><button type="button" data-i="'+i+'" data-a="delete" aria-pressed="false">احذف هذا الموعد</button></div>':it.action==="change"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">إلغاء التعديل</button><button type="button" data-i="'+i+'" data-a="delete">حذف الموعد بدلًا منه</button></div>':'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">تراجع عن الحذف</button></div>';
    else h+='<div class="pick"><button type="button" data-i="'+i+'" data-a="cancel-add">إلغاء الإضافة</button></div>';
    if(it.action==="change"||it.action==="add"){h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
-    h+='</div><label class="time"><span>وقت البداية</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم والبداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'">'+esc(it.note||"")+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){return '<button type="button" data-i="'+i+'" data-alt="'+esc(a.day+"|"+a.start)+'">بديل: '+fmtDays([a.day])+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>'}
+    h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'">'+esc(it.note||"")+(it.tone==="bad"?'<small class="verdict-next">'+(it.alts&&it.alts.length?'اضغط أحد البدائل المتاحة، أو غيّر اليوم أو الوقت.':'غيّر اليوم أو الوقت، ويُعاد الفحص تلقائيًا.')+'</small>':'')+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){return '<button type="button" data-i="'+i+'" data-alt="'+esc(a.day+"|"+a.start)+'">بديل: '+fmtDays([a.day])+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>'}
   }h+='</article>'});
  if(open&&data.courses&&data.courses.length){
   var collegeMap={};data.courses.forEach(function(c){if(c.collegeId&&!collegeMap[c.collegeId])collegeMap[c.collegeId]=c.collegeName||("كلية "+c.collegeId)});
@@ -15046,14 +15097,14 @@ function paint(){
   h+='<div class="card add-card"><header><b>تريد إضافة موعد جديد؟</b><small>اختر الكلية أولًا، ثم المقرر والأيام والوقت. القسم والفصل معروفان تلقائيًا.</small></header>'+(chooserOpen?'<div class="course-chooser">'+
    '<label class="course-college"><span>الكلية</span><select id="courseCollege"><option value="">اختر الكلية أولًا</option>'+collegeOptions.map(function(c){return '<option value="'+c.id+'">'+esc(c.name)+'</option>'}).join("")+'</select></label>'+
    '<input class="course-search" id="courseSearch" type="search" placeholder="اكتب اسم المقرر أو رمزه…" autocomplete="off" disabled>'+
-   '<div class="course-options">'+data.courses.map(function(c){return '<button type="button" class="course-option" data-course="'+c.id+'" data-college="'+c.collegeId+'" data-section="'+c.sectionId+'" data-search="'+esc((c.name+" "+c.code).toLowerCase())+'" hidden><b>'+esc(c.name||c.code)+'</b><small>'+esc(c.code||"")+'</small></button>'}).join("")+'</div>'+
+   '<p class="course-none" id="courseNone" hidden>لا يوجد مقرر بهذا الاسم في هذه الكلية. جرّب كلمةً أقصر أو رمز المقرر.</p><div class="course-options">'+data.courses.map(function(c){return '<button type="button" class="course-option" data-course="'+c.id+'" data-college="'+c.collegeId+'" data-section="'+c.sectionId+'" data-search="'+esc((c.name+" "+c.code).toLowerCase())+'" hidden><b>'+esc(c.name||c.code)+'</b><small>'+esc([c.code,c.collegeName].filter(Boolean).join(" · "))+(state.some(function(it){return it.action==="add"&&it.courseId===c.id&&Number(it.collegeId)===Number(c.collegeId)})?" · أضفتَه في هذا الطلب":"")+'</small></button>'}).join("")+'</div>'+
    '<button type="button" class="chooser-close" id="closeChooser">إغلاق القائمة</button></div>':'<button type="button" class="add-start" id="openChooser">+ اختر كلية ومقررًا وأضف موعدًا</button>')+'</div>'
  }
 
  h+='</section><section data-panel="activity" '+(activeTab==="activity"?'':'hidden')+'>'+activityHtml(r)+'</section>';
  /* التوقيع: حقلٌ واحدٌ فوق الزرّ، وجملةٌ تقول ما يعنيه الضغط. ولا يُقال
     «تحقّق من هويتك» — يُقال إنه توقيع، لأنه توقيع. */
- if(open)h+='<div class="send"><div class="sendbox"><label class="sign"><span>رقمك المدني</span>'+
+ if(open&&!chooserOpen)h+='<div class="send"><div class="sendbox"><label class="sign"><span>رقمك المدني</span>'+
   '<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" '+
   'placeholder="12 رقمًا" value="'+esc(signCivil)+'"></label>'+
   '<p class="signnote">بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.</p>'+
@@ -15078,7 +15129,8 @@ function wire(){
  function paintCourseChoices(){
   var collegeId=Number(courseCollege&&courseCollege.value)||0,query=String(courseSearch&&courseSearch.value||"").trim().toLowerCase();
   if(courseSearch)courseSearch.disabled=!collegeId;
-  host.querySelectorAll("[data-course]").forEach(function(option){option.hidden=!collegeId||Number(option.dataset.college)!==collegeId||(query&&String(option.dataset.search||"").indexOf(query)<0)})
+  var shown=0;host.querySelectorAll("[data-course]").forEach(function(option){option.hidden=!collegeId||Number(option.dataset.college)!==collegeId||(query&&String(option.dataset.search||"").indexOf(query)<0);if(!option.hidden)shown++});
+  var none=document.getElementById("courseNone");if(none)none.hidden=!collegeId||shown>0
  }
  if(courseCollege)courseCollege.onchange=function(){if(courseSearch)courseSearch.value="";paintCourseChoices();if(courseSearch&&!courseSearch.disabled)courseSearch.focus()};
  if(courseSearch)courseSearch.oninput=paintCourseChoices;paintCourseChoices();
@@ -15094,24 +15146,27 @@ function wire(){
  }});
  host.querySelectorAll("[data-a]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i,it=state[i],act=el.dataset.a;
-  if(act==="cancel-add"){state.splice(i,1);paint();return}
+  if(act==="cancel-add"){state.splice(i,1);pending={};paint();recheckAll();return}
   it.action=act;
   if(it.action==="change"&&!it.days.length){
    it.days=(it.slots||[]).map(function(s){return s.day});it.start=(it.slots||[])[0]?it.slots[0].start:""}
   if(it.action==="keep"||it.action==="delete"){it.tone="";it.note="";it.alts=[]}
-  paint();if(it.action==="change")check(i)}});
+  paint();recheckAll()}});
  host.querySelectorAll("[data-day]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i,it=state[i],d=el.dataset.day,at=it.days.indexOf(d);
-  if(at>=0)it.days.splice(at,1);else it.days.push(d);paint();check(i)}});
+  if(at>=0)it.days.splice(at,1);else it.days.push(d);paint();recheckAll(i)}});
+ host.querySelectorAll("[data-quick]").forEach(function(el){el.onclick=function(){
+  var i=+el.dataset.i;state[i].start=el.dataset.quick;paint();recheckAll(i)}});
  host.querySelectorAll("[data-start]").forEach(function(el){el.onchange=function(){
-  var i=+el.dataset.i;state[i].start=el.value;paint();check(i)}});
+  var i=+el.dataset.i;state[i].start=el.value;paint();recheckAll(i)}});
  host.querySelectorAll("[data-alt]").forEach(function(el){el.onclick=function(){
-  var i=+el.dataset.i,p=el.dataset.alt.split("|");state[i].days=[p[0]];state[i].start=p[1];paint();check(i)}});
+  var i=+el.dataset.i,p=el.dataset.alt.split("|");state[i].days=[p[0]];state[i].start=p[1];paint();recheckAll(i)}});
  host.querySelectorAll("[data-excuse]").forEach(function(el){el.oninput=function(){
   state[+el.dataset.i].excuse=el.value}});
  /* ويُحفظ ما كُتب لحظةَ كتابته: كلُّ تعديلٍ على الجدول يعيد الرسم، وكذلك
     جوابُ الحكم حين يصل متأخّراً — والحقلُ يُبنى من signCivil، فما كُتب ولم
     يُحفظ يُمحى تحت يده ويُردّ إرسالُه بلا سبب. */
+ var drop=document.getElementById("dropDraft");if(drop)drop.onclick=function(){clearDraft();dirty=false;location.reload()};
  var civilBox=document.getElementById("civil");
  if(civilBox)civilBox.oninput=function(){signCivil=digitsOf(civilBox.value);civilBox.value=signCivil};
  var send=document.getElementById("send");if(send)send.onclick=submit;
@@ -15119,6 +15174,12 @@ function wire(){
 /* الحكمُ يُسأل عنه الخادمُ عند كل تغيير: هو وحده يرى الجدول كاملاً، والصفحةُ
    ترى جدولَ صاحبها. وهي تعرض ما يقوله ولا تقرّر شيئاً بنفسها. */
 var pending={};
+/* الحكمُ على المسودة كلها: حذفُ موعدٍ يحرّر وقتَه لإضافةٍ أخرى، وتعديلُ بندٍ
+   قد يصطدم ببندٍ آخر. فكلُّ تغييرٍ يعيد فحصَ كلِّ بندٍ مطلوب، لا البندَ وحده. */
+function recheckAll(first){
+ if(typeof first==="number")check(first);
+ state.forEach(function(it,i){if(i!==first&&(it.action==="change"||it.action==="add")&&it.days.length&&it.start)check(i)});
+}
 function check(i){
  var it=state[i];if(!it||it.action!=="change"&&it.action!=="add"||!it.days.length||!it.start){if(it){it.tone="";it.note="";it.alts=[];paint()}return}
  var seq=(pending[i]||0)+1;pending[i]=seq;it.tone="checking";it.note="يفحص التعارض والموانع على جدولك…";it.alts=[];paint();
@@ -15131,7 +15192,15 @@ function check(i){
   it.note=d.headline||"";it.alts=d.nearestTimes||[];paint()})
  .catch(function(){if(seq!==pending[i]||!state[i])return;it.tone="bad";it.note="تعذّر فحص الموعد الآن. أعد المحاولة قبل الإرسال.";paint()});
 }
+function sameAsBefore(it){if(it.action!=="change")return false;var was=(it.slots||[]).map(function(x){return x.day}).sort().join(),now=it.days.slice().sort().join();
+ return was===now&&(it.slots||[])[0]&&it.slots[0].start===it.start}
+function focusItem(i,msg){activeTab="schedule";paint();if(msg)document.getElementById("err").innerHTML='<div class="err">'+esc(msg)+'</div>';
+ var card=host.querySelectorAll("article.card")[i];if(card)card.scrollIntoView({behavior:"smooth",block:"center"})}
 function submit(){
+ var incomplete=state.findIndex(function(it){return(it.action==="change"||it.action==="add")&&(!it.days.length||!it.start)});
+ if(incomplete>=0){focusItem(incomplete,"أكمل الأيام ووقت البداية للموعد "+(incomplete+1)+" قبل الإرسال.");return}
+ var excuse=state.findIndex(function(it){return it.tone==="warn"&&!String(it.excuse||"").trim()});
+ if(excuse>=0){focusItem(excuse,"اكتب سبب الاستثناء للموعد "+(excuse+1)+".");return}
  var blocked=state.findIndex(function(it){return it.tone==="bad"||it.tone==="checking"});
  if(blocked>=0){activeTab="schedule";paint();var card=host.querySelectorAll(".card")[blocked];if(card)card.scrollIntoView({behavior:"smooth",block:"center"});return}
  var field=document.getElementById("civil");
@@ -15148,8 +15217,10 @@ function submit(){
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){
   if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب إلى القسم";
+   if(typeof x.d.itemIndex==="number"&&state[x.d.itemIndex]){var bad=state[x.d.itemIndex];if(bad.action!=="delete"&&bad.action!=="keep"){bad.tone="bad";bad.note=x.d.error||bad.note}focusItem(x.d.itemIndex,x.d.error||"تعذّر الإرسال");return}
    document.getElementById("err").innerHTML='<div class="err">'+esc(x.d.error||"تعذّر الإرسال")+'</div>';
    window.scrollTo(0,0);return}
+  dirty=false;clearDraft();
   var code=x.d.request&&x.d.request.signature&&x.d.request.signature.verifyCode||"";
   host.innerHTML='<div class="done"><div class="tick">✓</div><h1>وصل طلبك إلى القسم</h1>'+
    '<p class="sub">'+(x.d.changed?esc(String(x.d.changed))+" تعديلاً":"بلا تعديلات")+
@@ -15164,12 +15235,23 @@ fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
  return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){
  if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذّر فتح الرابط")+'</div>';return}
  data=x.d;
- state=(data.request.items||[]).map(function(it){return{rowId:it.rowId,action:it.action||"keep",
+ state=(data.request.items||[]).map(function(it){var a=it.after||{};return{rowId:it.rowId,action:it.action||"keep",
+  courseId:it.action==="add"?Number(a.courseId||0):undefined,collegeId:it.action==="add"?Number(a.collegeId||0):undefined,
+  sectionId:it.action==="add"?Number(a.sectionId||0):undefined,collegeName:it.action==="add"?(a.collegeName||""):"",
   before:it.before||it.after,after:it.after,slots:it.slots||[],days:(it.action==="change"||it.action==="add")?(it.slots||[]).map(function(s){return s.day}):[],
   start:(it.action==="change"||it.action==="add")&&it.slots&&it.slots[0]?it.slots[0].start:"",excuse:it.excuse||"",
   decision:it.decision||null,tone:it.verdict==="clear"?"ok":it.verdict==="exception"?"warn":it.verdict==="conflict"?"bad":"",
   note:it.reasons&&it.reasons.length?it.reasons[0].text:(it.verdict==="clear"?"الوقت متاح":""),alts:it.nearestTimes||[]}});
- paint()}).catch(function(){host.innerHTML='<div class="err">تعذّر الاتصال. تحقّق من الإنترنت.</div>'});
+ var draft=data.windowOpen?readDraft():null;
+ if(draft&&Array.isArray(draft.items)){var byRow={};state.forEach(function(it){if(it.rowId!=null)byRow[it.rowId]=it});var adds=[];
+  draft.items.forEach(function(d,k){var nm=(draft.names||[])[k]||{};if(d.rowId!=null&&byRow[d.rowId]){var it=byRow[d.rowId];if(d.action!==it.action||(d.action==="change"&&(String(d.days)!==String(it.days)||d.start!==it.start))){it.action=d.action;it.days=d.days||[];it.start=d.start||"";it.excuse=d.excuse||"";it.tone="";it.note=""}}
+   else if(d.action==="add"&&d.courseId&&(data.courses||[]).some(function(c){return c.id===d.courseId&&Number(c.collegeId)===Number(d.collegeId)&&Number(c.sectionId)===Number(d.sectionId)})&&!state.some(function(it){return it.action==="add"&&it.courseId===d.courseId&&String(it.days)===String(d.days)&&it.start===d.start})){
+    var c=(data.courses||[]).filter(function(c){return c.id===d.courseId&&Number(c.collegeId)===Number(d.collegeId)})[0];
+    adds.push({rowId:null,action:"add",courseId:d.courseId,collegeId:d.collegeId,sectionId:d.sectionId,collegeName:c.collegeName||nm.collegeName||"",before:{courseName:c.name,sectionCode:""},after:{courseId:d.courseId,courseName:c.name,collegeId:d.collegeId,collegeName:c.collegeName,sectionId:d.sectionId},decision:null,slots:[],days:d.days||[],start:d.start||"",excuse:d.excuse||"",tone:"",note:"",alts:[]})}});
+  state=state.concat(adds);restoredDraft=true;dirty=true}
+ paint();
+ if(restoredDraft)recheckAll();
+ }).catch(function(){host.innerHTML='<div class="err">تعذّر الاتصال. تحقّق من الإنترنت.</div>'});
 })();</script></body></html>`;
 }
 
@@ -15395,7 +15477,7 @@ li span{display:flex;flex-direction:column;gap:3px}
 <h1>حالة طلبي</h1>
 <p class="sub">أدخل رقمك المدني لترى ما أرسلتَه إلى القسم.</p>
 <label for="civil">الرقم المدني</label>
-<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="············">
+<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا">
 <button id="go" type="button">اعرض حالتي</button>
 <div id="out"></div>
 </div>
@@ -15409,7 +15491,9 @@ function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
 return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 /* الأرقام العربية تُقبل كما تُكتب: من يكتب «٢٩٠…» أدخل رقمه، لا خطأً. */
 function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){
-return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}
+return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/[۰-۹]/g,function(d){
+return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\\D/g,"")}
+box.addEventListener("input",function(){var v=digits(box.value).slice(0,12);if(v!==box.value)box.value=v});
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
 d.toLocaleDateString("ar-KW-u-nu-latn",{year:"numeric",month:"long",day:"numeric"})}
 function fail(m){out.innerHTML='<div class="err">'+esc(m)+'</div>'}
@@ -15586,6 +15670,7 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 .pub-week .slot:last-child{border-bottom:0}
 .pub-week .slot b{display:block;font-size:12.5px;font-weight:600;line-height:1.35}
 .pub-week .slot small{display:block;margin-top:1px;font:600 10px/1.4 ui-monospace,Menlo,monospace;color:var(--brass)}
+.pub-week .slot{min-width:0;overflow:hidden}.pub-week .slot small,.pub-week .slot time{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pub-week .slot time{display:block;margin-top:2px;font:600 11px/1.4 ui-monospace,Menlo,monospace;color:var(--accent);white-space:nowrap}
 .pub-week .slot time+time{color:var(--muted);margin-top:0}
 .pub-week .slot i{display:block;margin-top:2px;font-style:normal;font-size:11px;color:var(--muted)}

@@ -265,6 +265,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   value={civil}
                   onChange={(e) => onCivil(e.target.value)}
                   onBlur={validateCivil}
+                  placeholder="12 رقمًا"
                   aria-label="الرقم المدني"
                   autoComplete="off"
                   autoFocus

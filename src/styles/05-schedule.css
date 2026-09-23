@@ -8370,3 +8370,31 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .share-sheet.visual-minimal .share-row-actions{display:grid;grid-template-columns:repeat(4,50px);justify-content:start}
   .share-sheet.visual-minimal footer{padding-block-end:max(18px,env(safe-area-inset-bottom))}
 }
+
+/* Publish sheet: one icon language and tidy link cards (2026-09-23).
+   Every glyph in the sheet sits in the same box so «نشر» and the three kinds
+   read as one family; link cards stack lead/actions without icons and text
+   crowding each other on phones or desktops. */
+.share-sheet.visual-minimal .share-glyph svg,
+.share-sheet.visual-minimal .share-kind button svg{stroke-width:1.7}
+.share-sheet.visual-minimal .share-kind button{border:1px solid var(--line);transition:border-color .15s ease,background-color .15s ease}
+.share-sheet.visual-minimal .share-kind button svg{inline-size:28px;block-size:28px;padding:10px;box-sizing:content-box;border-radius:16px;background:var(--surface);color:var(--accent)}
+.share-sheet.visual-minimal .share-kind button.active svg{background:var(--accent);color:var(--surface)}
+.share-sheet.visual-minimal .share-list{display:grid;gap:12px}
+.share-sheet.visual-minimal .share-list article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 16px;align-items:center;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.share-sheet.visual-minimal .share-row-lead{display:grid;gap:6px;min-inline-size:0}
+.share-sheet.visual-minimal .share-row-lead > span{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-inline-size:0;font-size:.78rem;color:var(--muted)}
+.share-sheet.visual-minimal .share-link-kind{display:inline-flex;align-items:center;gap:8px;min-inline-size:0;font-weight:750;font-size:.86rem;line-height:1.5;color:var(--ink)}
+.share-sheet.visual-minimal .share-link-kind svg{flex:none;inline-size:18px;block-size:18px;color:var(--accent)}
+.share-sheet.visual-minimal .share-link-id{display:block;min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono,ui-monospace,monospace);font-size:.76rem;font-weight:500;color:var(--muted)}
+.share-sheet.visual-minimal .share-row-actions{display:flex;flex-wrap:nowrap;gap:8px;justify-content:flex-end}
+.share-sheet.visual-minimal .share-row-actions button svg,
+.share-sheet.visual-minimal .share-row-actions a svg{inline-size:20px;block-size:20px;stroke-width:1.8}
+.share-sheet.visual-minimal .share-list article > .share-qr,
+.share-sheet.visual-minimal .share-list article > .share-deliver{grid-column:1 / -1}
+@media(max-width:680px){
+  .share-sheet.visual-minimal .share-list article{grid-template-columns:1fr;padding:14px}
+  .share-sheet.visual-minimal .share-row-actions{display:grid;grid-template-columns:repeat(4,minmax(44px,1fr));justify-content:stretch}
+  .share-sheet.visual-minimal .share-row-actions button,
+  .share-sheet.visual-minimal .share-row-actions a{inline-size:100%;min-inline-size:44px;block-size:46px;min-block-size:46px}
+}

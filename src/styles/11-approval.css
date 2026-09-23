@@ -655,6 +655,7 @@
 }
 .request-card-head strong{display:block;font-size:var(--t-h4)}
 .request-card-head small{color:var(--muted);font-size:var(--t-xs)}
+.request-card-head .request-card-section{display:inline-flex;align-items:center;margin:3px 0 2px;padding:1px 9px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:var(--t-xs);font-weight:600;line-height:1.8;margin-inline-end:6px}
 
 .request-items{display:flex;flex-direction:column}
 .request-item{

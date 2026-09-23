@@ -210,7 +210,8 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
       <header className="request-card-head">
         <div>
           <strong>{row.instructorName}</strong>
-          <small>{row.sectionName ? `${row.sectionName} · ` : ""}{countOf(items.length, AR.change)}{row.submittedAt ? ` · ${arabicDate(row.submittedAt)}` : ""}</small>
+          {row.sectionName ? <span className="request-card-section">قسم {row.sectionName.replace(/^قسم\s+/, "")}</span> : null}
+          <small>{countOf(items.length, AR.change)}{row.submittedAt ? ` · ${arabicDate(row.submittedAt)}` : ""}</small>
         </div>
         {/* ── من وقّعه ────────────────────────────────────────────────────
             الرابطُ يصل في واتساب ويُعاد توجيهه، فضغطةُ «أرسل» وحدَها لا تُثبت

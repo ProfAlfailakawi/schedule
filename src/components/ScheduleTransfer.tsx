@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
 import { validateCivilId } from "../utils/civilId";
+import { numericText } from "../utils/digits";
 import { AR, countOf } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
@@ -1503,7 +1504,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 {error && !editingDelegate ? <p className="transfer-error roster-local-error"><AlertTriangle />{error}</p> : null}
                 <div className="roster-add-fields">
                   <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="اسم المنتدب" aria-label="اسم المنتدب الجديد" />
-                  <input value={newCivil} onChange={e => setNewCivil(e.target.value.replace(/[^\d]/g, ""))} onBlur={()=>{if(newCivil&& !validateCivilId(newCivil).isValid)setError(validateCivilId(newCivil).message||"الرقم المدني غير صحيح.");}} placeholder="الرقم المدني" inputMode="numeric" dir="ltr" maxLength={12} aria-label="الرقم المدني للمنتدب الجديد" />
+                  <input value={newCivil} onChange={e => setNewCivil(numericText(e.target.value).slice(0, 12))} onBlur={()=>{if(newCivil&& !validateCivilId(newCivil).isValid)setError(validateCivilId(newCivil).message||"الرقم المدني غير صحيح.");}} placeholder="12 رقمًا" inputMode="numeric" maxLength={12} aria-label="الرقم المدني للمنتدب الجديد" />
                   <PrimaryButton type="button" data-guide-ignore="إضافة منتدب إلى دليل القسم إجراء إداري واضح داخل أداة المنتدبين" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}><Plus />أضف للقسم</PrimaryButton>
                 </div>
                 <small className="roster-rule-note">يمكن أن يكون المنتدب نفسه مسجلاً في أكثر من قسم، لكن لا يمكن إضافته مرتين داخل القسم نفسه.</small>
@@ -1519,7 +1520,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                       {error ? <p className="transfer-error roster-local-error"><AlertTriangle />{error}</p> : null}
                       <div className="roster-edit-fields">
                       <input value={editName} onChange={e=>setEditName(e.target.value)} aria-label="تعديل اسم المنتدب"/>
-                      <input value={editCivil} onChange={e=>setEditCivil(e.target.value.replace(/[^\d]/g,""))} onBlur={()=>{if(editCivil && !validateCivilId(editCivil).isValid)setError(validateCivilId(editCivil).message||"الرقم المدني غير صحيح.");}} inputMode="numeric" dir="ltr" maxLength={12} aria-label="تعديل الرقم المدني"/>
+                      <input value={editCivil} onChange={e=>setEditCivil(numericText(e.target.value).slice(0, 12))} onBlur={()=>{if(editCivil && !validateCivilId(editCivil).isValid)setError(validateCivilId(editCivil).message||"الرقم المدني غير صحيح.");}} placeholder="12 رقمًا" inputMode="numeric" maxLength={12} aria-label="تعديل الرقم المدني"/>
                       <PrimaryButton type="button" data-guide-ignore="حفظ تعديل بيانات منتدب داخل أداة المنتدبين" onClick={()=>void saveDelegateEdit(person.AdInstructorId)} disabled={busy}>حفظ</PrimaryButton>
                       <SecondaryButton type="button" data-guide-ignore="إلغاء تحرير منتدب لا يغير البيانات" onClick={()=>{setEditingDelegate(0);setError(null);}} disabled={busy}>إلغاء</SecondaryButton>
                       </div>

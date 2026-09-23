@@ -7,7 +7,7 @@ import {
   Command,
   Compass,
   CopyPlus,
-  FileDiff,
+  CalendarCheck,
   FileSearch,
   FileText,
   FlaskConical,
@@ -24,8 +24,8 @@ import {
   Sparkles,
   Sun,
   UsersRound,
-  ClipboardList,
-  MailQuestion,
+  ClipboardCheck,
+  MailCheck,
   WandSparkles,
   Wifi,
   WifiOff,
@@ -2392,7 +2392,7 @@ export default function App() {
                 activeView={activeView}
                 onGo={go}
                 view="scheduleChanges"
-                icon={<FileDiff />}
+                icon={<CalendarCheck />}
                 label="تغييرات الجدول"
                 badge={changesBadge}
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.scheduleChanges`،
@@ -2409,7 +2409,7 @@ export default function App() {
                 activeView={activeView}
                 onGo={go}
                 view="instructorRequests"
-                icon={<MailQuestion />}
+                icon={<MailCheck />}
                 label="رغبات الأساتذة"
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.instructorRequests`،
                    وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
@@ -2425,7 +2425,7 @@ export default function App() {
                 activeView={activeView}
                 onGo={go}
                 view="studentRegistration"
-                icon={<ClipboardList />}
+                icon={<ClipboardCheck />}
                 label="كشف التسجيل"
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.studentRegistration`،
                    وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
