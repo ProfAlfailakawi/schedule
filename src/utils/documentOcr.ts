@@ -91,10 +91,42 @@ let headerWorkerPromise:Promise<PooledWorker>|null=null;
  */
 export const retryOnFailure=<T,>(promise:Promise<T>,clear:()=>void):Promise<T>=>
   promise.catch(error=>{clear();throw error;});
+
+/* ── ملفّا اللغة يُعرَف مكانهما، لا يُفترَض ────────────────────────────────
+ *
+ * ara.traineddata وeng.traineddata في جذر المستودع، وكان tesseract يجدهما
+ * لأن مجلّدَ التشغيل الافتراضيَّ عنده هو مجلّدُ العمل الحاليّ — وهو /app في
+ * الإنتاج مصادفةً لا قصداً. فإن بدأ الخادمُ من مجلّدٍ آخر لم يجدهما، فذهب
+ * يطلبهما من الشبكة، فإن كانت محجوبةً فشلت القراءةُ كلُّها. قيس ذلك: من الجذر
+ * تعمل بلا شبكة، ومن مجلّدٍ آخر تُطلب من jsdelivr فتُردّ 403.
+ *
+ * فيُبحث عنهما في أماكن معروفة. ولا يُعطى tesseract مساراً إلا إن وُجد
+ * الملفّان كلاهما فيه؛ وإلا تُترك له قيمتُه الافتراضية كما كانت تماماً. فهذا
+ * لا يُضيّق شيئاً كان يعمل: ما كان يجد الملفّين يجدهما، وما لم يكن يجدهما صار
+ * يجدهما إن كانا في مكانٍ معروف. و OCR_DATA_DIR يُسمّي مكاناً صريحاً عند الحاجة. */
+let ocrDataDirPromise:Promise<string|null>|null=null;
+function ocrLanguageDataDir(){
+  if(!ocrDataDirPromise)ocrDataDirPromise=(async()=>{
+    const fs=await import("node:fs");
+    const path=await import("node:path");
+    const script=process.argv[1]?path.dirname(path.resolve(process.argv[1])):"";
+    /* dist/server.cjs يعمل من dist/ والملفّان في الجذر فوقه، فيُسأل عن الأب أيضاً. */
+    const candidates=[process.env.OCR_DATA_DIR,process.cwd(),script,script&&path.dirname(script)]
+      .filter((dir):dir is string=>Boolean(dir));
+    return candidates.find(dir=>["ara","eng"].every(lang=>fs.existsSync(path.join(dir,`${lang}.traineddata`))))||null;
+  })();
+  return ocrDataDirPromise;
+}
+/* المحرّك يُترك لقيمة tesseract الافتراضية (undefined لا رقم) كي لا يتغيّر
+   التعرّفُ نفسُه بشيء؛ المتغيّر هنا مكانُ الملفّين وحده. */
+async function newOcrWorker(langs:string):Promise<PooledWorker>{
+  const {createWorker}=await import("tesseract.js");
+  const dir=await ocrLanguageDataDir();
+  return await createWorker(langs,undefined,dir?{langPath:dir,cachePath:dir}:{}) as PooledWorker;
+}
 async function getHeaderWorker(){
   if(!headerWorkerPromise)headerWorkerPromise=retryOnFailure((async()=>{
-    const {createWorker}=await import("tesseract.js");
-    return await createWorker("ara+eng") as PooledWorker;
+    return await newOcrWorker("ara+eng");
   })(),()=>{headerWorkerPromise=null;});
   return headerWorkerPromise;
 }
@@ -102,7 +134,6 @@ type OcrWorkerPool={eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker};
 let poolPromise:Promise<OcrWorkerPool>|null=null;
 async function getWorkerPool(){
   if(!poolPromise)poolPromise=retryOnFailure((async()=>{
-    const {createWorker}=await import("tesseract.js");
     /* The page-1 preflight worker is reused as the first Arabic table worker.
        A wrong scanned PDF therefore initializes ONE OCR worker and stops;
        a valid PDF does not pay that cold-start twice. */
@@ -116,7 +147,7 @@ async function getWorkerPool(){
     const os=await import("node:os");
     const cores=(os as any).availableParallelism?.()??(os.cpus()?.length||4);
     const engCount=Math.min(5,Math.max(2,cores-1));
-    const engWorkers=await Promise.all(Array.from({length:engCount},()=>createWorker("eng")));
+    const engWorkers=await Promise.all(Array.from({length:engCount},()=>newOcrWorker("eng")));
     /* On a small instance the second Arabic worker is pure memory pressure:
        readGrid already serialises the two Arabic strips whenever ara===ara2,
        so sharing one worker is a supported, slower-but-safe mode — and an
@@ -126,7 +157,7 @@ async function getWorkerPool(){
        instance with raised memory the second Arabic worker restores real
        name/instructor parallelism — the largest per-page cost block. */
     const lowMemory=(os.totalmem?.()||0)<3*1024*1024*1024;
-    const a2=cores<=2&&lowMemory?a1:await createWorker("ara+eng");
+    const a2=cores<=2&&lowMemory?a1:await newOcrWorker("ara+eng");
     return{eng:engWorkers as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
   })(),()=>{poolPromise=null;});
   return poolPromise;
@@ -582,15 +613,13 @@ let graduationTextWorkerPromise:Promise<PooledWorker>|null=null;
 let graduationDigitsWorkerPromise:Promise<PooledWorker>|null=null;
 async function getGraduationTextWorker(){
   if(!graduationTextWorkerPromise)graduationTextWorkerPromise=retryOnFailure((async()=>{
-    const {createWorker}=await import("tesseract.js");
-    return await createWorker("ara+eng") as PooledWorker;
+    return await newOcrWorker("ara+eng");
   })(),()=>{graduationTextWorkerPromise=null;});
   return graduationTextWorkerPromise;
 }
 async function getGraduationDigitsWorker(){
   if(!graduationDigitsWorkerPromise)graduationDigitsWorkerPromise=retryOnFailure((async()=>{
-    const {createWorker}=await import("tesseract.js");
-    return await createWorker("eng") as PooledWorker;
+    return await newOcrWorker("eng");
   })(),()=>{graduationDigitsWorkerPromise=null;});
   return graduationDigitsWorkerPromise;
 }

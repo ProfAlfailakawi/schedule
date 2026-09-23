@@ -164,6 +164,11 @@ check('gunzipSync' in migration,'Firestore migration accepts compressed snapshot
 check('await initDatabase();' in server and 'startServer().catch' in server,'server waits for database initialization before listening')
 check('process.env.NODE_ENV = "production"' in runtime,'Cloud Run always serves the compiled production release')
 check('\"gcp-build\": \"npm run build\"' in package,'Google buildpack hook produces a fresh dist during source deployment')
+# ملفّا لغة OCR كانا يُوجدان لأن الخادم يبدأ من جذر المستودع مصادفةً؛ من مجلّدٍ
+# آخر يطلبهما tesseract من الشبكة فتفشل القراءة إن كانت محجوبة. فكلُّ عاملٍ يمرّ
+# بموضعٍ واحدٍ يعرف مكانهما، و createWorker("…") مباشرةً تُعيد الهشاشةَ صامتة.
+ocr=txt('src/utils/documentOcr.ts')
+check('createWorker("' not in ocr and 'newOcrWorker(' in ocr and 'ocrLanguageDataDir' in ocr,'every OCR worker loads language data from a known place, not the working directory')
 
 # 7) Refinement contract: calm UI, advanced features behind one decision hub.
 check('headless?: boolean' in experience and 'headless' in schedules,'legacy intelligence strip can operate headlessly while keeping dialogs functional')
@@ -189,13 +194,21 @@ check((root/'src/components/LivingScheduleScenes.tsx').exists() and (root/'src/c
 # صفحةُ «عن البرنامج» أُعيد تصميمها ولم تبقَ فيها تلك البطاقات، فالتثبيتُ
 # يصف واجهةً زالت. ويبقى ما يعنينا: ألّا يعود نمطٌ بذلك الاسم بشكلٍ مكسور.
 check('.about-editorial-people' not in all_css or re.search(r'\.about-editorial-people\s*\{[^}]*grid-template-columns',all_css,re.S) is not None,'about page carries no broken leftover of the old people grid')
-# ── نبضٌ مستمرّ: قرارُ تصميمٍ لا عطلُ شيفرة ──────────────────────────────
-# كُتب هذا الشرطُ على `index.css` و`refinement.css` وحدهما، فلم يمرّ يوماً على
-# ملفّات الطبقات. وفيها خمسةُ مواضعَ تنبض بلا توقّف، وليست سواءً: نبضُ
-# «يُعيد الاتصال» و«يفكّر» خبرٌ عن حالٍ جارية، و`ripple-pulse` زينة.
-# ونزعُ ما يُخبر ليس تحسيناً، وإبقاءُ ما يُزيّن ليس عقداً — والفرقُ بينهما
-# حكمُ صاحب المنتج، فيبقى الشرطُ على نطاقه الأصليّ حتى يُقال فيه قول.
+# ── النبضُ يُخبر أو يسكن ─────────────────────────────────────────────────
+# كُتب الشرطُ الأوّل على `index.css` و`refinement.css` وحدهما، فلم يمرّ يوماً
+# على ملفّات الطبقات. وفيها خمسةُ مواضعَ تنبض، قُرئ كلٌّ منها من الشيفرة بمتى
+# يُعرض لا بشكله: أربعةٌ منها حالٌ عابرة تقف وحدها — «يُعيد الاتصال» و«يفكّر»
+# ما دام ذلك جارياً، و«أحلّل…» (`ripple-pulse`) حتى تحلّ النتيجةُ محلّه،
+# و«تغيّر للتوّ» ستَّ ثوانٍ ثم يُرفع. وواحدٌ زينة: نقطةُ لوحة العمل الخضراء
+# (`deck-live`) تُعرض بلا شرطٍ وتنبض طوال الجلسة وهي لا تقول شيئاً يتغيّر.
+# وقضى صاحبُ المنتج بالأنسب، فسكنت الزينةُ وبقيت الأخبار. ويُثبَّت الوجهان:
+# نزعُ ما يُخبر ليس تحسيناً، وإعادةُ ما يُزيّن ليست عقداً.
 check('animation: pulse' not in (css+refine).lower() and 'animation:pulse' not in (css+refine).lower(),'no continuous pulse/blink decoration in the base layers')
+deck_live=re.search(r'\.deck-live i\s*\{([^}]*)\}',all_css,re.S)
+check(deck_live is not None and 'animation' not in deck_live.group(1),'the always-shown dashboard dot stays still')
+for selector,label in [(r'\.user-avatar\.health-reconnecting i','reconnecting'),(r'\.command-intelligence-card\.thinking>svg','thinking'),(r'\.ripple-pulse i','analysing'),(r'\.agenda-card\.just-changed::after','just changed')]:
+    block=re.search(selector+r'[^{]*\{([^}]*)\}',all_css,re.S)
+    check(block is not None and 'animation:pulse' in block.group(1).replace(' ',''),f'transient status keeps its pulse: {label}')
 # `@import` صار وسيلةَ ترتيبِ الطبقات المحليّة، وهو ليس المقصود. والمقصودُ
 # ألّا يُحمَّل خطٌّ من الشبكة فيحجب الرسم.
 check('fonts.googleapis.com' not in all_css and '@import url(' not in all_css,'no blocking external font import')

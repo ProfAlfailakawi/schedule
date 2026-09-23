@@ -185,10 +185,13 @@
 }
 .deck-chip svg{width:14px;height:14px;color:var(--muted-2)}
 .deck-live{width:22px;height:22px;flex:none;display:grid;place-items:center}
+/* النقطةُ الخضراء تقول «البيانات محدّثة» وتُعرض دائماً بلا شرط، فنبضُها الدائم
+   لا يُخبر بشيء — زينةٌ تتحرّك في طرف العين طوال الجلسة. فتبقى النقطةُ وهالتُها
+   ساكنتين. أمّا النبضاتُ الأخرى فتبقى لأنها حالاتٌ عابرة تقف وحدها: «يُعاد
+   الاتصال» و«يفكّر» و«أحلّل…» حتى تأتي النتيجة، و«تغيّر للتوّ» ستَّ ثوانٍ. */
 .deck-live i{
   width:8px;height:8px;border-radius:var(--r-full);background:var(--success);
   box-shadow:0 0 0 4px color-mix(in srgb,var(--success) 18%,transparent);
-  animation:pulse 2.6s ease-in-out infinite;
 }
 
 /* --- Today ribbon --------------------------------------------------------- */
