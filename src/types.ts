@@ -894,6 +894,8 @@ export type InstructorRequestRejectReason =
 
 export interface InstructorRequestSlot {
   day: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
+  /** أيامُ النمط كلُّها حين يكون البديلُ نقلاً للمحاضرة بأيامها، لا ليومٍ واحد منها. */
+  days?: Array<"fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday">;
   start: string;
   end: string;
 }

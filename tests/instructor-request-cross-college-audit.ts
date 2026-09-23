@@ -28,7 +28,9 @@ check(server.includes("requestRulesForScope") && server.includes("const instruct
 check(inbox.includes("item.after?.collegeId || row.AdCollegeId") && inbox.includes("item.after?.sectionId || row.AdSectionId"), "الورشة تفتح على الكلية والقسم الهدف لا على كلية الرابط");
 check(server.includes("expectedCollegeId") && server.includes("expectedSectionId") && server.includes("Number(created.AdCourseId) !== expectedCourseId"), "تثبيت الإضافة يرفض صفًا حُفظ في موقع أو مقرر مختلف");
 check(staffPage.includes("visibleCardCollege") && !staffPage.includes("row.college,row.department"), "بطاقة الأستاذ لا تعرض اسم القسم داخل كل خلية");
-check(staffPage.includes('/التربية\\s*الأساسية.*بنات/'), "التربية الأساسية بنات هي الكلية الصامتة بصريًا فقط");
+/* داخل قالب الخادم تُكتب الشرطةُ مضاعفةً: «\s» المفردة تصل المتصفحَ حرفَ s، فلا تُطابق
+   «التربية الأساسية» بمسافتها، وتظهر الكليةُ التي يُفترض صمتُها. */
+check(staffPage.includes('/التربية\\\\s*الأساسية.*بنات/'), "التربية الأساسية بنات هي الكلية الصامتة بصريًا فقط");
 
 const courseOptionBlock = server.slice(
   server.indexOf("async function instructorRequestCourseOptions"),
