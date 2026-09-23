@@ -212,6 +212,18 @@ async function runTests() {
         assert(currentTermId([{ AdTermId: 3, AdTermName: "فصل قديم" },
                               { AdTermId: 4, AdTermName: "أقدم" }], at("2026-09-03")) === 4,
           "إن غابت العلامة الصريحة يُختار أحدث فصل غير مغلق");
+        /* بلا علامةٍ على أيٍّ منهما — وهي حالُ البيانات القديمة — لا يصير
+           الفصلُ المستقبليُّ المُنشأ للتخطيط «الجاري» لأنه الأحدث. */
+        const firstBare = { AdTermId: 11, AdTermName: "الفصل الأول 2026/2027", AdTermStart: "2026-09-06", AdTermWeeks: 15 };
+        const secondBare = { AdTermId: 12, AdTermName: "الفصل الثاني 2026/2027", AdTermStart: "2027-02-01", AdTermWeeks: 15 };
+        assert(currentTermId([firstBare, secondBare], at("2026-09-23")) === 11,
+          "فصلٌ مستقبليٌّ بلا علامة لا يزيح الفصلَ الذي بدأ");
+        assert(currentTermId([{ ...summer }, firstBare, secondBare], at("2026-09-23")) === 11,
+          "وبعد آخر فصلٍ أُغلق يُختار أحدثُ ما بدأ، لا أحدثُ ما أُنشئ");
+        assert(currentTermId([{ ...firstBare, AdTermClosed: true }, secondBare], at("2026-12-20")) === 12,
+          "وإغلاقُ الجاري صراحةً ينقل التشغيلَ إلى التالي ولو لم يبدأ بعد");
+        assert(currentTermId([firstBare, secondBare], at("2027-01-20")) === 11,
+          "وانقضاءُ التقويم الافتراضي لا يجعل الجاريَ سابقاً ما لم يُغلق");
       }
 
       // لا فصل معتمداً بلا إغلاق صريح.

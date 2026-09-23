@@ -87,7 +87,7 @@ interface ChangeReport {
   deadline: InboxRow["deadline"];
   diff: { entries: DiffEntry[]; counts: { added: number; removed: number; changed: number; unchanged: number }; firstReview: boolean };
   /** من أين تبدأ المقارنة: النسخة المعتمدة، أو نسخة جولة، أو لقطة محفوظة، أو لا شيء. */
-  baselineSource?: "authority" | "round" | "capture" | "none";
+  baselineSource?: "authority" | "round" | "capture" | "reviewed" | "none";
   authoritySource?: { draftId: string; name: string; sourceFileName: string; importedAt?: string; publishedAt?: string | null };
   fullSchedule?: FullRow[];
   summary: string;
@@ -112,7 +112,7 @@ export interface ScheduleChangesRole {
 interface Props {
   role: ScheduleChangesRole;
   /** نطاق القسم حين تُفتح الشاشة من جدول قسمٍ بعينه. */
-  scope?: { collegeId: number; sectionId: number } | null;
+  scope?: { collegeId: number; sectionId: number; collegeName?: string; sectionName?: string } | null;
 }
 
 const request = async (url: string, init?: RequestInit) => {
@@ -1059,6 +1059,8 @@ function Report({ termId, termName, scope, role, onBack }: {
             <small className="changes-baseline-note">المقارنة مع النسخة المعتمدة «{report.authoritySource?.sourceFileName || "الجدول المعتمد.pdf"}» — بنفس أساس تقرير تغييرات الجدول الرسمي.</small>
           ) : report.baselineSource === "none" ? (
             <small className="changes-baseline-note">أولُ مراجعةٍ لهذا القسم — لا نسخةَ سابقةَ يُقارَن بها، فكلُّ موعدٍ يُعرض مضافاً.</small>
+          ) : report.baselineSource === "reviewed" ? (
+            <small className="changes-baseline-note">لم يتحرّك شيءٌ منذ آخر مراجعةٍ للتسجيل — الجدول كما رآه.</small>
           ) : report.baselineSource === "capture" ? (
             <small className="changes-baseline-note">لم تحمل الجولاتُ السابقة نسخةً محفوظة، فالمقارنةُ من آخر لقطةٍ للجدول قبل هذه الجولة.</small>
           ) : null}

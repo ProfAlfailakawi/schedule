@@ -29,6 +29,8 @@ import {
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
+import { blockingConflictDetails } from "./src/utils/scheduleBlockers";
+import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
@@ -8796,48 +8798,6 @@ function countBlockingConflicts(scopeRows: any[], termRows: any[]): number {
   return count;
 }
 
-/**
- * ── ما يمنع الاعتماد، بتفاصيله — داخل حدود القسم ─────────────────────────
- *
- * كانت الشاشة تقول «4 يمنع الاعتماد» ولا تقول ما هي: العددُ يصل، والتفاصيلُ لا
- * تُرسل أصلاً. فصار كلُّ مانعٍ يصل بمواعيد هذا القسم المعنيّة به. وتعارضٌ مع
- * موعدٍ في قسمٍ آخر يُقال عامّاً — «مع موعدٍ خارج هذا القسم» — بلا اسم قسمٍ ولا
- * مقرّرٍ ولا أستاذٍ منه: الخادمُ يرى الموعدَ المقابل ليحمي الجدول، والقارئُ لا.
- */
-function blockingConflictDetails(scopeRows: any[], termRows: any[], courseName: Map<number, string>) {
-  const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
-  const byId = new Map(termRows.map((row: any) => [Number(row.id), row] as const));
-  const scopeOf = new Map(termRows.map((row: any) => [Number(row.id), `${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] as const));
-  const typeLabel: Record<string, string> = { room: "تعارض قاعة", instructor: "تعارض أستاذ", duplicate: "موعد مكرّر", cohort: "تعارض مقرّرين يشترك طلبتُهما" };
-  const describe = (row: any) => `${courseName.get(Number(row?.AdCourseId)) || row?.AdCourseName || "مقرر"} (شعبة ${row?.SCode || "—"})`;
-  const seen = new Set<string>();
-  const blockers: Array<{ id: string; type: string; title: string; detail: string; rowIds: number[]; subjectLabel?: string }> = [];
-  for (const item of findConflicts(scopeRows as any, termRows as any)) {
-    if (item.severity !== "high" && item.type !== "duplicate") continue;
-    const a = Number(item.rowId), b = Number(item.otherId);
-    if (!ownIds.has(a) && !ownIds.has(b)) continue;
-    if (item.type === "instructor" && scopeOf.get(a) !== scopeOf.get(b)) continue;
-    const key = [Math.min(a, b), Math.max(a, b), item.type].join(":");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const label = typeLabel[String(item.type)] || "تعارض يمنع الاعتماد";
-    const inside = ownIds.has(a) && ownIds.has(b);
-    const own = [a, b].filter(id => ownIds.has(id));
-    blockers.push(inside ? {
-      id: key, type: String(item.type), title: label,
-      detail: `${describe(byId.get(a))} و${describe(byId.get(b))} في الوقت نفسه.`,
-      rowIds: own,
-      subjectLabel: `${describe(byId.get(a))} · ${describe(byId.get(b))}`,
-    } : {
-      id: key, type: String(item.type), title: `${label} مع موعدٍ خارج هذا القسم`,
-      detail: "الموعد المقابل في جدول قسمٍ آخر؛ غيّر وقتَ هذا الموعد أو مكانه، أو نسّق مع ذلك القسم.",
-      rowIds: own,
-      subjectLabel: describe(byId.get(own[0])),
-    });
-  }
-  return blockers;
-}
-
 /** السؤال عن قسمٍ واحد، حين لا يكون في اليد جدولُ الفصل أصلاً. */
 async function blockingConflictCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
   const [scopeRows, termRows] = await Promise.all([
@@ -9753,30 +9713,19 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
   const currentRound = approval.rounds.find(item => item.number === round);
   const currentRoundVersionId = currentRound?.reviewedVersionId;
   let baselineVersion = roundBaseline;
-  let baselineSource: "authority" | "round" | "capture" | "none" = authorityDraft ? "authority" : (roundBaseline ? "round" : "none");
+  let baselineSource: "authority" | "round" | "capture" | "reviewed" | "none" = authorityDraft ? "authority" : (roundBaseline ? "round" : "none");
   if (!authorityDraft && !baselineVersion) {
     const history = await Repository.getScheduleVersions(collegeId, sectionId, termId, 100);
-    const previousRound = approval.rounds
-      .filter(item => item.number < round)
-      .sort((a, b) => b.number - a.number)[0];
-    /* آخِرُ نظرةٍ للتسجيل، لا آخِرُ إرسالٍ من القسم. وغيابُها يعني أنه لم ينظر
-       بعد، فلا أساسَ يُخترع له. */
-    const lastLookAt = currentRound?.returnedAt || currentRound?.acceptedAt
-      || previousRound?.returnedAt || previousRound?.acceptedAt;
-    /* ونسخةُ الجولة نفسِها تُستثنى، وإلا قُورنت الجولةُ بنفسها فخرجت بلا
-       فرقٍ دائماً. */
-    const candidates = history.filter(item => item.id !== currentRoundVersionId
-      && (!lastLookAt || String(item.createdAt) >= String(lastLookAt)));
-    /* القائمة أحدثُ أولاً، لذلك آخر مرشح هو لقطة ما قبل أول تعديل. وفي أول
-       جولة لا تُخترع مرساة من `submittedAt`: نأخذ أقدم لقطة فعلية متاحة، كي
-       لا يتحول الجدول كله إلى «مضاف» لمجرد غياب نسخة جولة سابقة. */
-    const fallback = candidates[candidates.length - 1];
-    if (fallback) {
-      baselineVersion = await Repository.getScheduleVersionById(fallback.id);
+    const choice = chooseCaptureBaseline(approval.rounds as any, round, history as any);
+    if (choice.kind === "capture") {
+      baselineVersion = await Repository.getScheduleVersionById(choice.versionId);
       if (baselineVersion) baselineSource = "capture";
+    } else if (choice.kind === "reviewed") {
+      baselineVersion = { id: "", rows: live } as any;
+      baselineSource = "reviewed";
     }
   }
-  const baselineVersionId = authorityDraft ? null : (baselineVersion?.id || null);
+  const baselineVersionId = authorityDraft || baselineSource === "reviewed" ? null : (baselineVersion?.id || null);
 
   const names = {
     instructorById: new Map(instructors.map((row: any) => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
@@ -9925,8 +9874,10 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
         Repository.getSchedulesByScope({ termId }),
         Repository.getCourses(),
       ]);
+      const instructors = await Repository.getInstructors();
       return blockingConflictDetails(scopeRows as any[], termRows as any[],
-        new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")])));
+        new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")])),
+        new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])));
     })(),
     regulationNotices: await regulationNoticesForScope(collegeId, sectionId, termId),
   });
@@ -13418,7 +13369,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .pub-week .wslot b{display:block;font-size:12px;font-weight:600;line-height:1.35}
 .pub-week .wslot time{display:block;margin-top:2px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);direction:ltr}
 .pub-week .wslot{min-width:0;overflow:hidden}
-.pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:9.5px;font-weight:300;line-height:1.35;opacity:.78;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:9.5px;font-weight:400;line-height:1.35;opacity:.78;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pub-week .wslot .wroom{font-family:ui-monospace,monospace;font-size:9px;letter-spacing:-.2px;text-align:start}
 @media(max-width:520px){.pub-week th.t{width:40px;font-size:9.5px}.pub-week th{font-size:11px;padding:8px 2px}.pub-week .wslot{padding:6px 5px}.pub-week .wslot b{font-size:11px;line-height:1.3;overflow-wrap:anywhere}.pub-week .wslot time{font-size:9.5px;line-height:1.35}}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -14047,7 +13998,7 @@ function arCourses(n){
 
 function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:800;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:800;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:800;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
 </style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
 (function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,identityMemoryKey="schedule-student-identity-"+TOKEN;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
@@ -15775,7 +15726,7 @@ color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}
 button:disabled{opacity:.55;cursor:not-allowed}
 .err{background:#fdeceb;color:var(--bad);padding:11px 13px;border-radius:11px;margin-top:13px;font-size:14px}
 .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:18px}
-.ref{font-size:25px;font-weight:800;letter-spacing:.09em;text-align:center;margin:0 0 4px}
+.ref{font-size:25px;font-weight:700;letter-spacing:.09em;text-align:center;margin:0 0 4px}
 .reflabel{text-align:center;color:var(--muted);font-size:12px;margin:0 0 15px}
 ul{list-style:none;margin:0;padding:0}
 li{display:flex;justify-content:space-between;gap:11px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}

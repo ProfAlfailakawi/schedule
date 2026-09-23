@@ -123,13 +123,13 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
     margin:0 0 18px;padding-bottom:12px;border-bottom:2px solid var(--accent,#1f6b5c);
   }
   .print-report .print-head-title{min-width:0;flex:1}
-  .print-report .print-head-title h1{margin:0;font-size:clamp(17px,2.1vw,21px);font-weight:700;line-height:1.25;color:#111}
+  .print-report .print-head-title h1{margin:0;font-size:clamp(17px,2.1vw,21px);font-weight:800;line-height:1.25;color:#111}
   .print-report .print-head-title p{margin:5px 0 0;font-size:12.5px;color:#555;line-height:1.5}
   .print-report .print-head-brand{flex:none;display:flex;align-items:center;gap:11px;text-align:left}
   .print-report .print-emblem{flex:none;display:flex;color:var(--accent,#1f6b5c)}
   .print-report .print-emblem svg{width:46px;height:46px}
   .print-report .print-head-org{display:flex;flex-direction:column;gap:2px;max-width:230px}
-  .print-report .print-head-org strong{font-size:14px;font-weight:700;color:#0f4239;line-height:1.3}
+  .print-report .print-head-org strong{font-size:14px;font-weight:750;color:#0f4239;line-height:1.3}
   .print-report .print-head-org span{font-size:10.5px;color:#777;letter-spacing:.02em}
   .print-report table{
     width:100%;min-width:880px;

@@ -187,8 +187,26 @@ export function currentTermId(
     .sort((a, b) => termChronology(a) - termChronology(b)
       || Number(a.AdTermId || 0) - Number(b.AdTermId || 0))[0];
   if (declaredOpen) return Number(declaredOpen.AdTermId || 0);
-  const notClosed = ordered.find(term => term.AdTermClosed !== true);
-  return Number(notClosed?.AdTermId || 0);
+
+  /* ── بلا علامةٍ صريحة: أحدثُ فصلٍ بدأ فعلاً، لا أحدثُ فصلٍ أُنشئ ─────────
+     كان الرجوعُ «أحدث فصلٍ غير مغلق»، فإذا أُنشئ الفصلُ التالي للتخطيط —
+     وكلاهما بلا علامة، وهي حالُ البيانات القديمة — صار المستقبليُّ «الجاري»،
+     وقالت بطاقتي للأستاذ عن فصله الذي يُدرّسه الآن «فصل سابق». فيُقرأ ما بعد
+     آخر فصلٍ أُغلق صراحةً، ويُختار منه أحدثُ ما بدأ؛ فصلٌ لم يبدأ لا يصير جارياً
+     لأنه أحدث، وفصلٌ بدأ لا يصير سابقاً لأن تقويمه الافتراضي انقضى. */
+  const ascending = [...ordered].reverse();
+  let lastClosed = -1;
+  ascending.forEach((term, index) => { if (term.AdTermClosed === true) lastClosed = index; });
+  const pool = ascending.slice(lastClosed + 1).filter(term => term.AdTermClosed !== true);
+  const started = [...pool].reverse().find(term => {
+    const window = termWindow(term as any);
+    return Boolean(window && window.from <= now);
+  });
+  if (started) return Number(started.AdTermId || 0);
+  /* لم يبدأ شيءٌ بعد آخر مغلق: الفصلُ التشغيلي هو التالي له مباشرةً. وبلا أيِّ
+     إغلاقٍ ولا نافذةٍ معروفة يبقى الرجوعُ القديم: أحدثُ غير مغلق. */
+  const next = lastClosed >= 0 ? pool[0] : pool[pool.length - 1];
+  return Number(next?.AdTermId || 0);
 }
 
 export function isTermClosed(
