@@ -1484,3 +1484,15 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     inset-block:-5px;inset-inline:-5px;
   }
 }
+
+/* ── الحروفُ العربية لا تُباعَد ─────────────────────────────────────────────
+   العربيةُ خطٌّ متّصل: تباعدُ الحروف (letter-spacing) المصمَّم للعناوين
+   اللاتينية يفكّ اتصالها في Safari فتُقرأ «بـطـاقـتـي» حروفاً متفرّقة. وكان
+   منثوراً في عشرات العناوين الصغيرة. فيُلغى هنا مرّةً واحدةً للنص العربي،
+   على الشاشة وحدها — الطباعةُ لها ملفّها ولا تُمسّ — ويبقى للاتيني المعلَّم
+   (dir="ltr" أو lang="en") وللرموز وللعلامة التجارية. */
+@media screen{
+  html[lang="ar"] body :where(*):not([dir="ltr"], [dir="ltr"] *, [lang="en"], [lang="en"] *, code, kbd, samp, pre, .brand-mark, .rail-identity-name, .ob-brand, .sidebar-brand strong){
+    letter-spacing:0 !important;
+  }
+}

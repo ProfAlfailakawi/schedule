@@ -104,8 +104,8 @@ check(emptied.counts.removed === 2, "جدولٌ أُفرغ: كل صفٍّ محذ
 
 /* ── العرض ─────────────────────────────────────────────────────────────── */
 
-check(daysText(row()) === "ح ث", "الأيام حروفٌ تُقرأ لا أرقامٌ تُفكّ");
-check(daysText(row({ fsunday: true, fmonday: true, ftuesday: true, fwednesday: true, fthursday: true })) === "ح ن ث ر خ", "الأسبوع كامل بترتيبه");
+check(daysText(row()) === "الأحد · الثلاثاء", "الأيام بأسمائها لا حروفٌ ولا أرقامٌ تُفكّ");
+check(daysText(row({ fsunday: true, fmonday: true, ftuesday: true, fwednesday: true, fthursday: true })) === "الأحد · الاثنين · الثلاثاء · الأربعاء · الخميس", "الأسبوع كامل بترتيبه");
 check(fieldValue(row({ fsunday: false, ftuesday: false }), "days") === "—", "خانةٌ بلا قيمةٍ تُعرض شرطةً لا فراغاً");
 check(Object.keys(DIFF_FIELD_LABEL).length === 6, "ست خاناتٍ تُقارَن");
 check(Object.values(DIFF_FIELD_LABEL).every(label => /[؀-ۿ]/.test(label)), "كل خانةٍ لها اسمٌ عربي");
@@ -368,16 +368,22 @@ check(server.includes("authorityDraftForScope(collegeId, sectionId, termId)")
 /* ── ١١) اللائحة في موضع المراجعة نفسه ────────────────────────────────── */
 check(server.includes("regulationNotices: await regulationNoticesForScope"),
   "وتصل الملاحظات اللائحية بتفاصيلها إلى شاشة التغييرات");
-check(changes.includes("<RegulationReview notices={report.regulationNotices || []} onJump={onJump} />")
+check(changes.includes("<RegulationReview notices={report.regulationNotices || []} onJump={onJump} rowsById={rowsById} />")
   && changes.includes('className={`review-finding'),
   "وتُعرض بتقديم شاشة الاعتماد نفسه، لا بعدّادٍ مكرر عند زر التوقيع");
 check(!approvalBar.includes("approval-sign-notices") && !approvalBar.includes("regulationNotices"),
   "وشريط الاعتماد لا يكرر عدّاد اللائحة أو حالته");
 
+/* كما في «الجدول الدراسي»: الضغطُ يفتح الملاحظةَ في مكانها بأسماء الأساتذة
+   وشعبهم، والانتقالُ إلى الجدول زرٌّ صريحٌ بعدها — لا تحويلٌ عند أول ضغطة. */
 check(changes.includes("const [open, setOpen] = useState(false)")
   && changes.includes('aria-expanded={open}')
-  && changes.includes('onClick={() => onJump(blocker.rowIds)}'),
-  "ومراجعة الاعتماد مغلقة افتراضياً، والملاحظة تنقل إلى الموعد المتأثر");
+  && changes.includes("setOpenBlocker(current => current === key ? null : key)")
+  && changes.includes("<FindingRows rowIds={blocker.rowIds} rowsById={rowsById} onJump={onJump} />")
+  && changes.includes('className="review-person-head"')
+  && changes.includes("onClick={() => onJump(rowIds)}")
+  && !changes.includes('onClick={() => onJump(blocker.rowIds)}'),
+  "ومراجعة الاعتماد مغلقة افتراضياً، والملاحظة تُفتح في مكانها بأساتذتها ثم يُنتقل إليها بزرّ");
 check(changes.includes('document.getElementById(`schedule-row-${id}`)')
   && changes.includes('scrollIntoView({ behavior: "smooth", block: "center" })')
   && changes.includes('changes-row-focus'),

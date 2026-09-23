@@ -116,8 +116,10 @@ check(inbox.includes('item.action === "add" ? "افتحها في الورشة" :
 
 check((server.match(/isScopeAllowed\(req, collegeId, sectionId\)/g) || []).length >= 2,
   "ولا يُصدر ولا يُقرأ وارِدُ قسمٍ خارج نطاق الحساب");
-check(server.includes("isScopeAllowed(req, Number(stored.AdCollegeId), Number(stored.AdSectionId))"),
-  "ولا يُقرَّر في طلبٍ خارج النطاق");
+/* النطاقُ نطاقُ البند نفسه: محاضرةٌ في كليةٍ أخرى يقرّر فيها منسّقُ تلك الكلية. */
+check(server.includes("const itemScope = requestItemScope(stored, item);")
+  && server.includes("if (!isScopeAllowed(req, itemScope.collegeId, itemScope.sectionId)) {"),
+  "ولا يُقرَّر في بندٍ خارج النطاق");
 check(server.includes("تاريخ الإغلاق في الماضي."),
   "ونافذةٌ انتهت قبل أن تبدأ تُردّ: رابطٌ مغلقٌ بلا سببٍ يُعيد الأستاذ إلى الهاتف");
 
@@ -171,7 +173,7 @@ check(server.includes("allowed = (await instructorRequestCourseOptions(resolved.
 check(server.includes("async function instructorRequestSectionCourses")
   && server.includes("Repository.getCoursesBySection(sectionId)")
   && server.includes("Repository.getOperationalCourseIds(sectionId)")
-  && server.includes("instructorRequestSectionCourses(request.AdSectionId)"),
+  && server.includes("instructorRequestSectionCourses(scope.sectionId)"),
   "وبطاقة الأستاذ تقرأ كتالوج القسم الكامل مباشرة، ثم تستبعد المؤرشف أكاديمياً فقط");
 check(server.includes("async function refreshUnsubmittedInstructorRequest"),
   "والطلب غير المرسل يتجدد من الجدول الحي");

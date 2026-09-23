@@ -4132,7 +4132,7 @@ export const Repository = {
   getInstructorRequests: async (collegeId: number, sectionId: number, termId: number): Promise<InstructorRequest[]> => {
     const inScope = (row: InstructorRequest) =>
       Number(row.AdTermId) === termId &&
-      Number(row.AdCollegeId) === collegeId &&
+      (!collegeId || Number(row.AdCollegeId) === collegeId) &&
       (!sectionId || Number(row.AdSectionId) === sectionId);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("instructorRequests").where("AdTermId", "==", termId).limit(2000).get();

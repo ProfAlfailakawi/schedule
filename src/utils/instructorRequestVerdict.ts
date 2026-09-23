@@ -442,7 +442,23 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
     { cohortPairs: context.cohortPairs, placeholderInstructorIds: context.placeholderInstructorIds },
   );
   if (clashes.some(clash => clash.reasons?.includes("instructor") || clash.type === "instructor")) {
-    reasons.push({ source: "instructor", text: "لديك محاضرةٌ أخرى في هذا الوقت.", blocking: true });
+    /* والمحاضرةُ المقابلة تُسمّى: هي محاضرتُه هو، يعرفها ولا يكشف اسمُها
+       شيئاً عن غيره. و«لديك محاضرةٌ أخرى» وحدَها كانت تتركه يبحث عنها — وقد
+       تكون في كليةٍ أخرى لا يراها حيث يعدّل. */
+    const from = toMinutes(request.start), to = toMinutes(computedEnd);
+    const mine = week.find(row => Number(row.id) !== identity
+      && Number(row.AdInstructorId) === Number(context.instructorId)
+      && request.days.some(day => Boolean((row as any)[day]))
+      && from < toMinutes(row.fendtime) && toMinutes(row.fstarttime) < to);
+    const mineName = mine ? String(context.courses.get(Number(mine.AdCourseId))?.CourseName || (mine as any).AdCourseName || "").trim() : "";
+    const mineDay = mine ? request.days.find(day => Boolean((mine as any)[day])) : undefined;
+    reasons.push({
+      source: "instructor",
+      text: mine && mineName
+        ? `لديك محاضرةٌ أخرى في هذا الوقت: ${mineName} — ${mineDay ? dayLabel(mineDay) : ""} ${mine.fstarttime}–${mine.fendtime}.`
+        : "لديك محاضرةٌ أخرى في هذا الوقت.",
+      blocking: true,
+    });
   }
 
   /* ── طلبةٌ مشتركون ────────────────────────────────────────────────────── */

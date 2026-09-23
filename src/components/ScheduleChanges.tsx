@@ -453,8 +453,76 @@ const KIND_LABEL: Record<DiffEntry["kind"], string> = { added: "مضاف", remov
  * عرضٌ ثالث للملاحظة اللائحية. المحتوى يصل مفصلاً من فاحص النطاق نفسه، وليس
  * عداداً يطلب من القارئ أن يبحث عن التفاصيل في شاشة أخرى.
  */
-function RegulationReview({ notices, onJump }: { notices: RegulationNotice[]; onJump: (rowIds: number[]) => void }) {
+/**
+ * ── تفاصيلُ الملاحظة في مكانها، كما في «الجدول الدراسي» ───────────────────
+ *
+ * كان الضغطُ على ملاحظةٍ هنا ينقل القارئ إلى الجدول فوراً — فيغادر المراجعة
+ * ليعرف من المقصود. وفي «الجدول الدراسي» الضغطةُ تفتح الملاحظةَ في مكانها:
+ * أسماءُ الأساتذة وشعبُهم وأوقاتُهم، ثم زرٌّ صريحٌ لمن أراد الانتقال. فصارت هنا
+ * كذلك، بالأصناف نفسِها (`review-person`، `review-row-card`) فلا يفترق الشكلان.
+ */
+function FindingRows({ rowIds, rowsById, onJump }: { rowIds: number[]; rowsById: Map<number, DisplayRow>; onJump: (rowIds: number[]) => void }) {
+  const groups = new Map<string, DisplayRow[]>();
+  for (const id of [...new Set(rowIds.map(Number))]) {
+    const row = rowsById.get(id);
+    if (!row) continue;
+    const who = row.instructor || "بدون أستاذ";
+    groups.set(who, [...(groups.get(who) || []), row]);
+  }
+  const people = [...groups.entries()];
+  return (
+    <div className="review-rows">
+      {people.length ? people.slice(0, 12).map(([who, rows]) => (
+        <React.Fragment key={who}><FindingPerson who={who} rows={rows} /></React.Fragment>
+      )) : <p className="review-more">المواعيد المعنيّة خارج ما يعرضه هذا التقرير.</p>}
+      {people.length > 12 ? <p className="review-more">و{(people.length - 12).toLocaleString("ar-KW-u-nu-latn")} أساتذة غيرهم…</p> : null}
+      {rowIds.length ? (
+        <SecondaryButton type="button" data-guide-ignore="انتقالٌ صريح إلى المواعيد المعنيّة بالملاحظة — بعد قراءتها في مكانها" onClick={() => onJump(rowIds)}>
+          انتقل إلى المواعيد في الجدول
+        </SecondaryButton>
+      ) : null}
+    </div>
+  );
+}
+
+function FindingPerson({ who, rows }: { who: string; rows: DisplayRow[] }) {
   const [open, setOpen] = useState(false);
+  const single = rows.length === 1;
+  const sectionCount = new Set(rows.map(row => `${row.courseCode}:${row.sectionCode}`)).size;
+  return (
+    <div className={`review-person ${open ? "open" : ""}`}>
+      <button type="button" className="review-person-head" data-guide-ignore="طيّ شعب أستاذ داخل ملاحظة مراجعة — عرض فقط، لا يغيّر الجدول" onClick={() => !single && setOpen(value => !value)} aria-expanded={single ? undefined : open}>
+        <strong>{who}</strong>
+        {single ? (
+          <small>{rows[0].course}{rows[0].courseCode ? <> · <bdi dir="ltr">{rows[0].courseCode}</bdi></> : null} · شعبة {rows[0].sectionCode}</small>
+        ) : (
+          <>
+            <span className="review-person-count" title={`${rows.length.toLocaleString("ar-KW-u-nu-latn")} موعد`}>{sectionCount.toLocaleString("ar-KW-u-nu-latn")} شعب</span>
+            <ChevronDown className="review-person-chevron" aria-hidden="true" />
+          </>
+        )}
+      </button>
+      {(open || single) ? (
+        <div className="review-person-rows">
+          {rows.map(row => (
+            <article key={row.scheduleId} className="review-row-card">
+              <span className="rrc-code" dir="ltr">{row.courseCode || "—"}</span>
+              <div className="rrc-main">
+                {single ? null : <strong>{row.course}</strong>}
+                <small>شعبة {row.sectionCode} · {row.days || "بلا أيام"}{row.room ? <> · <bdi dir="ltr">{row.room}</bdi></> : null}</small>
+              </div>
+              <time className="rrc-time" dir="ltr">{row.time}</time>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RegulationReview({ notices, onJump, rowsById }: { notices: RegulationNotice[]; onJump: (rowIds: number[]) => void; rowsById: Map<number, DisplayRow> }) {
+  const [open, setOpen] = useState(false);
+  const [openNotice, setOpenNotice] = useState<string | null>(null);
   if (!notices.length) return null;
   const preview = notices.slice(0, 3).map(item => item.title).join(" · ");
   return (
@@ -480,11 +548,12 @@ function RegulationReview({ notices, onJump }: { notices: RegulationNotice[]; on
             const key = `${notice.rule}:${index}`;
             const medium = notice.approvalEffect === "review";
             return (
-              <article key={key} className={`review-finding severity-${medium ? "medium" : "low"}`}>
+              <article key={key} className={`review-finding severity-${medium ? "medium" : "low"} ${openNotice === key ? "open" : ""}`}>
                 <button
                   type="button"
-                  data-guide-ignore="الانتقال إلى الموعد المتأثر بهذه الملاحظة"
-                  onClick={() => onJump(notice.rowIds)}
+                  data-guide-ignore="فتح تفاصيل ملاحظة داخل مراجعة الاعتماد فقط"
+                  onClick={() => setOpenNotice(current => current === key ? null : key)}
+                  aria-expanded={openNotice === key}
                 >
                   <span className="review-mark" aria-hidden="true">{medium ? <Info /> : <CheckCircle2 />}</span>
                   <span className="review-copy">
@@ -494,6 +563,12 @@ function RegulationReview({ notices, onJump }: { notices: RegulationNotice[]; on
                   <em>{notice.article}</em>
                   <i>{medium ? "مراجعة لائحية" : "ملاحظة لائحية"}</i>
                 </button>
+                {openNotice === key ? (
+                  <>
+                    {notice.detail ? <div className="review-finding-detail"><p>{notice.detail}</p></div> : null}
+                    <FindingRows rowIds={notice.rowIds} rowsById={rowsById} onJump={onJump} />
+                  </>
+                ) : null}
               </article>
             );
           })}
@@ -510,6 +585,15 @@ function RegulationReview({ notices, onJump }: { notices: RegulationNotice[]; on
  */
 function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeReport; scopeLine: string; onJump: (rowIds: number[]) => void }) {
   const [open, setOpen] = useState(false);
+  const [openBlocker, setOpenBlocker] = useState<string | null>(null);
+  /* صفوفُ النطاق كما يعرضها التقرير نفسُه — الجدول كاملاً ومعه المحذوف — فتُسمّى
+     المواعيدُ المعنيّة بأساتذتها دون أن يغادر القارئ المراجعة. */
+  const rowsById = useMemo(() => {
+    const map = new Map<number, DisplayRow>();
+    for (const row of report.fullSchedule || []) map.set(Number(row.scheduleId), row);
+    for (const entry of report.diff.entries || []) if (entry.display && !map.has(Number(entry.scheduleId))) map.set(Number(entry.scheduleId), entry.display);
+    return map;
+  }, [report.fullSchedule, report.diff.entries]);
   const blockers = report.reviewBlockers || [];
   const notices = report.regulationNotices || [];
   const rowCount = Math.max(0, report.diff.counts.added + report.diff.counts.changed + report.diff.counts.unchanged);
@@ -595,8 +679,8 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
         {blockers.map((blocker, index) => {
           const key = blocker.id || `blocker-${index}`;
           return (
-            <article key={key} className="review-finding severity-high">
-              <button type="button" data-guide-ignore="الانتقال إلى الموعد المتأثر بهذا المانع" onClick={() => onJump(blocker.rowIds)}>
+            <article key={key} className={`review-finding severity-high ${openBlocker === key ? "open" : ""}`}>
+              <button type="button" data-guide-ignore="فتح تفاصيل مانع داخل مراجعة الاعتماد فقط" onClick={() => setOpenBlocker(current => current === key ? null : key)} aria-expanded={openBlocker === key}>
                 <span className="review-mark" aria-hidden="true"><AlertTriangle /></span>
                 <span className="review-copy">
                   <strong>{blocker.title || "يوجد مانع اعتماد"}</strong>
@@ -605,10 +689,16 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
                 <em>موانع الحفظ</em>
                 <i>يمنع الاعتماد</i>
               </button>
+              {openBlocker === key ? (
+                <>
+                  {blocker.detail ? <div className="review-finding-detail"><p>{blocker.detail}</p></div> : null}
+                  <FindingRows rowIds={blocker.rowIds} rowsById={rowsById} onJump={onJump} />
+                </>
+              ) : null}
             </article>
           );
         })}
-        <RegulationReview notices={report.regulationNotices || []} onJump={onJump} />
+        <RegulationReview notices={report.regulationNotices || []} onJump={onJump} rowsById={rowsById} />
         {!hasFindings ? (
           <div className="review-clear">
             <CheckCircle2 />

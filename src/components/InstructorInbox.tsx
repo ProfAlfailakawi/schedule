@@ -222,6 +222,7 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
             بسجلّه، فيُقال ذلك هنا برمزه — وهو ما يُطابَق به الطلبُ بعد شهرين
             إن أُنكر. وطلبٌ قديمٌ أُرسل قبل هذا لا يحمل توقيعاً، ويُقال ذلك
             صراحةً بدل أن يُفترض. */}
+        <div className="request-card-flags">
         {row.signature?.verifyCode ? (
           <span className="request-signed" title={`وقّعه صاحبه بالرقم المدني — ${arabicDate(row.signature.at)}`}>
             <ShieldCheck aria-hidden="true" />موقَّع <code>{row.signature.verifyCode}</code>
@@ -232,80 +233,103 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
           </span>
         ) : null}
         {row.status === "settled" ? <Badge tone="success">انتهى</Badge> : null}
+        </div>
       </header>
 
-      <div className="request-items">
+      {/* ── جدولٌ لا كومةُ بطاقات ─────────────────────────────────────────
+          كلُّ بندٍ صفٌّ واحد بأعمدةٍ ثابتة: ما هو، وأيُّ مقرّر، وكان، والمطلوب،
+          والفحص، والقرار. فيُقرأ الطلبُ كلُّه بنظرة كما يُقرأ تقريرُ
+          الاستعلامات، وتلوّن الحالةُ الصفَّ كلَّه: أخضرُ مضاف، وأصفرُ معدّل،
+          وأحمرُ محذوف. وعلى الهاتف ينقلب كلُّ صفٍّ بطاقةً بعناوين أعمدتها. */}
+      <div className="request-table-wrap">
+        <table className="request-table">
+          <thead>
+            <tr>
+              <th scope="col">الطلب</th>
+              <th scope="col">المقرر</th>
+              <th scope="col">كان</th>
+              <th scope="col">المطلوب</th>
+              <th scope="col">الفحص</th>
+              <th scope="col">القرار</th>
+            </tr>
+          </thead>
+          <tbody>
         {items.map(({ item, index }) => {
           const key = `${row.id}:${index}`;
           const decided = item.decision?.state;
           const current = item.rowId == null ? undefined : currentRows.get(Number(item.rowId));
+          const reasons = item.reasons || [];
           return (
-            <div key={key} className="request-item" data-verdict={item.verdict || "clear"} data-decided={decided || undefined}>
-              <div className="request-item-head">
-                <Badge tone={item.action === "delete" ? "danger" : item.action === "add" ? "info" : "neutral"}>
-                  {ACTION_LABEL[item.action] || item.action}
-                </Badge>
+            <React.Fragment key={key}>
+            <tr className="request-row" data-action={item.action} data-verdict={item.verdict || "clear"} data-decided={decided || undefined}>
+              <td data-label="الطلب">
+                <span className="request-action" data-action={item.action}>{ACTION_LABEL[item.action] || item.action}</span>
+              </td>
+              <td data-label="المقرر">
                 <strong>{item.after?.courseName || item.before?.courseName || "—"}</strong>
                 {item.before?.sectionCode ? <small>شعبة {item.before.sectionCode}</small> : null}
-              </div>
-
-              {/* سطران لا أكثر: «كان» و«طلب». وهو كلُّ ما يحتاجه القرار. */}
-              <dl className="request-diff">
-                {item.action === "add" && item.after?.collegeName ? (
-                  <div><dt>الكلية</dt><dd>{item.after.collegeName}</dd></div>
-                ) : null}
+                {item.action === "add" && item.after?.collegeName ? <small>{item.after.collegeName}</small> : null}
+              </td>
+              <td data-label="كان">
                 {item.before && item.action !== "add" ? (
-                  <div><dt>كان</dt><dd>{item.before.days} · {item.before.time}{item.before.room ? ` · ${item.before.room}` : ""}</dd></div>
+                  <span className={item.action === "delete" ? "request-was-gone" : undefined}>
+                    {item.before.days}<br /><bdi dir="ltr">{item.before.time}</bdi>
+                    {item.before.room ? <small className="request-room"><bdi dir="ltr">{item.before.room}</bdi></small> : null}
+                  </span>
+                ) : <span className="request-none">—</span>}
+              </td>
+              <td data-label="المطلوب">
+                {item.action === "delete" ? <span className="request-none">حذف الموعد</span>
+                  : item.after ? <span>{item.after.days}<br /><bdi dir="ltr">{item.after.time}</bdi></span>
+                  : <span className="request-none">—</span>}
+                {item.excuse ? <small className="request-excuse"><MessageSquare aria-hidden="true" /> {item.excuse}</small> : null}
+              </td>
+              <td data-label="الفحص">
+                {item.action === "delete" ? <span className="request-check" data-tone="clear">لا يُفحص الحذف</span>
+                  : reasons.length ? (
+                    <ul className="request-reasons">
+                      {reasons.map((reason, at) => (
+                        <li key={at} data-blocking={reason.blocking || undefined}>
+                          {reason.blocking ? <ShieldAlert aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
+                          {reason.text}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <span className="request-check" data-tone="clear"><Check aria-hidden="true" /> متاح</span>}
+                {/* القاعاتُ المرشّحة تظهر هنا وهنا وحدها: القرارُ فيها للقسم،
+                    والأستاذُ لم يرَ منها شيئاً. */}
+                {(item.roomCandidates || []).length && item.action !== "delete" ? (
+                  <small className="request-rooms">
+                    قاعاتٌ متاحة في هذا الوقت: {countOf(item.roomCandidates!.length, AR.room)}
+                  </small>
                 ) : null}
-                {item.action !== "delete" && item.after ? (
-                  <div><dt>طلب</dt><dd>{item.after.days} · {item.after.time}</dd></div>
-                ) : null}
-              </dl>
-
-              {item.excuse ? <p className="request-excuse"><MessageSquare aria-hidden="true" /> {item.excuse}</p> : null}
-
-              {(item.reasons || []).length ? (
-                <ul className="request-reasons">
-                  {(item.reasons || []).map((reason, at) => (
-                    <li key={at} data-blocking={reason.blocking || undefined}>
-                      {reason.blocking ? <ShieldAlert aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-                      {reason.text}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {/* القاعاتُ المرشّحة تظهر هنا وهنا وحدها: القرارُ فيها للقسم،
-                  والأستاذُ لم يرَ منها شيئاً. */}
-              {(item.roomCandidates || []).length && item.action !== "delete" ? (
-                <p className="request-rooms">
-                  قاعاتٌ متاحة في هذا الوقت: {countOf(item.roomCandidates!.length, AR.room)}
-                </p>
-              ) : null}
-
-              {decided ? (
-                <p className="request-decided" data-state={decided}>
-                  {decided === "fixed" ? <><Check aria-hidden="true" /> ثُبّت</> : <><X aria-hidden="true" /> رُفض — {REJECT_REASONS.find(([value]) => value === item.decision?.reasonCode)?.[1] || "بلا سبب"}</>}
-                  {item.decision?.note ? <span> · {item.decision.note}</span> : null}
-                </p>
-              ) : (
-                <div className="request-actions">
-                  <PrimaryButton
-                    type="button"
-                    data-guide-target="requests.action.fix"
-                    disabled={busyKey === key || item.verdict === "conflict" || (item.action === "change" && !current)}
-                    onClick={() => onDecide(index, "fixed", { current })}
-                    title={item.verdict === "conflict" ? "لا يُثبَّت بندٌ متعارض — عالجه أو ارفضه" : undefined}
-                  >
-                    {busyKey === key ? "يحفظ…" : item.action === "add" ? "افتحها في الورشة" : "ثبّت"}
-                  </PrimaryButton>
-                  <SecondaryButton type="button" data-guide-target="requests.action.reject" onClick={() => setRejecting(index)}>
-                    ارفض
-                  </SecondaryButton>
-                </div>
-              )}
-
-              {rejecting === index ? (
+              </td>
+              <td data-label="القرار">
+                {decided ? (
+                  <p className="request-decided" data-state={decided}>
+                    {decided === "fixed" ? <><Check aria-hidden="true" /> ثُبّت</> : <><X aria-hidden="true" /> رُفض — {REJECT_REASONS.find(([value]) => value === item.decision?.reasonCode)?.[1] || "بلا سبب"}</>}
+                    {item.decision?.note ? <span> · {item.decision.note}</span> : null}
+                  </p>
+                ) : (
+                  <div className="request-actions">
+                    <PrimaryButton
+                      type="button"
+                      data-guide-target="requests.action.fix"
+                      disabled={busyKey === key || item.verdict === "conflict" || (item.action === "change" && !current)}
+                      onClick={() => onDecide(index, "fixed", { current })}
+                      title={item.verdict === "conflict" ? "لا يُثبَّت بندٌ متعارض — عالجه أو ارفضه" : undefined}
+                    >
+                      {busyKey === key ? "يحفظ…" : item.action === "add" ? "افتحها في الورشة" : "ثبّت"}
+                    </PrimaryButton>
+                    <SecondaryButton type="button" data-guide-target="requests.action.reject" onClick={() => setRejecting(index)}>
+                      ارفض
+                    </SecondaryButton>
+                  </div>
+                )}
+              </td>
+            </tr>
+            {rejecting === index ? (
+              <tr className="request-reject-row"><td colSpan={6}>
                 <RejectSheet
                   item={item}
                   busy={busyKey === key}
@@ -315,10 +339,13 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
                     setRejecting(null);
                   }}
                 />
-              ) : null}
-            </div>
+              </td></tr>
+            ) : null}
+            </React.Fragment>
           );
         })}
+          </tbody>
+        </table>
       </div>
     </article>
   );

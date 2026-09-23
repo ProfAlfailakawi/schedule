@@ -90,7 +90,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
   content:"خارج النطاق";position:absolute;inset-block-start:6px;inset-inline-start:8px;
   padding:2px 7px;border-radius:var(--r-full);
   background:color-mix(in srgb,var(--danger) 12%,var(--surface));
-  color:var(--danger);font-size:10px;font-weight:800;line-height:1.6;
+  color:var(--danger);font-size:10px;font-weight:700;line-height:1.6;
   pointer-events:none;
 }
 
@@ -479,7 +479,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
   background:var(--surface);
   color:var(--ink-2);
   font-size:var(--t-sm);
-  font-weight:550;
+  font-weight:600;
   transition:border-color .16s var(--ease),background .16s var(--ease),color .16s var(--ease);
 }
 .week-daystrip-day:hover{border-color:var(--line-strong);background:var(--surface-2)}
@@ -750,7 +750,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
      line flush to the bottom, the descender of a final «ي/ن» clipped against the
      card's overflow. 1.3 restores the tail with no reflow — the clamp counts and
      card heights are unchanged. */
-  font-size:clamp(11px,calc(8.2px + 2cqw),14px);line-height:1.28;font-weight:490;
+  font-size:clamp(11px,calc(8.2px + 2cqw),14px);line-height:1.28;font-weight:500;
   color:var(--label);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   /* The gutter the catalogue chip occupies, reserved rather than guessed.
@@ -773,7 +773,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
   background:currentColor;opacity:.4;
 }
 .week-who{
-  font-size:clamp(10.25px,calc(8.4px + 1.45cqw),12px);line-height:1.28;color:var(--ink-2);font-weight:350;
+  font-size:clamp(10.25px,calc(8.4px + 1.45cqw),12px);line-height:1.28;color:var(--ink-2);font-weight:300;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   opacity:.82;letter-spacing:-.1px;
 }
@@ -808,11 +808,11 @@ button.schedule-radar:hover{filter:brightness(.96)}
   border-radius:3px;
   background:color-mix(in srgb,var(--edge) 15%,transparent);
   color:color-mix(in srgb,var(--label) 66%,transparent);
-  font:370 clamp(10px,calc(9.15px + 0.7cqw),10.5px)/1.1 var(--font-mono);font-style:normal;
+  font:300 clamp(10px,calc(9.15px + 0.7cqw),10.5px)/1.1 var(--font-mono);font-style:normal;
   font-variant-numeric:tabular-nums;letter-spacing:-.2px;
   pointer-events:none;
 }
-.week-code b{opacity:.55;font-weight:430}
+.week-code b{opacity:.55;font-weight:500}
 .week-code b::before{content:"·";margin-inline-end:2px;opacity:.7}
 
 /*
@@ -837,10 +837,10 @@ button.schedule-radar:hover{filter:brightness(.96)}
    force it into the emergency micro-width rules below. */
 @container (max-width:46px){
   .week-event{align-items:stretch;padding:2px 3px;gap:0}
-  .week-title{display:-webkit-box;padding-inline-end:24px;font-size:10.25px;line-height:1.12;font-weight:470;-webkit-line-clamp:1;overflow-wrap:anywhere;word-break:normal;letter-spacing:-.1px}
-  .week-who{display:block;font-size:10px;line-height:1.12;font-weight:350}
+  .week-title{display:-webkit-box;padding-inline-end:24px;font-size:10.25px;line-height:1.12;font-weight:500;-webkit-line-clamp:1;overflow-wrap:anywhere;word-break:normal;letter-spacing:-.1px}
+  .week-who{display:block;font-size:10px;line-height:1.12;font-weight:300}
   .week-when{display:none}
-  .week-code{display:inline-flex;max-width:22px;font-size:10px;font-weight:360}
+  .week-code{display:inline-flex;max-width:22px;font-size:10px;font-weight:300}
 }
 
 /* --- Colour as information -------------------------------------------------
@@ -881,10 +881,10 @@ button.schedule-radar:hover{filter:brightness(.96)}
    reads this board by: the course and the teacher. What gives way is the
    number, then the clock — never a name. And nothing here goes below the size
    at which Arabic stops being text and becomes texture. */
-.week-event[data-narrow="true"] .week-who{display:block;font-size:10.25px;font-weight:350;line-height:1.22;opacity:.9;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.week-event[data-narrow="true"] .week-who{display:block;font-size:10.25px;font-weight:300;line-height:1.22;opacity:.9;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .week-event[data-narrow="true"] .week-when i{display:none}
-.week-event[data-narrow="true"] .week-title{font-size:10.75px;font-weight:460;line-height:1.24;-webkit-line-clamp:2;padding-inline-end:var(--code-gutter);letter-spacing:0;overflow-wrap:normal;word-break:keep-all}
-.week-event[data-narrow="true"] .week-code{display:inline-flex;font-size:10px;font-weight:360}
+.week-event[data-narrow="true"] .week-title{font-size:10.75px;font-weight:500;line-height:1.24;-webkit-line-clamp:2;padding-inline-end:var(--code-gutter);letter-spacing:0;overflow-wrap:normal;word-break:keep-all}
+.week-event[data-narrow="true"] .week-code{display:inline-flex;font-size:10px;font-weight:300}
 
 /* --- The move echo ---------------------------------------------------------
    A dashed accent placeholder marks the slot a card just left, then fades on its
@@ -2961,9 +2961,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    which the row it sits on already states. */
 @container (max-width:64px){
   .week-when{display:none}
-  .week-code{display:block;font-size:9.5px;font-weight:420;line-height:1.12}
-  .week-title{font-size:10.25px;font-weight:520;-webkit-line-clamp:1;letter-spacing:0}
-  .week-who{display:block;font-size:9.75px;font-weight:380;opacity:.88}
+  .week-code{display:block;font-size:9.5px;font-weight:500;line-height:1.12}
+  .week-title{font-size:10.25px;font-weight:600;-webkit-line-clamp:1;letter-spacing:0}
+  .week-who{display:block;font-size:9.75px;font-weight:300;opacity:.88}
 }
 
 /* --- The card that just moved says so ---------------------------------------
@@ -3015,7 +3015,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-scale>div{
   position:relative;height:24px;
   direction:rtl;
-  font:560 10.5px/1 var(--font-mono);color:var(--muted-2);
+  font:600 10.5px/1 var(--font-mono);color:var(--muted-2);
 }
 .rooms-scale span{position:absolute;transform:translateX(50%);font-variant-numeric:tabular-nums;white-space:nowrap}
 .rooms-rows{min-width:var(--rooms-canvas-width,1706px);display:flex;flex-direction:column;gap:var(--s2)}
@@ -3040,7 +3040,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   padding-inline:var(--s4) var(--s2);
   border-inline-end:1px solid color-mix(in srgb,var(--line) 82%,transparent);
   background:color-mix(in srgb,var(--surface) 97%,var(--surface-2) 3%);
-  font-family:var(--font-ui);font-size:10.5px;font-weight:620;color:var(--ink-2);
+  font-family:var(--font-ui);font-size:10.5px;font-weight:700;color:var(--ink-2);
 }
 .rooms-row>.rooms-day-label::before{display:none}
 .rooms-row-none>small{font-family:var(--font-ui);color:var(--warning)}
@@ -3114,11 +3114,11 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   --label:hsl(var(--hue,158) 46% 88%);
 }
 .rooms-card b{
-  font-size:11.5px;font-weight:540;color:var(--label);line-height:1.22;
+  font-size:11.5px;font-weight:600;color:var(--label);line-height:1.22;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .rooms-card span{
-  font-size:10px;font-weight:390;color:var(--ink-2);opacity:.86;line-height:1.16;letter-spacing:-.08px;
+  font-size:10px;font-weight:300;color:var(--ink-2);opacity:.86;line-height:1.16;letter-spacing:-.08px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 /* `clip` cut names mid-letter — «عبدالعزيز» arrived as «ـبدالعزيز», which in
@@ -3127,7 +3127,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-card span i{display:block;font:inherit;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rooms-card em{
   position:absolute;top:4px;left:5px;right:auto;
-  font:430 10px/1 var(--font-mono);font-style:normal;
+  font:500 10px/1 var(--font-mono);font-style:normal;
   color:color-mix(in srgb,var(--label) 52%,transparent);
   letter-spacing:-.08px;
 }
@@ -3144,9 +3144,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
  * the teacher hold at every size, the code leaves first, and nothing prints
  * below the size at which Arabic stops being language.
  */
-.rooms-week-days .rooms-card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px;font-weight:540;line-height:1.18;letter-spacing:-.08px}
-.rooms-week-days .rooms-card span{flex:none;display:block;min-height:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:390;line-height:1.12;letter-spacing:-.08px}
-.rooms-week-days .rooms-card em{display:block;position:absolute;left:5px;bottom:4px;top:auto;right:auto;font:430 10px/1 var(--font-mono);font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent);letter-spacing:-.08px}
+.rooms-week-days .rooms-card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px;font-weight:600;line-height:1.18;letter-spacing:-.08px}
+.rooms-week-days .rooms-card span{flex:none;display:block;min-height:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:300;line-height:1.12;letter-spacing:-.08px}
+.rooms-week-days .rooms-card em{display:block;position:absolute;left:5px;bottom:4px;top:auto;right:auto;font:500 10px/1 var(--font-mono);font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent);letter-spacing:-.08px}
 /* Even a sliver keeps both identities. Time yields first because the axis
    already says it; subject and instructor never disappear. */
 .rooms-card{container-type:inline-size}
@@ -3268,14 +3268,14 @@ html.schedule-physics-active .rooms-paint{display:none}
  */
 @container (max-width:66px){
   .week-when{display:none}
-  .week-code{display:block !important;position:static;order:3;padding:0;background:transparent;font-size:9.5px;font-weight:420;line-height:1.12}
+  .week-code{display:block !important;position:static;order:3;padding:0;background:transparent;font-size:9.5px;font-weight:500;line-height:1.12}
   .week-title{
     display:-webkit-box !important;-webkit-box-orient:vertical;-webkit-line-clamp:1;
-    font-size:10.25px;font-weight:520;line-height:1.2;
+    font-size:10.25px;font-weight:600;line-height:1.2;
     overflow:hidden;overflow-wrap:anywhere;word-break:normal;
   }
   .week-who{
-    display:block !important;font-size:9.75px;font-weight:380;opacity:.9;
+    display:block !important;font-size:9.75px;font-weight:300;opacity:.9;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .week-event{padding:3px 3px;justify-content:flex-start}
@@ -3291,12 +3291,12 @@ html.schedule-physics-active .rooms-paint{display:none}
    A card that cannot print something legibly should print less, not smaller.
 */
 @container (min-width:66.01px) and (max-width:100px){
-  .week-title{font-size:10.5px;font-weight:520;line-height:1.25;-webkit-line-clamp:1;overflow-wrap:normal;word-break:keep-all}
-  .week-who{display:block;font-size:10px;font-weight:380;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .week-title{font-size:10.5px;font-weight:600;line-height:1.25;-webkit-line-clamp:1;overflow-wrap:normal;word-break:keep-all}
+  .week-who{display:block;font-size:10px;font-weight:300;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* The clock goes first: the row this card sits on already states the hour,
      so it is the only genuinely redundant line here. */
   .week-when{display:none}
-  .week-code{display:block !important;position:static;order:3;padding:0;background:transparent;font-size:9.75px;font-weight:420;line-height:1.14}
+  .week-code{display:block !important;position:static;order:3;padding:0;background:transparent;font-size:9.75px;font-weight:500;line-height:1.14}
 }
 /* A half-hour card still says who teaches it: title folds to one line and the
    instructor keeps the second. */
@@ -3505,7 +3505,7 @@ html.schedule-physics-active .rooms-paint{display:none}
    row rather than being crushed into one cell of the field grid. */
 .qc-location{grid-column:1/-1;min-width:0}
 .qc-location .location-registry-picker{margin:0}
-.qc-location .location-registry-picker label>span{font-size:var(--t-xs);color:var(--muted);font-weight:730}
+.qc-location .location-registry-picker label>span{font-size:var(--t-xs);color:var(--muted);font-weight:700}
 .qc-location .location-registry-picker select{
   min-height:34px;
   border:1px solid var(--line);border-radius:var(--r-sm);
@@ -3734,7 +3734,7 @@ html.schedule-physics-active .rooms-paint{display:none}
   white-space:normal;overflow:visible;text-overflow:clip;
 }
 .decision-note-body strong{
-  display:block!important;margin:0;color:var(--ink);font-size:var(--t-body);font-weight:760;line-height:1.5;
+  display:block!important;margin:0;color:var(--ink);font-size:var(--t-body);font-weight:700;line-height:1.5;
   white-space:normal!important;overflow:visible!important;text-overflow:clip!important;max-block-size:none!important;
   -webkit-line-clamp:unset!important;-webkit-box-orient:initial!important;overflow-wrap:break-word;word-break:normal;
 }
@@ -4172,7 +4172,7 @@ html.schedule-physics-active .rooms-slot.physics-impossible::before{
 }
 /* A carried card is read, so it drops the track's compression entirely. */
 .rooms-card.physics-source-lift b{
-  min-height:0;font-size:13px;font-weight:640;line-height:1.4;
+  min-height:0;font-size:13px;font-weight:700;line-height:1.4;
   -webkit-line-clamp:2;white-space:normal;
 }
 .rooms-card.physics-source-lift span{
@@ -4453,7 +4453,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 }
 .hall-barter-summary-copy{min-width:0;display:grid;gap:3px}
 .hall-barter-summary-copy small{font-size:11px;color:var(--accent-strong,var(--accent));font-weight:700}
-.hall-barter-summary-copy strong{font-size:clamp(17px,1.45vw,21px);font-weight:720;letter-spacing:-.018em;line-height:1.35}
+.hall-barter-summary-copy strong{font-size:clamp(17px,1.45vw,21px);font-weight:700;letter-spacing:-.018em;line-height:1.35}
 .hall-barter-summary-copy em{font-style:normal;font-size:12px;color:var(--ink-3);line-height:1.65}
 .hall-barter-summary-stats{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
 .hall-barter-summary-stats>b{
@@ -4476,7 +4476,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 }
 .hall-barter-guard>svg{width:25px;height:25px;color:var(--accent)}
 .hall-barter-guard>div{min-width:0;display:grid;gap:2px}
-.hall-barter-guard strong{font-size:13px;font-weight:720;color:var(--ink)}
+.hall-barter-guard strong{font-size:13px;font-weight:700;color:var(--ink)}
 .hall-barter-guard span{font-size:11.5px;line-height:1.7;color:var(--ink-3)}
 .hall-barter-guard .spin{animation:hall-barter-spin .85s linear infinite}
 @keyframes hall-barter-spin{to{transform:rotate(360deg)}}
@@ -4496,7 +4496,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .hall-barter-section>header{display:flex;align-items:end;justify-content:space-between;gap:var(--s3);padding:0 2px}
 .hall-barter-section>header>div{display:grid;gap:1px}
 .hall-barter-section>header small{font-size:10.5px;color:var(--ink-3)}
-.hall-barter-section>header strong{font-size:15px;font-weight:720;color:var(--ink)}
+.hall-barter-section>header strong{font-size:15px;font-weight:700;color:var(--ink)}
 .hall-barter-section>header>b{display:grid;place-items:center;min-width:31px;height:31px;padding:0 8px;border-radius:11px;background:var(--surface-2);color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
 .hall-barter-section.incoming>header>b{background:color-mix(in srgb,#f2c46b 15%,var(--surface));color:#8c5d16}
 
@@ -4507,7 +4507,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   background:linear-gradient(135deg,color-mix(in srgb,#f1c466 7%,var(--surface)),var(--surface));
 }
 .hall-barter-request-main{min-width:0;display:grid;gap:2px}
-.hall-barter-request-main>strong{font-size:13px;font-weight:720}
+.hall-barter-request-main>strong{font-size:13px;font-weight:700}
 .hall-barter-request-main>small{font-size:10.5px;color:var(--ink-3)}
 .hall-barter-window{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:7px;color:var(--ink-2);font-size:11px}
 .hall-barter-window>svg{width:14px;height:14px;color:var(--accent)}
@@ -4530,7 +4530,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .hall-barter-status-dot{position:absolute;inset-block-start:13px;inset-inline-end:13px;width:7px;height:7px;border-radius:999px;background:var(--accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 12%,transparent)}
 .hall-barter-active-grid>article>div{min-width:0;display:grid;gap:1px;padding-inline-end:14px}
 .hall-barter-active-grid>article>div small{font-size:9.5px;color:var(--ink-3)}
-.hall-barter-active-grid>article>div strong{font-size:12.5px;font-weight:720}
+.hall-barter-active-grid>article>div strong{font-size:12.5px;font-weight:700}
 .hall-barter-active-grid>article>div em{font-size:10px;font-style:normal;color:var(--ink-3)}
 .hall-barter-active-grid .hall-barter-window{grid-column:1/-1;margin-top:1px;padding-top:9px;border-top:1px solid var(--line-soft,var(--line))}
 .hall-barter-approved-label{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border-radius:999px;background:color-mix(in srgb,var(--accent) 10%,var(--surface));color:var(--accent-strong,var(--accent));font-size:10px;font-weight:700}
@@ -4626,7 +4626,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   background:color-mix(in srgb,var(--brass) 9%,var(--surface));color:color-mix(in srgb,var(--brass) 70%,var(--ink));
 }
 .week-hall-barter>svg{width:12px;height:12px;grid-row:1}
-.week-hall-barter>strong{font-size:9px;font-weight:750;white-space:nowrap}
+.week-hall-barter>strong{font-size:9px;font-weight:700;white-space:nowrap}
 .week-hall-barter>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 8.5px/1.2 "Plex Mono",ui-monospace,monospace;text-align:end}
 .week-hall-barter>time{grid-column:1/-1;font:600 8px/1.2 "Plex Mono",ui-monospace,monospace;direction:ltr;unicode-bidi:isolate;opacity:.82}
 @media(max-width:680px){
@@ -4725,7 +4725,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-stats,
 .schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-chevron{display:none !important}
 .schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-copy strong{
-  display:block !important;font-size:11px !important;line-height:1 !important;font-weight:720 !important;white-space:nowrap !important;
+  display:block !important;font-size:11px !important;line-height:1 !important;font-weight:700 !important;white-space:nowrap !important;
 }
 .schedule-control-barter .hall-barter-board.is-open{width:100% !important;margin:6px 0 0 !important}
 @media(max-width:760px){
@@ -4896,7 +4896,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .decision-card-icon svg{inline-size:18px;block-size:18px}
 .decision-card-body{display:grid;gap:5px;min-inline-size:0;max-inline-size:100%;color:var(--ink)}
 .decision-card-title{
-  display:block!important;margin:0;color:var(--ink);font-size:.92rem;font-weight:760;line-height:1.55;
+  display:block!important;margin:0;color:var(--ink);font-size:.92rem;font-weight:700;line-height:1.55;
   white-space:normal!important;overflow:visible!important;text-overflow:clip!important;max-block-size:none!important;
   -webkit-line-clamp:unset!important;-webkit-box-orient:initial!important;overflow-wrap:break-word;word-break:normal;
 }
@@ -4941,7 +4941,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   background:linear-gradient(180deg,color-mix(in srgb,var(--warning-soft) 55%,var(--surface)),var(--surface));
   color:var(--warning);
 }
-.conflict-head strong{font-size:clamp(1.02rem,.75rem + .55vw,1.28rem);font-weight:760;letter-spacing:-.02em;line-height:1.22}
+.conflict-head strong{font-size:clamp(1.02rem,.75rem + .55vw,1.28rem);font-weight:700;letter-spacing:-.02em;line-height:1.22}
 .conflict-head small{margin-top:6px;font-size:.77rem;line-height:1.7}
 .conflict-panel--clear{border-color:color-mix(in srgb,var(--success) 14%,var(--line))}
 .conflict-head--clear>span{border-color:color-mix(in srgb,var(--success) 16%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--success-soft) 58%,var(--surface)),var(--surface));color:var(--success)}
@@ -4987,7 +4987,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 }
 .decision-accordion-summary{
   display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;
-  padding:16px 18px;color:var(--ink);font-weight:780;
+  padding:16px 18px;color:var(--ink);font-weight:700;
 }
 .decision-accordion-summary::-webkit-details-marker{display:none}
 .decision-accordion-title{display:inline-flex;align-items:center;gap:9px;font-size:.92rem;line-height:1.3}
@@ -4996,7 +4996,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 10px;
   border:1px solid color-mix(in srgb,var(--line) 80%,transparent);border-radius:999px;
   background:color-mix(in srgb,var(--surface-2) 88%,var(--surface));color:var(--muted);
-  font-style:normal;font-size:.66rem;font-weight:800;line-height:1;
+  font-style:normal;font-size:.66rem;font-weight:700;line-height:1;
 }
 .decision-accordion-summary::before{
   content:"";inline-size:10px;block-size:10px;flex:none;
@@ -5059,13 +5059,13 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   border:1px solid color-mix(in srgb,var(--decision-tone) 14%,var(--line));border-radius:999px;
   background:color-mix(in srgb,var(--decision-tone) 7%,var(--surface));
   color:color-mix(in srgb,var(--decision-tone) 82%,var(--muted));
-  font-size:.66rem;font-weight:820;line-height:1;
+  font-size:.66rem;font-weight:700;line-height:1;
 }
 .decision-card-flag{
   display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:0 10px;
   border:1px solid color-mix(in srgb,var(--decision-tone) 14%,var(--line));border-radius:999px;
   background:color-mix(in srgb,var(--surface-2) 85%,var(--surface));
-  color:var(--muted);font-style:normal;font-size:.65rem;font-weight:820;line-height:1;
+  color:var(--muted);font-style:normal;font-size:.65rem;font-weight:700;line-height:1;
 }
 .decision-card-hero,.decision-feature-hero{
   display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:14px;
@@ -5078,14 +5078,14 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 }
 .decision-card-icon svg,.decision-note--feature .decision-note-icon svg{inline-size:22px;block-size:22px}
 .decision-card-body{gap:7px}
-.decision-card-title{font-size:1.02rem;font-weight:790;letter-spacing:-.018em;line-height:1.28}
+.decision-card-title{font-size:1.02rem;font-weight:700;letter-spacing:-.018em;line-height:1.28}
 .decision-card-title--sub,.decision-note--feature .decision-note-body strong+strong{font-size:.99rem;color:var(--ink)}
 .decision-card-copy,.decision-note--feature .decision-note-body p{font-size:.82rem;line-height:1.8;color:var(--ink-3)}
 .decision-card-support{
   display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
   min-height:28px;padding:0 10px;border:1px solid color-mix(in srgb,var(--line) 78%,transparent);border-radius:999px;
   background:color-mix(in srgb,var(--surface-2) 92%,var(--surface));color:var(--ink-3);
-  font-size:.67rem;font-weight:760;
+  font-size:.67rem;font-weight:700;
 }
 .decision-compare{
   display:grid;gap:10px;padding:13px 14px;
@@ -5094,13 +5094,13 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 }
 .decision-compare-axis{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
-  color:var(--muted);font-size:.67rem;font-weight:760;font-variant-numeric:tabular-nums;
+  color:var(--muted);font-size:.67rem;font-weight:700;font-variant-numeric:tabular-nums;
 }
 .decision-compare-tracks{display:grid;gap:10px}
 .decision-line{display:grid;gap:7px}
 .decision-line-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-inline-size:0}
-.decision-line-head span{min-inline-size:0;color:var(--ink);font-size:.72rem;font-weight:760;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.decision-line-head b{color:var(--ink-3);font-size:.72rem;font-weight:760;font-variant-numeric:tabular-nums}
+.decision-line-head span{min-inline-size:0;color:var(--ink);font-size:.72rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.decision-line-head b{color:var(--ink-3);font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums}
 .decision-line-track{
   position:relative;block-size:12px;border-radius:999px;overflow:hidden;
   background:linear-gradient(180deg,color-mix(in srgb,var(--line) 56%,transparent),color-mix(in srgb,var(--surface-2) 94%,var(--surface)));
@@ -5121,11 +5121,11 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   background:color-mix(in srgb,var(--surface-2) 88%,var(--surface));
   text-align:center;
 }
-.regulation-metric-strip span,.regulation-facts span{color:var(--muted);font-size:.66rem;font-weight:730;line-height:1.3}
-.regulation-metric-strip strong,.regulation-facts strong{color:var(--ink);font-size:.88rem;font-weight:810;line-height:1.25}
+.regulation-metric-strip span,.regulation-facts span{color:var(--muted);font-size:.66rem;font-weight:700;line-height:1.3}
+.regulation-metric-strip strong,.regulation-facts strong{color:var(--ink);font-size:.88rem;font-weight:700;line-height:1.25}
 .regulation-metric-emphasis{border-color:color-mix(in srgb,var(--decision-tone) 18%,var(--line));background:color-mix(in srgb,var(--decision-tone) 7%,var(--surface))}
 .conflict-clear{padding:28px 20px}
-.conflict-clear strong{font-size:1.02rem;font-weight:770}
+.conflict-clear strong{font-size:1.02rem;font-weight:700}
 .conflict-clear span{font-size:.8rem}
 @container (max-width:420px){
   .conflict-head{padding:16px 16px 14px;grid-template-columns:48px minmax(0,1fr)}
@@ -5208,7 +5208,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .visual-minimal .share-choice-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px}
 .visual-minimal .share-choice-summary dt{display:none}
 .visual-minimal .share-choice-summary>div{padding:12px 10px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
-.visual-minimal .share-choice-summary dd{margin:0;font-size:.8rem;font-weight:760;text-align:center}
+.visual-minimal .share-choice-summary dd{margin:0;font-size:.8rem;font-weight:700;text-align:center}
 .visual-minimal .transfer-import-actions,
 .visual-minimal .share-step-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .visual-minimal .transfer-import-actions .btn,
@@ -5285,11 +5285,11 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .quick-create.visual-minimal{border-radius:var(--radius-card);box-shadow:var(--shadow-lg)}
 .quick-create.visual-minimal .qc-head{padding:13px 14px;border-radius:var(--radius-card) var(--radius-card) 0 0}
 .quick-create.visual-minimal .qc-wheels{gap:8px}
-.quick-create.visual-minimal .qc-field>span{font-size:.68rem;color:var(--muted);font-weight:730}
+.quick-create.visual-minimal .qc-field>span{font-size:.68rem;color:var(--muted);font-weight:700}
 .quick-create.visual-minimal .qc-field input,
 .quick-create.visual-minimal .qc-field select,
 .quick-create.visual-minimal .qc-location .location-registry-picker select{border-radius:14px}
-.quick-create.visual-minimal .qc-location .location-registry-picker label>span{font-size:.68rem;font-weight:730}
+.quick-create.visual-minimal .qc-location .location-registry-picker label>span{font-size:.68rem;font-weight:700}
 
 /* Instructor scope marker: a real glyph, never a textual bullet. */
 .instructor-department-mark{display:grid;place-items:center;color:var(--accent);font-style:normal;flex:none}
@@ -5445,7 +5445,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   padding-inline-end:0;
   font-size:11.25px;
   line-height:1.23;
-  font-weight:380;
+  font-weight:300;
   letter-spacing:-.06px;
   -webkit-line-clamp:2;
   overflow-wrap:normal;
@@ -5474,7 +5474,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
     padding-inline-end:0;
     font-size:11px;
     line-height:1.2;
-    font-weight:380;
+    font-weight:300;
     -webkit-line-clamp:2;
   }
   .week-event .week-who{
@@ -5513,7 +5513,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 }
 @container (max-height:50px){
   .week-event{padding-block:3px;gap:0}
-  .week-event .week-title{font-size:10.75px;line-height:1.12;font-weight:380;-webkit-line-clamp:1}
+  .week-event .week-title{font-size:10.75px;line-height:1.12;font-weight:300;-webkit-line-clamp:1}
   .week-event .week-who{font-size:10.1px;line-height:1.08;font-weight:300}
   .week-event .week-code{font-size:10px;line-height:1.05;font-weight:300}
 }
@@ -5521,7 +5521,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 /* The old data-narrow language is intentionally neutralised. Density no longer
    means a different mini-card; actual container width is the only authority. */
 .week-event[data-narrow="true"]{padding:4px 5px;gap:1px}
-.week-event[data-narrow="true"] .week-title{font-size:11px;line-height:1.2;font-weight:380;padding-inline-end:0;-webkit-line-clamp:2}
+.week-event[data-narrow="true"] .week-title{font-size:11px;line-height:1.2;font-weight:300;padding-inline-end:0;-webkit-line-clamp:2}
 .week-event[data-narrow="true"] .week-who{display:block;font-size:10.25px;line-height:1.16;font-weight:300}
 .week-event[data-narrow="true"] .week-code{display:block !important;font-size:10px;font-weight:300}
 
@@ -5599,13 +5599,13 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .week-strip-ruler-label span{
   color:var(--ink-2);
   font-size:11.5px;
-  font-weight:620;
+  font-weight:700;
   letter-spacing:-.08px;
 }
 .week-strip-ruler-label small{
   color:var(--muted);
   font-size:9.75px;
-  font-weight:380;
+  font-weight:300;
   white-space:nowrap;
 }
 .week-strip-ruler-track{
@@ -5681,7 +5681,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .week-strip-day-label strong{
   font-size:13px;
   line-height:1.15;
-  font-weight:620;
+  font-weight:700;
   letter-spacing:-.12px;
   color:var(--ink);
 }
@@ -5691,17 +5691,17 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   gap:4px;
   color:var(--muted);
   font-size:10px;
-  font-weight:390;
+  font-weight:300;
 }
 .week-strip-day-label span b{
   color:var(--ink-2);
-  font:560 10px/1 var(--font-mono);
+  font:600 10px/1 var(--font-mono);
   font-variant-numeric:tabular-nums;
 }
 .week-strip-day-label small{
   color:color-mix(in srgb,var(--accent) 64%,var(--muted));
   font-size:9.75px;
-  font-weight:430;
+  font-weight:500;
 }
 .week-strip-day-row[data-today="true"] .week-strip-day-label strong{color:var(--brass)}
 
@@ -5805,7 +5805,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   padding:0;
   font-size:9.85px;
   line-height:1.08;
-  font-weight:330;
+  font-weight:300;
   letter-spacing:-.04px;
   opacity:.82;
   white-space:nowrap;
@@ -5860,7 +5860,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   padding:0;
   font-size:9.25px;
   line-height:1.04;
-  font-weight:320;
+  font-weight:300;
   letter-spacing:-.06px;
   opacity:.78;
   white-space:nowrap;
@@ -5901,7 +5901,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   background:color-mix(in srgb,var(--edge) 8%,transparent);
   border:1px solid color-mix(in srgb,var(--edge) 12%,transparent);
   color:color-mix(in srgb,var(--label) 58%,var(--muted));
-  font:350 8.45px/1 var(--font-mono);
+  font:300 8.45px/1 var(--font-mono);
   font-style:normal;
   letter-spacing:-.05px;
   overflow:hidden;
@@ -5969,8 +5969,8 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   overflow:hidden;
 }
 .week-strip-keymove b,
-.week-strip-paint b{font:540 9.5px/1 var(--font-mono);white-space:nowrap}
-.week-strip-paint span{font-size:9.5px;font-weight:520;white-space:nowrap}
+.week-strip-paint b{font:600 9.5px/1 var(--font-mono);white-space:nowrap}
+.week-strip-paint span{font-size:9.5px;font-weight:600;white-space:nowrap}
 .week-strip-now{
   position:absolute;
   inset-block:0;
@@ -6005,7 +6005,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   border-radius:999px;
   background:var(--surface);
   color:var(--brass);
-  font:520 9px/1.3 var(--font-mono);
+  font:600 9px/1.3 var(--font-mono);
   white-space:nowrap;
 }
 .week-strip-move-trace{
@@ -6255,11 +6255,11 @@ html[data-schedule-workspace="focus"] .schedule-agenda-surface{
    course + code on one line, instructor beneath; no microtext and no day dot. */
 .rooms-identity-line{display:flex;align-items:center;gap:6px;min-width:0;direction:rtl}
 .rooms-identity-line b{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rooms-identity-line em{position:static!important;flex:none;margin:0;font:430 10px/1 var(--font-mono)!important;font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent)}
+.rooms-identity-line em{position:static!important;flex:none;margin:0;font:500 10px/1 var(--font-mono)!important;font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent)}
 .rooms-week-days .rooms-card{height:42px!important;min-height:42px;padding:4px 7px;justify-content:center;gap:2px;border-radius:8px}
-.rooms-week-days .rooms-card span{font-size:10.5px;font-weight:390;line-height:1.08}
-.rooms-week-days .rooms-card b{font-size:11.5px;font-weight:540;line-height:1.15}
-.rooms-week-days .rooms-row>.rooms-day-label{font-size:10.5px;font-weight:620;color:var(--ink-2);padding-inline:10px 6px}
+.rooms-week-days .rooms-card span{font-size:10.5px;font-weight:300;line-height:1.08}
+.rooms-week-days .rooms-card b{font-size:11.5px;font-weight:600;line-height:1.15}
+.rooms-week-days .rooms-row>.rooms-day-label{font-size:10.5px;font-weight:700;color:var(--ink-2);padding-inline:10px 6px}
 .rooms-week-days .rooms-track{border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
 .rooms-week-days .rooms-row:first-child .rooms-track{border-top:0}
 
@@ -6970,7 +6970,7 @@ html[data-schedule-workspace="focus"] .rooms-scale{
   z-index:2!important;
   transform:translate(50%,-50%)!important;
   color:var(--muted-2)!important;
-  font:560 10.5px/1 var(--font-mono)!important;
+  font:600 10.5px/1 var(--font-mono)!important;
   font-variant-numeric:tabular-nums!important;
   white-space:nowrap!important;
 }
@@ -7176,7 +7176,7 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
   font:inherit;
 }
 .rooms-room-identity-compact>b{font-weight:600;color:var(--muted-2)}
-.rooms-room-identity-compact>strong{font-weight:720;color:var(--ink)}
+.rooms-room-identity-compact>strong{font-weight:700;color:var(--ink)}
 .rooms-room-identity-compact>i{flex:none;font-style:normal;color:var(--muted-2);font-weight:700}
 
 
@@ -7292,7 +7292,7 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
   position:absolute;z-index:120;inset-block-start:-24px;
   inset-inline:0;margin-inline:auto;width:fit-content;
   padding:4px 8px;border-radius:999px;
-  background:var(--accent);color:var(--accent-contrast);font:750 10px/1 var(--font-ui);
+  background:var(--accent);color:var(--accent-contrast);font:700 10px/1 var(--font-ui);
   box-shadow:0 8px 22px rgba(20,45,38,.18);pointer-events:none;white-space:nowrap;
 }
 
@@ -7342,13 +7342,13 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
   .schedule-editor-grid>.form-card,.schedule-editor-grid>.conflict-panel{height:auto!important;max-height:none!important;overflow:visible!important}
 }
 .decision-note-details{margin-top:8px;border:1px solid color-mix(in srgb,var(--line) 82%,transparent);border-radius:13px;background:color-mix(in srgb,var(--surface-2) 74%,var(--surface));overflow:hidden}
-.decision-note-details>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;padding:0 11px;cursor:pointer;color:var(--muted);font-size:.7rem;font-weight:780}
+.decision-note-details>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;padding:0 11px;cursor:pointer;color:var(--muted);font-size:.7rem;font-weight:700}
 .decision-note-details>summary::-webkit-details-marker{display:none}
 .decision-note-details>summary::after{content:"⌄";font-size:15px;line-height:1;color:var(--muted-2);transition:transform .16s ease}
 .decision-note-details[open]>summary::after{transform:rotate(180deg)}
 .decision-note-details>p{margin:0!important;padding:0 11px 11px;color:var(--ink-3)!important;font-size:.79rem!important;line-height:1.8!important}
-.replay-empty-state-rich.is-loading small{color:var(--accent);font-size:.72rem;font-weight:720}
-.replay-retry{min-height:34px;padding:0 13px;border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:999px;background:var(--surface);color:var(--accent);font:720 .72rem/1 var(--font-ui);cursor:pointer}
+.replay-empty-state-rich.is-loading small{color:var(--accent);font-size:.72rem;font-weight:700}
+.replay-retry{min-height:34px;padding:0 13px;border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:999px;background:var(--surface);color:var(--accent);font:700 .72rem/1 var(--font-ui);cursor:pointer}
 .replay-retry:hover{background:var(--accent-softer);border-color:var(--accent)}
 body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide{z-index:221!important}
 body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>span{top:0!important;transform:translate(-50%,calc(-100% - 8px))!important}
@@ -7524,7 +7524,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   position:absolute;inset-inline-start:-5px;inset-block-start:-6px;
   min-width:18px;height:18px;padding:0 4px;display:grid;place-items:center;
   border:2px solid var(--surface);border-radius:999px;background:var(--accent);color:var(--accent-contrast);
-  font:800 8px/1 var(--font-ui);
+  font:700 8px/1 var(--font-ui);
 }
 .schedule-hall-picker[open]>summary{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent)}
 .schedule-hall-picker-popover{
@@ -7537,7 +7537,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   background:var(--surface);box-shadow:0 20px 50px rgba(17,25,22,.16);
 }
 .schedule-hall-picker-popover>header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 3px 9px;border-bottom:1px solid var(--line)}
-.schedule-hall-picker-popover>header>div{display:grid;gap:1px}.schedule-hall-picker-popover>header small{font-size:9px;color:var(--muted)}.schedule-hall-picker-popover>header strong{font-size:11.5px}.schedule-hall-picker-popover>header>span{min-width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:9px;font-weight:800}
+.schedule-hall-picker-popover>header>div{display:grid;gap:1px}.schedule-hall-picker-popover>header small{font-size:9px;color:var(--muted)}.schedule-hall-picker-popover>header strong{font-size:11.5px}.schedule-hall-picker-popover>header>span{min-width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:9px;font-weight:700}
 .schedule-hall-picker-status{margin:3px 0 0;color:var(--muted);font-size:9px;line-height:1.35}.schedule-hall-picker-status b{color:var(--ink)}
 .schedule-hall-picker-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;padding-top:9px}
 .schedule-hall-choice{position:relative;min-width:0}
@@ -7556,12 +7556,12 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-hall-busy-card-head strong{font-size:9.5px}.schedule-hall-busy-card-head span{font:700 8px/1 var(--font-ui);color:var(--muted)}
 .schedule-hall-busy-card p{margin:4px 0 1px;font-size:9px;font-weight:700;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .schedule-hall-busy-card small{display:block;color:var(--muted);font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.schedule-hall-busy-open{margin-top:4px;padding:0;border:0;background:transparent;color:var(--accent);font:800 8px/1.2 var(--font-ui);cursor:pointer}
+.schedule-hall-busy-open{margin-top:4px;padding:0;border:0;background:transparent;color:var(--accent);font:700 8px/1.2 var(--font-ui);cursor:pointer}
 .schedule-hall-busy-card em{display:block;margin-top:3px;color:var(--muted);font-size:7.5px;font-style:normal}
 .schedule-hall-picker-grid>button,.schedule-hall-choice>button{
   min-height:38px;display:flex;align-items:center;justify-content:center;gap:5px;
   border:1px solid var(--line);border-radius:11px;background:var(--surface-2);color:var(--ink);
-  font:750 10px/1 var(--font-ui);cursor:pointer;
+  font:700 10px/1 var(--font-ui);cursor:pointer;
 }
 .schedule-hall-picker-grid>button svg,.schedule-hall-choice>button svg{width:13px;height:13px;color:var(--accent)}
 .schedule-hall-picker-grid>button:hover,.schedule-hall-picker-grid>button.active,.schedule-hall-choice>button:hover,.schedule-hall-choice>button.active{border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:var(--accent-softer);color:var(--accent-strong,var(--accent))}
@@ -7867,7 +7867,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-new-room-note button,
 .qc-new-room button{
   min-height:32px;padding:0 11px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));
-  border-radius:10px;background:var(--surface);color:var(--accent-ink);font:750 11px/1 inherit;cursor:pointer;
+  border-radius:10px;background:var(--surface);color:var(--accent-ink);font-weight:700;font-size:11px;line-height:1;font-family:inherit;cursor:pointer;
 }
 .schedule-new-room-note button:disabled,.qc-new-room button:disabled{opacity:.55;cursor:wait}
 .qc-new-room{
@@ -7915,7 +7915,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 }
 
 /* A term delegate is a normal instructor choice with one clear provenance tag. */
-.instructor-visiting-label{display:inline-flex;align-items:center;margin-inline-start:7px;padding:2px 7px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:999px;background:var(--accent-softer);color:var(--accent);font-size:11px;font-style:normal;font-weight:800;line-height:1.35;vertical-align:middle;white-space:nowrap}
+.instructor-visiting-label{display:inline-flex;align-items:center;margin-inline-start:7px;padding:2px 7px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:999px;background:var(--accent-softer);color:var(--accent);font-size:11px;font-style:normal;font-weight:700;line-height:1.35;vertical-align:middle;white-space:nowrap}
 
 /* V34 — current notes ---------------------------------------------------------
    1) The desktop week must yield to the expanded navigation rail instead of
@@ -8034,7 +8034,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   border-radius:999px;
   background:color-mix(in srgb,var(--brass,#a8792a) 10%,var(--surface));
   color:color-mix(in srgb,var(--brass,#a8792a) 88%,var(--ink));
-  font-size:10px;font-weight:800;font-style:normal;line-height:1.15;
+  font-size:10px;font-weight:700;font-style:normal;line-height:1.15;
   white-space:nowrap;vertical-align:middle;
 }
 .visiting-badge.compact{min-height:18px;padding-inline:6px;font-size:9px;margin-inline-start:5px}
@@ -8061,10 +8061,10 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
    وكانت الشاشة تصمت عن ذلك، فمن استورد من الرئيسي بحث عن صفوف الجهراء في
    جدول الرئيسي ولم يجدها فبدا أن الاستيراد ابتلعها. الصمت هو العيب. */
 .transfer-published-scopes{margin-top:var(--s3);padding:var(--s4);border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
-.transfer-published-scopes>strong{display:block;font-size:var(--t-sm);font-weight:750;color:var(--ink)}
+.transfer-published-scopes>strong{display:block;font-size:var(--t-sm);font-weight:700;color:var(--ink)}
 .transfer-published-scopes ul{margin:var(--s3) 0 0;padding:0;list-style:none;display:grid;gap:6px}
 .transfer-published-scopes li{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:7px 11px;border-radius:12px;background:var(--surface);font-size:var(--t-sm)}
-.transfer-published-scopes li>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-published-scopes li>b{font-weight:700;color:var(--primary,#12463c)}
 .transfer-published-scopes>small{display:block;margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs,.72rem);line-height:1.6}
 
 /* ── أين ذهب ما نشرته ─────────────────────────────────────────────────────
@@ -8072,10 +8072,10 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
    وكانت الشاشة تصمت عن ذلك، فمن استورد من الرئيسي بحث عن صفوف الجهراء في
    جدول الرئيسي ولم يجدها فبدا أن الاستيراد ابتلعها. الصمت هو العيب. */
 .transfer-published-scopes{margin-top:var(--s3);padding:var(--s4);border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
-.transfer-published-scopes>strong{display:block;font-size:var(--t-sm);font-weight:750;color:var(--ink)}
+.transfer-published-scopes>strong{display:block;font-size:var(--t-sm);font-weight:700;color:var(--ink)}
 .transfer-published-scopes ul{margin:var(--s3) 0 0;padding:0;list-style:none;display:grid;gap:6px}
 .transfer-published-scopes li{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:7px 11px;border-radius:12px;background:var(--surface);font-size:var(--t-sm)}
-.transfer-published-scopes li>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-published-scopes li>b{font-weight:700;color:var(--primary,#12463c)}
 .transfer-published-scopes>small{display:block;margin-top:var(--s3);color:var(--muted);font-size:.72rem;line-height:1.6}
 
 /* الرسالة عند اليد التي تضغط: رفض النشر كان يُعرض في أعلى النافذة وحدها،
@@ -8087,7 +8087,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   border-radius:16px;background:color-mix(in srgb,var(--danger,#a2402f) 8%,var(--surface));
 }
 .transfer-commit-error>svg{width:18px;height:18px;flex:none;color:var(--danger,#a2402f);margin-top:1px}
-.transfer-commit-error strong{display:block;color:var(--danger,#a2402f);font-size:var(--t-sm);font-weight:750;line-height:1.6}
+.transfer-commit-error strong{display:block;color:var(--danger,#a2402f);font-size:var(--t-sm);font-weight:700;line-height:1.6}
 .transfer-commit-error small{display:block;margin-top:5px;color:var(--muted);font-size:.72rem;line-height:1.6}
 
 /* ── حصيلة النشر: خاتمة، لا شاشة أخرى ────────────────────────────────────
@@ -8105,16 +8105,16 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   color:var(--primary,#12463c);
 }
 .transfer-receipt-mark>svg{width:26px;height:26px}
-.transfer-receipt>h3{margin:0;font-size:var(--t-lg,1.05rem);font-weight:800;color:var(--ink)}
+.transfer-receipt>h3{margin:0;font-size:var(--t-lg,1.05rem);font-weight:700;color:var(--ink)}
 .transfer-receipt>p{margin:0;color:var(--ink-2)}
-.transfer-receipt>p>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-receipt>p>b{font-weight:700;color:var(--primary,#12463c)}
 .transfer-receipt-scopes{width:100%;margin:0;padding:0;list-style:none;display:grid;gap:6px}
 .transfer-receipt-scopes li{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:8px 12px;border-radius:12px;background:var(--surface-2);font-size:var(--t-sm)}
-.transfer-receipt-scopes li>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-receipt-scopes li>b{font-weight:700;color:var(--primary,#12463c)}
 .transfer-receipt>small{color:var(--muted);font-size:var(--t-xs,.72rem);line-height:1.7}
 .transfer-receipt>.btn{min-width:132px}
 .transfer-receipt-planted{width:100%;padding:10px 12px;border:1px dashed color-mix(in srgb,var(--primary,#12463c) 30%,var(--line));border-radius:14px;background:var(--surface-2);text-align:start}
-.transfer-receipt-planted>strong{display:block;font-size:var(--t-xs,.72rem);font-weight:750;color:var(--ink-2)}
+.transfer-receipt-planted>strong{display:block;font-size:var(--t-xs,.72rem);font-weight:700;color:var(--ink-2)}
 .transfer-receipt-planted>ul{margin:6px 0 0;padding-inline-start:16px;display:grid;gap:3px;font-size:var(--t-xs,.72rem);color:var(--ink)}
 
 /* ── مرشِّح نوافذ الاستعارة ───────────────────────────────────────────────
@@ -8179,11 +8179,11 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .hall-barter-inbox-mark>i{animation:none}
 }
 .hall-barter-inbox-copy{display:grid;gap:1px;min-width:0}
-.hall-barter-inbox-copy>strong{font-size:var(--t-sm);font-weight:750}
+.hall-barter-inbox-copy>strong{font-size:var(--t-sm);font-weight:700}
 .hall-barter-inbox-copy>small{font-size:var(--t-xs,.72rem);color:var(--muted)}
 .hall-barter-inbox-go{
   flex:none;padding:5px 11px;border-radius:999px;
-  background:var(--accent);color:#fff;font-size:var(--t-xs,.72rem);font-weight:800;
+  background:var(--accent);color:#fff;font-size:var(--t-xs,.72rem);font-weight:700;
 }
 
 /* خبر القرار: الشريط نفسه بلا نبضة — هذا إخبارٌ لا مطالبةُ قرار. */
@@ -8218,7 +8218,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-borrow-hint:hover{border-color:var(--accent,#176f62);background:color-mix(in srgb,var(--accent,#176f62) 9%,var(--surface))}
 .schedule-borrow-hint>svg{flex:none;width:15px;height:15px;color:var(--accent,#176f62)}
 .schedule-borrow-hint>span{min-width:0;flex:1}
-.schedule-borrow-hint b{color:var(--accent,#176f62);font-weight:750}
+.schedule-borrow-hint b{color:var(--accent,#176f62);font-weight:700}
 .schedule-borrow-hint .schedule-borrow-chevron{flex:none;width:15px;height:15px;color:var(--accent,#176f62);opacity:.7;transition:transform .18s ease}
 .schedule-borrow-hint.open .schedule-borrow-chevron{transform:rotate(180deg)}
 .schedule-borrow-hint.open{border-style:solid;border-color:var(--accent,#176f62);background:color-mix(in srgb,var(--accent,#176f62) 9%,var(--surface))}
@@ -8270,7 +8270,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-borrow-owner{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .schedule-borrow-owner>b{font-weight:600;font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* الوقت تحت اسم القسم بخطٍّ رفيع جدًّا: يميّز قاعتين لقسمٍ واحد دون ضجيج. */
-.schedule-borrow-time{font-style:normal;font-weight:350;font-size:10px;color:var(--ink-3,#9aa3a0);letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.schedule-borrow-time{font-style:normal;font-weight:300;font-size:10px;color:var(--ink-3,#9aa3a0);letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .schedule-borrow-list button{
   flex:none;padding:5px 14px;border:0;border-radius:8px;cursor:pointer;
   font-size:12px;font-weight:700;color:#fff;background:var(--accent,#176f62);
@@ -8292,7 +8292,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .hall-barter-log-toggle>svg:first-child{flex:none;width:18px;height:18px;color:var(--accent)}
 .hall-barter-log-toggle>span{flex:1;min-width:0;display:grid;gap:1px}
 .hall-barter-log-toggle>span>small{font-size:9.5px;color:var(--muted)}
-.hall-barter-log-toggle>span>strong{font-size:13px;font-weight:750}
+.hall-barter-log-toggle>span>strong{font-size:13px;font-weight:700}
 .hall-barter-log-toggle>b{flex:none;display:grid;place-items:center;min-width:26px;height:22px;padding:0 7px;border-radius:999px;background:var(--surface-2);color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
 .hall-barter-log-chevron{flex:none;width:18px;height:18px;color:var(--ink-3);transition:transform .2s ease}
 .hall-barter-log-chevron.open{transform:rotate(180deg)}
@@ -8300,7 +8300,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .hall-barter-log-tools{display:flex;justify-content:flex-end;margin-bottom:8px}
 .hall-barter-log-list{margin:0;padding:0;list-style:none;display:grid;gap:5px}
 .hall-barter-log-row{display:grid;grid-template-columns:auto minmax(0,1.1fr) minmax(0,1.6fr) auto auto;align-items:center;gap:10px;padding:8px 11px;border:1px solid var(--line);border-radius:11px;background:var(--surface);font-size:11.5px}
-.hall-barter-log-dir{flex:none;padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:750}
+.hall-barter-log-dir{flex:none;padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:700}
 .hall-barter-log-dir.in{background:color-mix(in srgb,var(--accent) 12%,var(--surface-2));color:var(--accent)}
 .hall-barter-log-dir.out{background:var(--surface-2);color:var(--ink-2)}
 .hall-barter-log-with{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
@@ -8343,7 +8343,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   color:var(--muted);
 }
 .pending-room-notice[data-tone="frozen"] svg{color:var(--muted)}
-.pending-room-notice[data-tone="frozen"] b{color:var(--ink);font-weight:750}
+.pending-room-notice[data-tone="frozen"] b{color:var(--ink);font-weight:700}
 
 
 /* Mobile polish for publish and weekly cards requested on 2026-09-22. */
@@ -8351,18 +8351,18 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .week-title{padding-inline-end:0}
 .week-event:has(.week-code) .week-when{padding-inline-end:0}
 .week-when{flex-wrap:wrap;justify-content:center}
-.week-when i{display:block;inline-size:100%;max-inline-size:100%;text-align:center;direction:ltr;unicode-bidi:isolate;font-family:var(--font-sans);font-size:9px;font-weight:280;line-height:1.35;letter-spacing:-.12px;background:transparent;padding:0;color:color-mix(in srgb,var(--label) 54%,transparent)}
+.week-when i{display:block;inline-size:100%;max-inline-size:100%;text-align:center;direction:ltr;unicode-bidi:isolate;font-family:var(--font-sans);font-size:9px;font-weight:300;line-height:1.35;letter-spacing:-.12px;background:transparent;padding:0;color:color-mix(in srgb,var(--label) 54%,transparent)}
 
-.share-sheet.visual-minimal .share-kind{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch;justify-content:stretch}
+.share-sheet.visual-minimal .share-kind{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch;justify-content:stretch}
 .share-sheet.visual-minimal .share-kind button{display:grid;place-items:center;align-content:center;gap:8px;min-inline-size:0;min-block-size:118px;padding:14px 10px;text-align:center;border-radius:24px}
-.share-sheet.visual-minimal .share-kind button span{display:block;font-size:.9rem;font-weight:850;line-height:1.35}
-.share-sheet.visual-minimal .share-kind button small{display:block;max-inline-size:11rem;color:var(--muted);font-size:.72rem;font-weight:520;line-height:1.55}
+.share-sheet.visual-minimal .share-kind button span{display:block;font-size:.9rem;font-weight:700;line-height:1.35}
+.share-sheet.visual-minimal .share-kind button small{display:block;max-inline-size:11rem;color:var(--muted);font-size:.72rem;font-weight:600;line-height:1.55}
 .share-sheet.visual-minimal .share-kind button svg{width:30px;height:30px}
 .share-sheet.visual-minimal .share-row-actions{justify-content:flex-start;gap:9px}
 .share-sheet.visual-minimal .share-row-actions button,.share-sheet.visual-minimal .share-row-actions a{inline-size:50px;block-size:50px;min-inline-size:50px;min-block-size:50px;border-radius:17px}
 .share-sheet.visual-minimal .share-list article{align-items:center}
 @media(max-width:680px){
-  .share-sheet.visual-minimal .share-kind{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .share-sheet.visual-minimal .share-kind{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .share-sheet.visual-minimal .share-kind button{min-block-size:106px;padding:12px 6px;border-radius:20px}
   .share-sheet.visual-minimal .share-kind button span{font-size:.78rem}
   .share-sheet.visual-minimal .share-kind button small{font-size:.64rem;line-height:1.45}
@@ -8384,7 +8384,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .share-sheet.visual-minimal .share-list article{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 16px;align-items:center;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
 .share-sheet.visual-minimal .share-row-lead{display:grid;gap:6px;min-inline-size:0}
 .share-sheet.visual-minimal .share-row-lead > span{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-inline-size:0;font-size:.78rem;color:var(--muted)}
-.share-sheet.visual-minimal .share-link-kind{display:inline-flex;align-items:center;gap:8px;min-inline-size:0;font-weight:750;font-size:.86rem;line-height:1.5;color:var(--ink)}
+.share-sheet.visual-minimal .share-link-kind{display:inline-flex;align-items:center;gap:8px;min-inline-size:0;font-weight:700;font-size:.86rem;line-height:1.5;color:var(--ink)}
 .share-sheet.visual-minimal .share-link-kind svg{flex:none;inline-size:18px;block-size:18px;color:var(--accent)}
 .share-sheet.visual-minimal .share-link-id{display:block;min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono,ui-monospace,monospace);font-size:.76rem;font-weight:500;color:var(--muted)}
 .share-sheet.visual-minimal .share-row-actions{display:flex;flex-wrap:nowrap;gap:8px;justify-content:flex-end}

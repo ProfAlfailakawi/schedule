@@ -1458,15 +1458,15 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
 
           {tab === "publish" ? (
             <>
-              <div className="tool-lede">
-                <span className="tool-lede-mark"><Link2 aria-hidden="true" /></span>
-                <div>
-                  <strong>نشر الجدول من أدوات البيانات</strong>
-                  <p className="muted">أنشئ رابط القراءة وأدر روابط النشر من هنا، بدون الانتقال إلى مركز الذكاء.</p>
+              {/* بطاقةٌ واحدةٌ بزرٍّ بارز: كان هنا شرحٌ في بطاقة، وتحته زرٌّ رماديٌّ
+                  صغير يكاد لا يُرى — والزرُّ هو الشيء الوحيد الذي جاء له القارئ. */}
+              <div className="publish-hero">
+                <span className="publish-hero-mark"><Link2 aria-hidden="true" /></span>
+                <div className="publish-hero-copy">
+                  <strong>نشر الجدول</strong>
+                  <p>جدول القسم لمن يحمل الرابط، أو بطاقة لكل أستاذ يطلب منها تعديل جدوله.</p>
                 </div>
-              </div>
-              <div className="transfer-publish-tool">
-                <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} />
+                <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} appearance="primary" />
               </div>
             </>
           ) : null}

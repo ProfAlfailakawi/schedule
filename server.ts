@@ -8796,6 +8796,48 @@ function countBlockingConflicts(scopeRows: any[], termRows: any[]): number {
   return count;
 }
 
+/**
+ * ── ما يمنع الاعتماد، بتفاصيله — داخل حدود القسم ─────────────────────────
+ *
+ * كانت الشاشة تقول «4 يمنع الاعتماد» ولا تقول ما هي: العددُ يصل، والتفاصيلُ لا
+ * تُرسل أصلاً. فصار كلُّ مانعٍ يصل بمواعيد هذا القسم المعنيّة به. وتعارضٌ مع
+ * موعدٍ في قسمٍ آخر يُقال عامّاً — «مع موعدٍ خارج هذا القسم» — بلا اسم قسمٍ ولا
+ * مقرّرٍ ولا أستاذٍ منه: الخادمُ يرى الموعدَ المقابل ليحمي الجدول، والقارئُ لا.
+ */
+function blockingConflictDetails(scopeRows: any[], termRows: any[], courseName: Map<number, string>) {
+  const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
+  const byId = new Map(termRows.map((row: any) => [Number(row.id), row] as const));
+  const scopeOf = new Map(termRows.map((row: any) => [Number(row.id), `${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] as const));
+  const typeLabel: Record<string, string> = { room: "تعارض قاعة", instructor: "تعارض أستاذ", duplicate: "موعد مكرّر", cohort: "تعارض مقرّرين يشترك طلبتُهما" };
+  const describe = (row: any) => `${courseName.get(Number(row?.AdCourseId)) || row?.AdCourseName || "مقرر"} (شعبة ${row?.SCode || "—"})`;
+  const seen = new Set<string>();
+  const blockers: Array<{ id: string; type: string; title: string; detail: string; rowIds: number[]; subjectLabel?: string }> = [];
+  for (const item of findConflicts(scopeRows as any, termRows as any)) {
+    if (item.severity !== "high" && item.type !== "duplicate") continue;
+    const a = Number(item.rowId), b = Number(item.otherId);
+    if (!ownIds.has(a) && !ownIds.has(b)) continue;
+    if (item.type === "instructor" && scopeOf.get(a) !== scopeOf.get(b)) continue;
+    const key = [Math.min(a, b), Math.max(a, b), item.type].join(":");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const label = typeLabel[String(item.type)] || "تعارض يمنع الاعتماد";
+    const inside = ownIds.has(a) && ownIds.has(b);
+    const own = [a, b].filter(id => ownIds.has(id));
+    blockers.push(inside ? {
+      id: key, type: String(item.type), title: label,
+      detail: `${describe(byId.get(a))} و${describe(byId.get(b))} في الوقت نفسه.`,
+      rowIds: own,
+      subjectLabel: `${describe(byId.get(a))} · ${describe(byId.get(b))}`,
+    } : {
+      id: key, type: String(item.type), title: `${label} مع موعدٍ خارج هذا القسم`,
+      detail: "الموعد المقابل في جدول قسمٍ آخر؛ غيّر وقتَ هذا الموعد أو مكانه، أو نسّق مع ذلك القسم.",
+      rowIds: own,
+      subjectLabel: describe(byId.get(own[0])),
+    });
+  }
+  return blockers;
+}
+
 /** السؤال عن قسمٍ واحد، حين لا يكون في اليد جدولُ الفصل أصلاً. */
 async function blockingConflictCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
   const [scopeRows, termRows] = await Promise.all([
@@ -9877,6 +9919,15 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     /* السببُ الجاهز لا يحمل أي اسم أو تفاصيل من قسمٍ آخر. */
     suggestions,
     blockingConflicts: await blockingConflictCount(collegeId, sectionId, termId),
+    reviewBlockers: await (async () => {
+      const [scopeRows, termRows, courses] = await Promise.all([
+        Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+        Repository.getSchedulesByScope({ termId }),
+        Repository.getCourses(),
+      ]);
+      return blockingConflictDetails(scopeRows as any[], termRows as any[],
+        new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")])));
+    })(),
     regulationNotices: await regulationNoticesForScope(collegeId, sectionId, termId),
   });
 });
@@ -11673,6 +11724,92 @@ function staffLookupAllowed(token: string, ip: string): boolean {
   return seen.count <= STAFF_MAX_TRIES;
 }
 
+/**
+ * ── حركةُ جدول الأستاذ: مصدرٌ واحد لبطاقتي ولصفحة الطلب ────────────────────
+ *
+ * كانت «حركة الجدول» في بطاقتي و«الحركة» في صفحة الطلب شيئين مختلفين: الأولى
+ * تقرأ نسخَ الجدول، والثانية بنودَ الطلب وحدها. فيرى الأستاذ في الموضعين
+ * قصّتين. فصار لكلٍّ منهما القسمان نفساهما، بالكلمات نفسها:
+ *   - طلباتُه: ما طلبه، وقرارُ القسم فيه.
+ *   - حركةُ جدوله الرسمية: ما أُضيف ونُقل وحُذف فعلاً.
+ */
+type MovementEntry = {
+  at: string; label: string; tone: "add" | "move" | "room" | "gone"; day: string; text: string;
+  source?: "request" | "schedule"; decision?: "fixed" | "rejected" | "pending";
+};
+
+const MOVEMENT_REJECT_REASON: Record<string, string> = {
+  room: "لا يتوفّر مكانٌ مناسب في هذا الوقت", instructor: "يتعارض مع أستاذ آخر", regulation: "مخالفة للائحة",
+  cohort: "يتقاطع مع مقرّر يشترك طلبتُه", load: "النصاب", department: "قرار القسم", other: "سبب آخر",
+};
+
+function requestMovementEntries(requests: InstructorRequest[]): MovementEntry[] {
+  const entries: MovementEntry[] = [];
+  for (const request of requests) {
+    if (request.status === "sent" || !request.submittedAt) continue;
+    for (const item of request.items || []) {
+      if (item.action === "keep") continue;
+      const before = item.before, after = item.after;
+      const name = String(after?.courseName || before?.courseName || "مقرر");
+      const place = item.action === "add" && after?.collegeName ? ` · ${after.collegeName}` : "";
+      const text = item.action === "delete"
+        ? `طلبتَ حذف ${name} (${before?.days || ""} ${before?.time || ""})`
+        : item.action === "add"
+          ? `طلبتَ إضافة ${name}: ${after?.days || ""} ${after?.time || ""}${place}`
+          : `طلبتَ نقل ${name} من ${before?.days || ""} ${before?.time || ""} إلى ${after?.days || ""} ${after?.time || ""}`;
+      const state = item.decision?.state === "fixed" ? "fixed" : item.decision?.state === "rejected" ? "rejected" : "pending";
+      const label = state === "fixed" ? "ثبّته القسم"
+        : state === "rejected"
+          ? `رفضه القسم${item.decision?.reasonCode ? ` — ${MOVEMENT_REJECT_REASON[item.decision.reasonCode] || ""}` : ""}${item.decision?.note ? ` · ${item.decision.note}` : ""}`
+          : "بانتظار قرار القسم";
+      entries.push({
+        at: String(item.decision?.decidedAt || request.submittedAt),
+        label, text: text.replace(/\s+/g, " ").trim(),
+        tone: item.action === "delete" ? "gone" : item.action === "add" ? "add" : "move",
+        day: "", source: "request", decision: state,
+      });
+    }
+  }
+  return entries;
+}
+
+async function scheduleMovementEntries(instructorId: number, termId: number, rows: any[], courseById: Map<number, any>, options: { withRooms?: boolean } = {}): Promise<MovementEntry[]> {
+  /* صفحةُ الطلب لا تحمل اسمَ قاعةٍ أبداً: تقول إن المكان تغيّر، ولا تقول أين. */
+  const withRooms = options.withRooms !== false;
+  const movementScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
+  for (const row of rows) {
+    const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
+    if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
+  }
+  const movementHistory: MovementEntry[] = [];
+  const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
+  const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
+  const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
+  const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === instructorId).map(row => [Number(row.id),row]));
+  for (const scope of movementScopeMap.values()) {
+    const versions = await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, termId, 30);
+    const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
+    const liveSection = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);
+    const states = ordered.map(version => ({ at:version.createdAt,label:version.label || "تعديل الجدول",rows:version.rows || [] }));
+    states.push({ at:new Date().toISOString(),label:"الجدول الحالي",rows:liveSection });
+    for (let i=1;i<states.length;i++) {
+      const before=movementShape(states[i-1].rows), after=movementShape(states[i].rows);
+      const at=states[i].at,label=states[i].label;
+      for (const [id,now] of after) {
+        const was=before.get(id);
+        if (!was) { movementHistory.push({at,label,tone:"add",day:movementDay(now),source:"schedule",text:`${movementName(now)} أُضيفت ${now.fstarttime}–${now.fendtime}${withRooms ? ` · ${movementRoom(now)}` : ""}`}); continue; }
+        if (String(was.fstarttime)!==String(now.fstarttime) || String(was.fendtime)!==String(now.fendtime) || shareDayIndexes(was).join(",")!==shareDayIndexes(now).join(","))
+          movementHistory.push({at,label,tone:"move",day:movementDay(now),source:"schedule",text:`${movementName(now)} تغيّر موعدها من ${was.fstarttime}–${was.fendtime} إلى ${now.fstarttime}–${now.fendtime}`});
+        if (movementRoom(was)!==movementRoom(now))
+          movementHistory.push({at,label,tone:"room",day:movementDay(now),source:"schedule",text:withRooms ? `${movementName(now)} تغيّرت القاعة ${movementRoom(was)} ← ${movementRoom(now)}` : `${movementName(now)} تغيّر مكانُ محاضرتها`});
+      }
+      for (const [id,was] of before) if (!after.has(id))
+        movementHistory.push({at,label,tone:"gone",day:movementDay(was),source:"schedule",text:`${movementName(was)} حُذفت من جدولك`});
+    }
+  }
+  return movementHistory;
+}
+
 async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedTermId = 0) {
   const digits = String(civil || "").replace(/\D/g, "");
   if (digits.length < 8) return null;
@@ -11700,15 +11837,10 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
 
   // Every request remains attached to the lecture's real college + section.
 // A link issued by one campus must never hide requests from another campus.
-const requestScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
-for (const row of rows) {
-  const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
-  if (collegeId && sectionId) requestScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
-}
-const requestLists = await Promise.all([...requestScopeMap.values()].map(scope =>
-  Repository.getInstructorRequests(scope.collegeId, scope.sectionId, Number(displayTermId))
-));
-  const requestRows = requestLists.flat().filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
+  /* طلباتُه في الفصل كلِّه: الطلبُ يحمل جدولَه بكل كلياته، فلا يُبحث عنه
+     بكليةٍ بعينها. */
+  const requestRows = (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
+    .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
   const requestLinks = (await Promise.all(requestRows.map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
     if (!requestLink || requestLink.revoked || (requestLink.expiresAt && Date.parse(requestLink.expiresAt) < Date.now())) return null;
@@ -11725,39 +11857,12 @@ const requestLists = await Promise.all([...requestScopeMap.values()].map(scope =
 
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
 
-  const movementScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
-for (const row of rows) {
-  const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
-  if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
-}
-
-  const movementHistory: Array<{ at:string; label:string; tone:"add"|"move"|"room"|"gone"; day:string; text:string }> = [];
-  const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
-  const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
-  const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
-  const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === Number(person.AdInstructorId)).map(row => [Number(row.id),row]));
-  for (const scope of movementScopeMap.values()) {
-  const versions = await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, Number(displayTermId), 30);
-  const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
-  const liveSection = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);
-    const states = ordered.map(version => ({ at:version.createdAt,label:version.label || "تعديل الجدول",rows:version.rows || [] }));
-    states.push({ at:new Date().toISOString(),label:"الجدول الحالي",rows:liveSection });
-    for (let i=1;i<states.length;i++) {
-      const before=movementShape(states[i-1].rows), after=movementShape(states[i].rows);
-      const at=states[i].at,label=states[i].label;
-      for (const [id,now] of after) {
-        const was=before.get(id);
-        if (!was) { movementHistory.push({at,label,tone:"add",day:movementDay(now),text:`${movementName(now)} أُضيفت ${now.fendtime} - ${now.fstarttime} · ${movementRoom(now)}`}); continue; }
-        if (String(was.fstarttime)!==String(now.fstarttime) || String(was.fendtime)!==String(now.fendtime) || shareDayIndexes(was).join(",")!==shareDayIndexes(now).join(","))
-          movementHistory.push({at,label,tone:"move",day:movementDay(now),text:`${movementName(now)} تغيّر موعدها من ${was.fendtime} - ${was.fstarttime} إلى ${now.fendtime} - ${now.fstarttime}`});
-        if (movementRoom(was)!==movementRoom(now))
-          movementHistory.push({at,label,tone:"room",day:movementDay(now),text:`${movementName(now)} تغيّرت القاعة ${movementRoom(was)} ← ${movementRoom(now)}`});
-      }
-      for (const [id,was] of before) if (!after.has(id))
-        movementHistory.push({at,label,tone:"gone",day:movementDay(was),text:`${movementName(was)} حُذفت من جدولك`});
-    }
-  }
-  movementHistory.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
+  /* الحركةُ تُبنى في موضعٍ واحد لبطاقتي ولصفحة الطلب معاً، فلا تقول إحداهما
+     غير ما تقوله الأخرى. */
+  const movementHistory = [
+    ...requestMovementEntries(requestRows),
+    ...await scheduleMovementEntries(Number(person.AdInstructorId), Number(displayTermId), rows, courseById),
+  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   const shaped = rows
     .map(row => ({
@@ -13195,7 +13300,7 @@ input{flex:1;min-width:0;height:52px;padding:0 16px;border:1px solid var(--line)
   text-align:center;direction:ltr;outline:none;transition:border-color .16s,box-shadow .16s}
 input:focus{border-color:var(--jade);box-shadow:0 0 0 3px rgba(105,192,168,.16)}
 button{height:52px;padding:0 22px;border:0;border-radius:14px;background:var(--jade);color:#07100d;
-  font:600 15px/1 inherit;cursor:pointer;transition:transform .12s,filter .16s}
+  font-weight:600;font-size:15px;line-height:1;font-family:inherit;cursor:pointer;transition:transform .12s,filter .16s}
 button:active{transform:scale(.98)}
 button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
 .note{margin-top:16px;min-height:20px;color:#e0a08c;font-size:13px}
@@ -13246,7 +13351,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
   display:grid;gap:9px;animation:sub-in .22s cubic-bezier(.2,.8,.3,1) both}
 @keyframes sub-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .sub p{margin:0;font-size:13px;line-height:1.8;color:#8d9a94}
-.sub a,.sub button{min-height:44px;display:grid;place-items:center;border-radius:12px;font:600 14px/1.4 inherit;
+.sub a,.sub button{min-height:44px;display:grid;place-items:center;border-radius:12px;font-weight:600;font-size:14px;line-height:1.4;font-family:inherit;
   text-decoration:none;cursor:pointer;padding:0 14px;text-align:center}
 /* This page's palette is jade/brass — it has no --accent, and a var() naming
    nothing resolves to nothing, which painted a near-black label on a near-black
@@ -13273,12 +13378,12 @@ button.say{
   justify-self:start;
   margin-block-start:8px;min-height:36px;padding:0 13px;border-radius:9px;cursor:pointer;
   border:1px solid var(--line);background:transparent;color:var(--dim);
-  font:600 11.5px/1 inherit;white-space:nowrap;transition:color .16s,border-color .16s;
+  font-weight:600;font-size:11.5px;line-height:1;font-family:inherit;white-space:nowrap;transition:color .16s,border-color .16s;
 }
 button.say:hover:not(:disabled){color:var(--jade);border-color:var(--jade)}
 button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .card-tabs{display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:8px}
-.card-tab{padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--dim);font:600 13px/1 inherit;cursor:pointer}
+.card-tab{padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--dim);font-weight:600;font-size:13px;line-height:1;font-family:inherit;cursor:pointer}
 .card-tab[aria-selected=true]{background:var(--jade);color:#04100d;border-color:var(--jade)}
 .movement-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .movement-item{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:13px;line-height:1.6}
@@ -13286,6 +13391,11 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .movement-item.t-move{border-inline-start:3px solid #f59e0b}
 .movement-item.t-room{border-inline-start:3px solid #a855f7}
 .movement-item.t-gone{border-inline-start:3px solid #ef4444}
+.movement-head{margin:14px 0 8px;font-size:13.5px;font-weight:600;color:var(--brass)}
+.movement-head:first-child{margin-top:0}
+.movement-meta{display:block;color:var(--dim)}
+.movement-meta[data-decision=fixed]{color:var(--jade)}
+.movement-meta[data-decision=rejected]{color:#f87171}
 .requests-panel{margin-top:12px;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
 .requests-panel a.req-link{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;background:var(--jade);color:#04100d;font-weight:600;font-size:13.5px;text-decoration:none;margin-top:8px}
 .pastnote{
@@ -13300,6 +13410,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .pub-week th{padding:9px 4px;text-align:center;font-size:12px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
 .pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
 .pub-week th.t{width:52px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);vertical-align:top;padding-top:9px}
+/* عنوانُ العمود «الوقت» كلمةٌ عربية: بخطٍّ أحاديّ العرض تتفكّك حروفُها
+   «الـوقـت». الأرقامُ تحته تبقى أحادية العرض لتصطفّ. */
+.pub-week thead th.t{font-family:inherit;font-size:11.5px;letter-spacing:0}
 .pub-week .wslot{display:block;padding:8px 9px;border-bottom:1px dashed var(--line)}
 .pub-week .wslot:last-child{border-bottom:0}
 .pub-week .wslot b{display:block;font-size:12px;font-weight:600;line-height:1.35}
@@ -13386,7 +13499,8 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   var gate=document.getElementById("gate"),card=document.getElementById("card");
   var note=document.getElementById("note"),go=document.getElementById("go"),civil=document.getElementById("civil");
   var ar=function(n){try{return Number(n||0).toLocaleString("ar-KW-u-nu-latn")}catch(e){return String(n)}};
-  var hours=function(m){var h=Math.floor(m/60),r=m%60;return r?ar(h)+"٫"+ar(Math.round(r/6)):ar(h)};
+  /* الكسرُ بنقطةٍ لا بفاصلةٍ عربية: «4٫2» تُقرأ على الشاشة «4,2» كأنها عددان. */
+  var hours=function(m){var h=Math.floor(m/60),r=m%60;return r?ar(h)+"."+ar(Math.round(r/6)):ar(h)};
   var esc=function(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML};
   var ascii=function(value){return String(value||"")
     .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})
@@ -13427,12 +13541,17 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     if(!host)return;
     var list=d.movementHistory||[];
     if(!list.length){
-      host.innerHTML='<div class="pub-empty">لا توجد حركات مسجلة على جدولك في هذا الفصل.</div>';
+      host.innerHTML='<h3 class="movement-head">حركة جدولك الرسمية</h3><div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل، ولم تُرسل طلب تعديل.</div>';
       return;
     }
-    host.innerHTML='<ul class="movement-list">'+list.map(function(m){
-      return '<li class="movement-item t-'+esc(m.tone)+'"><b>'+esc(m.day)+'</b>: '+esc(m.text)+' <small style="display:block;color:var(--dim)">'+esc(m.label)+' · <bdi>'+esc(friendlyDate(m.at,true))+'</bdi></small></li>';
-    }).join("")+'</ul>';
+    /* قسمان كما في صفحة الطلب تماماً: طلباتُك وقرارُ القسم فيها، ثم حركةُ
+       جدولك الرسمية. */
+    var mine=list.filter(function(m){return m.source==="request"}),official=list.filter(function(m){return m.source!=="request"});
+    var item=function(m){
+      return '<li class="movement-item t-'+esc(m.tone)+'">'+(m.day?'<b>'+esc(m.day)+'</b>: ':'')+esc(m.text)+' <small class="movement-meta"'+(m.decision?' data-decision="'+esc(m.decision)+'"':'')+'>'+esc(m.label)+' · <bdi>'+esc(friendlyDate(m.at,true))+'</bdi></small></li>';
+    };
+    host.innerHTML=(mine.length?'<h3 class="movement-head">طلباتك</h3><ul class="movement-list">'+mine.map(item).join("")+'</ul>':'')+
+      '<h3 class="movement-head">حركة جدولك الرسمية</h3>'+(official.length?'<ul class="movement-list">'+official.map(item).join("")+'</ul>':'<div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل.</div>');
   }
 
   function renderRequests(d){
@@ -13605,7 +13724,7 @@ body{margin:0;min-height:100dvh;background:
   font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;
   -webkit-text-size-adjust:100%;padding:22px 16px 40px}
 .wrap{max-inline-size:640px;margin-inline:auto}
-.kicker{font:600 11px/1 system-ui;letter-spacing:.22em;color:var(--brass);text-transform:uppercase}
+.kicker{font-weight:600;font-size:12px;line-height:1.4;letter-spacing:0;color:var(--brass)}
 h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .sub{margin:0 0 12px;font-size:13.5px;color:var(--dim);line-height:1.85}
 .sub b{color:var(--ink);font-weight:600}
@@ -13643,13 +13762,13 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .field label{font-size:12.5px;color:var(--dim)}
 .field input{
   inline-size:100%;padding:13px 14px;border-radius:12px;border:1px solid var(--line);
-  background:var(--card);color:var(--ink);font:400 15px/1.5 inherit;
+  background:var(--card);color:var(--ink);font-weight:400;font-size:15px;line-height:1.5;font-family:inherit;
 }
 .field input:focus{outline:none;border-color:var(--jade)}
 .field input[inputmode=numeric]{direction:ltr;text-align:start;font-variant-numeric:tabular-nums}
 .send{
   inline-size:100%;min-block-size:52px;margin-block-start:8px;border-radius:14px;cursor:pointer;
-  background:var(--jade);border:1px solid var(--jade);color:#04100d;font:700 15.5px/1 inherit;
+  background:var(--jade);border:1px solid var(--jade);color:#04100d;font-weight:700;font-size:15.5px;line-height:1;font-family:inherit;
 }
 .send:disabled{opacity:.45;cursor:default}
 .note{margin:14px 0 0;font-size:11.5px;line-height:1.9;color:#4d5a55;text-align:center}
@@ -13928,8 +14047,8 @@ function arCourses(n){
 
 function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:800;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:800;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
-</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسـمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:800;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:800;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:800;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
+</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
 (function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,identityMemoryKey="schedule-student-identity-"+TOKEN;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
    any twelve digits, so a wrong number travelled through both remaining steps
@@ -14042,6 +14161,44 @@ function requestSnapshot(row: any, courseName: string, withRoom: boolean): Instr
     days: dayKeysOf(row).map(key => DAY_LETTERS[key]).join(" · "),
     time: `${row.fstarttime || ""} – ${row.fendtime || ""}`,
     ...(withRoom ? { room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") } : {}),
+  };
+}
+
+/**
+ * ── جدولُ الأستاذ كلُّه، بكل كلياته ─────────────────────────────────────────
+ *
+ * كان الطلبُ يُبنى من صفوف الأستاذ في الكلية والقسم اللذين أصدرا الرابط وحدهما.
+ * فأستاذٌ يدرّس محاضرتين — إحداهما في كليةٍ أخرى — كانت «بطاقتي» تعرض له
+ * الاثنتين والطلبُ واحدةً، فيسأل: أين محاضرتي الثانية؟ فصار الطلبُ يقرأ ما
+ * تقرؤه البطاقة: كلَّ صفوفه في الفصل. وكلُّ بندٍ يحمل كليتَه وقسمَه، فيصل
+ * منسّقَ تلك الكلية وحده (انظر `requestItemScope`).
+ */
+function requestSnapshotAt(row: any, courseName: string, collegeNameById: Map<number, string>): InstructorRequestSnapshot {
+  const collegeId = Number(row.AdCollegeId || 0);
+  const sectionId = Number(row.AdSectionId || 0);
+  return {
+    ...requestSnapshot(row, courseName, true),
+    ...(collegeId ? { collegeId, collegeName: collegeNameById.get(collegeId) || undefined } : {}),
+    ...(sectionId ? { sectionId } : {}),
+  };
+}
+
+function requestItemFromRow(row: any, courseName: string, collegeNameById: Map<number, string>): InstructorRequestItem {
+  return {
+    rowId: Number(row.id),
+    action: "keep",
+    before: requestSnapshotAt(row, courseName, collegeNameById),
+    slots: dayKeysOf(row).map(day => ({ day, start: String(row.fstarttime || ""), end: String(row.fendtime || "") })),
+  };
+}
+
+/** موقعُ البند: الإضافةُ حيث اختار الأستاذ، والتعديلُ والحذفُ حيث يقع الصفُّ نفسُه.
+ *  والطلباتُ القديمة التي لا تحمل موقعاً تعود إلى موقع الرابط، كما كانت. */
+function requestItemScope(request: InstructorRequest, item: InstructorRequestItem): { collegeId: number; sectionId: number } {
+  const snapshot = item.action === "add" ? item.after : item.before;
+  return {
+    collegeId: Number(snapshot?.collegeId || request.AdCollegeId || 0),
+    sectionId: Number(snapshot?.sectionId || request.AdSectionId || 0),
   };
 }
 
@@ -14222,30 +14379,21 @@ async function instructorRequestSectionCourses(sectionIdValue: unknown) {
  */
 async function refreshUnsubmittedInstructorRequest(request: InstructorRequest): Promise<InstructorRequest> {
   if (request.status !== "sent") return request;
-  const [scopeRows, courses] = await Promise.all([
-    Repository.getSchedulesByScope({
-      collegeId: Number(request.AdCollegeId),
-      sectionId: Number(request.AdSectionId),
-      termId: Number(request.AdTermId),
-    }),
-    instructorRequestSectionCourses(request.AdSectionId),
+  /* جدولُه في الفصل كلِّه، بكل كلياته — ما تعرضه «بطاقتي» نفسُه. */
+  const [termRows, courses, colleges] = await Promise.all([
+    Repository.getSchedulesByScope({ termId: Number(request.AdTermId) }),
+    Repository.getCourses(),
+    Repository.getColleges(),
   ]);
-  const own = (scopeRows as any[]).filter(row =>
+  const own = (termRows as any[]).filter(row =>
     Number(row.AdInstructorId) === Number(request.AdInstructorId));
   const courseName = new Map((courses as any[]).map(row =>
     [Number(row.AdCourseId), String(row.CourseName || row.CourseCode || "")]));
-  const nextItems: InstructorRequestItem[] = own.map(row => ({
-    rowId: Number(row.id),
-    action: "keep",
-    before: requestSnapshot(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), true),
-    slots: dayKeysOf(row).map(day => ({
-      day,
-      start: String(row.fstarttime || ""),
-      end: String(row.fendtime || ""),
-    })),
-  }));
+  const collegeNameById = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const nextItems: InstructorRequestItem[] = own.map(row =>
+    requestItemFromRow(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), collegeNameById));
   const shape = (items: InstructorRequestItem[]) => items.map(item => [
-    Number(item.rowId || 0), item.before?.courseId, item.before?.sectionCode,
+    Number(item.rowId || 0), item.before?.courseId, item.before?.sectionCode, item.before?.collegeId || 0,
     item.slots?.map(slot => `${slot.day}:${slot.start}:${slot.end}`).join("|"),
   ].join("~")).sort().join("||");
   if (shape(nextItems) === shape(request.items || [])) return request;
@@ -14382,9 +14530,12 @@ async function requestRulesForScope(
  * متاحاً يومَ فُتح الرابط قد يكون أُخذ قبل أن يضغط الأستاذ إرسال، وحُكمٌ
  * محفوظٌ من أمس يكذب بصمت.
  */
-async function judgeRequestItems(request: InstructorRequest): Promise<InstructorRequest> {
+async function judgeRequestItems(request: InstructorRequest, options: { forDepartment?: boolean } = {}): Promise<InstructorRequest> {
   const context = await buildRequestContext(request);
-  const open = requestWindowOpen(request);
+  /* نافذةُ الطلبات تحدّ إرسالَ الأستاذ، لا قرارَ القسم: بعد إغلاقها كان كلُّ
+     بندٍ يُعلَّم «انتهت مدّة استقبال الطلبات» مانعاً، فيتعطّل «ثبّت» على ما
+     لم يُقرَّر بعد. فالقسمُ يرى الحكمَ بلا شرط النافذة. */
+  const open = options.forDepartment ? true : requestWindowOpen(request);
   const instructorRows = context.allRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
   const mine = context.scopeRows.filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
 
@@ -14512,12 +14663,18 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
   const sourceTermId = source === "previous-term"
     ? Number(req.body?.previousTermId || 0) || termId
     : termId;
-  const [rows, courses, existing] = await Promise.all([
+  const [rows, courses, existing, sourceTermRows, colleges] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId }),
     Repository.getCourses(),
     Repository.getInstructorRequests(collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId: sourceTermId }),
+    Repository.getColleges(),
   ]);
   const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
+  const collegeNameById = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  /* من يُصدَر له رابطٌ يحدّده جدولُ هذا القسم؛ وما في طلبه جدولُه كلُّه. */
+  const termRowsOf = (instructorId: number) => (sourceTermRows as any[])
+    .filter(row => Number(row.AdInstructorId) === instructorId);
   const already = new Map(existing.map(row => [Number(row.AdInstructorId), row]));
 
   const byInstructor = new Map<number, any[]>();
@@ -14562,12 +14719,8 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
       window: { opensAt, closesAt: `${closesAt}T23:59:59.999Z` },
       source,
       status: "sent",
-      items: own.map(row => ({
-        rowId: Number(row.id),
-        action: "keep" as const,
-        before: requestSnapshot(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), true),
-        slots: dayKeysOf(row).map(day => ({ day, start: String(row.fstarttime || ""), end: String(row.fendtime || "") })),
-      })),
+      items: (termRowsOf(instructorId).length ? termRowsOf(instructorId) : own).map(row =>
+        requestItemFromRow(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), collegeNameById)),
       timeline: [{ kind: "link-created", at: opensAt, by: "القسم" }],
     });
     issued.push({ instructorId, linkId: link.id, reissued: false });
@@ -14591,30 +14744,55 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
     return;
   }
 
+  /* الطلباتُ تُقرأ للفصل كلِّه: طلبٌ أصدرته كليةٌ أخرى قد يحمل بنداً على
+     محاضرةٍ في هذه الكلية، لأن الأستاذ يرى جدولَه كلَّه. ثم يُصفّى كلُّ بندٍ
+     بموقعه هو، لا بموقع الرابط. */
   const [storedAll, instructors, scopeRowsAll, sections] = await Promise.all([
-    Repository.getInstructorRequests(collegeId, sectionId, termId),
+    Repository.getInstructorRequests(0, 0, termId),
     Repository.getInstructors(),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
     Repository.getSections(),
   ]);
+  /* في المختار، وفي نطاق الحساب — قسماً قسماً حين يُترك القسمُ فارغاً. */
+  const inSelection = (scope: { collegeId: number; sectionId: number }) =>
+    scope.collegeId === collegeId
+    && (!sectionId || scope.sectionId === sectionId)
+    && isScopeAllowed(req, scope.collegeId, Number(scope.sectionId) || -1);
   const inScope = (rowCollegeId: number, rowSectionId: number) =>
-    sectionId ? true : isScopeAllowed(req, rowCollegeId, Number(rowSectionId) || -1);
-  const stored = storedAll.filter(row => inScope(Number(row.AdCollegeId), Number(row.AdSectionId)));
+    inSelection({ collegeId: rowCollegeId, sectionId: Number(rowSectionId) });
+  /* بندٌ خارج المختار يُستبدل بمكانٍ فارغ لا تفاصيلَ فيه: يبقى ترقيمُ البنود
+     كما هو — فالقرارُ يُرسل برقم بنده — ولا يصل هذه الشاشةَ مقرّرٌ ولا وقتٌ
+     ولا قاعةٌ من كليةٍ أو قسمٍ آخر. */
+  const hiddenItem = (): InstructorRequestItem => ({ rowId: null, action: "keep", slots: [] } as any);
+  const stored = storedAll.filter(request =>
+    inScope(Number(request.AdCollegeId), Number(request.AdSectionId))
+    || (request.items || []).some(item => item.action !== "keep" && inSelection(requestItemScope(request, item))));
   const scopeRows = (scopeRowsAll as any[]).filter(row => inScope(Number(row.AdCollegeId ?? collegeId), Number(row.AdSectionId)));
   const sectionNameOf = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
   const nameOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
   const mobileOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorMobile || "")]));
 
-  const judged = await Promise.all(stored.map(row => judgeRequestItems(row)));
-  const rows = judged.map(request => ({
+  const judged = await Promise.all(stored.map(row => judgeRequestItems(row, { forDepartment: true })));
+  const rows = judged.map(full => {
+    const request = {
+      ...full,
+      items: (full.items || []).map(item => inSelection(requestItemScope(full, item)) ? item : hiddenItem()),
+    };
+    /* القسمُ الذي يُعرض على البطاقة هو قسمُ ما يُرى منها، لا قسمُ الرابط. */
+    const shownSections = [...new Set((request.items || [])
+      .filter(item => item.action !== "keep")
+      .map(item => requestItemScope(full, item).sectionId))];
+    return {
     ...request,
     instructorName: nameOf.get(Number(request.AdInstructorId)) || `أستاذ ${request.AdInstructorId}`,
     instructorMobile: mobileOf.get(Number(request.AdInstructorId)) || "",
-    sectionName: sectionNameOf.get(Number(request.AdSectionId)) || "",
+    sectionName: (shownSections.length ? shownSections : [Number(request.AdSectionId)])
+      .map(id => sectionNameOf.get(id) || "").filter(Boolean).join(" · "),
     /* البنودُ التي تحمل قراراً هي ما يُنظر إليه؛ وما أبقاه الأستاذ كما هو
        يُعدّ ولا يُفتح. */
     changedCount: (request.items || []).filter(item => item.action !== "keep").length,
-  }));
+    };
+  });
 
   const totals = {
     sent: rows.length,
@@ -14639,7 +14817,15 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
 app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
   if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
-  if (!isScopeAllowed(req, Number(stored.AdCollegeId), Number(stored.AdSectionId))) {
+
+  const index = Number(req.body?.itemIndex);
+  const item = (stored.items || [])[index];
+  if (!item) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }
+
+  /* النطاقُ نطاقُ البند لا نطاقُ الرابط: محاضرةُ الأستاذ في كليةٍ أخرى يقرّر
+     فيها منسّقُ تلك الكلية، لا منسّقُ الكلية التي أصدرت الرابط. */
+  const itemScope = requestItemScope(stored, item);
+  if (!isScopeAllowed(req, itemScope.collegeId, itemScope.sectionId)) {
     res.status(403).json({ error: "هذا القسم خارج نطاقك." });
     return;
   }
@@ -14647,12 +14833,8 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
   /* والقرارُ في فصلٍ مجمَّدٍ لا يقع: «ثُبّت» يحتاج كتابةً في الجدول وهي
      ممنوعة، و«رُفض» يُغلق بابَ أستاذٍ على حالٍ لا يملك القسمُ تغييرَها. */
   const decideLock = await scheduleLockRefusal(
-    req, Number(stored.AdCollegeId), Number(stored.AdSectionId), Number(stored.AdTermId));
+    req, itemScope.collegeId, itemScope.sectionId, Number(stored.AdTermId));
   if (decideLock) { res.status(409).json({ error: decideLock, code: "schedule-locked" }); return; }
-
-  const index = Number(req.body?.itemIndex);
-  const item = (stored.items || [])[index];
-  if (!item) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }
 
   const state = req.body?.state === "fixed" ? "fixed" : req.body?.state === "rejected" ? "rejected" : null;
   if (!state) { res.status(400).json({ error: "القرار إمّا تثبيتٌ أو رفض." }); return; }
@@ -14759,7 +14941,7 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
     ...stored, items, timeline,
     status: decided ? "settled" : "in-review",
   });
-  res.json(await judgeRequestItems(saved));
+  res.json(await judgeRequestItems(saved, { forDepartment: true }));
 });
 
 /* ── بابُ الأستاذ ────────────────────────────────────────────────────────── */
@@ -15044,7 +15226,7 @@ textarea[data-show="1"]{display:block}
 label.sign{display:grid;grid-template-columns:auto minmax(0,190px);align-items:center;justify-content:center;gap:10px;margin:0 0 8px;font-size:13px;color:var(--muted)}label.sign input{width:100%;padding:10px;border-radius:11px;border:1px solid var(--line);font-size:16px;letter-spacing:.08em;text-align:center;direction:ltr;background:#fff}
 .signnote{margin:0 0 11px;font-size:11.5px;color:var(--muted2);line-height:1.6;text-align:center}
 .activity-empty{text-align:center;padding:34px 18px;border:1px dashed var(--line2);border-radius:16px;color:var(--muted);font-size:13px;background:var(--card)}
-.activity-list{list-style:none;margin:0;padding:0;display:grid;gap:9px}.activity-item{position:relative;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:start;padding:13px 14px;border:1px solid var(--line);border-radius:15px;background:var(--card)}.activity-dot{width:10px;height:10px;border-radius:50%;margin-top:7px;background:var(--line2);box-shadow:0 0 0 4px var(--bg)}.activity-item[data-kind=add] .activity-dot{background:var(--ok)}.activity-item[data-kind=change] .activity-dot{background:var(--warn)}.activity-item[data-kind=delete] .activity-dot{background:var(--bad)}.activity-main b{display:block;font-size:14px}.activity-main p{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.7}.activity-item time{color:var(--muted2);font-size:11px;white-space:nowrap}.decision{margin-top:7px;padding:7px 9px;border-radius:9px;background:var(--bg);font-size:12px;color:var(--muted)}.starts{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:4px 0 10px}.starts button{padding:10px 4px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink,#1d2b24);font:600 13px/1 ui-monospace,monospace;direction:ltr;cursor:pointer}.starts button[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}.course-none{margin:8px 0;padding:10px;border-radius:10px;background:var(--bg);color:var(--muted);font-size:12.5px}.restored{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#eef6f0;border:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.7}.restored button{margin-inline-start:6px;border:0;background:none;color:var(--ok);font-weight:700;text-decoration:underline;cursor:pointer}article.card{scroll-margin-top:84px}.dept{margin:10px 0 4px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.7}.dept p{margin:4px 0 0}.dept[data-state=fixed]{background:var(--ok2);color:var(--ok);font-weight:700}.dept[data-state=rejected]{background:var(--bad2);color:var(--bad)}.dept .alts button{color:var(--ink)}.sendrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.sendrow .sign{display:grid;grid-template-columns:1fr;gap:3px;margin:0;justify-content:stretch;font-size:11.5px}.sendrow .sign input{padding:11px 10px}.sign input::placeholder{direction:rtl;letter-spacing:0}.sendrow #send{width:auto;min-width:118px;max-width:170px;padding:12px 14px;line-height:1.35}.sendbox{padding:10px 12px}.send{padding-top:12px}.send .signnote{margin:6px 0 0;font-size:11px}.tabs{position:static}.verdict-next{display:block;margin-top:4px;font-size:12px;opacity:.85}.activity-main .activity-meta{font-size:12px;color:var(--muted2)}.activity-meta[data-tone=ok]{color:var(--ok)}.activity-meta[data-tone=warn]{color:var(--warn)}.activity-meta[data-tone=bad]{color:var(--bad)}.decision[data-state=fixed]{color:var(--ok);font-weight:700}.decision[data-state=rejected]{color:var(--bad);font-weight:700}
+.activity-list{list-style:none;margin:0;padding:0;display:grid;gap:9px}.activity-item{position:relative;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:start;padding:13px 14px;border:1px solid var(--line);border-radius:15px;background:var(--card)}.activity-dot{width:10px;height:10px;border-radius:50%;margin-top:7px;background:var(--line2);box-shadow:0 0 0 4px var(--bg)}.activity-item[data-kind=add] .activity-dot{background:var(--ok)}.activity-item[data-kind=change] .activity-dot{background:var(--warn)}.activity-item[data-kind=delete] .activity-dot{background:var(--bad)}.activity-main b{display:block;font-size:14px}.activity-main p{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.7}.activity-item time{color:var(--muted2);font-size:11px;white-space:nowrap}.decision{margin-top:7px;padding:7px 9px;border-radius:9px;background:var(--bg);font-size:12px;color:var(--muted)}.starts{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:4px 0 10px}.starts button{padding:10px 4px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink,#1d2b24);font:600 13px/1 ui-monospace,monospace;direction:ltr;cursor:pointer}.starts button[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}.course-none{margin:8px 0;padding:10px;border-radius:10px;background:var(--bg);color:var(--muted);font-size:12.5px}.restored{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#eef6f0;border:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.7}.restored button{margin-inline-start:6px;border:0;background:none;color:var(--ok);font-weight:700;text-decoration:underline;cursor:pointer}article.card{scroll-margin-top:84px}.dept{margin:10px 0 4px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.7}.dept p{margin:4px 0 0}.dept[data-state=fixed]{background:var(--ok2);color:var(--ok);font-weight:700}.dept[data-state=rejected]{background:var(--bad2);color:var(--bad)}.dept .alts button{color:var(--ink)}.sendrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.sendrow .sign{display:grid;grid-template-columns:1fr;gap:3px;margin:0;justify-content:stretch;font-size:11.5px}.sendrow .sign input{padding:11px 10px}.sign input::placeholder{direction:rtl;letter-spacing:0}.sendrow #send{width:auto;min-width:118px;max-width:170px;padding:12px 14px;line-height:1.35}.sendbox{padding:10px 12px}.send{padding-top:12px}.send .signnote{margin:6px 0 0;font-size:11px}.tabs{position:static}.plan{margin:0 0 18px;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:0 5px 18px rgba(22,57,40,.035);overflow:hidden}.plan-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line)}.plan-head b{font-size:15px}.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}.legend span{display:inline-flex;align-items:center;gap:5px}.legend span::before{content:"";inline-size:9px;block-size:9px;border-radius:3px;background:var(--ok)}.legend span[data-act=change]::before{background:var(--warn)}.legend span[data-act=delete]::before{background:var(--bad)}.plan-scroll{overflow-x:auto}.plan-table{inline-size:100%;border-collapse:collapse;font-size:13px}.plan-table th{padding:9px 10px;text-align:start;font-size:11.5px;font-weight:600;color:var(--muted);background:var(--soft);white-space:nowrap}.plan-table td{padding:10px;border-top:1px solid var(--line);vertical-align:top;line-height:1.55}.plan-table td b{display:block;font-weight:600}.plan-table td small{display:block;font-size:11px;color:var(--muted2)}.plan-table td s{display:block;font-size:11.5px;color:var(--muted2)}.plan-table tr{cursor:pointer}.plan-table tr[data-act=add]{background:var(--ok2)}.plan-table tr[data-act=change]{background:var(--warn2)}.plan-table tr[data-act=delete]{background:var(--bad2)}.plan-table tr[data-act=delete] td:not(:last-child){text-decoration:line-through;color:var(--muted)}.plan-table td:first-child{box-shadow:inset -3px 0 0 transparent}.plan-table tr[data-act=add] td:first-child{box-shadow:inset -3px 0 0 var(--ok)}.plan-table tr[data-act=change] td:first-child{box-shadow:inset -3px 0 0 var(--warn)}.plan-table tr[data-act=delete] td:first-child{box-shadow:inset -3px 0 0 var(--bad)}.status{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--soft);color:var(--muted);white-space:nowrap}.status[data-act=add]{background:var(--ok);color:#fff}.status[data-act=change]{background:var(--warn);color:#fff}.status[data-act=delete]{background:var(--bad);color:#fff}.plan-check{margin-top:4px}.plan-check[data-tone=ok]{color:var(--ok)!important}.plan-check[data-tone=bad]{color:var(--bad)!important}.plan-check[data-tone=warn]{color:var(--warn)!important}.row-head .college{padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}.plan-table td:nth-child(3){white-space:nowrap;font-variant-numeric:tabular-nums}@media(max-width:520px){.plan-table{font-size:12px}.plan-table th,.plan-table td{padding:8px 6px}.plan-table td:nth-child(3){font-size:11.5px}}.verdict-next{display:block;margin-top:4px;font-size:12px;opacity:.85}.activity-main .activity-meta{font-size:12px;color:var(--muted2)}.activity-meta[data-tone=ok]{color:var(--ok)}.activity-meta[data-tone=warn]{color:var(--warn)}.activity-meta[data-tone=bad]{color:var(--bad)}.decision[data-state=fixed]{color:var(--ok);font-weight:700}.decision[data-state=rejected]{color:var(--bad);font-weight:700}
 .done{text-align:center;padding:44px 18px}
 .done .tick{width:58px;height:58px;border-radius:50%;background:var(--ok);color:#fff;font-size:30px;line-height:58px;margin:0 auto 14px}
 [hidden]{display:none!important}
@@ -15087,7 +15269,25 @@ function payloadItems(){return state.map(function(it){return{rowId:it.rowId,acti
  collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,
  days:(it.action==="change"||it.action==="add")?it.days:[],start:(it.action==="change"||it.action==="add")?it.start:"",excuse:it.excuse}})}
 function courseOf(it){var b=it.before||{},a=it.after||{};return b.courseName||a.courseName||"المقرر"}
-function collegeOf(it){return it.action==="add"?(it.collegeName||(it.after&&it.after.collegeName)||""):""}
+/* الكليةُ تُكتب على المحاضرة حين يدرّس الأستاذ في أكثر من كلية: بلا ذلك
+   تبدو محاضرتان بالاسم نفسه كأنهما واحدة. */
+/* الرسالةُ بلغة الأستاذ لا بلغة اللائحة: «تتابع مرتفع على الأستاذ (2) — م.6/2،3»
+   صحيحةٌ للقسم، ولا تقول للأستاذ ماذا يفعل. فتُقال له بجملةٍ تشرح وتدلّ. */
+var FRIENDLY=[
+ [/^تتابع مرتفع على الأستاذ/,"محاضراتك متتالية في هذا اليوم أكثر من المسموح — اترك فاصلاً بينها أو اختر يوماً آخر."],
+ [/^تكرار شعب المقرر في نفس الوقت/,"شعبةٌ أخرى من المقرر نفسه في هذا الوقت — اختر وقتاً آخر ليتمكّن الطلبة من التسجيل."],
+ [/^التدوير غير محقق/,"محاضراتك كلها في الفترة نفسها — نوّع بين الصباح وما بعده إن أمكن."],
+ [/^داخل وقت اجتماع القسم/,"هذا الوقت محجوز لاجتماع القسم — اختر وقتاً آخر."],
+ [/^خارج المعتاد تاريخياً/,"هذا الوقت غير معتاد لهذا المقرر — يُقبل مع ذكر السبب."],
+ [/^يتقاطع هذا الوقت مع مقرّرٍ يشترك فيه طلبتك/,"طلبتُك مسجّلون في مقررٍ آخر في هذا الوقت — اختر وقتاً آخر."]
+];
+function friendly(text){text=String(text||"");for(var k=0;k<FRIENDLY.length;k++){if(FRIENDLY[k][0].test(text))return FRIENDLY[k][1]}return text}
+function collegeNameOf(it){return it.action==="add"?(it.collegeName||(it.after&&it.after.collegeName)||""):((it.before&&it.before.collegeName)||"")}
+function manyColleges(){var seen={};state.forEach(function(it){var c=collegeNameOf(it);if(c)seen[c]=1});return Object.keys(seen).length>1}
+function collegeOf(it){return it.action==="add"||manyColleges()?collegeNameOf(it):""}
+function shortCollege(v){return String(v||"").replace(/^\\s*كلية\\s+/,"")}
+/* العددُ بلغته: «موعد واحد» و«موعدان» لا «1 مواعيد». */
+function countOf(n,one,two,few,many){return n===1?one:n===2?two:n<=10?n+" "+few:n+" "+many}
 function toneText(it){return it.tone==="ok"?"الوقت متاح":it.tone==="warn"?"يحتاج سبب استثناء":it.tone==="bad"?"يوجد مانع":it.tone==="checking"?"يُفحص الآن…":""}
 function wasText(it){var b=it.before||{};return it.action==="add"?"":((b.days||"")+(b.time?" · "+b.time:""))}
 var REASONS={room:"لا يتوفّر مكانٌ مناسب في هذا الوقت",instructor:"يتعارض مع أستاذ آخر",regulation:"مخالفة للائحة",cohort:"يتقاطع مع مقرّر يشترك طلبتُه",load:"النصاب",department:"قرار القسم",other:"سبب آخر"};
@@ -15098,6 +15298,38 @@ function decisionBox(it,i,open){var d=it.decision;if(!d||!d.state||d.state==="pe
  var alts=(d.alternatives||[]);
  return '<div class="dept" data-state="rejected"><b>رفض القسم هذا الطلب'+(d.reasonCode&&REASONS[d.reasonCode]?' — '+esc(REASONS[d.reasonCode]):'')+'</b>'+(d.note?'<p>'+esc(d.note)+'</p>':'')+
   (alts.length&&open?'<p>يقترح القسم:</p><div class="alts">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-dept-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div>'}
+/* جدولُه كما سيكون، بترتيب تقرير الاستعلامات وألوانه: الأخضرُ مضاف،
+   والأصفرُ معدّل، والأحمرُ محذوف. يُقرأ بنظرة، والضغطُ على صفٍّ ينزل إلى
+   بطاقته ليعدّلها. */
+function planTable(){
+ if(!state.length)return "";
+ var many=manyColleges();
+ var order=state.map(function(it,i){return{it:it,i:i}}).sort(function(a,b){
+  var da=planDays(a.it),db=planDays(b.it);var ka=DAYS.map(function(d){return d[0]}).indexOf(da[0]),kb=DAYS.map(function(d){return d[0]}).indexOf(db[0]);
+  return (ka<0?9:ka)-(kb<0?9:kb)||mins(planStart(a.it))-mins(planStart(b.it))});
+ return '<div class="plan"><div class="plan-head"><b>جدولك</b><span class="legend"><span data-act="add">مضاف</span><span data-act="change">معدّل</span><span data-act="delete">محذوف</span></span></div>'+
+  '<div class="plan-scroll"><table class="plan-table"><thead><tr><th>المقرر</th><th>الأيام</th><th>الوقت</th><th>الحالة</th></tr></thead><tbody>'+
+  order.map(function(x){var it=x.it,b=it.before||{},moved=it.action==="change";
+   var newDays=it.days.length?fmtDays(it.days):"—",newTime=it.start?(it.start+"–"+endOf(it.days,it.start)):"—";
+   var days=it.action==="add"?newDays:moved?newDays:(b.days||"—"),time=it.action==="add"?newTime:moved?newTime:(b.time||"—").replace(/\\s*–\\s*/,"–");
+   var col=collegeNameOf(it);
+   return '<tr data-act="'+esc(it.action)+'" data-jump="'+x.i+'"><td><b>'+esc(courseOf(it))+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(many||it.action==="add"?(col?'<small>'+esc(shortCollege(col))+'</small>':''):'')+'</td>'+
+    '<td>'+esc(days)+(moved&&b.days&&b.days!==newDays?'<s>'+esc(b.days)+'</s>':'')+'</td>'+
+    '<td><bdi dir="ltr">'+esc(time)+'</bdi>'+(moved&&b.time&&b.time.replace(/\\s*–\\s*/,"–")!==newTime?'<s><bdi dir="ltr">'+esc(b.time.replace(/\\s*–\\s*/,"–"))+'</bdi></s>':'')+'</td>'+
+    '<td><span class="status" data-act="'+esc(it.action)+'">'+(it.action==="keep"?"كما هو":actionName(it.action))+'</span>'+(it.action!=="keep"&&it.action!=="delete"&&toneText(it)?'<small class="plan-check" data-tone="'+esc(it.tone)+'">'+esc(toneText(it))+'</small>':'')+'</td></tr>'}).join("")+
+  '</tbody></table></div></div>'
+}
+function planDays(it){return it.action==="add"||it.action==="change"?it.days:(it.slots||[]).map(function(s){return s.day})}
+function planStart(it){return it.action==="add"||it.action==="change"?it.start:((it.slots||[])[0]||{}).start||""}
+var movement=null,movementLoading=false;
+function loadMovement(){if(movement||movementLoading)return;movementLoading=true;
+ fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/movement").then(function(r){return r.json()}).then(function(d){movement=d.movementHistory||[];movementLoading=false;if(activeTab==="activity")paint()}).catch(function(){movement=[];movementLoading=false;if(activeTab==="activity")paint()})}
+var MOVE_TONE={add:"أُضيف",move:"نُقل",room:"تغيّر المكان",gone:"حُذف"};
+function officialHtml(){
+ if(!movement)return '<div class="section-head"><b>حركة جدولك الرسمية</b><small>ما تغيّر فعلاً في جدولك</small></div><div class="activity-empty">يقرأ الحركة…</div>';
+ return '<div class="section-head"><b>حركة جدولك الرسمية</b><small>ما تغيّر فعلاً في جدولك — كما في بطاقتي</small></div>'+(movement.length?'<ul class="activity-list">'+movement.map(function(m){
+  return '<li class="activity-item" data-kind="'+esc(m.tone==="gone"?"delete":m.tone==="add"?"add":"change")+'"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(MOVE_TONE[m.tone]||"تغيير")+(m.day?' · '+esc(m.day):'')+'</b><p>'+esc(m.text)+'</p><div class="decision">'+esc(m.label||"")+'</div></div><time>'+esc(dt(m.at))+'</time></li>'}).join("")+'</ul>':'<div class="activity-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل.</div>')
+}
 function activityHtml(r){
  var changed=state.map(function(it,i){return{it:it,i:i}}).filter(function(x){return x.it.action!=="keep"});
  var submitted=r.status&&r.status!=="sent";
@@ -15112,7 +15344,8 @@ function activityHtml(r){
  var timeline=(r.timeline||[]).slice().reverse().map(function(e){var item=typeof e.itemIndex==="number"?state[e.itemIndex]:null,b=item&&(item.before||item.after)||{};
   var detail=(item?(actionName(item.action)+" · "+courseOf(item)+(collegeOf(item)?" · "+collegeOf(item):"")+" · "+requestedText(item)):e.detail||"");
   return '<li class="activity-item" data-kind="event"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(EVENTS[e.kind]||e.kind)+'</b>'+(detail?'<p>'+esc(detail)+'</p>':'')+(e.by?'<div class="decision">بواسطة '+esc(e.by)+'</div>':'')+'</div><time>'+esc(dt(e.at))+'</time></li>'}).join("");
- return '<div class="section-head"><b>حركة طلبك</b><small>كل إجراء موثّق بالتفصيل</small></div>'+(rows||timeline?'<ul class="activity-list">'+rows+timeline+'</ul>':'<div class="activity-empty">لا توجد حركة بعد. أي إضافة أو تعديل أو حذف سيظهر هنا فوراً.</div>')
+ loadMovement();
+ return '<div class="section-head"><b>طلبك</b><small>ما طلبتَه، وقرار القسم في كل بند</small></div>'+(rows||timeline?'<ul class="activity-list">'+rows+timeline+'</ul>':'<div class="activity-empty">لم تطلب شيئاً بعد. أي إضافة أو تعديل أو حذف يظهر هنا فوراً.</div>')+officialHtml()
 }
 /* المسودةُ تُحفظ في الجهاز نفسه: أستاذٌ أغلق الصفحة خطأً أو انقطع اتصاله
    يعود فيجد ما كتبه. ولا يُحفظ الرقمُ المدني أبداً. */
@@ -15127,18 +15360,19 @@ function paint(){
  var r=data.request,open=data.windowOpen,approved=r.status==="settled";
  var changed=state.filter(function(it){return it.action!=="keep"}).length;
  var blocked=state.filter(function(it){return it.tone==="bad"||it.tone==="checking"}).length;
- var ready=blocked?"راجع الموانع":changed?changed+" تغييرات جاهزة":"لم تغيّر شيئاً";
+ var ready=blocked?"راجع الموانع":changed?countOf(changed,"تغيير واحد جاهز","تغييران جاهزان","تغييرات جاهزة","تغييراً جاهزاً"):"لم تغيّر شيئاً";
  var h='<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
-  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?blocked+" بنود تحتاج معالجة":"فحص مباشر قبل الإرسال")+'</small></div></div>'+
+  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,"بند واحد يحتاج معالجة","بندان يحتاجان معالجة","بنود تحتاج معالجة","بنداً يحتاج معالجة"):"فحص مباشر قبل الإرسال")+'</small></div></div>'+
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
- h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'><div class="section-head"><b>مواعيدك الحالية</b><small>'+state.filter(function(it){return it.rowId!==null}).length+' مواعيد · كل بطاقة موعد مستقل</small></div>';
+ var existing=state.filter(function(it){return it.rowId!==null}).length;
+ h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable()+'<div class="section-head"><b>عدّل مواعيدك</b><small>'+countOf(existing,"موعد واحد","موعدان","مواعيد","موعداً")+' · اضغط «غيّر» أو «احذف»</small></div>';
  state.forEach(function(it,i){var b=it.before||it.after||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
-  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(courseOf(it))+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(collegeOf(it)?'<small>'+esc(collegeOf(it))+'</small>':'')+tag+'</div>'+(it.action==="add"?'<p class="now">'+(it.days.length?esc(fmtDays(it.days)):'اختر الأيام')+' · '+(it.start?esc(it.start+" – "+endOf(it.days,it.start)):'اختر الوقت')+(toneText(it)?' · '+esc(toneText(it)):'')+'</p>':'<p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>');
+  h+='<article class="card" data-act="'+it.action+'"><div class="row-head"><small>موعد '+(i+1)+'</small><b>'+esc(courseOf(it))+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(collegeOf(it)?'<small class="college">'+esc(shortCollege(collegeOf(it)))+'</small>':'')+tag+'</div>'+(it.action==="add"?'<p class="now">'+(it.days.length?esc(fmtDays(it.days)):'اختر الأيام')+' · '+(it.start?esc(it.start+" – "+endOf(it.days,it.start)):'اختر الوقت')+(toneText(it)?' · '+esc(toneText(it)):'')+'</p>':'<p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>');
   h+=decisionBox(it,i,open);
   if(open){if(it.action!=="add")h+=it.action==="keep"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="change" aria-pressed="false">غيّر هذا الموعد</button><button type="button" data-i="'+i+'" data-a="delete" aria-pressed="false">احذف هذا الموعد</button></div>':it.action==="change"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">إلغاء التعديل</button><button type="button" data-i="'+i+'" data-a="delete">حذف الموعد بدلًا منه</button></div>':'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">تراجع عن الحذف</button></div>';
    else h+='<div class="pick"><button type="button" data-i="'+i+'" data-a="cancel-add">إلغاء الإضافة</button></div>';
    if(it.action==="change"||it.action==="add"){h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
-    h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'">'+esc(it.note||"")+(it.tone==="bad"?'<small class="verdict-next">'+(it.alts&&it.alts.length?'اضغط أحد البدائل المتاحة، أو غيّر اليوم أو الوقت.':'غيّر اليوم أو الوقت، ويُعاد الفحص تلقائيًا.')+'</small>':'')+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-alt="'+esc(ds.join(",")+"|"+a.start)+'">بديل: '+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>'}
+    h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'">'+esc(friendly(it.note||""))+(it.tone==="bad"?'<small class="verdict-next">'+(it.alts&&it.alts.length?'اضغط أحد البدائل المتاحة، أو غيّر اليوم أو الوقت.':'غيّر اليوم أو الوقت، ويُعاد الفحص تلقائيًا.')+'</small>':'')+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-alt="'+esc(ds.join(",")+"|"+a.start)+'">بديل: '+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>'}
   }h+='</article>'});
  if(open&&data.courses&&data.courses.length){
   var collegeMap={};data.courses.forEach(function(c){if(c.collegeId&&!collegeMap[c.collegeId])collegeMap[c.collegeId]=c.collegeName||("كلية "+c.collegeId)});
@@ -15204,6 +15438,7 @@ function wire(){
  host.querySelectorAll("[data-day]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i,it=state[i],d=el.dataset.day,at=it.days.indexOf(d);
   if(at>=0)it.days.splice(at,1);else it.days.push(d);paint();recheckAll(i)}});
+ host.querySelectorAll("[data-jump]").forEach(function(el){el.onclick=function(){var card=host.querySelectorAll("article.card")[+el.dataset.jump];if(card)card.scrollIntoView({behavior:"smooth",block:"center"})}});
  host.querySelectorAll("[data-dept-alt]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i,it=state[i],p=el.dataset.deptAlt.split("|");if(!it)return;
   if(it.action!=="add")it.action="change";it.days=p[0].split(",").filter(Boolean);it.start=p[1];paint();recheckAll(i)}});
@@ -15389,6 +15624,28 @@ app.post("/api/public/request/:token/check", async (req: Request, res: Response)
     roomAvailable: item.verdict === "conflict" ? false : true,
     nearestTimes: (item.nearestTimes || []).map(slot => ({ day: slot.day, days: slot.days, start: slot.start, end: slot.end })),
   });
+});
+
+/**
+ * حركةُ جدول صاحب الرابط الرسمية — ما تعرضه «حركة الجدول» في بطاقتي نفسُها.
+ * تُقرأ حين يفتح الأستاذ تبويبَ الحركة، لا مع فتح الصفحة: نسخُ الجدول ثقيلة،
+ * وفتحُ الرابط يجب أن يبقى سريعاً.
+ */
+app.get("/api/public/request/:token/movement", async (req: Request, res: Response) => {
+  const resolved = await resolveRequestLink(String(req.params.token || ""));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  const request = resolved.request;
+  const [termRows, courses] = await Promise.all([
+    Repository.getSchedulesByScope({ termId: Number(request.AdTermId) }),
+    Repository.getCourses(),
+  ]);
+  const own = (termRows as any[]).filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
+  const courseById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), row]));
+  const entries = (await scheduleMovementEntries(Number(request.AdInstructorId), Number(request.AdTermId), own, courseById, { withRooms: false }))
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, 100);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ movementHistory: entries });
 });
 
 /** بابُ الأستاذ. رابطٌ واحدٌ لشخصٍ واحد، ولا شيء خلفه إلا جدولُه هو. */
@@ -15704,7 +15961,7 @@ h1{margin:18px 0 4px;font-size:26px;font-weight:600;letter-spacing:0}
 .tools a{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 16px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);text-decoration:none;font-size:14px;font-weight:600}
 .tools a.primary{background:var(--accent);border-color:var(--accent);color:#04100d}
 section{margin-top:26px}
-h2{margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.1em;color:var(--brass)}
+h2{margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:0;color:var(--brass)}
 article{display:grid;grid-template-columns:76px minmax(0,1fr);gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
 article:last-child{border-bottom:0}
 time{direction:ltr;font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);white-space:nowrap}
@@ -15722,6 +15979,9 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 .pub-week th{padding:10px 6px;text-align:center;font-size:12.5px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
 .pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
 .pub-week th.t{width:58px;font:600 11px/1.4 ui-monospace,Menlo,monospace;color:var(--accent);vertical-align:top;padding-top:10px}
+/* عنوانُ العمود «الوقت» كلمةٌ عربية: بخطٍّ أحاديّ العرض تتفكّك حروفُها
+   «الـوقـت». الأرقامُ تحته تبقى أحادية العرض لتصطفّ. */
+.pub-week thead th.t{font-family:inherit;font-size:11.5px;letter-spacing:0}
 .pub-week tbody th.t{background:rgba(255,255,255,.02)}
 .pub-week .slot{display:block;padding:9px 10px;border-bottom:1px dashed var(--line)}
 .pub-week .slot:last-child{border-bottom:0}

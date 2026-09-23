@@ -45,11 +45,12 @@ export interface ScheduleDiff {
 }
 
 const DAY_FIELDS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const;
-const DAY_LETTERS = ["ح", "ن", "ث", "ر", "خ"];
+const DAY_NAMES = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
 
-/** الأيام كحروفٍ تُقرأ: «ح ث خ» لا «1,3,5». */
+/** الأيام بأسمائها: «الأحد · الثلاثاء» لا «ح ث» ولا «1,3». الحرفُ اختصارٌ يعرفه
+ *  من وضعه، والتقريرُ يقرؤه من لم يضعه. */
 export function daysText(row: any): string {
-  return DAY_FIELDS.map((field, index) => (row?.[field] ? DAY_LETTERS[index] : "")).filter(Boolean).join(" ");
+  return DAY_FIELDS.map((field, index) => (row?.[field] ? DAY_NAMES[index] : "")).filter(Boolean).join(" · ");
 }
 
 function clock(value: unknown): string {
