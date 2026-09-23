@@ -128,10 +128,16 @@ check(staffHtml.includes('if(pick){window.location.href="/r/"+encodeURIComponent
 const inboxRoute = server.slice(server.indexOf('app.get("/api/instructor-requests"'), server.indexOf('app.post("/api/instructor-requests/:id/decide"'));
 check(inboxRoute.includes('if (!collegeId || !termId)') && !inboxRoute.includes("!collegeId || !sectionId || !termId"),
   "القسمُ اختياري في الوارد");
-check(inboxRoute.includes("sectionId ? true : isScopeAllowed(req, rowCollegeId, Number(rowSectionId) || -1)")
-  && inboxRoute.includes("storedAll.filter(row => inScope(") && inboxRoute.includes("(scopeRowsAll as any[]).filter(row => inScope("),
+check(inboxRoute.includes("&& isScopeAllowed(req, scope.collegeId, Number(scope.sectionId) || -1);")
+  && inboxRoute.includes("(scopeRowsAll as any[]).filter(row => inScope("),
   "وبلا قسمٍ يُصفّى كلُّ طلبٍ وكلُّ صفٍّ بنطاق الحساب قسماً قسماً");
-check(inboxRoute.includes('sectionName: sectionNameOf.get(Number(request.AdSectionId))'), "وكلُّ طلبٍ يحمل اسمَ قسمه");
+/* الطلبُ يحمل جدولَ الأستاذ بكل كلياته، فكلُّ بندٍ يُصفّى بموقعه هو: ما خارج
+   المختار يصير مكاناً فارغاً بلا تفاصيل، ويبقى ترقيمُ البنود كما هو. */
+check(inboxRoute.includes("Repository.getInstructorRequests(0, 0, termId)")
+  && inboxRoute.includes("inSelection(requestItemScope(full, item)) ? item : hiddenItem()")
+  && inboxRoute.includes('({ rowId: null, action: "keep", slots: [] } as any)'),
+  "وكلُّ بندٍ يصل منسّقَ كليته وحده، ولا يصل غيرَه منه شيء");
+check(inboxRoute.includes(".map(id => sectionNameOf.get(id) || \"\").filter(Boolean)"), "وكلُّ طلبٍ يحمل اسمَ قسم ما يُرى منه");
 check(inbox.includes('className="request-card-section"') && inbox.includes('item.action === "add" && item.after?.collegeName'),
   "والبطاقةُ تعرض القسمَ، والإضافةُ تعرض كليتَها");
 

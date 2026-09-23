@@ -28,18 +28,23 @@ const details = fs.readFileSync(path.join(process.cwd(), "src/styles/09-details.
 check(server.includes('app.post("/api/instructor-requests/issue"'), "مسارُ الإصدار قائمٌ في الخادم");
 check(publish.includes('fetch("/api/instructor-requests/issue"'),
   "والواجهةُ تستدعيه — وهذا ما كان ناقصاً، فبقيت الدورةُ بلا باب");
-check(publish.includes('type Kind = "department" | "staff" | "request";'),
-  "وهو بابٌ ثالثٌ في «نشر»، حيث البابان الآخران قراءةٌ فقط");
-check(publish.includes("<span>رغبات الأساتذة</span>"), "ويُسمّى باسمه");
-check(publish.includes("كل أستاذ يفتح جدوله ويطلب تعديله — والقرار لكم"),
-  "ويُقال تحته ما يفعله ومن يقرّر، فلا يُخلط ببطاقة الاطّلاع");
+/* «بطاقة الأستاذ» و«رغبات الأساتذة» كانتا بابين وهما للأستاذ شيءٌ واحد: يفتح
+   بطاقتَه برقمه المدني ومنها يطلب. فصارتا باباً واحداً، بلا سطرِ تعريفٍ تحته. */
+check(publish.includes('type Kind = "department" | "staff";'),
+  "بابان في «نشر»: جدولُ القسم، وبطاقةُ الأستاذ التي يُطلب منها التعديل");
+check(publish.includes("<span>بطاقة الأستاذ</span>") && !publish.includes("<span>رغبات الأساتذة</span>"),
+  "ويُسمّى بابُ الأستاذ باسمٍ واحد");
+check(!/<span>(جدول القسم|بطاقة الأستاذ)<\/span>\s*<small>/.test(publish),
+  "ولا سطرَ تعريفٍ تحت الأبواب");
+check(publish.includes("استقبال طلبات تعديل الجدول") && publish.includes("if (withRequests) {"),
+  "وطلباتُ التعديل تُفتح مع البطاقة نفسها");
 
 /* ── موعدٌ يُكتب، لا مدّةٌ تُحسب ───────────────────────────────────────── */
 
 /* الأستاذُ يقرأ «آخر موعد ٥ أكتوبر»، ولا يقرأ «ثلاثين يوماً من متى». */
 check(publish.includes('<label className="share-closes">') && publish.includes('type="date"'),
   "وللرغبات تاريخُ إغلاقٍ يُكتب، لا مدّةٌ بالأيام");
-check(publish.includes('disabled={busy || (kind === "request" && !closesAt)}'),
+check(publish.includes('disabled={busy || (withRequests && !closesAt)}'),
   "ولا يُصدَر بلا موعدٍ مكتوب");
 
 /* ── ويُقال ما وقع ────────────────────────────────────────────────────── */
@@ -48,9 +53,9 @@ check(publish.includes('disabled={busy || (kind === "request" && !closesAt)}'),
    رابطٌ واحدٌ يُنسخ. فلو صمتت الشاشةُ بعد الإصدار لظنَّ القسمُ أنه لم يقع. */
 check(publish.includes("const reissued = rows.filter(row => row.reissued).length;"),
   "ويُفرَّق بين رابطٍ جديدٍ وآخرَ يحمله صاحبُه من قبل");
-check(publish.includes("أُصدر") && publish.includes("يحملون روابطهم من قبل"),
+check(publish.includes("فُتحت طلبات التعديل لـ") && publish.includes("يحملون طلباتهم من قبل"),
   "فلا يظنُّ القسمُ أنه أرسل لعشرين وقد أرسل لثلاثة");
-check(publish.includes("أرسلها وتابعها في «وارد الأساتذة»"),
+check(publish.includes("يطلبون من بطاقتهم، وتتابعها في «وارد الأساتذة»"),
   "ويُدلُّ على موضع المتابعة، فالروابطُ لا تظهر في هذه القائمة");
 
 /* ── ثلاثةٌ في صفٍّ واحد ──────────────────────────────────────────────── */
@@ -95,8 +100,8 @@ check(publish.includes("useEffect(() => { setIssued(null); }, [open, collegeId, 
   "ونتيجةُ الإصدار تُمحى عند تغيّر النطاق أو النوع أو إعادة الفتح");
 check(publish.includes("setCreatedId(data.id);\n      setIssued(null);"),
   "وعند إنشاء رابطٍ من نوعٍ آخر");
-check(publish.includes("setIssued({ created: rows.length - reissued, reissued });\n      setCreatedId(null);"),
-  "والعكسُ كذلك، فلا يُعرض خبران عن فعلين");
+check(publish.includes("setIssued({ created: rows.length - reissued, reissued });"),
+  "ويُقال ما فُتح من الطلبات مع البطاقة، في الموضع نفسه");
 
 /* ── والمرشدُ يعرف البابَ الثالث ──────────────────────────────────────────
  * السؤالُ الذي جاء منه هذا العمل كان «وين الدكتور يقدر يعدل؟». فباباً يُضاف
@@ -106,23 +111,23 @@ check(guide.includes('id:"schedule.publish.requests"'),
   "وللبابِ الثالث تعريفٌ في المرشد");
 check(guide.includes("وين يعدل الدكتور"),
   "ويُعثر عليه بالسؤال الذي يُسأل به فعلاً");
-check(guide.includes("وبطاقةُ الأستاذ بجانبه للاطّلاع وحده، وهي موضعُ الخلط"),
-  "ويُفرَّق صراحةً عن بطاقة الاطّلاع، وهي موضعُ الخلط");
+check(guide.includes("ومنها يطلب الأستاذ تعديل جدوله. وجدولُ القسم بجانبها للاطّلاع وحده."),
+  "ويُقال صراحةً أن البطاقةَ هي بابُ الطلب، وجدولُ القسم للاطّلاع");
 /* ── وهدفُ الخطوة هو العنصرُ الذي تتكلّم عنه ────────────────────────────
  * المرشدُ يستبدل أولَ اسمٍ بين قوسين في نصّ الخطوة باسمِ هدفها الحيّ
  * (`hydrateGuideSteps`). فخطوةٌ تقول «اختر رغبات الأساتذة» وهدفُها زرُّ النشر
  * الخارجيُّ تصير «اختر نشر» — نقيضُ ما وُضعت له، وأسوأُ من غيابها. */
 check(publish.includes('data-guide-target="schedule.publish.requests"'),
   "ولزرِّ الرغبات هدفٌ خاصٌّ به في الشاشة");
-check(guide.includes('{target:"schedule.publish.requests",text:"هذا هو «رغبات الأساتذة»'),
+check(guide.includes('{target:"schedule.publish.requests",text:"هذه هي «بطاقة الأستاذ»'),
   "والخطوةُ التي تسمّيه تُشير إليه هو، فلا يُستبدل اسمُه باسم غيره");
 /* والخطوةُ التي لا تسمّي عنصراً لا تحمل قوسين أصلاً، فلا يُقحَم فيها اسمٌ. */
 check(!/\{target:"schedule\.publish",text:"[^"]*«/.test(guide.slice(guide.indexOf('id:"schedule.publish.requests"'))),
   "وما لا تسمّيه لا تضع فيه قوسين، فلا يُقحَم اسمُ الزرّ الخارجيّ");
 /* ووصفُ «نشر» نفسُه صار يذكر الأبوابَ الثلاثة، فلا يقرأ القارئُ «رابط قراءة»
    فيظنّ أن لا تعديلَ هناك. */
-check(guide.includes("ورغباتُ الأساتذة — وهو الوحيد الذي يُعدَّل منه"),
-  "ووصفُ النشر نفسُه يذكر الأبوابَ الثلاثة");
+check(guide.includes("بابان: جدولُ القسم لمن يحمل الرابط، وبطاقةُ الأستاذ يفتحها برقمه المدني — ومنها يطلب تعديل جدوله"),
+  "ووصفُ النشر نفسُه يذكر البابين، وأن الطلبَ من البطاقة");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

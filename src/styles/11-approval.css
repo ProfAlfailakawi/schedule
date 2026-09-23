@@ -87,7 +87,7 @@
    لا قبلها، ولأن الموظّف الذي انتهى من عشرين بطاقةً لا يُطلب منه أن يصعد.
    ══════════════════════════════════════════════════════════════════════════ */
 
-.changes-screen{display:grid;gap:16px}
+.changes-screen{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
 
 /* ── أعداد الوارد ────────────────────────────────────────────────────────
    أرقامٌ في سطر، لا بطاقاتٌ بظلال. هي سياقٌ يُلمح لا لوحةُ قيادة تُدرس.   */
@@ -98,7 +98,7 @@
   color:var(--muted);font-size:.86rem;
 }
 .changes-totals b{
-  font-size:1.35rem;font-weight:800;color:var(--ink);
+  font-size:1.35rem;font-weight:700;color:var(--ink);
   margin-inline-end:5px;font-variant-numeric:tabular-nums;
 }
 .changes-totals [data-tone="late"] b{color:var(--danger)}
@@ -145,7 +145,7 @@
 .changes-signals span{
   inline-size:23px;block-size:23px;border-radius:var(--r-full);
   display:grid;place-items:center;
-  font-size:.74rem;font-weight:800;font-variant-numeric:tabular-nums;
+  font-size:.74rem;font-weight:700;font-variant-numeric:tabular-nums;
   border:1px solid transparent;
 }
 .changes-signals [data-kind="block"]{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
@@ -170,7 +170,7 @@
 .changes-back svg{inline-size:15px;block-size:15px}
 
 .changes-report-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.changes-report-head h2{margin:0;font-size:1.32rem;font-weight:800}
+.changes-report-head h2{margin:0;font-size:1.32rem;font-weight:700}
 .changes-report-head p{margin:3px 0 0;color:var(--muted);font-size:.88rem}
 .changes-report-state{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
@@ -180,7 +180,7 @@
   background:var(--surface-2);border:1px solid var(--line);
 }
 .changes-summary svg{inline-size:17px;block-size:17px;opacity:.6;flex:none}
-.changes-summary strong{font-size:.98rem;font-weight:750}
+.changes-summary strong{font-size:.98rem;font-weight:700}
 .changes-summary small{color:var(--muted);font-size:.83rem;margin-inline-start:auto}
 
 /* ── اللائحة: مطويّة حتى تُطلب ─────────────────────────────────────────── */
@@ -259,7 +259,7 @@
 .changes-moved{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-inline-size:0}
 .changes-moved s{color:var(--muted);text-decoration-thickness:1px;opacity:.75;font-weight:500}
 .changes-moved svg{inline-size:12px;block-size:12px;opacity:.45;flex:none}
-.changes-moved b{font-weight:750;color:var(--warning)}
+.changes-moved b{font-weight:700;color:var(--warning)}
 /* والخانةُ المتحرّكةُ تُلمَّح بخلفيةٍ خفيفة: العينُ تجدها قبل أن تقرأ. */
 .changes-row [data-changed]{
   border-radius:var(--r-sm);
@@ -291,7 +291,7 @@
 .changes-entry>header small{color:var(--muted);font-size:.82rem}
 .changes-kind{
   padding:2px 9px;border-radius:var(--r-full);
-  font-size:.74rem;font-weight:800;flex:none;
+  font-size:.74rem;font-weight:700;flex:none;
 }
 .changes-entry[data-kind="added"] .changes-kind,.changes-row[data-kind="added"] .changes-kind{background:var(--success-soft);color:var(--success)}
 .changes-entry[data-kind="removed"] .changes-kind,.changes-row[data-kind="removed"] .changes-kind{background:var(--danger-soft);color:var(--danger)}
@@ -309,7 +309,7 @@
 .changes-fields dd{margin:0;display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:.9rem}
 .changes-fields s{color:var(--muted);text-decoration-thickness:1px;opacity:.8}
 .changes-fields svg{inline-size:14px;block-size:14px;opacity:.4;flex:none}
-.changes-fields b{font-weight:750}
+.changes-fields b{font-weight:700}
 
 /* ── النقر على الخانة ───────────────────────────────────────────────────
    أزرارٌ بأسماء الخانات نفسها. والموظّف لا يصف أين المشكلة — ينقر عليها. */
@@ -334,14 +334,14 @@
 .changes-notes [data-state="open"]{border-inline-start-color:var(--warning);background:var(--warning-soft)}
 .changes-notes [data-state="changed"]{border-inline-start-color:var(--success);background:var(--success-soft)}
 .changes-notes [data-state="answered"]{border-inline-start-color:var(--muted-2)}
-.changes-note-field{font-size:.76rem;font-weight:800;color:var(--muted);letter-spacing:.01em}
+.changes-note-field{font-size:.76rem;font-weight:700;color:var(--muted);letter-spacing:.01em}
 .changes-notes p{margin:0;font-size:.88rem;line-height:1.7}
 .changes-notes small{color:var(--muted);font-size:.79rem}
 .changes-notes blockquote{
   margin:2px 0 0;padding:7px 11px;border-radius:var(--r-xs);
   background:var(--surface);font-size:.85rem;line-height:1.7;
 }
-.changes-notes blockquote strong{font-weight:750}
+.changes-notes blockquote strong{font-weight:700}
 .changes-notes blockquote cite{display:block;margin-block-start:3px;color:var(--muted);font-size:.78rem;font-style:normal}
 .changes-note-actions{display:flex;flex-wrap:wrap;gap:7px}
 .changes-note-actions button{
@@ -380,7 +380,7 @@
   background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-lg);
 }
 .changes-extend-card header{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.changes-extend-card header strong{font-size:1.02rem;font-weight:750}
+.changes-extend-card header strong{font-size:1.02rem;font-weight:700}
 .changes-extend-card header button{
   border:0;background:transparent;padding:5px;border-radius:var(--r-xs);
   color:var(--muted);cursor:pointer;display:grid;place-items:center;
@@ -469,7 +469,7 @@
 }
 .approval-bar>svg{inline-size:17px;block-size:17px;flex:none;opacity:.8}
 .approval-bar-text{flex:1;min-inline-size:170px;display:grid;gap:2px}
-.approval-bar-text strong{font-size:.92rem;font-weight:750}
+.approval-bar-text strong{font-size:.92rem;font-weight:700}
 .approval-bar-text small{color:var(--muted);font-size:.82rem}
 .approval-bar[data-tone="returned"] .approval-bar-text small{color:var(--warning)}
 .approval-bar .btn{flex:none}
@@ -535,7 +535,7 @@
   color:var(--danger);
 }
 .approval-blocked-icon svg{inline-size:22px;block-size:22px}
-.approval-blocked strong{display:block;color:var(--danger);font-size:1rem;font-weight:820;line-height:1.35}
+.approval-blocked strong{display:block;color:var(--danger);font-size:1rem;font-weight:700;line-height:1.35}
 .approval-blocked p{margin:3px 0 0;color:var(--muted);font-size:.88rem;line-height:1.7}
 
 /* ── تعارضٌ مع قسمٍ آخر ─────────────────────────────────────────────────
@@ -569,7 +569,7 @@
 .changes-filter-chips{display:flex;flex-wrap:wrap;gap:6px}
 .changes-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:var(--r-full);border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);font-size:.82rem;font-weight:600;cursor:pointer}
 .changes-chip:hover{border-color:var(--line-strong)}
-.changes-chip>b{font-size:.72rem;font-weight:800;padding:0 6px;border-radius:var(--r-full);background:var(--surface-3);color:var(--ink-2);min-width:18px;text-align:center}
+.changes-chip>b{font-size:.72rem;font-weight:700;padding:0 6px;border-radius:var(--r-full);background:var(--surface-3);color:var(--ink-2);min-width:18px;text-align:center}
 .changes-chip[data-active]{background:var(--accent-softer);color:var(--accent-ink);border-color:color-mix(in srgb,var(--accent) 30%,transparent)}
 .changes-chip[data-active]>b{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent-ink)}
 .changes-search{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:var(--r-full);border:1px solid var(--line);background:var(--surface-2);min-width:210px;flex:1 1 210px;max-width:320px}
@@ -610,7 +610,7 @@
   padding:var(--s4) var(--s5);text-align:center;
 }
 .request-totals>div{display:flex;flex-direction:column;gap:2px}
-.request-totals b{font-size:var(--t-h2);font-weight:800;color:var(--ink);line-height:1.1}
+.request-totals b{font-size:var(--t-h2);font-weight:700;color:var(--ink);line-height:1.1}
 .request-totals span{font-size:var(--t-xs);color:var(--muted)}
 
 /* من لم يفتح رابطه: سطرٌ واحد، وكلُّ اسمٍ فيه زرُّ تذكيرٍ يفتح واتساب.
@@ -823,3 +823,63 @@
 .changes-row{scroll-margin-block:22vh}.changes-row-focus{animation:changes-row-focus 1.8s ease both}
 @keyframes changes-row-focus{0%,100%{box-shadow:none}18%,70%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent);border-color:var(--accent)}}
 @media (prefers-reduced-motion:reduce){.changes-review-toggle>svg,.changes-row-focus{transition:none;animation:none}}
+
+/* ── وارد الأساتذة: جدولٌ مرتّب ────────────────────────────────────────────
+   صفٌّ لكل بند بأعمدةٍ ثابتة، ولونُ الحالة على الصفّ كلّه كما في تقرير
+   الاستعلامات: أخضرُ مضاف، وأصفرُ معدّل، وأحمرُ محذوف. */
+.request-card-flags{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;justify-content:flex-end}
+.request-table-wrap{overflow-x:auto}
+.request-table{inline-size:100%;border-collapse:collapse;font-size:var(--t-sm)}
+.request-table thead th{padding:10px 12px;text-align:start;font-size:var(--t-xs);font-weight:600;color:var(--muted);background:var(--surface-2);border-bottom:1px solid var(--line);white-space:nowrap}
+.request-table td{padding:12px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.6;min-inline-size:0}
+.request-table tbody tr:last-child td{border-bottom:0}
+.request-table td strong{display:block;font-weight:600}
+.request-table td small{display:block;color:var(--muted);font-size:var(--t-xs)}
+.request-row[data-action="add"]{background:color-mix(in srgb,var(--success,#1f7a55) 7%,transparent)}
+.request-row[data-action="change"]{background:color-mix(in srgb,var(--warning,#a06b00) 8%,transparent)}
+.request-row[data-action="delete"]{background:color-mix(in srgb,var(--danger,#b3261e) 7%,transparent)}
+.request-row td:first-child{box-shadow:inset -3px 0 0 transparent}
+.request-row[data-action="add"] td:first-child{box-shadow:inset -3px 0 0 var(--success,#1f7a55)}
+.request-row[data-action="change"] td:first-child{box-shadow:inset -3px 0 0 var(--warning,#a06b00)}
+.request-row[data-action="delete"] td:first-child{box-shadow:inset -3px 0 0 var(--danger,#b3261e)}
+.request-action{display:inline-block;padding:2px 10px;border-radius:999px;font-size:var(--t-xs);font-weight:600;color:#fff;background:var(--muted);white-space:nowrap}
+.request-action[data-action="add"]{background:var(--success,#1f7a55)}
+.request-action[data-action="change"]{background:var(--warning,#a06b00)}
+.request-action[data-action="delete"]{background:var(--danger,#b3261e)}
+.request-was-gone{text-decoration:line-through;color:var(--muted)}
+.request-none{color:var(--muted)}
+.request-room{margin-top:2px;font-family:var(--font-mono,ui-monospace,monospace);overflow-wrap:anywhere}
+.request-table .request-excuse{display:flex;gap:4px;align-items:flex-start;margin-top:6px;color:var(--ink)}
+.request-table .request-excuse svg{inline-size:14px;block-size:14px;flex:none;margin-top:3px}
+.request-table .request-reasons{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+.request-table .request-reasons li{display:flex;gap:6px;align-items:flex-start;font-size:var(--t-xs);line-height:1.6;color:var(--warning,#a06b00)}
+.request-table .request-reasons li[data-blocking]{color:var(--danger,#b3261e)}
+.request-table .request-reasons svg{inline-size:14px;block-size:14px;flex:none;margin-top:3px}
+.request-check{display:inline-flex;align-items:center;gap:4px;font-size:var(--t-xs);color:var(--success,#1f7a55)}
+.request-check svg{inline-size:14px;block-size:14px}
+.request-table .request-rooms{margin-top:6px}
+.request-table .request-actions{display:flex;gap:6px;flex-wrap:wrap}
+.request-table .request-actions .btn{min-block-size:36px;padding-inline:14px}
+.request-table .request-decided{margin:0;font-size:var(--t-xs);font-weight:600}
+.request-reject-row td{background:var(--surface)}
+@media (max-width:760px){
+  .request-table thead{display:none}
+  .request-table,.request-table tbody,.request-table tr,.request-table td{display:block;inline-size:100%}
+  .request-row{padding:6px 0;border-bottom:1px solid var(--line)}
+  .request-table td{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;padding:6px 14px;border-bottom:0}
+  .request-table td::before{content:attr(data-label);font-size:var(--t-xs);color:var(--muted);font-weight:600}
+  .request-row td:first-child{box-shadow:none}
+  .request-row[data-action="add"]{box-shadow:inset -4px 0 0 var(--success,#1f7a55)}
+  .request-row[data-action="change"]{box-shadow:inset -4px 0 0 var(--warning,#a06b00)}
+  .request-row[data-action="delete"]{box-shadow:inset -4px 0 0 var(--danger,#b3261e)}
+}
+/* البطاقةُ داخل شبكة الشاشة: بلا حدٍّ أدنى صفري تتّسع لعرض محتواها الأدنى
+   فتتجاوز الهاتف (397 من 362) وتُقصّ أزرارُها من اليسار. */
+.request-deck,.request-card,.request-table-wrap{min-inline-size:0;max-inline-size:100%}
+@media (max-width:760px){
+  .request-table td{row-gap:4px;align-items:start}
+  .request-table td>*{grid-column:2;min-inline-size:0;justify-self:start}
+  .request-table td>.request-actions{justify-self:stretch}
+  .request-table td::before{grid-column:1;grid-row:1}
+  .request-table .request-actions .btn{flex:1 1 0;min-inline-size:0}
+}
