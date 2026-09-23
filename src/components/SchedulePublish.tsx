@@ -259,7 +259,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
 
   return (
     <>
-      <GhostButton type="button" data-guide-target="schedule.publish" data-guide-feature-id="schedule.publish" onClick={openDialog} disabled={!scoped} title="رابط قراءة" aria-label="نشر الجدول">
+      <GhostButton type="button" data-guide-target="schedule.publish" data-guide-feature-id="schedule.publish" onClick={openDialog} disabled={!scoped} title="نشر الجدول" aria-label="نشر الجدول">
         <Link2 />
         نشر
         {active.length ? <b className="tool-count">{active.length}</b> : null}
@@ -293,9 +293,9 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               <X />
             </button>
             <header>
-              <span className="share-glyph"><QrCode /></span>
+              <span className="share-glyph"><Link2 aria-hidden="true" /></span>
               <div>
-                <small>رابط قراءة</small>
+                <small>نشر الجدول</small>
                 <h2 id="schedule-publish-title">{scopeLabel || "نشر الجدول"}</h2>
               </div>
             </header>
@@ -512,8 +512,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                                 ? <><MessageSquarePlus aria-hidden="true" /> رغبات الأساتذة · يفتح جدوله ويطلب تعديله</>
                                 : <><Users aria-hidden="true" /> جدول القسم · لأي شخص لديه الرابط</>}
                           </span>
-                          <b dir="ltr">
-                            {link.kind === "staff" ? <IdCard aria-label="بطاقة أستاذ" /> : null}
+                          <b dir="ltr" className="share-link-id">
                             /s/{link.id.slice(0, 10)}…
                           </b>
                           <span>

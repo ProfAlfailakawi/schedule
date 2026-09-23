@@ -17,7 +17,7 @@ export function validateCivilId(civilId: string): { isValid: boolean; message?: 
 
   // Check length
   if (civilId.length !== 12) {
-    return { isValid: false, message: "الرقم المدني المدخل لأستاذ المقرر غير صحيح وفقاً لبيانات البطاقة المدنية" };
+    return { isValid: false, message: "الرقم المدني 12 رقمًا بالضبط." };
   }
 
   const digits = civilId.split("").map(Number);

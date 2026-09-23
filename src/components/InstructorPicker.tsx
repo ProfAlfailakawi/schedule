@@ -295,7 +295,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
             <div className="instructor-new">
               <strong>أستاذ جديد</strong>
               <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="الاسم الكامل" aria-label="اسم الأستاذ" />
-              <input value={newCivil} onChange={e => setNewCivil(numericText(e.target.value).slice(0, 12))} inputMode="numeric" placeholder="الرقم المدني" aria-label="الرقم المدني" dir="ltr" />
+              <input value={newCivil} onChange={e => setNewCivil(numericText(e.target.value).slice(0, 12))} inputMode="numeric" placeholder="12 رقمًا" aria-label="الرقم المدني" />
               <input value={newMobile} onChange={e => setNewMobile(numericText(e.target.value).slice(0, 8))} inputMode="numeric" placeholder="الهاتف (اختياري)" aria-label="الهاتف" dir="ltr" />
               {error ? <em>{error}</em> : null}
               <div>
