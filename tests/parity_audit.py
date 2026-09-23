@@ -164,6 +164,11 @@ check('gunzipSync' in migration,'Firestore migration accepts compressed snapshot
 check('await initDatabase();' in server and 'startServer().catch' in server,'server waits for database initialization before listening')
 check('process.env.NODE_ENV = "production"' in runtime,'Cloud Run always serves the compiled production release')
 check('\"gcp-build\": \"npm run build\"' in package,'Google buildpack hook produces a fresh dist during source deployment')
+# ملفّا لغة OCR كانا يُوجدان لأن الخادم يبدأ من جذر المستودع مصادفةً؛ من مجلّدٍ
+# آخر يطلبهما tesseract من الشبكة فتفشل القراءة إن كانت محجوبة. فكلُّ عاملٍ يمرّ
+# بموضعٍ واحدٍ يعرف مكانهما، و createWorker("…") مباشرةً تُعيد الهشاشةَ صامتة.
+ocr=txt('src/utils/documentOcr.ts')
+check('createWorker("' not in ocr and 'newOcrWorker(' in ocr and 'ocrLanguageDataDir' in ocr,'every OCR worker loads language data from a known place, not the working directory')
 
 # 7) Refinement contract: calm UI, advanced features behind one decision hub.
 check('headless?: boolean' in experience and 'headless' in schedules,'legacy intelligence strip can operate headlessly while keeping dialogs functional')
