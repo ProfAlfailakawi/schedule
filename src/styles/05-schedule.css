@@ -8398,3 +8398,8 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .share-sheet.visual-minimal .share-row-actions button,
   .share-sheet.visual-minimal .share-row-actions a{inline-size:100%;min-inline-size:44px;block-size:46px;min-block-size:46px}
 }
+/* The link's state is a label, not a control: a large boxed «فعال» read like a
+   button beside the real ones. It shrinks to a quiet badge coloured by state. */
+.share-sheet.visual-minimal .share-row-lead .share-status{display:inline-flex;align-items:center;gap:0;padding:1px 9px;border-radius:999px;font-size:.72rem;font-weight:700;line-height:1.7;border:0;background:color-mix(in srgb,var(--success,#1f7a55) 12%,transparent);color:var(--success,#1f7a55)}
+.share-sheet.visual-minimal .share-list article.dead .share-row-lead .share-status{background:var(--surface-2);color:var(--muted)}
+.share-sheet.visual-minimal .share-row-lead > span > i{display:none}

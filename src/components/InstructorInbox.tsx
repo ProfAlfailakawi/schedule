@@ -118,7 +118,9 @@ function RejectSheet({ item, onClose, onSubmit, busy }: {
   const [reason, setReason] = useState<InstructorRequestRejectReason | "">("");
   /* البدائلُ يقترحها النظام سلفاً من أقرب الأوقات المتاحة، والمنسّقُ يوافق أو
      يحذف — لا يكتبها. وهو الفرقُ بين رفضٍ يُغلق الباب ورفضٍ يفتح آخر. */
-  const [offered, setOffered] = useState<string[]>((item.nearestTimes || []).map(slot => `${slot.day}|${slot.start}|${slot.end}`));
+  const slotKey = (slot: { day: string; days?: string[]; start: string; end: string }) =>
+    `${(slot.days?.length ? slot.days : [slot.day]).join(",")}|${slot.start}|${slot.end}`;
+  const [offered, setOffered] = useState<string[]>((item.nearestTimes || []).map(slotKey));
   const [note, setNote] = useState("");
 
   const toggle = (key: string) =>
@@ -145,7 +147,7 @@ function RejectSheet({ item, onClose, onSubmit, busy }: {
             <span>بدائلُ تُعرض عليه</span>
             <div className="changes-filter-chips">
               {(item.nearestTimes || []).map(slot => {
-                const key = `${slot.day}|${slot.start}|${slot.end}`;
+                const key = slotKey(slot);
                 const on = offered.includes(key);
                 return (
                   <button
@@ -154,7 +156,7 @@ function RejectSheet({ item, onClose, onSubmit, busy }: {
                     data-guide-ignore="اختيار بديلٍ يُعرض — يُحفظ مع القرار"
                     onClick={() => toggle(key)}
                   >
-                    {slot.start} – {slot.end}
+                    {(slot.days?.length ? slot.days : [slot.day]).map(day => INBOX_DAY_NAMES[day] || day).join(" · ")} · <bdi dir="ltr">{slot.start} – {slot.end}</bdi>
                   </button>
                 );
               })}
@@ -174,8 +176,9 @@ function RejectSheet({ item, onClose, onSubmit, busy }: {
             disabled={busy || !reason}
             data-guide-target="requests.action.reject"
             onClick={() => onSubmit(reason as InstructorRequestRejectReason, note, offered.map(key => {
-              const [day, start, end] = key.split("|");
-              return { day, start, end };
+              const [days, start, end] = key.split("|");
+              const list = days.split(",").filter(Boolean);
+              return { day: list[0], days: list, start, end };
             }))}
           >
             {busy ? "يحفظ…" : "سجّل الرفض"}
@@ -248,7 +251,10 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
 
               {/* سطران لا أكثر: «كان» و«طلب». وهو كلُّ ما يحتاجه القرار. */}
               <dl className="request-diff">
-                {item.before ? (
+                {item.action === "add" && item.after?.collegeName ? (
+                  <div><dt>الكلية</dt><dd>{item.after.collegeName}</dd></div>
+                ) : null}
+                {item.before && item.action !== "add" ? (
                   <div><dt>كان</dt><dd>{item.before.days} · {item.before.time}{item.before.room ? ` · ${item.before.room}` : ""}</dd></div>
                 ) : null}
                 {item.action !== "delete" && item.after ? (
@@ -319,6 +325,10 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
 }
 
 /* ── الشاشة ─────────────────────────────────────────────────────────────── */
+
+const INBOX_DAY_NAMES: Record<string, string> = {
+  fsunday: "الأحد", fmonday: "الاثنين", ftuesday: "الثلاثاء", fwednesday: "الأربعاء", fthursday: "الخميس",
+};
 
 export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);

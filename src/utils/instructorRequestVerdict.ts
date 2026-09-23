@@ -69,6 +69,8 @@ export interface RequestReason {
 /** موضعٌ مقترح: يومٌ وبداية، والنهايةُ محسوبة. */
 export interface RequestSlot {
   day: DayKey;
+  /** أيامُ المحاضرة كلُّها: البديلُ ينقلها بنمطها، فلا تصير محاضرةُ يومين محاضرةَ يوم. */
+  days: DayKey[];
   dayLabel: string;
   start: string;
   end: string;
@@ -220,32 +222,43 @@ function instructorFree(instructorId: number, days: DayKey[], start: string, end
  * والبار المطلوب مطلق: لا قاعة مشغولة، ولا الأستاذ محجوز، ولا تقاطعَ مع
  * مقرّرٍ يشترك طلبتُه. موضعٌ يُصلح شيئاً ويكسر آخرَ ليس بديلاً.
  */
+/** سُلّمُ اللائحة نفسُه: القصيرةُ كل ساعةٍ من الثامنة، والطويلةُ كل ساعةٍ ونصف.
+ *  ليس اختراعاً — هو الشبكةُ التي تُبنى عليها الجداول أصلاً — ويُستعمل مع سُلّم
+ *  القسم لا بدلاً منه، فلا يبقى الأستاذُ بلا بديلٍ حين تمتلئ بداياتُ قسمه. */
+function regulationLadder(days: DayKey[]): string[] {
+  const long = days.some(day => day === "fmonday" || day === "fwednesday");
+  const short = days.some(day => day !== "fmonday" && day !== "fwednesday");
+  if (long && !short) return ["08:00", "09:30", "11:00", "12:30", "14:00", "15:30", "17:00", "18:30"];
+  return ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"];
+}
+
 function nearestFree(request: RequestedRow, context: VerdictContext, roomKeys: string[], week: FSchedule[], identity: number): RequestSlot[] {
-  const ladder = (context.startLadder || []).filter(Boolean);
-  if (!ladder.length || !request.days.length) return [];
+  const learned = (context.startLadder || []).filter(Boolean);
+  /* بلا سُلّمٍ معروفٍ للقسم لا يُقترح شيء. وحين يُعرف، يُكمَّل بشبكة اللائحة
+     فلا ينفد البديلُ لأن بداياتِ القسم المعتادة امتلأت كلُّها. */
+  if (!learned.length || !request.days.length) return [];
+  const days = [...request.days];
   const current = toMinutes(request.start);
-  const seen = new Set<string>();
+  const ladder = [...new Set([...learned, ...regulationLadder(days)])]
+    .sort((a, b) => toMinutes(a) - toMinutes(b));
   const found: Array<RequestSlot & { distance: number }> = [];
 
+  /* البديلُ ينقل المحاضرةَ بأيامها كلها إلى بدايةٍ واحدة: الأستاذُ طلب «الأحد
+     والثلاثاء»، فلا يُعرض عليه «الأحد وحده» ثم تصير محاضرتُه يوماً واحداً
+     بضغطةٍ لم يقصدها. */
   for (const start of ladder) {
     const minutes = toMinutes(start);
-    if (minutes < SCHEDULE_DAY_START || minutes >= SCHEDULE_DAY_END) continue;
-    for (const day of request.days) {
-      const end = endForRequest([day], start);
-      if (!end || toMinutes(end) > SCHEDULE_DAY_END) continue;
-      const key = `${day}|${start}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (day === request.days[0] && minutes === current) continue;
-      if (!instructorFree(context.instructorId, [day], start, end, week, identity)) continue;
-      if (roomKeys.length && !roomKeys.some(roomKey => roomFree(roomKey, [day], start, end, week, identity))) continue;
-      if (cohortClash(request.AdCourseId, [day], start, end, week, context.cohortPairs, identity)) continue;
-      found.push({ day, dayLabel: dayLabel(day), start, end, distance: Math.abs(minutes - current) });
-    }
+    if (minutes === current || minutes < SCHEDULE_DAY_START || minutes >= SCHEDULE_DAY_END) continue;
+    const end = endForRequest(days, start);
+    if (!end || toMinutes(end) > SCHEDULE_DAY_END) continue;
+    if (!instructorFree(context.instructorId, days, start, end, week, identity)) continue;
+    if (roomKeys.length && !roomKeys.some(roomKey => roomFree(roomKey, days, start, end, week, identity))) continue;
+    if (cohortClash(request.AdCourseId, days, start, end, week, context.cohortPairs, identity)) continue;
+    found.push({ day: days[0], days, dayLabel: days.map(dayLabel).join(" · "), start, end, distance: Math.abs(minutes - current) });
   }
 
   return found.sort((a, b) => a.distance - b.distance).slice(0, 3)
-    .map(({ day, dayLabel: label, start, end }) => ({ day, dayLabel: label, start, end }));
+    .map(({ day, days: all, dayLabel: label, start, end }) => ({ day, days: all, dayLabel: label, start, end }));
 }
 
 /** هل يتقاطع هذا الموضع مع مقرّرٍ يشترك طلبتُه مع هذا المقرّر؟ */
