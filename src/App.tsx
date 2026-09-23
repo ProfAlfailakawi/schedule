@@ -1688,7 +1688,12 @@ export default function App() {
               signatureStage: sessionRole.signatureStage,
             }}
             scope={scopes.length === 1 && Number(scopes[0]?.AdSectionId || 0) > 0 && !sessionRole.canReview
-              ? { collegeId: Number(scopes[0].AdCollegeId), sectionId: Number(scopes[0].AdSectionId) }
+              ? {
+                  collegeId: Number(scopes[0].AdCollegeId), sectionId: Number(scopes[0].AdSectionId),
+                  /* الاسمان يصلان مع النطاق نفسه؛ بدونهما كان رئيسُ القسم يقرأ
+                     في رأس تقريره «قسم 1» بدل اسم قسمه وكليته. */
+                  collegeName: String(scopes[0].AdCollegeName || ""), sectionName: String(scopes[0].AdSectionName || ""),
+                }
               : null}
           />
         ) : (

@@ -113,6 +113,7 @@ check(Object.values(DIFF_FIELD_LABEL).every(label => /[؀-ۿ]/.test(label)), "ك
 /* ── ما رُكّب في الخادم ────────────────────────────────────────────────── */
 
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+const baselineSrc = fs.readFileSync(path.join(process.cwd(), "src/utils/changesBaseline.ts"), "utf8");
 check(server.includes('app.get("/api/reports/schedule-changes"'), "تقرير التغييرات له مسار");
 check(server.includes('app.get("/api/approvals/inbox"'), "صندوق الوارد له مسار");
 check(server.includes("diffSchedules(baselineVersion?.rows"), "لقطة الجولة تبقى بديلاً للفصول القديمة التي لا وثيقة هيئة لها");
@@ -326,34 +327,35 @@ check(deptFormIds && !deptFormIds.includes("SCHEDULE_WORKSPACE"), "ولا يمل
  * من هذا النوع لا يملك أساساً أبداً، ويقرأ موظّفُ التسجيل جدولاً كاملاً وقد
  * تحرّك فيه صفّان. */
 check(server.includes("let baselineVersion = roundBaseline;")
-  && server.includes('let baselineSource: "authority" | "round" | "capture" | "none"'),
+  && server.includes('let baselineSource: "authority" | "round" | "capture" | "reviewed" | "none"'),
   "وللمقارنة أساسٌ يُسمّى مصدرُه، لا أساسٌ يغيب بصمت");
 check(server.includes("await Repository.getScheduleVersions(collegeId, sectionId, termId, 100)"),
   "فإن لم تحمل الجولاتُ نسخةً، يُؤخذ من اللقطات المحفوظة — وهي تُلتقط عند كل تعديل");
-check(server.includes("history.filter(item => item.id !== currentRoundVersionId"),
+check(baselineSrc.includes("historyNewestFirst.filter(item => item.id !== currentRound?.reviewedVersionId"),
   "ولا تُقارن الجولةُ بنسخةِ نفسِها، فتخرج بلا فرقٍ دائماً");
 /* ولحظةُ الأساس فتحُ الجولة لا آخرُ تعديل: النُّسَخُ تُلتقط عند كلِّ تعديل،
    فأحدثُها يسبق آخرَ تعديلٍ وحدَه — وقسمٌ حذف خمسةَ صفوفٍ ثم غيّر أستاذَ سادس
    كان يُعرض للتسجيل «معدَّلٌ واحد» والحذوفُ الخمسةُ لا أثر لها. ومراجعةٌ تبدو
    صحيحةً وهي ناقصة أسوأُ من مراجعةٍ تبدو ناقصة. */
-check(server.includes('const lastLookAt = currentRound?.returnedAt || currentRound?.acceptedAt')
-  && server.includes("|| previousRound?.returnedAt || previousRound?.acceptedAt;"),
+check(baselineSrc.includes('const lastLookAt = currentRound?.returnedAt || currentRound?.acceptedAt')
+  && baselineSrc.includes("|| previousRound?.returnedAt || previousRound?.acceptedAt;"),
   "والمرساةُ لحظةُ آخِرِ نظرةٍ للتسجيل، لا لحظةُ آخِرِ تعديلٍ للقسم");
 /* والإرسالُ ليس نظرة. ولو جُعل مرساةً لانكسرت أولُ مراجعة: القسمُ يعدّل ويوقّع
    قبل الإرسال وبعده فتُلتقط نُسَخ، فيُعرض على التسجيل «تعديلٌ واحدٌ منذ
    الإرسال» بدل الجدول كلِّه وهو أولُ مرّةٍ يراه فيها. */
-check(!server.includes("|| currentRound?.submittedAt"),
+check(!server.includes("|| currentRound?.submittedAt") && !baselineSrc.includes("submittedAt"),
   "والإرسالُ ليس نظرة، فلا يكون مرساة");
-check(server.includes("const candidates = history.filter")
-  && server.includes("(!lastLookAt || String(item.createdAt) >= String(lastLookAt))"),
+check(baselineSrc.includes("const candidates = historyNewestFirst.filter")
+  && baselineSrc.includes("(!lastLookAt || String(item.createdAt) >= String(lastLookAt))"),
   "ومن لم ينظر إليه التسجيلُ بعدُ يستعمل أقدم لقطة محفوظة بدلاً من المقارنة بالعدم");
 /* وجهةُ البحث بعد المرساة لا قبلها. واللقطةُ تحفظ ما كان قبل التعديل وتُنشأ
    لحظةَ التعديل، فكلُّ لقطةٍ لهذه الجولة أحدثُ من المرساة بالضرورة — والبحثُ
    قبلها لا ينطبق عليه شيءٌ أبداً، فيسقط الأساسُ إلى العدم ويعود البلاغُ كما
    كان. وقد وقع هذا فعلاً، وأظهره تحقّقٌ سلوكيٌّ على خادمٍ يعمل. */
-check(server.includes('String(item.createdAt) >= String(lastLookAt)'),
+check(baselineSrc.includes('String(item.createdAt) >= String(lastLookAt)'),
   "والبحثُ بعد المرساة، لأن اللقطةَ تُنشأ لحظةَ التعديل وتحفظ ما قبله");
-check(server.includes("const fallback = candidates[candidates.length - 1];"),
+check(baselineSrc.includes("const oldest = candidates[candidates.length - 1];")
+  && server.includes("chooseCaptureBaseline(approval.rounds as any, round, history as any)"),
   "ويُؤخذ أقدمُ ما بعدها — حالُ الجدول قبل أوّلِ تعديلٍ في هذه الجولة");
 check(server.includes("baselineSource,"),
   "والمصدرُ يصل الشاشة");
