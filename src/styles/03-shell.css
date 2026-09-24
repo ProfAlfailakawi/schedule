@@ -1904,6 +1904,9 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
 }
 .notify-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px 12px;border-bottom:1px solid var(--line)}
 .notify-panel>header div{display:grid;gap:2px}
+.notify-actions{display:flex;align-items:center;gap:2px}
+.notify-panel>header .notify-read-all{color:var(--accent)}
+.notify-panel>header .notify-read-all:hover{background:var(--accent-soft)}
 .notify-panel>header strong{font-size:16px;font-weight:700;color:var(--ink)}
 .notify-panel>header small{font-size:12.5px;color:var(--ink-2)}
 .notify-panel>header button{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;color:var(--ink-2)}
@@ -1920,7 +1923,8 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
   transition:background .15s,border-color .15s;
 }
 .notify-item:hover:not(:disabled){border-color:var(--line);background:var(--surface)}
-.notify-item:disabled{cursor:default}
+.notify-item:not(:disabled)[data-read="true"]{background:transparent}
+.notify-item[data-read="true"] .notify-text strong{font-weight:600}
 .notify-icon{width:36px;height:36px;border-radius:50%;display:grid;place-items:center}
 .notify-icon svg{width:18px;height:18px}
 .notify-item[data-tone="alert"] .notify-icon{background:var(--danger-soft);color:var(--danger)}

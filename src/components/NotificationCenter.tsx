@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Bell, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
+import { AlertTriangle, Bell, CheckCheck, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
 
 /**
@@ -138,18 +138,16 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
   }, [open, load]);
 
-  /* ما فُتح الجرسُ عليه صار مقروءاً: يبقى في مكانه ما دام سببُه قائماً، وتسقط
-     عنه علامةُ «جديد» وحدها. */
-  useEffect(() => {
-    if (!open || !items.length) return;
-    const next = new Set([...seen, ...items.map(item => item.id)]);
-    if (next.size === seen.size) return;
-    const timer = window.setTimeout(() => {
-      setSeen(next);
+  /* المقروءُ ما ضُغط عليه وحده، أو ما قُرئ كلُّه بالزرّ الصامت أعلى اللوحة:
+     فتحُ الجرس وحده لا يُسقط علامةَ «جديد» عن شيءٍ لم يُنظر فيه. */
+  const markRead = useCallback((ids: string[]) => {
+    setSeen(previous => {
+      const next = new Set([...previous, ...ids]);
+      if (next.size === previous.size) return previous;
       try { localStorage.setItem(`notify-seen:${userKey}`, JSON.stringify([...next].slice(-300))); } catch { /* تفضيلٌ لا أكثر */ }
-    }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [open, items, seen, userKey]);
+      return next;
+    });
+  }, [userKey]);
 
   const mine = mineCount;
   const fresh = items.filter(item => !seen.has(item.id)).length;
@@ -188,7 +186,12 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
               <strong>الإشعارات</strong>
               <small>{mine ? (mine === 1 ? "أمرٌ واحد ينتظرك" : mine === 2 ? "أمران ينتظرانك" : `${mine} أمور تنتظرك`) : "لا شيء مطلوبٌ منك الآن"}</small>
             </div>
-            <button type="button" aria-label="إغلاق" data-guide-ignore="إغلاق لوحة الإشعارات لا يعدّل البيانات" onClick={() => setOpen(false)}><X aria-hidden="true" /></button>
+            <span className="notify-actions">
+              {fresh ? (
+                <button type="button" className="notify-read-all" aria-label="تعليم الكل كمقروء" title="تعليم الكل كمقروء" data-guide-ignore="تعليم الإشعارات كمقروءة تفضيلٌ محلي لا يعدّل البيانات" onClick={() => markRead(items.map(item => item.id))}><CheckCheck aria-hidden="true" /></button>
+              ) : null}
+              <button type="button" aria-label="إغلاق" data-guide-ignore="إغلاق لوحة الإشعارات لا يعدّل البيانات" onClick={() => setOpen(false)}><X aria-hidden="true" /></button>
+            </span>
           </header>
           {groups.length ? groups.map(group => (
             <section key={group.id} aria-label={group.label}>
@@ -201,8 +204,8 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
                       className="notify-item"
                       data-guide-ignore="فتح الشاشة التي يخصّها الإشعار — تنقّلٌ لا يعدّل البيانات"
                       data-tone={item.tone}
-                      disabled={!item.view}
-                      onClick={() => { if (item.view) { focusOn(item); setOpen(false); onNavigate(item.view); } }}
+                      data-read={seen.has(item.id) ? "true" : undefined}
+                      onClick={() => { markRead([item.id]); if (item.view) { focusOn(item); setOpen(false); onNavigate(item.view); } }}
                     >
                       <span className="notify-icon">{ICON[item.tone]}</span>
                       <span className="notify-text">
@@ -227,7 +230,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
             type="button"
             className="notify-toast-body"
             data-guide-ignore="فتح الشاشة التي يخصّها الإشعار الجديد — تنقّلٌ لا يعدّل البيانات"
-            onClick={() => { const view = toast.view; focusOn(toast); setToast(null); if (view) onNavigate(view); else setOpen(true); }}
+            onClick={() => { const view = toast.view; markRead([toast.id]); focusOn(toast); setToast(null); if (view) onNavigate(view); else setOpen(true); }}
           >
             <span className="notify-icon">{ICON[toast.tone]}</span>
             <span className="notify-text">
