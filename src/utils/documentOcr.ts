@@ -1746,7 +1746,14 @@ async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:
     context.drawImage(image,x0,y0,x1-x0,y1-y0,0,0,crop.width,crop.height);
     const result:any=await worker.recognize(crop.toBuffer("image/png"));
     const run=authorityPrintedDayRun(String(result?.data?.text||""));
-    if(run){row.days=run;row.daysRaw=run;}
+    if(!run)continue;
+    /* قراءتان لخلية واحدة: فارغة ⇒ تُملأ بالقصّ؛ متطابقتان ⇒ تبقى؛ مختلفتان
+       ⇒ لا تُرجَّح إحداهما (نفس عدد الأيام يمرّ من فحص الساعات) فتُفرَّغ
+       للمراجعة. */
+    const lane=String(row.days||"").replace(/[^1-5]/g,"").split("").sort().join("");
+    const cropped=run.replace(/[^1-5]/g,"").split("").sort().join("");
+    const value=!lane||lane===cropped?run:"";
+    row.days=value;row.daysRaw=value;
   }
 }
 const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(row.code)&&/^\d{4,8}$/.test(row.reference)&&Boolean(row.start)&&Boolean(row.building||row.buildingRaw)).length;
