@@ -98,6 +98,7 @@ const printableCaseDate = (value: string) => {
   return new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(date);
 };
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
+import { interruptedImportMessage } from "../utils/importStreamFailure";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -1614,21 +1615,24 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setImportProgress({ phase: "render", page: 0, pages: 0, message: "يجهّز الملف للقراءة" });
     try {
       const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
+      const payload = await file.arrayBuffer();
+      /* A request that never reached the server, or a stream that broke before
+         its result, is named for what it was (see importStreamFailure). */
       const response = await fetch(`/api/intelligence/pdf-import?${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream", "Accept": "application/x-ndjson", "x-file-name": encodeURIComponent(file.name) },
-        body: await file.arrayBuffer(),
-      });
+        body: payload,
+      }).catch(() => { throw new Error(interruptedImportMessage(0)); });
       /* The server streams NDJSON: one progress object per line while it reads,
          a final line carrying the result. Reading the body as it arrives is what
          lets the bar advance page by page instead of freezing on one spinner. */
-      if (!response.ok && !response.body) throw new Error("تعذّرت قراءة PDF");
+      if (!response.ok && !response.body) throw new Error(interruptedImportMessage(response.status));
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = "", data: any = null, failure = "";
       if (reader) {
         for (;;) {
-          const { value, done } = await reader.read();
+          const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           let cut = buffer.indexOf("\n");
@@ -1647,7 +1651,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       if (failure) throw new Error(failure);
       if (!data) { const rest = buffer.trim(); if (rest) { try { const tail = JSON.parse(rest); data = tail.result || tail; } catch { /* no trailing json */ } } }
       if (data && (data as any).error && !(data as any).rows) throw new Error((data as any).error);
-      if (!data) throw new Error("تعذّرت قراءة PDF");
+      if (!data) throw new Error(interruptedImportMessage(response.status));
       {
         const normalizedRows=normalizeImportSectionSeries((Array.isArray(data.rows)?data.rows:[]) as ImportRow[]);
         const localIssues=validateImportRowsLocally(normalizedRows);

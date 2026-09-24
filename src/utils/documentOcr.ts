@@ -168,6 +168,64 @@ async function getWorkerPool(){
   })(),()=>{poolPromise=null;});
   return poolPromise;
 }
+/*
+ * ═══ ONE SCAN AT A TIME, AND ITS MEMORY GOES BACK AFTERWARDS ═══
+ *
+ * Measured in production (Cloud Run europe-west1, 2026-09-24 18:16 UTC): the
+ * instance that had just read a five-page scan was killed while reading the
+ * NEXT one — «Memory limit of 4096 MiB exceeded with 4659 MiB used» — and the
+ * reader saw only «تعذرت قراءة PDF». A WASM heap never shrinks, so the warm
+ * workers above kept every heap at the largest page they had ever read, and
+ * each upload started where the last one peaked. documentReadingGate also
+ * admits two uploads at once; both then drove the SAME workers, so their
+ * pages were in memory together and one reading's setParameters could land
+ * between the other's setParameters and recognize.
+ *
+ * Two rules close both:
+ *  1. Only one reading uses the table workers at a time. A second upload waits
+ *     for its turn — and is told so — instead of sharing them.
+ *  2. When a full table reading ends, every table worker is terminated, which
+ *     hands its memory back. The next upload starts fresh workers — all eleven
+ *     start in 2.4–3.1 s (measured) — and reads a file exactly as a fresh
+ *     instance would: the owner's three scans gave identical rows either way.
+ * The header preflight takes its turn too (it drives the first Arabic worker)
+ * but keeps the workers: it reads one small band, and the full reading that
+ * follows it reuses them.
+ */
+type ScanReadingTurn={release:(freeWorkers:boolean)=>Promise<void>};
+let scanTurnTail:Promise<void>=Promise.resolve();
+let scanTurnDepth=0;
+export async function takeScanReadingTurn(onWait?:()=>void):Promise<ScanReadingTurn>{
+  const ahead=scanTurnDepth++;
+  const previous=scanTurnTail;
+  let open!:()=>void;
+  scanTurnTail=new Promise<void>(resolve=>{open=resolve;});
+  if(ahead>0)onWait?.();
+  await previous;
+  let released=false;
+  return{release:async(freeWorkers:boolean)=>{
+    if(released)return;
+    released=true;
+    try{if(freeWorkers)await releaseTableWorkers();}
+    catch{/* a worker that will not stop must never keep the queue closed */}
+    finally{scanTurnDepth--;open();}
+  }};
+}
+/** Terminate every table-reading worker so its WASM memory returns to the
+ *  system; the getters create fresh ones on the next reading. */
+async function releaseTableWorkers():Promise<void>{
+  const held:Array<Promise<unknown>|null>=[headerWorkerPromise,poolPromise,wordLaneWorkerPromise,dayCellWorkerPromise,roomCellWorkerPromise,timeCellWorkerPromise];
+  headerWorkerPromise=null;poolPromise=null;wordLaneWorkerPromise=null;dayCellWorkerPromise=null;roomCellWorkerPromise=null;timeCellWorkerPromise=null;
+  const workers=new Set<PooledWorker>();
+  for(const promise of held){
+    const value:any=await promise?.catch(()=>null);
+    if(!value)continue;
+    if(Array.isArray(value.eng)){for(const worker of [...value.eng,value.ara,value.ara2])if(worker)workers.add(worker);}
+    else workers.add(value as PooledWorker);
+  }
+  await Promise.all([...workers].map(worker=>Promise.resolve().then(()=>worker.terminate()).catch(()=>undefined)));
+}
+
 /** Run jobs over the eng workers, one in flight per worker. */
 async function runOnPool<T>(workers:PooledWorker[],jobs:Array<(worker:PooledWorker)=>Promise<T>>):Promise<T[]>{
   const results:T[]=new Array(jobs.length);
@@ -3258,6 +3316,7 @@ export function authorityScanRequiresLandscape(
  * and OCRs ONLY the header band. It never reads timetable body rows here.
  */
 export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfHeader>{
+  let turn:ScanReadingTurn|null=null;
   try{
     const cached=headerPreflightCache.get(input);
     if(cached)return cached.header;
@@ -3346,6 +3405,8 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
        make the two pixel-axis finalists tie while the textual header sits in the
        remaining turn; semantic header fields, not a geometric tie-break, decide. */
     const candidates=scored;
+    /* This worker is also the first Arabic table worker: drive it only in turn. */
+    turn=await takeScanReadingTurn();
     const worker=await getHeaderWorker();
     let best:{header:AuthorityPdfHeader;score:number;turn:-1|0|1}|null=null;
     const lib=await canvas();
@@ -3431,6 +3492,7 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     }
     return{};
   }catch{return{};}
+  finally{await turn?.release(false);}
 }
 
 /**
@@ -3512,6 +3574,19 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     const embedded=await pdfTextLayer(input,onProgress);
     if(embedded){rememberOcr(fingerprint,embedded);return embedded;}
   }
+  const turn=await takeScanReadingTurn(()=>onProgress?.({phase:"render",page:0,pages:0,message:"الخادم يقرأ ملفاً آخر الآن — ملفك في الدور ويبدأ بعده مباشرة"}));
+  try{
+    /* The same file sent again while its first reading ran has waited for that
+       reading to finish; its result is remembered now, so it returns at once. */
+    const finished=cachedOcr(fingerprint);
+    if(finished){onProgress?.({phase:"read",page:finished.pageCount,pages:finished.pageCount,message:"تم استرجاع القراءة المحفوظة"});return finished;}
+    return await readScannedDocument(input,mime,fingerprint,optionKeys,onProgress);
+  }finally{await turn.release(true);}
+}
+
+/** The image path of ocrDocument. It runs only while holding the scan-reading
+ *  turn, and every table worker it starts is released when it ends. */
+async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,optionKeys:string[],onProgress?:OcrProgress):Promise<OcrResult>{
   /* One render. The old flow paid pdfjs twice — a probe pass and a full pass —
      when a probe is only a downscale of the full page it already had. */
   const images=await imagePages(input,mime,TARGET_LONG_EDGE,onProgress);
