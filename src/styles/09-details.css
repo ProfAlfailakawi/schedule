@@ -1823,3 +1823,4 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .share-row-lead .share-link-kind.kind-survey{border-color:color-mix(in srgb,var(--success) 30%,var(--line));color:var(--success)}
 }
 @media screen and (max-width:520px){.share-sheet.visual-minimal .share-kind{grid-template-columns:minmax(0,1fr)}}
+@media screen{.role-mismatch-hint{margin:6px 0 0;padding:6px 10px;border-radius:10px;background:var(--warning-soft);color:var(--warning);font-size:12.5px;font-weight:700}}

@@ -32,6 +32,7 @@ import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./sr
 import { blockingConflictDetails } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { buildNotifications } from "./src/utils/notificationCenter";
+import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
@@ -9664,21 +9665,26 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
   const instructorNames = handlesRequests
     ? new Map((await Repository.getInstructors() as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]))
     : new Map<number, string>();
-  const pendingByScope = new Map<string, Array<{ requestId: string; instructorName: string; count: number; at?: string }>>();
+  const termRows = await Repository.getSchedulesByScope({ termId });
+  const termRowsById = new Map((termRows as any[]).map(row => [Number(row.id), row] as [number, any]));
+  const pendingByScope = new Map<string, Array<{ requestId: string; instructorName: string; count: number; at?: string; linked?: boolean }>>();
   for (const request of requests as InstructorRequest[]) {
     if (request.status !== "submitted" && request.status !== "in-review") continue;
-    const perScope = new Map<string, number>();
-    for (const item of request.items || []) {
-      if (item.action === "keep" || item.decision?.state) continue;
+    const awaited = awaitedItemIndexes(request.items || [], termRowsById, item => requestItemScope(request, item));
+    const perScope = new Map<string, { count: number; linked: boolean }>();
+    (request.items || []).forEach((item, index) => {
+      if (item.action === "keep" || item.decision?.state) return;
       const where = requestItemScope(request, item);
       const key = `${where.collegeId}:${where.sectionId}`;
-      perScope.set(key, (perScope.get(key) || 0) + 1);
-    }
-    for (const [key, count] of perScope) {
+      const current = perScope.get(key) || { count: 0, linked: false };
+      perScope.set(key, { count: current.count + 1, linked: current.linked || awaited.has(index) });
+    });
+    for (const [key, entry] of perScope) {
       pendingByScope.set(key, [...(pendingByScope.get(key) || []), {
         requestId: String(request.id),
         instructorName: instructorNames.get(Number(request.AdInstructorId)) || "أستاذ",
-        count,
+        count: entry.count,
+        linked: entry.linked,
         at: request.submittedAt,
       }]);
     }
@@ -9686,7 +9692,6 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
   /* جدولُ الفصل يُقرأ مرّةً ويُعدّ لكل قسم — لا قراءةٌ لكل قسم: حسابٌ بأربعةٍ
      وخمسين قسماً كان ينتظر دقيقةً ليرى جرسه. والأقسامُ بلا مواعيد هذا الفصل
      وبلا دورة اعتماد ليست «جداول لم تُعتمد»: لا جدول لها أصلاً. */
-  const termRows = await Repository.getSchedulesByScope({ termId });
   const rowsPer = new Map<string, number>();
   for (const item of termRows as any[]) {
     const key = `${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`;
@@ -14996,10 +15001,16 @@ app.get("/api/instructor-requests", requirePermission(7), async (req: Authentica
   const mobileOf = new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorMobile || "")]));
 
   const judged = await Promise.all(stored.map(row => judgeRequestItems(row, { forDepartment: true })));
+  const scopeRowsById = new Map((scopeRowsAll as any[]).map(row => [Number(row.id), row] as [number, any]));
   const rows = judged.map(full => {
+    /* حذفٌ هنا ينتظره قسمٌ آخر ليُكمل الطلب: يُقال ذلك على البند، بلا تفاصيل
+       ذلك القسم. */
+    const awaited = awaitedItemIndexes(full.items || [], scopeRowsById, item => requestItemScope(full, item));
     const request = {
       ...full,
-      items: (full.items || []).map(item => inSelection(requestItemScope(full, item)) ? item : hiddenItem(item)),
+      items: (full.items || []).map((item, index) => inSelection(requestItemScope(full, item))
+        ? (awaited.has(index) ? { ...item, awaitedElsewhere: true } : item)
+        : hiddenItem(item)),
     };
     /* القسمُ الذي يُعرض على البطاقة هو قسمُ ما يُرى منها، لا قسمُ الرابط. */
     const shownSections = [...new Set((request.items || [])

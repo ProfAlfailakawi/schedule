@@ -29,7 +29,7 @@ export interface CenterScope {
   openRegistrarNotes: number;
   openRequests: number;
   /** طلباتُ الأساتذة المعلّقة في هذا القسم، طلباً طلباً. */
-  pendingRequests?: Array<{ requestId: string; instructorName: string; count: number; at?: string }>;
+  pendingRequests?: Array<{ requestId: string; instructorName: string; count: number; at?: string; linked?: boolean }>;
   /** موعد هذا القسم: تمديده إن وُجد، وإلا موعد الفصل. */
   deadline?: { effective?: string; past?: boolean; daysLeft?: number } | null;
 }
@@ -174,20 +174,27 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
   /* ── طلباتُ الأساتذة: لكل من يعمل على الجدول، أياً كانت صفته ─────────
      طلبٌ واحد لكل أستاذ باسمه، والمعرّفُ يحمل وقتَ الإرسال وعددَ البنود —
      فإن أرسل الأستاذ من جديد صار الإشعارُ «جديداً» مرّةً أخرى. */
-  const byRequest = new Map<string, { name: string; count: number; at?: string; places: string[]; scope: CenterScope }>();
+  const byRequest = new Map<string, { name: string; count: number; at?: string; places: string[]; linkedPlaces: string[]; scope: CenterScope }>();
   for (const scope of scopes) {
     for (const entry of scope.pendingRequests || []) {
-      const current = byRequest.get(entry.requestId) || { name: entry.instructorName, count: 0, at: entry.at, places: [], scope };
+      const current = byRequest.get(entry.requestId) || { name: entry.instructorName, count: 0, at: entry.at, places: [], linkedPlaces: [], scope };
       current.count += entry.count;
       current.places.push(placeOf(scope));
+      if (entry.linked) { current.linkedPlaces.push(placeOf(scope)); current.scope = scope; }
       byRequest.set(entry.requestId, current);
     }
   }
   for (const [requestId, entry] of byRequest) {
+    /* طلبٌ مرتبط: قسمٌ آخر لا يستطيع أن يُكمل حتى يُقرّر هذا القسمُ حذفَه. */
+    const linked = entry.linkedPlaces.length > 0;
     items.push({
-      id: `request:${requestId}:${entry.count}:${entry.at || ""}`, tone: "action",
-      title: `${entry.name} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${plural(entry.count, "تعديلاً", "تعديلين", "تعديلات")}`}`,
-      detail: [...new Set(entry.places)].join(" · "),
+      id: `request:${requestId}:${entry.count}:${entry.at || ""}${linked ? ":linked" : ""}`, tone: linked ? "alert" : "action",
+      title: linked
+        ? `${entry.name}: قسمٌ آخر ينتظر قرارك`
+        : `${entry.name} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${plural(entry.count, "تعديلاً", "تعديلين", "تعديلات")}`}`,
+      detail: linked
+        ? `${[...new Set(entry.linkedPlaces)].join(" · ")} — حذفٌ يُكمل به قسمٌ آخر طلبَه`
+        : [...new Set(entry.places)].join(" · "),
       view: "instructorRequests", at: entry.at, ...target(entry.scope),
     });
   }

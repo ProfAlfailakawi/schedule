@@ -244,3 +244,23 @@ export function canAnnotateCells(value: unknown): boolean {
   return id === "registrarHead" || id === "registrarStaff"
     || id === "departmentHead" || id === "committeeChair";
 }
+
+
+/**
+ * ── صفةٌ لا تشبه اسمَ صاحبها ────────────────────────────────────────────────
+ *
+ * «مكتب تسجيل البنات» بصفة «رئيس لجنة الجدول» يرى «وقّع جدول…» لأربعةٍ وخمسين
+ * قسماً ولا يملك زرَّ قبول. هذا لا يُكتشف إلا حين يشتكي أحد. فتُقرأ الصفةُ مع
+ * الاسم، ويُنبَّه المديرُ في شاشة المستخدمين — تنبيهٌ لا تغيير.
+ */
+export function roleMismatchHint(name: unknown, role: unknown): string | null {
+  const text = String(name || "");
+  const id = roleDefinition(role).id;
+  if (/تسجيل/.test(text) && id !== "registrarHead" && id !== "registrarStaff" && id !== "registrarDean") {
+    return "الاسم يدلّ على التسجيل والصفة ليست من صفات التسجيل — راجع الصفة.";
+  }
+  if (/^\s*عميد/.test(text) && id !== "dean" && id !== "viceDean" && id !== "registrarDean") {
+    return "الاسم يدلّ على عمادة والصفة ليست صفة عميد — راجع الصفة.";
+  }
+  return null;
+}

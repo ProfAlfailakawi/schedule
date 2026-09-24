@@ -134,7 +134,7 @@ check(inboxRoute.includes("&& isScopeAllowed(req, scope.collegeId, Number(scope.
 /* الطلبُ يحمل جدولَ الأستاذ بكل كلياته، فكلُّ بندٍ يُصفّى بموقعه هو: ما خارج
    المختار يصير مكاناً فارغاً بلا تفاصيل، ويبقى ترقيمُ البنود كما هو. */
 check(inboxRoute.includes("Repository.getInstructorRequests(0, 0, termId)")
-  && inboxRoute.includes("inSelection(requestItemScope(full, item)) ? item : hiddenItem(item)")
+  && /inSelection\(requestItemScope\(full, item\)\)\s*\?\s*\(awaited\.has\(index\) \? \{ \.\.\.item, awaitedElsewhere: true \} : item\)\s*:\s*hiddenItem\(item\)/.test(inboxRoute)
   /* المخفيُّ يحمل رقمَ الصفّ ونوعَ الفعل وحالةَ القرار — ليُعرف أنّ إضافةً هنا
      تنتظر حذفاً هناك — ولا مقرّرَ ولا وقتَ ولا قاعة. */
   && (() => {

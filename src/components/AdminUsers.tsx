@@ -25,7 +25,7 @@ import {
   FormName,
   FormSecurity,
 } from "../types";
-import { ACADEMIC_ROLES, roleDefinition, type AcademicRole } from "../utils/academicRoles";
+import { ACADEMIC_ROLES, roleDefinition, roleMismatchHint, type AcademicRole } from "../utils/academicRoles";
 
 /* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
    rail beside the users, the scopes and the log. It keeps its own screen and
@@ -1508,6 +1508,9 @@ export default function AdminUsers({
                   <Badge tone={roleDefinition(u.Role).readOnly ? "neutral" : "info"}>
                     {roleDefinition(u.Role).label}
                   </Badge>
+                  {roleMismatchHint(u.Name, u.Role) ? (
+                    <span title={roleMismatchHint(u.Name, u.Role) || ""}><Badge tone="warning">راجع الصفة</Badge></span>
+                  ) : null}
                   <Badge
                     tone={
                       u.IsLocked ? "danger" : u.IsActive ? "success" : "warning"
@@ -1531,6 +1534,9 @@ export default function AdminUsers({
                     <small>{roleDefinition(selected.Role).label}</small>
                     <h2>{selected.Name}</h2>
                     <p>@{selected.SystemUserLogin}</p>
+                    {roleMismatchHint(selected.Name, selected.Role) ? (
+                      <p className="role-mismatch-hint">{roleMismatchHint(selected.Name, selected.Role)}</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="inspector-status">
