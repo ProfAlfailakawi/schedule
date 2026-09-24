@@ -306,7 +306,12 @@ export function resolveAuthorityLocation(
   }
 
   // 6) Last resort: a distinctive official room may prove ONE building inside the branch.
-  if((building.status!=="CONFIRMED"||!building.value)&&!isInvalidLocationToken(rawRoom)){
+  //    Only for a DAMAGED building cell. A complete, well-formed official code
+  //    (e.g. 011B23) that the registry does not know is a new/unregistered
+  //    building to review — rebinding it to the one building that owns the same
+  //    room number would silently move the section to another place.
+  const wellFormedUnknown=/^\d{3}[A-Z]\d{2}$/.test(token);
+  if((building.status!=="CONFIRMED"||!building.value)&&!wellFormedUnknown&&!isInvalidLocationToken(rawRoom)){
     const byRoom=resolveBuildingFromUniqueRoom(registry,rawRoom,{branchRoot});
     if(byRoom.status==="CONFIRMED"&&byRoom.value){building=byRoom;buildingMethod="UNIQUE_ROOM_FINGERPRINT";buildingScore=90;}
   }

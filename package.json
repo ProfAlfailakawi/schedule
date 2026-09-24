@@ -32,7 +32,7 @@
     "test:gemini-layer": "tsx tests/gemini-schedule-layer.ts",
     "test:conflicts": "tsx tests/conflict-parity.ts",
     "test:locations": "python3 tests/location-registry-audit.py",
-    "test:pdf-import": "tsx tests/pdf-import-regression.ts && tsx tests/pdf-import-golden.ts",
+    "test:pdf-import": "tsx tests/pdf-import-regression.ts && tsx tests/pdf-import-golden.ts && tsx tests/pdf-import-hardening.ts",
     "audit:brand": "node scripts/render-brand.mjs --check",
     "brand": "node scripts/render-brand.mjs",
     "verify:pwa": "node scripts/verify-pwa.mjs",

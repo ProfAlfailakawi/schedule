@@ -96,6 +96,11 @@ export function authorityCourseCodeMatches(sourceCode: unknown, catalogueCourseC
   // Catalogue frequently stores only the three-digit course number (e.g. 102),
   // while SWRSCHA prints the complete key (e.g. 0101102).
   const tail = course.length >= 3 ? course.slice(-3) : course.padStart(3, "0");
+  /* مفتاح الكتالوج الكامل (7 خانات) قد يحمل كلية أخرى أُنشئ تحتها أولاً
+     (0101101 لمقرر يطبعه تقرير الكلية 02 بـ 0201101)، لكن القسم المحلي
+     (الخانتان 3–4) جزء من الهوية: 0102102 مقرر قسم آخر، لا 0101102. */
+  if (course.length === 7 && department.length === 4 && course.slice(2, 4) !== department.slice(2, 4)) return false;
+  if (course.length >= 4 && course.length < 7) return false;
   if (department && source === `${department}${tail}`) return true;
 
   // A clean three-digit source is acceptable only against the same three-digit

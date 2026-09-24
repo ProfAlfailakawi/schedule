@@ -45,6 +45,12 @@ export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:num
 export type OcrDocumentOptions={authorityCourseKeys?:string[]};
 
 const MAX_PAGES=12;
+/* صفحات بعد الحد كانت تُسقط بصمت: ملف من 14 صفحة يُقرأ 12 ويبدو كاملاً.
+   الجدول الناقص أخطر من الرفض، فيُرفض الملف كله برسالة صريحة. */
+class PdfPageLimitError extends Error{}
+function assertPageLimit(pages:number){
+  if(pages>MAX_PAGES)throw new PdfPageLimitError(`الملف يحتوي ${pages} صفحة، والحد الأقصى ${MAX_PAGES} صفحة. قسّم الملف ثم ارفع كل جزء في قسمه — لم يُستورد أي صف.`);
+}
 /** A4 at ~300dpi. The old 157dpi render was the single largest cause of
  *  unreadable rows: Arabic table text at that size loses its dots. */
 const TARGET_LONG_EDGE:number=2800;
@@ -197,6 +203,7 @@ async function renderPdf(input:Buffer,longEdge:number,onProgress?:OcrProgress):P
   const lib=await canvas();
   const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
   const pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;
+  assertPageLimit(Number(pdf.numPages||0));
   const count=Math.min(Number(pdf.numPages||0),MAX_PAGES),pages:Buffer[]=[];
   for(let index=1;index<=count;index++){
     onProgress?.({phase:"render",page:index,pages:count,message:`تحويل الصفحة ${index} من ${count}`});
@@ -382,6 +389,18 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
   const compact=(row:Word[])=>rtlText(row).replace(/\s+/g,"");
   const rows:GridRow[]=[];
   const activityNames=new Set(["محاضره","مختبر","تمارين","كلينيكي","عملي","نظري","ورشه","تدريب","بحث"]);
+  /* ── عمود القاعة من عنوانه المطبوع ────────────────────────────────────────
+     نسبة ثابتة من عرض الصفحة تنزلق مع أي إعادة طباعة، فتقع في عمود «المقاعد
+     في الرزم» المجاور: قاعة فارغة تصير «20»، وقاعة «124» تصير «20124». عناوين
+     الأعمدة مطبوعة في طبقة النص نفسها، فحدود خلية القاعة هي منتصف المسافة بين
+     عنوانها وعنوانَي جارَيها. */
+  const labelCenters=(label:string)=>words.filter(word=>nativeAuthorityLabel(word.text)===label).map(center);
+  const roomLabel=labelCenters("القاعه")[0];
+  const buildingLabel=labelCenters("المبني").filter(x=>roomLabel!==undefined&&x<roomLabel).sort((a,b)=>b-a)[0];
+  const packagesLabel=labelCenters("الرزم").filter(x=>roomLabel!==undefined&&x>roomLabel).sort((a,b)=>a-b)[0];
+  const roomWindow=roomLabel!==undefined&&buildingLabel!==undefined&&packagesLabel!==undefined
+    ?{from:(buildingLabel+roomLabel)/2,to:(roomLabel+packagesLabel)/2}
+    :undefined;
 
   for(const group of groups.sort((a,b)=>a.y-b.y)){
     const row=group.words;
@@ -462,7 +481,7 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
     const dayWords:Word[]=[];
     for(const word of leftOfActivity){
       const raw=asciiOf(word).replace(/[|،,;:_/\\–—-]/g," ").trim();
-      const daySyntax=Boolean(raw)&&/^[1-5](?:\s+[1-5])*$/.test(raw)&&Boolean(parseDays(raw));
+      const daySyntax=Boolean(raw)&&/^[1-5](?:\s*[1-5])*$/.test(raw)&&Boolean(parseDays(raw));
       if(daySyntax){dayWords.push(word);continue;}
       if(dayWords.length)break;
       /* Skip zero-width/punctuation artefacts before the first actual token. */
@@ -493,7 +512,12 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
     if(buildingWord){
       hallWord=rowAsc.find(word=>center(word)>center(buildingWord)&&center(word)-center(buildingWord)<pageWidth*.09&&Boolean(cleanHallCode(asciiOf(word))));
     }
-    let hallRaw=hallWord?asciiOf(hallWord).replace(/\s+/g,"").toUpperCase():toAscii(compact(zone(row,.34,.42))).toUpperCase();
+    const roomCellWords=roomWindow?row.filter(word=>center(word)>roomWindow.from&&center(word)<roomWindow.to):[];
+    let hallRaw=roomWindow
+      ?toAscii(compact(roomCellWords)).toUpperCase()
+      :hallWord?asciiOf(hallWord).replace(/\s+/g,"").toUpperCase():toAscii(compact(zone(row,.34,.42))).toUpperCase();
+    /* حين تُعرف حدود الخلية فهي الحَكَم: لا قاعة من خارجها. */
+    if(roomWindow)hall=cleanHallCode(hallRaw);
     if(!hall)hall=cleanHallCode(hallRaw);
 
     rows.push({
@@ -509,6 +533,7 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
   try{
     const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
     const pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;
+    assertPageLimit(Number(pdf.numPages||0));
     const count=Math.min(Number(pdf.numPages||0),MAX_PAGES);
     if(!count)return null;
     const pages:OcrPage[]=[];const pageTexts:string[]=[];let structuralRows=0,totalChars=0,pagesWithBody=0;
@@ -517,6 +542,22 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       onProgress?.({phase:"render",page:index,pages:count,message:`فحص النص المضمّن في الصفحة ${index} من ${count}`});
       const page=await pdf.getPage(index);
       const viewport=page.getViewport({scale:1});
+      /* ── مسحٌ «قابل للبحث» ليس PDF نصياً ─────────────────────────────────
+         CamScanner و Adobe Scan يضعان صورة الصفحة وتحتها طبقة نص مخفية من
+         قراءتهما الخاصة. تلك الطبقة ليست ما طبعته الجهة، وأخطاؤها كانت تدخل
+         بثقة 99٪. صورة بحجم صفحة (ألف بكسل فأكثر) تعني مسحاً: يُقرأ بالمسار
+         المصوّر وضوابطه. تقرير الجهة الأصلي لا يحمل صوراً أصلاً. */
+      try{
+        const ops:any=await page.getOperatorList();
+        const imageOps=new Set([pdfjs.OPS?.paintImageXObject,pdfjs.OPS?.paintJpegXObject,pdfjs.OPS?.paintInlineImageXObject].filter((op:any)=>op!==undefined));
+        const scanImage=(ops?.fnArray||[]).some((fn:number,at:number)=>{
+          if(!imageOps.has(fn))return false;
+          const args=ops.argsArray?.[at]||[];
+          const width=Number(args[1]||args[0]?.width||0),height=Number(args[2]||args[0]?.height||0);
+          return Math.max(width,height)>=1000;
+        });
+        if(scanImage)return null;
+      }catch{/* An unreadable operator list is not proof of a scan. */}
       const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
       const words:Word[]=[];
       for(const item of content?.items||[]){
@@ -547,9 +588,18 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
          preserves the audit contract that native text PDFs use the coordinate
          grid rather than camera OCR. Every other college opts into the semantic
          lane explicitly. */
-      const nativeGridRows=preserveBasicGirlsNativeLayout
-        ?authorityPdfTextGridRows(words,Number(viewport.width||0))
-        :authorityPdfTextGridRows(words,Number(viewport.width||0),"semantic");
+      const semanticRows=authorityPdfTextGridRows(words,Number(viewport.width||0),"semantic");
+      /* ── مسار بنات الأساسية محفوظ، لكنه لا يُصدَّق بلا فحص ────────────────
+         نِسَبه الثابتة صحيحة على تصدير الجهة الأصلي، أما إعادة الطباعة على A4
+         فتجعل الشعبة صدرَ الرقم المرجعي («1064» من 10643) وتُسقط الأيام. الصف
+         السليم: رقم مرجعي من 4–8 خانات، وأيام، وشعبة ليست صدر المرجعي. يبقى
+         المسار القديم ما دام لا يقل سلامةً عن الدلالي؛ وإلا يُقرأ الدلالي. */
+      const soundRows=(grid:GridRow[])=>grid.filter(row=>/^\d{4,8}$/.test(row.reference)&&Boolean(row.days)
+        &&!(row.scode.length>=3&&row.reference.startsWith(row.scode))).length;
+      const legacyRows=preserveBasicGirlsNativeLayout?authorityPdfTextGridRows(words,Number(viewport.width||0)):[];
+      const nativeGridRows=preserveBasicGirlsNativeLayout&&soundRows(legacyRows)>=soundRows(semanticRows)
+        ?legacyRows
+        :semanticRows;
       const fallbackStructuralRows=rows.filter(row=>{
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
         const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
@@ -561,12 +611,25 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       /* Native generated PDFs get the coordinate-grid path whenever at least
          one academic row is proven. A one-row tail page is legitimate. */
       const pageStructuralRows=nativeGridRows.length||fallbackStructuralRows;
+      /* ── صفوف مطبوعة بلا شبكة = استخراج غير آمن ──────────────────────────
+         كل صف بيانات يحمل رقم مقرر من سبع خانات وزوج وقت. إن زادت هذه الصفوف
+         على ما أثبتته شبكة الأعمدة، فالأعمدة انزلقت (إعادة طباعة بمقاس آخر،
+         رقم مقرر مقسوم) وكان المسار البديل يقرأ الأيام من عمود الوحدات
+         والشعبة من الساعات بصمت. تُعلَّم الصفحة مشبوهة فيتوقف الاستيراد. */
+      const keyedBodyRows=rows.filter(row=>{
+        const ascii=toAscii(row.line).toUpperCase();
+        const courseKey=/(?:^|\D)0\d{6}(?:\D|$)/.test(ascii);
+        const buildingKey=/(?:^|[^A-Z0-9])\d{3}[A-Z]\d{2}(?:[^A-Z0-9]|$)/.test(ascii);
+        return (courseKey||buildingKey)&&Boolean(timePair(ascii));
+      }).length;
+      const gridShortfall=keyedBodyRows>nativeGridRows.length;
       structuralRows+=pageStructuralRows;
       if(pageStructuralRows>=2||(index===count&&pageStructuralRows>=1))pagesWithBody++;
       pages.push({
         rows,
         ...(nativeGridRows.length?{gridRows:nativeGridRows}:{}),
-        diagnostic:{page:index,visualRows:nativeGridRows.length||rows.length,extractedRows:pageStructuralRows,gridDetected:Boolean(nativeGridRows.length),orientation:0,suspicious:false},
+        diagnostic:{page:index,visualRows:Math.max(nativeGridRows.length,keyedBodyRows)||rows.length,extractedRows:pageStructuralRows,gridDetected:Boolean(nativeGridRows.length),orientation:0,suspicious:gridShortfall,
+          ...(gridShortfall?{reason:`في الصفحة ${keyedBodyRows} صفاً مطبوعاً، ولم تثبت حدود الأعمدة إلا لـ ${nativeGridRows.length}. غالباً أُعيدت طباعة الملف بمقاس مختلف؛ ارفع الملف كما صدّرته الجهة (100٪)`}:{})},
       });
     }
     const text=pageTexts.join("\n\n--- PAGE ---\n\n");
@@ -574,16 +637,20 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
        route a hybrid/image PDF into the text parser. Every non-tail page of a
        genuine generated timetable contributes several structural body rows. */
     const requiredBodyPages=count===1?1:Math.max(1,count-1);
-    if(structuralRows<Math.max(3,count*2)||pagesWithBody<requiredBodyPages||totalChars<160)return null;
+    /* قسمٌ له شعبة أو شعبتان فقط جدولُه نصي أصيل أيضاً: صفٌّ واحد أثبتت
+       شبكة الأعمدة رقم مقرره يكفي لإبقائه على طبقة النص بدل OCR. */
+    const provenGridRows=pages.reduce((sum,page)=>sum+(page.gridRows?.length||0),0);
+    const provenNative=provenGridRows>=1&&totalChars>=160;
+    if(!provenNative&&(structuralRows<Math.max(3,count*2)||pagesWithBody<requiredBodyPages||totalChars<160))return null;
     const confidence=99;
     const header=parseAuthorityHeaderText(text);
     return{
       pages,text,pageCount:count,confidence,orientation:0,
       legibility:{readable:true,confidence,charactersPerPage:Math.round(totalChars/Math.max(1,count)),reason:""},
       headerTerm:header.term,headerBranch:header.branch,headerDepartment:header.department,
-      pageDiagnostics:pages.map(page=>page.diagnostic!),suspiciousExtraction:false,
+      pageDiagnostics:pages.map(page=>page.diagnostic!),suspiciousExtraction:pages.some(page=>Boolean(page.diagnostic?.suspicious)),
     };
-  }catch{return null;}
+  }catch(error){if(error instanceof PdfPageLimitError)throw error;return null;}
 }
 
 async function imagePages(input:Buffer,mime:string,longEdge:number,onProgress?:OcrProgress):Promise<Buffer[]>{
@@ -2733,8 +2800,15 @@ function readHeaderDepartment(text:string):HeaderDepartment|undefined{
     /* Physical RTL extraction may place the whole branch phrase before the
        department, e.g. «012كلية... الفرع : التربية الاسلامية 0101 القسم».
        Only the Arabic phrase nearest the department code belongs to القسم. */
-    const afterBranch=String(value||"").split(/(?:^|\s)الفرع\s*[:：_-]?\s*/).pop()||value;
-    return cleanName(afterBranch);
+    /* وفي الترتيب المنطقي يأتي الاسم أولاً ثم «| الفرع : 022 كليه…»: ما
+       قبل «الفرع» هو القسم، وما بعده اسم الفرع. يُؤخذ الجزء الملاصق للرمز
+       ما لم يكن هو نفسه اسم كلية/فرع. */
+    const parts=String(value||"").split(/(?:^|\s)الفرع\s*[:：_-]?\s*/);
+    const beforeBranch=cleanName(parts[0]||"");
+    const campusLike=/^(?:\d+\s*)?كلي[هة]\s/.test(beforeBranch)||/(?:بنات|بنين|الجهراء|الفحيحيل)$/.test(beforeBranch);
+    const chosen=parts.length>1&&beforeBranch.length>=3&&!campusLike?beforeBranch:cleanName(parts[parts.length-1]||value);
+    /* pdfjs يعكس الأقواس في النص العربي: «)تربيه اساسيه(». */
+    return chosen.replace(/\)([^()]*)\(/g,"($1)").replace(/\s+/g," ").trim();
   };
   const build=(code:string,nameRaw:string):HeaderDepartment=>{
     const name=nearestDepartmentName(nameRaw);return{code,name,label:[code,name].filter(Boolean).join(" ")};
@@ -2836,7 +2910,16 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     const physicalText=tableFromWords(headerWords,[],"pdf-text").map(row=>row.line).join("\n");
     const text=[logicalText,physicalText].filter(Boolean).join("\n");
     const embeddedParsed=parseAuthorityHeaderText(text);
-    const embedded:AuthorityPdfHeader={...embeddedParsed,source:"text"};
+    /* الرموز من القراءة المدموجة كما كانت؛ أما الأسماء فالترتيب الفيزيائي
+       وحده يحفظ سطر الترويسة سليماً — القراءة المدموجة تلصق «القسم : 0201»
+       بـ«022 الفرع : 02 الكلية» فيخرج الاسم فارغاً. يُكمَل الاسم الفارغ فقط،
+       وبشرط تطابق الرمز، ولا يُغيَّر رمز. */
+    const physicalParsed=parseAuthorityHeaderText(physicalText);
+    const withName=<T extends {code:string;name:string;label:string}>(field:T|undefined,alt:T|undefined):T|undefined=>{
+      if(!field||field.name||!alt?.name||alt.code!==field.code)return field;
+      return{...field,name:alt.name,label:[field.code,alt.name].filter(Boolean).join(" ")};
+    };
+    const embedded:AuthorityPdfHeader={...embeddedParsed,branch:withName(embeddedParsed.branch,physicalParsed.branch),department:withName(embeddedParsed.department,physicalParsed.department),source:"text"};
     if(embedded.term&&embedded.branch&&embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
 
     /* ROOT ORIENTATION SAFETY — for image-only Authority timetable scans, stop
@@ -3565,7 +3648,9 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
   const rawClean=clean(raw),rawTokens=identityTokens(raw);
   if(!rawClean||!rawTokens.length)return undefined;
 
-  const catalogue=instructors.map(person=>({
+  /* المتقاعد وصاحب التفرغ يبقيان في تاريخ الجداول، لكن فصلاً جديداً لا يُسند
+     إليهما آلياً — كما تستبعدهما قائمة الاختيار في المعاينة. */
+  const catalogue=instructors.filter(person=>!["retired","sabbatical"].includes(String((person as any)?.AdInstructorStatus||""))).map(person=>({
     person,
     normalized:identityTokens(person.AdInstructorName).join(" "),
     tokens:identityTokens(person.AdInstructorName),
@@ -3621,7 +3706,6 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
   const spacelessRaw=rawTokens.join("");
   /* والترتيب المقلوب («الأنصاري عبدالله رجب» في سجل قديم يُدخل العائلة أولاً)
      مساواةُ مجموعةٍ كاملة، لا احتواء. */
-  const sortedRaw=[...rawTokens].sort().join(" ");
   /* ── المساواة تسبق الاحتواء، ولا تُزاحَم به ────────────────────────────────
      الاحتواء قاعدةٌ لاسم عائلة قُصّ عند حافة الخانة: اسم السجل يرد كاملاً
      داخل المطبوع. لكنه على مستوى جامعةٍ بآلاف الأسماء يصطاد الأقصر داخل
@@ -3630,9 +3714,20 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
      يشترط تفرّداً بين الآلاف. المساواة التامة تُقرأ أولاً وحدها؛ فإن حسمت
      شخصاً واحداً فهو هو، ولا يُنظر في الاحتواء أصلاً. */
   const equalIds=(pool:typeof catalogue)=>new Set(pool.map(item=>Number(item.person.AdInstructorId)));
-  const equals=catalogue.filter(item=>normalizedRaw===item.normalized||item.tokens.join("")===spacelessRaw||[...item.tokens].sort().join(" ")===sortedRaw);
+  /* الترتيب المقلوب المقبول وحده: العائلة نُقلت إلى أول الاسم في سجل قديم
+     («الأنصاري عبدالله رجب»). أي تبديل آخر للأسماء — «محمد حسن عبدالله» مقابل
+     «عبدالله محمد حسن» — شخصٌ آخر لا الشخص نفسه. */
+  const familyFirst=(tokens:string[])=>tokens.length>=3?[...tokens.slice(1),tokens[0]].join(" "):"";
+  const equals=catalogue.filter(item=>normalizedRaw===item.normalized||item.tokens.join("")===spacelessRaw);
+  /* التدوير برهانٌ أضعف من المساواة: بثلاثة أسماء لا يُفرَّق بين «سجل يبدأ
+     بالعائلة» وشخص آخر اسمه مقلوب («محمد حسن عبدالله»). فلا يُقرأ إلا بعد
+     براهين المقرر والقسم، وحين لا يبقى غيره. */
+  const rotated=catalogue.filter(item=>rawTokens.length>=3&&item.tokens.length===rawTokens.length&&(familyFirst(item.tokens)===normalizedRaw||familyFirst(rawTokens)===item.normalized));
   if(equalIds(equals).size===1)return{person:equals[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,equals[0].tokens.length)};
-  const exact=equals.length?equals:catalogue.filter(item=>haystack.includes(` ${item.normalized} `));
+  /* الاحتواء لاسم عائلة قُصّ عند حافة الخانة فقط: اسم السجل يبدأ به المطبوع
+     من أوله، باسمين على الأقل. اسمٌ يقع في وسط المطبوع أو آخره —
+     «درويش مطر الشمري» داخل «حسين درويش مطر الشمري» — هو الأب لا الابن. */
+  const exact=equals.length?equals:catalogue.filter(item=>item.tokens.length>=2&&haystack.startsWith(` ${item.normalized} `));
   const exactIds=equalIds(exact);
   if(exactIds.size===1)return{person:exact[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,exact[0].tokens.length)};
   const preferredExact=exact.filter(item=>item.preferred);
@@ -3658,6 +3753,46 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
     return true;
   };
   const stemEqual=(a:string,b:string)=>a===b||(Math.min(a.length,b.length)>=3&&(a.startsWith(b)||b.startsWith(a)))||oneEditApart(a,b);
+  /* ── الاسم يُقرأ في موضعه ─────────────────────────────────────────────────
+     الاسم الأول يقابل الأول، والأب يقابل الأب، والجد الجد. اسمٌ مطبوع يخالف
+     نظيره في السجل ليس ضجيجاً بل دليلُ شخصٍ آخر: «احمد يوسف النصف» ليس
+     «احمد يوسف الكندري»، و«فهيد» ليس «فهد». يُسمح فقط بقصّ آخر اسم مطبوع عند
+     حافة الخانة، وبحرف واحد تالف في اسم طويل. */
+  const alignedEvidence=(candidate:string[],observed:string[])=>{
+    /* «علي السند» و«حسين درويش مطر الشمري» لسجلٍّ فيه «…مطر حمد الشمري»:
+       الأسماء الأولى بترتيبها، ثم العائلة مطابقةً لعائلة السجل، وما سقط بينهما
+       أسماء وسطى لم تطبعها الجهة. أي مخالفة في الموضع تُسقط المرشح. */
+    if(observed.length>=2&&candidate.length>observed.length){
+      const last=candidate[candidate.length-1],printedLast=observed[observed.length-1];
+      const lastOk=last===printedLast||(printedLast.length>=3&&last.startsWith(printedLast));
+      let headExact=0,headOk=true;
+      for(let i=0;i<observed.length-1&&headOk;i++){
+        if(candidate[i]===observed[i])headExact++;
+        else if(!oneEditApart(candidate[i],observed[i]))headOk=false;
+      }
+      if(lastOk&&headOk&&candidate[observed.length-1]!==printedLast){
+        const exactCount=headExact+(last===printedLast?1:0);
+        return{total:observed.length,exactCount,stemCount:observed.length-exactCount};
+      }
+    }
+    const n=Math.min(candidate.length,observed.length);
+    let exactCount=0,stemCount=0;
+    for(let i=0;i<n;i++){
+      const a=candidate[i],b=observed[i];
+      if(a===b){exactCount++;continue;}
+      const sharedHead=(()=>{let k=0;while(k<a.length&&k<b.length&&a[k]===b[k])k++;return k;})();
+      /* آخر اسم مطبوع قد يُقصّ عند حافة الخانة؛ وبعد ثلاثة أسماء متطابقة قد
+         يبقى منه صدره فقط مشوّه الشكل («الجي» من «الجميلي»). صدر «ال» وحده
+         لا يكفي: «النصف» و«الكندري» عائلتان. */
+      const truncatedTail=i===observed.length-1&&((b.length>=3&&(a.startsWith(b)||(exactCount>=3&&sharedHead>=3)))||(b.length<3&&exactCount>=2&&a.startsWith(b)));
+      if(truncatedTail||oneEditApart(a,b)){stemCount++;continue;}
+      return{total:0,exactCount:0,stemCount:0};
+    }
+    /* أسماء مطبوعة زائدة على سجلٍ قصير لا يُتحقَّق منها؛ تُقبل فقط حين يحمل
+       السجل ثلاثة أسماء على الأقل تطابقت كلها. */
+    if(observed.length>candidate.length&&candidate.length<3)return{total:0,exactCount:0,stemCount:0};
+    return{total:n,exactCount,stemCount};
+  };
   const orderedEvidence=(candidate:string[],observed:string[])=>{
     let at=0,exactCount=0,stemCount=0,total=0;
     for(const token of candidate){
@@ -3675,9 +3810,7 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
 
   const choose=(pool:typeof catalogue,allowTwo:boolean,soleOnly=false,allowNear=false,exactPairOnly=false)=>{
     const ranked=pool.map(item=>{
-      const forward=orderedEvidence(item.tokens,rawTokens);
-      const reverse=orderedEvidence(rawTokens,item.tokens);
-      const ordered=forward.total>=reverse.total?forward:reverse;
+      const ordered=alignedEvidence(item.tokens,rawTokens);
       const exactCommon=commonExact(item.tokens,rawTokens);
       const first=item.tokens[0],last=item.tokens[item.tokens.length-1];
       const firstHit=rawTokens.some(token=>tokenEqual(first,token));
@@ -3694,7 +3827,7 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
          evidence. This restores the old high hit-rate without saving OCR text. */
       const threeProof=ordered.total>=3&&ordered.exactCount>=2;
       const twoExactProof=allowTwo&&exactCommon>=2&&ordered.total>=2;
-      const firstLastProof=allowTwo&&!exactPairOnly&&item.tokens.length>=2&&(firstHit||(firstStemHit&&ordered.exactCount>=1))&&lastHit&&ordered.total>=2;
+      const firstLastProof=allowTwo&&!exactPairOnly&&item.tokens.length>=2&&(firstHit||(firstStemHit&&ordered.exactCount>=1))&&lastHit&&ordered.total>=2&&ordered.exactCount>=1;
       /* ── اسمان مطبوعان وأحدهما ناقص حرفاً ──────────────────────────────────
          «عبدالله حسن الرشيدي» تُطبع «بدالله حسن»: اسم العائلة مقصوص عند حافة
          الخانة، والاسم الأول فقد حرفاً واحداً. لا يبقى برهان حرفيّ كامل لاسمين،
@@ -3724,7 +3857,8 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
     if(rawTokens.length!==1)return undefined;
     const token=rawTokens[0];
     if(token.length<3)return undefined;
-    const hits=pool.filter(item=>item.tokens.some(candidate=>tokenEqual(candidate,token)));
+    /* الاسم المفرد اسمٌ أول، لا أي اسم في أي موضع: «سالم» ليس «يحيى سالم». */
+    const hits=pool.filter(item=>tokenEqual(item.tokens[0],token));
     const ids=new Set(hits.map(item=>Number(item.person.AdInstructorId)));
     return ids.size===1?hits[0]:undefined;
   };
@@ -3739,6 +3873,9 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
   const preferred=catalogue.filter(item=>item.preferred);
   const preferredHit=preferred.length?choose(preferred,true,false,true):undefined;
   if(preferredHit)return{person:preferredHit.item.person,method:"DEPARTMENT_TWO_NAME",score:98,matchedTokens:preferredHit.ordered.total};
+
+  const rotatedIds=equalIds(rotated);
+  if(rotatedIds.size===1)return{person:rotated[0].person,method:"EXACT_FULL",score:100,matchedTokens:rawTokens.length};
 
   const courseSingle=coursePool.length?soleByToken(coursePool):undefined;
   if(courseSingle)return{person:courseSingle.person,method:"COURSE_ONE_NAME",score:95,matchedTokens:1};
@@ -3847,8 +3984,15 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     if(authorityDepartment&&d.length<=3)return`${authorityDepartment}${d.padStart(3,"0").slice(-3)}`;
     return d;
   }).filter(k=>k.length===7);
-  const matchCourse=(code:string,nameText:string)=>{
-    if(isHeaderLine(code)||isHeaderLine(nameText))return null;
+  /* صف يحمل رقم مقرر سليماً من سبع خانات صفُّ بيانات، ولو كان اسم مقرره
+     «التقرير الفني» أو «الفصل الميداني» أو «مناهج التربية الأساسية»: فحص
+     الترويسة بالكلمات كان يُسقطه بصمت. */
+  const provenRowCode=(code:string)=>/^\d{7}$/.test(academicDigits(code))&&authorityCourseCellLooksPlausible(academicDigits(code),authorityDepartment);
+  const headerLike=(grid:{code:string;courseText:string;scode?:string;instructorText?:string})=>provenRowCode(grid.code)
+    ?isHeaderLine(grid.code)
+    :(isHeaderLine(`${grid.code} ${grid.scode||""} ${grid.courseText} ${grid.instructorText||""}`)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code));
+  const matchCourse=(code:string,nameText:string,sourceMode?:string)=>{
+    if(isHeaderLine(code)||(!provenRowCode(code)&&isHeaderLine(nameText)))return null;
     const source=academicDigits(code);
     if(!source)return null;
     const matches=catalogue.filter(item=>authorityCourseCodeMatches(source,item.digits,authorityDepartment));
@@ -3859,7 +4003,12 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       const unique=catalogue.find(item=>item.digits.slice(-3)===source);
       if(unique)return unique.course;
     }
-    if(canonicalKeys.length){
+    /* ── رقم مقرر مقروء نظيف لا يُصلَح ───────────────────────────────────────
+       الإصلاح بفرق خانة واحدة وُجد لخطأ OCR في مسح ضوئي. أما رقم طبقة النص، أو
+       رقمٌ سليم الشكل لمفتاح القسم، فهو ما طُبع فعلاً: إن غاب عن الكتالوج فهو
+       مقرر غير مسجّل، لا أقرب جار له — 0101357 ليس 0101157. */
+    const cleanDepartmentKey=/^\d{7}$/.test(source)&&Boolean(authorityDepartment)&&source.startsWith(authorityDepartment);
+    if(canonicalKeys.length&&sourceMode!=="pdf-text"&&!cleanDepartmentKey){
       const recovered=recoverAuthorityCourseCell(source,authorityDepartment,canonicalKeys);
       if(recovered){
         const recoveredMatches=catalogue.filter(item=>authorityCourseCodeMatches(recovered,item.digits,authorityDepartment));
@@ -3870,18 +4019,16 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   };
 
   const validGrids=gridRows.filter(grid=>{
-    const combined = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText} ${grid.building} ${grid.hall}`;
-    if(isHeaderLine(combined)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))return false;
+    if(headerLike(grid))return false;
     const hasData = Boolean(grid.code || grid.reference || grid.start || grid.days || authoritySectionCodeLooksPlausible(grid.scode) || grid.courseText.length > 2);
     return hasData;
   });
-  const firstPass=validGrids.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText)}));
+  const firstPass=validGrids.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText,grid.sourceMode)}));
   /* A missing course key stays unresolved. Neighbouring rows and edit-distance
      similarity are not identity evidence and must never create canonical data. */
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
   for(const {grid,course} of firstPass){
-    const combinedCheck = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText}`;
-    if(isHeaderLine(combinedCheck)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
+    if(headerLike(grid))continue;
     const flags = parseDays(grid.days) || EMPTY_DAYS;
     const coursePreferred=course?courseInstructorIds?.get(Number(course.AdCourseId)):undefined;
     const instructorMatch=matchInstructorIdentity(grid.instructorText,instructors,preferredInstructorIds,coursePreferred);
@@ -3891,7 +4038,6 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
 
     if(!course){
       const rawEvidence = grid.courseText || grid.code || "";
-      if(isHeaderLine(rawEvidence)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
       const hasScheduleData = Boolean(grid.start || grid.days || authoritySectionCodeLooksPlausible(grid.scode) || grid.reference || (grid.code && grid.code.length >= 3));
       if(!hasScheduleData || !rawEvidence || rawEvidence.length < 3) {
         continue;
