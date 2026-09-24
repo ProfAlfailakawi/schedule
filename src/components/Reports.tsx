@@ -2020,8 +2020,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         ) : !results.length && lens !== "room" && lens !== "balance" && lens !== "visitingHistory" ? (
           <div className="query-empty">
             <EmptyState
-              title={error ? "تعذّرت القراءة" : "لا نتائج"}
-              detail={error ? "لم تصل بيانات النطاق — أعد المحاولة من الشريط أعلاه." : "خفّف المرشحات"}
+              title={error ? "تعذّرت القراءة" : (roleId === "dean" || roleId === "viceDean") ? "لا جدول معتمد بعد" : "لا نتائج"}
+              detail={error ? "لم تصل بيانات النطاق — أعد المحاولة من الشريط أعلاه."
+                : (roleId === "dean" || roleId === "viceDean") ? "لم يعتمد التسجيلُ جدولَ أي قسمٍ في هذا النطاق حتى الآن. تابع التقدّم في «ميزان الأقسام»."
+                : "خفّف المرشحات"}
             />
           </div>
         ) : lens === "list" ? (

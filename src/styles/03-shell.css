@@ -1874,7 +1874,7 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
 /* ── مركز الإشعارات ─────────────────────────────────────────────────────────
    جرسٌ ثابتٌ في الزاوية، والرقمُ عليه ما بقي على صاحبه وحده. */
 .notify-bell{
-  position:fixed;top:14px;inset-inline-end:16px;z-index:60;
+  position:fixed;top:14px;inset-inline-end:16px;z-index:1400;
   width:44px;height:44px;display:grid;place-items:center;
   border:1px solid var(--line);border-radius:50%;
   background:var(--surface);color:var(--ink-2);
@@ -1896,7 +1896,7 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
 @keyframes notify-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(-14deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(4deg)}}
 
 .notify-panel{
-  position:fixed;top:66px;inset-inline-end:16px;z-index:61;
+  position:fixed;top:66px;inset-inline-end:16px;z-index:1401;
   width:min(390px,calc(100vw - 32px));max-height:min(620px,calc(100vh - 90px));overflow:auto;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
   box-shadow:var(--shadow-md);padding:6px 0 10px;
@@ -1947,7 +1947,7 @@ html[data-schedule-workspace="presentation"] .notify-bell{display:none}
 
 /* الإشعارُ العائم: ما وصل للتوّ، تحت الجرس، يختفي وحده بعد لحظات. */
 .notify-toast{
-  position:fixed;top:68px;inset-inline-end:16px;z-index:62;
+  position:fixed;top:68px;inset-inline-end:16px;z-index:1402;
   width:min(360px,calc(100vw - 32px));display:grid;grid-template-columns:minmax(0,1fr) 32px;align-items:start;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-md);
   animation:notify-drop .28s var(--ease,ease) both;overflow:hidden;

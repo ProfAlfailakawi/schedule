@@ -48,6 +48,10 @@ const day = (iso?: string) => {
 };
 
 const place = (scope: CenterScope) => scope.sectionName || `قسم ${scope.approval.AdSectionId}`;
+/* القسمُ نفسُه في كليتين (بنين وبنات) يُقال بكليّته، وإلا بدا الإشعارُ مكرّراً. */
+let twins = new Set<string>();
+const placeOf = (scope: CenterScope) => twins.has(place(scope)) && scope.collegeName
+  ? `${place(scope)} — ${scope.collegeName.replace(/^كلية\s+/, "")}` : place(scope);
 const plural = (count: number, one: string, two: string, many: string) =>
   count === 1 ? one : count === 2 ? two : `${count} ${many}`;
 
@@ -61,6 +65,8 @@ const DEANS = new Set(["dean", "viceDean"]);
 export function buildNotifications(input: CenterInput): CenterNotification[] {
   const items: CenterNotification[] = [];
   const { role, scopes } = input;
+  const names = scopes.map(place);
+  twins = new Set(names.filter((name, at) => names.indexOf(name) !== at));
   const key = (scope: CenterScope, kind: string) =>
     `${kind}:${scope.approval.AdCollegeId}:${scope.approval.AdSectionId}:${scope.approval.currentRound}`;
   const target = (scope: CenterScope) => ({ collegeId: scope.approval.AdCollegeId, sectionId: scope.approval.AdSectionId });
@@ -74,7 +80,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       const again = approval.rounds.some(item => item.acceptedAt);
       items.push({
         id: key(scope, "waiting"), tone: decides ? "action" : "waiting",
-        title: decides ? `جدول ${place(scope)} ينتظر قرارك` : `جدول ${place(scope)} عند التسجيل`,
+        title: decides ? `جدول ${placeOf(scope)} ينتظر قرارك` : `جدول ${placeOf(scope)} عند التسجيل`,
         detail: `${scope.collegeName}${again ? " — تعديلٌ بعد اعتمادٍ سابق" : approval.currentRound > 1 ? ` — الجولة ${approval.currentRound}` : " — أول تسليم"}`,
         view: "scheduleChanges", at: round?.submittedAt, ...target(scope),
       });
@@ -100,7 +106,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       if (approval.status === "returned") {
         items.push({
           id: key(scope, "returned"), tone: isHead ? "waiting" : "action",
-          title: `أرجع التسجيل جدول ${place(scope)}`,
+          title: `أرجع التسجيل جدول ${placeOf(scope)}`,
           detail: scope.openRegistrarNotes > 0
             ? `بقيت ${plural(scope.openRegistrarNotes, "ملاحظةٌ واحدة", "ملاحظتان", "ملاحظات")} تنتظر المعالجة أو الردّ، ثم يُعاد الإرسال.`
             : "عولجت الملاحظات — بقي إعادة الإرسال إلى التسجيل.",
@@ -109,35 +115,35 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       } else if (approval.status === "submitted") {
         items.push({
           id: key(scope, "submitted"), tone: "waiting",
-          title: `جدول ${place(scope)} عند التسجيل`,
+          title: `جدول ${placeOf(scope)} عند التسجيل`,
           detail: "التعديل مقفلٌ حتى يقبله التسجيل أو يُرجعه.",
           view: "schedules", ...target(scope),
         });
       } else if (approval.status === "accepted") {
         items.push({
           id: key(scope, "accepted"), tone: "done",
-          title: `جدول ${place(scope)} معتمد`,
+          title: `جدول ${placeOf(scope)} معتمد`,
           detail: "أيُّ تعديلٍ بعده يصل التسجيلَ مباشرة.",
           view: "schedules", at: accepted?.acceptedAt, ...target(scope),
         });
       } else if (approval.status === "drafting" && !accepted) {
         items.push({
           id: key(scope, "draft"), tone: isHead ? "waiting" : scope.rowCount > 0 ? "action" : "waiting",
-          title: isHead ? `جدول ${place(scope)} عند لجنة الجدول` : scope.rowCount > 0 ? `وقّع جدول ${place(scope)}` : `ابدأ جدول ${place(scope)}`,
+          title: isHead ? `جدول ${placeOf(scope)} عند لجنة الجدول` : scope.rowCount > 0 ? `وقّع جدول ${placeOf(scope)}` : `ابدأ جدول ${placeOf(scope)}`,
           detail: isHead ? "يصلك للاعتماد بعد توقيع اللجنة." : scope.rowCount > 0 ? "بعد توقيعك يصل لرئيس القسم ليعتمده." : "لا مواعيد فيه بعد.",
           view: "schedules", ...target(scope),
         });
       } else if (approval.status === "committee") {
         items.push({
           id: key(scope, "committee"), tone: isHead ? "action" : "waiting",
-          title: isHead ? `اعتمد جدول ${place(scope)}` : `جدول ${place(scope)} عند رئيس القسم`,
+          title: isHead ? `اعتمد جدول ${placeOf(scope)}` : `جدول ${placeOf(scope)} عند رئيس القسم`,
           detail: isHead ? "وقّعت اللجنة. اعتمادك يرسله للتسجيل مباشرة." : "بعد اعتماده يصل للتسجيل مباشرة.",
           view: "schedules", ...target(scope),
         });
       } else if (approval.status === "head") {
         items.push({
           id: key(scope, "head"), tone: "action",
-          title: `أرسل جدول ${place(scope)} إلى التسجيل`,
+          title: `أرسل جدول ${placeOf(scope)} إلى التسجيل`,
           detail: "اكتمل الاعتماد ولم يُرسل بعد.",
           view: "schedules", ...target(scope),
         });
@@ -168,15 +174,22 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
   /* ── طلباتُ الأساتذة: لكل من يعمل على الجدول، أياً كانت صفته ─────────
      طلبٌ واحد لكل أستاذ باسمه، والمعرّفُ يحمل وقتَ الإرسال وعددَ البنود —
      فإن أرسل الأستاذ من جديد صار الإشعارُ «جديداً» مرّةً أخرى. */
+  const byRequest = new Map<string, { name: string; count: number; at?: string; places: string[]; scope: CenterScope }>();
   for (const scope of scopes) {
     for (const entry of scope.pendingRequests || []) {
-      items.push({
-        id: `request:${entry.requestId}:${scope.approval.AdSectionId}:${entry.count}:${entry.at || ""}`, tone: "action",
-        title: `${entry.instructorName} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${plural(entry.count, "تعديلاً", "تعديلين", "تعديلات")}`}`,
-        detail: `${place(scope)}${scope.collegeName ? ` · ${scope.collegeName}` : ""} — ينتظر ردّك في «وارد الأساتذة».`,
-        view: "instructorRequests", at: entry.at, ...target(scope),
-      });
+      const current = byRequest.get(entry.requestId) || { name: entry.instructorName, count: 0, at: entry.at, places: [], scope };
+      current.count += entry.count;
+      current.places.push(placeOf(scope));
+      byRequest.set(entry.requestId, current);
     }
+  }
+  for (const [requestId, entry] of byRequest) {
+    items.push({
+      id: `request:${requestId}:${entry.count}:${entry.at || ""}`, tone: "action",
+      title: `${entry.name} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${plural(entry.count, "تعديلاً", "تعديلين", "تعديلات")}`}`,
+      detail: [...new Set(entry.places)].join(" · "),
+      view: "instructorRequests", at: entry.at, ...target(entry.scope),
+    });
   }
 
   if (DEANS.has(role) || role === "admin") {
@@ -195,7 +208,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       if (!accepted?.acceptedAt || scope.approval.status !== "accepted") continue;
       items.push({
         id: key(scope, "final"), tone: "done",
-        title: `اعتُمد جدول ${place(scope)}`,
+        title: `اعتُمد جدول ${placeOf(scope)}`,
         detail: scope.collegeName,
         view: "reportDepartment", at: accepted.acceptedAt, ...target(scope),
       });
