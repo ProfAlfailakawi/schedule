@@ -73,7 +73,31 @@ export const instructorIdentityKey = (value: string) => instructorIdentityTokens
 /** الاسم بترتيبٍ موحّد: بعض السجلات القديمة تُدخل العائلة أولاً
  *  («الأنصاري عبدالله رجب»)، والشخص هو الشخص. مجموعة الرموز الكاملة نفسها
  *  بأي ترتيب = هوية واحدة — للمساواة الكاملة فقط، كسابقتها. */
-export const instructorSortedKey = (value: string) => [...instructorIdentityTokens(value)].sort().join(" ");
+export const instructorSortedKey = (value: string) => {
+  /* الاسم مدوّراً: العائلة من أوله إلى آخره. التدوير وحده هو «السجل القديم
+     الذي يُدخل العائلة أولاً»؛ الترتيب الأبجدي الكامل كان يساوي بين «عبدالله
+     محمد حسن» و«محمد حسن عبدالله» — شخصان مختلفان. */
+  const tokens = instructorIdentityTokens(value);
+  return tokens.length >= 3 ? [...tokens.slice(1), tokens[0]].join(" ") : tokens.join(" ");
+};
+
+/**
+ * قانون «هذا الاسم هو ذاك الاسم» المشترك.
+ * ١) تساوي الرموز؛ ٢) تساويها بلا مسافات؛ ٣) تدوير العائلة إلى أول الاسم في
+ * أحد الطرفين (ثلاثة أسماء فأكثر)؛ ٤) اسم السجل صدرُ المطبوع كاملاً — اسم
+ * أخير زائد في المطبوع — باسمين على الأقل. لا احتواء في الوسط ولا
+ * في الآخر: «درويش مطر الشمري» داخل «حسين درويش مطر الشمري» هو الأب.
+ */
+export function sameInstructorIdentity(registryTokens: string[], printedTokens: string[]): boolean {
+  if (!registryTokens.length || !printedTokens.length) return false;
+  const key = registryTokens.join(" "), printed = printedTokens.join(" ");
+  if (key === printed || registryTokens.join("") === printedTokens.join("")) return true;
+  const rotate = (tokens: string[]) => [...tokens.slice(1), tokens[0]].join(" ");
+  if (registryTokens.length >= 3 && printedTokens.length === registryTokens.length
+    && (rotate(registryTokens) === printed || rotate(printedTokens) === key)) return true;
+  return registryTokens.length >= 2 && registryTokens.length < printedTokens.length
+    && registryTokens.every((token, index) => printedTokens[index] === token);
+}
 
 export const instructorSpacelessKey = (value: string) => instructorIdentityTokens(value).join("");
 
@@ -91,19 +115,9 @@ export function uniqueExactIdentityMatch<T extends { AdInstructorId: number | st
   raw: string,
   people: T[],
 ): T | undefined {
-  const printed = instructorIdentityKey(raw);
-  if (!printed) return undefined;
-  const printedSpaceless = printed.replace(/ /g, "");
-  const printedSorted = instructorSortedKey(raw);
-  const haystack = ` ${printed} `;
-  const hits = people.filter(person => {
-    const name = String(person?.AdInstructorName || "");
-    const key = instructorIdentityKey(name);
-    if (!key) return false;
-    return key === printed || haystack.includes(` ${key} `)
-      || key.replace(/ /g, "") === printedSpaceless
-      || instructorSortedKey(name) === printedSorted;
-  });
+  const printed = instructorIdentityTokens(raw);
+  if (!printed.length) return undefined;
+  const hits = people.filter(person => sameInstructorIdentity(instructorIdentityTokens(String(person?.AdInstructorName || "")), printed));
   const ids = new Set(hits.map(person => Number(person.AdInstructorId)));
   return ids.size === 1 ? hits[0] : undefined;
 }
@@ -149,8 +163,7 @@ export function registryCandidatesFor<T extends { AdInstructorId: number | strin
     const tokens = instructorIdentityTokens(String(person?.AdInstructorName || ""));
     if (!tokens.length) continue;
     const key = tokens.join(" ");
-    const isExact = key === printedKey || haystack.includes(` ${key} `) || tokens.join("") === printedSpaceless
-      || [...tokens].sort().join(" ") === [...printed].sort().join(" ");
+    const isExact = sameInstructorIdentity(tokens, printed);
     const shared = tokens.filter(token => printedSet.has(token)).length;
     if (isExact) { seen.add(id); exact.push(person); }
     else if (shared >= needed) { seen.add(id); partial.push(person); }
