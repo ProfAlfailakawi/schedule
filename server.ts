@@ -4732,9 +4732,31 @@ app.post("/api/schedules/import-preflight", requirePermission(7), async (req: Au
   const positionById=new Map<number,number>();
   rows.forEach((row:any,index:number)=>{const id=Number(row?.id);if(Number.isFinite(id))positionById.set(id,index);});
   const positionOf=(id:unknown)=>{const at=positionById.get(Number(id));return at===undefined?null:at;};
+  /* ── الموعد الآخر يُسمّى ─────────────────────────────────────────────────
+     «مع موعد قائم خارج هذا القسم» لا يكفي ليقرر المراجع: القسم الأكاديمي نفسه
+     يدرّس في كليات عدة، فالأستاذ نفسه قد يُحجز في كليتين في الساعة ذاتها. يُذكر
+     الكلية والقسم والمقرر والشعبة والأيام والوقت؛ وموعدٌ خارج صلاحية القارئ
+     يُذكر بكليته وأيامه ووقته وحدها. */
+  const termById=new Map((termRows as any[]).map((row:any)=>[Number(row.id),row]));
+  const sectionById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),row]));
+  const collegeById=new Map((colleges as any[]).map((row:any)=>[Number(row.AdCollegeId),row]));
+  const describeOther=(id:unknown)=>{
+    if(positionOf(id)!==null)return "";
+    const other=termById.get(Number(id));
+    if(!other)return "";
+    const days=SCHEDULE_DAY_KEYS.map((key,index)=>other[key]?DAY_LABELS[index]:null).filter(Boolean).join("، ");
+    const when=[days,formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))].filter(Boolean).join(" ");
+    const visible=Boolean(req.user?.IsAdminUser||isScopeAllowed(req,Number(other.AdCollegeId),Number(other.AdSectionId)));
+    if(!visible)return `${collegeById.get(Number(other.AdCollegeId))?.AdCollegeName||"كلية أخرى"} · ${when}`;
+    const section=sectionById.get(Number(other.AdSectionId))?.AdSectionName||"قسم آخر";
+    const college=collegeById.get(Number(other.AdCollegeId))?.AdCollegeName||"";
+    const course=[String(other.AdCourseName||"").trim(),other.SCode?`شعبة ${other.SCode}`:""].filter(Boolean).join(" ");
+    return [[college,section].filter(Boolean).join(" — "),course,when].filter(Boolean).join(" · ");
+  };
   res.json({conflicts:conflicts.slice(0,60).map((item:any)=>({
     type:String(item?.type||""),message:String(item?.message||""),detail:String(item?.detail||""),
     rowIndex:positionOf(item?.rowId),otherIndex:positionOf(item?.otherId),
+    otherLabel:describeOther(item?.otherId)||describeOther(item?.rowId),
   }))});
 });
 
@@ -8306,6 +8328,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      وأرقامهم المدنية، بنفس الظهور المتاح له في قائمة الاختيار أصلاً. */
   const describeCandidate=(person:any)=>`«${String(person?.AdInstructorName||"").trim()}»`;
   const unresolvedInstructorDiagnosis=(row:any):{method:string;reason:string}=>{
+    if(row.instructorAmbiguousShortName)return{method:"SHORT_NAME_CONTRADICTED",reason:String(row.instructorAmbiguousShortName)};
     const written=String(row?.sourceInstructorText||"");
     /* ── «هيئة تدريسية» ليست شخصاً، بل سجلّ يملكه كل قسم لنفسه ───────────────
        حين تُطبع في خانة الأستاذ ولا يُحسم شيء، فالسبب ليس غموض اسم: إما أن
@@ -8401,6 +8424,48 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       if(Math.abs(weekly-expected)>40){
         parsed.issues.push(`صف «${row.AdCourseName||"—"}» شعبة ${row.SCode||"—"}: الأيام المقروءة من الصورة (${dayCount}) لا تتسق مع مدة المحاضرة وساعات المقرر؛ فُرّغت لتحديدها يدوياً.`);
         for(const key of ["fsunday","fmonday","ftuesday","fwednesday","fthursday"])row[key]=false;
+      }
+    }
+  }
+  /* ── اسمٌ مختصر لا يُثبت شخصاً يُحجز في مكانين ─────────────────────────────
+     السجل قد يحفظ الاسم مختصراً («إقبال المطوع») والجهة تطبعه كاملاً
+     («اقبال عبدالعزيز المطوع»)، فيُربط بالاسم الأول واسم العائلة. فإن كان صاحب
+     السجل يدرّس في كلية أخرى في الساعة نفسها، فالربط ناقضه الدليل: شخصان بالاسم
+     المختصر نفسه، لا شخص واحد في مكانين. لا تخمين: تُفرَّغ هوية كل صفوف هذا
+     الاسم المطبوع، ويُذكر السبب، ويختار المراجع الأستاذ الصحيح أو يضيفه. */
+  {
+    const [termSchedules,scopeColleges,scopeSections]=await Promise.all([
+      Repository.getSchedulesByScope({termId}),Repository.getColleges(),Repository.getSections(),
+    ]);
+    const ownScopes=new Set(branchOwnScopes(scopeColleges as any,scopeSections as any,collegeId,sectionId).map(scope=>`${scope.collegeId}:${scope.sectionId}`));
+    const external=(termSchedules as any[]).filter(item=>!ownScopes.has(`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`));
+    const dayKeys=["fsunday","fmonday","ftuesday","fwednesday","fthursday"];
+    const minutesOf=(value:any)=>{const m=String(value||"").match(/^(\d{1,2}):(\d{2})/);return m?Number(m[1])*60+Number(m[2]):-1;};
+    const clash=(a:any,b:any)=>dayKeys.some(key=>a[key]&&b[key])&&minutesOf(a.fstarttime)>=0&&minutesOf(b.fstarttime)>=0
+      &&minutesOf(a.fstarttime)<minutesOf(b.fendtime)&&minutesOf(b.fstarttime)<minutesOf(a.fendtime);
+    const shortened=(row:any)=>{
+      const person=instructorNameById.get(Number(row.AdInstructorId||0))||"";
+      return instructorIdentityTokens(person).length<instructorIdentityTokens(String(row.sourceInstructorText||"")).length;
+    };
+    const contradicted=new Set<string>();
+    for(const row of parsed.rows as any[]){
+      const id=Number(row.AdInstructorId||0);
+      if(!id||!row.sourceInstructorText||!shortened(row)||row.importEvidence?.instructor?.source==="MANUAL")continue;
+      const other=external.find(item=>Number(item.AdInstructorId)===id&&clash(row,item));
+      if(!other)continue;
+      contradicted.add(`${id}|${foldHeaderIdentity(row.sourceInstructorText)}`);
+    }
+    if(contradicted.size){
+      const collegeName=new Map((scopeColleges as any[]).map((item:any)=>[Number(item.AdCollegeId),String(item.AdCollegeName||"")]));
+      for(const row of parsed.rows as any[]){
+        const id=Number(row.AdInstructorId||0);
+        if(!contradicted.has(`${id}|${foldHeaderIdentity(row.sourceInstructorText)}`))continue;
+        const person=instructorNameById.get(id)||"";
+        const clashAt=external.find(item=>Number(item.AdInstructorId)===id&&clash(row,item));
+        const where=clashAt?` (يدرّس «${person}» في ${collegeName.get(Number(clashAt.AdCollegeId))||"كلية أخرى"} في الوقت نفسه)`:"";
+        row.AdInstructorId=0;
+        row.instructorMatchMethod="";
+        row.instructorAmbiguousShortName=`«${String(row.sourceInstructorText||"").trim()}» يطابق «${person}» بالاسم المختصر فقط${where}؛ غالباً شخص آخر بالاسم نفسه — اختر الأستاذ أو أضفه.`;
       }
     }
   }
