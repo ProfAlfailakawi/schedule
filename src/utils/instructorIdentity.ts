@@ -95,8 +95,20 @@ export function sameInstructorIdentity(registryTokens: string[], printedTokens: 
   const rotate = (tokens: string[]) => [...tokens.slice(1), tokens[0]].join(" ");
   if (registryTokens.length >= 3 && printedTokens.length === registryTokens.length
     && (rotate(registryTokens) === printed || rotate(printedTokens) === key)) return true;
-  return registryTokens.length >= 2 && registryTokens.length < printedTokens.length
-    && registryTokens.every((token, index) => printedTokens[index] === token);
+  if (registryTokens.length >= 2 && registryTokens.length < printedTokens.length
+    && registryTokens.every((token, index) => printedTokens[index] === token)) return true;
+  /* الاسم المختصر في السجل: الأول والعائلة وما بينهما بترتيبه داخل المطبوع. */
+  if (registryTokens.length >= 2 && registryTokens.length < printedTokens.length
+    && registryTokens[0] === printedTokens[0] && registryTokens[registryTokens.length - 1] === printedTokens[printedTokens.length - 1]) {
+    let at = 1;
+    for (const token of registryTokens.slice(1, -1)) {
+      while (at < printedTokens.length - 1 && printedTokens[at] !== token) at++;
+      if (at >= printedTokens.length - 1) return false;
+      at++;
+    }
+    return true;
+  }
+  return false;
 }
 
 export const instructorSpacelessKey = (value: string) => instructorIdentityTokens(value).join("");
