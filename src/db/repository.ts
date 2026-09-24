@@ -2255,6 +2255,11 @@ export const caseRefOf = (id: string): string => String(id).slice(0, 8).toUpperC
 export const caseRefFor = (need: { id: string; caseRef?: string }): string =>
   String(need.caseRef || caseRefOf(need.id));
 
+/** A course-state write refused by its guard, read inside the write itself. */
+export class StudentCourseStateConflict extends Error {
+  constructor(message: string) { super(message); this.name = "StudentCourseStateConflict"; }
+}
+
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
   /** Lets the server drop any cached identity the moment accounts change. */
@@ -4482,7 +4487,20 @@ export const Repository = {
    * وأحدثُ قولٍ في المقرّر هو قولُه: الحالةُ تُستبدل ولا تُكدَّس، فلا يقرأ
    * أحدٌ سجلاًّ يقول «سُجّل» و«رُدّ» معاً.
    */
-  setStudentCourseState: async (needId: string, next: StudentCourseState): Promise<StudentNeed | undefined> => {
+  /**
+   * `guard` يُسأل عن حالة المقرّر الحاليّة **داخل** المعاملة نفسها التي تكتب:
+   * قرارُ اللجنة وقرارُ التسجيل على المقرّر نفسه في اللحظة نفسها لا يمرّ
+   * أحدُهما على حالةٍ قديمة قرأها قبل أن يغيّرها الآخر. يُرجع سبب الرفض أو
+   * null، والرفضُ يُرمى `StudentCourseStateConflict` بلا كتابة.
+   */
+  setStudentCourseState: async (needId: string, next: StudentCourseState,
+    guard?: (current: StudentCourseState | undefined) => string | null): Promise<StudentNeed | undefined> => {
+    const check = (current: StudentNeed) => {
+      if (!guard) return;
+      const existing = (current.courseStates || []).find(state => Number(state.courseId) === Number(next.courseId));
+      const refusal = guard(existing);
+      if (refusal) throw new StudentCourseStateConflict(refusal);
+    };
     const merge = (current: StudentNeed): StudentNeed => ({
       ...current,
       courseStates: [
@@ -4505,6 +4523,7 @@ export const Repository = {
       return await firestoreDb.runTransaction(async transaction => {
         const doc = await transaction.get(ref);
         if (!doc.exists) return undefined;
+        check(doc.data() as StudentNeed);
         const merged = merge(doc.data() as StudentNeed);
         transaction.set(ref, merged);
         return merged;
@@ -4513,6 +4532,7 @@ export const Repository = {
     if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
     const at = db.studentNeeds.findIndex(row => row.id === needId);
     if (at < 0) return undefined;
+    check(db.studentNeeds[at]);
     db.studentNeeds[at] = merge(db.studentNeeds[at]);
     saveDatabase();
     return db.studentNeeds[at];

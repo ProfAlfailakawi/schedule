@@ -18,7 +18,7 @@
  * يقف خلفه في الطابور.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CheckCheck, ClipboardList, Clock3, Search, X } from "lucide-react";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
@@ -181,6 +181,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   const [canWrite, setCanWrite] = useState(false);
   const [viewer, setViewer] = useState<Viewer>("committee");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const filterChosen = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [ask, setAsk] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -230,7 +231,15 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
       setRows(data.rows || []);
       setTotals(data.totals || null);
       setCanWrite(Boolean(data.canWrite));
-      setViewer(data.viewer === "registration" || data.viewer === "both" ? data.viewer : "committee");
+      const nextViewer: Viewer = data.viewer === "registration" || data.viewer === "both" ? data.viewer : "committee";
+      setViewer(nextViewer);
+      /* يبدأ كلٌّ من طابوره هو — اللجنةُ بما ينتظرها، والتسجيلُ بما سُلّم إليه —
+         مرةً واحدة، ولا يُعاد ضبطُ تصفيةٍ اختارها المستخدم بعدها. */
+      if (!filterChosen.current) {
+        const courses: CaseCourse[] = (data.rows || []).flatMap((row: CaseRow) => row.courses || []);
+        const queue: StatusFilter = nextViewer === "registration" ? "approved" : nextViewer === "committee" ? "pending" : "all";
+        setStatusFilter(queue !== "all" && courses.some(course => statusOf(course) === queue) ? queue : "all");
+      }
     } catch (e: any) { setError(e.message); setRows([]); }
   }, [collegeId, sectionId, termId]);
 
@@ -391,7 +400,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
               <button
                 key={value} type="button" className="changes-chip"
                 data-active={statusFilter === value || undefined}
-                onClick={() => setStatusFilter(value)}
+                onClick={() => { filterChosen.current = true; setStatusFilter(value); }}
                 data-guide-ignore="تصفية العرض — لا يغيّر شيئاً"
               >
                 {label}{value !== "all" && statusCounts[value] ? ` · ${statusCounts[value]}` : ""}
@@ -409,7 +418,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
             <EmptyState
               title="لا نتائج"
               detail="لا طالبَ يطابق البحث أو الحالة المختارة."
-              action={<SecondaryButton type="button" onClick={() => { setAsk(""); setStatusFilter("all"); }} data-guide-ignore="مسح البحث — عرضٌ لا فعل">اعرض الكل</SecondaryButton>}
+              action={<SecondaryButton type="button" onClick={() => { setAsk(""); filterChosen.current = true; setStatusFilter("all"); }} data-guide-ignore="مسح البحث — عرضٌ لا فعل">اعرض الكل</SecondaryButton>}
             />
           ) : (
             <div className="request-deck">

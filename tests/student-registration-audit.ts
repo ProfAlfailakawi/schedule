@@ -125,7 +125,7 @@ check(screen.includes('const PENDING_COMMITTEE = "بانتظار اللجنة";'
 
 /* ── اللجنةُ أولاً، ثم التسجيل ──────────────────────────────────────────── */
 check(server.includes("const reachedRegistration = (state: any): boolean =>")
-  && server.includes('viewer !== "registration" || reachedRegistration(states.get(Number(id)))'),
+  && server.includes('if (viewer === "registration") return reachedRegistration(states.get(Number(id)));'),
   "والتسجيلُ لا يرى إلا ما وافقت عليه اللجنة وسلّمته");
 check(server.includes("لم توافق لجنةُ القسم على هذا المقرّر بعد، فلا يُكتب فيه من جهة التسجيل."),
   "ولا يكتب التسجيلُ في مقرّرٍ لم تسلّمه اللجنة، ولو أُرسل الطلبُ بلا شاشة");
@@ -137,6 +137,14 @@ check(server.includes("اختر سبب عدم الموافقة.") && server.incl
   "وعدمُ موافقة اللجنة بلا سببٍ مرفوض، والأسبابُ قائمةٌ مغلقة");
 check(server.includes('"committee-rejected":"لم توافق عليه لجنة القسم"'),
   "والطالبُ يرى قرار اللجنة وسببه في صفحته");
+check(repo.includes("guard?: (current: StudentCourseState | undefined) => string | null")
+  && repo.includes("check(doc.data() as StudentNeed);") && server.includes("}, guardByState);"),
+  "وقرارا اللجنة والتسجيل على المقرّر نفسه يُفحصان داخل الكتابة نفسها، لا على نسخةٍ قُرئت قبلها");
+check(server.includes("هذا المقرّر لقسمٍ آخر؛ تقرّر فيه لجنةُ ذلك القسم.")
+  && server.includes("return !owner || owner === sectionId;"),
+  "ولجنةُ القسم ترى مقرّرات قسمها وتقرّر فيها وحدها، ولو جمع الطلبُ القديم قسمين");
+check(screen.includes("filterChosen.current") && screen.includes('nextViewer === "registration" ? "approved"'),
+  "وكلٌّ يبدأ من طابوره: اللجنةُ بما ينتظرها، والتسجيلُ بما سُلّم إليه");
 check(screen.includes("const approveAll = async (row: CaseRow)") && !screen.includes("approveEverything"),
   "والموافقةُ الجماعية لطالبٍ واحد لا للكشف كله: النظرُ في كل طالب عملُ اللجنة");
 
