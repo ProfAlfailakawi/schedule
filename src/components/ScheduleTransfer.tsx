@@ -437,6 +437,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
        أيضاً. زرٌّ يظهر ثم يُرفض هو وعدٌ كاذب، لا مراجعة. */
     previewConflicts.issues.forEach(issue => issues.add(issue));
     if (termConflictsFresh) (termConflicts?.issues || []).forEach(issue => issues.add(issue));
+    if (importKind === "authority-pdf") (Array.isArray(xlsxPreview.saveIssues) ? xlsxPreview.saveIssues : []).forEach((issue: unknown) => { const text = String(issue || "").trim(); if (text) issues.add(text); });
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds, roster, previewConflicts, termConflicts, termConflictsFresh]);
   /* Server notes arrive as «السطر N: …» against the whole draft. They are moved
@@ -498,7 +499,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         authoritySectionCodeLooksPlausible(row.SCode) &&
         hasDays(row) && start >= 0 && end > start &&
         row.buildingId && (row.roomId || row.locationStatus === "PENDING_ROOM") &&
-        Number(row.AdInstructorId)
+        Number(row.AdInstructorId) &&
+        !serverRowIssues[importRowKey(row)]?.length
       );
     };
     const ready = rows.filter(rowReady).length;
@@ -521,7 +523,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     const reviewCells = rows.reduce((sum, row) => sum + Object.values((row as any).importEvidence || {})
       .filter((proof: any) => proof?.confidence === "UNRESOLVED" || proof?.confidence === "REVIEW_REQUIRED").length, 0);
     return { ready, review, reviewCells, derived, troubledPages };
-  }, [importKind, xlsxPreview?.rows, departmentIds, roster]);
+  }, [importKind, xlsxPreview?.rows, departmentIds, roster, serverRowIssues]);
 
   /* What a sharper reading could still fix: pages that carry an unresolved row
      AND have not already been re-read. When the approved engine left nothing
@@ -738,10 +740,22 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     setXlsxPreview((prev: any) => {
       if (!prev) return prev;
       const rows = assignAuthoritySections(applySmartFills(prev.rows || [], chosen) as ImportRow[]);
+      /* القراءة الأدق قراءةٌ للمستند، فتدخل خط الأساس — لكن في صفوفه الأصلية
+         وحدها. استبدال الأساس بالصفوف الحالية كان يمحو منه ما حذفه المراجع أو
+         عدّله قبلها، فيختفي الأحمر والذهبي من تقرير التغييرات. */
+      const priorBaseline: any[] = Array.isArray(prev.baselineRows) ? prev.baselineRows : [];
+      const baselineFills = chosen.flatMap(fill => {
+        const target: any = (prev.rows || [])[fill.rowIndex];
+        const at = target ? priorBaseline.findIndex(row => Number(row?.sourceOrder) === Number(target.sourceOrder)) : -1;
+        return at >= 0 ? [{ ...fill, rowIndex: at }] : [];
+      });
+      const baselineRows = priorBaseline.length
+        ? assignAuthoritySections(applySmartFills(priorBaseline, baselineFills) as ImportRow[]).map((row: any) => ({ ...row }))
+        : rows.map((row: any) => ({ ...row }));
       return {
         ...prev,
         rows,
-        baselineRows: rows.map((row: any) => ({ ...row })),
+        baselineRows,
         // Conflicts are diagnostics, not import notes: they must not leak into
         // the preview's issue list either.
         issues: Array.isArray(prev.issues) ? prev.issues : [],
@@ -828,6 +842,10 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         rows:scannedRows,
         baselineRows:scannedRows.map((row:any)=>({...row})),
         valid:Boolean(data.ready),count:Number(scannedRows.length),fileName:file.name,importLayout:"authority-pdf",
+        /* ما يرفضه الخادم عند الحفظ يُرى من أول قراءة، على صفه، ويمنع زر
+           النشر — لا «جاهز» أخضر ثم رفضٌ بعد الضغط. يُمحى مع أي تعديل كعادته،
+           ويعيد الخادم فحصه عند الحفظ. */
+        saveIssues:Array.isArray(data.blockingIssues)?data.blockingIssues.map((item:any)=>String(item||"").trim()).filter(Boolean):undefined,
         sourceBranchCode:String(data.headerBranch?.code||""),
         sourceBranchName:String(data.headerBranch?.name||""),
       });

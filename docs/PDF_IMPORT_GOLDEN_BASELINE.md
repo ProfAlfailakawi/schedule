@@ -32,3 +32,15 @@ The machine-readable fixture is `tests/fixtures/authority-import-golden.json` an
 
 
 > الحالة الحالية الأوسع وقواعد عدم العبث موثقة أيضًا في `docs/CURRENT_GOLDEN_STATE.md`.
+
+## Hardening rules added after the 2026-09 audit (guard: `tests/pdf-import-hardening.ts`)
+
+10. Instructor names are compared **position by position**. A printed name that contradicts the registry name in any position (family `النصف`≠`الكندري`, father `فهيد`≠`فهد`, `حسن`≠`حسين`) is another person and stays blank. Only the last printed name may be truncated at the cell edge; missing middle names are allowed when the printed family name equals the registry family name. A registry name found in the middle/end of the printed name (the father) is never an identity, and a free permutation of names is not an exact match (only the family-first rotation, and only after the course/department pools).
+11. A clean course number (native text layer, or a well-formed department key) that is absent from the catalogue stays **unresolved** — it is never "repaired" to a one-digit neighbour. The OCR multi-page rescue keeps its golden behaviour. A seven-digit catalogue key must carry the same local department digits.
+12. A native page whose printed data rows exceed the rows proven by the column grid (re-printed at another scale, split course token) is **suspicious** and the import stops; it never falls back to the flat reader. Files over 12 pages are refused, never truncated. A searchable scan (full-page image + hidden text) is read as a scan. The 012 legacy lane is used only while it is at least as sound as the semantic lane.
+13. The room cell is bounded by the printed `القاعة` header label; the seats-in-packages column can never become a room.
+14. A well-formed but unregistered building code (e.g. `011B23`) is never rebound to another building through a room fingerprint; that rescue is for damaged cells only.
+15. Scanned (OCR) days must agree with the time slot and the catalogue hours, otherwise they are cleared or left for review; a scanned reference number whose length differs from the page is cleared. History-recovered values are shown for review, not as confirmed.
+16. Publishing an Authority draft re-checks that the term is still empty. The change report treats two different registered instructor IDs as a change, and never fills the live row from the baseline.
+17. Rows imported from the Authority keep their printed section (`01`, `1`) and Authority room through term copy, evaluation and edits.
+18. The PDF change report's units, hours and maximum columns are taken **from the system catalogue** by design; they are not read from the PDF.

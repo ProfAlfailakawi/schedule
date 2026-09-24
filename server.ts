@@ -292,13 +292,15 @@ function confirmedDepartmentRoomIds(
   return ids;
 }
 
-async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:number){
+async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:number,authorityRoomId=""){
   const [registry,colleges,pinnedDepartmentRooms]=await Promise.all([readLocationRegistry(),Repository.getColleges(),Repository.getPinnedDepartmentRooms(collegeId,sectionId)]);
   const pinnedRoomIds=confirmedDepartmentRoomIds(registry,pinnedDepartmentRooms,collegeId);
   /* الموقع داخل الفرع نفسه ليس خارج النطاق: قاعة الجهراء تبقى قابلة للتعديل
      والحفظ من القسم نفسه، بينما فرع آخر (بنين مقابل بنات) يظل مرفوضاً. */
   const branchRoot=collegeBranchRoot(colleges as any,collegeId);
-  const directoryApprovedRoom=Boolean(row?.roomId&&pinnedRoomIds.has(String(row.roomId)));
+  /* القاعة التي أسندتها الجهة في الجدول المستورد قرارٌ رسمي: تعديل الأستاذ أو
+     الوقت في الموعد نفسه لا يُرفض بحجة أن القاعة لقسم آخر ما دامت لم تتغير. */
+  const directoryApprovedRoom=Boolean(row?.roomId&&(pinnedRoomIds.has(String(row.roomId))||(authorityRoomId&&String(row.roomId)===authorityRoomId)));
   let check=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:directoryApprovedRoom});
   const blocking=check.issues.filter(issue=>issue.severity==="high");
   if(blocking.length&&blocking.every(issue=>issue.type==="room_scope")&&check.canonical&&await hallBarterAllowsRoomUse({...row,...check.canonical},collegeId,sectionId)){
@@ -1397,7 +1399,9 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       return;
     }
     consumed.add(index);
-    const next=current[index];
+    /* نسخة محلية: الصف الحي كائنٌ من ذاكرة الجداول المشتركة، والمقارنة لا تكتب فيه. */
+    const next={...current[index]};
+    source={...source};
     /* Compare the academic meaning of each printed cell, not incidental storage
        representation. Imported booleans, numeric ids, clocks and location codes
        can pass through JSON/Firestore with harmless type/spacing differences;
@@ -1459,6 +1463,9 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       .trim();
     const sameInstructorIdentity=()=>{
       if(comparable("AdInstructorId",source.AdInstructorId)===comparable("AdInstructorId",next.AdInstructorId))return true;
+      /* هويتان مسجّلتان مختلفتان = أستاذ تغيّر، مهما تشابه الاسم المطبوع:
+         «يحيى سالم» يقع داخل «يحيى سالم العنزي» و«يحيى سالم الشمري» معاً. */
+      if(Number(source.AdInstructorId||0)>0&&Number(next.AdInstructorId||0)>0)return false;
       const names=options.instructorNameById;
       const rawSource=String(source.sourceInstructorText||names?.get(Number(source.AdInstructorId))||"").trim();
       const rawNext=String(names?.get(Number(next.AdInstructorId))||next.sourceInstructorText||"").trim();
@@ -1474,18 +1481,19 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
 
     /* HEURISTIC: If OCR failed to extract certain fields on multi-page PDFs, 
        inherit them from the proven DB source to prevent false 'changed' or 'deleted' states. */
-    if (!next.fstarttime && source.fstarttime) next.fstarttime = source.fstarttime;
-    if (!next.fendtime && source.fendtime) next.fendtime = source.fendtime;
-    if (!next.AdRoomCode && source.AdRoomCode) next.AdRoomCode = source.AdRoomCode;
-    if (!next.AdRoomHall && source.AdRoomHall) next.AdRoomHall = source.AdRoomHall;
-    if (!next.AdCourseName && source.AdCourseName) next.AdCourseName = source.AdCourseName;
-    if (!next.CourseName && source.CourseName) next.CourseName = source.CourseName;
-    if (!next.fsunday && !next.fmonday && !next.ftuesday && !next.fwednesday && !next.fthursday) {
-      next.fsunday = source.fsunday;
-      next.fmonday = source.fmonday;
-      next.ftuesday = source.ftuesday;
-      next.fwednesday = source.fwednesday;
-      next.fthursday = source.fthursday;
+    /* ما عجزت القراءة الأصلية عن التقاطه لا يُعدّ «تعديلاً» — فتُكمَّل نسخة
+       المصدر المحلية من الحي. أما العكس (ملء الحي من المصدر) فكان يُخفي
+       تعديلاً حقيقياً: قاعة صارت «بانتظار التثبيت» تظهر بلا تغيير وبالقاعة القديمة. */
+    if (!source.fstarttime && next.fstarttime) source.fstarttime = next.fstarttime;
+    if (!source.fendtime && next.fendtime) source.fendtime = next.fendtime;
+    if (!source.AdRoomCode && next.AdRoomCode) source.AdRoomCode = next.AdRoomCode;
+    if (!source.AdRoomHall && next.AdRoomHall && source.locationStatus !== "PENDING_ROOM") source.AdRoomHall = next.AdRoomHall;
+    if (!source.fsunday && !source.fmonday && !source.ftuesday && !source.fwednesday && !source.fthursday) {
+      source.fsunday = next.fsunday;
+      source.fmonday = next.fmonday;
+      source.ftuesday = next.ftuesday;
+      source.fwednesday = next.fwednesday;
+      source.fthursday = next.fthursday;
     }
 
     const changedFields=AUTHORITY_PDF_COMPARE_FIELDS.filter(field=>{
@@ -1673,7 +1681,11 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     const instructorProvenByFullName=["EXACT_FULL","FACULTY_IDENTITY","GLOBAL_SOLE_TWO_NAME"].includes(String((row as any)?.importEvidence?.instructor?.method||""));
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
     else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!instructorProvenByFullName&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
-    if(options.requireDepartmentInstructor){
+    /* صفٌّ جاء من جدول الجهة يحمل شعبته كما طُبعت («01»، «1») وقاعته كما
+       أسندتها الجهة. نسخ الفصل والتقييم والاسترجاع تعيد فحص الصفوف نفسها،
+       فتُفحص بقانون الاستيراد نفسه لا بقاعدة «3–4 أرقام» الخاصة بالنماذج. */
+    const authorityRow=Boolean(String((row as any)?.sourceSectionText||"").trim())||Boolean((row as any)?.importEvidence?.section);
+    if(options.requireDepartmentInstructor||authorityRow){
       const authoritySection=normalizeAuthoritySectionCode(row.SCode);
       if(!authoritySectionCodeLooksPlausible(authoritySection))errors.push(`السطر ${index + 1}: رقم الشعبة في جدول PDF غير صالح أو لم يُقرأ من المصدر`);
     }else if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية`);
@@ -1682,7 +1694,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
        that hall turns a correct import into a wall of identical warnings the
        reviewer cannot act on. Double-booking is still caught below, by the
        conflict pass that compares the actual reservations. */
-    const authorityRooms=Boolean(options.requireDepartmentInstructor);
+    const authorityRooms=Boolean(options.requireDepartmentInstructor)||authorityRow;
     let location=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:authorityRooms});
     const locationBlocking=location.issues.filter(issue=>issue.severity==="high");
     if(!authorityRooms&&locationBlocking.length&&locationBlocking.every(issue=>issue.type==="room_scope")&&location.canonical&&await hallBarterAllowsRoomUse({...row,...location.canonical},collegeId,sectionId)){
@@ -6587,7 +6599,8 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   const editPlan=editPlans.find(row=>row.status==="active"&&editMemberPlanIds.has(row.id))||editPlans.find(row=>row.status==="transition"&&editMemberPlanIds.has(row.id));
   if (!term) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
   if (!instructor) { res.status(400).json({ error: "أستاذ المقرر المختار غير صالح" }); return; }
-  const locationResult=await canonicalizeLocationForWrite({...req.body,AdCollegeId:collegeId,AdSectionId:sectionId},collegeId,sectionId);
+  const importedRoomId=(existing as any)?.importEvidence&&(existing as any)?.roomId?String((existing as any).roomId):"";
+  const locationResult=await canonicalizeLocationForWrite({...req.body,AdCollegeId:collegeId,AdSectionId:sectionId},collegeId,sectionId,importedRoomId);
   if(!locationResult.check.ok){res.status(400).json({error:locationResult.check.issues[0]?.message||"المكان غير صالح",issues:locationResult.check.issues});return;}
   const canonicalBody={...req.body,...locationResult.check.canonical,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:courseId,AdInstructorId:instructorId};
   const conflicts=await scheduleConflicts(req,canonicalBody,id);
@@ -7789,7 +7802,7 @@ app.post("/api/intelligence/pdf-import/bootstrap-section", requirePermission(7),
   const sourceSite=officialCollegeSitePrefix(header.branch.name);
   const branchCode=String(header.branch.code||"").replace(/\D/g,"");
   const targetBranchCode=sitePrefix.slice(0,3).replace(/\D/g,"");
-  const branchMatches=sourceSite?sourceSite===sitePrefix:Boolean(branchCode&&targetBranchCode&&branchCode===targetBranchCode);
+  const branchMatches=branchCode&&targetBranchCode?branchCode===targetBranchCode:Boolean(sourceSite&&sourceSite.slice(0,3)===sitePrefix.slice(0,3));
   if(!branchMatches){res.status(409).json({error:`الملف تابع إلى «${header.branch.label}» وليس «${officialSiteLabel(sitePrefix,college.AdCollegeName)}»؛ لم تتم إضافة أي قسم.`,code:"PDF_BRANCH_MISMATCH"});return;}
   const sourceCode=academicDigits(header.department.code);
   if(!/^\d{4}$/.test(sourceCode)||!authorityCollegeCode||!sourceCode.startsWith(authorityCollegeCode)){
@@ -7935,9 +7948,12 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       const sourceSite=officialCollegeSitePrefix(header.branch.name);
       const branchCode=String(header.branch.code||"").replace(/\D/g,"");
       const targetBranchCode=targetSitePrefix.slice(0,3).replace(/\D/g,"");
-      const definiteMismatch=sourceSite
-        ?sourceSite!==targetSitePrefix
-        :Boolean(branchCode&&targetBranchCode&&branchCode!==targetBranchCode);
+      /* الرمز ذو الخانات الثلاث هو هوية الفرع؛ الاسم يختلف رسمه (كليه/كلية)
+         ولا يميّز مواقع الفرع الواحد (012 يضم الرئيسي والجهراء والفحيحيل).
+         فلا يُحتكم إلى الاسم إلا حين يغيب الرمز. */
+      const definiteMismatch=branchCode&&targetBranchCode
+        ?branchCode!==targetBranchCode
+        :Boolean(sourceSite&&sourceSite.slice(0,3)!==targetSitePrefix.slice(0,3));
       if(definiteMismatch){
         const sourceLabel=sourceSite?officialSiteLabel(sourceSite,header.branch.name):header.branch.label;
         return{status:409,body:{
@@ -8248,7 +8264,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       return{method:"AMBIGUOUS",reason:`الأقرب في السجل: ${describeCandidate(exact[0])} — اختره من القائمة إن كان المقصود.`};
     }
     if(partial.length){
-      return{method:"UNREGISTERED",reason:`لا أحد في السجل بهذا الاسم كاملاً. الأقرب جزئياً: ${partial.map(describeCandidate).join("، ")} — إن كان أحدهم المقصود فاختره، وإلا أضِف الاسم برقمه المدني.`};
+      return{method:"AMBIGUOUS",reason:`لا أحد في السجل بهذا الاسم كاملاً. الأقرب جزئياً: ${partial.map(describeCandidate).join("، ")} — إن كان أحدهم المقصود فاختره، وإلا أضِف الاسم برقمه المدني.`};
     }
     return{method:"UNREGISTERED",reason:"الاسم مقروء، لكن لا يوجد في سجل الأساتذة شخص بهذا الاسم. أضِفه من قائمة أستاذ المقرر برقمه المدني، أو اختر زميلاً مسجّلاً."};
   };
@@ -8282,6 +8298,39 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     parsed.issues.push("تعذّر تسجيل مواقع الفرع المذكورة في المستند؛ تابعت القراءة بالسجل الحالي، وما لم يُحسم مبناه يظهر للمراجعة.");
   }
 
+  /* ── ما قرأته الكاميرا يُراجَع قبل أن يُسمّى مؤكداً ─────────────────────────
+     طبقة النص تنقل ما طبعته الجهة حرفاً. أما OCR فقد يقرأ «1» من «3 1» أو يبتر
+     الرقم المرجعي 13319 إلى 1331، والخلية تبدو ممتلئة سليمة. قاعدتان لا
+     تخمين فيهما:
+     • الأيام × مدة المحاضرة يجب أن تساوي ساعات المقرر في الكتالوج (بهامش
+       فروق الجداول المعروفة ±40 دقيقة أسبوعياً). إن تعذّر الإثبات تبقى
+       الأيام للمراجعة، وإن ثبت التناقض تُفرَّغ.
+     • الأرقام المرجعية في الصفحة الواحدة بطول واحد؛ الشاذ منها مبتور فيُفرَّغ. */
+  const scannedRows=(parsed.rows as any[]).filter(row=>String(row.sourceReadMode||"ocr-grid")!=="pdf-text");
+  const ocrDaysReview=new Set<any>();
+  if(scannedRows.length){
+    const lengthCounts=new Map<number,number>();
+    for(const row of scannedRows){const len=String(row.referenceNumber||"").replace(/\D/g,"").length;if(len)lengthCounts.set(len,(lengthCounts.get(len)||0)+1);}
+    const dominant=[...lengthCounts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||0;
+    const clockMinutes=(value:any)=>{const m=String(value||"").match(/^(\d{2}):(\d{2})$/);return m?Number(m[1])*60+Number(m[2]):-1;};
+    for(const row of scannedRows){
+      const reference=String(row.referenceNumber||"").replace(/\D/g,"");
+      if(reference&&dominant&&reference.length!==dominant){
+        parsed.issues.push(`صف «${row.AdCourseName||row.sourceCourseText||"—"}» شعبة ${row.SCode||"—"}: الرقم المرجعي المقروء «${reference}» أقصر أو أطول من بقية الصفحة؛ تُرك فارغاً بدل قيمة مبتورة.`);
+        row.referenceNumber="";
+      }
+      const dayCount=["fsunday","fmonday","ftuesday","fwednesday","fthursday"].filter(key=>row[key]).length;
+      if(!dayCount)continue;
+      const start=clockMinutes(row.fstarttime),end=clockMinutes(row.fendtime);
+      const hours=Number(importCourseById.get(Number(row.AdCourseId||0))?.CourseHours||0);
+      if(start<0||end<=start||!hours){ocrDaysReview.add(row);continue;}
+      const weekly=dayCount*(end-start),expected=hours*50;
+      if(Math.abs(weekly-expected)>40){
+        parsed.issues.push(`صف «${row.AdCourseName||"—"}» شعبة ${row.SCode||"—"}: الأيام المقروءة من الصورة (${dayCount}) لا تتسق مع مدة المحاضرة وساعات المقرر؛ فُرّغت لتحديدها يدوياً.`);
+        for(const key of ["fsunday","fmonday","ftuesday","fwednesday","fthursday"])row[key]=false;
+      }
+    }
+  }
   const confirmedOfficialBuildingCodes=registry.buildings.filter((item:any)=>item.confidence==="CONFIRMED").map((item:any)=>String(item.officialCode||""));
   const sourceBranchRoot=academicDigits(headerPreflight.branch?.code).slice(0,3);
   for(const row of parsed.rows as any[]){
@@ -8310,11 +8359,11 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const instructorMethod=String(row.instructorMatchMethod||"");
     const instructorScore=Number(row.instructorMatchScore||0);
     row.importEvidence={
-      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdCourseId)?100:0,source:fieldSource("AdCourseId"),method:fieldDerived("AdCourseId")?"HISTORICAL_UNIQUE_FINGERPRINT":"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:fieldDerived("AdCourseId"),reason:Number(row.AdCourseId)?(fieldDerived("AdCourseId")?"خلية رقم المقرر كانت فارغة؛ استعيدت فقط لأن بقية حقائق الصف طابقت سجلاً تاريخياً واحد المعنى":"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط"):"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
+      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?(fieldDerived("AdCourseId")?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:Number(row.AdCourseId)?100:0,source:fieldSource("AdCourseId"),method:fieldDerived("AdCourseId")?"HISTORICAL_UNIQUE_FINGERPRINT":"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:fieldDerived("AdCourseId"),reason:Number(row.AdCourseId)?(fieldDerived("AdCourseId")?"خلية رقم المقرر كانت فارغة؛ استعيدت فقط لأن بقية حقائق الصف طابقت سجلاً تاريخياً واحد المعنى":"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط"):"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
       section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",score:sectionMatchesSource?100:(authoritySectionConfirmed?96:0),source:sectionMatchesSource?readSource:(authoritySectionConfirmed?"PRESERVED_CANONICAL":"UNRESOLVED"),method:sectionMatchesSource?"EXACT_SECTION_CELL":(authoritySectionConfirmed?"PRESERVED_SECTION_VALUE":"UNRESOLVED"),derived:Boolean(authoritySectionConfirmed&&!sectionMatchesSource),reason:sectionMatchesSource?"رقم الشعبة محفوظ كما طُبع في خلية الشعبة بالمستند دون إعادة ترقيم":(authoritySectionConfirmed?"حُفظ رقم الشعبة الموجود دون توليد تسلسل جديد":"تعذر إثبات رقم الشعبة من المصدر؛ تُترك للمراجعة بدلاً من اختراع قيمة"),evidence:sectionMatchesSource?["خلية الشعبة الأصلية","لا إعادة ترقيم حسب ترتيب الصفوف"]:(authoritySectionConfirmed?["قيمة شعبة محفوظة كما وصلت للمحلل"]:["لا توليد 501/502 عند غياب الشعبة"])},
-      days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?"CONFIRMED":"UNRESOLVED",score:activeDayKeys.length?100:0,source:fieldSource("fsunday","fmonday","ftuesday","fwednesday","fthursday"),method:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_DAYS",derived:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"),reason:activeDayKeys.length?(fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة":"أيام المحاضرة قُرئت من خلية الأيام نفسها"):"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
-      time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?"CONFIRMED":"UNRESOLVED",score:timeConfirmed?100:0,source:fieldSource("fstarttime","fendtime"),method:fieldDerived("fstarttime","fendtime")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_TIME_PAIR",derived:fieldDerived("fstarttime","fendtime"),reason:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"خلية الوقت كانت ناقصة؛ استعيدت من تطابق تاريخي فريد مع تطبيع HH:MM فقط":"زوج الوقت مثبت من خلية الوقت نفسها"):"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
-      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:fieldSource("AdInstructorId"),method:fieldDerived("AdInstructorId")?"HISTORICAL_UNIQUE_FINGERPRINT":(Number(row.AdInstructorId)?(instructorMethod||"SYSTEM_UNIQUE"):unresolvedInstructorOutcome(row)),derived:fieldDerived("AdInstructorId")||Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"اسم الأستاذ لم يُحسم من OCR؛ استعيدت الهوية فقط من بصمة صف تاريخية غير ملتبسة":"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء"):unresolvedInstructorDiagnosis(row).reason,evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
+      days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?((ocrDaysReview.has(row)||fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"))?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:activeDayKeys.length?100:0,source:fieldSource("fsunday","fmonday","ftuesday","fwednesday","fthursday"),method:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_DAYS",derived:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"),reason:activeDayKeys.length?(fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة":"أيام المحاضرة قُرئت من خلية الأيام نفسها"):"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
+      time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:timeConfirmed?100:0,source:fieldSource("fstarttime","fendtime"),method:fieldDerived("fstarttime","fendtime")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_TIME_PAIR",derived:fieldDerived("fstarttime","fendtime"),reason:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"خلية الوقت كانت ناقصة؛ استعيدت من تطابق تاريخي فريد مع تطبيع HH:MM فقط":"زوج الوقت مثبت من خلية الوقت نفسها"):"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
+      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:fieldSource("AdInstructorId"),method:fieldDerived("AdInstructorId")?"HISTORICAL_UNIQUE_FINGERPRINT":(Number(row.AdInstructorId)?(instructorMethod||"SYSTEM_UNIQUE"):unresolvedInstructorOutcome(row)),derived:fieldDerived("AdInstructorId")||Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"اسم الأستاذ لم يُحسم من OCR؛ استعيدت الهوية فقط من بصمة صف تاريخية غير ملتبسة":"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء"):unresolvedInstructorDiagnosis(row).reason,evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
       building:{raw:sourceBuildingRaw,normalized:token,confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomCode"),method:fieldDerived("AdRoomCode")?"HISTORICAL_UNIQUE_FINGERPRINT":"REGISTRY_PENDING",derived:fieldDerived("AdRoomCode"),reason:fieldDerived("AdRoomCode")?"خلية المبنى كانت فارغة؛ استعيد رمزها من بصمة صف تاريخية غير ملتبسة":"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
       room:{raw:sourceRoomRaw,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomHall"),method:fieldDerived("AdRoomHall")?"HISTORICAL_UNIQUE_FINGERPRINT":"BUILDING_BOUND_ROOM_PENDING",derived:fieldDerived("AdRoomHall"),reason:fieldDerived("AdRoomHall")?"خلية القاعة كانت فارغة؛ استعيدت من بصمة صف تاريخية غير ملتبسة":(rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر"),evidence:["خلية القاعة الأصلية"]},
     };
@@ -8372,7 +8421,8 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
     row.buildingId=building.value.id;
     const buildingDerived=location.buildingMethod!=="EXACT_REGISTRY";
-    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",score:location.buildingScore,method:location.buildingMethod,derived:buildingDerived,reason:buildingDerived?"استعادة مقيدة بالكامل بالسجل الرسمي؛ لم يتم اختراع كود مبنى":"تطابق صريح مع رمز مبنى رسمي",evidence:[...building.evidence,`طريقة الحسم ${location.buildingMethod}`,`الرمز الرسمي ${building.value.officialCode}`]});
+    const buildingFromHistory=fieldDerived("AdRoomCode");
+    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:buildingFromHistory?"REVIEW_REQUIRED":"CONFIRMED",score:location.buildingScore,method:buildingFromHistory?"HISTORICAL_UNIQUE_FINGERPRINT":location.buildingMethod,derived:buildingDerived||buildingFromHistory,reason:buildingDerived?"استعادة مقيدة بالكامل بالسجل الرسمي؛ لم يتم اختراع كود مبنى":"تطابق صريح مع رمز مبنى رسمي",evidence:[...building.evidence,`طريقة الحسم ${location.buildingMethod}`,`الرمز الرسمي ${building.value.officialCode}`]});
     /* Once the building identity is confirmed, the user's rule is simple:
        a room is valid iff it exists under THAT building. Do not wrongly reject
        a legitimate Jahra/Fahaheel room because the current upload was opened
@@ -8387,7 +8437,8 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة المقروءة «${rawHall||"فارغة"}» غير معروفة داخل ${building.value.officialCode}؛ اختر قاعة رسمية أو «بانتظار تثبيت القاعة».`);continue;
     }
     row.roomId=room.value.id;row.AdRoomHall=room.value.canonicalCode;row.locationStatus="VERIFIED";
-    Object.assign(row.importEvidence.room,{canonical:room.value.id,confidence:"CONFIRMED",score:location.roomScore||100,method:location.roomScore&&location.roomScore<100?"REGISTRY_CONSTRAINED_REPAIR":"EXACT_ROOM_IN_BUILDING",derived:Boolean(location.roomScore&&location.roomScore<100),reason:"قاعة Canonical مؤكدة داخل المبنى المحدد",evidence:[...room.evidence,`المبنى ${building.value.officialCode}`,`القاعة ${room.value.canonicalCode}`]});
+    const roomFromHistory=fieldDerived("AdRoomHall");
+    Object.assign(row.importEvidence.room,{canonical:room.value.id,confidence:roomFromHistory?"REVIEW_REQUIRED":"CONFIRMED",score:location.roomScore||100,method:roomFromHistory?"HISTORICAL_UNIQUE_FINGERPRINT":(location.roomScore&&location.roomScore<100?"REGISTRY_CONSTRAINED_REPAIR":"EXACT_ROOM_IN_BUILDING"),derived:roomFromHistory||Boolean(location.roomScore&&location.roomScore<100),reason:"قاعة Canonical مؤكدة داخل المبنى المحدد",evidence:[...room.evidence,`المبنى ${building.value.officialCode}`,`القاعة ${room.value.canonicalCode}`]});
   }
 
   /* The sheet names its own term in the header. Uploading last year's export
@@ -9987,6 +10038,16 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   if (draft.source === "import" || draft.importLayout === "authority-pdf") {
     const importRefusal = await wholesaleRefusal(draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, { kind: "import" });
     if (importRefusal) { res.status(409).json({ error: importRefusal, code: "deadline-wholesale" }); return; }
+  }
+  /* ── «فصلٌ فارغ» يُقاس لحظة النشر لا لحظة الحفظ ─────────────────────────
+     المسودة قد تُحفظ اليوم وتُنشر غداً، وبينهما يُضاف موعد يدوياً أو يُنشر
+     استيراد آخر. النشر يستبدل النطاق كاملاً، فكان يمحو ما أُضيف بصمت. */
+  if(draft.importLayout==="authority-pdf"&&draft.status!=="published"){
+    const occupiedNow=await Repository.getSchedulesByScope({collegeId:draft.AdCollegeId,sectionId:draft.AdSectionId,termId:draft.AdTermId});
+    if(occupiedNow.length){
+      res.status(409).json({error:`أُضيف إلى هذا الفصل ${occupiedNow.length} موعداً بعد حفظ نسخة PDF. نسخ جدول PDF متاح للفصل الفارغ فقط؛ لم يُنشر شيء ولم يُحذف شيء.`,code:"PDF_TARGET_TERM_OCCUPIED"});
+      return;
+    }
   }
 
   let publishRows=draft.importLayout==="authority-pdf"
