@@ -230,7 +230,16 @@ export default function PagedImportPreview({
     visitingPeople: [...((tableProps as any).visitingPeople || []), ...departmentPeople] as any,
   };
 
-  if (totalPages <= 1) return <ImportPreviewTable rows={rows} onRows={onRows} {...displayProps} />;
+  if (totalPages <= 1) {
+    /* ملفٌّ بصفحة واحدة لا شريطَ صفحاتٍ له، فتنبيهُ قراءتها (سطرٌ مطبوع لم يُقرأ) يُقال فوق جدولها. */
+    const warning = String(pageDiagnostics.find(item => item?.warning)?.warning || "");
+    return (
+      <>
+        {warning ? <div className="import-page-status" role="alert"><AlertTriangle /><span>{warning}.</span></div> : null}
+        <ImportPreviewTable rows={rows} onRows={onRows} {...displayProps} />
+      </>
+    );
+  }
 
   return (
     <section className="import-page-review" aria-label="معاينة صفحات PDF كل صفحة على حدة">
