@@ -1815,3 +1815,11 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .transfer-sheet.is-page-wide .import-preview-table-wrap{overflow-x:auto}
   .transfer-sheet.is-page-wide .import-preview-table{min-width:860px}
 }
+
+/* بطاقة الأستاذ: حقلُ التاريخ وحده. */
+@media screen{.share-compose-single{display:flex;justify-content:center}.share-compose-single .share-closes{width:min(320px,100%)}}
+@media screen{
+  .share-sheet.visual-minimal .share-kind{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .share-row-lead .share-link-kind.kind-survey{border-color:color-mix(in srgb,var(--success) 30%,var(--line));color:var(--success)}
+}
+@media screen and (max-width:520px){.share-sheet.visual-minimal .share-kind{grid-template-columns:minmax(0,1fr)}}

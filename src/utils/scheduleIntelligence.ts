@@ -234,9 +234,9 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     const place=roomKey(other);
     for(const day of dayKeys){
       if(!other[day]) continue;
-      if(personalInstructor(other)) push(byDayInstructor,`${String(day)}|${other.AdInstructorId}`,at);
+      if(personalInstructor(other)) push(byDayInstructor,`${String(day)}|${Number(other.AdInstructorId)}`,at);
       if(place) push(byDayRoom,`${String(day)}|${place}`,at);
-      if(wantCohort) push(byDayCourse,`${String(day)}|${other.AdCourseId}`,at);
+      if(wantCohort) push(byDayCourse,`${String(day)}|${Number(other.AdCourseId)}`,at);
     }
     push(byCourseSection,`${other.AdCourseId}|${String(other.SCode)}`,at);
   }
@@ -247,9 +247,9 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     const place=roomKey(row);
     for(const day of dayKeys){
       if(!row[day]) continue;
-      if(personalInstructor(row)) take(byDayInstructor.get(`${String(day)}|${row.AdInstructorId}`));
+      if(personalInstructor(row)) take(byDayInstructor.get(`${String(day)}|${Number(row.AdInstructorId)}`));
       if(place) take(byDayRoom.get(`${String(day)}|${place}`));
-      if(wantCohort) for(const partner of partners.get(row.AdCourseId)||[]) take(byDayCourse.get(`${String(day)}|${partner}`));
+      if(wantCohort) for(const partner of partners.get(Number(row.AdCourseId))||[]) take(byDayCourse.get(`${String(day)}|${partner}`));
     }
     take(byCourseSection.get(`${row.AdCourseId}|${String(row.SCode)}`));
 
@@ -268,18 +268,18 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
          longer flattened into one number that is wrong on one of them. */
       const needGap=sameRoom?requiredGap(row,other,doorway):0;
       const tight=needGap>0 && sameRoom && !clashing && roomsTouch(row,other,needGap);
-      const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
+      const twin=Number(row.AdCourseId)===Number(other.AdCourseId) && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
       /* Two overlapping lectures whose COURSES share students. Only meaningful
          when they actually overlap — a survey says nothing about a gap. */
-      const cohort=clashing && row.AdCourseId!==other.AdCourseId && Boolean(options?.cohortPairs?.size) &&
-        options!.cohortPairs!.has(`${Math.min(row.AdCourseId,other.AdCourseId)}|${Math.max(row.AdCourseId,other.AdCourseId)}`);
+      const cohort=clashing && Number(row.AdCourseId)!==Number(other.AdCourseId) && Boolean(options?.cohortPairs?.size) &&
+        options!.cohortPairs!.has(`${Math.min(Number(row.AdCourseId),Number(other.AdCourseId))}|${Math.max(Number(row.AdCourseId),Number(other.AdCourseId))}`);
       if(!clashing && !twin && !tight) continue;
 
       const pair=[row.id,other.id].sort((a,b)=>a-b).join(":");
       if(byPair.has(pair)) continue;
 
       const reasons:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">=[];
-      if(clashing && personalInstructor(row) && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
+      if(clashing && personalInstructor(row) && Number(row.AdInstructorId)===Number(other.AdInstructorId)) reasons.push("instructor");
       if(clashing && sameRoom) reasons.push("room");
       if(twin) reasons.push("duplicate");
       if(cohort) reasons.push("cohort");
@@ -416,18 +416,18 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
          longer flattened into one number that is wrong on one of them. */
       const needGap=sameRoom?requiredGap(row,other,doorway):0;
       const tight=needGap>0 && sameRoom && !clashing && roomsTouch(row,other,needGap);
-      const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
+      const twin=Number(row.AdCourseId)===Number(other.AdCourseId) && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
       /* Two overlapping lectures whose COURSES share students. Only meaningful
          when they actually overlap — a survey says nothing about a gap. */
-      const cohort=clashing && row.AdCourseId!==other.AdCourseId && Boolean(options?.cohortPairs?.size) &&
-        options!.cohortPairs!.has(`${Math.min(row.AdCourseId,other.AdCourseId)}|${Math.max(row.AdCourseId,other.AdCourseId)}`);
+      const cohort=clashing && Number(row.AdCourseId)!==Number(other.AdCourseId) && Boolean(options?.cohortPairs?.size) &&
+        options!.cohortPairs!.has(`${Math.min(Number(row.AdCourseId),Number(other.AdCourseId))}|${Math.max(Number(row.AdCourseId),Number(other.AdCourseId))}`);
       if(!clashing && !twin && !tight) continue;
 
       const pair=[row.id,other.id].sort((a,b)=>a-b).join(":");
       if(byPair.has(pair)) continue;
 
       const reasons:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">=[];
-      if(clashing && personalInstructor(row) && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
+      if(clashing && personalInstructor(row) && Number(row.AdInstructorId)===Number(other.AdInstructorId)) reasons.push("instructor");
       if(clashing && sameRoom) reasons.push("room");
       if(twin) reasons.push("duplicate");
       if(cohort) reasons.push("cohort");
@@ -531,7 +531,7 @@ export function fastConflictScan(rows:FSchedule[]):LiveClashScan {
       for(const other of active){
         const a=meta.row,b=other.row;
         if(a.id===b.id||a.AdTermId!==b.AdTermId) continue;
-        const sameInstructor=Boolean(a.AdInstructorId)&&a.AdInstructorId===b.AdInstructorId;
+        const sameInstructor=Boolean(Number(a.AdInstructorId))&&Number(a.AdInstructorId)===Number(b.AdInstructorId);
         const sameRoom=Boolean(meta.room)&&meta.room===other.room;
         if(!sameInstructor&&!sameRoom) continue;
         const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
@@ -650,7 +650,7 @@ function candidateConflictCount(candidate:FSchedule, allRows:FSchedule[], exclud
   let count=0;
   for(const other of allRows){
     if(other.id===excludeId||other.AdTermId!==candidate.AdTermId||!overlaps(candidate,other))continue;
-    if(candidate.AdInstructorId===other.AdInstructorId)count++;
+    if(Number(candidate.AdInstructorId)===Number(other.AdInstructorId))count++;
     if(roomKey(candidate)&&roomKey(candidate)===roomKey(other))count++;
   }
   return count;
@@ -666,7 +666,7 @@ export function conflictSolutions(row:FSchedule, allRows:FSchedule[], max=5){
   // Same answer, a fraction of the work.
   const roomScope=new Set(preferredRooms.map(r=>r.key));
   if(roomKey(row))roomScope.add(roomKey(row));
-  const relevant=allRows.filter(r=>r.AdInstructorId===row.AdInstructorId||roomScope.has(roomKey(r)));
+  const relevant=allRows.filter(r=>Number(r.AdInstructorId)===Number(row.AdInstructorId)||roomScope.has(roomKey(r)));
   const dur=Math.max(30,duration(row)); const original=timeToMinutes(row.fstarttime); const candidates:Array<any>=[];
   for(let start=SCHEDULE_DAY_START;start+dur<=SCHEDULE_DAY_END;start+=SCHEDULE_SLOT_MINUTES){
     const currentRoom=row.roomId&&row.buildingId?{key:roomKey(row),code:row.AdRoomCode,hall:row.AdRoomHall,buildingId:row.buildingId,roomId:row.roomId}:null;
@@ -708,7 +708,7 @@ export function autoScheduleProposal(targetRows:FSchedule[], allRows:FSchedule[]
       const latePenalty=start>=16*60?(start-16*60+30)*1.2:0;
       let gapPenalty=0;
       for(const other of [...placed,...remaining]){
-        if(other.AdInstructorId!==candidate.AdInstructorId||!sharesDay(other,candidate))continue;
+        if(Number(other.AdInstructorId)!==Number(candidate.AdInstructorId)||!sharesDay(other,candidate))continue;
         const otherStart=timeToMinutes(other.fstarttime),otherEnd=timeToMinutes(other.fendtime);
         const gap=Math.min(Math.abs(start-otherEnd),Math.abs(otherStart-(start+dur)));
         gapPenalty+=Math.min(180,gap)*0.16;

@@ -4144,6 +4144,25 @@ function broadcastScheduleChange(demoSessionId = "") {
   }
 }
 
+/**
+ * ── نبضةُ الإشعارات ───────────────────────────────────────────────────────
+ * لا تحمل شيئاً: تقول لكل شاشةٍ مفتوحة «اسأل عن إشعاراتك الآن»، فيسأل كلٌّ
+ * بنطاقه هو. فيصل طلبُ الأستاذ أو قرارُ التسجيل في لحظته، لا بعد دقائق.
+ */
+function broadcastNotify() {
+  scheduleEventSerial += 1;
+  const payload = `id: ${scheduleEventSerial}\nevent: notify\ndata: {"at":${Date.now()}}\n\n`;
+  for (const [response] of scheduleEventClients) {
+    try { response.write(payload); } catch { scheduleEventClients.delete(response); }
+  }
+}
+for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests"]) {
+  app.use(prefix, (req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(); });
+    next();
+  });
+}
+
 /* A mark older than this is treated as stale — the person is still connected,
    but wherever their pointer was, it is not news any more. A connection that
    has not spoken at all for the longer window stops being listed: a stream is
@@ -9582,7 +9601,35 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
   const today = new Date().toISOString().slice(0, 10);
   const department = role === "committeeChair" || role === "departmentHead";
-  const requests = department ? await Repository.getInstructorRequests(0, 0, termId) : [];
+  /* ── طلباتُ الأساتذة تصل من يعمل على الجدول، أيّاً كانت صفته ───────────────
+   * كانت تُحسب للجنة ورئيس القسم وحدهما، وبقسم الطلب لا بقسم البند: فطلبٌ
+   * بإضافةٍ في كليةٍ أخرى، أو منسّقٌ بصلاحية الإدارة، لا يصله شيء. فصار البندُ
+   * يُنسب إلى قسمه هو، ويصل كلَّ من يملك شاشة الجدول (٧) في ذلك القسم. */
+  const granted = req.permissions ?? [];
+  const handlesRequests = Boolean(req.user?.IsAdminUser) || granted.includes(7) || department;
+  const requests = handlesRequests ? await Repository.getInstructorRequests(0, 0, termId) : [];
+  const instructorNames = handlesRequests
+    ? new Map((await Repository.getInstructors() as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]))
+    : new Map<number, string>();
+  const pendingByScope = new Map<string, Array<{ requestId: string; instructorName: string; count: number; at?: string }>>();
+  for (const request of requests as InstructorRequest[]) {
+    if (request.status !== "submitted" && request.status !== "in-review") continue;
+    const perScope = new Map<string, number>();
+    for (const item of request.items || []) {
+      if (item.action === "keep" || item.decision?.state) continue;
+      const where = requestItemScope(request, item);
+      const key = `${where.collegeId}:${where.sectionId}`;
+      perScope.set(key, (perScope.get(key) || 0) + 1);
+    }
+    for (const [key, count] of perScope) {
+      pendingByScope.set(key, [...(pendingByScope.get(key) || []), {
+        requestId: String(request.id),
+        instructorName: instructorNames.get(Number(request.AdInstructorId)) || "أستاذ",
+        count,
+        at: request.submittedAt,
+      }]);
+    }
+  }
   const scopes = await Promise.all(inScope.map(async row => {
     const collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
     const approval = stored.get(`${collegeId}:${sectionId}`) || emptyApproval(collegeId, sectionId, termId);
@@ -9590,11 +9637,10 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     const openRegistrarNotes = department && approval.status === "returned"
       ? (await notesWithState(collegeId, sectionId, termId)).filter(note => note.origin === "registrar" && note.state === "open").length
       : 0;
-    const openRequests = (requests as any[]).filter(item =>
-      Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId
-      && (item.status === "submitted" || item.status === "in-review")).length;
+    const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
+    const openRequests = pendingRequests.reduce((sum, entry) => sum + entry.count, 0);
     return {
-      approval, rowCount, openRegistrarNotes, openRequests,
+      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests,
       collegeName: collegeName.get(collegeId) || "",
       sectionName: String(row.AdSectionName || ""),
       deadline: readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today),
@@ -15225,6 +15271,7 @@ sectionId: allowedOption.sectionId,
   });
 
   res.setHeader("Cache-Control", "no-store");
+  broadcastNotify();
   res.json({ request: stripForInstructor(saved), changed });
 });
 

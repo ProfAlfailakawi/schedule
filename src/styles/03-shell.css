@@ -1944,3 +1944,23 @@ html[data-schedule-workspace="presentation"] .notify-bell{display:none}
   .notify-bell{top:calc((var(--topbar-h,64px) - 40px) / 2);inset-inline-end:64px;width:40px;height:40px;box-shadow:none}
   .notify-panel{top:calc(var(--topbar-h,64px) + 8px)}
 }
+
+/* الإشعارُ العائم: ما وصل للتوّ، تحت الجرس، يختفي وحده بعد لحظات. */
+.notify-toast{
+  position:fixed;top:68px;inset-inline-end:16px;z-index:62;
+  width:min(360px,calc(100vw - 32px));display:grid;grid-template-columns:minmax(0,1fr) 32px;align-items:start;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-md);
+  animation:notify-drop .28s var(--ease,ease) both;overflow:hidden;
+}
+.notify-toast::before{content:"";position:absolute;inset-block:0;inset-inline-start:0;width:4px;background:var(--warning)}
+.notify-toast[data-tone="alert"]::before{background:var(--danger)}
+.notify-toast-body{display:grid;grid-template-columns:36px minmax(0,1fr);gap:10px;padding:12px 14px;text-align:start;color:var(--ink);cursor:pointer}
+.notify-toast-body .notify-icon{background:var(--warning-soft);color:var(--warning)}
+.notify-toast[data-tone="alert"] .notify-toast-body .notify-icon{background:var(--danger-soft);color:var(--danger)}
+.notify-toast-kicker{font-size:11px!important;font-weight:700;color:var(--accent)!important}
+.notify-toast-close{margin:8px 0 0 8px;width:28px;height:28px;display:grid;place-items:center;border-radius:50%;color:var(--ink-2)}
+.notify-toast-close:hover{background:var(--surface-2)}
+.notify-toast-close svg{width:16px;height:16px}
+@keyframes notify-drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@media screen and (max-width:1119px){.notify-toast{top:calc(var(--topbar-h,64px) + 8px)}}
+@media (prefers-reduced-motion:reduce){.notify-toast{animation:none}}

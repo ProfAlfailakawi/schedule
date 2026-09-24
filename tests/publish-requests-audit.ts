@@ -30,14 +30,15 @@ check(publish.includes('fetch("/api/instructor-requests/issue"'),
   "والواجهةُ تستدعيه — وهذا ما كان ناقصاً، فبقيت الدورةُ بلا باب");
 /* «بطاقة الأستاذ» و«رغبات الأساتذة» كانتا بابين وهما للأستاذ شيءٌ واحد: يفتح
    بطاقتَه برقمه المدني ومنها يطلب. فصارتا باباً واحداً، بلا سطرِ تعريفٍ تحته. */
-check(publish.includes('type Kind = "department" | "staff";'),
-  "بابان في «نشر»: جدولُ القسم، وبطاقةُ الأستاذ التي يُطلب منها التعديل");
+check(publish.includes('type Kind = "department" | "staff" | "survey";'),
+  "ثلاثة أبواب في «نشر»: جدولُ القسم، وبطاقةُ الأستاذ التي يُطلب منها التعديل، واستبيانُ الطلبة");
 check(publish.includes("<span>بطاقة الأستاذ</span>") && !publish.includes("<span>رغبات الأساتذة</span>"),
   "ويُسمّى بابُ الأستاذ باسمٍ واحد");
 check(!/<span>(جدول القسم|بطاقة الأستاذ)<\/span>\s*<small>/.test(publish),
   "ولا سطرَ تعريفٍ تحت الأبواب");
-check(publish.includes("استقبال طلبات تعديل الجدول") && publish.includes("if (withRequests) {"),
-  "وطلباتُ التعديل تُفتح مع البطاقة نفسها");
+check(publish.includes('const withRequests = kind === "staff";') && publish.includes("if (withRequests) {")
+  && !publish.includes("استقبال طلبات تعديل الجدول") && !/kind === "staff"[^\n]*share-days/.test(publish),
+  "وطلباتُ التعديل تُفتح مع البطاقة نفسها، بتاريخٍ واحد لا مدّتين");
 
 /* ── موعدٌ يُكتب، لا مدّةٌ تُحسب ───────────────────────────────────────── */
 
@@ -81,7 +82,7 @@ check(staffDoor.indexOf('res.redirect(302, `/r/${encodeURIComponent(resolved.lin
   "ويُردّ قبل أن يُبنى جدولُ القسم، لا بعده");
 /* وحارسٌ ثانٍ في الشاشة: لا تُعرض أصلاً، فلا تأخذ أزرارَ القائمة التي تبني
    `/s/`. */
-check(publish.includes('link.kind !== "survey" && link.kind !== "request"'),
+check(publish.includes('link => link.kind !== "request"') && publish.includes('?.kind === "survey" ? "q" : "s"'),
   "ولا تُعرض روابطُ الطلب في قائمة روابط النشر");
 
 /* ٢) الصلاحيةُ كانت ثابتةً بـ٢١ يوماً والموعدُ يُكتب بحرّية. فمن كتب موعداً

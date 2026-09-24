@@ -95,7 +95,7 @@ check(inbox.includes("putHandoff({") && inbox.includes('onNavigate?.("schedules"
   "الواردُ يحمل البذرةَ ثم ينتقل");
 check(!inbox.includes("throw new Error(\"الإضافة تُفتح في ورشة الجدول"),
   "ولم يبقَ الطريقُ المسدود");
-check(inbox.includes('item.action === "add" ? "افتحها في الورشة" : "ثبّت"'),
+check(inbox.includes('item.action === "add" ? "أضِفه الآن" : "ثبّت"'),
   "والزرُّ يقول ما سيفعل، فلا يَعِد بتثبيتٍ لا يقع");
 check(workshop.includes("const handoff = takeHandoff();") && workshop.includes("setMessage(handoffNotice(handoff))"),
   "والورشةُ تلتقطها وتقول من أين جاءت");

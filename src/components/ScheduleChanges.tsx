@@ -473,19 +473,14 @@ function FindingRows({ rowIds, rowsById, onJump }: { rowIds: number[]; rowsById:
   return (
     <div className="review-rows">
       {people.length ? people.slice(0, 12).map(([who, rows]) => (
-        <React.Fragment key={who}><FindingPerson who={who} rows={rows} /></React.Fragment>
+        <React.Fragment key={who}><FindingPerson who={who} rows={rows} onJump={onJump} /></React.Fragment>
       )) : <p className="review-more">المواعيد المعنيّة خارج ما يعرضه هذا التقرير.</p>}
       {people.length > 12 ? <p className="review-more">و{(people.length - 12).toLocaleString("ar-KW-u-nu-latn")} أساتذة غيرهم…</p> : null}
-      {rowIds.length ? (
-        <SecondaryButton type="button" data-guide-ignore="انتقالٌ صريح إلى المواعيد المعنيّة بالملاحظة — بعد قراءتها في مكانها" onClick={() => onJump(rowIds)}>
-          انتقل إلى المواعيد في الجدول
-        </SecondaryButton>
-      ) : null}
     </div>
   );
 }
 
-function FindingPerson({ who, rows }: { who: string; rows: DisplayRow[] }) {
+function FindingPerson({ who, rows, onJump }: { who: string; rows: DisplayRow[]; onJump: (rowIds: number[]) => void }) {
   const [open, setOpen] = useState(false);
   const single = rows.length === 1;
   const sectionCount = new Set(rows.map(row => `${row.courseCode}:${row.sectionCode}`)).size;
@@ -505,14 +500,15 @@ function FindingPerson({ who, rows }: { who: string; rows: DisplayRow[] }) {
       {(open || single) ? (
         <div className="review-person-rows">
           {rows.map(row => (
-            <article key={row.scheduleId} className="review-row-card">
+            /* الضغطُ على المقرّر ينقل إلى موعده هو وحده في الجدول. */
+            <button type="button" key={row.scheduleId} className="review-row-card review-row-jump" title="انتقل إلى هذا الموعد في الجدول" data-guide-ignore="انتقالٌ إلى موعدٍ واحد في الجدول — تنقّلٌ لا يعدّل البيانات" onClick={() => onJump([row.scheduleId])}>
               <span className="rrc-code" dir="ltr">{row.courseCode || "—"}</span>
               <div className="rrc-main">
                 {single ? null : <strong>{row.course}</strong>}
                 <small>شعبة {row.sectionCode} · {row.days || "بلا أيام"}{row.room ? <> · <bdi dir="ltr">{row.room}</bdi></> : null}</small>
               </div>
               <time className="rrc-time" dir="ltr">{row.time}</time>
-            </article>
+            </button>
           ))}
         </div>
       ) : null}
