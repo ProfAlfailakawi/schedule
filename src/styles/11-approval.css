@@ -952,3 +952,10 @@
   .request-depends svg{width:15px;height:15px;margin-top:3px;color:var(--accent);transform:scaleX(-1)}
 }
 @media screen{.request-readiness[data-readiness="waiting"]{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 25%,transparent)}}
+@media screen{.request-depends[data-tone="linked"]{background:var(--warning-soft);border-inline-start-color:var(--warning)}.request-depends[data-tone="linked"] svg{color:var(--warning)}}
+@media screen{
+  .request-notify{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:12.5px;font-weight:700;background:#e7f6ec;color:#16784a;border:1px solid color-mix(in srgb,#16784a 25%,transparent);text-decoration:none}
+  .request-notify svg{width:14px;height:14px}
+  .request-notify:hover{background:#d9f0e2}
+  .request-notify[data-blocked]{background:var(--surface-2);color:var(--ink-2);border-color:var(--line)}
+}

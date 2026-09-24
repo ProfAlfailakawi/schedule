@@ -76,20 +76,23 @@ export interface ReachMessage {
 export function reachAboutCard(
   person: Pick<AdInstructor, "AdInstructorName" | "AdInstructorMobile">,
   cardUrl: string,
-  occasion?: "new" | "changed" | "reminder",
+  occasion?: "new" | "changed" | "reminder" | "decided",
+  detail?: string,
 ): ReachMessage {
   const number = whatsappNumber(person.AdInstructorMobile);
   const name = String(person.AdInstructorName || "").trim();
   const greeting = name ? `${name}،` : "";
   const line =
-    occasion === "changed" ? "طرأ تعديل على جدولك."
+    occasion === "decided" ? "ردّ القسم على طلب تعديل جدولك."
+    : occasion === "changed" ? "طرأ تعديل على جدولك."
     : occasion === "reminder" ? "تذكير بجدولك لهذا الفصل."
     : "هذه بطاقة جدولك الدراسي.";
   const text = [
     greeting,
     line,
+    detail || "",
     cardUrl,
-    "الرابط للقراءة فقط ويُحدَّث من نفسه — احفظه ولا حاجة لطلبه مرة أخرى.",
+    occasion === "decided" ? "افتح الرابط لترى القرار في كل بند، والبدائل إن وُجدت." : "الرابط للقراءة فقط ويُحدَّث من نفسه — احفظه ولا حاجة لطلبه مرة أخرى.",
   ].filter(Boolean).join("\n");
 
   return {
