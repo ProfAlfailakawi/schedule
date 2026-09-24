@@ -3763,7 +3763,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       const scanOrientationLocked=cachedPreflight?.header.source==="scan"&&!cachedPreflight.header.requiresLandscapeUpload;
       /* صفحةٌ عليها تنبيهٌ فقط تكفيها القراءةُ المحسّنة أدناه؛ إعادةُ قراءة شبكتها
          كاملةً تضاعف الوقت ولا تُضيف. */
-      const rescueTurns=!pages[index]?.diagnostic?.suspicious?[] as Array<-1|0|1>:scanOrientationLocked?[bestOrientation]:[bestOrientation,-1,0,1] as Array<-1|0|1>;
+      let rescueTurns=scanOrientationLocked?[bestOrientation]:[bestOrientation,-1,0,1] as Array<-1|0|1>;
+      if(!pages[index]?.diagnostic?.suspicious)rescueTurns=[];
       for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
