@@ -33,7 +33,7 @@ for (const name of PAGES) {
     continue;
   }
   const html = String(sandbox.out || "");
-  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]).filter(code => code.trim());
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script[^>]*>/gi)].map(m => m[1]).filter(code => code.trim());
   const errors: string[] = [];
   for (const code of scripts) {
     try { new vm.Script(code); } catch (error: any) { errors.push(String(error?.message)); }
