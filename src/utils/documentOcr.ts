@@ -1708,7 +1708,7 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
   }
   return out;
 }
-async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number}>{
+async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number;tableNumbers:number}>{
   const worker=await getWordLaneWorker();
   /* الأرقام الصغيرة في مسح منخفض الدقة تلتصق وتتشوّه؛ تُكبَّر الصفحة إلى
      عرض 3300 تقريباً (300 نقطة لصفحة أفقية) قبل القراءة. */
@@ -1721,10 +1721,12 @@ async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence
   const prepared=authorityOcrWordsToWords(words,width);
   const rows=authorityPdfTextGridRows(prepared,842,"semantic").map(row=>({...row,sourceMode:"ocr-grid" as const}));
   const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
+  /* أرقام الجدول (ساعات، مراجع، أكواد) — صفحة دليل الأيام لا تحمل منها شيئاً. */
+  const tableNumbers=prepared.filter(word=>/\d{4,}/.test(toAscii(word.text))).length;
   try{await rereadDayCells(source,width,prepared,rows);}catch{/* the lane's own day reading stands */}
   try{await rereadTimeCells(source,width,prepared,rows);}catch{/* the lane's own time reading stands */}
   try{await rereadRoomCells(source,width,prepared,rows);}catch{/* the lane's own room reading stands */}
-  return{rows,bodyEvidence};
+  return{rows,bodyEvidence,tableNumbers};
 }
 /* ── إعادة قراءة خلية الأيام وحدها ─────────────────────────────────────────
    أرقام الأيام صغيرة ومنفصلة («4 2»)، وقراءة الصفحة كاملة تُسقطها أو تضم
@@ -3553,7 +3555,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }
     /* الطريقان معاً، ويُختار لكل صفحة ما أثبت صفوفاً سليمة أكثر (رقم مقرر،
        مرجعي، وقت، مبنى). ما كان يعمل لا يُفقد: يبقى إن كان الأسلم. */
-    let wordLane:{rows:GridRow[];bodyEvidence:number}|null=null;
+    let wordLane:{rows:GridRow[];bodyEvidence:number;tableNumbers:number}|null=null;
     try{
       /* طريق الكلمات يقرأ الصفحة من الملف الأصلي بدقة أعلى (3500) لا من
          الصورة المصغّرة المعدّة للخطوط: أرقام الخلايا الصغيرة لا تلتصق. */
@@ -3563,7 +3565,13 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     /* طريق الكلمات أساسٌ متى أثبت صفوفاً سليمة أكثر. وما رآه طريق الخطوط ولم
        يجمعه طريق الكلمات يُضاف بهويته فقط (المقرر، الشعبة، المرجعي) وتُترك
        خلاياه الأخرى فارغة للمراجعة: لا صف يضيع، ولا قيمة مشكوك فيها تدخل. */
-    if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)){
+    /* ولا يحلّ طريق الكلمات محلّ طريق الخطوط وهو يرى صفوفاً أقل مما أثبته
+       الخطوط (كود كامل ومرجعي بطول مراجع الصفحة): الصفوف التي يفقدها تعود
+       بهويتها فقط وتضيع أيامها ووقتها المقروءة. صفوف الخطوط المشوهة (مرجعي
+       مبتور) لا تُحسب. */
+    const laneReferenceLength=(()=>{const counts=new Map<number,number>();for(const row of wordLane?.rows||[]){const n=String(row.reference||"").length;if(n)counts.set(n,(counts.get(n)||0)+1);}return[...counts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||0;})();
+    const keyedGridRows=(gridRows||[]).filter(row=>/^\d{7}$/.test(String(row.code||""))&&String(row.reference||"").length===laneReferenceLength).length;
+    if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)&&wordLane.rows.length>=keyedGridRows){
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
@@ -3584,7 +3592,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }
     /* صفحة بلا رقم مقرر ولا صف (صفحة دليل الأيام الأخيرة) صفحةٌ فارغة، لا
        استخراج مشبوه: كانت تُسقط كل مسح متعدد الصفحات برسالة «صورة غير واضحة». */
-    if(!gridRows&&wordLane&&!wordLane.rows.length&&wordLane.bodyEvidence===0){
+    /* صفحة دليل حقاً: لا كود مقرر ولا أرقام جدول إطلاقاً. صفحة جدول رديئة
+       المسح لا يُقرأ فيها الكود لكن تبقى ساعاتها ومراجعها — تلك ليست فارغة،
+       وتذهب إلى الفحص الذي يعلّمها مشبوهة بدل أن تُسقط صفوفها بصمت. */
+    if(!gridRows&&wordLane&&!wordLane.rows.length&&wordLane.bodyEvidence===0&&wordLane.tableNumbers<3){
       texts[index]="";scores[index]=85;
       pages[index]={rows:[],diagnostic:{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation:pageOrientation,suspicious:false,reason:"صفحة بلا صفوف جدول"}};
       pagesDone++;
