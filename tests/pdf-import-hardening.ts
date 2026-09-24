@@ -7,7 +7,7 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
@@ -145,6 +145,33 @@ check("a well-formed but unregistered building code is never rebound through a r
   assert.equal(at("011B99","G25").building.value?.officialCode??null,null);
   assert.equal(at("011B30","G25").building.value?.officialCode,"011B30");
   assert.equal(at("11B30","G25").building.value?.officialCode,"011B30","a damaged code is still recovered");
+});
+
+/* ── Scanned day cell ─────────────────────────────────────────────────────── */
+check("the lost final ta of the activity word is never read as a day",()=>{
+  const w=(text:string,x0:number,x1:number,y:number)=>({text,x0,y0:y-9,x1,y1:y+1});
+  const row=(y:number,taGlyph:string,days:string[])=>[
+    w("0101102",788,824,y),w("10643",760,786,y),w("01",741,752,y),w("الثقافة",680,712,y),
+    w("011B18",265,302,y),w("1220",200,222,y),w("-",222,226,y),w("1100",226,248,y),
+    w("محاضر",184,206,y),...(taGlyph?[w(taGlyph,178,185,y)]:[]),
+    ...days.map((d,i)=>w(d,150-i*8,156-i*8,y)),w("شجاع",112,130,y),
+  ];
+  assert.equal(authorityPdfTextGridRows(row(180,"5",[]),842,"semantic")[0].days,"","«5» touching «محاضر» is its ta, not Thursday");
+  assert.equal(authorityPdfTextGridRows(row(180,"J)",["42"]),842,"semantic")[0].days.replace(/\s+/g,""),"42");
+  assert.equal(authorityPdfTextGridRows(row(180,"5",["42"]),842,"semantic")[0].days.replace(/\s+/g,""),"42");
+});
+check("OCR direction marks never hide the activity word",()=>{
+  const words=authorityOcrWordsToWords([{text:"\u200fمحاضر\u200e",x0:0,y0:0,x1:10,y1:10}],842);
+  assert.equal(words[0].text,"محاضر");
+});
+check("a re-read day cell is accepted only as the printed descending run",()=>{
+  assert.equal(authorityPrintedDayRun("4 2"),"4 2");
+  assert.equal(authorityPrintedDayRun("5 31"),"5 3 1");
+  assert.equal(authorityPrintedDayRun("54321"),"5 4 3 2 1");
+  assert.equal(authorityPrintedDayRun("2 531"),"","a neighbouring row's digit breaks the order");
+  assert.equal(authorityPrintedDayRun("1 4 2"),"");
+  assert.equal(authorityPrintedDayRun("4 4"),"");
+  assert.equal(authorityPrintedDayRun(""),"");
 });
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));
