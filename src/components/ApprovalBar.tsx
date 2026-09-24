@@ -88,10 +88,12 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const act = async (path: string) => {
     setBusy(true); setError(null);
     try {
-      await request(path, {
+      const result: any = await request(path, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId }),
       });
+      /* اعتمادُ رئيس القسم يُرسل معه؛ فإن منعه مانعٌ قيل السببُ هنا. */
+      if (result?.submitBlocked) setError(`حُفظ اعتمادك، ولم يُرسل بعد: ${result.submitBlocked}`);
       await load();
       onChanged?.();
     } catch (e: any) { setError(e.message); }
@@ -207,7 +209,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
         {canSignNow ? (
           <PrimaryButton type="button" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
-            {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد الجدول" : "توقيع لجنة الجدول"}
+            {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
           </PrimaryButton>
         ) : null}
 

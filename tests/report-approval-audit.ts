@@ -116,7 +116,7 @@ check(balanceBody.includes("if (!isScopeAllowed(req, Number(row.AdCollegeId), Nu
 
 check(reports.includes("const ROLE_LENSES"), "قائمة العدسات بحسب الصفة معرَّفة");
 const roleLensBlock = reports.slice(reports.indexOf("const ROLE_LENSES"), reports.indexOf("const ROLE_LENSES") + 700);
-check(/dean:\s*\["balance"/.test(roleLensBlock), "العميد يفتح على ميزان الأقسام: أوّل ما في القائمة هو الجواب");
+check(/dean:\s*\["list", "week", "balance"/.test(roleLensBlock), "العميد يفتح على الجداول المعتمدة نفسها، ثم ميزان الأقسام");
 check(/registrarHead:\s*\["balance"/.test(roleLensBlock), "رئيس التسجيل يفتح على الميزان أيضاً");
 check(!roleLensBlock.includes("committeeChair"), "لجنة الجدول ترى القائمة كاملةً كما كانت قبل هذه الإضافة");
 check(!roleLensBlock.includes("standard:"), "المستخدم العادي كذلك: التقصير لمن عُرف ما يريد، لا عقوبةٌ تُعمَّم");

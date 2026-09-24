@@ -31,6 +31,7 @@ import {
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
 import { blockingConflictDetails } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
+import { buildNotifications } from "./src/utils/notificationCenter";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
@@ -4429,13 +4430,63 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
  * which is the same answer at a fraction of the weight. The administrator keeps
  * the wide read, because for them the wide read is the answer.
  */
+/**
+ * ── العميد يرى الجدولَ النهائي وحده ──────────────────────────────────────────
+ *
+ * العميد والعميد المساعد لا يتابعان المسوّدة: يريان كلَّ قسمٍ كما قبِله
+ * التسجيل آخرَ مرّة. فقسمٌ معتمدٌ الآن يُقرأ حيّاً — لأن أيَّ تعديلٍ بعد القبول
+ * يعيده للتسجيل فوراً — وقسمٌ عاد للتسجيل بعد قبولٍ سابق يُقرأ من نسخة ذلك
+ * القبول، وقسمٌ لم يُقبل قطّ لا يظهر.
+ */
+function readsFinalSchedulesOnly(req: AuthenticatedRequest): boolean {
+  const id = roleDefinition(req.user?.Role).id;
+  return !req.user?.IsAdminUser && (id === "dean" || id === "viceDean");
+}
+
+async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedule[]> {
+  const approvals = await Repository.getScheduleApprovalsForTerm(termId);
+  const byScope = new Map<string, typeof approvals[number]>(approvals.map(item => [`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`, item]));
+  const groups = new Map<string, FSchedule[]>();
+  for (const row of rows) {
+    const key = `${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`;
+    groups.set(key, [...(groups.get(key) || []), row]);
+  }
+  const out: FSchedule[] = [];
+  for (const [key, live] of groups) {
+    const approval = byScope.get(key);
+    if (!approval) continue;
+    if (approval.status === "accepted") { out.push(...live); continue; }
+    const last = [...approval.rounds].filter(round => round.acceptedAt).sort((a, b) => b.number - a.number)[0];
+    const versionId = last?.acceptedVersionId || last?.reviewedVersionId;
+    if (!versionId) continue;
+    const version = await Repository.getScheduleVersionById(versionId);
+    if (version?.rows?.length) out.push(...(version.rows as FSchedule[]));
+  }
+  return out;
+}
+
 async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number): Promise<FSchedule[]> {
+  const rows = await readLiveSchedulesForRequest(req, collegeId, sectionId, termId);
+  return readsFinalSchedulesOnly(req) ? finalRowsOnly(rows, termId) : rows;
+}
+
+async function readLiveSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number): Promise<FSchedule[]> {
   if (!req.user?.IsAdminUser && !sectionId) {
+    /* نطاقُ الكلية كاملةً (قسمٌ صفر) يُقرأ بالكلية: العميد لا يملك قائمةَ أقسامٍ
+       في نطاقه، يملك الكلية. وكانت القراءة تُسقط الصفر فلا يرى شيئاً. */
+    let wholeColleges = [...new Set((req.scopes || [])
+      .filter(scope => Number(scope.AdSectionId) === 0 && (!collegeId || Number(scope.AdCollegeId) === collegeId))
+      .map(scope => Number(scope.AdCollegeId)).filter(Boolean))];
+    /* ومن نطاقُه كلُّ الكليات لا يُقرأ له الفصلُ كلُّه بلا اختيار: يختار كليةً. */
+    if (!collegeId && wholeColleges.length > 1) wholeColleges = [];
     const scopeSectionIds = [...new Set((req.scopes || [])
       .filter(scope => !collegeId || Number(scope.AdCollegeId) === collegeId)
+      .filter(scope => !wholeColleges.includes(Number(scope.AdCollegeId)))
       .map(scope => Number(scope.AdSectionId)).filter(Boolean))];
-    const groups = await Promise.all(scopeSectionIds.map(scopeSectionId =>
-      Repository.getSchedulesByScope({ sectionId: scopeSectionId, termId })));
+    const groups = await Promise.all([
+      ...wholeColleges.map(id => Repository.getSchedulesByScope({ collegeId: id, termId })),
+      ...scopeSectionIds.map(scopeSectionId => Repository.getSchedulesByScope({ sectionId: scopeSectionId, termId })),
+    ]);
     return filterByScope(req, groups.flat());
   }
   return filterByScope(req, await Repository.getSchedulesByScope({ collegeId, sectionId, termId }));
@@ -8699,7 +8750,10 @@ async function noteScheduleMutation(
 
       /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
          خانةً في صفٍّ وافق عليه، وإضافةُ شعبةٍ تُنشئ التزاماً لم يره أصلاً. */
-      const headSignature = next.signatures.find(item => item.stage === "head");
+      /* ورئيسُ القسم يعتمد المرّةَ الأولى وحدها: بعد أول قبولٍ من التسجيل تمرّ
+         تعديلاتُ اللجنة إلى التسجيل مباشرة، فلا يُنتظر إقرارُه على إضافة. */
+      const everAccepted = next.rounds.some(round => Boolean(round.acceptedAt));
+      const headSignature = everAccepted ? undefined : next.signatures.find(item => item.stage === "head");
       const addedRows = change.kind === "add" ? (change.rows || (change.row ? [change.row] : [])) : [];
       if (headSignature && addedRows.length) {
         const known = new Set(next.pendingAdditions.map(item => Number(item.scheduleId)));
@@ -8965,6 +9019,18 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     next.status = statusAfterSignature(next);
     const saved = await Repository.saveScheduleApproval(next);
     res.locals.auditChanges = `توقيع ${signature.roleLabel} على ${rows.length} موعداً، برمز ${signature.verifyCode}`;
+    /* اعتمادُ رئيس القسم هو الإرسال: يوقّع فيصل الجدولُ إلى التسجيل مباشرة.
+       فإن منعه مانعٌ (موعدٌ منقضٍ، ملاحظةٌ معلّقة) بقي التوقيع وقيل السبب. */
+    if (stage === "head") {
+      const sent = await submitToRegistrar(req, collegeId, sectionId, termId, saved);
+      if (sent.ok === true) {
+        res.locals.auditChanges += ` — وأُرسل إلى التسجيل (الجولة ${sent.round})`;
+        res.json({ approval: sent.approval, signature, regulationNotices: notices, submitted: true, round: sent.round });
+        return;
+      }
+      res.json({ approval: saved, signature, regulationNotices: notices, submitted: false, submitBlocked: sent.error });
+      return;
+    }
     res.json({ approval: saved, signature, regulationNotices: notices });
   });
 });
@@ -9015,6 +9081,64 @@ app.post("/api/approvals/acknowledge-additions", requireAuth, async (req: Authen
   });
 });
 
+/**
+ * الإرسال للتسجيل، بلا قفل: يستدعيه مسارُ الإرسال ومسارُ توقيع رئيس القسم،
+ * وكلاهما يمسك قفلَ النطاق قبله.
+ */
+async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, approval: ScheduleApproval) {
+  const deadline = await readDeadlineFor(approval, termId);
+  /* ── «عُولجت» تُحسب، ولا تُقرأ من علَم ──────────────────────────────────
+   *
+   * حالة الملاحظة مشتقّةٌ من القيمة الحاضرة في الخانة، لا مخزّنةٌ في صفّها:
+   * فإن تغيّرت الخانة فقد عُولجت، وإن لم تتغيّر فهي تنتظر. ولا شيء في هذا
+   * النظام يرفع علَم `resolved` عن ملاحظةٍ عالجها القسم — ولا ينبغي، لأن
+   * علَماً يُرفع يدوياً يمكن أن يُرفع بلا معالجة.
+   *
+   * فالعدّ هنا من الحالة المحسوبة نفسها التي يراها الطرفان على الشاشة. وقراءة
+   * العلَم بدلاً منها كانت ستُبقي كل ملاحظةٍ «مفتوحة» إلى الأبد: يعالجها
+   * القسم فلا يُسمح له بإعادة الإرسال، ولا سبيل أمامه إلى إغلاقها. */
+  const openNotes = (await notesWithState(collegeId, sectionId, termId))
+    .filter(note => note.origin === "registrar" && note.state === "open").length;
+  const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline });
+  if (verdict.ok !== true) return { ok: false as const, error: verdict.message, code: verdict.code };
+
+  const actor = approvalActor(req);
+  const version = await captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual");
+  const roundNumber = approval.currentRound + 1;
+
+  /* ── ما طُلب، وما فُعل ──────────────────────────────────────────────────
+   * الجولةُ المنتهية تحمل عدد ملاحظاتها — وهو ما طُلب. ويُضاف إليها الآن عدد
+   * الصفوف التي تحرّكت فعلاً منذ أن رآها التسجيل — وهو ما فُعل. فيقرأ الشريط
+   * الزمني «أُرجعت بأربع ملاحظات، فتحرّك خمسة صفوف»، ويُقاس الردُّ بالاثنين
+   * لا بأحدهما.
+   */
+  const closing = approval.rounds.find(round => round.number === approval.currentRound);
+  let changedRowCount: number | undefined;
+  if (closing?.reviewedVersionId) {
+    try {
+      const seen = await Repository.getScheduleVersionById(closing.reviewedVersionId);
+      if (seen) {
+        const now = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+        const moved = diffSchedules(seen.rows as any, now as any);
+        changedRowCount = moved.counts.added + moved.counts.removed + moved.counts.changed;
+      }
+    } catch { /* عددٌ يُعرض، لا شرطٌ يُحتسب: تعذّره لا يمنع الإرسال. */ }
+  }
+
+  const rounds = [...approval.rounds
+    .filter(round => round.number !== roundNumber)
+    .map(round => round.number === approval.currentRound && changedRowCount !== undefined
+      ? { ...round, changedRowCount }
+      : round), {
+    number: roundNumber,
+    submittedAt: new Date().toISOString(),
+    submittedBy: actor.name,
+    reviewedVersionId: version?.id,
+  }].sort((a, b) => a.number - b.number);
+  const saved = await Repository.saveScheduleApproval({ ...approval, status: "submitted", currentRound: roundNumber, rounds });
+  return { ok: true as const, approval: saved, round: roundNumber };
+}
+
 /** الإرسال للتسجيل. يفتح جولةً جديدة ويقفل التعديل حتى يقبل التسجيل أو يُرجع. */
 app.post("/api/approvals/submit", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
@@ -9024,58 +9148,10 @@ app.post("/api/approvals/submit", requireAuth, async (req: AuthenticatedRequest,
 
   await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
-    const deadline = await readDeadlineFor(approval, termId);
-    /* ── «عُولجت» تُحسب، ولا تُقرأ من علَم ──────────────────────────────────
-     *
-     * حالة الملاحظة مشتقّةٌ من القيمة الحاضرة في الخانة، لا مخزّنةٌ في صفّها:
-     * فإن تغيّرت الخانة فقد عُولجت، وإن لم تتغيّر فهي تنتظر. ولا شيء في هذا
-     * النظام يرفع علَم `resolved` عن ملاحظةٍ عالجها القسم — ولا ينبغي، لأن
-     * علَماً يُرفع يدوياً يمكن أن يُرفع بلا معالجة.
-     *
-     * فالعدّ هنا من الحالة المحسوبة نفسها التي يراها الطرفان على الشاشة. وقراءة
-     * العلَم بدلاً منها كانت ستُبقي كل ملاحظةٍ «مفتوحة» إلى الأبد: يعالجها
-     * القسم فلا يُسمح له بإعادة الإرسال، ولا سبيل أمامه إلى إغلاقها. */
-    const openNotes = (await notesWithState(collegeId, sectionId, termId))
-      .filter(note => note.origin === "registrar" && note.state === "open").length;
-    const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline });
-    if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
-
-    const actor = approvalActor(req);
-    const version = await captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual");
-    const roundNumber = approval.currentRound + 1;
-
-    /* ── ما طُلب، وما فُعل ──────────────────────────────────────────────────
-     * الجولةُ المنتهية تحمل عدد ملاحظاتها — وهو ما طُلب. ويُضاف إليها الآن عدد
-     * الصفوف التي تحرّكت فعلاً منذ أن رآها التسجيل — وهو ما فُعل. فيقرأ الشريط
-     * الزمني «أُرجعت بأربع ملاحظات، فتحرّك خمسة صفوف»، ويُقاس الردُّ بالاثنين
-     * لا بأحدهما.
-     */
-    const closing = approval.rounds.find(round => round.number === approval.currentRound);
-    let changedRowCount: number | undefined;
-    if (closing?.reviewedVersionId) {
-      try {
-        const seen = await Repository.getScheduleVersionById(closing.reviewedVersionId);
-        if (seen) {
-          const now = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
-          const moved = diffSchedules(seen.rows as any, now as any);
-          changedRowCount = moved.counts.added + moved.counts.removed + moved.counts.changed;
-        }
-      } catch { /* عددٌ يُعرض، لا شرطٌ يُحتسب: تعذّره لا يمنع الإرسال. */ }
-    }
-
-    const rounds = [...approval.rounds
-      .filter(round => round.number !== roundNumber)
-      .map(round => round.number === approval.currentRound && changedRowCount !== undefined
-        ? { ...round, changedRowCount }
-        : round), {
-      number: roundNumber,
-      submittedAt: new Date().toISOString(),
-      submittedBy: actor.name,
-      reviewedVersionId: version?.id,
-    }].sort((a, b) => a.number - b.number);
-    const saved = await Repository.saveScheduleApproval({ ...approval, status: "submitted", currentRound: roundNumber, rounds });
-    res.locals.auditChanges = `إرسال الجدول إلى التسجيل — الجولة ${roundNumber}`;
-    res.json({ approval: saved, round: roundNumber });
+    const result = await submitToRegistrar(req, collegeId, sectionId, termId, approval);
+    if (result.ok !== true) { res.status(409).json({ error: result.error, code: result.code }); return; }
+    res.locals.auditChanges = `إرسال الجدول إلى التسجيل — الجولة ${result.round}`;
+    res.json({ approval: result.approval, round: result.round });
   });
 });
 
@@ -9120,10 +9196,11 @@ app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest,
       return;
     }
     const actor = approvalActor(req);
+    const accepted = await captureScopeVersion(req, collegeId, sectionId, termId, "قبول التسجيل", "manual");
     const rounds = approval.rounds.map(round => round.number === approval.currentRound
-      ? { ...round, acceptedAt: new Date().toISOString(), acceptedBy: actor.name }
+      ? { ...round, acceptedAt: new Date().toISOString(), acceptedBy: actor.name, ...(accepted?.id ? { acceptedVersionId: accepted.id } : {}) }
       : round);
-    const saved = await Repository.saveScheduleApproval({ ...approval, status: "accepted", rounds });
+    const saved = await Repository.saveScheduleApproval({ ...approval, status: "accepted", rounds, pendingAdditions: [] });
     res.locals.auditChanges = `قبول الجدول نهائياً — الجولة ${approval.currentRound}`;
     res.json({ approval: saved });
   });
@@ -9483,6 +9560,53 @@ app.delete("/api/schedule-notes/:id", requireAuth, async (req: AuthenticatedRequ
  * والنداء رخيص عمداً: يُقرأ كل دقيقتين ومع كل عودةٍ إلى التبويب، فلا يجوز أن
  * يقرأ جداول الكلية كلها ليكتب رقماً.
  */
+/**
+ * مركز الإشعارات: ما بقي لكل صاحب صفة، مشتقّاً من حال الجداول لحظةَ السؤال.
+ * النطاق هنا هو النطاق في كل مكان — لا يرى أحدٌ إشعاراً عن قسمٍ خارج نطاقه.
+ */
+app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
+  if (!termId) { res.json({ termId: 0, items: [] }); return; }
+  const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
+  const [approvals, term, colleges, sections] = await Promise.all([
+    Repository.getScheduleApprovalsForTerm(termId),
+    Repository.getTermById(termId),
+    Repository.getColleges(),
+    Repository.getSections(),
+  ]);
+  const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const stored = new Map(approvals.map(row => [`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`, row] as [string, ScheduleApproval]));
+  const inScope = (sections as any[]).filter(row =>
+    req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
+  const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  const department = role === "committeeChair" || role === "departmentHead";
+  const requests = department ? await Repository.getInstructorRequests(0, 0, termId) : [];
+  const scopes = await Promise.all(inScope.map(async row => {
+    const collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
+    const approval = stored.get(`${collegeId}:${sectionId}`) || emptyApproval(collegeId, sectionId, termId);
+    const rowCount = department ? (await Repository.getSchedulesByScope({ collegeId, sectionId, termId })).length : 0;
+    const openRegistrarNotes = department && approval.status === "returned"
+      ? (await notesWithState(collegeId, sectionId, termId)).filter(note => note.origin === "registrar" && note.state === "open").length
+      : 0;
+    const openRequests = (requests as any[]).filter(item =>
+      Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId
+      && (item.status === "submitted" || item.status === "in-review")).length;
+    return {
+      approval, rowCount, openRegistrarNotes, openRequests,
+      collegeName: collegeName.get(collegeId) || "",
+      sectionName: String(row.AdSectionName || ""),
+      deadline: readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today),
+    };
+  }));
+  const items = buildNotifications({
+    role, scopes,
+    deadline: readDeadline({ termDeadline }, today),
+  });
+  res.json({ termId, termName: String((term as any)?.AdTermName || ""), items });
+});
+
 app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const terms = await Repository.getTerms();
   const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
