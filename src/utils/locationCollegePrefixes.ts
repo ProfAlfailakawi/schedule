@@ -117,7 +117,9 @@ export function recoverOfficialBuildingCodeFromAuthorityCell(
   const alphaPieces=[...token.matchAll(/([0-9]{2,4})([A-Z0-9])0*([0-9]{1,2})/g)];
   const siteGlyphMatches=(rawGlyph:string,official:string)=>rawGlyph===official
     ||(official==="B"&&rawGlyph==="8")
-    ||(official==="J"&&rawGlyph==="1");
+    ||(official==="J"&&rawGlyph==="1")
+    /* T المطبوعة في مسح 022T/021T تُقرأ 7 — مقيدة بالسجل والفرع كسابقتيها. */
+    ||(official==="T"&&rawGlyph==="7");
   const packedFull=token.match(/^(\d{3})([A-Z0-9])(\d{2})$/);
   const packedDropZero=token.match(/^(\d{2})([A-Z0-9])(\d{2})$/);
   /* ── الحرف المتضرر لا يُخمَّن، بل يسقط من المعادلة ────────────────────────

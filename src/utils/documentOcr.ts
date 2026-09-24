@@ -470,7 +470,9 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
     });
     const courseText=rtlText(courseWords);
 
-    const activityWord=rowAsc.find(word=>activityNames.has(nativeAuthorityLabel(word.text)));
+    /* OCR يُسقط التاء المربوطة الأخيرة («محاضر» من «محاضرة»)؛ الكلمة نفسها
+       بلا حرفها الأخير ما زالت هي النشاط، ولا يبدأ بها اسم مقرر أو أستاذ. */
+    const activityWord=rowAsc.find(word=>{const label=nativeAuthorityLabel(word.text);return activityNames.has(label)||activityNames.has(`${label}ه`);});
     const activityX=activityWord?center(activityWord):pageWidth*.23;
 
     /* DAYS are the consecutive day tokens immediately to the left of ACTIVITY.
@@ -484,8 +486,9 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
       const daySyntax=Boolean(raw)&&/^[1-5](?:\s*[1-5])*$/.test(raw)&&Boolean(parseDays(raw));
       if(daySyntax){dayWords.push(word);continue;}
       if(dayWords.length)break;
-      /* Skip zero-width/punctuation artefacts before the first actual token. */
-      if(!raw)continue;
+      /* Skip zero-width/punctuation artefacts before the first actual token —
+         and OCR specks such as «°» or «.» that carry no letter or digit. */
+      if(!raw||!/[0-9A-Za-z\u0621-\u064A]/.test(toAscii(raw)))continue;
       break;
     }
     const days=dayWords.length?toAscii(rtlText(dayWords)).replace(/[^1-5]+/g," ").trim():"";
@@ -502,6 +505,13 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
     const timeWords=row.filter(word=>center(word)>activityX&&center(word)<buildingX);
     let timeRaw=toAscii(rtlText(timeWords));
     let pair=timePair(timeRaw);
+    /* المسح قد يُسقط شرطة الوقت («1400 1450»). داخل ممر خلية الوقت نفسها —
+       بين النشاط والمبنى — ساعتان متتاليتان فقط هما زوج الوقت؛ ويبقى شرط
+       المدة المعقولة في timePair نفسه. خارج الممر لا يُقبل زوج بلا شرطة. */
+    if(!pair){
+      const clocks=(toAscii(timeRaw).match(/\d+/g)||[]);
+      if(clocks.length===2&&clocks.every(clock=>/^[0-2]\d[0-5]\d$/.test(clock)))pair=timePair(`${clocks[0]} - ${clocks[1]}`);
+    }
     if(!pair){timeRaw=toAscii(semanticRowText);pair=timePair(timeRaw);}
 
     let building=located.building;
@@ -1601,6 +1611,51 @@ export const authorityTimeCellLooksPlausible=(raw:string):boolean=>{
  * Read the ruled table cell by cell. Returns null when the page carries no
  * usable grid, so the caller can fall back to the flat-text path.
  */
+/* ── قراءة المسح بالكلمات لا بالخطوط ─────────────────────────────────────────
+   جدول الجهة الممسوح ليس فيه خطوط أعمدة أصلاً: خطوط الصفوف أفقية وحدها،
+   فكاشف الأعمدة كان يخترع «حدوداً» من جذوع حروف الترويسة الرمادية (41 بدل
+   22) فتتبعثر الخلايا. الكلمات نفسها تحمل مواضعها: تُقرأ بمواضعها، ويُفكّ
+   الملتصق منها بأشكاله المعروفة، ثم تمرّ في قارئ طبقة النص نفسه الذي يقرأ
+   تصدير الجهة الأصلي صحيحاً 100٪. لا نِسَب ثابتة ولا خطوط مخترعة. */
+let wordLaneWorkerPromise:Promise<PooledWorker>|null=null;
+async function getWordLaneWorker(){
+  if(!wordLaneWorkerPromise)wordLaneWorkerPromise=retryOnFailure((async()=>{
+    const worker=await newOcrWorker("ara+eng");
+    await worker.setParameters({tessedit_pageseg_mode:"11" as any,preserve_interword_spaces:"1",tessedit_char_whitelist:""});
+    return worker;
+  })(),()=>{wordLaneWorkerPromise=null;});
+  return wordLaneWorkerPromise;
+}
+export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:number;x1:number;y1:number}>,imageWidth:number,pageWidth=842):Word[]{
+  const scale=pageWidth/Math.max(1,imageWidth);const out:Word[]=[];
+  for(const word of raw){
+    const text=String(word?.text||"").normalize("NFKC").trim();if(!text)continue;
+    const ascii=toAscii(text);
+    let m:RegExpMatchArray|null;const pieces:string[]=[];
+    if((m=ascii.match(/^(\d{4,6})(0\d{6})$/)))pieces.push(m[1],m[2]);                 // CRN + course key
+    else if((m=ascii.match(/^([0-2]\d[0-5]\d)(\d{3}[A-Za-z]\d{2})$/)))pieces.push(m[1],m[2]); // clock + building
+    else if((m=ascii.match(/^(\d{3}[A-Za-z]\d{2})([0-2]\d[0-5]\d)$/)))pieces.push(m[1],m[2]);
+    else if((m=ascii.match(/^([0-2]\d[0-5]\d)(0\d{5})$/)))pieces.push(m[1],m[2]);      // clock + building (letter read as digit)
+    else pieces.push(text);
+    const unit=(word.x1-word.x0)/Math.max(1,pieces.join("").length);let x=word.x0;
+    for(const piece of pieces){const x1=x+unit*piece.length;out.push({text:piece,x0:x*scale,x1:x1*scale,y0:word.y0*scale,y1:word.y1*scale});x=x1;}
+  }
+  return out;
+}
+async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number}>{
+  const worker=await getWordLaneWorker();
+  const result:any=await worker.recognize(upright,{},{blocks:true});
+  const words:any[]=[];
+  for(const block of result?.data?.blocks||[])for(const paragraph of block.paragraphs||[])for(const line of paragraph.lines||[])for(const word of line.words||[])
+    words.push({text:word.text,x0:word.bbox.x0,y0:word.bbox.y0,x1:word.bbox.x1,y1:word.bbox.y1});
+  const width=upright.length>24&&upright.subarray(1,4).toString("latin1")==="PNG"?upright.readUInt32BE(16):Math.max(1,...words.map(word=>word.x1));
+  const prepared=authorityOcrWordsToWords(words,width);
+  const rows=authorityPdfTextGridRows(prepared,842,"semantic").map(row=>({...row,sourceMode:"ocr-grid" as const}));
+  const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
+  return{rows,bodyEvidence};
+}
+const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(row.code)&&/^\d{4,8}$/.test(row.reference)&&Boolean(row.start)&&Boolean(row.building||row.buildingRaw)).length;
+
 async function readGrid(
   upright:Buffer,
   pool:{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker},
@@ -3250,6 +3305,20 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         }catch{/* try the remaining orientation */}
       }
       if(best){upright=best.upright;gridRows=best.rows;pageOrientation=best.turn;}
+    }
+    /* الطريقان معاً، ويُختار لكل صفحة ما أثبت صفوفاً سليمة أكثر (رقم مقرر،
+       مرجعي، وقت، مبنى). ما كان يعمل لا يُفقد: يبقى إن كان الأسلم. */
+    let wordLane:{rows:GridRow[];bodyEvidence:number}|null=null;
+    try{wordLane=await readWordLane(upright);}catch{/* the grid reader remains */}
+    if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows))gridRows=wordLane.rows;
+    /* صفحة بلا رقم مقرر ولا صف (صفحة دليل الأيام الأخيرة) صفحةٌ فارغة، لا
+       استخراج مشبوه: كانت تُسقط كل مسح متعدد الصفحات برسالة «صورة غير واضحة». */
+    if(!gridRows&&wordLane&&!wordLane.rows.length&&wordLane.bodyEvidence===0){
+      texts[index]="";scores[index]=85;
+      pages[index]={rows:[],diagnostic:{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation:pageOrientation,suspicious:false,reason:"صفحة بلا صفوف جدول"}};
+      pagesDone++;
+      onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
+      return;
     }
     if(gridRows){
       if(index===0){
