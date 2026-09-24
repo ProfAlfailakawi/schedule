@@ -3422,7 +3422,14 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
          نفسها تحت ذلك المقرر صفٌّ واحد لا صفّان. شعبة 01 لمقرر آخر تبقى. */
       const sameCourse=(full:string,partial:string)=>Boolean(full&&partial)&&(full===partial||(partial.length<7&&full.startsWith(partial)));
+      /* ولا يُضاف صفّ إلا لمقرر أثبتته الصفحة: رقم مقرر لا يطابق (ولا يبدأ)
+         مقرراً قرأه طريق الكلمات هو رقم تسلسل ملتصق بمرجعي مبتور، لا صف. */
+      const seenReferences=new Set(wordLane.rows.map(row=>row.reference).filter(Boolean));
+      const catalogueKeys=new Set((courseKeysForPage(index)||[]).map(key=>String(key)));
+      const provenCourse=(code:string)=>catalogueKeys.has(code)||wordLane!.rows.some(word=>sameCourse(word.code,code));
       const duplicate=(row:GridRow)=>seen.has(`${row.reference}|${row.scode}`)
+        ||Boolean(row.reference&&seenReferences.has(row.reference))
+        ||!provenCourse(row.code)
         ||Boolean(row.scode&&wordLane!.rows.some(word=>word.scode===row.scode&&sameCourse(word.code,row.code)));
       const missing=(gridRows||[]).filter(row=>!duplicate(row))
         .map(row=>({...row,days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",instructorText:""}));
