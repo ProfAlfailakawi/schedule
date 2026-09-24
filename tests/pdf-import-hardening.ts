@@ -180,6 +180,7 @@ check("a re-read room cell is accepted only as a full floor-letter room",()=>{
   assert.equal(authorityPrintedRoomCell("F7"),"","a lost digit is not a room");
   assert.equal(authorityPrintedRoomCell("25"),"","a lost floor letter is not a room");
   assert.equal(authorityPrintedRoomCell("G0T"),"");
+  assert.equal(authorityPrintedRoomCell("S07"),"S07","an S-floor room is a full room, so a conflicting crop blanks it");
 });
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));

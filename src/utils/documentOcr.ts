@@ -540,7 +540,11 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
       const x=center(word);
       return x>activityX&&x<(roomWindow?.from??pageWidth*.40)&&/^\d{3}[A-Z0-9]\d{2}$/.test(asciiOf(word).replace(/[^A-Z0-9]/gi,"").toUpperCase());
     });
-    const buildingWord=locatedWord&&(!cellBuildingWord||cellBuildingWord===locatedWord)?locatedWord:(cellBuildingWord||locatedWord);
+    /* كود مبنى رسمي مُستخرج يبقى هو الحَكَم ما دام في ممر خلية المبنى؛ كلمة
+       الشكل وحدها لا تُستعمل إلا حين لا يوجد مبنى مستخرج هناك (أثرٌ رقمي من
+       ستّ خانات في ممر الوقت، «110050»، لا يُزيح مبنىً ثابتاً). */
+    const inBuildingCorridor=(word:Word)=>center(word)>activityX&&center(word)<(roomWindow?.from??pageWidth*.40);
+    const buildingWord=locatedWord&&inBuildingCorridor(locatedWord)?locatedWord:(cellBuildingWord||locatedWord);
     if(buildingWord&&buildingWord!==locatedWord)located.building=cleanBuildingCode(asciiOf(buildingWord).replace(/[^A-Z0-9]/gi,"").toUpperCase())||"";
     const buildingX=buildingWord?center(buildingWord):Math.min(pageWidth*.42,activityX+pageWidth*.20);
     const timeWords=row.filter(word=>center(word)>activityX&&center(word)<buildingX);
@@ -1751,7 +1755,7 @@ async function getRoomCellWorker(){
 }
 export function authorityPrintedRoomCell(text:string):string{
   const cell=String(text||"").replace(/\s+/g,"").toUpperCase();
-  return /^[FGT]\d{2}$/.test(cell)?cell:"";
+  return /^[FGTS]\d{2}$/.test(cell)?cell:"";
 }
 async function rereadRoomCells(source:Buffer,imageWidth:number,words:Word[],rows:GridRow[]){
   if(!rows.length)return;
@@ -1778,7 +1782,7 @@ async function rereadRoomCells(source:Buffer,imageWidth:number,words:Word[],rows
     if(!room)continue;
     /* قاعة رقمية كاملة (124) شكلٌ آخر للقاعات في فروع أخرى: لا يغيّرها القص. */
     if(/^\d{3}$/.test(toAscii(String(row.hallRaw||row.hall||"")).replace(/\s+/g,"")))continue;
-    const lane=authorityPrintedRoomCell(toAscii(String(row.hallRaw||row.hall||"")).toUpperCase().replace(/(?<=[FGT])O/g,"0"));
+    const lane=authorityPrintedRoomCell(toAscii(String(row.hallRaw||row.hall||"")).toUpperCase().replace(/(?<=[FGTS])O/g,"0"));
     const value=!lane||lane===room?room:"";
     row.hall=value;row.hallRaw=value;
   }
