@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
 
@@ -156,7 +157,10 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
     .map(group => ({ ...group, rows: items.filter(item => group.tones.includes(item.tone)) }))
     .filter(group => group.rows.length), [items]);
 
-  return (
+  /* على سطح الصفحة لا داخلها: لوحةٌ تُرسم داخل الغلاف تختفي خلف بطاقاتٍ
+     لها طبقاتُها الخاصة — كما وقع خلف مرشّحات «الجدول الدراسي». */
+  if (typeof document === "undefined") return null;
+  return createPortal((
     <>
       <button
         ref={bellRef}
@@ -236,5 +240,5 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
         </div>
       ) : null}
     </>
-  );
+  ), document.body);
 }

@@ -134,8 +134,14 @@ check(inboxRoute.includes("&& isScopeAllowed(req, scope.collegeId, Number(scope.
 /* الطلبُ يحمل جدولَ الأستاذ بكل كلياته، فكلُّ بندٍ يُصفّى بموقعه هو: ما خارج
    المختار يصير مكاناً فارغاً بلا تفاصيل، ويبقى ترقيمُ البنود كما هو. */
 check(inboxRoute.includes("Repository.getInstructorRequests(0, 0, termId)")
-  && inboxRoute.includes("inSelection(requestItemScope(full, item)) ? item : hiddenItem()")
-  && inboxRoute.includes('({ rowId: null, action: "keep", slots: [] } as any)'),
+  && inboxRoute.includes("inSelection(requestItemScope(full, item)) ? item : hiddenItem(item)")
+  /* المخفيُّ يحمل رقمَ الصفّ ونوعَ الفعل وحالةَ القرار — ليُعرف أنّ إضافةً هنا
+     تنتظر حذفاً هناك — ولا مقرّرَ ولا وقتَ ولا قاعة. */
+  && (() => {
+    const hidden = inboxRoute.slice(inboxRoute.indexOf("const hiddenItem = "), inboxRoute.indexOf("} as any);", inboxRoute.indexOf("const hiddenItem = ")));
+    return hidden.includes("slots: []") && hidden.includes("hidden: true")
+      && !/before|after|courseName|room|start|end|excuse|note/.test(hidden.replace(/decision\?\.state|decision:/g, ""));
+  })(),
   "وكلُّ بندٍ يصل منسّقَ كليته وحده، ولا يصل غيرَه منه شيء");
 check(inboxRoute.includes(".map(id => sectionNameOf.get(id) || \"\").filter(Boolean)"), "وكلُّ طلبٍ يحمل اسمَ قسم ما يُرى منه");
 check(inbox.includes('className="request-card-section"') && inbox.includes('item.action === "add" && item.after?.collegeName'),

@@ -130,7 +130,7 @@ export default function ScopeAskBar({
 
       {children}
 
-      <div className="query-scope query-primary-filters" aria-label="المرشحات الأساسية">
+      <div className="query-scope query-primary-filters" data-count={selects.length} aria-label="المرشحات الأساسية">
         {selects.map(select => (
           /* المفتاح على الغلاف لا على `Field`: نوعُ خصائصه لا يُعلن `key`،
              وإضافتُها إليه تُغري بتمريرها إلى الأمام كخاصيةٍ عادية — وهي ليست

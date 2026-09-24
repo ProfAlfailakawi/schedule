@@ -137,7 +137,12 @@ const page = server.slice(server.indexOf("function instructorRequestPage"), serv
 check(page.includes("مسودة · غير معتمدة · لا تُعتبر تكليفاً"),
   "الصفحةُ تحمل حالتَها: الصورةُ تُرسل وتُقرأ اعتماداً إن لم تحملها");
 check(page.includes("@media print"), "وتبقى الحالةُ في الطباعة");
-check(!/قاعة|AdRoomCode|AdRoomHall|roomCandidates/.test(page.replace(/مدّةُ المحاضرة/g, "")),
+/* الكلمةُ العامة مسموحة بطلب صاحب النظام («قاعة وليس مكان»): «لا تتوفّر قاعة»
+   و«تغيّرت القاعة» لا تكشفان قاعةً بعينها. أمّا اسمُ القاعة ورمزُها فممنوعان. */
+check(!/قاعة|AdRoomCode|AdRoomHall|roomCandidates/.test(page
+    .replace(/مدّةُ المحاضرة/g, "")
+    .replace(/لا تتوفّر قاعة في هذا الوقت/g, "")
+    .replace(/تغيّرت القاعة/g, "")),
   "ولا اسمَ قاعةٍ في الصفحة كلها");
 check(page.includes("ينتهي ") && page.includes("مدّةُ المحاضرة من اللائحة"),
   "والنهايةُ تُعرض محسوبةً ولا تُسأل");

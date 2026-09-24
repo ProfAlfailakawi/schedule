@@ -252,9 +252,9 @@ function useLiveCheck(candidate: any | null, enabled: boolean) {
 }
 
 /** حالةُ البند في كلمة: ما يراه المنسّق قبل أن يقرأ التفاصيل. */
-type Readiness = "ready" | "review" | "blocked" | "checking";
+type Readiness = "ready" | "review" | "blocked" | "checking" | "waiting";
 const READINESS: Record<Readiness, string> = {
-  ready: "جاهز للتثبيت", review: "يحتاج قرارك", blocked: "ممنوع", checking: "يفحص…",
+  ready: "جاهز للتثبيت", review: "يحتاج قرارك", blocked: "ممنوع", checking: "يفحص…", waiting: "بانتظار قسمٍ آخر",
 };
 
 /* ── بطاقةُ أستاذ ───────────────────────────────────────────────────────── */
@@ -272,7 +272,7 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
 
   const items = useMemo(() => (row.items || [])
     .map((item, index) => ({ item, index }))
-    .filter(entry => entry.item.action !== "keep" && filter(entry.item))
+    .filter(entry => entry.item.action !== "keep" && !(entry.item as any).hidden && filter(entry.item))
     .sort((a, b) => (VERDICT_ORDER[a.item.verdict || "clear"] ?? 0) - (VERDICT_ORDER[b.item.verdict || "clear"] ?? 0)),
     [row.items, filter]);
 
@@ -365,21 +365,28 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
      أستاذٌ نقل محاضرةً من الثامنة وأضاف أخرى في الثامنة: في الجدول الحاليّ
      هما متعارضتان، وفي الطلب لا. فالتعارضُ مع صفٍّ ينقله أو يحذفه بندٌ شقيقٌ
      لم يُقرَّر بعد ليس مانعاً — هو ترتيب: يُثبَّت الشقيقُ أولاً ثم هذا. */
-  const siblings = new Map<number, { index: number; name: string }>();
+  const siblings = new Map<number, { index: number; name: string; elsewhere?: boolean }>();
   (row.items || []).forEach((other, at) => {
     if (at === index || other.decision?.state || other.rowId == null) return;
     if (other.action !== "change" && other.action !== "delete") return;
-    siblings.set(Number(other.rowId), { index: at, name: String(other.before?.courseName || other.after?.courseName || "محاضرة") });
+    const elsewhere = Boolean((other as any).hidden);
+    siblings.set(Number(other.rowId), {
+      index: at, elsewhere,
+      name: elsewhere ? "محاضرته في قسمٍ آخر" : String(other.before?.courseName || other.after?.courseName || "محاضرة"),
+    });
   });
   const allLive = (live.issues || []).filter(issue => !seen.has(issue.message));
-  const dependsOn: Array<{ index: number; name: string }> = [...new Map<number, { index: number; name: string }>(allLive
+  const dependsOn: Array<{ index: number; name: string; elsewhere?: boolean }> = [...new Map<number, { index: number; name: string; elsewhere?: boolean }>(allLive
     .filter(issue => issue.otherId && siblings.has(issue.otherId))
-    .map(issue => [issue.otherId!, siblings.get(issue.otherId!)!] as [number, { index: number; name: string }])).values()];
+    .map(issue => [issue.otherId!, siblings.get(issue.otherId!)!] as [number, { index: number; name: string; elsewhere?: boolean }])).values()];
+  /* ما يُفرغه قسمٌ آخر لا يُثبَّت من هنا: ينتظر قرارَ ذلك القسم. */
+  const waitsElsewhere = dependsOn.some(entry => entry.elsewhere);
   const liveIssues = allLive.filter(issue => !(issue.otherId && siblings.has(issue.otherId)));
-  const blocked = item.verdict === "conflict" || reasons.some(reason => reason.blocking)
+  const blocked = waitsElsewhere || item.verdict === "conflict" || reasons.some(reason => reason.blocking)
     || liveIssues.some(issue => issue.severity === "high") || (item.action === "change" && !current);
   const readiness: Readiness = decided ? "ready"
     : item.action === "delete" ? "ready"
+    : waitsElsewhere && !liveIssues.some(issue => issue.severity === "high") && !reasons.some(reason => reason.blocking) ? "waiting"
     : blocked ? "blocked"
     : live.loading && !live.issues ? "checking"
     : (reasons.length || liveIssues.length || dependsOn.length) ? "review" : "ready";
@@ -413,6 +420,7 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
           {!decided ? (
             <span className="request-readiness" data-readiness={readiness}>
               {readiness === "checking" ? <Loader2 aria-hidden="true" className="spin" />
+                : readiness === "waiting" ? <Clock3 aria-hidden="true" />
                 : readiness === "blocked" ? <ShieldAlert aria-hidden="true" />
                 : readiness === "review" ? <AlertTriangle aria-hidden="true" />
                 : <ShieldCheck aria-hidden="true" />}
@@ -438,7 +446,9 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
           {dependsOn.length && !decided ? (
             <p className="request-depends">
               <ArrowRight aria-hidden="true" />
-              <span>يُفرغ هذا الوقتَ طلبُه الآخر: {dependsOn.map(entry => `«${entry.name}»`).join(" و")} — يُثبَّت ذلك أولاً تلقائياً.</span>
+              <span>{waitsElsewhere
+                ? "يعتمد على حذف محاضرته في قسمٍ آخر — بانتظار قرار ذلك القسم."
+                : <>يُفرغ هذا الوقتَ طلبُه الآخر: {dependsOn.map(entry => `«${entry.name}»`).join(" و")} — يُثبَّت ذلك أولاً تلقائياً.</>}</span>
             </p>
           ) : null}
           {item.action === "change" && !current && !decided ? (
@@ -462,9 +472,9 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
                 disabled={busy || blocked || readiness === "checking"}
                 onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
                   const rect = event.currentTarget.getBoundingClientRect();
-                  onDecide(index, "fixed", { current, anchor: { x: rect.left + rect.width / 2, y: rect.bottom }, after: dependsOn.map(entry => entry.index) });
+                  onDecide(index, "fixed", { current, anchor: { x: rect.left + rect.width / 2, y: rect.bottom }, after: dependsOn.filter(entry => !entry.elsewhere).map(entry => entry.index) });
                 }}
-                title={blocked ? "لا يُثبَّت بندٌ ممنوع — عالج سببه أو ارفضه" : undefined}
+                title={waitsElsewhere ? "ينتظر قرار القسم الآخر في حذف محاضرته" : blocked ? "لا يُثبَّت بندٌ ممنوع — عالج سببه أو ارفضه" : undefined}
               >
                 {busy ? "يحفظ…" : item.action === "add" ? "أضِفه الآن" : "ثبّت"}
               </PrimaryButton>
@@ -557,6 +567,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   const [actionFilter, setActionFilter] = useState<"all" | "change" | "add" | "delete">("all");
   const [verdictFilter, setVerdictFilter] = useState<"all" | "clear" | "exception" | "conflict">("all");
   const [deptFilter, setDeptFilter] = useState(0);
+  const [instructorFilter, setInstructorFilter] = useState(0);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [quick, setQuick] = useState<{ row: InboxRequest; index: number; seed: QuickSeed } | null>(null);
   const [quickSaving, setQuickSaving] = useState(false);
@@ -681,8 +692,23 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
 
   const needle = ask.trim();
   const visible = useMemo(() => (rows || [])
-    .filter(row => !needle || row.instructorName.includes(needle)),
-    [rows, needle]);
+    .filter(row => !needle || row.instructorName.includes(needle))
+    .filter(row => !instructorFilter || Number(row.AdInstructorId) === instructorFilter),
+    [rows, needle, instructorFilter]);
+
+  /* الأساتذةُ الذين في الوارد فعلاً، ومن طلب منهم أولاً — كقائمة الأستاذ في
+     «الجدول الدراسي». */
+  const instructorOptions = useMemo(() => {
+    const seen = new Map<number, { label: string; changed: boolean }>();
+    for (const row of rows || []) {
+      const id = Number(row.AdInstructorId);
+      if (!id || seen.has(id)) continue;
+      seen.set(id, { label: row.instructorName, changed: row.changedCount > 0 });
+    }
+    return [...seen]
+      .sort((a, b) => Number(b[1].changed) - Number(a[1].changed) || a[1].label.localeCompare(b[1].label, "ar"))
+      .map(([value, entry]) => ({ value, label: entry.changed ? `${entry.label} · طلب تعديلاً` : entry.label }));
+  }, [rows]);
 
   const itemFilter = useCallback((item: InstructorRequestItem) => {
     const state = item.decision?.state;
@@ -708,7 +734,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   }, [rows]);
 
   const counts = useMemo(() => {
-    const all = (rows || []).flatMap(row => (row.items || []).filter(item => item.action !== "keep"));
+    const all = (rows || []).flatMap(row => (row.items || []).filter(item => item.action !== "keep" && !(item as any).hidden));
     return {
       pending: all.filter(item => !item.decision?.state).length,
       fixed: all.filter(item => item.decision?.state === "fixed").length,
@@ -725,7 +751,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
 
   const changed = visible.filter(row => row.changedCount > 0
     && (!deptFilter || Number(row.AdSectionId) === deptFilter)
-    && (row.items || []).some(item => item.action !== "keep" && itemFilter(item)));
+    && (row.items || []).some(item => item.action !== "keep" && !(item as any).hidden && itemFilter(item)));
   const unchanged = visible.filter(row => row.status !== "sent" && row.changedCount === 0);
   const silent = visible.filter(row => !row.linkOpenedAt);
 
@@ -918,6 +944,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     { key: "college", label: "الكلية", value: collegeId, placeholder: "اختر الكلية", options: collegeOptions },
     { key: "section", label: "القسم", value: sectionId, placeholder: "كل أقسام الكلية", options: sectionOptions, disabled: !collegeId },
     { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: (terms || []).map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
+    { key: "instructor", label: "الأستاذ", value: instructorFilter, placeholder: "كل الأساتذة", options: instructorOptions, disabled: !instructorOptions.length },
   ];
 
   if (!terms) return <MicroLoader label="يقرأ الفصول…" />;
@@ -938,10 +965,12 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         onAskChange={setAsk}
         onAskSubmit={setAsk}
         askPlaceholder="اسأل: باسم الأستاذ"
-        onClear={() => setAsk("")}
+        onClear={() => { setAsk(""); setInstructorFilter(0); }}
         selects={selects}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
+          if (key === "instructor") { setInstructorFilter(id); return; }
+          setInstructorFilter(0);
           if (key === "college") { setCollegeId(id); setSectionId(0); }
           else if (key === "section") setSectionId(id);
           else setTermId(id);
@@ -1043,7 +1072,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                 { value: "conflict", label: "ممنوع", count: counts.conflict, tone: "bad" },
               ]}
             />
-            {departments.length > 1 ? (
+            {departments.length > 1 && !sectionId ? (
               <FilterGroup
                 label="القسم"
                 value={String(deptFilter)}

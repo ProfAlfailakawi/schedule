@@ -951,3 +951,4 @@
   .request-depends{display:grid;grid-template-columns:16px minmax(0,1fr);gap:8px;margin:8px 0 0;padding:8px 10px;border-radius:12px;background:var(--accent-soft);color:var(--ink);font-size:12.5px;line-height:1.7;border-inline-start:3px solid var(--accent)}
   .request-depends svg{width:15px;height:15px;margin-top:3px;color:var(--accent);transform:scaleX(-1)}
 }
+@media screen{.request-readiness[data-readiness="waiting"]{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 25%,transparent)}}

@@ -2551,7 +2551,11 @@ export default function App() {
               <strong>{user.Name}</strong>
               {isPowerAdmin || !/^\s*قسم(?:\s|$)/.test(user.Name || "") ? (
                 <small className="user-card-section">
-                  {isPowerAdmin ? "إدارة كاملة" : (scopes[0]?.AdSectionName || "القسم العلمي")}
+                  {isPowerAdmin ? "إدارة كاملة"
+                    /* صفةُ الكلية أو الكليات تُقال بكليّتها، لا بأول قسمٍ في نطاقها. */
+                    : sessionRole.viewerOnly || sessionRole.watchesInbox || sessionRole.canReview
+                      ? (new Set(scopes.map(scope => Number(scope.AdCollegeId))).size > 1 ? "كل الكليات المسندة" : String(scopes[0]?.AdCollegeName || "الكلية"))
+                      : (scopes[0]?.AdSectionName || "القسم العلمي")}
                 </small>
               ) : null}
             </div>
