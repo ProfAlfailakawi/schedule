@@ -657,4 +657,9 @@ ok('220 the import conflict note names the other saved lecture instead of only "
    'otherLabel:describeOther(item?.otherId)||describeOther(item?.rowId)' in server
    and 'مع موعد محفوظ في ${otherLabel}' in transfer)
 
+preview_src=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
+ok('221 an instructor double booking marks the TIME cell (the value that is wrong), not the correctly read name',
+   'if (/حجز مزدوج لأستاذ|لديه محاضرة متداخلة/.test(text)) return "time";' in preview_src
+   and preview_src.index('return "time";') < preview_src.index('return "instructor";'))
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
