@@ -327,7 +327,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           const there = Number.isInteger(item?.otherIndex) ? Number(item.otherIndex) : null;
           /* الطرف الآخر إمّا صف في المسودة فيُسمّى برقمه، وإمّا موعد محفوظ لقسم
              آخر لا رقم له هنا — وهو بالضبط ما كانت الشاشة تعجز عن قوله. */
-          const partner = there !== null ? `مع الصف ${label(there)}` : "مع موعد قائم خارج هذا القسم";
+          const otherLabel = String(item?.otherLabel || "").trim();
+          const partner = there !== null ? `مع الصف ${label(there)}` : otherLabel ? `مع موعد محفوظ في ${otherLabel}` : "مع موعد محفوظ خارج هذا الجدول";
           [here, there].forEach(at => {
             if (at === null) return;
             const row = rows[at];

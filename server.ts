@@ -4732,9 +4732,31 @@ app.post("/api/schedules/import-preflight", requirePermission(7), async (req: Au
   const positionById=new Map<number,number>();
   rows.forEach((row:any,index:number)=>{const id=Number(row?.id);if(Number.isFinite(id))positionById.set(id,index);});
   const positionOf=(id:unknown)=>{const at=positionById.get(Number(id));return at===undefined?null:at;};
+  /* ── الموعد الآخر يُسمّى ─────────────────────────────────────────────────
+     «مع موعد قائم خارج هذا القسم» لا يكفي ليقرر المراجع: القسم الأكاديمي نفسه
+     يدرّس في كليات عدة، فالأستاذ نفسه قد يُحجز في كليتين في الساعة ذاتها. يُذكر
+     الكلية والقسم والمقرر والشعبة والأيام والوقت؛ وموعدٌ خارج صلاحية القارئ
+     يُذكر بكليته وأيامه ووقته وحدها. */
+  const termById=new Map((termRows as any[]).map((row:any)=>[Number(row.id),row]));
+  const sectionById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),row]));
+  const collegeById=new Map((colleges as any[]).map((row:any)=>[Number(row.AdCollegeId),row]));
+  const describeOther=(id:unknown)=>{
+    if(positionOf(id)!==null)return "";
+    const other=termById.get(Number(id));
+    if(!other)return "";
+    const days=SCHEDULE_DAY_KEYS.map((key,index)=>other[key]?DAY_LABELS[index]:null).filter(Boolean).join("، ");
+    const when=[days,formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))].filter(Boolean).join(" ");
+    const visible=Boolean(req.user?.IsAdminUser||isScopeAllowed(req,Number(other.AdCollegeId),Number(other.AdSectionId)));
+    if(!visible)return `${collegeById.get(Number(other.AdCollegeId))?.AdCollegeName||"كلية أخرى"} · ${when}`;
+    const section=sectionById.get(Number(other.AdSectionId))?.AdSectionName||"قسم آخر";
+    const college=collegeById.get(Number(other.AdCollegeId))?.AdCollegeName||"";
+    const course=[String(other.AdCourseName||"").trim(),other.SCode?`شعبة ${other.SCode}`:""].filter(Boolean).join(" ");
+    return [[college,section].filter(Boolean).join(" — "),course,when].filter(Boolean).join(" · ");
+  };
   res.json({conflicts:conflicts.slice(0,60).map((item:any)=>({
     type:String(item?.type||""),message:String(item?.message||""),detail:String(item?.detail||""),
     rowIndex:positionOf(item?.rowId),otherIndex:positionOf(item?.otherId),
+    otherLabel:describeOther(item?.otherId)||describeOther(item?.rowId),
   }))});
 });
 
