@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import NotificationCenter from "./components/NotificationCenter";
 import {
   BookOpen,
   Building2,
@@ -2282,6 +2283,7 @@ export default function App() {
           <Search />
         </button>
       </header>
+      <NotificationCenter userKey={String(user.SystemUserId || user.Name || "")} onNavigate={(view) => go(view as View)} />
       {!sidebarOpen ? (
         <button
           className="sidebar-launcher no-print"

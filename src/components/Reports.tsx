@@ -3,7 +3,8 @@ import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, ClipboardList, Clock3, LayoutList,
-  CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X
+  CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X,
+  ShieldCheck,
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
@@ -14,7 +15,7 @@ import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
-import { sortTermsNewest, termChronology } from "../utils/termSequence";
+import { currentTermId, sortTermsNewest, termChronology } from "../utils/termSequence";
 import {
   buildVisitingHistoryModel, sortVisitingTerms, visitingHeatLevel,
   type VisitingHistoryPerson, type VisitingHistoryYear,
@@ -144,8 +145,10 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
  * يريد، لا عقوبةٌ تُعمَّم.
  */
 const ROLE_LENSES: Record<string, Lens[]> = {
-  dean:           ["balance", "fairness", "visiting"],
-  viceDean:       ["balance", "fairness", "visiting", "instructor", "room", "matrix"],
+  /* العميدان يفتحان على الجداول نفسها — المعتمدة وحدها، يقصرها الخادم — ثم
+     ما يُكمل الصورة. أسرعُ جوابٍ لمشغولٍ هو الجدولُ نفسه. */
+  dean:           ["list", "week", "balance", "fairness", "visiting"],
+  viceDean:       ["list", "week", "balance", "fairness", "visiting", "instructor", "room", "matrix"],
   registrarDean:  ["balance", "fairness"],
   registrarHead:  ["balance", "list", "room", "matrix"],
   registrarStaff: ["balance", "list", "room"],
@@ -608,6 +611,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             sectionId = scoped.sectionId;
           }
           if (termId && !sortedTerms.some(row => Number(row.AdTermId) === termId)) termId = Number(sortedTerms[0]?.AdTermId || 0);
+          /* العميدان يفتحان على الفصل الجاري مباشرة: لا يُسألان عن فصلٍ قبل أن يريا شيئاً. */
+          if (!termId && (roleId === "dean" || roleId === "viceDean")) termId = currentTermId(sortedTerms as any);
           return { ...prev, collegeId, sectionId, termId };
         });
       } catch (e: any) { setError(e.message); } finally { setLoading(false); }
@@ -1897,6 +1902,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           );
         })}
       </nav>
+
+      {(roleId === "dean" || roleId === "viceDean") && lens !== "balance" ? (
+        <p className="final-only-note no-print" role="note">
+          <ShieldCheck aria-hidden="true" /> تُعرض الجداول المعتمدة من التسجيل فقط. القسم الذي لم يُعتمد بعد لا يظهر هنا — حالته في «ميزان الأقسام».
+        </p>
+      ) : null}
 
       {lens === "visiting" || lens === "visitingHistory" ? (
         <div className="visiting-scope-switch no-print" role="group" aria-label="نطاق عرض المنتدبين">

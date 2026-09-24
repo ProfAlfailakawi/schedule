@@ -1136,6 +1136,8 @@ export interface ScheduleApprovalRound {
   acceptedBy?: string;
   /** النسخة التي رآها التسجيل في هذه الجولة — أساس المقارنة للجولة التالية. */
   reviewedVersionId?: string;
+  /** النسخة كما قبِلها التسجيل — ما يراه العميد جدولاً نهائياً حتى يُقبل غيره. */
+  acceptedVersionId?: string;
 }
 
 /**

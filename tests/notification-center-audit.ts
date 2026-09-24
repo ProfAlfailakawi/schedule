@@ -1,0 +1,58 @@
+/**
+ * مركز الإشعارات ودورة الاعتماد المختصرة:
+ * - اللجنة توقّع ← رئيس القسم يعتمد فيصل التسجيلَ مباشرة (المرّة الأولى).
+ * - بعد أول قبول: التعديل يصل التسجيل وحده، بلا إقرارٍ من رئيس القسم.
+ * - العميدان يريان المعتمد وحده.
+ */
+import fs from "fs";
+import path from "path";
+import { buildNotifications, type CenterScope } from "../src/utils/notificationCenter";
+import { emptyApproval } from "../src/utils/approvalWorkflow";
+
+let passed = 0, failed = 0;
+const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
+
+const scope = (over: Partial<CenterScope> & { status?: any; rounds?: any[]; pendingAdditions?: any[] } = {}): CenterScope => {
+  const approval = { ...emptyApproval(1, 5, 9), status: over.status || "drafting", rounds: over.rounds || [], pendingAdditions: over.pendingAdditions || [], currentRound: (over.rounds || []).length };
+  return { approval, collegeName: "كلية العلوم", sectionName: "الرياضيات", rowCount: 10, openRegistrarNotes: 0, openRequests: 0, ...over, } as CenterScope;
+};
+
+// اللجنة
+let items = buildNotifications({ role: "committeeChair", scopes: [scope()] });
+check(items[0]?.tone === "action" && items[0].title.includes("وقّع"), "اللجنة: جدولٌ بمواعيد ولم يُوقَّع → مطلوبٌ منها التوقيع");
+items = buildNotifications({ role: "committeeChair", scopes: [scope({ status: "committee" })] });
+check(items[0]?.tone === "waiting" && items[0].title.includes("رئيس القسم"), "اللجنة بعد توقيعها: بانتظار رئيس القسم");
+// رئيس القسم
+items = buildNotifications({ role: "departmentHead", scopes: [scope({ status: "committee" })] });
+check(items[0]?.tone === "action" && items[0].detail.includes("للتسجيل مباشرة"), "رئيس القسم: اعتمادُه يرسل للتسجيل مباشرة");
+const accepted = [{ number: 1, submittedAt: "2026-09-01T00:00:00Z", acceptedAt: "2026-09-02T00:00:00Z" }];
+items = buildNotifications({ role: "departmentHead", scopes: [scope({ status: "submitted", rounds: [...accepted, { number: 2, submittedAt: "2026-09-03T00:00:00Z" }], pendingAdditions: [{ scheduleId: 1 } as any] })] });
+check(!items.some(item => item.title.includes("بعد اعتمادك")), "بعد أول قبول: لا يُطلب من رئيس القسم إقرارٌ على إضافة");
+// التسجيل
+items = buildNotifications({ role: "registrarStaff", scopes: [scope({ status: "submitted", rounds: [{ number: 1, submittedAt: "2026-09-01T00:00:00Z" }] }), scope({ status: "drafting" })], deadline: { effective: "2026-09-01", past: true } });
+check(items.some(item => item.tone === "action" && item.title.includes("ينتظر قرارك")), "التسجيل: جدولٌ عنده ينتظر قراره");
+check(items.some(item => item.tone === "alert" && item.title.includes("لم يسلّم")), "التسجيل: الأقسام التي لم تسلّم بعد انقضاء الموعد تنبيهٌ");
+items = buildNotifications({ role: "registrarDean", scopes: [scope({ status: "submitted", rounds: [{ number: 1 }] })] });
+check(items.every(item => item.tone !== "action"), "عميد التسجيل يطّلع ولا يُطلب منه قرار");
+// العميد
+items = buildNotifications({ role: "dean", scopes: [scope({ status: "accepted", rounds: accepted }), scope()] });
+check(items.some(item => item.title === "المعتمد 1 من 2 جداول"), "العميد: كم قسماً اعتُمد من الكل");
+check(items.some(item => item.title.includes("اعتُمد جدول")), "العميد: كل قسمٍ اعتُمد يظهر");
+check(items.every(item => item.tone !== "action"), "العميد لا يُطلب منه شيء");
+// الترتيب
+items = buildNotifications({ role: "committeeChair", scopes: [scope({ status: "accepted", rounds: accepted }), scope({ status: "returned", rounds: [{ number: 1, returnedAt: "x" }], openRegistrarNotes: 2 } as any)] });
+check(items[0]?.tone === "action" && items[items.length - 1]?.tone === "done", "المطلوب أولاً، والمنجز آخراً");
+
+// الخادم
+const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+check(/if \(stage === "head"\) \{\s*const sent = await submitToRegistrar/.test(server), "اعتماد رئيس القسم يرسل للتسجيل في الخطوة نفسها");
+check(server.includes("const everAccepted = next.rounds.some(round => Boolean(round.acceptedAt));"), "بعد أول قبول لا تُسجَّل إضافاتٌ تنتظر رئيس القسم");
+check(/status: "accepted", rounds, pendingAdditions: \[\]/.test(server), "القبول يُسقط ما بقي من إقرارات");
+check(server.includes("acceptedVersionId: accepted.id"), "القبول يحفظ نسخة ما قُبل");
+check(/return readsFinalSchedulesOnly\(req\) \? finalRowsOnly\(rows, termId\) : rows;/.test(server), "العميدان يقرآن المعتمد وحده من الخادم، لا من الواجهة");
+check(/id === "dean" \|\| id === "viceDean"/.test(server), "المعتمد وحده للعميد والعميد المساعد تحديداً");
+check(server.includes('app.get("/api/notifications", requireAuth'), "مسار الإشعارات موجود");
+check(/isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId\)\)\);\s*const termDeadline/.test(server), "الإشعارات مقصورةٌ على نطاق الحساب");
+
+console.log(`\nNotification center audit: ${passed} passed, ${failed} failed`);
+if (failed) process.exit(1);

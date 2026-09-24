@@ -4613,3 +4613,7 @@ button.twin-delta{width:100%}
 .lens-week article small{max-width:100%;word-break:normal;overflow-wrap:anywhere}
 .lens-week article time{white-space:nowrap!important;direction:ltr;unicode-bidi:isolate}
 .lens-week-room{direction:ltr;unicode-bidi:isolate;overflow-wrap:anywhere;word-break:break-word}
+
+/* العميدان: سطرٌ هادئ يقول إن ما يُرى هو المعتمد وحده. */
+.final-only-note{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:9px 14px;border-radius:12px;background:var(--success-soft,#e9f7ef);color:var(--success,#1f7a4d);font-size:13px;line-height:1.7}
+.final-only-note svg{width:16px;height:16px;flex:none}
