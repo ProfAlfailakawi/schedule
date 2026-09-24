@@ -7,7 +7,7 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
@@ -172,6 +172,14 @@ check("a re-read day cell is accepted only as the printed descending run",()=>{
   assert.equal(authorityPrintedDayRun("1 4 2"),"");
   assert.equal(authorityPrintedDayRun("4 4"),"");
   assert.equal(authorityPrintedDayRun(""),"");
+});
+
+check("a re-read room cell is accepted only as a full floor-letter room",()=>{
+  assert.equal(authorityPrintedRoomCell("G07"),"G07");
+  assert.equal(authorityPrintedRoomCell(" f10 "),"F10");
+  assert.equal(authorityPrintedRoomCell("F7"),"","a lost digit is not a room");
+  assert.equal(authorityPrintedRoomCell("25"),"","a lost floor letter is not a room");
+  assert.equal(authorityPrintedRoomCell("G0T"),"");
 });
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));
