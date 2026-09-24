@@ -1723,6 +1723,30 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
   }
   return out;
 }
+/** Contrast-stretch a scanned page and erase long table rules (runs of dark
+ *  pixels far longer than any glyph) so digits touching a rule separate. */
+async function enhanceScanForOcr(source:Buffer):Promise<Buffer>{
+  const lib=await canvas();
+  const image=await lib.loadImage(source);
+  const W=image.width,H=image.height;
+  const surface=lib.createCanvas(W,H);const context=surface.getContext("2d");
+  context.drawImage(image,0,0);
+  const data=context.getImageData(0,0,W,H);const px=data.data;
+  const lum=new Uint8Array(W*H);
+  for(let i=0;i<W*H;i++)lum[i]=(px[i*4]*.299+px[i*4+1]*.587+px[i*4+2]*.114)|0;
+  const hist=new Array(256).fill(0);for(let i=0;i<lum.length;i++)hist[lum[i]]++;
+  let lo=0,hi=255,acc=0;
+  for(let v=0;v<256;v++){acc+=hist[v];if(acc>W*H*.02){lo=v;break;}}
+  acc=0;for(let v=255;v>=0;v--){acc+=hist[v];if(acc>W*H*.02){hi=v;break;}}
+  for(let i=0;i<lum.length;i++)lum[i]=Math.max(0,Math.min(255,((lum[i]-lo)*255/Math.max(1,hi-lo))|0));
+  const dark=140,vertical=Math.round(H*.02),horizontal=Math.round(W*.06);
+  const erase=new Uint8Array(W*H);
+  for(let x=0;x<W;x++){let y=0;while(y<H){if(lum[y*W+x]<dark){const s=y;while(y<H&&lum[y*W+x]<dark)y++;if(y-s>=vertical)for(let k=s;k<y;k++)erase[k*W+x]=1;}else y++;}}
+  for(let y=0;y<H;y++){let x=0;while(x<W){if(lum[y*W+x]<dark){const s=x;while(x<W&&lum[y*W+x]<dark)x++;if(x-s>=horizontal)for(let k=s;k<x;k++)erase[y*W+k]=1;}else x++;}}
+  for(let i=0;i<W*H;i++){const v=erase[i]?255:lum[i];px[i*4]=px[i*4+1]=px[i*4+2]=v;px[i*4+3]=255;}
+  context.putImageData(data,0,0);
+  return surface.toBuffer("image/png");
+}
 async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number;tableNumbers:number;printedRows:number}>{
   const worker=await getWordLaneWorker();
   /* الأرقام الصغيرة في مسح منخفض الدقة تلتصق وتتشوّه؛ تُكبَّر الصفحة إلى
@@ -3494,6 +3518,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      empty there, so the proven golden pages keep their byte-identical output. */
   const multiPageCourseKeys=optionKeys;
   const courseKeysForPage=(_index:number)=>multiPageCourseKeys;
+  const pagePrintedRows:number[]=[];
   const pool=await getWorkerPool();
   const lib0=await canvas();
   const probeOf=async(buffer:Buffer)=>{
@@ -3606,13 +3631,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     /* طريق الكلمات أساسٌ متى أثبت صفوفاً سليمة أكثر. وما رآه طريق الخطوط ولم
        يجمعه طريق الكلمات يُضاف بهويته فقط (المقرر، الشعبة، المرجعي) وتُترك
        خلاياه الأخرى فارغة للمراجعة: لا صف يضيع، ولا قيمة مشكوك فيها تدخل. */
-    /* ولا يحلّ طريق الكلمات محلّ طريق الخطوط وهو يرى صفوفاً أقل مما أثبته
-       الخطوط (كود كامل ومرجعي بطول مراجع الصفحة): الصفوف التي يفقدها تعود
-       بهويتها فقط وتضيع أيامها ووقتها المقروءة. صفوف الخطوط المشوهة (مرجعي
-       مبتور) لا تُحسب. */
-    const laneReferenceLength=(()=>{const counts=new Map<number,number>();for(const row of wordLane?.rows||[]){const n=String(row.reference||"").length;if(n)counts.set(n,(counts.get(n)||0)+1);}return[...counts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||0;})();
-    const keyedGridRows=(gridRows||[]).filter(row=>/^\d{7}$/.test(String(row.code||""))&&String(row.reference||"").length===laneReferenceLength).length;
-    if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)&&wordLane.rows.length>=keyedGridRows){
+    if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)){
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
@@ -3659,6 +3678,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       /* أسطر مطبوعة يراها طريق الكلمات بأرقامها ولم يخرج لها صف = صفوف كانت
          ستسقط بصمت. تُعلَّم الصفحة مشبوهة ويتوقف الاستيراد برسالة. */
       const printedRows=wordLane?.printedRows||0;
+      pagePrintedRows[index]=printedRows;
       const missedRows=printedRows>gridRows.length;
       const suspicious=(gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55))||missedRows;
       pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:Math.max(gridRows.length,printedRows),extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,
@@ -3732,9 +3752,29 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
           if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
       }
+      /* ── تحسين الصورة قبل الاستسلام ─────────────────────────────────────
+         صفحة ما زالت ناقصة: تُعاد من الملف بدقة عالية، ويُمدّ تباينها، وتُمحى
+         خطوط الجدول الطويلة الملاصقة للأرقام، ثم تُقرأ كلماتها من جديد. تُعتمد
+         القراءة المحسّنة إن أخرجت صفوفاً أكثر، ويبقى فحص الأسطر المطبوعة حكماً. */
+      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length){
+        try{
+          const sharp=wordLaneSources?(await wordLaneSources)[index]:undefined;
+          if(sharp){
+            const enhanced=await enhanceScanForOcr(sharp);
+            const lane=await readWordLane(enhanced);
+            pagePrintedRows[index]=Math.max(pagePrintedRows[index]||0,lane.printedRows);
+            const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
+            if(lane.rows.length>bestRows.length&&filled>=bestFilled){bestRows=lane.rows;bestFilled=filled;}
+          }
+        }catch{/* the earlier reading and its warning stand */}
+      }
       if(bestRows.length){
-        const suspicious=bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55);
-        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:bestRows.length,extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+        /* إعادة القراءة لا تمسح دليل الأسطر المطبوعة: صفوف أقل منها = مشبوهة. */
+        const printedRows=pagePrintedRows[index]||0;
+        const missedRows=printedRows>bestRows.length;
+        const suspicious=(bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55))||missedRows;
+        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:Math.max(bestRows.length,printedRows),extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,
+          reason:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${bestRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
         scores[index]=Math.min(92,60+bestFilled*2);
         if(index===0&&(!texts[index]||!parseAuthorityHeaderText(texts[index]).term||!parseAuthorityHeaderText(texts[index]).branch||!parseAuthorityHeaderText(texts[index]).department)){
           const cachedHeader=cachedPreflight?.header;
