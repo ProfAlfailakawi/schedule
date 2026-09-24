@@ -370,6 +370,25 @@ function nativeAuthorityLabel(value:string):string{
  * official building token. This makes column shifts harmless instead of
  * teaching the importer one set of x-ratios per college.
  */
+/* ملف أُعيدت طباعته بتصغير حول منتصف الصفحة، أو حُفظ مقلوباً: يُعاد إلى
+   مقاسه واتجاهه بأقرب نسبة (100٪ ثم 99٪ … حتى 70٪) تُثبت كل صف مطبوع كاملاً
+   وسليماً. لا نسبة كهذه ⇒ لا شيء، ويبقى الرفض. */
+export function authorityRescaledNativeRows(words:Word[],width:number,height:number,printedRows:number,soundRows:(rows:GridRow[])=>number):GridRow[]|null{
+  if(!words.length||!(width>0)||!(height>0)||printedRows<1)return null;
+  const cx=width/2,cy=height/2;
+  /* صفحة مقلوبة (180°) تُقرأ بعد قلب مواضع الكلمات؛ نص كل كلمة كما هو. */
+  const upright=words.map(word=>({...word,x0:width-word.x1,x1:width-word.x0,y0:height-word.y1,y1:height-word.y0}));
+  for(let percent=100;percent>=70;percent--){
+    const factor=100/percent;
+    for(const source of percent===100?[upright]:[words,upright]){
+      const scaled=source.map(word=>({...word,x0:cx+(word.x0-cx)*factor,x1:cx+(word.x1-cx)*factor,y0:cy+(word.y0-cy)*factor,y1:cy+(word.y1-cy)*factor}));
+      const candidate=authorityPdfTextGridRows(scaled,width,"semantic");
+      if(candidate.length>=printedRows&&soundRows(candidate)===candidate.length)return candidate;
+    }
+  }
+  return null;
+}
+
 export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:AuthorityPdfNativeLayout="legacy-basic-girls"):GridRow[]{
   if(!words.length||!Number.isFinite(pageWidth)||pageWidth<=0)return[];
   const center=(word:Word)=>(word.x0+word.x1)/2;
@@ -481,6 +500,11 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
        stops at the first non-day item. */
     const leftOfActivity=row.filter(word=>center(word)<activityX).sort((a,b)=>center(b)-center(a));
     const dayWords:Word[]=[];
+    /* «محاضر» فقدت تاءها: التاء المربوطة نفسها تُقرأ رمزاً قصيراً ملاصقاً
+       للكلمة («5» أو «J)» أو «3»)، لا يوماً. الأيام خلية مستقلة بفراغ واضح. */
+    const lostTa=Boolean(activityWord)&&!activityNames.has(nativeAuthorityLabel(activityWord!.text));
+    const touchesActivity=(word:Word)=>lostTa&&word.x1>=activityWord!.x0-pageWidth*.008&&toAscii(String(word.text||"")).replace(/\s+/g,"").length<=2;
+    while(leftOfActivity.length&&touchesActivity(leftOfActivity[0]))leftOfActivity.shift();
     for(const word of leftOfActivity){
       const raw=asciiOf(word).replace(/[|،,;:_/\\–—-]/g," ").trim();
       const daySyntax=Boolean(raw)&&/^[1-5](?:\s*[1-5])*$/.test(raw)&&Boolean(parseDays(raw));
@@ -614,7 +638,7 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       const soundRows=(grid:GridRow[])=>grid.filter(row=>/^\d{4,8}$/.test(row.reference)&&Boolean(row.days)
         &&!(row.scode.length>=3&&row.reference.startsWith(row.scode))).length;
       const legacyRows=preserveBasicGirlsNativeLayout?authorityPdfTextGridRows(words,Number(viewport.width||0)):[];
-      const nativeGridRows=preserveBasicGirlsNativeLayout&&soundRows(legacyRows)>=soundRows(semanticRows)
+      let nativeGridRows=preserveBasicGirlsNativeLayout&&soundRows(legacyRows)>=soundRows(semanticRows)
         ?legacyRows
         :semanticRows;
       const fallbackStructuralRows=rows.filter(row=>{
@@ -627,7 +651,6 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       }).length;
       /* Native generated PDFs get the coordinate-grid path whenever at least
          one academic row is proven. A one-row tail page is legitimate. */
-      const pageStructuralRows=nativeGridRows.length||fallbackStructuralRows;
       /* ── صفوف مطبوعة بلا شبكة = استخراج غير آمن ──────────────────────────
          كل صف بيانات يحمل رقم مقرر من سبع خانات وزوج وقت. إن زادت هذه الصفوف
          على ما أثبتته شبكة الأعمدة، فالأعمدة انزلقت (إعادة طباعة بمقاس آخر،
@@ -639,7 +662,17 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
         const buildingKey=/(?:^|[^A-Z0-9])\d{3}[A-Z]\d{2}(?:[^A-Z0-9]|$)/.test(ascii);
         return (courseKey||buildingKey)&&Boolean(timePair(ascii));
       }).length;
+      /* ── ملفٌ أُعيدت طباعته بتصغير «ملاءمة الصفحة» ─────────────────────────
+         الطباعة بنسبة 80–95٪ تُصغّر الجدول حول منتصف الصفحة، فيخرج رقم المقرر
+         من عموده. يُعاد الجدول إلى مقاسه بأقرب نسبة تُثبت كل صف مطبوع كاملاً
+         وسليماً؛ وإن لم توجد نسبة كهذه يبقى الرفض برسالته. مسار بنات الأساسية
+         (012) لا يُمَسّ. */
+      if(keyedBodyRows>nativeGridRows.length&&nativeGridRows===semanticRows){
+        const restored=authorityRescaledNativeRows(words,Number(viewport.width||0),Number(viewport.height||0),keyedBodyRows,soundRows);
+        if(restored)nativeGridRows=restored;
+      }
       const gridShortfall=keyedBodyRows>nativeGridRows.length;
+      const pageStructuralRows=nativeGridRows.length||fallbackStructuralRows;
       structuralRows+=pageStructuralRows;
       if(pageStructuralRows>=2||(index===count&&pageStructuralRows>=1))pagesWithBody++;
       pages.push({
@@ -1636,7 +1669,9 @@ async function getWordLaneWorker(){
 export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:number;x1:number;y1:number}>,imageWidth:number,pageWidth=842):Word[]{
   const scale=pageWidth/Math.max(1,imageWidth);const out:Word[]=[];
   for(const word of raw){
-    const text=String(word?.text||"").normalize("NFKC").trim();if(!text)continue;
+    /* Tesseract يلفّ الكلمة العربية بعلامات اتجاه خفية (U+200F … U+200E)؛
+       «‏محاضر‎» بها لا تُعرف كلمة نشاط، فتضيع الأيام المجاورة لها. */
+    const text=String(word?.text||"").normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,"").trim();if(!text)continue;
     const ascii=toAscii(text);
     let m:RegExpMatchArray|null;const pieces:string[]=[];
     if((m=ascii.match(/^(\d{4,6})(0\d{6})$/)))pieces.push(m[1],m[2]);                 // CRN + course key
@@ -1663,7 +1698,63 @@ async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence
   const prepared=authorityOcrWordsToWords(words,width);
   const rows=authorityPdfTextGridRows(prepared,842,"semantic").map(row=>({...row,sourceMode:"ocr-grid" as const}));
   const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
+  try{await rereadDayCells(source,width,prepared,rows);}catch{/* the lane's own day reading stands */}
   return{rows,bodyEvidence};
+}
+/* ── إعادة قراءة خلية الأيام وحدها ─────────────────────────────────────────
+   أرقام الأيام صغيرة ومنفصلة («4 2»)، وقراءة الصفحة كاملة تُسقطها أو تضم
+   إليها أثر التاء من «محاضرة». تُقصّ خلية الأيام لكل صف — على سطر رقمه
+   المرجعي، يسار كلمة النشاط مباشرة — وتُقرأ أرقاماً فقط. لا تُقبل القراءة
+   إلا تسلسلاً تنازلياً بلا تكرار كما تطبعه الجهة («5 3 1»، «4 2»)؛ غير ذلك
+   يبقى ما قرأه الطريق نفسه. والخادم يطابق بعدها الأيام مع ساعات المقرر. */
+let dayCellWorkerPromise:Promise<PooledWorker>|null=null;
+async function getDayCellWorker(){
+  if(!dayCellWorkerPromise)dayCellWorkerPromise=retryOnFailure((async()=>{
+    const worker=await newOcrWorker("eng");
+    await worker.setParameters({tessedit_pageseg_mode:"7" as any,tessedit_char_whitelist:"12345 "});
+    return worker;
+  })(),()=>{dayCellWorkerPromise=null;});
+  return dayCellWorkerPromise;
+}
+export function authorityPrintedDayRun(text:string):string{
+  const digits=String(text||"").trim();
+  if(!/^[1-5](?:\s*[1-5])*$/.test(digits))return "";
+  const run=digits.replace(/\s+/g,"");
+  for(let i=1;i<run.length;i++)if(Number(run[i-1])<=Number(run[i]))return "";
+  return run.split("").join(" ");
+}
+async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:GridRow[]){
+  if(!rows.length)return;
+  const lib=await canvas();
+  const image=await lib.loadImage(source);
+  const worker=await getDayCellWorker();
+  const scale=842/Math.max(1,imageWidth);
+  const activity=/^(محاضر|مختبر|تمارين|كلينيكي|عملي|نظري|ورش|تدريب)/;
+  for(const row of rows){
+    const anchors=words.filter(word=>toAscii(word.text)===row.reference);
+    if(!row.reference||anchors.length!==1)continue;
+    const anchor=anchors[0];
+    const yc=(anchor.y0+anchor.y1)/2,h=Math.max(1,anchor.y1-anchor.y0);
+    const act=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&activity.test(String(word.text||"").normalize("NFKC"))).sort((a,b)=>a.x0-b.x0)[0];
+    if(!act)continue;
+    const x0=Math.max(0,(act.x0-842*.075)/scale),x1=(act.x0-1)/scale;
+    const y0=Math.max(0,(yc-h*.55)/scale),y1=(yc+h*.55)/scale;
+    if(!(x1>x0&&y1>y0))continue;
+    const crop=lib.createCanvas(Math.round((x1-x0)*2),Math.round((y1-y0)*2));
+    const context=crop.getContext("2d");
+    context.fillStyle="#fff";context.fillRect(0,0,crop.width,crop.height);
+    context.drawImage(image,x0,y0,x1-x0,y1-y0,0,0,crop.width,crop.height);
+    const result:any=await worker.recognize(crop.toBuffer("image/png"));
+    const run=authorityPrintedDayRun(String(result?.data?.text||""));
+    if(!run)continue;
+    /* قراءتان لخلية واحدة: فارغة ⇒ تُملأ بالقصّ؛ متطابقتان ⇒ تبقى؛ مختلفتان
+       ⇒ لا تُرجَّح إحداهما (نفس عدد الأيام يمرّ من فحص الساعات) فتُفرَّغ
+       للمراجعة. */
+    const lane=String(row.days||"").replace(/[^1-5]/g,"").split("").sort().join("");
+    const cropped=run.replace(/[^1-5]/g,"").split("").sort().join("");
+    const value=!lane||lane===cropped?run:"";
+    row.days=value;row.daysRaw=value;
+  }
 }
 const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(row.code)&&/^\d{4,8}$/.test(row.reference)&&Boolean(row.start)&&Boolean(row.building||row.buildingRaw)).length;
 
@@ -3334,8 +3425,20 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
        خلاياه الأخرى فارغة للمراجعة: لا صف يضيع، ولا قيمة مشكوك فيها تدخل. */
     if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)){
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
-      const seenCourseSections=new Set(wordLane.rows.filter(row=>row.code&&row.scode).map(row=>`${row.code}|${row.scode}`));
-      const missing=(gridRows||[]).filter(row=>!seen.has(`${row.reference}|${row.scode}`)&&!(row.code&&row.scode&&seenCourseSections.has(`${row.code}|${row.scode}`)))
+      /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
+         طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
+         نفسها تحت ذلك المقرر صفٌّ واحد لا صفّان. شعبة 01 لمقرر آخر تبقى. */
+      const sameCourse=(full:string,partial:string)=>Boolean(full&&partial)&&(full===partial||(partial.length<7&&full.startsWith(partial)));
+      /* ولا يُضاف صفّ إلا لمقرر أثبتته الصفحة: رقم مقرر لا يطابق (ولا يبدأ)
+         مقرراً قرأه طريق الكلمات هو رقم تسلسل ملتصق بمرجعي مبتور، لا صف. */
+      const seenReferences=new Set(wordLane.rows.map(row=>row.reference).filter(Boolean));
+      const catalogueKeys=new Set((courseKeysForPage(index)||[]).map(key=>String(key)));
+      const provenCourse=(code:string)=>catalogueKeys.has(code)||wordLane!.rows.some(word=>sameCourse(word.code,code));
+      const duplicate=(row:GridRow)=>seen.has(`${row.reference}|${row.scode}`)
+        ||Boolean(row.reference&&seenReferences.has(row.reference))
+        ||!provenCourse(row.code)
+        ||Boolean(row.scode&&wordLane!.rows.some(word=>word.scode===row.scode&&sameCourse(word.code,row.code)));
+      const missing=(gridRows||[]).filter(row=>!duplicate(row))
         .map(row=>({...row,days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",instructorText:""}));
       gridRows=[...wordLane.rows,...missing];
     }

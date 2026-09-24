@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { matchInstructorIdentity, uniqueExactIdentityMatch, authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, instructorRegistryOutcome, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { matchInstructorIdentity, uniqueExactIdentityMatch, authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityRescaledNativeRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, instructorRegistryOutcome, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { fairShareByOwner } from "../src/utils/hallBarterFairness.ts";
@@ -193,6 +193,25 @@ assert.equal(authorityDaysCellLooksPlausible("5 3 3"),false);
   assert.equal(semanticRows[0].building,"011B18");
   assert.equal(semanticRows[0].hall,"G07");
   assert.match(semanticRows[0].instructorText,/شجاع/);
+
+  /* Printed with "fit to page" at 85%: the course code leaves its column and
+     the page is rejected, unless the table is restored to its size. The
+     restored row must be identical to the 100% export. */
+  const width=841.8898,height=595.2756,cx=width/2,cy=height/2,f=.85;
+  const shrunk=boysNativeWords.map(w=>({...w,x0:cx+(w.x0-cx)*f,x1:cx+(w.x1-cx)*f,y0:cy+(w.y0-cy)*f,y1:cy+(w.y1-cy)*f}));
+  assert.equal(authorityPdfTextGridRows(shrunk,width,"semantic").length,0);
+  const sound=(rows:any[])=>rows.filter(row=>/^\d{4,8}$/.test(row.reference)&&Boolean(row.days)).length;
+  const restored=authorityRescaledNativeRows(shrunk,width,height,1,sound);
+  assert.ok(restored);
+  assert.deepEqual(restored!.map(r=>[r.code,r.reference,r.scode,r.days,r.start,r.end,r.building,r.hall]),
+    semanticRows.map(r=>[r.code,r.reference,r.scode,r.days,r.start,r.end,r.building,r.hall]));
+  /* Saved upside down (180°): each word keeps its text, only its place flips. */
+  const flipped=boysNativeWords.map(w=>({...w,x0:width-w.x1,x1:width-w.x0,y0:height-w.y1,y1:height-w.y0}));
+  assert.equal(authorityPdfTextGridRows(flipped,width,"semantic").length,0);
+  assert.deepEqual(authorityRescaledNativeRows(flipped,width,height,1,sound)!.map(r=>[r.code,r.reference,r.scode,r.days,r.start,r.end,r.building,r.hall]),
+    semanticRows.map(r=>[r.code,r.reference,r.scode,r.days,r.start,r.end,r.building,r.hall]));
+  /* A page whose rows cannot all be proven stays rejected. */
+  assert.equal(authorityRescaledNativeRows(shrunk,width,height,2,sound),null);
 }
 
 /* Building-column proof is anchored to the owner's official site prefixes.
