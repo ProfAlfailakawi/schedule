@@ -7,7 +7,7 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
@@ -199,6 +199,25 @@ check("a re-read time strip is accepted only as a dashed, plausible clock pair",
   assert.equal(authorityTimeStripRead("1350 1300"),null,"no dash, no pair");
   assert.equal(authorityTimeStripRead("135 - 1300"),null);
   assert.equal(authorityTimeStripRead(""),null);
+});
+
+check("a scanned page whose rows lost their course codes is flagged, not imported as fragments",()=>{
+  const row=(code:string)=>({code,reference:"18945",scode:"501"}) as any;
+  assert.equal(unreadableIdentityRows([...Array(12)].map(()=>row("0101102")).concat([row("02011")])),0,"one damaged row is left for review");
+  assert.equal(unreadableIdentityRows([...Array(3)].map(()=>row("0101102")).concat([...Array(20)].map(()=>row("0101")))),20);
+});
+check("printed data lines are counted independently of the row reader",()=>{
+  const w=(text:string,y:number)=>({text,x0:0,x1:10,y0:y,y1:y+10});
+  const header=[w("2026",10),w("2027",10),w("0101",30)];
+  const body=[0,1,2].flatMap(i=>[w("0101102",100+i*20),w("18945",100+i*20),w("1100",100+i*20)]);
+  assert.equal(authorityPrintedRowBands([...header,...body]),3,"the header's year pair is not a row");
+});
+check("separator-welded section, reference and code split only in their full shapes",()=>{
+  const split=(text:string)=>authorityOcrWordsToWords([{text,x0:0,y0:0,x1:150,y1:10}],842).map(w=>w.text);
+  assert.deepEqual(split("503/18947/0101102"),["503","18947","0101102"]);
+  assert.deepEqual(split("503(19707.0101150"),["503","19707","0101150"]);
+  assert.deepEqual(split("[18945|0101102"),["18945","0101102"]);
+  assert.deepEqual(split("12/05"),["12/05"]);
 });
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));

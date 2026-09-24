@@ -1693,9 +1693,24 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
     if(/^\d{4}(?:[-–—]\d{4})?\d{3}[A-Za-z0-9]\d{2}$/.test(stripped))text=stripped;
     /* «FO7»: حرف الطابق ثم O في موضع الصفر هو «F07» — في المسح وحده. */
     if(/^[FGTS]O\d{1,2}$/i.test(toAscii(text)))text=toAscii(text).toUpperCase().replace(/^([FGTS])O/,"$10");
-    const ascii=toAscii(text);
+    let ascii=toAscii(text);
     let m:RegExpMatchArray|null;const pieces:string[]=[];
     if(leadDash&&text===stripped)pieces.push("-");
+    /* جدول 012 مسطّر بأعمدة رأسية: الشعبة والمرجعي ورقم المقرر تلتصق بأثر
+       الخط («503/18947/0101102»، «503(19707.0101150»، «[18945|0101102»). تُنزع
+       الفواصل ثم يُقبل التقسيم بأشكاله الكاملة وحدها: شعبة 3 + مرجعي 5 + مقرر
+       7، أو مرجعي 4–6 + مقرر 7. */
+    const packed=toAscii(text).replace(/^[\[(|]+|[\])|.,]+$/g,"");
+    if(/^\d[\d/(.|\[\]]*\d$/.test(packed)&&/[/(.|\[\]]/.test(packed)){
+      const digits=packed.replace(/[^\d]/g,"");
+      if(/^\d{3}\d{5}0\d{6}$/.test(digits)||/^\d{4,6}0\d{6}$/.test(digits)){text=digits;ascii=digits;}
+    }
+    if((m=toAscii(text).match(/^(\d{3})(\d{5})(0\d{6})$/))){
+      pieces.push(m[1],m[2],m[3]);
+      const unit=(word.x1-word.x0)/15;let x=word.x0;
+      for(const piece of pieces){const x1=x+unit*piece.length;out.push({text:piece,x0:x*scale,x1:x1*scale,y0:word.y0*scale,y1:word.y1*scale});x=x1;}
+      continue;
+    }
     if((m=ascii.match(/^(\d{4})[-–—](\d{4})(\d{3}[A-Za-z0-9]\d{2})$/)))pieces.push(m[1],"-",m[2],m[3]);   // clock - clock + building
     else if((m=ascii.match(/^(\d{4,6})(0\d{6})$/)))pieces.push(m[1],m[2]);                 // CRN + course key
     else if((m=ascii.match(/^([0-2]\d[0-5]\d)(\d{3}[A-Za-z]\d{2})$/)))pieces.push(m[1],m[2]); // clock + building
@@ -1708,7 +1723,37 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
   }
   return out;
 }
-async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number}>{
+/** صفوف بلا رقم مقرر كامل: إن بلغت ربع الصفحة (3 فأكثر) فالمسح لم يُقرأ،
+ *  لا صفٌّ ناقص هنا وهناك. يُعاد عددها ليُذكر في الرسالة، وإلا صفر. */
+export function unreadableIdentityRows(rows:GridRow[]):number{
+  const broken=rows.filter(row=>!/^\d{7}$/.test(String(row.code||""))).length;
+  return broken>=3&&broken>=rows.length*.25?broken:0;
+}
+/** Contrast-stretch a scanned page and erase long table rules (runs of dark
+ *  pixels far longer than any glyph) so digits touching a rule separate. */
+async function enhanceScanForOcr(source:Buffer):Promise<Buffer>{
+  const lib=await canvas();
+  const image=await lib.loadImage(source);
+  const W=image.width,H=image.height;
+  const surface=lib.createCanvas(W,H);const context=surface.getContext("2d");
+  context.drawImage(image,0,0);
+  const data=context.getImageData(0,0,W,H);const px=data.data;
+  const lum=new Uint8Array(W*H);
+  for(let i=0;i<W*H;i++)lum[i]=(px[i*4]*.299+px[i*4+1]*.587+px[i*4+2]*.114)|0;
+  const hist=new Array(256).fill(0);for(let i=0;i<lum.length;i++)hist[lum[i]]++;
+  let lo=0,hi=255,acc=0;
+  for(let v=0;v<256;v++){acc+=hist[v];if(acc>W*H*.02){lo=v;break;}}
+  acc=0;for(let v=255;v>=0;v--){acc+=hist[v];if(acc>W*H*.02){hi=v;break;}}
+  for(let i=0;i<lum.length;i++)lum[i]=Math.max(0,Math.min(255,((lum[i]-lo)*255/Math.max(1,hi-lo))|0));
+  const dark=140,vertical=Math.round(H*.02),horizontal=Math.round(W*.06);
+  const erase=new Uint8Array(W*H);
+  for(let x=0;x<W;x++){let y=0;while(y<H){if(lum[y*W+x]<dark){const s=y;while(y<H&&lum[y*W+x]<dark)y++;if(y-s>=vertical)for(let k=s;k<y;k++)erase[k*W+x]=1;}else y++;}}
+  for(let y=0;y<H;y++){let x=0;while(x<W){if(lum[y*W+x]<dark){const s=x;while(x<W&&lum[y*W+x]<dark)x++;if(x-s>=horizontal)for(let k=s;k<x;k++)erase[y*W+k]=1;}else x++;}}
+  for(let i=0;i<W*H;i++){const v=erase[i]?255:lum[i];px[i*4]=px[i*4+1]=px[i*4+2]=v;px[i*4+3]=255;}
+  context.putImageData(data,0,0);
+  return surface.toBuffer("image/png");
+}
+async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number;tableNumbers:number;printedRows:number}>{
   const worker=await getWordLaneWorker();
   /* الأرقام الصغيرة في مسح منخفض الدقة تلتصق وتتشوّه؛ تُكبَّر الصفحة إلى
      عرض 3300 تقريباً (300 نقطة لصفحة أفقية) قبل القراءة. */
@@ -1721,10 +1766,38 @@ async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence
   const prepared=authorityOcrWordsToWords(words,width);
   const rows=authorityPdfTextGridRows(prepared,842,"semantic").map(row=>({...row,sourceMode:"ocr-grid" as const}));
   const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
+  /* أرقام الجدول (ساعات، مراجع، أكواد) — صفحة دليل الأيام لا تحمل منها شيئاً. */
+  const tableNumbers=prepared.filter(word=>/\d{4,}/.test(toAscii(word.text))).length;
+  const printedRows=authorityPrintedRowBands(prepared);
   try{await rereadDayCells(source,width,prepared,rows);}catch{/* the lane's own day reading stands */}
   try{await rereadTimeCells(source,width,prepared,rows);}catch{/* the lane's own time reading stands */}
   try{await rereadRoomCells(source,width,prepared,rows);}catch{/* the lane's own room reading stands */}
-  return{rows,bodyEvidence};
+  return{rows,bodyEvidence,tableNumbers,printedRows};
+}
+/* ── كم سطر جدول مطبوع تراه الصفحة؟ ────────────────────────────────────────
+   دليلٌ مستقل عن قارئ الصفوف: سطر يحمل رقم مقرر (7) أو رقماً مرجعياً (5) أو
+   كود مبنى، ومعه رقمٌ ثانٍ من أرقام الجدول (أحدها أو ساعة). الترويسة لا تحمل
+   شيئاً من الثلاثة الأولى فلا تُعدّ. */
+export function authorityPrintedRowBands(words:Word[]):number{
+  const kind=(word:Word)=>{
+    const t=toAscii(String(word.text||"")).toUpperCase();
+    if(/^0\d{6}$/.test(t))return "code";
+    if(/^\d{5}$/.test(t))return "ref";
+    if(/^\d{3}[A-Z0-9]\d{2}$/.test(t))return "building";
+    if(/^[0-2]\d[0-5]\d$/.test(t))return "clock";
+    return "";
+  };
+  const marked=words.map(word=>({word,kind:kind(word)})).filter(item=>item.kind);
+  if(!marked.length)return 0;
+  const heights=marked.map(item=>Math.abs(item.word.y1-item.word.y0)).sort((a,b)=>a-b);
+  const tolerance=Math.max(2,(heights[Math.floor(heights.length/2)]||8)*.6);
+  const bands:{y:number;kinds:string[]}[]=[];
+  for(const item of marked.sort((a,b)=>(a.word.y0+a.word.y1)-(b.word.y0+b.word.y1))){
+    const y=(item.word.y0+item.word.y1)/2;
+    const band=bands.find(candidate=>Math.abs(candidate.y-y)<=tolerance);
+    if(band){band.kinds.push(item.kind);band.y=(band.y+y)/2;}else bands.push({y,kinds:[item.kind]});
+  }
+  return bands.filter(band=>band.kinds.some(k=>k!=="clock")&&band.kinds.length>=2).length;
 }
 /* ── إعادة قراءة خلية الأيام وحدها ─────────────────────────────────────────
    أرقام الأيام صغيرة ومنفصلة («4 2»)، وقراءة الصفحة كاملة تُسقطها أو تضم
@@ -1896,6 +1969,8 @@ async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:
     row.days=value;row.daysRaw=value;
   }
 }
+/** Rows whose identity is proven: a full course code and a reference number. */
+const identityRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(String(row.code||""))&&/^\d{4,8}$/.test(String(row.reference||""))).length;
 const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(row.code)&&/^\d{4,8}$/.test(row.reference)&&Boolean(row.start)&&Boolean(row.building||row.buildingRaw)).length;
 
 async function readGrid(
@@ -3451,6 +3526,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      empty there, so the proven golden pages keep their byte-identical output. */
   const multiPageCourseKeys=optionKeys;
   const courseKeysForPage=(_index:number)=>multiPageCourseKeys;
+  const pagePrintedRows:number[]=[];
   const pool=await getWorkerPool();
   const lib0=await canvas();
   const probeOf=async(buffer:Buffer)=>{
@@ -3553,7 +3629,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }
     /* الطريقان معاً، ويُختار لكل صفحة ما أثبت صفوفاً سليمة أكثر (رقم مقرر،
        مرجعي، وقت، مبنى). ما كان يعمل لا يُفقد: يبقى إن كان الأسلم. */
-    let wordLane:{rows:GridRow[];bodyEvidence:number}|null=null;
+    let wordLane:{rows:GridRow[];bodyEvidence:number;tableNumbers:number;printedRows:number}|null=null;
     try{
       /* طريق الكلمات يقرأ الصفحة من الملف الأصلي بدقة أعلى (3500) لا من
          الصورة المصغّرة المعدّة للخطوط: أرقام الخلايا الصغيرة لا تلتصق. */
@@ -3563,12 +3639,14 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     /* طريق الكلمات أساسٌ متى أثبت صفوفاً سليمة أكثر. وما رآه طريق الخطوط ولم
        يجمعه طريق الكلمات يُضاف بهويته فقط (المقرر، الشعبة، المرجعي) وتُترك
        خلاياه الأخرى فارغة للمراجعة: لا صف يضيع، ولا قيمة مشكوك فيها تدخل. */
-    if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)){
+    /* أو حين يثبت هويةَ صفوفٍ أكثر (رقم مقرر كامل ومرجعي): شبكة أزاحت أعمدتها
+       (المقرر فارغ، والكود في خانة المرجعي) لا تغلب قراءةً صحيحة الهوية. */
+    if(wordLane&&wordLane.rows.length&&(soundScanRows(wordLane.rows)>soundScanRows(gridRows)||identityRows(wordLane.rows)>identityRows(gridRows))){
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
          نفسها تحت ذلك المقرر صفٌّ واحد لا صفّان. شعبة 01 لمقرر آخر تبقى. */
-      const sameCourse=(full:string,partial:string)=>Boolean(full&&partial)&&(full===partial||(partial.length<7&&full.startsWith(partial)));
+      const sameCourse=(full:string,partial:string)=>Boolean(full&&partial)&&(full===partial||(partial.length>=5&&partial.length<7&&full.startsWith(partial)));
       /* ولا يُضاف صفّ إلا لمقرر أثبتته الصفحة: رقم مقرر لا يطابق (ولا يبدأ)
          مقرراً قرأه طريق الكلمات هو رقم تسلسل ملتصق بمرجعي مبتور، لا صف. */
       const seenReferences=new Set(wordLane.rows.map(row=>row.reference).filter(Boolean));
@@ -3584,7 +3662,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }
     /* صفحة بلا رقم مقرر ولا صف (صفحة دليل الأيام الأخيرة) صفحةٌ فارغة، لا
        استخراج مشبوه: كانت تُسقط كل مسح متعدد الصفحات برسالة «صورة غير واضحة». */
-    if(!gridRows&&wordLane&&!wordLane.rows.length&&wordLane.bodyEvidence===0){
+    /* صفحة دليل حقاً: لا كود مقرر ولا أرقام جدول إطلاقاً. صفحة جدول رديئة
+       المسح لا يُقرأ فيها الكود لكن تبقى ساعاتها ومراجعها — تلك ليست فارغة،
+       وتذهب إلى الفحص الذي يعلّمها مشبوهة بدل أن تُسقط صفوفها بصمت. */
+    if(!gridRows&&wordLane&&!wordLane.rows.length&&wordLane.bodyEvidence===0&&wordLane.tableNumbers<3){
       texts[index]="";scores[index]=85;
       pages[index]={rows:[],diagnostic:{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation:pageOrientation,suspicious:false,reason:"صفحة بلا صفوف جدول"}};
       pagesDone++;
@@ -3604,8 +3685,15 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       }else texts[index]="";
       const filled=gridRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
       scores[index]=Math.min(85,55+filled*2);
-      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55);
-      pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:gridRows.length,extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+      /* أسطر مطبوعة يراها طريق الكلمات بأرقامها ولم يخرج لها صف = صفوف كانت
+         ستسقط بصمت. تُعلَّم الصفحة مشبوهة ويتوقف الاستيراد برسالة. */
+      const printedRows=wordLane?.printedRows||0;
+      pagePrintedRows[index]=printedRows;
+      const missedRows=printedRows>gridRows.length;
+      const brokenRows=unreadableIdentityRows(gridRows);
+      const suspicious=(gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55))||missedRows||brokenRows>0;
+      pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:Math.max(gridRows.length,printedRows),extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,
+        reason:brokenRows>0?`في الصفحة ${brokenRows} صفاً لم يُقرأ رقم مقررها؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${gridRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
     }else{
       const grid=await spreadColumns(upright);
       await lanePool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
@@ -3672,12 +3760,34 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
           const pageCourseKeys=courseKeysForPage(index);
           const rows=await readGrid(upright,rescuePool,authorityGridDepartment,pageCourseKeys);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
-          if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
+          /* قراءة الإنقاذ لا تُعتمد إن أنقصت الصفوف ثابتة الهوية (شبكة أزاحت أعمدتها). */
+          if(rows&&filled>bestFilled&&identityRows(rows)>=identityRows(bestRows)){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
       }
+      /* ── تحسين الصورة قبل الاستسلام ─────────────────────────────────────
+         صفحة ما زالت ناقصة: تُعاد من الملف بدقة عالية، ويُمدّ تباينها، وتُمحى
+         خطوط الجدول الطويلة الملاصقة للأرقام، ثم تُقرأ كلماتها من جديد. تُعتمد
+         القراءة المحسّنة إن أخرجت صفوفاً أكثر، ويبقى فحص الأسطر المطبوعة حكماً. */
+      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length){
+        try{
+          const sharp=wordLaneSources?(await wordLaneSources)[index]:undefined;
+          if(sharp){
+            const enhanced=await enhanceScanForOcr(sharp);
+            const lane=await readWordLane(enhanced);
+            pagePrintedRows[index]=Math.max(pagePrintedRows[index]||0,lane.printedRows);
+            const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
+            if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)){bestRows=lane.rows;bestFilled=filled;}
+          }
+        }catch{/* the earlier reading and its warning stand */}
+      }
       if(bestRows.length){
-        const suspicious=bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55);
-        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:bestRows.length,extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+        /* إعادة القراءة لا تمسح دليل الأسطر المطبوعة: صفوف أقل منها = مشبوهة. */
+        const printedRows=pagePrintedRows[index]||0;
+        const missedRows=printedRows>bestRows.length;
+        const brokenRows=unreadableIdentityRows(bestRows);
+        const suspicious=(bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55))||missedRows||brokenRows>0;
+        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:Math.max(bestRows.length,printedRows),extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,
+          reason:brokenRows>0?`في الصفحة ${brokenRows} صفاً لم يُقرأ رقم مقررها؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${bestRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
         scores[index]=Math.min(92,60+bestFilled*2);
         if(index===0&&(!texts[index]||!parseAuthorityHeaderText(texts[index]).term||!parseAuthorityHeaderText(texts[index]).branch||!parseAuthorityHeaderText(texts[index]).department)){
           const cachedHeader=cachedPreflight?.header;
