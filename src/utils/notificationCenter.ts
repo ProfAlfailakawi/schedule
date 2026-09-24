@@ -28,6 +28,8 @@ export interface CenterScope {
   rowCount: number;
   openRegistrarNotes: number;
   openRequests: number;
+  /** طلباتُ الأساتذة المعلّقة في هذا القسم، طلباً طلباً. */
+  pendingRequests?: Array<{ requestId: string; instructorName: string; count: number; at?: string }>;
   /** موعد هذا القسم: تمديده إن وُجد، وإلا موعد الفصل. */
   deadline?: { effective?: string; past?: boolean; daysLeft?: number } | null;
 }
@@ -148,14 +150,6 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           view: "schedules", ...target(scope),
         });
       }
-      if (scope.openRequests > 0) {
-        items.push({
-          id: `requests:${scope.approval.AdCollegeId}:${scope.approval.AdSectionId}:${scope.openRequests}`, tone: "action",
-          title: `${plural(scope.openRequests, "طلبٌ من أستاذ", "طلبان من الأساتذة", "طلبات من الأساتذة")} ${scope.openRequests === 1 ? "ينتظر" : "تنتظر"} الردّ`,
-          detail: place(scope),
-          view: "instructorRequests", ...target(scope),
-        });
-      }
       const due = scope.deadline;
       if (!accepted && !approval.rounds.length && due?.effective && !isHead) {
         const days = Number(due.daysLeft);
@@ -168,6 +162,20 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           });
         }
       }
+    }
+  }
+
+  /* ── طلباتُ الأساتذة: لكل من يعمل على الجدول، أياً كانت صفته ─────────
+     طلبٌ واحد لكل أستاذ باسمه، والمعرّفُ يحمل وقتَ الإرسال وعددَ البنود —
+     فإن أرسل الأستاذ من جديد صار الإشعارُ «جديداً» مرّةً أخرى. */
+  for (const scope of scopes) {
+    for (const entry of scope.pendingRequests || []) {
+      items.push({
+        id: `request:${entry.requestId}:${scope.approval.AdSectionId}:${entry.count}:${entry.at || ""}`, tone: "action",
+        title: `${entry.instructorName} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${plural(entry.count, "تعديلاً", "تعديلين", "تعديلات")}`}`,
+        detail: `${place(scope)}${scope.collegeName ? ` · ${scope.collegeName}` : ""} — ينتظر ردّك في «وارد الأساتذة».`,
+        view: "instructorRequests", at: entry.at, ...target(scope),
+      });
     }
   }
 

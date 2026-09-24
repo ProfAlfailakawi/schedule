@@ -28,9 +28,10 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, MailQuestion,
-  MessageSquare, Send, ShieldAlert, ShieldCheck, X,
+  AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
+  MessageSquare, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
+import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import {
   Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface,
@@ -189,22 +190,91 @@ function RejectSheet({ item, onClose, onSubmit, busy }: {
   );
 }
 
+/* ── الفحصُ الحيّ: سياسةُ «الجدول الدراسي» نفسُها ─────────────────────────
+ *
+ * حكمُ الطلب يُحسب لحظةَ فتح الوارد، والجدولُ يتحرّك بعدها. فقبل أن يُعرض زرُّ
+ * «ثبّت» يُسأل الخادمُ بالسؤال نفسِه الذي يسأله نموذجُ الجدول الدراسي قبل
+ * الحفظ (`check-conflicts`): الأستاذُ والقاعةُ والطلبةُ المشتركون والشعبةُ
+ * المكرّرة، في كل الكليات. فما يُمنع هناك يُمنع هنا، ويُقال سببُه هنا. */
+
+export interface LiveIssue { severity: "high" | "medium" | "low"; message: string; detail?: string; otherId?: number }
+
+export const proposedRow = (row: InboxRequest, item: InstructorRequestItem, current?: FSchedule): any | null => {
+  if (item.action === "delete" || item.action === "keep") return null;
+  const slots = item.slots || [];
+  if (!slots.length || !slots[0]?.start || !slots[0]?.end) return null;
+  const days = new Set(slots.map(slot => slot.day));
+  const base: any = item.action === "change"
+    ? (current ? { ...current } : null)
+    : {
+        AdInstructorId: Number(row.AdInstructorId),
+        AdCourseId: Number(item.after?.courseId || 0),
+        AdCollegeId: Number(item.after?.collegeId || row.AdCollegeId),
+        AdSectionId: Number(item.after?.sectionId || row.AdSectionId),
+        AdTermId: Number(row.AdTermId),
+      };
+  if (!base) return null;
+  return {
+    ...base,
+    fsunday: days.has("fsunday"), fmonday: days.has("fmonday"), ftuesday: days.has("ftuesday"),
+    fwednesday: days.has("fwednesday"), fthursday: days.has("fthursday"),
+    fstarttime: slots[0].start, fendtime: slots[0].end,
+    excludeId: item.action === "change" ? Number(item.rowId || 0) : 0,
+  };
+};
+
+function useLiveCheck(candidate: any | null, enabled: boolean) {
+  const [state, setState] = useState<{ loading: boolean; issues: LiveIssue[] | null }>({ loading: false, issues: null });
+  const key = candidate ? JSON.stringify(candidate) : "";
+  useEffect(() => {
+    if (!enabled || !candidate) { setState({ loading: false, issues: null }); return; }
+    const controller = new AbortController();
+    setState(prev => ({ loading: true, issues: prev.issues }));
+    fetch("/api/schedules/check-conflicts", {
+      method: "POST", credentials: "include", signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: key,
+    })
+      .then(response => (response.ok ? response.json() : { conflicts: [] }))
+      .then(data => setState({
+        loading: false,
+        issues: (data.conflicts || []).map((conflict: any) => ({
+          severity: conflict.severity === "high" ? "high" : conflict.severity === "medium" ? "medium" : "low",
+          message: String(conflict.message || "تعارض"),
+          detail: conflict.detail ? String(conflict.detail) : undefined,
+          otherId: Number(conflict.rowId || conflict.otherId || 0) || undefined,
+        })),
+      }))
+      .catch(error => { if (error?.name !== "AbortError") setState({ loading: false, issues: null }); });
+    return () => controller.abort();
+  }, [key, enabled]);
+  return state;
+}
+
+/** حالةُ البند في كلمة: ما يراه المنسّق قبل أن يقرأ التفاصيل. */
+type Readiness = "ready" | "review" | "blocked" | "checking";
+const READINESS: Record<Readiness, string> = {
+  ready: "جاهز للتثبيت", review: "يحتاج قرارك", blocked: "ممنوع", checking: "يفحص…",
+};
+
 /* ── بطاقةُ أستاذ ───────────────────────────────────────────────────────── */
 
-function RequestCard({ row, currentRows, onDecide, busyKey }: {
+function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }: {
   key?: React.Key;
   row: InboxRequest;
   currentRows: Map<number, FSchedule>;
   onDecide: (index: number, state: "fixed" | "rejected", extra?: any) => void;
   busyKey: string | null;
+  filter: (item: InstructorRequestItem) => boolean;
+  rowErrors: Record<string, string>;
 }) {
   const [rejecting, setRejecting] = useState<number | null>(null);
 
   const items = useMemo(() => (row.items || [])
     .map((item, index) => ({ item, index }))
-    .filter(entry => entry.item.action !== "keep")
+    .filter(entry => entry.item.action !== "keep" && filter(entry.item))
     .sort((a, b) => (VERDICT_ORDER[a.item.verdict || "clear"] ?? 0) - (VERDICT_ORDER[b.item.verdict || "clear"] ?? 0)),
-    [row.items]);
+    [row.items, filter]);
 
   if (!items.length) return null;
 
@@ -254,102 +324,213 @@ function RequestCard({ row, currentRows, onDecide, busyKey }: {
             </tr>
           </thead>
           <tbody>
-        {items.map(({ item, index }) => {
-          const key = `${row.id}:${index}`;
-          const decided = item.decision?.state;
-          const current = item.rowId == null ? undefined : currentRows.get(Number(item.rowId));
-          const reasons = item.reasons || [];
-          return (
-            <React.Fragment key={key}>
-            <tr className="request-row" data-action={item.action} data-verdict={item.verdict || "clear"} data-decided={decided || undefined}>
-              <td data-label="الطلب">
-                <span className="request-action" data-action={item.action}>{ACTION_LABEL[item.action] || item.action}</span>
-              </td>
-              <td data-label="المقرر">
-                <strong>{item.after?.courseName || item.before?.courseName || "—"}</strong>
-                {item.before?.sectionCode ? <small>شعبة {item.before.sectionCode}</small> : null}
-                {item.action === "add" && item.after?.collegeName ? <small>{item.after.collegeName}</small> : null}
-              </td>
-              <td data-label="كان">
-                {item.before && item.action !== "add" ? (
-                  <span className={item.action === "delete" ? "request-was-gone" : undefined}>
-                    {item.before.days}<br /><bdi dir="ltr">{item.before.time}</bdi>
-                    {item.before.room ? <small className="request-room"><bdi dir="ltr">{item.before.room}</bdi></small> : null}
-                  </span>
-                ) : <span className="request-none">—</span>}
-              </td>
-              <td data-label="المطلوب">
-                {item.action === "delete" ? <span className="request-none">حذف الموعد</span>
-                  : item.after ? <span>{item.after.days}<br /><bdi dir="ltr">{item.after.time}</bdi></span>
-                  : <span className="request-none">—</span>}
-                {item.excuse ? <small className="request-excuse"><MessageSquare aria-hidden="true" /> {item.excuse}</small> : null}
-              </td>
-              <td data-label="الفحص">
-                {item.action === "delete" ? <span className="request-check" data-tone="clear">لا يُفحص الحذف</span>
-                  : reasons.length ? (
-                    <ul className="request-reasons">
-                      {reasons.map((reason, at) => (
-                        <li key={at} data-blocking={reason.blocking || undefined}>
-                          {reason.blocking ? <ShieldAlert aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-                          {reason.text}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : <span className="request-check" data-tone="clear"><Check aria-hidden="true" /> متاح</span>}
-                {/* القاعاتُ المرشّحة تظهر هنا وهنا وحدها: القرارُ فيها للقسم،
-                    والأستاذُ لم يرَ منها شيئاً. */}
-                {(item.roomCandidates || []).length && item.action !== "delete" ? (
-                  <small className="request-rooms">
-                    قاعاتٌ متاحة في هذا الوقت: {countOf(item.roomCandidates!.length, AR.room)}
-                  </small>
-                ) : null}
-              </td>
-              <td data-label="القرار">
-                {decided ? (
-                  <p className="request-decided" data-state={decided}>
-                    {decided === "fixed" ? <><Check aria-hidden="true" /> ثُبّت</> : <><X aria-hidden="true" /> رُفض — {REJECT_REASONS.find(([value]) => value === item.decision?.reasonCode)?.[1] || "بلا سبب"}</>}
-                    {item.decision?.note ? <span> · {item.decision.note}</span> : null}
-                  </p>
-                ) : (
-                  <div className="request-actions">
-                    <PrimaryButton
-                      type="button"
-                      data-guide-target="requests.action.fix"
-                      disabled={busyKey === key || item.verdict === "conflict" || (item.action === "change" && !current)}
-                      onClick={() => onDecide(index, "fixed", { current })}
-                      title={item.verdict === "conflict" ? "لا يُثبَّت بندٌ متعارض — عالجه أو ارفضه" : undefined}
-                    >
-                      {busyKey === key ? "يحفظ…" : item.action === "add" ? "افتحها في الورشة" : "ثبّت"}
-                    </PrimaryButton>
-                    <SecondaryButton type="button" data-guide-target="requests.action.reject" onClick={() => setRejecting(index)}>
-                      ارفض
-                    </SecondaryButton>
-                  </div>
-                )}
-              </td>
-            </tr>
-            {rejecting === index ? (
-              <tr className="request-reject-row"><td colSpan={6}>
-                <RejectSheet
-                  item={item}
-                  busy={busyKey === key}
-                  onClose={() => setRejecting(null)}
-                  onSubmit={(reason, note, alternatives) => {
-                    onDecide(index, "rejected", { reasonCode: reason, note, alternatives });
-                    setRejecting(null);
-                  }}
-                />
-              </td></tr>
-            ) : null}
-            </React.Fragment>
-          );
-        })}
+        {items.map(({ item, index }) => (
+          <RequestRow
+            key={`${row.id}:${index}`}
+            row={row}
+            item={item}
+            index={index}
+            current={item.rowId == null ? undefined : currentRows.get(Number(item.rowId))}
+            busy={busyKey === `${row.id}:${index}`}
+            rejecting={rejecting === index}
+            error={rowErrors[`${row.id}:${index}`]}
+            onReject={() => setRejecting(index)}
+            onCloseReject={() => setRejecting(null)}
+            onDecide={onDecide}
+          />
+        ))}
           </tbody>
         </table>
       </div>
     </article>
   );
 }
+
+/* ── صفُّ بند ─────────────────────────────────────────────────────────────
+ * الحكمُ المحفوظ مع الطلب والفحصُ الحيّ يُقرآن معاً: ما منعه أحدُهما مُنع،
+ * وما نبّه إليه أحدُهما قيل. ولا يُكرَّر السببُ نفسُه مرّتين. */
+function RequestRow({ row, item, index, current, busy, rejecting, error, onReject, onCloseReject, onDecide }: {
+  key?: React.Key;
+  row: InboxRequest; item: InstructorRequestItem; index: number; current?: FSchedule;
+  busy: boolean; rejecting: boolean; error?: string;
+  onReject: () => void; onCloseReject: () => void;
+  onDecide: (index: number, state: "fixed" | "rejected", extra?: any) => void;
+}) {
+  const decided = item.decision?.state;
+  const candidate = useMemo(() => proposedRow(row, item, current), [row, item, current]);
+  const live = useLiveCheck(candidate, !decided && item.action !== "delete");
+  const reasons = item.reasons || [];
+  const seen = new Set(reasons.map(reason => reason.text));
+  /* ── ما يُفرغه الطلبُ نفسُه ─────────────────────────────────────────────
+     أستاذٌ نقل محاضرةً من الثامنة وأضاف أخرى في الثامنة: في الجدول الحاليّ
+     هما متعارضتان، وفي الطلب لا. فالتعارضُ مع صفٍّ ينقله أو يحذفه بندٌ شقيقٌ
+     لم يُقرَّر بعد ليس مانعاً — هو ترتيب: يُثبَّت الشقيقُ أولاً ثم هذا. */
+  const siblings = new Map<number, { index: number; name: string }>();
+  (row.items || []).forEach((other, at) => {
+    if (at === index || other.decision?.state || other.rowId == null) return;
+    if (other.action !== "change" && other.action !== "delete") return;
+    siblings.set(Number(other.rowId), { index: at, name: String(other.before?.courseName || other.after?.courseName || "محاضرة") });
+  });
+  const allLive = (live.issues || []).filter(issue => !seen.has(issue.message));
+  const dependsOn: Array<{ index: number; name: string }> = [...new Map<number, { index: number; name: string }>(allLive
+    .filter(issue => issue.otherId && siblings.has(issue.otherId))
+    .map(issue => [issue.otherId!, siblings.get(issue.otherId!)!] as [number, { index: number; name: string }])).values()];
+  const liveIssues = allLive.filter(issue => !(issue.otherId && siblings.has(issue.otherId)));
+  const blocked = item.verdict === "conflict" || reasons.some(reason => reason.blocking)
+    || liveIssues.some(issue => issue.severity === "high") || (item.action === "change" && !current);
+  const readiness: Readiness = decided ? "ready"
+    : item.action === "delete" ? "ready"
+    : blocked ? "blocked"
+    : live.loading && !live.issues ? "checking"
+    : (reasons.length || liveIssues.length || dependsOn.length) ? "review" : "ready";
+
+  return (
+    <>
+      <tr className="request-row" data-action={item.action} data-verdict={item.verdict || "clear"} data-decided={decided || undefined} data-readiness={readiness}>
+        <td data-label="الطلب">
+          <span className="request-action" data-action={item.action}>{ACTION_LABEL[item.action] || item.action}</span>
+        </td>
+        <td data-label="المقرر">
+          <strong>{item.after?.courseName || item.before?.courseName || "—"}</strong>
+          {item.before?.sectionCode ? <small>شعبة {item.before.sectionCode}</small> : null}
+          {item.action === "add" && item.after?.collegeName ? <small>{item.after.collegeName}</small> : null}
+        </td>
+        <td data-label="كان">
+          {item.before && item.action !== "add" ? (
+            <span className={item.action === "delete" ? "request-was-gone" : undefined}>
+              {item.before.days}<br /><bdi dir="ltr">{item.before.time}</bdi>
+              {item.before.room ? <small className="request-room"><bdi dir="ltr">{item.before.room}</bdi></small> : null}
+            </span>
+          ) : <span className="request-none">—</span>}
+        </td>
+        <td data-label="المطلوب">
+          {item.action === "delete" ? <span className="request-none">حذف الموعد</span>
+            : item.after ? <span>{item.after.days}<br /><bdi dir="ltr">{item.after.time}</bdi></span>
+            : <span className="request-none">—</span>}
+          {item.excuse ? <small className="request-excuse"><MessageSquare aria-hidden="true" /> {item.excuse}</small> : null}
+        </td>
+        <td data-label="الفحص">
+          {!decided ? (
+            <span className="request-readiness" data-readiness={readiness}>
+              {readiness === "checking" ? <Loader2 aria-hidden="true" className="spin" />
+                : readiness === "blocked" ? <ShieldAlert aria-hidden="true" />
+                : readiness === "review" ? <AlertTriangle aria-hidden="true" />
+                : <ShieldCheck aria-hidden="true" />}
+              {item.action === "delete" ? "حذفٌ لا يُفحص" : READINESS[readiness]}
+            </span>
+          ) : null}
+          {item.action !== "delete" && (reasons.length || liveIssues.length) ? (
+            <ul className="request-issues">
+              {reasons.map((reason, at) => (
+                <li key={`r${at}`} data-severity={reason.blocking ? "high" : "medium"}>
+                  {reason.blocking ? <ShieldAlert aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
+                  <span>{reason.text}</span>
+                </li>
+              ))}
+              {liveIssues.map((issue, at) => (
+                <li key={`l${at}`} data-severity={issue.severity}>
+                  {issue.severity === "high" ? <ShieldAlert aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
+                  <span>{issue.message}{issue.detail ? <small>{issue.detail}</small> : null}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {dependsOn.length && !decided ? (
+            <p className="request-depends">
+              <ArrowRight aria-hidden="true" />
+              <span>يُفرغ هذا الوقتَ طلبُه الآخر: {dependsOn.map(entry => `«${entry.name}»`).join(" و")} — يُثبَّت ذلك أولاً تلقائياً.</span>
+            </p>
+          ) : null}
+          {item.action === "change" && !current && !decided ? (
+            <p className="request-issue-note">لم يعد هذا الموعد في الجدول — ربما حُذف أو نُقل بعد الطلب.</p>
+          ) : null}
+          {(item.roomCandidates || []).length && item.action !== "delete" && !decided ? (
+            <small className="request-rooms">قاعاتٌ متاحة في هذا الوقت: {countOf(item.roomCandidates!.length, AR.room)}</small>
+          ) : null}
+        </td>
+        <td data-label="القرار">
+          {decided ? (
+            <p className="request-decided" data-state={decided}>
+              {decided === "fixed" ? <><Check aria-hidden="true" /> ثُبّت</> : <><X aria-hidden="true" /> رُفض — {REJECT_REASONS.find(([value]) => value === item.decision?.reasonCode)?.[1] || "بلا سبب"}</>}
+              {item.decision?.note ? <span> · {item.decision.note}</span> : null}
+            </p>
+          ) : (
+            <div className="request-actions">
+              <PrimaryButton
+                type="button"
+                data-guide-target="requests.action.fix"
+                disabled={busy || blocked || readiness === "checking"}
+                onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  onDecide(index, "fixed", { current, anchor: { x: rect.left + rect.width / 2, y: rect.bottom }, after: dependsOn.map(entry => entry.index) });
+                }}
+                title={blocked ? "لا يُثبَّت بندٌ ممنوع — عالج سببه أو ارفضه" : undefined}
+              >
+                {busy ? "يحفظ…" : item.action === "add" ? "أضِفه الآن" : "ثبّت"}
+              </PrimaryButton>
+              <SecondaryButton type="button" data-guide-target="requests.action.reject" onClick={onReject}>
+                ارفض
+              </SecondaryButton>
+            </div>
+          )}
+          {error ? <p className="request-row-error"><ShieldAlert aria-hidden="true" />{error}</p> : null}
+        </td>
+      </tr>
+      {rejecting ? (
+        <tr className="request-reject-row"><td colSpan={6}>
+          <RejectSheet
+            item={item}
+            busy={busy}
+            onClose={onCloseReject}
+            onSubmit={(reason, note, alternatives) => {
+              onDecide(index, "rejected", { reasonCode: reason, note, alternatives });
+              onCloseReject();
+            }}
+          />
+        </td></tr>
+      ) : null}
+    </>
+  );
+}
+
+function FilterGroup({ label, value, options, onChange }: {
+  label: string; value: string;
+  options: Array<{ value: string; label: string; count?: number; tone?: "ok" | "warn" | "bad" }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="request-filter" role="group" aria-label={label}>
+      <span className="request-filter-label">{label}</span>
+      <div className="request-filter-chips">
+        {options.map(option => (
+          <button
+            key={option.value}
+            type="button"
+            className={value === option.value ? "active" : ""}
+            aria-pressed={value === option.value}
+            data-tone={option.tone}
+            data-guide-ignore="تصفية الوارد — عرضٌ لا فعل"
+            disabled={option.count === 0 && value !== option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+            {option.count !== undefined ? <b>{option.count.toLocaleString("ar-KW-u-nu-latn")}</b> : null}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* رسائلُ الحفظ كُتبت لنموذج «الجدول الدراسي» — «الحقول بالأحمر» لا معنى لها
+   هنا حيث لا حقول. فتُقال بما يعنيه البندُ نفسُه. */
+const inboxMessage = (raw: string) => {
+  const text = String(raw || "");
+  if (/الحقول المطلوبة|المبنى|القاعة غير/.test(text)) return "هذا الموعد مسجّلٌ في الجدول بلا مبنى أو قاعة معتمدة، فلا يُنقل قبل تحديدها. افتحه في «الجدول الدراسي» وحدّد قاعته، ثم ثبّت.";
+  if (/مقفل|عند التسجيل/.test(text)) return "الجدول عند التسجيل الآن، والتعديل مقفلٌ حتى يُقبل أو يُرجَع.";
+  if (/انتهى هذا الفصل/.test(text)) return text;
+  return text || "تعذّر التثبيت.";
+};
 
 /* ── الشاشة ─────────────────────────────────────────────────────────────── */
 
@@ -369,6 +550,18 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [ask, setAsk] = useState("");
   const [showUnchanged, setShowUnchanged] = useState(false);
+  /* ── المرشّحات ──────────────────────────────────────────────────────────
+     أربعةُ أسئلةٍ يسألها المنسّق فعلاً: ما الذي ينتظرني؟ أيُّ نوع؟ ما الجاهزُ
+     منه؟ وفي أيّ قسم؟ وكلٌّ منها زرٌّ واحد، لا قائمةٌ منسدلة. */
+  const [stateFilter, setStateFilter] = useState<"pending" | "fixed" | "rejected" | "all">("pending");
+  const [actionFilter, setActionFilter] = useState<"all" | "change" | "add" | "delete">("all");
+  const [verdictFilter, setVerdictFilter] = useState<"all" | "clear" | "exception" | "conflict">("all");
+  const [deptFilter, setDeptFilter] = useState(0);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [quick, setQuick] = useState<{ row: InboxRequest; index: number; seed: QuickSeed } | null>(null);
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  const [quickClash, setQuickClash] = useState<Record<string, string | null>>({});
   /* ── ما يراه صاحبُ الصلاحية الكاملة ──────────────────────────────────────
    *
    * قوائمُ الكلية والقسم كانت تُبنى من نطاق الحساب وحدَه. وهو صوابٌ لمن له
@@ -411,6 +604,18 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
 
   /* النطاقُ الافتراضيُّ نطاقُ الحساب حين يكون واحداً: من له قسمٌ واحدٌ لا
      يُسأل عن قسمه في كل فتحة. */
+  /* جاء من إشعار: يفتح على قسم الطلب نفسه، لا على نطاقٍ فارغ. */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("schedule:notify-focus");
+      if (!raw) return;
+      const focus = JSON.parse(raw);
+      sessionStorage.removeItem("schedule:notify-focus");
+      if (focus?.view !== "instructorRequests" || Date.now() - Number(focus.at || 0) > 60000) return;
+      if (Number(focus.collegeId)) { setCollegeId(Number(focus.collegeId)); setSectionId(Number(focus.sectionId) || 0); }
+    } catch { /* لا شيء */ }
+  }, []);
+
   useEffect(() => {
     /* ومن له الكلُّ لا يُختار له شيء: اختيارُ أوّلِ كليةٍ في الكتالوج يُخفي
        عنه البقيّةَ خلف قراءةٍ بدأت بلا طلبه. */
@@ -431,6 +636,16 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   }, [collegeId, sectionId, termId]);
 
   useEffect(() => { void load(); }, [load]);
+  /* الواردُ حيّ: طلبٌ يصل أو قرارٌ من زميلٍ يُعيد القراءةَ بهدوء، فلا يُثبِّت
+     اثنان البندَ نفسه ولا ينتظر أحدٌ زرَّ تحديث. */
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return;
+    let timer = 0;
+    const source = new EventSource("/api/schedules/events");
+    const soon = () => { window.clearTimeout(timer); timer = window.setTimeout(() => void load(), 900); };
+    source.addEventListener("notify", soon);
+    return () => { window.clearTimeout(timer); source.close(); };
+  }, [load]);
 
   const collegeOptions = useMemo(() => {
     if (catalog) {
@@ -469,7 +684,48 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     .filter(row => !needle || row.instructorName.includes(needle)),
     [rows, needle]);
 
-  const changed = visible.filter(row => row.changedCount > 0);
+  const itemFilter = useCallback((item: InstructorRequestItem) => {
+    const state = item.decision?.state;
+    if (stateFilter === "pending" && state) return false;
+    if (stateFilter === "fixed" && state !== "fixed") return false;
+    if (stateFilter === "rejected" && state !== "rejected") return false;
+    if (actionFilter !== "all" && item.action !== actionFilter) return false;
+    if (verdictFilter !== "all" && (item.verdict || "clear") !== verdictFilter) return false;
+    return true;
+  }, [stateFilter, actionFilter, verdictFilter]);
+
+  /* الأقسامُ التي في الوارد فعلاً — لا كلُّ أقسام الكلية. */
+  const departments = useMemo(() => {
+    const seen = new Map<number, { name: string; count: number }>();
+    for (const row of rows || []) {
+      if (!row.changedCount) continue;
+      const id = Number(row.AdSectionId);
+      const entry = seen.get(id) || { name: String(row.sectionName || `قسم ${id}`), count: 0 };
+      entry.count += 1;
+      seen.set(id, entry);
+    }
+    return [...seen].map(([id, entry]) => ({ id, ...entry })).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+  }, [rows]);
+
+  const counts = useMemo(() => {
+    const all = (rows || []).flatMap(row => (row.items || []).filter(item => item.action !== "keep"));
+    return {
+      pending: all.filter(item => !item.decision?.state).length,
+      fixed: all.filter(item => item.decision?.state === "fixed").length,
+      rejected: all.filter(item => item.decision?.state === "rejected").length,
+      all: all.length,
+      change: all.filter(item => item.action === "change").length,
+      add: all.filter(item => item.action === "add").length,
+      delete: all.filter(item => item.action === "delete").length,
+      clear: all.filter(item => (item.verdict || "clear") === "clear").length,
+      exception: all.filter(item => item.verdict === "exception").length,
+      conflict: all.filter(item => item.verdict === "conflict").length,
+    };
+  }, [rows]);
+
+  const changed = visible.filter(row => row.changedCount > 0
+    && (!deptFilter || Number(row.AdSectionId) === deptFilter)
+    && (row.items || []).some(item => item.action !== "keep" && itemFilter(item)));
   const unchanged = visible.filter(row => row.status !== "sent" && row.changedCount === 0);
   const silent = visible.filter(row => !row.linkOpenedAt);
 
@@ -481,10 +737,44 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
    * أخفقت الأولى لم تقع الثانية: قرارٌ مسجّلٌ بلا أثرٍ في الجدول أسوأُ من
    * قرارٍ لم يُسجَّل، لأنه يقول للأستاذ «ثُبّت» ولم يُثبَّت شيء.
    */
-  const decide = async (row: InboxRequest, index: number, state: "fixed" | "rejected", extra: any = {}) => {
+  const decide = async (row: InboxRequest, index: number, state: "fixed" | "rejected", extra: any = {}): Promise<boolean> => {
     const key = `${row.id}:${index}`;
+    /* ما يعتمد عليه هذا البند يُثبَّت قبله، بالمسار نفسه. فإن رُفض الشقيقُ وقف
+       هذا عنده، وقيل السببُ على صفّ الشقيق. */
+    if (state === "fixed" && Array.isArray(extra?.after) && extra.after.length) {
+      for (const sibling of extra.after as number[]) {
+        const ok = await decide(row, sibling, "fixed", { current: currentRows.get(Number(row.items[sibling]?.rowId)) });
+        if (!ok) {
+          setRowErrors(prev => ({ ...prev, [key]: "لم يُثبَّت طلبُه الآخر الذي يُفرغ هذا الوقت — انظر سببه في صفّه." }));
+          return false;
+        }
+      }
+    }
+    /* الإضافةُ تُفتح بطاقةً سريعة في مكانها — كبطاقة «الجدول الدراسي» —
+       بالمقرّر والأيام والوقت من طلب الأستاذ، والشعبةُ والقاعةُ قرارُ القسم. */
+    if (state === "fixed" && row.items[index]?.action === "add") {
+      const item = row.items[index];
+      const slots = item.slots || [];
+      const dayNames = slots.map(slot => INBOX_DAY_NAMES[slot.day] || slot.day).join(" · ");
+      setQuickError(null);
+      setQuick({
+        row, index,
+        seed: {
+          day: (slots[0]?.day || "fsunday") as any,
+          dayLabel: dayNames,
+          start: slots[0]?.start || "08:00",
+          end: slots[0]?.end || "08:50",
+          x: Number(extra?.anchor?.x || window.innerWidth / 2),
+          y: Number(extra?.anchor?.y || window.innerHeight / 3),
+          instructorId: Number(row.AdInstructorId),
+          room: "", hall: "",
+        },
+      });
+      return true;
+    }
     setBusyKey(key);
     setError(null);
+    setRowErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
     try {
       let scheduleId: number | undefined;
       if (state === "fixed") {
@@ -533,7 +823,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
             end: slots[0]?.end || "",
           });
           onNavigate?.("schedules");
-          return;
+          return true;
         }
       }
       await request(`/api/instructor-requests/${row.id}/decide`, {
@@ -542,8 +832,86 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         body: JSON.stringify({ itemIndex: index, state, scheduleId, ...extra, current: undefined }),
       });
       await load();
-    } catch (e: any) { setError(e.message); }
+      return true;
+    } catch (e: any) { setRowErrors(prev => ({ ...prev, [key]: inboxMessage(e.message) })); return false; }
     finally { setBusyKey(null); }
+  };
+
+  /* ── حفظُ البطاقة السريعة ─────────────────────────────────────────────────
+     الحفظُ عبر `/api/schedules` نفسه — فيرث كلَّ تحقّقه — ثم يُسجَّل القرار
+     بمعرّف الصفّ الناتج. وإن رُفض الحفظ قيل السببُ على البطاقة نفسها. */
+  const saveQuick = async (draft: QuickDraft) => {
+    if (!quick) return;
+    const { row, index } = quick;
+    const item = row.items[index];
+    const slots = item.slots || [];
+    const days = new Set(slots.map(slot => slot.day));
+    setQuickSaving(true); setQuickError(null);
+    try {
+      const saved = await request("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          AdCollegeId: Number(item.after?.collegeId || row.AdCollegeId),
+          AdSectionId: Number(item.after?.sectionId || row.AdSectionId),
+          AdTermId: Number(row.AdTermId),
+          AdCourseId: Number(draft.courseId || item.after?.courseId || 0),
+          SCode: draft.scode,
+          AdInstructorId: Number(row.AdInstructorId),
+          fsunday: days.has("fsunday"), fmonday: days.has("fmonday"), ftuesday: days.has("ftuesday"),
+          fwednesday: days.has("fwednesday"), fthursday: days.has("fthursday"),
+          fstarttime: draft.start, fendtime: draft.end,
+          AdRoomCode: draft.room, AdRoomHall: draft.hall,
+          buildingId: draft.buildingId, roomId: draft.roomId, locationStatus: draft.locationStatus,
+        }),
+      });
+      await request(`/api/instructor-requests/${row.id}/decide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIndex: index, state: "fixed", scheduleId: Number(saved?.id || 0) }),
+      });
+      setQuick(null);
+      await load();
+    } catch (e: any) { setQuickError(e.message); }
+    finally { setQuickSaving(false); }
+  };
+
+  /* فحصُ البطاقة: السؤالُ نفسُه للخادم بالقاعة والشعبة المختارتين. يُحفظ الجوابُ
+     بمفتاح المسوّدة، فتقرؤه البطاقةُ متى وصل. */
+  const quickConflictOf = (draft: QuickDraft) => {
+    if (!quick) return null;
+    const { row, index } = quick;
+    const item = row.items[index];
+    const days = new Set((item.slots || []).map(slot => slot.day));
+    const body = {
+      AdCollegeId: Number(item.after?.collegeId || row.AdCollegeId), AdSectionId: Number(item.after?.sectionId || row.AdSectionId),
+      AdTermId: Number(row.AdTermId), AdCourseId: Number(draft.courseId || item.after?.courseId || 0), SCode: draft.scode,
+      AdInstructorId: Number(row.AdInstructorId), fstarttime: draft.start, fendtime: draft.end,
+      fsunday: days.has("fsunday"), fmonday: days.has("fmonday"), ftuesday: days.has("ftuesday"),
+      fwednesday: days.has("fwednesday"), fthursday: days.has("fthursday"),
+      AdRoomCode: draft.room, AdRoomHall: draft.hall, buildingId: draft.buildingId, roomId: draft.roomId, locationStatus: draft.locationStatus,
+    };
+    const key = JSON.stringify(body);
+    if (key in quickClash) return quickClash[key];
+    setQuickClash(prev => (key in prev ? prev : { ...prev, [key]: null }));
+    void fetch("/api/schedules/check-conflicts", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: key })
+      .then(response => (response.ok ? response.json() : { conflicts: [] }))
+      .then(data => {
+        const hard = (data.conflicts || []).find((conflict: any) => conflict.severity === "high");
+        const soft = (data.conflicts || [])[0];
+        const pick = hard || soft;
+        setQuickClash(prev => ({ ...prev, [key]: pick ? `${pick.message}${pick.detail ? ` — ${pick.detail}` : ""}` : null }));
+      })
+      .catch(() => undefined);
+    return null;
+  };
+
+  const nextSectionFor = (courseId: number) => {
+    const used = [...currentRows.values()]
+      .filter(row => Number(row.AdCourseId) === Number(courseId))
+      .map(row => Number(String(row.SCode || "").replace(/\D/g, "")) || 0);
+    const next = (used.length ? Math.max(...used) : 0) + 1;
+    return String(next).padStart(2, "0");
   };
 
   const selects: ScopeAskSelect[] = [
@@ -640,6 +1008,56 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
             </button>
           ) : null}
 
+          <div className="request-filters" role="toolbar" aria-label="تصفية الوارد">
+            <span className="request-filters-mark" aria-hidden="true"><SlidersHorizontal /></span>
+            <FilterGroup
+              label="الحالة"
+              value={stateFilter}
+              onChange={value => setStateFilter(value as any)}
+              options={[
+                { value: "pending", label: "بانتظار قرارك", count: counts.pending, tone: "warn" },
+                { value: "fixed", label: "ثُبّت", count: counts.fixed, tone: "ok" },
+                { value: "rejected", label: "رُفض", count: counts.rejected, tone: "bad" },
+                { value: "all", label: "الكل", count: counts.all },
+              ]}
+            />
+            <FilterGroup
+              label="النوع"
+              value={actionFilter}
+              onChange={value => setActionFilter(value as any)}
+              options={[
+                { value: "all", label: "الكل" },
+                { value: "change", label: "تعديل", count: counts.change },
+                { value: "add", label: "إضافة", count: counts.add },
+                { value: "delete", label: "حذف", count: counts.delete },
+              ]}
+            />
+            <FilterGroup
+              label="الفحص"
+              value={verdictFilter}
+              onChange={value => setVerdictFilter(value as any)}
+              options={[
+                { value: "all", label: "الكل" },
+                { value: "clear", label: "متاح", count: counts.clear, tone: "ok" },
+                { value: "exception", label: "استثناء", count: counts.exception, tone: "warn" },
+                { value: "conflict", label: "ممنوع", count: counts.conflict, tone: "bad" },
+              ]}
+            />
+            {departments.length > 1 ? (
+              <FilterGroup
+                label="القسم"
+                value={String(deptFilter)}
+                onChange={value => setDeptFilter(Number(value) || 0)}
+                options={[{ value: "0", label: "كل الأقسام" }, ...departments.map(dept => ({ value: String(dept.id), label: dept.name.replace(/^قسم\s+/, ""), count: dept.count }))]}
+              />
+            ) : null}
+            {(stateFilter !== "pending" || actionFilter !== "all" || verdictFilter !== "all" || deptFilter) ? (
+              <button type="button" className="request-filters-reset" data-guide-ignore="إعادة المرشّحات — عرضٌ لا فعل" onClick={() => { setStateFilter("pending"); setActionFilter("all"); setVerdictFilter("all"); setDeptFilter(0); }}>
+                <X aria-hidden="true" /> إعادة
+              </button>
+            ) : null}
+          </div>
+
           {changed.length ? (
             <div className="request-deck">
               {changed.map(row => (
@@ -648,18 +1066,60 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                   row={row}
                   currentRows={currentRows}
                   busyKey={busyKey}
+                  filter={itemFilter}
+                  rowErrors={rowErrors}
                   onDecide={(index, state, extra) => void decide(row, index, state, extra)}
                 />
               ))}
             </div>
           ) : (
             <EmptyState
-              title={needle ? "لا نتائج" : "لا تعديلات تنتظر"}
-              detail={needle ? "لا أستاذَ يطابق البحث." : "كلُّ من أجاب قَبِل جدوله كما أرسله القسم."}
+              title={needle ? "لا نتائج" : stateFilter === "pending" && counts.all ? "لا شيء ينتظرك" : "لا تعديلات تنتظر"}
+              detail={needle ? "لا أستاذَ يطابق البحث." : stateFilter === "pending" && counts.all ? "قرّرتَ في كل الطلبات. غيّر «الحالة» لترى ما ثُبّت أو رُفض." : "كلُّ من أجاب قَبِل جدوله كما أرسله القسم."}
             />
           )}
         </>
       )}
+
+      {quick ? (() => {
+        const item = quick.row.items[quick.index];
+        return (
+          <QuickCreatePopover
+            seed={quick.seed}
+            courses={[{ AdCourseId: Number(item.after?.courseId || 0), CourseName: String(item.after?.courseName || "مقرر"), CourseCode: "" } as any]}
+            instructors={[{ AdInstructorId: Number(quick.row.AdInstructorId), AdInstructorName: quick.row.instructorName } as any]}
+            collegeId={Number(item.after?.collegeId || quick.row.AdCollegeId)}
+            sectionId={Number(item.after?.sectionId || quick.row.AdSectionId)}
+            termId={Number(quick.row.AdTermId)}
+            initialCourseId={Number(item.after?.courseId || 0)}
+            durationForDay={() => {
+              const [sh, sm] = quick.seed.start.split(":").map(Number), [eh, em] = quick.seed.end.split(":").map(Number);
+              return (eh * 60 + em) - (sh * 60 + sm);
+            }}
+            conflictOf={(draft) => quickConflictOf(draft)}
+            nextSectionCode={nextSectionFor}
+            saving={quickSaving}
+            error={quickError}
+            onCancel={() => setQuick(null)}
+            onExpand={() => {
+              /* «تفاصيل أكثر»: الطريقُ القديم إلى النموذج الكامل، لمن أراده. */
+              const slots = item.slots || [];
+              putHandoff({
+                requestId: quick.row.id, itemIndex: quick.index,
+                instructorId: Number(quick.row.AdInstructorId), instructorName: quick.row.instructorName,
+                courseId: Number(item.after?.courseId || 0),
+                collegeId: Number(item.after?.collegeId || quick.row.AdCollegeId),
+                sectionId: Number(item.after?.sectionId || quick.row.AdSectionId),
+                termId: Number(quick.row.AdTermId),
+                days: slots.map(slot => slot.day) as any, start: slots[0]?.start || "", end: slots[0]?.end || "",
+              });
+              setQuick(null);
+              onNavigate?.("schedules");
+            }}
+            onCreate={(draft) => void saveQuick(draft)}
+          />
+        );
+      })() : null}
     </div>
   );
 }

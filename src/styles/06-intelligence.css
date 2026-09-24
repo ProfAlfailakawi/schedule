@@ -4617,3 +4617,8 @@ button.twin-delta{width:100%}
 /* العميدان: سطرٌ هادئ يقول إن ما يُرى هو المعتمد وحده. */
 .final-only-note{display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:9px 14px;border-radius:12px;background:var(--success-soft,#e9f7ef);color:var(--success,#1f7a4d);font-size:13px;line-height:1.7}
 .final-only-note svg{width:16px;height:16px;flex:none}
+
+/* بطاقة المقرّر في ملاحظة المراجعة زرٌّ ينقل إلى موعده. */
+.review-row-jump{width:100%;text-align:start;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.review-row-jump:hover{border-color:var(--accent);box-shadow:var(--shadow-sm)}
+.review-row-jump:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, Check, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
+import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
@@ -24,7 +24,7 @@ interface ShareLink {
  * رابطٌ واحدٌ للقسم كله، ومعه (اختيارياً) نافذةُ طلبات التعديل بتاريخ إغلاقٍ
  * يُكتب. والطلباتُ تُتابَع في «وارد الأساتذة»، والقرارُ يبقى للقسم.
  */
-type Kind = "department" | "staff";
+type Kind = "department" | "staff" | "survey";
 type PublishStep = "kind" | "options" | "links";
 
 interface Props {
@@ -38,7 +38,7 @@ interface Props {
 
 const DAY_CHOICES = [7, 30, 90, 180];
 const PUBLISH_STEPS: Array<{ id: PublishStep; label: string; hint: string }> = [
-  { id: "kind", label: "نوع الرابط", hint: "للقسم أو للأساتذة" },
+  { id: "kind", label: "نوع الرابط", hint: "للقسم أو للأساتذة أو للطلبة" },
   { id: "options", label: "الصلاحية", hint: "المدة والخصوصية" },
   { id: "links", label: "الروابط", hint: "نسخ وإدارة الرابط" },
 ];
@@ -140,17 +140,23 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     setIssued({ created: rows.length - reissued, reissued });
   };
 
-  const withRequests = kind === "staff" && openRequests;
+  /* بطاقة الأستاذ: موعدٌ واحد يحكم كل شيء — الطلبات مفتوحة، والرابط صالحٌ حتى
+     ذلك الموعد. مدّتان معاً كانتا تتناقضان: رابطٌ لسبعة أيام وطلباتٌ لشهر. */
+  const withRequests = kind === "staff";
+  const byDate = kind === "staff" || kind === "survey";
+  const linkDays = byDate && closesAt
+    ? Math.max(1, Math.ceil((new Date(`${closesAt}T23:59:59`).getTime() - Date.now()) / 86400000))
+    : days;
 
   const create = async () => {
-    if (withRequests && !closesAt) { setError("اكتب آخر موعدٍ لاستقبال طلبات التعديل."); return; }
+    if (byDate && !closesAt) { setError(kind === "survey" ? "اكتب آخر موعدٍ لاستقبال إجابات الطلبة." : "اكتب آخر موعدٍ لاستقبال طلبات التعديل."); return; }
     setBusy(true);
     setError(null);
     try {
       const response = await fetch("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, days, showInstructors, kind })
+        body: JSON.stringify({ collegeId, sectionId, termId, days: linkDays, showInstructors, kind })
       });
       const data = await readReply(response, "تعذر إنشاء الرابط");
       setLinks(current => [data, ...current]);
@@ -183,7 +189,8 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     }
   };
 
-  const publicUrl = (id: string) => `${window.location.origin}/s/${id}`;
+  /* الاستبيانُ بابُه `/q/`، وما سواه `/s/`. */
+  const publicUrl = (id: string) => `${window.location.origin}/${links.find(link => link.id === id)?.kind === "survey" ? "q" : "s"}/${id}`;
   /**
    * ── التسليم ────────────────────────────────────────────────────────────
    *
@@ -245,7 +252,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
    *
    * وبابُ `/s/` صار يردّ رمزَ الطلب إلى بابه، فالحارسان اثنان: هنا لا تُعرض،
    * وهناك لا تُفتح. */
-  const publicationLinks = links.filter(link => link.kind !== "survey" && link.kind !== "request");
+  const publicationLinks = links.filter(link => link.kind !== "request");
   const active = publicationLinks.filter(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now());
 
   const currentStep = PUBLISH_STEPS.findIndex(item => item.id === step);
@@ -368,6 +375,18 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   <IdCard aria-hidden="true" />
                   <span>بطاقة الأستاذ</span>
                 </button>
+                {/* استبيانُ الطلبة من الباب نفسه: رابطٌ ورمزُ QR يُعلَّق، وتصل
+                    إجاباتُه «مركز الذكاء» و«كشف التسجيل» كما كانت. */}
+                <button
+                  type="button"
+                  className={kind === "survey" ? "active" : ""}
+                  onClick={() => setKind("survey")}
+                  data-guide-ignore="اختيار نوع الرابط: استبيان الطلبة — لا يعدّل الجدول"
+                  aria-pressed={kind === "survey"} title="استبيان الطلبة"
+                >
+                  <ClipboardList aria-hidden="true" />
+                  <span>استبيان الطلبة</span>
+                </button>
               </div>
               <div className="share-step-actions">
                 <PrimaryButton type="button" onClick={() => setStep("options")}>
@@ -384,13 +403,11 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
             >
               <header className="share-step-head">
                 <small>الخطوة 2 من 3</small>
-                <h3 id="publish-step-options-title">مدة الرابط وما سيظهر فيه</h3>
-                <p>{kind === "department"
-                  ? "رابط قراءة عام للجدول ضمن الصلاحية المحددة."
-                  : "رابطٌ واحد للقسم كله: كل أستاذ يفتح بطاقته برقمه المدني، ومنها يطلب تعديل جدوله."}</p>
+                <h3 id="publish-step-options-title">{kind === "department" ? "مدة الرابط وما سيظهر فيه" : kind === "survey" ? "آخر موعد لاستقبال إجابات الطلبة" : "آخر موعد لاستقبال الطلبات"}</h3>
+                {kind === "department" ? <p>رابط قراءة عام للجدول ضمن الصلاحية المحددة.</p> : null}
               </header>
-              <div className="share-compose">
-                <div className="share-days" role="group" aria-label="مدة الصلاحية">
+              <div className={`share-compose ${kind === "department" ? "" : "share-compose-single"}`}>
+                {kind === "department" ? <div className="share-days" role="group" aria-label="مدة الصلاحية">
                   {DAY_CHOICES.map(choice => (
                     <button
                       key={choice}
@@ -403,40 +420,26 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                       <small>يوم</small>
                     </button>
                   ))}
-                </div>
+                </div> : null}
                 {kind === "department" ? (
                   <label className="share-toggle">
                     <input type="checkbox" checked={showInstructors} onChange={event => setShowInstructors(event.target.checked)} />
                     <span>إظهار أسماء الأساتذة</span>
                   </label>
                 ) : (
-                  <div className="share-requests">
-                    <label className="share-toggle">
-                      <input type="checkbox" checked={openRequests} onChange={event => setOpenRequests(event.target.checked)} />
-                      <span>استقبال طلبات تعديل الجدول</span>
-                    </label>
-                    {openRequests ? (
-                      /* موعدٌ يُكتب لا مدّةٌ تُحسب: الأستاذُ يقرأ تاريخاً، لا
-                         «ثلاثين يوماً من متى». */
-                      <label className="share-closes">
-                        <span>آخر موعد لاستقبال الطلبات</span>
-                        <input
-                          type="date"
-                          value={closesAt}
-                          onChange={event => setClosesAt(event.target.value)}
-                        />
-                      </label>
-                    ) : null}
-                  </div>
+                  <label className="share-closes">
+                    <span className="sr-only">آخر موعد لاستقبال الطلبات</span>
+                    <input type="date" value={closesAt} onChange={event => setClosesAt(event.target.value)} />
+                  </label>
                 )}
               </div>
-              <dl className="share-choice-summary" aria-label="ملخص إعداد الرابط">
+              {kind === "department" ? <dl className="share-choice-summary" aria-label="ملخص إعداد الرابط">
                 <div><dt>النوع</dt><dd>{kind === "department" ? "جدول القسم" : "بطاقة الأستاذ"}</dd></div>
                 <div><dt>الصلاحية</dt><dd>{`${days.toLocaleString("ar-KW-u-nu-latn")} يوم`}</dd></div>
                 {kind === "department"
                   ? <div><dt>الأساتذة</dt><dd>{showInstructors ? "تظهر أسماؤهم" : "مخفية أسماؤهم"}</dd></div>
                   : <div><dt>طلبات التعديل</dt><dd>{openRequests ? (closesAt ? `حتى ${new Date(`${closesAt}T12:00:00`).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" })}` : "اكتب آخر موعد") : "مغلقة"}</dd></div>}
-              </dl>
+              </dl> : null}
               <div className="share-step-actions">
                 <SecondaryButton type="button" onClick={() => setStep("kind")}>رجوع</SecondaryButton>
                 <PrimaryButton
@@ -494,13 +497,15 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                         className={`${dead ? "dead" : "active"} ${createdId === link.id ? "just-created" : ""}`.trim()}
                       >
                         <div className="share-row-lead">
-                          <span className={`share-link-kind kind-${link.kind === "staff" ? "staff" : "department"}`}>
+                          <span className={`share-link-kind kind-${link.kind === "staff" ? "staff" : link.kind === "survey" ? "survey" : "department"}`}>
                             {link.kind === "staff"
                               ? <><IdCard aria-hidden="true" /> بطاقة الأستاذ</>
+                              : link.kind === "survey"
+                              ? <><ClipboardList aria-hidden="true" /> استبيان الطلبة</>
                               : <><Users aria-hidden="true" /> جدول القسم</>}
                           </span>
                           <b dir="ltr" className="share-link-id">
-                            /s/{link.id.slice(0, 10)}…
+                            /{link.kind === "survey" ? "q" : "s"}/{link.id.slice(0, 10)}…
                           </b>
                           <span>
                             <i aria-hidden="true" />
@@ -545,7 +550,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                             >
                               <Send />
                             </button>
-                          ) : (
+                          ) : link.kind === "survey" ? null : (
                             <a
                               href={`/api/public/ics/${link.id}`}
                               title="إضافة إلى التقويم"

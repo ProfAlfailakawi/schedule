@@ -109,7 +109,7 @@ check(inbox.includes('`/api/schedules/${item.rowId}`') && inbox.includes('method
    والضمانُ نفسُه مُبرهنٌ سلوكياً في `request-handoff-audit`. */
 check(inbox.includes("putHandoff({") && inbox.includes('onNavigate?.("schedules")'),
   "والإضافةُ تُحمل إلى الورشة ومعها ما قاله الأستاذ");
-check(inbox.includes('item.action === "add" ? "افتحها في الورشة" : "ثبّت"'),
+check(inbox.includes('item.action === "add" ? "أضِفه الآن" : "ثبّت"'),
   "والزرُّ يقول ما سيفعل، فلا يَعِد بتثبيتٍ لا يقع");
 
 /* ── النطاق ────────────────────────────────────────────────────────────── */

@@ -383,9 +383,10 @@ check(changes.includes("const [open, setOpen] = useState(false)")
   && changes.includes("setOpenBlocker(current => current === key ? null : key)")
   && changes.includes("<FindingRows rowIds={blocker.rowIds} rowsById={rowsById} onJump={onJump} />")
   && changes.includes('className="review-person-head"')
-  && changes.includes("onClick={() => onJump(rowIds)}")
+  && changes.includes("onClick={() => onJump([row.scheduleId])}")
+  && !changes.includes("انتقل إلى المواعيد في الجدول")
   && !changes.includes('onClick={() => onJump(blocker.rowIds)}'),
-  "ومراجعة الاعتماد مغلقة افتراضياً، والملاحظة تُفتح في مكانها بأساتذتها ثم يُنتقل إليها بزرّ");
+  "ومراجعة الاعتماد مغلقة افتراضياً، والملاحظة تُفتح في مكانها بأساتذتها، والضغط على المقرّر ينقل إلى موعده وحده");
 check(changes.includes('document.getElementById(`schedule-row-${id}`)')
   && changes.includes('scrollIntoView({ behavior: "smooth", block: "center" })')
   && changes.includes('changes-row-focus'),

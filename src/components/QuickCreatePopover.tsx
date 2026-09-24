@@ -74,7 +74,10 @@ export default function QuickCreatePopover({
   onCancel,
   onExpand,
   onCreate,
+  initialCourseId = 0,
 }: {
+  /** مقرّرٌ معروفٌ سلفاً — كإضافةٍ طلبها أستاذ — فتُفتح البطاقةُ وهو مختار. */
+  initialCourseId?: number;
   seed: QuickSeed;
   courses: AdCourse[];
   instructors: AdInstructor[];
@@ -102,8 +105,8 @@ export default function QuickCreatePopover({
   const openedStart = minutesOf(seed.start);
   const openedEnd = Math.max(openedStart + 30, minutesOf(seed.end));
   const [draft, setDraft] = useState<QuickDraft>({
-    courseId: 0,
-    scode: "",
+    courseId: initialCourseId || 0,
+    scode: initialCourseId && nextSectionCode ? nextSectionCode(initialCourseId) : "",
     instructorId: seed.instructorId || 0,
     room: "",
     hall: "",
@@ -219,7 +222,7 @@ export default function QuickCreatePopover({
             <option value="">اختر المقرر…</option>
             {orderedCourses.map((c) => (
               <option key={c.AdCourseId} value={c.AdCourseId}>
-                {c.CourseCode} · {c.CourseName}
+                {c.CourseCode ? `${c.CourseCode} · ` : ""}{c.CourseName}
               </option>
             ))}
           </select>

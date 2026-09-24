@@ -39,6 +39,14 @@ const when = (iso?: string) => {
   return date.toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" });
 };
 
+/* الإشعارُ يعرف قسمه: يُترك النطاقُ للشاشة التي يُفتح عليها، فتفتح عليه مباشرة. */
+export const NOTIFY_FOCUS_KEY = "schedule:notify-focus";
+const focusOn = (item: CenterNotification) => {
+  try {
+    if (item.collegeId) sessionStorage.setItem(NOTIFY_FOCUS_KEY, JSON.stringify({ view: item.view, collegeId: item.collegeId, sectionId: item.sectionId || 0, at: Date.now() }));
+  } catch { /* تخزينٌ ممنوع: تُفتح الشاشةُ على نطاقها المعتاد */ }
+};
+
 export default function NotificationCenter({ userKey, onNavigate }: Props) {
   const [items, setItems] = useState<CenterNotification[]>([]);
   const [open, setOpen] = useState(false);
@@ -48,19 +56,73 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
 
+  /* ── ما وصل الآن ─────────────────────────────────────────────────────────
+     أوّلُ قراءةٍ تُعرّف «ما كان»، وكلُّ قراءةٍ بعدها تسأل: ما المطلوبُ منّي
+     الذي لم يكن قبل لحظة؟ فيطفو سطرُه تحت الجرس ولو كانت الشاشةُ في عملٍ آخر. */
+  const known = useRef<Set<string> | null>(null);
+  const [toast, setToast] = useState<CenterNotification | null>(null);
+  const [toastMore, setToastMore] = useState(0);
+
   const load = useCallback(() => {
     fetch("/api/notifications", { credentials: "include" })
       .then(response => (response.ok ? response.json() : null))
-      .then(data => { if (data && Array.isArray(data.items)) setItems(data.items); })
+      .then(data => {
+        if (!data || !Array.isArray(data.items)) return;
+        const next: CenterNotification[] = data.items;
+        const urgent = next.filter(item => item.tone === "action" || item.tone === "alert");
+        if (known.current) {
+          const arrived = urgent.filter(item => !known.current!.has(item.id));
+          if (arrived.length) {
+            setToast(arrived[0]);
+            setToastMore(arrived.length - 1);
+            try {
+              if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+                new Notification("SCHEDULE", { body: arrived[0].title, tag: arrived[0].id });
+              }
+            } catch { /* المتصفّح يمنع — يكفي الجرس */ }
+          }
+        }
+        known.current = new Set(next.map(item => item.id));
+        setItems(next);
+      })
       .catch(() => undefined);
   }, []);
 
   useEffect(() => {
     load();
-    const timer = window.setInterval(load, 120000);
+    const timer = window.setInterval(load, 60000);
     window.addEventListener("focus", load);
-    return () => { window.clearInterval(timer); window.removeEventListener("focus", load); };
+    /* النبضةُ الحيّة: الخادم يقول «تغيّر شيء» فيُسأل فوراً — طلبُ أستاذ،
+       إرجاعٌ، اعتماد. والقراءةُ الدورية تبقى احتياطاً إن انقطع الخيط. */
+    let source: EventSource | null = null;
+    let pending = 0;
+    const soon = () => { window.clearTimeout(pending); pending = window.setTimeout(load, 700); };
+    try {
+      if (typeof EventSource !== "undefined") {
+        source = new EventSource("/api/schedules/events");
+        source.addEventListener("notify", soon);
+        source.addEventListener("schedules", soon);
+      }
+    } catch { source = null; }
+    return () => {
+      window.clearInterval(timer); window.clearTimeout(pending);
+      window.removeEventListener("focus", load);
+      source?.close();
+    };
   }, [load]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 9000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  /* عنوانُ النافذة يحمل العدد: من فتح النظامَ في لسانٍ جانبيٍّ يراه دون أن يعود إليه. */
+  const mineCount = items.filter(item => item.tone === "alert" || item.tone === "action").length;
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\+?\)\s*/, "");
+    document.title = mineCount ? `(${mineCount > 99 ? "99+" : mineCount}) ${base}` : base;
+  }, [mineCount]);
 
   useEffect(() => {
     if (!open) return;
@@ -88,7 +150,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
     return () => window.clearTimeout(timer);
   }, [open, items, seen, userKey]);
 
-  const mine = items.filter(item => item.tone === "alert" || item.tone === "action").length;
+  const mine = mineCount;
   const fresh = items.filter(item => !seen.has(item.id)).length;
   const groups = useMemo(() => GROUPS
     .map(group => ({ ...group, rows: items.filter(item => group.tones.includes(item.tone)) }))
@@ -106,7 +168,11 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
         aria-label={mine ? `الإشعارات — ${mine} مطلوبٌ منك` : "الإشعارات"}
         title="الإشعارات"
         data-guide-ignore="مركز الإشعارات يعرض ما بقي ولا يعدّل البيانات"
-        onClick={() => setOpen(value => !value)}
+        onClick={() => {
+          setOpen(value => !value);
+          setToast(null);
+          try { if ("Notification" in window && Notification.permission === "default") void Notification.requestPermission(); } catch { /* اختياري */ }
+        }}
       >
         <Bell aria-hidden="true" />
         {mine ? <b className="notify-count">{mine > 99 ? "99+" : mine}</b> : fresh ? <i className="notify-dot" aria-hidden="true" /> : null}
@@ -132,7 +198,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
                       data-guide-ignore="فتح الشاشة التي يخصّها الإشعار — تنقّلٌ لا يعدّل البيانات"
                       data-tone={item.tone}
                       disabled={!item.view}
-                      onClick={() => { if (item.view) { setOpen(false); onNavigate(item.view); } }}
+                      onClick={() => { if (item.view) { focusOn(item); setOpen(false); onNavigate(item.view); } }}
                     >
                       <span className="notify-icon">{ICON[item.tone]}</span>
                       <span className="notify-text">
@@ -149,6 +215,24 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
           )) : (
             <p className="notify-empty"><CheckCircle2 aria-hidden="true" /> كل شيءٍ على ما يرام — لا إشعارات.</p>
           )}
+        </div>
+      ) : null}
+      {toast && !open ? (
+        <div className="notify-toast no-print" role="status" aria-live="polite" data-tone={toast.tone}>
+          <button
+            type="button"
+            className="notify-toast-body"
+            data-guide-ignore="فتح الشاشة التي يخصّها الإشعار الجديد — تنقّلٌ لا يعدّل البيانات"
+            onClick={() => { const view = toast.view; focusOn(toast); setToast(null); if (view) onNavigate(view); else setOpen(true); }}
+          >
+            <span className="notify-icon">{ICON[toast.tone]}</span>
+            <span className="notify-text">
+              <small className="notify-toast-kicker">وصل الآن{toastMore ? ` · و${toastMore} غيره` : ""}</small>
+              <strong>{toast.title}</strong>
+              {toast.detail ? <small>{toast.detail}</small> : null}
+            </span>
+          </button>
+          <button type="button" className="notify-toast-close" aria-label="إخفاء" data-guide-ignore="إخفاء الإشعار العائم" onClick={() => setToast(null)}><X aria-hidden="true" /></button>
         </div>
       ) : null}
     </>
