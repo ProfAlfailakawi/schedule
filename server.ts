@@ -13252,8 +13252,25 @@ const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number;
   return !anyKnownOwner && Number(need.AdSectionId || 0) === sectionId;
 };
 
-const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "registered", "rejected"]);
+const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "committee-rejected", "registered", "rejected"]);
 const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "conflict", "closed", "other"]);
+const STUDENT_COMMITTEE_REASONS = new Set(["not-eligible", "not-in-plan", "prerequisite", "duplicate", "other"]);
+
+/* ── اللجنةُ أولاً، ثم التسجيل ──────────────────────────────────────────────
+ *
+ * طلبُ الطالب لا يصل التسجيلَ لأنه وصل القسم. تنظر فيه لجنةُ القسم مقرّراً
+ * مقرّراً: ما توافق عليه يُسلَّم («بانتظار التسجيل»)، وما لا توافق عليه يبقى
+ * عندها بسببه. والتسجيلُ لا يرى إلا ما سلّمته اللجنة، ولا يكتب إلا فيه.
+ *
+ * - «اللجنة»: كلُّ من يكتب في الكشف من جهة القسم.
+ * - «التسجيل»: أدوارُ التسجيل.
+ * - صاحبُ الصلاحية الكاملة يرى الجهتين. */
+type RegistrationViewer = "committee" | "registration" | "both";
+const registrationViewer = (req: AuthenticatedRequest): RegistrationViewer =>
+  req.user?.IsAdminUser ? "both" : isRegistrarRole(req.user?.Role) ? "registration" : "committee";
+/** ما يراه التسجيل: ما سلّمته اللجنة، وما قرّره هو فيه. */
+const reachedRegistration = (state: any): boolean =>
+  Boolean(state) && ["awaiting-registration", "registered", "rejected"].includes(String(state.state));
 
 /**
  * الكشف.
@@ -13305,8 +13322,13 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
   const courseById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), row]));
   const sectionNameById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
 
-  const rows = await Promise.all(needs.map(async need => {
+  const viewer = registrationViewer(req);
+  const rows = (await Promise.all(needs.map(async need => {
     const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
+    /* التسجيلُ لا يرى ما لم تسلّمه اللجنة: لا المنتظرَ عندها ولا ما لم توافق عليه. */
+    const visibleCourseIds = (need.courseIds || []).filter((id: any) =>
+      viewer !== "registration" || reachedRegistration(states.get(Number(id))));
+    if (!visibleCourseIds.length) return null;
     return {
       id: String(need.id),
       /* رقمُ الحالة هو نفسه الذي يحمله الطالب، مشتقٌّ من معرّف السجلّ — فيبحث
@@ -13317,7 +13339,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       createdAt: String(need.createdAt || ""),
       requestType: String(need.requestType || "new-course"),
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
-      courses: (need.courseIds || []).map((id: any) => {
+      courses: visibleCourseIds.map((id: any) => {
         const course: any = courseById.get(Number(id));
         const state: any = states.get(Number(id));
         return {
@@ -13336,19 +13358,22 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
         };
       }),
     };
-  }));
+  }))).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
   const every = rows.flatMap(row => row.courses);
   res.setHeader("Cache-Control", "no-store");
   res.json({
     rows: rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
     canWrite: canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser), await grantedPermissions(req)),
+    viewer,
     totals: {
       students: rows.length,
       courses: every.length,
+      pendingCommittee: every.filter(course => !course.settled).length,
+      committeeRejected: every.filter(course => course.state === "committee-rejected").length,
       registered: every.filter(course => course.state === "registered").length,
       rejected: every.filter(course => course.state === "rejected").length,
-      waiting: every.filter(course => course.state !== "registered" && course.state !== "rejected").length,
+      waiting: every.filter(course => course.settled && course.state === "awaiting-registration").length,
     },
   });
 });
@@ -13415,7 +13440,37 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
   const state = String(req.body?.state || "");
   if (!STUDENT_COURSE_STATES.has(state)) { res.status(400).json({ error: "حالةٌ غير معروفة." }); return; }
 
+  /* ── كلُّ جهةٍ تكتب ما يخصّها وحده ────────────────────────────────────────
+     اللجنةُ توافق أو لا توافق، ولا تكتب «سُجّل» ولا «رُدّ» باسم التسجيل.
+     والتسجيلُ لا يقرّر في مقرّرٍ لم تسلّمه اللجنة، ولا تنقض اللجنةُ قراراً
+     قاله التسجيل. وصاحبُ الصلاحية الكاملة يملك الجهتين. */
+  const viewer = registrationViewer(req);
+  const current: any = (need.courseStates || []).find((entry: any) => Number(entry.courseId) === courseId);
+  if (viewer === "committee") {
+    if (state !== "awaiting-registration" && state !== "committee-rejected") {
+      res.status(403).json({ error: "قرارُ «سُجّل» أو «رُدّ» للتسجيل. اللجنةُ توافق أو لا توافق." });
+      return;
+    }
+    if (current?.by === "registration" && (current.state === "registered" || current.state === "rejected")) {
+      res.status(409).json({ error: "قرّر التسجيلُ في هذا المقرّر، فلا يُغيَّر من جهة القسم." });
+      return;
+    }
+  } else if (viewer === "registration") {
+    if (!reachedRegistration(current)) {
+      res.status(409).json({ error: "لم توافق لجنةُ القسم على هذا المقرّر بعد، فلا يُكتب فيه من جهة التسجيل." });
+      return;
+    }
+    if (state === "committee-rejected") {
+      res.status(403).json({ error: "عدمُ الموافقة قرارُ لجنة القسم، لا التسجيل." });
+      return;
+    }
+  }
+
   const reasonCode = String(req.body?.reasonCode || "");
+  if (state === "committee-rejected" && !STUDENT_COMMITTEE_REASONS.has(reasonCode)) {
+    res.status(400).json({ error: "اختر سبب عدم الموافقة." });
+    return;
+  }
   /* الردُّ بلا سببٍ يُعيد الطالبَ إلى المكتب ليسأل «ليش؟» — وهو ما بُني هذا
      الكشفُ ليُغنيَ عنه. */
   if (state === "rejected" && !STUDENT_REJECT_REASONS.has(reasonCode)) {
@@ -13426,9 +13481,9 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
   const saved = await Repository.setStudentCourseState(need.id, {
     courseId,
     state: state as any,
-    ...(state === "rejected" ? { reasonCode: reasonCode as any } : {}),
+    ...(state === "rejected" || state === "committee-rejected" ? { reasonCode: reasonCode as any } : {}),
     note: String(req.body?.note || "").trim().slice(0, 300) || undefined,
-    by: isRegistrarRole(req.user?.Role) ? "registration" : "department",
+    by: state === "registered" || state === "rejected" ? "registration" : "department",
     byRole: roleLabel(req.user?.Role) || undefined,
     at: new Date().toISOString(),
   });
@@ -16092,6 +16147,7 @@ li span{display:flex;flex-direction:column;gap:3px}
 .st{font-style:normal;font-size:12px;color:var(--muted)}
 .st[data-s=registered]{color:var(--ok);font-weight:700}
 .st[data-s=rejected]{color:var(--bad);font-weight:700}
+.st[data-s=committee-rejected]{color:var(--bad);font-weight:700}
 .note{margin-top:15px;font-size:12.5px;color:var(--muted);line-height:1.6}
 .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
 </style></head><body><div class="wrap">
@@ -16105,9 +16161,10 @@ li span{display:flex;flex-direction:column;gap:3px}
 <script nonce="${nonce}">(function(){
 var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),
 go=document.getElementById("go"),out=document.getElementById("out");
-var STATE={"awaiting-registration":"سلّمه القسم للتسجيل","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
 var REASON={"no-seat":"لا مقاعد","prerequisite":"متطلّب سابق","level":"المستوى",
-"conflict":"تعارض في جدولك","closed":"الشعبة مغلقة","other":"سبب آخر"};
+"conflict":"تعارض في جدولك","closed":"الشعبة مغلقة","other":"سبب آخر",
+"not-eligible":"لا تنطبق عليك الشروط","not-in-plan":"ليس من خطتك الدراسية","duplicate":"طلب مكرر أو سبق تسجيله"};
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
 return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 /* الأرقام العربية تُقبل كما تُكتب: من يكتب «٢٩٠…» أدخل رقمه، لا خطأً. */

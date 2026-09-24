@@ -526,9 +526,23 @@ export interface ClientTelemetryEntry {
 
 /** أين وصل مقرّرٌ واحدٌ من طلب طالب. */
 export type StudentCourseStateValue =
-  | "awaiting-registration"  // القسم سلّمه، والتسجيل لم يقل شيئاً بعد
+  | "awaiting-registration"  // وافقت لجنة القسم وسلّمته، والتسجيل لم يقل شيئاً بعد
+  | "committee-rejected"     // لم توافق عليه لجنة القسم، ومعه سبب — لا يصل التسجيل
   | "registered"             // التسجيل سجّله
   | "rejected";              // التسجيل ردّه، ومعه سبب
+
+/**
+ * أسبابُ عدم موافقة لجنة القسم، من قائمةٍ مغلقة.
+ *
+ * الطلبُ يمرّ على اللجنة أولاً: ما توافق عليه يُسلَّم للتسجيل، وما لا توافق
+ * عليه يبقى عند القسم ولا يراه التسجيل. والسببُ يصل الطالب في صفحته.
+ */
+export type StudentCommitteeRejectReason =
+  | "not-eligible"   // لا تنطبق عليه الشروط
+  | "not-in-plan"    // ليس من خطته الدراسية
+  | "prerequisite"   // متطلّبٌ سابق
+  | "duplicate"      // طلبٌ مكرر أو سبق تسجيله
+  | "other";
 
 /**
  * أسبابُ الردّ، من قائمةٍ مغلقة.
@@ -548,9 +562,9 @@ export type StudentCourseRejectReason =
 export interface StudentCourseState {
   courseId: number;
   state: StudentCourseStateValue;
-  reasonCode?: StudentCourseRejectReason;
+  reasonCode?: StudentCourseRejectReason | StudentCommitteeRejectReason;
   note?: string;
-  /** من كتبها: القسم حين يسلّم، والتسجيل حين يقرّر. */
+  /** من كتبها: القسم (اللجنة) حين يوافق أو لا يوافق، والتسجيل حين يقرّر. */
   by: "department" | "registration";
   /** الصفةُ لا الاسم: «موظف التسجيل»، «رئيس لجنة الجدول». */
   byRole?: string;

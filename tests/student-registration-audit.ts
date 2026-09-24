@@ -119,7 +119,26 @@ check(server.includes('state: state?.state || ""'), "وحالةُ المقرّر
 /* «لم يُقل فيه شيء» ليس «بانتظار التسجيل»: الانتظارُ قولٌ يقوله القسمُ حين
    يسلّم، لا حالةٌ تُفترض على من لم يُسلَّم بعد. */
 check(server.includes("ولا يُسمّى «بانتظار التسجيل»"), "وما لم يُقل فيه شيءٌ لا يُسمّى انتظاراً");
-check(screen.includes('"لم يُقل فيه شيء بعد"'), "والكشفُ يفرّق بينهما كذلك");
+check(screen.includes('const PENDING_COMMITTEE = "بانتظار اللجنة";')
+  && screen.includes("course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE"),
+  "والكشفُ يفرّق بينهما كذلك: ما لم يُقل فيه شيءٌ «بانتظار اللجنة»");
+
+/* ── اللجنةُ أولاً، ثم التسجيل ──────────────────────────────────────────── */
+check(server.includes("const reachedRegistration = (state: any): boolean =>")
+  && server.includes('viewer !== "registration" || reachedRegistration(states.get(Number(id)))'),
+  "والتسجيلُ لا يرى إلا ما وافقت عليه اللجنة وسلّمته");
+check(server.includes("لم توافق لجنةُ القسم على هذا المقرّر بعد، فلا يُكتب فيه من جهة التسجيل."),
+  "ولا يكتب التسجيلُ في مقرّرٍ لم تسلّمه اللجنة، ولو أُرسل الطلبُ بلا شاشة");
+check(server.includes("قرارُ «سُجّل» أو «رُدّ» للتسجيل. اللجنةُ توافق أو لا توافق."),
+  "واللجنةُ لا تكتب «سُجّل» ولا «رُدّ» باسم التسجيل");
+check(server.includes("قرّر التسجيلُ في هذا المقرّر، فلا يُغيَّر من جهة القسم."),
+  "ولا تنقض اللجنةُ قراراً قاله التسجيل");
+check(server.includes("اختر سبب عدم الموافقة.") && server.includes("STUDENT_COMMITTEE_REASONS"),
+  "وعدمُ موافقة اللجنة بلا سببٍ مرفوض، والأسبابُ قائمةٌ مغلقة");
+check(server.includes('"committee-rejected":"لم توافق عليه لجنة القسم"'),
+  "والطالبُ يرى قرار اللجنة وسببه في صفحته");
+check(screen.includes("const approveAll = async (row: CaseRow)") && !screen.includes("approveEverything"),
+  "والموافقةُ الجماعية لطالبٍ واحد لا للكشف كله: النظرُ في كل طالب عملُ اللجنة");
 
 
 /* ── ثلاثةُ أعطالٍ من مراجعةٍ آلية على العمل نفسه ──────────────────────── */
