@@ -202,9 +202,11 @@ check("a re-read time strip is accepted only as a dashed, plausible clock pair",
 });
 
 check("a scanned page whose rows lost their course codes is flagged, not imported as fragments",()=>{
-  const row=(code:string)=>({code,reference:"18945",scode:"501"}) as any;
+  const row=(code:string)=>({code,reference:"18945",scode:"501",days:"3 1",start:"11:00"}) as any;
   assert.equal(unreadableIdentityRows([...Array(12)].map(()=>row("0101102")).concat([row("02011")])),0,"one damaged row is left for review");
   assert.equal(unreadableIdentityRows([...Array(3)].map(()=>row("0101102")).concat([...Array(20)].map(()=>row("0101")))),20);
+  const bare=(code:string)=>({code,reference:"18980",scode:"501",days:"",start:""}) as any;
+  assert.equal(unreadableIdentityRows([...Array(4)].map(()=>row("0101102")).concat([...Array(26)].map(()=>bare("0101156")))),26,"rows with neither days nor time are unread");
 });
 check("printed data lines are counted independently of the row reader",()=>{
   const w=(text:string,y:number)=>({text,x0:0,x1:10,y0:y,y1:y+10});
