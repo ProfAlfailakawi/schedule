@@ -168,6 +168,15 @@ export function resolveRoom(registry: LocationRegistry, raw: unknown, buildingId
     }
   }
 
+  /* LEADING-LETTER REPAIR, registry-exact. A scanned «G07» is read «607»: the
+     round G is the one glyph OCR turns into a digit. Only when no room «607»
+     exists here and exactly ONE room G07 exists under THIS building. */
+  const leadingSix=token.match(/^6(\d{2})$/);
+  if(leadingSix){
+    const repairedMatches=base.filter(r=>canonicalRoomShape(r.canonicalCode)===canonicalRoomShape(`G${leadingSix[1]}`));
+    if(repairedMatches.length===1){const r=repairedMatches[0];return {status:"CONFIRMED",value:r,evidence:[`استعادة OCR مقيدة بالمبنى: ${token} ← ${r.canonicalCode} داخل ${r.buildingCode}.`]};}
+  }
+
   /* PHANTOM-DIGIT REPAIR, registry-exact. A photographed grid rule beside the
      narrow room cell is read as an extra digit: F11 -> F111, F33 -> F331/F133.
      Official rooms in this family are letter + two digits, so a three-digit

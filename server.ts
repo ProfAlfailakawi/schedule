@@ -8303,8 +8303,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      ملتبس بمرشح قريب؛ أو غير مسجّل بهذا الاسم أصلاً. الحكم المجرد «غير محسوم»
      ترك المنسّق يحدّق في خانة لا تقول أياً منها — فتُسمّى المرشحون بأسمائهم
      وأرقامهم المدنية، بنفس الظهور المتاح له في قائمة الاختيار أصلاً. */
-  const civilOf=(person:any)=>String(person?.AdInstructorCivil||"").trim();
-  const describeCandidate=(person:any)=>`«${String(person?.AdInstructorName||"").trim()}»${civilOf(person)?` (${civilOf(person)})`:""}`;
+  const describeCandidate=(person:any)=>`«${String(person?.AdInstructorName||"").trim()}»`;
   const unresolvedInstructorDiagnosis=(row:any):{method:string;reason:string}=>{
     const written=String(row?.sourceInstructorText||"");
     /* ── «هيئة تدريسية» ليست شخصاً، بل سجلّ يملكه كل قسم لنفسه ───────────────
@@ -8322,21 +8321,21 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
         return key===placeholderKey||key.startsWith(`${placeholderKey} `)||tokens[0]===placeholderHead;
       });
       const mine=records.filter(person=>departmentMembership.has(Number(person.AdInstructorId)));
-      if(!records.length)return{method:"UNREGISTERED",reason:"«هيئة تدريسية» ليست شخصاً بل سجلّ يملكه القسم. لا يوجد في النظام سجلّ بهذا المعنى بعد، فاختر أستاذاً فعلياً للصف أو اترك الشعبة للمراجعة."};
-      if(mine.length>1)return{method:"DUPLICATE_REGISTRATION",reason:`سجلّ «هيئة تدريسية» مكرّر داخل هذا القسم: ${mine.map(describeCandidate).join("، ")}. احذف المكرر من شاشة الأساتذة أو اختر السجل الصحيح.`};
-      return{method:"AMBIGUOUS",reason:`«هيئة تدريسية» مسجّلة في النظام ${records.length===1?"مرة واحدة لقسم آخر":`${records.length} مرات لأقسام أخرى`}، ولا سجلّ لهذا القسم بعد. النظام لا ينسب صفوفك إلى سجلّ قسم آخر من تلقائه — اختر السجل المقصود من القائمة مرة واحدة، فيصير بعدها من أهل قسمك.`};
+      if(!records.length)return{method:"UNREGISTERED",reason:"لا يوجد سجل «هيئة تدريسية» للقسم؛ اختر أستاذاً."};
+      if(mine.length>1)return{method:"DUPLICATE_REGISTRATION",reason:`«هيئة تدريسية» مكررة في القسم: ${mine.map(describeCandidate).join("، ")}.`};
+      return{method:"AMBIGUOUS",reason:"«هيئة تدريسية» لقسم آخر، ولا سجلّ لهذا القسم بعد؛ اخترها من القائمة."};
     }
     const {exact,partial}=registryCandidatesFor(written,instructors as any);
     if(exact.length>=2){
-      return{method:"DUPLICATE_REGISTRATION",reason:`هذا الاسم مسجّل ${exact.length===2?"مرتين":`${exact.length} مرات`} بسجلات مختلفة: ${exact.map(describeCandidate).join("، ")}. النظام لا يختار بين سجلّين — احذف المكرر من شاشة الأساتذة أو اختر السجل الصحيح من القائمة.`};
+      return{method:"DUPLICATE_REGISTRATION",reason:`مسجّل أكثر من مرة: ${exact.map(describeCandidate).join("، ")}.`};
     }
     if(exact.length===1){
-      return{method:"AMBIGUOUS",reason:`الأقرب في السجل: ${describeCandidate(exact[0])} — اختره من القائمة إن كان المقصود.`};
+      return{method:"AMBIGUOUS",reason:`الأقرب: ${describeCandidate(exact[0])}.`};
     }
     if(partial.length){
-      return{method:"AMBIGUOUS",reason:`لا أحد في السجل بهذا الاسم كاملاً. الأقرب جزئياً: ${partial.map(describeCandidate).join("، ")} — إن كان أحدهم المقصود فاختره، وإلا أضِف الاسم برقمه المدني.`};
+      return{method:"AMBIGUOUS",reason:`الأقرب: ${partial.map(describeCandidate).join("، ")}.`};
     }
-    return{method:"UNREGISTERED",reason:"الاسم مقروء، لكن لا يوجد في سجل الأساتذة شخص بهذا الاسم. أضِفه من قائمة أستاذ المقرر برقمه المدني، أو اختر زميلاً مسجّلاً."};
+    return{method:"UNREGISTERED",reason:"غير موجود في سجل الأساتذة."};
   };
   const unresolvedInstructorOutcome=(row:any)=>unresolvedInstructorDiagnosis(row).method;
 
