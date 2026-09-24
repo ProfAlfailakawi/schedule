@@ -1969,6 +1969,8 @@ async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:
     row.days=value;row.daysRaw=value;
   }
 }
+/** Rows whose identity is proven: a full course code and a reference number. */
+const identityRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(String(row.code||""))&&/^\d{4,8}$/.test(String(row.reference||""))).length;
 const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(row.code)&&/^\d{4,8}$/.test(row.reference)&&Boolean(row.start)&&Boolean(row.building||row.buildingRaw)).length;
 
 async function readGrid(
@@ -3637,7 +3639,9 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     /* طريق الكلمات أساسٌ متى أثبت صفوفاً سليمة أكثر. وما رآه طريق الخطوط ولم
        يجمعه طريق الكلمات يُضاف بهويته فقط (المقرر، الشعبة، المرجعي) وتُترك
        خلاياه الأخرى فارغة للمراجعة: لا صف يضيع، ولا قيمة مشكوك فيها تدخل. */
-    if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)){
+    /* أو حين يثبت هويةَ صفوفٍ أكثر (رقم مقرر كامل ومرجعي): شبكة أزاحت أعمدتها
+       (المقرر فارغ، والكود في خانة المرجعي) لا تغلب قراءةً صحيحة الهوية. */
+    if(wordLane&&wordLane.rows.length&&(soundScanRows(wordLane.rows)>soundScanRows(gridRows)||identityRows(wordLane.rows)>identityRows(gridRows))){
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
@@ -3756,7 +3760,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
           const pageCourseKeys=courseKeysForPage(index);
           const rows=await readGrid(upright,rescuePool,authorityGridDepartment,pageCourseKeys);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
-          if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
+          /* قراءة الإنقاذ لا تُعتمد إن أنقصت الصفوف ثابتة الهوية (شبكة أزاحت أعمدتها). */
+          if(rows&&filled>bestFilled&&identityRows(rows)>=identityRows(bestRows)){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
       }
       /* ── تحسين الصورة قبل الاستسلام ─────────────────────────────────────
@@ -3771,7 +3776,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
             const lane=await readWordLane(enhanced);
             pagePrintedRows[index]=Math.max(pagePrintedRows[index]||0,lane.printedRows);
             const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
-            if(lane.rows.length>bestRows.length&&filled>=bestFilled){bestRows=lane.rows;bestFilled=filled;}
+            if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)){bestRows=lane.rows;bestFilled=filled;}
           }
         }catch{/* the earlier reading and its warning stand */}
       }
