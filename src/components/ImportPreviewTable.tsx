@@ -242,10 +242,12 @@ export default function ImportPreviewTable({
        the table look like it was saying something it was not. */
     return proof?.confidence==="CONFIRMED"?"import-cell-derived":"";
   };
+  /* التلميح جملة واحدة للمراجع، لا سجلّ تدقيق: الخلية المؤكدة صامتة، والتي
+     تحتاج قراراً تقول سببها فقط. تفاصيل البرهان تبقى محفوظة في importEvidence. */
   const evidenceTitle = (row:ImportRow,key:EvidenceKey) => {
     const proof=row.importEvidence?.[key];
-    if(!proof)return undefined;
-    return [proof.reason,Number.isFinite(Number(proof.score))?`الثقة: ${Number(proof.score)}٪`:"",proof.source?`المسار: ${proof.source}`:"",proof.method?`القاعدة: ${proof.method}`:"",proof.raw?`المصدر: ${proof.raw}`:"",proof.normalized?`بعد التطبيع: ${proof.normalized}`:"",...(proof.evidence||[])].filter(Boolean).join(" · ");
+    if(!proof||proof.confidence==="CONFIRMED")return undefined;
+    return String(proof.reason||"").trim()||undefined;
   };
 
   const autoEndForRow = (row:ImportRow, start:string) => {
@@ -344,7 +346,7 @@ export default function ImportPreviewTable({
             const notes = rowIssues[importRowKey(row)] || [];
             const notesFor = (key: EvidenceKey) => notes.filter(note => importIssueField(note) === key);
             const cellClass = (key: EvidenceKey, bad: boolean) => evidenceClass(row, key, bad || notesFor(key).length > 0);
-            const cellTitle = (key: EvidenceKey) => [evidenceTitle(row, key), ...notesFor(key)].filter(Boolean).join(" · ") || undefined;
+            const cellTitle = (key: EvidenceKey) => (notesFor(key).length ? notesFor(key).join(" · ") : evidenceTitle(row, key)) || undefined;
             const unplacedNotes = notes.filter(note => !importIssueField(note));
             const outsideNote = !missing.instructor(row) && !notesFor("instructor").length && instructorOutsideDepartment(row)
               ? "هذا الأستاذ ليس ضمن أساتذة القسم أو منتدبي الفصل — اضغط «تثبيت» إن كان هو المقصود، أو اختر غيره من القائمة."
