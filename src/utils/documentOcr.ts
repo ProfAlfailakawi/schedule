@@ -1723,6 +1723,12 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
   }
   return out;
 }
+/** صفوف بلا رقم مقرر كامل: إن بلغت ربع الصفحة (3 فأكثر) فالمسح لم يُقرأ،
+ *  لا صفٌّ ناقص هنا وهناك. يُعاد عددها ليُذكر في الرسالة، وإلا صفر. */
+export function unreadableIdentityRows(rows:GridRow[]):number{
+  const broken=rows.filter(row=>!/^\d{7}$/.test(String(row.code||""))).length;
+  return broken>=3&&broken>=rows.length*.25?broken:0;
+}
 /** Contrast-stretch a scanned page and erase long table rules (runs of dark
  *  pixels far longer than any glyph) so digits touching a rule separate. */
 async function enhanceScanForOcr(source:Buffer):Promise<Buffer>{
@@ -3636,7 +3642,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
          نفسها تحت ذلك المقرر صفٌّ واحد لا صفّان. شعبة 01 لمقرر آخر تبقى. */
-      const sameCourse=(full:string,partial:string)=>Boolean(full&&partial)&&(full===partial||(partial.length<7&&full.startsWith(partial)));
+      const sameCourse=(full:string,partial:string)=>Boolean(full&&partial)&&(full===partial||(partial.length>=5&&partial.length<7&&full.startsWith(partial)));
       /* ولا يُضاف صفّ إلا لمقرر أثبتته الصفحة: رقم مقرر لا يطابق (ولا يبدأ)
          مقرراً قرأه طريق الكلمات هو رقم تسلسل ملتصق بمرجعي مبتور، لا صف. */
       const seenReferences=new Set(wordLane.rows.map(row=>row.reference).filter(Boolean));
@@ -3680,9 +3686,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       const printedRows=wordLane?.printedRows||0;
       pagePrintedRows[index]=printedRows;
       const missedRows=printedRows>gridRows.length;
-      const suspicious=(gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55))||missedRows;
+      const brokenRows=unreadableIdentityRows(gridRows);
+      const suspicious=(gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55))||missedRows||brokenRows>0;
       pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:Math.max(gridRows.length,printedRows),extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,
-        reason:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${gridRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+        reason:brokenRows>0?`في الصفحة ${brokenRows} صفاً لم يُقرأ رقم مقررها؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${gridRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
     }else{
       const grid=await spreadColumns(upright);
       await lanePool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
@@ -3772,9 +3779,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         /* إعادة القراءة لا تمسح دليل الأسطر المطبوعة: صفوف أقل منها = مشبوهة. */
         const printedRows=pagePrintedRows[index]||0;
         const missedRows=printedRows>bestRows.length;
-        const suspicious=(bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55))||missedRows;
+        const brokenRows=unreadableIdentityRows(bestRows);
+        const suspicious=(bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55))||missedRows||brokenRows>0;
         pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:Math.max(bestRows.length,printedRows),extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,
-          reason:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${bestRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+          reason:brokenRows>0?`في الصفحة ${brokenRows} صفاً لم يُقرأ رقم مقررها؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${bestRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
         scores[index]=Math.min(92,60+bestFilled*2);
         if(index===0&&(!texts[index]||!parseAuthorityHeaderText(texts[index]).term||!parseAuthorityHeaderText(texts[index]).branch||!parseAuthorityHeaderText(texts[index]).department)){
           const cachedHeader=cachedPreflight?.header;
