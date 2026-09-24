@@ -38,6 +38,9 @@ export type AuthorityPdfHeader={
   requiresLandscapeUpload?:boolean;
   /** Physical PDF pages that violate the landscape-only Authority contract. */
   requiresLandscapePages?:number[];
+  /** Another scan held the OCR workers past the preflight's wait: the upload
+   *  is refused as busy at once instead of timing out in the queue. */
+  busy?:boolean;
 };
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type GraduationSheetOcrResult={text:string;pageCount:number;confidence:number;legibility:Legibility};
@@ -191,26 +194,52 @@ async function getWorkerPool(){
  * The header preflight takes its turn too (it drives the first Arabic worker)
  * but keeps the workers: it reads one small band, and the full reading that
  * follows it reuses them.
+ *
+ * The wait for a turn is bounded, because it runs inside a request that Cloud
+ * Run cuts at 300 s: a scan queued behind another scan's full reading (191 s
+ * measured) would be cut before its own reading ended. So a DIFFERENT file
+ * waits at most SCAN_TURN_WAIT_MS and is then refused as busy, in words; the
+ * SAME file sent again while it is being read shares that reading instead.
+ * Worst case of an accepted upload: 20 s + preflight + 45 s + its reading.
  */
+export const SCAN_READING_BUSY_MESSAGE="الخادم يقرأ الآن ملفاً ممسوحاً آخر، ولا يُقرأ ملفّان ممسوحان معاً. لم يُستورد أي صف. أعد رفع ملفك بعد دقيقة أو دقيقتين.";
+export class ScanReadingBusyError extends Error{constructor(){super(SCAN_READING_BUSY_MESSAGE);}}
+const SCAN_TURN_WAIT_MS=45_000;
+const PREFLIGHT_TURN_WAIT_MS=20_000;
 type ScanReadingTurn={release:(freeWorkers:boolean)=>Promise<void>};
-let scanTurnTail:Promise<void>=Promise.resolve();
-let scanTurnDepth=0;
-export async function takeScanReadingTurn(onWait?:()=>void):Promise<ScanReadingTurn>{
-  const ahead=scanTurnDepth++;
-  const previous=scanTurnTail;
-  let open!:()=>void;
-  scanTurnTail=new Promise<void>(resolve=>{open=resolve;});
-  if(ahead>0)onWait?.();
-  await previous;
+let scanTurnHeld=false;
+const scanTurnQueue:Array<()=>void>=[];
+/** First come, first served. Resolves null when the turn did not come within
+ *  `waitMs`; the caller then refuses as busy rather than holding its request. */
+export async function takeScanReadingTurn(waitMs=Number.POSITIVE_INFINITY,onWait?:()=>void):Promise<ScanReadingTurn|null>{
+  if(scanTurnHeld){
+    onWait?.();
+    const granted=await new Promise<boolean>(resolve=>{
+      let timer:ReturnType<typeof setTimeout>|undefined;
+      const grant=()=>{if(timer)clearTimeout(timer);resolve(true);};
+      scanTurnQueue.push(grant);
+      if(Number.isFinite(waitMs))timer=setTimeout(()=>{
+        const at=scanTurnQueue.indexOf(grant);
+        if(at>=0)scanTurnQueue.splice(at,1);
+        resolve(false);
+      },Math.max(0,waitMs));
+    });
+    if(!granted)return null;
+  }else scanTurnHeld=true;
   let released=false;
   return{release:async(freeWorkers:boolean)=>{
     if(released)return;
     released=true;
     try{if(freeWorkers)await releaseTableWorkers();}
     catch{/* a worker that will not stop must never keep the queue closed */}
-    finally{scanTurnDepth--;open();}
+    finally{
+      const next=scanTurnQueue.shift();
+      if(next)next();else scanTurnHeld=false;
+    }
   }};
 }
+/** Full readings in progress, by document fingerprint (content + course keys). */
+const inflightScanReads=new Map<string,Promise<OcrResult>>();
 /** Terminate every table-reading worker so its WASM memory returns to the
  *  system; the getters create fresh ones on the next reading. */
 async function releaseTableWorkers():Promise<void>{
@@ -3405,8 +3434,14 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
        make the two pixel-axis finalists tie while the textual header sits in the
        remaining turn; semantic header fields, not a geometric tie-break, decide. */
     const candidates=scored;
-    /* This worker is also the first Arabic table worker: drive it only in turn. */
-    turn=await takeScanReadingTurn();
+    /* This worker is also the first Arabic table worker: drive it only in turn.
+       The same file already being read needs no preflight of its own — its
+       reading proves the header — and another scan's full reading makes this
+       upload a busy refusal instead of a request that times out waiting. */
+    const contentHash=await documentFingerprint(input);
+    if([...inflightScanReads.keys()].some(key=>key.startsWith(contentHash)))return embedded;
+    turn=await takeScanReadingTurn(PREFLIGHT_TURN_WAIT_MS);
+    if(!turn)return{...embedded,busy:true};
     const worker=await getHeaderWorker();
     let best:{header:AuthorityPdfHeader;score:number;turn:-1|0|1}|null=null;
     const lib=await canvas();
@@ -3574,14 +3609,27 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     const embedded=await pdfTextLayer(input,onProgress);
     if(embedded){rememberOcr(fingerprint,embedded);return embedded;}
   }
-  const turn=await takeScanReadingTurn(()=>onProgress?.({phase:"render",page:0,pages:0,message:"الخادم يقرأ ملفاً آخر الآن — ملفك في الدور ويبدأ بعده مباشرة"}));
-  try{
-    /* The same file sent again while its first reading ran has waited for that
-       reading to finish; its result is remembered now, so it returns at once. */
-    const finished=cachedOcr(fingerprint);
-    if(finished){onProgress?.({phase:"read",page:finished.pageCount,pages:finished.pageCount,message:"تم استرجاع القراءة المحفوظة"});return finished;}
-    return await readScannedDocument(input,mime,fingerprint,optionKeys,onProgress);
-  }finally{await turn.release(true);}
+  /* The same file sent again while it is being read (a reviewer who reloaded
+     the page mid-read) shares that reading instead of queueing a second one. */
+  const sharing=inflightScanReads.get(fingerprint);
+  if(sharing){
+    onProgress?.({phase:"read",page:0,pages:0,message:"هذا الملف نفسه يُقرأ الآن — تظهر نتيجته حين تكتمل قراءته"});
+    return structuredClone(await sharing);
+  }
+  const turn=await takeScanReadingTurn(SCAN_TURN_WAIT_MS,()=>onProgress?.({phase:"render",page:0,pages:0,message:"الخادم يقرأ ملفاً آخر الآن — ينتظر ملفك دوره"}));
+  if(!turn)throw new ScanReadingBusyError();
+  const reading=(async()=>{
+    try{
+      /* A file that waited for its turn behind its own first reading finds that
+         reading remembered now, and returns at once. */
+      const finished=cachedOcr(fingerprint);
+      if(finished){onProgress?.({phase:"read",page:finished.pageCount,pages:finished.pageCount,message:"تم استرجاع القراءة المحفوظة"});return finished;}
+      return await readScannedDocument(input,mime,fingerprint,optionKeys,onProgress);
+    }finally{await turn.release(true);}
+  })();
+  inflightScanReads.set(fingerprint,reading);
+  try{return await reading;}
+  finally{if(inflightScanReads.get(fingerprint)===reading)inflightScanReads.delete(fingerprint);}
 }
 
 /** The image path of ocrDocument. It runs only while holding the scan-reading

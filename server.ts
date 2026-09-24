@@ -80,7 +80,7 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { instructorCleanName, foldInstructorText, instructorIdentityTokens, registryCandidatesFor } from "./src/utils/instructorIdentity";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -7891,6 +7891,7 @@ app.post("/api/intelligence/pdf-import/bootstrap-section", requirePermission(7),
   const authorityCollegeCode=academicDigits(sitePrefix).slice(0,2);
   const header=await readAuthorityPdfHeader(bytes);
   if(header.requiresLandscapeUpload){res.status(422).json({error:"دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع.",code:"PDF_SCAN_REQUIRES_LANDSCAPE"});return;}
+  if(header.busy){res.status(503).json({error:SCAN_READING_BUSY_MESSAGE,code:"SCAN_READING_BUSY"});return;}
   if(!header.branch||!header.department){res.status(422).json({error:"لم أتمكن من إثبات الكلية/الفرع والقسم من ترويسة الصفحة الأولى؛ لم تتم إضافة أي قسم.",code:"PDF_BOOTSTRAP_HEADER_UNRESOLVED"});return;}
   const sourceSite=officialCollegeSitePrefix(header.branch.name);
   const branchCode=String(header.branch.code||"").replace(/\D/g,"");
@@ -8016,6 +8017,9 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     });
     return;
   }
+  /* Another scan holds the OCR workers: refuse now, in words, rather than let
+     this request wait in a queue that the platform's 300 s limit would cut. */
+  if(headerPreflight.busy){res.status(503).json({error:SCAN_READING_BUSY_MESSAGE,code:"SCAN_READING_BUSY"});return;}
 
   /* Scope validation is shared by the cheap page-1 preflight and the full OCR
      rescue. A partial preflight is NOT a rejection: image-only CamScanner PDFs

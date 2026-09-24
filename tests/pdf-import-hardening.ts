@@ -7,7 +7,7 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, takeScanReadingTurn, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, takeScanReadingTurn, ScanReadingBusyError, type OcrPage } from "../src/utils/documentOcr.ts";
 import { interruptedImportMessage } from "../src/utils/importStreamFailure.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
@@ -236,9 +236,9 @@ check("a broken import stream says what broke instead of the one generic sentenc
 /* The reading turn is asynchronous; these cases run after the synchronous ones. */
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 {
-  const first=await takeScanReadingTurn();
+  const first=(await takeScanReadingTurn())!;
   let told=0,entered=false;
-  const next=takeScanReadingTurn(()=>{told++;}).then(turn=>{entered=true;return turn;});
+  const next=takeScanReadingTurn(Number.POSITIVE_INFINITY,()=>{told++;}).then(turn=>{entered=true;return turn!;});
   await settle();
   assert.equal(entered,false,"a second scanned reading must not drive the workers while the first holds them");
   assert.equal(told,1,"the waiting upload is told it is queued");
@@ -247,16 +247,27 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
   const second=await next;
   assert.equal(entered,true,"the next reading starts as soon as the first releases");
   let thirdEntered=false;
-  const third=takeScanReadingTurn().then(turn=>{thirdEntered=true;return turn;});
+  const third=takeScanReadingTurn().then(turn=>{thirdEntered=true;return turn!;});
   await settle();
   assert.equal(thirdEntered,false,"a double release of the first turn did not open the queue for a third");
   await second.release(true);
   await (await third).release(false);
   let toldIdle=0;
-  const idle=await takeScanReadingTurn(()=>{toldIdle++;});
+  const idle=(await takeScanReadingTurn(Number.POSITIVE_INFINITY,()=>{toldIdle++;}))!;
   assert.equal(toldIdle,0,"an idle instance starts a reading at once, without a queue message");
+  /* A request is cut by the platform at 300 s: waiting behind another scan's
+     full reading must end in a refusal, not in the queue. */
+  const gaveUp=await takeScanReadingTurn(20);
+  assert.equal(gaveUp,null,"a bounded wait that runs out returns no turn");
+  let afterTimeout=false;
+  const later=takeScanReadingTurn(Number.POSITIVE_INFINITY).then(turn=>{afterTimeout=true;return turn!;});
   await idle.release(true);
-  passed.push("one scanned reading drives the table workers at a time; the next waits its turn and is told so");
+  const handed=await later;
+  assert.equal(afterTimeout,true,"a waiter that gave up leaves the queue; the next one still gets the turn");
+  await handed.release(false);
+  passed.push("one scanned reading drives the table workers at a time; the next waits a bounded time, is told so, and gets the turn in order");
 }
+assert.match(new ScanReadingBusyError().message,/يقرأ الآن ملفاً ممسوحاً آخر.*لم يُستورد أي صف/,"a busy refusal says why and that nothing was imported");
+passed.push("a scan refused as busy says so in words");
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));
