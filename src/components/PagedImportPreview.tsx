@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, FileText } from "lucide-react";
 import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
 
 type TableProps = React.ComponentProps<typeof ImportPreviewTable>;
-type PageDiagnostic = { page?: number; extractedRows?: number; visualRows?: number; suspicious?: boolean; reason?: string };
+type PageDiagnostic = { page?: number; extractedRows?: number; visualRows?: number; suspicious?: boolean; reason?: string; warning?: string };
 type PageSummary = { page?: number; rows?: number; ready?: number; review?: number; suspicious?: boolean; diagnostic?: PageDiagnostic };
 
 /**
@@ -250,7 +250,7 @@ export default function PagedImportPreview({
           const diagnostic = diagnosticByPage.get(page) || summary?.diagnostic;
           const liveReview = pageRows.filter(rowNeedsReview).length;
           const review = pageRows.length ? liveReview : Number(summary?.review ?? 0);
-          const suspicious = Boolean(summary?.suspicious || diagnostic?.suspicious || review > 0 || (pageRows.length === 0 && Number(diagnostic?.extractedRows || 0) > 0));
+          const suspicious = Boolean(summary?.suspicious || diagnostic?.suspicious || diagnostic?.warning || review > 0 || (pageRows.length === 0 && Number(diagnostic?.extractedRows || 0) > 0));
           const empty = pageRows.length === 0;
           const active = activePage === page;
           return (
@@ -279,6 +279,8 @@ export default function PagedImportPreview({
           const review = currentRows.length ? liveReview : Number(summary?.review ?? 0);
           const suspicious = Boolean(summary?.suspicious || diagnostic?.suspicious || review > 0);
           if (!currentRows.length) return <><AlertTriangle /><span>لم تُستخرج صفوف من هذه الصفحة. راجع جودة الصفحة قبل النشر.</span></>;
+          /* تنبيهُ القراءة (سطرٌ مطبوع لم يُقرأ) يُقال على صفحته ولو اكتملت صفوفها المقروءة. */
+          if (diagnostic?.warning) return <><AlertTriangle /><span>{String(diagnostic.warning)}{review ? ` · ${review.toLocaleString("ar-KW-u-nu-latn")} صف يحتاج مراجعة` : ""}.</span></>;
           if (suspicious) return <><AlertTriangle /><span>هذه الصفحة تحتاج مراجعة: {review ? `${review.toLocaleString("ar-KW-u-nu-latn")} صف` : String(diagnostic?.reason || "بعض الخلايا لم تُحسم بعد")}.</span></>;
           return <><CheckCircle2 /><span>تمت قراءة الصفحة {activePage.toLocaleString("ar-KW-u-nu-latn")} بنجاح · {currentRows.length.toLocaleString("ar-KW-u-nu-latn")} صف.</span></>;
         })()}

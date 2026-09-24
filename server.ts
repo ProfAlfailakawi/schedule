@@ -8595,6 +8595,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   }
   const rows=assignAuthoritySections(safeDraftRows(parsed.rows,collegeId,sectionId,termId));
   const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true,departmentInstructorIds:departmentMembership}):[];
+  /* تنبيهُ الصفحة (سطرٌ مطبوع لم يُقرأ، صفٌّ غير واضح) يتصدّر ملاحظات المعاينة
+     ولا يوقف الملف: خانات الصفوف غير الواضحة فارغةٌ فتمنع حفظ صفّها وحده. */
+  const pageWarnings=(recognized.pageDiagnostics||[]).filter((page:any)=>page.warning).map((page:any)=>`الصفحة ${page.page}: ${page.warning}`);
+  parsed.issues.unshift(...pageWarnings);
   /* Conflict errors and structural errors block publishing until resolved */
   const parserNotes=[...new Set(parsed.issues)];
   const blocking=[...new Set([

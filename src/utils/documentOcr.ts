@@ -23,7 +23,7 @@ const fold=(value:string)=>toAscii(value).replace(/[ً-ْـ]/g,"").replace(/[أ�
 export type OcrCell={text:string;x0:number;x1:number};
 /** One physical table row, right-to-left, with the columns still apart. */
 export type OcrRow={cells:OcrCell[];line:string;y:number};
-export type OcrPageDiagnostic={page:number;visualRows:number;extractedRows:number;gridDetected:boolean;orientation:-1|0|1;suspicious:boolean;reason?:string};
+export type OcrPageDiagnostic={page:number;visualRows:number;extractedRows:number;gridDetected:boolean;orientation:-1|0|1;suspicious:boolean;reason?:string;warning?:string};
 export type OcrPage={rows:OcrRow[];gridRows?:GridRow[];diagnostic?:OcrPageDiagnostic};
 export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
@@ -3695,9 +3695,13 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       pagePrintedRows[index]=printedRows;
       const missedRows=printedRows>gridRows.length;
       const brokenRows=unreadableIdentityRows(gridRows);
-      const suspicious=(gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55))||missedRows||brokenRows>0;
-      pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:Math.max(gridRows.length,printedRows),extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,
-        reason:brokenRows>0?`في الصفحة ${brokenRows} صفاً غير واضح (رقم المقرر أو الأيام والوقت)؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${gridRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+      /* صفحةٌ قليلةُ الامتلاء وحدها توقف الملف كما كانت. سطرٌ مطبوع لم يخرج له صف،
+         أو صفٌّ بلا رقم مقرر أو بلا أيامٍ ووقت، يُعرض تنبيهاً على الصفحة في المعاينة:
+         خاناته الفارغة لا تُخمَّن وتبقى للمراجعة، وبقية الملف تُقرأ. */
+      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55);
+      const warning=brokenRows>0?`${brokenRows===1?"صفٌّ واحد":`${brokenRows} صفوف`} لم يتضح فيها رقم المقرر أو الأيام والوقت — خاناتها فارغة للمراجعة`:missedRows?`فيها ${printedRows} أسطر مطبوعة قُرئ منها ${gridRows.length} — راجع الصفحة وأضف الناقص يدوياً`:undefined;
+      pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:Math.max(gridRows.length,printedRows),extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,warning,
+        reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
     }else{
       const grid=await spreadColumns(upright);
       await lanePool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
@@ -3742,7 +3746,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      Keep the established page-scoped rescue, but reuse the same proven worker
      pool rather than spawning a second OCR engine. Clean pages are never re-read,
      and a weak page cannot make the rest of the document pay a retry. */
-  const suspiciousIndexes=pages.map((page,index)=>page?.diagnostic?.suspicious?index:-1).filter(index=>index>=0);
+  const suspiciousIndexes=pages.map((page,index)=>page?.diagnostic?.suspicious||page?.diagnostic?.warning?index:-1).filter(index=>index>=0);
   if(suspiciousIndexes.length){
     onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${suspiciousIndexes.length} صفحة تحتاج مراجعة دقيقة`});
     let rescuedCount=0;
@@ -3757,7 +3761,9 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
          quarter-turns only if they improve the number of semantically useful
          rows. This is the conservative Safe Path behind the fast lanes. */
       const scanOrientationLocked=cachedPreflight?.header.source==="scan"&&!cachedPreflight.header.requiresLandscapeUpload;
-      const rescueTurns=scanOrientationLocked?[bestOrientation]:[bestOrientation,-1,0,1] as Array<-1|0|1>;
+      /* صفحةٌ عليها تنبيهٌ فقط تكفيها القراءةُ المحسّنة أدناه؛ إعادةُ قراءة شبكتها
+         كاملةً تضاعف الوقت ولا تُضيف. */
+      const rescueTurns=!pages[index]?.diagnostic?.suspicious?[] as Array<-1|0|1>:scanOrientationLocked?[bestOrientation]:[bestOrientation,-1,0,1] as Array<-1|0|1>;
       for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
@@ -3793,9 +3799,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         const printedRows=pagePrintedRows[index]||0;
         const missedRows=printedRows>bestRows.length;
         const brokenRows=unreadableIdentityRows(bestRows);
-        const suspicious=(bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55))||missedRows||brokenRows>0;
-        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:Math.max(bestRows.length,printedRows),extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,
-          reason:brokenRows>0?`في الصفحة ${brokenRows} صفاً غير واضح (رقم المقرر أو الأيام والوقت)؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:missedRows?`في الصفحة ${printedRows} سطراً مطبوعاً ولم يُقرأ منها إلا ${bestRows.length}؛ المسح غير واضح بما يكفي — ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)`:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+        const suspicious=bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55);
+        const warning=brokenRows>0?`${brokenRows===1?"صفٌّ واحد":`${brokenRows} صفوف`} لم يتضح فيها رقم المقرر أو الأيام والوقت — خاناتها فارغة للمراجعة`:missedRows?`فيها ${printedRows} أسطر مطبوعة قُرئ منها ${bestRows.length} — راجع الصفحة وأضف الناقص يدوياً`:undefined;
+        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:Math.max(bestRows.length,printedRows),extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,warning,
+          reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
         scores[index]=Math.min(92,60+bestFilled*2);
         if(index===0&&(!texts[index]||!parseAuthorityHeaderText(texts[index]).term||!parseAuthorityHeaderText(texts[index]).branch||!parseAuthorityHeaderText(texts[index]).department)){
           const cachedHeader=cachedPreflight?.header;

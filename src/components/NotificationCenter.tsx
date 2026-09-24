@@ -122,8 +122,9 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
   const mineCount = items.filter(item => item.tone === "alert" || item.tone === "action").length;
   useEffect(() => {
     const base = document.title.replace(/^\(\d+\+?\)\s*/, "");
-    document.title = mineCount ? `(${mineCount > 99 ? "99+" : mineCount}) ${base}` : base;
-  }, [mineCount]);
+    const unread = items.filter(item => (item.tone === "alert" || item.tone === "action") && !seen.has(item.id)).length;
+    document.title = unread ? `(${unread > 99 ? "99+" : unread}) ${base}` : base;
+  }, [items, seen]);
 
   useEffect(() => {
     if (!open) return;
@@ -151,6 +152,9 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
 
   const mine = mineCount;
   const fresh = items.filter(item => !seen.has(item.id)).length;
+  /* رقمُ الجرس هو المطلوبُ منك الذي لم تقرأه بعد: يقلّ مع كل إشعارٍ تضغطه ويختفي بـ«قراءة الكل»،
+     ويعود إن جدّ أمرٌ جديد. */
+  const unreadMine = items.filter(item => (item.tone === "alert" || item.tone === "action") && !seen.has(item.id)).length;
   const groups = useMemo(() => GROUPS
     .map(group => ({ ...group, rows: items.filter(item => group.tones.includes(item.tone)) }))
     .filter(group => group.rows.length), [items]);
@@ -167,7 +171,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
         data-fresh={fresh > 0 ? "true" : undefined}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={mine ? `الإشعارات — ${mine} مطلوبٌ منك` : "الإشعارات"}
+        aria-label={unreadMine ? `الإشعارات — ${unreadMine} غير مقروء` : "الإشعارات"}
         title="الإشعارات"
         data-guide-ignore="مركز الإشعارات يعرض ما بقي ولا يعدّل البيانات"
         onClick={() => {
@@ -177,7 +181,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
         }}
       >
         <Bell aria-hidden="true" />
-        {mine ? <b className="notify-count">{mine > 99 ? "99+" : mine}</b> : fresh ? <i className="notify-dot" aria-hidden="true" /> : null}
+        {unreadMine ? <b className="notify-count">{unreadMine > 99 ? "99+" : unreadMine}</b> : fresh ? <i className="notify-dot" aria-hidden="true" /> : null}
       </button>
       {open ? (
         <div ref={panelRef} className="notify-panel no-print" role="dialog" aria-label="مركز الإشعارات">
