@@ -531,7 +531,17 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
        corridor when possible, then fall back to the proven whole row. */
     const semanticRowText=rtlText(row);
     const located=extractAuthorityLocationEvidence(semanticRowText);
-    const buildingWord=located.building?rowAsc.find(word=>asciiOf(word).replace(/[^A-Z0-9]/gi,"").toUpperCase().includes(located.building)):undefined;
+    const locatedWord=located.building?rowAsc.find(word=>asciiOf(word).replace(/[^A-Z0-9]/gi,"").toUpperCase().includes(located.building)):undefined;
+    /* خلية المبنى نفسها: كلمة بشكل الكود (3 أرقام، حرف الموقع، رقمان) بين
+       الوقت والقاعة. المسح يقرأ B «8» («011818») فلا يعرفها المستخرج، وكانت
+       شريحة ثابتة تلصق بها الساعة («0118180800»). تُؤخذ الكلمة كما هي،
+       ويبقى ترميم الحرف للسجل وحده (كود وحيد في الفرع). */
+    const cellBuildingWord=rowAsc.find(word=>{
+      const x=center(word);
+      return x>activityX&&x<(roomWindow?.from??pageWidth*.40)&&/^\d{3}[A-Z0-9]\d{2}$/.test(asciiOf(word).replace(/[^A-Z0-9]/gi,"").toUpperCase());
+    });
+    const buildingWord=locatedWord&&(!cellBuildingWord||cellBuildingWord===locatedWord)?locatedWord:(cellBuildingWord||locatedWord);
+    if(buildingWord&&buildingWord!==locatedWord)located.building=cleanBuildingCode(asciiOf(buildingWord).replace(/[^A-Z0-9]/gi,"").toUpperCase())||"";
     const buildingX=buildingWord?center(buildingWord):Math.min(pageWidth*.42,activityX+pageWidth*.20);
     const timeWords=row.filter(word=>center(word)>activityX&&center(word)<buildingX);
     let timeRaw=toAscii(rtlText(timeWords));
@@ -1699,6 +1709,7 @@ async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence
   const rows=authorityPdfTextGridRows(prepared,842,"semantic").map(row=>({...row,sourceMode:"ocr-grid" as const}));
   const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
   try{await rereadDayCells(source,width,prepared,rows);}catch{/* the lane's own day reading stands */}
+  try{await rereadRoomCells(source,width,prepared,rows);}catch{/* the lane's own room reading stands */}
   return{rows,bodyEvidence};
 }
 /* ── إعادة قراءة خلية الأيام وحدها ─────────────────────────────────────────
@@ -1722,6 +1733,55 @@ export function authorityPrintedDayRun(text:string):string{
   const run=digits.replace(/\s+/g,"");
   for(let i=1;i<run.length;i++)if(Number(run[i-1])<=Number(run[i]))return "";
   return run.split("").join(" ");
+}
+/* ── إعادة قراءة خلية القاعة وحدها ────────────────────────────────────────
+   حرف الطابق (G/F) يسقط في قراءة الصفحة: «07» لا تُعرف أهي G07 أم F07.
+   تُقصّ الخلية يمين كلمة المبنى على سطر الرقم المرجعي وتُقرأ بحروف القاعات
+   وأرقامها فقط. تُقبل بشكل القاعة الكامل (حرف ورقمان) وحده؛ وإن كان ما قرأه
+   الطريق نفسه قاعةً كاملة تخالفها لا تُرجَّح إحداهما فتُفرَّغ للمراجعة. والسجل
+   يتحقق بعدها أن القاعة موجودة في ذلك المبنى. */
+let roomCellWorkerPromise:Promise<PooledWorker>|null=null;
+async function getRoomCellWorker(){
+  if(!roomCellWorkerPromise)roomCellWorkerPromise=retryOnFailure((async()=>{
+    const worker=await newOcrWorker("eng");
+    await worker.setParameters({tessedit_pageseg_mode:"7" as any,tessedit_char_whitelist:"FGTS0123456789"});
+    return worker;
+  })(),()=>{roomCellWorkerPromise=null;});
+  return roomCellWorkerPromise;
+}
+export function authorityPrintedRoomCell(text:string):string{
+  const cell=String(text||"").replace(/\s+/g,"").toUpperCase();
+  return /^[FGT]\d{2}$/.test(cell)?cell:"";
+}
+async function rereadRoomCells(source:Buffer,imageWidth:number,words:Word[],rows:GridRow[]){
+  if(!rows.length)return;
+  const lib=await canvas();
+  const image=await lib.loadImage(source);
+  const worker=await getRoomCellWorker();
+  const scale=842/Math.max(1,imageWidth);
+  for(const row of rows){
+    const anchors=words.filter(word=>toAscii(word.text)===row.reference);
+    if(!row.reference||anchors.length!==1)continue;
+    const anchor=anchors[0];
+    const yc=(anchor.y0+anchor.y1)/2,h=Math.max(1,anchor.y1-anchor.y0);
+    const building=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&/^\d{3}[A-Z0-9]\d{2}$/.test(toAscii(word.text).toUpperCase())).sort((a,b)=>a.x0-b.x0)[0];
+    if(!building)continue;
+    const x0=(building.x1+1)/scale,x1=(building.x1+842*.04)/scale;
+    const y0=Math.max(0,(yc-h*.55)/scale),y1=(yc+h*.55)/scale;
+    if(!(x1>x0&&y1>y0))continue;
+    const crop=lib.createCanvas(Math.round((x1-x0)*2),Math.round((y1-y0)*2));
+    const context=crop.getContext("2d");
+    context.fillStyle="#fff";context.fillRect(0,0,crop.width,crop.height);
+    context.drawImage(image,x0,y0,x1-x0,y1-y0,0,0,crop.width,crop.height);
+    const result:any=await worker.recognize(crop.toBuffer("image/png"));
+    const room=authorityPrintedRoomCell(String(result?.data?.text||""));
+    if(!room)continue;
+    /* قاعة رقمية كاملة (124) شكلٌ آخر للقاعات في فروع أخرى: لا يغيّرها القص. */
+    if(/^\d{3}$/.test(toAscii(String(row.hallRaw||row.hall||"")).replace(/\s+/g,"")))continue;
+    const lane=authorityPrintedRoomCell(toAscii(String(row.hallRaw||row.hall||"")).toUpperCase().replace(/(?<=[FGT])O/g,"0"));
+    const value=!lane||lane===room?room:"";
+    row.hall=value;row.hallRaw=value;
+  }
 }
 async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:GridRow[]){
   if(!rows.length)return;
