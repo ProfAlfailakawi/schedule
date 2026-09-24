@@ -58,6 +58,8 @@ check("a short registry name (first + family) resolves the full printed name",()
   assert.equal(match("احمد يوسف النصف",registry),10);
   assert.equal(match("احمد يوسف النصف",[person(1,"أحمد الكندري")]),undefined,"the family name must still agree");
   assert.equal(sameInstructorIdentity(instructorIdentityTokens("شجاع العتيبي"),instructorIdentityTokens("شجاع غازي شجاع العتيبي")),true);
+  for(const name of ["يوسف عبدالرحيم المهيني","د. يوسف عبد الرحيم المهيني","يوسف المهيني"])
+    assert.equal(match("يوسف عبد الرحيم محمد المهي",[person(20,name)]),20,`truncated family «المهي» for ${name}`);
 });
 check("a lone printed name is a first name, not any name in any position",()=>{
   assert.equal(match("سالم",[person(1,"يحيى سالم محمد")],[1]),undefined);
