@@ -3650,7 +3650,17 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
 
   /* المتقاعد وصاحب التفرغ يبقيان في تاريخ الجداول، لكن فصلاً جديداً لا يُسند
      إليهما آلياً — كما تستبعدهما قائمة الاختيار في المعاينة. */
-  const catalogue=instructors.filter(person=>!["retired","sabbatical"].includes(String((person as any)?.AdInstructorStatus||""))).map(person=>({
+  /* سجلان بالرقم المدني نفسه شخصٌ واحد: يُحتفظ بأقدمهما ولا يُعدّان التباساً. */
+  const civilSeen=new Map<string,number>();
+  for(const person of [...instructors].sort((a,b)=>Number(a.AdInstructorId)-Number(b.AdInstructorId))){
+    const civil=String((person as any)?.AdInstructorCivil||"").replace(/\D/g,"");
+    if(civil.length>=8&&!civilSeen.has(civil))civilSeen.set(civil,Number(person.AdInstructorId));
+  }
+  const sameCivilDuplicate=(person:AdInstructor)=>{
+    const civil=String((person as any)?.AdInstructorCivil||"").replace(/\D/g,"");
+    return civil.length>=8&&civilSeen.get(civil)!==Number(person.AdInstructorId);
+  };
+  const catalogue=instructors.filter(person=>!sameCivilDuplicate(person)).filter(person=>!["retired","sabbatical"].includes(String((person as any)?.AdInstructorStatus||""))).map(person=>({
     person,
     normalized:identityTokens(person.AdInstructorName).join(" "),
     tokens:identityTokens(person.AdInstructorName),
@@ -3773,6 +3783,26 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
       if(lastOk&&headOk&&candidate[observed.length-1]!==printedLast){
         const exactCount=headExact+(last===printedLast?1:0);
         return{total:observed.length,exactCount,stemCount:observed.length-exactCount};
+      }
+    }
+    /* ── السجل يحفظ الاسم المختصر: الأول والعائلة ───────────────────────────
+       «د. شجاع العتيبي» لمطبوعٍ «شجاع غازي شجاع العتيبي»، و«أحمد النصف» لـ
+       «احمد يوسف النصف». أسماء السجل كلها واردة في المطبوع بترتيبها: الأول
+       أولاً والعائلة آخراً، وما بينهما أسماء وسطى لم يحفظها السجل. لا تناقض
+       هنا — السجل لم يذكر اسماً يخالف المطبوع. */
+    if(candidate.length>=2&&candidate.length<observed.length){
+      const last=candidate[candidate.length-1],printedLast=observed[observed.length-1];
+      const firstOk=candidate[0]===observed[0]||oneEditApart(candidate[0],observed[0]);
+      const lastOk=last===printedLast||(printedLast.length>=3&&last.startsWith(printedLast));
+      let at=1,inner=0;
+      for(let i=1;i<candidate.length-1;i++){
+        while(at<observed.length-1&&observed[at]!==candidate[i])at++;
+        if(at>=observed.length-1)break;
+        inner++;at++;
+      }
+      if(firstOk&&lastOk&&inner===candidate.length-2){
+        const exactCount=(candidate[0]===observed[0]?1:0)+(last===printedLast?1:0)+inner;
+        return{total:candidate.length,exactCount,stemCount:candidate.length-exactCount};
       }
     }
     const n=Math.min(candidate.length,observed.length);

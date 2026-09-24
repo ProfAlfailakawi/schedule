@@ -49,6 +49,16 @@ check("proven forms still resolve: truncated family, first+family, family-first 
   assert.equal(match("د.عبدالله محمد حسن",[person(1,"د. عبدالله محمد حسن")]),1);
   assert.equal(match("يحيى سالم",[person(1,"يحيى سالم محمد العنزي")],[1]),1);
 });
+check("a short registry name (first + family) resolves the full printed name",()=>{
+  const registry=[person(5,"د. سعد الحيص",{AdInstructorCivil:"100000000005"}),person(6,"د. غازي عوض العتيبي",{AdInstructorCivil:"100000000006"}),
+    person(7,"د. شجاع العتيبي",{AdInstructorCivil:"100000000007"}),person(8,"د. شجاع العتيبي",{AdInstructorCivil:"100000000007"}),
+    person(9,"د جمال يوسف أحمد الحجي",{AdInstructorCivil:"100000000009"}),person(10,"أحمد النصف",{AdInstructorCivil:"100000000010"})];
+  assert.equal(match("سعد خالد بريجان الحيص",registry),5);
+  assert.equal(match("شجاع غازي شجاع العتيبي",registry),7,"two records with one civil ID are one person");
+  assert.equal(match("احمد يوسف النصف",registry),10);
+  assert.equal(match("احمد يوسف النصف",[person(1,"أحمد الكندري")]),undefined,"the family name must still agree");
+  assert.equal(sameInstructorIdentity(instructorIdentityTokens("شجاع العتيبي"),instructorIdentityTokens("شجاع غازي شجاع العتيبي")),true);
+});
 check("a lone printed name is a first name, not any name in any position",()=>{
   assert.equal(match("سالم",[person(1,"يحيى سالم محمد")],[1]),undefined);
 });
