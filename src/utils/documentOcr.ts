@@ -1685,10 +1685,19 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
   for(const word of raw){
     /* Tesseract يلفّ الكلمة العربية بعلامات اتجاه خفية (U+200F … U+200E)؛
        «‏محاضر‎» بها لا تُعرف كلمة نشاط، فتضيع الأيام المجاورة لها. */
-    const text=String(word?.text||"").normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,"").trim();if(!text)continue;
+    let text=String(word?.text||"").normalize("NFKC").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,"").trim();if(!text)continue;
+    /* ملتصقات الوقت والمبنى تحمل أثر خط الجدول («-1230011B16/»، «1400011B18)»):
+       تُنزع علامات الأطراف وحدها، وتبقى الشرطة الأولى قطعةً مستقلة. */
+    const leadDash=/^[-–—]\d{4}\d{3}[A-Za-z0-9]\d{2}/.test(toAscii(text));
+    const stripped=toAscii(text).replace(/^[-–—,()/\\|]+|[,()/\\|.]+$/g,"");
+    if(/^\d{4}(?:[-–—]\d{4})?\d{3}[A-Za-z0-9]\d{2}$/.test(stripped))text=stripped;
+    /* «FO7»: حرف الطابق ثم O في موضع الصفر هو «F07» — في المسح وحده. */
+    if(/^[FGTS]O\d{1,2}$/i.test(toAscii(text)))text=toAscii(text).toUpperCase().replace(/^([FGTS])O/,"$10");
     const ascii=toAscii(text);
     let m:RegExpMatchArray|null;const pieces:string[]=[];
-    if((m=ascii.match(/^(\d{4,6})(0\d{6})$/)))pieces.push(m[1],m[2]);                 // CRN + course key
+    if(leadDash&&text===stripped)pieces.push("-");
+    if((m=ascii.match(/^(\d{4})[-–—](\d{4})(\d{3}[A-Za-z0-9]\d{2})$/)))pieces.push(m[1],"-",m[2],m[3]);   // clock - clock + building
+    else if((m=ascii.match(/^(\d{4,6})(0\d{6})$/)))pieces.push(m[1],m[2]);                 // CRN + course key
     else if((m=ascii.match(/^([0-2]\d[0-5]\d)(\d{3}[A-Za-z]\d{2})$/)))pieces.push(m[1],m[2]); // clock + building
     else if((m=ascii.match(/^(\d{3}[A-Za-z]\d{2})([0-2]\d[0-5]\d)$/)))pieces.push(m[1],m[2]);
     else if((m=ascii.match(/^([0-2]\d[0-5]\d)(0\d{5})$/)))pieces.push(m[1],m[2]);      // clock + building (letter read as digit)
@@ -1713,6 +1722,7 @@ async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence
   const rows=authorityPdfTextGridRows(prepared,842,"semantic").map(row=>({...row,sourceMode:"ocr-grid" as const}));
   const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
   try{await rereadDayCells(source,width,prepared,rows);}catch{/* the lane's own day reading stands */}
+  try{await rereadTimeCells(source,width,prepared,rows);}catch{/* the lane's own time reading stands */}
   try{await rereadRoomCells(source,width,prepared,rows);}catch{/* the lane's own room reading stands */}
   return{rows,bodyEvidence};
 }
@@ -1769,8 +1779,11 @@ async function rereadRoomCells(source:Buffer,imageWidth:number,words:Word[],rows
     const anchor=anchors[0];
     const yc=(anchor.y0+anchor.y1)/2,h=Math.max(1,anchor.y1-anchor.y0);
     const building=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&/^\d{3}[A-Z0-9]\d{2}$/.test(toAscii(word.text).toUpperCase())).sort((a,b)=>a.x0-b.x0)[0];
-    if(!building)continue;
-    const x0=(building.x1+1)/scale,x1=(building.x1+842*.04)/scale;
+    /* موضع المبنى من قصّ الشريط تقديريٌّ بحرف: يبدأ القصّ قبله بقليل، وشكل
+       القاعة الصارم (حرف ورقمان) يرفض أي بقية من كود المبنى. */
+    const buildingRight=building?building.x1+1:(stripBuildingRight.has(row)?stripBuildingRight.get(row)!-3:undefined);
+    if(buildingRight===undefined)continue;
+    const x0=buildingRight/scale,x1=(buildingRight+842*.04)/scale;
     const y0=Math.max(0,(yc-h*.55)/scale),y1=(yc+h*.55)/scale;
     if(!(x1>x0&&y1>y0))continue;
     const crop=lib.createCanvas(Math.round((x1-x0)*2),Math.round((y1-y0)*2));
@@ -1781,12 +1794,75 @@ async function rereadRoomCells(source:Buffer,imageWidth:number,words:Word[],rows
     const room=authorityPrintedRoomCell(String(result?.data?.text||""));
     if(!room)continue;
     /* قاعة رقمية كاملة (124) شكلٌ آخر للقاعات في فروع أخرى: لا يغيّرها القص. */
-    if(/^\d{3}$/.test(toAscii(String(row.hallRaw||row.hall||"")).replace(/\s+/g,"")))continue;
+    if(/^[1-9]\d{2}$/.test(toAscii(String(row.hallRaw||row.hall||"")).replace(/\s+/g,"")))continue;
     const lane=authorityPrintedRoomCell(toAscii(String(row.hallRaw||row.hall||"")).toUpperCase().replace(/(?<=[FGTS])O/g,"0"));
     const value=!lane||lane===room?room:"";
     row.hall=value;row.hallRaw=value;
   }
 }
+/* ── إعادة قراءة شريط الوقت والمبنى ───────────────────────────────────────
+   الساعة الأولى وكود المبنى يسقطان أحياناً من قراءة الصفحة كاملة. لصفٍّ بلا
+   وقت فقط: يُقصّ الشريط يمين كلمة النشاط على سطر رقمه المرجعي، ويُقرأ أرقاماً
+   وحروف مواقع. يُقبل الوقت زوجاً مكتملاً بشرطته يجتاز فحص المدة في timePair،
+   والمبنى يُملأ فقط إن كانت خليته فارغة، خاماً يحكم عليه السجل. */
+let timeCellWorkerPromise:Promise<PooledWorker>|null=null;
+async function getTimeCellWorker(){
+  if(!timeCellWorkerPromise)timeCellWorkerPromise=retryOnFailure((async()=>{
+    const worker=await newOcrWorker("eng");
+    await worker.setParameters({tessedit_pageseg_mode:"7" as any,tessedit_char_whitelist:"0123456789-ABFGJTS "});
+    return worker;
+  })(),()=>{timeCellWorkerPromise=null;});
+  return timeCellWorkerPromise;
+}
+export function authorityTimeStripRead(text:string):{start:string;end:string;timeRaw:string;buildingRaw:string}|null{
+  const strip=String(text||"").toUpperCase();
+  const m=strip.match(/^\s*(\d{4})\s*-\s*(\d{4})\s*(\d{3}[A-Z0-9]\d{2})?(?![0-9])/);
+  if(!m)return null;
+  const timeRaw=`${m[1]} - ${m[2]}`;
+  const pair=timePair(timeRaw);
+  if(!pair)return null;
+  return{start:pair.start,end:pair.end,timeRaw,buildingRaw:m[3]||""};
+}
+async function rereadTimeCells(source:Buffer,imageWidth:number,words:Word[],rows:GridRow[]){
+  const pending=rows.filter(row=>!row.start&&row.reference);
+  if(!pending.length)return;
+  const lib=await canvas();
+  const image=await lib.loadImage(source);
+  const worker=await getTimeCellWorker();
+  const scale=842/Math.max(1,imageWidth);
+  const activity=/^(محاضر|مختبر|تمارين|كلينيكي|عملي|نظري|ورش|تدريب)/;
+  for(const row of pending){
+    const anchors=words.filter(word=>toAscii(word.text)===row.reference);
+    if(anchors.length!==1)continue;
+    const anchor=anchors[0];
+    const yc=(anchor.y0+anchor.y1)/2,h=Math.max(1,anchor.y1-anchor.y0);
+    const act=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&activity.test(String(word.text||"").normalize("NFKC"))).sort((a,b)=>a.x0-b.x0)[0];
+    if(!act)continue;
+    const x0=(act.x1+1)/scale,x1=(act.x1+842*.135)/scale;
+    const y0=Math.max(0,(yc-h*.55)/scale),y1=(yc+h*.55)/scale;
+    if(!(x1>x0&&y1>y0))continue;
+    const crop=lib.createCanvas(Math.round((x1-x0)*2),Math.round((y1-y0)*2));
+    const context=crop.getContext("2d");
+    context.fillStyle="#fff";context.fillRect(0,0,crop.width,crop.height);
+    context.drawImage(image,x0,y0,x1-x0,y1-y0,0,0,crop.width,crop.height);
+    const result:any=await worker.recognize(crop.toBuffer("image/png"),{},{blocks:true});
+    const read=authorityTimeStripRead(String(result?.data?.text||""));
+    if(!read)continue;
+    row.start=read.start;row.end=read.end;row.timeRaw=read.timeRaw;
+    if(read.buildingRaw&&!row.building&&!/^\d{3}[A-Z0-9]\d{2}$/.test(toAscii(String(row.buildingRaw||"")).toUpperCase())){
+      row.buildingRaw=read.buildingRaw;
+      /* موضع المبنى من القصّ نفسه: مرساة قصّ القاعة لصفٍّ لم تجد قراءةُ الصفحة
+         كلمةَ مبناه. */
+      const stripWords:any[]=[];
+      for(const block of result?.data?.blocks||[])for(const paragraph of block.paragraphs||[])for(const line of paragraph.lines||[])for(const item of line.words||[])stripWords.push(item);
+      const last=stripWords.filter(item=>String(item.text||"").toUpperCase().includes(read.buildingRaw)).sort((a,b)=>b.bbox.x1-a.bbox.x1)[0];
+      if(last)stripBuildingRight.set(row,x0*scale+(last.bbox.x1/2)*scale);
+    }
+  }
+}
+/* A row whose building the page lane missed but the time strip read: its
+   building's right edge (page units), the room crop's anchor. */
+const stripBuildingRight=new WeakMap<GridRow,number>();
 async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:GridRow[]){
   if(!rows.length)return;
   const lib=await canvas();
