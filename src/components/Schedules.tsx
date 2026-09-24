@@ -132,6 +132,7 @@ import {
 } from "../utils/scheduleViews";
 import ScheduleTransfer from "./ScheduleTransfer";
 import VisitingBadge from "./VisitingBadge";
+import { usePageAwake } from "../utils/pageAwake";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
 import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
@@ -7823,8 +7824,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   useEffect(() => {
     liveBusy.current = saving || editor !== "index" || Boolean(physicsActive) || Boolean(draggingId);
   }, [saving, editor, physicsActive, draggingId]);
+  /* The stream sleeps with the tab (see pageAwake.ts): an open stream is billed
+     server time, and a board nobody is looking at has nothing to show. */
+  const pageAwake = usePageAwake();
+  const liveStreamOpenedBefore = useRef(false);
   useEffect(() => {
-    if (mode !== "schedule" || !workspaceReady || typeof EventSource === "undefined") return;
+    if (mode !== "schedule" || !workspaceReady || !pageAwake || typeof EventSource === "undefined") return;
     let refreshTimer = 0;
     /* The scope goes on the URL so the server knows which board this stream is
        watching from the first byte. It is read from the ref, not the filter
@@ -7876,7 +7881,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       refreshTimer = window.setTimeout(refreshQuietly, 250);
       setLiveFeedSerial(current => current + 1);
     });
-    source.onopen = () => setLiveFeed(true);
+    /* Waking from a sleep missed whatever colleagues saved meanwhile — one quiet
+       re-read on the first open after a sleep closes that gap. */
+    const wokeFromSleep = liveStreamOpenedBefore.current;
+    let caughtUp = false;
+    source.onopen = () => {
+      setLiveFeed(true);
+      liveStreamOpenedBefore.current = true;
+      if (wokeFromSleep && !caughtUp) { caughtUp = true; refreshQuietly(); }
+    };
     source.onerror = () => setLiveFeed(false);
     return () => {
       window.clearTimeout(refreshTimer);
@@ -7887,7 +7900,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       source.close();
       setLiveFeed(false);
     };
-  }, [mode, workspaceReady]);
+  }, [mode, workspaceReady, pageAwake]);
   /* Who is here is the only part of presence allowed to be React state — it
      changes when someone arrives or leaves, not when they move. */
   useEffect(() => presence.onRoster(setPeers), [presence]);

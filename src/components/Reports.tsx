@@ -26,6 +26,7 @@ import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
 import VisitingBadge from "./VisitingBadge";
+import { usePageAwake } from "../utils/pageAwake";
 import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
 
 /**
@@ -745,10 +746,17 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     });
     reportEventsRef.current = source;
   }, [readScope]);
+  /* The stream sleeps with the tab (see pageAwake.ts); waking re-reads once so
+     nothing saved during the sleep is missed. */
+  const pageAwake = usePageAwake();
+  const reportStreamOpenedBefore = useRef(false);
   useEffect(() => {
+    if (!pageAwake) return;
+    if (reportStreamOpenedBefore.current) void readScope(undefined, true);
+    reportStreamOpenedBefore.current = true;
     openReportEvents();
     return closeReportEvents;
-  }, [openReportEvents, closeReportEvents]);
+  }, [pageAwake, openReportEvents, closeReportEvents, readScope]);
 
   useEffect(() => {
     if (!sections.length || isPowerAdmin || !filters.collegeId) return;
