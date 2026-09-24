@@ -7,7 +7,7 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
@@ -181,6 +181,24 @@ check("a re-read room cell is accepted only as a full floor-letter room",()=>{
   assert.equal(authorityPrintedRoomCell("25"),"","a lost floor letter is not a room");
   assert.equal(authorityPrintedRoomCell("G0T"),"");
   assert.equal(authorityPrintedRoomCell("S07"),"S07","an S-floor room is a full room, so a conflicting crop blanks it");
+});
+
+check("a scanned clock welded to its building splits with table-rule marks removed",()=>{
+  const split=(text:string)=>authorityOcrWordsToWords([{text,x0:0,y0:0,x1:100,y1:10}],842).map(w=>w.text);
+  assert.deepEqual(split("-1230011B16/"),["-","1230","011B16"]);
+  assert.deepEqual(split("1400011B18)"),["1400","011B18"]);
+  assert.deepEqual(split("1350-1230011B18"),["1350","-","1230","011B18"]);
+  assert.deepEqual(split("FO7"),["F07"]);
+  assert.deepEqual(split("1100"),["1100"]);
+  assert.deepEqual(split("0118518"),["0118518"],"an unknown weld is left for review");
+});
+check("a re-read time strip is accepted only as a dashed, plausible clock pair",()=>{
+  const read=authorityTimeStripRead("1350 - 1300022701 1");
+  assert.equal(read?.start,"13:00");assert.equal(read?.end,"13:50");assert.equal(read?.buildingRaw,"022701");
+  assert.equal(authorityTimeStripRead("0920 -0800011B18 F0")?.start,"08:00");
+  assert.equal(authorityTimeStripRead("1350 1300"),null,"no dash, no pair");
+  assert.equal(authorityTimeStripRead("135 - 1300"),null);
+  assert.equal(authorityTimeStripRead(""),null);
 });
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));
