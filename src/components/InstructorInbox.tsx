@@ -303,6 +303,27 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
           </span>
         ) : null}
         {row.status === "settled" ? <Badge tone="success">انتهى</Badge> : null}
+        {/* ── إبلاغُ الأستاذ بالقرار ──────────────────────────────────────
+            حين يُقرَّر بندٌ واحدٌ على الأقل: رسالةُ واتساب جاهزة تعدّ ما ثُبّت
+            وما رُفض، ومعها رابطُه نفسه ليرى التفاصيل والبدائل. */}
+        {(() => {
+          const decidedItems = (row.items || []).filter(item => item.action !== "keep" && !(item as any).hidden && item.decision?.state);
+          if (!decidedItems.length) return null;
+          const fixed = decidedItems.filter(item => item.decision?.state === "fixed").length;
+          const rejected = decidedItems.length - fixed;
+          const summary = [fixed ? `ثُبّت: ${countOf(fixed, AR.change)}` : "", rejected ? `رُفض: ${countOf(rejected, AR.change)}` : ""].filter(Boolean).join(" · ");
+          const reach = reachAboutCard(
+            { AdInstructorName: row.instructorName, AdInstructorMobile: row.instructorMobile },
+            `${location.origin}/r/${row.linkId}`, "decided", summary,
+          );
+          return reach.href ? (
+            <a className="request-notify" href={reach.href} target="_blank" rel="noreferrer noopener" title="رسالة واتساب جاهزة بالقرار ورابط الطلب">
+              <Send aria-hidden="true" /> أبلغ الأستاذ
+            </a>
+          ) : (
+            <span className="request-notify" data-blocked="true" title={reach.blocked || ""}><Send aria-hidden="true" /> لا رقم جوّال</span>
+          );
+        })()}
         </div>
       </header>
 
@@ -442,6 +463,12 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
                 </li>
               ))}
             </ul>
+          ) : null}
+          {(item as any).awaitedElsewhere && !decided ? (
+            <p className="request-depends" data-tone="linked">
+              <ArrowRight aria-hidden="true" />
+              <span>قسمٌ آخر ينتظر هذا {item.action === "delete" ? "الحذف" : "النقل"} ليُكمل طلبَ الأستاذ — ثبّته أولاً.</span>
+            </p>
           ) : null}
           {dependsOn.length && !decided ? (
             <p className="request-depends">
