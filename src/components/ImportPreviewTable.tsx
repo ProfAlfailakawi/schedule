@@ -71,6 +71,9 @@ export const importRowKey = (row: ImportRow) =>
    is still shown — on the row number — rather than dropped. */
 export const importIssueField = (message: string): EvidenceKey | "" => {
   const text = String(message || "");
+  /* حجز الأستاذ المزدوج خطؤه في الوقت لا في الاسم: الاسم صحيح، والوقت هو ما
+     يضعه في مكانين. فالتنبيه يقع على خلية الوقت كي يُعدَّل ما هو خطأ فعلاً. */
+  if (/حجز مزدوج لأستاذ|لديه محاضرة متداخلة/.test(text)) return "time";
   if (/قاعة|القاعة/.test(text)) return "room";
   if (/مبنى|المبنى/.test(text)) return "building";
   if (/أستاذ|الأستاذ/.test(text)) return "instructor";
