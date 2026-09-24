@@ -19,7 +19,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, ClipboardList, Clock3, Search, X } from "lucide-react";
+import { Check, CheckCheck, ClipboardList, Clock3, Download, Search, X } from "lucide-react";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
@@ -216,6 +216,19 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
     })();
   }, []);
 
+  /* جاء من إشعار: يفتح على قسم الإشعار نفسه، لا على نطاقٍ فارغ. */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("schedule:notify-focus");
+      if (!raw) return;
+      const focus = JSON.parse(raw);
+      if (focus?.view !== "studentRegistration") return;
+      sessionStorage.removeItem("schedule:notify-focus");
+      if (Date.now() - Number(focus.at || 0) > 60000) return;
+      if (Number(focus.collegeId)) { setCollegeId(Number(focus.collegeId)); setSectionId(Number(focus.sectionId) || 0); }
+    } catch { /* لا شيء */ }
+  }, []);
+
   useEffect(() => {
     /* ومن له الكلُّ لا يُختار له شيء. */
     if (collegeId || powerAdmin || !scopes.length) return;
@@ -299,6 +312,29 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
     for (const row of rows || []) for (const course of row.courses) counts[statusOf(course)] = (counts[statusOf(course)] || 0) + 1;
     return counts;
   }, [rows]);
+
+  /* ── تصديرُ ما يُعرض، كما يُعرض ──────────────────────────────────────────
+     التسجيلُ يصفّي «بانتظار التسجيل» فيصدّر الكشفَ المعتمد جاهزاً للتسجيل،
+     واللجنةُ تصدّر ما تريد مراجعته. لا يُصدَّر إلا ما في الشاشة وبالتصفية
+     نفسها — فلا يخرج مقرّرٌ لم توافق عليه اللجنة في ملفّ التسجيل. */
+  const exportVisible = async () => {
+    const XLSX = await import("xlsx");
+    const headers = ["رقم الحالة", "اسم الطالب", "الرقم المدني", "رمز المقرر", "المقرر", "الحالة", "السبب", "ملاحظة"];
+    const body = visible.flatMap(row => row.courses
+      .filter(course => statusFilter === "all" || statusOf(course) === statusFilter)
+      .map(course => [
+        row.caseRef, row.name || "", row.civil || "", course.code || "", course.name || "",
+        course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE,
+        reasonLabel(course.reasonCode), course.note || "",
+      ]));
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...body]);
+    (sheet as any)["!cols"] = [{ wch: 11 }, { wch: 26 }, { wch: 14 }, { wch: 11 }, { wch: 30 }, { wch: 26 }, { wch: 22 }, { wch: 24 }];
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "كشف التسجيل");
+    const section = sectionOptions.find(item => item.value === sectionId)?.label || "القسم";
+    const term = (terms || []).find(item => Number(item.AdTermId) === termId)?.AdTermName || "الفصل";
+    XLSX.writeFile(book, `كشف_التسجيل_${section}_${term}.xlsx`.replace(/[\\/*?:"<>|]/g, "_"));
+  };
 
   /* موافقةُ اللجنة على كل ما ينتظرها في طلب طالبٍ واحد — لا على الكشف كله:
      النظرُ في كل طالب هو عملُ اللجنة، والزرُّ يختصر النقرات لا المراجعة. */
@@ -390,6 +426,14 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
           </Surface>
 
           <div className="registration-filter" role="group" aria-label="تصفية حسب الحالة">
+            <button
+              type="button" className="changes-chip registration-export"
+              disabled={!visible.length}
+              onClick={() => void exportVisible()}
+              data-guide-ignore="تصدير ما يُعرض إلى Excel — لا يغيّر شيئاً"
+            >
+              <Download aria-hidden="true" /> تصدير Excel
+            </button>
             {([
               ["all", "الكل"],
               ...(viewer !== "registration" ? [["pending", PENDING_COMMITTEE], ["committee-rejected", "لم توافق اللجنة"]] : []),

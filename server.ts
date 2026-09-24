@@ -9702,6 +9702,7 @@ app.delete("/api/schedule-notes/:id", requireAuth, async (req: AuthenticatedRequ
  * مركز الإشعارات: ما بقي لكل صاحب صفة، مشتقّاً من حال الجداول لحظةَ السؤال.
  * النطاق هنا هو النطاق في كل مكان — لا يرى أحدٌ إشعاراً عن قسمٍ خارج نطاقه.
  */
+const REGISTRAR_NOTIFY_ROLES = new Set(["registrarHead", "registrarStaff"]);
 app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const terms = await Repository.getTerms();
   const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
@@ -9762,9 +9763,37 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     const key = `${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`;
     rowsPer.set(key, (rowsPer.get(key) || 0) + 1);
   }
+  /* ── كشفُ التسجيل لكل قسم: مقرّراتُه هو ─────────────────────────────────
+     يُعدّ لمن يقرّر فيه: اللجنة (من يعمل على الجدول) والتسجيل. والمقرّرُ يُنسب
+     إلى القسم المالك له، كما يُعرض ويُكتب في الكشف نفسه. */
+  const registrarReader = REGISTRAR_NOTIFY_ROLES.has(role);
+  const studentQueueByScope = new Map<string, { pendingCommittee: number; awaitingRegistration: number; oldestPendingAt?: string; latestApprovedAt?: string }>();
+  if (handlesRequests || registrarReader) {
+    const [termNeeds, allCourses] = await Promise.all([Repository.getStudentNeedsForTerm(termId), Repository.getCourses()]);
+    const ownerOf = new Map((allCourses as any[]).map(row => [Number(row.AdCourseId), Number(row.AdSectionId || 0)]));
+    for (const need of termNeeds as any[]) {
+      const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
+      for (const id of need.courseIds || []) {
+        const owner = ownerOf.get(Number(id)) || 0;
+        if (!owner) continue;
+        const key = `${Number(need.AdCollegeId)}:${owner}`;
+        const entry = studentQueueByScope.get(key) || { pendingCommittee: 0, awaitingRegistration: 0 };
+        const state: any = states.get(Number(id));
+        if (!state) {
+          entry.pendingCommittee += 1;
+          const at = String(need.createdAt || "");
+          if (at && (!entry.oldestPendingAt || at < entry.oldestPendingAt)) entry.oldestPendingAt = at;
+        } else if (state.state === "awaiting-registration") {
+          entry.awaitingRegistration += 1;
+          if (!entry.latestApprovedAt || String(state.at || "") > entry.latestApprovedAt) entry.latestApprovedAt = String(state.at || "");
+        }
+        studentQueueByScope.set(key, entry);
+      }
+    }
+  }
   const active = inScope.filter(row => {
     const key = `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`;
-    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || department;
+    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || studentQueueByScope.has(key) || department;
   });
   const scopes = await Promise.all(active.map(async row => {
     const collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
@@ -9775,8 +9804,15 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
       : 0;
     const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
     const openRequests = pendingRequests.reduce((sum, entry) => sum + entry.count, 0);
+    const queue = studentQueueByScope.get(`${collegeId}:${sectionId}`);
+    /* التسجيلُ لا يُقال له عن كشفِ قسمٍ لم يوقَّع جدولُه — لا يُعرض له أصلاً. */
+    const studentQueue = queue ? {
+      ...queue,
+      pendingCommittee: handlesRequests ? queue.pendingCommittee : 0,
+      awaitingRegistration: registrarReader && !isFullySigned(approval) ? 0 : queue.awaitingRegistration,
+    } : undefined;
     return {
-      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests,
+      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue,
       collegeName: collegeName.get(collegeId) || "",
       sectionName: String(row.AdSectionName || ""),
       deadline: readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today),

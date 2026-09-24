@@ -54,5 +54,30 @@ check(/id === "dean" \|\| id === "viceDean"/.test(server), "المعتمد وح�
 check(server.includes('app.get("/api/notifications", requireAuth'), "مسار الإشعارات موجود");
 check(/isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId\)\)\);\s*const termDeadline/.test(server), "الإشعارات مقصورةٌ على نطاق الحساب");
 
+/* ── كشف التسجيل: اللجنةُ أولاً، ثم التسجيل ─────────────────────────────── */
+{
+  const now = Date.parse("2026-09-24T12:00:00Z");
+  const queued = (q: any) => scope({ status: "accepted", rounds: accepted, studentQueue: q } as any);
+  let list = buildNotifications({ role: "committeeChair", scopes: [queued({ pendingCommittee: 3, awaitingRegistration: 0, oldestPendingAt: "2026-09-23T10:00:00Z" })], now });
+  const committeeItem = list.find(item => item.view === "studentRegistration");
+  check(Boolean(committeeItem) && committeeItem!.tone === "action" && committeeItem!.title.includes("قرار اللجنة"),
+    "كشف التسجيل: اللجنةُ يُقال لها كم مقرّراً ينتظر قرارها");
+  list = buildNotifications({ role: "committeeChair", scopes: [queued({ pendingCommittee: 1, awaitingRegistration: 0, oldestPendingAt: "2026-09-18T10:00:00Z" })], now });
+  check(list.find(item => item.view === "studentRegistration")?.tone === "alert",
+    "ويصير تنبيهاً إذا انتظر أقدمُها أكثر من ثلاثة أيام");
+  list = buildNotifications({ role: "registrarStaff", scopes: [queued({ pendingCommittee: 4, awaitingRegistration: 0 })], now });
+  check(!list.some(item => item.view === "studentRegistration"),
+    "والتسجيلُ لا يُقال له عمّا لم توافق عليه اللجنة بعد");
+  list = buildNotifications({ role: "registrarStaff", scopes: [queued({ pendingCommittee: 0, awaitingRegistration: 2, latestApprovedAt: "2026-09-24T09:00:00Z" })], now });
+  const registrarItem = list.find(item => item.view === "studentRegistration");
+  check(Boolean(registrarItem) && registrarItem!.tone === "action" && registrarItem!.title.includes("وافقت لجنة"),
+    "والتسجيلُ يُقال له ما وافقت عليه اللجنة وينتظره");
+  const again = buildNotifications({ role: "registrarStaff", scopes: [queued({ pendingCommittee: 0, awaitingRegistration: 3, latestApprovedAt: "2026-09-24T11:00:00Z" })], now })
+    .find(item => item.view === "studentRegistration");
+  check(Boolean(again) && again!.id !== registrarItem!.id, "والدفعةُ الجديدة إشعارٌ جديد");
+  list = buildNotifications({ role: "committeeChair", scopes: [queued({ pendingCommittee: 0, awaitingRegistration: 5 })], now });
+  check(!list.some(item => item.view === "studentRegistration"), "واللجنةُ لا تُنبَّه بما سلّمته");
+}
+
 console.log(`\nNotification center audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
