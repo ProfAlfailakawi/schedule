@@ -3334,8 +3334,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
        خلاياه الأخرى فارغة للمراجعة: لا صف يضيع، ولا قيمة مشكوك فيها تدخل. */
     if(wordLane&&wordLane.rows.length&&soundScanRows(wordLane.rows)>soundScanRows(gridRows)){
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
-      const seenSections=new Set(wordLane.rows.map(row=>row.scode).filter(Boolean));
-      const missing=(gridRows||[]).filter(row=>!seen.has(`${row.reference}|${row.scode}`)&&!(row.scode&&seenSections.has(row.scode)))
+      const seenCourseSections=new Set(wordLane.rows.filter(row=>row.code&&row.scode).map(row=>`${row.code}|${row.scode}`));
+      const missing=(gridRows||[]).filter(row=>!seen.has(`${row.reference}|${row.scode}`)&&!(row.code&&row.scode&&seenCourseSections.has(`${row.code}|${row.scode}`)))
         .map(row=>({...row,days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",instructorText:""}));
       gridRows=[...wordLane.rows,...missing];
     }
@@ -3452,7 +3452,9 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));
   const pageDiagnostics=pages.map((page,index)=>page?.diagnostic||{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation,suspicious:true,reason:"لم تنتج الصفحة نتيجة قابلة للمراجعة"});
   const suspiciousExtraction=pageDiagnostics.some(page=>page.suspicious);
-  const allGrid=pageDiagnostics.every(page=>page.gridDetected);
+  /* صفحة الدليل الفارغة الموثّقة لا تُسقط المستند إلى فحص النص النثري. */
+  const emptyLegend=(page:typeof pageDiagnostics[number])=>!page.gridDetected&&!page.suspicious&&page.extractedRows===0&&page.reason==="صفحة بلا صفوف جدول";
+  const allGrid=pageDiagnostics.some(page=>page.gridDetected)&&pageDiagnostics.every(page=>page.gridDetected||emptyLegend(page));
   const proseLegibility=judgeLegibility(text,images.length,confidence);
   /* ocrDocument is also used by non-timetable documents. Preserve their prose
      legibility verdict here and expose table safety separately through
