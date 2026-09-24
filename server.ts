@@ -7,7 +7,7 @@ import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
-import { activeDataMode, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, withSerialLock , caseRefFor } from "./src/db/repository";
+import { activeDataMode, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
 import { DEMO_ROLE_ACCOUNTS } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
@@ -13326,8 +13326,16 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
   const rows = (await Promise.all(needs.map(async need => {
     const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
     /* التسجيلُ لا يرى ما لم تسلّمه اللجنة: لا المنتظرَ عندها ولا ما لم توافق عليه. */
-    const visibleCourseIds = (need.courseIds || []).filter((id: any) =>
-      viewer !== "registration" || reachedRegistration(states.get(Number(id))));
+    /* واللجنةُ ترى مقرّرات قسمها وحدها (أو ما لا يُعرف مالكه): الطلبُ القديم
+       لقسمين يُعرض على القسمين، وكلٌّ يقرّر في مقرّره هو. */
+    const visibleCourseIds = (need.courseIds || []).filter((id: any) => {
+      if (viewer === "registration") return reachedRegistration(states.get(Number(id)));
+      if (viewer === "committee") {
+        const owner = Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
+        return !owner || owner === sectionId;
+      }
+      return true;
+    });
     if (!visibleCourseIds.length) return null;
     return {
       id: String(need.id),
@@ -13445,26 +13453,30 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
      والتسجيلُ لا يقرّر في مقرّرٍ لم تسلّمه اللجنة، ولا تنقض اللجنةُ قراراً
      قاله التسجيل. وصاحبُ الصلاحية الكاملة يملك الجهتين. */
   const viewer = registrationViewer(req);
-  const current: any = (need.courseStates || []).find((entry: any) => Number(entry.courseId) === courseId);
   if (viewer === "committee") {
     if (state !== "awaiting-registration" && state !== "committee-rejected") {
       res.status(403).json({ error: "قرارُ «سُجّل» أو «رُدّ» للتسجيل. اللجنةُ توافق أو لا توافق." });
       return;
     }
-    if (current?.by === "registration" && (current.state === "registered" || current.state === "rejected")) {
-      res.status(409).json({ error: "قرّر التسجيلُ في هذا المقرّر، فلا يُغيَّر من جهة القسم." });
+    /* لجنةُ القسم تقرّر في مقرّرات قسمها وحدها. الطلبُ القديم قد يجمع مقرّرَين
+       لقسمين فيراه القسمان، لكن كلاً منهما يقرّر في مقرّره هو. */
+    if (courseOwnerSection && !isScopeAllowed(req, Number(need.AdCollegeId), courseOwnerSection)) {
+      res.status(403).json({ error: "هذا المقرّر لقسمٍ آخر؛ تقرّر فيه لجنةُ ذلك القسم." });
       return;
     }
-  } else if (viewer === "registration") {
-    if (!reachedRegistration(current)) {
-      res.status(409).json({ error: "لم توافق لجنةُ القسم على هذا المقرّر بعد، فلا يُكتب فيه من جهة التسجيل." });
-      return;
-    }
-    if (state === "committee-rejected") {
-      res.status(403).json({ error: "عدمُ الموافقة قرارُ لجنة القسم، لا التسجيل." });
-      return;
-    }
+  } else if (viewer === "registration" && state === "committee-rejected") {
+    res.status(403).json({ error: "عدمُ الموافقة قرارُ لجنة القسم، لا التسجيل." });
+    return;
   }
+  /* ما يتوقف على حالة المقرّر الحاليّة يُسأل داخل الكتابة نفسها: قرارا اللجنة
+     والتسجيل في اللحظة نفسها لا يمرّ أحدهما على حالةٍ قديمة. */
+  const guardByState = (current: any): string | null => {
+    if (viewer === "committee" && current?.by === "registration" && (current.state === "registered" || current.state === "rejected"))
+      return "قرّر التسجيلُ في هذا المقرّر، فلا يُغيَّر من جهة القسم.";
+    if (viewer === "registration" && !reachedRegistration(current))
+      return "لم توافق لجنةُ القسم على هذا المقرّر بعد، فلا يُكتب فيه من جهة التسجيل.";
+    return null;
+  };
 
   const reasonCode = String(req.body?.reasonCode || "");
   if (state === "committee-rejected" && !STUDENT_COMMITTEE_REASONS.has(reasonCode)) {
@@ -13478,7 +13490,9 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
     return;
   }
 
-  const saved = await Repository.setStudentCourseState(need.id, {
+  let saved: any;
+  try{
+  saved = await Repository.setStudentCourseState(need.id, {
     courseId,
     state: state as any,
     ...(state === "rejected" || state === "committee-rejected" ? { reasonCode: reasonCode as any } : {}),
@@ -13486,7 +13500,11 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
     by: state === "registered" || state === "rejected" ? "registration" : "department",
     byRole: roleLabel(req.user?.Role) || undefined,
     at: new Date().toISOString(),
-  });
+  }, guardByState);
+  }catch(error:any){
+    if(error instanceof StudentCourseStateConflict){res.status(409).json({ error: error.message });return;}
+    throw error;
+  }
   if (!saved) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
 
   res.setHeader("Cache-Control", "no-store");
