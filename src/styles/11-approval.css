@@ -759,7 +759,9 @@
 .registration-course-state>span[data-state="pending"]{color:var(--warn,#9a6a00)}
 
 /* تصفيةُ الكشف بالحالة: اللجنةُ تبدأ بما ينتظرها، والتسجيلُ بما سُلّم إليه. */
-.registration-filter{display:flex;flex-wrap:wrap;gap:6px}
+.registration-filter{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.registration-export{display:inline-flex;align-items:center;gap:5px;margin-inline-end:auto}
+.registration-export svg{width:13px;height:13px}
 .request-card-head .changes-chip{display:inline-flex;align-items:center;gap:5px;flex:none}
 .request-card-head .changes-chip svg{width:13px;height:13px}
 .registration-course-state em{font-style:normal;font-size:var(--t-xs);color:var(--muted-2)}

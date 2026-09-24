@@ -8,7 +8,7 @@
 import type { ScheduleApproval } from "../types";
 
 export type NotificationTone = "action" | "waiting" | "done" | "alert";
-export type NotificationView = "scheduleChanges" | "schedules" | "instructorRequests" | "reportDepartment";
+export type NotificationView = "scheduleChanges" | "schedules" | "instructorRequests" | "reportDepartment" | "studentRegistration";
 
 export interface CenterNotification {
   id: string;
@@ -30,6 +30,12 @@ export interface CenterScope {
   openRequests: number;
   /** طلباتُ الأساتذة المعلّقة في هذا القسم، طلباً طلباً. */
   pendingRequests?: Array<{ requestId: string; instructorName: string; count: number; at?: string; linked?: boolean }>;
+  /**
+   * طلباتُ الطلبة في كشف التسجيل، مقرّراتُ هذا القسم وحدها:
+   * ما ينتظر لجنة القسم، وما وافقت عليه اللجنة وينتظر التسجيل (ويُعدّ للتسجيل
+   * فقط حين يكون الجدول موقَّعاً، كما يُعرض له الكشف).
+   */
+  studentQueue?: { pendingCommittee: number; awaitingRegistration: number; oldestPendingAt?: string; latestApprovedAt?: string };
   /** موعد هذا القسم: تمديده إن وُجد، وإلا موعد الفصل. */
   deadline?: { effective?: string; past?: boolean; daysLeft?: number } | null;
 }
@@ -37,6 +43,8 @@ export interface CenterScope {
 export interface CenterInput {
   role: string;
   scopes: CenterScope[];
+  /** الساعةُ التي تُقاس بها مدةُ الانتظار (للاختبار). */
+  now?: number;
   deadline?: { effective?: string; past?: boolean; daysLeft?: number } | null;
 }
 
@@ -197,6 +205,34 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
         : [...new Set(entry.places)].join(" · "),
       view: "instructorRequests", at: entry.at, ...target(entry.scope),
     });
+  }
+
+  /* ── كشفُ التسجيل: اللجنةُ أولاً، ثم التسجيل ─────────────────────────────
+     اللجنةُ يُقال لها كم طلباً ينتظر قرارها، ويصير تنبيهاً إذا انتظر أقدمُها
+     أكثر من ثلاثة أيام. والتسجيلُ يُقال له كم مقرّراً وافقت عليه اللجنة
+     وينتظره. المعرّفُ يحمل العدد، فتصير الدفعةُ الجديدة إشعاراً جديداً. */
+  const now = input.now ?? Date.now();
+  for (const scope of scopes) {
+    const queue = scope.studentQueue;
+    if (!queue) continue;
+    if (queue.pendingCommittee > 0 && !REGISTRAR.has(role) && !WATCHERS.has(role) && !DEANS.has(role)) {
+      const waitedDays = queue.oldestPendingAt ? Math.floor((now - new Date(queue.oldestPendingAt).getTime()) / 86400000) : 0;
+      const late = waitedDays > 3;
+      items.push({
+        id: key(scope, `students-committee-${queue.pendingCommittee}`), tone: late ? "alert" : "action",
+        title: `${plural(queue.pendingCommittee, "مقرّرٌ واحد", "مقرّران", "مقرّرات")} في كشف التسجيل ${queue.pendingCommittee <= 2 ? "ينتظر" : "تنتظر"} قرار اللجنة`,
+        detail: late ? `${placeOf(scope)} — أقدمُها ينتظر منذ ${waitedDays} أيام` : placeOf(scope),
+        view: "studentRegistration", at: queue.oldestPendingAt, ...target(scope),
+      });
+    }
+    if (queue.awaitingRegistration > 0 && REGISTRAR.has(role)) {
+      items.push({
+        id: key(scope, `students-registration-${queue.awaitingRegistration}-${queue.latestApprovedAt || ""}`), tone: "action",
+        title: `وافقت لجنة ${placeOf(scope)} على ${plural(queue.awaitingRegistration, "مقرّرٍ واحد", "مقرّرين", "مقرّرات")} للتسجيل`,
+        detail: "تنتظر التسجيل أو الردّ في كشف التسجيل.",
+        view: "studentRegistration", at: queue.latestApprovedAt, ...target(scope),
+      });
+    }
   }
 
   if (DEANS.has(role) || role === "admin") {

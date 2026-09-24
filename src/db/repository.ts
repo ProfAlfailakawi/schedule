@@ -4573,6 +4573,15 @@ export const Repository = {
     return (db.studentNeeds || []).filter(mine);
   },
 
+  /** كلُّ طلبات الطلبة في فصلٍ واحد، لكل الكليات: يحتاجها مركزُ الإشعارات ليعدّ لكل قسم. */
+  getStudentNeedsForTerm: async (termId: number): Promise<StudentNeed[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("studentNeeds").where("AdTermId", "==", termId).limit(5000).get();
+      return snap.docs.map(doc => doc.data() as StudentNeed);
+    }
+    return (db.studentNeeds || []).filter(item => Number(item.AdTermId) === termId);
+  },
+
   getStudentNeeds: async (collegeId: number, sectionId: number, termId: number): Promise<StudentNeed[]> => {
     const mine = (item: StudentNeed) => {
       if (Number(item.AdCollegeId) !== collegeId || Number(item.AdTermId) !== termId) return false;

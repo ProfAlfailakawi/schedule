@@ -145,6 +145,11 @@ check(server.includes("هذا المقرّر لقسمٍ آخر؛ تقرّر في
   "ولجنةُ القسم ترى مقرّرات قسمها وتقرّر فيها وحدها، ولو جمع الطلبُ القديم قسمين");
 check(screen.includes("filterChosen.current") && screen.includes('nextViewer === "registration" ? "approved"'),
   "وكلٌّ يبدأ من طابوره: اللجنةُ بما ينتظرها، والتسجيلُ بما سُلّم إليه");
+check(screen.includes("const exportVisible = async () =>")
+  && screen.includes('.filter(course => statusFilter === "all" || statusOf(course) === statusFilter)'),
+  "والتصديرُ يُخرج ما يُعرض بالتصفية نفسها، فلا يخرج في ملف التسجيل ما لم توافق عليه اللجنة");
+check(screen.includes('focus?.view !== "studentRegistration"'),
+  "والإشعارُ يفتح الكشفَ على قسمه");
 check(screen.includes("const approveAll = async (row: CaseRow)") && !screen.includes("approveEverything"),
   "والموافقةُ الجماعية لطالبٍ واحد لا للكشف كله: النظرُ في كل طالب عملُ اللجنة");
 
