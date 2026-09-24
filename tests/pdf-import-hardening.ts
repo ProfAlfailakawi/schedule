@@ -7,7 +7,7 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
@@ -207,6 +207,7 @@ check("a scanned page whose rows lost their course codes is flagged, not importe
   assert.equal(unreadableIdentityRows([...Array(3)].map(()=>row("0101102")).concat([...Array(20)].map(()=>row("0101")))),20);
   const bare=(code:string)=>({code,reference:"18980",scode:"501",days:"",start:""}) as any;
   assert.equal(unreadableIdentityRows([...Array(4)].map(()=>row("0101102")).concat([...Array(26)].map(()=>bare("0101156")))),26,"rows with neither days nor time are unread");
+  assert.ok(unclearRowCount([row("0101156"),row("0101156")])<unclearRowCount([bare("0101156"),bare("0101156")]),"a rescue that restores days and time scores as better");
 });
 check("printed data lines are counted independently of the row reader",()=>{
   const w=(text:string,y:number)=>({text,x0:0,x1:10,y0:y,y1:y+10});

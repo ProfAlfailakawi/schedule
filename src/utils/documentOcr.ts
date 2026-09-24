@@ -1725,9 +1725,12 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
 }
 /** صفوف غير واضحة: إن بلغت ربع الصفحة (3 فأكثر) فالمسح لم يُقرأ،
  *  لا صفٌّ ناقص هنا وهناك. يُعاد عددها ليُذكر في الرسالة، وإلا صفر. */
+/** صف غير واضح: بلا رقم مقرر كامل، أو بلا أيام ولا وقت (هوية فقط). */
+export function unclearRowCount(rows:GridRow[]):number{
+  return rows.filter(row=>!/^\d{7}$/.test(String(row.code||""))||(!String(row.days||"").trim()&&!row.start)).length;
+}
 export function unreadableIdentityRows(rows:GridRow[]):number{
-  /* صف غير واضح: بلا رقم مقرر كامل، أو بلا أيام ولا وقت (هوية فقط). */
-  const broken=rows.filter(row=>!/^\d{7}$/.test(String(row.code||""))||(!String(row.days||"").trim()&&!row.start)).length;
+  const broken=unclearRowCount(rows);
   return broken>=3&&broken>=rows.length*.25?broken:0;
 }
 /** Contrast-stretch a scanned page and erase long table rules (runs of dark
@@ -3762,14 +3765,15 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
           const rows=await readGrid(upright,rescuePool,authorityGridDepartment,pageCourseKeys);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
           /* قراءة الإنقاذ لا تُعتمد إن أنقصت الصفوف ثابتة الهوية (شبكة أزاحت أعمدتها). */
-          if(rows&&filled>bestFilled&&identityRows(rows)>=identityRows(bestRows)){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
+          /* وتُعتمد كذلك إن أعادت أياماً ووقتاً لصفوف كانت بلا شيء منهما. */
+          if(rows&&identityRows(rows)>=identityRows(bestRows)&&(filled>bestFilled||(rows.length>=bestRows.length&&unclearRowCount(rows)<unclearRowCount(bestRows)))){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
       }
       /* ── تحسين الصورة قبل الاستسلام ─────────────────────────────────────
          صفحة ما زالت ناقصة: تُعاد من الملف بدقة عالية، ويُمدّ تباينها، وتُمحى
          خطوط الجدول الطويلة الملاصقة للأرقام، ثم تُقرأ كلماتها من جديد. تُعتمد
          القراءة المحسّنة إن أخرجت صفوفاً أكثر، ويبقى فحص الأسطر المطبوعة حكماً. */
-      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length){
+      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length||unreadableIdentityRows(bestRows)>0){
         try{
           /* صورة مرفوعة مباشرة (JPG/PNG/HEIC) لا عرض PDF لها: تُحسَّن الصفحة المعدّلة نفسها. */
           const sharp=(wordLaneSources?(await wordLaneSources)[index]:undefined)||bestUpright;
@@ -3778,7 +3782,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
             const lane=await readWordLane(enhanced);
             pagePrintedRows[index]=Math.max(pagePrintedRows[index]||0,lane.printedRows);
             const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
-            if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)){bestRows=lane.rows;bestFilled=filled;}
+            if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))){bestRows=lane.rows;bestFilled=filled;}
           }
         }catch{/* the earlier reading and its warning stand */}
       }
