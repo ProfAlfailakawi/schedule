@@ -15,6 +15,7 @@ import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 import { campusOf } from "../utils/campusTravel";
+import { interruptedImportMessage } from "../utils/importStreamFailure";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -783,11 +784,15 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(targetSectionId),termId:String(termId)});
+      const payload=await file.arrayBuffer();
+      /* A request that never reached the server, or a stream that broke before
+         its result, is named for what it was (see importStreamFailure) instead
+         of the one generic sentence that used to cover them all. */
       const response=await fetch(`/api/intelligence/pdf-import?${query}`,{
         method:"POST",
         headers:{"Content-Type":"application/octet-stream","Accept":"application/x-ndjson","x-file-name":encodeURIComponent(file.name)},
-        body:await file.arrayBuffer(),
-      });
+        body:payload,
+      }).catch(()=>{throw new Error(interruptedImportMessage(0));});
       /* Reading a scan takes over a minute. The server streams one JSON object
          per line while it works, and the result on the last line, so the bar
          advances page by page instead of the button simply freezing. */
@@ -795,7 +800,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
       const decoder=new TextDecoder();
       let buffer="",data:any=null,failure:any=null;
       if(reader)for(;;){
-        const {value,done}=await reader.read();
+        const {value,done}=await reader.read().catch(()=>({value:undefined,done:true}));
         if(done)break;
         buffer+=decoder.decode(value,{stream:true});
         let cut=buffer.indexOf("\n");
@@ -834,7 +839,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
          JSON object with no newline. Structured department mismatch stays on
          screen as an actionable recovery instead of a dead-end sentence. */
       if(data&&(data as any).error&&!(data as any).rows){if(offerScopeFix(data))return;throw new Error((data as any).error);}
-      if(!data)throw new Error("تعذرت قراءة PDF");
+      if(!data)throw new Error(interruptedImportMessage(response.status));
       const scannedRows=assignAuthoritySections(Array.isArray(data.rows)?data.rows:[]);
       setImportSectionId(targetSectionId);
       setPdfScopeFix(null);

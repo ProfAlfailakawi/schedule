@@ -7,7 +7,8 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, takeScanReadingTurn, type OcrPage } from "../src/utils/documentOcr.ts";
+import { interruptedImportMessage } from "../src/utils/importStreamFailure.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
@@ -222,5 +223,40 @@ check("separator-welded section, reference and code split only in their full sha
   assert.deepEqual(split("[18945|0101102"),["18945","0101102"]);
   assert.deepEqual(split("12/05"),["12/05"]);
 });
+
+check("a broken import stream says what broke instead of the one generic sentence",()=>{
+  assert.match(interruptedImportMessage(200),/انقطع الاتصال بالخادم قبل أن تكتمل قراءة الملف/,"a stream cut mid-read (the instance killed for memory)");
+  assert.match(interruptedImportMessage(429),/مشغول أو يُعاد تشغيله/,"the platform's «Rate exceeded» while the instance restarts");
+  assert.match(interruptedImportMessage(503),/مشغول أو يُعاد تشغيله/);
+  assert.match(interruptedImportMessage(413),/24 ميغابايت/);
+  assert.match(interruptedImportMessage(0),/لم يصل الملف/,"no response at all");
+  for(const status of [200,413,429,500,503])assert.match(interruptedImportMessage(status),/لم يُستورد أي صف/);
+});
+
+/* The reading turn is asynchronous; these cases run after the synchronous ones. */
+const settle=()=>new Promise(resolve=>setImmediate(resolve));
+{
+  const first=await takeScanReadingTurn();
+  let told=0,entered=false;
+  const next=takeScanReadingTurn(()=>{told++;}).then(turn=>{entered=true;return turn;});
+  await settle();
+  assert.equal(entered,false,"a second scanned reading must not drive the workers while the first holds them");
+  assert.equal(told,1,"the waiting upload is told it is queued");
+  await first.release(false);
+  await first.release(false);
+  const second=await next;
+  assert.equal(entered,true,"the next reading starts as soon as the first releases");
+  let thirdEntered=false;
+  const third=takeScanReadingTurn().then(turn=>{thirdEntered=true;return turn;});
+  await settle();
+  assert.equal(thirdEntered,false,"a double release of the first turn did not open the queue for a third");
+  await second.release(true);
+  await (await third).release(false);
+  let toldIdle=0;
+  const idle=await takeScanReadingTurn(()=>{toldIdle++;});
+  assert.equal(toldIdle,0,"an idle instance starts a reading at once, without a queue message");
+  await idle.release(true);
+  passed.push("one scanned reading drives the table workers at a time; the next waits its turn and is told so");
+}
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));
