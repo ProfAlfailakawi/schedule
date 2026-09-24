@@ -649,4 +649,12 @@ ok('218 resolving the PDF department also moves the live schedule selector, and 
    and 'onSectionChange={(nextSectionId) =>' in schedules_src
    and 'setFilterSection(nextSectionId)' in schedules_src)
 
+ok('219 a short-name instructor match that would double-book that person in another college is unlinked for review, for every row of that printed name',
+   'instructorAmbiguousShortName' in server
+   and 'SHORT_NAME_CONTRADICTED' in server
+   and 'instructorIdentityTokens(person).length<instructorIdentityTokens(String(row.sourceInstructorText||"")).length' in server)
+ok('220 the import conflict note names the other saved lecture instead of only "outside this department"',
+   'otherLabel:describeOther(item?.otherId)||describeOther(item?.rowId)' in server
+   and 'مع موعد محفوظ في ${otherLabel}' in transfer)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
