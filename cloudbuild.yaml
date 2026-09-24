@@ -29,22 +29,17 @@ steps:
       - 'managed'
       - '--quiet'
 
-  # ── الدوحة: نسخة مطابقة، أقرب إلى الكويت بعشرة أضعاف ──────────────────────
+  # ── بلجيكا: الوجهة المجانية للنطاق ────────────────────────────────────────
   #
-  # Measured from the same client on the same day: Doha answered /api/health in
-  # 280–375ms where London took 385–640ms. The global load balancer sends each
-  # visitor to the nearest healthy backend, so a coordinator in Kuwait stops
-  # paying for a round trip to England on every read and every save.
+  # schedule.dr-alfailakawi.com maps DIRECTLY to this service through a Cloud
+  # Run domain mapping, which is free. The global load balancer it replaces
+  # billed ~$18/month whether or not anyone visited, and it never routed to
+  # Doha anyway (its only backend was London). Domain mappings are not offered
+  # in europe-west2 or me-central1; europe-west1 is the nearest region that has
+  # them, and Firestore sits in London, a few milliseconds away.
   #
-  # The reason this step lives HERE, in the same build as London, is the only
-  # thing that makes a second region safe: both regions receive the identical
-  # image from the identical commit, in one build. A region deployed on its own
-  # schedule would eventually serve older code to whoever happens to be nearest
-  # it — which is worse than being slow, because nothing on screen would say so.
-  #
-  # If this step ever fails, London has already been updated above and keeps
-  # serving; the load balancer simply stops routing to a backend that fails its
-  # health check. Losing Doha costs latency, never correctness.
+  # Same image, same commit, same build as London above, so the two regions can
+  # never serve different code. London stays reachable on its run.app address.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     entrypoint: 'gcloud'
     args:
@@ -54,7 +49,7 @@ steps:
       - '--image'
       - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
       - '--region'
-      - 'me-central1'
+      - 'europe-west1'
       - '--platform'
       - 'managed'
       - '--quiet'
