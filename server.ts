@@ -8325,7 +8325,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       if(mine.length>1)return{method:"DUPLICATE_REGISTRATION",reason:`«هيئة تدريسية» مكررة في القسم: ${mine.map(describeCandidate).join("، ")}.`};
       return{method:"AMBIGUOUS",reason:"«هيئة تدريسية» لقسم آخر، ولا سجلّ لهذا القسم بعد؛ اخترها من القائمة."};
     }
-    const {exact,partial}=registryCandidatesFor(written,instructors as any);
+    /* المرشحون المعروضون أساتذةُ القسم وحدهم: أسماء الجامعة كلها ضجيجٌ أمام
+       المراجع، والاختيار الصحيح يكاد يكون دائماً من أهل القسم. */
+    const {exact:allExact,partial:allPartial}=registryCandidatesFor(written,(instructors as any[]).filter(person=>departmentMembership.has(Number(person.AdInstructorId))) as any);
+    const exact=allExact,partial=allPartial;
     if(exact.length>=2){
       return{method:"DUPLICATE_REGISTRATION",reason:`مسجّل أكثر من مرة: ${exact.map(describeCandidate).join("، ")}.`};
     }
@@ -8335,7 +8338,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     if(partial.length){
       return{method:"AMBIGUOUS",reason:`الأقرب: ${partial.map(describeCandidate).join("، ")}.`};
     }
-    return{method:"UNREGISTERED",reason:"غير موجود في سجل الأساتذة."};
+    return{method:"UNREGISTERED",reason:"غير موجود بين أساتذة القسم."};
   };
   const unresolvedInstructorOutcome=(row:any)=>unresolvedInstructorDiagnosis(row).method;
 
