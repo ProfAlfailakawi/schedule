@@ -3801,7 +3801,10 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
         inner++;at++;
       }
       if(firstOk&&lastOk&&inner===candidate.length-2){
-        const exactCount=(candidate[0]===observed[0]?1:0)+(last===printedLast?1:0)+inner;
+        /* عائلة مقصوصة عند حافة الخانة («المهي» من «المهيني») بأربعة أحرف فأكثر
+           شاهدٌ على العائلة نفسها كالمطابقة التامة. */
+        const tailProof=last===printedLast||printedLast.length>=4;
+        const exactCount=(candidate[0]===observed[0]?1:0)+(tailProof?1:0)+inner;
         return{total:candidate.length,exactCount,stemCount:candidate.length-exactCount};
       }
     }
@@ -3856,7 +3859,7 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
          department/preferred pool and only when no rival receives the same
          evidence. This restores the old high hit-rate without saving OCR text. */
       const threeProof=ordered.total>=3&&ordered.exactCount>=2;
-      const twoExactProof=allowTwo&&exactCommon>=2&&ordered.total>=2;
+      const twoExactProof=allowTwo&&ordered.exactCount>=2&&ordered.total>=2;
       const firstLastProof=allowTwo&&!exactPairOnly&&item.tokens.length>=2&&(firstHit||(firstStemHit&&ordered.exactCount>=1))&&lastHit&&ordered.total>=2&&ordered.exactCount>=1;
       /* ── اسمان مطبوعان وأحدهما ناقص حرفاً ──────────────────────────────────
          «عبدالله حسن الرشيدي» تُطبع «بدالله حسن»: اسم العائلة مقصوص عند حافة
