@@ -3765,8 +3765,9 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
           const rows=await readGrid(upright,rescuePool,authorityGridDepartment,pageCourseKeys);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
           /* قراءة الإنقاذ لا تُعتمد إن أنقصت الصفوف ثابتة الهوية (شبكة أزاحت أعمدتها). */
-          /* وتُعتمد كذلك إن أعادت أياماً ووقتاً لصفوف كانت بلا شيء منهما. */
-          if(rows&&identityRows(rows)>=identityRows(bestRows)&&(filled>bestFilled||(rows.length>=bestRows.length&&unclearRowCount(rows)<unclearRowCount(bestRows)))){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
+          /* قراءة الشبكة تملأ خانة الأيام بما تجده ولو كان خطأً، فلا يُكافأ «امتلاء»
+             أيامها هنا؛ استعادة الأيام والوقت تُقبل من القراءة المحسّنة وحدها. */
+          if(rows&&filled>bestFilled&&identityRows(rows)>=identityRows(bestRows)){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
       }
       /* ── تحسين الصورة قبل الاستسلام ─────────────────────────────────────
