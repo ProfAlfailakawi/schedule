@@ -3770,7 +3770,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
          القراءة المحسّنة إن أخرجت صفوفاً أكثر، ويبقى فحص الأسطر المطبوعة حكماً. */
       if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length){
         try{
-          const sharp=wordLaneSources?(await wordLaneSources)[index]:undefined;
+          /* صورة مرفوعة مباشرة (JPG/PNG/HEIC) لا عرض PDF لها: تُحسَّن الصفحة المعدّلة نفسها. */
+          const sharp=(wordLaneSources?(await wordLaneSources)[index]:undefined)||bestUpright;
           if(sharp){
             const enhanced=await enhanceScanForOcr(sharp);
             const lane=await readWordLane(enhanced);
