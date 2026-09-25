@@ -243,6 +243,22 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
     && surveyPageSource.includes("replaceNote()"), "S5/S4 الصفحة تطلب رقم الحالة وتعرض الطلب القائم وتنبّه قبل استبداله");
 }
 
+/* ── S8 الفصل المنتهي لا يستقبل طلبات ───────────────────────────────────── */
+{
+  check(server.includes("const surveyTermEnded = (term: any): boolean => Boolean(term) && (term.AdTermClosed === true || termHasEnded(term));"),
+    "S8 قاعدة واحدة: انتهاء التاريخ أو إعلان الانتهاء");
+  const share = between(server, 'app.post("/api/share"', 'app.delete("/api/share/:id"');
+  check(share.includes('kind === "survey" && surveyTermEnded('), "S8 لا يُصدَر رابط استبيان لفصلٍ منتهٍ (فرع الاستبيان وحده)");
+  const get = between(server, 'app.get("/api/public/survey/:token"', 'app.post("/api/public/survey/:token/identity-status"');
+  check(get.indexOf("surveyTermEnded(linkTerm)") > 0 && get.indexOf("surveyTermEnded(linkTerm)") < get.indexOf("surveyPayloadCache.get(cacheKey)"),
+    "S8 القراءة تقول «انتهى هذا الفصل» قبل النسخة المؤقتة");
+  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  check(post.includes('code: "term-ended"') && post.indexOf("surveyTermEnded(") < post.indexOf("Repository.saveStudentNeed("), "S8 الإرسال بعد نهاية الفصل يُرفض");
+  const proof = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
+  check(proof.indexOf("surveyTermEnded(") > 0 && proof.indexOf("surveyTermEnded(") < proof.indexOf("ocrGraduationSheetDocument("), "S8 ولا تُقرأ صحيفة لفصلٍ منتهٍ");
+  check(surveyPageSource.includes("x.d.termEnded") && surveyPageSource.includes("انتهى هذا الفصل"), "S8 الصفحة تعرض «انتهى هذا الفصل»");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

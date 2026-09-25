@@ -12263,6 +12263,13 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
   const termName = terms.find(row => row.AdTermId === termId)?.AdTermName || "";
+  /* A survey collects requests for a term that is still ahead or running. A
+     link issued for an ended or closed term would only gather answers nobody
+     can act on. (Survey links only; other link kinds are unchanged.) */
+  if (kind === "survey" && surveyTermEnded(terms.find(row => Number(row.AdTermId) === termId))) {
+    res.status(409).json({ error: "انتهى هذا الفصل، فلا يُصدَر له رابط استبيان. اختر الفصل القادم.", code: "term-ended" });
+    return;
+  }
   const label = kind === "staff"
     ? `بطاقات الأساتذة · ${termName}`.trim()
     : kind === "survey"
@@ -12798,6 +12805,13 @@ app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: Authen
   res.json(saved);
 });
 
+/**
+ * انتهى الفصلُ الذي يجمع له الاستبيان: مرّ تاريخُ نهايته، أو أعلن صاحبُ
+ * الصلاحية انتهاءه. قاعدةٌ واحدة يسألها إصدارُ الرابط، وقراءتُه، والإرسال.
+ */
+const surveyTermEnded = (term: any): boolean => Boolean(term) && (term.AdTermClosed === true || termHasEnded(term));
+const SURVEY_TERM_ENDED = "انتهى هذا الفصل، ولم يعد الاستبيان يستقبل طلبات. تابع طلبك السابق من «حالة طلبي» أو راجع القسم.";
+
 /* ── قائمةُ مقرّرات الاستبيان تُبنى مرّةً لكل رابط ────────────────────────
  * بناؤها يقرأ أرشيفَ الجداول كلّه (عشر سنوات) وخطةَ كل قسم. وكان يُعاد لكل
  * طالبٍ يفتح الرابط — ومئاتُ الطلبة يفتحونه في اليوم نفسه. والقائمةُ لا تتغيّر
@@ -12810,6 +12824,14 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
   const cacheKey = `${Repository.isDemoRequest() ? getCookies(req as any)["session_id"] || "demo" : "live"}:${resolved.link.id}`;
+  /* Asked on every open, outside the payload cache: the term can end while a
+     cached payload is still fresh. */
+  const linkTerm = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId));
+  if (surveyTermEnded(linkTerm)) {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ termEnded: true, message: SURVEY_TERM_ENDED, term: String((linkTerm as any)?.AdTermName || ""), statusUrl: `/m/${encodeURIComponent(resolved.link.id)}` });
+    return;
+  }
   const cached = surveyPayloadCache.get(cacheKey);
   if (cached && Date.now() - cached.at < SURVEY_PAYLOAD_TTL_MS) {
     res.setHeader("Cache-Control", "no-store");
@@ -12928,6 +12950,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   if("error"in resolved){res.status(resolved.status).json({error:resolved.error});return;}
   if(resolved.link.kind!=="survey"){res.status(404).json({error:"هذا الرابط ليس استبياناً"});return;}
   if(!staffLookupAllowed(`${token}:proof`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة."});return;}
+  if(surveyTermEnded((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId)))){res.status(409).json({error:SURVEY_TERM_ENDED,code:"term-ended"});return;}
   const civil=asciiDigits(decodeURIComponent(String(req.get("x-student-civil")||""))).replace(/\D/g,""),name=decodeURIComponent(String(req.get("x-student-name")||"")).trim(),sectionId=Number(req.get("x-student-section")||0);
   if(!validateCivilId(civil).isValid||name.length<3){res.status(400).json({error:"أكمل الاسم والرقم المدني الصحيح أولاً"});return;}
   const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
@@ -13012,6 +13035,10 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
   if (!staffLookupAllowed(token, req.ip || "unknown")) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
+    return;
+  }
+  if (surveyTermEnded((await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId)))) {
+    res.status(409).json({ error: SURVEY_TERM_ENDED, code: "term-ended" });
     return;
   }
 
@@ -14688,7 +14715,7 @@ function acceptVerifiedProof(d,reused){var upload=document.getElementById("proof
 function checkPriorGraduateProof(){var rule=section().graduateRule;if(rule&&rule.saved===false){var up=document.getElementById("proofUpload"),ex=document.getElementById("proofExample"),st=document.getElementById("proofStatus");if(up)up.hidden=true;if(ex)ex.hidden=true;if(st){st.className="proof-status bad";st.textContent="لم يعتمد قسمك العلمي قواعد التخرج في النظام بعد، فلا يمكن التحقق من صحيفة التخرج الآن. راجع القسم، ويمكنك اختيار نوع طلب آخر."}proofEligible=false;proofToken="";refreshGraduateSubmit();return}if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
 function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
 function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent=sendLabel();return fail(x.d.error||"تعذر الإرسال")}identityLocked=true;caseRef=String(x.d.caseRef||caseRef);host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'#'+encodeURIComponent(caseRef)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent=sendLabel();fail("تعذر الإرسال — تحقق من الاتصال.")})}
-fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
+fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}if(x.d.termEnded){host.innerHTML='<div class="done" role="status"><h2>انتهى هذا الفصل</h2><p>'+esc(x.d.message||"")+'</p><a href="'+esc(x.d.statusUrl||"#")+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">حالة طلبي</a></div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
 }
 
