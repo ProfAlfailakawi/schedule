@@ -30,6 +30,7 @@ import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/public
 import { runApprovalAttempts, type ApprovalOnce } from "./src/server/approvalAttempts";
 import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueueEntry } from "./src/server/notificationCache";
 import { createDataContextKey } from "./src/server/dataContextCache";
+import { isDemoLinkToken, publicLinkTokenFromPath, PUBLIC_LINK_PAGE_PREFIXES } from "./src/utils/demoLinkToken";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
@@ -728,6 +729,10 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
   const cookies = getCookies(req);
   const sessionId = cookies["session_id"];
   if (!sessionId) { next(); return; }
+  /* جلسةٌ تجريبية لا هويةَ لها خارج صندوقها: صندوقٌ انتهى، أو رابطٌ حقيقيٌّ
+     فُتح من متصفّح التجربة، يُقرأ فيهما الطلب مجهولاً — لا بهوية «مدير
+     البيئة التجريبية» المحفوظة في authCache على بياناتٍ حقيقية. */
+  if (sessionId.startsWith("demo_") && !Repository.isDemoRequest()) { next(); return; }
 
   const idleTtlMs = Repository.isDemoRequest() ? DEMO_SESSION_TTL_MS : SERVER_IDLE_SESSION_MS;
 
@@ -843,9 +848,28 @@ app.use("/api", (req, res, next) => {
   }));
 });
 
+/*
+ * ── الرابطُ العام يُفتح في عالَمه ────────────────────────────────────────────
+ *
+ * صفحاتُ الروابط (/s /q /r /m) وواجهاتُها (/api/public/…) تُحلّ برمز الرابط لا
+ * بالجلسة. فرمزٌ تجريبي («demo.…») يُربط بالصندوق الذي أنشأه — من المتصفّح
+ * نفسه أو من هاتفٍ يشترك في التقويم — ولا يُبحث عنه في البيانات الحقيقية.
+ * ورمزٌ حقيقي يُقرأ من البيانات الحقيقية ولو حمل المتصفّح جلسةً تجريبية، وتلك
+ * الجلسة لا هويةَ لها هناك (authMiddleware). القاعدة: src/utils/demoLinkToken.ts.
+ */
+function bindPublicLinkContext(req: Request, _res: Response, next: NextFunction) {
+  const token = publicLinkTokenFromPath(req.originalUrl);
+  const sessionId = isDemoLinkToken(token) ? Repository.demoSandboxForLinkToken(token) : "";
+  if (!sessionId) { next(); return; }
+  (req as AuthenticatedRequest).demoSessionId = sessionId;
+  if (!Repository.runDemoSandbox(sessionId, next)) next();
+}
+app.use(PUBLIC_LINK_PAGE_PREFIXES.map(prefix => `${prefix}:token`), bindPublicLinkContext);
+
 // A dedicated demo service binds every API request to the caller's own in-memory sandbox.
 // No demo request can fall through to another visitor's state. Production mode bypasses this entirely.
-app.use("/api", (req: Request, _res: Response, next: NextFunction) => {
+app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith("/public/")) { bindPublicLinkContext(req, res, next); return; }
   const sessionId = getCookies(req)["session_id"];
   // /journey is intentionally a marketing read of the real institutional
   // aggregate. It must never inherit a visitor's synthetic Demo sandbox.
@@ -13707,8 +13731,12 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
  * Neither plaintext is logged or sent to anyone outside those screens; an
  * existing case is opened on the public pages only with civil ID + case number.
  */
+/* الوعدُ محفوظٌ للعملية كلها، فيُقرأ السرُّ الحقيقيُّ دائماً — خارج صندوق العرض
+   (getSharedServerSecret). كان يُقرأ بسياق أوّل طالبٍ يسأله: فإن كان زائراً
+   تجريبياً حُفظ مفتاحُ الصندوق المحلي للنسخة كلها، فخُتمت به هوياتُ الطلبة
+   الحقيقيين وبصماتُهم بعده — مفتاحٌ لا تعرفه النسخُ الأخرى. */
 let studentCaseSecretPromise: Promise<string> | null = null;
-const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getStudentCaseSecret();
+const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getSharedServerSecret();
 const surveyFingerprint = async (civil: string) =>
   createHmac("sha256", await studentCaseSecret()).update(`need|${civil}`).digest("hex").slice(0, 32);
 

@@ -55,6 +55,7 @@ import {
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
 import { createDemoSandboxState } from "./demoSandbox";
+import { DEMO_LINK_TOKEN_PREFIX, isDemoLinkToken } from "../utils/demoLinkToken";
 import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
 import { caseRefFromId, mergeStudentResubmission } from "../utils/studentNeedMerge";
 
@@ -2347,6 +2348,16 @@ export const Repository = {
     }
     return await demoSandboxContext.run({ sessionId, state: record.state }, fn);
   },
+  /** الصندوقُ الحيّ الذي يملك هذا الرمز التجريبي، أو "". */
+  demoSandboxForLinkToken: (token: string): string => {
+    if (!isDemoLinkToken(token)) return "";
+    const now = Date.now();
+    for (const [sessionId, record] of demoSandboxes) {
+      if (record.expiresAt <= now) continue;
+      if ((record.state.scheduleShareLinks || []).some(link => link.id === token)) return sessionId;
+    }
+    return "";
+  },
   runDemoSandbox: (sessionId: string, fn: () => void): boolean => {
     const record = demoSandboxes.get(sessionId);
     if (!record || record.expiresAt <= Date.now()) { demoSandboxes.delete(sessionId); return false; }
@@ -4135,7 +4146,8 @@ export const Repository = {
   createShareLink: async (entry: Omit<ScheduleShareLink, "id" | "scopeKey" | "createdAt" | "views">): Promise<ScheduleShareLink> => {
     const row: ScheduleShareLink = {
       ...entry,
-      id: randomBytes(24).toString("base64url"),
+      /* رمزُ الصندوق التجريبي يعلن نفسه (src/utils/demoLinkToken.ts). */
+      id: `${demoSandboxContext.getStore() ? DEMO_LINK_TOKEN_PREFIX : ""}${randomBytes(24).toString("base64url")}`,
       scopeKey: `${entry.AdCollegeId}:${entry.AdSectionId}:${entry.AdTermId}`,
       createdAt: new Date().toISOString(),
       views: 0
@@ -4326,6 +4338,8 @@ export const Repository = {
   },
 
   getShareLink: async (id: string): Promise<ScheduleShareLink | undefined> => {
+    /* رمزٌ تجريبي لا يُبحث عنه في البيانات الحقيقية أبداً. */
+    if (isDemoLinkToken(id) && !demoSandboxContext.getStore()) return undefined;
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleShareLinks").doc(id).get();
       return doc.exists ? doc.data() as ScheduleShareLink : undefined;

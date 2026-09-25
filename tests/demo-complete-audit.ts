@@ -16,6 +16,7 @@ import { Repository } from "../src/db/repository";
 import { createDataContextKey } from "../src/server/dataContextCache";
 import { createDemoSandboxState } from "../src/db/demoSandbox";
 import { locationPreflight } from "../src/server/locationRegistryEngine";
+import { isDemoLinkToken, publicLinkTokenFromPath, DEMO_LINK_TOKEN_PREFIX } from "../src/utils/demoLinkToken";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -119,7 +120,46 @@ function p2Registry() {
     "Repository يقرأ سجلَّ الصندوق داخل الجلسة التجريبية");
 }
 
+/* ── P3: الرابطُ العام يُفتح في عالَمه ─────────────────────────────────────── */
+async function p3PublicLinks() {
+  check(publicLinkTokenFromPath("/s/demo.abc") === "demo.abc" && publicLinkTokenFromPath("/q/demo.abc?x=1") === "demo.abc"
+    && publicLinkTokenFromPath("/r/tok") === "tok" && publicLinkTokenFromPath("/m/tok#ref") === "tok",
+    "رمزُ الرابط يُقرأ من صفحات /s /q /r /m");
+  check(publicLinkTokenFromPath("/api/public/survey/demo.x/proof") === "demo.x" && publicLinkTokenFromPath("/api/public/ics/demo.y/key1") === "demo.y"
+    && publicLinkTokenFromPath("/api/public/staff/t1/note") === "t1", "ومن واجهات /api/public/<نوع>/<رمز>");
+  check(publicLinkTokenFromPath("/api/schedules") === "" && publicLinkTokenFromPath("/sw.js") === "", "ولا رمزَ لمسارٍ غير عام");
+  check(!isDemoLinkToken("Ab-_09xyz") && isDemoLinkToken(`${DEMO_LINK_TOKEN_PREFIX}Ab`), "الرمزُ التجريبي لا يلتبس برمزٍ حقيقي (base64url بلا نقطة)");
+
+  const owner = `demo_links_${Date.now()}`, other = `demo_links_other_${Date.now()}`;
+  Repository.createDemoSandbox(owner, 60_000);
+  Repository.createDemoSandbox(other, 60_000);
+  const link = await Repository.withDemoSandbox(owner, () => Repository.createShareLink({
+    AdCollegeId: 1, AdSectionId: 1, AdTermId: 1, label: "اختبار", kind: "survey",
+    expiresAt: new Date(Date.now() + 86_400_000).toISOString(), SystemUserId: 16, userName: "لجنة", showInstructors: false,
+  } as any));
+  check(isDemoLinkToken(link.id), "رابطٌ يُنشأ داخل الصندوق يحمل رمزاً تجريبياً");
+  check(Repository.demoSandboxForLinkToken(link.id) === owner, "ويُعرف صندوقُه من رمزه — فيُفتح من المتصفّح نفسه أو من هاتفٍ بلا جلسة");
+  check(await Repository.getShareLink(link.id) === undefined, "ولا يُبحث عنه في البيانات الحقيقية");
+  check(await Repository.withDemoSandbox(other, () => Repository.getShareLink(link.id)) === undefined, "ولا يقرؤه صندوقٌ آخر");
+  check(Repository.demoSandboxForLinkToken("realTokenAbc") === "", "والرمزُ الحقيقي لا يُربط بصندوقٍ أبداً");
+
+  check(server.includes("app.use(PUBLIC_LINK_PAGE_PREFIXES.map(prefix => `${prefix}:token`), bindPublicLinkContext);"),
+    "صفحاتُ الروابط تُربط بعالَم رمزها قبل أن تُحلّ");
+  const pagesAt = server.indexOf("app.use(PUBLIC_LINK_PAGE_PREFIXES.map");
+  check(["app.get(\"/s/:token\"", "app.get(\"/q/:token\"", "app.get(\"/r/:token\"", "app.get(\"/m/:token\""].every(route => server.indexOf(route) > pagesAt),
+    "والربطُ مسجَّلٌ قبل مسارات الصفحات الأربع");
+  const apiBinder = server.slice(server.indexOf('app.use("/api", (req: Request, res: Response, next: NextFunction) => {'));
+  check(apiBinder.slice(0, 300).includes('if (req.path.startsWith("/public/")) { bindPublicLinkContext(req, res, next); return; }'),
+    "وواجهاتُ /api/public تتبع الرمز لا الجلسة");
+  const auth = server.slice(server.indexOf("async function authMiddleware("), server.indexOf("async function authMiddleware(") + 900);
+  check(auth.includes('if (sessionId.startsWith("demo_") && !Repository.isDemoRequest()) { next(); return; }'),
+    "جلسةٌ تجريبية خارج صندوقها بلا هوية — لا «مدير البيئة التجريبية» على بياناتٍ حقيقية");
+  check(server.includes("const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getSharedServerSecret();"),
+    "سرُّ هويات الطلبة المحفوظ للعملية يُقرأ خارج الصندوق — لا يحفظ زائرٌ مفتاحَ صندوقه للطلبة الحقيقيين");
+}
+
 async function main() {
+  await p3PublicLinks();
   p2Registry();
   p1Structure();
   await p1Behaviour();
