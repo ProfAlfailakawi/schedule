@@ -10,6 +10,7 @@ import {
   CALENDAR_KEY_LABEL, calendarFeedKey, createCalendarSecretResolver, deriveCalendarSecret,
 } from "../src/server/calendarSecret";
 import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
+import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
 import { TERM_LINK_FALLBACK_DAYS, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
 
 let passed = 0, failed = 0;
@@ -111,6 +112,25 @@ async function main() {
     const send = server.slice(server.indexOf("async function sendCalendar"), server.indexOf('app.get("/api/public/ics/:token", '));
     check(send.includes("calendarSpanForTerm(term,") && !send.includes("const startDate = term?.AdTermStart"), "D7 sendCalendar يأخذ حدّيه من termWindow");
     check(send.includes("تواريخ الفصل تقديرية"), "D7 والملف يقول إنها تقديرية حين تُستنبط من الاسم");
+  }
+
+
+  /* ── D4: الرقم المدني يُطبَّع في موضعٍ واحد ─────────────────────────────── */
+  {
+    const ascii = "290010112345";
+    check(normalizeCivilId("٢٩٠٠١٠١١٢٣٤٥") === ascii, "D4 الأرقام العربية ← لاتينية");
+    check(normalizeCivilId("۲۹۰۰۱۰۱۱۲۳۴۵") === ascii, "D4 الأرقام الفارسية ← لاتينية");
+    check(normalizeCivilId(" 2900-1011 2345\u200f") === ascii, "D4 المسافات والشرطات وعلامات الاتجاه تُمحى");
+    check(sameCivilId("٢٩٠٠١٠١١٢٣٤٥", ascii) && !sameCivilId("", "") && !sameCivilId(null, undefined), "D4 المطابقة: الفارغ لا يطابق شيئاً");
+    check(!/AdInstructorCivil[^\n]{0,40}\.replace\(\/\\D\/g/.test(server), "D4 لا نسخة ‎\\D‎ وحدها على رقم الأستاذ");
+    check(!/String\([a-z]+\.AdInstructorCivil[^)]*\)\.trim\(\), ?[a-z]+\]/.test(server) && !server.includes('String(i.AdInstructorCivil).trim()'), "D4 لا فهرس استيرادٍ على النصّ الخام");
+    const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
+    check(card.includes("normalizeCivilId(civil)") && card.includes("sameCivilId(row.AdInstructorCivil, digits)"), "D4 بطاقتي تطبّع بالدالة الواحدة");
+    const note = server.slice(server.indexOf('app.post("/api/public/staff/:token/note"'), server.indexOf('app.post("/api/public/staff/:token/note"') + 4000);
+    check(note.includes("normalizeCivilId(body.civil)"), "D4 ملاحظة بطاقتي تطبّع بالدالة الواحدة");
+    check(server.includes("const storedCivil = normalizeCivilId(signer?.AdInstructorCivil)"), "D4 التوقيع يطبّع بالدالة الواحدة");
+    check(server.includes("new Map(instructors.map(row => [normalizeCivilId(row.AdInstructorCivil), row]))"), "D4 الاستيراد يطبّع بالدالة الواحدة");
+    check((server.match(/const AdInstructorCivil = normalizeCivilId\(req\.body\?\.AdInstructorCivil\)/g) || []).length === 2, "D4 إضافة الأستاذ وتعديله يخزّنان الصيغة الواحدة");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

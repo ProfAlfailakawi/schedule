@@ -1,4 +1,23 @@
-import { toEnglishDigits } from "./digits";
+import { digitsOnly, toEnglishDigits } from "./digits";
+
+/**
+ * ── الرقم المدني بصيغةٍ واحدة ─────────────────────────────────────────────────
+ *
+ * كان الرقم يُطبَّع في كل موضعٍ على طريقته: بطاقتي تمحو ‎\D‎ وحدها (فرقمٌ
+ * مخزونٌ بأرقامٍ عربية يصير فارغاً ولا يطابق شيئاً)، والتوقيع يحوّل الأرقام
+ * العربية ثم يمحو، والاستيراد يقارن النصَّ الخام. فالأستاذ نفسه يُعرف في باب
+ * ويُردّ في آخر. القاعدة هنا وحدها: الأرقام العربية والفارسية ← لاتينية، ثم
+ * يُمحى كلُّ ما ليس رقماً (مسافات، شرطات، علامات اتجاه).
+ */
+export function normalizeCivilId(value: unknown): string {
+  return digitsOnly(value);
+}
+
+/** هل الرقمان رقمٌ واحد؟ الفارغ لا يطابق شيئاً — ولا فارغاً مثله. */
+export function sameCivilId(a: unknown, b: unknown): boolean {
+  const left = normalizeCivilId(a);
+  return Boolean(left) && left === normalizeCivilId(b);
+}
 
 /**
  * Validate Kuwaiti Civil ID based on the legacy checksum algorithm.

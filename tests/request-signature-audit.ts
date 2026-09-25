@@ -34,11 +34,11 @@ check(route.length > 400, "مسارُ الإرسال مقروءٌ للتدقيق
 
 /* ── لا يمرّ بلا رقم ──────────────────────────────────────────────────── */
 
-check(route.includes('const civil = asciiDigits(req.body?.civil)'),
+check(route.includes('const civil = normalizeCivilId(req.body?.civil)'),
   "الإرسالُ يقرأ الرقمَ المدني");
 check(route.includes("validateCivilId(civil)"),
   "ويُتحقَّق من صحّته بالخوارزمية الكويتية، فلا يمرّ رقمٌ مخترع");
-check(route.includes("const storedCivil = asciiDigits(signer?.AdInstructorCivil)")
+check(route.includes("const storedCivil = normalizeCivilId(signer?.AdInstructorCivil)")
   && route.includes("if (!storedCivil || storedCivil !== civil)"),
   "ويُطابَق بسجلّ صاحب الرابط نفسِه — وهو ما يجعله توقيعاً");
 /* والرقمُ المخزونُ يُطبَّع كما يُطبَّع المُرسَل: سجلٌّ كُتب بأرقامٍ عربيةٍ أو
