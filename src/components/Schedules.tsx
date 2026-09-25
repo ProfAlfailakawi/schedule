@@ -136,6 +136,7 @@ import { usePageAwake } from "../utils/pageAwake";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts, isBlockingConflict } from "../utils/scheduleIntelligence";
 import { placeholderInstructorIds } from "../utils/instructorIdentity";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
@@ -1321,6 +1322,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
          Dropping them left the caller with one stitched sentence and no way to
          show a wall per line. */
       if (Array.isArray(data?.conflicts) && data.conflicts.length) failure.conflicts = data.conflicts;
+      if (data?.code) failure.code = data.code;
+      if (Array.isArray(data?.changes)) failure.changes = data.changes;
       if (res.status === 409 && data?.conflict === "revision") {
         failure.revisionConflict = true;
         failure.current = data.current;
@@ -4807,10 +4810,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     setMessage(null);
     setSaving(true);
     try {
-      const data = await fetchJson(`/api/intelligence/versions/${copyUndoPoint.id}/restore`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "restore" },
-      });
+      const data = await applyWithOverwriteConfirm("restore",
+        confirm => fetchJson(`/api/intelligence/versions/${copyUndoPoint.id}/restore`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (data === null) return;
       setCopyUndoPoint(null);
       setCopyPreview(null);
       setMessage(`تم التراجع عن آخر عملية نسخ واسترجاع ${data.count ?? 0} سجل.`);
@@ -5419,10 +5425,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       return;
     try {
       setSaving(true);
-      const d = await fetchJson(
-        `/api/intelligence/safety-net/${undoPoint.id}/undo`,
-        { method: "POST", headers: { "x-schedule-confirm": "decision-undo" } },
-      );
+      const d = await applyWithOverwriteConfirm("decision-undo",
+        confirm => fetchJson(
+          `/api/intelligence/safety-net/${undoPoint.id}/undo`,
+          { method: "POST", headers: { "x-schedule-confirm": confirm } },
+        ),
+        options => visualConfirm(options));
+      if (d === null) return;
       setUndoPoint(null);
       setPhysicsNotice("");
       setMessage(d.message || "تم استرجاع القرار السابق.");

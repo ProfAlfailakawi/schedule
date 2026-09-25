@@ -7,6 +7,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { blockingConflicts } from "../src/utils/scheduleBlockers";
+import { describeScopeChanges, replacementLoss, scopeBase, scopeFingerprint } from "../src/utils/scopeFingerprint";
+import { applyWithOverwriteConfirm, SCOPE_CHANGED_CODE } from "../src/utils/scopeOverwrite";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -94,6 +96,55 @@ const route = (signature: string) => {
     "B8 بداية الفصل لا تنسخ مقرراً مؤرشفاً");
   check(genesis.includes("archivedSkipped:archivedSource.length") && genesis.includes("لمقررات مؤرشفة أكاديمياً"), "B8 وتقول كم تركت ولماذا");
   check((server.match(/await splitArchivedCourseRows\(/g) || []).length >= 3, "B8 النسخ ومعاينته وبداية الفصل تقرأ القاعدة نفسها");
+}
+
+/* B9 — publish / restore / undo compare the live scope with the base they were built on. */
+await (async () => {
+  const r = (id: number, course: number, start = "08:00", extra: Record<string, unknown> = {}) => ({ id, AdCourseId: course, SCode: "501", AdInstructorId: 7,
+    fsunday: true, fstarttime: start, fendtime: "08:50", AdRoomCode: "B", AdRoomHall: "1", roomId: "r1", ...extra });
+  const base = scopeBase([r(1, 10), r(2, 11)]);
+  check(scopeFingerprint([r(2, 11), r(1, 10)]) === base.baseFingerprint, "B9 البصمة لا تتأثر بترتيب الصفوف");
+  const live = [r(1, 10, "09:00"), r(3, 12)];
+  const lines = describeScopeChanges(base.baseSignatures, live, id => ({ 10: "أ", 11: "ب", 12: "ج" } as any)[id]);
+  check(lines.length === 3 && lines.some(l => l.startsWith("عُدّل بعدها: أ")) && lines.some(l => l.startsWith("أُضيف بعدها: ج")) && lines.some(l => l.startsWith("حُذف بعدها: ب")),
+    "B9 ما تغيّر بعد الأساس يُسمّى: مُعدَّل ومُضاف ومحذوف");
+  const sent: string[] = [];
+  let asked = 0;
+  const refusal = Object.assign(new Error("x"), { data: { code: SCOPE_CHANGED_CODE, error: "تغيّر", changes: ["عُدّل بعدها: أ"] } });
+  const ok = await applyWithOverwriteConfirm("restore", async header => { sent.push(header); if (sent.length === 1) throw refusal; return "done"; }, async () => { asked++; return true; });
+  check(ok === "done" && asked === 1 && sent.join("|") === "restore|restore, overwrite-newer", "B9 الواجهة تسأل مرة ثم تعيد الطلب بموافقة المحو");
+  const declined = await applyWithOverwriteConfirm("publish", async () => { throw refusal; }, async () => false);
+  check(declined === null, "B9 والرفض لا يكتب شيئاً");
+  const publish = route('app.post("/api/intelligence/drafts/:id/publish"');
+  const restore = route('app.post("/api/intelligence/versions/:id/restore"');
+  const undo = route('app.post("/api/intelligence/safety-net/:id/undo"');
+  for (const [name, body, marker] of [["النشر", publish, "Repository.replaceScheduleScope"], ["الاسترجاع", restore, "Repository.replaceScheduleScope"], ["التراجع", undo, "Repository.replaceScheduleScope"]] as const) {
+    const at = body.search(/scopeOverwriteRefusal\(req,/);
+    check(at > 0 && at < body.indexOf(marker), `B9 ${name} يقارن بالأساس قبل الاستبدال`);
+  }
+  check(server.includes('...scopeBase(await Repository.getSchedulesByScope({collegeId,sectionId,termId})),') && server.includes("...scopeBase(targetUniverse.filter("),
+    "B9 المسودة تحفظ أساسها لحظة إنشائها");
+  check(/response\.once\("finish"[\s\S]{0,300}setScheduleVersionBase\(version\.id, scopeBase\(after\)\)/.test(server), "B9 النسخة تحفظ الجدول كما صار بعد التغيير الذي تحميه");
+  const repo = read("src/db/repository.ts");
+  check(/setScheduleVersionBase: async[\s\S]{0,400}firestoreDb[\s\S]{0,300}db\.scheduleVersions/.test(repo), "B9 حفظ الأساس يعمل في Firestore وفي العرض التجريبي");
+  for (const file of ["src/components/IntelligenceWorkspace.tsx", "src/components/Schedules.tsx", "src/components/LivingScheduleLayer.tsx", "src/components/ScheduleTransfer.tsx"]) {
+    const text = read(file);
+    check(!/"x-schedule-confirm": "(restore|decision-undo)"/.test(text), `B9 ${file.split("/").pop()} لا يسترجع إلا عبر سؤال المحو`);
+  }
+})();
+
+/* B10 — the deadline judges the effect of a replacement, not the button. */
+{
+  const r = (id: number, start: string) => ({ id, AdCourseId: id, SCode: "501", AdInstructorId: 1, fsunday: true, fstarttime: start, fendtime: "09:50", AdRoomCode: "B", AdRoomHall: "1" });
+  const live = [r(1, "08:00"), r(2, "08:00"), r(3, "08:00"), r(4, "08:00")];
+  check(JSON.stringify(replacementLoss(live, live.map(x => ({ ...x, id: x.id + 100 })))) === JSON.stringify({ deleting: 0, total: 4 }), "B10 إعادة كتابة الصفوف نفسها بمعرّفات جديدة ليست حذفاً");
+  check(replacementLoss(live, [live[0], { ...live[1], fstarttime: "09:00" }]).deleting === 3, "B10 ما يُمحى أو يتغيّر يُعدّ");
+  const publish = route('app.post("/api/intelligence/drafts/:id/publish"');
+  check(publish.includes("replacementWholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows,draftWholesaleKind)")
+    && !publish.includes('{kind:"import"});'), "B10 نشر مسودة عادية لا يُرفض بوصفه استيراداً");
+  check(route('app.post("/api/intelligence/versions/:id/restore"').includes("replacementWholesaleRefusal(") && route('app.post("/api/intelligence/safety-net/:id/undo"').includes("replacementWholesaleRefusal("),
+    "B10 والاسترجاع والتراجع يُقاسان بالقاعدة نفسها");
+  check(/kind: "bulk-delete", deleting: loss\.deleting, total: loss\.total/.test(server), "B10 قاعدة الحذف الجماعي موصولة");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

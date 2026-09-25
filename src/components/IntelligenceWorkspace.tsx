@@ -77,6 +77,7 @@ import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import PagedImportPreview from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
 import { roomIdentityKey } from "../utils/locationRegistry";
@@ -611,7 +612,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       catch { const error=new Error(r.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${r.status}). أعد المحاولة بعد قليل.`);telemetryError("response.parse",error);throw error; }
     }
     if (!r.ok)
-      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), { issues: d.issues });
+      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), { issues: d.issues, code: d.code, changes: d.changes });
     return d;
   };
   useEffect(() => {
@@ -1415,10 +1416,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     // no extra safety — and on iOS it can be suppressed permanently.
     setBusy(true);
     try {
-      await fetchJson(`/api/intelligence/drafts/${d.id}/publish`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "publish" },
-      });
+      /* A draft saved earlier may be published over edits made since; the
+         server names them and this asks before erasing them. */
+      const published = await applyWithOverwriteConfirm("publish",
+        confirm => fetchJson(`/api/intelligence/drafts/${d.id}/publish`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (published === null) return;
       setMessage("تم النشر بنجاح، وحُفظت نسخة زمنية قبل التغيير.");
       setScenario(null);
       setScenarioEval(null);
@@ -1435,10 +1441,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     // relying on a native confirm dialog.
     setBusy(true);
     try {
-      await fetchJson(`/api/intelligence/versions/${v.id}/restore`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "restore" },
-      });
+      const restored = await applyWithOverwriteConfirm("restore",
+        confirm => fetchJson(`/api/intelligence/versions/${v.id}/restore`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (restored === null) return;
       setMessage("تم الاسترجاع، والنسخة التي كانت قبل الاسترجاع محفوظة أيضاً.");
       await reload();
     } catch (e: any) {

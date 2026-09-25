@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
-import { PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
+import { PrimaryButton, SecondaryButton, useDialogDismiss, visualConfirm } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
 import { AR, countOf } from "../utils/arabicCount";
@@ -8,6 +8,7 @@ import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
@@ -1058,9 +1059,13 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const undoReplacement = async (versionId: string) => {
     setBusy(true); setError(null);
     try {
-      const response = await fetch(`/api/intelligence/versions/${encodeURIComponent(versionId)}/restore`, { method: "POST", headers: { "x-schedule-confirm": "restore" } });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "تعذر التراجع");
+      const done = await applyWithOverwriteConfirm("restore", async confirm => {
+        const response = await fetch(`/api/intelligence/versions/${encodeURIComponent(versionId)}/restore`, { method: "POST", headers: { "x-schedule-confirm": confirm } });
+        const data = await response.json();
+        if (!response.ok) throw Object.assign(new Error(data.error || "تعذر التراجع"), { data });
+        return data;
+      }, options => visualConfirm(options));
+      if (done === null) return;
       await loadReplacementHistory(); onChanged();
     } catch (e: any) { setError(e.message || "تعذر التراجع"); }
     finally { setBusy(false); }

@@ -435,6 +435,9 @@ export interface ScheduleVersion {
   label: string;
   source: "manual" | "draft" | "publish" | "undo" | "copy" | "import";
   rows: FSchedule[];
+  /** The live scope right after the change this version protects (see scopeFingerprint). */
+  baseFingerprint?: string;
+  baseSignatures?: Record<string, string>;
 }
 
 export interface ScheduleDraft {
@@ -451,6 +454,9 @@ export interface ScheduleDraft {
   status: "draft" | "published" | "archived";
   source: "what-if" | "auto" | "import" | "manual";
   rows: FSchedule[];
+  /** The live scope the draft was built against (see scopeFingerprint). */
+  baseFingerprint?: string;
+  baseSignatures?: Record<string, string>;
   /** Original scanned table, kept immutable for the colour-coded change report. */
   baselineRows?: FSchedule[];
   sourceFileName?: string;

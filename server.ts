@@ -29,6 +29,7 @@ import {
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
+import { describeScopeChanges, fingerprintOfSignatures, replacementLoss, scopeBase, scopeSignatures, type ScopeBase } from "./src/utils/scopeFingerprint";
 import { approvalBlockerCount, blockingConflictDetails, blockingConflicts, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { buildNotifications } from "./src/utils/notificationCenter";
@@ -1219,10 +1220,68 @@ function safeSystemUser(user: any) {
 async function captureScopeVersion(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, label: string, source: "manual"|"draft"|"publish"|"undo"|"copy"|"import" = "manual") {
   if (!req.user) return undefined;
   const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
-  return Repository.createScheduleVersion({
+  const version = await Repository.createScheduleVersion({
     SystemUserId: Number(req.user.SystemUserId), userName: String(req.user.Name || req.user.SystemUserLogin || ""),
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, label, source, rows
   });
+  /* ── ما بعد التغيير هو أساسُ التراجع عنه ────────────────────────────────
+     النسخة تُؤخذ قبل التغيير الذي تحميه. فحين يُطلب التراجع لاحقاً، السؤال
+     ليس «هل تغيّر الجدول منذ النسخة؟» — تغيّر، وهذا هو التغيير نفسه — بل «هل
+     تغيّر شيءٌ آخر بعده؟». فيُسجَّل الجدولُ كما صار حين ينجح الطلب، ويُقارن به
+     عند الاسترجاع (scopeOverwriteRefusal). */
+  const response = (req as any).res as Response | undefined;
+  if (version?.id && response && typeof response.once === "function") {
+    response.once("finish", () => {
+      if (response.statusCode >= 400) return;
+      void Repository.getSchedulesByScope({ collegeId, sectionId, termId })
+        .then(after => Repository.setScheduleVersionBase(version.id, scopeBase(after)))
+        .catch(() => undefined);
+    });
+  }
+  return version;
+}
+
+/* ── «x-schedule-confirm» قد يحمل أكثر من موافقة ───────────────────────────
+   «publish» أو «restore» تقول «أريد هذا الفعل»، و«overwrite-newer» تقول «وأعرف
+   أنه سيمحو ما تغيّر بعد أساسه». تُرسلان معاً مفصولتين بفاصلة. */
+function confirmTokens(req: AuthenticatedRequest): Set<string> {
+  return new Set(String(req.get("x-schedule-confirm") || "").split(",").map(token => token.trim()).filter(Boolean));
+}
+
+/**
+ * ── لا يُمحى ما تغيّر بعد الأساس دون أن يُسمّى ─────────────────────────────
+ * The live scope against the base a draft or version was built on. Equal, or no
+ * base recorded (older objects): nothing to say. Different, and the caller has
+ * not said «overwrite-newer»: a refusal that lists what would be lost.
+ */
+async function scopeOverwriteRefusal(
+  req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, base: ScopeBase,
+): Promise<{ error: string; code: string; changes: string[] } | null> {
+  if (!base?.baseSignatures || !base.baseFingerprint) return null;
+  if (confirmTokens(req).has("overwrite-newer")) return null;
+  const live = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+  if (fingerprintOfSignatures(scopeSignatures(live)) === base.baseFingerprint) return null;
+  const courses = await Repository.getCoursesBySection(sectionId).catch(() => [] as any[]);
+  const nameOf = new Map((courses as any[]).map(course => [Number(course.AdCourseId), String(course.CourseName || "")]));
+  const changes = describeScopeChanges(base.baseSignatures, live, id => nameOf.get(id) || "");
+  return {
+    error: `تغيّر الجدول بعد أن أُخذت هذه النسخة: ${countOf(changes.length, AR.change)} ستُمحى إن تابعت. لم يُكتب شيء.`,
+    code: "scope-changed-since-base",
+    changes: changes.slice(0, 40),
+  };
+}
+
+/* ── الموعد النهائي يقيس أثر الاستبدال، لا اسم الزر ─────────────────────────
+   استيرادُ ملفٍّ ونسخُ فصلٍ تسليمٌ شامل بطبيعته. أما نشرُ مسودةٍ عادية أو
+   استرجاعُ نسخةٍ أو التراجعُ عن قرار فيُقاس بما يمحوه فعلاً من الجدول الحيّ،
+   بقاعدة الحذف الجماعي نفسها (isWholesaleChange). */
+async function replacementWholesaleRefusal(
+  collegeId: number, sectionId: number, termId: number, nextRows: any[], kind?: "import" | "copy-term",
+): Promise<string | null> {
+  if (kind) return wholesaleRefusal(collegeId, sectionId, termId, { kind });
+  const live = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+  const loss = replacementLoss(live, nextRows);
+  return wholesaleRefusal(collegeId, sectionId, termId, { kind: "bulk-delete", deleting: loss.deleting, total: loss.total });
 }
 
 function safeImportEvidence(input:any){
@@ -8758,6 +8817,7 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   const draft=await Repository.createScheduleDraft({
     SystemUserId:req.user.SystemUserId,userName:req.user.Name,
     AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,
+    ...scopeBase(await Repository.getSchedulesByScope({collegeId,sectionId,termId})),
     name:String(req.body?.name||"سيناريو جديد").slice(0,100),
     source:["what-if","auto","import","manual"].includes(req.body?.source)?req.body.source:"what-if",
     rows,baselineRows,
@@ -10360,7 +10420,7 @@ app.delete("/api/intelligence/drafts/:id/rows", requirePermission(7), async (req
 });
 
 app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="publish"){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
+  if(!confirmTokens(req).has("publish")){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
   if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
   if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
@@ -10373,8 +10433,11 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
 
   /* النشر من مسودةٍ مستوردة هو الاستيراد نفسه واصلاً إلى الجدول: هنا يُقاس
      بالموعد، لا عند رفع الملف — فقد يُرفع الملف قبل الموعد ويُنشر بعده. */
-  if (draft.source === "import" || draft.importLayout === "authority-pdf") {
-    const importRefusal = await wholesaleRefusal(draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, { kind: "import" });
+  const draftWholesaleKind: "import" | "copy-term" | undefined =
+    draft.source === "import" || draft.importLayout === "authority-pdf" ? "import"
+      : /^بداية الفصل/.test(String(draft.name || "")) ? "copy-term" : undefined;
+  if (draftWholesaleKind) {
+    const importRefusal = await wholesaleRefusal(draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, { kind: draftWholesaleKind });
     if (importRefusal) { res.status(409).json({ error: importRefusal, code: "deadline-wholesale" }); return; }
   }
   /* ── «فصلٌ فارغ» يُقاس لحظة النشر لا لحظة الحفظ ─────────────────────────
@@ -10387,6 +10450,11 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
       return;
     }
   }
+  /* ما تغيّر في الجدول بعد حفظ المسودة يُسمّى قبل أن يُمحى. */
+  const draftOverwrite = draft.status !== "published"
+    ? await scopeOverwriteRefusal(req, draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, draft)
+    : null;
+  if (draftOverwrite) { res.status(409).json(draftOverwrite); return; }
 
   let publishRows=draft.importLayout==="authority-pdf"
     ?assignAuthoritySections(safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId))
@@ -10525,7 +10593,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
         code:"schedule-locked",
       });return;
     }
-    const groupDeadline=await wholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,{kind:"import"});
+    const groupDeadline=await replacementWholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows,draftWholesaleKind);
     if(groupDeadline){
       res.status(409).json({
         error:`«${group.scope.siteLabel}» — ${groupDeadline} لم يُنشر أي صف.`,
@@ -10603,7 +10671,7 @@ app.get("/api/intelligence/versions/compare", requirePermission(7), async (req: 
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
 });
 app.post("/api/intelligence/versions/:id/restore", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="restore"){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
+  if(!confirmTokens(req).has("restore")){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const restoreOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(restoreOverwrite){res.status(409).json(restoreOverwrite);return;} const restoreDeadline=await replacementWholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); if(restoreDeadline){res.status(409).json({error:restoreDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
 });
 
 app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -11051,7 +11119,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
   const genesisConflicts=blockingConflicts(rows,[...external,...rows],await approvalBlockerOptions());
   const rowIssues=mapSmartIssuesToRows(rows,issues,genesisConflicts);
   const issueRowIds=Object.keys(rowIssues).map(Number);
-  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
+  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,...scopeBase(targetUniverse.filter(r=>Number(r.AdCollegeId)===collegeId&&Number(r.AdSectionId)===sectionId)),name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
   const courseById=new Map(courses.map(course=>[Number(course.AdCourseId),course]));
   const instructorById=new Map(instructors.map(instructor=>[Number(instructor.AdInstructorId),instructor]));
   const previewRows=draft.rows.map((row,index)=>({
@@ -11077,7 +11145,7 @@ app.get("/api/intelligence/safety-net", requirePermission(7), async (req: Authen
 });
 
 app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="decision-undo"){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
+  if(!confirmTokens(req).has("decision-undo")){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const undoOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(undoOverwrite){res.status(409).json(undoOverwrite);return;} const undoDeadline=await replacementWholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); if(undoDeadline){res.status(409).json({error:undoDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
 });
 
 
