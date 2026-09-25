@@ -283,6 +283,18 @@ async function main() {
     check(page.includes("ساعات تدريس أسبوعية") && page.includes('" نصاب"') && !page.includes('["ساعة أسبوعياً"'), "D13 البطاقة تسمّي الرقمين باسميهما");
   }
 
+
+  /* ── D16: الأسبوعان القادمان وحالة الاعتماد في البطاقة ───────────────────── */
+  {
+    const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
+    check(card.includes("upcomingExceptions") && card.includes("14 * 86400000") && card.includes('timeZone: "Asia/Kuwait"'), "D16 إلغاءات وتغطيات أربعة عشر يوماً بتقويم الكويت");
+    check(card.includes('entry.kind === "cover" && Number(entry.coverInstructorId) === Number(person.AdInstructorId)'), "D16 تغطيته لغيره تظهر، ولا يظهر جدول أحدٍ آخر");
+    check(card.includes("departmentApprovals") && card.includes("APPROVAL_STATUS_LABEL[status]") && card.includes('approval?.status || "drafting"'), "D16 حالة اعتماد كل قسمٍ بتسميات الدورة نفسها");
+    const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(page.includes('id="approvals"') && page.includes('id="soon"') && page.includes("خلال الأسبوعين القادمين"), "D16 الصفحة تعرضهما للقراءة فقط");
+    check(!/id="approvals"[^>]*<button|id="soon"[^>]*<button/.test(page), "D16 لا أزرار فيهما");
+  }
+
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }

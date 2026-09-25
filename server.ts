@@ -12278,6 +12278,51 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
 
   const teachingColleges = [...new Set(shaped.map(row => row.college).filter(Boolean))];
 
+  /* ── ما يقع في أسبوعيه القادمين، وحالةُ اعتماد كل قسمٍ يدرّس فيه ──────────
+   * الإلغاءُ والتغطيةُ بتاريخٍ محدّد كانا يصلان إلى تقويمه وحده؛ البطاقةُ نفسُها
+   * لا تقولهما. وحالةُ الاعتماد (قيد الإعداد… معتمد) تقول له هل جدولُه نهائي.
+   * كلاهما للقراءة فقط، ولا يُكشف فيهما جدولُ أحدٍ غيره. */
+  const kuwaitToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuwait", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const horizon = new Date(Date.parse(`${kuwaitToday}T00:00:00Z`) + 14 * 86400000).toISOString().slice(0, 10);
+  const [termExceptions, termApprovals, displayTermRows] = await Promise.all([
+    Repository.getScheduleWeekExceptions(Number(displayTermId)),
+    Repository.getScheduleApprovalsForTerm(Number(displayTermId)),
+    displayTermId === link.AdTermId ? Promise.resolve(null) : Repository.getSchedulesByScope({ termId: displayTermId }),
+  ]);
+  const allTermRows = (displayTermRows || await Repository.getSchedulesByScope({ termId: link.AdTermId })) as any[];
+  const termRowById = new Map(allTermRows.map(row => [Number(row.id), row]));
+  const ownIds = new Set(rows.map(row => Number(row.id)));
+  const courseLabel = (row: any) => row?.AdCourseName || courseById.get(row?.AdCourseId)?.CourseName || courseById.get(row?.AdCourseId)?.CourseCode || "محاضرة";
+  const upcomingExceptions = termExceptions
+    .filter(entry => entry.date >= kuwaitToday && entry.date <= horizon)
+    .filter(entry => ownIds.has(Number(entry.scheduleId)) || (entry.kind === "cover" && Number(entry.coverInstructorId) === Number(person.AdInstructorId)))
+    .map(entry => {
+      const row = termRowById.get(Number(entry.scheduleId));
+      const mine = ownIds.has(Number(entry.scheduleId));
+      return {
+        date: entry.date,
+        day: SHARE_DAY_NAMES[SHARE_DAY_KEYS.indexOf(weekExceptionDayKey(entry.date) as any)] || "",
+        course: courseLabel(row),
+        timeRange: row ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "",
+        kind: !mine ? "covering" as const : entry.kind === "cancel" ? "cancelled" as const : "handed" as const,
+        text: !mine ? "تغطّي هذه المحاضرة ليومٍ واحد"
+          : entry.kind === "cancel" ? "أُلغيت هذا اليوم"
+          : `يغطّيها ${entry.coverInstructorName || "زميل"} هذا اليوم`,
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const departmentScopes = new Map<string, { collegeId: number; sectionId: number }>();
+  for (const row of rows) departmentScopes.set(`${row.AdCollegeId}:${row.AdSectionId}`, { collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId) });
+  const departmentApprovals = [...departmentScopes.values()].map(scope => {
+    const approval = termApprovals.find(item => Number(item.AdCollegeId) === scope.collegeId && Number(item.AdSectionId) === scope.sectionId);
+    const status = approval?.status || "drafting";
+    return {
+      department: sections.find(item => Number(item.AdSectionId) === scope.sectionId)?.AdSectionName || "القسم",
+      college: colleges.find(item => Number(item.AdCollegeId) === scope.collegeId)?.AdCollegeName || "",
+      status, label: APPROVAL_STATUS_LABEL[status],
+    };
+  });
+
   return {
     name: person.AdInstructorName || "",
     college: teachingColleges.length > 1 ? "كل مواقعك" : (teachingColleges[0] || colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || ""),
@@ -12311,6 +12356,8 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     longestGap: Math.max(0, ...byDay.flatMap(day => day.gaps.map(gap => gap.minutes))),
     byDay,
     rows: shaped,
+    upcomingExceptions,
+    departmentApprovals,
     requestLinks,
     movementHistory: movementHistory.slice(0, 100),
   };
@@ -13900,6 +13947,16 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .movement-meta[data-decision=rejected]{color:#f87171}
 .requests-panel{margin-top:12px;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
 .requests-panel a.req-link{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;background:var(--jade);color:#04100d;font-weight:600;font-size:13.5px;text-decoration:none;margin-top:8px}
+.approvals{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.approvals span{padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:11.5px;color:var(--dim)}
+.approvals span[data-status=accepted]{border-color:var(--jade);color:var(--jade)}
+.approvals span[data-status=returned]{border-color:#f87171;color:#f87171}
+.soon{margin:0 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+.soon b{display:block;font-size:13px;margin-bottom:6px}
+.soon ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.soon li{font-size:12.5px;color:var(--dim);line-height:1.7}
+.soon li[data-kind=cancelled] strong{color:#f87171}
+.soon li[data-kind=covering] strong{color:var(--jade)}
 .pastnote{
   margin-block-end:14px;padding:11px 13px;border-radius:12px;
   border:1px solid var(--line);background:color-mix(in srgb,var(--brass) 9%,transparent);
@@ -13966,7 +14023,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       <label for="termPick">الفصل الدراسي</label>
       <select id="termPick" aria-label="اختر الفصل الدراسي"></select>
     </div>
+    <div class="approvals" id="approvals" aria-label="حالة اعتماد جدول القسم"></div>
     <div class="stats" id="stats"></div>
+    <div class="soon" id="soon" hidden></div>
     <div class="card-tabs" role="tablist">
       <button type="button" class="card-tab" id="tab-week" role="tab" aria-selected="true">الجدول الأسبوعي</button>
       <button type="button" class="card-tab" id="tab-movement" role="tab" aria-selected="false">حركة الجدول</button>
@@ -14118,6 +14177,16 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       termPick.innerHTML=d.availableTerms.map(function(t){return '<option value="'+t.id+'"'+(t.id===d.termId?' selected':'')+'>'+esc(t.name)+'</option>'}).join("");
       termPick.onchange=function(){switchTerm(Number(termPick.value)||0)};
     }
+    /* حالةُ اعتماد كل قسمٍ يدرّس فيه — للقراءة فقط. */
+    document.getElementById("approvals").innerHTML=(d.departmentApprovals||[]).map(function(a){
+      return '<span data-status="'+esc(a.status)+'">'+esc(a.department)+' · '+esc(a.label)+'</span>'}).join("");
+    /* ما يقع في أسبوعيه القادمين: إلغاءٌ، أو تغطيةٌ له أو منه. */
+    var soon=document.getElementById("soon"),upcoming=d.upcomingExceptions||[];
+    if(upcoming.length){
+      soon.innerHTML='<b>خلال الأسبوعين القادمين</b><ul>'+upcoming.map(function(x){
+        return '<li data-kind="'+esc(x.kind)+'"><time dir="ltr">'+esc(x.date)+'</time> · '+esc(x.day)+' — <strong>'+esc(x.course)+'</strong> '+(x.timeRange?'<span>'+esc(x.timeRange)+'</span> ':'')+'· '+esc(x.text)+'</li>'}).join("")+'</ul>';
+      soon.removeAttribute("hidden");
+    } else { soon.innerHTML=""; soon.setAttribute("hidden",""); }
     var nouns=d.countNouns||{};
     document.getElementById("stats").innerHTML=[
       ["ساعات تدريس أسبوعية",hours(d.weeklyMinutes)],
