@@ -214,7 +214,7 @@ export function TopologyScene({ topology }: { topology: any }) {
           </p>
         </div>
         <Badge tone={conflicts ? "warning" : "success"}>
-          {conflicts ? `${conflicts} موضع تحقق` : "بلا موانع"}
+          {conflicts ? `${countOf(conflicts, AR.position)} للتحقق` : "بلا موانع"}
         </Badge>
       </header>
 

@@ -1043,7 +1043,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const after = request.after;
     if (!before || !after) return;
     const issues = findConflicts([after], rows.filter(item => Number(item.id) !== Number(before.id)));
-    setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر ${issues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تعارض في هذه المعاينة.` : "لا يظهر تعارض مانع في هذه المعاينة." });
+    setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر في هذه المعاينة ${countOf(issues.length, AR.conflict)}.` : "لا يظهر تعارض مانع في هذه المعاينة." });
     setReviewFocus(new Set([Number(before.id)]));
     changeView("week");
   // one-shot handoff from «جرّب»; consumed once the real board is ready.
@@ -1993,7 +1993,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       const result = await flushOfflineScheduleQueue();
       setOfflinePending(result.remaining);
       if (result.done) {
-        setPhysicsNotice(`تمت مزامنة ${result.done.toLocaleString("ar-KW-u-nu-latn")} تغييرات محلية.`);
+        setPhysicsNotice(`تمت مزامنة ${countOf(result.done, oblique(AR.localChange))}.`);
         await loadRows({ silent: true }).catch(() => undefined);
       } else if (result.conflict) {
         setPhysicsNotice("عاد الاتصال؛ تم حفظ التغيير المتعارض للمراجعة خارج طابور المزامنة حتى لا يعلق العداد.");
@@ -2022,7 +2022,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         setOfflinePending(result.remaining);
         if (result.done) {
           setPhysicsNotice(result.remaining
-            ? `${result.remaining.toLocaleString("ar-KW-u-nu-latn")} تغيير ما زال بانتظار التثبيت.`
+            ? `ما زال بانتظار التثبيت: ${countOf(result.remaining, AR.change)}.`
             : "تم تثبيت التغييرات في الخلفية.");
           void loadRows({ silent: true }).catch(() => undefined);
         } else if (result.conflict) {
@@ -2714,7 +2714,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             .slice(0, 4)
             .map(item => countOf(item.minutes, AR.minute));
           if (normalDurations.length) {
-            return `مدة ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
+            return `مدة ${countOf(duration, oblique(AR.minute))} غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
           }
         }
 
@@ -8838,7 +8838,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                                   </li>
                                 ))}
                               </ul>
-                              {matched.length > shown.length ? <p className="schedule-borrow-more">و{matched.length - shown.length} قاعة أخرى — حدِّد البحث لتضييقها.</p> : null}
+                              {matched.length > shown.length ? <p className="schedule-borrow-more">و{countOf(matched.length - shown.length, AR.room)} غيرها — حدِّد البحث لتضييقها.</p> : null}
                             </>
                           );
                         })()}
@@ -9512,7 +9512,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         if (detail.payload.roomHall) after.AdRoomHall = String(detail.payload.roomHall);
         if (detail.payload.instructorId) after.AdInstructorId = Number(detail.payload.instructorId);
         const issues = findConflicts([after], rows.filter(item => item.id !== before.id));
-        setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر ${issues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تعارض في هذه المعاينة.` : "لا يظهر تعارض مانع في هذه المعاينة." });
+        setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر في هذه المعاينة ${countOf(issues.length, AR.conflict)}.` : "لا يظهر تعارض مانع في هذه المعاينة." });
         setReviewFocus(new Set([id]));
         changeView("week");
         return;
@@ -9719,7 +9719,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           </div>
         </div>
       ) : null}
-      {pendingNoticeVisible&&pendingOwnRows.length?<div className="pending-room-notice no-print"><div><CircleAlert aria-hidden="true"/><span>لديك <b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")}</b> شعب لم يتم تثبيت قاعاتها بعد.</span></div><div><SecondaryButton type="button" data-guide-ignore="فلتر القاعات المعلقة" onClick={()=>{setPendingOnly(true);setPendingNoticeVisible(false)}}>استكمال القاعات</SecondaryButton><button type="button" data-guide-ignore="إخفاء تنبيه القاعات المعلقة" className="pending-room-dismiss" aria-label="إخفاء التنبيه" onClick={()=>setPendingNoticeVisible(false)}><X/></button></div></div>:null}
+      {pendingNoticeVisible&&pendingOwnRows.length?<div className="pending-room-notice no-print"><div><CircleAlert aria-hidden="true"/><span>لم تُثبَّت بعد قاعات <b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(pendingOwnRows.length, AR.section)} لديك.</span></div><div><SecondaryButton type="button" data-guide-ignore="فلتر القاعات المعلقة" onClick={()=>{setPendingOnly(true);setPendingNoticeVisible(false)}}>استكمال القاعات</SecondaryButton><button type="button" data-guide-ignore="إخفاء تنبيه القاعات المعلقة" className="pending-room-dismiss" aria-label="إخفاء التنبيه" onClick={()=>setPendingNoticeVisible(false)}><X/></button></div></div>:null}
       {returnNote || error || message ? <div className="schedule-feedback-stack" aria-live="polite">
         {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
         {error ? <Notice>{error}</Notice> : null}
@@ -9734,7 +9734,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               own pill that does not clear until the shelf is empty. */}
           {parked.length ? <button type="button" data-guide-ignore="فتح قائمة التغييرات التي رفضها الخادم بعد انقطاع الاتصال" className={`schedule-ops-pill warn ${parkedOpen?"on":""}`} onClick={()=>setParkedOpen(value=>!value)}><ShieldAlert aria-hidden="true"/><b>{countOf(parked.length, AR.change)} رفضها الخادم</b></button> : null}
           {liveCollaborators ? <span className="schedule-ops-pill"><UsersRound aria-hidden="true"/><b>{liveCollaborators.toLocaleString("ar-KW-u-nu-latn")} يعمل الآن</b></span> : null}
-          {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>{(liveEditors + liveHolders).toLocaleString("ar-KW-u-nu-latn")} بطاقة تحت التحرير</b></span> : null}
+          {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>تحت التحرير: {countOf(liveEditors + liveHolders, AR.card)}</b></span> : null}
         </div>
       ) : null}
       {/* ── ما رفضه الخادم، معروضاً أخيراً ────────────────────────────────────
@@ -11360,7 +11360,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                             style={{ ["--reading" as any]: `${dayLoad.share[d.key] || 0}%` }}
                           >
                             <strong>{d.label}</strong>
-                            <span><b>{dayCounts[d.key] || 0}</b> موعدًا</span>
+                            <span><b>{dayCounts[d.key] || 0}</b> {nounFor(dayCounts[d.key] || 0, AR.appointment)}</span>
                             <small>ذروة {layout.busiest} معًا</small>
                           </div>
                           <div
@@ -11957,8 +11957,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             </header>
             <div className="repair-cost">
               <span><b>{repair.moves.length.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.moves.length, AR.move)}</span>
-              <span><b className="visual-metric-flow"><span>{repair.before.toLocaleString("ar-KW-u-nu-latn")}</span><ChevronLeft aria-hidden="true" /><span>{repair.after.toLocaleString("ar-KW-u-nu-latn")}</span></b> تداخل</span>
-              <span><b>{repair.instructorsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> أساتذة متأثرون</span>
+              <span><b className="visual-metric-flow"><span>{repair.before.toLocaleString("ar-KW-u-nu-latn")}</span><ChevronLeft aria-hidden="true" /><span>{repair.after.toLocaleString("ar-KW-u-nu-latn")}</span></b> {nounFor(repair.after, AR.clash)}</span>
+              <span><b>{repair.instructorsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.instructorsAffected, AR.instructor)} {nounFor(repair.instructorsAffected, AR.affectedHumanAdj)}</span>
               <span><b>{repair.roomsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.roomsAffected, AR.room)}</span>
             </div>
             <ol className="repair-steps">

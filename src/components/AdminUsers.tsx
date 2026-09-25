@@ -1111,7 +1111,7 @@ export default function AdminUsers({
               })}
             </div>
             <div className="permission-selection-summary">
-              <span><b>{permSelections.length}</b> صلاحية محددة من <b>{forms.length}</b></span>
+              <span>المحدَّد <b>{permSelections.length}</b> من <b>{forms.length}</b> {nounFor(forms.length, AR.permission)}</span>
               {permSelections.length ? (
                 <button type="button" onClick={() => setPermSelections([])}>مسح الاختيار</button>
               ) : null}
@@ -1286,7 +1286,7 @@ export default function AdminUsers({
                   <i style={{ width: `${exportPercent}%` }} />
                 </div>
                 <div className="vault-export-progress-meta">
-                  <span><b>{exportJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> سجل جُمِع</span>
+                  <span>جُمِع <b>{exportJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(exportJob.documentCount, AR.record)}</span>
                   <span><b>{exportJob.completedUnits.toLocaleString("ar-KW-u-nu-latn")}</b> / {countOf(exportJob.totalUnits, AR.stage)}</span>
                   {exportJob.sizeBytes ? <span><b>{(exportJob.sizeBytes / 1024 / 1024).toFixed(exportJob.sizeBytes > 10 * 1024 * 1024 ? 1 : 2)}</b> MB</span> : null}
                 </div>
@@ -1486,7 +1486,7 @@ export default function AdminUsers({
           </span>
           <span>
             <UserCog />
-            <b>{users.filter((u) => u.AdInstructorId).length}</b> لوحة شخصية
+            <b>{users.filter((u) => u.AdInstructorId).length}</b> {nounFor(users.filter((u) => u.AdInstructorId).length, AR.board)} {nounFor(users.filter((u) => u.AdInstructorId).length, AR.personalFemAdj)}
           </span>
         </div>
         <div className="master-detail-shell">

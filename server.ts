@@ -15539,7 +15539,6 @@ function asciiDigits(value){
     .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d));});
 }
 ${ARABIC_COUNT_SCRIPT}
-function arCourses(n){ return countOf(n, AR.course); }
 
 (function(){
   var TOKEN=${JSON.stringify(token)};
@@ -15668,7 +15667,7 @@ function arCourses(n){ return countOf(n, AR.course); }
         hits += shown;
       });
       nohit.hidden = hits>0;
-      seekCount.textContent = q ? arCourses(hits) : "";
+      seekCount.textContent = q ? countOf(hits, AR.course) : "";
     });
     document.addEventListener("input",function(e){
       var input=e.target;
@@ -15687,7 +15686,7 @@ function arCourses(n){ return countOf(n, AR.course); }
       send.textContent = picked.size===0 ? "اختر مقرراً واحداً على الأقل"
         : nm.length<3 ? "اكتب اسمك"
         : cv.length!==12 ? "أدخل الرقم المدني (12 رقماً)"
-        : "إرسال · "+arCourses(picked.size);
+        : "إرسال · "+countOf(picked.size, AR.course);
     }
 
     send.onclick=function(){
@@ -15703,7 +15702,7 @@ function arCourses(n){ return countOf(n, AR.course); }
           document.getElementById("root").innerHTML=
             '<div class="done"><div class="tick">✓</div>'+
             '<h2>وصلت إجابتك</h2>'+
-            '<p>شكراً '+esc(x.d.name)+' — سجّلنا اختيارك: '+arCourses(x.d.count)+'.<br>'+
+            '<p>شكراً '+esc(x.d.name)+' — سجّلنا اختيارك: '+countOf(x.d.count, AR.course)+'.<br>'+
             'هذا ليس تسجيلاً؛ أكمل تسجيلك كالمعتاد. ويمكنك فتح الرابط مرة أخرى لتعديل اختيارك.</p></div>';
           window.scrollTo(0,0);
         })

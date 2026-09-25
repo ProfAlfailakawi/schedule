@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, CheckCheck, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
 import { NOTIFY_FOCUS_KEY, writeNotifyFocus } from "../utils/notifyFocus";
-import { AR, countOf, oblique } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 /**
  * ── مركز الإشعارات ──────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
           <header>
             <div>
               <strong>الإشعارات</strong>
-              <small>{mine ? (mine === 1 ? "أمرٌ واحد ينتظرك" : mine === 2 ? "أمران ينتظرانك" : `${mine} أمور تنتظرك`) : "لا شيء مطلوبٌ منك الآن"}</small>
+              <small>{mine ? `${countOf(mine, AR.matter)} ${nounFor(mine, AR.waitsYouVerb)}` : "لا شيء مطلوبٌ منك الآن"}</small>
             </div>
             <span className="notify-actions">
               {fresh ? (

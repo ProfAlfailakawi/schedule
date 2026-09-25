@@ -2541,7 +2541,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       {historyModel.archive ? (
                         <th scope="col" className="is-archive">
                           <bdi dir="ltr">{historyModel.archive.label}</bdi>
-                          <span>{num(historyModel.archive.yearCount)} سنوات سابقة</span>
+                          <span>قبلها {countOf(historyModel.archive.yearCount, AR.year)}</span>
                         </th>
                       ) : null}
                       {historyModel.years.map(year => (
@@ -3946,9 +3946,9 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
           <section className="print-explicit-page print-visiting-history-page" key={`visiting-history-page-${page.peoplePageIndex + 1}-${page.yearPageIndex + 1}`}>
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <div className="print-query-summaryline print-history-summaryline">
-              <span><b>{sortedPeople.length}</b> منتدب فعلي</span>
+              <span><b>{sortedPeople.length}</b> {nounFor(sortedPeople.length, AR.visitor)} فعلاً</span>
               <span><b>{model.totals.years}</b> {nounFor(model.totals.years, AR.academicYear)}</span>
-              {yearPages.length > 1 ? <span><b>{page.yearPageIndex + 1}</b> من <b>{yearPages.length}</b> نطاق سنوات</span> : null}
+              {yearPages.length > 1 ? <span>نطاق السنوات <b>{page.yearPageIndex + 1}</b> من <b>{yearPages.length}</b></span> : null}
               <span className="print-history-legend">داخل كل سنة: <b>الأول</b> ثم <b>الثاني</b> · الرقم = عدد الشعب</span>
             </div>
             <table className="print-history-matrix">

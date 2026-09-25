@@ -56,6 +56,21 @@ const PATTERN = new RegExp(`(?:${INTERP})${ISO}${TAGS}${ISO}(?:${nounAlternation
 /* Noun-first names that follow an interpolation. Matched against the source
  * line; each entry must still match something, so a stale one is reported. */
 const ALLOW: Array<{ file: string; contains: string; why: string }> = [
+  { file: "server.ts", contains: "${dayLabel} يوم محجوز", why: "«الأحد يوم محجوز» — اسم يوم قبل «يوم»، لا عدد" },
+  { file: "server.ts", contains: "${requestedInstructor.AdInstructorName} يوم ${dayMatch.label}", why: "اسم أستاذ ثم «يوم الأحد»" },
+  { file: "server.ts", contains: "\"موعد آخر\")} شعبة ${String(other.SCode", why: "اسم مقرر ثم «شعبة 01» — رمز الشعبة بعد اسمها" },
+  { file: "server.ts", contains: "${movementName(now)} تغيّر موعدها", why: "«تغيّر» هنا فعلٌ بعد اسم المقرر، لا معدود" },
+  { file: "server.ts", contains: "${movementName(now)} تغيّر مكانُ محاضرتها", why: "«تغيّر» فعلٌ بعد اسم المقرر" },
+  { file: "server.ts", contains: "<h3 class=\"movement-head\">حركة جدولك الرسمية", why: "عنوان «حركة جدولك» بعد وصلة نصّية، لا عدد" },
+  { file: "server.ts", contains: "<h1>${label}</h1><p class=\"lead\">طلب واضح", why: "جملة تبدأ بـ«طلب» بعد عنوان الصفحة" },
+  { file: "server.ts", contains: "font-weight:700\">حالة طلبي</a>", why: "نصّ الرابط «حالة طلبي» بعد عنوانه" },
+  { file: "src/components/ImportPreviewTable.tsx", contains: "</bdi> قاعة {roomOwner.section", why: "«12/3 قاعة القسم …» — رقم القاعة ثم نسبتها" },
+  { file: "src/components/Schedules.tsx", contains: "</bdi> قاعة {roomOwner.section", why: "«12/3 قاعة القسم …» — رقم القاعة ثم نسبتها" },
+  { file: "src/components/IntelligenceWorkspace.tsx", contains: "<Badge tone=\"neutral\">شعبة {r.SCode}</Badge>", why: "اسم المقرر ثم شارة «شعبة 01»" },
+  { file: "src/components/Reports.tsx", contains: "<i>شعبة {row.SCode", why: "رمز المقرر ثم «شعبة 01»" },
+  { file: "src/components/LocationRegistryAdmin.tsx", contains: "<p>مبنى {buildingNumberLabel", why: "رمز المبنى ثم «مبنى 7»" },
+  { file: "src/components/Schedules.tsx", contains: "</b><span>موعد جديد</span>", why: "نطاق وقت ثم وسم «موعد جديد»، لا عدد" },
+  { file: "src/components/SmartGuide.tsx", contains: "<small>عنصر واجهة جديد", why: "عنوان العنصر ثم وصفه «عنصر واجهة جديد»" },
 ];
 
 function sourceFiles(): string[] {

@@ -22,7 +22,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Check, CheckCheck, ClipboardList, Clock3, Download, Search, X } from "lucide-react";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { AR, countOf, oblique } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, StudentCommitteeRejectReason, StudentCourseRejectReason, StudentCourseStateValue } from "../types";
 import type { StudentCaseStatus } from "../utils/studentCaseDecision";
@@ -498,10 +498,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
       ) : (
         <>
           <Surface className="request-totals">
-            <div><b>{totals?.students ?? 0}</b><span>{viewer === "registration" ? "طالباً سلّمته اللجنة" : "طالباً أجاب"}</span></div>
+            <div><b>{totals?.students ?? 0}</b><span>{nounFor(totals?.students ?? 0, AR.student)} {nounFor(totals?.students ?? 0, viewer === "registration" ? AR.handedOverVerb : AR.answeredVerb)}</span></div>
             {viewer !== "registration" ? <div><b>{totals?.pendingCommittee ?? 0}</b><span>ينتظر اللجنة</span></div> : null}
             <div><b>{totals?.waiting ?? 0}</b><span>ينتظر التسجيل</span></div>
-            <div><b>{totals?.registered ?? 0}</b><span>مقرّراً سُجّل</span></div>
+            <div><b>{totals?.registered ?? 0}</b><span>{nounFor(totals?.registered ?? 0, AR.course)} {nounFor(totals?.registered ?? 0, AR.registeredVerb)}</span></div>
           </Surface>
 
           <div className="registration-filter" role="group" aria-label="تصفية حسب الحالة">

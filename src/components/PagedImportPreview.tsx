@@ -290,7 +290,7 @@ export default function PagedImportPreview({
           const suspicious = Boolean(summary?.suspicious || diagnostic?.suspicious || review > 0);
           if (!currentRows.length) return <><AlertTriangle /><span>لم تُستخرج صفوف من هذه الصفحة. راجع جودة الصفحة قبل النشر.</span></>;
           /* تنبيهُ القراءة (سطرٌ مطبوع لم يُقرأ) يُقال على صفحته ولو اكتملت صفوفها المقروءة. */
-          if (diagnostic?.warning) return <><AlertTriangle /><span>{String(diagnostic.warning)}{review ? ` · ${review.toLocaleString("ar-KW-u-nu-latn")} صف يحتاج مراجعة` : ""}.</span></>;
+          if (diagnostic?.warning) return <><AlertTriangle /><span>{String(diagnostic.warning)}{review ? ` · ${countOf(review, AR.row)} بحاجة إلى مراجعة` : ""}.</span></>;
           if (suspicious) return <><AlertTriangle /><span>هذه الصفحة تحتاج مراجعة: {review ? countOf(review, AR.row) : String(diagnostic?.reason || "بعض الخلايا لم تُحسم بعد")}.</span></>;
           return <><CheckCircle2 /><span>تمت قراءة الصفحة {activePage.toLocaleString("ar-KW-u-nu-latn")} بنجاح · {countOf(currentRows.length, AR.row)}.</span></>;
         })()}

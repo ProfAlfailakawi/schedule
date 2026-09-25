@@ -48,7 +48,7 @@ import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES }
 import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { sortByName } from "../utils/sorting";
 import { roomIdentityKey } from "../utils/locationRegistry";
-import { AR, countOf, oblique } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 type Scene =
   | "pulse"
@@ -462,7 +462,7 @@ export default function LivingScheduleLayer({
       setChoreoPhase((current) => (current === "drift" ? "settle" : current));
       setMessage(
         d.reviewRequired
-          ? `تم بناء المسودة بنجاح، ومعها ${d.reviewRequired} ملاحظة واضحة للمراجعة قبل النشر.`
+          ? `تم بناء المسودة بنجاح، ومعها ${countOf(d.reviewRequired, AR.note)} للمراجعة قبل النشر.`
           : "تم بناء مسودة بداية الفصل دون نشر أي موعد."
       );
       onEnsureWeek?.();
@@ -580,7 +580,7 @@ export default function LivingScheduleLayer({
       const undoPoint = Array.isArray(points) ? points[0] : null;
       setGenesisUndoPoint(undoPoint);
       setGenesis((current: any) => current ? { ...current, published: true, publication: result?.publication } : current);
-      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${countOf(result.count, AR.appointment)}` : ""}${result?.adjusted ? ` · عالج النظام ${result.adjusted} موعداً زمنياً بأمان قبل النشر` : ""}.`);
+      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${countOf(result.count, AR.appointment)}` : ""}${result?.adjusted ? ` · ضبط النظام وقت ${countOf(result.adjusted, oblique(AR.appointment))} بأمان قبل النشر` : ""}.`);
       await loadLiving();
       onRefresh?.();
     } catch (e: any) {
@@ -1012,11 +1012,11 @@ export default function LivingScheduleLayer({
                       <strong>{rollover.sentence}</strong>
                       <div className="genesis-reading-grid">
                         <span><b className="num">{rollover.confident}</b> يمكن نقلها بثقة</span>
-                        {rollover.newCourses?.length ? <span><b className="num">{rollover.newCourses.length}</b> مقرراً جديداً</span> : null}
-                        {rollover.unavailableInstructors?.length ? <span><b className="num">{rollover.unavailableInstructors.length}</b> أستاذاً غير متاح</span> : null}
-                        {rollover.changedCourses?.length ? <span><b className="num">{rollover.changedCourses.length}</b> مقرراً تغيّر</span> : null}
-                        {rollover.retiredRooms?.length ? <span><b className="num">{rollover.retiredRooms.length}</b> قاعة متوقفة</span> : null}
-                        {rollover.concernCount ? <span className="is-concern"><b className="num">{rollover.concernCount}</b> قراراً يستحق المراجعة</span> : null}
+                        {rollover.newCourses?.length ? <span><b className="num">{rollover.newCourses.length}</b> {nounFor(rollover.newCourses.length, AR.course)} {nounFor(rollover.newCourses.length, AR.newAdj)}</span> : null}
+                        {rollover.unavailableInstructors?.length ? <span><b className="num">{rollover.unavailableInstructors.length}</b> {nounFor(rollover.unavailableInstructors.length, AR.instructor)} {nounFor(rollover.unavailableInstructors.length, AR.unavailableAdj)}</span> : null}
+                        {rollover.changedCourses?.length ? <span><b className="num">{rollover.changedCourses.length}</b> {nounFor(rollover.changedCourses.length, AR.course)} {nounFor(rollover.changedCourses.length, AR.shiftedVerb)}</span> : null}
+                        {rollover.retiredRooms?.length ? <span><b className="num">{rollover.retiredRooms.length}</b> {nounFor(rollover.retiredRooms.length, AR.room)} {nounFor(rollover.retiredRooms.length, AR.stoppedFemAdj)}</span> : null}
+                        {rollover.concernCount ? <span className="is-concern"><b className="num">{rollover.concernCount}</b> {nounFor(rollover.concernCount, AR.decision)} {nounFor(rollover.concernCount, AR.deservesVerb)} المراجعة</span> : null}
                       </div>
                       {/* ── وهل سيبدو كجدولك؟ ─────────────────────────────────
                           The counts above say what survives the copy. This says
@@ -1124,7 +1124,7 @@ export default function LivingScheduleLayer({
                         <div>
                           <strong>{genesis.draft?.name}</strong>
                           <p>
-                            تم نسخ {genesis.coverage?.copiedRows} موعدًا إلى المسودة الجديدة
+                            نُسخ {countOf(genesis.coverage?.copiedRows || 0, AR.appointment)} إلى المسودة الجديدة
                             · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
                             {genesis.analysis?.conflicts}
                             {genesis.reviewRequired ? ` · ${countOf(genesis.reviewRequired, AR.note)} للمراجعة` : ""}

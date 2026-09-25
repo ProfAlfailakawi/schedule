@@ -157,9 +157,9 @@ type Tab = "command" | "copilot" | "twin" | "history" | "import";
 function PdfDifferenceBody({report,courses,instructors}:{report:any;courses:AdCourse[];instructors:AdInstructor[]}){
   return <>
     <div className="pdf-report-summary">
-      <article className="added"><strong>{report.counts.added}</strong><span>مقرر مضاف</span></article>
-      <article className="deleted"><strong>{report.counts.deleted}</strong><span>مقرر محذوف</span></article>
-      <article className="changed"><strong>{report.counts.changed}</strong><span>مقرر عُدّل</span></article>
+      <article className="added"><strong>{report.counts.added}</strong><span>{nounFor(report.counts.added, AR.course)} {nounFor(report.counts.added, AR.addedAdj)}</span></article>
+      <article className="deleted"><strong>{report.counts.deleted}</strong><span>{nounFor(report.counts.deleted, AR.course)} {nounFor(report.counts.deleted, AR.deletedAdj)}</span></article>
+      <article className="changed"><strong>{report.counts.changed}</strong><span>{nounFor(report.counts.changed, AR.course)} {nounFor(report.counts.changed, AR.editedVerb)}</span></article>
       <article><strong>{report.counts.unchanged}</strong><span>دون تغيير</span></article>
     </div>
     <div className="pdf-report-legend" aria-label="دليل الألوان"><span className="added"><i />إضافة جديدة — الرقم المرجعي فارغ</span><span className="deleted"><i />حذف</span><span className="changed"><i />الخانة المعدّلة</span></div>
@@ -1749,7 +1749,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     if(preflight.length){
       setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
       setError(null);
-      setImportErrorModal(`يوجد ${preflight.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تحتاج معالجة قبل تعبئة الجدول.`);
+      setImportErrorModal(`يوجد ${countOf(preflight.length, AR.note)} بحاجة إلى معالجة قبل تعبئة الجدول.`);
       return;
     }
     const ok = await visualConfirm({
@@ -2721,7 +2721,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               })}>
                 <small>حالة الاعتماد</small>
                 <strong>{overview.metrics.criticalConflicts ? "يمنع الاعتماد" : "جاهز للاعتماد"}</strong>
-                <span>{overview.metrics.criticalConflicts ? `${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضع يحتاج تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span><ChevronLeft aria-hidden="true" />
+                <span>{overview.metrics.criticalConflicts ? `${countOf(overview.metrics.criticalConflicts, AR.position)} بحاجة إلى تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span><ChevronLeft aria-hidden="true" />
               </button>
               <button type="button" data-guide-ignore="يفتح شرح حالة النشر داخل القراءة الحالية فقط" className="publication-state" onClick={() => setInsightReason({
                 kicker:"حالة النشر", title:overview.publication?"الجدول منشور":"لم يُنشر بعد", metric:overview.publication?"✓":"—", tone:overview.publication?"good":"plain", icon:<Upload />,
@@ -2769,7 +2769,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             {overview.alerts.length > 3 ? (
               <details className="insight-disclosure alert-disclosure">
                 <summary>
-                  عرض {overview.alerts.length - 3} تنبيهات إضافية
+                  عرض الباقي ({countOf(overview.alerts.length - 3, AR.alert)})
                 </summary>
                 <div className="smart-alerts">
                   {overview.alerts.slice(3).map((a: any, i: number) => (
@@ -4376,7 +4376,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             <span>#{o.rank}</span>
                             <div>
                               <strong>{o.title}</strong>
-                              <small>{o.changed} موعد يتغير</small>
+                              <small>{countOf(o.changed, AR.appointment)} {nounFor(o.changed, AR.changesVerb)}</small>
                             </div>
                             <b>{o.score}/100</b>
                           </div>
@@ -4387,7 +4387,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             <span
                               className={o.constraintViolations ? "warn" : "ok"}
                             >
-                              {o.constraintViolations} مخالفة قاعدة
+                              {countOf(o.constraintViolations, AR.breach)} للقواعد
                             </span>
                           </div>
                           <ul>
@@ -4893,7 +4893,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="version-scrubber">
                 <div><span className="surface-kicker">الوضع الزمني</span><strong>{new Date(chronologicalVersions[Math.max(1,Math.min(chronologicalVersions.length-1,versionScrubIndex))]?.createdAt).toLocaleString("ar-KW-u-nu-latn")}</strong></div>
                 <input type="range" min="1" max={Math.max(1,chronologicalVersions.length-1)} value={Math.max(1,Math.min(chronologicalVersions.length-1,versionScrubIndex))} onChange={e=>setVersionScrubIndex(Number(e.target.value))} aria-label="اسحب عبر تاريخ الجدول" />
-                <small>{chronologicalVersions.length} محطات محفوظة</small>
+                <small>المحفوظ: {countOf(chronologicalVersions.length, AR.station)}</small>
               </div>
             ) : null}
             <div className="version-compare">
@@ -5123,7 +5123,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="surface-head">
                 <div>
                   <span className="surface-kicker">معاينة</span>
-                  <h2>{importPreview.count} صفاً تم قراءتها</h2>
+                  <h2>قُرئ {countOf(importPreview.count, AR.row)}</h2>
                 </div>
                 <Badge tone={importPreview.valid ? "success" : "danger"}>
                   {importPreview.valid
@@ -5221,7 +5221,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ))}
               </RecordDeck>
               )}
-              {importBlockingIssues.length ? <button type="button" data-guide-ignore="ينقل المستخدم إلى ملاحظات الاستيراد داخل نفس المعاينة" className="import-review-jump" onClick={() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({behavior:"smooth",block:"center"})}>راجع {importBlockingIssues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة لتفعيل الحفظ والنشر</button> : null}
+              {importBlockingIssues.length ? <button type="button" data-guide-ignore="ينقل المستخدم إلى ملاحظات الاستيراد داخل نفس المعاينة" className="import-review-jump" onClick={() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({behavior:"smooth",block:"center"})}>راجع {countOf(importBlockingIssues.length, oblique(AR.note))} لتفعيل الحفظ والنشر</button> : null}
               <div className="import-actions">
                 <SecondaryButton
                   onClick={() => {
@@ -5379,8 +5379,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </div>
                 <div className="room-drawer-infographic">
                   <div className="drawer-metrics room-kpis">
-                    <article><span><CalendarClock /></span><strong>{detail.data.totalAppointments}</strong><small>موعد في الفصل</small></article>
-                    <article><span><Clock3 /></span><strong>{detail.data.freeWindows.length}</strong><small>نافذة متاحة</small></article>
+                    <article><span><CalendarClock /></span><strong>{detail.data.totalAppointments}</strong><small>{nounFor(detail.data.totalAppointments, AR.appointment)} في الفصل</small></article>
+                    <article><span><Clock3 /></span><strong>{detail.data.freeWindows.length}</strong><small>{nounFor(detail.data.freeWindows.length, AR.window)} {nounFor(detail.data.freeWindows.length, AR.availableFemAdj)}</small></article>
                   </div>
                   <section className="room-usage-block">
                     <header><div><small>الجهة الأبرز</small><strong>الأكثر استخدامًا</strong></div><Building2 /></header>

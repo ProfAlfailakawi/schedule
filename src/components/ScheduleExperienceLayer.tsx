@@ -610,7 +610,7 @@ export default function ScheduleExperienceLayer({
                     </h3>
                     <p>
                       {e.decision.issue
-                        ? `${e.decision.issue.conflictCount} موضع يحتاج تحقق · ${e.decision.issue.professorName || ""} · ${e.decision.issue.room || ""}`
+                        ? `${countOf(e.decision.issue.conflictCount, AR.position)} بحاجة إلى تحقق · ${e.decision.issue.professorName || ""} · ${e.decision.issue.room || ""}`
                         : "لا يوجد مانع زمني واضح؛ حافظ على الوضع الحالي وراجع نقطة الهشاشة فقط."}
                     </p>
                     {e.decision.issue ? (
@@ -836,7 +836,7 @@ export default function ScheduleExperienceLayer({
                 <strong>{topInstructor?.name || "—"}</strong>
                 <p>
                   {topInstructor
-                    ? `${topInstructor.constraints ? `${topInstructor.constraints} قيد مباشر · ` : ""}${topInstructor.count} حضورًا أسبوعيًا مرتبطًا بهذا الأستاذ؛ لذلك هو الأكثر حساسية داخل البصمة الحالية.`
+                    ? `${topInstructor.constraints ? `${countOf(topInstructor.constraints, AR.constraint)} مباشرةً · ` : ""}${countOf(topInstructor.count, AR.appointment)} أسبوعياً ${nounFor(topInstructor.count, AR.linkedAdj)} بهذا الأستاذ؛ لذلك هو الأكثر حساسية داخل البصمة الحالية.`
                     : "لا توجد بيانات أساتذة كافية."}
                 </p>
               </article>

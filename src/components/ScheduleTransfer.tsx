@@ -1245,7 +1245,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         <b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b>
                         <small>مقرراً للمراجعة</small>
                         <small className="review-units">
-                          {pdfReadinessSummary.reviewCells?<em>{pdfReadinessSummary.reviewCells.toLocaleString("ar-KW-u-nu-latn")} خانة ناقصة</em>:null}
+                          {pdfReadinessSummary.reviewCells?<em>ناقص: {countOf(pdfReadinessSummary.reviewCells, AR.slot)}</em>:null}
                           {Number(xlsxPreview.smartFilled||0)>0?<em className="filled">عُبّئت {Number(xlsxPreview.smartFilled).toLocaleString("ar-KW-u-nu-latn")} بالقراءة الأدق</em>:null}
                         </small>
                       </span>
@@ -1611,7 +1611,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <span>{replacementCheck?.compatible === false ? <ShieldAlert /> : <CheckCircle2 />}</span>
                   <div>
                     <strong>{replacementCheck?.compatible === false ? "يوجد تعارض" : replacementCheck?.compatible ? "متوافق مع جميع المواعيد" : "نفحص المواعيد…"}</strong>
-                    <small>{replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "الأستاذ البديل مرتبط بموعد متداخل.") : retirePreview != null ? `${retirePreview.toLocaleString("ar-KW-u-nu-latn")} موعد سيتأثر` : ""}</small>
+                    <small>{replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "الأستاذ البديل مرتبط بموعد متداخل.") : retirePreview != null ? `${countOf(retirePreview, AR.appointment)} ${nounFor(retirePreview, AR.willAffectVerb)}` : ""}</small>
                   </div>
                 </div>
               ) : null}

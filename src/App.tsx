@@ -44,6 +44,7 @@ import { safeStorage } from "./utils/safeStorage";
 import { warmStart } from "./utils/warmStart";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
 import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb, telemetryGuide } from "./utils/clientTelemetry";
+import { AR, countOf, nounFor } from "./utils/arabicCount";
 
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
@@ -2716,7 +2717,7 @@ export default function App() {
           if (!guideIntroduced && user) setLauncherIntroduced(Number(user.SystemUserId), true);
           setGuideOpen(true);
         }}
-        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : guideNewCount ? `افتح مرشد SCHEDULE — لديك ${guideNewCount} عناصر جديدة: ${guideUnread.product.length} تحديثات للميزات و${guideUnread.runtime.length} عناصر جديدة في هذه الشاشة` : "افتح مرشد SCHEDULE"}
+        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : guideNewCount ? `افتح مرشد SCHEDULE — لديك ${countOf(guideNewCount, AR.element)} ${nounFor(guideNewCount, AR.newAdj)}: ${countOf(guideUnread.product.length, AR.update)} للميزات و${countOf(guideUnread.runtime.length, AR.element)} في هذه الشاشة` : "افتح مرشد SCHEDULE"}
         title={guideHint ? `${guideHint.title}` : guideNewCount ? `${guideNewCount} جديد — اضغط لمعرفة ما هو` : "مرشد SCHEDULE"}
       >
         <span className="smart-guide-fab-mark" aria-hidden="true"><Sparkles /></span>

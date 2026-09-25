@@ -176,14 +176,14 @@ export default function CurriculumPlans({
       const offerings = Number(readiness.currentOfferings || 0);
       const requests = Number(readiness.linkedStudentRequests || 0);
       if (offerings || requests) {
-        setError(`لا يمكن أرشفة ${plan.name} الآن: ${offerings} طرح حالي لمقرر خاص بها، و${requests} طلب طلابي مرتبط بها في أحدث فصل.`);
+        setError(`لا يمكن أرشفة ${plan.name} الآن: ما زال لمقرراتها الخاصة ${countOf(offerings, AR.offering, "لا طرح")} في الفصل الحالي و${countOf(requests, AR.request, "لا طلبات")} من الطلبة في أحدث فصل.`);
         return;
       }
       const shared = Number(readiness.sharedCourses || 0);
       const oldOnly = Number(readiness.oldOnlyCourses || 0);
       if (!(await visualConfirm({
         title: "الصحيفة جاهزة للأرشفة",
-        message: `الفحص ناجح: لا توجد طروحات حالية ولا طلبات طلابية مرتبطة بها. سيختفي ${oldOnly} مقرر خاص بهذه الصحيفة من التشغيل، بينما يبقى ${shared} مقرر مشتركاً عبر الصحائف الفعالة. التاريخ والتقارير القديمة لن تتغير.`,
+        message: `الفحص ناجح: لا توجد طروحات حالية ولا طلبات طلابية مرتبطة بها. سيختفي من التشغيل ما يخصّ هذه الصحيفة وحدها (${countOf(oldOnly, AR.course)})، ويبقى المشترك مع الصحائف الفعالة (${countOf(shared, AR.course)}). التاريخ والتقارير القديمة لن تتغير.`,
         confirmLabel: "أرشفة الصحيفة", tone: "danger", compact: true,
       }))) return;
       const archived = await fetch(`/api/curriculum/plans/${encodeURIComponent(plan.id)}/archive`, {
@@ -223,7 +223,7 @@ export default function CurriculumPlans({
                 <h2>كل المقررات الحالية فعّالة تلقائياً</h2>
                 <p>لم تُنشأ صحيفة جديدة بعد. عند إنشاء أول صحيفة، سيثبّت النظام هذه القائمة كما هي في «الصحيفة السابقة» ويبدأ الصحيفة الجديدة فارغة؛ لن تحتاج إلى حذف 90٪ من نسخة مكررة.</p>
               </div>
-              <b>{courses.length.toLocaleString("ar-KW-u-nu-latn")} <small>مقرر</small></b>
+              <b>{courses.length.toLocaleString("ar-KW-u-nu-latn")} <small>{nounFor(courses.length, AR.course)}</small></b>
             </Surface>
           ) : null}
 
