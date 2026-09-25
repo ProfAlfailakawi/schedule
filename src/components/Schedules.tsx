@@ -133,7 +133,9 @@ import ScheduleTransfer from "./ScheduleTransfer";
 import VisitingBadge from "./VisitingBadge";
 import { usePageAwake } from "../utils/pageAwake";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
-import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
+import { fastConflictScan, findConflicts, isBlockingConflict } from "../utils/scheduleIntelligence";
+import { placeholderInstructorIds } from "../utils/instructorIdentity";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
@@ -673,17 +675,23 @@ type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: s
  * لم تُستعمل منذ ٤ فصول» — a fact about the past standing in the way of the
  * present.
  */
-export const isBlockingConflict = (item: any): boolean => {
-  if (!item) return false;
-  if (item.soft === true) return false;
-  if (item.type === "memory" || item.type === "advice" || item.type === "regulation") return false;
-  /* The user's law, and the server's own save gate, in one line: a real
-     double-booking of a TIME, a ROOM or an INSTRUCTOR arrives as severity
-     "high"; a duplicate row is data integrity. Everything else the system
-     knows — cohort overlap, doorway walking time, hall history, day rhythm —
-     is a remark beside a move that succeeded, never a wall in front of it. */
-  return item.severity === "high" || item.type === "duplicate";
+/* ── ما يحمله باب النقل وحده ────────────────────────────────────────────────
+   Days, time and hall — and nothing else. An undo step whose snapshot differs
+   from the current row in any other editable field is not a move and must be
+   restored whole. Bookkeeping fields are not edits. */
+const UNDO_PLACEMENT_FIELDS = new Set(["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday", "fstarttime", "fendtime", "AdRoomCode", "AdRoomHall", "buildingId", "roomId", "locationStatus", "fdetail"]);
+const UNDO_BOOKKEEPING_FIELDS = new Set(["id", "rev", "updatedAt", "updatedBy", "createdAt", "createdBy", "AdCourseName"]);
+export const undoStepIsPlacementOnly = (snapshot: any, current: any): boolean => {
+  if (!snapshot || !current) return false;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  return Object.keys(snapshot).every(key =>
+    UNDO_PLACEMENT_FIELDS.has(key) || UNDO_BOOKKEEPING_FIELDS.has(key) || same(snapshot[key], current[key]));
 };
+
+/* The user's law, and the server's own save gate, in one line — which now
+   lives beside the conflict sweep (`isBlockingConflict` in scheduleIntelligence)
+   so the board, the editor, the review and the server read one predicate. */
+export { isBlockingConflict };
 
 const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string; soft?: boolean; severity?: string }>): RefusalReason[] =>
   (items || []).filter(isBlockingConflict).slice(0, 3).map((item): RefusalReason => {
@@ -915,6 +923,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   const [mobileViewGate, setMobileViewGate] = useState<"list" | "week" | "rooms" | null>(null);
   const [phoneReadOnly, setPhoneReadOnly] = useState(() => isPhoneDevice());
   const [livingPanelOpen, setLivingPanelOpen] = useState(false);
+  /* ── فصلٌ فارغ ليس طريقاً مسدوداً ───────────────────────────────────────
+     «بداية الفصل» تعيش في الطبقة الحية، والطبقة لا تُركَّب إلا حين يكون في
+     الجدول صفّ — أي أن الفصل الذي يحتاجها أكثر من غيره لم يكن يراها. فالحالة
+     الفارغة تطلبها صراحةً، وتُركَّب الطبقة مفتوحةً عليها، وتُغلق معها. */
+  const [genesisFromEmpty, setGenesisFromEmpty] = useState(false);
+  const onLivingPanelOpenChange = useCallback((open: boolean) => {
+    setLivingPanelOpen(open);
+    if (!open) setGenesisFromEmpty(false);
+  }, []);
   const [returnNote] = useState(() => {
     const note = sessionStorage.getItem("schedule-return-note") || "";
     sessionStorage.removeItem("schedule-return-note");
@@ -1304,6 +1321,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
          Dropping them left the caller with one stitched sentence and no way to
          show a wall per line. */
       if (Array.isArray(data?.conflicts) && data.conflicts.length) failure.conflicts = data.conflicts;
+      if (data?.code) failure.code = data.code;
+      if (Array.isArray(data?.changes)) failure.changes = data.changes;
       if (res.status === 409 && data?.conflict === "revision") {
         failure.revisionConflict = true;
         failure.current = data.current;
@@ -1589,11 +1608,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     setError(null);
     try {
       /* An undo of moves goes back through the same atomic door the moves came
-         in by — all restored or none, with the server judging conflicts. Steps
-         that are not schedule placements fall back to the sequential path. */
+         in by — all restored or none, with the server judging conflicts. That
+         door only carries a PLACEMENT (days, time, hall), so it is used only
+         when a placement is all that changed. An editor edit — the instructor,
+         the course, the section — used to go through it too: the time came
+         back, the instructor did not, and the bar still said «تم التراجع».
+         Such a step is now restored whole, against the row's current revision,
+         and success is only announced when every step came back. */
       const scheduleStep = /^\/api\/schedules\/(\d+)$/;
+      const currentOf = (step: UndoStep) => {
+        const match = scheduleStep.exec(step.url);
+        return match ? rows.find(item => Number(item.id) === Number(match[1])) : undefined;
+      };
       const allPlacements = entry.steps.length > 0 &&
-        entry.steps.every(step => step.method === "PUT" && scheduleStep.test(step.url) && step.body);
+        entry.steps.every(step => step.method === "PUT" && scheduleStep.test(step.url) && step.body
+          && undoStepIsPlacementOnly(step.body, currentOf(step)));
       if (allPlacements) {
         await fetchJson("/api/schedules/move-batch", {
           method: "POST",
@@ -1602,6 +1631,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             strict: false,
             moves: entry.steps.map(step => ({
               id: Number(scheduleStep.exec(step.url)![1]),
+              rev: currentOf(step)?.rev,
               fields: {
                 fsunday: Boolean(step.body.fsunday),
                 fmonday: Boolean(step.body.fmonday),
@@ -1612,18 +1642,35 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 fendtime: step.body.fendtime,
                 AdRoomCode: step.body.AdRoomCode,
                 AdRoomHall: step.body.AdRoomHall,
+                buildingId: step.body.buildingId ?? null,
+                roomId: step.body.roomId ?? null,
+                locationStatus: step.body.locationStatus ?? null,
               },
             })),
           }),
         });
       } else {
-        for (const step of entry.steps) {
-          await fetchJson(step.url, {
-            method: step.method,
-            ...(step.body === undefined
-              ? {}
-              : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.body) }),
-          });
+        let restored = 0;
+        try {
+          for (const step of entry.steps) {
+            const current = step.method === "PUT" ? currentOf(step) : undefined;
+            /* The snapshot carries the revision it was taken at; the row has
+               moved on since (that is what is being undone), so the restore is
+               sent against the revision the coordinator is looking at now. */
+            const body = current && step.body ? { ...step.body, rev: current.rev } : step.body;
+            await fetchJson(step.url, {
+              method: step.method,
+              ...(body === undefined
+                ? {}
+                : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+            });
+            restored += 1;
+          }
+        } catch (stepError: any) {
+          await loadRows();
+          throw new Error(restored
+            ? `تراجعٌ ناقص: أُعيد ${countOf(restored, AR.change)} من ${countOf(entry.steps.length, AR.change)} — ${friendlyError(stepError)}`
+            : friendlyError(stepError));
         }
       }
       setUndoLog(current => current.map(item => (item.id === entry.id ? { ...item, usedAt: Date.now() } : item)));
@@ -3195,7 +3242,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":"",
     outsideTeachingDay?`وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}.`:"",
   ].filter(Boolean);
-  const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
+  const blockingConflicts=conflicts.filter(isBlockingConflict);
   const editorTimingNote = historicalTimingNote(form);
   const formDurationMinutes = form.fstarttime && form.fendtime ? Math.max(0, mins(form.fendtime) - mins(form.fstarttime)) : 0;
   const currentInstructorName = instructorById.get(Number(form.AdInstructorId || 0))?.AdInstructorName || "";
@@ -3244,7 +3291,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
      * stopped anything — «انتقال ضيّق بين الحرم الرئيسي والجهراء» — read as a
      * refusal, which is how people learn to stop reading the colour entirely.
      */
-    const blocks = conflict?.severity === "high" || conflict?.type === "duplicate";
+    const blocks = isBlockingConflict(conflict);
     const typeLabel = isRoom ? (isScope ? "نطاق القاعة" : "تعارض قاعة")
       : isInstructor ? "تعارض أستاذ"
         : conflict.type === "duplicate" ? "تكرار"
@@ -4771,10 +4818,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     setMessage(null);
     setSaving(true);
     try {
-      const data = await fetchJson(`/api/intelligence/versions/${copyUndoPoint.id}/restore`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "restore" },
-      });
+      const data = await applyWithOverwriteConfirm("restore",
+        confirm => fetchJson(`/api/intelligence/versions/${copyUndoPoint.id}/restore`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (data === null) return;
       setCopyUndoPoint(null);
       setCopyPreview(null);
       setMessage(`تم التراجع عن آخر عملية نسخ واسترجاع ${data.count ?? 0} سجل.`);
@@ -4812,7 +4862,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         : " مع الإبقاء على أيامه الحالية";
     try {
       const check=await fetchJson("/api/schedules/check-conflicts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...payload,excludeId:row.id})});
-      const blocking=Array.isArray(check.conflicts)?check.conflicts.filter((c:any)=>c?.severity==="high"||c?.type==="duplicate"):[];
+      const blocking=Array.isArray(check.conflicts)?check.conflicts.filter(isBlockingConflict):[];
       if(blocking.length){const reasons=blocking.slice(0,3).map((c:any)=>[c?.message,c?.detail].filter(Boolean).join(" — ")).filter(Boolean);const reason=reasons.join(" | ")||"هذا النقل يسبب تعارضاً ولا يمكن حفظه.";setError(`تعذر نقل الموعد: ${reason}`);setPhysicsNotice(`رفض النقل: ${reason}`);return;}
     } catch(e:any){setError(friendlyError(e));return;}
     const decisionRipple =
@@ -5228,6 +5278,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       room: { code: building, hall },
     };
     const after = buildPhysicsTargetCandidate(row, target);
+    /* ── القاعة الهدف بهويتها، لا باسمها وحده ──────────────────────────────
+       الصفّ الموثّق يحمل معرّف قاعته القديمة، فإن أُرسل الاسم الجديد وحده
+       عاد الخادم فحسم المكان من المعرّف القديم. فتُرسل هوية القاعة الهدف كما
+       يعرفها صفٌّ موثّقٌ فيها على اللوحة، أو تُفرَّغ صراحةً ليحسمها الخادم من
+       الاسم. */
+    const targetHallKey = roomIdentity(after.AdRoomCode, after.AdRoomHall).key;
+    const hallChanged = roomIdentity(row.AdRoomCode, row.AdRoomHall).key !== targetHallKey;
+    const knownTargetHall = hallChanged
+      ? rows.find(item => item.roomId && item.locationStatus === "VERIFIED" && roomIdentity(item.AdRoomCode, item.AdRoomHall).key === targetHallKey)
+      : undefined;
+    const targetLocation: Record<string, unknown> = !hallChanged ? {}
+      : knownTargetHall
+        ? { buildingId: knownTargetHall.buildingId, roomId: knownTargetHall.roomId, locationStatus: "VERIFIED" }
+        : { buildingId: null, roomId: null, locationStatus: null };
+    if (knownTargetHall) Object.assign(after, { buildingId: knownTargetHall.buildingId, roomId: knownTargetHall.roomId, locationStatus: "VERIFIED" });
     const unchanged =
       row.fstarttime === after.fstarttime && row.fendtime === after.fendtime &&
       roomIdentity(row.AdRoomCode, row.AdRoomHall).key === roomIdentity(after.AdRoomCode, after.AdRoomHall).key &&
@@ -5298,6 +5363,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 fendtime: after.fendtime,
                 AdRoomCode: after.AdRoomCode,
                 AdRoomHall: after.AdRoomHall,
+                ...targetLocation,
               },
             }],
           }),
@@ -5367,10 +5433,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       return;
     try {
       setSaving(true);
-      const d = await fetchJson(
-        `/api/intelligence/safety-net/${undoPoint.id}/undo`,
-        { method: "POST", headers: { "x-schedule-confirm": "decision-undo" } },
-      );
+      const d = await applyWithOverwriteConfirm("decision-undo",
+        confirm => fetchJson(
+          `/api/intelligence/safety-net/${undoPoint.id}/undo`,
+          { method: "POST", headers: { "x-schedule-confirm": confirm } },
+        ),
+        options => visualConfirm(options));
+      if (d === null) return;
       setUndoPoint(null);
       setPhysicsNotice("");
       setMessage(d.message || "تم استرجاع القرار السابق.");
@@ -7476,7 +7545,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    * the same review the approval sheet prints, run quietly on the open scope.
    * The colliding cards themselves wear the ring in every view.
    */
-  const localClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+  const boardPlaceholderIds = useMemo(() => placeholderInstructorIds(instructorById.values()), [instructorById]);
+  const localClash = useMemo(() => fastConflictScan(filteredRows, { placeholderInstructorIds: boardPlaceholderIds }), [filteredRows, boardPlaceholderIds]);
   /**
    * ── التعارض مع خارج النطاق، على اللوحة نفسها ────────────────────────────
    *
@@ -9737,8 +9807,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           technology and diagnostics; blocking problems still use the existing
           conflict/error UI, and undo remains in the compact undo bar. */}
       {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
-      {!rowsForeign && rows.length > 0 ? (
+      {!rowsForeign && (rows.length > 0 || genesisFromEmpty) ? (
       <div className="schedule-overview-stack no-print">
+        {/* An empty term shows no zero counters — only the genesis scene it asked for. */}
+        {!rowsForeign && rows.length > 0 ? (
         <section className="schedule-mini-stats">
           <StatCard
             icon={<CalendarDays />}
@@ -9758,6 +9830,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             label="أستاذ مقرر"
           />
         </section>
+        ) : null}
         <LivingScheduleLayer
           user={user}
           rows={filteredRows}
@@ -9771,7 +9844,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           onRefresh={loadRows}
           experience={experience}
           onEnsureWeek={() => setViewMode("week")}
-          onPanelOpenChange={setLivingPanelOpen}
+          onPanelOpenChange={onLivingPanelOpenChange}
+          initialScene={genesisFromEmpty ? "genesis" : null}
         />
       </div>
       ) : null}
@@ -10235,6 +10309,24 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     </div>
                   ) : null}
                   <PrimaryButton onClick={openCreate} disabled={Boolean(approvalLock)} title={approvalLock || undefined} data-guide-ignore="فتح محرّر إضافة موعد — يُعطَّل بسببٍ مكتوب حين يكون الجدول عند التسجيل، والحفظ داخله مسجّل">إضافة موعد</PrimaryButton>
+                  {filterCollege && filterSection && filterTerm && !rowsForeign ? (
+                    <SecondaryButton
+                      type="button"
+                      data-guide-ignore="يفتح «بداية الفصل» في الطبقة الحية: مسودة من الفصل السابق لا تغيّر الجدول قبل النشر"
+                      onClick={() => { if (!showMobileReadOnlyGate()) setGenesisFromEmpty(true); }}
+                    >
+                      بداية الفصل من الفصل السابق
+                    </SecondaryButton>
+                  ) : null}
+                  {filterCollege && filterSection && filterTerm ? (
+                    <GhostButton
+                      type="button"
+                      data-guide-ignore="يفتح أدوات البيانات (استيراد جدول) من الحالة الفارغة نفسها"
+                      onClick={() => { if (!showMobileReadOnlyGate()) setTransferOpen(true); }}
+                    >
+                      <ArrowLeftRight /> استيراد من أدوات البيانات
+                    </GhostButton>
+                  ) : null}
                 </>
               }
             />

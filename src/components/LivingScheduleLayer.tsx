@@ -28,7 +28,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton } from "./ui";
+import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton, visualConfirm } from "./ui";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import LocationPicker from "./LocationPicker";
 import GenesisChoreography, { type ChoreoPhase } from "./GenesisChoreography";
 import useReducedMotion from "./SchedulePhysics/useReducedMotion";
@@ -92,6 +93,8 @@ interface Props {
   experience?: ScheduleExperience;
   onEnsureWeek?: () => void;
   onPanelOpenChange?: (open: boolean) => void;
+  /** Opens the layer already on a scene — the empty term asks for «بداية الفصل». */
+  initialScene?: Scene | null;
 }
 
 export default function LivingScheduleLayer({
@@ -108,12 +111,13 @@ export default function LivingScheduleLayer({
   experience,
   onEnsureWeek,
   onPanelOpenChange,
+  initialScene = null,
 }: Props) {
   const power = Boolean(user?.SystemUserId);
   const reducedMotion = useReducedMotion();
   const genesisPreviewRef = useRef<HTMLElement | null>(null);
   const [living, setLiving] = useState<any>(null),
-    [scene, setScene] = useState<Scene | null>(null),
+    [scene, setScene] = useState<Scene | null>(initialScene),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -563,10 +567,13 @@ export default function LivingScheduleLayer({
     setBusy(true);
     setError("");
     try {
-      const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/publish`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "publish" },
-      });
+      const result = await applyWithOverwriteConfirm("publish",
+        confirm => json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/publish`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (result === null) return;
       const q = contextQuery();
       const points = await json(`/api/intelligence/safety-net?${q}`).catch(() => []);
       const undoPoint = Array.isArray(points) ? points[0] : null;
@@ -589,10 +596,13 @@ export default function LivingScheduleLayer({
     setBusy(true);
     setError("");
     try {
-      const d = await json(`/api/intelligence/safety-net/${genesisUndoPoint.id}/undo`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "decision-undo" },
-      });
+      const d = await applyWithOverwriteConfirm("decision-undo",
+        confirm => json(`/api/intelligence/safety-net/${genesisUndoPoint.id}/undo`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (d === null) return;
       setGenesis((current: any) => current ? { ...current, published: false } : current);
       setGenesisUndoPoint(null);
       setMessage(d.message || "تم التراجع عن النشر بنجاح.");
@@ -663,10 +673,13 @@ export default function LivingScheduleLayer({
     setBusy(true);
     setError("");
     try {
-      const d = await json(`/api/intelligence/safety-net/${item.id}/undo`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "decision-undo" },
-      });
+      const d = await applyWithOverwriteConfirm("decision-undo",
+        confirm => json(`/api/intelligence/safety-net/${item.id}/undo`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (d === null) return;
       setMessage(d.message || "تم الاسترجاع");
       await loadSafety();
       await loadLiving();

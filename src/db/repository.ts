@@ -3812,6 +3812,22 @@ export const Repository = {
       .slice(0, safeLimit);
   },
 
+  /**
+   * The scope as it stood right after the change a version protects. Written
+   * once the change has succeeded, so a later restore can tell «nothing else
+   * happened since» from «these edits would be erased».
+   */
+  setScheduleVersionBase: async (id: string, base: { baseFingerprint: string; baseSignatures: Record<string, string> }): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleVersions").doc(id).set(base, { merge: true });
+      return;
+    }
+    const row = (db.scheduleVersions || []).find(item => item.id === id);
+    if (!row) return;
+    Object.assign(row, base);
+    saveDatabase();
+  },
+
   getScheduleVersionById: async (id: string): Promise<ScheduleVersion | undefined> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleVersions").doc(id).get();

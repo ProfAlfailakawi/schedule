@@ -76,7 +76,8 @@ import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext"
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
-import { findConflicts } from "../utils/scheduleIntelligence";
+import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import PagedImportPreview from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
 import { roomIdentityKey } from "../utils/locationRegistry";
@@ -611,7 +612,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       catch { const error=new Error(r.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${r.status}). أعد المحاولة بعد قليل.`);telemetryError("response.parse",error);throw error; }
     }
     if (!r.ok)
-      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), { issues: d.issues });
+      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), { issues: d.issues, code: d.code, changes: d.changes });
     return d;
   };
   useEffect(() => {
@@ -1134,6 +1135,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId }),
       });
+      /* An empty term answers with the way forward, not with rows. */
+      if (d?.empty) { setMessage(d.message); return; }
       setActiveDraftId(null);
       setScenario(d.rows);
       setScenarioEval({ baseline: d.before, scenario: d.after });
@@ -1415,10 +1418,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     // no extra safety — and on iOS it can be suppressed permanently.
     setBusy(true);
     try {
-      await fetchJson(`/api/intelligence/drafts/${d.id}/publish`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "publish" },
-      });
+      /* A draft saved earlier may be published over edits made since; the
+         server names them and this asks before erasing them. */
+      const published = await applyWithOverwriteConfirm("publish",
+        confirm => fetchJson(`/api/intelligence/drafts/${d.id}/publish`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (published === null) return;
       setMessage("تم النشر بنجاح، وحُفظت نسخة زمنية قبل التغيير.");
       setScenario(null);
       setScenarioEval(null);
@@ -1435,10 +1443,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     // relying on a native confirm dialog.
     setBusy(true);
     try {
-      await fetchJson(`/api/intelligence/versions/${v.id}/restore`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "restore" },
-      });
+      const restored = await applyWithOverwriteConfirm("restore",
+        confirm => fetchJson(`/api/intelligence/versions/${v.id}/restore`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (restored === null) return;
       setMessage("تم الاسترجاع، والنسخة التي كانت قبل الاسترجاع محفوظة أيضاً.");
       await reload();
     } catch (e: any) {
@@ -1793,8 +1804,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const byRow: Record<string, string[]> = {};
     if (rows.length < 2) return byRow;
     const staged = rows.map((row, index) => ({ ...row, id: index + 1, AdTermId: termId })) as any[];
-    findConflicts(staged, staged)
-      .filter(item => item.severity === "high" || item.type === "duplicate")
+    blockingConflicts(staged, staged, { placeholderInstructorIds: placeholderInstructorIds(instructors) })
       .forEach(item => {
         const pair: Array<[number, number]> = [[Number(item.rowId), Number(item.otherId)], [Number(item.otherId), Number(item.rowId)]];
         pair.forEach(([at, partner]) => {
@@ -1806,7 +1816,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         });
       });
     return byRow;
-  }, [importPreview?.rows, termId]);
+  }, [importPreview?.rows, termId, instructors]);
 
   const importBlockingIssues = useMemo(() => {
     if (!importPreview) return [] as string[];
@@ -1891,18 +1901,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setWarBusy(true);
     setError(null);
     try {
-      setWarRoom(
-        await fetchJson("/api/intelligence/war-room", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            collegeId,
-            sectionId,
-            termId,
-            rowId: warRowId || undefined,
-          }),
+      const room = await fetchJson("/api/intelligence/war-room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collegeId,
+          sectionId,
+          termId,
+          rowId: warRowId || undefined,
         }),
-      );
+      });
+      if (room?.empty) { setWarRoom(null); setMessage(room.message); }
+      else setWarRoom(room);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -1913,18 +1923,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setAutopilotBusy(true);
     setError(null);
     try {
-      setAutopilot(
-        await fetchJson("/api/intelligence/autopilot", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            collegeId,
-            sectionId,
-            termId,
-            goal: autopilotGoal,
-          }),
+      const plan = await fetchJson("/api/intelligence/autopilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collegeId,
+          sectionId,
+          termId,
+          goal: autopilotGoal,
         }),
-      );
+      });
+      if (plan?.empty) { setAutopilot(null); setMessage(plan.message); }
+      else setAutopilot(plan);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -2320,7 +2330,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const reasonForSmartAlert = (alert:any, index:number): InsightReason => {
     const title = String(alert?.title || "تنبيه ذكي");
     const base = { kicker:"تفاصيل التنبيه", title, metric:String(index + 1), tone:(alert?.severity === "critical" || alert?.severity === "high" || alert?.severity === "danger" ? "bad" : alert?.severity === "ok" ? "good" : "warn") as InsightReason["tone"] };
-    if (/مانع اعتماد|تعارض|حجز|مزدوج/.test(title)) return { ...base, icon:<ShieldAlert />, summary:"هذه هي الموانع الفعلية التي كوّنت الرقم:", items:conflictReasonItems, facts:[{label:"الموانع",value:String(overview?.metrics?.criticalConflicts || 0)},{label:"النوع",value:"حجز فعلي"},{label:"اللائحة",value:"تحذيرية"}] };
+    if (/مانع اعتماد|مانعا اعتماد|موانع اعتماد|تعارض|حجز|مزدوج/.test(title)) return { ...base, icon:<ShieldAlert />, summary:"هذه هي الموانع الفعلية التي كوّنت الرقم:", items:conflictReasonItems, facts:[{label:"الموانع",value:String(overview?.metrics?.criticalConflicts || 0)},{label:"النوع",value:"حجز فعلي"},{label:"اللائحة",value:"تحذيرية"}] };
     if (/فراغ/.test(title)) return { ...base, icon:<CalendarClock />, summary:"الأساتذة الذين تجاوز لديهم الفراغ 3 ساعات:", items:longGapReasonItems, facts:[{label:"الأساتذة",value:String(longGapReasonItems.length)},{label:"الحد",value:formatUnitMetricArabic(3,"ساعات",0)},{label:"القراءة",value:"إرشادية"}] };
     if (/متأخر|بعد 4|وقت/.test(title)) return { ...base, icon:<Clock3 />, summary:`المواعيد التي تبدأ من ${scheduleClockForDisplay("16:00")} فأكثر:`, items:lateReasonItems, facts:[{label:"المواعيد",value:String(lateReasonItems.length)},{label:"من",value:scheduleClockForDisplay("16:00")},{label:"النوع",value:"توقيت"}] };
     if (/بيانات|سجل/.test(title)) return { ...base, icon:<FileClock />, summary:"السجلات التي ينقصها شيء محدد:", items:invalidReasonItems, facts:[{label:"السجلات",value:String(invalidReasonItems.length)},{label:"الحالة",value:"تحتاج إكمال"}] };

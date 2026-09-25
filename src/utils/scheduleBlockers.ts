@@ -1,15 +1,85 @@
-import { findConflicts } from "./scheduleIntelligence";
+import { findConflicts, isBlockingConflict, type ConflictInsight } from "./scheduleIntelligence";
+import { placeholderInstructorIds } from "./instructorIdentity";
+import type { FSchedule } from "../types";
+
+export { isBlockingConflict, placeholderInstructorIds };
+
+/**
+ * ── «مانع الاعتماد» — قاعدةٌ واحدة، في موضعٍ واحد ──────────────────────────
+ *
+ * The question «what stops this department's schedule from being approved?»
+ * was answered six different ways: the save gate exempted «هيئة تدريسية» and
+ * normalised legacy hall aliases; the committee count did neither and dropped
+ * cross-department instructor clashes; the dean's balance counted only
+ * severity "high" and so ignored exact duplicates; the review screen counted
+ * cross-department instructors but not placeholders… One department of the
+ * college showed eight approval blockers that were all placeholder pairs, and
+ * the dean saw fourteen for a department the registrar saw two for.
+ *
+ * Every screen now asks THIS module:
+ *
+ *   • A blocker is a pair, counted once, that `isBlockingConflict` accepts
+ *     (instructor / room double booking, or an exact duplicate; never soft
+ *     advice).
+ *   • «هيئة تدريسية» is never a person: its pairs are never instructor
+ *     clashes (a shared hall or an exact duplicate still is).
+ *   • A hall is identified the way the save gate identifies it — the caller
+ *     passes the gate's canonicalisation as `normalizeRow`.
+ *   • A pair belongs to every department owning either row. A clash with a
+ *     lecture of another department is real — the save gate refuses it — so
+ *     it counts in both, and is described here only generically
+ *     («مع موعدٍ خارج هذا القسم»).
+ *
+ * `tests/blocker-oracle-audit.ts` holds the behaviour and refuses a second
+ * copy of the predicate anywhere else in the product.
+ */
+export interface ApprovalBlockerOptions {
+  /** «هيئة تدريسية» records (see `placeholderInstructorIds`). */
+  placeholderInstructorIds?: Iterable<number>;
+  /** The save gate's hall canonicalisation; identity when omitted. */
+  normalizeRow?: (row: any) => any;
+  courseName?: Map<number, string>;
+  instructorName?: Map<number, string>;
+}
+
+/**
+ * The blocking pairs with at least one foot in `scopeRows`, once each, read
+ * against the whole term. `termRows` may or may not contain the scope rows:
+ * the scope's own version of a row always wins (unsaved candidates, drafts).
+ */
+export function blockingConflicts(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ConflictInsight[] {
+  const normalize = options.normalizeRow || ((row: any) => row);
+  const scope = (scopeRows || []).map(normalize);
+  const scopeIds = new Set(scope.map((row: any) => Number(row.id)));
+  const universe = [
+    ...(termRows || []).filter((row: any) => !scopeIds.has(Number(row?.id))).map(normalize),
+    ...scope,
+  ];
+  const seen = new Set<string>();
+  const out: ConflictInsight[] = [];
+  for (const item of findConflicts(scope as FSchedule[], universe as FSchedule[], { placeholderInstructorIds: options.placeholderInstructorIds })) {
+    if (!isBlockingConflict(item)) continue;
+    const a = Number(item.rowId), b = Number(item.otherId);
+    const key = `${Math.min(a, b)}:${Math.max(a, b)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+/** The number every screen prints next to «مانع اعتماد». */
+export function approvalBlockerCount(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): number {
+  return blockingConflicts(scopeRows, termRows, options).length;
+}
 
 /**
  * ── ما يمنع الاعتماد، بتفاصيله — داخل حدود القسم ─────────────────────────
  *
- * كانت شاشةُ التغييرات تقول «4 يمنع الاعتماد» ولا تقول ما هي. فصار كلُّ مانعٍ
- * يصل بمواعيد هذا القسم المعنيّة به، بمقرّراتها وأساتذتها. وتعارضٌ مع موعدٍ في
- * قسمٍ آخر يُقال عامّاً — «مع موعدٍ خارج هذا القسم» — بلا اسم قسمٍ ولا مقرّرٍ
- * ولا أستاذٍ منه: الخادمُ يرى الموعدَ المقابل ليحمي الجدول، والقارئُ لا.
- *
- * والقواعدُ هي قواعدُ العدّ نفسُها (`countBlockingConflicts`): تعارضُ الأستاذ
- * بين نطاقين لا يُحسب هنا، لأن الأستاذَ الزائر يُراجَع في جدوله هو.
+ * كلُّ مانعٍ يصل بمواعيد هذا القسم المعنيّة به، بمقرّراتها وأساتذتها. وتعارضٌ
+ * مع موعدٍ في قسمٍ آخر يُقال عامّاً — «مع موعدٍ خارج هذا القسم» — بلا اسم قسمٍ
+ * ولا مقرّرٍ ولا أستاذٍ منه: الخادمُ يرى الموعدَ المقابل ليحمي الجدول، والقارئُ
+ * لا. والقائمة هي `blockingConflicts` نفسها، فطولها هو `approvalBlockerCount`.
  */
 export interface ReviewBlocker {
   id: string;
@@ -20,15 +90,12 @@ export interface ReviewBlocker {
   subjectLabel?: string;
 }
 
-export function blockingConflictDetails(
-  scopeRows: any[],
-  termRows: any[],
-  courseName: Map<number, string>,
-  instructorName: Map<number, string> = new Map(),
-): ReviewBlocker[] {
-  const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
-  const byId = new Map(termRows.map((row: any) => [Number(row.id), row] as const));
-  const scopeOf = new Map(termRows.map((row: any) => [Number(row.id), `${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] as const));
+export function approvalBlockers(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ReviewBlocker[] {
+  const courseName = options.courseName || new Map<number, string>();
+  const instructorName = options.instructorName || new Map<number, string>();
+  const ownIds = new Set((scopeRows || []).map((row: any) => Number(row.id)));
+  const byId = new Map<number, any>((termRows || []).map((row: any) => [Number(row.id), row] as const));
+  for (const row of scopeRows || []) byId.set(Number(row.id), row);
   const typeLabel: Record<string, string> = {
     room: "تعارض قاعة", instructor: "تعارض أستاذ", duplicate: "موعد مكرّر", cohort: "تعارض مقرّرين يشترك طلبتُهما",
   };
@@ -36,33 +103,35 @@ export function blockingConflictDetails(
     const who = instructorName.get(Number(row?.AdInstructorId)) || "";
     return `${courseName.get(Number(row?.AdCourseId)) || row?.AdCourseName || "مقرر"} (شعبة ${row?.SCode || "—"}${who ? ` — ${who}` : ""})`;
   };
-  const seen = new Set<string>();
-  const blockers: ReviewBlocker[] = [];
-  for (const item of findConflicts(scopeRows as any, termRows as any)) {
-    if (item.severity !== "high" && item.type !== "duplicate") continue;
+  return blockingConflicts(scopeRows, termRows, options).map(item => {
     const a = Number(item.rowId), b = Number(item.otherId);
-    if (!ownIds.has(a) && !ownIds.has(b)) continue;
-    if (item.type === "instructor" && scopeOf.get(a) !== scopeOf.get(b)) continue;
     const key = [Math.min(a, b), Math.max(a, b), item.type].join(":");
-    if (seen.has(key)) continue;
-    seen.add(key);
     const label = typeLabel[String(item.type)] || "تعارض يمنع الاعتماد";
     const own = [a, b].filter(id => ownIds.has(id));
     if (own.length === 2) {
-      blockers.push({
+      return {
         id: key, type: String(item.type), title: label,
         detail: `${describe(byId.get(a))} و${describe(byId.get(b))} في الوقت نفسه.`,
         rowIds: own,
         subjectLabel: `${describe(byId.get(a))} · ${describe(byId.get(b))}`,
-      });
-    } else {
-      blockers.push({
-        id: key, type: String(item.type), title: `${label} مع موعدٍ خارج هذا القسم`,
-        detail: "الموعد المقابل في جدول قسمٍ آخر؛ غيّر وقتَ هذا الموعد أو مكانه، أو نسّق مع ذلك القسم.",
-        rowIds: own,
-        subjectLabel: describe(byId.get(own[0])),
-      });
+      };
     }
-  }
-  return blockers;
+    return {
+      id: key, type: String(item.type), title: `${label} مع موعدٍ خارج هذا القسم`,
+      detail: "الموعد المقابل في جدول قسمٍ آخر؛ غيّر وقتَ هذا الموعد أو مكانه، أو نسّق مع ذلك القسم.",
+      rowIds: own,
+      subjectLabel: describe(byId.get(own[0])),
+    };
+  });
+}
+
+/** Kept for existing callers: the same list, with names passed positionally. */
+export function blockingConflictDetails(
+  scopeRows: any[],
+  termRows: any[],
+  courseName: Map<number, string>,
+  instructorName: Map<number, string> = new Map(),
+  options: ApprovalBlockerOptions = {},
+): ReviewBlocker[] {
+  return approvalBlockers(scopeRows, termRows, { ...options, courseName, instructorName });
 }

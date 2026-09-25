@@ -335,13 +335,14 @@ export function useScheduleExperience({
     setDecisionError("");
     setDecision(null);
     try {
-      setDecision(
-        await fetchJson("/api/intelligence/war-room", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ collegeId, sectionId, termId }),
-        }),
-      );
+      const room = await fetchJson("/api/intelligence/war-room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId }),
+      });
+      /* An empty term is guidance, not a room to render. */
+      if (room?.empty) setDecisionError(String(room.message || ""));
+      else setDecision(room);
     } catch (e: any) {
       setDecisionError(String(e?.message || e));
     } finally {
