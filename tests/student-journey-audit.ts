@@ -12,6 +12,7 @@ import os from "os";
 import { validateCivilId } from "../src/utils/civilId";
 import { suggestedDegreeRule } from "../src/utils/degreeRules";
 import { graduationProgrammeText, graduationSheetFacts } from "../src/utils/documentOcr";
+import { createCoalescer, createTtlMemo, studentQueueAggregate } from "../src/server/notificationCache";
 import { applyStudentCaseDecision, isCaseLevelNeed, studentCaseRefusal, studentCaseStatus } from "../src/utils/studentCaseDecision";
 
 /* مخزنٌ محليٌّ معزول لكل تشغيل: لا يلمس بيانات أحد. */
@@ -402,9 +403,61 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
 
 /* ── S19 كتابة الكشف تنبض للشاشات المفتوحة ────────────────────────────── */
 {
-  check(server.includes('for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests", "/api/student-registration"])'),
-    "S19 قرارات الكشف ترسل نبضة الإشعارات");
+  const pulse = between(server, 'const broadcastStudentNotifySoon', "/* A mark older than this");
+  check(pulse.includes('createCoalescer(3000, broadcastNotify)') && pulse.includes('app.use("/api/student-registration"') && pulse.includes("broadcastStudentNotifySoon();"),
+    "S19 قرارات الكشف ترسل نبضة الإشعارات — مجمّعةً في ثلاث ثوانٍ");
   check(read("src/components/StudentRegistration.tsx").includes('source.addEventListener("notify", soon)'), "S19 والكشف المفتوح يعيد القراءة عندها");
+}
+
+/* ── مراجعة 2: الجرس لا يقرأ كشف الفصل مع كل نداء ─────────────────────── */
+{
+  const needs = [
+    { AdCollegeId: 1, courseIds: [10, 11, 99], createdAt: "2026-09-02", courseStates: [{ courseId: 11, state: "awaiting-registration", at: "2026-09-05" }] },
+    { AdCollegeId: 1, courseIds: [10], createdAt: "2026-09-01", courseStates: [] },
+  ];
+  const agg = studentQueueAggregate(needs as any, [{ AdCourseId: 10, AdSectionId: 3 }, { AdCourseId: 11, AdSectionId: 4 }]);
+  check(agg.get("1:3")?.pendingCommittee === 2 && agg.get("1:3")?.oldestPendingAt === "2026-09-01"
+    && agg.get("1:4")?.awaitingRegistration === 1 && agg.get("1:4")?.latestApprovedAt === "2026-09-05" && agg.size === 2,
+    "R2 المجموعُ لكل قسمٍ مالك كما كان يُحسب في الجرس");
+
+  let t = 0, loads = 0;
+  const memo = createTtlMemo<number>({ ttlMs: 60_000, now: () => t });
+  const load = async () => { loads += 1; return loads; };
+  const [a, b] = await Promise.all([memo.get("k", load), memo.get("k", load)]);
+  check(a === 1 && b === 1 && loads === 1, "R2 نداءان متزامنان يقرآن الفصل مرّةً واحدة");
+  t = 30_000; await memo.get("k", load);
+  check(loads === 1, "R2 داخل الدقيقة: من الذاكرة");
+  t = 61_000; await memo.get("k", load);
+  check(loads === 2, "R2 بعد الدقيقة: قراءةٌ جديدة");
+  memo.invalidate(); await memo.get("k", load);
+  check(loads === 3, "R2 الكتابة تمحو المحفوظ");
+  let release: (v: number) => void = () => {};
+  const slow = memo.get("s", () => new Promise<number>(resolve => { release = resolve; }));
+  memo.invalidate(); release(7); await slow; await Promise.resolve();
+  check(memo.size() === 0, "R2 قراءةٌ بدأت قبل الكتابة لا تُحفظ بعدها");
+  const failing = createTtlMemo<number>({ ttlMs: 60_000, now: () => 0 });
+  await failing.get("x", async () => { throw new Error("boom"); }).catch(() => undefined); await Promise.resolve();
+  check(failing.size() === 0, "R2 القراءة الفاشلة لا تُحفظ");
+
+  const scheduled: Array<() => void> = []; let fired = 0;
+  const pulseSoon = createCoalescer(3000, () => { fired += 1; }, { set: fn => { scheduled.push(fn); return scheduled.length; } });
+  for (let i = 0; i < 20; i++) pulseSoon();
+  check(scheduled.length === 1, "R2 عشرون قراراً متتالياً: موعدُ نبضةٍ واحد");
+  scheduled[0](); pulseSoon();
+  check(fired === 1 && scheduled.length === 2, "R2 وبعد النبضة يُضبط موعدٌ جديد");
+
+  const bell = between(server, "async function notificationItemsForTerm", 'app.get("/api/notifications"');
+  check(bell.includes("await studentQueueForTerm(termId)") && !bell.includes("getStudentNeedsForTerm"), "R2 الجرس يقرأ المجموع المحفوظ لا الفصل");
+  check((server.match(/getStudentNeedsForTerm\(/g) || []).length === 1 && server.includes("return studentQueueMemo.get(key,"), "R2 قراءةُ الفصل كلّه في مكانٍ واحد، خلف الذاكرة");
+  check(server.includes("const key = `${Repository.currentDemoSessionId() || \"\"}:${termId}`;"), "R2 مفتاح الذاكرة يحمل جلسة العرض");
+  const survey = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  check(survey.indexOf("studentQueueMemo.invalidate()") > survey.indexOf("await Repository.saveStudentNeed("), "R2 الاستبيان يمحو المحفوظ بعد الحفظ");
+  check(between(server, "const broadcastStudentNotifySoon", "/* A mark older than this").includes("studentQueueMemo.invalidate();"), "R2 كتابة الكشف تمحو المحفوظ");
+  const beacon = between(server, "function listenForScheduleChangesAcrossInstances", "broadcastScheduleChange();");
+  check(beacon.includes("studentQueueMemo.invalidate();"), "R2 ونبضُ النسخ الأخرى يمحوه");
+  const center = read("src/components/NotificationCenter.tsx");
+  check(center.includes("const pageAwake = usePageAwake();") && center.includes("if (!pageAwake) return;") && center.includes("}, [load, pageAwake]);"),
+    "R2 الجرس ينام مع اللسان المخفيّ");
 }
 
 /* ── S20 تعليقات الخصوصية تقول الحقيقة ─────────────────────────────────── */

@@ -27,6 +27,7 @@ import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/cale
 import { personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
 import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
+import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueueEntry } from "./src/server/notificationCache";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
@@ -4292,14 +4293,25 @@ function broadcastNotify() {
     try { response.write(payload); } catch { scheduleEventClients.delete(response); }
   }
 }
-/* «/api/student-registration»: قرارُ اللجنة يصل التسجيلَ، وقرارُ التسجيل يصل
-   القسمَ، في لحظته — كما يصل طلبُ الأستاذ. */
-for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests", "/api/student-registration"]) {
+for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests"]) {
   app.use(prefix, (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(); });
     next();
   });
 }
+/* «/api/student-registration»: قرارُ اللجنة يصل التسجيلَ، وقرارُ التسجيل يصل
+   القسمَ — لكن بنبضةٍ مجمّعة (ثلاث ثوانٍ): اللجنةُ تقرّر مقرّراً بعد مقرّر،
+   وكلُّ نبضةٍ توقظ كلَّ شاشةٍ فتسأل جرسها. وكلُّ كتابةٍ تمحو مجموعَ الكشف
+   المحفوظ للجرس (studentQueueMemo) قبل أن تصل النبضة. */
+const broadcastStudentNotifySoon = createCoalescer(3000, broadcastNotify);
+app.use("/api/student-registration", (req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== "GET") res.on("finish", () => {
+    if (res.statusCode >= 300) return;
+    studentQueueMemo.invalidate();
+    broadcastStudentNotifySoon();
+  });
+  next();
+});
 
 /* A mark older than this is treated as stale — the person is still connected,
    but wherever their pointer was, it is not news any more. A connection that
@@ -4414,6 +4426,7 @@ function listenForScheduleChangesAcrossInstances() {
     // quietly, because announcing a change we did not make would send the
     // beacon straight back out and the two instances would echo forever.
     clearScheduleCacheQuietly();
+    studentQueueMemo.invalidate();
     hallBarterSerial += 1;
     hallBarterBoardCache.clear();
     livingResponseCache.clear();
@@ -10264,6 +10277,18 @@ const REGISTRAR_NOTIFY_ROLES = new Set(["registrarHead", "registrarStaff"]);
  * لم ينتهِ وفيه نشاط)، وكلُّ بندٍ من فصل التخطيط يحمل اسمَ فصله ومعرّفه.
  * ومن سأل عن فصلٍ بعينه (termId) يُجاب عنه وحده.
  */
+/* مجموعُ كشف الطلبة لكل فصل، محفوظاً دقيقة — القاعدة في src/server/notificationCache.ts.
+   يُمحى عند كتابة الكشف، ووصول استبيان، ونبضِ نسخةٍ أخرى. والمفتاحُ يحمل جلسة
+   العرض التجريبي: لكلِّ جلسةٍ بياناتُها. */
+const studentQueueMemo = createTtlMemo<Map<string, StudentQueueEntry>>({ ttlMs: 60_000 });
+function studentQueueForTerm(termId: number): Promise<Map<string, StudentQueueEntry>> {
+  const key = `${Repository.currentDemoSessionId() || ""}:${termId}`;
+  return studentQueueMemo.get(key, async () => {
+    const [termNeeds, allCourses] = await Promise.all([Repository.getStudentNeedsForTerm(termId), Repository.getCourses()]);
+    return studentQueueAggregate(termNeeds as any[], allCourses as any[]);
+  });
+}
+
 async function bellPlanningTermId(terms: any[]): Promise<number> {
   for (const candidate of planningTermCandidates(terms as any)) {
     const [approvals, rows] = await Promise.all([
@@ -10336,30 +10361,9 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
      يُعدّ لمن يقرّر فيه: اللجنة (من يعمل على الجدول) والتسجيل. والمقرّرُ يُنسب
      إلى القسم المالك له، كما يُعرض ويُكتب في الكشف نفسه. */
   const registrarReader = REGISTRAR_NOTIFY_ROLES.has(role);
-  const studentQueueByScope = new Map<string, { pendingCommittee: number; awaitingRegistration: number; oldestPendingAt?: string; latestApprovedAt?: string }>();
-  if (handlesRequests || registrarReader) {
-    const [termNeeds, allCourses] = await Promise.all([Repository.getStudentNeedsForTerm(termId), Repository.getCourses()]);
-    const ownerOf = new Map((allCourses as any[]).map(row => [Number(row.AdCourseId), Number(row.AdSectionId || 0)]));
-    for (const need of termNeeds as any[]) {
-      const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
-      for (const id of need.courseIds || []) {
-        const owner = ownerOf.get(Number(id)) || 0;
-        if (!owner) continue;
-        const key = `${Number(need.AdCollegeId)}:${owner}`;
-        const entry = studentQueueByScope.get(key) || { pendingCommittee: 0, awaitingRegistration: 0 };
-        const state: any = states.get(Number(id));
-        if (!state) {
-          entry.pendingCommittee += 1;
-          const at = String(need.createdAt || "");
-          if (at && (!entry.oldestPendingAt || at < entry.oldestPendingAt)) entry.oldestPendingAt = at;
-        } else if (state.state === "awaiting-registration") {
-          entry.awaitingRegistration += 1;
-          if (!entry.latestApprovedAt || String(state.at || "") > entry.latestApprovedAt) entry.latestApprovedAt = String(state.at || "");
-        }
-        studentQueueByScope.set(key, entry);
-      }
-    }
-  }
+  const studentQueueByScope = handlesRequests || registrarReader
+    ? await studentQueueForTerm(termId)
+    : new Map<string, StudentQueueEntry>();
   const watchesSubmission = registrarReader || role === "registrarDean" || role === "dean" || role === "viceDean";
   const active = inScope.filter(row => {
     const key = `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`;
@@ -14166,6 +14170,7 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     requestType,curriculumPlanId,nameCipher:await sealStudentIdentity(name),civilCipher:await sealStudentIdentity(civil),details,
     graduateReason,passedUnits,requiredUnits,degreeUnits,eligibility,proofNameMatched:graduateNameMatched,
   });
+  studentQueueMemo.invalidate();
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.status(201).json({ name, count: courseIds.length, requestType, caseRef: caseRefFor(savedNeed) });

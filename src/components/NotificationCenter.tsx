@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePageAwake } from "../utils/pageAwake";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, CheckCheck, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
@@ -88,7 +89,13 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
       .catch(() => undefined);
   }, []);
 
+  /* الجرسُ ينام مع اللسان (pageAwake.ts): لسانٌ منسيٌّ في الخلفية كان يسأل كل
+     دقيقة ويُبقي خيطاً مفتوحاً طوال الليل، وكلُّ سؤالٍ يقرأ الفصل. يبقى مستيقظاً
+     دقيقةً بعد الإخفاء (فيصل تنبيهُ سطح المكتب لما يجري حينها)، ثم ينام، ويسأل
+     فورَ عودة اللسان. */
+  const pageAwake = usePageAwake();
   useEffect(() => {
+    if (!pageAwake) return;
     load();
     const timer = window.setInterval(load, 60000);
     window.addEventListener("focus", load);
@@ -109,7 +116,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
       window.removeEventListener("focus", load);
       source?.close();
     };
-  }, [load]);
+  }, [load, pageAwake]);
 
   useEffect(() => {
     if (!toast) return;

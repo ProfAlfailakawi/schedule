@@ -3,3 +3,4 @@
 | id | status | covering test |
 |----|--------|---------------|
 | 1 | FIXED | tests/doctor-journey-audit.ts D6 (reserve concurrency + structural) |
+| 2 | FIXED | tests/student-journey-audit.ts «R2» (memo/coalescer behaviour + structural wiring + NotificationCenter pageAwake) |
