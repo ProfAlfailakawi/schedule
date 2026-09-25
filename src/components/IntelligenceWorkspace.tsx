@@ -94,6 +94,7 @@ import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetric
 
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
+import { pageReviewIssues, pageReviewWaitLine, pagesAwaitingReview } from "../utils/importPageReview";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -518,6 +519,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [versionCompare, setVersionCompare] = useState<any>(null),
     [timeTravel, setTimeTravel] = useState(50);
   const [importProgress, setImportProgress] = useState<{ phase: string; page: number; pages: number; message: string; notice?: string } | null>(null);
+  /* Scanned pages whose missing printed lines the reviewer confirmed (importPageReview). */
+  const [reviewedImportPages, setReviewedImportPages] = useState<number[]>([]);
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [importInstructorIds, setImportInstructorIds] = useState<number[]>([]),
@@ -1594,6 +1597,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setBusy(true);
     setError(null);
     setImportProgress({ phase: "render", page: 0, pages: 0, message: "يجهّز الملف للقراءة" });
+    setReviewedImportPages([]);
     try {
       const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
       const payload = await file.arrayBuffer();
@@ -1798,9 +1802,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       ...(Array.isArray(importPreview.issues) ? importPreview.issues : []),
       ...validateImportRowsLocally(rows),
       ...Object.values(importRowIssues).flat(),
+      /* صفحة قُبلت بأسطر مطبوعة بلا صف تنتظر «راجعت الصفحة» قبل النشر. */
+      ...(importPreview.importLayout === "authority-pdf" ? pageReviewIssues(importPreview.pageDiagnostics, reviewedImportPages) : []),
     ])];
-  }, [importPreview, importRowIssues]);
+  }, [importPreview, importRowIssues, reviewedImportPages]);
   const importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0);
+  /* Scanned pages still waiting for «راجعت الصفحة» — named beside save and publish. */
+  const importPagesPendingReview = importPreview?.importLayout === "authority-pdf" ? pagesAwaitingReview(importPreview.pageDiagnostics, reviewedImportPages) : [];
 
   const scopedCourses = useMemo(
     () => sortByName(
@@ -5126,6 +5134,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   pageCount={Number(importPreview.pages||0)}
                   pageDiagnostics={Array.isArray(importPreview.pageDiagnostics)?importPreview.pageDiagnostics:[]}
                   pageSummaries={Array.isArray(importPreview.pageSummaries)?importPreview.pageSummaries:[]}
+                  reviewedPages={reviewedImportPages}
+                  onReviewPage={page => setReviewedImportPages(prev => prev.includes(page) ? prev : [...prev, page])}
                   courses={courses as any}
                   instructors={instructors as any}
                   departmentIds={importInstructorIds}
@@ -5169,6 +5179,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ))}
               </RecordDeck>
               )}
+              {/* ملاحظات صفحات PDF لا تُسرد فوق الجدول؛ فالصفحة التي تنتظر «راجعت الصفحة»
+                  تُسمّى هنا بجوار الحفظ والنشر، كما في شاشة نقل الجدول. */}
+              {importPagesPendingReview.length ? (
+                <p className="transfer-preflight-wait" role="status">{pageReviewWaitLine(importPagesPendingReview)}</p>
+              ) : null}
               {importBlockingIssues.length ? <button type="button" data-guide-ignore="ينقل المستخدم إلى ملاحظات الاستيراد داخل نفس المعاينة" className="import-review-jump" onClick={() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({behavior:"smooth",block:"center"})}>راجع {countOf(importBlockingIssues.length, oblique(AR.note))} لتفعيل الحفظ والنشر</button> : null}
               <div className="import-actions">
                 <SecondaryButton

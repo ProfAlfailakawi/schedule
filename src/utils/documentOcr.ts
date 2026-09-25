@@ -27,7 +27,11 @@ export type OcrRow={cells:OcrCell[];line:string;y:number};
 export type OcrPageDiagnostic={page:number;visualRows:number;extractedRows:number;gridDetected:boolean;orientation:-1|0|1;suspicious:boolean;reason?:string;warning?:string;
   /** Flagged by the first reading but never given its deep pass, because an
    *  earlier page already stopped the file. Its reason is not a confirmed one. */
-  unverified?:boolean};
+  unverified?:boolean;
+  /** Printed lines that produced no row, within the tolerance that keeps the
+   *  page a warning. They have no row in the preview, so publishing waits for
+   *  the reviewer to confirm the page (importPageReview). */
+  missedLines?:number};
 export type OcrPage={rows:OcrRow[];gridRows?:GridRow[];diagnostic?:OcrPageDiagnostic};
 export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
@@ -1864,7 +1868,7 @@ export function unreadableIdentityRows(rows:GridRow[]):number{
  * بإعادة كتابة الصفحة يدوياً، وقد تحمل يوماً ناقصاً لا يلفت النظر (قيس على
  * الصفحة 2 من جدول 2026: 28 صفاً بلا وقت ولا مبنى، وفي أحدها «3 1» والمطبوع
  * «5 3 1»). فأكثر من نصف الصفوف (وأكثر من صفّين) بلا وقت ولا مبنى يوقف الملف. */
-export type ScanPageVerdict={suspicious:boolean;reason?:string;warning?:string};
+export type ScanPageVerdict={suspicious:boolean;reason?:string;warning?:string;missedLines?:number};
 export function scanPageVerdict({rows,filled,printed,broken,unscheduled=0}:{rows:number;filled:number;printed:number;broken:number;unscheduled?:number}):ScanPageVerdict{
   const thin=rows>=3&&filled<Math.ceil(rows*0.55);
   const missed=Math.max(0,printed-rows);
@@ -1879,7 +1883,8 @@ export function scanPageVerdict({rows,filled,printed,broken,unscheduled=0}:{rows
     broken>0?`${countOf(broken,AR.row)} بلا رقم مقرر واضح أو بلا أيام ووقت، وخاناتها غير الواضحة فارغة للمراجعة`:"",
     missed>0&&!severeMiss?`${lines} ${rows?`وقُرئ منها ${countOf(rows,AR.row)}`:"ولم يُقرأ منها أي صف"} — راجع الصفحة وأضف الناقص يدوياً`:"",
   ].filter(Boolean);
-  return{suspicious:thin||severeMiss||blindSchedule,reason,warning:notes.length?notes.join("؛ "):undefined};
+  return{suspicious:thin||severeMiss||blindSchedule,reason,warning:notes.length?notes.join("؛ "):undefined,
+    missedLines:missed>0&&!severeMiss?missed:undefined};
 }
 /** Rows the reader gave neither a time nor a building: their schedule side was not read. */
 export const unscheduledRowCount=(rows:GridRow[])=>rows.filter(row=>!row.start&&!(row.building||row.buildingRaw)).length;
@@ -1892,6 +1897,38 @@ export function scanRefusalMessage(pages:OcrPageDiagnostic[]):string{
   const confirmed=suspicious.filter(page=>!page.unverified);
   const named=(confirmed.length?confirmed:suspicious).map(page=>`الصفحة ${page.page}: ${page.reason||"لم تثبت هندسة الجدول"}`).join(" · ");
   return `أوقفت الاستيراد لأن جزءاً من الجدول لم يُقرأ. ${named}. لم يُستورد أي صف. ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)، أو اطلب ملف Excel أو PDF مُصدَّراً من النظام، فهو يُقرأ كاملاً في ثوانٍ.`;
+}
+/* ── خانة أيامٍ لا تطبعها الجهة لا تدخل الجدول ───────────────────────────────
+ *
+ * الجهة تطبع أيام المحاضرة تسلسلاً مرتّباً من أرقام 1–5 بلا تكرار («5 3 1»،
+ * «4 2»، «5 4 3 2 1»). وقارئ الشبكة كان يقيس الخلية بهذا الفاحص ليختار بين
+ * قراءتيها، ثم يرجع إلى النص الخام حين يرفضهما معاً — فدخلت «3 2 4» (والمطبوع
+ * «4 2») أياماً ثلاثة خاطئة في نسخة نظيفة بدقة 200 نقطة، ومثلها «1 53» و«2 4 3»
+ * في مسح 2026. هذه قراءة خاطئة لا قيمة: تُفرَّغ للمراجعة، ويبقى نصها الخام في
+ * daysRaw دليلاً يراه المراجع، ويبقى للخادم أن يستعيدها من تطابق تاريخي فريد.
+ * القراءة الناقصة المرتّبة («3» بدل «4 2») يلتقطها الخادم بمطابقة الأيام مع
+ * مدة المحاضرة وساعات المقرر. الملفات النصية لا تمرّ من هنا.
+ *
+ * إلا خانةً قُرئت كلماتُها معكوسة الترتيب: رقمٌ لاتيني داخل صفحة عربية قد تخرج
+ * كلماته من اليمين إلى اليسار، فتصير «5 3 1» «31 5» أو «1 53» (قيس في ثلاث نسخ
+ * نظيفة من العيّنة B وفي مسح 2026). عكسُ ترتيب الكلمات وحده — لا رقم يُزاد ولا
+ * يُحذف — يعيدها تسلسلاً صحيحاً، فتُقبل. و«3 2 4» تبقى خاطئة معكوسةً أيضاً. */
+export function clearImplausibleScanDays(rows:GridRow[]){
+  for(const row of rows){
+    const days=String(row.days||"").trim();
+    if(!days||authorityDaysCellLooksPlausible(days))continue;
+    row.daysRaw=row.daysRaw||days;
+    const mirrored=days.split(/\s+/).filter(Boolean).reverse().join(" ");
+    row.days=authorityDaysCellLooksPlausible(mirrored)?mirrored.replace(/[^1-5]/g,"").split("").join(" "):"";
+  }
+}
+/** The reason an empty day cell gives the reviewer. A cell the scanner did
+ *  read — and this reader or the server's hours check then emptied — says what
+ *  it read, isolated left-to-right as it stands on the sheet, so the reviewer
+ *  sets the days from the paper knowing why the cell is blank. */
+export function unresolvedDaysReason(raw:unknown):string{
+  const seen=String(raw||"").trim();
+  return/^[\d\s]+$/.test(seen)?`لم تثبت أيام المحاضرة؛ قُرئت الخلية «\u2066${seen}\u2069»`:"لم تثبت أيام المحاضرة";
 }
 /** «الصفحة 2» / «الصفحتان 1 و3» / «الصفحات 1، 3، 4» — the pages a notice names. */
 function unreadPagesNotice(pages:number[]):string|undefined{
@@ -4023,6 +4060,9 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
     }
   }
 
+  /* Every row is now final: a day cell the Authority could never have printed
+     leaves the reading here (clearImplausibleScanDays). */
+  for(const page of pages)if(page?.gridRows)clearImplausibleScanDays(page.gridRows);
   const text=texts.join("\n\n--- PAGE ---\n\n");
   const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));
   const pageDiagnostics=pages.map((page,index)=>page?.diagnostic||{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation,suspicious:true,reason:"لم تنتج الصفحة نتيجة قابلة للمراجعة"});

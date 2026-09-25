@@ -11,7 +11,7 @@ import { activeDataMode, ApprovalRevisionConflict, DuplicateResourceError, initD
 import { DEMO_ROLE_ACCOUNTS } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
-import { normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
+import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
 import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
@@ -19,7 +19,7 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { currentTermId, planningTermCandidates, termHasEnded } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
+import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
@@ -29,6 +29,8 @@ import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
 import { runApprovalAttempts, type ApprovalOnce } from "./src/server/approvalAttempts";
 import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueueEntry } from "./src/server/notificationCache";
+import { createDataContextKey } from "./src/server/dataContextCache";
+import { isDemoLinkToken, publicLinkTokenFromPath, PUBLIC_LINK_PAGE_PREFIXES } from "./src/utils/demoLinkToken";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
@@ -71,7 +73,7 @@ import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { endForRequest, judgeRequest, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
@@ -119,7 +121,7 @@ import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocat
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { fairShareByOwner } from "./src/utils/hallBarterFairness";
-import { scanRefusalMessage } from "./src/utils/documentOcr";
+import { scanRefusalMessage, unresolvedDaysReason } from "./src/utils/documentOcr";
 import type { BranchScope } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
@@ -197,16 +199,35 @@ const termChronologyServer = (term: any) => {
 const sortTermsNewestServer = <T extends { AdTermId?: unknown; AdTermName?: unknown }>(rows: readonly T[]): T[] =>
   [...rows].sort((a, b) => termChronologyServer(b) - termChronologyServer(a) || Number(b.AdTermId || 0) - Number(a.AdTermId || 0));
 
-let locationRegistryCache:{at:number;buildings:MasterBuilding[];rooms:MasterRoom[]}|null=null;
+/* ── ذاكرةُ العملية لها عالَمان: الحقيقي، وصندوقُ كل زائرٍ تجريبي ───────────
+ *
+ * البيئةُ التجريبية تعمل داخل الخدمة الحقيقية نفسها: طلبُ الزائر يُربط بصندوقه
+ * (AsyncLocalStorage) فيقرأ Repository بياناتِه هو. أما ذاكرةٌ على مستوى
+ * العملية فلا تعرف ذلك الربط — فكان سجلُّ المباني المحفوظ دقيقةً يمتلئ من أوّل
+ * طلبٍ يسأله: إن كان زائراً تجريبياً حُفظ سجلُّ صندوقه (فارغاً) فرُفض حفظُ
+ * المستخدمين الحقيقيين «اختر مبنى رسميًا من سجل المباني» دقيقةً كاملة، وإن
+ * كان حقيقياً قرأ الزائرُ سجلَّ الجامعة.
+ *
+ * فكلُّ مفتاحٍ لذاكرةٍ تحفظ ما قرأه Repository يمرّ بـdataContextCacheKey
+ * (القاعدة في src/server/dataContextCache.ts). */
+const dataContextCacheKey = createDataContextKey(() => Repository.currentDemoSessionId());
+
+const locationRegistryCache=new Map<string,{at:number;buildings:MasterBuilding[];rooms:MasterRoom[]}>();
 async function readLocationRegistry(force=false){
-  if(!force&&locationRegistryCache&&Date.now()-locationRegistryCache.at<60_000)return locationRegistryCache;
+  const cacheKey=dataContextCacheKey("registry");
+  const held=locationRegistryCache.get(cacheKey);
+  if(!force&&held&&Date.now()-held.at<60_000)return held;
   const [buildings,rooms]=await Promise.all([Repository.getLocationBuildings(),Repository.getLocationRooms()]);
-  const merged=mergeRegistryWithSeed({buildings,rooms});
+  /* بذرةُ السجل مأخوذةٌ من تاريخ الجامعة الحقيقي؛ الصندوقُ التجريبي له سجلُّه
+     الوهميّ وحده (demoSandbox.ts) ولا يُخلط بمباني الجامعة. */
+  const merged=Repository.isDemoRequest()?{buildings:[...buildings],rooms:[...rooms]}:mergeRegistryWithSeed({buildings,rooms});
   merged.buildings.sort((a,b)=>compareLocationCodes(a.officialCode,b.officialCode));
   merged.rooms.sort((a,b)=>compareLocationCodes(a.buildingCode,b.buildingCode)||compareLocationCodes(a.canonicalCode,b.canonicalCode));
-  locationRegistryCache={at:Date.now(),...merged};return locationRegistryCache;
+  const entry={at:Date.now(),...merged};
+  if(locationRegistryCache.size>100)locationRegistryCache.clear();
+  locationRegistryCache.set(cacheKey,entry);return entry;
 }
-function invalidateLocationRegistry(){locationRegistryCache=null;}
+function invalidateLocationRegistry(){locationRegistryCache.delete(dataContextCacheKey("registry"));}
 
 /* ── مواقع الفرع تدخل السجل من الوثيقة المعتمدة ───────────────────────────
  *
@@ -709,6 +730,10 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
   const cookies = getCookies(req);
   const sessionId = cookies["session_id"];
   if (!sessionId) { next(); return; }
+  /* جلسةٌ تجريبية لا هويةَ لها خارج صندوقها: صندوقٌ انتهى، أو رابطٌ حقيقيٌّ
+     فُتح من متصفّح التجربة، يُقرأ فيهما الطلب مجهولاً — لا بهوية «مدير
+     البيئة التجريبية» المحفوظة في authCache على بياناتٍ حقيقية. */
+  if (sessionId.startsWith("demo_") && !Repository.isDemoRequest()) { next(); return; }
 
   const idleTtlMs = Repository.isDemoRequest() ? DEMO_SESSION_TTL_MS : SERVER_IDLE_SESSION_MS;
 
@@ -824,9 +849,28 @@ app.use("/api", (req, res, next) => {
   }));
 });
 
+/*
+ * ── الرابطُ العام يُفتح في عالَمه ────────────────────────────────────────────
+ *
+ * صفحاتُ الروابط (/s /q /r /m) وواجهاتُها (/api/public/…) تُحلّ برمز الرابط لا
+ * بالجلسة. فرمزٌ تجريبي («demo.…») يُربط بالصندوق الذي أنشأه — من المتصفّح
+ * نفسه أو من هاتفٍ يشترك في التقويم — ولا يُبحث عنه في البيانات الحقيقية.
+ * ورمزٌ حقيقي يُقرأ من البيانات الحقيقية ولو حمل المتصفّح جلسةً تجريبية، وتلك
+ * الجلسة لا هويةَ لها هناك (authMiddleware). القاعدة: src/utils/demoLinkToken.ts.
+ */
+function bindPublicLinkContext(req: Request, _res: Response, next: NextFunction) {
+  const token = publicLinkTokenFromPath(req.originalUrl);
+  const sessionId = isDemoLinkToken(token) ? Repository.demoSandboxForLinkToken(token) : "";
+  if (!sessionId) { next(); return; }
+  (req as AuthenticatedRequest).demoSessionId = sessionId;
+  if (!Repository.runDemoSandbox(sessionId, next)) next();
+}
+app.use(PUBLIC_LINK_PAGE_PREFIXES.map(prefix => `${prefix}:token`), bindPublicLinkContext);
+
 // A dedicated demo service binds every API request to the caller's own in-memory sandbox.
 // No demo request can fall through to another visitor's state. Production mode bypasses this entirely.
-app.use("/api", (req: Request, _res: Response, next: NextFunction) => {
+app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+  if (req.path.startsWith("/public/")) { bindPublicLinkContext(req, res, next); return; }
   const sessionId = getCookies(req)["session_id"];
   // /journey is intentionally a marketing read of the real institutional
   // aggregate. It must never inherit a visitor's synthetic Demo sandbox.
@@ -2011,6 +2055,162 @@ async function readDemoIdentity(userId: number) {
   return { user, permissions, scopes };
 }
 
+/*
+ * ── قصّةٌ لكل صفة، من أول نظرة ──────────────────────────────────────────────
+ *
+ * الجداولُ ودورةُ الاعتماد مبذورةٌ في demoSandbox.ts. وما يحتاج مفاتيحَ الخادم
+ * — بصمةَ الرقم المدني وختمَ هوية الطالب، وحُكمَ النظام على طلب الأستاذ —
+ * يُبذر هنا، بالدوالّ نفسها التي يكتب بها الحقيقي، داخل صندوق الزائر:
+ *
+ *   • رابطا القسم: بطاقاتُ الأساتذة، واستبيانُ المقررات — فيجدهما المنسّق في
+ *     لوحة النشر كما يجدهما في الحقيقي، ويجرّبهما الأستاذُ والطالب.
+ *   • قاعدةُ التخرّج لعلوم الحاسب — فطلبُ الخريج ممكنٌ في الاستبيان.
+ *   • أربعُ حالات طلبة: خريجٌ وافقت عليه اللجنة وينتظر التسجيل، وتعارضُ مقرّرين
+ *     ينتظر اللجنة، وفتحُ مقرّرٍ سجّله التسجيل، وآخرُ لم توافق عليه اللجنة.
+ *   • طلبا أستاذين: واحدٌ وصل وينتظر القسم، وآخرُ قُرّر برفضٍ وبدائل.
+ *
+ * كلُّ الأسماء والأرقام وهمية (generateSyntheticCivilId).
+ */
+const DEMO_STORY_SCOPE = { collegeId: 1, sectionId: 1, termId: 1 } as const;
+async function seedDemoStories(): Promise<void> {
+  if (!Repository.isDemoRequest()) return;
+  const { collegeId, sectionId, termId } = DEMO_STORY_SCOPE;
+  const [terms, sections, courses, instructors, colleges, scopeRows, termRows] = await Promise.all([
+    Repository.getTerms(), Repository.getSections(), Repository.getCourses(), Repository.getInstructors(), Repository.getColleges(),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }), Repository.getSchedulesByScope({ termId }),
+  ]);
+  const term = terms.find(row => Number(row.AdTermId) === termId);
+  if (!term || !scopeRows.length) return;
+  const termName = String(term.AdTermName || ""), sectionName = sections.find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || "";
+  const iso = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
+  const committee = { id: 16, name: "د. رئيس لجنة جدول الحاسب", role: roleLabel("committeeChair") };
+
+  // ── قاعدةُ التخرّج (d)
+  const rule = { AdSectionId: sectionId, degreeUnits: 130, fieldTrainingRequired: 100, graduateRegularPassed: 112, graduateSummerPassed: 118, updatedAt: iso(-20), updatedBy: committee.name };
+  await Repository.saveDegreeRule(rule);
+
+  // ── رابطا القسم (a)
+  const linkBase = { AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, SystemUserId: committee.id, userName: committee.name };
+  await Repository.createShareLink({
+    ...linkBase, kind: "staff", label: shareLinkLabel("staff", sectionName, termName),
+    expiresAt: termLinkExpiresAt(term), requestsCloseAt: requestsCloseAtFromDate(iso(14).slice(0, 10)), showInstructors: true,
+  } as any);
+  const survey = await Repository.createShareLink({
+    ...linkBase, kind: "survey", label: shareLinkLabel("survey", sectionName, termName),
+    expiresAt: iso(30), showInstructors: true,
+  } as any);
+
+  // ── حالاتُ الطلبة (b)
+  const courseOf = (code: string) => courses.find(row => String(row.CourseCode) === code);
+  const cs220 = courseOf("CS220"), ds110 = courseOf("DS110"), cs315 = courseOf("CS315"), cs350 = courseOf("CS350");
+  const saveCase = async (name: string, civil: string, entry: Partial<StudentNeed>) => Repository.saveStudentNeed({
+    fingerprint: await surveyFingerprint(civil), AdCollegeId: collegeId, AdSectionId: sectionId, studentSectionId: sectionId,
+    surveySectionId: sectionId, surveyLinkId: survey.id, AdTermId: termId, courseIds: [], requestType: "new-course",
+    nameCipher: await sealStudentIdentity(name), civilCipher: await sealStudentIdentity(civil), details: "", eligibility: "not-checked",
+    ...entry,
+  } as any);
+  const cases: Array<{ label: string; civil: string; caseRef: string }> = [];
+  const remember = (label: string, civil: string, need: StudentNeed) => cases.push({ label, civil, caseRef: caseRefFor(need) });
+
+  const graduateCivil = generateSyntheticCivilId();
+  const graduate = await saveCase("نورة (طالبة تجريبية)", graduateCivil, {
+    requestType: "graduate", graduateReason: "field-conflict",
+    details: "التطبيق الميداني يتعارض مع آخر مقرّرٍ في خطتي — أحتاج شعبةً مسائية.",
+    passedUnits: 118, requiredUnits: graduateThreshold(rule, termName), degreeUnits: rule.degreeUnits, eligibility: "eligible", proofNameMatched: true,
+  });
+  await Repository.setStudentCaseDecision(graduate.id, "committee", { state: "approved", note: "الحالة مستوفية؛ أُحيلت إلى التسجيل.", byRole: committee.role, at: iso(-1) });
+  remember("خريجة — وافقت اللجنة وتنتظر التسجيل", graduateCivil, graduate);
+
+  if (cs220 && ds110) {
+    const civil = generateSyntheticCivilId();
+    const need = await saveCase("فهد (طالب تجريبي)", civil, { requestType: "course-conflict", courseIds: [Number(cs220.AdCourseId), Number(ds110.AdCourseId)] });
+    remember("تعارض مقرّرين — ينتظر اللجنة", civil, need);
+  }
+  if (cs315) {
+    const civil = generateSyntheticCivilId();
+    const need = await saveCase("مريم (طالبة تجريبية)", civil, { requestType: "new-course", courseIds: [Number(cs315.AdCourseId)] });
+    await Repository.setStudentCourseState(need.id, { courseId: Number(cs315.AdCourseId), state: "registered", by: "registration", byRole: roleLabel("registrarStaff"), at: iso(-1) });
+    remember("فتح مقرّر — سُجّل", civil, need);
+  }
+  if (cs350) {
+    const civil = generateSyntheticCivilId();
+    const need = await saveCase("خالد (طالب تجريبي)", civil, { requestType: "new-course", courseIds: [Number(cs350.AdCourseId)] });
+    await Repository.setStudentCourseState(need.id, { courseId: Number(cs350.AdCourseId), state: "committee-rejected", reasonCode: "prerequisite", note: "يلزم اجتياز «هياكل البيانات» أولاً.", by: "department", byRole: committee.role, at: iso(-2) });
+    remember("فتح مقرّر — لم توافق اللجنة", civil, need);
+  }
+  Repository.setDemoGuide({ freshStudentCivil: generateSyntheticCivilId(), cases });
+
+  // ── طلبا أستاذين (c): واحدٌ ينتظر القسم، وآخرُ قُرّر برفضٍ وبدائل.
+  const courseName = new Map(courses.map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
+  const collegeNameById = new Map(colleges.map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const teachers = [...new Set(scopeRows.map(row => Number(row.AdInstructorId)).filter(Boolean))].slice(0, 2);
+  const candidateSlots: Array<{ days: RequestDayKey[]; start: string }> = [
+    { days: ["fsunday", "ftuesday"], start: "12:30" }, { days: ["fmonday", "fwednesday"], start: "14:00" },
+    { days: ["fsunday", "ftuesday"], start: "15:30" }, { days: ["fmonday", "fwednesday"], start: "08:00" },
+    { days: ["fmonday", "fwednesday"], start: "09:30" }, { days: ["fsunday", "ftuesday"], start: "11:00" },
+    { days: ["fmonday", "fwednesday"], start: "15:30" }, { days: ["fsunday", "ftuesday"], start: "08:00" },
+  ];
+  for (const [index, instructorId] of teachers.entries()) {
+    const person = instructors.find(row => Number(row.AdInstructorId) === instructorId);
+    if (!person) continue;
+    const own = termRows.filter(row => Number(row.AdInstructorId) === instructorId);
+    const link = await Repository.createShareLink({
+      ...linkBase, kind: "request", AdInstructorId: instructorId, label: `طلب جدول — ${instructorId}`,
+      expiresAt: new Date(Math.max(Date.now() + REQUEST_LINK_DAYS * 86_400_000, Date.parse(termLinkExpiresAt(term)))).toISOString(),
+      showInstructors: false,
+    } as any);
+    const opened = iso(-6);
+    let request = await Repository.createInstructorRequest({
+      AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdInstructorId: instructorId, linkId: link.id,
+      window: { opensAt: opened, closesAt: requestsCloseAtFromDate(iso(10).slice(0, 10)) }, source: "draft", status: "sent",
+      items: own.map(row => requestItemFromRow(row, courseName.get(Number(row.AdCourseId)) || String(row.AdCourseName || ""), collegeNameById)),
+      timeline: [{ kind: "link-created", at: opened, by: "القسم" }, { kind: "link-opened", at: iso(-5) }],
+    });
+    request = { ...request, linkOpenedAt: iso(-5) };
+    /* بندٌ واحدٌ يُطلب نقله إلى أوّل موعدٍ يقبله حكمُ النظام نفسُه (judgeRequestItems). */
+    const target = request.items.findIndex(item => Number(item.before?.sectionId || sectionId) === sectionId);
+    if (target < 0) continue;
+    const movedTo = (slot: { days: RequestDayKey[]; start: string }) => request.items.map((item, at) => at !== target ? item : {
+      ...item, action: "change" as const,
+      after: { ...item.before!, room: undefined, days: slot.days.map(day => DAY_LETTERS[day]).join(" · "), time: `${slot.start} – ${endForRequest(slot.days, slot.start)}` },
+      slots: slot.days.map(day => ({ day, start: slot.start, end: endForRequest([day], slot.start) })),
+      excuse: "يتوافق مع ساعاتي المكتبية وتدريب الطلبة الميداني.",
+    });
+    /* كلُّ موعدٍ يُطلب أو يُعرض بديلاً يمرّ بحكم النظام نفسه أولاً: لا يُبذر
+       طلبٌ لا يُرسل، ولا بديلٌ يرفضه النظام حين يختاره الأستاذ. */
+    const acceptable: Array<{ slot: { days: RequestDayKey[]; start: string }; judged: InstructorRequest }> = [];
+    for (const slot of candidateSlots) {
+      const attempt = await judgeRequestItems({ ...request, items: movedTo(slot) });
+      if (attempt.items[target].verdict === "clear") acceptable.push({ slot, judged: attempt });
+    }
+    if (!acceptable.length) continue;
+    const judged = acceptable[0].judged;
+    const submittedAt = iso(-4 + index);
+    const signed = {
+      ...judged, status: "submitted" as const, submittedAt,
+      signature: { at: submittedAt, fingerprint: await surveyFingerprint(normalizeCivilId(person.AdInstructorCivil)), verifyCode: verificationCode(request.id, instructorId, submittedAt) },
+      timeline: [...request.timeline, { kind: "submitted" as const, at: submittedAt, detail: "1" }, { kind: "received" as const, at: submittedAt, by: "القسم" }],
+    };
+    if (index === 0) { await Repository.saveInstructorRequest(signed); continue; }
+    const decidedAt = iso(-1);
+    const offered = acceptable.slice(1, 3)
+      .map(({ slot }) => ({ day: slot.days[0], days: slot.days, start: slot.start, end: endForRequest(slot.days, slot.start) }));
+    if (!offered.length) { await Repository.saveInstructorRequest(signed); continue; }
+    const decidedItems = signed.items.map((item, at) => at !== target ? item : {
+      ...item, decision: { state: "rejected" as const, reasonCode: "room" as const, note: "لا قاعة مناسبة في هذا الموعد؛ اختر أحد البديلين.", alternatives: offered, decidedBy: committee.role, decidedAt },
+    });
+    /* الحالةُ من القاعدة نفسها التي يحكم بها مسارُ القرار: رفضٌ ببدائل ينتظر الأستاذ. */
+    const settled = requestFullySettled(decidedItems);
+    await Repository.saveInstructorRequest({
+      ...signed, status: settled ? "settled" : "in-review", items: decidedItems,
+      timeline: [...signed.timeline,
+        { kind: "item-rejected", at: decidedAt, by: committee.role, itemIndex: target, detail: "room" },
+        { kind: "alternative-offered", at: decidedAt, by: committee.role, itemIndex: target },
+        ...(settled ? [{ kind: "settled" as const, at: decidedAt, by: committee.role }] : [])],
+    });
+  }
+}
+
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
   if (process.env.SCHEDULE_DEMO_ENABLED === "false") {
     res.status(404).json({ error: "الدخول التجريبي غير مفعّل." });
@@ -2021,6 +2221,8 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
   try {
     const payload = await Repository.withDemoSandbox(sessionId, async () => {
       await Repository.createSession(sessionId, ROOT_ADMIN_USER_ID, DEMO_SESSION_TTL_MS);
+      /* القصصُ زينةٌ للتجربة لا شرطٌ لها: تعذّرُها يُسجَّل ولا يمنع الدخول. */
+      await seedDemoStories().catch(error => console.error("[demo] seeding stories failed:", error));
       const identity = await readDemoIdentity(ROOT_ADMIN_USER_ID);
       return demoSessionPayload(identity.user, identity.permissions, identity.scopes);
     });
@@ -2214,6 +2416,8 @@ app.post("/api/demo/reset", requireAuth, async (req: AuthenticatedRequest, res: 
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
   if (!sessionId || !Repository.resetDemoSandbox(sessionId, DEMO_SESSION_TTL_MS)) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
+  /* الصندوقُ الجديد يبدأ بقصصه كما بدأ الأول. */
+  await Repository.withDemoSandbox(sessionId, () => seedDemoStories()).catch(error => console.error("[demo] seeding stories failed:", error));
   forgetAuthSession(sessionId);
   await Repository.refreshSession(sessionId, DEMO_SESSION_TTL_MS);
   res.json({ success: true });
@@ -2710,15 +2914,19 @@ app.delete("/api/colleges/:id", requirePermission(2), async (req: AuthenticatedR
   res.json({ success: true });
 });
 
-const collegeMobilityHistoryCache=new Map<number,{expiresAt:number;history:any[]}>();
+const collegeMobilityHistoryCache=new Map<string,{expiresAt:number;history:any[]}>();
 app.get("/api/colleges/:id/mobility", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.params.id||0);if(!collegeId){res.status(400).json({error:"الكلية غير صالحة"});return;}
   if(!req.user.IsAdminUser&&!isScopeAllowed(req,collegeId,0)){res.status(403).json({error:"خارج صلاحيات الكلية"});return;}
   const [college,profile]=await Promise.all([Repository.getCollegeById(collegeId),Repository.getCampusMobilityProfile(collegeId)]);
   if(!college){res.status(404).json({error:"الكلية غير موجودة"});return;}
-  const cachedHistory=collegeMobilityHistoryCache.get(collegeId);
+  const historyKey=dataContextCacheKey(collegeId);
+  const cachedHistory=collegeMobilityHistoryCache.get(historyKey);
   const history=cachedHistory&&cachedHistory.expiresAt>Date.now()?cachedHistory.history:await Repository.getSchedulesByScope({collegeId});
-  if(!cachedHistory||cachedHistory.expiresAt<=Date.now())collegeMobilityHistoryCache.set(collegeId,{history,expiresAt:Date.now()+10*60*1000});
+  if(!cachedHistory||cachedHistory.expiresAt<=Date.now()){
+    if(collegeMobilityHistoryCache.size>100)collegeMobilityHistoryCache.clear();
+    collegeMobilityHistoryCache.set(historyKey,{history,expiresAt:Date.now()+10*60*1000});
+  }
   const usage=new Map<string,number>();history.forEach((row:any)=>{const b=normalizedBuilding(row.AdRoomCode);if(b)usage.set(b,(usage.get(b)||0)+1);});
   /* This list is walked to fill in a travel-time matrix, so it is ordered the
      way a person looks a building up — by its number — not by how busy it is. */
@@ -3588,7 +3796,7 @@ function hallBarterRequestShape(request:HallBarterRequest,sections:any[],college
 }
 
 async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,sectionId:number,termId:number){
-  const cacheKey=`${collegeId}:${sectionId}:${termId}:${String((req.query as any)?.ownerSectionId||"")}:${String((req.query as any)?.day||"")}:${String((req.query as any)?.buildingCode||"")}`;
+  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId}:${String((req.query as any)?.ownerSectionId||"")}:${String((req.query as any)?.day||"")}:${String((req.query as any)?.buildingCode||"")}`);
   const cached=hallBarterBoardCache.get(cacheKey);
   if(cached&&cached.scheduleSerial===driftSerial&&cached.barterSerial===hallBarterSerial&&cached.expiresAt>Date.now())return cached.body;
   /* لا قراءة لكل جداول النظام بعد اليوم: السؤال صار عن هذا الفصل وحده،
@@ -3998,7 +4206,7 @@ const rhythmCache=new Map<string,{serial:number}&DepartmentStyle>();
 async function departmentStyle(row:any):Promise<DepartmentStyle>{
   const collegeId=Number(row?.AdCollegeId||0),sectionId=Number(row?.AdSectionId||0),termId=Number(row?.AdTermId||0);
   if(!collegeId)return{reading:null,doorway:0,memory:null,...NO_COHORT};
-  const key=`${collegeId}:${sectionId}`;
+  const key=dataContextCacheKey(`${collegeId}:${sectionId}`);
   const cached=rhythmCache.get(key);
   if(cached&&cached.serial===driftSerial)
     return{reading:cached.reading,doorway:cached.doorway,memory:cached.memory,
@@ -4310,16 +4518,20 @@ function broadcastScheduleChange(demoSessionId = "") {
  * لا تحمل شيئاً: تقول لكل شاشةٍ مفتوحة «اسأل عن إشعاراتك الآن»، فيسأل كلٌّ
  * بنطاقه هو. فيصل طلبُ الأستاذ أو قرارُ التسجيل في لحظته، لا بعد دقائق.
  */
-function broadcastNotify() {
+/* نبضةٌ من صندوقٍ تجريبي لا توقظ إلا شاشاتِ ذلك الصندوق: قرارٌ وهميّ لا يجعل
+   كلَّ شاشةٍ حقيقية تعيد سؤال جرسها. */
+function broadcastNotify(demoSessionId = "") {
   scheduleEventSerial += 1;
   const payload = `id: ${scheduleEventSerial}\nevent: notify\ndata: {"at":${Date.now()}}\n\n`;
-  for (const [response] of scheduleEventClients) {
+  for (const [response, client] of scheduleEventClients) {
+    if (demoSessionId && client.demoSessionId !== demoSessionId) continue;
     try { response.write(payload); } catch { scheduleEventClients.delete(response); }
   }
 }
 for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests"]) {
   app.use(prefix, (req: Request, res: Response, next: NextFunction) => {
-    if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(); });
+    const demoSessionId = (req as AuthenticatedRequest).demoSessionId || "";
+    if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(demoSessionId); });
     next();
   });
 }
@@ -8868,7 +9080,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     row.importEvidence={
       course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?(fieldDerived("AdCourseId")?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:Number(row.AdCourseId)?100:0,source:fieldSource("AdCourseId"),method:fieldDerived("AdCourseId")?"HISTORICAL_UNIQUE_FINGERPRINT":"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:fieldDerived("AdCourseId"),reason:Number(row.AdCourseId)?(fieldDerived("AdCourseId")?"خلية رقم المقرر كانت فارغة؛ استعيدت فقط لأن بقية حقائق الصف طابقت سجلاً تاريخياً واحد المعنى":"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط"):"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
       section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",score:sectionMatchesSource?100:(authoritySectionConfirmed?96:0),source:sectionMatchesSource?readSource:(authoritySectionConfirmed?"PRESERVED_CANONICAL":"UNRESOLVED"),method:sectionMatchesSource?"EXACT_SECTION_CELL":(authoritySectionConfirmed?"PRESERVED_SECTION_VALUE":"UNRESOLVED"),derived:Boolean(authoritySectionConfirmed&&!sectionMatchesSource),reason:sectionMatchesSource?"رقم الشعبة محفوظ كما طُبع في خلية الشعبة بالمستند دون إعادة ترقيم":(authoritySectionConfirmed?"حُفظ رقم الشعبة الموجود دون توليد تسلسل جديد":"تعذر إثبات رقم الشعبة من المصدر؛ تُترك للمراجعة بدلاً من اختراع قيمة"),evidence:sectionMatchesSource?["خلية الشعبة الأصلية","لا إعادة ترقيم حسب ترتيب الصفوف"]:(authoritySectionConfirmed?["قيمة شعبة محفوظة كما وصلت للمحلل"]:["لا توليد 501/502 عند غياب الشعبة"])},
-      days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?((ocrDaysReview.has(row)||fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"))?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:activeDayKeys.length?100:0,source:fieldSource("fsunday","fmonday","ftuesday","fwednesday","fthursday"),method:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_DAYS",derived:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"),reason:activeDayKeys.length?(fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة":"أيام المحاضرة قُرئت من خلية الأيام نفسها"):"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
+      days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?((ocrDaysReview.has(row)||fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"))?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:activeDayKeys.length?100:0,source:fieldSource("fsunday","fmonday","ftuesday","fwednesday","fthursday"),method:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_DAYS",derived:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"),reason:activeDayKeys.length?(fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة":"أيام المحاضرة قُرئت من خلية الأيام نفسها"):unresolvedDaysReason(row.sourceDaysText),evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
       time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:timeConfirmed?100:0,source:fieldSource("fstarttime","fendtime"),method:fieldDerived("fstarttime","fendtime")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_TIME_PAIR",derived:fieldDerived("fstarttime","fendtime"),reason:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"خلية الوقت كانت ناقصة؛ استعيدت من تطابق تاريخي فريد مع تطبيع HH:MM فقط":"زوج الوقت مثبت من خلية الوقت نفسها"):"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
       instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"REVIEW_REQUIRED":"CONFIRMED"):"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:fieldSource("AdInstructorId"),method:fieldDerived("AdInstructorId")?"HISTORICAL_UNIQUE_FINGERPRINT":(Number(row.AdInstructorId)?(instructorMethod||"SYSTEM_UNIQUE"):unresolvedInstructorOutcome(row)),derived:fieldDerived("AdInstructorId")||Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"اسم الأستاذ لم يُحسم من OCR؛ استعيدت الهوية فقط من بصمة صف تاريخية غير ملتبسة":"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء"):unresolvedInstructorDiagnosis(row).reason,evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
       building:{raw:sourceBuildingRaw,normalized:token,confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomCode"),method:fieldDerived("AdRoomCode")?"HISTORICAL_UNIQUE_FINGERPRINT":"REGISTRY_PENDING",derived:fieldDerived("AdRoomCode"),reason:fieldDerived("AdRoomCode")?"خلية المبنى كانت فارغة؛ استعيد رمزها من بصمة صف تاريخية غير ملتبسة":"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
@@ -9723,6 +9935,11 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     let next: ScheduleApproval = { ...approval, signatures: [...approval.signatures.filter(item => item.stage !== stage), signature] };
     /* توقيعُ اللجنة من جديد يطوي إرجاع رئيس القسم: أُجيب عنه (R11). */
     if (stage === "committee" && next.headReturn) { const { headReturn: _answered, ...rest } = next; next = rest as ScheduleApproval; }
+    /* وتوقيعُ رئيس القسم على النسخة الحاضرة يشمل كلَّ شعبةٍ فيها: ما أُضيف بعد
+       توقيعه القديم قرأه الآن ووقّع عليه (والعددُ محروسٌ بـrefuseIfStale أعلاه).
+       كان يبقى «بانتظار موافقة رئيس القسم» فيُمنع الإرسالُ الذي يليه التوقيع،
+       ويُطلب منه إقرارٌ ثانٍ على ما وقّع عليه للتوّ. */
+    if (stage === "head" && pendingAdditionTotal(next)) next = acknowledgeAdditions(next).next;
     next.status = statusAfterSignatureChange(next);
     next = withEvent(req, next, "sign", `${signature.roleLabel} — ${countOf(rows.length, AR.appointment)} — ${signature.verifyCode}`);
     /* اعتمادُ رئيس القسم هو الإرسال: يوقّع فيصل الجدولُ إلى التسجيل مباشرة.
@@ -10415,7 +10632,7 @@ const REGISTRAR_NOTIFY_ROLES = new Set(["registrarHead", "registrarStaff"]);
    العرض التجريبي: لكلِّ جلسةٍ بياناتُها. */
 const studentQueueMemo = createTtlMemo<Map<string, StudentQueueEntry>>({ ttlMs: 60_000 });
 function studentQueueForTerm(termId: number): Promise<Map<string, StudentQueueEntry>> {
-  const key = `${Repository.currentDemoSessionId() || ""}:${termId}`;
+  const key = dataContextCacheKey(termId);
   return studentQueueMemo.get(key, async () => {
     const [termNeeds, allCourses] = await Promise.all([Repository.getStudentNeedsForTerm(termId), Repository.getCourses()]);
     return studentQueueAggregate(termNeeds as any[], allCourses as any[]);
@@ -10430,7 +10647,7 @@ function studentQueueForTerm(termId: number): Promise<Map<string, StudentQueueEn
 const bellBlockingMemo = createTtlMemo<number>({ ttlMs: 60_000 });
 onSchedulesInvalidated(() => bellBlockingMemo.invalidate());
 function bellBlockingCount(collegeId: number, sectionId: number, termId: number, termRows: any[]): Promise<number> {
-  const key = `${Repository.currentDemoSessionId() || ""}:${termId}:${collegeId}:${sectionId}`;
+  const key = dataContextCacheKey(`${termId}:${collegeId}:${sectionId}`);
   return bellBlockingMemo.get(key, async () => {
     const scopeRows = termRows.filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId);
     return countBlockingConflicts(scopeRows, termRows, await approvalBlockerOptions());
@@ -11470,7 +11687,7 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
   const { collegeId, sectionId, termId, section } = await resolveSmartContext(req);
   if (!collegeId || !sectionId || !termId || !section) { res.status(400).json({ error: "لا يوجد قسم أو فصل دراسي متاح للتحليل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const livingKey = `${collegeId}:${sectionId}:${termId}`;
+  const livingKey = dataContextCacheKey(`${collegeId}:${sectionId}:${termId}`);
   const isDemoLiving = Boolean(Repository.currentDemoSessionId());
   if (!isDemoLiving) {
     const held = livingResponseCache.get(livingKey);
@@ -11614,7 +11831,7 @@ app.get("/api/intelligence/department-start-rhythm", requirePermission(7), async
   if(!collegeId||!isScopeAllowed(req,collegeId,sectionId)){
     res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"}); return;
   }
-  const cacheKey=`${collegeId}:${sectionId}:${termId||"latest"}`;
+  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId||"latest"}`);
   const cached=historicalTimeCache.get(cacheKey);
   if(cached&&cached.serial===driftSerial&&cached.expiresAt>Date.now()){res.json(cached.body);return;}
   const [terms,history]=await Promise.all([
@@ -11639,7 +11856,7 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const key = `${collegeId}:${sectionId}:${viewingTermId || "any"}`;
+  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${viewingTermId || "any"}`);
   const cached = driftCache.get(key);
   if (cached && cached.serial === driftSerial) { res.json(cached.body); return; }
 
@@ -13250,6 +13467,15 @@ app.get("/api/share", requirePermission(7), async (req: AuthenticatedRequest, re
   res.json(await Repository.getShareLinks(collegeId, sectionId, termId));
 });
 
+/** عنوانُ الرابط كما يُعرض في لوحة النشر وعلى الصفحة — لكل نوعٍ صيغتُه. */
+function shareLinkLabel(kind: "staff" | "survey" | "department", sectionName: string, termName: string): string {
+  return kind === "staff"
+    ? `بطاقات الأساتذة · ${termName}`.trim()
+    : kind === "survey"
+      ? `استبيان المقررات · ${sectionName} · ${termName}`.trim()
+      : `${sectionName} · ${termName}`.trim();
+}
+
 app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
@@ -13272,11 +13498,7 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
     res.status(409).json({ error: "انتهى هذا الفصل، فلا يُصدَر له رابط استبيان. اختر الفصل القادم.", code: "term-ended" });
     return;
   }
-  const label = kind === "staff"
-    ? `بطاقات الأساتذة · ${termName}`.trim()
-    : kind === "survey"
-      ? `استبيان المقررات · ${sectionName} · ${termName}`.trim()
-      : `${sectionName} · ${termName}`.trim();
+  const label = shareLinkLabel(kind, sectionName, termName);
   /* بطاقةُ الأستاذ تعيش الفصلَ كلَّه — التقويمُ في هاتفه يتبعها — وموعدُ
      الطلبات يُحفظ منفصلاً ويحكم الكتابة وحدها. العمرُ يُحسب هنا، لا في المتصفح. */
   const requestsCloseAt = kind === "staff" ? requestsCloseAtFromDate(req.body?.requestsCloseAt) : "";
@@ -13703,8 +13925,12 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
  * Neither plaintext is logged or sent to anyone outside those screens; an
  * existing case is opened on the public pages only with civil ID + case number.
  */
+/* الوعدُ محفوظٌ للعملية كلها، فيُقرأ السرُّ الحقيقيُّ دائماً — خارج صندوق العرض
+   (getSharedServerSecret). كان يُقرأ بسياق أوّل طالبٍ يسأله: فإن كان زائراً
+   تجريبياً حُفظ مفتاحُ الصندوق المحلي للنسخة كلها، فخُتمت به هوياتُ الطلبة
+   الحقيقيين وبصماتُهم بعده — مفتاحٌ لا تعرفه النسخُ الأخرى. */
 let studentCaseSecretPromise: Promise<string> | null = null;
-const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getStudentCaseSecret();
+const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getSharedServerSecret();
 const surveyFingerprint = async (civil: string) =>
   createHmac("sha256", await studentCaseSecret()).update(`need|${civil}`).digest("hex").slice(0, 32);
 
@@ -13984,7 +14210,7 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
-  const cacheKey = `${Repository.isDemoRequest() ? getCookies(req as any)["session_id"] || "demo" : "live"}:${resolved.link.id}`;
+  const cacheKey = dataContextCacheKey(resolved.link.id);
   /* Asked on every open, outside the payload cache: the term can end while a
      cached payload is still fresh. */
   const linkTerm = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId));
@@ -15022,6 +15248,43 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
  * execute; with scripts nonced and `object-src 'none'`, letting them through
  * costs nothing that matters.
  */
+/*
+ * ── تلميحُ البيئة التجريبية على الصفحات العامة ──────────────────────────────
+ *
+ * بطاقةُ الأستاذ والاستبيانُ و«حالة طلبي» وطلبُ الجدول كلُّها تطلب رقماً مدنياً
+ * — وزائرُ التجربة لا يعرف رقماً يطابق شيئاً في صندوقه، فتقف الرحلةُ عند أول
+ * حقل. فتقترح الصفحةُ في البيئة التجريبية وحدها رقماً وهمياً يعمل: أستاذاً في
+ * القسم، وطالباً جديداً، وحالةً مبذورةً برقمها.
+ *
+ * ولا يُكتب شيءٌ من هذا في الحقيقي أبداً: الشرطُ الأول `isDemoRequest`، وهو لا
+ * يصدق إلا والطلبُ مربوطٌ بصندوقٍ برمز رابطه (bindPublicLinkContext).
+ */
+async function demoPageHint(link: ScheduleShareLink, page: "staff" | "survey" | "status" | "request"): Promise<string> {
+  if (!Repository.isDemoRequest()) return "";
+  const num = (value: string) => `<bdi dir="ltr" style="font-weight:700;user-select:all;-webkit-user-select:all">${String(value).replace(/[^0-9A-Z]/gi, "")}</bdi>`;
+  const lines: string[] = [];
+  if (page === "staff" || page === "request") {
+    const ownerId = Number(link.AdInstructorId || 0);
+    const rows = ownerId ? [] : await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, sectionId: link.AdSectionId, termId: link.AdTermId });
+    const ids = ownerId ? [ownerId] : [...new Set(rows.map(row => Number(row.AdInstructorId)))].sort((a, b) => a - b);
+    const person = (await Repository.getInstructors()).find(row => ids.includes(Number(row.AdInstructorId)) && normalizeCivilId(row.AdInstructorCivil));
+    if (person) lines.push(page === "request"
+      ? `رقمُ صاحب هذا الرابط المدني (وهمي) للتوقيع عند الإرسال: ${num(normalizeCivilId(person.AdInstructorCivil))}`
+      : `جرّب الرقم المدني ${num(normalizeCivilId(person.AdInstructorCivil))} — أستاذٌ وهمي في هذا القسم.`);
+  }
+  const guide = Repository.getDemoGuide();
+  if (page === "survey" && guide) {
+    lines.push(`طالبٌ جديد: الرقم المدني ${num(guide.freshStudentCivil)} وأيُّ اسمٍ ثلاثي.`);
+    const graduate = guide.cases[0];
+    if (graduate) lines.push(`أو افتح حالةً مبذورة (${graduate.label}): الرقم المدني ${num(graduate.civil)} · رقم الحالة ${num(graduate.caseRef)}.`);
+  }
+  if (page === "status" && guide) {
+    for (const entry of guide.cases.slice(0, 3)) lines.push(`${entry.label}: الرقم المدني ${num(entry.civil)} · رقم الحالة ${num(entry.caseRef)}`);
+  }
+  if (!lines.length) return "";
+  return `<div class="demo-hint" role="note" style="margin:12px 0;padding:10px 12px;border-radius:10px;background:#fff7e6;border:1px dashed #c79b5f;color:#5b4520;font-size:13px;line-height:1.8;text-align:start"><b>بيئة تجريبية</b> — الأرقام وهمية.<br>${lines.join("<br>")}</div>`;
+}
+
 function publicPageNonce(res: Response): string {
   const nonce = randomBytes(16).toString("base64");
   res.setHeader("Content-Security-Policy", [
@@ -15045,7 +15308,7 @@ function publicPageNonce(res: Response): string {
   return nonce;
 }
 
-function staffCardPage(token: string, label: string, nonce: string): string {
+function staffCardPage(token: string, label: string, nonce: string, demoHint = ""): string {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -15242,7 +15505,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   <div class="gate" id="gate">
     <div class="mark">SCHEDULE</div>
     <h1>بطاقتي</h1>
-    <p>${label}<br>اكتب رقمك المدني لعرض جدولك.</p>
+    <p>${label}<br>اكتب رقمك المدني لعرض جدولك.</p>${demoHint}
     <form class="field" id="form">
       <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا" aria-label="الرقم المدني">
       <button type="submit" id="go">عرض</button>
@@ -15870,10 +16133,10 @@ ${ARABIC_COUNT_SCRIPT}
 </script></body></html>`;
 }
 
-function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
+function studentCaseSurveyPage(token:string,label:string,nonce:string,demoHint=""):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 *{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:var(--muted);font-size:12px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
-.prior-case{margin:14px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card2);display:grid;gap:5px}.prior-case strong{font-size:14px}.prior-case small,.prior-case p{font-size:12.5px;color:var(--muted);margin:0}.prior-case ul{margin:4px 0;padding:0 18px;font-size:13px}.replace-note{margin:14px 0 0;padding:11px 13px;border-radius:12px;border:1px solid #806a3a;background:#231d10;color:#f1dfb5;font-size:13px}</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
+.prior-case{margin:14px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card2);display:grid;gap:5px}.prior-case strong{font-size:14px}.prior-case small,.prior-case p{font-size:12.5px;color:var(--muted);margin:0}.prior-case ul{margin:4px 0;padding:0 18px;font-size:13px}.replace-note{margin:14px 0 0;padding:11px 13px;border-radius:12px;border:1px solid #806a3a;background:#231d10;color:#f1dfb5;font-size:13px}</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p>${demoHint}<section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
 (function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,caseRef="",priorSummary=null,priorInitial="",needsCaseRef=false,proofAt=0,PROOF_TTL=20*60*1000,MAX_PROOF_BYTES=14*1024*1024;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
    any twelve digits, so a wrong number travelled through both remaining steps
@@ -16802,7 +17065,8 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
   }];
   if (alternatives.length) timeline.push({ kind: "alternative-offered" as InstructorRequestEventKind, at: now, by, itemIndex: index });
 
-  const decided = items.every(entry => entry.action === "keep" || entry.decision?.state === "fixed" || entry.decision?.state === "rejected");
+  /* رفضٌ ببدائل ينتظر اختيارَ الأستاذ، فلا يُغلق الطلب (requestFullySettled). */
+  const decided = requestFullySettled(items);
   if (decided) timeline.push({ kind: "settled" as InstructorRequestEventKind, at: now, by });
 
   const saved = await Repository.saveInstructorRequest({
@@ -17034,7 +17298,7 @@ sectionId: allowedOption.sectionId,
   });
 
   res.setHeader("Cache-Control", "no-store");
-  broadcastNotify();
+  broadcastNotify(Repository.currentDemoSessionId());
   res.json({ request: stripForInstructor(saved), changed });
 });
 
@@ -17054,7 +17318,7 @@ sectionId: allowedOption.sectionId,
  *     وما رُفض ولماذا. فلا يُقال بعدها «أنتم ما سويتوا شيئاً»، ولا يُقال له
  *     «أرسلنا» وهو لم يفتح.
  */
-function instructorRequestPage(token: string, nonce: string): string {
+function instructorRequestPage(token: string, nonce: string, demoHint = ""): string {
   return `<!doctype html><html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
@@ -17118,7 +17382,7 @@ label.sign{display:grid;grid-template-columns:auto minmax(0,190px);align-items:c
 [hidden]{display:none!important}
 @media(max-width:520px){.wrap{padding:12px 12px 116px}.hero{grid-template-columns:1fr}.readiness{display:flex;align-items:center;justify-content:space-between;text-align:start;padding:8px 12px}.readiness b{font-size:16px}.card{padding:13px}.days{gap:4px}.days button{font-size:11.5px;padding-inline:1px}.course-options{grid-template-columns:1fr}.ends{margin-inline-start:0}.activity-item{grid-template-columns:12px minmax(0,1fr)}.activity-item time{grid-column:2}.tabs{top:6px}}
 @media print{body{background:#fff}.tabs,.pick,.edit,.send,.alts,.add-card{display:none!important}.wrap{max-width:none;padding:0}.card{box-shadow:none;break-inside:avoid}}
-</style></head><body><div class="wrap" id="host">يفتح جدولك…</div>
+</style></head><body>${demoHint?`<div style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div>
 <script nonce="${nonce}">(function(){
 var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[],signCivil="",activeTab="schedule",chooserOpen=false;
 var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
@@ -17558,7 +17822,7 @@ app.get("/r/:token", async (req: Request, res: Response) => {
 ${resolved.error}</body></html>`);
     return;
   }
-  res.type("text/html; charset=utf-8").send(instructorRequestPage(resolved.link.id, publicPageNonce(res)));
+  res.type("text/html; charset=utf-8").send(instructorRequestPage(resolved.link.id, publicPageNonce(res), await demoPageHint(resolved.link, "request")));
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -17711,7 +17975,7 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
  * أسبوع التسجيل. ودمجُهما كان يعني أن يمرّ من يريد السؤالَ وحده على خطوات
  * التعبئة كلها ليصل إلى سطرٍ واحد.
  */
-function studentCaseStatusPage(token: string, nonce: string): string {
+function studentCaseStatusPage(token: string, nonce: string, demoHint = ""): string {
   return `<!doctype html><html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
@@ -17753,7 +18017,7 @@ label.gap{margin-top:13px}
 .case small{font-weight:400;color:var(--ink)}
 </style></head><body><div class="wrap">
 <h1>حالة طلبي</h1>
-<p class="sub">أدخل رقمك المدني ورقم الحالة لترى ما أرسلتَه إلى القسم.</p>
+<p class="sub">أدخل رقمك المدني ورقم الحالة لترى ما أرسلتَه إلى القسم.</p>${demoHint}
 <label for="civil">الرقم المدني</label>
 <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا">
 <label for="ref" class="gap">رقم الحالة</label>
@@ -17833,7 +18097,7 @@ app.get("/m/:token", async (req: Request, res: Response) => {
 <body style="font:400 16px/1.7 'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none;padding:40px;text-align:center;color:#16281f">${message}</body></html>`);
     return;
   }
-  res.type("text/html; charset=utf-8").send(studentCaseStatusPage(resolved.link.id, publicPageNonce(res)));
+  res.type("text/html; charset=utf-8").send(studentCaseStatusPage(resolved.link.id, publicPageNonce(res), await demoPageHint(resolved.link, "status")));
 });
 
 app.get("/q/:token", async (req: Request, res: Response) => {
@@ -17847,7 +18111,7 @@ app.get("/q/:token", async (req: Request, res: Response) => {
     return;
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content=width=device-width,initial-scale=1><title>SCHEDULE</title><link rel=icon href=/schedule-icon.svg type=image/svg+xml><link rel=apple-touch-icon href=/schedule-icon-192.png></head><body><p dir=rtl>هذا الرابط ليس استبياناً.</p></body></html>"); return; }
-  res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res)));
+  res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res), await demoPageHint(resolved.link, "survey")));
 });
 
 app.get("/s/:token", async (req: Request, res: Response) => {
@@ -17863,7 +18127,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
     return;
   }
   if (resolved.link.kind === "staff") {
-    res.send(staffCardPage(resolved.link.id, esc(resolved.link.label || "بطاقة الأستاذ"), publicPageNonce(res)));
+    res.send(staffCardPage(resolved.link.id, esc(resolved.link.label || "بطاقة الأستاذ"), publicPageNonce(res), await demoPageHint(resolved.link, "staff")));
     return;
   }
   /* ── رابطُ الطلب له بابُه وحدَه ───────────────────────────────────────────

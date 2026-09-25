@@ -8,8 +8,8 @@ const end = server.indexOf('app.post("/api/public/request/:token/check"', start)
 if (start < 0 || end <= start) throw new Error('تعذر عزل صفحة طلب الأستاذ من المصدر');
 let fn = server.slice(start, end);
 fn = fn.replace(
-  'function instructorRequestPage(token: string, nonce: string): string {',
-  'function instructorRequestPage(token, nonce) {'
+  'function instructorRequestPage(token: string, nonce: string, demoHint = ""): string {',
+  'function instructorRequestPage(token, nonce, demoHint = "") {'
 );
 const sandbox = { html: '', ARABIC_COUNT_SCRIPT };
 vm.runInNewContext(`${fn}\nhtml=instructorRequestPage('browser-test-token','nonce123');`, sandbox, { timeout: 1000 });

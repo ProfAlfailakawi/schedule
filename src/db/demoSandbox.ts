@@ -1,7 +1,7 @@
 import type {
   AdCollege, AdCollegeUserAssign, AdCourse, AdInstructor, AdRoom, AdSection,
   AdTerm, FSchedule, FormName, FormSecurity, ScheduleApproval, ScheduleComment,
-  ScheduleVersion, SystemUser
+  ScheduleVersion, SystemUser, MasterBuilding, MasterRoom
 } from "../types";
 import { generateSyntheticCivilId } from "../utils/civilId";
 import { ACADEMIC_ROLES, roleDefinition, type AcademicRole } from "../utils/academicRoles";
@@ -47,6 +47,8 @@ export interface DemoSandboxState {
      يسلّم العميدَ حسابَه. ومجموعةٌ غائبةٌ هنا تعني شاشةً تنكسر في التجربة
      وحدها، وهو أسوأ موضعٍ ينكسر فيه شيء: حيث يُختبر. */
   scheduleApprovals: any[];
+  /* سجلُّ المباني والقاعات: بدونه لا يُحفظ موعدٌ في الصندوق (locationPreflight). */
+  locationBuildings: MasterBuilding[]; locationRooms: MasterRoom[];
 }
 
 function syntheticInstructors(): AdInstructor[] {
@@ -69,23 +71,81 @@ function syntheticCourses(): AdCourse[] {
   });
 }
 
-/* Rooms and instructors belong to ONE college each.
+/* ── سجلُّ مبانٍ وقاعاتٍ للبيئة التجريبية ─────────────────────────────────
  *
- * The board loads a single college, but the "outside-scope" sweep compares it
- * against every row in the term — so any hall or instructor shared across two
- * colleges surfaces on the board as «خارج النطاق». The old generator drew from
- * one global pool of 8 halls and 12 instructors with a small modulus, so almost
- * every synthetic row collided with a same-hour twin in a sibling college and
- * the whole demo board lit up dashed-red on first sight. Giving each college its
- * own disjoint band of halls and instructors makes a cross-college clash
- * impossible by construction, while the in-college conflicts that power the
- * "معالجة التعارضات" showcase are untouched — a college's own sections still
- * share its band, so same-hall / same-instructor overlaps within it remain. */
-const ROOM_BANDS: Record<number, ReadonlyArray<readonly [string, string]>> = {
-  1: [["A", "101"], ["A", "203"], ["B", "110"]],
-  2: [["B", "205"], ["C", "301"], ["C", "315"]],
-  3: [["D", "120"], ["D", "220"]],
-};
+ * كلُّ كتابةٍ على موعد (إضافة، تعديل، نقل) تمرّ بـlocationPreflight، وهو يطلب
+ * مبنى وقاعةً من سجلّ المباني الرسمي. والصندوقُ كان بلا سجلّ، وصفوفُه قاعاتٌ
+ * نصّية («A/101») لا ترتبط بشيء — فلم يكن في البيئة التجريبية موعدٌ واحدٌ
+ * يُعدَّل أو يُنقل: كلُّ حفظٍ يُرفض «اختر مبنى رسميًا من سجل المباني».
+ *
+ * فللصندوق سجلُّه الوهمي بالشكل الذي يقرؤه النظام في الحقيقي: مبنىً بكودٍ رسميّ
+ * الشكل (فرعٌ من ثلاثة أرقام — 9xx لا يوجد في الجامعة —، حرفُ موقع، رقمُ مبنى)
+ * لكل كلية، وقاعاتٌ لكل قسم، ومختبرٌ مشترك بين قسمَي كلية العلوم. وكلُّ صفٍّ
+ * مبذور مرتبطٌ بمبناه وقاعته (buildingId/roomId، والكودان الرسميان، و«VERIFIED»).
+ *
+ * والقاعاتُ لقسمها: فلا تظهر قاعةُ قسمٍ خارجَ كليته، ولا يقع تعارضٌ عابرٌ
+ * للكليات — وهو ما كان يُشعل اللوحة كلّها «خارج النطاق» في أول نظرة. */
+interface DemoBuildingSeed {
+  prefix: string; siteLetter: string; number: string; collegeId: number; name: string;
+  rooms: ReadonlyArray<readonly [hall: string, sectionIds: readonly number[], description: string]>;
+}
+const DEMO_BUILDINGS: readonly DemoBuildingSeed[] = [
+  { prefix: "901", siteLetter: "A", number: "01", collegeId: 1, name: "مبنى العلوم التطبيقية", rooms: [
+    ["101", [1], "قاعة ذكية 40 مقعدًا"], ["102", [1], "قاعة محاضرات 35 مقعدًا"], ["203", [1], "مختبر حاسب"],
+    ["104", [2], "قاعة بيانات 30 مقعدًا"], ["110", [2], "قاعة محاضرات 45 مقعدًا"],
+  ] },
+  { prefix: "901", siteLetter: "A", number: "02", collegeId: 1, name: "مبنى المختبرات المشتركة", rooms: [
+    ["L01", [1, 2], "مختبر مشترك للحاسب والبيانات"],
+  ] },
+  { prefix: "902", siteLetter: "B", number: "01", collegeId: 2, name: "مبنى الأعمال والابتكار", rooms: [
+    ["205", [3], "قاعة نقاش"], ["206", [3], "قاعة محاضرات"], ["301", [4], "مختبر ابتكار"], ["315", [4], "قاعة مشاريع"],
+  ] },
+  { prefix: "903", siteLetter: "D", number: "01", collegeId: 3, name: "مبنى التربية المستقبلية", rooms: [
+    ["120", [5], "مختبر تعلم رقمي"], ["220", [5], "قاعة نقاش"], ["221", [5], "قاعة مرنة"],
+  ] },
+];
+const demoBuildingCode = (b: DemoBuildingSeed) => `${b.prefix}${b.siteLetter}${b.number}`;
+const demoBuildingId = (b: DemoBuildingSeed) => `building_${demoBuildingCode(b)}`;
+const demoRoomId = (b: DemoBuildingSeed, hall: string) => `room_${demoBuildingCode(b)}_${hall}`;
+
+/** قاعةٌ واحدة من سجلّ الصندوق بما يكتبه الصفُّ عنها. */
+interface DemoHall { buildingId: string; roomId: string; code: string; hall: string; sectionIds: readonly number[]; collegeId: number; description: string; }
+const DEMO_HALLS: readonly DemoHall[] = DEMO_BUILDINGS.flatMap(b => b.rooms.map(([hall, sectionIds, description]) => ({
+  buildingId: demoBuildingId(b), roomId: demoRoomId(b, hall), code: demoBuildingCode(b), hall, sectionIds, collegeId: b.collegeId, description,
+})));
+const hallsForSection = (sectionId: number) => DEMO_HALLS.filter(h => h.sectionIds.includes(sectionId));
+/** ما يكتبه الصفُّ عن قاعته — الشكلُ نفسه الذي يُخرجه locationPreflight عند الحفظ. */
+function hallFields(hall: DemoHall): Partial<FSchedule> {
+  return { buildingId: hall.buildingId, roomId: hall.roomId, AdRoomCode: hall.code, AdRoomHall: hall.hall, locationStatus: "VERIFIED" };
+}
+
+function demoLocationRegistry(schedules: FSchedule[]): { buildings: MasterBuilding[]; rooms: MasterRoom[] } {
+  const at = new Date().toISOString();
+  const usage = (key: "buildingId" | "roomId", id: string) => schedules.filter(r => (r as any)[key] === id).length;
+  const evidence = ["سجلٌّ وهمي للبيئة التجريبية — لا يمثّل مبنىً حقيقياً."];
+  const buildings: MasterBuilding[] = DEMO_BUILDINGS.map(b => {
+    const sectionIds = [...new Set(b.rooms.flatMap(([, ids]) => ids))];
+    return {
+      id: demoBuildingId(b), officialCode: demoBuildingCode(b), sitePrefix: `${b.prefix}${b.siteLetter}`,
+      prefix: b.prefix, siteLetter: b.siteLetter, buildingNumber: String(Number(b.number)),
+      siteName: "", branchName: colleges.find(c => c.AdCollegeId === b.collegeId)?.AdCollegeName || "", description: b.name,
+      active: true, aliases: [], collegeIds: [b.collegeId], sectionIds,
+      historicalUsageCount: usage("buildingId", demoBuildingId(b)), firstTermId: 1, lastTermId: 1, roomCount: b.rooms.length,
+      confidence: "CONFIRMED", source: "DEMO_SANDBOX", adminVerified: true, evidence, auditHistory: [],
+      createdAt: at, updatedAt: at, lastVerifiedAt: at,
+    };
+  });
+  const rooms: MasterRoom[] = DEMO_HALLS.map(h => ({
+    id: h.roomId, buildingId: h.buildingId, buildingCode: h.code, canonicalCode: h.hall, active: true, aliases: [],
+    collegeIds: [h.collegeId], sectionIds: [...h.sectionIds], primarySectionIds: [...h.sectionIds],
+    shared: h.sectionIds.length > 1, sharedConfidence: "CONFIRMED",
+    historicalUsageCount: usage("roomId", h.roomId), firstTermId: 1, lastTermId: 1,
+    confidence: "CONFIRMED", source: "DEMO_SANDBOX", adminVerified: true, evidence, auditHistory: [],
+    createdAt: at, updatedAt: at, lastVerifiedAt: at,
+  }));
+  return { buildings, rooms };
+}
+
 const INSTRUCTOR_BANDS: Record<number, ReadonlyArray<number>> = {
   1: [1, 2, 3, 4],
   2: [5, 6, 7, 8],
@@ -115,18 +175,28 @@ export const DEMO_CONFLICT_SECTION_ID = 4;
 function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   const times = [["08:00", "09:15"], ["09:30", "10:45"], ["11:00", "12:15"], ["12:30", "13:45"], ["14:00", "15:15"], ["15:30", "16:45"]];
   const positionInCollege = new Map<number, number>();
+  const positionInSection = new Map<number, number>();
+  /* قاعةٌ مشغولة في نمطٍ وساعة — فلا يُسند صفّان القاعةَ نفسها في الموعد نفسه. */
+  const taken = new Set<string>();
   const rows: FSchedule[] = Array.from({ length: 30 }, (_, index) => {
     const course = courses[index % courses.length];
-    const roomBand = ROOM_BANDS[course.AdCollegeId] ?? ROOM_BANDS[1];
     const instructorBand = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
     const k = positionInCollege.get(course.AdCollegeId) ?? 0;
     positionInCollege.set(course.AdCollegeId, k + 1);
-    /* pattern alternates, the hour advances every two rows, the hall and the
-       doctor advance every twelve — so two rows at one pattern+hour differ in both. */
+    const j = positionInSection.get(course.AdSectionId) ?? 0;
+    positionInSection.set(course.AdSectionId, j + 1);
+    /* pattern alternates, the hour advances every two rows; the doctor advances
+       with the hour and every twelve rows — so two rows at one pattern+hour
+       never share a doctor. */
     const pattern = k % 2;
     const [start, end] = times[Math.floor(k / 2) % times.length];
     const lap = Math.floor(k / (2 * times.length));
-    const [code, hall] = roomBand[lap % roomBand.length];
+    /* القاعة: من قاعات القسم، تدور مع ترتيب الصفّ في قسمه — فتنتشر محاضراتُ
+       القسم على قاعاته كما تنتشر في الحقيقة — وتتخطّى ما هو مشغولٌ في الموعد. */
+    const band = hallsForSection(course.AdSectionId);
+    const slot = `${pattern}|${start}`;
+    const hall = band.map((_, step) => band[(j + step) % band.length]).find(h => !taken.has(`${slot}|${h.roomId}`)) ?? band[j % band.length];
+    taken.add(`${slot}|${hall.roomId}`);
     return {
       id: index + 1, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
       AdCourseId: course.AdCourseId, AdCourseName: course.CourseName,
@@ -135,29 +205,62 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       fsunday: pattern === 0, fmonday: pattern === 1,
       ftuesday: pattern === 0, fwednesday: pattern === 1,
       fthursday: false, fstarttime: start, fendtime: end,
-      AdRoomCode: code, AdRoomHall: hall, fdetail: "", rev: 0,
-    };
+      ...hallFields(hall), fdetail: "", rev: 0,
+    } as FSchedule;
   });
   /* The two deliberate conflicts, in the drafting department only. */
   const drafting = rows.filter(row => Number(row.AdSectionId) === DEMO_CONFLICT_SECTION_ID);
   if (drafting.length >= 3) {
     const [anchor, roomClash, teacherClash] = drafting;
+    const sameSlot = (other: FSchedule) => other.fstarttime === anchor.fstarttime && Boolean(other.fsunday) === Boolean(anchor.fsunday)
+      && Boolean(other.fmonday) === Boolean(anchor.fmonday);
     Object.assign(roomClash, {
       fsunday: anchor.fsunday, fmonday: anchor.fmonday, ftuesday: anchor.ftuesday, fwednesday: anchor.fwednesday, fthursday: anchor.fthursday,
-      fstarttime: anchor.fstarttime, fendtime: anchor.fendtime, AdRoomCode: anchor.AdRoomCode, AdRoomHall: anchor.AdRoomHall,
+      fstarttime: anchor.fstarttime, fendtime: anchor.fendtime,
+      buildingId: anchor.buildingId, roomId: anchor.roomId, AdRoomCode: anchor.AdRoomCode, AdRoomHall: anchor.AdRoomHall,
       fdetail: "حالة تجريبية مقصودة: تعارض قاعة مع موعدٍ آخر في القسم نفسه — لاستعراض «معالجة التعارضات».",
     });
-    const freeHall = (ROOM_BANDS[anchor.AdCollegeId] ?? ROOM_BANDS[1]).find(([c, h]) =>
-      !rows.some(other => other !== teacherClash && other.fstarttime === anchor.fstarttime && Boolean(other.fsunday) === Boolean(anchor.fsunday)
-        && Boolean(other.fmonday) === Boolean(anchor.fmonday) && other.AdRoomCode === c && other.AdRoomHall === h));
+    const freeHall = hallsForSection(DEMO_CONFLICT_SECTION_ID).find(h =>
+      !rows.some(other => other !== teacherClash && sameSlot(other) && other.roomId === h.roomId));
     Object.assign(teacherClash, {
       fsunday: anchor.fsunday, fmonday: anchor.fmonday, ftuesday: anchor.ftuesday, fwednesday: anchor.fwednesday, fthursday: anchor.fthursday,
       fstarttime: anchor.fstarttime, fendtime: anchor.fendtime, AdInstructorId: anchor.AdInstructorId,
-      ...(freeHall ? { AdRoomCode: freeHall[0], AdRoomHall: freeHall[1] } : {}),
+      ...(freeHall ? hallFields(freeHall) : {}),
       fdetail: "حالة تجريبية مقصودة: الأستاذ نفسه في قاعتين في الساعة نفسها — لاستعراض «معالجة التعارضات».",
     });
   }
   return rows;
+}
+
+/* ── فصلان يتبعان التاريخ، لا تاريخاً مكتوباً ───────────────────────────────
+ *
+ * كان الفصلُ مكتوباً بتاريخه («الأول 2026/2027» يبدأ 2026-09-06)، فيأتي يومٌ
+ * ينتهي فيه ويقول الاستبيانُ لكل زائر «انتهى هذا الفصل». فالفصلُ الجاري يبدأ
+ * قبل ثلاثة أسابيع من الدخول أيّاً كان يومه، واسمُه من تقويم الجامعة
+ * (سبتمبر→ديسمبر الأول، فبراير→مايو الثاني، يونيو→يوليو الصيفي)، والفصلُ
+ * السابق قبله بفصلٍ كامل وقد انتهى. */
+export const DEMO_PREVIOUS_TERM_ID = 2;
+function demoTermName(start: Date): string {
+  const month = start.getUTCMonth() + 1, year = start.getUTCFullYear();
+  if (month >= 8) return `الفصل الأول ${year}/${year + 1}`;
+  if (month >= 6) return `الفصل الصيفي ${year - 1}/${year}`;
+  return `الفصل الثاني ${year - 1}/${year}`;
+}
+function demoTerms(now: Date): AdTerm[] {
+  const day = 86_400_000;
+  const start = new Date(now.getTime() - 21 * day);
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // الأحد
+  const previous = new Date(start.getTime() - 22 * 7 * day);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return [
+    { AdTermId: 1, AdTermName: demoTermName(start), AdTermStart: iso(start), AdTermWeeks: 15, AdTermSubmissionDeadline: iso(new Date(now.getTime() + 7 * day)) },
+    { AdTermId: DEMO_PREVIOUS_TERM_ID, AdTermName: demoTermName(previous), AdTermStart: iso(previous), AdTermWeeks: 15 },
+  ];
+}
+function previousTermRows(current: FSchedule[]): FSchedule[] {
+  const top = Math.max(0, ...current.map(row => Number(row.id)));
+  return current.filter(row => !String(row.fdetail || "").includes("حالة تجريبية مقصودة"))
+    .map((row, index) => ({ ...structuredClone(row), id: top + 1000 + index, AdTermId: DEMO_PREVIOUS_TERM_ID, rev: 0 }));
 }
 
 /*
@@ -223,37 +326,48 @@ function noteValue(row: FSchedule, field: "room" | "instructor" | "time"): strin
  * ── دورةٌ محكيّة، لا صندوقٌ فارغ ─────────────────────────────────────────────
  *
  * بيئةٌ بلا سجلّ اعتمادٍ تُفتح فيها شاشةُ التغييرات على «لا وارد» و«لم يتغيّر
- * شيء» — فيظنّ المجرِّب أن الميزة معطّلة وهي تعمل. فتُبذَر دورةٌ عاشت: قسمٌ
- * أُرسل جدولُه وعاد بملاحظاتٍ ثم أُرسل ثانيةً وهو الآن عند التسجيل، وقسمٌ
- * مُرجَعٌ ينتظر القسم، وقسمٌ اعتُمد. والمقارنةُ لها أساسٌ محفوظ، فالتقرير يُظهر
- * «ما تحرّك» فعلاً لا جدولاً كاملاً بوصفه جديداً.
+ * شيء» — فيظنّ المجرِّب أن الميزة معطّلة وهي تعمل. فتُبذَر دورةٌ عاشت، ولكل صفةٍ
+ * فيها ما تفعله من أول نظرة:
+ *
+ *   • علوم الحاسب (مسرحُ اللجنة ورئيس القسم): أرجعه التسجيل بملاحظاتٍ مفتوحة،
+ *     فاللجنةُ تعدّل وتنقل وتضيف وتعالج الملاحظات ثم توقّع، ورئيسُ القسم يعلّق
+ *     ويوقّع فيصل الجدول إلى التسجيل. ولا يُقفل: جدولٌ عند التسجيل لا يُعدَّل،
+ *     واللجنةُ لا تجرّب شيئاً على جدولٍ مقفل.
+ *   • علم البيانات (وارد التسجيل): عند التسجيل في جولته الثانية، بأساسٍ محفوظ
+ *     يُظهر «ما تحرّك»، وملاحظتين مفتوحتين، وردٍّ من القسم ينتظر القرار.
+ *   • الإدارة: معتمد.
  */
 function seedApprovalUniverse(schedules: FSchedule[]): {
   approvals: ScheduleApproval[]; versions: ScheduleVersion[]; comments: ScheduleComment[];
 } {
   const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
-  const stage = schedules.filter(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === 1);
+  const scopeRows = (sectionId: number) => schedules.filter(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === sectionId);
+  const nextId = (() => { let top = Math.max(0, ...schedules.map(r => Number(r.id))); return () => ++top; })();
 
   const versions: ScheduleVersion[] = [];
   const comments: ScheduleComment[] = [];
   const approvals: ScheduleApproval[] = [];
 
-  // ── قسم علوم الحاسب: عند التسجيل، الجولة الثانية، بأساسٍ محفوظ يُظهر ما تحرّك.
-  if (stage.length >= 4) {
+  /* نسخةُ ما رآه التسجيل: خانتان تغيّرتا بعدها (قاعةٌ ووقت)، وصفٌّ أُضيف بعدها،
+     وصفٌّ كان فيها وحُذف — فيُقرأ التقريرُ «معدّلاً ومضافاً ومحذوفاً» لا جدولاً جديداً. */
+  function seenBaseline(stage: FSchedule[], sectionId: number): FSchedule[] {
     const baseline = structuredClone(stage);
-    // خانتان تغيّرتا منذ ما رآه التسجيل: قاعةٌ ووقت — فيُقرآن «معدّلَين».
-    baseline[0].AdRoomHall = "999";
+    const movedFrom = hallsForSection(sectionId).find(h => h.roomId !== baseline[0].roomId)!;
+    Object.assign(baseline[0], hallFields(movedFrom));
     baseline[1].fstarttime = "07:00"; baseline[1].fendtime = "08:15";
-    // صفٌّ في الجدول الحيّ ليس في نسخة التسجيل — فيُقرأ «مضافاً».
     baseline.pop();
-    // صفٌّ كان في نسخة التسجيل وحُذف بعدها — يجب أن يبقى في الأساس ويغيب عن
-    // الحيّ ليُقرأ «محذوفاً»؛ فيُوضع في الأساس وحده بمعرّفٍ لا وجود له في الحيّ.
-    const removedId = Math.max(0, ...schedules.map(r => Number(r.id))) + 1;
     baseline.push({
-      ...structuredClone(stage[0]), id: removedId,
+      ...structuredClone(stage[0]), id: nextId(),
       AdCourseName: "مادةٌ أُلغيت بعد المراجعة", SCode: "09",
-      fstarttime: "16:00", fendtime: "17:15", AdRoomCode: "A", AdRoomHall: "101",
+      fstarttime: "16:00", fendtime: "17:15", ...hallFields(hallsForSection(sectionId)[0]),
     });
+    return baseline;
+  }
+
+  // ── علوم الحاسب: مُرجَعٌ بملاحظاتٍ مفتوحة — عملُ اللجنة ورئيس القسم الآن.
+  const cs = scopeRows(1);
+  if (cs.length >= 4) {
+    const baseline = seenBaseline(cs, 1);
     const versionId = "demo-ver-cs-round1";
     versions.push({
       id: versionId, scopeKey: "1:1:1", createdAt: iso(9), rowCount: baseline.length,
@@ -261,70 +375,87 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
       AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
       label: "نسخة الجولة الأولى — كما رآها التسجيل", source: "manual", rows: baseline,
     });
-
-    // ملاحظتا تسجيلٍ مفتوحتان (القيمة لم تتغيّر منذ كتابتهما)، وثالثةٌ رُدَّ عليها.
     comments.push(
       {
         id: "demo-note-cs-1", createdAt: iso(3), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(stage[2].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+        scheduleId: Number(cs[2].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
         text: "سعة القاعة أقل من عدد المسجّلين المتوقّع — يرجى مراجعتها.",
-        resolved: false, field: "room", valueAtNote: noteValue(stage[2], "room"), round: 2, origin: "registrar",
+        resolved: false, field: "room", valueAtNote: noteValue(cs[2], "room"), round: 1, origin: "registrar",
       },
       {
         id: "demo-note-cs-2", createdAt: iso(3), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(stage[3].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+        scheduleId: Number(cs[3].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
         text: "تأكّدوا من إسناد الأستاذ — نصابه هذا الفصل يتجاوز المعتاد.",
-        resolved: false, field: "instructor", valueAtNote: noteValue(stage[3], "instructor"), round: 2, origin: "registrar",
+        resolved: false, field: "instructor", valueAtNote: noteValue(cs[3], "instructor"), round: 1, origin: "registrar",
       },
-      {
-        id: "demo-note-cs-3", createdAt: iso(2), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(stage[0].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
-        text: "يُفضّل تقديم الموعد نصف ساعة.",
-        resolved: false, field: "time", valueAtNote: noteValue(stage[0], "time"), round: 2, origin: "registrar",
-        rebuttal: { text: "الموعد مثبّت بطلب القسم لتوافقه مع مختبرٍ مشترك.", at: iso(1), SystemUserId: 16, userName: "د. رئيس لجنة جدول الحاسب" },
-      },
-      // ملاحظةٌ داخلية من القسم نفسه — لا تمنع الإرسال، تُقرأ فقط.
+      // ملاحظةٌ داخلية من رئيس القسم — لا تمنع الإرسال، تُقرأ فقط.
       {
         id: "demo-note-cs-dept", createdAt: iso(2), SystemUserId: 15, userName: "د. رئيس قسم علوم الحاسب",
-        scheduleId: Number(stage[1].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+        scheduleId: Number(cs[1].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
         text: "ملاحظة داخلية: راجعوا سعة القاعة قبل الاعتماد.",
-        resolved: false, field: "room", valueAtNote: noteValue(stage[1], "room"), round: 2, origin: "department",
+        resolved: false, field: "room", valueAtNote: noteValue(cs[1], "room"), round: 1, origin: "department",
       },
     );
-
     approvals.push({
       id: "1:1:1", scopeKey: "1:1:1", AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
-      status: "submitted", currentRound: 2,
+      status: "returned", currentRound: 1,
       signatures: [
         { stage: "committee", SystemUserId: 16, userName: "د. رئيس لجنة جدول الحاسب", roleLabel: "رئيس لجنة الجدول", at: iso(9), versionId, rowCount: baseline.length, regulationNoticeCount: 1, verifyCode: "CMT-2481" },
         { stage: "head", SystemUserId: 15, userName: "د. رئيس قسم علوم الحاسب", roleLabel: "رئيس القسم العلمي", at: iso(9), versionId, rowCount: baseline.length, regulationNoticeCount: 1, verifyCode: "HEAD-7193" },
       ],
       rounds: [
-        { number: 1, submittedAt: iso(9), submittedBy: "د. رئيس لجنة جدول الحاسب", returnedAt: iso(5), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, changedRowCount: 3, reviewedVersionId: versionId },
-        { number: 2, submittedAt: iso(2), submittedBy: "د. رئيس لجنة جدول الحاسب" },
+        { number: 1, submittedAt: iso(9), submittedBy: "د. رئيس لجنة جدول الحاسب", returnedAt: iso(3), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, reviewedVersionId: versionId },
+      ],
+      pendingAdditions: [], updatedAt: iso(3),
+    });
+  }
+
+  // ── علم البيانات: عند التسجيل، الجولة الثانية، بأساسٍ محفوظ يُظهر ما تحرّك.
+  const ds = scopeRows(2);
+  if (ds.length >= 4) {
+    const baseline = seenBaseline(ds, 2);
+    const versionId = "demo-ver-ds-round1";
+    versions.push({
+      id: versionId, scopeKey: "1:2:1", createdAt: iso(10), rowCount: baseline.length,
+      SystemUserId: 16, userName: "لجنة علم البيانات",
+      AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+      label: "نسخة الجولة الأولى — كما رآها التسجيل", source: "manual", rows: baseline,
+    });
+    comments.push(
+      {
+        id: "demo-note-ds-1", createdAt: iso(1), SystemUserId: 13, userName: "أ. رئيس التسجيل",
+        scheduleId: Number(ds[2].id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+        text: "القاعة صغيرة على عدد الطلبة المتوقّع.",
+        resolved: false, field: "room", valueAtNote: noteValue(ds[2], "room"), round: 2, origin: "registrar",
+      },
+      {
+        id: "demo-note-ds-2", createdAt: iso(1), SystemUserId: 13, userName: "أ. رئيس التسجيل",
+        scheduleId: Number(ds[3].id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+        text: "تأكّدوا من إسناد الأستاذ — نصابه هذا الفصل يتجاوز المعتاد.",
+        resolved: false, field: "instructor", valueAtNote: noteValue(ds[3], "instructor"), round: 2, origin: "registrar",
+      },
+      {
+        id: "demo-note-ds-3", createdAt: iso(4), SystemUserId: 13, userName: "أ. رئيس التسجيل",
+        scheduleId: Number(ds[0].id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+        text: "يُفضّل تقديم الموعد نصف ساعة.",
+        resolved: false, field: "time", valueAtNote: noteValue(ds[0], "time"), round: 2, origin: "registrar",
+        rebuttal: { text: "الموعد مثبّت بطلب القسم لتوافقه مع مختبرٍ مشترك.", at: iso(2), SystemUserId: 16, userName: "لجنة علم البيانات" },
+      },
+    );
+    approvals.push({
+      id: "1:2:1", scopeKey: "1:2:1", AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+      status: "submitted", currentRound: 2,
+      signatures: [
+        { stage: "committee", SystemUserId: 16, userName: "لجنة علم البيانات", roleLabel: "رئيس لجنة الجدول", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 0, verifyCode: "CMT-5510" },
+        { stage: "head", SystemUserId: 15, userName: "رئيس قسم علم البيانات", roleLabel: "رئيس القسم العلمي", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 0, verifyCode: "HEAD-6620" },
+      ],
+      rounds: [
+        { number: 1, submittedAt: iso(10), submittedBy: "لجنة علم البيانات", returnedAt: iso(6), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, changedRowCount: 3, reviewedVersionId: versionId },
+        { number: 2, submittedAt: iso(2), submittedBy: "لجنة علم البيانات" },
       ],
       pendingAdditions: [], updatedAt: iso(2),
     });
   }
-
-  // ── قسم علم البيانات: مُرجَعٌ بملاحظات، ينتظر القسم.
-  approvals.push({
-    id: "1:2:1", scopeKey: "1:2:1", AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
-    status: "returned", currentRound: 1,
-    signatures: [
-      { stage: "committee", SystemUserId: 16, userName: "لجنة علم البيانات", roleLabel: "رئيس لجنة الجدول", at: iso(6), rowCount: 6, verifyCode: "CMT-5510" },
-      { stage: "head", SystemUserId: 15, userName: "رئيس قسم علم البيانات", roleLabel: "رئيس القسم العلمي", at: iso(6), rowCount: 6, verifyCode: "HEAD-6620" },
-    ],
-    rounds: [{ number: 1, submittedAt: iso(6), submittedBy: "لجنة علم البيانات", returnedAt: iso(4), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 1 }],
-    pendingAdditions: [], updatedAt: iso(4),
-  });
-  const dataRow = schedules.find(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === 2);
-  if (dataRow) comments.push({
-    id: "demo-note-ds-1", createdAt: iso(4), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-    scheduleId: Number(dataRow.id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
-    text: "القاعة صغيرة على عدد الطلبة المتوقّع.",
-    resolved: false, field: "room", valueAtNote: noteValue(dataRow, "room"), round: 1, origin: "registrar",
-  });
 
   // ── قسم الإدارة: اعتُمد.
   approvals.push({
@@ -344,7 +475,12 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
 export function createDemoSandboxState(): DemoSandboxState {
   const instructors = syntheticInstructors();
   const courses = syntheticCourses();
-  const schedules = syntheticSchedules(courses);
+  const schedules = [...syntheticSchedules(courses)];
+  /* الفصلُ السابق: جدولُ الأقسام نفسُه قبل فصل — تاريخٌ تتعلّم منه القراءاتُ
+     (إيقاعُ القسم، ما دُرِّس فعلاً في الاستبيان)، ومصدرٌ يُبنى منه الفصلُ الجديد
+     («بداية الفصل»). والحالتان التجريبيتان المقصودتان لا تُورَّثان. */
+  const history = previousTermRows(schedules);
+
   const formNames: FormName[] = Array.from({ length: 17 }, (_, index) => ({ FormNameId: index + 1, FormName: `صلاحية ${index + 1}` }));
 
   const users: SystemUser[] = [
@@ -369,20 +505,19 @@ export function createDemoSandboxState(): DemoSandboxState {
     ...DEMO_ROLE_SEEDS.flatMap(seed => demoAssignsFor(seed.role).map(a => ({ legacyId: ++assignId, SystemUserId: seed.id, AdCollegeId: a.AdCollegeId, AdSectionId: a.AdSectionId }))),
   ];
 
-  const rooms: AdRoom[] = [
-    ["A", "101", "قاعة ذكية 40 مقعدًا"], ["A", "203", "مختبر حاسب"], ["B", "110", "قاعة محاضرات"], ["B", "205", "مختبر ابتكار"],
-    ["C", "301", "قاعة مرنة"], ["C", "315", "قاعة مشاريع"], ["D", "120", "مختبر تعلم رقمي"], ["D", "220", "قاعة نقاش"],
-  ].map((row, index) => ({ AdRoomId: index + 1, AdRoomCode: row[0], AdRoomHall: row[1], AdRoomDescrip: row[2] }));
+  const rooms: AdRoom[] = DEMO_HALLS.map((hall, index) => ({ AdRoomId: index + 1, AdRoomCode: hall.code, AdRoomHall: hall.hall, AdRoomDescrip: hall.description }));
+  const registry = demoLocationRegistry(schedules);
 
   const seeded = seedApprovalUniverse(schedules);
 
   return {
     users, formNames, formSecurity, collegeUserAssign,
-    terms: [{ AdTermId: 1, AdTermName: "الفصل الأول 2026/2027", AdTermStart: "2026-09-06", AdTermWeeks: 15, AdTermSubmissionDeadline: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10) }],
+    terms: demoTerms(new Date()),
     colleges: structuredClone(colleges), sections: structuredClone(sections), instructors, courses,
-    schedules, rooms,
+    schedules: [...schedules, ...history], rooms,
     auditLogs: [], scheduleVersions: seeded.versions, scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: seeded.comments,
     studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [],
     campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: seeded.approvals,
+    locationBuildings: registry.buildings, locationRooms: registry.rooms,
   };
 }
