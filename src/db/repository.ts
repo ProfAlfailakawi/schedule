@@ -58,6 +58,7 @@ import { createDemoSandboxState } from "./demoSandbox";
 import { DEMO_LINK_TOKEN_PREFIX, isDemoLinkToken } from "../utils/demoLinkToken";
 import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
 import { caseRefFromId, mergeStudentResubmission } from "../utils/studentNeedMerge";
+import { cleanSeenIds, mergeSeenIds, seenUnchanged } from "../utils/notificationSeen";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -226,6 +227,8 @@ interface DBState {
   scheduleApprovals?: ScheduleApproval[];
   hallBarterRequests?: HallBarterRequest[];
   scheduleWeekExceptions?: ScheduleWeekException[];
+  /** «المقروء» في جرس الإشعارات لكل مستخدم (src/utils/notificationSeen.ts). */
+  notificationSeen?: Array<{ userId: number; ids: string[]; updatedAt: string }>;
   locationBuildings?: MasterBuilding[];
   locationRooms?: MasterRoom[];
   locationReviewCases?: LocationReviewCase[];
@@ -5105,6 +5108,37 @@ export const Repository = {
     if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
     db.scheduleConstraints = db.scheduleConstraints.filter(row=>row.id!==id);
     saveDatabase();
+  },
+
+  /* «المقروء» في الجرس محفوظٌ للمستخدم نفسه على الخادم، فيتطابق على كل أجهزته.
+     تفضيلٌ لا بيانات جدول: لا يغيّر ما يُعرض، بل علامة «جديد» وحدها. */
+  getNotificationSeen: async (userId: number): Promise<string[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("notificationSeen").doc(String(userId)).get();
+      return cleanSeenIds(doc.exists ? doc.data()?.ids : []);
+    }
+    return cleanSeenIds((db.notificationSeen || []).find(row => row.userId === userId)?.ids);
+  },
+
+  addNotificationSeen: async (userId: number, ids: unknown): Promise<string[]> => {
+    const added = cleanSeenIds(ids);
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("notificationSeen").doc(String(userId));
+      return firestoreDb.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        const stored = cleanSeenIds(snap.exists ? snap.data()?.ids : []);
+        const merged = mergeSeenIds(stored, added);
+        if (!seenUnchanged(stored, merged)) tx.set(ref, { userId, ids: merged, updatedAt: new Date().toISOString() });
+        return merged;
+      });
+    }
+    if (!Array.isArray(db.notificationSeen)) db.notificationSeen = [];
+    let row = db.notificationSeen.find(item => item.userId === userId);
+    if (!row) { row = { userId, ids: [], updatedAt: "" }; db.notificationSeen.push(row); }
+    const stored = cleanSeenIds(row.ids);
+    const merged = mergeSeenIds(stored, added);
+    if (!seenUnchanged(stored, merged)) { row.ids = merged; row.updatedAt = new Date().toISOString(); saveDatabase(); }
+    return merged;
   },
 
   createScheduleDecisionMemory: async (entry: Omit<ScheduleDecisionMemory, "id" | "createdAt">): Promise<ScheduleDecisionMemory> => {

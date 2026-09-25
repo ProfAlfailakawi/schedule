@@ -26,10 +26,12 @@ import { isReadOnlyRole, isViewerOnlyRole, roleDefinition } from "../utils/acade
  */
 export const APPROVAL_WRITE_PREFIXES = ["/approvals", "/schedule-notes", "/student-registration"] as const;
 
-/** ما ليس تعديلاً على بيانات: الدخول والخروج والنبض والحضور. */
+/** ما ليس تعديلاً على بيانات: الدخول والخروج والنبض والحضور، و«المقروء» في
+ *  جرس الإشعارات — تفضيلُ صاحب الحساب وحده، يكتبه العميدُ كما يكتبه غيره. */
 export const SESSION_WRITE_PATHS = new Set([
   "/auth/logout", "/auth/heartbeat", "/auth/presence",
   "/auth/login", "/auth/demo", "/demo/reset", "/demo/role", "/telemetry/client",
+  "/notifications/seen",
 ]);
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);

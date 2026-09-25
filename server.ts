@@ -23,6 +23,7 @@ import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleCo
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
+import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
 import { termPhase } from "./src/utils/termSequence";
@@ -976,7 +977,9 @@ app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) =
   const routePath = req.path;
   const authKind = routePath === "/auth/login" ? "login" : routePath === "/auth/logout" ? "logout" : null;
   const authEvent = authKind !== null;
-  const skip = (routePath.startsWith("/auth/") && !authEvent) || routePath.endsWith("/check-conflicts") || routePath === "/telemetry/client";
+  /* «المقروء» في الجرس تفضيلٌ لا تعديل، ويُكتب مع كل ضغطة على إشعار: تسجيله
+     يدفن السجلّ كما يدفنه النبض. */
+  const skip = (routePath.startsWith("/auth/") && !authEvent) || routePath.endsWith("/check-conflicts") || routePath === "/telemetry/client" || routePath === "/notifications/seen";
   if (!mutating || skip) { next(); return; }
   const startedUser = req.user ? { id: Number(req.user.SystemUserId), name: String(req.user.Name || req.user.SystemUserLogin || "") } : null;
   res.on("finish", () => {
@@ -10808,6 +10811,8 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
 }
 
 app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  /* «المقروء» يُطلب مع بداية الطلب لا بعد بناء القائمة؛ تعذّرُه لا يُسقط الجرس. */
+  const seenStored = Repository.getNotificationSeen(Number(req.user?.SystemUserId)).catch(() => [] as string[]);
   const terms = await Repository.getTerms();
   const explicit = Number(req.query.termId || 0);
   const termId = explicit || currentTermId(terms as any);
@@ -10827,7 +10832,19 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
     items.sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
   }
-  res.json({ termId, termName, planningTermId: planning || 0, planningTermName: planningName, items });
+  /* «المقروء» محفوظٌ للمستخدم على الخادم فيتطابق الجرس على أجهزته كلها؛ يُرسل
+     منه ما يخصّ القائمة الحاضرة وحده. تعذّرُ قراءته لا يُسقط الجرس. */
+  const listed = new Set(items.map(item => seenKey(item)));
+  const seen = (await seenStored).filter(key => listed.has(key));
+  res.json({ termId, termName, planningTermId: planning || 0, planningTermName: planningName, items, seen });
+});
+
+/* تعليمُ إشعاراتٍ كمقروءة للمستخدم نفسه وحده (src/utils/notificationSeen.ts). */
+app.post("/api/notifications/seen", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const ids = cleanSeenIds(req.body?.ids);
+  if (!ids.length) { res.json({ ok: true, stored: 0 }); return; }
+  const stored = await Repository.addNotificationSeen(Number(req.user?.SystemUserId), ids);
+  res.json({ ok: true, stored: stored.length });
 });
 
 /** عدّادُ فصلٍ واحد — يُجمع للجاري ولفصل التخطيط (N18). */

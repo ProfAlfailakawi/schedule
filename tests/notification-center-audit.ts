@@ -8,6 +8,8 @@ import fs from "fs";
 import path from "path";
 import { buildNotifications, type CenterScope } from "../src/utils/notificationCenter";
 import { emptyApproval } from "../src/utils/approvalWorkflow";
+import { cleanSeenIds, mergeSeenIds, seenKey, seenUnchanged, SEEN_LIMIT } from "../src/utils/notificationSeen";
+import { roleWriteDecision } from "../src/server/roleGuard";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
@@ -86,6 +88,43 @@ check(/isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId
   check(!withDeadline.some(item => item.id === "deadline-missing"), "…ولا يُطلب متى حُدِّد");
   const staff = buildNotifications({ role: "registrarStaff", scopes: [scope({ status: "drafting" })] });
   check(!staff.some(item => item.id === "deadline-missing"), "…وموظف التسجيل لا يملك الموعد فلا يُطلب منه");
+}
+
+/* ── «المقروء» واحدٌ على كل أجهزة المستخدم ─────────────────────────────── */
+{
+  check(JSON.stringify(cleanSeenIds([" a ", "a", "", 7, null, "x".repeat(201), "b"])) === JSON.stringify(["a", "b"]),
+    "المقروء: نصوصٌ غير فارغة ومعقولة الطول وبلا تكرار؛ وما سواها يُهمل");
+  check(cleanSeenIds("a").length === 0 && cleanSeenIds(undefined).length === 0, "المقروء: طلبٌ ليس قائمةً لا يُعلّم شيئاً");
+  const many = Array.from({ length: SEEN_LIMIT + 50 }, (_, index) => `n${index}`);
+  check(cleanSeenIds(many).length === SEEN_LIMIT && cleanSeenIds(many)[0] === "n50", `المقروء: ${SEEN_LIMIT} معرّف على الأكثر، والأحدث يبقى`);
+  const merged = mergeSeenIds(["a", "b"], ["b", "c"]);
+  check(JSON.stringify(merged) === JSON.stringify(["a", "b", "c"]), "المقروء: ما قُرئ قبلاً يبقى مكانه، والجديد يُضاف آخراً");
+  check(mergeSeenIds(many.slice(0, SEEN_LIMIT), ["new"]).length === SEEN_LIMIT && mergeSeenIds(many.slice(0, SEEN_LIMIT), ["new"]).at(-1) === "new", "المقروء: الأقدم يسقط عند الحدّ");
+  check(JSON.stringify(mergeSeenIds(["a", "b", "c"], ["a"])) === JSON.stringify(["b", "c", "a"]), "المقروء: ما يُعلَّم ثانيةً يصير أحدثَ ما حُفظ فلا يسقط وهو حاضر");
+  check(seenUnchanged(["a", "b"], mergeSeenIds(["a", "b"], ["b"])) && !seenUnchanged(["a"], ["a", "b"]), "المقروء: لا كتابة حين لا يتغيّر شيء");
+  /* بمفتاح الفصل: معرّف الإشعار نفسه في فصلين إشعاران؛ وإشعار فصل التخطيط يبقى هو حين يصير جارياً. */
+  check(seenKey({ id: "waiting:1:2:1", termId: 41 }) !== seenKey({ id: "waiting:1:2:1", termId: 42 }), "المقروء: قراءةُ الفصل الماضي لا تُخفي إشعار هذا الفصل");
+  check(seenKey({ id: "term-42:waiting:1:2:1", termId: 42 }) === seenKey({ id: "waiting:1:2:1", termId: 42 }), "المقروء: إشعارُ فصل التخطيط مقروءٌ كما هو حين يصير الفصلَ الجاري");
+  /* العميدُ يقرأ ولا يكتب في البيانات — لكنّ «المقروء» تفضيلُه هو. */
+  for (const role of ["dean", "viceDean", "registrarDean", "departmentHead"] as const) {
+    const verdict = roleWriteDecision({ method: "POST", path: "/notifications/seen", authenticated: true, powerUser: false, role });
+    check(verdict.allowed, `المقروء: «${role}» يعلّم إشعاراته كمقروءة`);
+  }
+  check(!roleWriteDecision({ method: "POST", path: "/notifications", authenticated: true, powerUser: false, role: "dean" }).allowed
+    && !roleWriteDecision({ method: "POST", path: "/notifications/seen/extra", authenticated: true, powerUser: false, role: "dean" }).allowed,
+    "المقروء: الإذنُ لهذا المسار بعينه، لا لما يشبهه");
+  /* موصولٌ من الطرفين: الخادم يرسل المقروء ويحفظه، والجرسُ يرسل ما يُعلَّم. */
+  const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+  const bell = fs.readFileSync(path.join(process.cwd(), "src/components/NotificationCenter.tsx"), "utf8");
+  check(/app\.post\("\/api\/notifications\/seen", requireAuth,[\s\S]{0,300}cleanSeenIds\(req\.body\?\.ids\)[\s\S]{0,300}Repository\.addNotificationSeen\(Number\(req\.user\?\.SystemUserId\)/.test(server),
+    "المقروء: الخادم يحفظه لصاحب الجلسة وحده، بعد تنقية ما وصل");
+  check(/const seenStored = Repository\.getNotificationSeen\(Number\(req\.user\?\.SystemUserId\)\)\.catch\(/.test(server)
+    && /const listed = new Set\(items\.map\(item => seenKey\(item\)\)\);\s*const seen = \(await seenStored\)\.filter\(key => listed\.has\(key\)\);[\s\S]{0,160}items, seen \}\)/.test(server),
+    "المقروء: قائمةُ الجرس تحمل ما قُرئ منها على أي جهاز، ويُطلب مع بداية الطلب");
+  check(/const markRead = useCallback[\s\S]{0,700}sendSeen\(refresh \? keys : unseen\);/.test(bell) && /data\.seen/.test(bell) && !/seen\.has\(item\.id\)/.test(bell),
+    "المقروء: الجرسُ يرسل ما لم يُقرأ بعد، ويقرأ بمفتاح الفصل، ويقبل ما قُرئ على جهازٍ آخر");
+  check(/routePath === "\/telemetry\/client" \|\| routePath === "\/notifications\/seen"/.test(server),
+    "المقروء: لا يُكتب في سجلّ العمليات، كالنبض — وإلا دفنه");
 }
 
 console.log(`\nNotification center audit: ${passed} passed, ${failed} failed`);
