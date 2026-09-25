@@ -16,7 +16,7 @@
 | B12 | FIXED | tests/blockers-stream-audit.ts (B12) |
 | B13 | FIXED (brief wired; emergency flag made truthful — no emergency UI built) | tests/blockers-stream-audit.ts (B13) |
 | B14 | FIXED | tests/blockers-stream-audit.ts (B14) |
-| B15 | TODO | |
+| B15 | FIXED | tests/blockers-stream-audit.ts (B15) — old seed: 5/7/3 blockers in submitted/returned/accepted scopes |
 
 ## Notes
 - B1: one module `src/utils/scheduleBlockers.ts` (blockingConflicts / approvalBlockerCount / approvalBlockers /

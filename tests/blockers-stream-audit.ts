@@ -6,7 +6,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { blockingConflicts } from "../src/utils/scheduleBlockers";
+import { approvalBlockerCount, blockingConflicts, placeholderInstructorIds } from "../src/utils/scheduleBlockers";
+import { createDemoSandboxState, DEMO_CONFLICT_SECTION_ID } from "../src/db/demoSandbox";
 import { describeScopeChanges, replacementLoss, scopeBase, scopeFingerprint } from "../src/utils/scopeFingerprint";
 import { applyWithOverwriteConfirm, SCOPE_CHANGED_CODE } from "../src/utils/scopeOverwrite";
 
@@ -184,6 +185,28 @@ await (async () => {
     "B14 سجلّ الأستاذ لا يقول عن كل محاضرة «أُضيفت»");
   const repo = read("src/db/repository.ts");
   check(/\.select\("id", "scopeKey"[^)]*"rowCount"\)/.test(repo), "B14 (القائمة ما زالت خفيفة عمداً — الإصلاح عند القارئ)");
+}
+
+/* B15 — the demo never shows a state the product would refuse. */
+{
+  const demo = createDemoSandboxState();
+  const opts = { placeholderInstructorIds: placeholderInstructorIds(demo.instructors) };
+  const scopeRows = (collegeId: number, sectionId: number) => demo.schedules.filter(r => r.AdCollegeId === collegeId && r.AdSectionId === sectionId);
+  const sectionKeys = demo.schedules.map(r => `${r.AdTermId}:${r.AdCourseId}:${r.SCode}`);
+  check(new Set(sectionKeys).size === sectionKeys.length, "B15 لا شعبة مكرّرة (المقرر نفسه والشعبة نفسها مرتين)");
+  for (const approval of demo.scheduleApprovals) {
+    const count = approvalBlockerCount(scopeRows(approval.AdCollegeId, approval.AdSectionId), demo.schedules, opts);
+    check(count === 0, `B15 نطاق «${approval.status}» ${approval.scopeKey} بلا مانع اعتماد (${count})`);
+  }
+  check(!demo.scheduleApprovals.some((a: any) => a.AdSectionId === DEMO_CONFLICT_SECTION_ID), "B15 قسم الاستعراض ما زال في طور الإعداد");
+  const showcase = scopeRows(2, DEMO_CONFLICT_SECTION_ID);
+  const clashes = blockingConflicts(showcase, demo.schedules, opts);
+  check(clashes.length >= 1 && clashes.length <= 2, `B15 تعارضٌ أو اثنان مقصودان في قسم الاستعراض (${clashes.length})`);
+  check(clashes.every(c => [c.rowId, c.otherId].some(id => /حالة تجريبية مقصودة/.test(String(demo.schedules.find(r => r.id === id)?.fdetail || "")))),
+    "B15 وكل تعارضٍ مقصود مشروحٌ في ملاحظة موعده");
+  const others = demo.sections.filter(s => s.AdSectionId !== DEMO_CONFLICT_SECTION_ID)
+    .reduce((sum, s) => sum + approvalBlockerCount(scopeRows(s.AdCollegeId, s.AdSectionId), demo.schedules, opts), 0);
+  check(others === 0, "B15 ولا تعارض في أي قسمٍ آخر");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
