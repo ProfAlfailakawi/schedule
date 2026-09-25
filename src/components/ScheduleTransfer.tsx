@@ -5,7 +5,7 @@ import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
-import PagedImportPreview from "./PagedImportPreview";
+import PagedImportPreview, { PageReviewWait } from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
@@ -16,7 +16,7 @@ import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 import { campusOf } from "../utils/campusTravel";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
-import { pageReviewIssues, pageReviewWaitLine, pagesAwaitingReview } from "../utils/importPageReview";
+import { pageReviewIssues, pagesAwaitingReview } from "../utils/importPageReview";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -488,6 +488,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   /* Pages still waiting for «راجعت الصفحة» — named beside the publish button,
      which otherwise just disappears with no word about why. */
   const pagesPendingReview = importKind === "authority-pdf" ? pagesAwaitingReview(xlsxPreview?.pageDiagnostics, reviewedImportPages) : [];
+  const confirmImportPage = (page: number) => setReviewedImportPages(prev => prev.includes(page) ? prev : [...prev, page]);
   /* Reviewing a scanned timetable is reading a PAGE, not a card. In a 620px
      sheet the table needed a second, horizontal scrollbar, and a plain mouse
      had to travel in two directions to read one row. While the PDF preview is
@@ -1384,7 +1385,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         pageDiagnostics={Array.isArray(xlsxPreview.pageDiagnostics)?xlsxPreview.pageDiagnostics:[]}
                         pageSummaries={Array.isArray(xlsxPreview.pageSummaries)?xlsxPreview.pageSummaries:[]}
                         reviewedPages={reviewedImportPages}
-                        onReviewPage={page => setReviewedImportPages(prev => prev.includes(page) ? prev : [...prev, page])}
+                        onReviewPage={confirmImportPage}
                         courses={deptCourses as any}
                         instructors={instructors as any}
                         departmentIds={departmentIds}
@@ -1454,9 +1455,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         </div>
                       ) : null}
                       <div className="transfer-import-commit">
-                        {pagesPendingReview.length ? (
-                          <p className="transfer-preflight-wait" role="status">{pageReviewWaitLine(pagesPendingReview)}</p>
-                        ) : null}
+                        {/* بلا صفوف تختفي معاينة الصفحات، فيقف زرّ المراجعة في سطر الانتظار. */}
+                        <PageReviewWait pages={pagesPendingReview} onReviewPage={confirmImportPage} withButtons={!xlsxPreview?.rows?.length} />
                         {importReady && !publishGateSatisfied ? (
                           <p className="transfer-preflight-wait" role="status">جارٍ فحص التعارض مع بقية الأقسام في هذا الفصل…</p>
                         ) : null}

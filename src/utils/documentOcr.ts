@@ -1881,10 +1881,21 @@ export function scanPageVerdict({rows,filled,printed,broken,unscheduled=0}:{rows
     :thin?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined;
   const notes=[
     broken>0?`${countOf(broken,AR.row)} بلا رقم مقرر واضح أو بلا أيام ووقت، وخاناتها غير الواضحة فارغة للمراجعة`:"",
-    missed>0&&!severeMiss?`${lines} ${rows?`وقُرئ منها ${countOf(rows,AR.row)}`:"ولم يُقرأ منها أي صف"} — راجع الصفحة وأضف الناقص يدوياً`:"",
+    missed>0&&!severeMiss?`${lines} ${rows?`وقُرئ منها ${countOf(rows,AR.row)}`:"ولم يُقرأ منها أي صف"} — راجع الصفحة، وأضف الناقص في الجدول بعد الاستيراد`:"",
   ].filter(Boolean);
   return{suspicious:thin||severeMiss||blindSchedule,reason,warning:notes.length?notes.join("؛ "):undefined,
     missedLines:missed>0&&!severeMiss?missed:undefined};
+}
+/** A page the deep pass still leaves with no row keeps its first verdict unless
+ *  judged again: its enhanced read may have counted more printed lines («2
+ *  printed, 0 read» that is really 5). The first, smaller count would accept
+ *  the page with a note — and ask the reviewer about 2 missing lines instead of
+ *  refusing a page that lost all 5. Only a page not already refused is judged
+ *  again, and only upward: a count never shrinks. */
+export function rejudgeEmptyPage(diagnostic:OcrPageDiagnostic,printedRows:number):OcrPageDiagnostic{
+  if(diagnostic.suspicious||!diagnostic.gridDetected||printedRows<=Number(diagnostic.visualRows||0))return diagnostic;
+  const{reason:_reason,warning:_warning,missedLines:_missed,...rest}=diagnostic;
+  return{...rest,visualRows:printedRows,...scanPageVerdict({rows:0,filled:0,printed:printedRows,broken:0,unscheduled:0})};
 }
 /** Rows the reader gave neither a time nor a building: their schedule side was not read. */
 export const unscheduledRowCount=(rows:GridRow[])=>rows.filter(row=>!row.start&&!(row.building||row.buildingRaw)).length;
@@ -1918,7 +1929,7 @@ export function clearImplausibleScanDays(rows:GridRow[]){
     const days=String(row.days||"").trim();
     if(!days||authorityDaysCellLooksPlausible(days))continue;
     row.daysRaw=row.daysRaw||days;
-    const mirrored=days.split(/\s+/).filter(Boolean).reverse().join(" ");
+    const mirrored=toAscii(days.split(/\s+/).filter(Boolean).reverse().join(" "));
     row.days=authorityDaysCellLooksPlausible(mirrored)?mirrored.replace(/[^1-5]/g,"").split("").join(" "):"";
   }
 }
@@ -1929,6 +1940,15 @@ export function clearImplausibleScanDays(rows:GridRow[]){
 export function unresolvedDaysReason(raw:unknown):string{
   const seen=String(raw||"").trim();
   return/^[\d\s]+$/.test(seen)?`لم تثبت أيام المحاضرة؛ قُرئت الخلية «\u2066${seen}\u2069»`:"لم تثبت أيام المحاضرة";
+}
+/** The reason a day cell filled from a unique historical match gives. The cell
+ *  was empty only when nothing was read; a reading this reader or the server's
+ *  hours check refused is named, so the tooltip never claims no value changed. */
+export function restoredDaysReason(raw:unknown):string{
+  const seen=String(raw||"").trim();
+  return/^[\d\s]+$/.test(seen)
+    ?`قُرئت خلية الأيام «\u2066${seen}\u2069» ولم تُقبل؛ استعيدت الأيام من تطابق تاريخي فريد`
+    :"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة";
 }
 /** «الصفحة 2» / «الصفحتان 1 و3» / «الصفحات 1، 3، 4» — the pages a notice names. */
 function unreadPagesNotice(pages:number[]):string|undefined{
@@ -4047,6 +4067,8 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
           const rescuedHeader=await readAuthorityHeaderBand(bestUpright,rescuePool.ara);
           texts[index]=[cachedText,rescuedHeader].filter(Boolean).join("\n");
         }
+      }else if(pages[index]?.diagnostic){
+        pages[index]={...pages[index]!,diagnostic:rejudgeEmptyPage(pages[index]!.diagnostic!,pagePrintedRows[index]||0)};
       }
       rescuedCount++;
       if(pages[index]?.diagnostic?.suspicious){
