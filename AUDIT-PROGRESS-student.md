@@ -10,7 +10,7 @@
 | S6 | FIXED — my-case uses toEnglishDigits + validateCivilId(...).isValid; server asciiDigits is now an alias of the shared toEnglishDigits; survey page digits() accepts ۰-۹; student-case-status audit no longer encodes the object test | tests/student-journey-audit.ts §S6 (incl. repo-wide `!validateCivilId(x)` guard, executes the page's digits()) |
 | S7 | FIXED — GET /api/degree-rules reviewed=Boolean(saved), suggested=!saved; degreeRuleForSection reviewed:false for unsaved; name-derived guess now only in src/utils/degreeRules.ts (server + Sections.tsx import it); Sections shows «اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين» + «احفظ الاقتراح»; survey GET sends per-dept graduateRule {saved, threshold}; page blocks upload for a dept without saved rule; proof checks saved rule BEFORE OCR (code no-degree-rule); rule PUT clears survey payload cache | tests/student-journey-audit.ts §S7 |
 | S8 | FIXED — surveyTermEnded(term) = AdTermClosed || termHasEnded (one rule); survey POST and proof upload refuse (409 term-ended); GET returns termEnded + «انتهى هذا الفصل» (checked outside the payload cache) and the page shows it with a «حالة طلبي» link; /api/share refuses survey links for ended/closed terms (survey branch only) | tests/student-journey-audit.ts §S8 |
-| S9 | TODO | |
+| S9 | FIXED — surveyActiveCourseIds(sectionId) (= Repository.getOperationalCourseIds) used by survey GET, POST (link + college-wide conflict set) and /api/schedules/demand; GET no longer uses curriculumOverview's narrower set | tests/student-journey-audit.ts §S9 |
 | S10 | TODO | |
 | S11 | TODO | |
 | S12 | TODO | |

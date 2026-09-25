@@ -12751,6 +12751,16 @@ const surveyCohort = (sectionName: string) => {
   return { cohort: "mixed", cohortLabel: "طلبة القسم" };
 };
 
+/**
+ * The courses a survey treats as ACTIVE for one department — one rule for the
+ * page that lists them (GET), the answer that is checked (POST) and the
+ * department's reading of the answers (demand). GET used curriculumOverview,
+ * which drops catalogue courses that have no plan membership, while POST and
+ * demand used getOperationalCourseIds, which keeps them: a course could be
+ * accepted and counted but never offered, or the reverse.
+ */
+const surveyActiveCourseIds = (sectionId: number): Promise<Set<number>> => Repository.getOperationalCourseIds(sectionId);
+
 function surveyCourseIdsForSection(courses: any[], history: any[], sectionId: number) {
   const taught = new Map<number, number>();
   for (const row of history) {
@@ -12853,8 +12863,7 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
        here, before the student uploads anything, instead of after OCR. */
     const savedRule=await storedDegreeRuleForSection(sid);
     const graduateRule=savedRule?{saved:true,threshold:graduateThreshold(savedRule,linkTermName)}:{saved:false};
-    const overview=await curriculumOverview(sid);
-    const operational=new Set((overview?.operationalCourseIds||[]).map(Number));
+    const operational=await surveyActiveCourseIds(sid);
     const offered=courses.filter((course:any)=>Number(course.AdSectionId)===sid&&operational.has(Number(course.AdCourseId)))
       .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
       .sort((a:any,b:any)=>b.lastTaught-a.lastTaught||String(a.code).localeCompare(String(b.code),"ar"));
@@ -13083,13 +13092,13 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
      the course being clashed with can belong to any department in the college. */
   const linkSectionId=Number(resolved.link.AdSectionId);
   const { allowed } = surveyCourseIdsForSection(courses, history, linkSectionId);
-  const operationalLinkIds=await Repository.getOperationalCourseIds(linkSectionId);
+  const operationalLinkIds=await surveyActiveCourseIds(linkSectionId);
   for(const id of [...allowed])if(!operationalLinkIds.has(Number(id)))allowed.delete(Number(id));
   courses.filter((course:any)=>Number(course.AdSectionId)===linkSectionId&&operationalLinkIds.has(Number(course.AdCourseId)))
     .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   if(requestType==="course-conflict"){
     const collegeSectionIds=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId)).map((row:any)=>Number(row.AdSectionId));
-    const operationalBySection=new Map<number,Set<number>>(await Promise.all(collegeSectionIds.map(async sid=>[sid,await Repository.getOperationalCourseIds(sid)] as [number,Set<number>])));
+    const operationalBySection=new Map<number,Set<number>>(await Promise.all(collegeSectionIds.map(async sid=>[sid,await surveyActiveCourseIds(sid)] as [number,Set<number>])));
     courses.filter((course:any)=>operationalBySection.get(Number(course.AdSectionId))?.has(Number(course.AdCourseId)))
       .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   }
@@ -13198,7 +13207,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     Repository.getTerms().catch(() => []),
     Repository.getSections().catch(() => []),
   ]);
-  const operationalDemandIds=await Repository.getOperationalCourseIds(sectionId);
+  const operationalDemandIds=await surveyActiveCourseIds(sectionId);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId && operationalDemandIds.has(Number(course.AdCourseId)));
   const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
   const belongsToSurvey = (need:any) => {

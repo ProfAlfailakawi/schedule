@@ -259,6 +259,16 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(surveyPageSource.includes("x.d.termEnded") && surveyPageSource.includes("انتهى هذا الفصل"), "S8 الصفحة تعرض «انتهى هذا الفصل»");
 }
 
+/* ── S9 مجموعة المقررات الفعّالة واحدة للقراءة والإرسال والقراءة عند القسم ── */
+{
+  const get = between(server, 'app.get("/api/public/survey/:token"', 'app.post("/api/public/survey/:token/identity-status"');
+  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  const demand = between(server, 'app.get("/api/schedules/demand"', "كشفُ التسجيل — الطرفان على ورقةٍ واحدة");
+  check(get.includes("surveyActiveCourseIds(sid)") && !get.includes("curriculumOverview("), "S9 صفحة الاستبيان تعرض المجموعة الفعّالة نفسها");
+  check((post.match(/surveyActiveCourseIds\(/g) || []).length === 2 && !post.includes("getOperationalCourseIds("), "S9 والإرسال يتحقق بها");
+  check(demand.includes("surveyActiveCourseIds(sectionId)") && !demand.includes("getOperationalCourseIds("), "S9 وقراءة القسم تعدّ بها");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
