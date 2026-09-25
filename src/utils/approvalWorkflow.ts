@@ -376,12 +376,26 @@ export function deadlinePassed(dateISO: string | undefined, now: Date = new Date
  * أن يُقفل أثراً رجعياً. والتمديد يتقدّم على الموعد دائماً، حتى لو كان أقرب:
  * قرارُ رئيس التسجيل في قسمٍ بعينه أخصُّ من قراره في الفصل كله.
  */
+/**
+ * الموعدُ الذي يُحاسَب عليه القسم: الأبعدُ من موعد الفصل واستثنائه.
+ *
+ * الاستثناءُ مَنحٌ للقسم لا قيدٌ عليه: إن أُخِّر موعدُ الفصل بعد منح استثناءٍ
+ * صار أقربَ منه، فالقسمُ يأخذ الأبعد ولا يُعاقَب بمنحةٍ سبقت. قاعدةٌ واحدة
+ * يقرؤها العرضُ والتأخّرُ واللوحة.
+ */
+export function effectiveSubmissionDate(termDeadline?: string | null, extensionUntil?: string | null): string | undefined {
+  const a = String(termDeadline || "").slice(0, 10), b = String(extensionUntil || "").slice(0, 10);
+  if (!a) return b || undefined;
+  if (!b) return a;
+  return a >= b ? a : b;
+}
+
 export function readDeadline(
   input: { termDeadline?: string; extensionUntil?: string; extensionReason?: string },
   /** لحظةُ السؤال، أو تاريخٌ في الكويت بصيغة YYYY-MM-DD. */
   today: Date | string = new Date(),
 ): DeadlineState {
-  const effective = input.extensionUntil || input.termDeadline;
+  const effective = effectiveSubmissionDate(input.termDeadline, input.extensionUntil);
   if (!effective) {
     return { termDeadline: input.termDeadline, extensionUntil: input.extensionUntil, past: false, tone: "none" };
   }

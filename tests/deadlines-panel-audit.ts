@@ -237,5 +237,15 @@ const approval = (over: Partial<ScheduleApproval> = {}): ScheduleApproval => ({ 
   check(grant.next?.extensionUntil === addKuwaitDays(deadline, withRequest[0].extensionRequest!.days) && !grant.next?.extensionRequest, "D10 ومنحُ الطلب التجريبي يعمل بالقاعدة نفسها");
 }
 
+/* الأبعد يحكم: تأخيرُ موعد الفصل بعد منح استثناءٍ أقرب لا يعاقب القسم. */
+{
+  const later = readDeadline({ termDeadline: "2026-10-20", extensionUntil: "2026-10-10" }, "2026-10-15");
+  check(later.effective === "2026-10-20" && !later.past, "موعد الفصل الأبعد يغلب استثناءً صار أقرب منه");
+  const ext = readDeadline({ termDeadline: "2026-10-08", extensionUntil: "2026-10-11" }, "2026-10-09");
+  check(ext.effective === "2026-10-11" && !ext.past, "والاستثناء الأبعد يغلب موعد الفصل");
+  check(!isLate({ approvalStatus: "drafting", submittedRounds: 0, deadline: "2026-10-20", extension: "2026-10-10", now: "2026-10-15T10:00:00+03:00" }),
+    "والتأخّر يقرأ القاعدة نفسها: لا متأخّر قبل الموعد الأبعد");
+}
+
 console.log(`\nDeadlines panel audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

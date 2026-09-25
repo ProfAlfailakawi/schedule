@@ -13,7 +13,7 @@
  *   - وما سواه متأخّرٌ إذا انقضى اليومُ الأخير — ولو لم يكتب موعداً واحداً:
  *     قسمٌ لم يبدأ بعد انقضاء الموعد هو أشدُّ التأخّر لا استثناءٌ منه.
  */
-import { daysBetween, kuwaitDateISO } from "./approvalWorkflow";
+import { daysBetween, effectiveSubmissionDate, kuwaitDateISO } from "./approvalWorkflow";
 
 export interface LatenessInput {
   /** عددُ مواعيد القسم في الفصل — للعرض فقط؛ الصفرُ لا يُعفي من التأخّر. */
@@ -34,7 +34,7 @@ const HANDED_OVER = new Set(["submitted", "accepted", "returned"]);
 
 /** الموعد الذي يُحاسَب عليه القسم. */
 export function effectiveDeadline(input: Pick<LatenessInput, "deadline" | "extension">): string | undefined {
-  return String(input.extension || input.deadline || "") || undefined;
+  return effectiveSubmissionDate(input.deadline, input.extension);
 }
 
 function todayOf(now?: number | string): string {

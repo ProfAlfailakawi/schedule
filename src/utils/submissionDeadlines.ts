@@ -16,7 +16,7 @@
  *   - رفعُ الاستثناء يعيد القسم إلى موعد الفصل.
  */
 import type { ScheduleApproval } from "../types";
-import { daysBetween, extensionRefusal, type DeadlineState } from "./approvalWorkflow";
+import { daysBetween, extensionRefusal, type DeadlineState, effectiveSubmissionDate } from "./approvalWorkflow";
 import { AR, countOf, oblique } from "./arabicCount";
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -322,7 +322,7 @@ export function decideException(
     if (!approval.extensionRequest) return { outcome: { ok: false, unchanged: true, error: "لا طلبَ تمديدٍ معلّقاً لهذا القسم." } };
     return {
       next: withoutExtensionRequest(approval),
-      outcome: { ok: true, until: approval.extensionUntil || input.termDeadline, event: { action: "extension-request-rejected", detail: reason } },
+      outcome: { ok: true, until: effectiveSubmissionDate(input.termDeadline, approval.extensionUntil), event: { action: "extension-request-rejected", detail: reason } },
     };
   }
   if (input.action === "remove") {

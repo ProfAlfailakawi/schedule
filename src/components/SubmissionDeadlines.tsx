@@ -21,7 +21,7 @@ import {
   CalendarClock, CalendarPlus, Check, ChevronDown, ChevronUp, Hourglass, Inbox, Pencil, Search, Trash2, X,
 } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
-import { daysBetween, kuwaitDateISO, readDeadline } from "../utils/approvalWorkflow";
+import { daysBetween, effectiveSubmissionDate, kuwaitDateISO, readDeadline } from "../utils/approvalWorkflow";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import {
   DEADLINE_PRESET_WEEKS, EXCEPTION_DAY_CHIPS, EXCEPTION_MAX_DAYS, PROGRESS_LABEL,
@@ -358,7 +358,7 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
       scope: "departments", picked: [keyOf(row)],
       mode: !ask && row.deadline.extensionUntil ? "date" : "days",
       days: ask ? Math.min(EXCEPTION_MAX_DAYS, Math.max(1, ask.days)) : 3,
-      until: row.deadline.extensionUntil || termDeadline,
+      until: effectiveSubmissionDate(termDeadline, row.deadline.extensionUntil) || termDeadline,
       reason: ask ? ask.reason : row.deadline.extensionReason || "",
     });
   }, [extendFor?.nonce]);
@@ -505,7 +505,7 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
           {draft ? <p className="sd-muted">{deadlineHeadline(readDeadline({ termDeadline: draft }, new Date()))}</p> : null}
           {draft && exceptions.some(row => String(row.deadline.extensionUntil) < draft) ? (
             <p className="sd-refusal">
-              استثناءاتٌ أقرب من الموعد الجديد: {exceptions.filter(row => String(row.deadline.extensionUntil) < draft).length} — راجعها بعد الحفظ، فالاستثناء يتقدّم على موعد الفصل.
+              {countOf(exceptions.filter(row => String(row.deadline.extensionUntil) < draft).length, AR.exception)} أقرب من الموعد الجديد — أقسامُها تأخذ الموعد الجديد تلقائياً، فالقسم يُحاسَب على الأبعد دائماً.
             </p>
           ) : null}
           <div className="sd-editor-actions">
