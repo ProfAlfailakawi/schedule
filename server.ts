@@ -46,13 +46,13 @@ import {
   signatureStage, watchesInbox,
   type AcademicRole,
 } from "./src/utils/academicRoles";
-import { AR, countOf } from "./src/utils/arabicCount";
+import { AR, countOf, nounFor } from "./src/utils/arabicCount";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, judgeRequest, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
@@ -12256,6 +12256,10 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   const weeklyMinutes = shaped.reduce(
     (total, row) => total + Math.max(0, toMinutes(row.end) - toMinutes(row.start)) * row.days.length, 0
   );
+  /* ساعاتُ التدريس على الساعة غيرُ ما يُحاسَب به النصاب: النصابُ يُعدّ بساعات
+     المقرّر المعتمدة لكل شعبة (‎weeklyLoadOf‎، القاعدة نفسها التي يحكم بها فحصُ
+     الطلبات). فتقول البطاقة الرقمين باسميهما، لا رقماً واحداً يُقرأ خطأً. */
+  const loadUnits = weeklyLoadOf(rows as any, courseById as any);
   const byDay = SHARE_DAY_NAMES.map((name, index) => {
     const dayRows = shaped.filter(row => row.days.includes(index));
     // A gap is idle time between two of the day's own lectures — the thing an
@@ -12293,6 +12297,14 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     // established who is holding it — so the civil ID never reaches a URL.
     calendarKey: await calendarKey(link.id, person.AdInstructorId),
     weeklyMinutes,
+    loadUnits,
+    /* أسماءُ الأعداد تُصاغ هنا بالقاعدة الواحدة (‎nounFor‎)، والصفحة تعرضها. */
+    countNouns: {
+      lectures: nounFor(shaped.length, AR.lecture),
+      days: nounFor(byDay.filter(day => day.rows.length).length, AR.day),
+      rooms: nounFor(new Set(shaped.map(row => `${row.room}/${row.hall}`).filter(value => value !== "/")).size, AR.room),
+      units: nounFor(loadUnits, AR.unit),
+    },
     lectureCount: shaped.length,
     dayCount: byDay.filter(day => day.rows.length).length,
     rooms: Array.from(new Set(shaped.map(row => `${row.room}/${row.hall}`).filter(value => value !== "/"))),
@@ -13810,7 +13822,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
    phone width and left the fourth stranded alone on its own row; two by two
    is even at every width the card is read on. */
 .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px}
-@media (min-width:560px){.stats{grid-template-columns:repeat(4,1fr)}}
+@media (min-width:560px){.stats{grid-template-columns:repeat(5,1fr)}}
 .stat{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
 .stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .stat span{display:block;margin-top:2px;color:var(--dim);font-size:12px}
@@ -13919,7 +13931,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   .wrap{max-width:none!important}.gate,.tools,.foot,.sub,.since,.term-switch,.card-tabs{display:none!important}
   .card{display:block!important;animation:none!important}.head{margin:0 0 12px;padding:0 0 10px;border-bottom:2px solid #222}
   .head h1{font-size:22px!important;letter-spacing:0!important}.head small,.stat span{color:#555!important}
-  .stats{grid-template-columns:repeat(4,1fr)!important;gap:6px;margin-bottom:12px}.stat{padding:8px 10px;border-radius:8px}
+  .stats{grid-template-columns:repeat(5,1fr)!important;gap:6px;margin-bottom:12px}.stat{padding:8px 10px;border-radius:8px}
   .stat b{font-size:18px;letter-spacing:0}.day{break-inside:avoid;border-radius:8px;margin-bottom:8px}
   .day,.stat{border-color:#bbb;background:#fff}.day>h2{padding:8px 10px}.slot{padding:7px 10px}.slot time{color:#111}
   .pastnote{display:none!important}
@@ -14106,11 +14118,13 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       termPick.innerHTML=d.availableTerms.map(function(t){return '<option value="'+t.id+'"'+(t.id===d.termId?' selected':'')+'>'+esc(t.name)+'</option>'}).join("");
       termPick.onchange=function(){switchTerm(Number(termPick.value)||0)};
     }
+    var nouns=d.countNouns||{};
     document.getElementById("stats").innerHTML=[
-      ["ساعة أسبوعياً",hours(d.weeklyMinutes)],
-      ["محاضرة",ar(d.lectureCount)],
-      ["أيام",ar(d.dayCount)],
-      ["قاعات",ar(d.rooms.length)]
+      ["ساعات تدريس أسبوعية",hours(d.weeklyMinutes)],
+      [(nouns.units||"وحدات")+" نصاب",ar(d.loadUnits||0)],
+      [nouns.lectures||"محاضرات",ar(d.lectureCount)],
+      [nouns.days||"أيام",ar(d.dayCount)],
+      [nouns.rooms||"قاعات",ar(d.rooms.length)]
     ].map(function(x){return '<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'}).join("");
 
     var starts=[];d.byDay.forEach(function(day){day.rows.forEach(function(r){if(starts.indexOf(r.start)<0)starts.push(r.start)})});starts.sort();

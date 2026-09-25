@@ -14,7 +14,7 @@
 | D10 | FIXED — card rows carry timeRange = formatScheduleTimeRange (END - START, isolated); page renders it, no own ordering. Movement texts in scheduleMovementEntries and /r/ stored item times left (shared with blockers stream / stored data) | tests/doctor-journey-audit.ts D10 |
 | D11 | FIXED — /issue returns emptyTerm + reason (no-rows / no-instructors) before issuing; SchedulePublish shows an honest message; counts via countOf | tests/doctor-journey-audit.ts D11 |
 | D12 | TODO | |
-| D13 | TODO | |
+| D13 | FIXED — card shows «ساعات تدريس أسبوعية» (clock) and «وحدات نصاب» = weeklyLoadOf (same rule as request load check); stat nouns via nounFor server-side; AR.unit added | tests/doctor-journey-audit.ts D13 |
 | D14 | TODO | |
 | D15 | FIXED — roleGuard allows `/public/` prefix for authenticated read-only roles (token governs) | tests/role-guard-audit.ts (public section) |
 | D16 | TODO | |

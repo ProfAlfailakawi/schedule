@@ -12,6 +12,7 @@ import {
 import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "../src/server/publicAttemptLimiter";
 import { termPhase } from "../src/utils/termSequence";
+import { AR, nounFor } from "../src/utils/arabicCount";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
 import { coverConflict } from "../src/utils/coverAvailability";
 import { chosenAlternativeIndex } from "../src/utils/requestAlternatives";
@@ -269,6 +270,17 @@ async function main() {
     const publish = read("src/components/SchedulePublish.tsx");
     check(publish.includes("data?.emptyTerm") && publish.includes("لم تُفتح طلبات تعديل لأحد"), "D11 الشاشة تقول الحقيقة لا «فُتحت»");
     check(!publish.includes('.toLocaleString("ar-KW-u-nu-latn")} أستاذاً') && publish.includes("countOf(issued.created, AR.instructor)"), "D11 العدد بـcountOf");
+  }
+
+
+  /* ── D13: ساعات التدريس غير وحدات النصاب ─────────────────────────────────── */
+  {
+    check(nounFor(3, AR.unit) === "وحدات" && nounFor(12, AR.unit) === "وحدة", "D13 «وحدة» اسمٌ معدود في المعجم الواحد");
+    const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
+    check(card.includes("const loadUnits = weeklyLoadOf(rows as any, courseById as any);"), "D13 وحدات النصاب بالقاعدة نفسها التي يحكم بها فحص الطلبات");
+    check(card.includes("countNouns:") && card.includes("nounFor(shaped.length, AR.lecture)"), "D13 أسماء الأعداد تُصاغ بالقاعدة الواحدة");
+    const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(page.includes("ساعات تدريس أسبوعية") && page.includes('" نصاب"') && !page.includes('["ساعة أسبوعياً"'), "D13 البطاقة تسمّي الرقمين باسميهما");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);
