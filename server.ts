@@ -37,6 +37,7 @@ import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
 import { instructorScheduleFingerprint } from "./src/utils/scheduleFingerprint";
 import { coversWholeCollege, expandScopeSections, resolveSmartScope } from "./src/server/readScope";
 import { finalSourceFor, type Finality } from "./src/utils/finality";
+import { movementAttribution } from "./src/utils/movementAttribution";
 import { isLate } from "./src/utils/lateness";
 import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
 import {
@@ -46,6 +47,7 @@ import {
   acknowledgeAdditions, appendApprovalEvent, approvalLockReason, awaitsHeadSignature, canHeadReturn, canRequestExtension, canReturn, canWithdraw,
   CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, isOpenRegistrarNote, extensionRefusal, insistOutcome,
   isSwapEdit, kuwaitDateISO, mergePendingAdditions, openRound, pendingAdditionTotal, readViewExpectation,
+  additionsAwaitingHead, withRemainingSignatures, extensionRequestRefusal,
   roundBaselineVersionId, roundEndVersionId, staleViewRefusal, statusAfterSignatureChange, suggestedExtensionDate,
   TERM_CLOSED_APPROVAL_MESSAGE,
 } from "./src/utils/approvalWorkflow";
@@ -1023,10 +1025,23 @@ app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) =
   next();
 });
 
+/*
+ * ── «سجّل الدخول» لمن لا حسابَ له: الجلسةُ التجريبية المفقودة ─────────────────
+ *
+ * الصندوقُ التجريبيُّ في ذاكرة الخادم. فإن انقضت ساعتُه أو أُعيد تشغيلُ الخادم
+ * (نشرُ نسخةٍ جديدة) ضاع، وصار كلُّ طلبٍ من المجرِّب يُردّ «الرجاء تسجيل الدخول
+ * أولاً» — لمن لم يملك حساباً قطّ، وفي منتصف دورةٍ يؤدّيها. وقد وقع هذا في
+ * البروفة الحيّة بعد نشرٍ جرى أثناءها. فيُقال له ما حدث وما يفعل.
+ */
+const DEMO_SESSION_GONE = "انتهت الجلسة التجريبية أو أُعيد تشغيل الخادم فمُحيت بياناتها. ابدأ تجربةً جديدة من صفحة الدخول.";
+function signInRequiredMessage(req: Request): string {
+  return String(getCookies(req)["session_id"] || "").startsWith("demo_") ? DEMO_SESSION_GONE : "الرجاء تسجيل الدخول أولاً";
+}
+
 // Require authenticated user
 function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user) {
-    res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" });
+    res.status(401).json({ error: signInRequiredMessage(req) });
     return;
   }
   next();
@@ -1042,14 +1057,14 @@ function isPowerUser(req: AuthenticatedRequest): boolean {
   return Boolean(req.user && (req.user.IsAdminUser || Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID));
 }
 function requirePowerAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (!req.user) { res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" }); return; }
+  if (!req.user) { res.status(401).json({ error: signInRequiredMessage(req) }); return; }
   if (!isPowerUser(req)) { res.status(403).json({ error: "هذه الأداة مخصصة لإدارة النظام الرئيسية" }); return; }
   next();
 }
 
 const ROOT_ADMIN_USER_ID = Math.max(1, Number(process.env.ROOT_ADMIN_USER_ID || 1) || 1);
 function requireRootAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (!req.user) { res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" }); return; }
+  if (!req.user) { res.status(401).json({ error: signInRequiredMessage(req) }); return; }
   if (Number(req.user.SystemUserId) !== ROOT_ADMIN_USER_ID) {
     res.status(403).json({ error: "هذه الخزنة مخصصة لحساب الإدارة الرئيسي فقط" });
     return;
@@ -1153,7 +1168,7 @@ const documentReadingGate = limitConcurrency(2, 8);
 function requirePermission(formNameId: number) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" });
+      res.status(401).json({ error: signInRequiredMessage(req) });
       return;
     }
     // Keep the single department scheduler inside the operational workspace even if
@@ -1178,7 +1193,7 @@ function requirePermission(formNameId: number) {
 function requireAnyPermission(formNameIds: number[]) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" });
+      res.status(401).json({ error: signInRequiredMessage(req) });
       return;
     }
     if (formNameIds.every(id => powerOnlyFormIds.has(id)) && !isPowerUser(req)) {
@@ -2247,7 +2262,7 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
 app.post("/api/demo/role", rateLimitDemoRole, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
-  if (!sessionId) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
+  if (!sessionId) { res.status(401).json({ error: DEMO_SESSION_GONE }); return; }
   const requested = String(req.body?.role || "");
   const targetId = requested === "admin"
     ? ROOT_ADMIN_USER_ID
@@ -2415,7 +2430,7 @@ app.post("/api/auth/heartbeat", requireAuth, async (req: AuthenticatedRequest, r
 app.post("/api/demo/reset", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
-  if (!sessionId || !Repository.resetDemoSandbox(sessionId, DEMO_SESSION_TTL_MS)) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
+  if (!sessionId || !Repository.resetDemoSandbox(sessionId, DEMO_SESSION_TTL_MS)) { res.status(401).json({ error: DEMO_SESSION_GONE }); return; }
   /* الصندوقُ الجديد يبدأ بقصصه كما بدأ الأول. */
   await Repository.withDemoSandbox(sessionId, () => seedDemoStories()).catch(error => console.error("[demo] seeding stories failed:", error));
   forgetAuthSession(sessionId);
@@ -9840,8 +9855,8 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
     rowCount: rows.length,
     /* سببُ منع التعديل لهذا الناظر، من حارس الخادم نفسه (R21). */
     lockReason,
-    canRequestExtension: canRequestExtension(deadline) && !approval.extensionRequest
-      && (approval.status === "drafting" || approval.status === "committee" || approval.status === "head" || approval.status === "returned"),
+    /* من القاعدة نفسها التي يُسأل بها مسارُ الطلب (extensionRequestRefusal). */
+    canRequestExtension: extensionRequestRefusal(approval, deadline) === null,
     statusLabel: APPROVAL_STATUS_LABEL[approval.status],
     lastReviewedVersionId: lastReviewedVersionId(approval),
   });
@@ -9869,20 +9884,31 @@ app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, re
    * لا سجلَّ لها، فكانت تغيب عن الميزان كلياً — وهي أهمّ ما يسأل عنه العميد.
    * تُبنى هنا من سجلّ الأقسام في نطاق القارئ، بحال «لم يبدأ»، ويُحكم على
    * تأخّرها وتأخّر غيرها بالقاعدة الواحدة `isLate` (src/utils/lateness.ts). */
-  const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const [sections, colleges, termRows] = await Promise.all([
+    Repository.getSections(), Repository.getColleges(), Repository.getSchedulesByScope({ termId }),
+  ]);
   const collegeName = new Map(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
   const started = new Set(rows.map(row => `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`));
+  /* ── قسمٌ كتب مواعيده ولم يوقّع ليس «لم يبدأ» (مراجعة البروفة) ──────────
+   * بلا سجلّ اعتماد، كان كلُّ قسمٍ يُقال عنه «لم يبدأ» — وميزانُ العميد يعرض
+   * بجانبه ستةَ مواعيد، والواردُ وشريطُ القسم يقولان عنه «قيد الإعداد». فالحالُ
+   * من الجدول نفسه: مواعيدُ في الفصل ⇒ قيد الإعداد، ولا شيء ⇒ لم يبدأ. */
+  const withRows = new Set((termRows as any[]).map(row => `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`));
   const notStarted = sections
     .filter((row: any) => (!collegeId || Number(row.AdCollegeId) === collegeId)
       && !started.has(`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`)
       && (req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))))
-    .map((row: any) => ({
+    .map((row: any) => {
+      const drafting = withRows.has(`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`);
+      return {
       AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId),
       sectionName: String(row.AdSectionName || ""), collegeName: collegeName.get(Number(row.AdCollegeId)) || "",
-      status: "notStarted" as const, statusLabel: "لم يبدأ",
+      status: drafting ? "drafting" as const : "notStarted" as const,
+      statusLabel: drafting ? APPROVAL_STATUS_LABEL.drafting : "لم يبدأ",
       deadline: readDeadline({ termDeadline }, now),
       late: isLate({ approvalStatus: null, submittedRounds: 0, deadline: termDeadline }),
-    }));
+      };
+    });
   res.json({
     termDeadline,
     approvals: visible.map(row => ({
@@ -9984,7 +10010,7 @@ app.post("/api/approvals/withdraw", requireAuth, async (req: AuthenticatedReques
     /* سحبُ توقيع اللجنة يُسقط توقيع رئيس القسم معه: الترتيب جزءٌ من المعنى،
        وتوقيعُ رئيس قسمٍ فوق لجنةٍ سحبت توقيعها لا يقول شيئاً. */
     const dropped = stage === "committee" ? [] : approval.signatures.filter(item => item.stage === "committee");
-    let next: ScheduleApproval = { ...approval, signatures: dropped };
+    let next: ScheduleApproval = withRemainingSignatures(approval, dropped);
     /* وجدولٌ مُرجَعٌ يبقى مُرجَعاً: السحبُ لا يمحو أن التسجيل ينتظره. */
     next.status = statusAfterSignatureChange(next);
     next = withEvent(req, next, "withdraw", roleLabel(actor.role));
@@ -10014,8 +10040,7 @@ app.post("/api/approvals/head-return", requireAuth, async (req: AuthenticatedReq
     if (verdict.ok !== true) { res.status(verdict.code === "reason" ? 400 : 409).json({ error: verdict.message, code: verdict.code }); return; }
     const actor = approvalActor(req);
     let next: ScheduleApproval = {
-      ...approval,
-      signatures: approval.signatures.filter(item => item.stage !== "committee" && item.stage !== "head"),
+      ...withRemainingSignatures(approval, approval.signatures.filter(item => item.stage !== "committee" && item.stage !== "head")),
       status: "drafting",
       headReturn: { by: actor.name, at: new Date().toISOString(), reason },
     };
@@ -10034,7 +10059,7 @@ app.post("/api/approvals/acknowledge-additions", requireAuth, async (req: Authen
   if (await refuseIfTermClosed(res, termId)) return;
   await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
-    if (!pendingAdditionTotal(approval)) { res.json({ approval, acknowledged: 0, remaining: 0 }); return; }
+    if (!additionsAwaitingHead(approval)) { res.json({ approval, acknowledged: 0, remaining: 0 }); return; }
     /* ── يُقرّ ما رآه وحده (R6/R14) ───────────────────────────────────────
      * الشاشةُ ترسل المعرّفات التي عرضتها وعدد ما زاد عليها. وما أُضيف بعد أن
      * فتحها يبقى ينتظره، بدل أن يُقرّ بضغطةٍ على قائمةٍ لم تكن فيها. */
@@ -10269,7 +10294,10 @@ app.post("/api/approvals/extension-request", requireAuth, async (req: Authentica
   await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const deadline = await readDeadlineFor(approval, termId);
-    if (!deadline.effective) { res.status(409).json({ error: "لا موعد تسليمٍ لهذا الفصل — لا شيء يُمدَّد." }); return; }
+    /* القاعدةُ التي يُعرض بها الزرّ هي التي يُقبل بها الطلب: جدولٌ معتمدٌ أو
+       عند التسجيل، أو موعدٌ بعيد، أو طلبٌ سابقٌ معلّق — كلٌّ يُردّ بسببه. */
+    const refusal = extensionRequestRefusal(approval, deadline);
+    if (refusal) { res.status(409).json({ error: refusal, code: "extension-request-refused" }); return; }
     const actor = approvalActor(req);
     let next: ScheduleApproval = {
       ...approval,
@@ -10824,7 +10852,9 @@ async function approvalBadgeForTerm(req: AuthenticatedRequest, termId: number): 
     let open = 0;
     for (const approval of approvals) {
       if (stage === "head" && awaitsHeadSignature(approval)) open += 1;
-      open += pendingAdditionTotal(approval);
+      /* الإضافاتُ تنتظر رئيسَ القسم وحده، وما دام توقيعُه قائماً (additionsAwaitingHead):
+         كانت تُعدّ في عدّاد اللجنة أيضاً، وهي لا تملك فيها فعلاً. */
+      if (stage === "head") open += additionsAwaitingHead(approval);
       /* والجدولُ عند التسجيل ملاحظاتُه مراجعةٌ جارية لا يملك القسم فيها فعلاً. */
       if (approval.status === "submitted") continue;
       const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
@@ -10944,7 +10974,7 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
          للجنته داخليةٌ لا تنتظر التسجيل ولا تُضخّم عدّاده. */
       openNotes: countOpenRegistrarNotes(notes),
       answeredNotes: countAnsweredRegistrarNotes(notes),
-      pendingAdditions: pendingAdditionTotal(approval),
+      pendingAdditions: additionsAwaitingHead(approval),
       deadline,
       /* طلبُ تمديدٍ من القسم، والتاريخُ الذي يُقترح لمنحه (R17). */
       extensionRequest: approval.extensionRequest,
@@ -13229,7 +13259,9 @@ async function scheduleMovementEntries(instructorId: number, termId: number, row
     if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
   }
   const movementHistory: MovementEntry[] = [];
-  const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
+  /* أيامُ المحاضرة كلُّها: «الأحد» وحده عن محاضرة الأحد والثلاثاء كان يوحي
+     بأن الثلاثاء لم يتغيّر. */
+  const movementDay = (row:any) => shareDayIndexes(row).map(index => SHARE_DAY_NAMES[index]).filter(Boolean).join(" · ");
   const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
   const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
   const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === instructorId).map(row => [Number(row.id),row]));
@@ -13241,7 +13273,8 @@ async function scheduleMovementEntries(instructorId: number, termId: number, row
     states.push({ at:new Date().toISOString(),label:"الجدول الحالي",rows:liveSection });
     for (let i=1;i<states.length;i++) {
       const before=movementShape(states[i-1].rows), after=movementShape(states[i].rows);
-      const at=states[i].at,label=states[i].label;
+      /* ما تغيّر بين لقطتين وقع بعد الأولى، بالفعل الذي أُخذت قبله (movementAttribution). */
+      const {at,label}=movementAttribution(states[i-1]);
       for (const [id,now] of after) {
         const was=before.get(id);
         if (!was) { movementHistory.push({at,label,tone:"add",day:movementDay(now),source:"schedule",text:`${movementName(now)} أُضيفت ${now.fstarttime}–${now.fendtime}${withRooms ? ` · ${movementRoom(now)}` : ""}`}); continue; }
@@ -16713,6 +16746,8 @@ async function judgeRequestItems(request: InstructorRequest, options: { forDepar
       startLadder: rules.startLadder,
       windowOpen: open,
       instructorLoad: Number(context.instructors.get(Number(request.AdInstructorId))?.AdInstructorLoad || 0) || null,
+      /* ورقةُ رفض القسم تعرض بدائلَ لكل بند، ولو كان متاحاً (مراجعة البروفة). */
+      offerAlternatives: Boolean(options.forDepartment),
     });
     return {
       ...item,

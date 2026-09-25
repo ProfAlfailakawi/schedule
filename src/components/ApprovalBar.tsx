@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Clock3, CornerUpLeft, History, MessageSquareText, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
-  APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed, pendingAdditionTotal,
+  APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
 } from "../utils/approvalWorkflow";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
@@ -146,8 +146,10 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const mine = signatureStage ? approval.signatures.find(item => item.stage === signatureStage) : undefined;
   const committee = approval.signatures.find(item => item.stage === "committee");
   const head = approval.signatures.find(item => item.stage === "head");
-  /* المسمّى وما زاد عليه معاً: ما زاد يمنع كما يمنع المسمّى. */
-  const pendingAdditions = pendingAdditionTotal(approval);
+  /* المسمّى وما زاد عليه معاً: ما زاد يمنع كما يمنع المسمّى. وما دام توقيعُ
+     رئيس القسم قائماً وحده (additionsAwaitingHead): بغيابه يشملها اعتمادُه
+     القادم، فلا يُقال له «أُضيفت بعد اعتمادك» ولا اعتمادَ له. */
+  const pendingAdditions = additionsAwaitingHead(approval);
   const overflow = Math.max(0, Number(approval.pendingAdditionsOverflow || 0));
   const additionsLine = approval.pendingAdditions.map(item => `${item.courseName || "مقرر"} · شعبة ${item.sectionCode || "—"}`).join(" · ")
     + (overflow ? ` · و${countOf(overflow, AR.section)} أخرى` : "");
