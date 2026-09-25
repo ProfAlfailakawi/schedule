@@ -17,13 +17,14 @@ import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
-import { currentTermId } from "./src/utils/termSequence";
+import { currentTermId, termHasEnded } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { expandScopeSections, resolveSmartScope } from "./src/server/readScope";
+import { finalSourceFor, type Finality } from "./src/utils/finality";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -4487,8 +4488,16 @@ function readsFinalSchedulesOnly(req: AuthenticatedRequest): boolean {
   return !req.user?.IsAdminUser && (id === "dean" || id === "viceDean");
 }
 
-async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedule[]> {
-  const approvals = await Repository.getScheduleApprovalsForTerm(termId);
+/**
+ * الفصلُ منتهٍ؟ أُغلق صراحةً أو انقضت نافذته (القاعدة المستقرّة: termHasEnded).
+ */
+async function termEndedForReading(termId: number): Promise<boolean> {
+  const term = (await Repository.getTerms()).find(item => Number(item.AdTermId) === Number(termId));
+  return Boolean(term && (term.AdTermClosed === true || termHasEnded(term as any)));
+}
+
+async function finalRowsWithFinality(rows: FSchedule[], termId: number): Promise<{ rows: FSchedule[]; finality: Record<string, Finality> }> {
+  const [approvals, termEnded] = await Promise.all([Repository.getScheduleApprovalsForTerm(termId), termEndedForReading(termId)]);
   const byScope = new Map<string, typeof approvals[number]>(approvals.map(item => [`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`, item]));
   const groups = new Map<string, FSchedule[]>();
   for (const row of rows) {
@@ -4496,22 +4505,32 @@ async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedu
     groups.set(key, [...(groups.get(key) || []), row]);
   }
   const out: FSchedule[] = [];
+  const finality: Record<string, Finality> = {};
   for (const [key, live] of groups) {
-    const approval = byScope.get(key);
-    if (!approval) continue;
-    if (approval.status === "accepted") { out.push(...live); continue; }
-    const last = [...approval.rounds].filter(round => round.acceptedAt).sort((a, b) => b.number - a.number)[0];
-    const versionId = last?.acceptedVersionId || last?.reviewedVersionId;
-    if (!versionId) continue;
-    const version = await Repository.getScheduleVersionById(versionId);
-    if (version?.rows?.length) out.push(...(version.rows as FSchedule[]));
+    const source = finalSourceFor(byScope.get(key), termEnded);
+    if (source.kind === "none") continue;
+    if (source.kind === "live") { out.push(...live); finality[key] = source.finality; continue; }
+    const version = await Repository.getScheduleVersionById(source.versionId);
+    if (version?.rows?.length) { out.push(...(version.rows as FSchedule[])); finality[key] = "accepted"; }
+    else if (termEnded) { out.push(...live); finality[key] = "historical"; }
   }
-  return out;
+  return { rows: out, finality };
 }
 
-async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number): Promise<FSchedule[]> {
+async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedule[]> {
+  return (await finalRowsWithFinality(rows, termId)).rows;
+}
+
+/**
+ * `out.finality` — لمن يرى النهائيَّ وحده: صفةُ كل قسمٍ ظهر («accepted» أو
+ * «historical»)، ليقول التقرير أيَّها معتمدٌ وأيَّها منفَّذٌ قبل دورة الاعتماد.
+ */
+async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, out?: { finality?: Record<string, Finality> }): Promise<FSchedule[]> {
   const rows = await readLiveSchedulesForRequest(req, collegeId, sectionId, termId);
-  return readsFinalSchedulesOnly(req) ? finalRowsOnly(rows, termId) : rows;
+  if (!readsFinalSchedulesOnly(req)) return rows;
+  const final = await finalRowsWithFinality(rows, termId);
+  if (out) out.finality = final.finality;
+  return final.rows;
 }
 
 /**
@@ -4578,7 +4597,11 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
   // available by sending termId explicitly, but a blank filter can no longer scan
   // the university's entire ten-year schedule collection.
   if(!termId){const terms=await Repository.getTerms();termId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
-  let list = await readSchedulesForRequest(req, collegeId, sectionId, termId);
+  const finalityOut: { finality?: Record<string, Finality> } = {};
+  let list = await readSchedulesForRequest(req, collegeId, sectionId, termId, finalityOut);
+  /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده: معتمدٌ أم منفَّذٌ قبل دورة الاعتماد.
+     في ترويسةٍ لا في الجسم، فلا يتغيّر شكلُ المصفوفة لأيِّ شاشةٍ تقرؤها. */
+  if (finalityOut.finality) res.setHeader("X-Schedule-Finality", JSON.stringify(finalityOut.finality));
 
   if (req.query.instructorId) {
     list = list.filter(s => s.AdInstructorId === parseInt(req.query.instructorId as string));

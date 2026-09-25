@@ -10,6 +10,7 @@
 import fs from "fs";
 import path from "path";
 import { coversWholeCollege, expandScopeSections, resolveSmartScope, type ScopePredicate } from "../src/server/readScope";
+import { finalSourceFor, HISTORICAL_FINALITY_LABEL } from "../src/utils/finality";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -92,6 +93,31 @@ check(JSON.stringify([...expandScopeSections(sections, dean)].sort()) === JSON.s
   "N8: صفُّ الكلية كلها يتوسّع إلى أقسامها");
 check(coversWholeCollege(sections, dean, 1) && !coversWholeCollege(sections, committee, 1),
   "N8: «يغطّي الكلية» غيرُ «له شيءٌ فيها»");
+
+/* ══ N1 — فصولٌ منتهية بلا دورة اعتماد تظهر «منفَّذة» ═══════════════════ */
+{
+  const noRecordEnded = finalSourceFor(undefined, true);
+  check(noRecordEnded.kind === "live" && noRecordEnded.finality === "historical",
+    "N1: فصلٌ منتهٍ وقسمٌ بلا سجلّ → الحيّ بصفة «منفَّذ»");
+  check(finalSourceFor(undefined, false).kind === "none", "N1: الفصل الجاري/القادم يبقى المعتمدَ وحده");
+  const accepted = finalSourceFor({ status: "accepted", rounds: [] }, false);
+  check(accepted.kind === "live" && accepted.finality === "accepted", "N1: المعتمد الآن يُقرأ حيّاً «معتمداً»");
+  const back = finalSourceFor({ status: "committee", rounds: [{ number: 1, acceptedAt: "2026-01-01", acceptedVersionId: "v1" }] }, true);
+  check(back.kind === "version" && back.versionId === "v1", "N1: ما قُبل ثم عاد يُقرأ من نسخة القبول ولو انتهى الفصل");
+  const neverEnded = finalSourceFor({ status: "drafting", rounds: [] }, true);
+  check(neverEnded.kind === "live" && neverEnded.finality === "historical", "N1: سجلٌّ لم يُقبل قطّ في فصلٍ منتهٍ → «منفَّذ»");
+  check(finalSourceFor({ status: "drafting", rounds: [] }, false).kind === "none", "N1: …وفي فصلٍ جارٍ لا يظهر");
+}
+check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الاعتماد)", "N1: التسمية كما طلبها المالك");
+{
+  const body = fnBody("async function finalRowsWithFinality(");
+  check(body.includes("finalSourceFor(byScope.get(key), termEnded)"), "N1: القراءة النهائية تحكم بالدالّة الواحدة");
+  check(!/if \(!approval\) continue;/.test(server), "N1: لم يعد القسم بلا سجلّ يسقط صامتاً");
+  check(fnBody("async function termEndedForReading(").includes("termHasEnded("), "N1: الانتهاء من القاعدة المستقرّة termHasEnded");
+  check(routeBody('app.get("/api/schedules", requireAnyPermission').includes('"X-Schedule-Finality"'), "N1: الخادم يكشف صفةَ كل قسم");
+  const reports = read("src/components/Reports.tsx");
+  check(reports.includes('X-Schedule-Finality') && reports.includes("HISTORICAL_FINALITY_LABEL"), "N1: التقرير يقرأ الصفة ويسمّيها");
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

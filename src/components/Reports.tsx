@@ -22,6 +22,7 @@ import {
 } from "../utils/visitingHistory";
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
+import { HISTORICAL_FINALITY_LABEL } from "../utils/finality";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
@@ -421,6 +422,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [scopeMenu, setScopeMenu] = useState<"comprehensive" | "authority" | null>(null);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
+  /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده («accepted» | «historical»)، من ترويسة
+     الخادم. فارغةٌ لغير العميدين. */
+  const [finality, setFinality] = useState<Record<string, "accepted" | "historical">>({});
+  const historicalScopeCount = useMemo(() => Object.values(finality).filter(value => value === "historical").length, [finality]);
   const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
   const [filters, setFilters] = useState<Filters>(() => ({
     ...fresh(),
@@ -664,6 +669,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     return fetch(`/api/schedules?${query}`, { signal })
       .then(response => {
         if (!response.ok) throw new Error("تعذر تحميل مواعيد النطاق الحالي");
+        let nextFinality: Record<string, "accepted" | "historical"> = {};
+        try { nextFinality = JSON.parse(response.headers.get("X-Schedule-Finality") || "{}") || {}; } catch { nextFinality = {}; }
+        setFinality(nextFinality);
         return response.json();
       })
       .then(rows => {
@@ -1914,6 +1922,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       {(roleId === "dean" || roleId === "viceDean") && lens !== "balance" ? (
         <p className="final-only-note no-print" role="note">
           <ShieldCheck aria-hidden="true" /> تُعرض الجداول المعتمدة من التسجيل فقط. القسم الذي لم يُعتمد بعد لا يظهر هنا — حالته في «ميزان الأقسام».
+          {historicalScopeCount ? (
+            <> وفي هذا الفصل المنتهي {countOf(historicalScopeCount, AR.department)} بصفة «{HISTORICAL_FINALITY_LABEL}»: جدولٌ دُرِّس فعلاً ولم يمرّ بدورة الاعتماد.</>
+          ) : null}
         </p>
       ) : null}
 
@@ -2063,6 +2074,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       <span className="code-chip">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</span>
                       <span>{row.SCode}</span>
                       <span className="report-instructor-with-badge"><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
+                      {finality[`${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] === "historical"
+                        ? <span className="finality-historical-chip" title="فصلٌ انتهى وقسمٌ لم يمرّ بدورة الاعتماد">{HISTORICAL_FINALITY_LABEL}</span>
+                        : null}
                     </div>
                   </div>
                   <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
