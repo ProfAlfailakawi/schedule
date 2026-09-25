@@ -415,6 +415,17 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(types.includes("the record is NOT anonymous"), "S20 النوع يقول إن الهوية محفوظة مشفّرة");
 }
 
+/* ── S21 قراءة الفصل لا تقف عند 5000 ─────────────────────────────────── */
+{
+  const repo = read("src/db/repository.ts");
+  const helper = between(repo, "async function readStudentNeedsWhere", "\n}\n");
+  check(helper.includes("orderBy(FieldPath.documentId())") && helper.includes("startAfter(last)") && helper.includes("snap.size < STUDENT_NEEDS_PAGE"),
+    "S21 طلبات الطلبة تُقرأ صفحةً صفحة حتى آخرها");
+  const reads = ["  getStudentNeedHistory: async", "  getStudentNeedsForTerm: async", "  getStudentNeeds: async"].map(start => between(repo, start, "\n  },\n"));
+  check(reads.every(body => body.includes("readStudentNeedsWhere(") && !/\.limit\(\d+\)\.get\(\)/.test(body)), "S21 القراءات الثلاث بلا سقفٍ صامت");
+  check(!/collection\("studentNeeds"\)[\s\S]{0,120}\.limit\((?:5000|20000)\)/.test(repo), "S21 لا limit(5000) ولا limit(20000) على طلبات الطلبة");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

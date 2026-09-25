@@ -2258,6 +2258,31 @@ export const caseRefOf = caseRefFromId;
 export const caseRefFor = (need: { id: string; caseRef?: string }): string =>
   String(need.caseRef || caseRefOf(need.id));
 
+/**
+ * Every studentNeeds document where `field == value`, read page by page.
+ *
+ * The term read used to stop silently at 5000 documents — one busy term across
+ * a college and the newest requests simply vanished from every sheet and count,
+ * with nothing on screen to say so. Paging on the document id needs only the
+ * automatic single-field index, so no composite index is involved.
+ */
+const STUDENT_NEEDS_PAGE = 1000;
+async function readStudentNeedsWhere(field: "AdTermId" | "AdCollegeId", value: number): Promise<StudentNeed[]> {
+  if (!firestoreDb) return [];
+  const out: StudentNeed[] = [];
+  let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  for (;;) {
+    let query: FirebaseFirestore.Query = firestoreDb.collection("studentNeeds")
+      .where(field, "==", value).orderBy(FieldPath.documentId()).limit(STUDENT_NEEDS_PAGE);
+    if (last) query = query.startAfter(last);
+    const snap = await query.get();
+    for (const doc of snap.docs) out.push(doc.data() as StudentNeed);
+    if (snap.size < STUDENT_NEEDS_PAGE) break;
+    last = snap.docs[snap.docs.length - 1];
+  }
+  return out;
+}
+
 /** A course-state write refused by its guard, read inside the write itself. */
 export class StudentCourseStateConflict extends Error {
   constructor(message: string) { super(message); this.name = "StudentCourseStateConflict"; }
@@ -4583,9 +4608,7 @@ export const Repository = {
       // `surveySectionId` was added after the first deployed surveys. Read by
       // college and filter in memory so old records are not made invisible by a
       // field they could never have carried.
-      const snap = await firestoreDb.collection("studentNeeds")
-        .where("AdCollegeId", "==", collegeId).limit(20000).get();
-      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+      return (await readStudentNeedsWhere("AdCollegeId", collegeId)).filter(mine);
     }
     return (db.studentNeeds || []).filter(mine);
   },
@@ -4593,8 +4616,7 @@ export const Repository = {
   /** كلُّ طلبات الطلبة في فصلٍ واحد، لكل الكليات: يحتاجها مركزُ الإشعارات ليعدّ لكل قسم. */
   getStudentNeedsForTerm: async (termId: number): Promise<StudentNeed[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("studentNeeds").where("AdTermId", "==", termId).limit(5000).get();
-      return snap.docs.map(doc => doc.data() as StudentNeed);
+      return await readStudentNeedsWhere("AdTermId", termId);
     }
     return (db.studentNeeds || []).filter(item => Number(item.AdTermId) === termId);
   },
@@ -4606,9 +4628,7 @@ export const Repository = {
       return Number(item.surveySectionId || item.AdSectionId || 0) === sectionId;
     };
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("studentNeeds")
-        .where("AdTermId", "==", termId).limit(5000).get();
-      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+      return (await readStudentNeedsWhere("AdTermId", termId)).filter(mine);
     }
     return (db.studentNeeds || []).filter(mine);
   },
