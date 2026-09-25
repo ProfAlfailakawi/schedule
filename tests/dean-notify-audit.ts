@@ -17,6 +17,7 @@ import { daysLeftUntil, isLate } from "../src/utils/lateness";
 import { buildFairnessEngine } from "../src/utils/livingSchedule";
 import { placeholderInstructorIdsOf } from "../src/utils/placeholderInstructor";
 import { mergeBalanceDepartments } from "../src/components/Reports";
+import { NOTIFY_FOCUS_KEY, takeNotifyFocus, writeNotifyFocus } from "../src/utils/notifyFocus";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -131,8 +132,10 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   const lenses = reports.slice(reports.indexOf("const ROLE_LENSES"), reports.indexOf("const ROLE_LENSES") + 900);
   check(/dean:\s*\["balance"/.test(lenses) && /viceDean:\s*\["balance"/.test(lenses), "N2: العميد والعميد المساعد يبدآن بميزان الأقسام");
   check(reports.includes("initialLensFor(roleId, mode, saved.lens)"), "N2: العدسة الأولى من دالّةٍ واحدة تعرف الصفة");
-  const fn = reports.slice(reports.indexOf("function initialLensFor("), reports.indexOf("function initialLensFor(") + 900);
-  check(fn.includes('if (deanReader && (mode === "reportDepartment" || mode === "searchAdvanced")) return "balance";'),
+  const fn = reports.slice(reports.indexOf("function initialLensFor("), reports.indexOf("function initialLensFor(") + 1400);
+  check(reports.includes("const nextLens = modeSeen.current ? initialLensFor(roleId, mode, undefined) : lens;"),
+    "N2: أثرُ تبدّل الشاشة لا يمحو العدسة الأولى عند الفتح");
+  check(fn.includes('const generic = mode === "reportDepartment" || mode === "searchAdvanced";') && fn.includes('if (deanReader && generic) return "balance";'),
     "N2: تقرير القسم يفتح للعميدين على الميزان");
   check(fn.includes('if (wanted === "time" && fits("matrix")) return "matrix";'), "N11: شاشة ١٦ (الوقت) تُفتح للعميد المساعد على المصفوفة");
   check(fn.includes("fits(savedLens as Lens)"), "N11: عدسةٌ محفوظة لا تملكها الصفة لا تُفتح");
@@ -295,6 +298,24 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(printBody.includes("<th>الاعتماد</th><th>الموعد</th>") && printBody.includes("balanceStatusLabel(state.status)"), "N14: الطباعة تحمل عمود الاعتماد والموعد");
   check(printBody.includes("mergeBalanceDepartments(") && printBody.includes("صادرة في ${issueDate}"), "N14: النشرة تشمل الأقسام التي لم تبدأ، وتحمل الفصل والتاريخ");
   check(reports.includes("balanceApprovals={termApprovals}"), "N14: حال الاعتماد تصل ورقة الطباعة");
+}
+
+/* ══ N16 — الإشعار يفتح على قسمه ══════════════════════════════════════════ */
+{
+  const store = new Map<string, string>();
+  (globalThis as any).sessionStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) };
+  writeNotifyFocus({ view: "scheduleChanges", collegeId: 1, sectionId: 11, termId: 9 }, 1000);
+  check(takeNotifyFocus("reportDepartment", 2000) === null && store.has(NOTIFY_FOCUS_KEY), "N16: شاشةٌ أخرى لا تأخذ تركيزاً ليس لها");
+  const focus = takeNotifyFocus("scheduleChanges", 2000);
+  check(focus?.sectionId === 11 && focus?.termId === 9 && !store.has(NOTIFY_FOCUS_KEY), "N16: الشاشة المقصودة تأخذه مرّةً واحدة");
+  writeNotifyFocus({ view: "scheduleChanges", collegeId: 1, sectionId: 11 }, 0);
+  check(takeNotifyFocus("scheduleChanges", 10 * 60_000) === null, "N16: تركيزٌ قديم لا يُطاع");
+  const changes = read("src/components/ScheduleChanges.tsx");
+  check(changes.includes('takeNotifyFocus("scheduleChanges")') && changes.includes("setOpened({ collegeId: focus.collegeId, sectionId: focus.sectionId })"), "N16: تغييرات الجدول تفتح على قسم الإشعار");
+  const reports = read("src/components/Reports.tsx");
+  check(reports.includes('takeNotifyFocus("reportDepartment")') && reports.includes("focusSectionId={focusSectionId}"), "N16: التقرير يفتح على قسم الإشعار ويُبرزه في الميزان");
+  const center = read("src/components/NotificationCenter.tsx");
+  check(center.includes("writeNotifyFocus(item)") && !center.includes("sessionStorage.setItem"), "N16: كاتبُ التركيز وقارئه في ملفٍّ واحد");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

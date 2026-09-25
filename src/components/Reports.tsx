@@ -23,6 +23,7 @@ import {
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 import { HISTORICAL_FINALITY_LABEL } from "../utils/finality";
+import { takeNotifyFocus } from "../utils/notifyFocus";
 import { buildFairnessEngine } from "../utils/livingSchedule";
 import { weeklyLoadOf } from "../utils/instructorRequestVerdict";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
@@ -171,12 +172,17 @@ const ROLE_LENSES: Record<string, Lens[]> = {
 function initialLensFor(roleId: string | undefined, mode: ReportMode, savedLens: unknown): Lens {
   const allowed = roleId ? ROLE_LENSES[roleId] : undefined;
   const fits = (lens: Lens) => !allowed || allowed.includes(lens) || (lens === "visitingHistory" && allowed.includes("visiting"));
+  const wanted = LENS_FOR_MODE[mode] || "list";
+  /* شاشةٌ لها سؤالها (الأساتذة، القاعات، الأوقات) تفتح عليه كما كانت. */
+  const generic = mode === "reportDepartment" || mode === "searchAdvanced";
+  if (!generic) {
+    if (fits(wanted)) return wanted;
+    if (wanted === "time" && fits("matrix")) return "matrix";
+  }
   if (LENSES.some(item => item.id === savedLens) && fits(savedLens as Lens)) return savedLens as Lens;
   const deanReader = roleId === "dean" || roleId === "viceDean";
-  if (deanReader && (mode === "reportDepartment" || mode === "searchAdvanced")) return "balance";
-  const wanted = LENS_FOR_MODE[mode] || "list";
+  if (deanReader && generic) return "balance";
   if (fits(wanted)) return wanted;
-  if (wanted === "time" && fits("matrix")) return "matrix";
   return allowed?.[0] || "list";
 }
 
@@ -519,8 +525,13 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
 
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
 
+  /* تبدّل الشاشة (mode) يفتح عدستها — بالدالّة نفسها التي تعرف الصفة (N2/N11).
+     أوّلُ تشغيلٍ يأخذ ما قرّرته `initialLensFor` (محفوظةً أو ميزاناً للعميدين)
+     ولا يمحوه بعدسة الشاشة الخام — كان يفعل، فيفتح العميدُ على قائمةٍ فارغة. */
+  const modeSeen = useRef(false);
   useEffect(() => {
-    const nextLens = LENS_FOR_MODE[mode] || "list";
+    const nextLens = modeSeen.current ? initialLensFor(roleId, mode, undefined) : lens;
+    modeSeen.current = true;
     setLens(nextLens);
     setPrintKind(nextLens);
   }, [mode]);
@@ -650,10 +661,17 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         // Keep the last academic workspace active after login/navigation. The
         // old code restored it in useState and then immediately zeroed it here,
         // which is why Reports looked like a first visit every time.
+        /* الإشعار يفتح على قسمه (N16): يتقدّم على آخر نطاقٍ محفوظ، ثم يمرّ
+           بالتصفية نفسها — فلا يفتح تركيزٌ ما لا يملكه القارئ. */
+        const focus = takeNotifyFocus("reportDepartment");
+        if (focus) {
+          setFocusSectionId(focus.sectionId || 0);
+          if (isDeanReader || roleId === "registrarDean") setLens("balance");
+        }
         setFilters(prev => {
-          let collegeId = Number(prev.collegeId || 0) || 0;
-          let sectionId = Number(prev.sectionId || 0) || 0;
-          let termId = Number(prev.termId || 0) || 0;
+          let collegeId = Number(focus?.collegeId || prev.collegeId || 0) || 0;
+          let sectionId = focus ? Number(focus.sectionId || 0) : Number(prev.sectionId || 0) || 0;
+          let termId = Number(focus?.termId || prev.termId || 0) || 0;
           if (isPowerAdmin) {
             if (collegeId && !data[0].some((row: AdCollege) => Number(row.AdCollegeId) === collegeId)) collegeId = 0;
             const section = data[1].find((row: AdSection) => Number(row.AdSectionId) === sectionId);
@@ -707,6 +725,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
    */
   const [balance, setBalance] = useState<any>(null);
   const [balanceSort, setBalanceSort] = useState<{ key: string; desc: boolean }>({ key: "rows", desc: true });
+  /** القسم الذي فُتح عليه التقرير من إشعار — يُبرَز في الميزان (N16/N20). */
+  const [focusSectionId, setFocusSectionId] = useState(0);
   const readScope = useCallback((signal?: AbortSignal, quiet = false) => {
     if (!filters.collegeId || !filters.termId) { setAll([]); return Promise.resolve(); }
     const query = new URLSearchParams({ termId: String(filters.termId) });
@@ -2759,6 +2779,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             onSort={setBalanceSort}
             num={num}
             approvals={termApprovals || undefined}
+            focusSectionId={focusSectionId}
           />
         ) : fairness ? (
           <div className="lens-fairness">
@@ -2917,7 +2938,8 @@ export function mergeBalanceDepartments(departments: any[], approvals?: Map<numb
   return list;
 }
 
-function BalancePanel({ balance, sort, onSort, num, approvals }: {
+function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 0 }: {
+  focusSectionId?: number;
   balance: any;
   sort: { key: string; desc: boolean };
   onSort: React.Dispatch<React.SetStateAction<{ key: string; desc: boolean }>>;
@@ -2953,6 +2975,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
    * عمودُ الاعتماد لا يظهر إلا حين تُقرأ الحالات، وقد تُخفق القراءة أو تتبدّل
    * العدسة. وكان الفرزُ يبقى عليه: فتختفي علامةُ الترتيب من كل رأسٍ ظاهر،
    * ويُعرض الجدول بترتيبٍ لا يُنسب إلى أحد — والقارئُ لا يعرف أن اختياره سقط. */
+  const focusScrolled = useRef(false);
   useEffect(() => {
     if (sort.key === "approval" && !approvals) onSort({ key: "rows", desc: true });
   }, [approvals, sort.key, onSort]);
@@ -3011,7 +3034,11 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
           </thead>
           <tbody>
             {ordered.map((item: any) => (
-              <tr key={item.sectionId} className={item.conflicts ? "has-conflicts" : ""}>
+              <tr
+                key={item.sectionId}
+                className={[item.conflicts ? "has-conflicts" : "", Number(item.sectionId) === focusSectionId ? "is-focused" : ""].filter(Boolean).join(" ") || undefined}
+                ref={Number(item.sectionId) === focusSectionId ? (node => { if (node && !focusScrolled.current) { focusScrolled.current = true; node.scrollIntoView({ block: "center" }); } }) : undefined}
+              >
                 <td>
                   <strong>{item.sectionName}</strong>
                   <small>{item.collegeName}</small>
