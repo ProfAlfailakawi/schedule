@@ -569,6 +569,9 @@ export interface StudentCourseState {
   /** الصفةُ لا الاسم: «موظف التسجيل»، «رئيس لجنة الجدول». */
   byRole?: string;
   at: string;
+  /** حذف الطالبُ هذا المقرّر من طلبه بعد أن قيل فيه شيء — يبقى القرارُ مقروءاً. */
+  droppedByStudent?: boolean;
+  droppedAt?: string;
 }
 
 /**
@@ -636,6 +639,10 @@ export interface StudentNeed {
   courseStates?: StudentCourseState[];
   /** قرارُ الحالة كلها حين لا يسمّي الطلبُ مقرّراً (الخريج). */
   caseState?: StudentCaseState;
+  /** غيّر الطالبُ طلبَ الخريج إلى نوعٍ آخر بعد قرارٍ فيه: متى. */
+  caseDroppedAt?: string;
+  /** آخر إعادة إرسال — السجلُّ يُحدَّث في مكانه ولا يُستبدل. */
+  updatedAt?: string;
   /**
    * رقمُ الحالة كما أُعطي للطالب، ثابتٌ عبر إعادة الإرسال.
    *

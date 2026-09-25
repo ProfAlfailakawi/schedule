@@ -187,6 +187,35 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
     "S3 تحذير «أوقف الرابط» يقول الحقيقة: تتوقف الطلبات وتبقى المتابعة");
 }
 
+/* ── S4 إعادة الإرسال تُحدِّث في مكانها وتُبقي القرارات ─────────────────────── */
+{
+  const base = { fingerprint: "fp-resubmit", AdCollegeId: 1, AdSectionId: 3, studentSectionId: 3, surveySectionId: 3, AdTermId: 9, requestType: "new-course" } as any;
+  const first = await Repository.saveStudentNeed({ ...base, courseIds: [11, 12] });
+  await Repository.setStudentCourseState(first.id, { courseId: 11, state: "registered", by: "registration", at: "2026-09-25T09:00:00.000Z" });
+  await Repository.setStudentCourseState(first.id, { courseId: 12, state: "awaiting-registration", by: "department", at: "2026-09-25T09:01:00.000Z" });
+  const second = await Repository.saveStudentNeed({ ...base, courseIds: [12, 13] });
+  check(second.id === first.id && second.caseRef === first.caseRef && second.createdAt === first.createdAt, "S4 يبقى المعرّف ورقم الحالة وتاريخ أول إرسال");
+  check(Boolean(second.updatedAt), "S4 ويُسجَّل وقت آخر تعديل");
+  const kept = (second.courseStates || []).find(state => state.courseId === 12);
+  check(kept?.state === "awaiting-registration" && !kept?.droppedByStudent, "S4 قرارُ المقرّر الباقي يبقى");
+  const dropped = (second.courseStates || []).find(state => state.courseId === 11);
+  check(dropped?.state === "registered" && dropped?.droppedByStudent === true, "S4 المقرّر المسجَّل الذي حذفه الطالب يبقى معلَّماً droppedByStudent");
+  const all = (await Repository.getStudentNeeds(1, 0, 9)).filter((need: any) => need.fingerprint === "fp-resubmit");
+  check(all.length === 1, "S4 سجلٌّ واحد لليد الواحدة، لا حذف ثم إنشاء");
+  const third = await Repository.saveStudentNeed({ ...base, courseIds: [11, 12, 13] });
+  check(!(third.courseStates || []).find(state => state.courseId === 11)?.droppedByStudent, "S4 إعادة المقرّر تُزيل علامة الإلغاء");
+  const merge = read("src/utils/studentNeedMerge.ts");
+  check(merge.includes("ألغاه الطالب بعد التسجيل"), "S4 النصّ «ألغاه الطالب بعد التسجيل»");
+  const repo = read("src/db/repository.ts");
+  const save = between(repo, "  saveStudentNeed: async", "  setStudentCaseDecision: async");
+  check(save.includes("runTransaction") && save.includes("mergeStudentResubmission(") && !save.includes("batch.delete"),
+    "S4 مسار Firestore يدمج داخل معاملة ولا يحذف ثم يُنشئ");
+  const list = between(server, 'app.get("/api/student-registration"', 'app.post("/api/student-registration/:id/course-state"');
+  check(list.includes("droppedByStudent") && list.includes("droppedCourseLabel("), "S4 الكشف يعرض المقرّر الذي ألغاه الطالب");
+  const myCase = between(server, 'app.post("/api/public/survey/:token/my-case"', "function studentCaseStatusPage");
+  check(myCase.includes("droppedCourseLabel("), "S4 وصفحة الطالب تقول له إنه ألغاه");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

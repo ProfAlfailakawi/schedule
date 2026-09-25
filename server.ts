@@ -46,6 +46,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
+import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { termHasEnded, termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
@@ -13022,9 +13023,10 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     :"";
   let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,graduateNameMatched:boolean|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
   /* Keep a previously verified graduation sheet alive even when the student
-     changes this survey answer to another request type. saveStudentNeed replaces
-     the prior answer by design, so without this carry-forward the verified fact
-     would disappear and the next graduate request would wrongly demand upload. */
+     changes this survey answer to another request type. saveStudentNeed updates
+     the record in place with the NEW answer's fields, so without this
+     carry-forward the verified fact would disappear and the next graduate
+     request would wrongly demand upload. */
   const reusableVerification=await reusableGraduateVerification(resolved.link,civil,sectionId);
   if(requestType!=="graduate"&&reusableVerification){
     passedUnits=reusableVerification.passedUnits;requiredUnits=reusableVerification.requiredUnits;degreeUnits=reusableVerification.degreeUnits;
@@ -13415,7 +13417,12 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     /* التسجيلُ لا يرى ما لم تسلّمه اللجنة: لا المنتظرَ عندها ولا ما لم توافق عليه. */
     /* واللجنةُ ترى مقرّرات قسمها وحدها (أو ما لا يُعرف مالكه): الطلبُ القديم
        لقسمين يُعرض على القسمين، وكلٌّ يقرّر في مقرّره هو. */
-    const visibleCourseIds = (need.courseIds || []).filter((id: any) => {
+    /* مقرّرٌ حذفه الطالبُ بعد أن قيل فيه شيء يبقى في الكشف معلَّماً، فلا يبقى
+       مقعدٌ محجوزاً باسم من لم يعد يريده دون أن يعرف أحد. */
+    const droppedIds = (need.courseStates || [])
+      .filter((state: any) => state?.droppedByStudent && !(need.courseIds || []).map(Number).includes(Number(state.courseId)))
+      .map((state: any) => Number(state.courseId));
+    const visibleCourseIds = [...(need.courseIds || []), ...droppedIds].filter((id: any) => {
       if (viewer === "registration") return reachedRegistration(states.get(Number(id)));
       if (viewer === "committee") {
         const owner = Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
@@ -13434,6 +13441,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       createdAt: String(need.createdAt || ""),
       requestType: String(need.requestType || "new-course"),
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+      /* طلبُ خريجٍ قيل فيه شيءٌ ثم غيّره الطالب إلى طلب مقرّرات. */
+      caseDroppedAt: need.caseDroppedAt && need.caseState ? String(need.caseDroppedAt) : "",
       courses: visibleCourseIds.map((id: any) => {
         const course: any = courseById.get(Number(id));
         const state: any = states.get(Number(id));
@@ -13450,6 +13459,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
           /* «لم يقل أحدٌ شيئاً» يختلف عن «سلّمه القسم وينتظر»: الأولى غيابُ
              سجلّ، والثانيةُ قولٌ مكتوب. والفرقُ يهمّ من يقرأ. */
           settled: Boolean(state),
+          droppedByStudent: Boolean(state?.droppedByStudent),
+          droppedLabel: state?.droppedByStudent ? droppedCourseLabel(state) : undefined,
         };
       }),
     };
@@ -16296,7 +16307,10 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
       committee: mine.caseState?.committee ? { state: mine.caseState.committee.state, reason: mine.caseState.committee.reasonCode || "", note: mine.caseState.committee.note || "" } : null,
       registrar: mine.caseState?.registrar ? { state: mine.caseState.registrar.state, reason: mine.caseState.registrar.reasonCode || "", note: mine.caseState.registrar.note || "" } : null,
     } : null,
-    courses: (Array.isArray(mine.courseIds) ? mine.courseIds : []).map((id: any) => {
+    courses: [
+      ...(Array.isArray(mine.courseIds) ? mine.courseIds : []),
+      ...(mine.courseStates || []).filter((entry: any) => entry?.droppedByStudent).map((entry: any) => entry.courseId),
+    ].filter((id: any, index: number, all: any[]) => all.map(Number).indexOf(Number(id)) === index).map((id: any) => {
       const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
       return {
         code: codeOf.get(Number(id)) || "",
@@ -16306,6 +16320,7 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
         state: state?.state || "",
         reason: state?.reasonCode || "",
         note: state?.note || "",
+        dropped: state?.droppedByStudent ? droppedCourseLabel(state) : "",
       };
     }),
   });
@@ -16397,7 +16412,7 @@ function show(d){
   '<ul>'+(d.courses||[]).map(function(c){
    return '<li><span>'+esc(c.name)+(c.state?'<i class="st" data-s="'+esc(c.state)+'">'+
     esc(STATE[c.state]||c.state)+(c.reason?' — '+esc(REASON[c.reason]||c.reason):'')+
-    (c.note?' · '+esc(c.note):'')+'</i>':'')+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
+    (c.note?' · '+esc(c.note):'')+'</i>':'')+(c.dropped?'<i class="st" data-s="dropped">'+esc(c.dropped)+'</i>':'')+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
   '<p class="note">وصل طلبك إلى القسم يوم '+esc(dt(d.submittedAt))+'.<br>'+
   'هذه حالةُ طلبك عند القسم، وليست تسجيلاً في النظام الأكاديمي. '+
   'وإذا غيّرت اختيارك، افتح رابط الاستبيان وأرسل من جديد فيُحدَّث طلبك.</p></div>'}

@@ -55,6 +55,7 @@ import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTr
 import { sortByName } from "../utils/sorting";
 import { createDemoSandboxState } from "./demoSandbox";
 import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
+import { caseRefFromId, mergeStudentResubmission } from "../utils/studentNeedMerge";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -2251,7 +2252,7 @@ const readCommentsOrdered = async (
  * وكشفُ التسجيل. ولو اشتقّه كلٌّ بطريقته لاختلفوا يوماً، ولوقف الطالبُ أمام
  * الموظّف برقمٍ لا يجده في كشفه.
  */
-export const caseRefOf = (id: string): string => String(id).slice(0, 8).toUpperCase();
+export const caseRefOf = caseRefFromId;
 
 /** رقمُ الحالة كما يُعرض: الثابتُ المحفوظ، أو المشتقُّ للسجلّات التي سبقته. */
 export const caseRefFor = (need: { id: string; caseRef?: string }): string =>
@@ -4415,66 +4416,49 @@ export const Repository = {
   /**
    * ── ما يحتاجه الطالب ──────────────────────────────────────────────────────
    *
-   * The thinnest record in the system, and deliberately so. No name and no
-   * civil ID are stored — only a fingerprint that can tell two submissions
-   * apart and can never be turned back into a person. See StudentNeed in
-   * types.ts for why that is a feature and not caution.
+   * One record per student hand (fingerprint + term + survey department). The
+   * name and civil ID are stored only as field-level ciphertexts (see server.ts
+   * sealStudentIdentity) because the authorised department needs them to act
+   * on the case; the fingerprint is the duplicate key.
    *
-   * Writing the same fingerprint twice REPLACES the earlier answer rather than
-   * adding a second: a student who changes their mind has changed their mind,
-   * and counting both would inflate every number on the coordinator's screen.
+   * Writing the same hand again UPDATES that record in place, inside one
+   * transaction: same id, same case number, the first submission date kept,
+   * and every decision the committee or registrar already made kept — a course
+   * the student removed after a decision stays visible, flagged
+   * `droppedByStudent` (rule: src/utils/studentNeedMerge.ts). It used to delete
+   * and recreate, discarding those decisions, in two non-atomic steps.
    */
   saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">): Promise<StudentNeed> => {
-    const row: StudentNeed = { ...entry, id: randomUUID(), createdAt: new Date().toISOString() };
+    const now = new Date().toISOString();
     const sameHand = (item: StudentNeed) => {
       const itemSurveySection = Number(item.surveySectionId || item.AdSectionId || 0);
-      const rowSurveySection = Number(row.surveySectionId || row.AdSectionId || 0);
-      return item.fingerprint === row.fingerprint && Number(item.AdTermId) === Number(row.AdTermId)
-        && itemSurveySection === rowSurveySection;
-    };
-    /* ── ما قاله التسجيلُ لا يمحوه الطالبُ بتغيير رأيه ──────────────────────
-     *
-     * إعادةُ الإرسال تستبدل السجلّ، فكانت حالاتُ المقرّرات تذهب معه: مقرّرٌ
-     * سجّله التسجيلُ أمسِ يعود «لم يُقل فيه شيء» لأن الطالبَ أضاف مقرّراً
-     * آخرَ اليوم. فتُنقل الحالاتُ إلى السجلّ الجديد، ولا يُنقل منها إلا ما
-     * يخصّ مقرّراً ما زال مطلوباً — فمقرّرٌ سحبه الطالبُ لا تبقى له حالة.
-     */
-    const carry = (prior: StudentNeed[]): StudentCourseState[] | undefined => {
-      const wanted = new Set((row.courseIds || []).map(Number));
-      const kept = prior
-        .flatMap(item => item.courseStates || [])
-        .filter(state => wanted.has(Number(state.courseId)));
-      /* أحدثُ قولٍ في كل مقرّر هو قولُه: سجلّان للشخص نفسه لا يجتمعان عادةً،
-         لكن الاحتياط هنا أرخص من حالةٍ قديمةٍ تعلو حديثة. */
-      const newest = new Map<number, StudentCourseState>();
-      for (const state of kept) {
-        const at = newest.get(Number(state.courseId));
-        if (!at || String(state.at) > String(at.at)) newest.set(Number(state.courseId), state);
-      }
-      return newest.size ? [...newest.values()] : undefined;
+      const entrySurveySection = Number(entry.surveySectionId || entry.AdSectionId || 0);
+      return item.fingerprint === entry.fingerprint && Number(item.AdTermId) === Number(entry.AdTermId)
+        && itemSurveySection === entrySurveySection;
     };
 
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("studentNeeds")
-        .where("fingerprint", "==", row.fingerprint).limit(20).get();
-      const replaced = snap.docs.map(doc => doc.data() as StudentNeed).filter(sameHand);
-      const inherited = carry(replaced);
-      if (inherited && !row.courseStates) row.courseStates = inherited;
-      row.caseRef = row.caseRef || replaced.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id);
-      const batch = firestoreDb.batch();
-      snap.docs.filter(doc => sameHand(doc.data() as StudentNeed)).forEach(doc => batch.delete(doc.ref));
-      batch.set(firestoreDb.collection("studentNeeds").doc(row.id), row);
-      await batch.commit();
-      return row;
+      const collection = firestoreDb.collection("studentNeeds");
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(collection.where("fingerprint", "==", entry.fingerprint).limit(20));
+        const prior = snap.docs.map(doc => doc.data() as StudentNeed).filter(sameHand);
+        const { row, removeIds } = mergeStudentResubmission(prior, entry, now, randomUUID());
+        for (const id of removeIds) transaction.delete(collection.doc(id));
+        transaction.set(collection.doc(row.id), row);
+        return row;
+      });
     }
     if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
-    const replacedLocal = db.studentNeeds.filter(sameHand);
-    const inherited = carry(replacedLocal);
-    if (inherited && !row.courseStates) row.courseStates = inherited;
-    row.caseRef = row.caseRef || replacedLocal.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id);
-    db.studentNeeds = db.studentNeeds.filter(item => !sameHand(item));
-    db.studentNeeds.unshift(row);
-    if (db.studentNeeds.length > 20000) db.studentNeeds.length = 20000;
+    const prior = db.studentNeeds.filter(sameHand);
+    const { row, removeIds } = mergeStudentResubmission(prior, entry, now, randomUUID());
+    const at = db.studentNeeds.findIndex(item => item.id === row.id);
+    if (removeIds.length) db.studentNeeds = db.studentNeeds.filter(item => !removeIds.includes(item.id));
+    const index = db.studentNeeds.findIndex(item => item.id === row.id);
+    if (at >= 0 && index >= 0) db.studentNeeds[index] = row;
+    else {
+      db.studentNeeds.unshift(row);
+      if (db.studentNeeds.length > 20000) db.studentNeeds.length = 20000;
+    }
     saveDatabase();
     return row;
   },
@@ -4482,9 +4466,8 @@ export const Repository = {
   /**
    * يكتب حالةَ مقرّرٍ واحدٍ في طلب طالب.
    *
-   * كتابةٌ موضعيةٌ عن قصد: `saveStudentNeed` تستبدل السجلّ كلَّه ببصمته، وهي
-   * الدلالةُ الصحيحةُ حين يعيد الطالبُ إرساله — وهي الدلالةُ الخطأ تماماً حين
-   * يقول التسجيلُ كلمةً عن مقرّرٍ واحد.
+   * كتابةٌ موضعيةٌ عن قصد: `saveStudentNeed` تكتب طلبَ الطالب كلَّه (وتُبقي
+   * القرارات)، وهذه تكتب قولاً واحداً عن مقرّرٍ واحد.
    *
    * وأحدثُ قولٍ في المقرّر هو قولُه: الحالةُ تُستبدل ولا تُكدَّس، فلا يقرأ
    * أحدٌ سجلاًّ يقول «سُجّل» و«رُدّ» معاً.

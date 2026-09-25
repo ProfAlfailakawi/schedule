@@ -53,6 +53,9 @@ interface CaseCourse {
   reasonCode?: StudentCourseRejectReason | StudentCommitteeRejectReason;
   note?: string; by?: string; byRole?: string; at?: string;
   settled: boolean;
+  /** حذفه الطالبُ من طلبه بعد القرار: يُعرض ولا يُقرَّر فيه. */
+  droppedByStudent?: boolean;
+  droppedLabel?: string;
 }
 
 interface CaseDecisionView {
@@ -64,6 +67,7 @@ interface CaseRow {
   id: string; caseRef: string; name: string; civil: string;
   createdAt: string; requestType: string; studentSectionName: string;
   details?: string;
+  caseDroppedAt?: string;
   courses: CaseCourse[];
   /** طلبُ الخريج: قرارٌ واحدٌ في الحالة كلها بدل قرارات المقرّرات. */
   caseLevel?: boolean;
@@ -377,7 +381,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   /* موافقةُ اللجنة على كل ما ينتظرها في طلب طالبٍ واحد — لا على الكشف كله:
      النظرُ في كل طالب هو عملُ اللجنة، والزرُّ يختصر النقرات لا المراجعة. */
   const approveAll = async (row: CaseRow) => {
-    const pending = row.courses.filter(course => !course.settled);
+    const pending = row.courses.filter(course => !course.settled && !course.droppedByStudent);
     if (!pending.length) return;
     setBusyKey(`${row.id}:all`);
     setError(null);
@@ -628,6 +632,9 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                     );
                   })() : (
                   <div className="request-items">
+                    {row.caseDroppedAt ? (
+                      <p className="registration-dropped">ألغى الطالب طلب الخريج السابق بعد قرارٍ فيه، واستبدله بهذا الطلب.</p>
+                    ) : null}
                     {row.courses.map(course => {
                       const key = `${row.id}:${course.id}`;
                       return (
@@ -644,9 +651,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                             {course.reasonCode ? (
                               <em>{reasonLabel(course.reasonCode)}{course.note ? ` · ${course.note}` : ""}</em>
                             ) : course.note ? <em>{course.note}</em> : null}
+                            {course.droppedByStudent ? <em className="registration-dropped">{course.droppedLabel || "ألغاه الطالب بعد التسجيل"}</em> : null}
                           </div>
 
-                          {committeeActs && !decidedByRegistration(course) ? (
+                          {committeeActs && !course.droppedByStudent && !decidedByRegistration(course) ? (
                             <div className="registration-course-actions" aria-label="قرار اللجنة">
                               <button
                                 type="button" className="changes-chip"
@@ -668,7 +676,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                               </button>
                             </div>
                           ) : null}
-                          {registrationActs && course.settled && course.state !== "committee-rejected" ? (
+                          {registrationActs && !course.droppedByStudent && course.settled && course.state !== "committee-rejected" ? (
                             <div className="registration-course-actions" aria-label="قرار التسجيل">
                               <button
                                 type="button" className="changes-chip"
