@@ -2185,9 +2185,12 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges, scheduleCount] = await Promise.all([
     Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.countSchedules()
   ]);
-  const assignedSectionIds = new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)));
+  /* أقسامُ القارئ من الحَكَم الواحد: صفُّ «الكلية كلها» يُقرأ لأقسامها (N8)،
+     والعميدان يُعطيان النهائيَّ وحده كما في كل شاشة. */
+  const assignedSectionIds = await scopeSectionIdsFor(req);
 
-  const latestScopedSchedules = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const latestScopedSchedulesRaw = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const latestScopedSchedules = readsFinalSchedulesOnly(req) ? await finalRowsOnly(latestScopedSchedulesRaw, latestTermId) : latestScopedSchedulesRaw;
   const scopedCourses = allCourses.filter(course => assignedSectionIds.has(Number(course.AdSectionId)));
 
   // ASP.NET DayOfWeek returned 0 for Sunday, but the legacy view checked d == 7.
@@ -2221,9 +2224,10 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
    * two numbers from the same page contradicting each other, and the one the
    * reader trusts is the one that is wrong. A coordinator's view is unchanged.
    */
+  const finalIds = readsFinalSchedulesOnly(req) ? new Set(latestScopedSchedules.map(row => Number(row.id))) : null;
   const visibleTableRows = req.user.IsAdminUser
     ? daySchedules
-    : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+    : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)) && (!finalIds || finalIds.has(Number(row.id))));
   const instructorIds = new Set(latestScopedSchedules.map(row => row.AdInstructorId));
   const coursesById = new Map(allCourses.map(course => [course.AdCourseId, course]));
   const instructorsById = new Map(allInstructors.map(instructor => [instructor.AdInstructorId, instructor]));
@@ -2456,9 +2460,10 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   const sectionById = new Map(sections.map(item => [item.AdSectionId, item]));
   const collegeById = new Map(colleges.map(item => [item.AdCollegeId, item]));
   const matches = (value: unknown) => String(value ?? "").toLocaleLowerCase("ar").includes(q);
+  const readerInstructorCivil = (person?: { AdInstructorCivil?: string; AdInstructorMobile?: string }) => (person ? instructorsForReader(req, [person])[0].AdInstructorCivil : "");
   const matchedSchedules = schedules.filter(row => {
     const ins = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
-    return [ins?.AdInstructorName, ins?.AdInstructorCivil, course?.CourseName, course?.CourseCode, row.SCode, row.AdRoomCode, row.AdRoomHall, sectionById.get(row.AdSectionId)?.AdSectionName, collegeById.get(row.AdCollegeId)?.AdCollegeName].some(matches);
+    return [ins?.AdInstructorName, readerInstructorCivil(ins), course?.CourseName, course?.CourseCode, row.SCode, row.AdRoomCode, row.AdRoomHall, sectionById.get(row.AdSectionId)?.AdSectionName, collegeById.get(row.AdCollegeId)?.AdCollegeName].some(matches);
   });
   const visibleInstructorIds = new Set(schedules.map(row => row.AdInstructorId));
   const visibleCourseIds = new Set(schedules.map(row => row.AdCourseId));
@@ -2467,7 +2472,8 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
     subtitle: `${canInstructor || canSchedule || canAdvanced ? instructorById.get(row.AdInstructorId)?.AdInstructorName || "" : ""}${canRoom || canSchedule || canAdvanced ? ` — ${row.AdRoomCode}/${row.AdRoomHall}` : ""} — ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
     meta: `${courseById.get(row.AdCourseId)?.CourseCode || ""} / شعبة ${row.SCode}`
   })) : [];
-  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? sortArabicNamed(instructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || matches(item.AdInstructorCivil))), item => item.AdInstructorName).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
+  const readerInstructors = instructorsForReader(req, instructors);
+  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? sortArabicNamed(readerInstructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || (item.AdInstructorCivil && matches(item.AdInstructorCivil)))), item => item.AdInstructorName).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
   const courseResults = (canSchedule || canAdvanced) ? sortCoursesByName(courses.filter(item => visibleCourseIds.has(item.AdCourseId) && (matches(item.CourseName) || matches(item.CourseCode)))).slice(0, 8).map(item => ({ id: item.AdCourseId, kind: "course", title: item.CourseName, subtitle: item.CourseCode, meta: sectionById.get(item.AdSectionId)?.AdSectionName || "" })) : [];
   const roomMap = new Map<string, {building:string;hall:string;count:number;roomId:string;buildingId?:string}>();
   schedules.forEach(row => { const key=verifiedRoomKey(row); if(!key)return; const prev=roomMap.get(key); roomMap.set(key,{building:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),roomId:String(row.roomId||""),buildingId:row.buildingId,count:(prev?.count||0)+1}); });
@@ -2752,12 +2758,26 @@ app.delete("/api/terms/:id", requirePermission(5), async (req: Request, res: Res
  * the moment someone searches beyond their own department; that search itself
  * returns at most forty matching people instead of the whole register.
  */
+/**
+ * ── بياناتُ الأستاذ الشخصية لا تصل القارئ ───────────────────────────────────
+ *
+ * صفاتُ الاطّلاع (العميدان، التسجيل، رئيس القسم) تفتح تقرير القسم (١٤) فتقرأ
+ * دليلَ الأساتذة — وكان يصلها الرقمُ المدني والهاتف لكل أستاذ. لا عمل لها بهما:
+ * لا تُنشئ أستاذاً ولا تطابق هويةً. فيُحذفان هنا، لكل مسارٍ يعيد الدليل.
+ */
+function instructorsForReader<T extends { AdInstructorCivil?: string; AdInstructorMobile?: string }>(req: AuthenticatedRequest, list: T[]): T[] {
+  if (req.user?.IsAdminUser || !isReadOnlyRole(req.user?.Role)) return list;
+  return list.map(person => ({ ...person, AdInstructorCivil: "", AdInstructorMobile: "" }));
+}
+
 app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = Number(req.query.sectionId || 0);
   const collegeId = Number(req.query.collegeId || 0);
   const termId = Number(req.query.termId || 0);
   const query = String(req.query.q || "").trim();
   const limit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
+  /* القارئ (صفات الاطّلاع) يرى الاسم ولا يرى الرقم المدني ولا الهاتف (N13). */
+  const send = <T extends { AdInstructorCivil?: string; AdInstructorMobile?: string }>(list: T[]) => res.json(instructorsForReader(req, list));
 
   // If query is provided, search across the university instructors catalog
   if (query) {
@@ -2790,12 +2810,14 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       const civil = String(person.AdInstructorCivil || "").trim();
       return Boolean(digits) && digits.length === civil.length && digits === civil;
     });
-    res.json(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
+    send(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
     return;
   }
 
   if (sectionId) {
-    const canReadSection = Boolean(req.user?.IsAdminUser || req.scopes?.some(scope => scope.AdSectionId === sectionId));
+    /* الحَكَم الواحد: صفُّ «الكلية كلها» يجيز أقسامها (N8). */
+    const sectionRow = (await Repository.getSections()).find(row => Number(row.AdSectionId) === sectionId);
+    const canReadSection = Boolean(sectionRow && isScopeAllowed(req, Number(sectionRow.AdCollegeId), sectionId));
     if (!canReadSection) { res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" }); return; }
     const termScoped = termId ? await Repository.getInstructorsByScope(sectionId, termId) : [];
     const allDeptHistorical = await Repository.getInstructorsByScope(sectionId, 0);
@@ -2810,7 +2832,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       ? (await Repository.getInstructors()).filter(person => manualIds.includes(Number(person.AdInstructorId)))
       : [];
     const merged = [...new Map([...allDeptHistorical, ...termScoped, ...manualPeople].map(person => [Number(person.AdInstructorId), person])).values()];
-    res.json(sortArabicNamed(merged, row => row.AdInstructorName));
+    send(sortArabicNamed(merged, row => row.AdInstructorName));
     return;
   }
 
@@ -2822,7 +2844,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const instructors = collegeId
     ? await Repository.getInstructorsByScheduleScope({ collegeId, termId })
     : await Repository.getInstructors();
-  res.json(sortArabicNamed(instructors, row => row.AdInstructorName));
+  send(sortArabicNamed(instructors, row => row.AdInstructorName));
 });
 
 /* ── الإضافة السريعة أثناء بناء الجدول ────────────────────────────────────────

@@ -158,5 +158,28 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(!/view: "(schedules|scheduleChanges|instructorRequests|reportDepartment|studentRegistration)"/.test(nc), "N15: لا وجهةَ مكتوبةً بجانب routeFor");
 }
 
+/* ══ N8 (تتمّة) — لوحة البداية وقائمة الأساتذة بالحَكَم الواحد ════════════ */
+{
+  const dash = routeBody('app.get("/api/dashboard"');
+  check(dash.includes("await scopeSectionIdsFor(req)"), "N8: لوحة البداية تقرأ أقسامها من الحَكَم الواحد");
+  check(!dash.includes("(req.scopes || []).map(scope => Number(scope.AdSectionId))"), "N8: لا قائمةَ أقسامٍ خامٍ في لوحة البداية");
+  check(dash.includes("readsFinalSchedulesOnly(req) ? await finalRowsOnly("), "N8: العميدان يريان النهائي في لوحة البداية");
+  const ins = routeBody('app.get("/api/instructors", requireAnyPermission');
+  check(ins.includes("isScopeAllowed(req, Number(sectionRow.AdCollegeId), sectionId)") && !ins.includes("scope.AdSectionId === sectionId"),
+    "N8: قائمة أساتذة القسم تجيز صفَّ الكلية كلها");
+  check(fnBody("async function scopeSectionIdsFor(").includes("expandScopeSections("), "N8: helper واحد يوسّع النطاق");
+  check(!/new Set\(\(req\.scopes \|\| \[\]\)\.map\(scope => Number\(scope\.AdSectionId\)\)/.test(server), "N8: لا نسخةَ ثانية لتوسيع النطاق في الخادم");
+}
+
+/* ══ N13 — الرقم المدني والهاتف لا يصلان صفات الاطّلاع ═══════════════════ */
+{
+  const ins = routeBody('app.get("/api/instructors", requireAnyPermission');
+  check(!/res\.json\(sortArabicNamed\(/.test(ins) && (ins.match(/send\(/g) || []).length === 3, "N13: كل إجابات دليل الأساتذة تمرّ بالمُرشِّح");
+  const fn = fnBody("function instructorsForReader<");
+  check(fn.includes("isReadOnlyRole(req.user?.Role)") && fn.includes('AdInstructorCivil: ""') && fn.includes('AdInstructorMobile: ""'), "N13: صفات الاطّلاع لا ترى الرقم المدني ولا الهاتف");
+  const search = routeBody('app.get("/api/search"');
+  check(search.includes("instructorsForReader(req, instructors)") && search.includes("readerInstructorCivil(ins)"), "N13: البحث العام لا يكشف الرقم المدني ولا يطابق عليه للقارئ");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
