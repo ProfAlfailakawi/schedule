@@ -3800,7 +3800,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
   const processPage=async(index:number,lanePool:OcrWorkerPool)=>{
     /* Move the UI out of the orientation stage before the expensive grid read.
        `page` here means completed pages, so zero is intentional on page 1. */
-    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${index+1} من ${images.length}`});
+    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${index+1} من ${images.length}`,notice:unreadPagesNotice(flaggedPages)});
     const pageImage=images[index];
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
@@ -3979,7 +3979,11 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
          صفحة ما زالت ناقصة: تُعاد من الملف بدقة عالية، ويُمدّ تباينها، وتُمحى
          خطوط الجدول الطويلة الملاصقة للأرقام، ثم تُقرأ كلماتها من جديد. تُعتمد
          القراءة المحسّنة إن أخرجت صفوفاً أكثر، ويبقى فحص الأسطر المطبوعة حكماً. */
-      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length||unreadableIdentityRows(bestRows)>0){
+      /* A page read without its schedule side (scanPageVerdict) gets this read
+         too: it is the reading trusted to restore times, so without it such a
+         page could only ever be refused, even when a re-read would recover it. */
+      const scheduleBlind=unscheduledRowCount(bestRows)>Math.max(2,bestRows.length/2);
+      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length||unreadableIdentityRows(bestRows)>0||scheduleBlind){
         try{
           /* صورة مرفوعة مباشرة (JPG/PNG/HEIC) لا عرض PDF لها: تُحسَّن الصفحة المعدّلة نفسها. */
           const sharp=(wordLaneSources?(await wordLaneSources)[index]:undefined)||bestUpright;
@@ -3989,7 +3993,8 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
             pagePrintedRows[index]=Math.max(pagePrintedRows[index]||0,lane.printedRows);
             const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
             if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)
-              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))){bestRows=lane.rows;bestFilled=filled;}
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){bestRows=lane.rows;bestFilled=filled;}
           }
         }catch{/* the earlier reading and its warning stand */}
       }
