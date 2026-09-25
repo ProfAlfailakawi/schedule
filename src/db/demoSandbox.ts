@@ -469,6 +469,29 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
     pendingAdditions: [], updatedAt: iso(3),
   });
 
+  /* ── مواعيد التسليم: موعدُ الفصل بعد أسبوع (demoTerms)، واستثناءٌ واحد، وطلبٌ
+     واحد ينتظر — فيفتح رئيسُ التسجيل لوحته على ما يفعله: يمنح أو يرفض، ويرى
+     استثناءً قائماً يُعدَّل ويُرفع. والقسمان خارج مسرح اللجنة ورئيس القسم. */
+  const termDeadline = demoTerms(new Date())[0].AdTermSubmissionDeadline!;
+  const plus = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+  /* علم البيانات: استثناءٌ ثلاثة أيام مُنح قبل أن يُرسل جولته الثانية. (ريادةُ
+     الأعمال قسمُ الاستعراض بلا سجلّ اعتماد عمداً — B15 — فلا يُبذر فيه شيء.) */
+  const ds1 = approvals.find(row => row.scopeKey === "1:2:1");
+  if (ds1) {
+    Object.assign(ds1, {
+      extensionUntil: plus(termDeadline, 3), extensionReason: "تأخّر اعتماد المنتدبين من الكلية",
+      extensionBy: "أ. رئيس التسجيل", extensionAt: iso(5),
+    });
+  }
+  // تقنيات التعليم: قيد الإعداد، ويطلب خمسة أيام.
+  approvals.push({
+    id: "3:5:1", scopeKey: "3:5:1", AdCollegeId: 3, AdSectionId: 5, AdTermId: 1,
+    status: "drafting", currentRound: 0, signatures: [], rounds: [], pendingAdditions: [],
+    extensionRequest: { by: "رئيس لجنة جدول تقنيات التعليم", role: "committeeChair", at: iso(1), reason: "انتظار توزيع القاعات الجديدة للمبنى", days: 5 },
+    events: [{ at: iso(1), by: "رئيس لجنة جدول تقنيات التعليم", role: "committeeChair", action: "extension-request", round: 0, detail: "5 أيام — انتظار توزيع القاعات الجديدة للمبنى" }],
+    updatedAt: iso(1),
+  });
+
   return { approvals, versions, comments };
 }
 
