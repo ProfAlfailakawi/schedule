@@ -9513,20 +9513,9 @@ async function termIsClosed(termId: number): Promise<boolean> {
  *     `once`: يُنفَّذ مرّةً واحدة عبر المحاولتين، وتأخذ الثانيةُ نتيجةَ الأولى.
  */
 async function approvalTransaction(
-  res: Response, collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>,
-): Promise<void> {
-  const outcome = await approvalTransactionOutcome(collegeId, sectionId, termId, task, () => !res.headersSent);
-  if (outcome === "conflict") {
-    res.status(409).json({ error: "سبقك قرارٌ آخر على هذا الجدول في اللحظة نفسها — حدّث الشاشة وأعد المحاولة.", code: "approval-revision" });
-  }
-}
-
-/**
- * الطابورُ والمراجعة نفسُهما، بلا ردٍّ على الطلب: لقرارٍ يقع على أقسامٍ كثيرة
- * في طلبٍ واحد (استثناءاتُ مواعيد التسليم)، فيُقال لكل قسمٍ ما جرى له.
- */
-async function approvalTransactionOutcome(
-  collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>, canRetry: () => boolean,
+  /* بلا ردٍّ (null) لقرارٍ يقع على أقسامٍ كثيرة في طلبٍ واحد — استثناءاتُ
+     مواعيد التسليم: الطابورُ والمراجعة نفسُهما، ويُقال لكل قسمٍ ما جرى له. */
+  res: Response | null, collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>,
 ): Promise<"done" | "conflict"> {
   let outcome: "done" | "conflict" = "done";
   await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
@@ -9535,8 +9524,11 @@ async function approvalTransactionOutcome(
       console.error("[approval] تعذّر فتحُ جولة التعديل المنتظرة:", error instanceof Error ? error.message : error));
     outcome = await runApprovalAttempts(task, {
       isConflict: error => error instanceof ApprovalRevisionConflict,
-      canRetry,
+      canRetry: () => !res?.headersSent,
     });
+    if (outcome === "conflict" && res) {
+      res.status(409).json({ error: "سبقك قرارٌ آخر على هذا الجدول في اللحظة نفسها — حدّث الشاشة وأعد المحاولة.", code: "approval-revision" });
+    }
   });
   return outcome;
 }
@@ -10397,7 +10389,7 @@ app.post("/api/approvals/extensions", requireAuth, async (req: AuthenticatedRequ
     if (!allowed(collegeId, sectionId)) { results.push({ collegeId, sectionId, sectionName, ok: false, error: "خارج صلاحيات الأقسام المسموحة لك" }); continue; }
     let result: Omit<(typeof results)[number], "collegeId" | "sectionId" | "sectionName"> = { ok: false };
     try {
-      const outcome = await approvalTransactionOutcome(collegeId, sectionId, termId, async () => {
+      const outcome = await approvalTransaction(null, collegeId, sectionId, termId, async () => {
         const approval = await readApproval(collegeId, sectionId, termId);
         let next: ScheduleApproval;
         if (action === "reject") {
@@ -10415,7 +10407,7 @@ app.post("/api/approvals/extensions", requireAuth, async (req: AuthenticatedRequ
           result = { ok: true, until: plan.until, from: plan.from, daysAfterTerm: plan.daysAfterTerm };
         }
         await Repository.saveScheduleApproval(next);
-      }, () => true);
+      });
       if (outcome === "conflict") result = { ok: false, error: "سبقك قرارٌ آخر على هذا القسم في اللحظة نفسها — أعد المحاولة." };
     } catch (error) {
       console.error("[deadlines] تعذّر حفظُ استثناء:", error instanceof Error ? error.message : error);
