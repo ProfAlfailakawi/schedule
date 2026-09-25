@@ -1869,7 +1869,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         </form>
         {askNote ? <p className="query-ask-note" id="query-ask-note" role="status">{askNote}</p> : null}
 
-        <div className="query-scope query-primary-filters" aria-label="المرشحات الأساسية">
+        <div className="query-scope query-primary-filters" data-count={singleDepartmentOf(scopes, filters.collegeId, isPowerAdmin) === null ? 3 : 2} aria-label="المرشحات الأساسية">
           <Field label="الكلية">
             <select
               value={filters.collegeId || ""}
