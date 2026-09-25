@@ -12764,8 +12764,9 @@ async function buildSharePayload(link: ScheduleShareLink) {
    ‎src/server/publicAttemptLimiter.ts‎. */
 const publicAttempts = createAttemptLimiter(limiterOptionsFromEnv());
 const publicAttemptKey = (scope: string, ip: string) => `${scope}|${ip}`;
-const publicAttemptBlocked = (scope: string, ip: string) => publicAttempts.blocked(publicAttemptKey(scope, ip));
-const publicAttemptFailed = (scope: string, ip: string) => publicAttempts.fail(publicAttemptKey(scope, ip));
+/* يُحجز قبل أوّل `await`: المحاولة تُحسب خطأً عند الدخول، ويُرجعها النجاح
+   وحده بـ`release()`. فلا يمرّ من الطلبات المتوازية أكثرُ من الحدّ. */
+const publicAttemptReserve = (scope: string, ip: string) => publicAttempts.reserve(publicAttemptKey(scope, ip));
 
 /** الأبواب التي لم تنتقل بعد إلى عدّ الأخطاء وحدها (استبيان الطلبة): كل طلبٍ يُعدّ. */
 function staffLookupAllowed(token: string, ip: string): boolean {
@@ -13452,14 +13453,16 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
-  if (publicAttemptBlocked(token, req.ip || "unknown")) {
+  const attempt = publicAttemptReserve(token, req.ip || "unknown");
+  if (!attempt) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
 
   const body = (req.body || {}) as Record<string, unknown>;
   const card = await buildStaffCard(resolved.link, String(body.civil || ""), Number(body.termId || 0));
-  if (!card) { publicAttemptFailed(token, req.ip || "unknown"); res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  attempt.release();
   if (!card.liveTermId || Number(card.termId) !== Number(card.liveTermId)) {
     res.status(409).json({ error: "هذا الفصل للاطلاع فقط. اختر الفصل الجاري للإبلاغ." });
     return;
@@ -14812,14 +14815,16 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
-  if (publicAttemptBlocked(token, req.ip || "unknown")) {
+  const attempt = publicAttemptReserve(token, req.ip || "unknown");
+  if (!attempt) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
   const card = await buildStaffCard(resolved.link, String(req.body?.civil || ""), Number(req.body?.termId || 0));
   // One answer for a wrong number and for someone with no lectures this term:
   // the page must not become a way to test which numbers exist.
-  if (!card) { publicAttemptFailed(token, req.ip || "unknown"); res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  attempt.release();
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   /* «منذ زيارتك الأخيرة»: ما حُفظ من الزيارة السابقة يُعاد، ثم تُسجَّل هذه. */
   const { instructorId: cardInstructorId, fingerprint: cardFingerprint, ...visible } = card;
@@ -16730,14 +16735,14 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
    * مجرَّبا عليه بالأرقام.
    */
   const signScope = `request:${resolved.request.id}`;
-  if (publicAttemptBlocked(signScope, req.ip || "unknown")) {
+  const signAttempt = publicAttemptReserve(signScope, req.ip || "unknown");
+  if (!signAttempt) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
     return;
   }
   const civil = normalizeCivilId(req.body?.civil);
   const civilCheck = validateCivilId(civil);
   if (!civilCheck.isValid) {
-    publicAttemptFailed(signScope, req.ip || "unknown");
     res.status(400).json({ error: civilCheck.message || "اكتب رقمك المدني كاملاً." });
     return;
   }
@@ -16751,10 +16756,10 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
      سببٍ يظهر له ولا للقسم. */
   const storedCivil = normalizeCivilId(signer?.AdInstructorCivil);
   if (!storedCivil || storedCivil !== civil) {
-    publicAttemptFailed(signScope, req.ip || "unknown");
     res.status(403).json({ error: "الرقم المدني لا يطابق صاحب هذا الرابط." });
     return;
   }
+  signAttempt.release();
 
   const sent = Array.isArray(req.body?.items) ? (req.body.items as any[]) : null;
   if (!sent) { res.status(400).json({ error: "لم يصل شيء." }); return; }

@@ -50,6 +50,29 @@ export function createAttemptLimiter(options: AttemptLimiterOptions = {}) {
       if (failures.size >= capacity) failures.clear();
       failures.set(key, { count: 1, first: clock() });
     },
+    /**
+     * حجزُ محاولةٍ قبل أوّل `await` — هذا هو الطريق الوحيد للأبواب التي تبحث
+     * ثم تحكم. كان النمط «اسأل `blocked` ← انتظر البحث ← `fail`»، فخمسمئة
+     * طلبٍ متوازٍ تمرّ كلها من السؤال قبل أن يُسجَّل أوّل خطأ. فصار العدّ عند
+     * الدخول متزامناً: المحاولة تُحسب خطأً فوراً، ومن نجح يُرجعها بـ`release()`.
+     * يعيد `null` إذا استُنفد الحدّ (ولا يُسجّل شيئاً حينئذٍ).
+     */
+    reserve(key: string): { release(): void } | null {
+      if ((live(key)?.count || 0) >= maxFailures) return null;
+      this.fail(key);
+      const entry = failures.get(key)!;
+      let done = false;
+      return {
+        release() {
+          if (done) return;
+          done = true;
+          /* إن انقضت النافذة وبدأت أخرى فليس لهذه المحاولة فيها شيء تُرجعه. */
+          if (failures.get(key) !== entry) return;
+          entry.count = Math.max(0, entry.count - 1);
+          if (entry.count === 0) failures.delete(key);
+        },
+      };
+    },
     /** للأبواب التي لم تنتقل بعد إلى عدّ الأخطاء: كلُّ طلبٍ يُعدّ. */
     consume(key: string): boolean {
       if (this.blocked(key)) return false;

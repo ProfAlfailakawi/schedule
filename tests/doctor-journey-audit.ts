@@ -180,12 +180,45 @@ async function main() {
     const legacy = createAttemptLimiter({ maxFailures: 2, windowMs: 60_000, now: () => 0 });
     check(legacy.consume("s") && legacy.consume("s") && !legacy.consume("s"), "D6 الأبواب القديمة (استبيان) تبقى على العدّ الكامل");
 
-    const staffPost = server.slice(server.indexOf('app.post("/api/public/staff/:token", '), server.indexOf('app.post("/api/public/staff/:token", ') + 1200);
-    check(staffPost.includes("publicAttemptBlocked(token") && staffPost.includes("if (!card) { publicAttemptFailed(token") && !staffPost.includes("staffLookupAllowed"),
-      "D6 بطاقتي تُسأل الحدّ وتسجّل الفشل وحده");
+    /* الطلبات المتوازية: خمسمئة تخمينٍ تبدأ قبل أن ينتهي أيٌّ منها. */
+    {
+      const racing = createAttemptLimiter({ maxFailures: 10, windowMs: 60_000, now: () => 0 });
+      const lookup = async (right: boolean) => {
+        const ticket = racing.reserve("tok|ip");
+        if (!ticket) return "429";
+        await new Promise(resolve => setTimeout(resolve, 1));
+        if (right) { ticket.release(); return "ok"; }
+        return "404";
+      };
+      const answers = await Promise.all(Array.from({ length: 500 }, () => lookup(false)));
+      check(answers.filter(a => a === "404").length === 10 && answers.filter(a => a === "429").length === 490,
+        "D6 خمسمئة تخمينٍ متوازٍ: عشرةٌ تُفحص والباقي يُردّ");
+      const fresh = createAttemptLimiter({ maxFailures: 3, windowMs: 60_000, now: () => 0 });
+      const oks = await Promise.all(Array.from({ length: 3 }, () => (async () => { const t = fresh.reserve("k"); await Promise.resolve(); t?.release(); return Boolean(t); })()));
+      check(oks.every(Boolean) && !fresh.blocked("k"), "D6 النجاح يُرجع المحاولة فلا يُحسب خطأً");
+      const seq = createAttemptLimiter({ maxFailures: 2, windowMs: 60_000, now: () => 0 });
+      for (let i = 0; i < 30; i++) seq.reserve("k")?.release();
+      check(!seq.blocked("k"), "D6 ثلاثون دخولاً صحيحاً متتالياً لا تُغلق الباب");
+      const twice = seq.reserve("k")!; twice.release(); twice.release();
+      seq.reserve("k"); seq.reserve("k");
+      check(seq.blocked("k") && seq.reserve("k") === null, "D6 الإرجاع مرّةً واحدة، والخطآن يُغلقان");
+      let clock = 0;
+      const windowed = createAttemptLimiter({ maxFailures: 2, windowMs: 1000, now: () => clock });
+      const old = windowed.reserve("k")!; clock = 2000; windowed.reserve("k"); old.release();
+      windowed.reserve("k");
+      check(windowed.blocked("k"), "D6 إرجاعُ محاولةٍ من نافذةٍ انقضت لا يمسّ النافذة الجديدة");
+    }
+    const staffPost = server.slice(server.indexOf('app.post("/api/public/staff/:token", '), server.indexOf('app.post("/api/public/staff/:token", ') + 1400);
+    check(staffPost.includes('const attempt = publicAttemptReserve(token') && staffPost.includes("attempt.release();") && !staffPost.includes("staffLookupAllowed"),
+      "D6 بطاقتي تحجز المحاولة قبل البحث ويُرجعها النجاح وحده");
+    check(staffPost.indexOf("publicAttemptReserve(token") < staffPost.indexOf("await buildStaffCard") && staffPost.indexOf("await buildStaffCard") < staffPost.indexOf("attempt.release();"),
+      "D6 الحجز قبل أوّل انتظار، والإرجاع بعد ثبوت البطاقة");
     const note = server.slice(server.indexOf('app.post("/api/public/staff/:token/note"'), server.indexOf('app.post("/api/public/staff/:token/note"') + 1500);
-    check(note.includes("publicAttemptBlocked(token") && note.includes("publicAttemptFailed(token") && !note.includes("staffLookupAllowed"), "D6 ملاحظة بطاقتي كذلك");
-    check(server.includes("publicAttemptBlocked(signScope") && (server.match(/publicAttemptFailed\(signScope/g) || []).length === 2, "D6 التوقيع يسجّل الرقم الخاطئ وحده");
+    check(note.includes("publicAttemptReserve(token") && note.indexOf("publicAttemptReserve(token") < note.indexOf("await buildStaffCard") && note.includes("attempt.release();") && !note.includes("staffLookupAllowed"), "D6 ملاحظة بطاقتي كذلك");
+    const sign = server.slice(server.indexOf("const signScope = `request:"), server.indexOf("const signScope = `request:") + 2500);
+    check(sign.includes("publicAttemptReserve(signScope") && sign.indexOf("signAttempt.release();") > sign.indexOf("storedCivil !== civil"), "D6 التوقيع يحجز ويُرجع بعد مطابقة الرقم وحدها");
+    check(!/publicAttemptBlocked|publicAttemptFailed|publicAttempts\.blocked\(|publicAttempts\.fail\(/.test(server),
+      "D6 لا نمطَ «اسأل ثم انتظر ثم سجّل» في الخادم: الحجزُ طريقٌ واحد");
     check(!server.includes("staffAttempts") && !server.includes("STAFF_MAX_TRIES"), "D6 لا عدّاد ثانٍ في الخادم");
   }
 
