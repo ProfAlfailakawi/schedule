@@ -3,6 +3,9 @@ import type { AdCollege, AdSection } from "../types";
 export interface ScopeAssignmentLike {
   AdCollegeId?: number | string;
   AdSectionId?: number | string;
+  /** The server expands a college-wide row (section 0) into one row per
+   *  department for display, and marks each expanded row with this flag. */
+  AdCollegeWide?: boolean;
 }
 
 const unique = (values: Array<number | string | undefined | null>) =>
@@ -25,6 +28,48 @@ export function normalizeScopeAssignments(scopes: ScopeAssignmentLike[] = []) {
 }
 
 /**
+ * ── قسمٌ واحد: لا منتقيَ للقسم ─────────────────────────────────────────────
+ *
+ * الحساب الذي لا يملك في الكلية المختارة إلا قسماً واحداً لا يُسأل عن القسم:
+ * يُختار له ويُخفى المنتقي، فيبقى أمامه «الكلية + الفصل» في كل شاشة — كما في
+ * لوحة الجدول. هذه الدالة هي الموضع الوحيد الذي يقرّر ذلك؛ كل شاشةٍ ترسم
+ * منتقي قسمٍ مربوطاً بنطاق القارئ تسألها، ولا تكتب شرطها بنفسها.
+ *
+ * تُرجع رقم القسم الوحيد، أو null حين يجب أن يبقى المنتقي:
+ *   - الإدارة (isAdmin) دائماً null.
+ *   - الكلية المطلوبة خارج النطاق → null. وبلا كلية مطلوبة تُعتمد الكلية
+ *     الوحيدة إن كانت واحدة، وإلا null.
+ *   - صفُّ «الكلية كلها» (قسم صفر، أو صفٌّ موسومٌ AdCollegeWide بعد بسطه) يعني
+ *     كل أقسام الكلية — عميد، عميد مساعد، أدوار التسجيل — فلا يُعامل قسماً
+ *     واحداً ولو كانت الكلية لا تضمّ اليوم إلا قسماً.
+ *   - غير ذلك: القسم إن كان واحداً بعينه، وإلا null.
+ */
+export function singleDepartmentOf(
+  scopes: ScopeAssignmentLike[] = [],
+  collegeId: number | string = 0,
+  isAdmin = false,
+): number | null {
+  if (isAdmin || !Array.isArray(scopes) || !scopes.length) return null;
+  const rows = scopes
+    .map((scope) => ({
+      college: Number(scope?.AdCollegeId || 0),
+      section: Number(scope?.AdSectionId || 0),
+      wide: Boolean(scope?.AdCollegeWide),
+    }))
+    .filter((row) => row.college);
+  const colleges = [...new Set(rows.map((row) => row.college))];
+  const requested = Number(collegeId || 0);
+  const active = requested
+    ? (colleges.includes(requested) ? requested : 0)
+    : (colleges.length === 1 ? colleges[0] : 0);
+  if (!active) return null;
+  const inCollege = rows.filter((row) => row.college === active);
+  if (inCollege.some((row) => row.wide || !row.section)) return null;
+  const sections = [...new Set(inCollege.map((row) => row.section))];
+  return sections.length === 1 ? sections[0] : null;
+}
+
+/**
  * UI scope resolver.
  * Admin is deliberately never auto-locked: admin must always see the complete
  * college/section selectors. Normal users only see a selector when there is a
@@ -40,7 +85,6 @@ export function resolveScopeSelection(
       defaultCollegeId: 0,
       defaultSectionId: 0,
       lockCollege: false,
-      lockSection: false,
       collegeIds: [] as number[],
       sectionIds: [] as number[],
     };
@@ -65,7 +109,6 @@ export function resolveScopeSelection(
     defaultCollegeId,
     defaultSectionId: sectionIds.length === 1 ? sectionIds[0] : 0,
     lockCollege: collegeIds.length === 1,
-    lockSection: Boolean(activeCollegeId) && sectionIds.length === 1,
     collegeIds,
     sectionIds,
   };

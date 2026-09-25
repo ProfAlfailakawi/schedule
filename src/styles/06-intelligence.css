@@ -4687,3 +4687,6 @@ button.twin-delta{width:100%}
 .review-row-jump:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* أربعُ قوائم (الكلية والقسم والفصل والأستاذ) في صفٍّ واحد متساوٍ. */
 @media screen and (min-width:761px){.query-scope[data-count="4"]{grid-template-columns:repeat(4,minmax(140px,1fr))}}
+/* قسمٌ واحد: منتقي القسم لا يُرسم (singleDepartmentOf)، فتبقى «الكلية + الفصل»
+   عموداً عموداً بلا خانةٍ فارغةٍ مكانه، والزرّ في طرفه كما كان. */
+@media screen and (min-width:761px){.query-scope[data-count="2"]{grid-template-columns:repeat(2,minmax(150px,1fr)) auto}}

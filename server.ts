@@ -2030,6 +2030,11 @@ async function clientScopeDetails(scopes: any[]) {
   }
   const out: any[] = [];
   const seen = new Set<string>();
+  /* والصفّ المبسوط يحمل وسمَ «الكلية كلها»: الواجهة تُبقي منتقي القسم لمن
+     نطاقُه الكلية كلها ولو لم تضمّ الكلية اليوم إلا قسماً واحداً
+     (singleDepartmentOf). وسمٌ للعرض فقط؛ الإذن يقرأ الصفر الخام. */
+  const wideColleges = new Set<number>();
+  for (const scope of scopes) if (Number(scope.AdSectionId) === 0) wideColleges.add(Number(scope.AdCollegeId));
   const push = (collegeId: number, sectionId: number, sectionName?: string) => {
     const key = `${collegeId}:${sectionId}`;
     if (seen.has(key)) return;
@@ -2038,6 +2043,7 @@ async function clientScopeDetails(scopes: any[]) {
       AdCollegeId: collegeId, AdSectionId: sectionId,
       AdSectionName: sectionName ?? sectionById.get(sectionId) ?? "",
       AdCollegeName: collegeById.get(collegeId) || "",
+      ...(wideColleges.has(collegeId) ? { AdCollegeWide: true } : {}),
     });
   };
   for (const scope of scopes) {

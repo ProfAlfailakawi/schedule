@@ -40,6 +40,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import { reachAboutCard } from "../utils/reachInstructor";
 import { putHandoff } from "../utils/requestHandoff";
 import { currentTermId } from "../utils/termSequence";
+import { singleDepartmentOf } from "../utils/scopeContext";
 import type {
   AdTerm, FSchedule, InstructorRequest, InstructorRequestItem, InstructorRequestRejectReason,
 } from "../types";
@@ -658,9 +659,19 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     /* ومن له الكلُّ لا يُختار له شيء: اختيارُ أوّلِ كليةٍ في الكتالوج يُخفي
        عنه البقيّةَ خلف قراءةٍ بدأت بلا طلبه. */
     if (collegeId || powerAdmin || !scopes.length) return;
-    setCollegeId(Number(scopes[0].AdCollegeId) || 0);
-    if (scopes.length === 1) setSectionId(Number(scopes[0].AdSectionId) || 0);
+    const first = Number(scopes[0].AdCollegeId) || 0;
+    setCollegeId(first);
+    /* قسمٌ واحد في الكلية: يُختار له، ومنتقيه لا يُرسم (singleDepartmentOf). */
+    const only = singleDepartmentOf(scopes, first);
+    if (only) setSectionId(only);
   }, [scopes, collegeId, powerAdmin]);
+
+  /* والمنتقي المخفيّ لا يترك القيمة فارغة: أيّ طريقٍ وصل بالكلية (إشعار، تبديل)
+     يُعاد قسمُه إلى القسم الوحيد، فيبقى الطلبُ يحمل sectionId. */
+  useEffect(() => {
+    const only = singleDepartmentOf(scopes, collegeId, powerAdmin);
+    if (only && sectionId !== only) setSectionId(only);
+  }, [scopes, collegeId, sectionId, powerAdmin]);
 
   const load = useCallback(async () => {
     if (!collegeId || !termId) { setRows(null); return; }
@@ -969,7 +980,10 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
 
   const selects: ScopeAskSelect[] = [
     { key: "college", label: "الكلية", value: collegeId, placeholder: "اختر الكلية", options: collegeOptions },
-    { key: "section", label: "القسم", value: sectionId, placeholder: "كل أقسام الكلية", options: sectionOptions, disabled: !collegeId },
+    /* من لا يملك في الكلية إلا قسماً واحداً لا يُسأل عن القسم (singleDepartmentOf). */
+    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null
+      ? [{ key: "section", label: "القسم", value: sectionId, placeholder: "كل أقسام الكلية", options: sectionOptions, disabled: !collegeId }]
+      : []),
     { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: (terms || []).map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
     { key: "instructor", label: "الأستاذ", value: instructorFilter, placeholder: "كل الأساتذة", options: instructorOptions, disabled: !instructorOptions.length },
   ];
@@ -998,7 +1012,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           const id = Number(value) || 0;
           if (key === "instructor") { setInstructorFilter(id); return; }
           setInstructorFilter(0);
-          if (key === "college") { setCollegeId(id); setSectionId(0); }
+          if (key === "college") { setCollegeId(id); setSectionId(singleDepartmentOf(scopes, id, powerAdmin) ?? 0); }
           else if (key === "section") setSectionId(id);
           else setTermId(id);
         }}

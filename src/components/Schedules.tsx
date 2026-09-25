@@ -112,7 +112,7 @@ import {
   scheduleTimeFromMinutes as timeFromMins,
   type DayKey,
 } from "./scheduleWorkspace";
-import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
+import { coerceScopeValues, describeScopeSelection, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
 import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, currentTermId } from "../utils/termSequence";
@@ -8236,7 +8236,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             </div>
           </div>
           <form onSubmit={copySchedule}>
-            {copyScope.lockCollege && copyScope.lockSection ? <div className="scope-inline-note"><strong>النطاق الجاهز</strong><span>{describeScopeSelection(colleges, sections, copyCollege, copySection)}</span></div> : null}
+            {copyScope.lockCollege && singleDepartmentOf(scopes, copyCollege, isPowerAdmin) !== null ? <div className="scope-inline-note"><strong>النطاق الجاهز</strong><span>{describeScopeSelection(colleges, sections, copyCollege, copySection)}</span></div> : null}
             <div className="form-grid">
               {!copyScope.lockCollege ? <Field label="الكلية" required>
                 <select
@@ -8254,7 +8254,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   ))}
                 </select>
               </Field> : null}
-              {!copyScope.lockSection ? <Field label="القسم العلمي" required>
+              {singleDepartmentOf(scopes, copyCollege, isPowerAdmin) === null ? <Field label="القسم العلمي" required>
                 <select
                   value={copySection || ""}
                   disabled={!copyCollege}
@@ -8456,7 +8456,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     <option value="">اختر ...</option>{colleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}
                   </select>
                 </Field> : null}
-                {!formScope.lockSection ? <Field label="القسم العلمي" required>
+                {singleDepartmentOf(scopes, form.AdCollegeId, isPowerAdmin) === null ? <Field label="القسم العلمي" required>
                   <select value={form.AdSectionId || ""} disabled={!form.AdCollegeId} onChange={(e)=>{const id=Number(e.target.value)||0;setForm(p=>({...p,AdSectionId:id,AdCourseId:0}));setCourseName("");}} required>
                     <option value="">اختر ...</option>{formSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}
                   </select>
@@ -9840,7 +9840,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       <Surface className="schedule-control">
         <div className="filter-strip">
           <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
-          {isPowerAdmin || !filterScope.lockSection ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
+          {singleDepartmentOf(scopes, filterCollege, isPowerAdmin) === null ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
           <Field label="الفصل الدراسي">
             <select
               data-guide-target="schedule.filter.term"
