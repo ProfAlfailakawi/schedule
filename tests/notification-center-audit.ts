@@ -79,5 +79,14 @@ check(/isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId
   check(!list.some(item => item.view === "studentRegistration"), "واللجنةُ لا تُنبَّه بما سلّمته");
 }
 
+{
+  const noDeadline = buildNotifications({ role: "registrarHead", scopes: [scope({ status: "drafting" })] });
+  check(noDeadline.some(item => item.id === "deadline-missing" && item.tone === "action" && item.view === "scheduleChanges"), "رئيس التسجيل يُطلب منه تحديد موعد التسليم ما دام غير محدَّد");
+  const withDeadline = buildNotifications({ role: "registrarHead", scopes: [scope({ status: "drafting" })], deadline: { effective: "2099-01-01" } as any });
+  check(!withDeadline.some(item => item.id === "deadline-missing"), "…ولا يُطلب متى حُدِّد");
+  const staff = buildNotifications({ role: "registrarStaff", scopes: [scope({ status: "drafting" })] });
+  check(!staff.some(item => item.id === "deadline-missing"), "…وموظف التسجيل لا يملك الموعد فلا يُطلب منه");
+}
+
 console.log(`\nNotification center audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
