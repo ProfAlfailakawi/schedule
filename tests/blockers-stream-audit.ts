@@ -87,5 +87,14 @@ const route = (signature: string) => {
   check(/const onLivingPanelOpenChange = useCallback\(/.test(schedules), "B7 ردّ الإغلاق ثابت الهوية فلا يُغلق المشهد عند كل رسم");
 }
 
+/* B8 — genesis refuses archived-curriculum courses exactly like add/copy/import. */
+{
+  const genesis = route('app.post("/api/intelligence/genesis"');
+  check(genesis.includes("await splitArchivedCourseRows(source,sectionId)") && genesis.includes("!archivedCourseIds.has(Number(c.AdCourseId))"),
+    "B8 بداية الفصل لا تنسخ مقرراً مؤرشفاً");
+  check(genesis.includes("archivedSkipped:archivedSource.length") && genesis.includes("لمقررات مؤرشفة أكاديمياً"), "B8 وتقول كم تركت ولماذا");
+  check((server.match(/await splitArchivedCourseRows\(/g) || []).length >= 3, "B8 النسخ ومعاينته وبداية الفصل تقرأ القاعدة نفسها");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

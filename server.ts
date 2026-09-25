@@ -6859,8 +6859,7 @@ app.get("/api/schedules/copy-preview", requireAuth, requirePowerAdmin, async (re
   const [source,target,courses,instructors]=await Promise.all([
     Repository.getSchedulesByScope({collegeId,sectionId,termId:fromTermId}),Repository.getSchedulesByScope({collegeId,sectionId,termId:toTermId}),Repository.getCourses(),Repository.getInstructors()
   ]);
-  const operationalIds=await Repository.getOperationalCourseIds(sectionId);
-  const archivedInSource=source.filter(row=>!operationalIds.has(Number(row.AdCourseId)));
+  const {archived:archivedInSource}=await splitArchivedCourseRows(source,sectionId);
   const sourceIssues=[...new Set([...source.flatMap((row:any)=>schedulePayloadIssues(row)),...(archivedInSource.length?[`يتضمن الفصل ${archivedInSource.length} موعداً لمقررات أصبحت مؤرشفة أكاديمياً ولن تُنسخ إلى فصل جديد.`]:[])])];
   const courseById=new Map(courses.map(item=>[item.AdCourseId,item])); const instructorById=new Map(instructors.map(item=>[item.AdInstructorId,item]));
   res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:row.CourseCodeSnapshot||courseById.get(row.AdCourseId)?.CourseCode||"",courseName:row.CourseNameSnapshot||row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:formatScheduleTimeRange(row.fstarttime, row.fendtime),room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
@@ -6892,8 +6891,7 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
   if (!sourceTerm || !targetTerm) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
 
   const sourceRows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId });
-  const operationalIdsForCopy=await Repository.getOperationalCourseIds(sectionId);
-  const archivedRows=sourceRows.filter(row=>!operationalIdsForCopy.has(Number(row.AdCourseId)));
+  const {archived:archivedRows}=await splitArchivedCourseRows(sourceRows,sectionId);
   if(archivedRows.length){res.status(409).json({error:`لا يمكن نسخ الفصل كما هو: ${archivedRows.length} موعداً مرتبط بمقررات مؤرشفة أكاديمياً. أضف بدائلها الحالية يدوياً حتى يبقى الجدول الجديد صحيحاً.`,code:"archived-curriculum-courses"});return;}
   const copiedRows = safeDraftRows(sourceRows, collegeId, sectionId, targetTermId);
   const copyIssues = await validateSmartRows(copiedRows, collegeId, sectionId, { resolveHistorical: true });
@@ -10993,10 +10991,23 @@ app.get("/api/intelligence/rollover", requirePermission(7), async (req: Authenti
   });
 });
 
+/* ── المقرر المؤرشف لا يُوضع في جدولٍ حالي — بأي باب ──────────────────────
+   الإضافة والنسخ والاستيراد ترفض مقرراً أُرشف أكاديمياً، و«بداية الفصل» كانت
+   تنسخه كما هو من الفصل السابق، فيعود المقرر الذي أُخرج من الخطة إلى جدول
+   الفصل الجديد من الباب الخلفي. القراءة هنا واحدة يستعملها النسخ وبداية الفصل. */
+async function splitArchivedCourseRows<T extends { AdCourseId?: unknown }>(rows: T[], sectionId: number): Promise<{ operational: T[]; archived: T[] }> {
+  const operationalIds = await Repository.getOperationalCourseIds(sectionId);
+  const operational: T[] = [], archived: T[] = [];
+  for (const row of rows) (operationalIds.has(Number(row.AdCourseId)) ? operational : archived).push(row);
+  return { operational, archived };
+}
+
 app.post("/api/intelligence/genesis", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),targetTermId=Number(req.body?.targetTermId||req.body?.termId||0),sourceTermId=Number(req.body?.sourceTermId||0); if(!collegeId||!sectionId||!targetTermId||!sourceTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(sourceTermId===targetTermId){res.status(400).json({error:"اختر فصلاً سابقاً مختلفاً عن الفصل الجديد"});return;}
   const [source,targetUniverse,courses,instructors,terms,constraints]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId,termId:sourceTermId}),Repository.getSchedulesByScope({termId:targetTermId}),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms(),Repository.getScheduleConstraints(collegeId,sectionId,targetTermId)]); if(!source.length){res.status(400).json({error:"الفصل السابق لا يحتوي جدولاً لهذا القسم"});return;}
-  const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId).map(c=>c.AdCourseId));
+  const {archived:archivedSource}=await splitArchivedCourseRows(source,sectionId);
+  const archivedCourseIds=new Set(archivedSource.map(row=>Number(row.AdCourseId)));
+  const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId&&!archivedCourseIds.has(Number(c.AdCourseId))).map(c=>c.AdCourseId));
   const validInstructorIds=new Set(instructors.map(i=>Number(i.AdInstructorId)));
   const sourceByCourse=new Map<number,FSchedule[]>();
   source.forEach(row=>{const list=sourceByCourse.get(Number(row.AdCourseId))||[];list.push(row);sourceByCourse.set(Number(row.AdCourseId),list);});
@@ -11050,7 +11061,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
     fsunday:Boolean(row.fsunday),fmonday:Boolean(row.fmonday),ftuesday:Boolean(row.ftuesday),fwednesday:Boolean(row.fwednesday),fthursday:Boolean(row.fthursday),
     building:row.AdRoomCode||"",hall:row.AdRoomHall||"",
   }));
-  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),issueRowIds,rowIssues,previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
+  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,archivedSkipped:archivedSource.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),issueRowIds,rowIssues,previewRows,guardrail:(archivedSource.length?`لم تُنسخ ${countOf(archivedSource.length, AR.appointment)} لمقررات مؤرشفة أكاديمياً. `:"")+(issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد.")});
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

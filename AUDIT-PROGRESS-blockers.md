@@ -9,7 +9,7 @@
 | B5 | FIXED | tests/blockers-stream-audit.ts (B5) |
 | B6 | FIXED | tests/blockers-stream-audit.ts (B6) |
 | B7 | FIXED | tests/blockers-stream-audit.ts (B7); guide-audit green |
-| B8 | TODO | |
+| B8 | FIXED | tests/blockers-stream-audit.ts (B8) |
 | B9 | TODO | |
 | B10 | TODO | |
 | B11 | TODO | |
