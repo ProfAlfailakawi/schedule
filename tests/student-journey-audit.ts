@@ -407,6 +407,14 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(read("src/components/StudentRegistration.tsx").includes('source.addEventListener("notify", soon)'), "S19 والكشف المفتوح يعيد القراءة عندها");
 }
 
+/* ── S20 تعليقات الخصوصية تقول الحقيقة ─────────────────────────────────── */
+{
+  const repo = read("src/db/repository.ts"), types = read("src/types.ts");
+  check(!server.includes("Never names, only numbers") && !server.includes("then hashed and discarded"), "S20 الخادم لا يدّعي أن الاسم لا يُحفظ");
+  check(!repo.includes("No name and no civil ID are stored") && !repo.includes("the same anonymous hand"), "S20 المخزن لا يدّعي أن السجلّ مجهول");
+  check(types.includes("the record is NOT anonymous"), "S20 النوع يقول إن الهوية محفوظة مشفّرة");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

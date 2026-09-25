@@ -599,7 +599,7 @@ export interface StudentCaseState {
 
 export interface StudentNeed {
   id: string;
-  /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
+  /** Keyed HMAC of the civil ID: the duplicate key. On its own it identifies nobody (the identity is in the ciphers below). */
   fingerprint: string;
   AdCollegeId: number;
   /** The student's own scientific section, validated in the link's college. */
@@ -619,6 +619,9 @@ export interface StudentNeed {
   /** Every course this student says they need. */
   courseIds: number[];
   requestType?: "new-course" | "course-conflict" | "graduate";
+  /** The student's name and civil ID, each sealed with field-level AES-256-GCM
+   * (server.ts sealStudentIdentity). Decrypted only for the authorised
+   * department/registration screens — the record is NOT anonymous. */
   nameCipher?: string;
   civilCipher?: string;
   details?: string;

@@ -4569,7 +4569,7 @@ export const Repository = {
    * Every answer this section has ever collected, all terms.
    *
    * The per-term read above is what a reading of *this* term needs. This one is
-   * what learning a sequence needs: the same anonymous hand appearing in two
+   * what learning a sequence needs: the same fingerprinted hand appearing in two
    * terms is what makes «what follows what» knowable at all. Single-field
    * query, so no composite index is involved.
    */

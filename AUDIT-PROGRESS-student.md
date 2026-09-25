@@ -21,6 +21,6 @@
 | S17 | FIXED — survey page no longer writes civil ID/name to localStorage (removed with S5 rewrite); sw.js never caches /api/schedules/demand or /api/student-registration (PERSONAL_API_PREFIXES) while other API caching stays; survey links get 404 from /api/public/schedule and /api/public/ics, and /s/ redirects them to /q/. Not touched: /api/public/ics/:token/:key (staff calendar, other stream; HMAC key per instructor) | tests/student-journey-audit.ts §S17 (executes sw.js isCacheableApi) |
 | S18 | FIXED — survey page: every label has for= (radio labels wrap their input), searches/file input have aria-label, course toggles set aria-pressed via press(), type buttons type=button, all #err role=alert aria-live, proof status role=status, civil inputs inputmode=numeric, privacy text 12px in --muted (contrast measured ≥4.5:1 in the test); status page: #out aria-live, errors role=alert, small texts ≥12px | tests/student-journey-audit.ts §S18 |
 | S19 | FIXED — /api/student-registration added to the broadcastNotify write-prefix list; the open registration sheet reloads (debounced) on the notify pulse | tests/student-journey-audit.ts §S19 |
-| S20 | TODO | |
+| S20 | FIXED — survey header comment, /api/schedules/demand doc, my-case «لا تكشف أحداً» comment, repository saveStudentNeed/history docs and types.ts StudentNeed field docs now say the truth: fingerprint + field-encrypted name/civil ID, decrypted only for authorised screens, opened publicly only with civil ID + case number | tests/student-journey-audit.ts §S20 |
 | S21 | TODO | |
 | S22 | TODO | |

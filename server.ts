@@ -12576,9 +12576,12 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
  * girls' survey are two links, issued the same way as any other.
  *
  * The civil ID is checked against the Kuwaiti checksum — an invented number
- * never reaches the store — then hashed and discarded. The name and civil ID are stored with field-level encryption because the
- * authorised department explicitly needs them to act on a case. The key is
- * shared across server instances; the fingerprint remains the duplicate key.
+ * never reaches the store. It is then kept in two forms: a keyed HMAC
+ * fingerprint (the duplicate key, which identifies nobody on its own) AND,
+ * together with the name, a field-level AES-256-GCM ciphertext, because the
+ * authorised department and registration need to know who a case belongs to.
+ * Neither plaintext is logged or sent to anyone outside those screens; an
+ * existing case is opened on the public pages only with civil ID + case number.
  */
 let studentCaseSecretPromise: Promise<string> | null = null;
 const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getStudentCaseSecret();
@@ -13209,7 +13212,9 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   res.status(201).json({ name, count: courseIds.length, requestType, caseRef: caseRefFor(savedNeed) });
 });
 
-/** What the students said, for the department. Never names, only numbers. */
+/** What the students said, for the department: the counts that plan sections,
+ * and the named case list (name + civil ID decrypted) for the authorised,
+ * scope-checked department only. Never cached by the service worker. */
 app.get("/api/schedules/demand", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -16378,9 +16383,10 @@ ${resolved.error}</body></html>`);
      وصل الطلب، ومتى، وبأيّ مقرّرات. وادّعاءُ ما بعدها يصنع زحمةً أسوأ حين
      يكتشف الطالبُ أنه غير مسجَّل.
 
-   - **لا تكشف أحداً.** تُقرأ ببصمة الرقم المدني كما يُكتب بها، فالصفحةُ لا
-     تعرف اسماً ولا تعرضه. ومن لا طلبَ له يُقال له ذلك، لا «الرقم خطأ»:
-     الفرقُ بينهما يكشف من عبّأ ومن لم يعبّئ لمن يجرّب أرقاماً.
+   - **لا تكشف أحداً.** تُقرأ ببصمة الرقم المدني **ورقم الحالة** معاً، فالرقمُ
+     المدنيُّ وحده لا يفتح طلبَ أحد، والصفحةُ لا تعرض اسماً. ومن لا طلبَ له —
+     أو أخطأ في أحد الرقمين — يُقال له الجوابُ نفسُه، لا «الرقم خطأ»: الفرقُ
+     بينهما يكشف من عبّأ ومن لم يعبّئ لمن يجرّب أرقاماً.
 
    - **ولا تُفتح بالمحاولة.** حدُّ المحاولات نفسُه المفروضُ على بطاقة الأستاذ:
      عشرُ محاولاتٍ في النافذة، ثم انتظار.
