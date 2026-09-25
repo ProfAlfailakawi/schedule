@@ -1686,7 +1686,8 @@ export default function App() {
             role={{
               id: sessionRole.id,
               canReview: sessionRole.canReview,
-              canManageDeadline: sessionRole.canManageDeadline,
+              /* الخادمُ يقبل الموعدَ واستثناءاته من الإدارة الرئيسية أيضاً (isPowerUser). */
+              canManageDeadline: sessionRole.canManageDeadline || isPowerAdmin,
               canAnnotate: sessionRole.canAnnotate,
               signatureStage: sessionRole.signatureStage,
             }}

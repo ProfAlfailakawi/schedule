@@ -196,6 +196,7 @@ export const AR = {
   range:       { one: "نطاق", two: "نطاقان", few: "نطاقات", many: "نطاقاً" },
   shift:       { one: "تغيّر", two: "تغيّران", few: "تغيّرات", many: "تغيّراً" },
   offering:    { one: "طرح", two: "طرحان", few: "طروح", many: "طرحاً" },
+  exception:   { one: "استثناء", two: "استثناءان", few: "استثناءات", many: "استثناءً" },
 
   /* ── Agreement forms, read with nounFor(n, …) after a counted noun ──────
    * A verb or adjective that follows a counted non-human noun is singular for

@@ -30,6 +30,7 @@ import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
 import VisitingBadge from "./VisitingBadge";
+import SubmissionDeadlines, { type DeadlineRow } from "./SubmissionDeadlines";
 import { usePageAwake } from "../utils/pageAwake";
 import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
 
@@ -502,6 +503,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [changesAppendix, setChangesAppendix] = useState<ChangesAppendix | null>(null);
   /** حال الاعتماد لكل قسمٍ في الفصل — تُقرأ مرّةً لميزان الأقسام كله. */
   const [termApprovals, setTermApprovals] = useState<Map<number, BalanceApprovalState> | null>(null);
+  /** الفصلُ نفسه كما تقرؤه لوحة «مواعيد التسليم» — شريطُ قراءةٍ فوق الميزان. */
+  const [deadlineView, setDeadlineView] = useState<{ termId: number; termDeadline?: string; rows: DeadlineRow[] } | null>(null);
   const [appendixBusy, setAppendixBusy] = useState(false);
   const [authorityReport, setAuthorityReport] = useState<AuthorityReport | null>(null);
   /* تقرير التغييرات للقسم كله: تقرير لكل موقع، مرتبة كما تُقرأ — الموقع
@@ -579,6 +582,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           },
         ];
         setTermApprovals(new Map([...data.approvals.map(entry), ...(data.notStarted || []).map(entry)]));
+        setDeadlineView({ termId: Number(filters.termId), termDeadline: data.termDeadline || undefined, rows: termDeadlineRows(data) });
       })
       .catch(() => setTermApprovals(null));
     return () => controller.abort();
@@ -2775,6 +2779,17 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             })}
           </div>
         ) : lens === "balance" ? (
+          <>
+          {deadlineView && deadlineView.termId === Number(filters.termId) ? (
+            <SubmissionDeadlines
+              terms={terms.filter(row => Number(row.AdTermId) === Number(filters.termId)).map(row => ({ ...row, AdTermSubmissionDeadline: deadlineView.termDeadline }))}
+              termId={Number(filters.termId)}
+              onTermChange={() => undefined}
+              rows={deadlineView.rows}
+              canEdit={false}
+              onChanged={() => undefined}
+            />
+          ) : null}
           <BalancePanel
             balance={balance}
             sort={balanceSort}
@@ -2783,6 +2798,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             approvals={termApprovals || undefined}
             focusSectionId={focusSectionId}
           />
+          </>
         ) : fairness ? (
           <div className="lens-fairness">
             <div className="fairness-summary">
@@ -2902,6 +2918,21 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
  * is the point, because the question is always "which one is the outlier".
  */
 /** حالُ قسمٍ في عمود الاعتماد — «notStarted» لقسمٍ بلا سجلّ بعد. */
+/** حالُ الفصل من /api/approvals/term بشكل سطر «مواعيد التسليم». */
+function termDeadlineRows(data: any): DeadlineRow[] {
+  const row = (item: any, record: boolean): DeadlineRow => ({
+    collegeId: Number(item.AdCollegeId || 0), sectionId: Number(item.AdSectionId || 0),
+    collegeName: String(item.collegeName || ""), sectionName: String(item.sectionName || ""),
+    status: item.status, round: Number(item.currentRound || 0),
+    /* سجلُّ اعتمادٍ قائم ليس «لم يبدأ»؛ وما لا سجلَّ له يحمل حاله من الخادم. */
+    rowCount: record || item.status === "drafting" ? 1 : 0,
+    deadline: item.deadline || { past: false, tone: "none" },
+    late: Boolean(item.late),
+    extensionRequest: item.extensionRequest, extensionBy: item.extensionBy, extensionAt: item.extensionAt,
+  });
+  return [...(data.approvals || []).map((item: any) => row(item, true)), ...(data.notStarted || []).map((item: any) => row(item, false))];
+}
+
 interface BalanceApprovalState {
   status: ScheduleApprovalStatus | "notStarted";
   late: boolean;

@@ -164,7 +164,7 @@ const extended = readDeadline({ termDeadline: "2026-10-01", extensionUntil: "202
 check(!extended.past && extended.effective === "2026-10-20", "التمديد يتقدّم على موعد الفصل");
 check(extended.extensionReason === "تأخّر اعتماد المنتدبين", "سبب التمديد محفوظٌ ليُعرض");
 const shortened = readDeadline({ termDeadline: "2026-12-01", extensionUntil: "2026-10-01" }, "2026-10-05");
-check(shortened.past, "التمديد يتقدّم حتى لو كان أقرب: قرارُ القسم أخصُّ من قرار الفصل");
+check(!shortened.past && shortened.effective === "2026-12-01", "استثناءٌ صار أقرب بعد تأخير موعد الفصل لا يعاقب القسم: الأبعد يحكم");
 
 check(daysBetween("2026-10-01", "2026-10-08") === 7, "الأيام تُحسب أياماً لا ساعات");
 check(daysBetween("2026-10-08", "2026-10-01") === -7, "الاتجاه محفوظ");

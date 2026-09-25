@@ -21,6 +21,7 @@ import {
   UsersRound, X,
 } from "lucide-react";
 import ApprovalBar from "./ApprovalBar";
+import SubmissionDeadlines from "./SubmissionDeadlines";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EMPTY_INBOX_ASK, matchesInboxAsk, parseInboxAsk, type InboxAsk, type InboxAskSignal } from "../utils/inboxAsk";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
@@ -44,6 +45,8 @@ interface InboxRow {
   /** طلبُ تمديدٍ من القسم، والتاريخُ المقترح لمنحه. */
   extensionRequest?: { by: string; at: string; reason: string; days: number };
   suggestedExtensionUntil?: string;
+  extensionBy?: string;
+  extensionAt?: string;
 }
 
 interface NoteRow {
@@ -184,12 +187,16 @@ export function ApprovalChip({ status, late }: { status: ScheduleApprovalStatus;
 
 /* ── صندوق الوارد ───────────────────────────────────────────────────────── */
 
-function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
+function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onExtend }: {
   termId: number;
   terms: AdTerm[];
   onTermChange: (termId: number) => void;
   onOpen: (row: InboxRow) => void;
   canExtend: boolean;
+  /** الوارد نفسه يُسلَّم للوحة «مواعيد التسليم» — قراءةٌ واحدة للشاشة. */
+  onLoaded?: (rows: InboxRow[] | null) => void;
+  /** «تمديد» في السطر يفتح ورقة الاستثناء في اللوحة، لا ورقةً ثانية. */
+  onExtend?: (row: InboxRow) => void;
   key?: React.Key;
 }) {
   const [rows, setRows] = useState<InboxRow[] | null>(null);
@@ -205,18 +212,14 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
   const [moreOpen, setMoreOpen] = useState(false);
   const [lateOnly, setLateOnly] = useState(false);
   const [signalFilters, setSignalFilters] = useState<InboxAskSignal[]>([]);
-  const [extending, setExtending] = useState<InboxRow | null>(null);
-  const [extendUntil, setExtendUntil] = useState("");
-  const [extendReason, setExtendReason] = useState("");
-  const [busy, setBusy] = useState(false);
-
   const load = useCallback(async () => {
     setError(null);
     try {
       const data = await request(`/api/approvals/inbox?termId=${termId}`);
       setRows(data.rows || []);
       setTotals(data.totals || null);
-    } catch (e: any) { setError(e.message); setRows([]); }
+      onLoaded?.(data.rows || []);
+    } catch (e: any) { setError(e.message); setRows([]); onLoaded?.([]); }
   }, [termId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -285,20 +288,6 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
       options: terms.map(row => ({ value: row.AdTermId, label: row.AdTermName })),
     },
   ];
-
-  const submitExtension = async () => {
-    if (!extending) return;
-    setBusy(true);
-    try {
-      await request("/api/approvals/extension", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId: extending.collegeId, sectionId: extending.sectionId, termId, until: extendUntil, reason: extendReason }),
-      });
-      setExtending(null); setExtendUntil(""); setExtendReason("");
-      await load();
-    } catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  };
 
   if (!rows) return <MicroLoader label="يقرأ الوارد…" />;
 
@@ -426,13 +415,9 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
                   طلب تمديد {countOf(row.extensionRequest.days, oblique(AR.day))} — «{row.extensionRequest.reason}» · {row.extensionRequest.by}
                 </small>
               ) : null}
-              {canExtend ? (
-                <button type="button" className="changes-extend" data-guide-target="changes.action.deadline" onClick={() => {
-                  setExtending(row);
-                  setExtendUntil(row.extensionRequest ? (row.suggestedExtensionUntil || "") : (row.deadline.extensionUntil || ""));
-                  setExtendReason(row.extensionRequest ? row.extensionRequest.reason : (row.deadline.extensionReason || ""));
-                }}>
-                  تمديد
+              {canExtend && onExtend ? (
+                <button type="button" className="changes-extend" data-guide-ignore="يفتح ورقة الاستثناء في «مواعيد التسليم» على هذا القسم — التطبيق هناك هو الفعل" onClick={() => onExtend(row)}>
+                  {row.extensionRequest ? "نظر الطلب" : row.deadline.extensionUntil ? "استثناء" : "تمديد"}
                 </button>
               ) : null}
             </div>
@@ -440,31 +425,6 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
         </div>
       )}
 
-      {extending ? (
-        <div className="changes-extend-sheet" role="dialog" aria-label="تمديد التسليم">
-          <div className="changes-extend-card">
-            <header>
-              <strong>تمديد تسليم «{extending.sectionName}»</strong>
-              <button type="button" data-guide-ignore="إغلاق الورقة المنبثقة — لا يغيّر شيئاً" onClick={() => setExtending(null)} aria-label="إغلاق"><X /></button>
-            </header>
-            <label>
-              <span>حتى تاريخ</span>
-              <input type="date" value={extendUntil} onChange={(e) => setExtendUntil(e.target.value)} />
-            </label>
-            <label>
-              <span>السبب <small>اختياري</small></span>
-              <input value={extendReason} onChange={(e) => setExtendReason(e.target.value)} placeholder="تأخّر اعتماد المنتدبين" />
-            </label>
-            <div className="changes-extend-actions">
-              {/* تاريخٌ فارغ يرفع التمديد: القرار بالرفع واردٌ كالقرار بالمنح. */}
-              <SecondaryButton type="button" data-guide-ignore="تفريغ حقل التاريخ داخل الورقة — الحفظ هو ما يُنفّذ، وهو مسجّل" onClick={() => { setExtendUntil(""); }}>إلغاء التمديد</SecondaryButton>
-              <PrimaryButton type="button" data-guide-target="changes.action.deadline" disabled={busy} onClick={submitExtension}>
-                {busy ? "يحفظ…" : extendUntil ? "منح التمديد" : "رفع التمديد"}
-              </PrimaryButton>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }
@@ -1303,68 +1263,16 @@ function Report({ termId, termName, scope, role, onBack }: {
 
 /* ── الشاشة ─────────────────────────────────────────────────────────────── */
 
-/**
- * ── موعد التسليم ────────────────────────────────────────────────────────────
- *
- * حقلٌ واحد بجانب اسم الفصل، في الشاشة التي يفتحها رئيس التسجيل كل يوم. لا
- * شاشةَ إعداداتٍ يُبحث فيها عنه، ولا خطوتان: يكتب التاريخ ويحفظ.
- *
- * ولا يظهر لغيره أصلاً — فمن لا يملك القرار لا يُعرض عليه.
- */
-function DeadlineControl({ term, onSaved }: { term: AdTerm; onSaved: () => void }) {
-  const [value, setValue] = useState(term.AdTermSubmissionDeadline || "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  /* التاريخ يُعاد ضبطه عند تبدّل الفصل وحده.
-   *
-   * وكان يُعاد عند تبدّل الموعد أيضاً — والحفظُ نفسه هو ما يُبدّله. فرسالةُ
-   * «محفوظ» كانت تُمحى في اللحظة التي تستحقّ أن تظهر فيها، ويبقى الحافظُ بلا
-   * دليلٍ على أن حفظَه وقع. */
-  useEffect(() => { setValue(term.AdTermSubmissionDeadline || ""); setSaved(false); }, [term.AdTermId]);
-
-  const save = async () => {
-    setBusy(true); setError(null);
-    try {
-      await request("/api/approvals/deadline", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ termId: term.AdTermId, deadline: value }),
-      });
-      setSaved(true);
-      onSaved();
-    } catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  };
-
-  const dirty = (value || "") !== (term.AdTermSubmissionDeadline || "");
-
-  return (
-    <div className="changes-deadline-control">
-      <label>
-        <span>آخر موعد لتسليم الجداول</span>
-        <input type="date" value={value} onChange={(e) => { setValue(e.target.value); setSaved(false); }} />
-      </label>
-      {dirty ? (
-        <PrimaryButton type="button" data-guide-target="changes.action.deadline" disabled={busy} onClick={save}>
-          {busy ? "يحفظ…" : value ? "أثبِت الموعد" : "ارفع الموعد"}
-        </PrimaryButton>
-      ) : saved ? (
-        <span className="changes-deadline-saved"><Check aria-hidden="true" /> محفوظ، وظاهرٌ لكل الأقسام</span>
-      ) : (
-        <span className="changes-deadline-hint">يظهر لكل قسمٍ فوق جدوله</span>
-      )}
-      {error ? <Notice type="error">{error}</Notice> : null}
-    </div>
-  );
-}
-
 export default function ScheduleChanges({ role, scope }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
   const [opened, setOpened] = useState<{ collegeId: number; sectionId: number; collegeName?: string; sectionName?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  /* الوارد يُقرأ مرّةً ويُسلَّم للوحة مواعيد التسليم فوقه. */
+  const [inboxRows, setInboxRows] = useState<InboxRow[] | null>(null);
+  const [extendFor, setExtendFor] = useState<{ row: InboxRow; nonce: number } | null>(null);
+  const [panelFocus, setPanelFocus] = useState<{ collegeId: number; sectionId: number; nonce: number } | null>(null);
 
   const loadTerms = useCallback(async () => {
     try {
@@ -1377,7 +1285,7 @@ export default function ScheduleChanges({ role, scope }: Props) {
   }, []);
 
   useEffect(() => { void loadTerms(); }, [loadTerms]);
-  useEffect(() => { setOpened(null); }, [termId]);
+  useEffect(() => { setOpened(null); setInboxRows(null); }, [termId]);
   /* ── الإشعار يفتح على قسمه (N16) ─────────────────────────────────────
      يُؤخذ التركيز مرّةً بعد أن يُعرف الفصل: فصلُ الإشعار إن اختلف، ثم القسم.
      ويأتي بعد مسح «المفتوح» عند تغيّر الفصل، فلا يُمحى ما فتحه. */
@@ -1389,6 +1297,8 @@ export default function ScheduleChanges({ role, scope }: Props) {
     if (!focus) return;
     if (focus.termId && focus.termId !== termId && terms.some(row => Number(row.AdTermId) === focus.termId)) { setTermId(focus.termId); return; }
     focusRef.current = null;
+    /* إشعارُ الموعد وطلبُ التمديد يفتحان «مواعيد التسليم»، لا تقرير القسم. */
+    if (focus.panel === "deadlines") { setPanelFocus({ collegeId: focus.collegeId, sectionId: focus.sectionId, nonce: Date.now() }); return; }
     if (focus.sectionId) setOpened({ collegeId: focus.collegeId, sectionId: focus.sectionId });
   }, [termId, terms]);
 
@@ -1431,10 +1341,18 @@ export default function ScheduleChanges({ role, scope }: Props) {
 
       {error ? <Notice type="error">{error}</Notice> : null}
 
-      {role.canManageDeadline && term ? (
-        <Surface className="changes-deadline-surface">
-          <DeadlineControl term={term} onSaved={() => { setReloadKey(key => key + 1); void loadTerms(); }} />
-        </Surface>
+      {/* ── مواعيد التسليم: الموضعُ الوحيد الذي يُكتب منه الموعدُ واستثناءاتُه ── */}
+      {termId && !active && term ? (
+        <SubmissionDeadlines
+          terms={terms}
+          termId={termId}
+          onTermChange={(id) => setTermId(id)}
+          rows={inboxRows}
+          canEdit={role.canManageDeadline}
+          onChanged={() => { setReloadKey(key => key + 1); void loadTerms(); }}
+          extendFor={extendFor}
+          focus={panelFocus}
+        />
       ) : null}
 
       {!termId ? (
@@ -1449,6 +1367,8 @@ export default function ScheduleChanges({ role, scope }: Props) {
             terms={terms}
             onTermChange={(id) => setTermId(id)}
             canExtend={role.canManageDeadline}
+            onLoaded={setInboxRows}
+            onExtend={(row) => setExtendFor({ row, nonce: Date.now() })}
             onOpen={(row) => setOpened({ collegeId: row.collegeId, sectionId: row.sectionId, collegeName: row.collegeName, sectionName: row.sectionName })}
           />
         </Surface>

@@ -26,6 +26,8 @@ export interface CenterNotification {
   /** فصلُ البند — يضعه الخادم؛ الجرسُ يقرأ الجاري وفصلَ التخطيط معاً (N18). */
   termId?: number;
   termName?: string;
+  /** لوحةٌ في الشاشة يُفتح عليها البند (مواعيد التسليم). */
+  panel?: "deadlines";
 }
 
 export interface CenterScope {
@@ -170,8 +172,8 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       items.push({
         id: "deadline-missing", tone: "action",
         title: "حدّد موعد تسليم الجداول لهذا الفصل",
-        detail: "موعدٌ واحد لكل الأقسام، ثم التمديد لمن يحتاج من القسم نفسه.",
-        view: routeFor(role, "approval"),
+        detail: "موعدٌ واحد لكل الأقسام من «مواعيد التسليم»، ثم الاستثناءات بالأيام لمن يحتاج.",
+        view: routeFor(role, "approval"), panel: "deadlines",
       });
     }
     /* ── طلبُ تمديد (N25) ─────────────────────────────────────────────────
@@ -185,7 +187,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           id: key(scope, `extension-request-${ask.at || ""}`), tone: "action",
           title: `${placeOf(scope)} يطلب تمديد موعد التسليم`,
           detail: [ask.until ? `حتى ${day(ask.until)}` : ask.days ? countOf(ask.days, AR.day) : "", ask.reason || ""].filter(Boolean).join(" — ") || scope.collegeName,
-          view: routeFor(role, "approval"), at: ask.at, ...target(scope),
+          view: routeFor(role, "approval"), panel: "deadlines", at: ask.at, ...target(scope),
         });
       }
     }

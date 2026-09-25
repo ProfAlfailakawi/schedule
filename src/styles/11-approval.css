@@ -433,23 +433,6 @@
   border:1px solid var(--line-strong);border-radius:var(--r-sm);
   background:var(--surface);color:var(--ink);
 }
-.changes-deadline-surface{padding:14px 16px}
-.changes-deadline-control{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
-.changes-deadline-control label{display:grid;gap:6px}
-.changes-deadline-control label>span{font-size:.85rem;font-weight:700}
-.changes-deadline-control input{
-  min-block-size:40px;padding:8px 11px;font:inherit;
-  border:1px solid var(--line-strong);border-radius:var(--r-sm);
-  background:var(--surface);color:var(--ink);
-}
-.changes-deadline-control input:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
-.changes-deadline-hint{color:var(--muted);font-size:.84rem;padding-block-end:11px}
-.changes-deadline-saved{
-  display:inline-flex;align-items:center;gap:6px;padding-block-end:11px;
-  color:var(--success);font-size:.84rem;font-weight:600;
-}
-.changes-deadline-saved svg{inline-size:15px;block-size:15px}
-
 /* ── سطر الإضافات المنتظِرة، ولوحة توقيع رئيس القسم ────────────────────
    سطرٌ واحد فوق الجدول، وزرٌّ واحد. ولا يظهر أيٌّ منهما إلا حين يكون
    مطلوباً فعلاً — فرئيس القسم الذي لا ينتظره شيء لا يرى شيئاً.          */
@@ -513,14 +496,12 @@
 .approval-history strong{color:var(--ink);font-weight:600}
 
 @media (max-width:640px){
-  .changes-deadline-control{align-items:stretch}
-  .changes-deadline-control label{flex:1 1 100%}
   .approval-bar{align-items:stretch}
   .approval-bar .btn{inline-size:100%;justify-content:center}
 }
 
 @media print{
-  .changes-term-picker,.changes-deadline-surface{display:none !important}
+  .changes-term-picker,.sd-panel{display:none !important}
 }
 
 /* ── عمود الاعتماد في ميزان الأقسام ────────────────────────────────────

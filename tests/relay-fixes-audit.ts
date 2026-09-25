@@ -313,7 +313,10 @@ const noDeadline = readDeadline({}, "2026-10-01");
   const request = route('app.post("/api/approvals/extension-request"');
   check(request.includes("extensionRequest: { by:") && request.includes("signatureStage(req.user?.Role)"), "R17 المسارُ للجنة ورئيس القسم ويحفظ الطلب");
   check(route('app.get("/api/approvals/inbox"').includes("extensionRequest: approval.extensionRequest"), "R17 والواردُ يعرضه");
-  check(changes.includes("row.suggestedExtensionUntil") && bar.includes("طلب تمديد"), "R17 و«تمديد» يُفتح مملوءاً، والشريطُ يطلبه");
+  /* «تمديد» في الوارد يفتح ورقة الاستثناء في «مواعيد التسليم» مملوءةً بأيام الطلب وسببه. */
+  const deadlinesPanel = fs.readFileSync(path.join(process.cwd(), "src/components/SubmissionDeadlines.tsx"), "utf8");
+  check(changes.includes("onExtend(row)") && deadlinesPanel.includes("ask.days") && deadlinesPanel.includes("ask.reason") && bar.includes("طلب تمديد"),
+    "R17 و«تمديد» يُفتح مملوءاً، والشريطُ يطلبه");
 }
 
 /* ── R18: سجلُّ الدورة ──────────────────────────────────────────────────────── */

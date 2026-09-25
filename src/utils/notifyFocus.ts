@@ -14,13 +14,16 @@ export interface NotifyFocus {
   collegeId: number;
   sectionId: number;
   termId?: number;
+  /** لوحةٌ بعينها في الشاشة: «deadlines» تفتح مواعيد التسليم بدل تقرير القسم. */
+  panel?: "deadlines";
   at: number;
 }
 
-export function writeNotifyFocus(item: { view?: string; collegeId?: number; sectionId?: number; termId?: number }, now: number = Date.now()): void {
+export function writeNotifyFocus(item: { view?: string; collegeId?: number; sectionId?: number; termId?: number; panel?: "deadlines" }, now: number = Date.now()): void {
   try {
-    if (item.collegeId) sessionStorage.setItem(NOTIFY_FOCUS_KEY, JSON.stringify({
-      view: item.view, collegeId: item.collegeId, sectionId: item.sectionId || 0, termId: item.termId || 0, at: now,
+    if (item.collegeId || item.panel) sessionStorage.setItem(NOTIFY_FOCUS_KEY, JSON.stringify({
+      view: item.view, collegeId: item.collegeId || 0, sectionId: item.sectionId || 0, termId: item.termId || 0,
+      ...(item.panel ? { panel: item.panel } : {}), at: now,
     }));
   } catch { /* تخزينٌ ممنوع: تُفتح الشاشةُ على نطاقها المعتاد */ }
 }
@@ -33,7 +36,10 @@ export function takeNotifyFocus(view: string, now: number = Date.now()): NotifyF
     const focus = JSON.parse(raw) as NotifyFocus;
     if (focus?.view !== view) return null;
     sessionStorage.removeItem(NOTIFY_FOCUS_KEY);
-    if (!focus.collegeId || !(now - Number(focus.at || 0) < NOTIFY_FOCUS_TTL_MS)) return null;
-    return { ...focus, collegeId: Number(focus.collegeId), sectionId: Number(focus.sectionId || 0), termId: Number(focus.termId || 0) || undefined };
+    if ((!focus.collegeId && focus.panel !== "deadlines") || !(now - Number(focus.at || 0) < NOTIFY_FOCUS_TTL_MS)) return null;
+    return {
+      ...focus, collegeId: Number(focus.collegeId || 0), sectionId: Number(focus.sectionId || 0), termId: Number(focus.termId || 0) || undefined,
+      panel: focus.panel === "deadlines" ? "deadlines" : undefined,
+    };
   } catch { return null; }
 }

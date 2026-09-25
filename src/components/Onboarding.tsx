@@ -352,7 +352,7 @@ const REGISTRAR_SCENES: Scene[] = [
 ];
 
 const REGISTRAR_HEAD_EXTRA: Scene = {
-  key: "reg-deadline", eyebrow: "الموعد", title: "أنت وحدك تضع موعد التسليم", copy: "وتمدّده لقسمٍ بعينه بسببٍ مكتوب؛ طلبات التمديد تصلك في الجرس.", icon: <AlarmClockOff />,
+  key: "reg-deadline", eyebrow: "الموعد", title: "أنت وحدك تضع موعد التسليم", copy: "من لوحة «مواعيد التسليم» أعلى الوارد: موعدٌ واحد لكل الأقسام، ثم استثناءاتٌ بالأيام بسببٍ مكتوب؛ وطلبات التمديد تُمنح أو تُرفض منها بضغطة.", icon: <AlarmClockOff />,
 };
 
 const DEAN_SCENES: Scene[] = [

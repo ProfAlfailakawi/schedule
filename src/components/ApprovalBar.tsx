@@ -21,11 +21,12 @@ import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
 } from "../utils/approvalWorkflow";
 import { AR, countOf, oblique } from "../utils/arabicCount";
+import { deadlineDateLong, departmentDeadlineLine, lastExtensionRejection } from "../utils/submissionDeadlines";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
 interface DeadlineShape {
   effective?: string; past: boolean; daysLeft?: number; tone: string;
-  extensionUntil?: string; extensionReason?: string;
+  termDeadline?: string; extensionUntil?: string; extensionReason?: string;
 }
 
 interface Payload {
@@ -237,12 +238,15 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   /* ── الموعد: عدٌّ تنازليّ يُقرأ، وطلبُ تمديدٍ حين يقترب ─────────────────── */
   const deadline = state.deadline;
+  /* «موعدكم: الأحد 11 أكتوبر 2026 · بقي 15 يوماً (استثناء حتى …)» — السطرُ
+     نفسه الذي تبنيه لوحة «مواعيد التسليم» (utils/submissionDeadlines). */
   const countdown = deadline?.effective && !accepted && !locked
-    ? deadlineGone ? `انقضى موعد التسليم (${arabicDate(deadline.effective)})`
-      : deadline.daysLeft === 0 ? "آخر موعد للتسليم اليوم"
-      : `بقي ${countOf(Number(deadline.daysLeft || 0), AR.day)} على موعد التسليم`
+    ? deadlineGone
+      ? `انقضى موعدكم ${deadlineDateLong(deadline.effective)}${deadline.extensionUntil ? " (استثناء)" : ""}`
+      : departmentDeadlineLine({ ...deadline, past: false })
     : "";
   const extensionRequest = approval.extensionRequest;
+  const rejected = !extensionRequest ? lastExtensionRejection(approval) : null;
   const events = [...(approval.events || [])].reverse();
 
   const Icon =
@@ -275,6 +279,8 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           <small className="approval-countdown" data-past={deadlineGone || undefined}>
             <Clock3 aria-hidden="true" /> {countdown}
             {extensionRequest ? ` · طُلب تمديد ${countOf(extensionRequest.days, oblique(AR.day))} (${arabicDate(extensionRequest.at)}) — بانتظار رئيس التسجيل` : ""}
+            {deadline?.extensionUntil && deadline.extensionReason && !deadlineGone ? ` — ${deadline.extensionReason}` : ""}
+            {rejected ? ` · رُفض طلب التمديد (${arabicDate(rejected.at)})${rejected.detail ? `: ${rejected.detail}` : ""}` : ""}
           </small>
         ) : null}
         {/* الخلافُ الذي تكرّر ثلاثاً يُعرض لرئيس القسم هنا — وهذا ما تَعِد به شاشةُ الملاحظات. */}
