@@ -1,7 +1,7 @@
 import type {
   AdCollege, AdCollegeUserAssign, AdCourse, AdInstructor, AdRoom, AdSection,
   AdTerm, FSchedule, FormName, FormSecurity, ScheduleApproval, ScheduleComment,
-  ScheduleVersion, SystemUser
+  ScheduleVersion, SystemUser, MasterBuilding, MasterRoom
 } from "../types";
 import { generateSyntheticCivilId } from "../utils/civilId";
 import { ACADEMIC_ROLES, roleDefinition, type AcademicRole } from "../utils/academicRoles";
@@ -47,6 +47,8 @@ export interface DemoSandboxState {
      يسلّم العميدَ حسابَه. ومجموعةٌ غائبةٌ هنا تعني شاشةً تنكسر في التجربة
      وحدها، وهو أسوأ موضعٍ ينكسر فيه شيء: حيث يُختبر. */
   scheduleApprovals: any[];
+  /* سجلُّ المباني والقاعات: بدونه لا يُحفظ موعدٌ في الصندوق (locationPreflight). */
+  locationBuildings: MasterBuilding[]; locationRooms: MasterRoom[];
 }
 
 function syntheticInstructors(): AdInstructor[] {
@@ -69,23 +71,81 @@ function syntheticCourses(): AdCourse[] {
   });
 }
 
-/* Rooms and instructors belong to ONE college each.
+/* ── سجلُّ مبانٍ وقاعاتٍ للبيئة التجريبية ─────────────────────────────────
  *
- * The board loads a single college, but the "outside-scope" sweep compares it
- * against every row in the term — so any hall or instructor shared across two
- * colleges surfaces on the board as «خارج النطاق». The old generator drew from
- * one global pool of 8 halls and 12 instructors with a small modulus, so almost
- * every synthetic row collided with a same-hour twin in a sibling college and
- * the whole demo board lit up dashed-red on first sight. Giving each college its
- * own disjoint band of halls and instructors makes a cross-college clash
- * impossible by construction, while the in-college conflicts that power the
- * "معالجة التعارضات" showcase are untouched — a college's own sections still
- * share its band, so same-hall / same-instructor overlaps within it remain. */
-const ROOM_BANDS: Record<number, ReadonlyArray<readonly [string, string]>> = {
-  1: [["A", "101"], ["A", "203"], ["B", "110"]],
-  2: [["B", "205"], ["C", "301"], ["C", "315"]],
-  3: [["D", "120"], ["D", "220"]],
-};
+ * كلُّ كتابةٍ على موعد (إضافة، تعديل، نقل) تمرّ بـlocationPreflight، وهو يطلب
+ * مبنى وقاعةً من سجلّ المباني الرسمي. والصندوقُ كان بلا سجلّ، وصفوفُه قاعاتٌ
+ * نصّية («A/101») لا ترتبط بشيء — فلم يكن في البيئة التجريبية موعدٌ واحدٌ
+ * يُعدَّل أو يُنقل: كلُّ حفظٍ يُرفض «اختر مبنى رسميًا من سجل المباني».
+ *
+ * فللصندوق سجلُّه الوهمي بالشكل الذي يقرؤه النظام في الحقيقي: مبنىً بكودٍ رسميّ
+ * الشكل (فرعٌ من ثلاثة أرقام — 9xx لا يوجد في الجامعة —، حرفُ موقع، رقمُ مبنى)
+ * لكل كلية، وقاعاتٌ لكل قسم، ومختبرٌ مشترك بين قسمَي كلية العلوم. وكلُّ صفٍّ
+ * مبذور مرتبطٌ بمبناه وقاعته (buildingId/roomId، والكودان الرسميان، و«VERIFIED»).
+ *
+ * والقاعاتُ لقسمها: فلا تظهر قاعةُ قسمٍ خارجَ كليته، ولا يقع تعارضٌ عابرٌ
+ * للكليات — وهو ما كان يُشعل اللوحة كلّها «خارج النطاق» في أول نظرة. */
+interface DemoBuildingSeed {
+  prefix: string; siteLetter: string; number: string; collegeId: number; name: string;
+  rooms: ReadonlyArray<readonly [hall: string, sectionIds: readonly number[], description: string]>;
+}
+const DEMO_BUILDINGS: readonly DemoBuildingSeed[] = [
+  { prefix: "901", siteLetter: "A", number: "01", collegeId: 1, name: "مبنى العلوم التطبيقية", rooms: [
+    ["101", [1], "قاعة ذكية 40 مقعدًا"], ["102", [1], "قاعة محاضرات 35 مقعدًا"], ["203", [1], "مختبر حاسب"],
+    ["104", [2], "قاعة بيانات 30 مقعدًا"], ["110", [2], "قاعة محاضرات 45 مقعدًا"],
+  ] },
+  { prefix: "901", siteLetter: "A", number: "02", collegeId: 1, name: "مبنى المختبرات المشتركة", rooms: [
+    ["L01", [1, 2], "مختبر مشترك للحاسب والبيانات"],
+  ] },
+  { prefix: "902", siteLetter: "B", number: "01", collegeId: 2, name: "مبنى الأعمال والابتكار", rooms: [
+    ["205", [3], "قاعة نقاش"], ["206", [3], "قاعة محاضرات"], ["301", [4], "مختبر ابتكار"], ["315", [4], "قاعة مشاريع"],
+  ] },
+  { prefix: "903", siteLetter: "D", number: "01", collegeId: 3, name: "مبنى التربية المستقبلية", rooms: [
+    ["120", [5], "مختبر تعلم رقمي"], ["220", [5], "قاعة نقاش"], ["221", [5], "قاعة مرنة"],
+  ] },
+];
+const demoBuildingCode = (b: DemoBuildingSeed) => `${b.prefix}${b.siteLetter}${b.number}`;
+const demoBuildingId = (b: DemoBuildingSeed) => `building_${demoBuildingCode(b)}`;
+const demoRoomId = (b: DemoBuildingSeed, hall: string) => `room_${demoBuildingCode(b)}_${hall}`;
+
+/** قاعةٌ واحدة من سجلّ الصندوق بما يكتبه الصفُّ عنها. */
+interface DemoHall { buildingId: string; roomId: string; code: string; hall: string; sectionIds: readonly number[]; collegeId: number; description: string; }
+const DEMO_HALLS: readonly DemoHall[] = DEMO_BUILDINGS.flatMap(b => b.rooms.map(([hall, sectionIds, description]) => ({
+  buildingId: demoBuildingId(b), roomId: demoRoomId(b, hall), code: demoBuildingCode(b), hall, sectionIds, collegeId: b.collegeId, description,
+})));
+const hallsForSection = (sectionId: number) => DEMO_HALLS.filter(h => h.sectionIds.includes(sectionId));
+/** ما يكتبه الصفُّ عن قاعته — الشكلُ نفسه الذي يُخرجه locationPreflight عند الحفظ. */
+function hallFields(hall: DemoHall): Partial<FSchedule> {
+  return { buildingId: hall.buildingId, roomId: hall.roomId, AdRoomCode: hall.code, AdRoomHall: hall.hall, locationStatus: "VERIFIED" };
+}
+
+function demoLocationRegistry(schedules: FSchedule[]): { buildings: MasterBuilding[]; rooms: MasterRoom[] } {
+  const at = new Date().toISOString();
+  const usage = (key: "buildingId" | "roomId", id: string) => schedules.filter(r => (r as any)[key] === id).length;
+  const evidence = ["سجلٌّ وهمي للبيئة التجريبية — لا يمثّل مبنىً حقيقياً."];
+  const buildings: MasterBuilding[] = DEMO_BUILDINGS.map(b => {
+    const sectionIds = [...new Set(b.rooms.flatMap(([, ids]) => ids))];
+    return {
+      id: demoBuildingId(b), officialCode: demoBuildingCode(b), sitePrefix: `${b.prefix}${b.siteLetter}`,
+      prefix: b.prefix, siteLetter: b.siteLetter, buildingNumber: String(Number(b.number)),
+      siteName: "", branchName: colleges.find(c => c.AdCollegeId === b.collegeId)?.AdCollegeName || "", description: b.name,
+      active: true, aliases: [], collegeIds: [b.collegeId], sectionIds,
+      historicalUsageCount: usage("buildingId", demoBuildingId(b)), firstTermId: 1, lastTermId: 1, roomCount: b.rooms.length,
+      confidence: "CONFIRMED", source: "DEMO_SANDBOX", adminVerified: true, evidence, auditHistory: [],
+      createdAt: at, updatedAt: at, lastVerifiedAt: at,
+    };
+  });
+  const rooms: MasterRoom[] = DEMO_HALLS.map(h => ({
+    id: h.roomId, buildingId: h.buildingId, buildingCode: h.code, canonicalCode: h.hall, active: true, aliases: [],
+    collegeIds: [h.collegeId], sectionIds: [...h.sectionIds], primarySectionIds: [...h.sectionIds],
+    shared: h.sectionIds.length > 1, sharedConfidence: "CONFIRMED",
+    historicalUsageCount: usage("roomId", h.roomId), firstTermId: 1, lastTermId: 1,
+    confidence: "CONFIRMED", source: "DEMO_SANDBOX", adminVerified: true, evidence, auditHistory: [],
+    createdAt: at, updatedAt: at, lastVerifiedAt: at,
+  }));
+  return { buildings, rooms };
+}
+
 const INSTRUCTOR_BANDS: Record<number, ReadonlyArray<number>> = {
   1: [1, 2, 3, 4],
   2: [5, 6, 7, 8],
@@ -115,18 +175,28 @@ export const DEMO_CONFLICT_SECTION_ID = 4;
 function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   const times = [["08:00", "09:15"], ["09:30", "10:45"], ["11:00", "12:15"], ["12:30", "13:45"], ["14:00", "15:15"], ["15:30", "16:45"]];
   const positionInCollege = new Map<number, number>();
+  const positionInSection = new Map<number, number>();
+  /* قاعةٌ مشغولة في نمطٍ وساعة — فلا يُسند صفّان القاعةَ نفسها في الموعد نفسه. */
+  const taken = new Set<string>();
   const rows: FSchedule[] = Array.from({ length: 30 }, (_, index) => {
     const course = courses[index % courses.length];
-    const roomBand = ROOM_BANDS[course.AdCollegeId] ?? ROOM_BANDS[1];
     const instructorBand = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
     const k = positionInCollege.get(course.AdCollegeId) ?? 0;
     positionInCollege.set(course.AdCollegeId, k + 1);
-    /* pattern alternates, the hour advances every two rows, the hall and the
-       doctor advance every twelve — so two rows at one pattern+hour differ in both. */
+    const j = positionInSection.get(course.AdSectionId) ?? 0;
+    positionInSection.set(course.AdSectionId, j + 1);
+    /* pattern alternates, the hour advances every two rows; the doctor advances
+       with the hour and every twelve rows — so two rows at one pattern+hour
+       never share a doctor. */
     const pattern = k % 2;
     const [start, end] = times[Math.floor(k / 2) % times.length];
     const lap = Math.floor(k / (2 * times.length));
-    const [code, hall] = roomBand[lap % roomBand.length];
+    /* القاعة: من قاعات القسم، تدور مع ترتيب الصفّ في قسمه — فتنتشر محاضراتُ
+       القسم على قاعاته كما تنتشر في الحقيقة — وتتخطّى ما هو مشغولٌ في الموعد. */
+    const band = hallsForSection(course.AdSectionId);
+    const slot = `${pattern}|${start}`;
+    const hall = band.map((_, step) => band[(j + step) % band.length]).find(h => !taken.has(`${slot}|${h.roomId}`)) ?? band[j % band.length];
+    taken.add(`${slot}|${hall.roomId}`);
     return {
       id: index + 1, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
       AdCourseId: course.AdCourseId, AdCourseName: course.CourseName,
@@ -135,25 +205,27 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       fsunday: pattern === 0, fmonday: pattern === 1,
       ftuesday: pattern === 0, fwednesday: pattern === 1,
       fthursday: false, fstarttime: start, fendtime: end,
-      AdRoomCode: code, AdRoomHall: hall, fdetail: "", rev: 0,
-    };
+      ...hallFields(hall), fdetail: "", rev: 0,
+    } as FSchedule;
   });
   /* The two deliberate conflicts, in the drafting department only. */
   const drafting = rows.filter(row => Number(row.AdSectionId) === DEMO_CONFLICT_SECTION_ID);
   if (drafting.length >= 3) {
     const [anchor, roomClash, teacherClash] = drafting;
+    const sameSlot = (other: FSchedule) => other.fstarttime === anchor.fstarttime && Boolean(other.fsunday) === Boolean(anchor.fsunday)
+      && Boolean(other.fmonday) === Boolean(anchor.fmonday);
     Object.assign(roomClash, {
       fsunday: anchor.fsunday, fmonday: anchor.fmonday, ftuesday: anchor.ftuesday, fwednesday: anchor.fwednesday, fthursday: anchor.fthursday,
-      fstarttime: anchor.fstarttime, fendtime: anchor.fendtime, AdRoomCode: anchor.AdRoomCode, AdRoomHall: anchor.AdRoomHall,
+      fstarttime: anchor.fstarttime, fendtime: anchor.fendtime,
+      buildingId: anchor.buildingId, roomId: anchor.roomId, AdRoomCode: anchor.AdRoomCode, AdRoomHall: anchor.AdRoomHall,
       fdetail: "حالة تجريبية مقصودة: تعارض قاعة مع موعدٍ آخر في القسم نفسه — لاستعراض «معالجة التعارضات».",
     });
-    const freeHall = (ROOM_BANDS[anchor.AdCollegeId] ?? ROOM_BANDS[1]).find(([c, h]) =>
-      !rows.some(other => other !== teacherClash && other.fstarttime === anchor.fstarttime && Boolean(other.fsunday) === Boolean(anchor.fsunday)
-        && Boolean(other.fmonday) === Boolean(anchor.fmonday) && other.AdRoomCode === c && other.AdRoomHall === h));
+    const freeHall = hallsForSection(DEMO_CONFLICT_SECTION_ID).find(h =>
+      !rows.some(other => other !== teacherClash && sameSlot(other) && other.roomId === h.roomId));
     Object.assign(teacherClash, {
       fsunday: anchor.fsunday, fmonday: anchor.fmonday, ftuesday: anchor.ftuesday, fwednesday: anchor.fwednesday, fthursday: anchor.fthursday,
       fstarttime: anchor.fstarttime, fendtime: anchor.fendtime, AdInstructorId: anchor.AdInstructorId,
-      ...(freeHall ? { AdRoomCode: freeHall[0], AdRoomHall: freeHall[1] } : {}),
+      ...(freeHall ? hallFields(freeHall) : {}),
       fdetail: "حالة تجريبية مقصودة: الأستاذ نفسه في قاعتين في الساعة نفسها — لاستعراض «معالجة التعارضات».",
     });
   }
@@ -242,7 +314,8 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
   if (stage.length >= 4) {
     const baseline = structuredClone(stage);
     // خانتان تغيّرتا منذ ما رآه التسجيل: قاعةٌ ووقت — فيُقرآن «معدّلَين».
-    baseline[0].AdRoomHall = "999";
+    const movedFrom = hallsForSection(1).find(h => h.roomId !== baseline[0].roomId)!;
+    Object.assign(baseline[0], hallFields(movedFrom));
     baseline[1].fstarttime = "07:00"; baseline[1].fendtime = "08:15";
     // صفٌّ في الجدول الحيّ ليس في نسخة التسجيل — فيُقرأ «مضافاً».
     baseline.pop();
@@ -252,7 +325,7 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
     baseline.push({
       ...structuredClone(stage[0]), id: removedId,
       AdCourseName: "مادةٌ أُلغيت بعد المراجعة", SCode: "09",
-      fstarttime: "16:00", fendtime: "17:15", AdRoomCode: "A", AdRoomHall: "101",
+      fstarttime: "16:00", fendtime: "17:15", ...hallFields(hallsForSection(1)[0]),
     });
     const versionId = "demo-ver-cs-round1";
     versions.push({
@@ -369,10 +442,8 @@ export function createDemoSandboxState(): DemoSandboxState {
     ...DEMO_ROLE_SEEDS.flatMap(seed => demoAssignsFor(seed.role).map(a => ({ legacyId: ++assignId, SystemUserId: seed.id, AdCollegeId: a.AdCollegeId, AdSectionId: a.AdSectionId }))),
   ];
 
-  const rooms: AdRoom[] = [
-    ["A", "101", "قاعة ذكية 40 مقعدًا"], ["A", "203", "مختبر حاسب"], ["B", "110", "قاعة محاضرات"], ["B", "205", "مختبر ابتكار"],
-    ["C", "301", "قاعة مرنة"], ["C", "315", "قاعة مشاريع"], ["D", "120", "مختبر تعلم رقمي"], ["D", "220", "قاعة نقاش"],
-  ].map((row, index) => ({ AdRoomId: index + 1, AdRoomCode: row[0], AdRoomHall: row[1], AdRoomDescrip: row[2] }));
+  const rooms: AdRoom[] = DEMO_HALLS.map((hall, index) => ({ AdRoomId: index + 1, AdRoomCode: hall.code, AdRoomHall: hall.hall, AdRoomDescrip: hall.description }));
+  const registry = demoLocationRegistry(schedules);
 
   const seeded = seedApprovalUniverse(schedules);
 
@@ -384,5 +455,6 @@ export function createDemoSandboxState(): DemoSandboxState {
     auditLogs: [], scheduleVersions: seeded.versions, scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: seeded.comments,
     studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [],
     campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: seeded.approvals,
+    locationBuildings: registry.buildings, locationRooms: registry.rooms,
   };
 }

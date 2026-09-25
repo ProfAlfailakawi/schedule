@@ -14,6 +14,8 @@ import fs from "fs";
 import path from "path";
 import { Repository } from "../src/db/repository";
 import { createDataContextKey } from "../src/server/dataContextCache";
+import { createDemoSandboxState } from "../src/db/demoSandbox";
+import { locationPreflight } from "../src/server/locationRegistryEngine";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -86,7 +88,39 @@ async function p1Behaviour() {
   check(realCount === (await Repository.getLocationBuildings()).length, "والحقيقيُّ بعده يقرأ سجلَّه هو، لا ما حفظه الزائر");
 }
 
+/* ── P2: للصندوق سجلُّه، وكلُّ صفٍّ مبذور يمرّ بفحص الموقع عند الحفظ ──────── */
+function p2Registry() {
+  const state = createDemoSandboxState();
+  const registry = { buildings: state.locationBuildings, rooms: state.locationRooms };
+  check(state.locationBuildings.length >= state.colleges.length, `لكل كليةٍ مبنىً على الأقل (${state.locationBuildings.length} مبانٍ)`);
+  check(state.colleges.every(c => state.locationBuildings.some(b => b.collegeIds.includes(c.AdCollegeId))), "كلُّ كليةٍ تجريبية لها مبناها في السجل");
+  check(state.locationBuildings.every(b => b.active && b.confidence === "CONFIRMED" && b.adminVerified && /^\d{3}[A-Z]\d{2}$/.test(b.officialCode)),
+    "المباني فعّالةٌ مؤكَّدةٌ بكودٍ رسميّ الشكل");
+  check(state.locationBuildings.every(b => !b.officialCode.startsWith("01")), "وكودُها وهميٌّ لا يطابق فرعاً حقيقياً");
+  check(state.locationRooms.every(r => r.active && r.confidence === "CONFIRMED" && state.locationBuildings.some(b => b.id === r.buildingId && b.officialCode === r.buildingCode)),
+    "كلُّ قاعةٍ فعّالةٌ مؤكَّدةٌ ومبناها في السجل");
+  check(state.sections.every(sec => state.locationRooms.some(r => r.sectionIds.includes(sec.AdSectionId))), "لكل قسمٍ قاعاتُه");
+  const refused = state.schedules.filter(row => !locationPreflight(row, registry, { collegeId: row.AdCollegeId, sectionId: row.AdSectionId }).ok);
+  check(refused.length === 0, `كلُّ صفٍّ مبذور يجتاز locationPreflight — فيُعدَّل ويُنقل${refused.length ? ` (رُفض: ${refused.map(r => r.id).join("، ")})` : ""}`);
+  check(state.schedules.every(row => row.locationStatus === "VERIFIED" && row.buildingId && row.roomId),
+    "وكلُّ صفٍّ مرتبطٌ بمبناه وقاعته (VERIFIED)");
+  check(state.schedules.every(row => {
+    const room = state.locationRooms.find(r => r.id === row.roomId);
+    const building = state.locationBuildings.find(b => b.id === row.buildingId);
+    return room && building && row.AdRoomCode === building.officialCode && row.AdRoomHall === room.canonicalCode;
+  }), "والكودان المكتوبان في الصفّ هما كودا السجلّ");
+  const csHalls = new Set(state.schedules.filter(r => r.AdCollegeId === 1 && r.AdSectionId === 1).map(r => r.roomId));
+  check(csHalls.size >= 3, `محاضراتُ علوم الحاسب موزّعةٌ على قاعاتها (${csHalls.size})، لا في قاعةٍ واحدة`);
+  const perHall = new Map<string, number>();
+  state.schedules.forEach(r => perHall.set(String(r.roomId), (perHall.get(String(r.roomId)) || 0) + 1));
+  check(Math.max(...perHall.values()) <= 5, "ولا قاعةٌ تحمل أكثر من خمس محاضرات — فلا «نقطة اعتماد حساسة» مصطنعة");
+  const server = read("src/db/repository.ts");
+  check(server.includes("return [...(db.locationBuildings||[])];") && server.includes("return [...(db.locationRooms||[])];"),
+    "Repository يقرأ سجلَّ الصندوق داخل الجلسة التجريبية");
+}
+
 async function main() {
+  p2Registry();
   p1Structure();
   await p1Behaviour();
   console.log(`\n${passed} نجحت · ${failed} أخفقت`);

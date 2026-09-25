@@ -479,7 +479,7 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(server.includes("onSchedulesInvalidated(() => bellBlockingMemo.invalidate());")
     && fnBody("function listenForScheduleChangesAcrossInstances(").includes("bellBlockingMemo.invalidate();"),
     "R4 ويُمحى المحفوظ حين يتغيّر جدولٌ هنا أو في نسخةٍ أخرى");
-  check(server.includes("const key = `${Repository.currentDemoSessionId() || \"\"}:${termId}:${collegeId}:${sectionId}`;"), "R4 المفتاح يحمل جلسة العرض والفصل والقسم");
+  check(server.includes("const key = dataContextCacheKey(`${termId}:${collegeId}:${sectionId}`);"), "R4 المفتاح يحمل جلسة العرض (dataContextCacheKey) والفصل والقسم");
 }
 
 /* ── مراجعة 9: «اليوم» في الجرس بتوقيت الكويت ─────────────────────────── */
