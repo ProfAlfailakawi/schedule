@@ -36,7 +36,7 @@ items = buildNotifications({ role: "registrarDean", scopes: [scope({ status: "su
 check(items.every(item => item.tone !== "action"), "عميد التسجيل يطّلع ولا يُطلب منه قرار");
 // العميد
 items = buildNotifications({ role: "dean", scopes: [scope({ status: "accepted", rounds: accepted }), scope()] });
-check(items.some(item => item.title === "المعتمد 1 من 2 جداول"), "العميد: كم قسماً اعتُمد من الكل");
+check(items.some(item => item.title === "المعتمد 1 من جدولين"), "العميد: كم قسماً اعتُمد من الكل");
 check(items.some(item => item.title.includes("اعتُمد جدول")), "العميد: كل قسمٍ اعتُمد يظهر");
 check(items.every(item => item.tone !== "action"), "العميد لا يُطلب منه شيء");
 // الترتيب

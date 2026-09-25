@@ -1,6 +1,6 @@
 import { roomIdentityKey } from "./locationRegistry";
 import { requiredGapForDays } from "./scheduleRegulations";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, nounFor } from "./arabicCount";
 import { placeholderInstructorIds as placeholderIdsOf } from "./instructorIdentity";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
@@ -666,10 +666,10 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   const alerts:Array<{severity:"critical"|"warning"|"info";title:string;detail:string}>=[];
   const critical=conflicts.filter(isBlockingConflict).length;
   if(critical)alerts.push({severity:"critical",title:`${countOf(critical, AR.approvalBlocker)}`,detail:"حجز مزدوج يجب معالجته قبل الاعتماد."});
-  const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${longGap} أستاذ لديهم فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
-  if(lateRows)alerts.push({severity:"info",title:`${lateRows} موعداً متأخراً`,detail:`بعد ${scheduleClockForDisplay("16:00")}.`});
+  const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${countOf(longGap, AR.instructor)} ${nounFor(longGap, AR.hasPron)} فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
+  if(lateRows)alerts.push({severity:"info",title:`${countOf(lateRows, AR.appointment)} ${nounFor(lateRows, AR.lateAdj)}`,detail:`بعد ${scheduleClockForDisplay("16:00")}.`});
   if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`تفاوت ملحوظ بين أحمال الأيام · ${imbalance}%.`});
-  if(invalidRows)alerts.push({severity:"critical",title:`${invalidRows} سجل يحتاج بيانات`,detail:"موعد ناقص أو غير صالح."});
+  if(invalidRows)alerts.push({severity:"critical",title:`${countOf(invalidRows, AR.record)} ببيانات ناقصة`,detail:"موعد ناقص أو غير صالح."});
   if(!alerts.length)alerts.push({severity:"info",title:"الوضع مستقر",detail:"لا توجد ملاحظات حرجة."});
 
   const readiness=critical===0&&invalidRows===0? (score>=85?"ready":score>=70?"review":"needs-work") : "blocked";
@@ -718,7 +718,7 @@ export function conflictSolutions(row:FSchedule, allRows:FSchedule[], max=5){
   }
   const unique=new Map<string,any>();
   candidates.sort((a,b)=>a.score-b.score).forEach(item=>{const key=`${item.start}|${item.roomId}`;if(!unique.has(key))unique.set(key,item)});
-  return [...unique.values()].slice(0,max).map((item,index)=>({...item,rank:index+1,label:item.conflicts===0?"بدون مانع ظاهر":`${item.conflicts} مانع محتمل`,reason:item.roomChanged?"تغيير الوقت والقاعة لتحقيق أفضل مساحة متاحة":"الإبقاء على القاعة مع تحسين الوقت"}));
+  return [...unique.values()].slice(0,max).map((item,index)=>({...item,rank:index+1,label:item.conflicts===0?"بدون مانع ظاهر":`${countOf(item.conflicts, AR.blocker)} ${nounFor(item.conflicts, AR.possibleAdj)}`,reason:item.roomChanged?"تغيير الوقت والقاعة لتحقيق أفضل مساحة متاحة":"الإبقاء على القاعة مع تحسين الوقت"}));
 }
 
 export function autoScheduleProposal(targetRows:FSchedule[], allRows:FSchedule[]){

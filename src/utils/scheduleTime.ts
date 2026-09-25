@@ -1,3 +1,4 @@
+import { AR, nounFor } from "./arabicCount";
 /**
  * The single teaching-day contract shared by browser and server.
  * A view, suggestion and saved appointment must never disagree about it.
@@ -123,7 +124,7 @@ export function formatCompactDurationArabic(minutes: number | null | undefined):
  * Latin digits from tangling with whatever punctuation follows. */
 export function formatMinuteMetricArabic(minutes: number | null | undefined): string {
   const value = new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits: 1 }).format(Number(minutes) || 0);
-  return `⁧${value}⁩ دقيقة`;
+  return `⁧${value}⁩ ${nounFor(Number(minutes) || 0, AR.minute)}`;
 }
 
 

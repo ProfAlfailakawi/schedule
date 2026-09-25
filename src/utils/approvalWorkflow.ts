@@ -378,7 +378,7 @@ export function describeWholesaleRefusal(action: WholesaleAction, deadline: Dead
   const what =
     action.kind === "import" ? "استيراد جدولٍ من ملف"
     : action.kind === "copy-term" ? "نسخ الجدول من فصلٍ آخر"
-    : `حذف ${action.deleting} من ${action.total} موعداً دفعةً واحدة`;
+    : `حذف ${action.deleting} من ${countOf(action.total, AR.appointment)} دفعةً واحدة`;
   return `انقضى آخر موعدٍ لتسليم الجداول${when}. ${what} تسليمٌ شامل، ولا يمرّ بعد الموعد. `
     + "التعديلات الجزئية — إضافة شعبة، أو تغيير قاعةٍ أو أستاذٍ أو وقت — تبقى مفتوحة. "
     + "وللتسليم الشامل يلزم تمديدٌ من رئيس التسجيل.";

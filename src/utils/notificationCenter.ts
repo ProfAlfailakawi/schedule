@@ -8,7 +8,7 @@
 import type { ScheduleApproval } from "../types";
 import { roleDefinition } from "./academicRoles";
 import { isLate } from "./lateness";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, nounFor, oblique } from "./arabicCount";
 
 export type NotificationTone = "action" | "waiting" | "done" | "alert";
 export type NotificationView = "scheduleChanges" | "schedules" | "instructorRequests" | "reportDepartment" | "studentRegistration";
@@ -70,8 +70,6 @@ const place = (scope: CenterScope) => scope.sectionName || `قسم ${scope.appro
 let twins = new Set<string>();
 const placeOf = (scope: CenterScope) => twins.has(place(scope)) && scope.collegeName
   ? `${place(scope)} — ${scope.collegeName.replace(/^كلية\s+/, "")}` : place(scope);
-const plural = (count: number, one: string, two: string, many: string) =>
-  count === 1 ? one : count === 2 ? two : `${count} ${many}`;
 
 const lastAccepted = (approval: ScheduleApproval) =>
   [...approval.rounds].filter(round => round.acceptedAt).sort((a, b) => b.number - a.number)[0];
@@ -192,7 +190,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           /* الصدق فيما بقي (N23): إضافاتٌ تنتظر إقرار رئيس القسم تمنع إعادة
              الإرسال، فلا يُقال «بقي إعادة الإرسال» واللجنة لا تملكها. */
           detail: scope.openRegistrarNotes > 0
-            ? `بقيت ${plural(scope.openRegistrarNotes, "ملاحظةٌ واحدة", "ملاحظتان", "ملاحظات")} تنتظر المعالجة أو الردّ، ثم يُعاد الإرسال.`
+            ? `بقيت ${countOf(scope.openRegistrarNotes, AR.note)} ${nounFor(scope.openRegistrarNotes, AR.waitFemVerb)} المعالجة أو الردّ، ثم يُعاد الإرسال.`
             : approval.pendingAdditions.length
               ? `عولجت الملاحظات — وتنتظر ${countOf(approval.pendingAdditions.length, AR.section)} أُضيفت إقرارَ رئيس القسم قبل إعادة الإرسال.`
               : "عولجت الملاحظات — بقي إعادة الإرسال إلى التسجيل.",
@@ -247,7 +245,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       if (isHead && Number(scope.escalatedNotes || 0) > 0) {
         items.push({
           id: key(scope, "escalated-notes"), tone: "action",
-          title: `التسجيل يُصرّ على ${plural(Number(scope.escalatedNotes), "ملاحظةٍ واحدة", "ملاحظتين", "ملاحظات")} في جدول ${placeOf(scope)}`,
+          title: `التسجيل يُصرّ على ${countOf(Number(scope.escalatedNotes), oblique(AR.note))} في جدول ${placeOf(scope)}`,
           detail: "تكرّر الإصرار ثلاث مرّات — تحتاج قرارك مع اللجنة.",
           view: routeFor(role, "notes"), ...target(scope),
         });
@@ -255,7 +253,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       if (isHead && approval.pendingAdditions.length && !accepted) {
         items.push({
           id: key(scope, "additions"), tone: "action",
-          title: `${plural(approval.pendingAdditions.length, "شعبةٌ أُضيفت", "شعبتان أُضيفتا", "شعب أُضيفت")} بعد اعتمادك`,
+          title: `${countOf(approval.pendingAdditions.length, AR.section)} ${nounFor(approval.pendingAdditions.length, AR.addedFemVerb)} بعد اعتمادك`,
           detail: "وافق عليها ليُعاد الإرسال.",
           view: routeFor(role, "approval"), ...target(scope),
         });
@@ -266,7 +264,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
         if (due.past || (Number.isFinite(days) && days <= 7)) {
           items.push({
             id: key(scope, `deadline-${due.effective}`), tone: "alert",
-            title: due.past ? "انقضى موعد تسليم الجدول" : days <= 0 ? "اليوم آخر موعد لتسليم الجدول" : `بقي ${plural(days, "يومٌ واحد", "يومان", "أيام")} على تسليم الجدول`,
+            title: due.past ? "انقضى موعد تسليم الجدول" : days <= 0 ? "اليوم آخر موعد لتسليم الجدول" : `بقي ${countOf(days, AR.day)} على تسليم الجدول`,
             detail: due.past ? "يلزم تمديدٌ من رئيس التسجيل قبل التسليم." : `آخر موعد ${day(due.effective)}.`,
             view: routeFor(role, "approval"), ...target(scope),
           });
@@ -296,7 +294,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       id: `request:${requestId}:${entry.at || ""}${linked ? ":linked" : ""}`, tone: linked ? "alert" : "action",
       title: linked
         ? `${entry.name}: قسمٌ آخر ينتظر قرارك`
-        : `${entry.name} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${plural(entry.count, "تعديلاً", "تعديلين", "تعديلات")}`}`,
+        : `${entry.name} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${countOf(entry.count, oblique(AR.edit))}`}`,
       detail: linked
         ? `${[...new Set(entry.linkedPlaces)].join(" · ")} — حذفٌ يُكمل به قسمٌ آخر طلبَه`
         : [...new Set(entry.places)].join(" · "),
@@ -317,15 +315,15 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       const late = waitedDays > 3;
       items.push({
         id: key(scope, `students-committee-${late ? "late" : "open"}`), tone: late ? "alert" : "action",
-        title: `${plural(queue.pendingCommittee, "مقرّرٌ واحد", "مقرّران", "مقرّرات")} في كشف التسجيل ${queue.pendingCommittee <= 2 ? "ينتظر" : "تنتظر"} قرار اللجنة`,
-        detail: late ? `${placeOf(scope)} — أقدمُها ينتظر منذ ${waitedDays} أيام` : placeOf(scope),
+        title: `${countOf(queue.pendingCommittee, AR.course)} في كشف التسجيل ${nounFor(queue.pendingCommittee, AR.waitVerb)} قرار اللجنة`,
+        detail: late ? `${placeOf(scope)} — أقدمُها ينتظر منذ ${countOf(waitedDays, oblique(AR.day))}` : placeOf(scope),
         view: routeFor(role, "students"), at: queue.oldestPendingAt, ...target(scope),
       });
     }
     if (queue.awaitingRegistration > 0 && REGISTRAR.has(role)) {
       items.push({
         id: key(scope, `students-registration-${queue.latestApprovedAt || ""}`), tone: "action",
-        title: `وافقت لجنة ${placeOf(scope)} على ${plural(queue.awaitingRegistration, "مقرّرٍ واحد", "مقرّرين", "مقرّرات")} للتسجيل`,
+        title: `وافقت لجنة ${placeOf(scope)} على ${countOf(queue.awaitingRegistration, oblique(AR.course))} للتسجيل`,
         detail: "تنتظر التسجيل أو الردّ في كشف التسجيل.",
         view: routeFor(role, "students"), at: queue.latestApprovedAt, ...target(scope),
       });
@@ -338,7 +336,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
     if (total > 0) {
       items.push({
         id: `final-summary:${done === total ? "all" : "partial"}`, tone: done === total ? "done" : "waiting",
-        title: done === total ? "كل جداول الأقسام معتمدة" : `المعتمد ${done} من ${total} جداول`,
+        title: done === total ? "كل جداول الأقسام معتمدة" : `المعتمد ${done} من ${countOf(total, oblique(AR.schedule))}`,
         detail: done === total ? "الجداول النهائية جاهزة للاطّلاع." : `بقي ${total - done} لم يعتمده التسجيل بعد.`,
         view: routeFor(role, "final"),
       });
@@ -363,7 +361,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       if (idleDays > 3) {
         items.push({
           id: key(scope, "dean-returned-idle"), tone: "alert",
-          title: `جدول ${placeOf(scope)} مُرجَعٌ منذ ${countOf(idleDays, AR.day)}`,
+          title: `جدول ${placeOf(scope)} مُرجَعٌ منذ ${countOf(idleDays, oblique(AR.day))}`,
           detail: "لم يُعِد القسم إرساله بعد.",
           view: routeFor(role, "final"), at: round?.returnedAt, ...target(scope),
         });

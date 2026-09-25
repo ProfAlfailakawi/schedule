@@ -1,6 +1,7 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { departsFromNature, type CourseNature } from "./courseNature";
 import { SCHEDULE_DAY_END , formatScheduleTimeRange } from "./scheduleTime";
+import { AR, countOf, oblique } from "./arabicCount";
 
 /**
  * The timetable rules of PAAET decision 1913/2016, written as code.
@@ -308,7 +309,7 @@ export function planMove(options: {
       meetings: [{ day: targetDay, start: targetStart, end: clock(Math.min(SCHEDULE_DAY_END, start + expected)) }],
       reshapes: false,
       headline: `${dayLabel(targetDay)} ${targetStart}`,
-      detail: `مدة اللقاء ${expected} دقيقة على هذا اليوم (م.8/أ،ب).`
+      detail: `مدة اللقاء ${countOf(expected, AR.minute)} على هذا اليوم (م.8/أ،ب).`
     };
   }
 
@@ -330,7 +331,7 @@ export function planMove(options: {
       : `تحويل إلى ${pattern.days.map(dayLabel).join(" · ")}`,
     detail: sameDays
       ? pattern.note
-      : `${weeklyHours} ساعات أسبوعياً. ${pattern.note} سيُعاد تشكيل المقرر إلى ${pattern.days.length} لقاءات بنفس وقت البداية.`
+      : `${countOf(weeklyHours, AR.hour)} أسبوعياً. ${pattern.note} سيُعاد تشكيل المقرر إلى ${countOf(pattern.days.length, oblique(AR.meeting))} بنفس وقت البداية.`
   };
 }
 

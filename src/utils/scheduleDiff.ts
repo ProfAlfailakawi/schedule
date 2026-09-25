@@ -14,6 +14,7 @@
  */
 
 import type { FSchedule } from "../types";
+import { AR, countOf } from "./arabicCount";
 
 export type DiffFieldKey = "time" | "days" | "room" | "instructor" | "sectionCode" | "course";
 
@@ -151,7 +152,7 @@ export function diffSchedules(before: FSchedule[] | undefined, after: FSchedule[
 /** سطرٌ واحد يلخّص التقرير قبل فتحه. «لم يتغيّر شيء» جوابٌ كامل. */
 export function summarizeDiff(diff: ScheduleDiff): string {
   const { added, removed, changed } = diff.counts;
-  if (diff.firstReview) return `جدولٌ جديد — ${added} موعداً`;
+  if (diff.firstReview) return `جدولٌ جديد — ${countOf(added, AR.appointment)}`;
   if (!added && !removed && !changed) return "لم يتغيّر شيء منذ مراجعتك";
   const parts: string[] = [];
   if (added) parts.push(`${added} مضاف`);

@@ -15,6 +15,7 @@
  *   ٣–١٠   ٣ مواعيد             — a broken plural
  *   ١١–٩٩  ١١ موعداً            — singular, accusative (تمييز منصوب)
  *   ١٠٠+   ١٠٠ موعد             — singular, genitive
+ *   ٧٫٥    ٧٫٥ ساعة             — a fraction takes the singular too
  *
  * Compounds follow their last part: ١٠٣ مواعيد, ١١١ موعداً, ٢٠٠ موعد.
  *
@@ -52,6 +53,9 @@ export interface ArabicNoun {
  * body referenced from outside would be undefined in the browser.
  */
 export function countOf(value: number, noun: ArabicNoun, zero?: string): string {
+  // A fraction («7.5 ساعة») is read with the singular, like a hundred.
+  const tenths = Math.max(0, Math.round((Number(value) || 0) * 10)) / 10;
+  if (tenths % 1) return tenths.toLocaleString("ar-KW-u-nu-latn") + " " + noun.one;
   const n = Math.max(0, Math.round(Number(value) || 0));
   if (n === 0) return zero ?? "لا " + noun.few;
   if (n === 1) return noun.one + " " + (noun.one.slice(-1) === "ة" ? "واحدة" : "واحد");
@@ -72,6 +76,7 @@ export function countOf(value: number, noun: ArabicNoun, zero?: string): string 
  * Self-contained for the same reason as countOf.
  */
 export function nounFor(value: number, noun: ArabicNoun): string {
+  if ((Math.max(0, Math.round((Number(value) || 0) * 10)) / 10) % 1) return noun.one;
   const n = Math.max(0, Math.round(Number(value) || 0));
   if (n === 0) return noun.few;
   if (n === 1) return noun.one;
@@ -80,6 +85,16 @@ export function nounFor(value: number, noun: ArabicNoun): string {
   if (rest === 0 || rest === 1 || rest === 2) return noun.one;
   if (rest >= 3 && rest <= 10) return noun.few;
   return noun.many;
+}
+
+/**
+ * The same noun after a preposition or as an object: only the dual changes
+ * case — «منذ يومين»، «على ملاحظتين»، «من جدولين» — every other form is the
+ * same word. The one-to-many forms are untouched, so this is still countOf's
+ * rule, applied to the oblique dual.
+ */
+export function oblique(noun: ArabicNoun): ArabicNoun {
+  return { ...noun, two: noun.two.replace(/ان$/, "ين").replace(/ا (?=\S)/, "ي ") };
 }
 
 /* ── The nouns this program counts ────────────────────────────────────────
@@ -112,6 +127,7 @@ export const AR = {
   blocker:     { one: "مانع", two: "مانعان", few: "موانع", many: "مانعاً" },
   /* مضافٌ إلى «اعتماد»: المثنّى تسقط نونه، والتمييز لا تنوين له. */
   approvalBlocker: { one: "مانع اعتماد", two: "مانعا اعتماد", few: "موانع اعتماد", many: "مانع اعتماد" },
+  saveBlocker: { one: "مانع حفظ", two: "مانعا حفظ", few: "موانع حفظ", many: "مانع حفظ" },
   breach:      { one: "مخالفة", two: "مخالفتان", few: "مخالفات", many: "مخالفة" },
   decision:    { one: "قرار", two: "قراران", few: "قرارات", many: "قراراً" },
   record:      { one: "سجل", two: "سجلان", few: "سجلات", many: "سجلاً" },
@@ -136,6 +152,9 @@ export const AR = {
   edit:        { one: "تعديل", two: "تعديلان", few: "تعديلات", many: "تعديلاً" },
   item:        { one: "بند", two: "بندان", few: "بنود", many: "بنداً" },
   slot:        { one: "خانة", two: "خانتان", few: "خانات", many: "خانة" },
+  bond:        { one: "ارتباط", two: "ارتباطان", few: "ارتباطات", many: "ارتباطاً" },
+  booking:     { one: "حجز", two: "حجزان", few: "حجوزات", many: "حجزاً" },
+  line:        { one: "سطر", two: "سطران", few: "أسطر", many: "سطراً" },
   offering:    { one: "طرح", two: "طرحان", few: "طروح", many: "طرحاً" },
 
   /* ── Agreement forms, read with nounFor(n, …) after a counted noun ──────
@@ -148,6 +167,13 @@ export const AR = {
   otherAdj:      { one: "آخر", two: "آخران", few: "أخرى", many: "آخر" },
   readyAdj:      { one: "جاهز", two: "جاهزان", few: "جاهزة", many: "جاهزة" },
   needsVerb:     { one: "يحتاج معالجة", two: "يحتاجان معالجة", few: "تحتاج معالجة", many: "تحتاج معالجة" },
+  inItPron:      { one: "فيه", two: "فيهما", few: "فيها", many: "فيها" },
+  waitVerb:      { one: "ينتظر", two: "ينتظران", few: "تنتظر", many: "تنتظر" },
+  waitFemVerb:   { one: "تنتظر", two: "تنتظران", few: "تنتظر", many: "تنتظر" },
+  addedFemVerb:  { one: "أُضيفت", two: "أُضيفتا", few: "أُضيفت", many: "أُضيفت" },
+  hasPron:       { one: "لديه", two: "لديهما", few: "لديهم", many: "لديهم" },
+  lateAdj:       { one: "متأخر", two: "متأخران", few: "متأخرة", many: "متأخراً" },
+  possibleAdj:   { one: "محتمل", two: "محتملان", few: "محتملة", many: "محتملاً" },
   otherFemAdj:   { one: "أخرى", two: "أخريان", few: "أخرى", many: "أخرى" },
 } as const satisfies Record<string, ArabicNoun>;
 
