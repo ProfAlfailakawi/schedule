@@ -15,9 +15,12 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CornerUpLeft, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Clock3, CornerUpLeft, History, MessageSquareText, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
-import { APPROVAL_STATUS_LABEL, blockingConflictPhrase } from "../utils/approvalWorkflow";
+import {
+  APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, blockingConflictPhrase, deadlinePassed, pendingAdditionTotal,
+} from "../utils/approvalWorkflow";
+import { AR, countOf } from "../utils/arabicCount";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
 interface DeadlineShape {
@@ -34,6 +37,12 @@ interface Payload {
   /** عددُ مواعيد الجدول: لا يُوقَّع على جدولٍ فارغ. */
   rowCount: number;
   statusLabel: string;
+  /** سببُ منع التعديل لهذا الناظر، من حارس الخادم نفسه — أو null. */
+  lockReason?: string | null;
+  /** خلافاتٌ أصرّ عليها التسجيل ثلاثاً، تُعرض لرئيس القسم. */
+  escalatedNotes?: number;
+  /** أيُعرض «طلب تمديد» الآن: قرب الموعد أو بعده، ولا طلبَ قائم. */
+  canRequestExtension?: boolean;
 }
 
 interface Props {
@@ -47,6 +56,13 @@ interface Props {
   /** يتغيّر كلّما تغيّر الجدول تحته، فيُعاد قراءةُ الحال. */
   refreshSignal?: number;
   onChanged?: () => void;
+  /**
+   * يُبلَّغ به سببُ منع التعديل كلّما تغيّر (أو null حين يُفتح)، فتعرف الورشةُ
+   * قبل أن تفتح محرّراً يقول «صالح للحفظ» ثم يرفضه الخادم.
+   */
+  onLockChange?: (reason: string | null) => void;
+  /** يفتح شاشة التغييرات حيث تُقرأ الملاحظات على مواعيدها. غيابه يعني أنها معروضةٌ هنا. */
+  onOpenNotes?: () => void;
 }
 
 const request = async (url: string, init?: RequestInit) => {
@@ -64,10 +80,15 @@ const arabicDate = (iso?: string) => {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
-export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, onChanged }: Props) {
+export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, onChanged, onLockChange, onOpenNotes }: Props) {
   const [state, setState] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /* ورقتان صغيرتان تُفتحان في مكانهما: إرجاعُ رئيس القسم، وطلبُ التمديد. */
+  const [sheet, setSheet] = useState<null | "head-return" | "extension">(null);
+  const [reason, setReason] = useState("");
+  const [days, setDays] = useState(7);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!collegeId || !sectionId || !termId) { setState(null); return; }
@@ -85,18 +106,33 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
     void load();
   }, [refreshSignal]);
 
-  const act = async (path: string) => {
+  /* سببُ القفل يُبلَّغ للورشة كلّما تغيّر — ولو لم يُرسم الشريط نفسه. */
+  const lockReason = state ? (state.lockReason ?? null) : null;
+  useEffect(() => { onLockChange?.(lockReason); }, [lockReason]);
+  useEffect(() => () => { onLockChange?.(null); }, []);
+
+  /* ── القرارُ يحمل ما رآه صاحبه ──────────────────────────────────────────
+     الجولةُ وحالُها وعددُ المواعيد كما في الشاشة لحظةَ الضغط. فإن تغيّر شيءٌ
+     منها تحت يده ردّه الخادم «تغيّر الجدول منذ فتحت الشاشة — حدّث». */
+  const act = async (path: string, extra?: Record<string, unknown>) => {
     setBusy(true); setError(null);
     try {
+      const seen = state ? {
+        expectedRound: state.approval.currentRound,
+        expectedStatus: state.approval.status,
+        expectedRowCount: state.rowCount,
+      } : {};
       const result: any = await request(path, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId }),
+        body: JSON.stringify({ collegeId, sectionId, termId, ...seen, ...(extra || {}) }),
       });
       /* اعتمادُ رئيس القسم يُرسل معه؛ فإن منعه مانعٌ قيل السببُ هنا. */
       if (result?.submitBlocked) setError(`حُفظ اعتمادك، ولم يُرسل بعد: ${result.submitBlocked}`);
+      if (Number(result?.remaining || 0) > 0) setError(`أُقرّ ما عُرض عليك. ووصل بعده ${countOf(Number(result.remaining), AR.section)} تنتظر نظرك.`);
+      setSheet(null); setReason("");
       await load();
       onChanged?.();
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setError(e.message); await load(); }
     finally { setBusy(false); }
   };
 
@@ -108,7 +144,12 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const mine = signatureStage ? approval.signatures.find(item => item.stage === signatureStage) : undefined;
   const committee = approval.signatures.find(item => item.stage === "committee");
   const head = approval.signatures.find(item => item.stage === "head");
-  const pendingAdditions = approval.pendingAdditions.length;
+  /* المسمّى وما زاد عليه معاً: ما زاد يمنع كما يمنع المسمّى. */
+  const pendingAdditions = pendingAdditionTotal(approval);
+  const overflow = Math.max(0, Number(approval.pendingAdditionsOverflow || 0));
+  const additionsLine = approval.pendingAdditions.map(item => `${item.courseName || "مقرر"} · شعبة ${item.sectionCode || "—"}`).join(" · ")
+    + (overflow ? ` · و${countOf(overflow, AR.section)} أخرى` : "");
+  const escalated = Number(state.escalatedNotes || 0);
 
   /* ── حالةٌ واحدة متّصلة، لا خمسُ حالاتٍ يُخرج من كلٍّ منها مبكّراً ────────
    *
@@ -135,9 +176,15 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   /* والموعدُ شرطٌ أيضاً، للتسليم الأول وحده: بعده لا يُسلَّم شاملٌ إلا بتمديد،
      أمّا الجولات فتمرّ. وكانت هذه البيانات تصل الشريط ولا تُقرأ. */
   const firstSubmission = Number(approval.currentRound || 0) === 0;
-  const pastDeadline = Boolean(state.deadline?.past) && firstSubmission;
+  /* الموعدُ ينتهي في آخر ثانيةٍ من يومه بتوقيت الكويت — القاعدة نفسها التي
+     يقرؤها الخادم، فلا يبقى الزرّ ظاهراً ساعاتٍ بعد أن رُفض. */
+  const deadlineGone = Boolean(state.deadline?.past) || deadlinePassed(state.deadline?.effective);
+  const pastDeadline = deadlineGone && firstSubmission;
+  /* والمعتمدُ لا يُرسل وهو على حاله، والتعارضُ المادّي يمنع الإرسال كما يمنع
+     التوقيع — شرطا الخادم في `canSubmit` حرفاً بحرف. */
+  const accepted = status === "accepted";
   const readyToSubmit = Boolean(committee && head)
-    && pendingAdditions === 0 && openNotes === 0 && !pastDeadline && !locked;
+    && pendingAdditions === 0 && openNotes === 0 && !pastDeadline && !locked && !accepted && blockingConflicts === 0;
   const headMustAcknowledge = pendingAdditions > 0 && signatureStage === "head";
 
   const tone =
@@ -151,27 +198,48 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
      رئيسُ قسمٍ أمامه شُعبٌ تنتظر إقراره وجدولٌ مُرجَع: كان يُقال له «أُرجع
      الجدول» ويُعرض زرُّ «موافق» بلا ذكرِ ما يوافق عليه. فصار المطلوبُ منه هو
      العنوان، والإرجاعُ خبرٌ يقرؤه في الجدول نفسه بخاناته الملوّنة. */
+  const headReturn = approval.headReturn;
   const headline =
     headMustAcknowledge ? "أُضيفت شُعبٌ بعد اعتمادك"
     : status === "returned" ? "أرجع التسجيل الجدول بملاحظات"
+    : status === "drafting" && headReturn ? "أرجع رئيس القسم الجدول للجنة"
     : locked ? "الجدول عند التسجيل"
     : status === "accepted" ? "الجدول معتمدٌ من التسجيل"
     : pendingAdditions > 0
       ? (headMustAcknowledge ? "أُضيفت شُعبٌ بعد اعتمادك" : "بانتظار موافقة رئيس القسم")
       : APPROVAL_STATUS_LABEL[status];
 
+  /* ── ما يُقال عن الملاحظات يُقال صادقاً ────────────────────────────────
+     كان الشريط يقول «الخانات المعلَّق عليها ملوّنةٌ في مكانها من الجدول» —
+     والجدولُ هنا لا يقرأ الملاحظات أصلاً. فيُقال العددُ ومكانُها الحقيقي. */
+  const notesWhere = onOpenNotes ? "تُقرأ على مواعيدها في شاشة تغييرات الجدول." : "معروضةٌ أدناه على مواعيدها.";
+  const amendmentOpen = locked && Boolean(round?.amendment) && !state.lockReason;
   const detail =
     headMustAcknowledge
-      ? approval.pendingAdditions.map(item => `${item.courseName || "مقرر"} · شعبة ${item.sectionCode || "—"}`).join(" · ")
+      ? additionsLine
     : status === "returned"
-      ? `الجولة ${approval.currentRound}${round?.returnedNoteCount ? ` — ${round.returnedNoteCount} ملاحظة` : ""}. الخانات المعلَّق عليها ملوّنةٌ في مكانها من الجدول.`
+      ? `الجولة ${approval.currentRound} — ${openNotes ? `${countOf(openNotes, AR.note)} من التسجيل تنتظر معالجةً أو ردّاً` : "عُولجت ملاحظات التسجيل كلها"}. ${notesWhere}`
+    : status === "drafting" && headReturn
+      ? `«${headReturn.reason}» — ${headReturn.by}${headReturn.at ? ` · ${arabicDate(headReturn.at)}` : ""}. يُطوى متى وقّعت اللجنة من جديد.`
+    : amendmentOpen
+      ? `جولة تعديلٍ بعد القبول (${approval.currentRound}) — التعديلات تتجمّع فيها حتى يكتب التسجيل ملاحظة.`
     : locked
       ? `الجولة ${approval.currentRound} — التعديل مقفلٌ حتى يُقبل أو يُرجَع بملاحظات.`
     : status === "accepted"
-      ? `${round?.acceptedAt ? `بتاريخ ${arabicDate(round.acceptedAt)} — ` : ""}أيُّ تعديلٍ بعده يعيده للتسجيل جولةً جديدة.`
+      ? `${round?.acceptedAt ? `بتاريخ ${arabicDate(round.acceptedAt)} — ` : ""}أيُّ تعديلٍ بعده يفتح جولةَ تعديلٍ عند التسجيل.`
     : pendingAdditions > 0
-      ? approval.pendingAdditions.map(item => `${item.courseName || "مقرر"} · شعبة ${item.sectionCode || "—"}`).join(" · ")
+      ? additionsLine
       : "";
+
+  /* ── الموعد: عدٌّ تنازليّ يُقرأ، وطلبُ تمديدٍ حين يقترب ─────────────────── */
+  const deadline = state.deadline;
+  const countdown = deadline?.effective && !accepted && !locked
+    ? deadlineGone ? `انقضى موعد التسليم (${arabicDate(deadline.effective)})`
+      : deadline.daysLeft === 0 ? "آخر موعد للتسليم اليوم"
+      : `بقي ${countOf(Number(deadline.daysLeft || 0), AR.day)} على موعد التسليم`
+    : "";
+  const extensionRequest = approval.extensionRequest;
+  const events = [...(approval.events || [])].reverse();
 
   const Icon =
     headMustAcknowledge ? AlertTriangle
@@ -182,6 +250,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   /* من لا يوقّع ولا ينتظره شيء لا يُعرض عليه الشريط أصلاً. */
   if (!signatureStage && !locked && status !== "accepted" && status !== "returned") return null;
+  const canHeadReturnNow = signatureStage === "head" && status === "committee" && !locked;
 
   return (
     <div className="approval-bar" data-tone={tone}>
@@ -198,13 +267,48 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             {head ? <span>رئيس القسم: <b>{head.userName}</b> · {arabicDate(head.at)} · <code>{head.verifyCode}</code></span> : null}
           </div>
         ) : null}
+        {countdown ? (
+          <small className="approval-countdown" data-past={deadlineGone || undefined}>
+            <Clock3 aria-hidden="true" /> {countdown}
+            {extensionRequest ? ` · طُلب تمديد ${countOf(extensionRequest.days, AR.day)} (${arabicDate(extensionRequest.at)}) — بانتظار رئيس التسجيل` : ""}
+          </small>
+        ) : null}
+        {/* الخلافُ الذي تكرّر ثلاثاً يُعرض لرئيس القسم هنا — وهذا ما تَعِد به شاشةُ الملاحظات. */}
+        {escalated > 0 && signatureStage === "head" ? (
+          <small className="approval-escalated">
+            <MessageSquareText aria-hidden="true" /> {countOf(escalated, AR.note)} أصرّ عليها التسجيل ثلاثاً بعد ردّ اللجنة — تحتاج نظرك.
+          </small>
+        ) : null}
       </div>
 
       <div className="approval-sign">
         {headMustAcknowledge ? (
-          <PrimaryButton type="button" data-guide-ignore="إقرار رئيس القسم بالشُّعب المضافة — ضغطةٌ واحدة، لا توقيعٌ جديد" disabled={busy} onClick={() => void act("/api/approvals/acknowledge-additions")}>
+          <PrimaryButton type="button" data-guide-ignore="إقرار رئيس القسم بالشُّعب المضافة — ضغطةٌ واحدة، لا توقيعٌ جديد" disabled={busy} onClick={() => void act("/api/approvals/acknowledge-additions", {
+            /* يُقرّ ما عُرض عليه وحده، لا ما وصل بعد أن فتح الشاشة. */
+            expectedPendingIds: approval.pendingAdditions.map(item => Number(item.scheduleId)),
+            expectedOverflow: overflow,
+          })}>
             {busy ? "يحفظ…" : "موافق"}
           </PrimaryButton>
+        ) : null}
+
+        {/* الملاحظاتُ تُقرأ حيث هي: زرٌّ يفتح شاشة التغييرات بدل وعدٍ بتلوينٍ لا يقع. */}
+        {onOpenNotes && (openNotes > 0 || status === "returned") ? (
+          <SecondaryButton type="button" data-guide-ignore="انتقالٌ إلى شاشة تغييرات الجدول لقراءة الملاحظات — تنقّلٌ لا فعل" onClick={onOpenNotes}>
+            <MessageSquareText aria-hidden="true" /> افتح الملاحظات{openNotes ? ` (${openNotes.toLocaleString("ar-KW-u-nu-latn")})` : ""}
+          </SecondaryButton>
+        ) : null}
+
+        {canHeadReturnNow ? (
+          <SecondaryButton type="button" data-guide-ignore="يفتح ورقة سبب إرجاع الجدول للجنة — الإرسال داخلها وهو مسجّل" disabled={busy} onClick={() => { setSheet("head-return"); setReason(""); }}>
+            <CornerUpLeft aria-hidden="true" /> إرجاع للجنة
+          </SecondaryButton>
+        ) : null}
+
+        {state.canRequestExtension && signatureStage ? (
+          <SecondaryButton type="button" data-guide-ignore="يفتح ورقة طلب تمديد التسليم — الإرسال داخلها وهو مسجّل" disabled={busy} onClick={() => { setSheet("extension"); setReason(""); setDays(7); }}>
+            <Clock3 aria-hidden="true" /> طلب تمديد
+          </SecondaryButton>
         ) : null}
 
         {/* المانعُ سطرٌ هادئ بجانب الزرّ، لا تنبيهٌ عائمٌ يعود كلما تحرّكت الشاشة. */}
@@ -221,7 +325,8 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             كان يختفي في اللحظة التي يوقّع فيها الطرفُ الآخر، فمن وقّع خطأً لا
             يجد مخرجاً إلا أن يُرسل أو يسأل زميله أن يسحب توقيعه أولاً. والخادم
             يقبله ما دام الجدول لم يُرسَل. */}
-        {mine && !locked ? (
+        {/* ولا بعد القبول: سحبُ توقيعٍ على جدولٍ معتمد كان يُسقطه صامتاً إلى الإعداد. */}
+        {mine && !locked && !accepted ? (
           <SecondaryButton type="button" data-guide-ignore="سحب توقيعٍ أثبته صاحبه قبل الإرسال — تراجعٌ عن فعلٍ مسجّل" disabled={busy} onClick={() => void act("/api/approvals/withdraw")}>
             سحب توقيعي
           </SecondaryButton>
@@ -233,9 +338,12 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             الإرجاع، فلا يُطلبان مرّةً ثانية. */}
         {/* وحين يمنعه ما يمنعه، يُقال السببُ في مكان الزرّ لا بعد ضغطه. */}
         {!readyToSubmit && Boolean(committee && head) && !locked && (signatureStage || powerAdmin) && pendingAdditions === 0 ? (
-          openNotes > 0 ? (
+          accepted ? null
+          : blockingConflicts > 0 ? (
+            <span className="approval-blocked">يمنع الإرسال: {blockingConflictPhrase(blockingConflicts)}</span>
+          ) : openNotes > 0 ? (
             <span className="approval-blocked">
-              {openNotes === 1 ? "ملاحظةٌ من التسجيل تنتظر معالجةً أو ردّاً" : `${openNotes} ملاحظةً من التسجيل تنتظر معالجةً أو ردّاً`}
+              {countOf(openNotes, AR.note)} من التسجيل تنتظر معالجةً أو ردّاً
             </span>
           ) : pastDeadline ? (
             <span className="approval-blocked">انقضى موعد التسليم — يلزم تمديدٌ من رئيس التسجيل</span>
@@ -246,8 +354,50 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             <Send aria-hidden="true" /> {busy ? "يرسل…" : status === "returned" ? "إعادة الإرسال إلى التسجيل" : "إرسال إلى التسجيل"}
           </PrimaryButton>
         ) : null}
+        {events.length ? (
+          <button type="button" className="approval-history-toggle" aria-expanded={historyOpen} data-guide-ignore="طيّ سجلّ الدورة وفتحه — عرضٌ لا فعل" onClick={() => setHistoryOpen(open => !open)}>
+            <History aria-hidden="true" /> السجلّ
+          </button>
+        ) : null}
       </div>
 
+      {sheet ? (
+        <div className="approval-sheet" role="group" aria-label={sheet === "head-return" ? "سبب الإرجاع للجنة" : "طلب تمديد"}>
+          <label>
+            <span>{sheet === "head-return" ? "سبب الإرجاع — تقرؤه اللجنة في شريطها" : "سبب طلب التمديد"}</span>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={sheet === "head-return" ? "شعبتا المختبر في وقتٍ واحد" : "تأخّر اعتماد المنتدبين"} autoFocus />
+          </label>
+          {sheet === "extension" ? (
+            <label>
+              <span>كم يوماً</span>
+              <input type="number" min={1} max={60} value={days} onChange={(e) => setDays(Math.min(60, Math.max(1, Number(e.target.value) || 1)))} />
+            </label>
+          ) : null}
+          <div className="approval-sheet-actions">
+            <SecondaryButton type="button" data-guide-ignore="إلغاء الورقة — لا يغيّر شيئاً" onClick={() => setSheet(null)}>إلغاء</SecondaryButton>
+            <PrimaryButton
+              type="button"
+              data-guide-ignore="إرسال الورقة المفتوحة: إرجاعُ رئيس القسم للجنة أو طلبُ تمديد — فعلٌ مسجّل في سجلّ الدورة"
+              disabled={busy || reason.trim().length < 3}
+              onClick={() => void act(sheet === "head-return" ? "/api/approvals/head-return" : "/api/approvals/extension-request", sheet === "head-return" ? { reason } : { reason, days })}
+            >
+              {busy ? "يرسل…" : sheet === "head-return" ? "أرجِع للجنة" : "أرسل الطلب"}
+            </PrimaryButton>
+          </div>
+        </div>
+      ) : null}
+
+      {historyOpen && events.length ? (
+        <ol className="approval-history">
+          {events.map((event, index) => (
+            <li key={`${event.at}:${index}`}>
+              <time>{arabicDate(event.at)}</time>
+              <strong>{APPROVAL_EVENT_LABEL[event.action] || event.action}</strong>
+              <span>{event.by}{event.round ? ` · الجولة ${event.round}` : ""}{event.detail ? ` — ${event.detail}` : ""}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
 
       {error ? <Notice type="error">{error}</Notice> : null}
     </div>

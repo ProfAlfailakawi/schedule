@@ -54,7 +54,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  AddButton,
   Badge,
   EmptyState,
   Field,
@@ -1805,6 +1804,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   /** Bumped whenever the live channel reports a write, so readings that depend
    *  on the whole university can refresh without anyone polling for them. */
   const [liveFeedSerial, setLiveFeedSerial] = useState(0);
+  /* ── قفلُ الدورة كما يقرؤه الخادم ─────────────────────────────────────────
+     يصل من شريط الاعتماد (`onLockChange`)، فتعرف الورشةُ أن الجدول عند
+     التسجيل قبل أن تفتح محرّراً يقول «صالح للحفظ» ثم يرفضه الخادم. */
+  const [approvalLock, setApprovalLock] = useState<string | null>(null);
+  /* ضغطُ بطاقةٍ والجدولُ مقفل: السحبُ لا يبدأ، ويُقال لماذا بدل أن يبدو معطَّلاً. */
+  const explainApprovalLock = () => { if (approvalLock) setPhysicsNotice(approvalLock); };
   useEffect(() => () => presence.dispose(), [presence]);
   /** `silent` refreshes without the reading indicator — the live channel uses
    *  it so a colleague's change slides in without the screen looking busy. */
@@ -2735,6 +2740,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
 
   const openCreate = (seed?: CreateSeed) => {
       if (showMobileReadOnlyGate()) return;
+      /* كلُّ أبواب الإضافة تمرّ من هنا — الزرّ والخانة الفارغة والأوامر —
+         فيُقال السببُ هنا مرّةً واحدة بدل محرّرٍ يُفتح ليُرفض. */
+      if (approvalLock) { setMessage(null); setError(approvalLock); return; }
       setError(null);
       setMessage(null);
       setConflicts([]);
@@ -6303,13 +6311,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         {...grip}
         draggable={!physics.supported && !rowPending}
         onDragStart={(e) => {
+          if (approvalLock) { e.preventDefault(); setPhysicsNotice(approvalLock); return; }
           e.dataTransfer.setData("text/schedule-id", String(r.id));
           e.dataTransfer.effectAllowed = "move";
           beginRipple(r);
         }}
         onDragEnd={clearRipple}
         onPointerDown={(e) => {
-          pressOrigin.current = { x: e.clientX, y: e.clientY };
+          pressOrigin.current = { x: e.clientX, y: e.clientY }; explainApprovalLock();
           if (rowPending) {
             setPhysicsNotice("هذا الموعد ما زال بانتظار تثبيت نقله السابق. يمكنك سحب بقية المواعيد الآن، ثم العودة إليه بعد اكتمال الحفظ.");
             return;
@@ -6744,6 +6753,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       editor !== "index" ||
       (viewMode !== "week" && viewMode !== "rooms") ||
       presentationMode ||
+      // The registrar holds the timetable: nothing may be lifted until it is
+      // returned or accepted (the same reason the server gives, via ApprovalBar).
+      Boolean(approvalLock) ||
       // One card, one hand: while the keyboard is carrying a lecture the
       // pointer layer is switched off entirely, so a stray press cannot pick up
       // a second copy of the same thing.
@@ -9021,6 +9033,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 ) : null}
               </div>
             ) : (
+              approvalLock ? (
+                /* الفحصُ نظيف، لكنّ الحفظ لن يمرّ: يُقال السببُ هنا بدل «صالح». */
+                <div className="conflict-clear" data-locked="true">
+                  <AlertTriangle />
+                  <strong>لا يُحفظ الآن</strong>
+                  <span>{approvalLock}</span>
+                </div>
+              ) : (
               <div className="conflict-clear">
                 <CheckCircle2 />
                 <strong>الموعد صالح للحفظ</strong>
@@ -9028,6 +9048,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   سيستمر الفحص تلقائياً مع تغيير الوقت أو القاعة أو الأستاذ.
                 </span>
               </div>
+              )
             )}
             {conflicts.length ? (
               <div className="solver-box">
@@ -9572,7 +9593,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       <PageTitle
         eyebrow="مركز الجدول"
         subtitle="نطاق · مراجعة · نشر"
-        action={<AddButton onClick={openCreate}>إضافة موعد</AddButton>}
+        action={<PrimaryButton onClick={() => openCreate()} disabled={Boolean(approvalLock)} title={approvalLock || undefined} data-guide-ignore="فتح محرّر إضافة موعد — يُعطَّل بسببٍ مكتوب حين يكون الجدول عند التسجيل، والحفظ داخله مسجّل"><Plus aria-hidden="true" />إضافة موعد</PrimaryButton>}
       >
         الجدول الدراسي
       </PageTitle>
@@ -9983,6 +10004,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
              زال الاعتماد، وهو بالضبط الخبرُ الذي وُجد ليقوله. */
           refreshSignal={liveFeedSerial}
           onChanged={() => setLiveFeedSerial(value => value + 1)}
+          onLockChange={setApprovalLock}
+          onOpenNotes={onNavigate ? () => onNavigate("scheduleChanges") : undefined}
         />
       ) : null}
       <ScheduleExperienceLayer
@@ -10211,7 +10234,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       ))}
                     </div>
                   ) : null}
-                  <PrimaryButton onClick={openCreate}>إضافة موعد</PrimaryButton>
+                  <PrimaryButton onClick={openCreate} disabled={Boolean(approvalLock)} title={approvalLock || undefined} data-guide-ignore="فتح محرّر إضافة موعد — يُعطَّل بسببٍ مكتوب حين يكون الجدول عند التسجيل، والحفظ داخله مسجّل">إضافة موعد</PrimaryButton>
                 </>
               }
             />
@@ -10330,6 +10353,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   style={cardStyle}
                   draggable={!physics.supported && !rowPending}
                   onDragStart={(e) => {
+                    if (approvalLock) { e.preventDefault(); setPhysicsNotice(approvalLock); return; }
                     e.dataTransfer.setData("text/schedule-id", String(row.id));
                     e.dataTransfer.effectAllowed = "move";
                     beginRipple(row);
@@ -10338,7 +10362,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   onPointerDown={(e) => {
-                    pressOrigin.current = { x: e.clientX, y: e.clientY };
+                    pressOrigin.current = { x: e.clientX, y: e.clientY }; explainApprovalLock();
                     if (rowPending) {
                       e.preventDefault();
                       e.stopPropagation();
@@ -11089,7 +11113,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         className="week-unplaced-card"
                         style={{ ["--hue" as any]: hueFor(code, r.AdCourseName || c?.CourseName || "", i?.AdInstructorName, placeOf(r)) }}
                         onPointerDown={(e) => {
-                          pressOrigin.current = { x: e.clientX, y: e.clientY };
+                          pressOrigin.current = { x: e.clientX, y: e.clientY }; explainApprovalLock();
                           grip.onPointerDown?.(e);
                         }}
                         onClick={(e) => {
@@ -11817,7 +11841,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             type="button"
             className="dock-add"
             onClick={() => openCreate()}
-            title="إضافة موعد جديد"
+            disabled={Boolean(approvalLock)}
+            title={approvalLock || "إضافة موعد جديد"}
+            data-guide-ignore="فتح محرّر إضافة موعد — يُعطَّل بسببٍ مكتوب حين يكون الجدول عند التسجيل، والحفظ داخله مسجّل"
           ><Plus aria-hidden="true" /><span>موعد</span></button>
         </nav>
       ) : null}

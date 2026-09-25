@@ -176,7 +176,8 @@ check(!changes.includes("{isRegistrar && entry.kind !== \"removed\" ? ("),
   "فلم يبقَ بابٌ مقفلٌ في وجه رئيس القسم");
 check(server.includes("if (!canAnnotateCells(req.user?.Role) && !isPowerUser(req))"),
   "والخادم يقرأ الإذن من الدالّة نفسها: لا يُفتح في إحداهما ما يُقفل في الأخرى");
-check(changes.includes('note.origin === "department" ? <em> · من القسم</em>'),
+/* ويُسمّى كاتبُها (R12): ملاحظاتُ القسم لكلٍّ كاتبُها. */
+check(changes.includes('note.origin === "department" ? <em> · من القسم — <bdi>{note.userName}</bdi></em>'),
   "ومصدرُ الملاحظة يُقال: ملاحظةُ التسجيل تمنع الإرسال، وملاحظةُ القسم لا تمنع");
 
 /* ── ٢) عميد التسجيل يفتح الوارد ولا يقرّر فيه ──────────────────────────── */
@@ -223,8 +224,12 @@ check(changes.includes("فتحرّك ${round.changedRowCount} صفّاً"),
   "ويُقرأ في الشريط الزمني بجانب ما طُلب");
 
 /* ── ٧) خلافٌ لم يُحسم ──────────────────────────────────────────────────── */
-check(changes.includes('Number(note.insistCount || 0) >= 3'), "الخانةُ المختلَف عليها ثلاثاً تُعلَن");
-check(changes.includes("إعلامٌ لرئيس القسم، ولا شيء يقف عليه"),
+check(changes.includes('Number(note.insistCount || 0) >= ESCALATE_AFTER_INSISTS')
+  && fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8").includes("export const ESCALATE_AFTER_INSISTS = 3;"),
+  "الخانةُ المختلَف عليها ثلاثاً تُعلَن");
+/* والرسالةُ صادقة (R19): كانت تقول «إعلامٌ لرئيس القسم» ولا شيء يُعلمه. صار
+   يُعرض له في شريطه، والرسالةُ تقول أين. */
+check(changes.includes("ظهرت لرئيس القسم في شريط الاعتماد. إعلامٌ لا يوقف شيئاً."),
   "إعلاماً لا إجباراً: لا شيء في النظام يقف عليه");
 
 /* ── ٨) سؤالٌ وفلترٌ بالحالة في الوارد ──────────────────────────────────────

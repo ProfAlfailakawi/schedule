@@ -23,7 +23,9 @@ import ApprovalBar from "./ApprovalBar";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EMPTY_INBOX_ASK, matchesInboxAsk, parseInboxAsk, type InboxAsk, type InboxAskSignal } from "../utils/inboxAsk";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
+import { APPROVAL_STATUS_LABEL, CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, ESCALATE_AFTER_INSISTS } from "../utils/approvalWorkflow";
+import { isViewerOnlyRole } from "../utils/academicRoles";
+import { AR, countOf } from "../utils/arabicCount";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
 import { DECISION_1912_LABEL, regulationScore, type RegulationFinding } from "../utils/scheduleRegulations";
 import { currentTermId } from "../utils/termSequence";
@@ -38,6 +40,9 @@ interface InboxRow {
   blockingConflicts: number; openNotes: number; answeredNotes: number; pendingAdditions: number;
   deadline: { effective?: string; past: boolean; daysLeft?: number; tone: string; extensionUntil?: string; extensionReason?: string };
   late: boolean; priority: number; updatedAt: string;
+  /** طلبُ تمديدٍ من القسم، والتاريخُ المقترح لمنحه. */
+  extensionRequest?: { by: string; at: string; reason: string; days: number };
+  suggestedExtensionUntil?: string;
 }
 
 interface NoteRow {
@@ -47,6 +52,11 @@ interface NoteRow {
   rebuttal?: { text: string; at: string; userName: string };
   rebuttalVerdict?: "accepted" | "insisted";
   insistCount?: number;
+  /** أهي ملاحظةُ الناظر نفسه — ملاحظاتُ القسم لكلٍّ كاتبُها. */
+  mine?: boolean;
+  rebuttalHistory?: Array<{ text: string; at: string; userName: string; insistedAt: string; insistedBy: string }>;
+  escalatedAt?: string;
+  resolution?: "rebuttal-accepted" | "closed-by-acceptance";
 }
 
 interface DiffChange { field: DiffFieldKey; label: string; before: string; after: string }
@@ -83,6 +93,12 @@ interface ReviewBlocker {
 interface ChangeReport {
   approval: { status: ScheduleApprovalStatus; currentRound: number; pendingAdditions: any[]; signatures: any[] };
   statusLabel: string; round: number;
+  /** عددُ مواعيد الجدول الحيّ الآن — يُرسل مع القرار ليُعرف أنه على ما رُئي. */
+  rowCount?: number;
+  /** أوثيقةُ الهيئة متاحةٌ أساساً للمقارنة ولو لم تُختر. */
+  authorityAvailable?: boolean;
+  /** جولةٌ مضت تُقرأ بين أساسها ونهايتها. */
+  viewingPastRound?: boolean;
   rounds: Array<{ number: number; submittedAt?: string; submittedBy?: string; returnedAt?: string; returnedBy?: string; returnedNoteCount?: number; changedRowCount?: number; acceptedAt?: string; acceptedBy?: string }>;
   deadline: InboxRow["deadline"];
   diff: { entries: DiffEntry[]; counts: { added: number; removed: number; changed: number; unchanged: number }; firstReview: boolean };
@@ -403,8 +419,18 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
                 </div>
                 <ChevronLeft aria-hidden="true" />
               </button>
+              {/* طلبُ القسم يُقرأ في مكانه، و«تمديد» يُفتح مملوءاً بما طلب. */}
+              {row.extensionRequest ? (
+                <small className="changes-extension-request">
+                  طلب تمديد {countOf(row.extensionRequest.days, AR.day)} — «{row.extensionRequest.reason}» · {row.extensionRequest.by}
+                </small>
+              ) : null}
               {canExtend ? (
-                <button type="button" className="changes-extend" data-guide-target="changes.action.deadline" onClick={() => { setExtending(row); setExtendUntil(row.deadline.extensionUntil || ""); setExtendReason(row.deadline.extensionReason || ""); }}>
+                <button type="button" className="changes-extend" data-guide-target="changes.action.deadline" onClick={() => {
+                  setExtending(row);
+                  setExtendUntil(row.extensionRequest ? (row.suggestedExtensionUntil || "") : (row.deadline.extensionUntil || ""));
+                  setExtendReason(row.extensionRequest ? row.extensionRequest.reason : (row.deadline.extensionReason || ""));
+                }}>
                   تمديد
                 </button>
               ) : null}
@@ -816,6 +842,10 @@ function Report({ termId, termName, scope, role, onBack }: {
   const [rebutText, setRebutText] = useState("");
   /* يُبلِّغ شريطَ الاعتماد أن يُعيد قراءةَ حاله بعد توقيعٍ أو إرسال. */
   const [approvalSignal, setApprovalSignal] = useState(0);
+  /* أساسُ المقارنة: ما رآه التسجيل في الجولة، أو وثيقةُ الهيئة. «تلقائي» يترك
+     الخادم يختار: الجولةُ متى طُلبت جولة، والوثيقةُ متى لم تُطلب. */
+  const [baseline, setBaseline] = useState<"auto" | "round" | "authority">("auto");
+  const [viewRound, setViewRound] = useState<number | undefined>(undefined);
   const sortedDiffEntries = useMemo(() => {
     const kindOrder: Record<DiffEntry["kind"], number> = { added: 0, changed: 1, removed: 2 };
     return [...(report?.diff.entries || [])].sort((a, b) =>
@@ -831,10 +861,10 @@ function Report({ termId, termName, scope, role, onBack }: {
     a.course.localeCompare(b.course, "ar")
   ), [report?.fullSchedule]);
 
-  const load = useCallback(async (round?: number) => {
+  const load = useCallback(async (round?: number, base: "auto" | "round" | "authority" = "auto") => {
     setError(null);
     try {
-      const query = `collegeId=${scope.collegeId}&sectionId=${scope.sectionId}&termId=${termId}${round ? `&round=${round}` : ""}`;
+      const query = `collegeId=${scope.collegeId}&sectionId=${scope.sectionId}&termId=${termId}${round ? `&round=${round}` : ""}${base !== "auto" ? `&baseline=${base}` : ""}`;
       setReport(await request(`/api/reports/schedule-changes?${query}`));
     } catch (e: any) {
       /**
@@ -858,6 +888,8 @@ function Report({ termId, termName, scope, role, onBack }: {
     setNoteDraft(null);
     setRebutting(null);
     setMessage(null);
+    setBaseline("auto");
+    setViewRound(undefined);
   }, [scope.collegeId, scope.sectionId, termId]);
 
   useEffect(() => { void load(); }, [load]);
@@ -865,12 +897,19 @@ function Report({ termId, termName, scope, role, onBack }: {
   const act = async (url: string, body?: unknown, done?: string) => {
     setBusy(true); setError(null); setMessage(null);
     try {
+      /* القرارُ يحمل ما رآه صاحبه: الجولة وحالها وعدد المواعيد. فإن تغيّر شيءٌ
+         منها منذ فُتحت الشاشة ردّه الخادم بدل أن يقع على جدولٍ لم يُقرأ. */
+      const seen = report ? {
+        expectedRound: report.approval.currentRound,
+        expectedStatus: report.approval.status,
+        ...(report.rowCount !== undefined ? { expectedRowCount: report.rowCount } : {}),
+      } : {};
       await request(url, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId: scope.collegeId, sectionId: scope.sectionId, termId, ...(body as object || {}) }),
+        body: JSON.stringify({ collegeId: scope.collegeId, sectionId: scope.sectionId, termId, ...seen, ...(body as object || {}) }),
       });
       if (done) setMessage(done);
-      await load();
+      await load(viewRound, baseline);
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   };
@@ -894,7 +933,7 @@ function Report({ termId, termName, scope, role, onBack }: {
         body: JSON.stringify({ scheduleId: noteDraft.scheduleId, field: noteDraft.field, text: noteText }),
       });
       setNoteDraft(null); setNoteText("");
-      await load();
+      await load(viewRound, baseline);
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   };
@@ -908,17 +947,22 @@ function Report({ termId, termName, scope, role, onBack }: {
         body: JSON.stringify({ text: rebutText }),
       });
       setRebutting(null); setRebutText("");
-      await load();
+      await load(viewRound, baseline);
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   };
 
   if (!report) return error ? <Notice type="error">{error}</Notice> : <MicroLoader label="يقارن بالجولة السابقة…" />;
 
-  const openNotes = report.notes.filter(note => note.state === "open").length;
-  const answeredNotes = report.notes.filter(note => note.state === "answered").length;
-  const handledNotes = report.notes.filter(note => note.state === "changed" || note.state === "removed").length;
+  /* العدّاد الواحد الذي يقرؤه الخادم عند الإرجاع: ملاحظاتُ التسجيل وحدها،
+     في أيّ جولةٍ كانت. ملاحظةُ القسم الداخلية لا «تُرسل مع الإرجاع». */
+  const openNotes = countOpenRegistrarNotes(report.notes);
+  const answeredNotes = countAnsweredRegistrarNotes(report.notes);
+  const handledNotes = report.notes.filter(note => note.origin === "registrar" && (note.state === "changed" || note.state === "removed")).length;
   const isRegistrar = role.canReview;
+  /* «أبقِها كما هي» ردٌّ من القسم، لمن يوقّع فيه وحده — لا لعميد التسجيل ولا
+     للعميد، وهما يقرآن ولا يكتبان. */
+  const canRebut = Boolean(role.signatureStage) && !isViewerOnlyRole(role.id) && !isRegistrar;
   /* ── من يعلّق، ومن يقرّر ───────────────────────────────────────────────
    * التعليقُ للتسجيل وللقسم كليهما — وهو أوّلُ ما طُلب في هذا العمل: رئيسُ
    * القسم يحطّ ملاحظات ولا يعدّل. والقرارُ — قبولاً وإرجاعاً — للتسجيل وحده.
@@ -926,7 +970,9 @@ function Report({ termId, termName, scope, role, onBack }: {
   const canAnnotate = role.canAnnotate;
   const mineOrigin = isRegistrar ? "registrar" : "department";
   const existingNoteFor = (scheduleId: number, field: NoteField) =>
-    (notesByRow.get(scheduleId) || []).find(note => note.field === field && note.origin === mineOrigin);
+    (notesByRow.get(scheduleId) || []).find(note => note.field === field && note.origin === mineOrigin
+      /* ملاحظةُ القسم لكاتبها: لا تُفتح ملاحظةُ زميلك لتُكتب فوقها. */
+      && (mineOrigin !== "department" || Boolean(note.mine)));
   /* فتحُ ورقة الملاحظة على خانةٍ بعينها: النصُّ الموجود، وإلا ما يعرفه النظام، وإلا فراغ. */
   const openNote = (scheduleId: number, field: NoteField) => {
     setNoteDraft({ scheduleId, field });
@@ -949,15 +995,27 @@ function Report({ termId, termName, scope, role, onBack }: {
               <li key={note.id} data-state={note.state}>
                 <span className="changes-note-field">
                   {note.fieldLabel}
-                  {note.origin === "department" ? <em> · من القسم</em> : null}
+                  {note.origin === "department" ? <em> · من القسم — <bdi>{note.userName}</bdi></em> : null}
                 </span>
                 <p>{note.text}</p>
                 {note.state === "changed" ? <small>عُولجت — تغيّرت الخانة</small> : null}
-                {note.state === "resolved" ? <small>محسومة — قُبل تبرير القسم</small> : null}
-                {Number(note.insistCount || 0) >= 3 ? (
+                {note.state === "resolved" ? (
+                  <small>{note.resolution === "closed-by-acceptance" ? `محسومة — ${CLOSED_BY_ACCEPTANCE_LABEL}` : "محسومة — قُبل تبرير القسم"}</small>
+                ) : null}
+                {Number(note.insistCount || 0) >= ESCALATE_AFTER_INSISTS ? (
                   <small className="changes-note-stuck">
-                    اختلف الطرفان على هذه الخانة {note.insistCount} مرّات. إعلامٌ لرئيس القسم، ولا شيء يقف عليه.
+                    أصرّ التسجيل على هذه الخانة بعد ردّ القسم {countOf(Number(note.insistCount), AR.visit)} — ظهرت لرئيس القسم في شريط الاعتماد. إعلامٌ لا يوقف شيئاً.
                   </small>
+                ) : null}
+                {note.rebuttalHistory?.length ? (
+                  <details className="changes-note-history">
+                    <summary>ردودٌ سابقة ({note.rebuttalHistory.length.toLocaleString("ar-KW-u-nu-latn")})</summary>
+                    <ul>
+                      {note.rebuttalHistory.map((item, index) => (
+                        <li key={`${item.at}:${index}`}>«{item.text}» — <bdi>{item.userName}</bdi> · أصرّ التسجيل ({arabicDate(item.insistedAt)})</li>
+                      ))}
+                    </ul>
+                  </details>
                 ) : null}
                 {note.rebuttal ? (
                   <blockquote>
@@ -966,7 +1024,7 @@ function Report({ termId, termName, scope, role, onBack }: {
                   </blockquote>
                 ) : null}
                 <div className="changes-note-actions">
-                  {!isRegistrar && note.origin === "registrar" && note.state === "open" ? (
+                  {canRebut && note.origin === "registrar" && note.state === "open" ? (
                     <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
                   ) : null}
                   {isRegistrar && note.state === "answered" ? (
@@ -1060,7 +1118,27 @@ function Report({ termId, termName, scope, role, onBack }: {
           ) : report.baselineSource === "capture" ? (
             <small className="changes-baseline-note">لم تحمل الجولاتُ السابقة نسخةً محفوظة، فالمقارنةُ من آخر لقطةٍ للجدول قبل هذه الجولة.</small>
           ) : null}
+          {/* جولةٌ مضت تُقرأ بين أساسها ونهايتها — لا بين أساسها والجدول الآن. */}
+          {report.viewingPastRound ? (
+            <small className="changes-baseline-note">
+              تعرض الجولة {report.round} كما انتهت، لا الجدول الآن.{" "}
+              <button type="button" className="changes-inline-link" data-guide-ignore="العودة إلى الجولة الجارية — قراءةٌ لا فعل" onClick={() => { setViewRound(undefined); setBaseline("auto"); void load(undefined, "auto"); }}>
+                عُد إلى الجولة الجارية
+              </button>
+            </small>
+          ) : null}
         </div>
+        {/* وثيقةُ الهيئة أساسٌ يُختار، لا يُفرض: من يراجع جولةً يريد ما تغيّر منذ رآها. */}
+        {report.authorityAvailable && !report.viewingPastRound ? (
+          <div className="changes-view-toggle" role="group" aria-label="أساس المقارنة">
+            <button type="button" data-active={report.baselineSource !== "authority" || undefined} aria-pressed={report.baselineSource !== "authority"} data-guide-ignore="المقارنة بما رآه التسجيل آخر مرّة — عرضٌ لا فعل" onClick={() => { setBaseline("round"); void load(viewRound, "round"); }}>
+              منذ آخر مراجعة
+            </button>
+            <button type="button" data-active={report.baselineSource === "authority" || undefined} aria-pressed={report.baselineSource === "authority"} data-guide-ignore="المقارنة بوثيقة الهيئة المعتمدة — عرضٌ لا فعل" onClick={() => { setBaseline("authority"); void load(viewRound, "authority"); }}>
+              منذ وثيقة الهيئة
+            </button>
+          </div>
+        ) : null}
         {/* تبديلٌ بين ما تحرّك والجدول كامل — القسم يريد رؤية جدوله كله والملاحظات فيه. */}
         <div className="changes-view-toggle" role="group" aria-label="طريقة العرض">
           <button type="button" data-active={view === "changes" || undefined} aria-pressed={view === "changes"} data-guide-ignore="تبديل العرض إلى ما تحرّك — عرضٌ لا فعل" onClick={() => setView("changes")}>
@@ -1091,7 +1169,7 @@ function Report({ termId, termName, scope, role, onBack }: {
                     </span>
                   ) : null}
                   {round.acceptedAt ? <span>قُبلت {arabicDate(round.acceptedAt)}{round.acceptedBy ? ` — ${round.acceptedBy}` : ""}</span> : null}
-                  <button type="button" data-guide-ignore="عرض تغييرات جولةٍ سابقة — قراءةٌ لا فعل" onClick={() => { setShowRounds(false); void load(round.number); }}>اعرض تغييراتها</button>
+                  <button type="button" data-guide-ignore="عرض تغييرات جولةٍ سابقة — قراءةٌ لا فعل" onClick={() => { setShowRounds(false); setViewRound(round.number); setBaseline("round"); void load(round.number, "round"); }}>اعرض تغييراتها</button>
                 </li>
               ))}
             </ol>
@@ -1136,20 +1214,24 @@ function Report({ termId, termName, scope, role, onBack }: {
         </div>
       )}
 
-      {/* أزرار القرار في الأسفل: تُضغط بعد القراءة لا قبلها. */}
-      {isRegistrar && report.approval.status === "submitted" ? (
+      {/* أزرار القرار في الأسفل: تُضغط بعد القراءة لا قبلها. وتُعرض على الجولة
+          الجارية وحدها — قرارٌ من شاشة جولةٍ مضت يقع على ما لم يُعرض.
+          والمعتمدُ يُرجَع أيضاً بملاحظة، في جولةٍ جديدة. */}
+      {isRegistrar && !report.viewingPastRound && (report.approval.status === "submitted" || report.approval.status === "accepted") ? (
         <div className="changes-decision">
           <span>
-            {openNotes ? `${openNotes} ملاحظةً ستُرسل مع الإرجاع` : "لا ملاحظات مكتوبة بعد"}
-            {handledNotes ? ` · ${handledNotes} عُولجت` : ""}
-            {answeredNotes ? ` · ${answeredNotes} بانتظار قرارك` : ""}
+            {openNotes ? `${countOf(openNotes, AR.note)} من التسجيل ستُرسل مع الإرجاع` : "لا ملاحظات مكتوبة بعد"}
+            {handledNotes ? ` · ${countOf(handledNotes, AR.note)} عُولجت` : ""}
+            {answeredNotes ? ` · ${countOf(answeredNotes, AR.note)} بانتظار قرارك` : ""}
           </span>
-          <SecondaryButton type="button" data-guide-target="changes.action.return" disabled={busy || openNotes === 0} onClick={() => void act("/api/approvals/return", undefined, "أُرجع الجدول للقسم")}>
-            <CornerUpLeft aria-hidden="true" /> إرجاع للقسم
+          <SecondaryButton type="button" data-guide-target="changes.action.return" disabled={busy || openNotes === 0} onClick={() => void act("/api/approvals/return", undefined, report.approval.status === "accepted" ? "أُعيد فتح الجدول المعتمد وأُرجع للقسم" : "أُرجع الجدول للقسم")}>
+            <CornerUpLeft aria-hidden="true" /> {report.approval.status === "accepted" ? "إعادة فتح وإرجاع للقسم" : "إرجاع للقسم"}
           </SecondaryButton>
-          <PrimaryButton type="button" data-guide-target="changes.action.accept" disabled={busy || report.blockingConflicts > 0} onClick={() => void act("/api/approvals/accept", undefined, "اعتُمد الجدول")}>
-            <ShieldCheck aria-hidden="true" /> قبول نهائي
-          </PrimaryButton>
+          {report.approval.status === "submitted" ? (
+            <PrimaryButton type="button" data-guide-target="changes.action.accept" disabled={busy || report.blockingConflicts > 0} onClick={() => void act("/api/approvals/accept", undefined, "اعتُمد الجدول")}>
+              <ShieldCheck aria-hidden="true" /> قبول نهائي
+            </PrimaryButton>
+          ) : null}
         </div>
       ) : null}
 
