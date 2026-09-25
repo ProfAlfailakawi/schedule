@@ -225,6 +225,20 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           detail: "أيُّ تعديلٍ بعده يصل التسجيلَ مباشرة.",
           view: routeFor(role, "approval"), at: accepted?.acceptedAt, ...target(scope),
         });
+      } else if (approval.status === "drafting" && approval.headReturn && !accepted) {
+        /* ── إرجاعُ رئيس القسم يُقال بسببه (مراجعة البروفة) ─────────────────
+           كان يقع في فرع «قيد الإعداد» فيُقال للجنة «وقّع جدول…» كأنها تبدأ،
+           ولا تعرف أن رئيس القسم أرجعه ولا لماذا — والشريطُ وحده يقوله لمن
+           فتح الورشة. فالجرسُ يحمل السببَ نفسه الذي يحمله الشريط. */
+        const reason = String(approval.headReturn.reason || "").trim();
+        items.push({
+          id: key(scope, `head-return-${approval.headReturn.at || ""}`), tone: isHead ? "waiting" : "action",
+          title: isHead ? `أرجعتَ جدول ${placeOf(scope)} للجنة` : `أرجع رئيس القسم جدول ${placeOf(scope)}`,
+          detail: isHead
+            ? "يعود إليك بعد أن تعالجه اللجنة وتوقّع من جديد."
+            : `${reason ? `«${reason}» — ` : ""}عالجه ثم وقّع من جديد ليصل رئيسَ القسم.`,
+          view: routeFor(role, "approval"), at: approval.headReturn.at, ...target(scope),
+        });
       } else if (approval.status === "drafting" && !accepted) {
         items.push({
           id: key(scope, "draft"), tone: isHead ? "waiting" : scope.rowCount > 0 ? "action" : "waiting",

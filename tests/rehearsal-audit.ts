@@ -34,7 +34,7 @@ const block = (source: string, start: string, end = "\napp.") => {
  * توقيعُه معه) ووقّعت من جديد. فقال الجرسُ لرئيس القسم «شعبة واحدة أُضيفت بعد
  * اعتمادك — وافق عليها» ولا اعتمادَ له، وعُدّت الشعبةُ في عدّاد اللجنة. */
 {
-  const sig = (stage: "committee" | "head") => ({ stage, SystemUserId: 1, userName: "س", roleLabel: "ص", at: "2026-09-25T00:00:00Z" });
+  const sig = (stage: "committee" | "head") => ({ stage, SystemUserId: 1, userName: "س", roleLabel: "ص", at: "2026-09-25T00:00:00Z", rowCount: 8, verifyCode: "ABC123" });
   const addition = { scheduleId: 1058, courseId: 17, courseName: "أمن الأنظمة", sectionCode: "02", addedAt: "2026-09-25T00:00:00Z", addedBy: "اللجنة" };
   const base = (signatures: any[], status: any = "returned"): ScheduleApproval => ({
     ...emptyApproval(1, 1, 1), status, currentRound: 1, signatures,
@@ -91,6 +91,25 @@ const block = (source: string, start: string, end = "\napp.") => {
   const bar = read("src/components/ApprovalBar.tsx");
   check(bar.includes("const pendingAdditions = additionsAwaitingHead(approval);") && !bar.includes("pendingAdditionTotal"),
     "R1: الشريطُ يقرأ القاعدة الواحدة");
+}
+
+/* ══ R2: إرجاعُ رئيس القسم يصل اللجنةَ بسببه ═════════════════════════════════
+ * البروفة: أرجع رئيس القسم الجدول بسببٍ مكتوب، فقال جرسُ اللجنة «وقّع جدول
+ * علوم الحاسب — بعد توقيعك يصل لرئيس القسم» كأنها تبدأ، بلا ذكرٍ للإرجاع. */
+{
+  const approval = {
+    ...emptyApproval(1, 1, 1), status: "drafting", currentRound: 1, signatures: [],
+    rounds: [{ number: 1, submittedAt: "2026-09-16T00:00:00Z", returnedAt: "2026-09-22T00:00:00Z" }],
+    headReturn: { by: "د. رئيس القسم", at: "2026-09-25T17:47:18.277Z", reason: "راجعوا توقيت الشعبة الثانية" },
+  } as ScheduleApproval;
+  const scope = { approval, collegeName: "ك", sectionName: "علوم الحاسب", rowCount: 8, openRegistrarNotes: 0, openRequests: 0 } as CenterScope;
+  const committee = buildNotifications({ role: "committeeChair", scopes: [scope] });
+  const item = committee.find(entry => entry.title.includes("أرجع رئيس القسم"));
+  check(Boolean(item) && item!.tone === "action" && item!.detail.includes("راجعوا توقيت الشعبة الثانية"),
+    "R2: اللجنةُ تقرأ في جرسها أن رئيس القسم أرجع الجدول، وبسببه");
+  check(!committee.some(entry => entry.title.startsWith("وقّع جدول")), "R2: ولا يُقال لها «وقّع» كأنها تبدأ");
+  const head = buildNotifications({ role: "departmentHead", scopes: [scope] });
+  check(head.some(entry => entry.tone === "waiting" && entry.title.includes("أرجعتَ")), "R2: ورئيسُ القسم يرى أنه ينتظر اللجنة");
 }
 
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);
