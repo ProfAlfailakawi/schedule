@@ -11,6 +11,7 @@
 @import "./styles/06-intelligence.css";
 @import "./styles/09-details.css";
 @import "./styles/11-approval.css";
+@import "./styles/12-deadlines.css";
 @import "./styles/07-responsive.css";
 /* 10-journey and 08-print moved to deferred.css — loaded in parallel, off the
    render-blocking path. They were the LAST two imports, so loading them after

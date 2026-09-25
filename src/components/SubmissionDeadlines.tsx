@@ -343,7 +343,7 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
 
   /* ما ينتظر صاحبَ القرار لا يُطوى عنه: فصلٌ بلا موعد، أو طلبٌ معلّق. */
   const needsAttention = canEdit && (phase === "none" || requests.length > 0);
-  const open = !collapsed || needsAttention || editing;
+  const open = !collapsed || needsAttention || editing || Boolean(sheet);
 
   useEffect(() => {
     if (!extendFor) return;
