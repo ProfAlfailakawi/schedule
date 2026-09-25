@@ -11,6 +11,7 @@ import { execSync } from "child_process";
 import os from "os";
 import { validateCivilId } from "../src/utils/civilId";
 import { suggestedDegreeRule } from "../src/utils/degreeRules";
+import { graduationProgrammeText, graduationSheetFacts } from "../src/utils/documentOcr";
 import { applyStudentCaseDecision, isCaseLevelNeed, studentCaseRefusal, studentCaseStatus } from "../src/utils/studentCaseDecision";
 
 /* مخزنٌ محليٌّ معزول لكل تشغيل: لا يلمس بيانات أحد. */
@@ -288,6 +289,26 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(guard.includes("res.status(413)") && guard.includes('error.type==="entity.too.large"') && guard.includes("content-length"), "S11 413 برسالة عربية قبل القراءة وعند تجاوز الحدّ");
   check(server.includes("const STUDENT_PROOF_MAX_BYTES=14*1024*1024;") && surveyPageSource.includes("MAX_PROOF_BYTES=14*1024*1024"), "S11 حدٌّ واحد: 14 ميغابايت في الخادم والصفحة");
   check(surveyPageSource.includes("if(sent>MAX_PROOF_BYTES)"), "S11 الصفحة تفحص الحجم قبل الرفع");
+}
+
+/* ── S12 التخصص يُقرأ من سطر البرنامج وحده ──────────────────────────────── */
+{
+  const sheet = [
+    "الهيئة العامة للتعليم التطبيقي والتدريب",
+    "الخطة الدراسية · مقررات قسم التربية الإسلامية المساندة",
+    "طالب تجريبي 3000 1010 0122",
+    "البرنامج رياضيات",
+    "الوحدات المطلوبة 130",
+    "الوحدات المجتازة 110",
+  ].join("\n");
+  check(graduationProgrammeText(sheet) === "رياضيات", "S12 البرنامج من سطره وحده، لا من كلمات الصفحة");
+  check(graduationSheetFacts(sheet).programmeText === "رياضيات", "S12 الحقائق تحمل نص البرنامج");
+  check(graduationProgrammeText("البرنامج: لغة انجليزية الوحدات المطلوبة 134") === "لغه انجليزيه", "S12 يقف عند الحقل التالي في السطر نفسه");
+  check(graduationProgrammeText("الخطة الدراسية\nالتربية الإسلامية\nالوحدات المجتازة 114") === "", "S12 بلا سطر برنامج: فارغ (يفشل مغلقاً)");
+  const proof = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
+  check(proof.includes("academicSectionNameMatches(programmeText,") && !proof.includes("academicSectionNameMatches(facts.normalizedText"),
+    "S12 مطابقة القسم على سطر البرنامج لا على النص كله");
+  check(proof.includes('code:"programme-unreadable"'), "S12 سطر برنامج غير مقروء يُرفض بسببه");
 }
 
 export function finish() {

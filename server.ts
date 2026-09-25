@@ -13020,7 +13020,13 @@ app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Req
      prints the full civil name. Civil ID remains the 100% identity gate. */
   const foldName=(value:string)=>String(value||"").replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
   const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.some(word=>documentName.includes(word));
-  const specializationMatched=academicSectionNameMatches(facts.normalizedText,String(section.AdSectionName||""));
+  /* Only the programme row decides the specialization — never words anywhere
+     else on the sheet. No readable programme row fails closed. */
+  const programmeText=String(facts.programmeText||"");
+  if(!programmeText){
+    res.status(422).json({code:"programme-unreadable",error:"لم أتعرف على سطر «البرنامج» في صحيفة التخرج. ارفع الصفحة الرسمية كاملة وبوضوح يظهر فيها البرنامج."});return;
+  }
+  const specializationMatched=academicSectionNameMatches(programmeText,String(section.AdSectionName||""));
   if(!specializationMatched){
     res.status(422).json({error:`التخصص الظاهر في صحيفة التخرج لا يطابق القسم المحدد «${String(section.AdSectionName||"")}». اختر قسمك الصحيح وارفع صحيفتك أنت.`});return;
   }
