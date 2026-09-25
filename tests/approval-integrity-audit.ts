@@ -134,7 +134,10 @@ check(server.includes("app.get(\"/api/user-scopes\", requireAnyPermission([11, 1
  * تبدأ بإرسالٍ من أحد. والأخذُ بالجولة السابقة وحدها يقع عليها فيجد يداً
  * فارغة، فيُقارن الجدولُ بالعدم ويُعرض كاملاً على أنه جديد. */
 
-check(server.includes("item.number < round && item.reviewedVersionId"),
+/* صار المسحُ في قاعدةٍ واحدة يقرؤها التقريرُ وجدولُ العميد معاً (R9). */
+const workflowSource = fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8");
+check(server.includes("const roundBaselineId = roundBaselineVersionId(approval, round);")
+  && workflowSource.includes("item.number < round") && workflowSource.includes("item.acceptedVersionId || item.reviewedVersionId"),
   "المسح إلى الوراء حتى تُوجد نسخة، لا الجولة السابقة وحدها");
 
 /* ── ٦) لا كتابةَ بلا تغيير ─────────────────────────────────────────────── */
@@ -254,12 +257,13 @@ check(noteMutBody.includes("withSerialLock(`approval:${collegeId}:${sectionId}:$
   "تحديثُ السجلّ بعد تعديل الجدول على الطابور نفسه الذي تقف عليه قراراتُ الدورة");
 /* القفل غيرُ قابلٍ لإعادة الدخول، فتداخلُ مفتاحين متطابقين توقّفٌ تام. */
 const approvalLockSites = [...server.matchAll(/withSerialLock\(`approval:/g)].map(m => m.index || 0);
-const nested = approvalLockSites.filter(at => server.slice(at, at + 2600).includes("noteScheduleMutation("));
+/* يُبحث عن الاستدعاء لا عن الاسم: تعريفُ الدالّة نفسُه قد يلي القفلَ في الملف. */
+const nested = approvalLockSites.filter(at => server.slice(at, at + 2600).includes("await noteScheduleMutation("));
 check(nested.length === 0, "ولا قفلَ داخل قفلٍ بالمفتاح نفسه: التداخل توقّفٌ تام لا بطء");
 
 /* ── ١٦) الموعد المنتقل إضافةٌ عند وجهته ───────────────────────────────── */
 
-check(server.includes('movedScope ? { kind: "add", row: updated } : { kind: "edit", row: updated }'),
+check(server.includes('movedScope || isSwapEdit(existing, updated) ? { kind: "add", row: updated } : { kind: "edit", row: updated }'),
   "شعبةٌ انتقلت إلى قسمٍ بعد توقيع رئيسه تُسجَّل في انتظار إقراره");
 check(server.includes("const movedScope = existing.AdCollegeId !== collegeId"),
   "والقسمُ الذي غادرته يُبلَّغ أيضاً: يتغيّر ولو بالنقصان");

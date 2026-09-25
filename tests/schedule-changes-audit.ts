@@ -128,7 +128,9 @@ check(server.includes('app.post("/api/schedule-notes/:id/verdict"'), "قرار �
    الكتابة، فيبقى الردّ وتبقى الخانة رماديةً إلى الأبد. */
 check(server.includes('rebuttalVerdict: "insisted",') && server.includes('}, ["rebuttal"]);'),
   "الإصرار يمحو الردّ: الخانة تعود برتقاليةً تنتظر، لا رماديةً أُجيب عنها");
-check(server.includes("insistCount: Number(note.insistCount || 0) + 1"),
+/* العدُّ صار في `insistOutcome` (R19)، يُكتب معه لحظةُ بلوغ الحدّ. */
+check(server.includes("const outcome = insistOutcome(note, at);")
+  && fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8").includes("const insistCount = Number(note.insistCount || 0) + 1;"),
   "ويُعدّ: الخلافُ الذي تكرّر ثلاثاً لم يعد خلافاً على قاعة");
 
 /* ── الدورة تُغلق فعلاً ───────────────────────────────────────────────────
@@ -139,11 +141,11 @@ check(server.includes("insistCount: Number(note.insistCount || 0) + 1"),
  *
  * والسبب الوحيد الذي يوقعها فيه: أن يُعدّ المفتوحُ من علَمٍ مخزّن لا من
  * الحالة المحسوبة. ولذلك يُحرس العدّ هنا صراحةً. */
-const submitAt = server.indexOf('app.post("/api/approvals/submit"');
+const submitAt = server.indexOf("async function submitToRegistrar(");
 const submitBody = server.slice(submitAt, submitAt + 3000);
-check(submitBody.includes("await notesWithState("),
+check(submitBody.includes("countOpenRegistrarNotes(await notesWithState("),
   "عدّ الملاحظات قبل الإرسال من الحالة المحسوبة");
-check(submitBody.includes('note.state === "open"'),
+check(fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8").includes('return note.origin === "registrar" && note.state === "open";'),
   "المفتوح وحده يمنع الإرسال: ما عُولج لا يُحسب");
 check(!submitBody.includes("!note.resolved"),
   "لا يُقرأ علَم `resolved`: لا شيء يرفعه عن ملاحظةٍ عالجها القسم، فقراءته تقفل الدورة إلى الأبد");
@@ -174,7 +176,8 @@ check(!changes.includes("{isRegistrar && entry.kind !== \"removed\" ? ("),
   "فلم يبقَ بابٌ مقفلٌ في وجه رئيس القسم");
 check(server.includes("if (!canAnnotateCells(req.user?.Role) && !isPowerUser(req))"),
   "والخادم يقرأ الإذن من الدالّة نفسها: لا يُفتح في إحداهما ما يُقفل في الأخرى");
-check(changes.includes('note.origin === "department" ? <em> · من القسم</em>'),
+/* ويُسمّى كاتبُها (R12): ملاحظاتُ القسم لكلٍّ كاتبُها. */
+check(changes.includes('note.origin === "department" ? <em> · من القسم — <bdi>{note.userName}</bdi></em>'),
   "ومصدرُ الملاحظة يُقال: ملاحظةُ التسجيل تمنع الإرسال، وملاحظةُ القسم لا تمنع");
 
 /* ── ٢) عميد التسجيل يفتح الوارد ولا يقرّر فيه ──────────────────────────── */
@@ -217,12 +220,16 @@ check(server.includes("changedRowCount = moved.counts.added + moved.counts.remov
   "كلُّ جولةٍ تحمل عدد الصفوف التي تحرّكت رداً على ملاحظاتها");
 check(server.includes("/* عددٌ يُعرض، لا شرطٌ يُحتسب: تعذّره لا يمنع الإرسال. */"),
   "وحسابُه لا يمنع إرسالاً");
-check(changes.includes("فتحرّك ${round.changedRowCount} صفّاً"),
+check(changes.includes("فتحرّك ${countOf(round.changedRowCount, AR.row)}"),
   "ويُقرأ في الشريط الزمني بجانب ما طُلب");
 
 /* ── ٧) خلافٌ لم يُحسم ──────────────────────────────────────────────────── */
-check(changes.includes('Number(note.insistCount || 0) >= 3'), "الخانةُ المختلَف عليها ثلاثاً تُعلَن");
-check(changes.includes("إعلامٌ لرئيس القسم، ولا شيء يقف عليه"),
+check(changes.includes('Number(note.insistCount || 0) >= ESCALATE_AFTER_INSISTS')
+  && fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8").includes("export const ESCALATE_AFTER_INSISTS = 3;"),
+  "الخانةُ المختلَف عليها ثلاثاً تُعلَن");
+/* والرسالةُ صادقة (R19): كانت تقول «إعلامٌ لرئيس القسم» ولا شيء يُعلمه. صار
+   يُعرض له في شريطه، والرسالةُ تقول أين. */
+check(changes.includes("ظهرت لرئيس القسم في شريط الاعتماد. إعلامٌ لا يوقف شيئاً."),
   "إعلاماً لا إجباراً: لا شيء في النظام يقف عليه");
 
 /* ── ٨) سؤالٌ وفلترٌ بالحالة في الوارد ──────────────────────────────────────

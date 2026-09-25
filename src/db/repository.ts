@@ -1,4 +1,5 @@
 import fs from "fs";
+import { chooseStudentCaseSecret, STUDENT_CASE_SECRET_CONFLICT_MESSAGE, type StudentCaseSecretChoice } from "../server/studentCaseSecret";
 import { AsyncLocalStorage } from "async_hooks";
 import { cachedReference, cachedSchedules, invalidateReference, invalidateSchedules, REFERENCE_KEYS } from "./referenceCache";
 import path from "path";
@@ -35,13 +36,14 @@ import {
   AdDegreeRule,
   ScheduleDecisionMemory,
   CampusMobilityProfile,
-  ScheduleShareLink,
+  ScheduleShareLink, ShareLinkInstructorMark,
   InstructorRequest,
   VisitingRoster,
   DepartmentDelegateDirectory,
   DepartmentRoomDirectory,
   StudentNeed,
   StudentCourseState,
+  StudentCaseDecision,
   HallBarterRequest,
   ScheduleWeekException,
   MasterBuilding,
@@ -53,6 +55,8 @@ import {
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
 import { createDemoSandboxState } from "./demoSandbox";
+import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
+import { caseRefFromId, mergeStudentResubmission } from "../utils/studentNeedMerge";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -2167,46 +2171,59 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
 
 const STUDENT_CASE_SECRET_DOC = "systemSecrets/student-case-identity-v1";
 let studentCaseSecretCache = "";
+/* ذاكرةُ الملف المحلي منفصلةٌ عن ذاكرة السرّ المشترك: طلبٌ من صندوق العرض يقرأ
+   ملفاً محلياً، ولا يجوز أن يلتصق سرُّه بالذاكرة فتقرأه النسخة الحقيقية بعده. */
+let localStudentCaseSecretCache = "";
 /**
  * Stable key material for student-case fingerprints and field-level identity
  * encryption. Cloud Run can serve two consecutive requests from two different
  * instances, so a per-process random secret makes a case written by instance A
- * unreadable to instance B. Prefer an operator-owned environment secret; when
- * that is not configured, create one shared secret once in Firestore. Local
- * mode keeps the same 0600 key beside the private database, outside the release.
+ * unreadable to instance B. The STORED secret (Firestore, or the 0600 local key
+ * beside the private database) always wins; STUDENT_CASE_SECRET only seeds it
+ * when nothing is stored yet, and is refused loudly if it differs. CALENDAR_SECRET
+ * is never read here (see src/server/studentCaseSecret.ts).
  */
 async function getOrCreateStudentCaseSecret(): Promise<string> {
-  const configured = String(process.env.STUDENT_CASE_SECRET || process.env.CALENDAR_SECRET || "").trim();
-  if (configured) return configured;
-  if (studentCaseSecretCache) return studentCaseSecretCache;
+  /* القاعدة في src/server/studentCaseSecret.ts: المحفوظ هو الحَكَم، و
+     CALENDAR_SECRET لا يُقرأ هنا. */
+  const configured = String(process.env.STUDENT_CASE_SECRET || "").trim();
+  const generate = () => randomBytes(32).toString("hex");
+  const warnConflict = (choice: StudentCaseSecretChoice) => {
+    if (choice.conflict) console.error(`[student-case-secret] ${STUDENT_CASE_SECRET_CONFLICT_MESSAGE}`);
+  };
 
   if (firestoreDb && !demoSandboxContext.getStore()) {
+    if (studentCaseSecretCache) return studentCaseSecretCache;
     const ref = firestoreDb.doc(STUDENT_CASE_SECRET_DOC);
-    const secret = await firestoreDb.runTransaction(async tx => {
+    const choice = await firestoreDb.runTransaction(async tx => {
       const snap = await tx.get(ref);
-      const existing = String(snap.data()?.secret || "").trim();
-      if (existing) return existing;
-      const created = randomBytes(32).toString("hex");
-      tx.set(ref, { secret: created, createdAt: new Date().toISOString(), purpose: "student-case-identity-v1" });
-      return created;
+      const picked = chooseStudentCaseSecret({ configured, stored: snap.data()?.secret, generate });
+      if (picked.persist) {
+        tx.set(ref, { secret: picked.secret, createdAt: new Date().toISOString(), purpose: "student-case-identity-v1", source: configured ? "env" : "generated" });
+      }
+      return picked;
     });
-    studentCaseSecretCache = secret;
-    return secret;
+    warnConflict(choice);
+    studentCaseSecretCache = choice.secret;
+    return choice.secret;
   }
 
+  if (localStudentCaseSecretCache) return localStudentCaseSecretCache;
   const file = path.join(DB_DIR, "student-case-identity.key");
-  if (fs.existsSync(file)) {
-    studentCaseSecretCache = fs.readFileSync(file, "utf8").trim();
-    if (studentCaseSecretCache) return studentCaseSecretCache;
+  const readStored = () => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : "");
+  let choice = chooseStudentCaseSecret({ configured, stored: readStored(), generate });
+  if (choice.persist) {
+    fs.mkdirSync(DB_DIR, { recursive: true, mode: 0o700 });
+    try { fs.writeFileSync(file, `${choice.secret}\n`, { mode: 0o600, flag: "wx" }); }
+    catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+      /* سبقنا غيرُنا إلى الكتابة: ما كُتب هو الحَكَم. */
+      choice = chooseStudentCaseSecret({ configured, stored: readStored(), generate });
+    }
   }
-  fs.mkdirSync(DB_DIR, { recursive: true, mode: 0o700 });
-  const created = randomBytes(32).toString("hex");
-  try { fs.writeFileSync(file, `${created}\n`, { mode: 0o600, flag: "wx" }); }
-  catch (error: any) {
-    if (error?.code !== "EEXIST") throw error;
-  }
-  studentCaseSecretCache = fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : created;
-  return studentCaseSecretCache || created;
+  warnConflict(choice);
+  localStudentCaseSecretCache = choice.secret;
+  return localStudentCaseSecretCache;
 }
 
 /** الأحدث أولاً، ويحتمل ملاحظةً بلا تاريخ — من ترحيلٍ أو نسخةٍ احتياطية. */
@@ -2249,19 +2266,64 @@ const readCommentsOrdered = async (
  * وكشفُ التسجيل. ولو اشتقّه كلٌّ بطريقته لاختلفوا يوماً، ولوقف الطالبُ أمام
  * الموظّف برقمٍ لا يجده في كشفه.
  */
-export const caseRefOf = (id: string): string => String(id).slice(0, 8).toUpperCase();
+export const caseRefOf = caseRefFromId;
 
 /** رقمُ الحالة كما يُعرض: الثابتُ المحفوظ، أو المشتقُّ للسجلّات التي سبقته. */
 export const caseRefFor = (need: { id: string; caseRef?: string }): string =>
   String(need.caseRef || caseRefOf(need.id));
+
+/**
+ * Every studentNeeds document where `field == value`, read page by page.
+ *
+ * The term read used to stop silently at 5000 documents — one busy term across
+ * a college and the newest requests simply vanished from every sheet and count,
+ * with nothing on screen to say so. Paging on the document id needs only the
+ * automatic single-field index, so no composite index is involved.
+ */
+const STUDENT_NEEDS_PAGE = 1000;
+async function readStudentNeedsWhere(field: "AdTermId" | "AdCollegeId", value: number): Promise<StudentNeed[]> {
+  if (!firestoreDb) return [];
+  const out: StudentNeed[] = [];
+  let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+  for (;;) {
+    let query: FirebaseFirestore.Query = firestoreDb.collection("studentNeeds")
+      .where(field, "==", value).orderBy(FieldPath.documentId()).limit(STUDENT_NEEDS_PAGE);
+    if (last) query = query.startAfter(last);
+    const snap = await query.get();
+    for (const doc of snap.docs) out.push(doc.data() as StudentNeed);
+    if (snap.size < STUDENT_NEEDS_PAGE) break;
+    last = snap.docs[snap.docs.length - 1];
+  }
+  return out;
+}
 
 /** A course-state write refused by its guard, read inside the write itself. */
 export class StudentCourseStateConflict extends Error {
   constructor(message: string) { super(message); this.name = "StudentCourseStateConflict"; }
 }
 
+/**
+ * ── وثيقةُ الاعتماد كُتبت فوقها ─────────────────────────────────────────────
+ *
+ * كلُّ قرارٍ في الدورة يقرأ الوثيقة ثم يكتبها كاملة. والطابورُ في الذاكرة يحمي
+ * خادماً واحداً، وCloud Run يشغّل أكثر من واحد: موظّفان يقبل أحدهما ويُرجع
+ * الآخر في اللحظة نفسها على خادمين، فيكتب الثاني فوق الأول بلا أن يعرف أحد.
+ *
+ * فللوثيقة رقمُ مراجعة، والحفظُ يُرفض إن لم يكن الرقمُ المقروءُ هو الرقمَ
+ * المحفوظ. والخاسر يُعاد مرّةً واحدة على ما صار، ثم يُقال له.
+ */
+export class ApprovalRevisionConflict extends Error {
+  constructor(public current?: ScheduleApproval) {
+    super("سبق قرارٌ آخر على هذا الجدول في اللحظة نفسها.");
+    this.name = "ApprovalRevisionConflict";
+  }
+}
+
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
+  /** السرّ المشترك بين نسخ الخادم، مقروءاً خارج صندوق العرض دائماً: مفتاحُ
+   *  التقويم مادةٌ للخادم كله لا لجلسة عرضٍ بعينها. */
+  getSharedServerSecret: async (): Promise<string> => demoSandboxContext.exit(() => getOrCreateStudentCaseSecret()),
   /** Lets the server drop any cached identity the moment accounts change. */
   onIdentityChanged: (listener: () => void) => { identityListeners.add(listener); },
 
@@ -3795,6 +3857,22 @@ export const Repository = {
       .slice(0, safeLimit);
   },
 
+  /**
+   * The scope as it stood right after the change a version protects. Written
+   * once the change has succeeded, so a later restore can tell «nothing else
+   * happened since» from «these edits would be erased».
+   */
+  setScheduleVersionBase: async (id: string, base: { baseFingerprint: string; baseSignatures: Record<string, string> }): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleVersions").doc(id).set(base, { merge: true });
+      return;
+    }
+    const row = (db.scheduleVersions || []).find(item => item.id === id);
+    if (!row) return;
+    Object.assign(row, base);
+    saveDatabase();
+  },
+
   getScheduleVersionById: async (id: string): Promise<ScheduleVersion | undefined> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleVersions").doc(id).get();
@@ -4076,7 +4154,8 @@ export const Repository = {
   getShareLinks: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleShareLink[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(50).get();
+      /* الروابطُ الشخصية رابطٌ لكل أستاذ في القسم؛ خمسون كانت تُسقط بعضها. */
+      const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(300).get();
       return snap.docs.map(doc => doc.data() as ScheduleShareLink).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
     return (db.scheduleShareLinks || []).filter(row => row.scopeKey === scopeKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -4197,16 +4276,53 @@ export const Repository = {
    * قرارٍ ونصفُها من قرارٍ آخر.
    */
   saveScheduleApproval: async (approval: ScheduleApproval): Promise<ScheduleApproval> => {
-    const row: ScheduleApproval = { ...approval, updatedAt: new Date().toISOString() };
+    /* المراجعةُ المقروءة هي ما يُشترط. وثيقةٌ قديمة بلا رقمٍ تُقرأ صفراً، وقسمٌ
+       لم يُكتب له سجلٌّ بعد صفرٌ كذلك — فلا ينكسر شيءٌ مما كُتب قبل هذا. */
+    const expected = Math.max(0, Number(approval.revision || 0));
+    const row: ScheduleApproval = { ...approval, revision: expected + 1, updatedAt: new Date().toISOString() };
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      await firestoreDb.collection("scheduleApprovals").doc(row.scopeKey.replace(/:/g, "_")).set(row);
-      return row;
+      const ref = firestoreDb.collection("scheduleApprovals").doc(row.scopeKey.replace(/:/g, "_"));
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        const stored = doc.exists ? (doc.data() as ScheduleApproval) : undefined;
+        if (Math.max(0, Number(stored?.revision || 0)) !== expected) throw new ApprovalRevisionConflict(stored);
+        transaction.set(ref, row);
+        return row;
+      });
     }
     if (!Array.isArray(db.scheduleApprovals)) db.scheduleApprovals = [];
     const index = db.scheduleApprovals.findIndex(item => item.scopeKey === row.scopeKey);
+    const stored = index === -1 ? undefined : db.scheduleApprovals[index];
+    if (Math.max(0, Number(stored?.revision || 0)) !== expected) throw new ApprovalRevisionConflict(stored);
     if (index === -1) db.scheduleApprovals.push(row); else db.scheduleApprovals[index] = row;
     saveDatabase();
     return row;
+  },
+
+  /**
+   * علامةُ «تعديلٌ ينتظر جولته» فوق آخر مراجعة (مراجعة 6). ليست حفظاً مشروطاً:
+   * تقرأ الأحدث وتضيف العلامة وترفع المراجعة، فكلُّ من قرأ قبلها يخسر سباقه
+   * ويعيد القراءة فيراها — فلا يمحوها حفظٌ كاملٌ قديم. لا تُنشئ وثيقةً غائبة:
+   * قسمٌ بلا وثيقة لم يُعتمد، فلا جولة تُنتظر له.
+   */
+  markScheduleApprovalAmendmentPending: async (collegeId: number, sectionId: number, termId: number, marker: NonNullable<ScheduleApproval["amendmentPending"]>): Promise<boolean> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleApprovals").doc(scopeKey.replace(/:/g, "_"));
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        if (!doc.exists) return false;
+        const stored = doc.data() as ScheduleApproval;
+        transaction.set(ref, { ...stored, amendmentPending: marker, revision: Math.max(0, Number(stored.revision || 0)) + 1, updatedAt: new Date().toISOString() });
+        return true;
+      });
+    }
+    const index = (db.scheduleApprovals || []).findIndex(item => item.scopeKey === scopeKey);
+    if (index === -1) return false;
+    const stored = db.scheduleApprovals![index];
+    db.scheduleApprovals![index] = { ...stored, amendmentPending: marker, revision: Math.max(0, Number(stored.revision || 0)) + 1, updatedAt: new Date().toISOString() };
+    saveDatabase();
+    return true;
   },
 
   getShareLink: async (id: string): Promise<ScheduleShareLink | undefined> => {
@@ -4225,6 +4341,21 @@ export const Repository = {
     const row = (db.scheduleShareLinks || []).find(item => item.id === id);
     if (!row) throw new Error("الرابط غير موجود");
     row.revoked = true;
+    saveDatabase();
+  },
+
+  /** يسجّل إرسالاً أو زيارةً لأستاذٍ على رابط (دمجٌ لا استبدال). */
+  markShareLinkInstructor: async (id: string, instructorId: number, patch: ShareLinkInstructorMark): Promise<void> => {
+    const key = String(Number(instructorId) || 0);
+    if (key === "0") return;
+    const clean = Object.fromEntries(Object.entries(patch).filter(([, value]) => typeof value === "string" && value)) as ShareLinkInstructorMark;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleShareLinks").doc(id).set({ marks: { [key]: clean } }, { merge: true });
+      return;
+    }
+    const row = (db.scheduleShareLinks || []).find(item => item.id === id);
+    if (!row) return;
+    row.marks = { ...(row.marks || {}), [key]: { ...(row.marks?.[key] || {}), ...clean } };
     saveDatabase();
   },
 
@@ -4413,66 +4544,49 @@ export const Repository = {
   /**
    * ── ما يحتاجه الطالب ──────────────────────────────────────────────────────
    *
-   * The thinnest record in the system, and deliberately so. No name and no
-   * civil ID are stored — only a fingerprint that can tell two submissions
-   * apart and can never be turned back into a person. See StudentNeed in
-   * types.ts for why that is a feature and not caution.
+   * One record per student hand (fingerprint + term + survey department). The
+   * name and civil ID are stored only as field-level ciphertexts (see server.ts
+   * sealStudentIdentity) because the authorised department needs them to act
+   * on the case; the fingerprint is the duplicate key.
    *
-   * Writing the same fingerprint twice REPLACES the earlier answer rather than
-   * adding a second: a student who changes their mind has changed their mind,
-   * and counting both would inflate every number on the coordinator's screen.
+   * Writing the same hand again UPDATES that record in place, inside one
+   * transaction: same id, same case number, the first submission date kept,
+   * and every decision the committee or registrar already made kept — a course
+   * the student removed after a decision stays visible, flagged
+   * `droppedByStudent` (rule: src/utils/studentNeedMerge.ts). It used to delete
+   * and recreate, discarding those decisions, in two non-atomic steps.
    */
   saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">): Promise<StudentNeed> => {
-    const row: StudentNeed = { ...entry, id: randomUUID(), createdAt: new Date().toISOString() };
+    const now = new Date().toISOString();
     const sameHand = (item: StudentNeed) => {
       const itemSurveySection = Number(item.surveySectionId || item.AdSectionId || 0);
-      const rowSurveySection = Number(row.surveySectionId || row.AdSectionId || 0);
-      return item.fingerprint === row.fingerprint && Number(item.AdTermId) === Number(row.AdTermId)
-        && itemSurveySection === rowSurveySection;
-    };
-    /* ── ما قاله التسجيلُ لا يمحوه الطالبُ بتغيير رأيه ──────────────────────
-     *
-     * إعادةُ الإرسال تستبدل السجلّ، فكانت حالاتُ المقرّرات تذهب معه: مقرّرٌ
-     * سجّله التسجيلُ أمسِ يعود «لم يُقل فيه شيء» لأن الطالبَ أضاف مقرّراً
-     * آخرَ اليوم. فتُنقل الحالاتُ إلى السجلّ الجديد، ولا يُنقل منها إلا ما
-     * يخصّ مقرّراً ما زال مطلوباً — فمقرّرٌ سحبه الطالبُ لا تبقى له حالة.
-     */
-    const carry = (prior: StudentNeed[]): StudentCourseState[] | undefined => {
-      const wanted = new Set((row.courseIds || []).map(Number));
-      const kept = prior
-        .flatMap(item => item.courseStates || [])
-        .filter(state => wanted.has(Number(state.courseId)));
-      /* أحدثُ قولٍ في كل مقرّر هو قولُه: سجلّان للشخص نفسه لا يجتمعان عادةً،
-         لكن الاحتياط هنا أرخص من حالةٍ قديمةٍ تعلو حديثة. */
-      const newest = new Map<number, StudentCourseState>();
-      for (const state of kept) {
-        const at = newest.get(Number(state.courseId));
-        if (!at || String(state.at) > String(at.at)) newest.set(Number(state.courseId), state);
-      }
-      return newest.size ? [...newest.values()] : undefined;
+      const entrySurveySection = Number(entry.surveySectionId || entry.AdSectionId || 0);
+      return item.fingerprint === entry.fingerprint && Number(item.AdTermId) === Number(entry.AdTermId)
+        && itemSurveySection === entrySurveySection;
     };
 
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("studentNeeds")
-        .where("fingerprint", "==", row.fingerprint).limit(20).get();
-      const replaced = snap.docs.map(doc => doc.data() as StudentNeed).filter(sameHand);
-      const inherited = carry(replaced);
-      if (inherited && !row.courseStates) row.courseStates = inherited;
-      row.caseRef = row.caseRef || replaced.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id);
-      const batch = firestoreDb.batch();
-      snap.docs.filter(doc => sameHand(doc.data() as StudentNeed)).forEach(doc => batch.delete(doc.ref));
-      batch.set(firestoreDb.collection("studentNeeds").doc(row.id), row);
-      await batch.commit();
-      return row;
+      const collection = firestoreDb.collection("studentNeeds");
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(collection.where("fingerprint", "==", entry.fingerprint).limit(20));
+        const prior = snap.docs.map(doc => doc.data() as StudentNeed).filter(sameHand);
+        const { row, removeIds } = mergeStudentResubmission(prior, entry, now, randomUUID());
+        for (const id of removeIds) transaction.delete(collection.doc(id));
+        transaction.set(collection.doc(row.id), row);
+        return row;
+      });
     }
     if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
-    const replacedLocal = db.studentNeeds.filter(sameHand);
-    const inherited = carry(replacedLocal);
-    if (inherited && !row.courseStates) row.courseStates = inherited;
-    row.caseRef = row.caseRef || replacedLocal.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id);
-    db.studentNeeds = db.studentNeeds.filter(item => !sameHand(item));
-    db.studentNeeds.unshift(row);
-    if (db.studentNeeds.length > 20000) db.studentNeeds.length = 20000;
+    const prior = db.studentNeeds.filter(sameHand);
+    const { row, removeIds } = mergeStudentResubmission(prior, entry, now, randomUUID());
+    const at = db.studentNeeds.findIndex(item => item.id === row.id);
+    if (removeIds.length) db.studentNeeds = db.studentNeeds.filter(item => !removeIds.includes(item.id));
+    const index = db.studentNeeds.findIndex(item => item.id === row.id);
+    if (at >= 0 && index >= 0) db.studentNeeds[index] = row;
+    else {
+      db.studentNeeds.unshift(row);
+      if (db.studentNeeds.length > 20000) db.studentNeeds.length = 20000;
+    }
     saveDatabase();
     return row;
   },
@@ -4480,9 +4594,8 @@ export const Repository = {
   /**
    * يكتب حالةَ مقرّرٍ واحدٍ في طلب طالب.
    *
-   * كتابةٌ موضعيةٌ عن قصد: `saveStudentNeed` تستبدل السجلّ كلَّه ببصمته، وهي
-   * الدلالةُ الصحيحةُ حين يعيد الطالبُ إرساله — وهي الدلالةُ الخطأ تماماً حين
-   * يقول التسجيلُ كلمةً عن مقرّرٍ واحد.
+   * كتابةٌ موضعيةٌ عن قصد: `saveStudentNeed` تكتب طلبَ الطالب كلَّه (وتُبقي
+   * القرارات)، وهذه تكتب قولاً واحداً عن مقرّرٍ واحد.
    *
    * وأحدثُ قولٍ في المقرّر هو قولُه: الحالةُ تُستبدل ولا تُكدَّس، فلا يقرأ
    * أحدٌ سجلاًّ يقول «سُجّل» و«رُدّ» معاً.
@@ -4538,6 +4651,38 @@ export const Repository = {
     return db.studentNeeds[at];
   },
 
+  /**
+   * قرارُ جهةٍ واحدةٍ في الحالة كلها (طلبُ الخريج بلا مقرّرات).
+   *
+   * النمطُ نفسُه الذي يكتب به `setStudentCourseState`: القاعدةُ تُسأل داخل
+   * المعاملة على الحالة كما هي لحظتَها (`studentCaseRefusal`)، فقرارا اللجنة
+   * والتسجيل في اللحظة نفسها لا يمرّ أحدهما على حالةٍ قديمة. `next === null`
+   * يسحب قرارَ تلك الجهة.
+   */
+  setStudentCaseDecision: async (needId: string, side: StudentCaseSide, next: StudentCaseDecision | null): Promise<StudentNeed | undefined> => {
+    const merge = (current: StudentNeed): StudentNeed => {
+      const refusal = studentCaseRefusal(current.caseState, side, next);
+      if (refusal) throw new StudentCourseStateConflict(refusal);
+      return { ...current, caseState: applyStudentCaseDecision(current.caseState, side, next) };
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("studentNeeds").doc(needId);
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        if (!doc.exists) return undefined;
+        const merged = merge(doc.data() as StudentNeed);
+        transaction.set(ref, merged);
+        return merged;
+      });
+    }
+    if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
+    const at = db.studentNeeds.findIndex(row => row.id === needId);
+    if (at < 0) return undefined;
+    db.studentNeeds[at] = merge(db.studentNeeds[at]);
+    saveDatabase();
+    return db.studentNeeds[at];
+  },
+
   /** سجلٌّ واحدٌ بمعرّفه. يحتاجه مسارُ الحالة ليتحقّق من نطاقه قبل الكتابة. */
   getStudentNeedById: async (needId: string): Promise<StudentNeed | undefined> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
@@ -4552,7 +4697,7 @@ export const Repository = {
    * Every answer this section has ever collected, all terms.
    *
    * The per-term read above is what a reading of *this* term needs. This one is
-   * what learning a sequence needs: the same anonymous hand appearing in two
+   * what learning a sequence needs: the same fingerprinted hand appearing in two
    * terms is what makes «what follows what» knowable at all. Single-field
    * query, so no composite index is involved.
    */
@@ -4566,9 +4711,7 @@ export const Repository = {
       // `surveySectionId` was added after the first deployed surveys. Read by
       // college and filter in memory so old records are not made invisible by a
       // field they could never have carried.
-      const snap = await firestoreDb.collection("studentNeeds")
-        .where("AdCollegeId", "==", collegeId).limit(20000).get();
-      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+      return (await readStudentNeedsWhere("AdCollegeId", collegeId)).filter(mine);
     }
     return (db.studentNeeds || []).filter(mine);
   },
@@ -4576,8 +4719,7 @@ export const Repository = {
   /** كلُّ طلبات الطلبة في فصلٍ واحد، لكل الكليات: يحتاجها مركزُ الإشعارات ليعدّ لكل قسم. */
   getStudentNeedsForTerm: async (termId: number): Promise<StudentNeed[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("studentNeeds").where("AdTermId", "==", termId).limit(5000).get();
-      return snap.docs.map(doc => doc.data() as StudentNeed);
+      return await readStudentNeedsWhere("AdTermId", termId);
     }
     return (db.studentNeeds || []).filter(item => Number(item.AdTermId) === termId);
   },
@@ -4589,9 +4731,7 @@ export const Repository = {
       return Number(item.surveySectionId || item.AdSectionId || 0) === sectionId;
     };
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("studentNeeds")
-        .where("AdTermId", "==", termId).limit(5000).get();
-      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+      return (await readStudentNeedsWhere("AdTermId", termId)).filter(mine);
     }
     return (db.studentNeeds || []).filter(mine);
   },

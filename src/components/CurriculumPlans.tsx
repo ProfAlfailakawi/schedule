@@ -24,6 +24,7 @@ import {
   visualConfirm,
 } from "./ui";
 import { sortByName } from "../utils/sorting";
+import { AR, countOf, nounFor } from "../utils/arabicCount";
 
 type Overview = {
   section: AdSection;
@@ -175,14 +176,14 @@ export default function CurriculumPlans({
       const offerings = Number(readiness.currentOfferings || 0);
       const requests = Number(readiness.linkedStudentRequests || 0);
       if (offerings || requests) {
-        setError(`لا يمكن أرشفة ${plan.name} الآن: ${offerings} طرح حالي لمقرر خاص بها، و${requests} طلب طلابي مرتبط بها في أحدث فصل.`);
+        setError(`لا يمكن أرشفة ${plan.name} الآن: ما زال لمقرراتها الخاصة ${countOf(offerings, AR.offering, "لا طرح")} في الفصل الحالي و${countOf(requests, AR.request, "لا طلبات")} من الطلبة في أحدث فصل.`);
         return;
       }
       const shared = Number(readiness.sharedCourses || 0);
       const oldOnly = Number(readiness.oldOnlyCourses || 0);
       if (!(await visualConfirm({
         title: "الصحيفة جاهزة للأرشفة",
-        message: `الفحص ناجح: لا توجد طروحات حالية ولا طلبات طلابية مرتبطة بها. سيختفي ${oldOnly} مقرر خاص بهذه الصحيفة من التشغيل، بينما يبقى ${shared} مقرر مشتركاً عبر الصحائف الفعالة. التاريخ والتقارير القديمة لن تتغير.`,
+        message: `الفحص ناجح: لا توجد طروحات حالية ولا طلبات طلابية مرتبطة بها. سيختفي من التشغيل ما يخصّ هذه الصحيفة وحدها (${countOf(oldOnly, AR.course)})، ويبقى المشترك مع الصحائف الفعالة (${countOf(shared, AR.course)}). التاريخ والتقارير القديمة لن تتغير.`,
         confirmLabel: "أرشفة الصحيفة", tone: "danger", compact: true,
       }))) return;
       const archived = await fetch(`/api/curriculum/plans/${encodeURIComponent(plan.id)}/archive`, {
@@ -222,7 +223,7 @@ export default function CurriculumPlans({
                 <h2>كل المقررات الحالية فعّالة تلقائياً</h2>
                 <p>لم تُنشأ صحيفة جديدة بعد. عند إنشاء أول صحيفة، سيثبّت النظام هذه القائمة كما هي في «الصحيفة السابقة» ويبدأ الصحيفة الجديدة فارغة؛ لن تحتاج إلى حذف 90٪ من نسخة مكررة.</p>
               </div>
-              <b>{courses.length.toLocaleString("ar-KW-u-nu-latn")} <small>مقرر</small></b>
+              <b>{courses.length.toLocaleString("ar-KW-u-nu-latn")} <small>{nounFor(courses.length, AR.course)}</small></b>
             </Surface>
           ) : null}
 
@@ -237,7 +238,7 @@ export default function CurriculumPlans({
                 </div>
                 <h3>{plan.name}</h3>
                 <p>{status.note}</p>
-                <div className="curriculum-plan-meta"><b>{count.toLocaleString("ar-KW-u-nu-latn")}</b><span>مقرر</span>{plan.code ? <em>{plan.code}</em> : null}</div>
+                <div className="curriculum-plan-meta"><b>{count.toLocaleString("ar-KW-u-nu-latn")}</b><span>{nounFor(count, AR.course)}</span>{plan.code ? <em>{plan.code}</em> : null}</div>
                 {plan.status === "transition" && !plan.virtual ? <SecondaryButton data-guide-ignore="أرشفة صحيفة أكاديمية بعد فحص الجاهزية" className="curriculum-archive-btn" onClick={() => archivePlan(plan)} disabled={busy}><Archive /> أرشفة الصحيفة</SecondaryButton> : null}
                 {plan.status === "active" ? <SecondaryButton data-guide-ignore="إظهار نموذج إنشاء الجيل التالي من الصحيفة" className="curriculum-archive-btn" onClick={() => setShowNewPlan(v => !v)} disabled={busy}><Plus /> صحيفة أحدث</SecondaryButton> : null}
               </PlanSurface>;
@@ -263,7 +264,7 @@ export default function CurriculumPlans({
               <p className="curriculum-help">المقرر الجديد الذي تنشئه من شاشة المقررات يُضاف تلقائياً إلى هذه الصحيفة. استخدم القائمة فقط للمقرر القديم الذي بقي نفسه في الصحيفتين.</p>
               <div className="curriculum-mini-list">
                 {activeCourses.length ? activeCourses.map(course => <article key={course.AdCourseId}>
-                  <span className="course-code">{course.CourseCode}</span><div><strong>{course.CourseName}</strong><small>{course.CourseCredit} وحدات · {course.CourseHours} ساعات</small></div>
+                  <span className="course-code">{course.CourseCode}</span><div><strong>{course.CourseName}</strong><small>{countOf(course.CourseCredit, AR.unit)} · {countOf(course.CourseHours, AR.hour)}</small></div>
                   <button type="button" data-guide-ignore="إخراج مقرر من الصحيفة الحالية مع حماية الاستخدام الجاري" onClick={() => removeFromActive(course.AdCourseId)} aria-label={`إخراج ${course.CourseName} من الصحيفة`} title="إخراج من الصحيفة"><Trash2 /></button>
                 </article>) : <EmptyState title="الصحيفة الجديدة فارغة" detail="أنشئ المقررات الجديدة من شاشة المقررات؛ ستدخل هنا تلقائياً." />}
               </div>

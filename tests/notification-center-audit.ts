@@ -36,7 +36,7 @@ items = buildNotifications({ role: "registrarDean", scopes: [scope({ status: "su
 check(items.every(item => item.tone !== "action"), "عميد التسجيل يطّلع ولا يُطلب منه قرار");
 // العميد
 items = buildNotifications({ role: "dean", scopes: [scope({ status: "accepted", rounds: accepted }), scope()] });
-check(items.some(item => item.title === "المعتمد 1 من 2 جداول"), "العميد: كم قسماً اعتُمد من الكل");
+check(items.some(item => item.title === "المعتمد 1 من جدولين"), "العميد: كم قسماً اعتُمد من الكل");
 check(items.some(item => item.title.includes("اعتُمد جدول")), "العميد: كل قسمٍ اعتُمد يظهر");
 check(items.every(item => item.tone !== "action"), "العميد لا يُطلب منه شيء");
 // الترتيب
@@ -45,11 +45,11 @@ check(items[0]?.tone === "action" && items[items.length - 1]?.tone === "done", "
 
 // الخادم
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
-check(/if \(stage === "head"\) \{\s*const sent = await submitToRegistrar/.test(server), "اعتماد رئيس القسم يرسل للتسجيل في الخطوة نفسها");
+check(server.includes('const sent = stage === "head" ? await submitToRegistrar('), "اعتماد رئيس القسم يرسل للتسجيل في الخطوة نفسها");
 check(server.includes("const everAccepted = next.rounds.some(round => Boolean(round.acceptedAt));"), "بعد أول قبول لا تُسجَّل إضافاتٌ تنتظر رئيس القسم");
 check(/status: "accepted", rounds, pendingAdditions: \[\]/.test(server), "القبول يُسقط ما بقي من إقرارات");
 check(server.includes("acceptedVersionId: accepted.id"), "القبول يحفظ نسخة ما قُبل");
-check(/return readsFinalSchedulesOnly\(req\) \? finalRowsOnly\(rows, termId\) : rows;/.test(server), "العميدان يقرآن المعتمد وحده من الخادم، لا من الواجهة");
+check(/if \(!readsFinalSchedulesOnly\(req\)\) return rows;\s*const final = await finalRowsWithFinality\(rows, termId\);/.test(server), "العميدان يقرآن المعتمد وحده من الخادم، لا من الواجهة");
 check(/id === "dean" \|\| id === "viceDean"/.test(server), "المعتمد وحده للعميد والعميد المساعد تحديداً");
 check(server.includes('app.get("/api/notifications", requireAuth'), "مسار الإشعارات موجود");
 check(/isScopeAllowed\(req, Number\(row\.AdCollegeId\), Number\(row\.AdSectionId\)\)\);\s*const termDeadline/.test(server), "الإشعارات مقصورةٌ على نطاق الحساب");

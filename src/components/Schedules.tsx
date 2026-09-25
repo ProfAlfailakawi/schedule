@@ -54,7 +54,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  AddButton,
   Badge,
   EmptyState,
   Field,
@@ -134,12 +133,14 @@ import ScheduleTransfer from "./ScheduleTransfer";
 import VisitingBadge from "./VisitingBadge";
 import { usePageAwake } from "../utils/pageAwake";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
-import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
+import { fastConflictScan, findConflicts, isBlockingConflict } from "../utils/scheduleIntelligence";
+import { placeholderInstructorIds } from "../utils/instructorIdentity";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { handoffNotice, takeHandoff, type RequestHandoff } from "../utils/requestHandoff";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
 import { claimWarmStart } from "../utils/warmStart";
@@ -307,7 +308,7 @@ const scheduleStartConventionNote = (row: Partial<FSchedule>): string | null => 
     const duration = endMinutes - startMinutes;
     const expected = hasLongLectureDays ? LONG_LECTURE_MINUTES : SHORT_LECTURE_MINUTES;
     if (duration > 0 && duration !== expected) {
-      return `ملاحظة التوقيت: المدة المعتادة لهذا النمط ${expected} دقيقة، بينما المدة المدخلة ${duration} دقيقة. تنبيه فقط — راجع سجل المقرر إن كان له نمط تاريخي مختلف.`;
+      return `ملاحظة التوقيت: المدة المعتادة لهذا النمط ${countOf(expected, AR.minute)}، بينما المدة المدخلة ${countOf(duration, AR.minute)}. تنبيه فقط — راجع سجل المقرر إن كان له نمط تاريخي مختلف.`;
     }
   }
   return null;
@@ -320,23 +321,9 @@ const normalizeArabicDigits = (value: string) => String(value || "")
 
 const displayClockCompact = (value: string) => scheduleClockForDisplay(value);
 
-const formatTermLabel = (value: number) => {
-  const count = Number(value || 0);
-  if (!count) return "—";
-  if (count === 1) return "فصل واحد";
-  if (count === 2) return "فصلان";
-  if (count <= 10) return `فصول ${count}`;
-  return `فصلًا ${count}`;
-};
+const formatTermLabel = (value: number) => countOf(Number(value || 0), AR.term, "—");
 
-const formatChangeLabel = (value: number) => {
-  const count = Number(value || 0);
-  if (!count) return "بلا تغيّر";
-  if (count === 1) return "تغيّر واحد";
-  if (count === 2) return "تغيّران";
-  if (count <= 10) return `${count} تغيّرات`;
-  return `${count} تغيّرًا`;
-};
+const formatChangeLabel = (value: number) => countOf(Number(value || 0), AR.shift, "بلا تغيّر");
 
 const formatLifeSummary = (terms: number, changes?: number | null) => {
   const parts = [formatTermLabel(terms)];
@@ -349,7 +336,8 @@ const isolateLtrText = (value: string) => `\u2066${String(value || "")}\u2069`;
 type RegulationMetric = { kind: "minutes" | "meetings"; usual: number; current: number; delta: number; unit: string };
 const parseRegulationMetric = (value: string): RegulationMetric | null => {
   const text = normalizeArabicDigits(String(value || ""));
-  let match = text.match(/المعتاد\s+(\d+)\s+دقيقة[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
+  // The prose comes from countOf, so the unit follows the count's own form.
+  let match = text.match(/المعتاد\s+(\d+)\s+(?:دقيقة|دقائق)[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
   if (match) {
     const usual = Number(match[1]);
     const current = Number(match[2]);
@@ -357,8 +345,9 @@ const parseRegulationMetric = (value: string): RegulationMetric | null => {
       return { kind: "minutes", usual, current, delta: current - usual, unit: "د" };
     }
   }
-  match = text.match(/المعتاد\s+(\d+)\s+لقاءات[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
+  match = text.match(/المعتاد\s+(?:(\d+)\s+(?:لقاءات|لقاءً|لقاء)|(لقاء واحد)|(لقاءان))[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
   if (match) {
+    match = [match[0], match[1] ?? (match[2] ? "1" : "2"), match[4]] as unknown as RegExpMatchArray;
     const usual = Number(match[1]);
     const current = Number(match[2]);
     if (Number.isFinite(usual) && Number.isFinite(current)) {
@@ -674,17 +663,23 @@ type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: s
  * لم تُستعمل منذ ٤ فصول» — a fact about the past standing in the way of the
  * present.
  */
-export const isBlockingConflict = (item: any): boolean => {
-  if (!item) return false;
-  if (item.soft === true) return false;
-  if (item.type === "memory" || item.type === "advice" || item.type === "regulation") return false;
-  /* The user's law, and the server's own save gate, in one line: a real
-     double-booking of a TIME, a ROOM or an INSTRUCTOR arrives as severity
-     "high"; a duplicate row is data integrity. Everything else the system
-     knows — cohort overlap, doorway walking time, hall history, day rhythm —
-     is a remark beside a move that succeeded, never a wall in front of it. */
-  return item.severity === "high" || item.type === "duplicate";
+/* ── ما يحمله باب النقل وحده ────────────────────────────────────────────────
+   Days, time and hall — and nothing else. An undo step whose snapshot differs
+   from the current row in any other editable field is not a move and must be
+   restored whole. Bookkeeping fields are not edits. */
+const UNDO_PLACEMENT_FIELDS = new Set(["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday", "fstarttime", "fendtime", "AdRoomCode", "AdRoomHall", "buildingId", "roomId", "locationStatus", "fdetail"]);
+const UNDO_BOOKKEEPING_FIELDS = new Set(["id", "rev", "updatedAt", "updatedBy", "createdAt", "createdBy", "AdCourseName"]);
+export const undoStepIsPlacementOnly = (snapshot: any, current: any): boolean => {
+  if (!snapshot || !current) return false;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  return Object.keys(snapshot).every(key =>
+    UNDO_PLACEMENT_FIELDS.has(key) || UNDO_BOOKKEEPING_FIELDS.has(key) || same(snapshot[key], current[key]));
 };
+
+/* The user's law, and the server's own save gate, in one line — which now
+   lives beside the conflict sweep (`isBlockingConflict` in scheduleIntelligence)
+   so the board, the editor, the review and the server read one predicate. */
+export { isBlockingConflict };
 
 const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string; soft?: boolean; severity?: string }>): RefusalReason[] =>
   (items || []).filter(isBlockingConflict).slice(0, 3).map((item): RefusalReason => {
@@ -916,6 +911,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   const [mobileViewGate, setMobileViewGate] = useState<"list" | "week" | "rooms" | null>(null);
   const [phoneReadOnly, setPhoneReadOnly] = useState(() => isPhoneDevice());
   const [livingPanelOpen, setLivingPanelOpen] = useState(false);
+  /* ── فصلٌ فارغ ليس طريقاً مسدوداً ───────────────────────────────────────
+     «بداية الفصل» تعيش في الطبقة الحية، والطبقة لا تُركَّب إلا حين يكون في
+     الجدول صفّ — أي أن الفصل الذي يحتاجها أكثر من غيره لم يكن يراها. فالحالة
+     الفارغة تطلبها صراحةً، وتُركَّب الطبقة مفتوحةً عليها، وتُغلق معها. */
+  const [genesisFromEmpty, setGenesisFromEmpty] = useState(false);
+  const onLivingPanelOpenChange = useCallback((open: boolean) => {
+    setLivingPanelOpen(open);
+    if (!open) setGenesisFromEmpty(false);
+  }, []);
   const [returnNote] = useState(() => {
     const note = sessionStorage.getItem("schedule-return-note") || "";
     sessionStorage.removeItem("schedule-return-note");
@@ -1039,7 +1043,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const after = request.after;
     if (!before || !after) return;
     const issues = findConflicts([after], rows.filter(item => Number(item.id) !== Number(before.id)));
-    setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر ${issues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تعارض في هذه المعاينة.` : "لا يظهر تعارض مانع في هذه المعاينة." });
+    setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر في هذه المعاينة ${countOf(issues.length, AR.conflict)}.` : "لا يظهر تعارض مانع في هذه المعاينة." });
     setReviewFocus(new Set([Number(before.id)]));
     changeView("week");
   // one-shot handoff from «جرّب»; consumed once the real board is ready.
@@ -1305,6 +1309,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
          Dropping them left the caller with one stitched sentence and no way to
          show a wall per line. */
       if (Array.isArray(data?.conflicts) && data.conflicts.length) failure.conflicts = data.conflicts;
+      if (data?.code) failure.code = data.code;
+      if (Array.isArray(data?.changes)) failure.changes = data.changes;
       if (res.status === 409 && data?.conflict === "revision") {
         failure.revisionConflict = true;
         failure.current = data.current;
@@ -1590,11 +1596,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     setError(null);
     try {
       /* An undo of moves goes back through the same atomic door the moves came
-         in by — all restored or none, with the server judging conflicts. Steps
-         that are not schedule placements fall back to the sequential path. */
+         in by — all restored or none, with the server judging conflicts. That
+         door only carries a PLACEMENT (days, time, hall), so it is used only
+         when a placement is all that changed. An editor edit — the instructor,
+         the course, the section — used to go through it too: the time came
+         back, the instructor did not, and the bar still said «تم التراجع».
+         Such a step is now restored whole, against the row's current revision,
+         and success is only announced when every step came back. */
       const scheduleStep = /^\/api\/schedules\/(\d+)$/;
+      const currentOf = (step: UndoStep) => {
+        const match = scheduleStep.exec(step.url);
+        return match ? rows.find(item => Number(item.id) === Number(match[1])) : undefined;
+      };
       const allPlacements = entry.steps.length > 0 &&
-        entry.steps.every(step => step.method === "PUT" && scheduleStep.test(step.url) && step.body);
+        entry.steps.every(step => step.method === "PUT" && scheduleStep.test(step.url) && step.body
+          && undoStepIsPlacementOnly(step.body, currentOf(step)));
       if (allPlacements) {
         await fetchJson("/api/schedules/move-batch", {
           method: "POST",
@@ -1603,6 +1619,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             strict: false,
             moves: entry.steps.map(step => ({
               id: Number(scheduleStep.exec(step.url)![1]),
+              rev: currentOf(step)?.rev,
               fields: {
                 fsunday: Boolean(step.body.fsunday),
                 fmonday: Boolean(step.body.fmonday),
@@ -1613,18 +1630,35 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 fendtime: step.body.fendtime,
                 AdRoomCode: step.body.AdRoomCode,
                 AdRoomHall: step.body.AdRoomHall,
+                buildingId: step.body.buildingId ?? null,
+                roomId: step.body.roomId ?? null,
+                locationStatus: step.body.locationStatus ?? null,
               },
             })),
           }),
         });
       } else {
-        for (const step of entry.steps) {
-          await fetchJson(step.url, {
-            method: step.method,
-            ...(step.body === undefined
-              ? {}
-              : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.body) }),
-          });
+        let restored = 0;
+        try {
+          for (const step of entry.steps) {
+            const current = step.method === "PUT" ? currentOf(step) : undefined;
+            /* The snapshot carries the revision it was taken at; the row has
+               moved on since (that is what is being undone), so the restore is
+               sent against the revision the coordinator is looking at now. */
+            const body = current && step.body ? { ...step.body, rev: current.rev } : step.body;
+            await fetchJson(step.url, {
+              method: step.method,
+              ...(body === undefined
+                ? {}
+                : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+            });
+            restored += 1;
+          }
+        } catch (stepError: any) {
+          await loadRows();
+          throw new Error(restored
+            ? `تراجعٌ ناقص: أُعيد ${countOf(restored, AR.change)} من ${countOf(entry.steps.length, oblique(AR.change))} — ${friendlyError(stepError)}`
+            : friendlyError(stepError));
         }
       }
       setUndoLog(current => current.map(item => (item.id === entry.id ? { ...item, usedAt: Date.now() } : item)));
@@ -1805,6 +1839,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   /** Bumped whenever the live channel reports a write, so readings that depend
    *  on the whole university can refresh without anyone polling for them. */
   const [liveFeedSerial, setLiveFeedSerial] = useState(0);
+  /* ── قفلُ الدورة كما يقرؤه الخادم ─────────────────────────────────────────
+     يصل من شريط الاعتماد (`onLockChange`)، فتعرف الورشةُ أن الجدول عند
+     التسجيل قبل أن تفتح محرّراً يقول «صالح للحفظ» ثم يرفضه الخادم. */
+  const [approvalLock, setApprovalLock] = useState<string | null>(null);
+  /* ضغطُ بطاقةٍ والجدولُ مقفل: السحبُ لا يبدأ، ويُقال لماذا بدل أن يبدو معطَّلاً. */
+  const explainApprovalLock = () => { if (approvalLock) setPhysicsNotice(approvalLock); };
   useEffect(() => () => presence.dispose(), [presence]);
   /** `silent` refreshes without the reading indicator — the live channel uses
    *  it so a colleague's change slides in without the screen looking busy. */
@@ -1953,7 +1993,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       const result = await flushOfflineScheduleQueue();
       setOfflinePending(result.remaining);
       if (result.done) {
-        setPhysicsNotice(`تمت مزامنة ${result.done.toLocaleString("ar-KW-u-nu-latn")} تغييرات محلية.`);
+        setPhysicsNotice(`تمت مزامنة ${countOf(result.done, oblique(AR.localChange))}.`);
         await loadRows({ silent: true }).catch(() => undefined);
       } else if (result.conflict) {
         setPhysicsNotice("عاد الاتصال؛ تم حفظ التغيير المتعارض للمراجعة خارج طابور المزامنة حتى لا يعلق العداد.");
@@ -1982,7 +2022,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         setOfflinePending(result.remaining);
         if (result.done) {
           setPhysicsNotice(result.remaining
-            ? `${result.remaining.toLocaleString("ar-KW-u-nu-latn")} تغيير ما زال بانتظار التثبيت.`
+            ? `ما زال بانتظار التثبيت: ${countOf(result.remaining, AR.change)}.`
             : "تم تثبيت التغييرات في الخلفية.");
           void loadRows({ silent: true }).catch(() => undefined);
         } else if (result.conflict) {
@@ -2672,9 +2712,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           const normalDurations = (learned.durations || [])
             .filter(item => isSupported(item.samples, item.share))
             .slice(0, 4)
-            .map(item => `${item.minutes.toLocaleString("ar-KW-u-nu-latn")} دقيقة`);
+            .map(item => countOf(item.minutes, AR.minute));
           if (normalDurations.length) {
-            return `مدة ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
+            return `مدة ${countOf(duration, oblique(AR.minute))} غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
           }
         }
 
@@ -2735,6 +2775,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
 
   const openCreate = (seed?: CreateSeed) => {
       if (showMobileReadOnlyGate()) return;
+      /* كلُّ أبواب الإضافة تمرّ من هنا — الزرّ والخانة الفارغة والأوامر —
+         فيُقال السببُ هنا مرّةً واحدة بدل محرّرٍ يُفتح ليُرفض. */
+      if (approvalLock) { setMessage(null); setError(approvalLock); return; }
       setError(null);
       setMessage(null);
       setConflicts([]);
@@ -3187,7 +3230,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":"",
     outsideTeachingDay?`وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}.`:"",
   ].filter(Boolean);
-  const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
+  const blockingConflicts=conflicts.filter(isBlockingConflict);
   const editorTimingNote = historicalTimingNote(form);
   const formDurationMinutes = form.fstarttime && form.fendtime ? Math.max(0, mins(form.fendtime) - mins(form.fstarttime)) : 0;
   const currentInstructorName = instructorById.get(Number(form.AdInstructorId || 0))?.AdInstructorName || "";
@@ -3236,7 +3279,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
      * stopped anything — «انتقال ضيّق بين الحرم الرئيسي والجهراء» — read as a
      * refusal, which is how people learn to stop reading the colour entirely.
      */
-    const blocks = conflict?.severity === "high" || conflict?.type === "duplicate";
+    const blocks = isBlockingConflict(conflict);
     const typeLabel = isRoom ? (isScope ? "نطاق القاعة" : "تعارض قاعة")
       : isInstructor ? "تعارض أستاذ"
         : conflict.type === "duplicate" ? "تكرار"
@@ -4763,13 +4806,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     setMessage(null);
     setSaving(true);
     try {
-      const data = await fetchJson(`/api/intelligence/versions/${copyUndoPoint.id}/restore`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "restore" },
-      });
+      const data = await applyWithOverwriteConfirm("restore",
+        confirm => fetchJson(`/api/intelligence/versions/${copyUndoPoint.id}/restore`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (data === null) return;
       setCopyUndoPoint(null);
       setCopyPreview(null);
-      setMessage(`تم التراجع عن آخر عملية نسخ واسترجاع ${data.count ?? 0} سجل.`);
+      setMessage(`تم التراجع عن آخر عملية نسخ واسترجاع ${countOf(data.count ?? 0, AR.record)}.`);
     } catch (e: any) {
       setError(friendlyError(e));
     } finally {
@@ -4804,7 +4850,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         : " مع الإبقاء على أيامه الحالية";
     try {
       const check=await fetchJson("/api/schedules/check-conflicts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...payload,excludeId:row.id})});
-      const blocking=Array.isArray(check.conflicts)?check.conflicts.filter((c:any)=>c?.severity==="high"||c?.type==="duplicate"):[];
+      const blocking=Array.isArray(check.conflicts)?check.conflicts.filter(isBlockingConflict):[];
       if(blocking.length){const reasons=blocking.slice(0,3).map((c:any)=>[c?.message,c?.detail].filter(Boolean).join(" — ")).filter(Boolean);const reason=reasons.join(" | ")||"هذا النقل يسبب تعارضاً ولا يمكن حفظه.";setError(`تعذر نقل الموعد: ${reason}`);setPhysicsNotice(`رفض النقل: ${reason}`);return;}
     } catch(e:any){setError(friendlyError(e));return;}
     const decisionRipple =
@@ -5220,6 +5266,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       room: { code: building, hall },
     };
     const after = buildPhysicsTargetCandidate(row, target);
+    /* ── القاعة الهدف بهويتها، لا باسمها وحده ──────────────────────────────
+       الصفّ الموثّق يحمل معرّف قاعته القديمة، فإن أُرسل الاسم الجديد وحده
+       عاد الخادم فحسم المكان من المعرّف القديم. فتُرسل هوية القاعة الهدف كما
+       يعرفها صفٌّ موثّقٌ فيها على اللوحة، أو تُفرَّغ صراحةً ليحسمها الخادم من
+       الاسم. */
+    const targetHallKey = roomIdentity(after.AdRoomCode, after.AdRoomHall).key;
+    const hallChanged = roomIdentity(row.AdRoomCode, row.AdRoomHall).key !== targetHallKey;
+    const knownTargetHall = hallChanged
+      ? rows.find(item => item.roomId && item.locationStatus === "VERIFIED" && roomIdentity(item.AdRoomCode, item.AdRoomHall).key === targetHallKey)
+      : undefined;
+    const targetLocation: Record<string, unknown> = !hallChanged ? {}
+      : knownTargetHall
+        ? { buildingId: knownTargetHall.buildingId, roomId: knownTargetHall.roomId, locationStatus: "VERIFIED" }
+        : { buildingId: null, roomId: null, locationStatus: null };
+    if (knownTargetHall) Object.assign(after, { buildingId: knownTargetHall.buildingId, roomId: knownTargetHall.roomId, locationStatus: "VERIFIED" });
     const unchanged =
       row.fstarttime === after.fstarttime && row.fendtime === after.fendtime &&
       roomIdentity(row.AdRoomCode, row.AdRoomHall).key === roomIdentity(after.AdRoomCode, after.AdRoomHall).key &&
@@ -5290,6 +5351,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 fendtime: after.fendtime,
                 AdRoomCode: after.AdRoomCode,
                 AdRoomHall: after.AdRoomHall,
+                ...targetLocation,
               },
             }],
           }),
@@ -5359,10 +5421,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       return;
     try {
       setSaving(true);
-      const d = await fetchJson(
-        `/api/intelligence/safety-net/${undoPoint.id}/undo`,
-        { method: "POST", headers: { "x-schedule-confirm": "decision-undo" } },
-      );
+      const d = await applyWithOverwriteConfirm("decision-undo",
+        confirm => fetchJson(
+          `/api/intelligence/safety-net/${undoPoint.id}/undo`,
+          { method: "POST", headers: { "x-schedule-confirm": confirm } },
+        ),
+        options => visualConfirm(options));
+      if (d === null) return;
       setUndoPoint(null);
       setPhysicsNotice("");
       setMessage(d.message || "تم استرجاع القرار السابق.");
@@ -6303,13 +6368,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         {...grip}
         draggable={!physics.supported && !rowPending}
         onDragStart={(e) => {
+          if (approvalLock) { e.preventDefault(); setPhysicsNotice(approvalLock); return; }
           e.dataTransfer.setData("text/schedule-id", String(r.id));
           e.dataTransfer.effectAllowed = "move";
           beginRipple(r);
         }}
         onDragEnd={clearRipple}
         onPointerDown={(e) => {
-          pressOrigin.current = { x: e.clientX, y: e.clientY };
+          pressOrigin.current = { x: e.clientX, y: e.clientY }; explainApprovalLock();
           if (rowPending) {
             setPhysicsNotice("هذا الموعد ما زال بانتظار تثبيت نقله السابق. يمكنك سحب بقية المواعيد الآن، ثم العودة إليه بعد اكتمال الحفظ.");
             return;
@@ -6744,6 +6810,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       editor !== "index" ||
       (viewMode !== "week" && viewMode !== "rooms") ||
       presentationMode ||
+      // The registrar holds the timetable: nothing may be lifted until it is
+      // returned or accepted (the same reason the server gives, via ApprovalBar).
+      Boolean(approvalLock) ||
       // One card, one hand: while the keyboard is carrying a lecture the
       // pointer layer is switched off entirely, so a stray press cannot pick up
       // a second copy of the same thing.
@@ -7260,7 +7329,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       const nearest = Math.min(...sameDay.map(other =>
         other.to <= from ? from - other.to : other.from >= to ? other.from - to : 0));
       score -= Math.min(40, Math.round(nearest / 15) * 4);
-      reasons.push(nearest === 0 ? "ملاصق لمحاضرة أخرى للأستاذ" : `فراغ ${nearest} دقيقة عن أقرب محاضرة للأستاذ`);
+      reasons.push(nearest === 0 ? "ملاصق لمحاضرة أخرى للأستاذ" : `فراغ ${countOf(nearest, AR.minute)} عن أقرب محاضرة للأستاذ`);
     } else {
       score -= 12;
       reasons.push("يوم جديد للأستاذ — يكلّف انتقالاً");
@@ -7464,7 +7533,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    * the same review the approval sheet prints, run quietly on the open scope.
    * The colliding cards themselves wear the ring in every view.
    */
-  const localClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+  const boardPlaceholderIds = useMemo(() => placeholderInstructorIds(instructorById.values()), [instructorById]);
+  const localClash = useMemo(() => fastConflictScan(filteredRows, { placeholderInstructorIds: boardPlaceholderIds }), [filteredRows, boardPlaceholderIds]);
   /**
    * ── التعارض مع خارج النطاق، على اللوحة نفسها ────────────────────────────
    *
@@ -7632,7 +7702,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           AdRoomCode: move.roomCode, AdRoomHall: move.roomHall } as FSchedule,
       })));
       offerUndo(
-        `إصلاح بسلسلة ${countOf(repair.moves.length, AR.move)}`,
+        `إصلاح بسلسلة ${countOf(repair.moves.length, oblique(AR.move))}`,
         repair.moves.map(move => restoreStep(move.before)),
       );
       setRepair(null);
@@ -8072,7 +8142,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           <p>
             {sections.find((s) => s.AdSectionId === filterSection)
               ?.AdSectionName || "عرض الاجتماع"}{" "}
-            · {filteredRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد
+            · {countOf(filteredRows.length, AR.appointment)}
           </p>
         </div>
         <div className="cinema-tools">
@@ -8104,7 +8174,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <header>
                 <span>{day.short}</span>
                 <strong>{day.label}</strong>
-                <small>{items.length} موعد</small>
+                <small>{countOf(items.length, AR.appointment)}</small>
               </header>
               <div className="cinema-day-track">
                 {items.length ? (
@@ -8513,8 +8583,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       <span className="surface-kicker">كما يُدرَّس هذا المقرر عادةً</span>
                       <strong>{courseNature.summary}</strong>
                       <small>
-                        من {courseNature.terms.toLocaleString("ar-KW-u-nu-latn")} فصلاً
-                        · {courseNature.observations.toLocaleString("ar-KW-u-nu-latn")} شعبة
+                        من {countOf(courseNature.terms, oblique(AR.term))}
+                        · {countOf(courseNature.observations, AR.section)}
                         {courseNature.sectionsPerTerm > 1 ? ` · عادةً ${countOf(courseNature.sectionsPerTerm, AR.section)} في الفصل` : ""}
                       </small>
                     </div>
@@ -8768,7 +8838,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                                   </li>
                                 ))}
                               </ul>
-                              {matched.length > shown.length ? <p className="schedule-borrow-more">و{matched.length - shown.length} قاعة أخرى — حدِّد البحث لتضييقها.</p> : null}
+                              {matched.length > shown.length ? <p className="schedule-borrow-more">و{countOf(matched.length - shown.length, AR.room)} غيرها — حدِّد البحث لتضييقها.</p> : null}
                             </>
                           );
                         })()}
@@ -9021,6 +9091,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 ) : null}
               </div>
             ) : (
+              approvalLock ? (
+                /* الفحصُ نظيف، لكنّ الحفظ لن يمرّ: يُقال السببُ هنا بدل «صالح». */
+                <div className="conflict-clear" data-locked="true">
+                  <AlertTriangle />
+                  <strong>لا يُحفظ الآن</strong>
+                  <span>{approvalLock}</span>
+                </div>
+              ) : (
               <div className="conflict-clear">
                 <CheckCircle2 />
                 <strong>الموعد صالح للحفظ</strong>
@@ -9028,6 +9106,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   سيستمر الفحص تلقائياً مع تغيير الوقت أو القاعة أو الأستاذ.
                 </span>
               </div>
+              )
             )}
             {conflicts.length ? (
               <div className="solver-box">
@@ -9433,7 +9512,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         if (detail.payload.roomHall) after.AdRoomHall = String(detail.payload.roomHall);
         if (detail.payload.instructorId) after.AdInstructorId = Number(detail.payload.instructorId);
         const issues = findConflicts([after], rows.filter(item => item.id !== before.id));
-        setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر ${issues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تعارض في هذه المعاينة.` : "لا يظهر تعارض مانع في هذه المعاينة." });
+        setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر في هذه المعاينة ${countOf(issues.length, AR.conflict)}.` : "لا يظهر تعارض مانع في هذه المعاينة." });
         setReviewFocus(new Set([id]));
         changeView("week");
         return;
@@ -9572,7 +9651,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       <PageTitle
         eyebrow="مركز الجدول"
         subtitle="نطاق · مراجعة · نشر"
-        action={<AddButton onClick={openCreate}>إضافة موعد</AddButton>}
+        action={<PrimaryButton onClick={() => openCreate()} disabled={Boolean(approvalLock)} title={approvalLock || undefined} data-guide-ignore="فتح محرّر إضافة موعد — يُعطَّل بسببٍ مكتوب حين يكون الجدول عند التسجيل، والحفظ داخله مسجّل"><Plus aria-hidden="true" />إضافة موعد</PrimaryButton>}
       >
         الجدول الدراسي
       </PageTitle>
@@ -9640,7 +9719,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           </div>
         </div>
       ) : null}
-      {pendingNoticeVisible&&pendingOwnRows.length?<div className="pending-room-notice no-print"><div><CircleAlert aria-hidden="true"/><span>لديك <b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")}</b> شعب لم يتم تثبيت قاعاتها بعد.</span></div><div><SecondaryButton type="button" data-guide-ignore="فلتر القاعات المعلقة" onClick={()=>{setPendingOnly(true);setPendingNoticeVisible(false)}}>استكمال القاعات</SecondaryButton><button type="button" data-guide-ignore="إخفاء تنبيه القاعات المعلقة" className="pending-room-dismiss" aria-label="إخفاء التنبيه" onClick={()=>setPendingNoticeVisible(false)}><X/></button></div></div>:null}
+      {pendingNoticeVisible&&pendingOwnRows.length?<div className="pending-room-notice no-print"><div><CircleAlert aria-hidden="true"/><span>لم تُثبَّت بعد قاعات <b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(pendingOwnRows.length, AR.section)} لديك.</span></div><div><SecondaryButton type="button" data-guide-ignore="فلتر القاعات المعلقة" onClick={()=>{setPendingOnly(true);setPendingNoticeVisible(false)}}>استكمال القاعات</SecondaryButton><button type="button" data-guide-ignore="إخفاء تنبيه القاعات المعلقة" className="pending-room-dismiss" aria-label="إخفاء التنبيه" onClick={()=>setPendingNoticeVisible(false)}><X/></button></div></div>:null}
       {returnNote || error || message ? <div className="schedule-feedback-stack" aria-live="polite">
         {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
         {error ? <Notice>{error}</Notice> : null}
@@ -9655,7 +9734,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               own pill that does not clear until the shelf is empty. */}
           {parked.length ? <button type="button" data-guide-ignore="فتح قائمة التغييرات التي رفضها الخادم بعد انقطاع الاتصال" className={`schedule-ops-pill warn ${parkedOpen?"on":""}`} onClick={()=>setParkedOpen(value=>!value)}><ShieldAlert aria-hidden="true"/><b>{countOf(parked.length, AR.change)} رفضها الخادم</b></button> : null}
           {liveCollaborators ? <span className="schedule-ops-pill"><UsersRound aria-hidden="true"/><b>{liveCollaborators.toLocaleString("ar-KW-u-nu-latn")} يعمل الآن</b></span> : null}
-          {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>{(liveEditors + liveHolders).toLocaleString("ar-KW-u-nu-latn")} بطاقة تحت التحرير</b></span> : null}
+          {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>تحت التحرير: {countOf(liveEditors + liveHolders, AR.card)}</b></span> : null}
         </div>
       ) : null}
       {/* ── ما رفضه الخادم، معروضاً أخيراً ────────────────────────────────────
@@ -9716,8 +9795,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           technology and diagnostics; blocking problems still use the existing
           conflict/error UI, and undo remains in the compact undo bar. */}
       {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
-      {!rowsForeign && rows.length > 0 ? (
+      {!rowsForeign && (rows.length > 0 || genesisFromEmpty) ? (
       <div className="schedule-overview-stack no-print">
+        {/* An empty term shows no zero counters — only the genesis scene it asked for. */}
+        {!rowsForeign && rows.length > 0 ? (
         <section className="schedule-mini-stats">
           <StatCard
             icon={<CalendarDays />}
@@ -9737,6 +9818,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             label="أستاذ مقرر"
           />
         </section>
+        ) : null}
         <LivingScheduleLayer
           user={user}
           rows={filteredRows}
@@ -9750,7 +9832,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           onRefresh={loadRows}
           experience={experience}
           onEnsureWeek={() => setViewMode("week")}
-          onPanelOpenChange={setLivingPanelOpen}
+          onPanelOpenChange={onLivingPanelOpenChange}
+          initialScene={genesisFromEmpty ? "genesis" : null}
         />
       </div>
       ) : null}
@@ -9983,6 +10066,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
              زال الاعتماد، وهو بالضبط الخبرُ الذي وُجد ليقوله. */
           refreshSignal={liveFeedSerial}
           onChanged={() => setLiveFeedSerial(value => value + 1)}
+          onLockChange={setApprovalLock}
+          onOpenNotes={onNavigate ? () => onNavigate("scheduleChanges") : undefined}
         />
       ) : null}
       <ScheduleExperienceLayer
@@ -10007,7 +10092,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <span className="surface-kicker">عرض ذكي</span>
               <h2>مواعيد القسم</h2>
             </div>
-            <span>{agendaRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
+            <span>{countOf(agendaRows.length, AR.appointment)}</span>
           </div>
           {hueLegend.length > 1 || scheduledVisitingIds.size ? (
             <div className="week-legend agenda-legend" role="group" aria-label="مفتاح الألوان">
@@ -10211,7 +10296,25 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       ))}
                     </div>
                   ) : null}
-                  <PrimaryButton onClick={openCreate}>إضافة موعد</PrimaryButton>
+                  <PrimaryButton onClick={openCreate} disabled={Boolean(approvalLock)} title={approvalLock || undefined} data-guide-ignore="فتح محرّر إضافة موعد — يُعطَّل بسببٍ مكتوب حين يكون الجدول عند التسجيل، والحفظ داخله مسجّل">إضافة موعد</PrimaryButton>
+                  {filterCollege && filterSection && filterTerm && !rowsForeign ? (
+                    <SecondaryButton
+                      type="button"
+                      data-guide-ignore="يفتح «بداية الفصل» في الطبقة الحية: مسودة من الفصل السابق لا تغيّر الجدول قبل النشر"
+                      onClick={() => { if (!showMobileReadOnlyGate()) setGenesisFromEmpty(true); }}
+                    >
+                      بداية الفصل من الفصل السابق
+                    </SecondaryButton>
+                  ) : null}
+                  {filterCollege && filterSection && filterTerm ? (
+                    <GhostButton
+                      type="button"
+                      data-guide-ignore="يفتح أدوات البيانات (استيراد جدول) من الحالة الفارغة نفسها"
+                      onClick={() => { if (!showMobileReadOnlyGate()) setTransferOpen(true); }}
+                    >
+                      <ArrowLeftRight /> استيراد من أدوات البيانات
+                    </GhostButton>
+                  ) : null}
                 </>
               }
             />
@@ -10330,6 +10433,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   style={cardStyle}
                   draggable={!physics.supported && !rowPending}
                   onDragStart={(e) => {
+                    if (approvalLock) { e.preventDefault(); setPhysicsNotice(approvalLock); return; }
                     e.dataTransfer.setData("text/schedule-id", String(row.id));
                     e.dataTransfer.effectAllowed = "move";
                     beginRipple(row);
@@ -10338,7 +10442,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   onPointerDown={(e) => {
-                    pressOrigin.current = { x: e.clientX, y: e.clientY };
+                    pressOrigin.current = { x: e.clientX, y: e.clientY }; explainApprovalLock();
                     if (rowPending) {
                       e.preventDefault();
                       e.stopPropagation();
@@ -10429,7 +10533,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
                       <div><Building2 /><strong>فلتر المباني</strong></div>
-                      <small>{phoneReadOnly ? "المباني معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixBuildings.size ? `اخترت ${matrixBuildings.size.toLocaleString("ar-KW-u-nu-latn")} من ${allBuildings.length.toLocaleString("ar-KW-u-nu-latn")} مبنى — اضغط لإضافة مبنى أو إزالته.` : "كل المباني ظاهرة — اختر مبنى واحدًا أو عدة مبانٍ قبل تصفية القاعات."}</small>
+                      <small>{phoneReadOnly ? "المباني معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixBuildings.size ? `اخترت ${matrixBuildings.size.toLocaleString("ar-KW-u-nu-latn")} من ${countOf(allBuildings.length, oblique(AR.building))} — اضغط لإضافة مبنى أو إزالته.` : "كل المباني ظاهرة — اختر مبنى واحدًا أو عدة مبانٍ قبل تصفية القاعات."}</small>
                     </div>
                     <div className="rooms-picker" role="group" aria-label="اختيار مبنى واحد أو عدة مبانٍ">
                       <button
@@ -10474,9 +10578,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       <small>{phoneReadOnly
                         ? "القاعات معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر."
                         : roomFilterKey
-                          ? `نتيجة الفلتر: ${countOf(roomFilterMatches.length, AR.room)} من ${countOf(buildingScopedRooms.length, AR.room)}.`
+                          ? `نتيجة الفلتر: ${countOf(roomFilterMatches.length, AR.room)} من ${countOf(buildingScopedRooms.length, oblique(AR.room))}.`
                           : matrixRooms.size
-                            ? `اخترت ${matrixRooms.size} من ${countOf(buildingScopedRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.`
+                            ? `اخترت ${matrixRooms.size} من ${countOf(buildingScopedRooms.length, oblique(AR.room))} — اضغط لإضافة قاعة أو إزالتها.`
                             : matrixBuildings.size
                               ? "كل قاعات المباني المختارة ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."
                               : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
@@ -10866,7 +10970,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   : undefined}
               >
                 {physicsActive && dragComparison
-                  ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
+                  ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${countOf(dragComparison.partyCount, oblique(AR.appointment))}` : ""}`
                   : phoneReadOnly
                     ? "على الهاتف يمكنك التعديل والإضافة من «قائمة»، أما عرض الأسبوع فيبقى للقراءة فقط حتى لا يتحول اللمس إلى نقلٍ غير مقصود."
                   : picking
@@ -11089,7 +11193,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         className="week-unplaced-card"
                         style={{ ["--hue" as any]: hueFor(code, r.AdCourseName || c?.CourseName || "", i?.AdInstructorName, placeOf(r)) }}
                         onPointerDown={(e) => {
-                          pressOrigin.current = { x: e.clientX, y: e.clientY };
+                          pressOrigin.current = { x: e.clientX, y: e.clientY }; explainApprovalLock();
                           grip.onPointerDown?.(e);
                         }}
                         onClick={(e) => {
@@ -11256,7 +11360,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                             style={{ ["--reading" as any]: `${dayLoad.share[d.key] || 0}%` }}
                           >
                             <strong>{d.label}</strong>
-                            <span><b>{dayCounts[d.key] || 0}</b> موعدًا</span>
+                            <span><b>{dayCounts[d.key] || 0}</b> {nounFor(dayCounts[d.key] || 0, AR.appointment)}</span>
                             <small>ذروة {layout.busiest} معًا</small>
                           </div>
                           <div
@@ -11477,7 +11581,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     <span>{d.label}</span>
                     <b title="عدد المواعيد في هذا اليوم">{dayCounts[d.key] || 0}</b>
                     {(weekLayout[d.key]?.busiest || 1) >= 4 && expandedDay !== d.key ? (
-                      <i className="week-dense" title={`${weekLayout[d.key].busiest} محاضرات في نفس الساعة — اضغط لتوسيع اليوم`}>
+                      <i className="week-dense" title={`${countOf(weekLayout[d.key].busiest, AR.lecture)} في نفس الساعة — اضغط لتوسيع اليوم`}>
                         <Expand aria-hidden="true" />
                       </i>
                     ) : null}
@@ -11817,7 +11921,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             type="button"
             className="dock-add"
             onClick={() => openCreate()}
-            title="إضافة موعد جديد"
+            disabled={Boolean(approvalLock)}
+            title={approvalLock || "إضافة موعد جديد"}
+            data-guide-ignore="فتح محرّر إضافة موعد — يُعطَّل بسببٍ مكتوب حين يكون الجدول عند التسجيل، والحفظ داخله مسجّل"
           ><Plus aria-hidden="true" /><span>موعد</span></button>
         </nav>
       ) : null}
@@ -11850,10 +11956,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <button type="button" onClick={() => setRepair(null)} aria-label="إغلاق"><X aria-hidden="true" /></button>
             </header>
             <div className="repair-cost">
-              <span><b>{repair.moves.length.toLocaleString("ar-KW-u-nu-latn")}</b> حركات</span>
-              <span><b className="visual-metric-flow"><span>{repair.before.toLocaleString("ar-KW-u-nu-latn")}</span><ChevronLeft aria-hidden="true" /><span>{repair.after.toLocaleString("ar-KW-u-nu-latn")}</span></b> تداخل</span>
-              <span><b>{repair.instructorsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> أساتذة متأثرون</span>
-              <span><b>{repair.roomsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> قاعات</span>
+              <span><b>{repair.moves.length.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.moves.length, AR.move)}</span>
+              <span><b className="visual-metric-flow"><span>{repair.before.toLocaleString("ar-KW-u-nu-latn")}</span><ChevronLeft aria-hidden="true" /><span>{repair.after.toLocaleString("ar-KW-u-nu-latn")}</span></b> {nounFor(repair.after, AR.clash)}</span>
+              <span><b>{repair.instructorsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.instructorsAffected, AR.instructor)} {nounFor(repair.instructorsAffected, AR.affectedHumanAdj)}</span>
+              <span><b>{repair.roomsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.roomsAffected, AR.room)}</span>
             </div>
             <ol className="repair-steps">
               {repair.moves.map((move, index) => (
@@ -12183,7 +12289,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName,
             ].filter(Boolean).join(" · ")}
           />
-          <div className="print-change-log-summary"><strong>{undoLog.length.toLocaleString("ar-KW-u-nu-latn")} تعديل</strong><span>سجل تغييرات اليوم · الأحدث أولاً</span></div>
+          <div className="print-change-log-summary"><strong>{countOf(undoLog.length, AR.edit)}</strong><span>سجل تغييرات اليوم · الأحدث أولاً</span></div>
           <table>
             <thead><tr><th>الوقت</th><th>التعديل</th><th>الأستاذ</th><th>الحالة</th></tr></thead>
             <tbody>{undoLog.map(entry=>{const meta=undoEntryMeta(entry);return <tr key={`print-change-${entry.id}`}><td className="print-ltr">{undoClock(entry.at)}</td><td className="print-wrap">{entry.label}</td><td className="print-wrap">{meta.whoName || "—"}{meta.visiting ? " · منتدب" : ""}</td><td>{entry.usedAt ? `تم التراجع ${undoClock(entry.usedAt)}` : "قائم"}</td></tr>;})}</tbody>
@@ -12343,13 +12449,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 <span><HelpCircle aria-hidden="true" /></span>
                 <div><small>{/مختلف|غير معتاد|تاريخ/i.test(context.whyHere || "") ? "خارج المعتاد" : "ضمن النمط"}</small><strong>{/مانع|تعارض/i.test(context.whyHere || "") ? "يحتاج تحقق" : "بدون مانع"}</strong></div>
               </article>
-              <article title={context.courseLife ? `من ${context.courseLife.firstTerm} إلى ${context.courseLife.latestTerm} · ${context.courseLife.observations} حالة` : undefined}>
+              <article title={context.courseLife ? `من ${context.courseLife.firstTerm} إلى ${context.courseLife.latestTerm} · ${countOf(context.courseLife.observations, AR.occurrence)}` : undefined}>
                 <span><History aria-hidden="true" /></span>
                 <div><small>حياة المقرر</small><strong>{context.courseLife ? `${formatTermLabel(context.courseLife.terms)} · ${context.courseLife.stability}% ثبات` : "تاريخ قليل"}</strong></div>
               </article>
               <article title={context.offeringLife ? `من ${context.offeringLife.firstTerm} إلى ${context.offeringLife.latestTerm}` : undefined}>
                 <span><CalendarDays aria-hidden="true" /></span>
-                <div><small>حياة الشعبة</small><strong>{context.offeringLife ? (context.offeringLife.currentJourney ? `${context.offeringLife.currentJourney.snapshots || 0} نسخة · ${formatChangeLabel(context.offeringLife.currentJourney.changes || 0)}` : formatLifeSummary(context.offeringLife.terms, context.offeringLife.changes)) : "أول ظهور"}</strong></div>
+                <div><small>حياة الشعبة</small><strong>{context.offeringLife ? (context.offeringLife.currentJourney ? `${countOf(context.offeringLife.currentJourney.snapshots || 0, AR.version)} · ${formatChangeLabel(context.offeringLife.currentJourney.changes || 0)}` : formatLifeSummary(context.offeringLife.terms, context.offeringLife.changes)) : "أول ظهور"}</strong></div>
               </article>
               <article className={`decision-cost-${context.decisionCost?.level || "low"}`} title={(context.decisionCost?.factors || []).join(" · ") || undefined}>
                 <span><BrainCircuit aria-hidden="true" /></span>
@@ -12370,7 +12476,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 <span className="context-move-copy">
                   <small>
                     {moveNote.moves > 1
-                      ? `انتقل ${moveNote.moves.toLocaleString("ar-KW-u-nu-latn")} مرات · آخر مرة`
+                      ? `انتقل ${countOf(moveNote.moves, AR.visit)} · آخر مرة`
                       : "انتقل مرة واحدة · السبب"}
                   </small>
                   <strong>{moveNote.text}</strong>

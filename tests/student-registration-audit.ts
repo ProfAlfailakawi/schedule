@@ -38,10 +38,13 @@ check(caseRefFor({ id: "abcdef12-0000" }) === "ABCDEF12", "وسجلٌّ بلا �
 check(caseRefFor({ id: "ffffffff-9999", caseRef: "1B86022D" }) === "1B86022D",
   "والرقمُ المحفوظ يعلو المشتقّ، فلا يتغيّر تحت يد صاحبه");
 check(types.includes("caseRef?: string"), "وللرقم حقلٌ ثابتٌ في السجلّ");
-check(repo.includes("row.caseRef = row.caseRef || replaced.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id)"),
-  "ويُورَّث عند الاستبدال في المخزن البعيد");
-check(repo.includes("row.caseRef = row.caseRef || replacedLocal.map(item => item.caseRef).find(Boolean) || caseRefOf(row.id)"),
-  "وفي المحلّي كذلك، فلا يفترق المخزنان");
+/* إعادةُ الإرسال صارت تحديثاً في المكان (S4): المعرّفُ نفسُه يبقى، فالرقمُ
+   لا يتغيّر أصلاً. والدمجُ قاعدةٌ واحدةٌ يمرّ بها المخزنان. */
+const merge = fs.readFileSync(path.join(process.cwd(), "src/utils/studentNeedMerge.ts"), "utf8");
+check(merge.includes("caseRef: ordered.map(item => item.caseRef).find(Boolean) || caseRefFromId(keep.id)") && merge.includes("id: keep.id"),
+  "ويُورَّث عند إعادة الإرسال، والمعرّفُ نفسُه يبقى");
+check((repo.match(/mergeStudentResubmission\(/g) || []).length === 2,
+  "والمخزنان (البعيد والمحلّي) يمرّان بالدمج نفسه، فلا يفترقان");
 
 /* اشتقاقٌ واحدٌ يقرؤه كلُّ من يعرض الرقم: لو اشتقّه كلٌّ بطريقته لاختلفوا
    يوماً، ووقف الطالبُ أمام الموظّف برقمٍ ليس في كشفه. */
@@ -52,11 +55,11 @@ check(!/slice\(0,\s*8\)\.toUpperCase\(\)/.test(server),
 
 /* ── ما قاله التسجيل لا يمحوه الطالب ───────────────────────────────────── */
 
-check(repo.includes("const carry = (prior: StudentNeed[]): StudentCourseState[] | undefined"),
-  "حالاتُ المقرّرات تُنقل إلى السجلّ الجديد عند إعادة الإرسال");
-check(repo.includes("wanted.has(Number(state.courseId))"),
-  "ولا يُنقل منها إلا ما يخصّ مقرّراً ما زال مطلوباً");
-check(repo.includes("if (!at || String(state.at) > String(at.at)) newest.set"),
+check(merge.includes("export function mergeStudentResubmission("),
+  "حالاتُ المقرّرات تبقى في السجلّ نفسه عند إعادة الإرسال");
+check(merge.includes("wanted.has(Number(state.courseId))") && merge.includes("droppedByStudent: true"),
+  "وما حذفه الطالبُ بعد قرارٍ يبقى معلَّماً، لا يُمحى");
+check(merge.includes("if (!at || String(state.at) > String(at.at)) newest.set"),
   "وأحدثُ قولٍ في المقرّر هو قولُه");
 check(repo.includes("setStudentCourseState"), "والكتابةُ الموضعيّة لا تستبدل السجلّ كلَّه");
 check(repo.includes("(current.courseStates || []).filter(state => Number(state.courseId) !== Number(next.courseId))"),
@@ -115,7 +118,7 @@ check(!/Repository\.(createSchedule|updateSchedule|deleteSchedule)/.test(registr
 
 /* ── الطالب يرى ────────────────────────────────────────────────────────── */
 
-check(server.includes('state: state?.state || ""'), "وحالةُ المقرّر تصل صفحةَ الطالب");
+check(server.includes('? "awaiting-signatures" : (state?.state || "")'), "وحالةُ المقرّر تصل صفحةَ الطالب (وبصدق: قبل التوقيعين «بانتظار اكتمال الاعتماد»)");
 /* «لم يُقل فيه شيء» ليس «بانتظار التسجيل»: الانتظارُ قولٌ يقوله القسمُ حين
    يسلّم، لا حالةٌ تُفترض على من لم يُسلَّم بعد. */
 check(server.includes("ولا يُسمّى «بانتظار التسجيل»"), "وما لم يُقل فيه شيءٌ لا يُسمّى انتظاراً");

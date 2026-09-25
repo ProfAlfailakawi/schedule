@@ -8,6 +8,7 @@ import fs from "fs";
 import vm from "vm";
 import path from "path";
 import ts from "typescript";
+import { ARABIC_COUNT_SCRIPT } from "../src/utils/arabicCount";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
@@ -25,7 +26,7 @@ for (const name of PAGES) {
   if (!node) { check(false, `${name}: موجودة`); continue; }
   const js = ts.transpileModule(node.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const args = node.parameters.map(() => JSON.stringify("x")).join(",");
-  const sandbox: any = { out: "" };
+  const sandbox: any = { out: "", ARABIC_COUNT_SCRIPT };
   try {
     vm.runInNewContext(`${js}\nout = ${name}(${args});`, sandbox);
   } catch (error: any) {

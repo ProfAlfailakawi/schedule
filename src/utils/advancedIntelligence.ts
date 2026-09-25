@@ -2,6 +2,7 @@ import { formatScheduleTimeRange, scheduleClockForDisplay } from "./scheduleTime
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleVersion } from "../types";
 import { SCHEDULE_DAYS, timeToMinutes, minutesToTime, type DayKey } from "./scheduleIntelligence";
 import { roomIdentityKey } from "./locationRegistry";
+import { AR, countOf, oblique } from "./arabicCount";
 
 export type HistoricalDayModel = {
   minute: number;
@@ -345,9 +346,9 @@ export function buildDecisionCost(selected: FSchedule, currentRows: FSchedule[],
     level,
     affected: professorLinks + roomLinks + courseLinks,
     factors: [
-      professorLinks ? `${professorLinks} ارتباطات للأستاذ` : "",
-      roomLinks ? `${roomLinks} حجوزات مرتبطة بالقاعة` : "",
-      courseLinks ? `${courseLinks} شعب/مواعيد لنفس المقرر` : "",
+      professorLinks ? `${countOf(professorLinks, AR.bond)} للأستاذ` : "",
+      roomLinks ? `${countOf(roomLinks, AR.booking)} في القاعة نفسها` : "",
+      courseLinks ? `${countOf(courseLinks, AR.appointment)} لنفس المقرر` : "",
       stable >= 60 ? `الموضع تاريخياً ثابت ${stable}٪` : "",
     ].filter(Boolean).slice(0, 3),
   };
@@ -383,7 +384,7 @@ export function investigateCrowding(rows: FSchedule[], day: DayKey, history: FSc
     { label: "النمط الأكثر حضوراً", value: patterns?.share || 0, max: 100, caption: `${patterns?.share || 0}٪` },
   ];
   const verdict = delta >= 8
-    ? `الازدحام أعلى من تاريخ القسم بنحو ${delta} نقطة؛ ليس مجرد عادة قديمة.`
+    ? `الازدحام أعلى من تاريخ القسم بنحو ${countOf(delta, oblique(AR.point))}؛ ليس مجرد عادة قديمة.`
     : inherited >= 20
       ? "الازدحام متكرر تاريخياً؛ جزء كبير منه نمط متوارث في القسم."
       : "الازدحام يبدو خاصاً بهذا الفصل أكثر من كونه عادة تاريخية.";
@@ -399,7 +400,7 @@ export function discoverUnwrittenRules(history: FSchedule[], terms: AdTerm[], co
   for (const day of SCHEDULE_DAYS) {
     const data = model.department.days[day.key as DayKey];
     if (data && data.samples >= 30 && data.share >= .82) {
-      rules.push({ id:`minute:${day.key}`, kind:"start-minute", confidence:Math.round(data.share*100), title:`${day.label} يبدأ غالباً عند ${scheduleClockForDisplay(data.ladder.find((time:string)=>time.endsWith(`:${String(data.minute).padStart(2,"0")}`)) || data.ladder[0] || `12:${String(data.minute).padStart(2,"0")}`)}`, detail:`${data.samples} حالة تاريخية`, });
+      rules.push({ id:`minute:${day.key}`, kind:"start-minute", confidence:Math.round(data.share*100), title:`${day.label} يبدأ غالباً عند ${scheduleClockForDisplay(data.ladder.find((time:string)=>time.endsWith(`:${String(data.minute).padStart(2,"0")}`)) || data.ladder[0] || `12:${String(data.minute).padStart(2,"0")}`)}`, detail:`${countOf(data.samples, AR.historicCase)}`, });
     }
     const dayRows = rows.filter(row => Boolean((row as any)[day.key]));
     const share = rows.length ? dayRows.length / rows.length : 0;
@@ -409,7 +410,7 @@ export function discoverUnwrittenRules(history: FSchedule[], terms: AdTerm[], co
   if (ends.length >= 60) {
     const p90 = percentile(ends,.9);
     const within = ends.filter(v=>v<=p90).length/ends.length;
-    if (within >= .88) rules.push({ id:"latest-end", kind:"latest-end", confidence:Math.round(within*100), title:`90٪ من اليوم ينتهي قبل ${minutesToTime(p90)}`, detail:`مقروءة من ${ends.length} موعد`, });
+    if (within >= .88) rules.push({ id:"latest-end", kind:"latest-end", confidence:Math.round(within*100), title:`90٪ من اليوم ينتهي قبل ${minutesToTime(p90)}`, detail:`مقروءة من ${countOf(ends.length, oblique(AR.appointment))}`, });
   }
   const byCourse = new Map<number,FSchedule[]>(); rows.forEach(row=>byCourse.set(row.AdCourseId,[...(byCourse.get(row.AdCourseId)||[]),row]));
   for (const [courseId,list] of byCourse) {
@@ -429,7 +430,7 @@ export function logicalAnomalies(rows: FSchedule[], history: FSchedule[]) {
   rows.forEach(row => {
     const duration = timeToMinutes(row.fendtime) - timeToMinutes(row.fstarttime);
     if (duration <= 0) anomalies.push({ kind:"duration", severity:"high", rowId:row.id, title:"مدة غير منطقية", detail:`${row.AdCourseName} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}` });
-    else if (duration > 300) anomalies.push({ kind:"duration", severity:"medium", rowId:row.id, title:"مدة طويلة جداً", detail:`${row.AdCourseName} · ${duration} دقيقة` });
+    else if (duration > 300) anomalies.push({ kind:"duration", severity:"medium", rowId:row.id, title:"مدة طويلة جداً", detail:`${row.AdCourseName} · ${countOf(duration, AR.minute)}` });
     const key = `${row.AdCourseId}|${row.SCode}|${patternKeyOf(row)}|${row.fstarttime}|${row.fendtime}`;
     exact.set(key,[...(exact.get(key)||[]),row]);
   });
@@ -439,7 +440,7 @@ export function logicalAnomalies(rows: FSchedule[], history: FSchedule[]) {
     const duration=Math.max(0,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));
     instructorMinutes.set(row.AdInstructorId,(instructorMinutes.get(row.AdInstructorId)||0)+duration*Math.max(1,daysOf(row).length));
   });
-  instructorMinutes.forEach((minutes,id)=>{if(minutes>24*60)anomalies.push({kind:"load",severity:"medium",title:"حمل أسبوعي غير معتاد",detail:`الأستاذ #${id} · ${Math.round(minutes/60*10)/10} ساعة`});});
+  instructorMinutes.forEach((minutes,id)=>{if(minutes>24*60)anomalies.push({kind:"load",severity:"medium",title:"حمل أسبوعي غير معتاد",detail:`الأستاذ #${id} · ${countOf(minutes/60, AR.hour)}`});});
   // Compare each course against its own common duration to catch "10:00 → 10:20" style slips.
   const historicalDurations = new Map<number,number[]>();
   history.forEach(row=>{
@@ -484,7 +485,7 @@ export function scheduleAccuracyFromVersions(versions: ScheduleVersion[], curren
   const ranked=Object.entries(dimensions).sort((x,y)=>y[1]-x[1]);
   const labels:Record<string,string>={time:"الوقت",room:"القاعة",instructor:"الأستاذ",days:"الأيام"};
   const postmortem:string[]=[];
-  if(changed)postmortem.push(`تغيّر ${changed} موعداً منذ ${baselineVersion.source === "publish" ? "الاعتماد" : "أول نسخة محفوظة"}.`);
+  if(changed)postmortem.push(`تغيّر ${countOf(changed, AR.appointment)} منذ ${baselineVersion.source === "publish" ? "الاعتماد" : "أول نسخة محفوظة"}.`);
   if(ranked[0]?.[1])postmortem.push(`أكثر ما تغيّر: ${labels[ranked[0][0]]} (${ranked[0][1]}).`);
   if(added||removed)postmortem.push(`أضيف ${added} وحُذف ${removed} من هوية الشعب.`);
   if(!postmortem.length)postmortem.push("النسخة بقيت مستقرة بلا تغييرات جوهرية.");
@@ -505,9 +506,9 @@ export function simulatePolicy(rows: FSchedule[], history: FSchedule[], input: {
   if(type==="growth"){
     const growth=Math.max(1,Math.min(100,Number(input.growth||10)));
     const projected=Math.ceil(rows.length*growth/100);
-    return {type,affected:projected,currentTotal:rows.length,share:Math.round(projected/Math.max(1,rows.length)*100),historicalAffected:0,historicalTotal:history.length,historicalShare:0,terms:termIds.size,summary:`نمو ${growth}٪ يعني تقريباً ${projected} موعد/شعبة إضافية فوق الحمل الحالي قبل حساب السعات الفعلية.`};
+    return {type,affected:projected,currentTotal:rows.length,share:Math.round(projected/Math.max(1,rows.length)*100),historicalAffected:0,historicalTotal:history.length,historicalShare:0,terms:termIds.size,summary:`نمو ${growth}٪ يعني زيادةً بنحو ${countOf(projected, oblique(AR.appointment))} فوق الحمل الحالي قبل حساب السعات الفعلية.`};
   }
   const share=Math.round(currentAffected.length/Math.max(1,rows.length)*100);
   const historicalShare=Math.round(historicAffected.length/Math.max(1,history.length)*100);
-  return {type,affected:currentAffected.length,currentTotal:rows.length,share,historicalAffected:historicAffected.length,historicalTotal:history.length,historicalShare,terms:termIds.size,summary:`السياسة تمس ${currentAffected.length} من ${rows.length} موعداً حالياً (${share}٪)، وكانت ستمس ${historicalShare}٪ من التاريخ المتاح.`};
+  return {type,affected:currentAffected.length,currentTotal:rows.length,share,historicalAffected:historicAffected.length,historicalTotal:history.length,historicalShare,terms:termIds.size,summary:`السياسة تمس ${currentAffected.length} من ${countOf(rows.length, oblique(AR.appointment))} حالياً (${share}٪)، وكانت ستمس ${historicalShare}٪ من التاريخ المتاح.`};
 }

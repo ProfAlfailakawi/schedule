@@ -23,6 +23,8 @@
  * lines of text and a dependency for it would be a dependency to keep alive.
  */
 
+import { termWindow } from "./termSequence";
+
 export interface CalendarLecture {
   /** Stable across edits — the appointment's own id. */
   id: number | string;
@@ -80,6 +82,12 @@ export interface CalendarDocument {
    * ends where the term ends, and re-reading it a hundred times changes nothing.
    */
   startDate?: string;
+  /**
+   * The last teaching day (YYYY-MM-DD), when the term's end is known as a date
+   * rather than as a count of weeks — a term with no recorded start whose
+   * window comes from its name. With it the series ends there exactly.
+   */
+  endDate?: string;
   /** One line under the calendar's name in the subscriber's app. */
   description?: string;
   /**
@@ -138,11 +146,49 @@ const stampUTC = (date: Date) =>
   `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T` +
   `${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
 
+/**
+ * ── مدى التقويم من الفصل، لا من اليوم ────────────────────────────────────────
+ *
+ * فصلٌ بلا «تاريخ بداية» مسجّل كان يُرسى على «اليوم»، فكلُّ قراءةٍ جديدةٍ
+ * للاشتراك تدفع الفصل كلَّه إلى الأمام — والفصلُ الجاري في الإنتاج بلا تاريخ.
+ * `termWindow` يعرف للفصل حدّين حتى بلا تاريخٍ مسجّل (من اسمه: الأول سبتمبر→
+ * ديسمبر…)، فالتقويم يأخذ حدّيه منه. «اليوم» يبقى آخرَ الحلول، ويقول الملف ذلك.
+ */
+export interface TermCalendarSpan {
+  startDate?: string;
+  endDate?: string;
+  weeks: number;
+  source: "declared" | "default" | "none";
+}
+
+export function calendarSpanForTerm(
+  term: Parameters<typeof termWindow>[0],
+  fallbackWeeks: number,
+): TermCalendarSpan {
+  const window = termWindow(term);
+  const ymd = (at: number) => { const d = new Date(at); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  if (!window) return { weeks: Math.max(1, Number(fallbackWeeks) || 1), source: "none" };
+  const weeks = Math.max(1, Math.ceil((window.to - window.from) / (7 * 86400000)));
+  return {
+    startDate: ymd(window.from),
+    /* `to` هو اليوم التالي لآخر يوم؛ فآخر يوم تدريسٍ قبله بيوم. */
+    endDate: ymd(window.to - 86400000),
+    weeks,
+    source: window.source,
+  };
+}
+
 /** The last instant the series may produce: `weeks` after its first occurrence. */
 const untilStamp = (first: Date, weeks: number) => {
   const end = new Date(first.getTime());
   end.setUTCDate(end.getUTCDate() + Math.max(1, weeks) * 7 - 1);
   end.setUTCHours(23, 59, 59, 0);
+  return stampUTC(end);
+};
+
+/** UNTIL from a known last day — the same instant on every fetch. */
+const untilFromDate = (date: string) => {
+  const end = new Date(`${date}T23:59:59Z`);
   return stampUTC(end);
 };
 
@@ -174,6 +220,7 @@ export function buildCalendar(document: CalendarDocument): string {
     ? new Date(`${document.startDate}T00:00:00Z`)
     : null;
   const from = anchor && !Number.isNaN(anchor.getTime()) ? anchor : now;
+  const endDate = anchor && /^\d{4}-\d{2}-\d{2}$/.test(String(document.endDate || "")) ? String(document.endDate) : "";
   const alarm = Math.max(0, Math.min(120, Number(document.alarmMinutes || 0)));
   const lines: string[] = [
     "BEGIN:VCALENDAR",
@@ -235,7 +282,7 @@ export function buildCalendar(document: CalendarDocument): string {
          every fetch. COUNT otherwise, which at least bounds the series even
          though its start still drifts with the anchor. */
       `RRULE:FREQ=WEEKLY;${anchor
-        ? `UNTIL=${untilStamp(first, document.weeks)}`
+        ? `UNTIL=${endDate ? untilFromDate(endDate) : untilStamp(first, document.weeks)}`
         : `COUNT=${Math.max(1, document.weeks) * days.length}`};BYDAY=${days.map(day => ICAL_DAYS[day]).join(",")}`,
       `SUMMARY:${escapeText(lecture.title)}`,
       lecture.room ? `LOCATION:${escapeText(lecture.room)}` : "",

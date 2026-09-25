@@ -1,5 +1,5 @@
 import type { AdCourse, StudentNeed } from "../types";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 
 /**
  * ── الطلبة يتغيّرون كل فصل ──────────────────────────────────────────────────
@@ -156,8 +156,8 @@ export function readCourseSuccession(needs: StudentNeed[], courses: AdCourse[]):
   return {
     links, pathsSeen: followed.length, termsSpanned: terms.size,
     headline: links.length
-      ? `${countOf(links.length, AR.link)} في تسلسل المقررات — مقروءة من ${countOf(followed.length, AR.student)} ` +
-        `تابعناهم عبر ${countOf(terms.size, AR.term)}.`
+      ? `${countOf(links.length, AR.link)} في تسلسل المقررات — مقروءة من ${countOf(followed.length, oblique(AR.student))} ` +
+        `تابعناهم عبر ${countOf(terms.size, oblique(AR.term))}.`
       : "",
   };
 }

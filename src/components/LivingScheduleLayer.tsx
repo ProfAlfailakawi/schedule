@@ -28,7 +28,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton } from "./ui";
+import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton, visualConfirm } from "./ui";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import LocationPicker from "./LocationPicker";
 import GenesisChoreography, { type ChoreoPhase } from "./GenesisChoreography";
 import useReducedMotion from "./SchedulePhysics/useReducedMotion";
@@ -47,6 +48,7 @@ import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES }
 import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { sortByName } from "../utils/sorting";
 import { roomIdentityKey } from "../utils/locationRegistry";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 type Scene =
   | "pulse"
@@ -92,6 +94,8 @@ interface Props {
   experience?: ScheduleExperience;
   onEnsureWeek?: () => void;
   onPanelOpenChange?: (open: boolean) => void;
+  /** Opens the layer already on a scene — the empty term asks for «بداية الفصل». */
+  initialScene?: Scene | null;
 }
 
 export default function LivingScheduleLayer({
@@ -108,12 +112,13 @@ export default function LivingScheduleLayer({
   experience,
   onEnsureWeek,
   onPanelOpenChange,
+  initialScene = null,
 }: Props) {
   const power = Boolean(user?.SystemUserId);
   const reducedMotion = useReducedMotion();
   const genesisPreviewRef = useRef<HTMLElement | null>(null);
   const [living, setLiving] = useState<any>(null),
-    [scene, setScene] = useState<Scene | null>(null),
+    [scene, setScene] = useState<Scene | null>(initialScene),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -457,7 +462,7 @@ export default function LivingScheduleLayer({
       setChoreoPhase((current) => (current === "drift" ? "settle" : current));
       setMessage(
         d.reviewRequired
-          ? `تم بناء المسودة بنجاح، ومعها ${d.reviewRequired} ملاحظة واضحة للمراجعة قبل النشر.`
+          ? `تم بناء المسودة بنجاح، ومعها ${countOf(d.reviewRequired, AR.note)} للمراجعة قبل النشر.`
           : "تم بناء مسودة بداية الفصل دون نشر أي موعد."
       );
       onEnsureWeek?.();
@@ -512,7 +517,7 @@ export default function LivingScheduleLayer({
       const currentRows = Array.isArray(genesis?.previewRows) ? genesis.previewRows : [];
       const nextRow = genesisBulkEdit ? currentRows[currentRows.findIndex((row:any) => Number(row.id) === Number(editedId)) + 1] : null;
       setGenesisEditId(null); setGenesisEdit(null);
-      setMessage(result.ready ? "تمت معالجة الموانع. المسودة جاهزة للنشر." : `تم حفظ التعديل. بقيت ${(result.issues || []).length} ملاحظة.`);
+      setMessage(result.ready ? "تمت معالجة الموانع. المسودة جاهزة للنشر." : `تم حفظ التعديل. بقيت ${countOf((result.issues || []).length, AR.note)}.`);
       if (nextRow) window.setTimeout(() => beginGenesisEdit(nextRow), 0);
       else if (genesisBulkEdit) setGenesisBulkEdit(false);
     } catch (e:any) { setError(e.message); } finally { setBusy(false); }
@@ -531,7 +536,7 @@ export default function LivingScheduleLayer({
         issues: result.issues || [], issueRowIds: result.issueRowIds || [], rowIssues: result.rowIssues || {}, reviewRequired: (result.issues || []).length,
       } : current);
       if (genesisEditId === rowId) { setGenesisEditId(null); setGenesisEdit(null); }
-      setMessage(result.ready ? "تم حذف الموعد وإعادة الفحص. المسودة جاهزة للنشر." : `تم حذف الموعد وإعادة الفحص · بقيت ${(result.issues || []).length} ملاحظة.`);
+      setMessage(result.ready ? "تم حذف الموعد وإعادة الفحص. المسودة جاهزة للنشر." : `تم حذف الموعد وإعادة الفحص · بقيت ${countOf((result.issues || []).length, AR.note)}.`);
     } catch (e:any) { setError(e.message); } finally { setBusy(false); }
   };
   const deleteAllGenesisRows = async () => {
@@ -563,16 +568,19 @@ export default function LivingScheduleLayer({
     setBusy(true);
     setError("");
     try {
-      const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/publish`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "publish" },
-      });
+      const result = await applyWithOverwriteConfirm("publish",
+        confirm => json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/publish`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (result === null) return;
       const q = contextQuery();
       const points = await json(`/api/intelligence/safety-net?${q}`).catch(() => []);
       const undoPoint = Array.isArray(points) ? points[0] : null;
       setGenesisUndoPoint(undoPoint);
       setGenesis((current: any) => current ? { ...current, published: true, publication: result?.publication } : current);
-      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${result.count} موعد` : ""}${result?.adjusted ? ` · عالج النظام ${result.adjusted} موعداً زمنياً بأمان قبل النشر` : ""}.`);
+      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${countOf(result.count, AR.appointment)}` : ""}${result?.adjusted ? ` · ضبط النظام وقت ${countOf(result.adjusted, oblique(AR.appointment))} بأمان قبل النشر` : ""}.`);
       await loadLiving();
       onRefresh?.();
     } catch (e: any) {
@@ -589,10 +597,13 @@ export default function LivingScheduleLayer({
     setBusy(true);
     setError("");
     try {
-      const d = await json(`/api/intelligence/safety-net/${genesisUndoPoint.id}/undo`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "decision-undo" },
-      });
+      const d = await applyWithOverwriteConfirm("decision-undo",
+        confirm => json(`/api/intelligence/safety-net/${genesisUndoPoint.id}/undo`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (d === null) return;
       setGenesis((current: any) => current ? { ...current, published: false } : current);
       setGenesisUndoPoint(null);
       setMessage(d.message || "تم التراجع عن النشر بنجاح.");
@@ -663,10 +674,13 @@ export default function LivingScheduleLayer({
     setBusy(true);
     setError("");
     try {
-      const d = await json(`/api/intelligence/safety-net/${item.id}/undo`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "decision-undo" },
-      });
+      const d = await applyWithOverwriteConfirm("decision-undo",
+        confirm => json(`/api/intelligence/safety-net/${item.id}/undo`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (d === null) return;
       setMessage(d.message || "تم الاسترجاع");
       await loadSafety();
       await loadLiving();
@@ -998,11 +1012,11 @@ export default function LivingScheduleLayer({
                       <strong>{rollover.sentence}</strong>
                       <div className="genesis-reading-grid">
                         <span><b className="num">{rollover.confident}</b> يمكن نقلها بثقة</span>
-                        {rollover.newCourses?.length ? <span><b className="num">{rollover.newCourses.length}</b> مقرراً جديداً</span> : null}
-                        {rollover.unavailableInstructors?.length ? <span><b className="num">{rollover.unavailableInstructors.length}</b> أستاذاً غير متاح</span> : null}
-                        {rollover.changedCourses?.length ? <span><b className="num">{rollover.changedCourses.length}</b> مقرراً تغيّر</span> : null}
-                        {rollover.retiredRooms?.length ? <span><b className="num">{rollover.retiredRooms.length}</b> قاعة متوقفة</span> : null}
-                        {rollover.concernCount ? <span className="is-concern"><b className="num">{rollover.concernCount}</b> قراراً يستحق المراجعة</span> : null}
+                        {rollover.newCourses?.length ? <span><b className="num">{rollover.newCourses.length}</b> {nounFor(rollover.newCourses.length, AR.course)} {nounFor(rollover.newCourses.length, AR.newAdj)}</span> : null}
+                        {rollover.unavailableInstructors?.length ? <span><b className="num">{rollover.unavailableInstructors.length}</b> {nounFor(rollover.unavailableInstructors.length, AR.instructor)} {nounFor(rollover.unavailableInstructors.length, AR.unavailableAdj)}</span> : null}
+                        {rollover.changedCourses?.length ? <span><b className="num">{rollover.changedCourses.length}</b> {nounFor(rollover.changedCourses.length, AR.course)} {nounFor(rollover.changedCourses.length, AR.shiftedVerb)}</span> : null}
+                        {rollover.retiredRooms?.length ? <span><b className="num">{rollover.retiredRooms.length}</b> {nounFor(rollover.retiredRooms.length, AR.room)} {nounFor(rollover.retiredRooms.length, AR.stoppedFemAdj)}</span> : null}
+                        {rollover.concernCount ? <span className="is-concern"><b className="num">{rollover.concernCount}</b> {nounFor(rollover.concernCount, AR.decision)} {nounFor(rollover.concernCount, AR.deservesVerb)} المراجعة</span> : null}
                       </div>
                       {/* ── وهل سيبدو كجدولك؟ ─────────────────────────────────
                           The counts above say what survives the copy. This says
@@ -1021,7 +1035,7 @@ export default function LivingScheduleLayer({
                           <div className="genesis-style-read">
                             <span className="is-good"><Fingerprint aria-hidden="true" /><b className="num">{rollover.style.inStyle}</b> على النمط</span>
                             {rollover.style.offStyle ? <span className="is-off"><AlertTriangle aria-hidden="true" /><b className="num">{rollover.style.offStyle}</b> خارجه</span> : null}
-                            <em>مقروء من {rollover.style.learnedFrom?.terms || 0} فصلاً · {rollover.style.learnedFrom?.rows || 0} موعد</em>
+                            <em>مقروء من {countOf(rollover.style.learnedFrom?.terms || 0, oblique(AR.term))} · {countOf(rollover.style.learnedFrom?.rows || 0, AR.appointment)}</em>
                           </div>
                         </div>
                       ) : null}
@@ -1110,10 +1124,10 @@ export default function LivingScheduleLayer({
                         <div>
                           <strong>{genesis.draft?.name}</strong>
                           <p>
-                            تم نسخ {genesis.coverage?.copiedRows} موعدًا إلى المسودة الجديدة
+                            نُسخ {countOf(genesis.coverage?.copiedRows || 0, AR.appointment)} إلى المسودة الجديدة
                             · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
                             {genesis.analysis?.conflicts}
-                            {genesis.reviewRequired ? ` · ${genesis.reviewRequired} ملاحظة للمراجعة` : ""}
+                            {genesis.reviewRequired ? ` · ${countOf(genesis.reviewRequired, AR.note)} للمراجعة` : ""}
                           </p>
                           <small>{genesis.guardrail}</small>
                           {Array.isArray(genesis.issues) && genesis.issues.length ? (
@@ -1287,7 +1301,7 @@ export default function LivingScheduleLayer({
                             <strong>{item.label}</strong>
                             <small>
                               {new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}{" "}
-                              · {item.userName} · {item.rowCount} موعد
+                              · {item.userName} · {countOf(item.rowCount, AR.appointment)}
                             </small>
                           </div>
                           <GhostButton

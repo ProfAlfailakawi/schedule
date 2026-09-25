@@ -2,6 +2,7 @@ import { roomIdentityKey } from "./locationRegistry";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleConstraint } from "../types";
 import { activeDays, analyzeSchedule, autoScheduleProposal, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
+import { AR, countOf, oblique } from "./arabicCount";
 
 const cloneRows=(rows:FSchedule[])=>rows.map(row=>({...row}));
 const roomKey=(row:Partial<FSchedule>)=>roomIdentityKey(row);
@@ -38,7 +39,7 @@ export function evaluateScheduleConstraints(rows:FSchedule[],constraints:Schedul
     }
     if(c.type==="max_instructor_gap"&&c.maxMinutes){
       const ids=c.AdInstructorId?[c.AdInstructorId]:[...new Set(rows.map(r=>r.AdInstructorId).filter(Boolean))];
-      ids.forEach(id=>SCHEDULE_DAYS.forEach(day=>dayGapRows(rows,id,day.key).filter(g=>g.minutes>Number(c.maxMinutes)).forEach(g=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`فراغ ${g.minutes} دقيقة يوم ${day.label} بين ${scheduleClockForDisplay(g.before.fendtime)} و${scheduleClockForDisplay(g.after.fstarttime)}.`,rowId:g.after.id,severity:"warning"}))));
+      ids.forEach(id=>SCHEDULE_DAYS.forEach(day=>dayGapRows(rows,id,day.key).filter(g=>g.minutes>Number(c.maxMinutes)).forEach(g=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`فراغ ${countOf(g.minutes, AR.minute)} يوم ${day.label} بين ${scheduleClockForDisplay(g.before.fendtime)} و${scheduleClockForDisplay(g.after.fstarttime)}.`,rowId:g.after.id,severity:"warning"}))));
     }
   }
   const byConstraint=enabled.map(c=>({id:c.id,label:c.label,count:violations.filter(v=>v.constraintId===c.id).length}));
@@ -75,9 +76,9 @@ export function buildScheduleGenome(allSectionRows:FSchedule[],terms:AdTerm[],cu
   const dnaGap=Math.round(avg(p=>p.avgGap));
   const deviations:Array<any>=[];
   let distance=0;
-  for(const day of SCHEDULE_DAYS){const cur=Number(current.dayShares[day.key]||0),base=Number(dnaDays[day.key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.9;if(Math.abs(delta)>=8)deviations.push({kind:"day",severity:Math.abs(delta)>=15?"warning":"info",title:`${day.label}: ${delta>0?"ضغط أعلى":"حضور أقل"} من بصمة القسم`,detail:`الحالي ${cur}% مقابل متوسط تاريخي ${base}% (${delta>0?"+":""}${delta} نقطة).`})}
+  for(const day of SCHEDULE_DAYS){const cur=Number(current.dayShares[day.key]||0),base=Number(dnaDays[day.key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.9;if(Math.abs(delta)>=8)deviations.push({kind:"day",severity:Math.abs(delta)>=15?"warning":"info",title:`${day.label}: ${delta>0?"ضغط أعلى":"حضور أقل"} من بصمة القسم`,detail:`الحالي ${cur}% مقابل متوسط تاريخي ${base}% (${delta>0?"+":"−"}${countOf(Math.abs(delta), AR.point)}).`})}
   for(const key of bucketKeys){const cur=Number(current.timeShares[key]||0),base=Number(dnaTimes[key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.55;if(Math.abs(delta)>=10)deviations.push({kind:"time",severity:"info",title:`نافذة ${displayTimeBucket(key)} تغيّرت`,detail:`الحالي ${cur}% مقابل ${base}% تاريخياً.`})}
-  const gapDelta=current.avgGap-dnaGap;distance+=Math.min(30,Math.abs(gapDelta)/6);if(Math.abs(gapDelta)>=45)deviations.push({kind:"gap",severity:gapDelta>0?"warning":"success",title:gapDelta>0?"الفراغات أطول من المعتاد":"الفراغات أفضل من المعتاد",detail:`متوسط الفراغ الحالي ${current.avgGap} دقيقة مقابل البصمة التاريخية ${dnaGap} دقيقة.`});
+  const gapDelta=current.avgGap-dnaGap;distance+=Math.min(30,Math.abs(gapDelta)/6);if(Math.abs(gapDelta)>=45)deviations.push({kind:"gap",severity:gapDelta>0?"warning":"success",title:gapDelta>0?"الفراغات أطول من المعتاد":"الفراغات أفضل من المعتاد",detail:`متوسط الفراغ الحالي ${countOf(current.avgGap, AR.minute)} مقابل البصمة التاريخية ${countOf(dnaGap, AR.minute)}.`});
   const historicalRoomSet=new Set(dnaRooms.map(r=>r.key));const newTop=current.rooms.slice(0,4).filter((r:any)=>!historicalRoomSet.has(r.key));if(newTop.length)deviations.push({kind:"room",severity:"info",title:"تغيّر في القاعات المعتادة",detail:`${newTop.map((r:any)=>r.key.replace("|","/")).join("، ")} دخلت ضمن القاعات الأكثر استخداماً هذا الفصل.`});
   const compatibility=Math.round(clamp(100-distance/2.25,0,100));
   if(!deviations.length)deviations.push({kind:"stable",severity:"success",title:"الفصل قريب جداً من بصمة القسم",detail:"توزيع الأيام والأوقات والفراغات والقاعات يقع داخل النمط التاريخي المعتاد."});
@@ -100,8 +101,8 @@ export function forecastScheduleMove(existing:FSchedule,candidate:FSchedule,scop
   const pressureDelta=beforeDay?Math.round((afterDay-beforeDay)/beforeDay*100):afterDay>beforeDay?100:0;
   const qualityDelta=after.score-before.score,conflictDelta=afterConflicts-beforeConflicts,gapDelta=(afterProf?.gapMinutes||0)-(beforeProf?.gapMinutes||0);
   const effects:Array<{tone:"good"|"warn"|"neutral";text:string}>=[];
-  effects.push({tone:conflictDelta<0?"good":conflictDelta>0?"warn":"neutral",text:conflictDelta<0?`يزيل ${Math.abs(conflictDelta)} مانع حفظ لهذا الموعد`:conflictDelta>0?`يضيف ${conflictDelta} مانع حفظ محتمل`:"لا يغيّر موانع حفظ هذا الموعد"});
-  effects.push({tone:gapDelta<0?"good":gapDelta>0?"warn":"neutral",text:gapDelta<0?`يقلل فراغات الأستاذ ${Math.abs(gapDelta)} دقيقة`:gapDelta>0?`يزيد فراغات الأستاذ ${gapDelta} دقيقة`:"فراغات الأستاذ تبقى تقريباً كما هي"});
+  effects.push({tone:conflictDelta<0?"good":conflictDelta>0?"warn":"neutral",text:conflictDelta<0?`يزيل ${countOf(Math.abs(conflictDelta), oblique(AR.saveBlocker))} عن هذا الموعد`:conflictDelta>0?`قد يضيف ${countOf(conflictDelta, oblique(AR.saveBlocker))}`:"لا يغيّر موانع حفظ هذا الموعد"});
+  effects.push({tone:gapDelta<0?"good":gapDelta>0?"warn":"neutral",text:gapDelta<0?`يقلل فراغات الأستاذ ${countOf(Math.abs(gapDelta), AR.minute)}`:gapDelta>0?`يزيد فراغات الأستاذ ${countOf(gapDelta, AR.minute)}`:"فراغات الأستاذ تبقى تقريباً كما هي"});
   effects.push({tone:pressureDelta<=0?"good":pressureDelta>=15?"warn":"neutral",text:`ضغط ${dayLabel} ${pressureDelta>0?"يزداد":pressureDelta<0?"ينخفض":"لا يتغير"} ${Math.abs(pressureDelta)}%`});
   effects.push({tone:qualityDelta>0?"good":qualityDelta<0?"warn":"neutral",text:`مؤشر الجودة ${qualityDelta>0?"+":""}${qualityDelta}`});
   const headline=conflictDelta<0?"النقل يزيل مانعاً ظاهراً":conflictDelta>0?"النقل غير مسموح لأنه يخلق مانعاً زمنياً":qualityDelta>0?"النقل يحسّن الجدول":"الأثر محدود؛ راجع الفراغ والضغط قبل الإفلات";
@@ -142,7 +143,7 @@ export function runScheduleAutopilot(baseRows:FSchedule[],termRows:FSchedule[],c
   }
   results.sort((a,b)=>b.objective-a.objective);
   const selected:Array<any>=[];for(const result of results){if(selected.length>=3)break;if(selected.some(s=>scenarioSignature(s.rows)===scenarioSignature(result.rows)))continue;selected.push(result)}
-  const options=selected.map((item,index)=>({id:`auto-${index+1}`,rank:index+1,title:index===0?"أفضل توازن شامل":index===1?"أقل تغيير ممكن":"بديل احتياطي قوي",rows:item.rows,score:item.analysis.score,deltaScore:item.analysis.score-baseline.analysis.score,conflicts:item.analysis.metrics.criticalConflicts,avgGap:item.analysis.metrics.avgInstructorGap,imbalance:item.analysis.metrics.imbalance,constraintViolations:item.rule.total,changed:item.changed,explanation:[item.analysis.metrics.criticalConflicts<baseline.analysis.metrics.criticalConflicts?`يقلل التعارضات الحرجة من ${baseline.analysis.metrics.criticalConflicts} إلى ${item.analysis.metrics.criticalConflicts}`:`يحافظ على التعارضات عند ${item.analysis.metrics.criticalConflicts}`,item.analysis.metrics.avgInstructorGap<baseline.analysis.metrics.avgInstructorGap?`يخفض متوسط الفراغ ${baseline.analysis.metrics.avgInstructorGap-item.analysis.metrics.avgInstructorGap} دقيقة`:`متوسط الفراغ ${item.analysis.metrics.avgInstructorGap} دقيقة`,item.rule.total?`${item.rule.total} مخالفة لقواعد Constraint Canvas`:`يحترم جميع قواعد Constraint Canvas`,`${item.changed} موعداً فقط يتغير داخل السيناريو`]}));
+  const options=selected.map((item,index)=>({id:`auto-${index+1}`,rank:index+1,title:index===0?"أفضل توازن شامل":index===1?"أقل تغيير ممكن":"بديل احتياطي قوي",rows:item.rows,score:item.analysis.score,deltaScore:item.analysis.score-baseline.analysis.score,conflicts:item.analysis.metrics.criticalConflicts,avgGap:item.analysis.metrics.avgInstructorGap,imbalance:item.analysis.metrics.imbalance,constraintViolations:item.rule.total,changed:item.changed,explanation:[item.analysis.metrics.criticalConflicts<baseline.analysis.metrics.criticalConflicts?`يقلل التعارضات الحرجة من ${baseline.analysis.metrics.criticalConflicts} إلى ${item.analysis.metrics.criticalConflicts}`:`يحافظ على التعارضات عند ${item.analysis.metrics.criticalConflicts}`,item.analysis.metrics.avgInstructorGap<baseline.analysis.metrics.avgInstructorGap?`يخفض متوسط الفراغ ${countOf(baseline.analysis.metrics.avgInstructorGap-item.analysis.metrics.avgInstructorGap, AR.minute)}`:`متوسط الفراغ ${countOf(item.analysis.metrics.avgInstructorGap, AR.minute)}`,item.rule.total?`${countOf(item.rule.total, AR.breach)} لقواعد Constraint Canvas`:`يحترم جميع قواعد Constraint Canvas`,`يتغيّر ${countOf(item.changed, AR.appointment)} فقط داخل السيناريو`]}));
   return {goal:String(goal||"تحسين الجدول بأقل تدخل").slice(0,240),explored:iterations,evaluated:results.length,safety:{publishes:false,changesDays:false,changesRooms:false,humanGate:true},baseline:{score:baseline.analysis.score,conflicts:baseline.analysis.metrics.criticalConflicts,avgGap:baseline.analysis.metrics.avgInstructorGap,imbalance:baseline.analysis.metrics.imbalance,constraintViolations:baseline.rule.total},options};
 }
 

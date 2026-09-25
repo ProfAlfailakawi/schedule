@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AR, countOf } from "../utils/arabicCount";
 
 export type JourneyReading = {
   scoped: boolean;
@@ -276,7 +277,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
             جداول ومقررات وأعضاء هيئة تدريس وقرارات تراكمت حتى صارت ذاكرة عمل.
           </p>
 
-          <div className="jr-headnum" aria-label={reading ? `${ar(heroValue)} موعداً أكاديمياً في ذاكرة النظام` : "تُقرأ ذاكرة النظام"}>
+          <div className="jr-headnum" aria-label={reading ? `${countOf(heroValue, AR.academicRecord)} في ذاكرة النظام` : "تُقرأ ذاكرة النظام"}>
             <b><Num>{reading ? <Counted value={heroValue} duration={900} /> : "—"}</Num></b>
             <span>موعد أكاديمي مرّ عبر SCHEDULE</span>
             <small>{reading?.scoped ? "ضمن نطاق صلاحياتك" : "ذاكرة النظام الكاملة"}</small>

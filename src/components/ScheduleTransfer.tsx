@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
-import { PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
+import { PrimaryButton, SecondaryButton, useDialogDismiss, visualConfirm } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
-import { instructorIdentityTokens } from "../utils/instructorIdentity";
 import SchedulePublish from "./SchedulePublish";
-import { findConflicts } from "../utils/scheduleIntelligence";
+import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
@@ -31,6 +31,7 @@ interface Instructor {
   AdInstructorId: number;
   AdInstructorName: string;
   AdInstructorCivil?: string;
+  AdInstructorMobile?: string;
 }
 
 interface Props {
@@ -112,11 +113,13 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   // the college-wide instructor registry.
   const [newName, setNewName] = useState("");
   const [newCivil, setNewCivil] = useState("");
+  const [newMobile, setNewMobile] = useState("");
   const [directoryPeople, setDirectoryPeople] = useState<Instructor[]>([]);
   const [directoryIds, setDirectoryIds] = useState<number[]>([]);
   const [editingDelegate, setEditingDelegate] = useState<number>(0);
   const [editName, setEditName] = useState("");
   const [editCivil, setEditCivil] = useState("");
+  const [editMobile, setEditMobile] = useState("");
   const [copyPeople, setCopyPeople] = useState<Instructor[]>([]);
   const [copyIds, setCopyIds] = useState<number[]>([]);
   const [copySelected, setCopySelected] = useState<number[]>([]);
@@ -178,12 +181,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     try {
       const response = await fetch("/api/department-delegates/instructor", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, AdInstructorCivil: civil, AdInstructorName: name }),
+        body: JSON.stringify({ collegeId, sectionId, termId, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: newMobile.trim() }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذّر إضافة المنتدب.");
       const person: Instructor = data.person;
-      setNewName(""); setNewCivil("");
+      setNewName(""); setNewCivil(""); setNewMobile("");
       setDirectoryIds(data.instructorIds || currentUnique([...directoryIds, person.AdInstructorId]));
       setDirectoryPeople(current => sortByName(mergePeople(current, [person]), row => row.AdInstructorName));
       setRoster(data.roster || currentUnique([...roster, Number(person.AdInstructorId)]));
@@ -200,7 +203,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     try {
       const response = await fetch(`/api/department-delegates/${id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, AdInstructorName: editName.trim(), AdInstructorCivil: editCivil }),
+        body: JSON.stringify({ collegeId, sectionId, AdInstructorName: editName.trim(), AdInstructorCivil: editCivil, AdInstructorMobile: editMobile.trim() }),
       });
       const person = await response.json();
       if (!response.ok) throw new Error(person.error || "تعذر تعديل المنتدب.");
@@ -369,7 +372,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
    * مرتين أو قاعة محجوزة مرتين كان يبدو نظيفاً تماماً، ويظهر زر «تعبئة ونشرها»
    * كأن كل شيء تمّ، حتى إذا ضُغط ردّ الخادم بالرفض وعندها فقط احمرّت الخلايا.
    *
-   * الفحص نفسه الذي يرفض به الخادم يُقرأ هنا — `findConflicts` ذاتها، لا نسخة
+   * الفحص نفسه الذي يرفض به الخادم يُقرأ هنا — `blockingConflicts` ذاتها، لا نسخة
    * منها — فلا يمكن أن يرى أحدهما تعارضاً يعمى عنه الآخر. والنتيجة تسقط على
    * الخليتين معاً وعلى الصفين كليهما، لأن الحجز المزدوج ليس خطأ صفٍّ واحد.
    *
@@ -382,12 +385,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     if (rows.length < 2) return empty;
     const staged = rows.map((row, index) => ({ ...row, id: index + 1, AdTermId: termId })) as any[];
     /* «هيئة تدريسية» معنى مشترك لا شخص: صفّان يحملانها ليسا حجزاً مزدوجاً. */
-    const placeholderHead = instructorIdentityTokens("هيئة")[0];
-    const placeholderIds = new Set([...instructors, ...directoryPeople, ...((xlsxPreview?.resolvedInstructors || []) as any[])]
-      .filter(person => instructorIdentityTokens(String(person?.AdInstructorName || ""))[0] === placeholderHead)
-      .map(person => Number(person.AdInstructorId)).filter(Boolean));
-    const blocking = findConflicts(staged, staged, { placeholderInstructorIds: placeholderIds })
-      .filter(item => item.severity === "high" || item.type === "duplicate");
+    const placeholderIds = placeholderInstructorIds([...instructors, ...directoryPeople, ...((xlsxPreview?.resolvedInstructors || []) as any[])]);
+    const blocking = blockingConflicts(staged, staged, { placeholderInstructorIds: placeholderIds });
     const notes: Record<string, string[]> = {};
     const issues: string[] = [];
     const place = (at: number, partner: number, message: string) => {
@@ -1065,9 +1064,13 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const undoReplacement = async (versionId: string) => {
     setBusy(true); setError(null);
     try {
-      const response = await fetch(`/api/intelligence/versions/${encodeURIComponent(versionId)}/restore`, { method: "POST", headers: { "x-schedule-confirm": "restore" } });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "تعذر التراجع");
+      const done = await applyWithOverwriteConfirm("restore", async confirm => {
+        const response = await fetch(`/api/intelligence/versions/${encodeURIComponent(versionId)}/restore`, { method: "POST", headers: { "x-schedule-confirm": confirm } });
+        const data = await response.json();
+        if (!response.ok) throw Object.assign(new Error(data.error || "تعذر التراجع"), { data });
+        return data;
+      }, options => visualConfirm(options));
+      if (done === null) return;
       await loadReplacementHistory(); onChanged();
     } catch (e: any) { setError(e.message || "تعذر التراجع"); }
     finally { setBusy(false); }
@@ -1231,9 +1234,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               {xlsxPreview ? (
                 <div className={`transfer-preview${smartBusy ? " is-smart-locked" : ""}`} aria-busy={smartBusy}>
                   <div className="transfer-counts import-summary-cards">
-                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفاً</small></span>
-                    {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>:null}
-                    {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفحات</small></span>:null}
+                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(Number(xlsxPreview.count || 0), AR.row)}</small></span>
+                    {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(xlsxPreview.issues?.length || 0, AR.note)}</small></span>:null}
+                    {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(Number(xlsxPreview.pages||0), AR.page)}</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز للنشر</small></span>:null}
                     {/* One card, two units: the rows still waiting and the exact
                         number of blanks inside them — so filling two cells of a
@@ -1245,7 +1248,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         <b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b>
                         <small>مقرراً للمراجعة</small>
                         <small className="review-units">
-                          {pdfReadinessSummary.reviewCells?<em>{pdfReadinessSummary.reviewCells.toLocaleString("ar-KW-u-nu-latn")} خانة ناقصة</em>:null}
+                          {pdfReadinessSummary.reviewCells?<em>ناقص: {countOf(pdfReadinessSummary.reviewCells, AR.slot)}</em>:null}
                           {Number(xlsxPreview.smartFilled||0)>0?<em className="filled">عُبّئت {Number(xlsxPreview.smartFilled).toLocaleString("ar-KW-u-nu-latn")} بالقراءة الأدق</em>:null}
                         </small>
                       </span>
@@ -1475,7 +1478,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   ) : null}
                   {preview.preview && preview.ready ? (
                     <PrimaryButton type="button" onClick={() => payload && run(payload, true)} disabled={busy}>
-                      {busy ? "يستورد…" : `أضف ${Number(preview.ready).toLocaleString("ar-KW-u-nu-latn")} موعداً`}
+                      {busy ? "يستورد…" : `أضف ${countOf(Number(preview.ready), oblique(AR.appointment))}`}
                     </PrimaryButton>
                   ) : null}
                 </div>
@@ -1532,6 +1535,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 <div className="roster-add-fields">
                   <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="اسم المنتدب" aria-label="اسم المنتدب الجديد" />
                   <input value={newCivil} onChange={e => setNewCivil(numericText(e.target.value).slice(0, 12))} onBlur={()=>{if(newCivil&& !validateCivilId(newCivil).isValid)setError(validateCivilId(newCivil).message||"الرقم المدني غير صحيح.");}} placeholder="12 رقمًا" inputMode="numeric" maxLength={12} aria-label="الرقم المدني للمنتدب الجديد" />
+                  <input value={newMobile} onChange={e => setNewMobile(numericText(e.target.value).slice(0, 15))} placeholder="الجوّال (اختياري)" inputMode="tel" maxLength={15} aria-label="جوّال المنتدب الجديد" data-guide-ignore="حقل جوّال المنتدب داخل نموذج الإضافة نفسه" />
                   <PrimaryButton type="button" data-guide-ignore="إضافة منتدب إلى دليل القسم إجراء إداري واضح داخل أداة المنتدبين" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}><Plus />أضف للقسم</PrimaryButton>
                 </div>
                 <small className="roster-rule-note">يمكن أن يكون المنتدب نفسه مسجلاً في أكثر من قسم، لكن لا يمكن إضافته مرتين داخل القسم نفسه.</small>
@@ -1548,6 +1552,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                       <div className="roster-edit-fields">
                       <input value={editName} onChange={e=>setEditName(e.target.value)} aria-label="تعديل اسم المنتدب"/>
                       <input value={editCivil} onChange={e=>setEditCivil(numericText(e.target.value).slice(0, 12))} onBlur={()=>{if(editCivil && !validateCivilId(editCivil).isValid)setError(validateCivilId(editCivil).message||"الرقم المدني غير صحيح.");}} placeholder="12 رقمًا" inputMode="numeric" maxLength={12} aria-label="تعديل الرقم المدني"/>
+                      <input value={editMobile} onChange={e=>setEditMobile(numericText(e.target.value).slice(0, 15))} placeholder="الجوّال" inputMode="tel" maxLength={15} aria-label="تعديل جوّال المنتدب" data-guide-ignore="حقل جوّال المنتدب داخل نموذج التعديل نفسه"/>
                       <PrimaryButton type="button" data-guide-ignore="حفظ تعديل بيانات منتدب داخل أداة المنتدبين" onClick={()=>void saveDelegateEdit(person.AdInstructorId)} disabled={busy}>حفظ</PrimaryButton>
                       <SecondaryButton type="button" data-guide-ignore="إلغاء تحرير منتدب لا يغير البيانات" onClick={()=>{setEditingDelegate(0);setError(null);}} disabled={busy}>إلغاء</SecondaryButton>
                       </div>
@@ -1555,9 +1560,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                       <button type="button" data-guide-ignore="تحديد عضوية المنتدب في الفصل الحالي إجراء واضح داخل أداة المنتدبين" className={`roster-term-toggle ${on?"on":""}`} onClick={()=>void saveRoster(on?roster.filter(id=>id!==person.AdInstructorId):[...roster,person.AdInstructorId])} aria-pressed={on}>
                         {on?<Check aria-hidden="true"/>:<Plus aria-hidden="true"/>}<span>{on?"يدرّس هذا الفصل":"أضفه لهذا الفصل"}</span>
                       </button>
-                      <span className="instructor-identity"><b>{person.AdInstructorName}</b><small dir="ltr">{person.AdInstructorCivil||"—"}</small></span>
+                      <span className="instructor-identity"><b>{person.AdInstructorName}</b><small dir="ltr">{person.AdInstructorCivil||"—"}</small>{person.AdInstructorMobile ? null : <small className="roster-no-mobile">بلا جوّال — لن تصله بطاقته</small>}</span>
                       <div className="roster-row-actions">
-                        <button type="button" data-guide-ignore="فتح تحرير المنتدب داخل صفه" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
+                        <button type="button" data-guide-ignore="فتح تحرير المنتدب داخل صفه" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setEditMobile(String(person.AdInstructorMobile||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
                         <button type="button" data-guide-ignore="حذف المنتدب من دليل القسم له تأكيد مستقل قبل التنفيذ" className="danger" onClick={()=>void removeDelegate(person.AdInstructorId)} aria-label={`حذف ${person.AdInstructorName} من قائمة القسم`} title="حذف من قائمة القسم"><Trash2/></button>
                       </div>
                     </>}
@@ -1609,7 +1614,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <span>{replacementCheck?.compatible === false ? <ShieldAlert /> : <CheckCircle2 />}</span>
                   <div>
                     <strong>{replacementCheck?.compatible === false ? "يوجد تعارض" : replacementCheck?.compatible ? "متوافق مع جميع المواعيد" : "نفحص المواعيد…"}</strong>
-                    <small>{replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "الأستاذ البديل مرتبط بموعد متداخل.") : retirePreview != null ? `${retirePreview.toLocaleString("ar-KW-u-nu-latn")} موعد سيتأثر` : ""}</small>
+                    <small>{replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "الأستاذ البديل مرتبط بموعد متداخل.") : retirePreview != null ? `${countOf(retirePreview, AR.appointment)} ${nounFor(retirePreview, AR.willAffectVerb)}` : ""}</small>
                   </div>
                 </div>
               ) : null}

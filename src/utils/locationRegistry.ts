@@ -1,5 +1,6 @@
 import type { FSchedule, LocationConfidence, MasterBuilding, MasterRoom, ScheduleLocationStatus } from "../types";
 import { recoverOfficialBuildingCodeFromAuthorityCell } from "./locationCollegePrefixes";
+import { AR, countOf, oblique } from "./arabicCount";
 
 export const PENDING_ROOM = "PENDING_ROOM" as const;
 const INVALID = new Set(["", "0", "00", "000", "-", "--", "---", "TBA", "N/A", "NA", "NONE", "NULL", "بدون", "بدونقاعة", "الغاء", "إلغاء"]);
@@ -80,7 +81,7 @@ export function resolveBuilding(registry: LocationRegistry, raw: unknown, contex
   if (candidates.length === 1) {
     const b=candidates[0]; return {status:b.confidence,value:b,evidence:[...b.evidence,`حُسم داخل سياق الكلية/القسم إلى ${b.officialCode}.`]};
   }
-  if (candidates.length > 1) return {status:"REVIEW_REQUIRED",evidence:[`القيمة تطابق ${candidates.length} مبانٍ في السياق.`]};
+  if (candidates.length > 1) return {status:"REVIEW_REQUIRED",evidence:[`القيمة تطابق ${countOf(candidates.length, oblique(AR.building))} في السياق.`]};
 
   const full=canonicalBuildingShape(raw);
   const exact=full ? registry.buildings.filter(b=>b.officialCode===full && inContext(b)) : [];

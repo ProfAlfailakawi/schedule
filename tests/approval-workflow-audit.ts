@@ -131,7 +131,7 @@ const additionsMessage = (count: number) => {
   return verdict.ok === true ? "" : verdict.message;
 };
 check(additionsMessage(1).includes("شعبة واحدة"), "شعبةٌ واحدة تُقرأ «شعبة واحدة»");
-check(additionsMessage(2).includes("شعبتان"), "شعبتان تُقرآن مثنّى لا «2 شعبة»");
+check(additionsMessage(2).includes("على شعبتين"), "شعبتان تُقرآن مثنّى مجروراً «على شعبتين» لا «2 شعبة»");
 check(additionsMessage(5).includes("شعب"), "خمسٌ تُقرأ جمع قلّة");
 check(!/\d/.test(additionsMessage(1)), "لا رقمَ لاتينياً في رسالةٍ عربية عن الواحد");
 

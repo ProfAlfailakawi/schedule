@@ -34,6 +34,19 @@ export const SESSION_WRITE_PATHS = new Set([
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+/**
+ * الصفحات العامة (بطاقة عضو الهيئة، رابط الطلب، التقويم، استمارة الطالب)
+ * تُفتح برمزٍ في الرابط لا بحساب. من يفتحها وهو مسجّلُ الدخول بصفة اطّلاع —
+ * رئيسُ قسمٍ هو أيضاً عضو هيئة تدريس يوقّع طلبه — يكتب فيها بصفته صاحبَ
+ * الرابط لا بصفة حسابه. فصلاحيةُ الكتابة هناك يحكمها الرمز داخل المسار،
+ * والحساب الملتصق بالطلب لا يغيّر شيئاً.
+ */
+export const PUBLIC_API_PREFIX = "/public/";
+
+export function isPublicApiPath(pathname: string): boolean {
+  return pathname.startsWith(PUBLIC_API_PREFIX);
+}
+
 export interface RoleGuardInput {
   method: string;
   /** المسار داخل ‎/api‎، مثل ‎/schedules/418‎ — لا المسار الكامل. */
@@ -46,7 +59,7 @@ export interface RoleGuardInput {
 }
 
 export type RoleGuardVerdict =
-  | { allowed: true; reason: "read" | "unauthenticated" | "session" | "power" | "writer" | "approval" }
+  | { allowed: true; reason: "read" | "unauthenticated" | "public" | "session" | "power" | "writer" | "approval" }
   | { allowed: false; reason: "read-only-role" };
 
 export function isApprovalWritePath(pathname: string): boolean {
@@ -64,6 +77,7 @@ export function isApprovalWritePath(pathname: string): boolean {
 export function roleWriteDecision(input: RoleGuardInput): RoleGuardVerdict {
   if (READ_METHODS.has(input.method.toUpperCase())) return { allowed: true, reason: "read" };
   if (!input.authenticated) return { allowed: true, reason: "unauthenticated" };
+  if (isPublicApiPath(input.path)) return { allowed: true, reason: "public" };
   if (SESSION_WRITE_PATHS.has(input.path)) return { allowed: true, reason: "session" };
   if (input.powerUser) return { allowed: true, reason: "power" };
   if (!isReadOnlyRole(input.role)) return { allowed: true, reason: "writer" };

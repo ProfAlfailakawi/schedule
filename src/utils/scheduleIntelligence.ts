@@ -1,6 +1,7 @@
 import { roomIdentityKey } from "./locationRegistry";
 import { requiredGapForDays } from "./scheduleRegulations";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, nounFor } from "./arabicCount";
+import { placeholderInstructorIds as placeholderIdsOf } from "./instructorIdentity";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
@@ -72,6 +73,27 @@ export interface ConflictInsight {
   rowId:number;otherId:number;message:string;detail:string;
   /** Every reason this one pair collides, so a clash is never counted twice. */
   reasons?:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">;
+}
+
+/**
+ * ── ما يمنع — سطرٌ واحد في المنتج كله ───────────────────────────────────────
+ *
+ * The owner's law: a real double booking of a TIME, a ROOM or an INSTRUCTOR
+ * arrives as severity "high"; a duplicate row is data integrity. Everything
+ * else the system knows — cohort overlap, the gap between two lectures, hall
+ * history, day rhythm, memory — is a remark beside a move, never a wall.
+ *
+ * `soft` is how the save gate marks advice riding in the same array as real
+ * collisions, so the same predicate reads a raw sweep and a server answer.
+ * It lived in six places, each spelled slightly differently (one forgot the
+ * duplicate, another the soft flag); `tests/blocker-oracle-audit.ts` now
+ * refuses a seventh.
+ */
+export function isBlockingConflict(item: any): boolean {
+  if (!item) return false;
+  if (item.soft === true) return false;
+  if (item.type === "memory" || item.type === "advice" || item.type === "regulation") return false;
+  return item.severity === "high" || item.type === "duplicate";
 }
 
 export interface ConflictOptions {
@@ -381,7 +403,7 @@ export function outsideScopeClashes(scopeRows:FSchedule[], allRows:FSchedule[], 
   const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
   const byId=new Map(allRows.map(row=>[Number(row.id),row] as const));
   return findConflicts(scopeRows,allRows,options)
-    .filter(item=>item.severity==="high"||item.type==="duplicate")
+    .filter(isBlockingConflict)
     .map(item=>{
       /* findConflicts names a pair from the target's side, but the target list
          is the scope itself — so read which end is ours rather than assume. */
@@ -510,7 +532,10 @@ export interface LiveClashScan {
  * instructor/room/duplicate reading, with no pair exempted, at a cost that
  * stays flat while the term grows.
  */
-export function fastConflictScan(rows:FSchedule[]):LiveClashScan {
+export function fastConflictScan(rows:FSchedule[], options?:{placeholderInstructorIds?:Iterable<number>}):LiveClashScan {
+  /* «هيئة تدريسية» is not a person on the board either: the ring and the
+     toolbar count must match the approval count (scheduleBlockers). */
+  const placeholders=new Set<number>(Array.from<number>(options?.placeholderInstructorIds??[]).map(Number).filter(Boolean));
   const ids=new Set<number>();
   const seen=new Set<string>();
   let instructorPairs=0,roomPairs=0,duplicatePairs=0;
@@ -531,7 +556,7 @@ export function fastConflictScan(rows:FSchedule[]):LiveClashScan {
       for(const other of active){
         const a=meta.row,b=other.row;
         if(a.id===b.id||a.AdTermId!==b.AdTermId) continue;
-        const sameInstructor=Boolean(Number(a.AdInstructorId))&&Number(a.AdInstructorId)===Number(b.AdInstructorId);
+        const sameInstructor=Boolean(Number(a.AdInstructorId))&&!placeholders.has(Number(a.AdInstructorId))&&Number(a.AdInstructorId)===Number(b.AdInstructorId);
         const sameRoom=Boolean(meta.room)&&meta.room===other.room;
         if(!sameInstructor&&!sameRoom) continue;
         const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
@@ -588,13 +613,31 @@ function instructorGapStats(rows:FSchedule[]){
   return result;
 }
 
-export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], courses:AdCourse[]=[], instructors:AdInstructor[]=[]){
-  const conflicts=findConflicts(targetRows,allRows);
+export interface AnalyzeOptions {
+  /** «هيئة تدريسية» records. Derived from `instructors` when not given. */
+  placeholderInstructorIds?:Iterable<number>;
+  /** The save gate's hall canonicalisation (legacy aliases → one hall). */
+  normalizeRow?:(row:FSchedule)=>FSchedule;
+}
+
+export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], courses:AdCourse[]=[], instructors:AdInstructor[]=[], options:AnalyzeOptions={}){
+  /* «مانع اعتماد» here is the same number every other screen prints: the same
+     placeholder exemption, the same hall identity, the same predicate
+     (duplicates included) — see `approvalBlockerCount` in scheduleBlockers. */
+  const placeholders=options.placeholderInstructorIds??placeholderIdsOf(instructors as any);
+  const normalize=options.normalizeRow;
+  const conflicts=normalize
+    ? findConflicts(targetRows.map(normalize),allRows.map(normalize),{placeholderInstructorIds:placeholders})
+    : findConflicts(targetRows,allRows,{placeholderInstructorIds:placeholders});
   const dayLoad=SCHEDULE_DAYS.map(day=>({key:day.key,label:day.label,count:targetRows.filter(row=>Boolean(row[day.key])).length}));
   const activeDayCounts=dayLoad.map(x=>x.count); const maxDay=Math.max(0,...activeDayCounts),minDay=Math.min(...activeDayCounts);
   const gaps=instructorGapStats(targetRows); const gapValues=[...gaps.values()]; const totalGap=gapValues.reduce((s,g)=>s+g.gapMinutes,0); const avgGap=gapValues.length?Math.round(totalGap/gapValues.length):0;
   const lateRows=targetRows.filter(row=>timeToMinutes(row.fstarttime)>=16*60).length;
-  const invalidRows=targetRows.filter(row=>!row.AdInstructorId||!row.AdCourseId||!row.buildingId||(row.locationStatus!=="PENDING_ROOM"&&!row.roomId)||duration(row)<=0||activeDays(row).length===0).length;
+  /* «ناقص» ما لا يُعرف مكانُه أصلاً، لا ما كُتب مكانُه نصّاً قبل سجل المباني: القاعة
+     التاريخية غير الموثّقة بيانٌ صحيح ينتظر التوثيق (قاعدة الحالة الذهبية)، وعدُّها
+     «ناقصة» كان يجعل كل جدولٍ قديمٍ «محجوباً» بمانعٍ لا تعرفه بوابة الحفظ. */
+  const hasPlace=(row:any)=>Boolean(row.buildingId||String(row.AdRoomCode||"").trim())&&(row.locationStatus==="PENDING_ROOM"||Boolean(row.roomId)||Boolean(String(row.AdRoomHall||"").trim()));
+  const invalidRows=targetRows.filter(row=>!row.AdInstructorId||!row.AdCourseId||!hasPlace(row)||duration(row)<=0||activeDays(row).length===0).length;
   const imbalance=maxDay?Math.round((maxDay-minDay)/maxDay*100):0;
   // Conflict counts can become large in imported/legacy semesters because every overlapping
   // pair is counted. A square-root curve keeps the score sensitive to meaningful reductions
@@ -625,12 +668,12 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   void courseById;
 
   const alerts:Array<{severity:"critical"|"warning"|"info";title:string;detail:string}>=[];
-  const critical=conflicts.filter(c=>c.severity==="high").length;
-  if(critical)alerts.push({severity:"critical",title:`${critical} مانع اعتماد`,detail:"حجز مزدوج يجب معالجته قبل الاعتماد."});
-  const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${longGap} أستاذ لديهم فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
-  if(lateRows)alerts.push({severity:"info",title:`${lateRows} موعداً متأخراً`,detail:`بعد ${scheduleClockForDisplay("16:00")}.`});
+  const critical=conflicts.filter(isBlockingConflict).length;
+  if(critical)alerts.push({severity:"critical",title:`${countOf(critical, AR.approvalBlocker)}`,detail:"حجز مزدوج يجب معالجته قبل الاعتماد."});
+  const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${countOf(longGap, AR.instructor)} ${nounFor(longGap, AR.hasPron)} فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
+  if(lateRows)alerts.push({severity:"info",title:`${countOf(lateRows, AR.appointment)} ${nounFor(lateRows, AR.lateAdj)}`,detail:`بعد ${scheduleClockForDisplay("16:00")}.`});
   if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`تفاوت ملحوظ بين أحمال الأيام · ${imbalance}%.`});
-  if(invalidRows)alerts.push({severity:"critical",title:`${invalidRows} سجل يحتاج بيانات`,detail:"موعد ناقص أو غير صالح."});
+  if(invalidRows)alerts.push({severity:"critical",title:`${countOf(invalidRows, AR.record)} ببيانات ناقصة`,detail:"موعد ناقص أو غير صالح."});
   if(!alerts.length)alerts.push({severity:"info",title:"الوضع مستقر",detail:"لا توجد ملاحظات حرجة."});
 
   const readiness=critical===0&&invalidRows===0? (score>=85?"ready":score>=70?"review":"needs-work") : "blocked";
@@ -679,7 +722,7 @@ export function conflictSolutions(row:FSchedule, allRows:FSchedule[], max=5){
   }
   const unique=new Map<string,any>();
   candidates.sort((a,b)=>a.score-b.score).forEach(item=>{const key=`${item.start}|${item.roomId}`;if(!unique.has(key))unique.set(key,item)});
-  return [...unique.values()].slice(0,max).map((item,index)=>({...item,rank:index+1,label:item.conflicts===0?"بدون مانع ظاهر":`${item.conflicts} مانع محتمل`,reason:item.roomChanged?"تغيير الوقت والقاعة لتحقيق أفضل مساحة متاحة":"الإبقاء على القاعة مع تحسين الوقت"}));
+  return [...unique.values()].slice(0,max).map((item,index)=>({...item,rank:index+1,label:item.conflicts===0?"بدون مانع ظاهر":`${countOf(item.conflicts, AR.blocker)} ${nounFor(item.conflicts, AR.possibleAdj)}`,reason:item.roomChanged?"تغيير الوقت والقاعة لتحقيق أفضل مساحة متاحة":"الإبقاء على القاعة مع تحسين الوقت"}));
 }
 
 export function autoScheduleProposal(targetRows:FSchedule[], allRows:FSchedule[]){

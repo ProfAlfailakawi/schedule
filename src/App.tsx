@@ -44,6 +44,7 @@ import { safeStorage } from "./utils/safeStorage";
 import { warmStart } from "./utils/warmStart";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
 import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb, telemetryGuide } from "./utils/clientTelemetry";
+import { AR, countOf, nounFor } from "./utils/arabicCount";
 
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
@@ -104,6 +105,7 @@ const Schedules = safeLazy(loadSchedules);
 const Reports = safeLazy(loadReports);
 const AdminUsers = safeLazy(loadAdminUsers);
 const About = safeLazy(loadAbout);
+import { legacyOnboardingSeenKey, onboardingSeen, onboardingSeenKey } from "./utils/onboardingKey";
 /* The welcome stage is a first-run surface: it must not sit in the payload
    every returning user downloads. */
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
@@ -1545,8 +1547,8 @@ export default function App() {
     if (!user) return;
     setUsage(safeStorage.json(`schedule-usage-${user.SystemUserId}`, {}));
     setEntityFavorites(safeStorage.json(`schedule-entity-favorites-${user.SystemUserId}`, []));
-    if (!safeStorage.get(`schedule-onboarding-v4-${user.SystemUserId}`)) setOnboardingStep(0);
-  }, [user?.SystemUserId]);
+    if (!onboardingSeen(key => safeStorage.get(key), user.SystemUserId, sessionRole.id)) setOnboardingStep(0);
+  }, [user?.SystemUserId, sessionRole.id]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
@@ -2193,14 +2195,19 @@ export default function App() {
     go(mode === "copyTerm" ? ("scheduleCopy" as View) : (mode as unknown as View));
 
   const finishOnboarding = () => {
-    if (user) safeStorage.set(`schedule-onboarding-v4-${user.SystemUserId}`, "done");
+    if (user) safeStorage.set(onboardingSeenKey(user.SystemUserId, sessionRole.id), "done");
     setOnboardingStep(-1);
   };
   /* الجولة تُعرض مرة واحدة ثم يُختم المفتاح، فلم يكن لمن أراد مراجعتها باب.
      محو المفتاح قبل الفتح يجعل الإعادة كالمرة الأولى تماماً: لو أُغلقت في
      منتصفها لا تبقى «منتهية» بغير أن تُرى. */
   const replayOnboarding = () => {
-    if (user) safeStorage.remove(`schedule-onboarding-v4-${user.SystemUserId}`);
+    if (user) {
+      safeStorage.remove(onboardingSeenKey(user.SystemUserId, sessionRole.id));
+      /* والعلامةُ القديمة كذلك، وإلا عُدّت الجولةُ «مرئية» بعد الإعادة. */
+      const legacy = legacyOnboardingSeenKey(user.SystemUserId, sessionRole.id);
+      if (legacy) safeStorage.remove(legacy);
+    }
     setSidebarOpen(false);
     setOnboardingStep(0);
   };
@@ -2715,7 +2722,7 @@ export default function App() {
           if (!guideIntroduced && user) setLauncherIntroduced(Number(user.SystemUserId), true);
           setGuideOpen(true);
         }}
-        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : guideNewCount ? `افتح مرشد SCHEDULE — لديك ${guideNewCount} عناصر جديدة: ${guideUnread.product.length} تحديثات للميزات و${guideUnread.runtime.length} عناصر جديدة في هذه الشاشة` : "افتح مرشد SCHEDULE"}
+        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : guideNewCount ? `افتح مرشد SCHEDULE — لديك ${countOf(guideNewCount, AR.element)} ${nounFor(guideNewCount, AR.newAdj)}: ${countOf(guideUnread.product.length, AR.update)} للميزات و${countOf(guideUnread.runtime.length, AR.element)} في هذه الشاشة` : "افتح مرشد SCHEDULE"}
         title={guideHint ? `${guideHint.title}` : guideNewCount ? `${guideNewCount} جديد — اضغط لمعرفة ما هو` : "مرشد SCHEDULE"}
       >
         <span className="smart-guide-fab-mark" aria-hidden="true"><Sparkles /></span>
@@ -2939,6 +2946,7 @@ export default function App() {
         <Suspense fallback={null}>
           <Onboarding
             isPowerAdmin={isPowerAdmin}
+            roleId={sessionRole.id}
             workspaceQuery={scheduleScopeQuery(Number(user.SystemUserId) || 0)}
             onFinish={finishOnboarding}
           />

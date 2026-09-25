@@ -7,29 +7,49 @@ import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
-import { activeDataMode, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
+import { activeDataMode, ApprovalRevisionConflict, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
 import { DEMO_ROLE_ACCOUNTS } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
-import { validateCivilId } from "./src/utils/civilId";
+import { normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
 import { byRoom } from "./src/utils/sorting";
-import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
+import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
-import { currentTermId } from "./src/utils/termSequence";
+import { currentTermId, planningTermCandidates, termHasEnded } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
+import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
+import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
+import { termPhase } from "./src/utils/termSequence";
+import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
+import { runApprovalAttempts, type ApprovalOnce } from "./src/server/approvalAttempts";
+import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueueEntry } from "./src/server/notificationCache";
+import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
+import { coverConflict } from "./src/utils/coverAvailability";
+import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
+import { instructorScheduleFingerprint } from "./src/utils/scheduleFingerprint";
+import { coversWholeCollege, expandScopeSections, resolveSmartScope } from "./src/server/readScope";
+import { finalSourceFor, type Finality } from "./src/utils/finality";
+import { isLate } from "./src/utils/lateness";
+import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
+  acknowledgeAdditions, appendApprovalEvent, approvalLockReason, awaitsHeadSignature, canHeadReturn, canRequestExtension, canReturn, canWithdraw,
+  CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, isOpenRegistrarNote, extensionRefusal, insistOutcome,
+  isSwapEdit, kuwaitDateISO, mergePendingAdditions, openRound, pendingAdditionTotal, readViewExpectation,
+  roundBaselineVersionId, roundEndVersionId, staleViewRefusal, statusAfterSignatureChange, suggestedExtensionDate,
+  TERM_CLOSED_APPROVAL_MESSAGE,
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
-import { blockingConflictDetails } from "./src/utils/scheduleBlockers";
+import { describeScopeChanges, fingerprintOfSignatures, replacementLoss, scopeBase, scopeSignatures, type ScopeBase } from "./src/utils/scopeFingerprint";
+import { approvalBlockerCount, blockingConflictDetails, blockingConflicts, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { buildNotifications } from "./src/utils/notificationCenter";
 import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
@@ -40,17 +60,21 @@ import {
   signatureStage, watchesInbox,
   type AcademicRole,
 } from "./src/utils/academicRoles";
-import { AR, countOf } from "./src/utils/arabicCount";
+import { AR, ARABIC_COUNT_SCRIPT, countOf, nounFor, oblique } from "./src/utils/arabicCount";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
+import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
+import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
+import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
+import { termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, judgeRequest, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
-import { buildCalendar, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
+import { buildCalendar, calendarSpanForTerm, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
 import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
@@ -525,6 +549,16 @@ function rateLimitLogin(req: Request, res: Response, next: NextFunction) {
  * one library-backed limiter in the file, kept generous (thirty switches a
  * minute per address) so demoing every role never hits a wall.
  */
+/* تقرير التغييرات يقرأ الفصل ونسخه ويقارن: أثقلُ قراءةٍ يفتحها كل دور. حدٌّ
+   سخيٌّ لقارئٍ بشري، يمنع حلقةً مسعورة من تجميد الخادم للجميع. */
+const rateLimitHeavyReport = rateLimit({
+  windowMs: 60_000,
+  limit: 90,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "طلباتٌ كثيرة لهذا التقرير في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
+});
+
 const rateLimitDemoRole = rateLimit({
   windowMs: 60_000,
   limit: 30,
@@ -1217,13 +1251,82 @@ function safeSystemUser(user: any) {
 }
 
 
-async function captureScopeVersion(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, label: string, source: "manual"|"draft"|"publish"|"undo"|"copy"|"import" = "manual") {
+/**
+ * ── ما بعد التغيير هو أساسُ التراجع عنه ────────────────────────────────
+ * النسخة تُؤخذ قبل التغيير الذي تحميه. فحين يُطلب التراجع لاحقاً، السؤال
+ * ليس «هل تغيّر الجدول منذ النسخة؟» — تغيّر، وهذا هو التغيير نفسه — بل «هل
+ * تغيّر شيءٌ آخر بعده؟». فيُسجَّل الجدولُ كما صار، ويُقارن به عند الاسترجاع
+ * (scopeOverwriteRefusal).
+ *
+ * و«كما صار» يُحسب من الصفوف التي كتبها الطلب نفسه، داخل الطلب وقبل الردّ
+ * (recordVersionAfter) — لا بإعادة قراءة النطاق بعد انتهاء الردّ: تلك القراءة
+ * كانت تلتقط تعديلَ زميلٍ وقع بينهما، فيُحسب من «ما صار» بعد عمليتنا، ثم
+ * يمحوه التراجعُ بلا سؤال. ومن لا يكتب صفوفاً (قرارات الاعتماد) يقول
+ * `{ unchanged: true }` فيكون أساسُها ما التُقط.
+ */
+async function captureScopeVersion(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, label: string, source: "manual"|"draft"|"publish"|"undo"|"copy"|"import" = "manual", options: { unchanged?: boolean } = {}) {
   if (!req.user) return undefined;
   const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
-  return Repository.createScheduleVersion({
+  const version = await Repository.createScheduleVersion({
     SystemUserId: Number(req.user.SystemUserId), userName: String(req.user.Name || req.user.SystemUserLogin || ""),
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, label, source, rows
   });
+  if (options.unchanged) await recordVersionAfter(version, rows);
+  return version;
+}
+
+/** «ما صار» بعد العملية، من صفوفها هي: دالّةٌ على ما قبلها، أو الصفوف المكتوبة نفسها. */
+async function recordVersionAfter(
+  version: { id?: string; rows?: any[] } | undefined,
+  after: any[] | ((before: any[]) => any[]),
+): Promise<void> {
+  if (!version?.id) return;
+  const rows = typeof after === "function" ? after(version.rows || []) : after;
+  try { await Repository.setScheduleVersionBase(version.id, scopeBase(rows)); }
+  catch (error) { console.error("[versions] تعذّر تسجيل أساس النسخة:", error instanceof Error ? error.message : error); }
+}
+
+/* ── «x-schedule-confirm» قد يحمل أكثر من موافقة ───────────────────────────
+   «publish» أو «restore» تقول «أريد هذا الفعل»، و«overwrite-newer» تقول «وأعرف
+   أنه سيمحو ما تغيّر بعد أساسه». تُرسلان معاً مفصولتين بفاصلة. */
+function confirmTokens(req: AuthenticatedRequest): Set<string> {
+  return new Set(String(req.get("x-schedule-confirm") || "").split(",").map(token => token.trim()).filter(Boolean));
+}
+
+/**
+ * ── لا يُمحى ما تغيّر بعد الأساس دون أن يُسمّى ─────────────────────────────
+ * The live scope against the base a draft or version was built on. Equal, or no
+ * base recorded (older objects): nothing to say. Different, and the caller has
+ * not said «overwrite-newer»: a refusal that lists what would be lost.
+ */
+async function scopeOverwriteRefusal(
+  req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, base: ScopeBase,
+): Promise<{ error: string; code: string; changes: string[] } | null> {
+  if (!base?.baseSignatures || !base.baseFingerprint) return null;
+  if (confirmTokens(req).has("overwrite-newer")) return null;
+  const live = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+  if (fingerprintOfSignatures(scopeSignatures(live)) === base.baseFingerprint) return null;
+  const courses = await Repository.getCoursesBySection(sectionId).catch(() => [] as any[]);
+  const nameOf = new Map((courses as any[]).map(course => [Number(course.AdCourseId), String(course.CourseName || "")]));
+  const changes = describeScopeChanges(base.baseSignatures, live, id => nameOf.get(id) || "");
+  return {
+    error: `تغيّر الجدول بعد أن أُخذت هذه النسخة: ${countOf(changes.length, AR.change)} ستُمحى إن تابعت. لم يُكتب شيء.`,
+    code: "scope-changed-since-base",
+    changes: changes.slice(0, 40),
+  };
+}
+
+/* ── الموعد النهائي يقيس أثر الاستبدال، لا اسم الزر ─────────────────────────
+   استيرادُ ملفٍّ ونسخُ فصلٍ تسليمٌ شامل بطبيعته. أما نشرُ مسودةٍ عادية أو
+   استرجاعُ نسخةٍ أو التراجعُ عن قرار فيُقاس بما يمحوه فعلاً من الجدول الحيّ،
+   بقاعدة الحذف الجماعي نفسها (isWholesaleChange). */
+async function replacementAction(
+  collegeId: number, sectionId: number, termId: number, nextRows: any[], kind?: "import" | "copy-term",
+): Promise<WholesaleAction> {
+  if (kind) return { kind };
+  const live = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+  const loss = replacementLoss(live, nextRows);
+  return { kind: "bulk-delete", deleting: loss.deleting, total: loss.total };
 }
 
 function safeImportEvidence(input:any){
@@ -1554,26 +1657,32 @@ function branchOwnScopes(colleges:any[],sections:any[],collegeId:number,sectionI
    ساعة واحدة «تعارضاً» لا يملك أحد إصلاحه. وكلمة «هيئة» لا يُسمّى بها الناس،
    فصدرُ الاسم وحده يعرّف السجل مهما كتبت بقيته. */
 function placeholderInstructorIds(instructors: Array<{ AdInstructorId?: unknown; AdInstructorName?: unknown }>): Set<number> {
-  const head = instructorIdentityTokens("هيئة")[0];
-  const ids = new Set<number>();
-  for (const person of instructors || []) {
-    const tokens = instructorIdentityTokens(String(person?.AdInstructorName || ""));
-    const id = Number(person?.AdInstructorId || 0);
-    if (id > 0 && tokens[0] === head) ids.add(id);
-  }
-  return ids;
+  /* القاعدة في `instructorIdentity` وحدها؛ هنا اسمُها القديم لمن يناديه. */
+  return sharedPlaceholderInstructorIds(instructors);
+}
+
+/* ── خيارات قاعدة المانع كما تقرؤها بوابة الحفظ ────────────────────────────
+   «هيئة تدريسية» ليست شخصاً، والقاعة تُعرف بعد طيّ أسمائها القديمة على السجل
+   الرسمي. كل عدٍّ أو قائمةٍ لموانع الاعتماد يأخذ الخيارين من هنا، فلا يرى
+   أحدٌ مانعاً لا تراه البوابة ولا العكس. */
+async function approvalBlockerOptions(): Promise<ApprovalBlockerOptions> {
+  const [instructors, registry] = await Promise.all([Repository.getInstructors(), readLocationRegistry()]);
+  return {
+    placeholderInstructorIds: placeholderInstructorIds(instructors as any),
+    normalizeRow: (row: any) => canonicalizeHistoricalLocationForRuntime(row as FSchedule, registry),
+  };
 }
 
 function blockingImportConflicts(
   targetRows:any[],termRows:any[],collegeId:number,sectionId:number,
   ownScopeList:Array<{collegeId:number;sectionId:number}>,
   placeholderIds?:Set<number>,
+  normalizeRow?:(row:any)=>any,
 ){
   const ownScopes=new Set<string>([`${collegeId}:${sectionId}`,...ownScopeList.map(scope=>`${scope.collegeId}:${scope.sectionId}`)]);
   const external=termRows.filter(item=>!ownScopes.has(`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`));
   const universe=[...external,...targetRows];
-  return findConflicts(targetRows as any,universe as any,{placeholderInstructorIds:placeholderIds})
-    .filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+  return blockingConflicts(targetRows,universe,{placeholderInstructorIds:placeholderIds,normalizeRow});
 }
 
 /* ── نطاق أساتذة القسم الذي لا تاريخ له ──────────────────────────────────────
@@ -1721,7 +1830,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
      * ويرفض الصف بحجّة «حجز مزدوج لأستاذ المقرر»، والحقيقة أنه يتعارض مع نفسه
      * قبل أن يُستبدل. ومواقع القسم كلها ستُستبدل بهذه العملية نفسها، فلا تدخل
      * فحص التعارض. أما بقية الأقسام فتبقى كما هي: حجزها حقيقي ويُحترم. */
-    const conflicts = blockingImportConflicts(rows, currentSchedules, collegeId, sectionId, departmentScopes, placeholderInstructorIds(instructors as any));
+    const conflicts = blockingImportConflicts(rows, currentSchedules, collegeId, sectionId, departmentScopes, placeholderInstructorIds(instructors as any), (await approvalBlockerOptions()).normalizeRow);
     conflicts.slice(0, 20).forEach((item:any) => errors.push(item.message || item.detail || "يوجد تعارض يمنع الاعتماد"));
   }
   return [...new Set(errors)].slice(0, 30);
@@ -1760,21 +1869,33 @@ function smartContextFrom(req: AuthenticatedRequest) {
 }
 
 
-async function resolveSmartContext(req: AuthenticatedRequest) {
+/**
+ * ── السياق الذكي لا يُصدِّق الطلبَ على نطاقه ────────────────────────────────
+ *
+ * كان يأخذ القسمَ والكليةَ من الطلب كما جاءا، ولا يسأل عنهما أحداً — فكان
+ * البحثُ بالجملة يقرأ لرئيس لجنةٍ مسوّداتِ أيِّ قسمٍ يكتب رقمَه في الرابط.
+ * وحين لا يُسمّى قسمٌ كان يختار من أرقام صفوف النطاق الخام، فيسقط صفُّ «الكلية
+ * كلها» ويقرأ للعميد الجامعةَ كلها بقسمٍ صفر.
+ *
+ * صار القرار في `resolveSmartScope` (src/server/readScope.ts) بحَكَمٍ واحد هو
+ * `isScopeAllowed`، ومعه `allowed` يلتزم به كلُّ من يستدعي هذه الدالّة.
+ */
+async function resolveSmartContext(req: AuthenticatedRequest, options: { allowCollegeWide?: boolean } = {}) {
   const requested = smartContextFrom(req);
   const [terms, sections] = await Promise.all([Repository.getTerms(), Repository.getSections()]);
   const termId = requested.termId || Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
-  let sectionId = requested.sectionId;
-  if (!sectionId) {
+  let busiest: Map<number, number> | undefined;
+  if (!requested.sectionId) {
     const schedules = await Repository.getSchedulesByScope({ termId });
-    const allowedSectionIds = req.user?.IsAdminUser ? new Set(sections.map(row=>row.AdSectionId)) : new Set((req.scopes||[]).map(row=>Number(row.AdSectionId)));
-    const counts = new Map<number,number>();
-    schedules.filter(row=>allowedSectionIds.has(row.AdSectionId)).forEach(row=>counts.set(row.AdSectionId,(counts.get(row.AdSectionId)||0)+1));
-    sectionId = [...allowedSectionIds].sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0))[0] || 0;
+    busiest = new Map<number, number>();
+    for (const row of schedules) busiest.set(Number(row.AdSectionId), (busiest.get(Number(row.AdSectionId)) || 0) + 1);
   }
-  const section = sections.find(row=>row.AdSectionId===sectionId);
-  const collegeId = requested.collegeId || Number(section?.AdCollegeId || 0);
-  return { collegeId, sectionId, termId, section };
+  const scope = resolveSmartScope({
+    requested, sections, busiest, allowCollegeWide: options.allowCollegeWide,
+    allowed: (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+  });
+  const section = sections.find(row => row.AdSectionId === scope.sectionId);
+  return { collegeId: scope.collegeId, sectionId: scope.sectionId, termId, section, allowed: scope.allowed };
 }
 
 /**
@@ -2172,9 +2293,12 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges, scheduleCount] = await Promise.all([
     Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.countSchedules()
   ]);
-  const assignedSectionIds = new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)));
+  /* أقسامُ القارئ من الحَكَم الواحد: صفُّ «الكلية كلها» يُقرأ لأقسامها (N8)،
+     والعميدان يُعطيان النهائيَّ وحده كما في كل شاشة. */
+  const assignedSectionIds = await scopeSectionIdsFor(req);
 
-  const latestScopedSchedules = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const latestScopedSchedulesRaw = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const latestScopedSchedules = readsFinalSchedulesOnly(req) ? await finalRowsOnly(latestScopedSchedulesRaw, latestTermId) : latestScopedSchedulesRaw;
   const scopedCourses = allCourses.filter(course => assignedSectionIds.has(Number(course.AdSectionId)));
 
   // ASP.NET DayOfWeek returned 0 for Sunday, but the legacy view checked d == 7.
@@ -2208,9 +2332,10 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
    * two numbers from the same page contradicting each other, and the one the
    * reader trusts is the one that is wrong. A coordinator's view is unchanged.
    */
+  const finalIds = readsFinalSchedulesOnly(req) ? new Set(latestScopedSchedules.map(row => Number(row.id))) : null;
   const visibleTableRows = req.user.IsAdminUser
     ? daySchedules
-    : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+    : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)) && (!finalIds || finalIds.has(Number(row.id))));
   const instructorIds = new Set(latestScopedSchedules.map(row => row.AdInstructorId));
   const coursesById = new Map(allCourses.map(course => [course.AdCourseId, course]));
   const instructorsById = new Map(allInstructors.map(instructor => [instructor.AdInstructorId, instructor]));
@@ -2426,9 +2551,8 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   if (q.length < 2) { res.json({ schedules: [], instructors: [], courses: [], rooms: [] }); return; }
   const terms = await Repository.getTerms();
   const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
-  const scheduleRead = req.user.IsAdminUser
-    ? Repository.getSchedulesByScope({ termId: latestTermId })
-    : Promise.all([...new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)).filter(Boolean))].map(sectionId => Repository.getSchedulesByScope({ sectionId, termId: latestTermId }))).then(groups => groups.flat());
+  /* النطاقُ من الحَكَم الواحد (صفُّ الكلية كلها يُقرأ)، والعميدُ يُعطى النهائي. */
+  const scheduleRead = readScopedTermRows(req, latestTermId);
   const [allSchedules, instructors, courses, sections, colleges, security] = await Promise.all([
     scheduleRead, Repository.getInstructors(), Repository.getCourses(), Repository.getSections(), Repository.getColleges(), Repository.getSecurityByUser(req.user!.SystemUserId)
   ]);
@@ -2444,9 +2568,10 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   const sectionById = new Map(sections.map(item => [item.AdSectionId, item]));
   const collegeById = new Map(colleges.map(item => [item.AdCollegeId, item]));
   const matches = (value: unknown) => String(value ?? "").toLocaleLowerCase("ar").includes(q);
+  const readerInstructorCivil = (person?: { AdInstructorCivil?: string; AdInstructorMobile?: string }) => (person ? instructorsForReader(req, [person])[0].AdInstructorCivil : "");
   const matchedSchedules = schedules.filter(row => {
     const ins = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
-    return [ins?.AdInstructorName, ins?.AdInstructorCivil, course?.CourseName, course?.CourseCode, row.SCode, row.AdRoomCode, row.AdRoomHall, sectionById.get(row.AdSectionId)?.AdSectionName, collegeById.get(row.AdCollegeId)?.AdCollegeName].some(matches);
+    return [ins?.AdInstructorName, readerInstructorCivil(ins), course?.CourseName, course?.CourseCode, row.SCode, row.AdRoomCode, row.AdRoomHall, sectionById.get(row.AdSectionId)?.AdSectionName, collegeById.get(row.AdCollegeId)?.AdCollegeName].some(matches);
   });
   const visibleInstructorIds = new Set(schedules.map(row => row.AdInstructorId));
   const visibleCourseIds = new Set(schedules.map(row => row.AdCourseId));
@@ -2455,11 +2580,12 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
     subtitle: `${canInstructor || canSchedule || canAdvanced ? instructorById.get(row.AdInstructorId)?.AdInstructorName || "" : ""}${canRoom || canSchedule || canAdvanced ? ` — ${row.AdRoomCode}/${row.AdRoomHall}` : ""} — ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
     meta: `${courseById.get(row.AdCourseId)?.CourseCode || ""} / شعبة ${row.SCode}`
   })) : [];
-  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? sortArabicNamed(instructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || matches(item.AdInstructorCivil))), item => item.AdInstructorName).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
+  const readerInstructors = instructorsForReader(req, instructors);
+  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? sortArabicNamed(readerInstructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || (item.AdInstructorCivil && matches(item.AdInstructorCivil)))), item => item.AdInstructorName).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
   const courseResults = (canSchedule || canAdvanced) ? sortCoursesByName(courses.filter(item => visibleCourseIds.has(item.AdCourseId) && (matches(item.CourseName) || matches(item.CourseCode)))).slice(0, 8).map(item => ({ id: item.AdCourseId, kind: "course", title: item.CourseName, subtitle: item.CourseCode, meta: sectionById.get(item.AdSectionId)?.AdSectionName || "" })) : [];
   const roomMap = new Map<string, {building:string;hall:string;count:number;roomId:string;buildingId?:string}>();
   schedules.forEach(row => { const key=verifiedRoomKey(row); if(!key)return; const prev=roomMap.get(key); roomMap.set(key,{building:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),roomId:String(row.roomId||""),buildingId:row.buildingId,count:(prev?.count||0)+1}); });
-  const roomResults = (canRoom || canSchedule || canAdvanced) ? Array.from(roomMap.values()).filter(item => matches(item.building) || matches(item.hall)).slice(0, 8).map((item,index) => ({ id: item.roomId, kind: "room", title: `مبنى ${item.building} — قاعة ${item.hall}`, subtitle: `${item.count} موعد في الجداول`, meta: "قاعة رسمية", building:item.building, hall:item.hall, buildingId:item.buildingId, roomId:item.roomId })) : [];
+  const roomResults = (canRoom || canSchedule || canAdvanced) ? Array.from(roomMap.values()).filter(item => matches(item.building) || matches(item.hall)).slice(0, 8).map((item,index) => ({ id: item.roomId, kind: "room", title: `مبنى ${item.building} — قاعة ${item.hall}`, subtitle: `${countOf(item.count, AR.appointment)} في الجداول`, meta: "قاعة رسمية", building:item.building, hall:item.hall, buildingId:item.buildingId, roomId:item.roomId })) : [];
   res.json({ schedules: scheduleResults, instructors: instructorResults, courses: courseResults, rooms: roomResults });
 });
 
@@ -2541,7 +2667,7 @@ app.post("/api/colleges", requirePermission(2), async (req: Request, res: Respon
   const code = cleanText(req.body?.AdCollegeCode, TEXT_LIMIT.code);
   const name = cleanText(req.body?.AdCollegeName, TEXT_LIMIT.name);
   if (!code || !name) {
-    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const newC = await Repository.createCollege(code, name);
@@ -2557,7 +2683,7 @@ app.put("/api/colleges/:id", requirePermission(2), async (req: AuthenticatedRequ
   const AdCollegeCode = cleanText(req.body?.AdCollegeCode, TEXT_LIMIT.code);
   const AdCollegeName = cleanText(req.body?.AdCollegeName, TEXT_LIMIT.name);
   if (!AdCollegeCode || !AdCollegeName) {
-    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   try {
@@ -2623,7 +2749,7 @@ app.post("/api/sections", requirePermission(4), async (req: AuthenticatedRequest
   const AdSectionName = cleanText(req.body?.AdSectionName, TEXT_LIMIT.name);
   const collegeId = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
   if (!collegeId || !AdSectionCode || !AdSectionName) {
-    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const college = await Repository.getCollegeById(collegeId);
@@ -2642,7 +2768,7 @@ app.put("/api/sections/:id", requirePermission(4), async (req: AuthenticatedRequ
   const AdSectionName = cleanText(req.body?.AdSectionName, TEXT_LIMIT.name);
   const targetCollegeId = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
   if (!targetCollegeId || !AdSectionCode || !AdSectionName) {
-    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const current = await Repository.getSectionById(id);
@@ -2689,7 +2815,7 @@ app.post("/api/terms", requirePermission(5), async (req: Request, res: Response)
      termCalendarFields in the repository; the name is what had no bound. */
   const AdTermName = cleanText(req.body?.AdTermName, TEXT_LIMIT.name);
   if (!AdTermName) {
-    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const newTerm = await Repository.createTerm(AdTermName,
@@ -2702,7 +2828,7 @@ app.put("/api/terms/:id", requirePermission(5), async (req: Request, res: Respon
   const id = parseInt(req.params.id);
   const AdTermName = cleanText(req.body?.AdTermName, TEXT_LIMIT.name);
   if (!AdTermName) {
-    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   try {
@@ -2740,12 +2866,26 @@ app.delete("/api/terms/:id", requirePermission(5), async (req: Request, res: Res
  * the moment someone searches beyond their own department; that search itself
  * returns at most forty matching people instead of the whole register.
  */
+/**
+ * ── بياناتُ الأستاذ الشخصية لا تصل القارئ ───────────────────────────────────
+ *
+ * صفاتُ الاطّلاع (العميدان، التسجيل، رئيس القسم) تفتح تقرير القسم (١٤) فتقرأ
+ * دليلَ الأساتذة — وكان يصلها الرقمُ المدني والهاتف لكل أستاذ. لا عمل لها بهما:
+ * لا تُنشئ أستاذاً ولا تطابق هويةً. فيُحذفان هنا، لكل مسارٍ يعيد الدليل.
+ */
+function instructorsForReader<T extends { AdInstructorCivil?: string; AdInstructorMobile?: string }>(req: AuthenticatedRequest, list: T[]): T[] {
+  if (req.user?.IsAdminUser || !isReadOnlyRole(req.user?.Role)) return list;
+  return list.map(person => ({ ...person, AdInstructorCivil: "", AdInstructorMobile: "" }));
+}
+
 app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = Number(req.query.sectionId || 0);
   const collegeId = Number(req.query.collegeId || 0);
   const termId = Number(req.query.termId || 0);
   const query = String(req.query.q || "").trim();
   const limit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
+  /* القارئ (صفات الاطّلاع) يرى الاسم ولا يرى الرقم المدني ولا الهاتف (N13). */
+  const send = <T extends { AdInstructorCivil?: string; AdInstructorMobile?: string }>(list: T[]) => res.json(instructorsForReader(req, list));
 
   // If query is provided, search across the university instructors catalog
   if (query) {
@@ -2778,12 +2918,14 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       const civil = String(person.AdInstructorCivil || "").trim();
       return Boolean(digits) && digits.length === civil.length && digits === civil;
     });
-    res.json(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
+    send(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
     return;
   }
 
   if (sectionId) {
-    const canReadSection = Boolean(req.user?.IsAdminUser || req.scopes?.some(scope => scope.AdSectionId === sectionId));
+    /* الحَكَم الواحد: صفُّ «الكلية كلها» يجيز أقسامها (N8). */
+    const sectionRow = (await Repository.getSections()).find(row => Number(row.AdSectionId) === sectionId);
+    const canReadSection = Boolean(sectionRow && isScopeAllowed(req, Number(sectionRow.AdCollegeId), sectionId));
     if (!canReadSection) { res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" }); return; }
     const termScoped = termId ? await Repository.getInstructorsByScope(sectionId, termId) : [];
     const allDeptHistorical = await Repository.getInstructorsByScope(sectionId, 0);
@@ -2798,7 +2940,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       ? (await Repository.getInstructors()).filter(person => manualIds.includes(Number(person.AdInstructorId)))
       : [];
     const merged = [...new Map([...allDeptHistorical, ...termScoped, ...manualPeople].map(person => [Number(person.AdInstructorId), person])).values()];
-    res.json(sortArabicNamed(merged, row => row.AdInstructorName));
+    send(sortArabicNamed(merged, row => row.AdInstructorName));
     return;
   }
 
@@ -2810,7 +2952,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const instructors = collegeId
     ? await Repository.getInstructorsByScheduleScope({ collegeId, termId })
     : await Repository.getInstructors();
-  res.json(sortArabicNamed(instructors, row => row.AdInstructorName));
+  send(sortArabicNamed(instructors, row => row.AdInstructorName));
 });
 
 /* ── الإضافة السريعة أثناء بناء الجدول ────────────────────────────────────────
@@ -2839,7 +2981,9 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
  * مسبقاً لم يعد طريقاً مسدوداً: صاحبه يُضمّ إلى القسم ويُعاد كاختيار، لأن
  * «أريده عندنا» مطلبٌ مشروع لشخص موجود، لا محاولة تكرار له. */
 app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: AuthenticatedRequest, res: Response) => {
-  const { AdInstructorCivil, AdInstructorName, AdInstructorMobile } = req.body;
+  const { AdInstructorName, AdInstructorMobile } = req.body;
+  /* الرقم يُخزَّن بصيغته الواحدة، فيطابقه كلُّ بابٍ يبحث به (بطاقتي، التوقيع، الاستيراد). */
+  const AdInstructorCivil = normalizeCivilId(req.body?.AdInstructorCivil);
   if (!AdInstructorCivil || !String(AdInstructorName || "").trim()) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
     return;
@@ -2880,7 +3024,9 @@ app.post("/api/instructors", requireAnyPermission([3, 7]), async (req: Authentic
 
 app.put("/api/instructors/:id", requirePermission(3), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
-  const { AdInstructorCivil, AdInstructorName, AdInstructorMobile } = req.body;
+  const { AdInstructorName, AdInstructorMobile } = req.body;
+  /* الرقم يُخزَّن بصيغته الواحدة، فيطابقه كلُّ بابٍ يبحث به (بطاقتي، التوقيع، الاستيراد). */
+  const AdInstructorCivil = normalizeCivilId(req.body?.AdInstructorCivil);
   const statusRaw = req.body?.AdInstructorStatus;
   const status = statusRaw === "retired" || statusRaw === "sabbatical" ? statusRaw : null;
   /* النصابُ رقمٌ موجبٌ معقول، أو لا شيء. وحدُّه الأعلى ليس تجميلاً: نصابٌ
@@ -3703,7 +3849,7 @@ function spatialBurnoutAnalysis(scopeRows:any[],termRows:any[],profile:any,instr
         const needed=travelMinutesFor(profile,from,to),margin=gap-needed;
         const level=margin<0?"high":margin<=10?"guarded":"low";
         if(level==="low")continue;
-        risks.push({instructorId,instructorName:instructorName.get(instructorId)||`أستاذ ${instructorId}`,day:day.key,dayLabel:day.label,fromRowId:prev.id,toRowId:next.id,fromBuilding:from,toBuilding:to,gapMinutes:gap,requiredMinutes:needed,marginMinutes:margin,level,title:level==="high"?"خطر الإرهاق الجسدي":"انتقال جغرافي ضيق",detail:level==="high"?`الفاصل ${gap} دقيقة بينما الانتقال التقريبي يحتاج ${needed} دقيقة.`:`المتاح ${gap} دقيقة والانتقال يحتاج قرابة ${needed} دقيقة؛ هامش الحركة ${margin} دقائق فقط.`});
+        risks.push({instructorId,instructorName:instructorName.get(instructorId)||`أستاذ ${instructorId}`,day:day.key,dayLabel:day.label,fromRowId:prev.id,toRowId:next.id,fromBuilding:from,toBuilding:to,gapMinutes:gap,requiredMinutes:needed,marginMinutes:margin,level,title:level==="high"?"خطر الإرهاق الجسدي":"انتقال جغرافي ضيق",detail:level==="high"?`الفاصل ${countOf(gap, AR.minute)} بينما الانتقال التقريبي يحتاج ${countOf(needed, oblique(AR.minute))}.`:`المتاح ${countOf(gap, AR.minute)} والانتقال يحتاج قرابة ${countOf(needed, oblique(AR.minute))}؛ هامش الحركة ${countOf(margin, AR.minute)} فقط.`});
       }
     }
   }
@@ -3791,7 +3937,7 @@ async function interCampusWarnings(candidate: any, all: any[]) {
       warnings.push({
         type: "travel", severity: "warning", soft: true, rowId: 0,
         message: `انتقال ضيّق بين ${CAMPUS_LABEL[candCampus]} و${CAMPUS_LABEL[otherCampus]}`,
-        detail: `${label}: التنقّل يحتاج قرابة ${need} دقيقة، والمتاح ${gap} دقيقة فقط بين موعدَي الأستاذ. يمكنك الحفظ مع الانتباه لهذا الفارق.`,
+        detail: `${label}: التنقّل يحتاج قرابة ${countOf(need, oblique(AR.minute))}، والمتاح ${countOf(gap, AR.minute)} فقط بين موعدَي الأستاذ. يمكنك الحفظ مع الانتباه لهذا الفارق.`,
       });
     }
   }
@@ -4176,6 +4322,19 @@ for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-
     next();
   });
 }
+/* «/api/student-registration»: قرارُ اللجنة يصل التسجيلَ، وقرارُ التسجيل يصل
+   القسمَ — لكن بنبضةٍ مجمّعة (ثلاث ثوانٍ): اللجنةُ تقرّر مقرّراً بعد مقرّر،
+   وكلُّ نبضةٍ توقظ كلَّ شاشةٍ فتسأل جرسها. وكلُّ كتابةٍ تمحو مجموعَ الكشف
+   المحفوظ للجرس (studentQueueMemo) قبل أن تصل النبضة. */
+const broadcastStudentNotifySoon = createCoalescer(3000, broadcastNotify);
+app.use("/api/student-registration", (req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== "GET") res.on("finish", () => {
+    if (res.statusCode >= 300) return;
+    studentQueueMemo.invalidate();
+    broadcastStudentNotifySoon();
+  });
+  next();
+});
 
 /* A mark older than this is treated as stale — the person is still connected,
    but wherever their pointer was, it is not news any more. A connection that
@@ -4290,6 +4449,8 @@ function listenForScheduleChangesAcrossInstances() {
     // quietly, because announcing a change we did not make would send the
     // beacon straight back out and the two instances would echo forever.
     clearScheduleCacheQuietly();
+    studentQueueMemo.invalidate();
+    bellBlockingMemo.invalidate();
     hallBarterSerial += 1;
     hallBarterBoardCache.clear();
     livingResponseCache.clear();
@@ -4476,8 +4637,16 @@ function readsFinalSchedulesOnly(req: AuthenticatedRequest): boolean {
   return !req.user?.IsAdminUser && (id === "dean" || id === "viceDean");
 }
 
-async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedule[]> {
-  const approvals = await Repository.getScheduleApprovalsForTerm(termId);
+/**
+ * الفصلُ منتهٍ؟ أُغلق صراحةً أو انقضت نافذته (القاعدة المستقرّة: termHasEnded).
+ */
+async function termEndedForReading(termId: number): Promise<boolean> {
+  const term = (await Repository.getTerms()).find(item => Number(item.AdTermId) === Number(termId));
+  return Boolean(term && (term.AdTermClosed === true || termHasEnded(term as any)));
+}
+
+async function finalRowsWithFinality(rows: FSchedule[], termId: number): Promise<{ rows: FSchedule[]; finality: Record<string, Finality> }> {
+  const [approvals, termEnded] = await Promise.all([Repository.getScheduleApprovalsForTerm(termId), termEndedForReading(termId)]);
   const byScope = new Map<string, typeof approvals[number]>(approvals.map(item => [`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`, item]));
   const groups = new Map<string, FSchedule[]>();
   for (const row of rows) {
@@ -4485,21 +4654,66 @@ async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedu
     groups.set(key, [...(groups.get(key) || []), row]);
   }
   const out: FSchedule[] = [];
+  const finality: Record<string, Finality> = {};
   for (const [key, live] of groups) {
-    const approval = byScope.get(key);
-    if (!approval) continue;
-    if (approval.status === "accepted") { out.push(...live); continue; }
-    const last = [...approval.rounds].filter(round => round.acceptedAt).sort((a, b) => b.number - a.number)[0];
-    const versionId = last?.acceptedVersionId || last?.reviewedVersionId;
-    if (!versionId) continue;
-    const version = await Repository.getScheduleVersionById(versionId);
-    if (version?.rows?.length) out.push(...(version.rows as FSchedule[]));
+    const source = finalSourceFor(byScope.get(key), termEnded);
+    if (source.kind === "none") continue;
+    if (source.kind === "live") { out.push(...live); finality[key] = source.finality; continue; }
+    const version = await Repository.getScheduleVersionById(source.versionId);
+    if (version?.rows?.length) { out.push(...(version.rows as FSchedule[])); finality[key] = "accepted"; }
+    else if (termEnded) { out.push(...live); finality[key] = "historical"; }
   }
-  return out;
+  return { rows: out, finality };
 }
 
-async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number): Promise<FSchedule[]> {
+async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedule[]> {
+  return (await finalRowsWithFinality(rows, termId)).rows;
+}
+
+/**
+ * `out.finality` — لمن يرى النهائيَّ وحده: صفةُ كل قسمٍ ظهر («accepted» أو
+ * «historical»)، ليقول التقرير أيَّها معتمدٌ وأيَّها منفَّذٌ قبل دورة الاعتماد.
+ */
+async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, out?: { finality?: Record<string, Finality> }): Promise<FSchedule[]> {
   const rows = await readLiveSchedulesForRequest(req, collegeId, sectionId, termId);
+  if (!readsFinalSchedulesOnly(req)) return rows;
+  const final = await finalRowsWithFinality(rows, termId);
+  if (out) out.finality = final.finality;
+  return final.rows;
+}
+
+/**
+ * ── كل ما في نطاق القارئ لفصلٍ واحد ─────────────────────────────────────────
+ *
+ * البحث ولوحة البداية وقائمة الأساتذة كانت تجمع أرقامَ الأقسام من صفوف النطاق
+ * الخام، فيسقط صفُّ «الكلية كلها» (قسم صفر) ويرى العميدُ ومساعدُه لا شيء.
+ * هنا تُشتقّ الأقسامُ من الحَكَم (`expandScopeSections`)، وتُقرأ الكليةُ
+ * المغطّاة كاملةً بقراءةٍ واحدة. ومن يقرأ النهائيَّ وحده (العميد) يُعطى النهائي.
+ */
+async function scopeSectionIdsFor(req: AuthenticatedRequest): Promise<Set<number>> {
+  const sections = await Repository.getSections();
+  return expandScopeSections(sections, (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId));
+}
+
+async function readScopedTermRows(req: AuthenticatedRequest, termId: number): Promise<FSchedule[]> {
+  if (req.user?.IsAdminUser) return Repository.getSchedulesByScope({ termId });
+  const sections = await Repository.getSections();
+  const allowed = (collegeId: number, sectionId: number) => isScopeAllowed(req, collegeId, sectionId);
+  const own = expandScopeSections(sections, allowed);
+  const byCollege = new Map<number, number[]>();
+  for (const section of sections) {
+    const collegeId = Number(section.AdCollegeId);
+    if (!byCollege.has(collegeId)) byCollege.set(collegeId, []);
+    byCollege.get(collegeId)!.push(Number(section.AdSectionId));
+  }
+  const reads: Promise<FSchedule[]>[] = [];
+  for (const [collegeId, ids] of byCollege) {
+    const mine = ids.filter(id => own.has(id));
+    if (!mine.length) continue;
+    if (mine.length === ids.length) reads.push(Repository.getSchedulesByScope({ collegeId, termId }));
+    else mine.forEach(sectionId => reads.push(Repository.getSchedulesByScope({ sectionId, termId })));
+  }
+  const rows = filterByScope(req, (await Promise.all(reads)).flat());
   return readsFinalSchedulesOnly(req) ? finalRowsOnly(rows, termId) : rows;
 }
 
@@ -4532,7 +4746,11 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
   // available by sending termId explicitly, but a blank filter can no longer scan
   // the university's entire ten-year schedule collection.
   if(!termId){const terms=await Repository.getTerms();termId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
-  let list = await readSchedulesForRequest(req, collegeId, sectionId, termId);
+  const finalityOut: { finality?: Record<string, Finality> } = {};
+  let list = await readSchedulesForRequest(req, collegeId, sectionId, termId, finalityOut);
+  /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده: معتمدٌ أم منفَّذٌ قبل دورة الاعتماد.
+     في ترويسةٍ لا في الجسم، فلا يتغيّر شكلُ المصفوفة لأيِّ شاشةٍ تقرؤها. */
+  if (finalityOut.finality) res.setHeader("X-Schedule-Finality", JSON.stringify(finalityOut.finality));
 
   if (req.query.instructorId) {
     list = list.filter(s => s.AdInstructorId === parseInt(req.query.instructorId as string));
@@ -4724,6 +4942,7 @@ app.post("/api/schedules/import-preflight", requirePermission(7), async (req: Au
     rows,termRows as any[],collegeId,sectionId,
     branchOwnScopes(colleges as any,sections as any,collegeId,sectionId),
     placeholderInstructorIds(allInstructors as any),
+    (await approvalBlockerOptions()).normalizeRow,
   );
   /* ── الموضع يُقرأ من الترتيب الحالي، لا من المعرّف ──────────────────────────
      المعرّفات السالبة تُمنح مرة واحدة ثم تبقى مع الصف، فحذف صف من المعاينة
@@ -4793,8 +5012,7 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
   const seen=new Set<string>();
   const add=(item:any)=>{const key=String(item.id||`${item.type}:${(item.rowIds||[]).join(":")}`);if(seen.has(key))return;seen.add(key);blockers.push(item);};
 
-  findConflicts(scopeRows as any,termRows as any)
-    .filter((item:any)=>item.severity==="high"||item.type==="duplicate")
+  blockingConflicts(scopeRows,termRows,await approvalBlockerOptions())
     .forEach((item:any)=>{
       const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
       if(!ownIds.has(ownId))return;
@@ -4884,7 +5102,8 @@ app.get("/api/schedules/outside-clashes", requirePermission(7), async (req: Auth
   const termRows=termRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
   /* The rule itself lives beside the conflict sweep in scheduleIntelligence,
      so this route holds no copy of it and `tests/run-tests.ts` can hold it. */
-  const outside=outsideScopeClashes(scopeRows as any,termRows as any);
+  const outside=outsideScopeClashes(scopeRows as any,termRows as any,
+    {placeholderInstructorIds:(await approvalBlockerOptions()).placeholderInstructorIds});
 
   const scopeKey=(row:any)=>`${Number(row?.AdCollegeId||0)}:${Number(row?.AdSectionId||0)}`;
   const scopeNames=new Map<string,string>();
@@ -4949,7 +5168,7 @@ app.post("/api/intelligence/nl-move", requirePermission(7), async (req: Authenti
   const issues=schedulePayloadIssues(after);
   if(issues.length){res.json({ok:false,hint:issues[0]});return;}
   const conflicts=await scheduleConflicts(req,{...after,AdTermId:termId},target.id);
-  const blocking=conflicts.filter((c:any)=>!c.soft&&(c.severity==="high"||c.type==="duplicate"));
+  const blocking=conflicts.filter(isBlockingConflict);
   res.json({
     ok:true,
     move:{id:target.id,fields},
@@ -4996,7 +5215,7 @@ async function previewNaturalLanguageMove(req: AuthenticatedRequest, q: string, 
   const issues=schedulePayloadIssues(after);
   if(issues.length)return{ok:false,hint:issues[0]};
   const conflicts=await scheduleConflicts(req,{...after,AdTermId:context.termId},target.id);
-  const blocking=conflicts.filter((c:any)=>!c.soft&&(c.severity==="high"||c.type==="duplicate"));
+  const blocking=conflicts.filter(isBlockingConflict);
   const external=scheduleData.universe.filter(row=>!(row.AdCollegeId===context.collegeId&&row.AdSectionId===context.sectionId));
   const beforeAnalysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
   const scenario=rows.map(row=>Number(row.id)===Number(target.id)?after:row);
@@ -5102,6 +5321,45 @@ app.post("/api/intelligence/nl-schedule", requirePermission(7), async (req: Auth
  * whole party through one atomic batch. 409 carries the human-readable reason;
  * nothing is written when anything is refused.
  */
+/* ── القاعة الجديدة تُقرأ من اسمها لا من معرّف القديمة ─────────────────────
+   لوحة القاعات تنقل المحاضرة بكتابة المبنى والقاعة الجديدين. والصفّ الموثّق
+   يحمل معرّفَ قاعته القديمة، والمعرّفُ يسبق الاسمَ عند التوثيق — فكانت القاعة
+   القديمة تُكتب من جديد فوق الاسم الجديد، ويقول النقلُ «تم» والمحاضرةُ في
+   مكانها. فمتى تغيّر الاسم ولم يتغيّر المعرّف، يُسقَط المعرّفُ القديم ويُحسم
+   المكان من الاسم كما يُحسم في أي كتابةٍ جديدة. */
+function dropStaleHallIdentity(row: any, fields: any): void {
+  for (const key of ["roomId", "buildingId", "locationStatus"] as const) {
+    row[key] = undefined;
+    fields[key] = undefined;
+  }
+}
+
+/* ── المنقولةُ بعضُها مع بعض، في أماكنها الجديدة ────────────────────────────
+   فحص النقل الجماعي يقرأ كلَّ صفٍّ منقول مقابل الفصل كما هو الآن، ويتجاهل عمداً
+   الصفوفَ المنقولة الأخرى لأن أماكنها القديمة ستُخلى. لكنه بذلك لا يرى أين
+   ستقف هي: صفّان يُنقلان معاً إلى القاعة نفسها في الساعة نفسها كانا يمرّان ثم
+   يُكتبان حجزاً مزدوجاً. فيُقرأ المنقولُ بعضه مع بعض هنا، بالقاعدة الواحدة. */
+async function movedRowsCollisions(movedRows: FSchedule[]): Promise<any[]> {
+  const movedById = new Map<number, FSchedule>(movedRows.map(row => [Number(row.id), row] as const));
+  return blockingConflicts(movedRows, movedRows, await approvalBlockerOptions()).map(item => {
+    const a = movedById.get(Number(item.rowId)), b = movedById.get(Number(item.otherId));
+    return {
+      ...item,
+      message: `${item.message} بين موعدين منقولين معاً`,
+      detail: `${a?.AdCourseName || "مقرر"} (شعبة ${a?.SCode || "—"}) و${b?.AdCourseName || "مقرر"} (شعبة ${b?.SCode || "—"}) في المكان والوقت الجديدين.`,
+    };
+  });
+}
+
+/** The hall text moved but the registry identity it carried did not. */
+function hallTextChangedWithoutIdentity(original: any, fields: any): boolean {
+  if (!("AdRoomCode" in fields) && !("AdRoomHall" in fields)) return false;
+  const before = roomKeyOf("", original?.AdRoomCode, original?.AdRoomHall);
+  const after = roomKeyOf("", fields.AdRoomCode ?? original?.AdRoomCode, fields.AdRoomHall ?? original?.AdRoomHall);
+  if (before === after) return false;
+  return !fields.roomId || String(fields.roomId) === String(original?.roomId || "");
+}
+
 app.post("/api/schedules/move-batch", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const rawMoves = Array.isArray(req.body?.moves) ? req.body.moves : [];
   const strict = Boolean(req.body?.strict);
@@ -5130,7 +5388,9 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     const fields: any = {};
     for (const key of ALLOWED) if (move?.fields && key in move.fields) fields[key] = move.fields[key];
     fields.fdetail = legacyFDetail({ ...originals[index], ...fields });
-    return { row: { ...originals[index], ...fields } as FSchedule, fields };
+    const row = { ...originals[index], ...fields } as FSchedule;
+    if (hallTextChangedWithoutIdentity(originals[index], fields)) dropStaleHallIdentity(row, fields);
+    return { row, fields };
   });
   const blocked: any[] = [];
   for (const candidate of candidates) {
@@ -5144,8 +5404,9 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     }
     const conflicts = await scheduleConflicts(req, candidate.row, candidate.row.id);
     blocked.push(...conflicts.filter((c: any) =>
-      !c.soft && !movedIds.has(Number(c.rowId)) && (strict || c.severity === "high" || c.type === "duplicate")));
+      !c.soft && !movedIds.has(Number(c.rowId)) && (strict || isBlockingConflict(c))));
   }
+  blocked.push(...await movedRowsCollisions(candidates.map((candidate: { row: FSchedule }) => candidate.row)));
   if (blocked.length) {
     const first = blocked[0];
     res.status(409).json({
@@ -5316,7 +5577,7 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
   ]);
   const courseByCode = new Map(courses.filter(row => Number(row.AdSectionId) === sectionId)
     .map(row => [String(row.CourseCode || "").trim().toLowerCase(), row]));
-  const instructorByCivil = new Map(instructors.map(row => [String(row.AdInstructorCivil || "").trim(), row]));
+  const instructorByCivil = new Map(instructors.map(row => [normalizeCivilId(row.AdInstructorCivil), row]));
   const seen = new Set(existing.map(row => `${row.AdCourseId}|${String(row.SCode).trim()}`));
 
   /**
@@ -5344,7 +5605,7 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
       } catch { /* a course we cannot add is reported by its rows below */ }
     }
     for (const entry of (Array.isArray(body.instructors) ? body.instructors : [])) {
-      const civil = String(entry?.civil || "").trim();
+      const civil = normalizeCivilId(entry?.civil);
       if (!civil || instructorByCivil.has(civil)) continue;
       try {
         const created = await Repository.createInstructor(
@@ -5364,7 +5625,7 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     const course = courseByCode.get(String(entry?.courseCode || "").trim().toLowerCase());
     if (!course) { rejected.push({ line: index + 1, reason: "رمز المقرر غير موجود في هذا القسم", label }); return; }
     if(!operationalImportIds.has(Number(course.AdCourseId))){rejected.push({line:index+1,reason:"المقرر مؤرشف أكاديمياً ولا يمكن استيراده إلى جدول حالي",label});return;}
-    const instructor = instructorByCivil.get(String(entry?.instructorCivil || "").trim());
+    const instructor = instructorByCivil.get(normalizeCivilId(entry?.instructorCivil));
     if (!instructor) { rejected.push({ line: index + 1, reason: "الرقم المدني للأستاذ غير مسجّل", label }); return; }
     const key = `${course.AdCourseId}|${String(entry?.section || "").trim()}`;
     if (seen.has(key)) { rejected.push({ line: index + 1, reason: "الشعبة موجودة بالفعل", label }); return; }
@@ -5404,7 +5665,10 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     else if(locationResult.check.canonical)Object.assign(row,locationResult.check.canonical);
   }
   if(!importPreflightIssues.length){
-    const conflicts=findConflicts(ready as any,[...existing,...ready] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+    /* ضد الفصل كله لا القسم وحده؛ ومعرّفاتٌ سالبة للفحص كي يتعارض الجديد بعضه مع بعض. */
+    const termRowsForImport=await Repository.getSchedulesByScope({termId});
+    const staged=ready.map((row:any,index:number)=>({...row,id:-(index+1)}));
+    const conflicts=blockingConflicts(staged,termRowsForImport,await approvalBlockerOptions());
     conflicts.slice(0,20).forEach((item:any)=>importPreflightIssues.push(item.message||item.detail||"يوجد تعارض يمنع الاستيراد"));
   }
   if(importPreflightIssues.length){
@@ -5417,7 +5681,7 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     const newCourses = (Array.isArray(body.courses) ? body.courses : [])
       .filter((entry: any) => !courseByCode.has(String(entry?.code || "").trim().toLowerCase())).length;
     const newInstructors = (Array.isArray(body.instructors) ? body.instructors : [])
-      .filter((entry: any) => !instructorByCivil.has(String(entry?.civil || "").trim())).length;
+      .filter((entry: any) => !instructorByCivil.has(normalizeCivilId(entry?.civil))).length;
     res.json({ preview: true, ready: ready.length, rejected, sample: ready.slice(0, 5), willAdd: { courses: newCourses, instructors: newInstructors } });
     return;
   }
@@ -5460,6 +5724,14 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   res.json({ instructorIds, instructors });
 });
 
+/** أقسامُ كليةٍ يغطّيها القارئ كلَّها — فارغةٌ إن لم يغطّها (الحَكَم الواحد). */
+async function wholeCollegeSectionIds(req: AuthenticatedRequest, collegeId: number): Promise<number[]> {
+  const sections = await Repository.getSections();
+  const allowed = (c: number, s: number) => isScopeAllowed(req, c, s);
+  if (!coversWholeCollege(sections, allowed, collegeId)) return [];
+  return sections.filter(row => Number(row.AdCollegeId) === collegeId).map(row => Number(row.AdSectionId)).filter(Boolean);
+}
+
 /** Read-only counterpart for the inquiry centre. Report permissions must be
  * able to see the current visiting roster without granting the data-editing
  * permission used by the schedule transfer tool. */
@@ -5467,10 +5739,14 @@ app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 1
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const { instructorIds, instructors } = await readLiveVisitingRoster(collegeId, sectionId, termId);
-  res.json({ instructorIds, instructors });
+  if (!collegeId || !termId) { res.json({ instructorIds: [] }); return; }
+  /* مستوى الكلية (N7): من يغطّي الكلية كلها (العميد) يرى منتدبي أقسامها جميعاً. */
+  const sectionIds = sectionId ? [sectionId] : await wholeCollegeSectionIds(req, collegeId);
+  if (!sectionIds.length || !sectionIds.every(id => isScopeAllowed(req, collegeId, id))) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const parts = await Promise.all(sectionIds.map(id => readLiveVisitingRoster(collegeId, id, termId)));
+  const instructorIds = [...new Set(parts.flatMap(part => part.instructorIds))];
+  const instructors = [...new Map(parts.flatMap(part => part.instructors).map((person: any) => [Number(person.AdInstructorId), person])).values()];
+  res.json({ instructorIds, instructors: instructorsForReader(req, instructors as any[]) });
 });
 
 // A delegate badge is global to the person, but department directories are not.
@@ -5577,13 +5853,19 @@ app.get("/api/department-delegates", requirePermission(7), async (req: Authentic
  * department without creating a second instructor record. */
 app.post("/api/department-delegates/instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
-  const civil=asciiDigits(req.body?.AdInstructorCivil).replace(/\D/g,"");
+  const civil=normalizeCivilId(req.body?.AdInstructorCivil);
   const name=String(req.body?.AdInstructorName||"").trim().slice(0,100);
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const check=validateCivilId(civil);
   if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
+  /* المنتدبُ بلا جوّالٍ لا تصله بطاقته: القسمُ الذي يضيفه يكتب رقمه. */
+  const mobile=storableMobile(req.body?.AdInstructorMobile);
+  if(mobile===null){res.status(400).json({error:"رقم الجوّال غير صالح — ثمانية أرقام تبدأ بـ5 أو 6 أو 9، أو رقمٌ دوليّ كامل."});return;}
   let person=await Repository.getInstructorByCivil(civil);
-  if(!person) person=await Repository.createInstructor(civil,name,"");
+  if(!person) person=await Repository.createInstructor(civil,name,mobile);
+  /* شخصٌ موجودٌ من قبل (منتدبٌ لقسمٍ آخر): يُكمَّل رقمُه إن كان بلا رقم، ولا
+     يُكتب فوق رقمٍ سجّله غيرُ هذا القسم. */
+  else if(mobile&&!whatsappNumber(person.AdInstructorMobile)) person=await Repository.updateInstructor(Number(person.AdInstructorId),String(person.AdInstructorCivil||civil),String(person.AdInstructorName||name),mobile,(person as any).AdInstructorStatus||null,(person as any).AdInstructorLoad??null);
   const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
   if(directory.includes(Number(person.AdInstructorId))){res.status(409).json({error:"هذا المنتدب موجود بالفعل في قائمة هذا القسم.",person});return;}
   await Repository.addDepartmentDelegate(collegeId,sectionId,Number(person.AdInstructorId));
@@ -5598,7 +5880,7 @@ app.put("/api/department-delegates/:instructorId", requirePermission(7), async (
   if(!collegeId||!sectionId||!instructorId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
   if(!directory.includes(instructorId)){res.status(404).json({error:"المنتدب غير موجود في قائمة هذا القسم"});return;}
-  const civil=asciiDigits(req.body?.AdInstructorCivil).replace(/\D/g,"");
+  const civil=normalizeCivilId(req.body?.AdInstructorCivil);
   const name=String(req.body?.AdInstructorName||"").trim().slice(0,100);
   const check=validateCivilId(civil);
   if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
@@ -5606,7 +5888,13 @@ app.put("/api/department-delegates/:instructorId", requirePermission(7), async (
   if(collision&&Number(collision.AdInstructorId)!==instructorId){res.status(409).json({error:"هذا الرقم المدني مرتبط بمنتدب آخر."});return;}
   const existing=await Repository.getInstructorById(instructorId);
   if(!existing){res.status(404).json({error:"المنتدب غير موجود"});return;}
-  const person=await Repository.updateInstructor(instructorId,civil,name,String(existing.AdInstructorMobile||""),(existing as any).AdInstructorStatus||null);
+  /* الجوّالُ لمن يديره هذا القسم (تحقّقنا أعلاه أنه في قائمته). غيابُ الحقل
+     يُبقي الرقم كما هو؛ والحقلُ الفارغ يمحوه صراحةً. */
+  const hasMobile=Object.prototype.hasOwnProperty.call(req.body||{},"AdInstructorMobile");
+  const mobile=hasMobile?storableMobile(req.body?.AdInstructorMobile):String(existing.AdInstructorMobile||"");
+  if(mobile===null){res.status(400).json({error:"رقم الجوّال غير صالح — ثمانية أرقام تبدأ بـ5 أو 6 أو 9، أو رقمٌ دوليّ كامل."});return;}
+  /* والنصابُ يُحمل كما هو: التعديلُ هنا لا يمسّه، وكان يمحوه. */
+  const person=await Repository.updateInstructor(instructorId,civil,name,mobile,(existing as any).AdInstructorStatus||null,(existing as any).AdInstructorLoad??null);
   res.json(person);
 });
 
@@ -5630,7 +5918,7 @@ app.delete("/api/department-delegates/:instructorId", requirePermission(7), asyn
 /** Backwards-compatible creation path now writes the department directory too. */
 app.post("/api/visiting-roster/instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
-  const civil=asciiDigits(req.body?.AdInstructorCivil).replace(/\D/g,"");
+  const civil=normalizeCivilId(req.body?.AdInstructorCivil);
   const name=String(req.body?.AdInstructorName||"").trim().slice(0,100);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const check=validateCivilId(civil);if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
@@ -5663,32 +5951,41 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
 
 app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
-  if(!collegeId||!sectionId){res.status(400).json({error:"حدد الكلية والقسم."});return;}
-  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [rosters,instructors,terms,directory]=await Promise.all([
-    Repository.getVisitingRosterHistory(collegeId,sectionId),
+  if(!collegeId){res.status(400).json({error:"حدد الكلية."});return;}
+  /* مستوى الكلية (N7): أقسامُ الكلية كلها لمن يغطّيها. */
+  const sectionIds=sectionId?[sectionId]:await wholeCollegeSectionIds(req,collegeId);
+  if(!sectionIds.length||!sectionIds.every(id=>isScopeAllowed(req,collegeId,id))){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [rosterGroups,instructors,terms,directories]=await Promise.all([
+    Promise.all(sectionIds.map(id=>Repository.getVisitingRosterHistory(collegeId,id).then(list=>list.map((row:any)=>({...row,sectionId:id}))))),
     Repository.getInstructors(),
     Repository.getTerms(),
-    Repository.getDepartmentDelegates(collegeId,sectionId),
+    Promise.all(sectionIds.map(id=>Repository.getDepartmentDelegates(collegeId,id))),
   ]);
-  const activeDelegateIds=new Set(directory.map(Number));
+  const rosters=rosterGroups.flat();
+  /* التاريخُ تاريخ: من كان منتدباً في فصلٍ مضى يبقى فيه ولو خرج من دليل القسم
+     اليوم (N7). كان يُسقَط، فيقرأ العميدُ «لم ينتدب القسم أحداً» عن فصلٍ انتُدب
+     فيه ثلاثة. ويُعلَّم من لم يعد في الدليل. */
+  const activeDelegateIds=new Set(directories.flat().map(Number));
   const peopleById=new Map(instructors.map(person=>[Number(person.AdInstructorId),person]));
   const termsById=new Map(terms.map(term=>[Number(term.AdTermId),term]));
   const termIds=[...new Set(rosters.map(row=>Number(row.termId)).filter(Boolean))];
-  const rowsByTerm=new Map<number,any[]>();
-  await Promise.all(termIds.map(async termId=>{
-    rowsByTerm.set(termId,await Repository.getSchedulesByScope({collegeId,sectionId,termId}));
+  const rowsByTerm=new Map<string,any[]>();
+  await Promise.all(rosters.map(async (roster:any)=>{
+    const key=`${Number(roster.sectionId)}:${Number(roster.termId||0)}`;
+    if(rowsByTerm.has(key))return;
+    rowsByTerm.set(key,[]);
+    rowsByTerm.set(key,await Repository.getSchedulesByScope({collegeId,sectionId:Number(roster.sectionId),termId:Number(roster.termId||0)}));
   }));
-  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[]}>();
+  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[];listedNow:boolean}>();
   for(const roster of rosters){
     const termId=Number(roster.termId||0);
     const term=termsById.get(termId);
-    const ids=[...new Set(
-      (roster.instructorIds||[])
+    const ids:number[]=[...new Set<number>(
+      ((roster.instructorIds||[]) as unknown[])
         .map(Number)
-        .filter((id:number)=>Boolean(id)&&activeDelegateIds.has(id)&&peopleById.has(id))
+        .filter((id:number)=>Boolean(id)&&peopleById.has(id))
     )];
-    const termRows=rowsByTerm.get(termId)||[];
+    const termRows=rowsByTerm.get(`${Number(roster.sectionId)}:${termId}`)||[];
     for(const instructorId of ids){
       const mine=termRows.filter(row=>Number(row.AdInstructorId)===instructorId);
       const distinctCourses=new Set(mine.map(row=>Number(row.AdCourseId||0)).filter(Boolean)).size;
@@ -5696,27 +5993,32 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
       const current=people.get(instructorId)||{
         instructorId,
         name:person?.AdInstructorName||`منتدب ${instructorId}`,
-        civil:person?.AdInstructorCivil||"",
+        civil:person ? instructorsForReader(req,[person])[0].AdInstructorCivil||"" : "",
         times:0,
         sections:0,
         courses:0,
         terms:[],
+        listedNow:activeDelegateIds.has(instructorId),
       };
-      current.times+=1;
       current.sections+=mine.length;
       current.courses+=distinctCourses;
+      const items=mine.map((row:any)=>({
+        scheduleId:Number(row.id||0),
+        courseId:Number(row.AdCourseId||0),
+        courseName:String(row.AdCourseName||""),
+        sectionCode:String(row.SCode||"").trim(),
+      }));
+      /* على مستوى الكلية قد يُنتدب الشخص في قسمين في الفصل نفسه: فصلٌ واحد. */
+      const sameTerm=current.terms.find((entry:any)=>entry.termId===termId);
+      if(sameTerm){sameTerm.sections+=mine.length;sameTerm.courses+=distinctCourses;sameTerm.items.push(...items);people.set(instructorId,current);continue;}
+      current.times+=1;
       current.terms.push({
         termId,
         termName:term?.AdTermName||String(termId),
         rostered:true,
         sections:mine.length,
         courses:distinctCourses,
-        items:mine.map((row:any)=>({
-          scheduleId:Number(row.id||0),
-          courseId:Number(row.AdCourseId||0),
-          courseName:String(row.AdCourseName||""),
-          sectionCode:String(row.SCode||"").trim(),
-        })),
+        items,
       });
       people.set(instructorId,current);
     }
@@ -6064,8 +6366,7 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: 
   const candidates = rows.map(row => ({ ...row, AdInstructorId: toId || 0 }));
   const remaining = termRows.filter(row => !movedIds.has(Number(row.id)));
   const conflicts = toId
-    ? findConflicts(candidates as any, [...remaining, ...candidates] as any)
-        .filter((item:any) => item.severity === "high" || item.type === "duplicate")
+    ? blockingConflicts(candidates, [...remaining, ...candidates], await approvalBlockerOptions())
         .filter((item:any) => movedIds.has(Number(item.rowId)) || movedIds.has(Number(item.otherId)))
         .slice(0, 20)
     : [];
@@ -6083,6 +6384,8 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: 
   const toName = toId ? (instructors.find(i => Number(i.AdInstructorId) === toId)?.AdInstructorName || `أستاذ ${toId}`) : "بلا أستاذ";
   const undoVersion = await captureScopeVersion(req, collegeId, sectionId, termId, `قبل استبدال الأستاذ: ${fromName} ← ${toName}`, "manual");
   for (const row of rows) await Repository.updateSchedule(row.id, { AdInstructorId: toId || 0 } as any);
+  const replacedIds = new Set(rows.map((row: any) => Number(row.id)));
+  await recordVersionAfter(undoVersion, before => before.map(row => replacedIds.has(Number(row.id)) ? { ...row, AdInstructorId: toId || 0 } : row));
   if (rows.length) await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "edit" });
   res.json({ preview: false, moved: rows.length, cleared: !toId, compatible: true, undoVersionId: undoVersion?.id });
 });
@@ -6240,7 +6543,7 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
       if (idle === 0) reasons.push("لا يترك فراغاً للأستاذ");
       else reasons.push(`فراغ ${countOf(Math.round(idle / perDay), AR.minute)}`);
       if (walk === 0) reasons.push("بلا انتقال بين المباني");
-      else reasons.push(`انتقال ${Math.round(walk / perDay)} دقيقة`);
+      else reasons.push(`انتقال ${countOf(Math.round(walk / perDay), AR.minute)}`);
       if (spread === 0) reasons.push("داخل يوم القسم الحالي");
 
       candidates.push({
@@ -6298,9 +6601,9 @@ app.get("/api/schedules/:id/exceptions", requirePermission(7), async (req: Authe
 app.post("/api/schedules/:id/exceptions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const row = await readScheduleForException(req, res);
   if (!row) return;
-  /* واستثناءُ الأسبوع تعديلٌ على الجدول كغيره: إلغاءُ محاضرةٍ أو تغطيتُها
-     يغيّر ما جرى فعلاً، فيُحرس بالحارس نفسِه. */
-  const exceptionLock = await scheduleLockRefusal(req, Number(row.AdCollegeId), Number(row.AdSectionId), Number(row.AdTermId));
+  /* واستثناءُ الأسبوع يُحرس بحكم الفصل المنتهي، لا بقفل التسجيل (R8): إلغاءُ
+     محاضرةِ الغد أو تغطيتُها لا ينتظر قرار التسجيل في الجدول الفصلي. */
+  const exceptionLock = await scheduleLockRefusal(req, Number(row.AdCollegeId), Number(row.AdSectionId), Number(row.AdTermId), { registrarLock: false });
   if (exceptionLock) { res.status(409).json({ error: exceptionLock, code: "schedule-locked" }); return; }
   const body = req.body || {};
   const date = String(body.date || "").trim();
@@ -6325,6 +6628,25 @@ app.post("/api/schedules/:id/exceptions", requirePermission(7), async (req: Auth
     if (coverInstructorId === Number(row.AdInstructorId)) { res.status(400).json({ error: "التغطية تكون بأستاذ آخر غير أستاذ الشعبة" }); return; }
     const person = (await Repository.getInstructors()).find(item => item.AdInstructorId === coverInstructorId);
     if (!person) { res.status(404).json({ error: "الأستاذ البديل غير موجود" }); return; }
+    /* لا تغطيتان في الساعة نفسها، ولا تغطيةٌ فوق محاضرته: القاعدةُ نفسها التي
+       يرتّب بها «بديل اليوم» مرشّحيه. */
+    const [coverTermRows, coverTermExceptions] = await Promise.all([
+      Repository.getSchedulesByScope({ termId: Number(row.AdTermId) }),
+      Repository.getScheduleWeekExceptions(Number(row.AdTermId)),
+    ]);
+    const busy = coverConflict({
+      instructorId: coverInstructorId, date, dayKey, start: row.fstarttime, end: row.fendtime,
+      termRows: coverTermRows as any, exceptions: coverTermExceptions, coveringScheduleId: Number(row.id),
+    });
+    if (busy) {
+      res.status(409).json({
+        error: busy.kind === "cover"
+          ? `${person.AdInstructorName || "هذا الأستاذ"} مكلَّفٌ بتغطيةٍ أخرى في الساعة نفسها من هذا اليوم.`
+          : `${person.AdInstructorName || "هذا الأستاذ"} لديه محاضرةٌ في الساعة نفسها من هذا اليوم.`,
+        code: busy.kind === "cover" ? "cover-double-booked" : "cover-busy",
+      });
+      return;
+    }
     coverInstructorName = person.AdInstructorName;
   }
   const created = await Repository.createScheduleWeekException({
@@ -6344,7 +6666,7 @@ app.post("/api/schedules/:id/exceptions", requirePermission(7), async (req: Auth
 app.delete("/api/schedules/:id/exceptions/:exceptionId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const row = await readScheduleForException(req, res);
   if (!row) return;
-  const exceptionLock = await scheduleLockRefusal(req, Number(row.AdCollegeId), Number(row.AdSectionId), Number(row.AdTermId));
+  const exceptionLock = await scheduleLockRefusal(req, Number(row.AdCollegeId), Number(row.AdSectionId), Number(row.AdTermId), { registrarLock: false });
   if (exceptionLock) { res.status(409).json({ error: exceptionLock, code: "schedule-locked" }); return; }
   const entry = await Repository.getScheduleWeekExceptionById(String(req.params.exceptionId || ""));
   if (!entry || Number(entry.scheduleId) !== Number(row.id)) { res.status(404).json({ error: "الاستثناء غير موجود" }); return; }
@@ -6367,14 +6689,17 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
   const dayKey = weekExceptionDayKey(date);
   if (!dayKey || !(row as any)[dayKey]) { res.status(400).json({ error: "هذا الموعد لا يُعقد في اليوم المحدد" }); return; }
 
-  const [instructors, termRows, collegeHistory] = await Promise.all([
+  const [instructors, termRows, collegeHistory, termExceptions] = await Promise.all([
     Repository.getInstructors(),
     Repository.getSchedulesByScope({ termId: Number(row.AdTermId) }),
     Repository.getSchedulesByScope({ collegeId: Number(row.AdCollegeId) }),
+    Repository.getScheduleWeekExceptions(Number(row.AdTermId)),
   ]);
-  const start = timeToMinutes(row.fstarttime), end = timeToMinutes(row.fendtime);
-  const overlapsSlot = (item: FSchedule) =>
-    Boolean((item as any)[dayKey]) && timeToMinutes(item.fstarttime) < end && timeToMinutes(item.fendtime) > start;
+  /* الحريةُ في تلك الساعة من ذلك التاريخ: القاعدةُ نفسها التي يُحرس بها التسجيل. */
+  const busyAtSlot = (instructorId: number) => Boolean(coverConflict({
+    instructorId, date, dayKey, start: row.fstarttime, end: row.fendtime,
+    termRows: termRows as any, exceptions: termExceptions, coveringScheduleId: Number(row.id),
+  }));
 
   const rowsByInstructor = new Map<number, FSchedule[]>();
   for (const item of termRows) {
@@ -6395,7 +6720,7 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
     .filter(person => !person.AdInstructorStatus)
     .map(person => {
       const mine = rowsByInstructor.get(person.AdInstructorId) || [];
-      if (mine.some(overlapsSlot)) return null;
+      if (busyAtSlot(person.AdInstructorId)) return null;
       const taughtTerms = taughtTermsByInstructor.get(person.AdInstructorId)?.size || 0;
       const inSection = mine.some(item =>
         Number(item.AdCollegeId) === Number(row.AdCollegeId) && Number(item.AdSectionId) === Number(row.AdSectionId));
@@ -6410,7 +6735,7 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
         return sum + perMeeting * SCHEDULE_DAY_KEYS.filter(key => Boolean((item as any)[key])).length;
       }, 0);
       const reasons: string[] = [];
-      if (taughtTerms) reasons.push(`درّس هذا المقرر في ${countOf(taughtTerms, AR.term)}`);
+      if (taughtTerms) reasons.push(`درّس هذا المقرر في ${countOf(taughtTerms, oblique(AR.term))}`);
       if (inSection) reasons.push("من أساتذة القسم هذا الفصل");
       if (sameBuilding) reasons.push("موجود في نفس المبنى ذلك اليوم");
       else if (sameDayRows.length) reasons.push("لديه محاضرات في نفس اليوم");
@@ -6582,7 +6907,7 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
   const addLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);
   if (addLock) { res.status(409).json({ error: addLock, code: "schedule-locked" }); return; }
 
-  await captureScopeVersion(req, collegeId, sectionId, termId, "قبل إضافة موعد دراسي", "manual");
+  const addVersion = await captureScopeVersion(req, collegeId, sectionId, termId, "قبل إضافة موعد دراسي", "manual");
 
   const newSched = await Repository.createSchedule({
     AdCollegeId: collegeId,
@@ -6618,6 +6943,7 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
     fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday })
   });
 
+  await recordVersionAfter(addVersion, before => [...before, newSched]);
   await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: newSched });
 
   res.status(201).json(newSched);
@@ -6709,10 +7035,10 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   if (editLock) { res.status(409).json({ error: editLock, code: "schedule-locked" }); return; }
 
   try {
-    await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
-    if (existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId) {
-      await captureScopeVersion(req, collegeId, sectionId, termId, "قبل نقل موعد إلى هذا الجدول", "manual");
-    }
+    const editVersion = await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
+    const arrivalVersion = existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId
+      ? await captureScopeVersion(req, collegeId, sectionId, termId, "قبل نقل موعد إلى هذا الجدول", "manual")
+      : undefined;
     const updated = await Repository.updateSchedule(id, {
       AdCollegeId: collegeId,
       AdSectionId: sectionId,
@@ -6746,13 +7072,19 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
     // Hand the audit trail the sentence describing what actually moved.
     res.locals.auditChanges = describeScheduleChange(existing, updated) || undefined;
     const movedScope = existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId;
+    await recordVersionAfter(editVersion, before => movedScope
+      ? before.filter(row => Number(row.id) !== Number(id))
+      : before.map(row => Number(row.id) === Number(id) ? updated : row));
+    await recordVersionAfter(arrivalVersion, before => [...before.filter(row => Number(row.id) !== Number(id)), updated]);
     /* ── الموعد المنتقل إضافةٌ عند وجهته، لا تعديلاً ──────────────────────
      * كان يُبلَّغ القسمُ المستقبِل بـ«تعديل»، فلا يُسجَّل في انتظار الإقرار.
      * لكنّ شعبةً ظهرت في جدوله بعد توقيع رئيسه هي بالضبط ما وُجدت قائمةُ
      * الانتظار من أجله: التزامٌ لم يره حين وقّع. والقسمُ الذي غادرته يتغيّر
      * أيضاً، ولو بالنقصان. */
+    /* وتبديلُ المقرر أو رقم الشعبة في مكانه إضافةٌ كذلك (R13): التزامٌ آخر
+       حلّ محلّ الذي وقّع عليه رئيس القسم، لا خانةٌ تبدّلت في صفٍّ رآه. */
     await noteScheduleMutation(req, collegeId, sectionId, termId,
-      movedScope ? { kind: "add", row: updated } : { kind: "edit", row: updated });
+      movedScope || isSwapEdit(existing, updated) ? { kind: "add", row: updated } : { kind: "edit", row: updated });
     if (movedScope) {
       await noteScheduleMutation(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, { kind: "delete", row: existing });
     }
@@ -6786,14 +7118,16 @@ app.delete("/api/schedules/:id", requirePermission(7), async (req: Authenticated
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
+  let deleteVersion: Awaited<ReturnType<typeof captureScopeVersion>>;
   if (sched) {
     const deleteLock = await scheduleLockRefusal(req,sched.AdCollegeId, sched.AdSectionId, sched.AdTermId);
     if (deleteLock) { res.status(409).json({ error: deleteLock, code: "schedule-locked" }); return; }
-    await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
+    deleteVersion = await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
     // A deletion has no "after", so the record keeps what was standing there.
     res.locals.auditChanges = `حُذف: ${sched.AdCourseName || "موعد"} · شعبة ${sched.SCode} · ${formatScheduleTimeRange(sched.fstarttime, sched.fendtime)} · ${sched.AdRoomCode}/${sched.AdRoomHall}`;
   }
   await Repository.deleteSchedule(id);
+  await recordVersionAfter(deleteVersion, before => before.filter(row => Number(row.id) !== Number(id)));
   if (sched) await noteScheduleMutation(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, { kind: "delete", row: sched });
   res.json({ success: true });
 });
@@ -6808,9 +7142,8 @@ app.get("/api/schedules/copy-preview", requireAuth, requirePowerAdmin, async (re
   const [source,target,courses,instructors]=await Promise.all([
     Repository.getSchedulesByScope({collegeId,sectionId,termId:fromTermId}),Repository.getSchedulesByScope({collegeId,sectionId,termId:toTermId}),Repository.getCourses(),Repository.getInstructors()
   ]);
-  const operationalIds=await Repository.getOperationalCourseIds(sectionId);
-  const archivedInSource=source.filter(row=>!operationalIds.has(Number(row.AdCourseId)));
-  const sourceIssues=[...new Set([...source.flatMap((row:any)=>schedulePayloadIssues(row)),...(archivedInSource.length?[`يتضمن الفصل ${archivedInSource.length} موعداً لمقررات أصبحت مؤرشفة أكاديمياً ولن تُنسخ إلى فصل جديد.`]:[])])];
+  const {archived:archivedInSource}=await splitArchivedCourseRows(source,sectionId);
+  const sourceIssues=[...new Set([...source.flatMap((row:any)=>schedulePayloadIssues(row)),...(archivedInSource.length?[`يتضمن الفصل ${countOf(archivedInSource.length, AR.appointment)} لمقررات أصبحت مؤرشفة أكاديمياً ولن تُنسخ إلى فصل جديد.`]:[])])];
   const courseById=new Map(courses.map(item=>[item.AdCourseId,item])); const instructorById=new Map(instructors.map(item=>[item.AdInstructorId,item]));
   res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:row.CourseCodeSnapshot||courseById.get(row.AdCourseId)?.CourseCode||"",courseName:row.CourseNameSnapshot||row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:formatScheduleTimeRange(row.fstarttime, row.fendtime),room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
 });
@@ -6841,9 +7174,8 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
   if (!sourceTerm || !targetTerm) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
 
   const sourceRows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId });
-  const operationalIdsForCopy=await Repository.getOperationalCourseIds(sectionId);
-  const archivedRows=sourceRows.filter(row=>!operationalIdsForCopy.has(Number(row.AdCourseId)));
-  if(archivedRows.length){res.status(409).json({error:`لا يمكن نسخ الفصل كما هو: ${archivedRows.length} موعداً مرتبط بمقررات مؤرشفة أكاديمياً. أضف بدائلها الحالية يدوياً حتى يبقى الجدول الجديد صحيحاً.`,code:"archived-curriculum-courses"});return;}
+  const {archived:archivedRows}=await splitArchivedCourseRows(sourceRows,sectionId);
+  if(archivedRows.length){res.status(409).json({error:`لا يمكن نسخ الفصل كما هو: ${countOf(archivedRows.length, AR.appointment)} ${nounFor(archivedRows.length, AR.linkedAdj)} بمقررات مؤرشفة أكاديمياً. أضف بدائلها الحالية يدوياً حتى يبقى الجدول الجديد صحيحاً.`,code:"archived-curriculum-courses"});return;}
   const copiedRows = safeDraftRows(sourceRows, collegeId, sectionId, targetTermId);
   const copyIssues = await validateSmartRows(copiedRows, collegeId, sectionId, { resolveHistorical: true });
   if (copyIssues.length) {
@@ -6860,6 +7192,7 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
   if (copyRefusal) { res.status(409).json({ error: copyRefusal, code: "deadline-wholesale" }); return; }
   const undoVersion = await captureScopeVersion(req, collegeId, sectionId, targetTermId, "قبل نسخ الفصل الدراسي", "copy");
   const written = await Repository.replaceScheduleScope(collegeId, sectionId, targetTermId, copiedRows as FSchedule[]);
+  await recordVersionAfter(undoVersion, written as any[]);
   await noteScheduleMutation(req, collegeId, sectionId, targetTermId, { kind: "add", rows: written as any[] });
   res.json({ success: true, count: written.length, message: "تم نسخ الفصل الدراسي بالقيم الرسمية للمباني والقاعات", undoVersion: undoVersion ? { id: undoVersion.id, label: undoVersion.label } : null });
 });
@@ -7071,7 +7404,7 @@ async function requestGeminiScheduleLayer(parts: GeminiPart[], options: { json?:
   } catch (error: any) {
     const aborted = error?.name === "AbortError";
     console.error(`Gemini ${model} فشل: ${aborted ? `تجاوز المهلة ${budgetMs}ms` : String(error?.message || error).slice(0, 200)}`);
-    return { failed: true, status: 0, reason: aborted ? `تجاوز المهلة (${Math.round(budgetMs / 1000)} ثانية) أثناء قراءة الملف` : String(error?.message || "تعذر الاتصال بـGemini").slice(0, 200) };
+    return { failed: true, status: 0, reason: aborted ? `تجاوز المهلة (${countOf(Math.round(budgetMs / 1000), AR.second)}) أثناء قراءة الملف` : String(error?.message || "تعذر الاتصال بـGemini").slice(0, 200) };
   } finally {
     clearTimeout(timer);
   }
@@ -7186,7 +7519,7 @@ app.get("/api/intelligence/open-decisions", requirePermission(7), async (req: Au
     scopedScheduleUniverse(collegeId,sectionId,termId),
     Repository.getCoursesBySection(sectionId),Repository.getInstructorsByScope(sectionId,0),Repository.getSchedulesByScope({collegeId,sectionId}),
   ]);
-  const analysis=analyzeSchedule(scheduleData.rows,scheduleData.universe,courses,instructors);
+  const analysis=analyzeSchedule(scheduleData.rows,scheduleData.universe,courses,instructors,await approvalBlockerOptions());
   const anomalies=logicalAnomalies(scheduleData.rows,history);
   const inferred=[
     ...(analysis.alerts||[]).slice(0,5).map((item:any,index:number)=>({id:`inferred:alert:${index}`,title:item.title||"قرار يحتاج مراجعة",detail:item.detail||"",priority:index===0?"high":"medium",source:"inferred"})),
@@ -7262,7 +7595,7 @@ app.get("/api/intelligence/overview", requirePermission(7), async (req: Authenti
     Repository.getScheduleDrafts(collegeId, sectionId, termId), Repository.getSchedulePublication(collegeId, sectionId, termId), Repository.getCampusMobilityProfile(collegeId)
   ]);
   const {rows:target,universe:termRows}=scheduleData;
-  const analysis = analyzeSchedule(target, termRows, courses, instructors);
+  const analysis = analyzeSchedule(target, termRows, courses, instructors, await approvalBlockerOptions());
   const spatial = roomCastlingProposals(target, termRows, mobilityProfile, instructors);
   const universityHeatmap:any[]=[];
   for(const day of SCHEDULE_DAYS){for(let minute=SCHEDULE_DAY_START;minute<SCHEDULE_DAY_END;minute+=SCHEDULE_SLOT_MINUTES){const count=termRows.filter(row=>Boolean((row as any)[day.key])&&timeToMinutes(row.fstarttime)<minute+SCHEDULE_SLOT_MINUTES&&timeToMinutes(row.fendtime)>minute).length;universityHeatmap.push({day:day.key,label:day.label,time:minutesToTime(minute),count})}}
@@ -7310,7 +7643,7 @@ app.post("/api/intelligence/ripple/:id", requirePermission(7), async (req: Authe
   const beforeSpatial=spatialBurnoutAnalysis(scopeRows,termRows,mobilityProfile,instructors),afterSpatial=spatialBurnoutAnalysis(nextScope,nextUniverse,mobilityProfile,instructors);
   const relevant=afterSpatial.risks.filter((risk:any)=>risk.fromRowId===row.id||risk.toRowId===row.id).slice(0,3);
   forecast.spatialBurnout={beforeScore:beforeSpatial.score,afterScore:afterSpatial.score,delta:afterSpatial.score-beforeSpatial.score,risks:relevant};
-  if(relevant.length){const worst=relevant[0];forecast.effects=[...(forecast.effects||[]),{tone:worst.level==="high"?"warn":"neutral",text:worst.level==="high"?`خطر الإرهاق الجسدي: انتقال ${worst.fromBuilding} → ${worst.toBuilding} يحتاج ${worst.requiredMinutes} دقيقة والمتاح ${worst.gapMinutes} فقط`:`هامش انتقال جغرافي ضيق: ${worst.marginMinutes} دقائق`}];forecast.delta={...(forecast.delta||{}),spatialBurnout:afterSpatial.score-beforeSpatial.score};}
+  if(relevant.length){const worst=relevant[0];forecast.effects=[...(forecast.effects||[]),{tone:worst.level==="high"?"warn":"neutral",text:worst.level==="high"?`خطر الإرهاق الجسدي: انتقال ${worst.fromBuilding} → ${worst.toBuilding} يحتاج ${countOf(worst.requiredMinutes, oblique(AR.minute))} والمتاح ${worst.gapMinutes} فقط`:`هامش انتقال جغرافي ضيق: ${countOf(worst.marginMinutes, AR.minute)}`}];forecast.delta={...(forecast.delta||{}),spatialBurnout:afterSpatial.score-beforeSpatial.score};}
   res.json(forecast);
 });
 
@@ -7359,7 +7692,7 @@ app.post("/api/intelligence/constraints", requirePermission(7), requirePowerAdmi
     if(!check.ok||!check.canonical?.roomId){res.status(400).json({error:check.issues.find(i=>i.severity==="high")?.message||"القاعة غير معتمدة في السجل الرسمي",issues:check.issues});return;}
     roomCode=String(check.canonical.AdRoomCode||"");roomHall=String(check.canonical.AdRoomHall||"");
   }
-  const dayLabel=SCHEDULE_DAYS.find(d=>d.key===day)?.label||"";const label=type==="instructor_latest_end"?`${instructor?.AdInstructorName}: لا محاضرات بعد ${time}`:type==="instructor_day_off"?`${instructor?.AdInstructorName}: ${dayLabel} يوم محجوز`:type==="department_day_off"?`${dayLabel}: يوم محجوز للقسم`:type==="course_room"?`${course?.CourseCode||course?.CourseName}: القاعة ${roomCode}/${roomHall}`:instructor?`${instructor.AdInstructorName}: الفراغ لا يتجاوز ${maxMinutes} دقيقة`:`أي أستاذ: الفراغ لا يتجاوز ${maxMinutes} دقيقة`;
+  const dayLabel=SCHEDULE_DAYS.find(d=>d.key===day)?.label||"";const label=type==="instructor_latest_end"?`${instructor?.AdInstructorName}: لا محاضرات بعد ${time}`:type==="instructor_day_off"?`${instructor?.AdInstructorName}: ${dayLabel} يوم محجوز`:type==="department_day_off"?`${dayLabel}: يوم محجوز للقسم`:type==="course_room"?`${course?.CourseCode||course?.CourseName}: القاعة ${roomCode}/${roomHall}`:instructor?`${instructor.AdInstructorName}: الفراغ لا يتجاوز ${countOf(maxMinutes, oblique(AR.minute))}`:`أي أستاذ: الفراغ لا يتجاوز ${countOf(maxMinutes, oblique(AR.minute))}`;
   const created=await Repository.createScheduleConstraint({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,type:type as any,label,enabled:true,AdInstructorId:(type==="instructor_latest_end"||type==="instructor_day_off"||type==="max_instructor_gap")?(instructorId||undefined):undefined,AdCourseId:type==="course_room"?(courseId||undefined):undefined,day:(type==="instructor_day_off"||type==="department_day_off")&&SCHEDULE_DAYS.some(d=>d.key===day)?day as any:undefined,time:type==="instructor_latest_end"?(time||undefined):undefined,buildingId:type==="course_room"?buildingId:undefined,roomId:type==="course_room"?roomId:undefined,roomCode:type==="course_room"?(roomCode||undefined):undefined,roomHall:type==="course_room"?(roomHall||undefined):undefined,maxMinutes:type==="max_instructor_gap"?maxMinutes:undefined});res.status(201).json(created);
 });
 app.put("/api/intelligence/constraints/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -7373,15 +7706,28 @@ app.delete("/api/intelligence/constraints/:id", requirePermission(7), requirePow
   const item=(await Repository.getScheduleConstraints(collegeId,sectionId,termId)).find(c=>c.id===String(req.params.id));if(!item){res.status(404).json({error:"القاعدة غير موجودة في هذا النطاق"});return;}await Repository.deleteScheduleConstraint(item.id);res.json({success:true});
 });
 
+/* ── قسمٌ بلا مواعيد بعد: جوابٌ يدلّ على الطريق، لا خطأ ────────────────────
+   غرفة القرار والجدولة المساعدة والمقترح التلقائي تعمل على جدولٍ قائم. وحين
+   لا جدول بعد كانت تردّ 400 «لا يوجد جدول» — خطأٌ أحمر لشيءٍ ليس خطأ، ولا يقول
+   ما العمل. فالجواب الآن 200 يقول إن الفصل فارغ ويشير إلى «بداية الفصل»
+   (نسخ الفصل السابق مسودةً) أو إلى الاستيراد. */
+function emptyScopeGuidance(what: string) {
+  return {
+    empty: true,
+    message: `${what} يحتاج جدولاً قائماً، وهذا الفصل لا مواعيد فيه لهذا القسم بعد. ابدأ بـ«بداية الفصل من الفصل السابق» (مسودة لا تغيّر شيئاً قبل النشر) أو باستيراد الجدول من أدوات البيانات.`,
+    nextStep: { kind: "genesis", endpoint: "/api/intelligence/genesis", label: "بداية الفصل من الفصل السابق" },
+  };
+}
+
 app.post("/api/intelligence/war-room", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.status(400).json({error:"لا يوجد جدول لبناء غرفة قرار"});return;}
+  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.json(emptyScopeGuidance("غرفة القرار"));return;}
   res.json(buildWarRoom(base,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined));
 });
 
 app.post("/api/intelligence/autopilot", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req),goal=String(req.body?.goal||"حافظ على خلو الجدول من الموانع وقلل الفراغات بأقل تغيير ممكن").trim().slice(0,240);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.status(400).json({error:"لا توجد مواعيد لتشغيل الجدولة المساعدة"});return;}
+  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.json(emptyScopeGuidance("الجدولة المساعدة"));return;}
   res.json(runScheduleAutopilot(base,universe,courses,instructors,constraints,goal,240));
 });
 
@@ -7402,14 +7748,14 @@ app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: Au
   const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]);
   const target=scheduleData.rows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId&&Number(row.AdTermId)===termId);
   const universe=scheduleData.universe;
-  if(!target.length){res.status(400).json({error:"لا توجد مواعيد في هذا القسم والفصل لإنشاء مقترح"});return;}
+  if(!target.length){res.json(emptyScopeGuidance("المقترح التلقائي"));return;}
   const proposal=autoScheduleProposal(target,universe);
   const external=universe.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
   const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors);
   const proposedAnalysis=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors);
   const safeImprovement=proposedAnalysis.metrics.criticalConflicts<before.metrics.criticalConflicts||(proposedAnalysis.metrics.criticalConflicts===before.metrics.criticalConflicts&&proposedAnalysis.score>=before.score);
   const chosenRows=safeImprovement?proposal.rows:target,changed=safeImprovement?proposal.changed:0,after=safeImprovement?proposedAnalysis:before;
-  const summary=changed?`اقتراح آمن غيّر وقت ${changed} موعداً فقط، مع إبقاء المقرر والأستاذ والأيام والقاعة كما هي. موانع الحفظ ${before.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts}، والجودة ${before.score} ← ${after.score}.`:`حللت البدائل ولم أجد تغييراً آمناً أفضل من الجدول الحالي ضمن القيود نفسها؛ لذلك لم أقترح أي تعديل تلقائي.`;
+  const summary=changed?`اقتراح آمن غيّر وقت ${countOf(changed, oblique(AR.appointment))} فقط، مع إبقاء المقرر والأستاذ والأيام والقاعة كما هي. موانع الحفظ ${before.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts}، والجودة ${before.score} ← ${after.score}.`:`حللت البدائل ولم أجد تغييراً آمناً أفضل من الجدول الحالي ضمن القيود نفسها؛ لذلك لم أقترح أي تعديل تلقائي.`;
   res.json({rows:chosenRows,changed,before,after,summary});
 });
 
@@ -7420,7 +7766,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const [scheduleData,courses,instructors,sections]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getSections()]);
   const target=scheduleData.rows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId&&Number(row.AdTermId)===termId);
   const universe=scheduleData.universe;
-  const analysis=analyzeSchedule(target,universe,courses,instructors); const bullets:string[]=[]; let title="قراءة ذكية للجدول";
+  const analysis=analyzeSchedule(target,universe,courses,instructors,await approvalBlockerOptions()); const bullets:string[]=[]; let title="قراءة ذكية للجدول";
   /**
    * ── الإجابة المرسومة ──────────────────────────────────────────────────────
    *
@@ -7440,7 +7786,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const figures: Figure[] = [];
   const bars: Bar[] = [];
   let shift: { label: string; before: number|string; after: number|string; better?: boolean } | null = null;
-  let shape: "reading"|"alert"|"gaps"|"crowd"|"investigation"|"move"|"plan"|"rooms" = "reading"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${analysis.metrics.criticalConflicts} موضعاً يحتاج تحقق و${analysis.metrics.avgInstructorGap} دقيقة كمتوسط فراغ للأساتذة.`;
+  let shape: "reading"|"alert"|"gaps"|"crowd"|"investigation"|"move"|"plan"|"rooms" = "reading"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${countOf(analysis.metrics.criticalConflicts, oblique(AR.position), "لا مواضع")} بحاجة إلى تحقق و${countOf(analysis.metrics.avgInstructorGap, AR.minute)} كمتوسط فراغ للأساتذة.`;
   const normalized=prompt.replace(/[؟?]/g,"").toLowerCase();
   const dayMatch=SCHEDULE_DAYS.find(day=>normalized.includes(day.label));
   const hourMatch=normalized.match(/(?:إلى|الى|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?/);
@@ -7487,7 +7833,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
           const gap=timeToMinutes(items[i].fstarttime)-timeToMinutes(items[i-1].fendtime);
           if(gap>0)gaps.push({from:items[i-1].fendtime,to:items[i].fstarttime,mins:gap});
         }
-        summary=items.length?gaps.length?`في ${dayMatch.label} يظهر لهذا الأستاذ ${gaps.length} فراغات بإجمالي ${gaps.reduce((n,g)=>n+g.mins,0)} دقيقة.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;
+        summary=items.length?gaps.length?`في ${dayMatch.label} يظهر لهذا الأستاذ ${countOf(gaps.length, AR.gap)} بإجمالي ${countOf(gaps.reduce((n,g)=>n+g.mins,0), AR.minute)}.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;
         shape="gaps";
         figures.push(
           {label:"فترات الفراغ",value:`${gaps.length}`,tone:gaps.length?"warn":"good"},
@@ -7498,7 +7844,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
         gaps.slice(0,6).forEach((g:any)=>bars.push({label:formatScheduleTimeRange(g.from,g.to),value:g.mins,max:worst,caption:`${Math.floor(g.mins/60)}س ${g.mins%60}د`}));
       }else{
         const load=analysis.professorLoads.find((x:any)=>x.id===requestedInstructor.AdInstructorId);
-        summary=load?`أكبر فراغ لهذا الأستاذ ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، وحمله الأسبوعي ${load.weeklyHours} ساعة.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;
+        summary=load?`أكبر فراغ لهذا الأستاذ ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، وحمله الأسبوعي ${countOf(load.weeklyHours, AR.hour)}.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;
         shape="gaps";
         figures.push(
           {label:"أكبر فراغ",value:`${Math.floor((load?.maxGap||0)/60)}س ${(load?.maxGap||0)%60}د`,tone:(load?.maxGap||0)>=180?"warn":"plain"},
@@ -7520,7 +7866,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
       const threshold=(Number(normalized.match(/(?<!\d)(\d+)\s{0,4}ساع/)?.[1]||3))*60;
       const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);
       const longest=Math.max(0,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
-      summary=long.length?`يوجد ${long.length} أستاذاً بفراغ يومي يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
+      summary=long.length?`يوجد ${countOf(long.length, AR.instructor)} بفراغ يومي يساوي أو يتجاوز ${countOf(Math.round(threshold/60), oblique(AR.hour))}.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
       shape="gaps";
       figures.push(
         {label:"أساتذة بفراغ طويل",value:`${long.length}`,tone:long.length?"warn":"good"},
@@ -7536,8 +7882,8 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     const history=(await Repository.getSchedulesByScope({collegeId,sectionId})).filter(row=>Number(row.AdTermId)!==termId);
     const investigation=investigateCrowding(target,dayMatch.key as any,history);
     summary=`في ${dayMatch.label} يوجد ${countOf(day?.count||0, AR.appointment)}؛ ${investigation.verdict}`;
-    peaks.slice(0,2).forEach((x:any)=>bullets.push(`${x.time}: ${x.count} محاضرات متزامنة.`));
-    bullets.push(`الحركة موزعة على ${investigation.professors} أستاذ و${investigation.rooms} قاعة.`);
+    peaks.slice(0,2).forEach((x:any)=>bullets.push(`${x.time}: ${countOf(x.count, AR.lecture)} في الوقت نفسه.`));
+    bullets.push(`الحركة موزعة على ${countOf(investigation.professors, oblique(AR.instructor))} و${countOf(investigation.rooms, oblique(AR.room))}.`);
     shape="investigation";
     figures.push({label:dayMatch.label,value:`${day?.count||0}`,hint:"موعداً",tone:"plain"},
       {label:"مقابل التاريخ",value:`${investigation.delta>0?"+":""}${investigation.delta}`,tone:investigation.delta>=8?"warn":"good",hint:"نقطة"},
@@ -7545,14 +7891,14 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     investigation.causes.forEach((x:any)=>bars.push(x));
   } else if(normalized.includes("إذا نقلت")||normalized.includes("اذا نقلت")){
     title="محاكاة نقل موعد"; const code=courses.find(c=>normalized.includes(String(c.CourseCode).toLowerCase())); const row=code?target.find(r=>r.AdCourseId===code.AdCourseId):target[0];
-    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const before=findConflicts([row],universe).length,after=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate)).length;summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
+    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const moveOpts=await approvalBlockerOptions();const before=approvalBlockerCount([row],universe,moveOpts),after=approvalBlockerCount([candidate],universe.filter(x=>x.id!==row.id).concat(candidate),moveOpts);summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
       shape="move";
       shift={label:"موانع الحفظ",before,after,better:after<=before};
       figures.push({label:"الوقت المقترح",value:formatScheduleTimeRange(candidate.fstarttime,candidate.fendtime),hint:"",tone:after===0?"good":"bad"});}
     else summary="حدد رمز المقرر والساعة في السؤال، مثال: إذا نقلت 101 إلى الساعة 11، فما الذي سيتأثر؟";
   } else if(normalized.includes("أفضل توزيع")||normalized.includes("افضل توزيع")||normalized.includes("قلل الفراغ")||normalized.includes("تقليل الفراغ")){
     title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
-    summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${proposal.changed} موعداً: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
+    summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${countOf(proposal.changed, oblique(AR.appointment))}: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
     if(dayMatch)bullets.push(`ذكرت ${dayMatch.label}. سأتعامل معه كأولوية تحليل، لكن لن أغيّر نمط أيام المقرر تلقائياً لأن ذلك قد يكون قيداً أكاديمياً.`);
     bullets.push("افتح «المحاكاة» لمراجعة كل تغيير قبل اعتماده.");
     shape="plan";
@@ -7602,7 +7948,7 @@ app.get("/api/intelligence/context/:id", requirePermission(7), async (req: Authe
     course:termVisible.filter(r=>r.AdCourseId===selected.AdCourseId),
     room:termVisible.filter(r=>Boolean(roomIdentityKey(selected))&&roomIdentityKey(r)===roomIdentityKey(selected)).sort((a,b)=>a.fstarttime.localeCompare(b.fstarttime))
   };
-  const externalConflicts=findConflicts([selected],termRows).map(c=>({...c,otherId:visible.some(v=>v.id===c.otherId)?c.otherId:0}));
+  const externalConflicts=findConflicts([selected],termRows,{placeholderInstructorIds:placeholderInstructorIds(instructors as any)}).map(c=>({...c,otherId:visible.some(v=>v.id===c.otherId)?c.otherId:0}));
   /* ── ما تقوله عشر سنوات عن هذا الموعد بالذات ─────────────────────────────
    *
    * Three questions, each about a thing already named on this panel — the
@@ -7651,7 +7997,7 @@ app.get("/api/intelligence/replay/:id", requirePermission(7), async (req: Authen
       nameOf,
       Number(style?.doorway||0),
     ):null;
-    if(changes.length)events.push({timestamp:b.timestamp,type:"move",title:"تغيّر قرار الموعد",detail:changes.join(" · "),actor:b.userName,tone:b.conflicts<a.conflicts?"good":b.conflicts>a.conflicts?"warn":"neutral",why:why?.text,whyAgainst:why?.against,whySource:why?"مُستنتَج من نسخة ذلك اليوم":undefined});if(a.conflicts===0&&b.conflicts>0)events.push({timestamp:b.timestamp,type:"conflict",title:"ظهر تعارض في هذه المرحلة",detail:`النسخة تحمل ${b.conflicts} علاقة تعارض لهذا الموعد.`,actor:b.userName,tone:"warn"});if(a.conflicts>0&&b.conflicts===0)events.push({timestamp:b.timestamp,type:"resolved",title:"اختفى التعارض الظاهر",detail:"النسخة التالية لم تعد تحمل التعارض السابق لهذا الموعد.",actor:b.userName,tone:"good"})}
+    if(changes.length)events.push({timestamp:b.timestamp,type:"move",title:"تغيّر قرار الموعد",detail:changes.join(" · "),actor:b.userName,tone:b.conflicts<a.conflicts?"good":b.conflicts>a.conflicts?"warn":"neutral",why:why?.text,whyAgainst:why?.against,whySource:why?"مُستنتَج من نسخة ذلك اليوم":undefined});if(a.conflicts===0&&b.conflicts>0)events.push({timestamp:b.timestamp,type:"conflict",title:"ظهر تعارض في هذه المرحلة",detail:`النسخة تحمل ${countOf(b.conflicts, oblique(AR.conflict))} لهذا الموعد.`,actor:b.userName,tone:"warn"});if(a.conflicts>0&&b.conflicts===0)events.push({timestamp:b.timestamp,type:"resolved",title:"اختفى التعارض الظاهر",detail:"النسخة التالية لم تعد تحمل التعارض السابق لهذا الموعد.",actor:b.userName,tone:"good"})}
   drafts.filter(d=>d.rows.some(same)).slice(0,20).forEach(d=>{const r=d.rows.find(same)!;events.push({timestamp:d.updatedAt,type:"draft",title:d.status==="published"?"مرّ عبر مسودة منشورة":"جُرّب بديل داخل المحاكاة",detail:`${d.name} · ${formatScheduleTimeRange(r.fstarttime, r.fendtime)} · ${r.AdRoomCode}/${r.AdRoomHall}`,actor:d.userName,tone:d.status==="published"?"good":"info"})});
   comments.forEach(c=>events.push({timestamp:c.createdAt,type:"comment",title:c.resolved?"ملاحظة أُغلقت":"ملاحظة قرار",detail:c.text,actor:c.userName,tone:c.resolved?"good":"info"}));if(publication)events.push({timestamp:publication.publishedAt,type:"publish",title:"تم اعتماد جدول هذا النطاق",detail:publication.draftId?`الاعتماد مرتبط بالمسودة ${publication.draftId}`:"اعتماد مباشر",actor:publication.userName,tone:"good"});
   audits.filter(a=>a.path===`/schedules/${id}`||a.path===`/api/schedules/${id}`||a.path.endsWith(`/schedules/${id}`)).slice(0,30).forEach(a=>events.push({timestamp:a.timestamp,type:"audit",title:`${a.action} مباشر على الموعد`,detail:`${a.method} ${a.path}`,actor:a.userName,tone:"neutral"}));events.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
@@ -7693,7 +8039,15 @@ app.post("/api/intelligence/comments/:scheduleId", requirePermission(7), async (
   const scheduleId=Number(req.params.scheduleId||0),text=String(req.body?.text||"").trim(); const row=await Repository.getScheduleById(scheduleId); if(!row){res.status(404).json({error:"الموعد غير موجود"});return;} if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(text.length<2||text.length>600){res.status(400).json({error:"اكتب ملاحظة واضحة لا تتجاوز 600 حرف"});return;} const comment=await Repository.createScheduleComment({SystemUserId:req.user.SystemUserId,userName:req.user.Name,scheduleId,AdCollegeId:row.AdCollegeId,AdSectionId:row.AdSectionId,AdTermId:row.AdTermId,text}); res.status(201).json(comment);
 });
 app.put("/api/intelligence/comments/:scheduleId/:commentId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const scheduleId=Number(req.params.scheduleId||0); const row=await Repository.getScheduleById(scheduleId); if(!row){res.status(404).json({error:"الموعد غير موجود"});return;} if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} await Repository.setScheduleCommentResolved(String(req.params.commentId),Boolean(req.body?.resolved)); res.json({success:true});
+  const scheduleId=Number(req.params.scheduleId||0); const row=await Repository.getScheduleById(scheduleId); if(!row){res.status(404).json({error:"الموعد غير موجود"});return;} if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  /* ── ملاحظة التسجيل لا تُغلق من هنا ─────────────────────────────────────
+     ملاحظات التسجيل تمنع الإرسال حتى تُعالج في مسار الاعتماد نفسه. وهذا الباب
+     العام للتعليقات كان يغلق أي تعليقٍ بمعرّفه — فيكفي نداءٌ واحد ليختفي
+     مانعٌ كتبه التسجيل دون أن يُعالَج. ويُتحقق كذلك أن التعليق لهذا الموعد. */
+  const comment=(await Repository.getScheduleComments(scheduleId)).find((item:any)=>String(item?.id)===String(req.params.commentId));
+  if(!comment){res.status(404).json({error:"التعليق غير موجود على هذا الموعد"});return;}
+  if((comment as any).origin==="registrar"){res.status(403).json({error:"ملاحظة التسجيل تُعالَج من مسار ملاحظات الاعتماد، ولا تُغلق من التعليقات.",code:"registrar-note"});return;}
+  await Repository.setScheduleCommentResolved(String(req.params.commentId),Boolean(req.body?.resolved)); res.json({success:true});
 });
 
 app.get("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -7870,7 +8224,7 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     pagesRequested:[...requestedPages],
     pageCount:pageImages.length,
     guardrail:"Gemini يقرأ ويفسر فقط؛ كل صف يمر عبر validators الحالية قبل حفظ أي مسودة أو نشرها.",
-    message:rows.length?`قرأ Gemini ${rows.length} صفاً للمراجعة.`:"لم أتمكن من استخراج صفوف من الملف.",
+    message:rows.length?`قرأ Gemini ${countOf(rows.length, AR.row)} للمراجعة.`:"لم أتمكن من استخراج صفوف من الملف.",
   });
 });
 
@@ -8375,7 +8729,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
   const geometryRows=recognized.pageDiagnostics.reduce((sum:any,page:any)=>sum+Number(page.extractedRows||0),0);
   if(geometryRows>=3&&parsed.rows.length<Math.ceil(geometryRows*.7)){
-    const message=`أوقفت الاستيراد: حدود الجدول أثبتت ${geometryRows} صفاً تقريباً، لكن المطابقة أعادت ${parsed.rows.length} فقط. هذا فرق غير آمن وقد يعني انزياح أعمدة أو دمج صفوف. لم يتم استيراد أي صف.`;
+    const message=`أوقفت الاستيراد: حدود الجدول أثبتت ${countOf(geometryRows, oblique(AR.row))} تقريباً، لكن المطابقة أعادت ${parsed.rows.length} فقط. هذا فرق غير آمن وقد يعني انزياح أعمدة أو دمج صفوف. لم يتم استيراد أي صف.`;
     if(streaming){emit({type:"error",error:message,code:"COUNT_RECONCILIATION_FAILED",pageDiagnostics:recognized.pageDiagnostics});res.end();return;}
     res.status(422).json({error:message,code:"COUNT_RECONCILIATION_FAILED",pageDiagnostics:recognized.pageDiagnostics});return;
   }
@@ -8671,7 +9025,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     headerBranch:headerPreflight.branch||recognized.headerBranch||undefined,
     headerDepartment:headerPreflight.department||recognized.headerDepartment||undefined,
     headerTerm:headerPreflight.term||recognized.headerTerm||undefined,
-    message:rows.length?`تمت قراءة ${rows.length} شعبة من ${recognized.pageCount} صفحة`:`لم أتمكن من استخراج شعب من الملف`,
+    message:rows.length?`تمت قراءة ${countOf(rows.length, oblique(AR.section))} من ${countOf(recognized.pageCount, oblique(AR.page))}`:`لم أتمكن من استخراج شعب من الملف`,
   };
   if(streaming){emit({type:"done",result});res.end();return;}
   res.json(result);
@@ -8711,6 +9065,7 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   const draft=await Repository.createScheduleDraft({
     SystemUserId:req.user.SystemUserId,userName:req.user.Name,
     AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,
+    ...scopeBase(await Repository.getSchedulesByScope({collegeId,sectionId,termId})),
     name:String(req.body?.name||"سيناريو جديد").slice(0,100),
     source:["what-if","auto","import","manual"].includes(req.body?.source)?req.body.source:"what-if",
     rows,baselineRows,
@@ -8826,6 +9181,9 @@ app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), asyn
  */
 async function scheduleLockRefusal(
   req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number,
+  /* `registrarLock: false` لما لا يقفله التسجيل: استثناءُ الأسبوع، وقرارُ طلب
+     الأستاذ، وإصدارُ روابطه. يبقى عليها حكمُ الفصل المنتهي وحده (R8). */
+  options: { registrarLock?: boolean } = {},
 ): Promise<string | null> {
   /* ── وفصلٌ انتهى لا يُعدَّل ──────────────────────────────────────────────
    *
@@ -8853,20 +9211,86 @@ async function scheduleLockRefusal(
   const role = req.user?.Role;
   const isCommittee = isAcademicRole(role) && signatureStage(role) === "committee";
   const term = (await Repository.getTerms()).find(row => Number(row.AdTermId) === Number(termId));
-  if (term?.AdTermClosed === true && !isCommittee) {
-    return "انتهى هذا الفصل. جدولُه محفوظٌ للاطّلاع والتقارير، ولجنةُ الجدول وحدَها تعمل فيه.";
-  }
+  const termClosed = term?.AdTermClosed === true;
+  const approval = options.registrarLock === false ? undefined : await Repository.getScheduleApproval(collegeId, sectionId, termId);
+  /* القاعدةُ نفسُها التي تقرؤها الشاشة قبل أن يمدّ أحدٌ يده (R21): من
+     `approvalLockReason` وحدها، لا نسخةٌ ثانية هنا تفترق عنها. */
+  return approvalLockReason(approval, {
+    termClosed, isCommittee,
+    registrarNotesInCurrentRound: approval ? await registrarNotesInRound(approval) : 0,
+    registrarLock: options.registrarLock,
+  });
+}
 
-  const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
-  if (!approval) return null;
-  if (approval.status === "submitted") {
-    return "الجدول عند التسجيل الآن وينتظر قراره. التعديل يُفتح متى قُبل أو أُرجع بملاحظات.";
-  }
-  return null;
+/** كم ملاحظةً كتبها التسجيل في الجولة الجارية — ما يُغلق جولةَ التعديل. */
+async function registrarNotesInRound(approval: ScheduleApproval): Promise<number> {
+  if (approval.status !== "submitted") return 0;
+  const notes = await Repository.getScheduleCommentsByScope(approval.AdCollegeId, approval.AdSectionId, approval.AdTermId);
+  return notes.filter(note => note.origin === "registrar" && Number(note.round || 1) === Number(approval.currentRound)).length;
+}
+
+/** أانتهى الفصل بعلامةٍ صريحة؟ (R23) */
+async function termIsClosed(termId: number): Promise<boolean> {
+  const term = await Repository.getTermById(termId);
+  return (term as any)?.AdTermClosed === true;
 }
 
 /**
- * ما بعد التعديل: إعادة فتح جولة، وتسجيل ما أُضيف بعد التوقيع.
+ * ── وثيقةُ الاعتماد على طابورٍ وبمراجعة ─────────────────────────────────────
+ *
+ * كلُّ قرارٍ يقرأ الوثيقة ويكتبها كاملة. الطابورُ يحمي خادماً واحداً، ورقمُ
+ * المراجعة يحمي الخوادم كلها (R7): إن كُتب فوق ما قرأناه أُعيد القرار مرّةً
+ * واحدة على ما صار، فإن تكرّر قيل لصاحبه بدل أن يُمحى قرارُ غيره.
+ *
+ * ولأن القرار قد يُعاد، فعقدُه (مراجعة 5):
+ *   - حفظٌ واحد للوثيقة في كل محاولة، وهو آخرُ ما يُكتب قبل الردّ.
+ *   - كلُّ أثرٍ جانبيٍّ لا يُعاد (إغلاقُ ملاحظات) يأتي **بعد** نجاح الحفظ.
+ *   - وما يجب أن يسبق الحفظ لأن الوثيقة تحمل معرّفه (التقاطُ نسخة) يمرّ بـ
+ *     `once`: يُنفَّذ مرّةً واحدة عبر المحاولتين، وتأخذ الثانيةُ نتيجةَ الأولى.
+ */
+async function approvalTransaction(
+  res: Response, collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>,
+): Promise<void> {
+  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    /* تعديلٌ على المعتمد ينتظر جولته يُفتح قبل أي قرار (مراجعة 6). */
+    await settlePendingAmendmentInLock(collegeId, sectionId, termId).catch(error =>
+      console.error("[approval] تعذّر فتحُ جولة التعديل المنتظرة:", error instanceof Error ? error.message : error));
+    const outcome = await runApprovalAttempts(task, {
+      isConflict: error => error instanceof ApprovalRevisionConflict,
+      canRetry: () => !res.headersSent,
+    });
+    if (outcome === "conflict") {
+      res.status(409).json({ error: "سبقك قرارٌ آخر على هذا الجدول في اللحظة نفسها — حدّث الشاشة وأعد المحاولة.", code: "approval-revision" });
+    }
+  });
+}
+
+/**
+ * اسمُ النطاق كما يُقرأ في سجلّ التدقيق: الكلية والقسم والفصل (R18). سطرٌ
+ * يقول «قبول الجدول — الجولة ٢» لا يقول أيَّ جدول.
+ */
+async function approvalScopeLabel(collegeId: number, sectionId: number, termId: number): Promise<string> {
+  try {
+    const [colleges, sections, term] = await Promise.all([Repository.getColleges(), Repository.getSections(), Repository.getTermById(termId)]);
+    const college = (colleges as any[]).find(row => Number(row.AdCollegeId) === collegeId);
+    const section = (sections as any[]).find(row => Number(row.AdSectionId) === sectionId);
+    return [college?.AdCollegeName || `كلية ${collegeId}`, section?.AdSectionName || `قسم ${sectionId}`, (term as any)?.AdTermName || `فصل ${termId}`].join(" · ");
+  } catch {
+    return `${collegeId}:${sectionId}:${termId}`;
+  }
+}
+
+/** حدثٌ في سجلّ الدورة باسم صاحب الطلب وصفته. */
+function withEvent(req: AuthenticatedRequest, approval: ScheduleApproval, action: string, detail?: string, round?: number): ScheduleApproval {
+  return appendApprovalEvent(approval, {
+    by: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+    role: String(req.user?.Role || (req.user?.IsAdminUser ? "admin" : "")),
+    action, detail, round,
+  });
+}
+
+/**
+ * ما بعد التعديل: فتحُ جولة تعديل، وتسجيل ما أُضيف بعد التوقيع.
  *
  * تُستدعى بعد نجاح التعديل لا قبله، لأنها تصف ما وقع فعلاً. وهي صامتةٌ عند
  * الفشل عمداً: لا يجوز أن يُبطِل عجزُ سجلٍّ إداريٍّ عن الكتابة حفظَ موعدٍ
@@ -8881,80 +9305,144 @@ async function noteScheduleMutation(
     /**
      * ── على الطابور نفسه الذي تقف عليه قرارات الاعتماد ────────────────────
      *
-     * هذه الدالّة تقرأ وثيقة الاعتماد ثم تكتبها كاملة. وكل قرارٍ في الدورة —
-     * توقيعٌ وإرسالٌ وإقرار — يفعل ذلك تحت قفلٍ باسم النطاق، وكانت هي وحدها
-     * خارجه.
-     *
-     * والضرر ليس نظرياً: رئيس القسم يضغط «موافق» على الشُّعب المضافة فتُكتب
-     * القائمة فارغة، واستيرادٌ كان قد قرأ الوثيقة قبلها بلحظة يكتبها فتعود
-     * القائمة كما كانت — أو ينعكس الترتيب فتُمحى شعبةٌ سُجّلت للتوّ، ويُرسل
-     * الجدول وفيه التزامٌ لم يره رئيس القسم.
-     *
-     * فصارت على الطابور نفسه. والقفل بالمفتاح ذاته، فلا طابوران لشيءٍ واحد.
+     * هذه الدالّة تقرأ وثيقة الاعتماد ثم تكتبها كاملة، كقرارات الدورة كلها.
+     * فهي على الطابور نفسه وبالمراجعة نفسها: رئيسُ القسم يضغط «موافق» على
+     * الشُّعب المضافة، واستيرادٌ قرأ الوثيقة قبلها بلحظة لا يكتب فوقه.
      */
     await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
-      const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
-      if (!approval) return;
-      let next: ScheduleApproval = approval;
-
-      /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
-         خانةً في صفٍّ وافق عليه، وإضافةُ شعبةٍ تُنشئ التزاماً لم يره أصلاً. */
-      /* ورئيسُ القسم يعتمد المرّةَ الأولى وحدها: بعد أول قبولٍ من التسجيل تمرّ
-         تعديلاتُ اللجنة إلى التسجيل مباشرة، فلا يُنتظر إقرارُه على إضافة. */
-      const everAccepted = next.rounds.some(round => Boolean(round.acceptedAt));
-      const headSignature = everAccepted ? undefined : next.signatures.find(item => item.stage === "head");
-      const addedRows = change.kind === "add" ? (change.rows || (change.row ? [change.row] : [])) : [];
-      if (headSignature && addedRows.length) {
-        const known = new Set(next.pendingAdditions.map(item => Number(item.scheduleId)));
-        const addedBy = String(req.user?.Name || req.user?.SystemUserLogin || "");
-        const at = new Date().toISOString();
-        const fresh = addedRows
-          .filter(row => row && !known.has(Number(row.id)))
-          .map(row => ({
-            scheduleId: Number(row.id),
-            courseId: Number(row.AdCourseId || 0),
-            courseName: String(row.AdCourseName || ""),
-            sectionCode: String(row.SCode || ""),
-            addedAt: at,
-            addedBy,
-          }));
-        /* ── السجلّ يبقى مقروءاً ──────────────────────────────────────────────
-         * السطر الذي يراه رئيس القسم يعدّ الشُّعب ويسمّيها. واستيرادُ ثلاثمئة
-         * صفٍّ بعد توقيعه ليس «شُعباً أُضيفت بعد اعتمادك»، هو جدولٌ آخر — ولا
-         * يُقرأ بعدّه شعبةً شعبة. فيُحفظ منه ما يُقرأ، ويبقى المنعُ قائماً على
-         * أي حال: وجودُ واحدةٍ يكفي لإيقاف الإرسال حتى يُقرّ. */
-        if (fresh.length) {
-          next = { ...next, pendingAdditions: [...next.pendingAdditions, ...fresh].slice(0, 60) };
-        }
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try { await applyScheduleMutation(req, collegeId, sectionId, termId, change); return; }
+        catch (error) { if (!(error instanceof ApprovalRevisionConflict) || attempt === 1) throw error; }
       }
-      /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد.
-         والشرط قبل البناء لا بعده: بناءُ كائنٍ جديد في كل حذفٍ يجعل فحص التغيير
-         في الأسفل صادقاً دائماً، فتُكتب وثيقةُ الاعتماد ويُبعث تاريخُها في كل
-         حذفِ موعدٍ ولو لم يتغيّر فيها شيء. */
-      if (change.kind === "delete" && change.row
-          && next.pendingAdditions.some(item => Number(item.scheduleId) === Number(change.row.id))) {
-        next = { ...next, pendingAdditions: next.pendingAdditions.filter(item => Number(item.scheduleId) !== Number(change.row.id)) };
-      }
-
-      if (next.status === "accepted") {
-        const roundNumber = next.currentRound + 1;
-        next = {
-          ...next,
-          status: "submitted",
-          currentRound: roundNumber,
-          rounds: [...next.rounds, {
-            number: roundNumber,
-            submittedAt: new Date().toISOString(),
-            submittedBy: String(req.user?.Name || req.user?.SystemUserLogin || ""),
-          }].sort((a, b) => a.number - b.number),
-        };
-      }
-
-      if (next !== approval) await Repository.saveScheduleApproval(next);
     });
   } catch (error) {
     console.error("[approval] تعذّر تحديث سجلّ الاعتماد بعد تعديل الجدول:", error instanceof Error ? error.message : error);
+    /* ── لا يمرّ تعديلُ المعتمد بلا جولة (مراجعة 6) ─────────────────────────
+     * كان الفشلُ هنا يُبلع: جدولٌ معتمد يُعدَّل ويبقى «معتمداً» ولا يعلم
+     * التسجيل. فتُكتب علامةٌ فوق آخر مراجعة، ويفتح الجولةَ أوّلُ من يقرأ
+     * الوثيقة (settlePendingAmendment)، ويُقال للشاشة في ترويسة الردّ. */
+    try {
+      const marked = await Repository.markScheduleApprovalAmendmentPending(collegeId, sectionId, termId, {
+        at: new Date().toISOString(),
+        by: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+        role: String(req.user?.Role || (req.user?.IsAdminUser ? "admin" : "")),
+        kind: change.kind,
+      });
+      if (marked) {
+        console.error(`[approval] عُلّم ${collegeId}:${sectionId}:${termId} بتعديلٍ ينتظر جولته.`);
+        if (req.res && !req.res.headersSent) req.res.setHeader("X-Approval-Amendment", "pending");
+      }
+    } catch (markError) {
+      console.error("[approval] تعذّر حتى تعليمُ التعديل المنتظر:", markError instanceof Error ? markError.message : markError);
+      if (req.res && !req.res.headersSent) req.res.setHeader("X-Approval-Amendment", "failed");
+    }
   }
+}
+
+/**
+ * ── ما بعد تعديل جدولٍ معتمد: جولةُ تعديل (R8)، أو حدثٌ في فصلٍ منتهٍ (R23) ──
+ * مكانٌ واحد يقرؤه التعديلُ نفسه (applyScheduleMutation) ومن يُصفّي علامةَ
+ * تعديلٍ لم تُفتح جولتُه (settleAmendmentMarker). `event` يكتب الحدث باسم صاحب
+ * التعديل، لا باسم من صادف أن قرأ الوثيقة.
+ */
+type ApprovalEventWriter = (approval: ScheduleApproval, action: string, detail?: string, round?: number) => ScheduleApproval;
+async function amendmentAfterEdit(
+  approval: ScheduleApproval, termId: number, by: string, kind: "add" | "edit" | "delete", event: ApprovalEventWriter,
+): Promise<ScheduleApproval> {
+  if (approval.status !== "accepted") return approval;
+  /* ── الفصلُ المنتهي لا تُفتح فيه جولة (R23) ─────────────────────────
+   * لجنةُ الجدول تعمل في فصلٍ منتهٍ، والتسجيلُ لا يراجع فيه شيئاً. فتعديلُها
+   * يُسجَّل حدثاً ظاهراً في السجلّ، ولا يُرسل الجدول إلى وارد لا ينتظره. */
+  if (await termIsClosed(termId)) {
+    return event(approval, "closed-term-edit", kind === "add" ? "إضافة" : kind === "delete" ? "حذف" : "تعديل");
+  }
+  /* ── جولةُ تعديل، لا قفل (R8) ─────────────────────────────────────
+   * أولُ تعديلٍ على جدولٍ مقبول يفتح جولةً أساسُها ما قُبل، ويبقى
+   * التعديل فيها مفتوحاً حتى يكتب التسجيل ملاحظة. والجولةُ تُبنى من
+   * الدالّة نفسها التي يبني بها الإرسالُ جولته. */
+  const baselineVersionId = roundBaselineVersionId(approval, approval.currentRound + 1, { acceptedOnly: true });
+  const opened = openRound(approval, { at: new Date().toISOString(), by, amendment: true, baselineVersionId });
+  return event({ ...approval, status: "submitted", ...opened }, "amendment-open", undefined, opened.currentRound);
+}
+
+/** تُصفّى العلامة في الذاكرة: تُمحى، وتُفتح الجولة إن كان الجدول ما زال معتمداً. */
+async function settleAmendmentMarker(approval: ScheduleApproval): Promise<ScheduleApproval> {
+  const marker = approval.amendmentPending;
+  if (!marker) return approval;
+  const { amendmentPending: _settled, ...rest } = approval;
+  const event: ApprovalEventWriter = (row, action, detail, round) => appendApprovalEvent(row, { by: marker.by, role: marker.role || "", action, detail, round });
+  return amendmentAfterEdit(rest as ScheduleApproval, approval.AdTermId, marker.by, marker.kind, event);
+}
+
+/** داخل قفل النطاق: تُقرأ الوثيقة، وتُصفّى علامتُها وتُحفظ إن وُجدت. */
+async function settlePendingAmendmentInLock(collegeId: number, sectionId: number, termId: number): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
+    if (!approval?.amendmentPending) return;
+    try { await Repository.saveScheduleApproval(await settleAmendmentMarker(approval)); return; }
+    catch (error) { if (!(error instanceof ApprovalRevisionConflict) || attempt === 1) throw error; }
+  }
+}
+
+/** لمن يقرأ خارج القفل (شريط القسم، الوارد): يأخذ القفل ويُصفّي، ولا يُسقط القراءة إن تعذّر. */
+async function settlePendingAmendment(collegeId: number, sectionId: number, termId: number): Promise<void> {
+  try {
+    await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, () => settlePendingAmendmentInLock(collegeId, sectionId, termId));
+  } catch (error) {
+    console.error("[approval] تعذّر فتحُ جولة التعديل المنتظرة:", error instanceof Error ? error.message : error);
+  }
+}
+
+async function applyScheduleMutation(
+  req: AuthenticatedRequest,
+  collegeId: number, sectionId: number, termId: number,
+  change: { kind: "add" | "edit" | "delete"; row?: any; rows?: any[] },
+): Promise<void> {
+  const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
+  if (!approval) return;
+  /* علامةُ تعديلٍ سابقٍ لم تُفتح جولتُه تُصفّى أوّلاً (مراجعة 6). */
+  let next: ScheduleApproval = await settleAmendmentMarker(approval);
+  const by = String(req.user?.Name || req.user?.SystemUserLogin || "");
+
+  /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
+     خانةً في صفٍّ وافق عليه، وإضافةُ شعبةٍ تُنشئ التزاماً لم يره أصلاً. */
+  /* ورئيسُ القسم يعتمد المرّةَ الأولى وحدها: بعد أول قبولٍ من التسجيل تمرّ
+     تعديلاتُ اللجنة إلى التسجيل مباشرة، فلا يُنتظر إقرارُه على إضافة. */
+  const everAccepted = next.rounds.some(round => Boolean(round.acceptedAt));
+  const headSignature = everAccepted ? undefined : next.signatures.find(item => item.stage === "head");
+  const addedRows = change.kind === "add" ? (change.rows || (change.row ? [change.row] : [])) : [];
+  if (headSignature && addedRows.length) {
+    const at = new Date().toISOString();
+    const fresh = addedRows
+      .filter(row => row)
+      .map(row => ({
+        scheduleId: Number(row.id),
+        courseId: Number(row.AdCourseId || 0),
+        courseName: String(row.AdCourseName || ""),
+        sectionCode: String(row.SCode || ""),
+        addedAt: at,
+        addedBy: by,
+      }));
+    /* ── ما زاد على السقف يُعدّ ولا يسقط (R14) ────────────────────────────
+     * كان يُقصّ عند ستين فيضيع ما بعده. فيُسمّى ما يُقرأ، ويُعدّ الباقي،
+     * ويمنع الإرسالَ كلُّه حتى يُقرّ. */
+    const merged = mergePendingAdditions(next, fresh);
+    if (merged.pendingAdditions.length !== next.pendingAdditions.length
+        || merged.pendingAdditionsOverflow !== Number(next.pendingAdditionsOverflow || 0)) {
+      next = { ...next, ...merged };
+    }
+  }
+  /* صفٌّ حُذف قبل أن يُقرّ لا ينتظر إقراراً: ما عاد موجوداً ليوافق عليه أحد.
+     والشرط قبل البناء لا بعده: بناءُ كائنٍ جديد في كل حذفٍ يجعل فحص التغيير
+     في الأسفل صادقاً دائماً، فتُكتب وثيقةُ الاعتماد في كل حذفِ موعد. */
+  if (change.kind === "delete" && change.row
+      && next.pendingAdditions.some(item => Number(item.scheduleId) === Number(change.row.id))) {
+    next = { ...next, pendingAdditions: next.pendingAdditions.filter(item => Number(item.scheduleId) !== Number(change.row.id)) };
+  }
+
+  next = await amendmentAfterEdit(next, termId, by, change.kind, (row, action, detail, round) => withEvent(req, row, action, detail, round));
+
+  if (next !== approval) await Repository.saveScheduleApproval(next);
 }
 
 /**
@@ -8983,31 +9471,19 @@ async function wholesaleRefusal(collegeId: number, sectionId: number, termId: nu
  * كاملاً مرّةً لكل قسم — عشرين قراءةً كاملة لشاشةٍ تُفتح عشرين مرّةً في اليوم.
  * فتُقرأ مرّةً في الأعلى، وتُمرَّر.
  */
-function countBlockingConflicts(scopeRows: any[], termRows: any[]): number {
-  const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
-  const scopeOf = new Map(termRows.map((row: any) => [Number(row.id), `${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] as const));
-  const seen = new Set<string>();
-  let count = 0;
-  for (const item of findConflicts(scopeRows as any, termRows as any)) {
-    if (item.severity !== "high" && item.type !== "duplicate") continue;
-    const a = Number(item.rowId), b = Number(item.otherId);
-    if (!ownIds.has(a) && !ownIds.has(b)) continue;
-    if (item.type === "instructor" && scopeOf.get(a) !== scopeOf.get(b)) continue;
-    const key = [Math.min(a, b), Math.max(a, b), item.type].join(":");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    count += 1;
-  }
-  return count;
+function countBlockingConflicts(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): number {
+  /* القاعدة نفسها في `scheduleBlockers` — هذا اسمها القديم فقط. */
+  return approvalBlockerCount(scopeRows, termRows, options);
 }
 
 /** السؤال عن قسمٍ واحد، حين لا يكون في اليد جدولُ الفصل أصلاً. */
 async function blockingConflictCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
-  const [scopeRows, termRows] = await Promise.all([
+  const [scopeRows, termRows, options] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
     Repository.getSchedulesByScope({ termId }),
+    approvalBlockerOptions(),
   ]);
-  return countBlockingConflicts(scopeRows, termRows);
+  return countBlockingConflicts(scopeRows, termRows, options);
 }
 
 /** الملاحظات اللائحية الظاهرة وقت التوقيع — تُسجَّل ولا تمنع. */
@@ -9052,14 +9528,14 @@ async function readApproval(collegeId: number, sectionId: number, termId: number
   return stored || emptyApproval(collegeId, sectionId, termId);
 }
 
-/** الموعد الساري لهذا القسم: تمديده إن وُجد، وإلا موعد فصله. */
+/** الموعد الساري لهذا القسم: تمديده إن وُجد، وإلا موعد فصله — بتوقيت الكويت (R15). */
 async function readDeadlineFor(approval: ScheduleApproval, termId: number): Promise<DeadlineState> {
   const term = await Repository.getTermById(termId);
   return readDeadline({
     termDeadline: (term as any)?.AdTermSubmissionDeadline,
     extensionUntil: approval.extensionUntil,
     extensionReason: approval.extensionReason,
-  }, new Date().toISOString().slice(0, 10));
+  }, new Date());
 }
 
 function approvalActor(req: AuthenticatedRequest) {
@@ -9070,18 +9546,53 @@ function approvalActor(req: AuthenticatedRequest) {
   };
 }
 
+/** نطاقُ الطلب: ثلاثة أرقام، وإلا ردٌّ واحدٌ بالعربية. */
+function approvalScopeFromBody(req: AuthenticatedRequest, res: Response): { collegeId: number; sectionId: number; termId: number } | null {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return null; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return null; }
+  return { collegeId, sectionId, termId };
+}
+
+/**
+ * ── فصلٌ منتهٍ: الدورةُ مغلقة (R23) ────────────────────────────────────────
+ * كلُّ فعلٍ يكتب في وثيقة الاعتماد يُسأل هذا أولاً، برسالةٍ واحدةٍ واضحة.
+ */
+async function refuseIfTermClosed(res: Response, termId: number): Promise<boolean> {
+  if (!(await termIsClosed(termId))) return false;
+  res.status(409).json({ error: TERM_CLOSED_APPROVAL_MESSAGE, code: "term-closed" });
+  return true;
+}
+
+/**
+ * ── القرارُ على ما رآه صاحبه (R6) ──────────────────────────────────────────
+ * الشاشةُ ترسل الجولة وعدد المواعيد كما رآهما صاحبها. فإن تغيّر أحدهما تحت
+ * يده رُدّ قراره بدل أن يقع على جدولٍ لم يقرأه. وما لم يُرسل لا يُفحص.
+ */
+function refuseIfStale(req: AuthenticatedRequest, res: Response, current: { round: number; rowCount?: number; status?: string }): boolean {
+  const refusal = staleViewRefusal(current, readViewExpectation(req.body));
+  if (!refusal) return false;
+  res.status(409).json({ error: refusal, code: "stale-view" });
+  return true;
+}
+
 /** قراءة حالة الاعتماد لقسمٍ واحد، بالموعد والملاحظات والتعارضات معه. */
 app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const approval = await readApproval(collegeId, sectionId, termId);
-  const [deadline, blocking, notices, notes, rows] = await Promise.all([
+  let approval = await readApproval(collegeId, sectionId, termId);
+  if (approval.amendmentPending) {
+    await settlePendingAmendment(collegeId, sectionId, termId);
+    approval = await readApproval(collegeId, sectionId, termId);
+  }
+  const [deadline, blocking, notices, notes, rows, lockReason] = await Promise.all([
     readDeadlineFor(approval, termId),
     blockingConflictCount(collegeId, sectionId, termId),
     regulationNoticeCount(collegeId, sectionId, termId),
     notesWithState(collegeId, sectionId, termId),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    scheduleLockRefusal(req, collegeId, sectionId, termId),
   ]);
   res.json({
     approval,
@@ -9089,12 +9600,16 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
     blockingConflicts: blocking,
     regulationNotices: notices,
     /* ── ما يمنع الإرسال يُقال قبل الضغط ────────────────────────────────────
-     * كانت الملاحظات المعلّقة تُفحص عند الإرسال وحده، فيضغط القسم الزرَّ
-     * ويُردّ. والرسالةُ صحيحةٌ ومفهومة، لكنّ الأصحّ أن يُقال له قبل أن يمدّ
-     * يده — فالزرُّ الذي يُرفض دائماً ليس زرّاً. */
-    openRegistrarNotes: notes.filter(note => note.origin === "registrar" && note.state === "open").length,
+     * من العدّاد الواحد نفسه الذي يقرؤه الإرسالُ والإرجاعُ والوارد (R4). */
+    openRegistrarNotes: countOpenRegistrarNotes(notes),
+    /* خلافاتٌ بلغت حدَّ الرفع إلى رئيس القسم (R19): تُعرض له في شريطه. */
+    escalatedNotes: notes.filter(note => note.origin === "registrar" && note.escalatedAt && note.state !== "resolved").length,
     /* وعددُ المواعيد: لا يُوقَّع على جدولٍ فارغ، فلا يُعرض زرُّ توقيعٍ عليه. */
     rowCount: rows.length,
+    /* سببُ منع التعديل لهذا الناظر، من حارس الخادم نفسه (R21). */
+    lockReason,
+    canRequestExtension: canRequestExtension(deadline) && !approval.extensionRequest
+      && (approval.status === "drafting" || approval.status === "committee" || approval.status === "head" || approval.status === "returned"),
     statusLabel: APPROVAL_STATUS_LABEL[approval.status],
     lastReviewedVersionId: lastReviewedVersionId(approval),
   });
@@ -9115,16 +9630,36 @@ app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, re
     Repository.getScheduleApprovalsForTerm(termId, collegeId),
     Repository.getTermById(termId),
   ]);
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
   const visible = rows.filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
+  /* ── الأقسام التي لم تبدأ (N3) ─────────────────────────────────────────
+   * لا سجلَّ لها، فكانت تغيب عن الميزان كلياً — وهي أهمّ ما يسأل عنه العميد.
+   * تُبنى هنا من سجلّ الأقسام في نطاق القارئ، بحال «لم يبدأ»، ويُحكم على
+   * تأخّرها وتأخّر غيرها بالقاعدة الواحدة `isLate` (src/utils/lateness.ts). */
+  const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const collegeName = new Map(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const started = new Set(rows.map(row => `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`));
+  const notStarted = sections
+    .filter((row: any) => (!collegeId || Number(row.AdCollegeId) === collegeId)
+      && !started.has(`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`)
+      && (req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))))
+    .map((row: any) => ({
+      AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId),
+      sectionName: String(row.AdSectionName || ""), collegeName: collegeName.get(Number(row.AdCollegeId)) || "",
+      status: "notStarted" as const, statusLabel: "لم يبدأ",
+      deadline: readDeadline({ termDeadline }, now),
+      late: isLate({ approvalStatus: null, submittedRounds: 0, deadline: termDeadline }),
+    }));
   res.json({
     termDeadline,
     approvals: visible.map(row => ({
       ...row,
       statusLabel: APPROVAL_STATUS_LABEL[row.status],
-      deadline: readDeadline({ termDeadline, extensionUntil: row.extensionUntil, extensionReason: row.extensionReason }, today),
+      deadline: readDeadline({ termDeadline, extensionUntil: row.extensionUntil, extensionReason: row.extensionReason }, now),
+      late: isLate({ approvalStatus: row.status, submittedRounds: row.currentRound, deadline: termDeadline, extension: row.extensionUntil }),
     })),
+    notStarted,
   });
 });
 
@@ -9135,23 +9670,24 @@ app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, re
  * تغيّر الجدول بعدها عُرف ما تغيّر، لا مجرّد أنه تغيّر.
  */
 app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
 
   const actor = approvalActor(req);
   const stage = signatureStage(actor.role);
   if (!stage) { res.status(403).json({ error: "التوقيع لرئيس لجنة الجدول ولرئيس القسم العلمي فقط." }); return; }
+  if (await refuseIfTermClosed(res, termId)) return;
 
-  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+    if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
     const blocking = await blockingConflictCount(collegeId, sectionId, termId);
     const verdict = canSign(approval, stage, { blockingConflicts: blocking, rowCount: rows.length });
     if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
 
     const notices = await regulationNoticeCount(collegeId, sectionId, termId);
-    const version = await captureScopeVersion(req, collegeId, sectionId, termId, `توقيع ${roleLabel(actor.role)}`, "manual");
+    const version = await once("sign-version", () => captureScopeVersion(req, collegeId, sectionId, termId, `توقيع ${roleLabel(actor.role)}`, "manual", { unchanged: true }));
     const at = new Date().toISOString();
     const signature: ScheduleApprovalSignature = {
       stage,
@@ -9164,17 +9700,23 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
       regulationNoticeCount: notices,
       verifyCode: verificationCode(String(version?.id || `${collegeId}:${sectionId}:${termId}`), actor.id, at),
     };
-    const next: ScheduleApproval = { ...approval, signatures: [...approval.signatures.filter(item => item.stage !== stage), signature] };
-    next.status = statusAfterSignature(next);
-    const saved = await Repository.saveScheduleApproval(next);
-    res.locals.auditChanges = `توقيع ${signature.roleLabel} على ${rows.length} موعداً، برمز ${signature.verifyCode}`;
+    let next: ScheduleApproval = { ...approval, signatures: [...approval.signatures.filter(item => item.stage !== stage), signature] };
+    /* توقيعُ اللجنة من جديد يطوي إرجاع رئيس القسم: أُجيب عنه (R11). */
+    if (stage === "committee" && next.headReturn) { const { headReturn: _answered, ...rest } = next; next = rest as ScheduleApproval; }
+    next.status = statusAfterSignatureChange(next);
+    next = withEvent(req, next, "sign", `${signature.roleLabel} — ${countOf(rows.length, AR.appointment)} — ${signature.verifyCode}`);
     /* اعتمادُ رئيس القسم هو الإرسال: يوقّع فيصل الجدولُ إلى التسجيل مباشرة.
-       فإن منعه مانعٌ (موعدٌ منقضٍ، ملاحظةٌ معلّقة) بقي التوقيع وقيل السبب. */
-    if (stage === "head") {
-      const sent = await submitToRegistrar(req, collegeId, sectionId, termId, saved);
+       فإن منعه مانعٌ (موعدٌ منقضٍ، ملاحظةٌ معلّقة، تعارض) بقي التوقيع وقيل السبب.
+       والتوقيعُ والإرسال حفظٌ واحد (مراجعة 5): كانا حفظين، فإن سبق الثانيَ
+       قرارٌ آخر أُعيد كلُّ شيء ووجد التوقيعَ محفوظاً فرُدّ رئيسُ القسم بـ409. */
+    const sent = stage === "head" ? await submitToRegistrar(req, collegeId, sectionId, termId, next, once) : undefined;
+    const saved = await Repository.saveScheduleApproval(sent?.ok === true ? sent.next : next);
+    const where = await approvalScopeLabel(collegeId, sectionId, termId);
+    res.locals.auditChanges = `توقيع ${signature.roleLabel} على جدول ${where}: ${countOf(rows.length, AR.appointment)}، برمز ${signature.verifyCode}`;
+    if (sent) {
       if (sent.ok === true) {
         res.locals.auditChanges += ` — وأُرسل إلى التسجيل (الجولة ${sent.round})`;
-        res.json({ approval: sent.approval, signature, regulationNotices: notices, submitted: true, round: sent.round });
+        res.json({ approval: saved, signature, regulationNotices: notices, submitted: true, round: sent.round });
         return;
       }
       res.json({ approval: saved, signature, regulationNotices: notices, submitted: false, submitBlocked: sent.error });
@@ -9189,83 +9731,114 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
  *
  * التوقيع قرارٌ، والقرار يُراجَع. لكن الرجوع عنه لا يكون إلا لمن أثبته
  * بنفسه — لا يسحب رئيس القسم توقيع اللجنة ولا العكس — ولا بعد أن يصير
- * الجدول عند التسجيل، لأن الطرف الآخر بنى عليه عمله.
+ * الجدول عند التسجيل، ولا بعد أن يُقبل (R1): القاعدةُ من `canWithdraw` وحدها.
  */
 app.post("/api/approvals/withdraw", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
   const actor = approvalActor(req);
   const stage = signatureStage(actor.role);
   if (!stage) { res.status(403).json({ error: "سحب التوقيع لمن أثبته وحده." }); return; }
-  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+  if (await refuseIfTermClosed(res, termId)) return;
+  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
-    if (approval.status === "submitted") { res.status(409).json({ error: "الجدول عند التسجيل. لا يُسحب توقيعٌ بنى عليه الطرف الآخر عمله." }); return; }
-    const mine = approval.signatures.find(item => item.stage === stage);
-    if (!mine) { res.status(409).json({ error: "لا يوجد توقيعٌ لك على هذا الجدول." }); return; }
+    const verdict = canWithdraw(approval, stage);
+    if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
     /* سحبُ توقيع اللجنة يُسقط توقيع رئيس القسم معه: الترتيب جزءٌ من المعنى،
        وتوقيعُ رئيس قسمٍ فوق لجنةٍ سحبت توقيعها لا يقول شيئاً. */
     const dropped = stage === "committee" ? [] : approval.signatures.filter(item => item.stage === "committee");
-    const next: ScheduleApproval = { ...approval, signatures: dropped };
-    next.status = statusAfterSignature(next);
+    let next: ScheduleApproval = { ...approval, signatures: dropped };
+    /* وجدولٌ مُرجَعٌ يبقى مُرجَعاً: السحبُ لا يمحو أن التسجيل ينتظره. */
+    next.status = statusAfterSignatureChange(next);
+    next = withEvent(req, next, "withdraw", roleLabel(actor.role));
     const saved = await Repository.saveScheduleApproval(next);
-    res.locals.auditChanges = `سحب توقيع ${roleLabel(actor.role)}`;
+    res.locals.auditChanges = `سحب توقيع ${roleLabel(actor.role)} — ${await approvalScopeLabel(collegeId, sectionId, termId)}`;
+    res.json({ approval: saved });
+  });
+});
+
+/**
+ * ── رئيسُ القسم يُرجع للجنة (R11) ──────────────────────────────────────────
+ *
+ * كان رئيسُ القسم لا يملك إلا أن يعتمد أو يسكت: جدولٌ لا يرضاه يبقى «موقّعاً
+ * من اللجنة» بلا أثرٍ لاعتراضه. فصار يُرجعه بسببٍ مكتوب، فيسقط توقيعُ اللجنة
+ * ويعود الجدول إلى الإعداد، ويُقرأ السببُ في شريطها حتى توقّع من جديد.
+ */
+app.post("/api/approvals/head-return", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
+  if (signatureStage(req.user?.Role) !== "head") { res.status(403).json({ error: "الإرجاع للجنة لرئيس القسم العلمي وحده." }); return; }
+  if (await refuseIfTermClosed(res, termId)) return;
+  const reason = String(req.body?.reason || "").trim().slice(0, 400);
+  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    if (refuseIfStale(req, res, { round: approval.currentRound, status: approval.status })) return;
+    const verdict = canHeadReturn(approval, reason);
+    if (verdict.ok !== true) { res.status(verdict.code === "reason" ? 400 : 409).json({ error: verdict.message, code: verdict.code }); return; }
+    const actor = approvalActor(req);
+    let next: ScheduleApproval = {
+      ...approval,
+      signatures: approval.signatures.filter(item => item.stage !== "committee" && item.stage !== "head"),
+      status: "drafting",
+      headReturn: { by: actor.name, at: new Date().toISOString(), reason },
+    };
+    next = withEvent(req, next, "head-return", reason);
+    const saved = await Repository.saveScheduleApproval(next);
+    res.locals.auditChanges = `إرجاع رئيس القسم الجدولَ للجنة — ${await approvalScopeLabel(collegeId, sectionId, termId)}: ${reason.slice(0, 120)}`;
     res.json({ approval: saved });
   });
 });
 
 /** إقرار رئيس القسم بالشُّعب المضافة بعد توقيعه. ضغطةٌ واحدة، لا توقيعٌ جديد. */
 app.post("/api/approvals/acknowledge-additions", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
   if (signatureStage(req.user?.Role) !== "head") { res.status(403).json({ error: "الإقرار على الشُّعب المضافة لرئيس القسم العلمي وحده." }); return; }
-  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+  if (await refuseIfTermClosed(res, termId)) return;
+  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
-    if (!approval.pendingAdditions.length) { res.json({ approval }); return; }
-    const count = approval.pendingAdditions.length;
-    const saved = await Repository.saveScheduleApproval({ ...approval, pendingAdditions: [] });
-    res.locals.auditChanges = `إقرار رئيس القسم على ${count} شعبةً أُضيفت بعد اعتماده`;
-    res.json({ approval: saved, acknowledged: count });
+    if (!pendingAdditionTotal(approval)) { res.json({ approval, acknowledged: 0, remaining: 0 }); return; }
+    /* ── يُقرّ ما رآه وحده (R6/R14) ───────────────────────────────────────
+     * الشاشةُ ترسل المعرّفات التي عرضتها وعدد ما زاد عليها. وما أُضيف بعد أن
+     * فتحها يبقى ينتظره، بدل أن يُقرّ بضغطةٍ على قائمةٍ لم تكن فيها. */
+    const seenIds = Array.isArray(req.body?.expectedPendingIds) ? (req.body.expectedPendingIds as any[]).map(Number).filter(Number.isFinite) : undefined;
+    const outcome = acknowledgeAdditions(approval, seenIds ? { ids: seenIds, overflow: Number(req.body?.expectedOverflow || 0) } : undefined);
+    const next = withEvent(req, outcome.next, "acknowledge-additions", countOf(outcome.acknowledged, AR.section));
+    const saved = await Repository.saveScheduleApproval(next);
+    res.locals.auditChanges = `إقرار رئيس القسم على ${countOf(outcome.acknowledged, oblique(AR.section))} أُضيفت بعد اعتماده — ${await approvalScopeLabel(collegeId, sectionId, termId)}`;
+    res.json({ approval: saved, acknowledged: outcome.acknowledged, remaining: outcome.remaining });
   });
 });
 
 /**
- * الإرسال للتسجيل، بلا قفل: يستدعيه مسارُ الإرسال ومسارُ توقيع رئيس القسم،
- * وكلاهما يمسك قفلَ النطاق قبله.
+ * الإرسال للتسجيل، بلا قفلٍ ولا حفظ: يستدعيه مسارُ الإرسال ومسارُ توقيع رئيس
+ * القسم، وكلاهما يمسك قفلَ النطاق قبله ويحفظ ما يعيده (`next`) حفظاً واحداً.
  */
-async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, approval: ScheduleApproval) {
+async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, approval: ScheduleApproval, once: ApprovalOnce) {
   const deadline = await readDeadlineFor(approval, termId);
   /* ── «عُولجت» تُحسب، ولا تُقرأ من علَم ──────────────────────────────────
    *
    * حالة الملاحظة مشتقّةٌ من القيمة الحاضرة في الخانة، لا مخزّنةٌ في صفّها:
-   * فإن تغيّرت الخانة فقد عُولجت، وإن لم تتغيّر فهي تنتظر. ولا شيء في هذا
-   * النظام يرفع علَم `resolved` عن ملاحظةٍ عالجها القسم — ولا ينبغي، لأن
-   * علَماً يُرفع يدوياً يمكن أن يُرفع بلا معالجة.
-   *
-   * فالعدّ هنا من الحالة المحسوبة نفسها التي يراها الطرفان على الشاشة. وقراءة
-   * العلَم بدلاً منها كانت ستُبقي كل ملاحظةٍ «مفتوحة» إلى الأبد: يعالجها
-   * القسم فلا يُسمح له بإعادة الإرسال، ولا سبيل أمامه إلى إغلاقها. */
-  const openNotes = (await notesWithState(collegeId, sectionId, termId))
-    .filter(note => note.origin === "registrar" && note.state === "open").length;
-  const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline });
+   * فإن تغيّرت الخانة فقد عُولجت، وإن لم تتغيّر فهي تنتظر. والعدُّ من العدّاد
+   * الواحد الذي يقرؤه الإرجاعُ والوارد والشاشة (R4). */
+  const openNotes = countOpenRegistrarNotes(await notesWithState(collegeId, sectionId, termId));
+  /* والتعارضُ المادّي يمنع الإرسال كما يمنع التوقيع والقبول (R3). */
+  const blocking = await blockingConflictCount(collegeId, sectionId, termId);
+  const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline, blockingConflicts: blocking });
   if (verdict.ok !== true) return { ok: false as const, error: verdict.message, code: verdict.code };
 
   const actor = approvalActor(req);
-  const version = await captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual");
-  const roundNumber = approval.currentRound + 1;
+  const version = await once("submit-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual", { unchanged: true }));
 
   /* ── ما طُلب، وما فُعل ──────────────────────────────────────────────────
    * الجولةُ المنتهية تحمل عدد ملاحظاتها — وهو ما طُلب. ويُضاف إليها الآن عدد
-   * الصفوف التي تحرّكت فعلاً منذ أن رآها التسجيل — وهو ما فُعل. فيقرأ الشريط
-   * الزمني «أُرجعت بأربع ملاحظات، فتحرّك خمسة صفوف»، ويُقاس الردُّ بالاثنين
-   * لا بأحدهما.
+   * الصفوف التي تحرّكت فعلاً منذ أن رآها التسجيل — وهو ما فُعل.
    */
-  const closing = approval.rounds.find(round => round.number === approval.currentRound);
+  const closingBaseline = roundBaselineVersionId(approval, approval.currentRound + 1);
   let changedRowCount: number | undefined;
-  if (closing?.reviewedVersionId) {
+  if (approval.currentRound > 0 && closingBaseline) {
     try {
-      const seen = await Repository.getScheduleVersionById(closing.reviewedVersionId);
+      const seen = await Repository.getScheduleVersionById(closingBaseline);
       if (seen) {
         const now = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
         const moved = diffSchedules(seen.rows as any, now as any);
@@ -9274,84 +9847,119 @@ async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, s
     } catch { /* عددٌ يُعرض، لا شرطٌ يُحتسب: تعذّره لا يمنع الإرسال. */ }
   }
 
-  const rounds = [...approval.rounds
-    .filter(round => round.number !== roundNumber)
-    .map(round => round.number === approval.currentRound && changedRowCount !== undefined
-      ? { ...round, changedRowCount }
-      : round), {
-    number: roundNumber,
-    submittedAt: new Date().toISOString(),
-    submittedBy: actor.name,
-    reviewedVersionId: version?.id,
-  }].sort((a, b) => a.number - b.number);
-  const saved = await Repository.saveScheduleApproval({ ...approval, status: "submitted", currentRound: roundNumber, rounds });
-  return { ok: true as const, approval: saved, round: roundNumber };
+  /* الجولةُ تُبنى من `openRound` — الدالّةِ نفسها التي تفتح بها التعديلاتُ
+     بعد القبول جولتَها (R8)، فلا شكلان للجولة. */
+  const opened = openRound(approval, {
+    at: new Date().toISOString(), by: actor.name,
+    reviewedVersionId: version?.id, closingChangedRowCount: changedRowCount,
+  });
+  const next = withEvent(req, { ...approval, status: "submitted", ...opened, extensionRequest: undefined }, "submit", undefined, opened.currentRound);
+  return { ok: true as const, next, round: opened.currentRound };
 }
 
 /** الإرسال للتسجيل. يفتح جولةً جديدة ويقفل التعديل حتى يقبل التسجيل أو يُرجع. */
 app.post("/api/approvals/submit", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
   if (!signatureStage(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "الإرسال للتسجيل من القسم: لجنة الجدول أو رئيس القسم." }); return; }
+  if (await refuseIfTermClosed(res, termId)) return;
 
-  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
-    const result = await submitToRegistrar(req, collegeId, sectionId, termId, approval);
+    if (refuseIfStale(req, res, { round: approval.currentRound, status: approval.status })) return;
+    const result = await submitToRegistrar(req, collegeId, sectionId, termId, approval, once);
     if (result.ok !== true) { res.status(409).json({ error: result.error, code: result.code }); return; }
-    res.locals.auditChanges = `إرسال الجدول إلى التسجيل — الجولة ${result.round}`;
-    res.json({ approval: result.approval, round: result.round });
+    const saved = await Repository.saveScheduleApproval(result.next);
+    res.locals.auditChanges = `إرسال جدول ${await approvalScopeLabel(collegeId, sectionId, termId)} إلى التسجيل — الجولة ${result.round}`;
+    res.json({ approval: saved, round: result.round });
   });
 });
 
-/** إرجاع الجدول للقسم بملاحظات. يفتح القفل، ولا يُبطل التوقيعين. */
+/**
+ * إرجاع الجدول للقسم بملاحظات. يفتح القفل، ولا يُبطل التوقيعين.
+ *
+ * ويُرجَع المعتمدُ أيضاً (R10): في جولةٍ جديدة أساسُها ما قُبل. والعدُّ من
+ * العدّاد الواحد (R4) — فملاحظةٌ أصرّ عليها التسجيل من جولةٍ سابقة تُحسب.
+ */
 app.post("/api/approvals/return", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
   if (!canReviewSubmissions(req.user?.Role)) { res.status(403).json({ error: "الإرجاع للتسجيل وحده." }); return; }
+  if (await refuseIfTermClosed(res, termId)) return;
 
-  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
-    if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
-    const notes = await notesWithState(collegeId, sectionId, termId);
-    const openNow = notes.filter(note =>
-      note.origin === "registrar" && note.state === "open" && Number(note.round || 1) === approval.currentRound).length;
-    if (openNow <= 0) { res.status(409).json({ error: "لا يُرجَع جدولٌ بلا ملاحظة. اكتب ملاحظةً واحدةً على الأقل." }); return; }
+    const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+    if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
+    const openNow = countOpenRegistrarNotes(await notesWithState(collegeId, sectionId, termId));
+    const verdict = canReturn(approval, openNow);
+    if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
 
     const actor = approvalActor(req);
-    const rounds = approval.rounds.map(round => round.number === approval.currentRound
-      ? { ...round, returnedAt: new Date().toISOString(), returnedBy: actor.name, returnedNoteCount: openNow }
+    const at = new Date().toISOString();
+    let base: ScheduleApproval = approval;
+    if (verdict.reopensAccepted) {
+      /* المعتمدُ يُرجع في جولةٍ جديدة، أساسُها ما رآه التسجيل الآن. */
+      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع جدولٍ معتمد", "manual", { unchanged: true }));
+      base = { ...approval, ...openRound(approval, { at, by: actor.name, reviewedVersionId: seen?.id }) };
+    } else if (!base.rounds.find(round => round.number === base.currentRound)?.reviewedVersionId) {
+      /* جولةُ التعديل لم تحمل نسخةً: ما رآه التسجيل يُلتقط لحظةَ الإرجاع،
+         فيصير أساسَ الجولة التالية بدل أن يُقارن بما قبلها. */
+      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع للقسم", "manual", { unchanged: true }));
+      if (seen?.id) base = { ...base, rounds: base.rounds.map(round => round.number === base.currentRound ? { ...round, reviewedVersionId: seen.id } : round) };
+    }
+    const rounds = base.rounds.map(round => round.number === base.currentRound
+      ? { ...round, returnedAt: at, returnedBy: actor.name, returnedNoteCount: openNow }
       : round);
-    const saved = await Repository.saveScheduleApproval({ ...approval, status: "returned", rounds });
-    res.locals.auditChanges = `إرجاع الجدول للقسم مع ${openNow} ملاحظةً — الجولة ${approval.currentRound}`;
+    const next = withEvent(req, { ...base, status: "returned", rounds }, "return", countOf(openNow, AR.note), base.currentRound);
+    const saved = await Repository.saveScheduleApproval(next);
+    res.locals.auditChanges = `إرجاع جدول ${await approvalScopeLabel(collegeId, sectionId, termId)} للقسم مع ${countOf(openNow, oblique(AR.note))} — الجولة ${base.currentRound}`;
     res.json({ approval: saved, returnedNoteCount: openNow });
   });
 });
 
 /** قبول التسجيل. المانع الوحيد تعارضٌ مادّي؛ واللائحة تُعرض ولا تمنع. */
 app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
   if (!canReviewSubmissions(req.user?.Role)) { res.status(403).json({ error: "القبول للتسجيل وحده." }); return; }
+  if (await refuseIfTermClosed(res, termId)) return;
 
-  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
     if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
+    const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+    if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
     const blocking = await blockingConflictCount(collegeId, sectionId, termId);
     if (blocking > 0) {
       res.status(409).json({ error: `لا يُقبل جدولٌ فيه ${blockingConflictPhrase(blocking)}. أرجِعه للقسم لمعالجته.`, code: "blocking-conflicts" });
       return;
     }
     const actor = approvalActor(req);
-    const accepted = await captureScopeVersion(req, collegeId, sectionId, termId, "قبول التسجيل", "manual");
+    const accepted = await once("accept-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "قبول التسجيل", "manual", { unchanged: true }));
     const rounds = approval.rounds.map(round => round.number === approval.currentRound
       ? { ...round, acceptedAt: new Date().toISOString(), acceptedBy: actor.name, ...(accepted?.id ? { acceptedVersionId: accepted.id } : {}) }
       : round);
-    const saved = await Repository.saveScheduleApproval({ ...approval, status: "accepted", rounds, pendingAdditions: [] });
-    res.locals.auditChanges = `قبول الجدول نهائياً — الجولة ${approval.currentRound}`;
-    res.json({ approval: saved });
+    /* ── القبولُ يُغلق ما بقي من ملاحظات التسجيل (R5) ─────────────────────
+     * ملاحظةٌ مفتوحة على جدولٍ قُبل كانت تبقى حيّة، فتمنع أوّلَ إعادة إرسالٍ
+     * بعد أي تعديلٍ لاحق — والقسمُ لا يعرف أنها ما زالت هناك. فقبولُ الجدول
+     * قرارٌ فيها أيضاً: تُغلق «بالقبول» ويبقى نصُّها.
+     * والإغلاقُ بعد نجاح حفظ القبول لا قبله (مراجعة 5): قبولٌ خسر سباق
+     * المراجعة فرُدّ بـ409 كان قد أغلق ملاحظاتِ جدولٍ لم يُقبل. */
+    const notes = await notesWithState(collegeId, sectionId, termId);
+    const closing = notes.filter(note => note.origin === "registrar" && (note.state === "open" || note.state === "answered"));
+    const next = withEvent(req, { ...approval, status: "accepted", rounds, pendingAdditions: [], pendingAdditionsOverflow: 0 },
+      "accept", closing.length ? `${countOf(closing.length, AR.note)} ${CLOSED_BY_ACCEPTANCE_LABEL}` : undefined);
+    const saved = await Repository.saveScheduleApproval(next);
+    /* القبولُ محفوظ: تعذّرُ إغلاق ملاحظةٍ يُسجَّل ولا يُبطله (والإغلاقُ نفسه
+       لا ضرر في تكراره). */
+    for (const note of closing) {
+      try { await Repository.updateScheduleComment(note.id, { resolved: true, resolution: "closed-by-acceptance" }); }
+      catch (error) { console.error("[approval] تعذّر إغلاق ملاحظةٍ بعد القبول:", error instanceof Error ? error.message : error); }
+    }
+    res.locals.auditChanges = `قبول جدول ${await approvalScopeLabel(collegeId, sectionId, termId)} نهائياً — الجولة ${approval.currentRound}`
+      + (closing.length ? ` (${countOf(closing.length, AR.note)} ${CLOSED_BY_ACCEPTANCE_LABEL})` : "");
+    res.json({ approval: saved, closedNotes: closing.length });
   });
 });
 
@@ -9371,25 +9979,68 @@ app.post("/api/approvals/deadline", requireAuth, async (req: AuthenticatedReques
   res.json({ termId, deadline: deadline || null });
 });
 
-/** تمديدٌ لقسمٍ بعينه. ضغطتان من صندوق الوارد، بسببٍ يُحفظ ويُعرض. */
+/**
+ * تمديدٌ لقسمٍ بعينه. ضغطتان من صندوق الوارد، بسببٍ يُحفظ ويُعرض.
+ *
+ * وفي نطاق مانحه وحده (R16)، ولا يسبق موعد الفصل: تمديدٌ يُقرّب الموعد ليس
+ * تمديداً. ومنحُه يطوي طلبَ القسم إن كان.
+ */
 app.post("/api/approvals/extension", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!canManageDeadline(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "التمديد يمنحه رئيس التسجيل." }); return; }
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
   const until = String(req.body?.until || "").trim();
   const reason = String(req.body?.reason || "").trim().slice(0, 240);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
   if (until && !/^\d{4}-\d{2}-\d{2}$/.test(until)) { res.status(400).json({ error: "التاريخ يُكتب هكذا: 2026-10-22" }); return; }
-  await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+  if (await refuseIfTermClosed(res, termId)) return;
+  const term = await Repository.getTermById(termId);
+  const earlier = extensionRefusal(until, (term as any)?.AdTermSubmissionDeadline);
+  if (earlier) { res.status(400).json({ error: earlier, code: "extension-before-deadline" }); return; }
+  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const actor = approvalActor(req);
-    const saved = await Repository.saveScheduleApproval({
+    let next: ScheduleApproval = {
       ...approval,
       extensionUntil: until || undefined,
       extensionReason: until ? (reason || undefined) : undefined,
       extensionBy: until ? actor.name : undefined,
       extensionAt: until ? new Date().toISOString() : undefined,
-    });
-    res.locals.auditChanges = until ? `تمديد تسليم القسم إلى ${until}${reason ? ` — ${reason}` : ""}` : "إلغاء تمديد التسليم";
+      extensionRequest: until ? undefined : approval.extensionRequest,
+    };
+    next = withEvent(req, next, "extension", until ? `${until}${reason ? ` — ${reason}` : ""}` : "إلغاء التمديد");
+    const saved = await Repository.saveScheduleApproval(next);
+    const where = await approvalScopeLabel(collegeId, sectionId, termId);
+    res.locals.auditChanges = until ? `تمديد تسليم ${where} إلى ${until}${reason ? ` — ${reason}` : ""}` : `إلغاء تمديد تسليم ${where}`;
+    res.json({ approval: saved });
+  });
+});
+
+/**
+ * ── طلبُ تمديد من القسم (R17) ──────────────────────────────────────────────
+ *
+ * القسمُ الذي يرى موعده يقترب كان لا يملك إلا الهاتف. فيطلب من شريطه بسببٍ
+ * وعدد أيام، ويصل الطلبُ صندوقَ رئيس التسجيل بجانب زرّ «تمديد» مملوءاً.
+ */
+app.post("/api/approvals/extension-request", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const scope = approvalScopeFromBody(req, res); if (!scope) return;
+  const { collegeId, sectionId, termId } = scope;
+  if (!signatureStage(req.user?.Role)) { res.status(403).json({ error: "طلب التمديد من لجنة الجدول أو رئيس القسم." }); return; }
+  if (await refuseIfTermClosed(res, termId)) return;
+  const reason = String(req.body?.reason || "").trim().slice(0, 240);
+  const days = Math.min(60, Math.max(1, Math.round(Number(req.body?.days || 7))));
+  if (reason.length < 3) { res.status(400).json({ error: "اكتب سبب طلب التمديد." }); return; }
+  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
+    const approval = await readApproval(collegeId, sectionId, termId);
+    const deadline = await readDeadlineFor(approval, termId);
+    if (!deadline.effective) { res.status(409).json({ error: "لا موعد تسليمٍ لهذا الفصل — لا شيء يُمدَّد." }); return; }
+    const actor = approvalActor(req);
+    let next: ScheduleApproval = {
+      ...approval,
+      extensionRequest: { by: actor.name, role: String(actor.role || ""), at: new Date().toISOString(), reason, days },
+    };
+    next = withEvent(req, next, "extension-request", `${countOf(days, AR.day)} — ${reason}`);
+    const saved = await Repository.saveScheduleApproval(next);
+    res.locals.auditChanges = `طلب تمديد تسليم ${await approvalScopeLabel(collegeId, sectionId, termId)} ${countOf(days, AR.day)}: ${reason}`;
     res.json({ approval: saved });
   });
 });
@@ -9504,8 +10155,7 @@ async function noteSuggestions(collegeId: number, sectionId: number, termId: num
 
     /* التعارضُ المادّي أدقُّ ما يُقترح: يقول الخانة ويقول مع من. */
     const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
-    for (const item of findConflicts(scopeRows as any, termRows as any)) {
-      if (item.severity !== "high" && item.type !== "duplicate") continue;
+    for (const item of blockingConflicts(scopeRows, termRows, await approvalBlockerOptions())) {
       const ownId = ownIds.has(Number(item.rowId)) ? Number(item.rowId) : Number(item.otherId);
       if (!ownIds.has(ownId)) continue;
       const other = byId.get(Number(item.rowId) === ownId ? Number(item.otherId) : Number(item.rowId));
@@ -9573,6 +10223,8 @@ app.post("/api/schedule-notes", requireAuth, async (req: AuthenticatedRequest, r
   const row = await Repository.getScheduleById(scheduleId);
   if (!row) { res.status(404).json({ error: "الموعد غير موجود" }); return; }
   if (!isScopeAllowed(req, row.AdCollegeId, row.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  /* الملاحظةُ فعلٌ في الدورة، والدورةُ في فصلٍ منتهٍ مغلقة (R23). */
+  if (await refuseIfTermClosed(res, Number(row.AdTermId))) return;
 
   const fromRegistrar = canReviewSubmissions(req.user?.Role);
   /* المصدر يُشتقّ من الصفة، والإذنُ يُقرأ من الدالّة نفسها التي تقرؤها
@@ -9590,9 +10242,14 @@ app.post("/api/schedule-notes", requireAuth, async (req: AuthenticatedRequest, r
 
   /* خانةٌ واحدة، ملاحظةٌ واحدة. النقر مرّتين على القاعة نفسها تصحيحٌ للنصّ،
      لا ملاحظتان تُعالَج إحداهما وتبقى الأخرى معلّقة بلا سبب. */
+  /* وملاحظاتُ القسم لكلٍّ كاتبُها (R12): رئيسُ القسم ورئيسُ اللجنة يكتبان
+     على الخانة نفسها كلٌّ رأيه، وكانت الثانية تمحو الأولى لأن المفتاح كان
+     الجهةَ لا الكاتب. أمّا التسجيل فجهةٌ واحدة تتكلّم بصوتٍ واحد. */
+  const authorId = Number(req.user?.SystemUserId || 0);
   const existing = (await Repository.getScheduleCommentsByScope(row.AdCollegeId, row.AdSectionId, row.AdTermId))
     .find(note => Number(note.scheduleId) === scheduleId && (note.field || "row") === field
-      && note.origin === origin && !note.resolved && Number(note.round || 1) === round);
+      && note.origin === origin && !note.resolved && Number(note.round || 1) === round
+      && (origin !== "department" || Number(note.SystemUserId) === authorId));
 
   const value = noteFieldValue(row, field);
   if (existing) {
@@ -9632,6 +10289,7 @@ app.post("/api/schedule-notes/:id/rebut", requireAuth, async (req: Authenticated
   if (!note) { res.status(404).json({ error: "الملاحظة غير موجودة" }); return; }
   if (!isScopeAllowed(req, note.AdCollegeId, note.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (note.origin !== "registrar") { res.status(409).json({ error: "الردّ يكون على ملاحظات التسجيل." }); return; }
+  if (await refuseIfTermClosed(res, Number(note.AdTermId))) return;
   if (signatureStage(req.user?.Role) === null && !isPowerUser(req)) { res.status(403).json({ error: "الردّ على الملاحظة من القسم." }); return; }
   const text = String(req.body?.text || "").trim().slice(0, 600);
   if (text.length < 3) { res.status(400).json({ error: "اكتب سبب الإبقاء. ردٌّ بلا سببٍ لا يفيد التسجيل." }); return; }
@@ -9658,21 +10316,31 @@ app.post("/api/schedule-notes/:id/verdict", requireAuth, async (req: Authenticat
   if (!isScopeAllowed(req, note.AdCollegeId, note.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (!canReviewSubmissions(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "القرار على الردّ للتسجيل." }); return; }
   if (!note.rebuttal) { res.status(409).json({ error: "لا يوجد ردٌّ من القسم على هذه الملاحظة." }); return; }
+  if (await refuseIfTermClosed(res, Number(note.AdTermId))) return;
   const verdict = String(req.body?.verdict || "");
   if (verdict !== "accepted" && verdict !== "insisted") { res.status(400).json({ error: "القرار إمّا قبولٌ للتبرير وإمّا إصرارٌ على التغيير." }); return; }
+  const at = new Date().toISOString();
+  const outcome = insistOutcome(note, at);
   const updated = verdict === "accepted"
-    ? await Repository.updateScheduleComment(note.id, { rebuttalVerdict: "accepted", resolved: true })
-    /* الإصرار يمحو الردّ: الخانة تعود برتقاليةً تنتظر، لا رماديةً أُجيب عنها. */
-    /* الإصرار يمحو الردّ فعلاً. وكان يُمرَّر `undefined` فيُسقَط قبل الكتابة،
-       فيبقى الردّ وتبقى الخانة رماديةً إلى الأبد ويُقرأ الإصرارُ قبولاً. */
+    ? await Repository.updateScheduleComment(note.id, { rebuttalVerdict: "accepted", resolved: true, resolution: "rebuttal-accepted" })
+    /* ── الإصرارُ يرفع الردَّ من الانتظار، ولا يمحوه (R4) ───────────────────
+     * الخانةُ تعود برتقاليةً تنتظر — والردُّ يُنقل إلى سجلّ الردود بدل أن
+     * يُمحى، فتبقى الحجّةُ مقروءةً لمن يسأل بعد شهرين: قال القسم كذا، وأصرّ
+     * التسجيل. والملاحظةُ تُعدّ مفتوحةً في أيّ جولةٍ كانت، فيُرجَع بها. */
     : await Repository.updateScheduleComment(note.id, {
         rebuttalVerdict: "insisted",
-        /* كل إصرارٍ بعد ردّ يُعدّ: الخلافُ الذي تكرّر ثلاثاً لم يعد خلافاً على
-           قاعة، ومكانُه فوق مستوى الاثنين. */
-        insistCount: Number(note.insistCount || 0) + 1,
+        rebuttalHistory: [...(note.rebuttalHistory || []), {
+          ...note.rebuttal!, insistedAt: at,
+          insistedBy: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+        }],
+        /* كل إصرارٍ بعد ردّ يُعدّ، والثالثُ يُسجَّل لحظتُه (R19): من هنا يظهر
+           الخلافُ لرئيس القسم في شريطه، فتصدق الشاشةُ حين تقول إنه يُعرض له. */
+        ...outcome,
       }, ["rebuttal"]);
-  res.locals.auditChanges = verdict === "accepted" ? "قبول تبرير القسم" : "إصرار التسجيل على التغيير";
-  res.json({ note: updated });
+  const escalatedNow = verdict === "insisted" && Boolean(outcome.escalatedAt) && !note.escalatedAt;
+  res.locals.auditChanges = verdict === "accepted" ? "قبول تبرير القسم"
+    : `إصرار التسجيل على التغيير${escalatedNow ? " — رُفع الخلاف إلى رئيس القسم" : ""}`;
+  res.json({ note: updated, escalated: escalatedNow });
 });
 
 /** حذف ملاحظةٍ كتبها صاحبها قبل الإرجاع. تراجعٌ عن نقرة، لا أكثر. */
@@ -9714,10 +10382,53 @@ app.delete("/api/schedule-notes/:id", requireAuth, async (req: AuthenticatedRequ
  * النطاق هنا هو النطاق في كل مكان — لا يرى أحدٌ إشعاراً عن قسمٍ خارج نطاقه.
  */
 const REGISTRAR_NOTIFY_ROLES = new Set(["registrarHead", "registrarStaff"]);
-app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const terms = await Repository.getTerms();
-  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
-  if (!termId) { res.json({ termId: 0, items: [] }); return; }
+/**
+ * ── الجرس لفصلين: الجاري، وفصل التخطيط (N18) ────────────────────────────────
+ *
+ * دورةُ الاعتماد تجري غالباً على الفصل التالي والجاري يُدرَّس. فيُقرأ الجرس
+ * للجاري ولفصل التخطيط (planningTermCandidates في termSequence.ts: أحدثُ فصلٍ
+ * لم ينتهِ وفيه نشاط)، وكلُّ بندٍ من فصل التخطيط يحمل اسمَ فصله ومعرّفه.
+ * ومن سأل عن فصلٍ بعينه (termId) يُجاب عنه وحده.
+ */
+/* مجموعُ كشف الطلبة لكل فصل، محفوظاً دقيقة — القاعدة في src/server/notificationCache.ts.
+   يُمحى عند كتابة الكشف، ووصول استبيان، ونبضِ نسخةٍ أخرى. والمفتاحُ يحمل جلسة
+   العرض التجريبي: لكلِّ جلسةٍ بياناتُها. */
+const studentQueueMemo = createTtlMemo<Map<string, StudentQueueEntry>>({ ttlMs: 60_000 });
+function studentQueueForTerm(termId: number): Promise<Map<string, StudentQueueEntry>> {
+  const key = `${Repository.currentDemoSessionId() || ""}:${termId}`;
+  return studentQueueMemo.get(key, async () => {
+    const [termNeeds, allCourses] = await Promise.all([Repository.getStudentNeedsForTerm(termId), Repository.getCourses()]);
+    return studentQueueAggregate(termNeeds as any[], allCourses as any[]);
+  });
+}
+
+/* موانعُ القسم المعتمد في جرس العميدين (N20): كانت تُسأل بـblockingConflictCount
+   لكل قسمٍ معتمد مع كل نداء — قراءتان لجدول الفصل وفحصُ تعارضٍ كامل لكل قسم.
+   فصار جدولُ الفصل الذي قرأه الجرس مرّةً يُعدّ لكل قسمٍ في الذاكرة (كما يفعل
+   الوارد)، ويُحفظ العدُّ لكل فصلٍ وقسم حتى يتغيّر جدولٌ (onSchedulesInvalidated
+   ونبضُ النسخ الأخرى) أو تمضي دقيقة. */
+const bellBlockingMemo = createTtlMemo<number>({ ttlMs: 60_000 });
+onSchedulesInvalidated(() => bellBlockingMemo.invalidate());
+function bellBlockingCount(collegeId: number, sectionId: number, termId: number, termRows: any[]): Promise<number> {
+  const key = `${Repository.currentDemoSessionId() || ""}:${termId}:${collegeId}:${sectionId}`;
+  return bellBlockingMemo.get(key, async () => {
+    const scopeRows = termRows.filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId);
+    return countBlockingConflicts(scopeRows, termRows, await approvalBlockerOptions());
+  });
+}
+
+async function bellPlanningTermId(terms: any[]): Promise<number> {
+  for (const candidate of planningTermCandidates(terms as any)) {
+    const [approvals, rows] = await Promise.all([
+      Repository.getScheduleApprovalsForTerm(candidate),
+      Repository.getSchedulesByScope({ termId: candidate }),
+    ]);
+    if (approvals.length || rows.length) return candidate;
+  }
+  return 0;
+}
+
+async function notificationItemsForTerm(req: AuthenticatedRequest, termId: number) {
   const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
   const [approvals, term, colleges, sections] = await Promise.all([
     Repository.getScheduleApprovalsForTerm(termId),
@@ -9730,7 +10441,9 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
   const inScope = (sections as any[]).filter(row =>
     req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
-  const today = new Date().toISOString().slice(0, 10);
+  /* «اليوم» بتوقيت الكويت كما في الوارد (R15): بين منتصف الليل والثالثة فجراً
+     كان الجرسُ يعدّ الأمسَ يوماً جارياً، فيقول «يومٌ باقٍ» والوارد «انقضى». */
+  const today = kuwaitDateISO();
   const department = role === "committeeChair" || role === "departmentHead";
   /* ── طلباتُ الأساتذة تصل من يعمل على الجدول، أيّاً كانت صفته ───────────────
    * كانت تُحسب للجنة ورئيس القسم وحدهما، وبقسم الطلب لا بقسم البند: فطلبٌ
@@ -9778,40 +10491,33 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
      يُعدّ لمن يقرّر فيه: اللجنة (من يعمل على الجدول) والتسجيل. والمقرّرُ يُنسب
      إلى القسم المالك له، كما يُعرض ويُكتب في الكشف نفسه. */
   const registrarReader = REGISTRAR_NOTIFY_ROLES.has(role);
-  const studentQueueByScope = new Map<string, { pendingCommittee: number; awaitingRegistration: number; oldestPendingAt?: string; latestApprovedAt?: string }>();
-  if (handlesRequests || registrarReader) {
-    const [termNeeds, allCourses] = await Promise.all([Repository.getStudentNeedsForTerm(termId), Repository.getCourses()]);
-    const ownerOf = new Map((allCourses as any[]).map(row => [Number(row.AdCourseId), Number(row.AdSectionId || 0)]));
-    for (const need of termNeeds as any[]) {
-      const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
-      for (const id of need.courseIds || []) {
-        const owner = ownerOf.get(Number(id)) || 0;
-        if (!owner) continue;
-        const key = `${Number(need.AdCollegeId)}:${owner}`;
-        const entry = studentQueueByScope.get(key) || { pendingCommittee: 0, awaitingRegistration: 0 };
-        const state: any = states.get(Number(id));
-        if (!state) {
-          entry.pendingCommittee += 1;
-          const at = String(need.createdAt || "");
-          if (at && (!entry.oldestPendingAt || at < entry.oldestPendingAt)) entry.oldestPendingAt = at;
-        } else if (state.state === "awaiting-registration") {
-          entry.awaitingRegistration += 1;
-          if (!entry.latestApprovedAt || String(state.at || "") > entry.latestApprovedAt) entry.latestApprovedAt = String(state.at || "");
-        }
-        studentQueueByScope.set(key, entry);
-      }
-    }
-  }
+  const studentQueueByScope = handlesRequests || registrarReader
+    ? await studentQueueForTerm(termId)
+    : new Map<string, StudentQueueEntry>();
+  const watchesSubmission = registrarReader || role === "registrarDean" || role === "dean" || role === "viceDean";
   const active = inScope.filter(row => {
     const key = `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`;
-    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || studentQueueByScope.has(key) || department;
+    /* من يُحاسِب على التسليم (التسجيل، والعميدان، وعميد التسجيل) يُعدّ له كلُّ
+       قسمٍ في نطاقه — قسمٌ لم يكتب شيئاً ولم يبدأ الدورة هو أوّلُ من يتأخّر،
+       وكان يسقط من الجرس لأنه بلا صفوف ولا سجلّ (N21). */
+    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || studentQueueByScope.has(key) || department || watchesSubmission;
   });
   const scopes = await Promise.all(active.map(async row => {
     const collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
     const approval = stored.get(`${collegeId}:${sectionId}`) || emptyApproval(collegeId, sectionId, termId);
     const rowCount = rowsPer.get(`${collegeId}:${sectionId}`) || 0;
-    const openRegistrarNotes = department && approval.status === "returned"
-      ? (await notesWithState(collegeId, sectionId, termId)).filter(note => note.origin === "registrar" && note.state === "open").length
+    /* ملاحظاتُ التسجيل المفتوحة في أي حال (N19): تُكتب والجدول قيد الإعداد أو
+       بعد اعتماده أيضاً، وكان القسم لا يُنبَّه بها إلا بعد «أُرجع». */
+    const deptNotes = department && (stored.has(`${collegeId}:${sectionId}`))
+      ? (await notesWithState(collegeId, sectionId, termId)).filter(isOpenRegistrarNote)
+      : [];
+    const openRegistrarNotes = deptNotes.length;
+    /* ملاحظةٌ أصرّ عليها التسجيل ثلاثاً أو صُعّدت (N24) — تُقرأ بحذر: حقلُ
+       التصعيد يضيفه مسارٌ آخر. */
+    const escalatedNotes = deptNotes.filter((note: any) => Number(note.insistCount || 0) >= 3 || Boolean(note.escalatedAt)).length;
+    /* قسمٌ معتمد ظهر فيه مانع (N20) — للعميدين وحدهما، وللمعتمد وحده. */
+    const blockingConflicts = (role === "dean" || role === "viceDean") && approval.status === "accepted"
+      ? await bellBlockingCount(collegeId, sectionId, termId, termRows as any[])
       : 0;
     const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
     const openRequests = pendingRequests.reduce((sum, entry) => sum + entry.count, 0);
@@ -9823,7 +10529,7 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
       awaitingRegistration: registrarReader && !isFullySigned(approval) ? 0 : queue.awaitingRegistration,
     } : undefined;
     return {
-      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue,
+      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue, escalatedNotes, blockingConflicts,
       collegeName: collegeName.get(collegeId) || "",
       sectionName: String(row.AdSectionName || ""),
       deadline: readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today),
@@ -9833,13 +10539,34 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     role, scopes,
     deadline: readDeadline({ termDeadline }, today),
   });
-  res.json({ termId, termName: String((term as any)?.AdTermName || ""), items });
+  return { term, items };
+}
+
+app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const explicit = Number(req.query.termId || 0);
+  const termId = explicit || currentTermId(terms as any);
+  if (!termId) { res.json({ termId: 0, items: [] }); return; }
+  const current = await notificationItemsForTerm(req, termId);
+  const termName = String((current.term as any)?.AdTermName || "");
+  let items = current.items.map(item => ({ ...item, termId, termName }));
+  const planning = explicit ? 0 : await bellPlanningTermId(terms as any[]);
+  let planningName = "";
+  if (planning && planning !== termId) {
+    const next = await notificationItemsForTerm(req, planning);
+    planningName = String((next.term as any)?.AdTermName || "");
+    items = [...items, ...next.items.map(item => ({
+      ...item, id: `term-${planning}:${item.id}`, termId: planning, termName: planningName,
+      detail: [planningName, item.detail].filter(Boolean).join(" — "),
+    }))];
+    const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
+    items.sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
+  }
+  res.json({ termId, termName, planningTermId: planning || 0, planningTermName: planningName, items });
 });
 
-app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const terms = await Repository.getTerms();
-  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
-  if (!termId) { res.json({ count: 0 }); return; }
+/** عدّادُ فصلٍ واحد — يُجمع للجاري ولفصل التخطيط (N18). */
+async function approvalBadgeForTerm(req: AuthenticatedRequest, termId: number): Promise<{ count: number; kind?: string }> {
 
   const approvals = (await Repository.getScheduleApprovalsForTerm(termId))
     .filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
@@ -9847,21 +10574,40 @@ app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, r
   /* من يفتح الوارد يرى عدّاده، ولو لم يقرّر فيه: سؤالُ عميد التسجيل هو
      «كم جدولاً ينتظر؟»، لا «أيّها أقبل؟». */
   if (canReviewSubmissions(req.user?.Role) || watchesInbox(req.user?.Role)) {
-    res.json({ count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" });
-    return;
+    return { count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" };
   }
-  if (signatureStage(req.user?.Role)) {
+  const stage = signatureStage(req.user?.Role);
+  if (stage) {
+    /* ما ينتظر هذا الشخص بعينه (N17/N19):
+       - رئيس القسم: كلُّ جدولٍ وقّعته اللجنة وينتظر توقيعه («committee») —
+         كان العدّاد يتجاهله، وهو أوّلُ ما يُطلب منه.
+       - الإضافاتُ التي تنتظر إقراره.
+       - ملاحظاتُ التسجيل المفتوحة في أي حال — لا في «أُرجع» وحده: ملاحظةٌ
+         كُتبت والجدول قيد الإعداد أو بعد اعتماده ملاحظةٌ تنتظر ردّاً أيضاً. */
     let open = 0;
     for (const approval of approvals) {
-      if (approval.status !== "returned" && !approval.pendingAdditions.length) continue;
+      if (stage === "head" && awaitsHeadSignature(approval)) open += 1;
+      open += pendingAdditionTotal(approval);
+      /* والجدولُ عند التسجيل ملاحظاتُه مراجعةٌ جارية لا يملك القسم فيها فعلاً. */
+      if (approval.status === "submitted") continue;
       const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
-      open += notes.filter(note => note.origin === "registrar" && note.state === "open").length;
-      open += approval.pendingAdditions.length;
+      open += countOpenRegistrarNotes(notes);
     }
-    res.json({ count: open, kind: "notes" });
-    return;
+    return { count: open, kind: "notes" };
   }
-  res.json({ count: 0 });
+  return { count: 0 } as { count: number; kind?: string };
+}
+
+app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const explicit = Number(req.query.termId || 0);
+  const termId = explicit || currentTermId(terms as any);
+  if (!termId) { res.json({ count: 0 }); return; }
+  const current = await approvalBadgeForTerm(req, termId);
+  const planning = explicit ? 0 : await bellPlanningTermId(terms as any[]);
+  if (!planning || planning === termId) { res.json(current); return; }
+  const next = await approvalBadgeForTerm(req, planning);
+  res.json({ count: current.count + next.count, kind: current.kind || next.kind, planningTermId: planning });
 });
 
 /** سطرُ قسمٍ في صندوق الوارد: حالته وموعده وملاحظاته وموانعه في نداءٍ واحد. */
@@ -9869,14 +10615,21 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
   const termId = Number(req.query.termId || 0);
   if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
 
-  const [approvals, term, colleges, sections] = await Promise.all([
+  const [storedApprovals, term, colleges, sections] = await Promise.all([
     Repository.getScheduleApprovalsForTerm(termId),
     Repository.getTermById(termId),
     Repository.getColleges(),
     Repository.getSections(),
   ]);
+  /* ما عُلّم بتعديلٍ ينتظر جولته يُصفّى قبل أن يُعرض (مراجعة 6) — نادر، فلا يُقرأ
+     الفصلُ ثانيةً إلا إن وُجد. */
+  const marked = storedApprovals.filter(row => row.amendmentPending);
+  for (const row of marked) await settlePendingAmendment(Number(row.AdCollegeId), Number(row.AdSectionId), termId);
+  const approvals = marked.length ? await Repository.getScheduleApprovalsForTerm(termId) : storedApprovals;
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
-  const today = new Date().toISOString().slice(0, 10);
+  /* «اليوم» بتوقيت الكويت، لا بالساعة العالمية (R15). */
+  const now = new Date();
+  const today = kuwaitDateISO(now);
   const collegeName = new Map(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
   const sectionName = new Map(sections.map((row: any) => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
 
@@ -9901,9 +10654,10 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
    * للمقارنة — ثم يُوزَّع على الأقسام في الذاكرة. والعدد ثابتٌ مهما كثرت
    * الأقسام، وهو ما طُلب صراحةً: الأقسام كثيرة.
    */
-  const [allTermRows, allNotes] = await Promise.all([
+  const [allTermRows, allNotes, blockerOptions] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
     Repository.getScheduleCommentsForTerm(termId),
+    approvalBlockerOptions(),
   ]);
   const rowsByScope = new Map<string, any[]>();
   for (const row of allTermRows as any[]) {
@@ -9933,12 +10687,12 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
   const rows = visible.map(approval => {
     const key = `${approval.AdCollegeId}:${approval.AdSectionId}`;
     const scheduleRows = rowsByScope.get(key) || [];
-    const blocking = countBlockingConflicts(scheduleRows, allTermRows as any[]);
+    const blocking = countBlockingConflicts(scheduleRows, allTermRows as any[], blockerOptions);
     const scopeRowById = rowByIdForScope(key);
     const notes = (notesByScope.get(key) || [])
       .filter(note => note.origin === "registrar" || note.origin === "department")
       .map(note => ({ ...note, state: noteState(note, scopeRowById.get(Number(note.scheduleId))) }));
-    const deadline = readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today);
+    const deadline = readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, now);
     return {
       collegeId: approval.AdCollegeId,
       sectionId: approval.AdSectionId,
@@ -9949,13 +10703,20 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
       round: approval.currentRound,
       rowCount: scheduleRows.length,
       blockingConflicts: blocking,
-      openNotes: notes.filter(note => note.state === "open").length,
-      answeredNotes: notes.filter(note => note.state === "answered").length,
-      pendingAdditions: approval.pendingAdditions.length,
+      /* من العدّاد الواحد (R4): ملاحظاتُ التسجيل وحدها. ملاحظةُ رئيس القسم
+         للجنته داخليةٌ لا تنتظر التسجيل ولا تُضخّم عدّاده. */
+      openNotes: countOpenRegistrarNotes(notes),
+      answeredNotes: countAnsweredRegistrarNotes(notes),
+      pendingAdditions: pendingAdditionTotal(approval),
       deadline,
+      /* طلبُ تمديدٍ من القسم، والتاريخُ الذي يُقترح لمنحه (R17). */
+      extensionRequest: approval.extensionRequest,
+      suggestedExtensionUntil: approval.extensionRequest
+        ? suggestedExtensionDate(deadline.effective, approval.extensionRequest.days, today)
+        : undefined,
       /* متأخّر: انقضى موعده ولم يُسلّم بعد. حالةٌ تُحسب ولا تُخزَّن، لأنها
          تتغيّر بمرور اليوم لا بفعل أحد. */
-      late: deadline.past && approval.currentRound === 0,
+      late: isLate({ approvalStatus: approval.status, submittedRounds: approval.currentRound, deadline: termDeadline, extension: approval.extensionUntil }),
       priority: inboxPriority(approval, blocking),
       updatedAt: approval.updatedAt,
     };
@@ -9986,7 +10747,7 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
  * والمحذوف والمعدّل. لقطات الجولات تبقى بديلاً للفصول القديمة التي لم
  * تُستورد لها وثيقة معتمدة.
  */
-app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
@@ -9997,6 +10758,15 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
      يملك الناظر أن يصلحه. */
   const requestedRound = Number(req.query.round || 0);
   const round = requestedRound > 0 && requestedRound <= approval.currentRound ? requestedRound : approval.currentRound;
+  /* ── أساسُ المقارنة يُختار ولا يُفرض (R9) ─────────────────────────────────
+   * كان وجودُ وثيقة الهيئة يجعل المقارنة بها دائماً، أيّاً كانت الجولة
+   * المطلوبة — فمن فتح «الجولة ٢» رأى الفرق عن ملف PDF لا عمّا رآه التسجيل.
+   * فالأساس `round` متى طُلبت جولةٌ بعينها، و`authority` حين يُطلب صراحةً أو
+   * لا تُطلب جولة. */
+  const baselineParam = String(req.query.baseline || "");
+  const wantsAuthority = baselineParam === "authority" || (baselineParam !== "round" && !requestedRound);
+  /* جولةٌ مضت تُقرأ بين أساسها ونهايتها، لا بين أساسها والجدول الحيّ. */
+  const roundEndId = roundEndVersionId(approval, round);
 
   /**
    * ── الأساس الاحتياطي للفصول بلا وثيقة هيئة ─────────────────────────────
@@ -10010,19 +10780,24 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
    * يجد جدولاً كاملاً مطلوباً منه أن يقرأه من أوّله. فيُمسح إلى الوراء حتى
    * تُوجد نسخة.
    */
-  const roundBaselineId = approval.rounds
-    .filter(item => item.number < round && item.reviewedVersionId)
-    .sort((a, b) => b.number - a.number)[0]?.reviewedVersionId;
+  const roundBaselineId = roundBaselineVersionId(approval, round);
 
-  const [roundBaseline, live, instructors, courses, notes, suggestions, authorityDraft] = await Promise.all([
+  const [roundBaseline, liveRows, roundEnd, instructors, courses, notesRaw, suggestions, authorityFound] = await Promise.all([
     roundBaselineId ? Repository.getScheduleVersionById(roundBaselineId) : Promise.resolve(undefined),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    roundEndId ? Repository.getScheduleVersionById(roundEndId) : Promise.resolve(undefined),
     Repository.getInstructors(),
     Repository.getCourses(),
     notesWithState(collegeId, sectionId, termId),
     noteSuggestions(collegeId, sectionId, termId),
     authorityDraftForScope(collegeId, sectionId, termId),
   ]);
+  const authorityDraft = wantsAuthority ? authorityFound : undefined;
+  /* «الجدول» في جولةٍ مضت هو ما انتهت عليه تلك الجولة. */
+  const live = (roundEnd?.rows as any[]) || liveRows;
+  /* ملاحظاتُ القسم لكلٍّ كاتبُها (R12): الشاشةُ تعرف ملاحظتَك من ملاحظة زميلك. */
+  const viewerId = Number(req.user?.SystemUserId || 0);
+  const notes = notesRaw.map(note => ({ ...note, mine: Number(note.SystemUserId) === viewerId }));
 
   /**
    * ── أساسٌ لا يسقط إلى العدم ──────────────────────────────────────────────
@@ -10209,6 +10984,11 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
     round,
     rounds: approval.rounds,
     deadline,
+    /* ما يُرسله القرار ليُعرف أنه وقع على ما رُئي (R6). */
+    rowCount: liveRows.length,
+    /* أوثيقةُ الهيئة متاحةٌ أساساً، ولو لم تُختر الآن. */
+    authorityAvailable: Boolean(authorityFound),
+    viewingPastRound: round < approval.currentRound,
     baselineVersionId,
     /* من أين تبدأ المقارنة: وثيقة الهيئة، أو نسخة جولة، أو لقطة محفوظة، أو
        لا شيء. والشاشة تقول ذلك بدل أن يستنتجه القارئ من كثرة «المضاف». */
@@ -10230,7 +11010,8 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
       const instructors = await Repository.getInstructors();
       return blockingConflictDetails(scopeRows as any[], termRows as any[],
         new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")])),
-        new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])));
+        new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
+        await approvalBlockerOptions());
     })(),
     regulationNotices: await regulationNoticesForScope(collegeId, sectionId, termId),
   });
@@ -10288,7 +11069,7 @@ app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asyn
   const issues = await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
-  const conflictRows = findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate");
+  const conflictRows = blockingConflicts(rows, [...external, ...rows], await approvalBlockerOptions());
   const rowIssues = mapSmartIssuesToRows(rows, issues, conflictRows);
   const issueRowIds = Object.keys(rowIssues).map(Number);
   const updated = await Repository.updateScheduleDraft(draft.id, { rows });
@@ -10307,7 +11088,7 @@ app.delete("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asy
   const issues = rows.length ? await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"}) : [];
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
-  const conflictRows = rows.length ? findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate") : [];
+  const conflictRows = rows.length ? blockingConflicts(rows, [...external, ...rows], await approvalBlockerOptions()) : [];
   const rowIssues = rows.length ? mapSmartIssuesToRows(rows, issues, conflictRows) : {};
   const issueRowIds = Object.keys(rowIssues).map(Number);
   const updated = await Repository.updateScheduleDraft(draft.id, { rows });
@@ -10324,7 +11105,7 @@ app.delete("/api/intelligence/drafts/:id/rows", requirePermission(7), async (req
 });
 
 app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="publish"){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
+  if(!confirmTokens(req).has("publish")){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
   if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
   if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
@@ -10337,8 +11118,11 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
 
   /* النشر من مسودةٍ مستوردة هو الاستيراد نفسه واصلاً إلى الجدول: هنا يُقاس
      بالموعد، لا عند رفع الملف — فقد يُرفع الملف قبل الموعد ويُنشر بعده. */
-  if (draft.source === "import" || draft.importLayout === "authority-pdf") {
-    const importRefusal = await wholesaleRefusal(draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, { kind: "import" });
+  const draftWholesaleKind: "import" | "copy-term" | undefined =
+    draft.source === "import" || draft.importLayout === "authority-pdf" ? "import"
+      : /^بداية الفصل/.test(String(draft.name || "")) ? "copy-term" : undefined;
+  if (draftWholesaleKind) {
+    const importRefusal = await wholesaleRefusal(draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, { kind: draftWholesaleKind });
     if (importRefusal) { res.status(409).json({ error: importRefusal, code: "deadline-wholesale" }); return; }
   }
   /* ── «فصلٌ فارغ» يُقاس لحظة النشر لا لحظة الحفظ ─────────────────────────
@@ -10347,10 +11131,15 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   if(draft.importLayout==="authority-pdf"&&draft.status!=="published"){
     const occupiedNow=await Repository.getSchedulesByScope({collegeId:draft.AdCollegeId,sectionId:draft.AdSectionId,termId:draft.AdTermId});
     if(occupiedNow.length){
-      res.status(409).json({error:`أُضيف إلى هذا الفصل ${occupiedNow.length} موعداً بعد حفظ نسخة PDF. نسخ جدول PDF متاح للفصل الفارغ فقط؛ لم يُنشر شيء ولم يُحذف شيء.`,code:"PDF_TARGET_TERM_OCCUPIED"});
+      res.status(409).json({error:`أُضيف إلى هذا الفصل ${countOf(occupiedNow.length, AR.appointment)} بعد حفظ نسخة PDF. نسخ جدول PDF متاح للفصل الفارغ فقط؛ لم يُنشر شيء ولم يُحذف شيء.`,code:"PDF_TARGET_TERM_OCCUPIED"});
       return;
     }
   }
+  /* ما تغيّر في الجدول بعد حفظ المسودة يُسمّى قبل أن يُمحى. */
+  const draftOverwrite = draft.status !== "published"
+    ? await scopeOverwriteRefusal(req, draft.AdCollegeId, draft.AdSectionId, draft.AdTermId, draft)
+    : null;
+  if (draftOverwrite) { res.status(409).json(draftOverwrite); return; }
 
   let publishRows=draft.importLayout==="authority-pdf"
     ?assignAuthoritySections(safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId))
@@ -10376,7 +11165,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   if(issues.length){
     const termRows=await Repository.getSchedulesByScope({termId:draft.AdTermId});
     const externalRows=termRows.filter(row=>!(Number(row.AdCollegeId)===draft.AdCollegeId&&Number(row.AdSectionId)===draft.AdSectionId));
-    const conflictRows=findConflicts(publishRows as any,[...externalRows,...publishRows] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+    const conflictRows=blockingConflicts(publishRows,[...externalRows,...publishRows],await approvalBlockerOptions());
     const rowIssues=mapSmartIssuesToRows(publishRows,issues,conflictRows);
     const issueRowIds=Object.keys(rowIssues).map(Number);
     res.status(400).json({error:"لا يمكن نشر المسودة قبل معالجة البيانات",issues,issueRowIds,rowIssues});return;
@@ -10489,7 +11278,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
         code:"schedule-locked",
       });return;
     }
-    const groupDeadline=await wholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,{kind:"import"});
+    const groupDeadline=await wholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,await replacementAction(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows,draftWholesaleKind));
     if(groupDeadline){
       res.status(409).json({
         error:`«${group.scope.siteLabel}» — ${groupDeadline} لم يُنشر أي صف.`,
@@ -10540,14 +11329,16 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   }
 
   /* نقاط الأمان أولاً ولكل موقع، حتى يكون لكل جدول ما يعود إليه. */
+  const publishVersions=new Map<any,Awaited<ReturnType<typeof captureScopeVersion>>>();
   for(const group of groups){
-    await captureScopeVersion(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish");
+    publishVersions.set(group,await captureScopeVersion(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish"));
   }
   const written:any[]=[];
   let publication:any=null;
   const publishedScopes:Array<{siteLabel:string;count:number}>=[];
   for(const group of groups){
     const rows=await Repository.replaceScheduleScope(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows);
+    await recordVersionAfter(publishVersions.get(group),rows as any[]);
     /* وكلُّ موقعٍ يُبلَّغ عن نشره: جدولٌ مقبولٌ يعود جولةً جديدة، وصفٌّ يصل
        بعد توقيع رئيس القسم ينتظر إقراره — في موقعه هو، لا في موقع المسودة. */
     await noteScheduleMutation(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,{kind:"add",rows:rows as any[]});
@@ -10567,7 +11358,7 @@ app.get("/api/intelligence/versions/compare", requirePermission(7), async (req: 
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
 });
 app.post("/api/intelligence/versions/:id/restore", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="restore"){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
+  if(!confirmTokens(req).has("restore")){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const restoreOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(restoreOverwrite){res.status(409).json(restoreOverwrite);return;} const restoreDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(restoreDeadline){res.status(409).json({error:restoreDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} const restoreVersion=await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await recordVersionAfter(restoreVersion,rows as any[]); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
 });
 
 app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -10602,9 +11393,32 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: Aut
 });
 
 app.post("/api/intelligence/import-preview", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const raw=Array.isArray(req.body?.rows)?req.body.rows:[]; if(!raw.length){res.status(400).json({error:"الملف لا يحتوي صفوفاً قابلة للقراءة"});return;} if(raw.length>450){res.status(400).json({error:"الملف أكبر من الحد الآمن للاستيراد"});return;} const [courses,instructors,operationalImportIds]=await Promise.all([Repository.getCourses(),Repository.getInstructors(),Repository.getOperationalCourseIds(sectionId)]); const sectionCourses=courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId&&operationalImportIds.has(Number(c.AdCourseId))); const byCode=new Map(sectionCourses.map(c=>[String(c.CourseCode).trim().toLowerCase(),c])); const byCivil=new Map(instructors.map(i=>[String(i.AdInstructorCivil).trim(),i])); const byName=new Map(instructors.map(i=>[String(i.AdInstructorName).trim().toLowerCase(),i])); const issues:string[]=[]; const rows:any[]=[];
-  raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=normalizeClock(String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5)),end=normalizeClock(String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5));const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId,{resolveHistorical:true}); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const raw=Array.isArray(req.body?.rows)?req.body.rows:[]; if(!raw.length){res.status(400).json({error:"الملف لا يحتوي صفوفاً قابلة للقراءة"});return;} if(raw.length>450){res.status(400).json({error:"الملف أكبر من الحد الآمن للاستيراد"});return;} const [courses,instructors,operationalImportIds]=await Promise.all([Repository.getCourses(),Repository.getInstructors(),Repository.getOperationalCourseIds(sectionId)]); const sectionCourses=courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId&&operationalImportIds.has(Number(c.AdCourseId))); const byCode=new Map(sectionCourses.map(c=>[String(c.CourseCode).trim().toLowerCase(),c])); const byCivil=new Map(instructors.map(i=>[normalizeCivilId(i.AdInstructorCivil),i])); const byName=new Map(instructors.map(i=>[String(i.AdInstructorName).trim().toLowerCase(),i])); const issues:string[]=[]; const rows:any[]=[];
+  raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=normalizeCivilId(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"");const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=normalizeClock(String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5)),end=normalizeClock(String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5));const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId,{resolveHistorical:true}); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
 });
+
+/* ── قائمة النسخ لا تحمل صفوفها ──────────────────────────────────────────
+   في Firestore تُقرأ قائمة النسخ بلا لقطاتها عمداً (getScheduleVersions)،
+   فمن يقارن بها يجد نسخةً فارغة: «الملخص» قال إن كل موعد تغيّر، وسجلّ الأستاذ
+   قال عن كل محاضرة «أُضيفت». ما يحتاج اللقطة يطلبها بمعرّفها. */
+async function hydrateVersionRows<T extends { id: string; rows?: any[]; rowCount?: number }>(versions: T[]): Promise<T[]> {
+  return Promise.all(versions.map(async version => {
+    /* rowCount 0 is a genuinely empty snapshot; an older document without a
+       count is fetched too, since an empty list there proves nothing. */
+    if ((version.rows && version.rows.length) || version.rowCount === 0) return version;
+    const full = await Repository.getScheduleVersionById(version.id).catch(() => undefined);
+    return full ? { ...version, rows: full.rows || [] } : version;
+  }));
+}
+
+/* ما تغيّر منذ آخر نقطة أمان — القراءة نفسها للملخص وللطبقة الحية. */
+async function briefChangedSince(collegeId: number, sectionId: number, termId: number, rows: any[]): Promise<number | undefined> {
+  const [latest] = await hydrateVersionRows(await Repository.getScheduleVersions(collegeId, sectionId, termId, 1));
+  if (!latest) return undefined;
+  const before = new Map((latest.rows || []).map((r: any) => [r.id, rowSignatureServer(r)]));
+  return rows.filter(r => before.get(r.id) !== rowSignatureServer(r)).length
+    + (latest.rows || []).filter((r: any) => !rows.some(x => x.id === r.id)).length;
+}
 
 function rowSignatureServer(row:any){return `${row.AdCourseId||0}:${row.SCode||""}:${row.AdInstructorId||0}:${activeDays(row).join(",")}:${row.fstarttime||""}:${row.fendtime||""}:${row.AdRoomCode||""}|${row.AdRoomHall||""}`}
 
@@ -10657,7 +11471,11 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
   const topology = buildConflictTopology(rows, universe, courses, instructors); await breathe();
   /* Cheap by comparison: every reading it needs is memoised above and answers
      from cache, so it is left to run without a further pause. */
-  const brief = buildOneMinuteBrief(rows, universe, courses, instructors);
+  /* The one-minute brief was also served alone at /api/intelligence/brief,
+     which no screen ever called — so the living layer's «ملخص الدقيقة» never
+     said what changed. It now carries the same «since the last safety point»
+     reading, from the same helper. */
+  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows));
   const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
   const livingPayload = {
     context:{collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
@@ -10665,7 +11483,9 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
     topology,brief,
     memory:buildDecisionMemoryInsight(memories),
     constraints:{count:constraints.filter(c=>c.enabled).length},
-    capabilities:{powerAdmin:true,emergency:true,genesis:true,decisionMemory:true,meetingIntelligence:true}
+    /* A flag says what a screen can actually reach. The emergency planner has
+       an endpoint but no screen yet, so it is not advertised as available. */
+    capabilities:{powerAdmin:true,emergency:false,genesis:true,decisionMemory:true,meetingIntelligence:true,brief:true}
   };
   if (!isDemoLiving) livingResponseCache.set(livingKey, { at: Date.now(), body: JSON.stringify(livingPayload) });
   res.json(livingPayload);
@@ -10716,16 +11536,16 @@ app.post("/api/intelligence/context-copilot", requirePermission(7), async (req: 
   const {collegeId,sectionId,termId}=smartContextFrom(req); const contextType=String(req.body?.contextType||"schedule"),action=String(req.body?.action||"improve"); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول في هذا النطاق"});return;}
   if(contextType==="schedule"){
-    const row=rows.find(r=>r.id===Number(req.body?.rowId||req.body?.contextId||0)); if(!row){res.status(404).json({error:"الموعد غير موجود في هذا القسم"});return;} const solutions=conflictSolutions(row,universe,5); const options=solutions.slice(0,3).map(sol=>{const candidate={...row,fstarttime:sol.start,fendtime:sol.end,buildingId:sol.buildingId,roomId:sol.roomId,AdRoomCode:sol.roomCode,AdRoomHall:sol.roomHall,locationStatus:"VERIFIED" as const};const why=explainScheduleDecision(rows,universe,candidate,courses,instructors,constraints);return{rank:sol.rank,title:sol.conflicts?`بديل غير قابل للحفظ (${sol.conflicts} مانع)`:"بديل صالح",candidate,verdict:why.verdict,delta:why.delta,positives:why.positives.slice(0,3),tradeoffs:why.tradeoffs.slice(0,2)}}); const best=options[0]; res.json({title:`مساعد القرار · ${row.AdCourseName} / شعبة ${row.SCode}`,summary:best?`أقوى تحسين حالي: ${best.verdict}. الجودة ${best.delta.score>=0?"+":""}${best.delta.score}، وموانع الحفظ ${best.delta.conflicts>=0?"+":""}${best.delta.conflicts}.`:"لا يظهر بديل آمن أفضل من الموعد الحالي.",context:{type:"schedule",rowId:row.id},options,guardrail:"الاقتراحات لا تحفظ شيئاً؛ افتح البديل في نموذج التعديل إذا قررت استخدامه."}); return;
+    const row=rows.find(r=>r.id===Number(req.body?.rowId||req.body?.contextId||0)); if(!row){res.status(404).json({error:"الموعد غير موجود في هذا القسم"});return;} const solutions=conflictSolutions(row,universe,5); const options=solutions.slice(0,3).map(sol=>{const candidate={...row,fstarttime:sol.start,fendtime:sol.end,buildingId:sol.buildingId,roomId:sol.roomId,AdRoomCode:sol.roomCode,AdRoomHall:sol.roomHall,locationStatus:"VERIFIED" as const};const why=explainScheduleDecision(rows,universe,candidate,courses,instructors,constraints);return{rank:sol.rank,title:sol.conflicts?`بديل غير قابل للحفظ (${countOf(sol.conflicts, AR.blocker)})`:"بديل صالح",candidate,verdict:why.verdict,delta:why.delta,positives:why.positives.slice(0,3),tradeoffs:why.tradeoffs.slice(0,2)}}); const best=options[0]; res.json({title:`مساعد القرار · ${row.AdCourseName} / شعبة ${row.SCode}`,summary:best?`أقوى تحسين حالي: ${best.verdict}. الجودة ${best.delta.score>=0?"+":""}${best.delta.score}، وموانع الحفظ ${best.delta.conflicts>=0?"+":""}${best.delta.conflicts}.`:"لا يظهر بديل آمن أفضل من الموعد الحالي.",context:{type:"schedule",rowId:row.id},options,guardrail:"الاقتراحات لا تحفظ شيئاً؛ افتح البديل في نموذج التعديل إذا قررت استخدامه."}); return;
   }
   if(contextType==="room"){
-    const key=String(req.body?.value||req.body?.contextId||""); const intel=buildRoomResilience(rows,universe); const room=intel.rooms.find(r=>r.key===key)||intel.rooms[0]; if(!room){res.status(404).json({error:"لا توجد بيانات قاعات"});return;} res.json({title:`مساعد القرار · القاعة ${room.code}/${room.hall}`,summary:room.singlePoint?`هذه القاعة نقطة اعتماد حساسة: ${room.sessions} مواعيد و${room.recoverabilityPct}% فقط قابلة للنقل إلى قاعات بديلة بنفس الوقت.`:`اعتماد القسم على هذه القاعة تحت السيطرة؛ نسبة الاسترداد التقديرية ${room.recoverabilityPct}%.`,context:{type:"room",key:room.key},options:intel.rooms.filter(r=>r.key!==room.key&&r.risk<room.risk).slice(0,3).map(r=>({title:`${r.code}/${r.hall}`,detail:`مخاطرة ${r.risk}/100 · استخدام ${r.sessions} مواعيد`})),guardrail:"هذه قراءة تشغيلية؛ التوفر النهائي يُفحص عند نقل كل موعد."});return;
+    const key=String(req.body?.value||req.body?.contextId||""); const intel=buildRoomResilience(rows,universe); const room=intel.rooms.find(r=>r.key===key)||intel.rooms[0]; if(!room){res.status(404).json({error:"لا توجد بيانات قاعات"});return;} res.json({title:`مساعد القرار · القاعة ${room.code}/${room.hall}`,summary:room.singlePoint?`هذه القاعة نقطة اعتماد حساسة: ${countOf(room.sessions, AR.appointment)} و${room.recoverabilityPct}% فقط قابلة للنقل إلى قاعات بديلة بنفس الوقت.`:`اعتماد القسم على هذه القاعة تحت السيطرة؛ نسبة الاسترداد التقديرية ${room.recoverabilityPct}%.`,context:{type:"room",key:room.key},options:intel.rooms.filter(r=>r.key!==room.key&&r.risk<room.risk).slice(0,3).map(r=>({title:`${r.code}/${r.hall}`,detail:`مخاطرة ${r.risk}/100 · استخدام ${countOf(r.sessions, oblique(AR.appointment))}`})),guardrail:"هذه قراءة تشغيلية؛ التوفر النهائي يُفحص عند نقل كل موعد."});return;
   }
   if(contextType==="instructor"){
-    const id=Number(req.body?.value||req.body?.contextId||0); const fairness=buildFairnessEngine(rows,instructors); const prof=fairness.profiles.find(p=>p.id===id)||fairness.profiles[0]; if(!prof){res.status(404).json({error:"لا توجد بيانات أستاذ"});return;} const own=rows.filter(r=>r.AdInstructorId===prof.id); const suggestions=own.map(row=>{const best=conflictSolutions(row,universe,2)[0];return best?{rowId:row.id,course:row.AdCourseName,current:formatScheduleTimeRange(row.fstarttime, row.fendtime),candidate:formatScheduleTimeRange(best.start, best.end),room:`${best.roomCode}/${best.roomHall}`,conflicts:best.conflicts}:null}).filter(Boolean).slice(0,4); res.json({title:`مساعد القرار · ${prof.name}`,summary:`حمله ${prof.weeklyHours} ساعة على ${prof.days} أيام، وإجمالي الفراغ ${prof.gapMinutes} دقيقة. ${prof.deltaFromAverage>0?`أعلى من متوسط القسم بـ${Math.round(prof.deltaFromAverage)} نقطة.`:"ضمن متوسط القسم تقريباً."}`,context:{type:"instructor",id:prof.id},options:suggestions,guardrail:"ضغط أيام الأستاذ يحتاج مراجعة أكاديمية؛ الاقتراحات لا تطبق تلقائياً."});return;
+    const id=Number(req.body?.value||req.body?.contextId||0); const fairness=buildFairnessEngine(rows,instructors); const prof=fairness.profiles.find(p=>p.id===id)||fairness.profiles[0]; if(!prof){res.status(404).json({error:"لا توجد بيانات أستاذ"});return;} const own=rows.filter(r=>r.AdInstructorId===prof.id); const suggestions=own.map(row=>{const best=conflictSolutions(row,universe,2)[0];return best?{rowId:row.id,course:row.AdCourseName,current:formatScheduleTimeRange(row.fstarttime, row.fendtime),candidate:formatScheduleTimeRange(best.start, best.end),room:`${best.roomCode}/${best.roomHall}`,conflicts:best.conflicts}:null}).filter(Boolean).slice(0,4); res.json({title:`مساعد القرار · ${prof.name}`,summary:`حمله ${countOf(prof.weeklyHours, AR.hour)} على ${countOf(prof.days, oblique(AR.day))}، وإجمالي الفراغ ${countOf(prof.gapMinutes, AR.minute)}. ${prof.deltaFromAverage>0?`أعلى من متوسط القسم بـ${countOf(Math.round(prof.deltaFromAverage), oblique(AR.point))}.`:"ضمن متوسط القسم تقريباً."}`,context:{type:"instructor",id:prof.id},options:suggestions,guardrail:"ضغط أيام الأستاذ يحتاج مراجعة أكاديمية؛ الاقتراحات لا تطبق تلقائياً."});return;
   }
   if(contextType==="day"){
-    const day=String(req.body?.value||req.body?.contextId||""); if(!SCHEDULE_DAYS.some(d=>d.key===day)){res.status(400).json({error:"اليوم غير صالح"});return;} const plans=createEmergencyPlans("day",day,rows,universe,courses,instructors,constraints).plans; const best=[...plans].sort((a,b)=>b.score-a.score||a.changed-b.changed)[0]; const count=rows.filter(r=>Boolean((r as any)[day])).length; res.json({title:`مساعد القرار · ${SCHEDULE_DAYS.find(d=>d.key===day)?.label}`,summary:`اليوم يحمل ${count} موعداً. أفضل سيناريو تخفيف يغيّر ${best?.changed||0} مواعيد مع جودة ${best?.score||0}/100.`,context:{type:"day",day},options:best?best.rows.filter(r=>{const base=rows.find(x=>x.id===r.id);return base&&rowSignatureServer(base)!==rowSignatureServer(r)}).slice(0,5).map(r=>({rowId:r.id,course:r.AdCourseName,time:formatScheduleTimeRange(r.fstarttime, r.fendtime),days:activeDays(r).map(k=>SCHEDULE_DAYS.find(d=>d.key===k)?.label).join("، ")})):[],guardrail:"تخفيف اليوم معروض كسيناريو فقط ولا يغيّر الجدول الحقيقي."});return;
+    const day=String(req.body?.value||req.body?.contextId||""); if(!SCHEDULE_DAYS.some(d=>d.key===day)){res.status(400).json({error:"اليوم غير صالح"});return;} const plans=createEmergencyPlans("day",day,rows,universe,courses,instructors,constraints).plans; const best=[...plans].sort((a,b)=>b.score-a.score||a.changed-b.changed)[0]; const count=rows.filter(r=>Boolean((r as any)[day])).length; res.json({title:`مساعد القرار · ${SCHEDULE_DAYS.find(d=>d.key===day)?.label}`,summary:`اليوم يحمل ${countOf(count, oblique(AR.appointment))}. أفضل سيناريو تخفيف يغيّر ${countOf(best?.changed||0, oblique(AR.appointment))} مع جودة ${best?.score||0}/100.`,context:{type:"day",day},options:best?best.rows.filter(r=>{const base=rows.find(x=>x.id===r.id);return base&&rowSignatureServer(base)!==rowSignatureServer(r)}).slice(0,5).map(r=>({rowId:r.id,course:r.AdCourseName,time:formatScheduleTimeRange(r.fstarttime, r.fendtime),days:activeDays(r).map(k=>SCHEDULE_DAYS.find(d=>d.key===k)?.label).join("، ")})):[],guardrail:"تخفيف اليوم معروض كسيناريو فقط ولا يغيّر الجدول الحقيقي."});return;
   }
   res.status(400).json({error:"سياق مساعد القرار غير معروف"});
 });
@@ -10955,10 +11775,23 @@ app.get("/api/intelligence/rollover", requirePermission(7), async (req: Authenti
   });
 });
 
+/* ── المقرر المؤرشف لا يُوضع في جدولٍ حالي — بأي باب ──────────────────────
+   الإضافة والنسخ والاستيراد ترفض مقرراً أُرشف أكاديمياً، و«بداية الفصل» كانت
+   تنسخه كما هو من الفصل السابق، فيعود المقرر الذي أُخرج من الخطة إلى جدول
+   الفصل الجديد من الباب الخلفي. القراءة هنا واحدة يستعملها النسخ وبداية الفصل. */
+async function splitArchivedCourseRows<T extends { AdCourseId?: unknown }>(rows: T[], sectionId: number): Promise<{ operational: T[]; archived: T[] }> {
+  const operationalIds = await Repository.getOperationalCourseIds(sectionId);
+  const operational: T[] = [], archived: T[] = [];
+  for (const row of rows) (operationalIds.has(Number(row.AdCourseId)) ? operational : archived).push(row);
+  return { operational, archived };
+}
+
 app.post("/api/intelligence/genesis", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),targetTermId=Number(req.body?.targetTermId||req.body?.termId||0),sourceTermId=Number(req.body?.sourceTermId||0); if(!collegeId||!sectionId||!targetTermId||!sourceTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(sourceTermId===targetTermId){res.status(400).json({error:"اختر فصلاً سابقاً مختلفاً عن الفصل الجديد"});return;}
   const [source,targetUniverse,courses,instructors,terms,constraints]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId,termId:sourceTermId}),Repository.getSchedulesByScope({termId:targetTermId}),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms(),Repository.getScheduleConstraints(collegeId,sectionId,targetTermId)]); if(!source.length){res.status(400).json({error:"الفصل السابق لا يحتوي جدولاً لهذا القسم"});return;}
-  const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId).map(c=>c.AdCourseId));
+  const {archived:archivedSource}=await splitArchivedCourseRows(source,sectionId);
+  const archivedCourseIds=new Set(archivedSource.map(row=>Number(row.AdCourseId)));
+  const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId&&!archivedCourseIds.has(Number(c.AdCourseId))).map(c=>c.AdCourseId));
   const validInstructorIds=new Set(instructors.map(i=>Number(i.AdInstructorId)));
   const sourceByCourse=new Map<number,FSchedule[]>();
   source.forEach(row=>{const list=sourceByCourse.get(Number(row.AdCourseId))||[];list.push(row);sourceByCourse.set(Number(row.AdCourseId),list);});
@@ -10999,10 +11832,10 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
   }
   const adjustedRows=rows.filter((row,index)=>row.fstarttime!==initialRows[index]?.fstarttime||row.fendtime!==initialRows[index]?.fendtime).length;
   const issues=await validateSmartRows(rows,collegeId,sectionId);
-  const genesisConflicts=findConflicts(rows as any,[...external,...rows] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+  const genesisConflicts=blockingConflicts(rows,[...external,...rows],await approvalBlockerOptions());
   const rowIssues=mapSmartIssuesToRows(rows,issues,genesisConflicts);
   const issueRowIds=Object.keys(rowIssues).map(Number);
-  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
+  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,...scopeBase(targetUniverse.filter(r=>Number(r.AdCollegeId)===collegeId&&Number(r.AdSectionId)===sectionId)),name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
   const courseById=new Map(courses.map(course=>[Number(course.AdCourseId),course]));
   const instructorById=new Map(instructors.map(instructor=>[Number(instructor.AdInstructorId),instructor]));
   const previewRows=draft.rows.map((row,index)=>({
@@ -11012,15 +11845,15 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
     fsunday:Boolean(row.fsunday),fmonday:Boolean(row.fmonday),ftuesday:Boolean(row.ftuesday),fwednesday:Boolean(row.fwednesday),fthursday:Boolean(row.fthursday),
     building:row.AdRoomCode||"",hall:row.AdRoomHall||"",
   }));
-  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),issueRowIds,rowIssues,previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
+  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,archivedSkipped:archivedSource.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),issueRowIds,rowIssues,previewRows,guardrail:(archivedSource.length?`لم تُنسخ ${countOf(archivedSource.length, AR.appointment)} لمقررات مؤرشفة أكاديمياً. `:"")+(issues.length?`أُنشئت المسودة بنجاح وبها ${countOf(issues.length, oblique(AR.note))} للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد.")});
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,versions]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleVersions(collegeId,sectionId,termId,2)]); const {rows,universe}=scheduleData; let changedSince: number|undefined=undefined; if(versions[0]){const before=new Map(versions[0].rows.map(r=>[r.id,rowSignatureServer(r)]));changedSince=rows.filter(r=>before.get(r.id)!==rowSignatureServer(r)).length+versions[0].rows.filter(r=>!rows.some(x=>x.id===r.id)).length;} res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince));
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]); const {rows,universe}=scheduleData; const changedSince=await briefChangedSince(collegeId,sectionId,termId,rows); res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince));
 });
 
 app.post("/api/intelligence/meeting-minutes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,constraints,memories]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId),Repository.getScheduleDecisionMemories(collegeId,sectionId,120)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول لبناء محضر قرار"});return;} const war=buildWarRoom(rows,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined); const chosen=war.options?.find((x:any)=>x.id===String(req.body?.optionId||""))||war.options?.[0]; const issueRowId=war.issue?.rowId; const comments=issueRowId?await Repository.getScheduleComments(issueRowId):[]; const recentMemory=memories.filter(m=>!war.issue?.rowId||m.scheduleId===war.issue.rowId||m.AdCourseId===rows.find(r=>r.id===war.issue.rowId)?.AdCourseId).slice(0,5); const minutes={title:"محضر قرار الجدول",problem:war.issue?`${war.issue.courseName} · شعبة ${war.issue.sectionCode} — ${war.issue.conflictCount} موضع يحتاج تحقق قبل الاعتماد.`:"مراجعة عامة للجدول",alternatives:(war.options||[]).map((o:any)=>({id:o.id,title:o.title,reason:o.reason,score:o.score,conflicts:o.conflicts,changed:o.changed})),selected:chosen?{id:chosen.id,title:chosen.title,reason:chosen.reason,score:chosen.score,conflicts:chosen.conflicts,changed:chosen.changed}:null,expectedImpact:chosen?`الجودة ${war.baseline.score} ← ${chosen.score}، وموانع الحفظ ${war.baseline.conflicts} ← ${chosen.conflicts}، وعدد المواعيد المتغيرة ${chosen.changed}.`:"لم يُحدد بديل.",discussion:comments.slice(0,8).map(c=>({text:c.text,user:c.userName,createdAt:c.createdAt,resolved:c.resolved})),memory:recentMemory.map(m=>({reason:m.reason,kind:m.kind,createdAt:m.createdAt,user:m.userName})),approvedBy:String(req.body?.approvedBy||req.user.Name).slice(0,120),generatedAt:new Date().toISOString()}; res.json(minutes);
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,constraints,memories]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId),Repository.getScheduleDecisionMemories(collegeId,sectionId,120)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول لبناء محضر قرار"});return;} const war=buildWarRoom(rows,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined); const chosen=war.options?.find((x:any)=>x.id===String(req.body?.optionId||""))||war.options?.[0]; const issueRowId=war.issue?.rowId; const comments=issueRowId?await Repository.getScheduleComments(issueRowId):[]; const recentMemory=memories.filter(m=>!war.issue?.rowId||m.scheduleId===war.issue.rowId||m.AdCourseId===rows.find(r=>r.id===war.issue.rowId)?.AdCourseId).slice(0,5); const minutes={title:"محضر قرار الجدول",problem:war.issue?`${war.issue.courseName} · شعبة ${war.issue.sectionCode} — ${countOf(war.issue.conflictCount, AR.position)} بحاجة إلى تحقق قبل الاعتماد.`:"مراجعة عامة للجدول",alternatives:(war.options||[]).map((o:any)=>({id:o.id,title:o.title,reason:o.reason,score:o.score,conflicts:o.conflicts,changed:o.changed})),selected:chosen?{id:chosen.id,title:chosen.title,reason:chosen.reason,score:chosen.score,conflicts:chosen.conflicts,changed:chosen.changed}:null,expectedImpact:chosen?`الجودة ${war.baseline.score} ← ${chosen.score}، وموانع الحفظ ${war.baseline.conflicts} ← ${chosen.conflicts}، وعدد المواعيد المتغيرة ${chosen.changed}.`:"لم يُحدد بديل.",discussion:comments.slice(0,8).map(c=>({text:c.text,user:c.userName,createdAt:c.createdAt,resolved:c.resolved})),memory:recentMemory.map(m=>({reason:m.reason,kind:m.kind,createdAt:m.createdAt,user:m.userName})),approvedBy:String(req.body?.approvedBy||req.user.Name).slice(0,120),generatedAt:new Date().toISOString()}; res.json(minutes);
 });
 
 app.get("/api/intelligence/safety-net", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -11028,7 +11861,7 @@ app.get("/api/intelligence/safety-net", requirePermission(7), async (req: Authen
 });
 
 app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(req.get("x-schedule-confirm")!=="decision-undo"){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
+  if(!confirmTokens(req).has("decision-undo")){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const undoOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(undoOverwrite){res.status(409).json(undoOverwrite);return;} const undoDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(undoDeadline){res.status(409).json({error:undoDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} const undoVersion=await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await recordVersionAfter(undoVersion,rows as any[]); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
 });
 
 
@@ -11399,7 +12232,7 @@ app.post("/api/users/grant-decision-centre", requirePermission(11), requirePower
     granted += 1;
     if (names.length < 40) names.push(user.Name || user.SystemUserLogin || `#${user.SystemUserId}`);
   }
-  res.locals.auditChanges = `منح مركز الذكاء: ${granted} حساب جديد، ${alreadyHad} كان لديه الصلاحية`;
+  res.locals.auditChanges = `منح مركز الذكاء: حسابات جديدة ${granted}، وحسابات كانت لديها الصلاحية ${alreadyHad}`;
   res.json({ granted, alreadyHad, total: users.length, names });
 });
 
@@ -11610,8 +12443,9 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   const { termId, collegeId, sectionId, instructorId, building, hall, courseId, courseCode, civil, startTime, endTime } = req.query;
   let resolvedTermId=Number(termId||0);
   if(!resolvedTermId){const terms=await Repository.getTerms();resolvedTermId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
-  let schedules = await Repository.getSchedulesByScope({termId:resolvedTermId,collegeId:Number(collegeId||0),sectionId:Number(sectionId||0)});
-  schedules = filterByScope(req, schedules);
+  /* قارئ الطلب نفسه (N12): نطاقٌ من الحَكَم الواحد، والنهائيُّ وحده للعميدين —
+     كان الملفّ يُخرج المسوّدات التي لا تعرضها الشاشة لهما. */
+  let schedules = await readSchedulesForRequest(req, Number(collegeId||0), Number(sectionId||0), resolvedTermId);
 
   if (instructorId) schedules = schedules.filter(s => s.AdInstructorId === parseInt(instructorId as string));
   if (building) schedules = schedules.filter(s => String(s.AdRoomCode || "").includes(String(building)));
@@ -11635,7 +12469,8 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   ]);
   const collegeById = new Map(colleges.map(x => [x.AdCollegeId, x]));
   const sectionById = new Map(sections.map(x => [x.AdSectionId, x]));
-  const instructorById = new Map(instructors.map(x => [x.AdInstructorId, x]));
+  /* الرقم المدني لا يصل صفات الاطّلاع (N13) — ولا في الملفّ. */
+  const instructorById = new Map(instructorsForReader(req, instructors).map(x => [x.AdInstructorId, x]));
   const courseById = new Map(courses.map(x => [x.AdCourseId, x]));
 
   // These two read through a relation, so they wait for the maps above.
@@ -11707,15 +12542,20 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
   const parsed = parseNaturalQuery(String(req.query.q || ""));
   if (parsed.intent === "unknown") { res.json({ intent: "unknown", title: "", rows: [] }); return; }
 
-  const { collegeId, sectionId, termId } = await resolveSmartContext(req);
+  /* النطاق يُفرض هنا لكل صفة: قسمٌ أو كليةٌ خارج نطاق القارئ تُرفض صراحةً،
+     والصفوف تُقرأ بقارئ الطلب نفسه — مُصفّاةً بالنطاق، ونهائيةً للعميد. أما
+     «الكون» فلا يُستعمل إلا لإشغال القاعات وفراغات الأستاذ: وقتٌ ومكانٌ بلا
+     مقرّرٍ ولا قسم. */
+  const { collegeId, sectionId, termId, allowed } = await resolveSmartContext(req, { allowCollegeWide: true });
+  if (!allowed) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (!termId) { res.json({ intent: parsed.intent, title: "", rows: [] }); return; }
 
-  const [scoped, courses, instructors] = await Promise.all([
-    scopedScheduleUniverse(collegeId, sectionId, termId),
+  const [rows, universe, courses, instructors] = await Promise.all([
+    readSchedulesForRequest(req, collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId }),
     Repository.getCourses(),
     Repository.getInstructors()
   ]);
-  const { rows, universe } = scoped;
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
@@ -11846,6 +12686,14 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
  * محكوماً بالنطاق كغيره: العميد يرى كليته، وعميد التسجيل يرى الجميع، ومن لا
  * نطاق له لا يرى شيئاً. والإدارة الرئيسية تبقى كما كانت، ترى الكل.
  */
+function balanceScopeLabel(req: AuthenticatedRequest): "الجامعة" | "الكلية" | "النطاق" {
+  if (req.user?.IsAdminUser || roleDefinition(req.user?.Role).scopeMode === "allColleges") return "الجامعة";
+  const colleges = new Set((req.scopes || []).map(scope => Number(scope.AdCollegeId)).filter(Boolean));
+  const wholeCollege = (req.scopes || []).some(scope => !Number(scope.AdSectionId));
+  if (colleges.size === 1 && (wholeCollege || roleDefinition(req.user?.Role).scopeMode === "college")) return "الكلية";
+  return "النطاق";
+}
+
 app.get("/api/reports/department-balance", requirePermission(14), async (req: AuthenticatedRequest, res: Response) => {
   let termId = Number(req.query.termId || 0);
   const terms = await Repository.getTerms();
@@ -11864,17 +12712,28 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
     if (list) list.push(row); else bySection.set(Number(row.AdSectionId), [row]);
   }
   const MORNING_END = 14 * 60;
+  /* The dean's «مانع اعتماد» is the registrar's: one rule, one set of options. */
+  const balanceBlockerOptions = await approvalBlockerOptions();
   const departments = [...bySection.entries()].map(([sectionId, rows]) => {
     const section = sections.find(item => item.AdSectionId === sectionId);
     const fairness = buildFairnessEngine(rows, instructors);
-    const analysis = analyzeSchedule(rows, termRows, courses, instructors);
+    const analysis = analyzeSchedule(rows, termRows, courses, instructors, balanceBlockerOptions);
     let morning = 0, evening = 0;
     for (const row of rows) {
       const meetings = Math.max(1, activeDays(row).length);
       (timeToMinutes(row.fstarttime) < MORNING_END ? (morning += meetings) : (evening += meetings));
     }
     const meetings = Math.max(1, morning + evening);
-    const rooms = new Set(rows.map(row => verifiedRoomKey(row)).filter(Boolean));
+    /* Every hall the department actually teaches in — a legacy spelling is
+       folded onto its registered hall first, blanks and «---» are not halls —
+       beside the subset already verified in the registry. Counting only the
+       verified ones printed «0 قاعات» for a department teaching in twelve. */
+    const verifiedRooms = new Set(rows.map(row => verifiedRoomKey(row)).filter(Boolean));
+    const rooms = new Set(rows.map(row => {
+      const canonical: any = balanceBlockerOptions.normalizeRow ? balanceBlockerOptions.normalizeRow(row) : row;
+      if (!canonical.roomId && (isInvalidLocationToken(canonical.AdRoomHall) || isInvalidLocationToken(canonical.AdRoomCode))) return "";
+      return roomIdentityKey(canonical);
+    }).filter(Boolean));
     return {
       sectionId,
       sectionName: section?.AdSectionName || `قسم ${sectionId}`,
@@ -11882,6 +12741,7 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
       rows: rows.length,
       instructors: new Set(rows.map(row => row.AdInstructorId).filter(Boolean)).size,
       rooms: rooms.size,
+      verifiedRooms: verifiedRooms.size,
       morningPct: Math.round((morning / meetings) * 100),
       eveningPct: Math.round((evening / meetings) * 100),
       fairness: fairness.score,
@@ -11899,6 +12759,11 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
       departments: departments.length,
       rows: departments.reduce((sum, item) => sum + item.rows, 0),
       conflicts: departments.reduce((sum, item) => sum + item.conflicts, 0),
+      /* What «all» means for THIS reader: a dean reads a college, the
+         registrar and the administration read the university, anyone else
+         reads the departments of their scope. The screen printed
+         «على مستوى الجامعة» to a dean who can see one college. */
+      scopeLabel: balanceScopeLabel(req),
     },
   });
 });
@@ -11909,13 +12774,19 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
   let termId = Number(req.query.termId || 0);
   // القاعات الظاهرة للمستخدم العادي تظل داخل قسمه. نحتاج جدول الفصل
   // الكامل فقط لمعرفة أن قاعته محجوزة من جهة أخرى، لا لعرض قاعات الآخرين.
-  if (!req.user.IsAdminUser && (!collegeId || !sectionId || !isScopeAllowed(req, collegeId, sectionId))) {
+  /* مستوى الكلية (N10): من يغطّي الكلية كلها (العميد والعميد المساعد) يرى
+     قاعاتها بلا اختيار قسم — كان يُردّ بـ403 لأن القسم صفر. */
+  const collegeWide = !sectionId && Boolean(collegeId) && (await wholeCollegeSectionIds(req, collegeId)).length > 0;
+  if (!req.user.IsAdminUser && (!collegeId || (!collegeWide && (!sectionId || !isScopeAllowed(req, collegeId, sectionId))))) {
     res.status(403).json({ error: "خارج نطاق القسم المسموح لك" });
     return;
   }
   if (!termId) { const terms = await Repository.getTerms(); termId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0); }
 
-  const { rows, universe } = await scopedScheduleUniverse(collegeId, sectionId, termId);
+  const scoped = await scopedScheduleUniverse(collegeId, sectionId, termId);
+  const universe = scoped.universe;
+  /* «قاعاتي» للعميدين من الجداول النهائية وحدها، كسائر ما يقرآن. */
+  const rows = readsFinalSchedulesOnly(req) ? await finalRowsOnly(scoped.rows, termId) : scoped.rows;
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   // Room utilization is intentionally official-only. Pending and historical
   // unresolved locations are separate data-quality signals and must never
@@ -11964,11 +12835,22 @@ function shareDayIndexes(row: FSchedule): number[] {
   return SHARE_DAY_KEYS.map((key, index) => (row as any)[key] ? index : -1).filter(index => index >= 0);
 }
 
+/** هل ما زال الرابطُ مقروءاً؟ القاعدة (وأيُّ الأنواع يُقرأ حتى نهاية فصله —
+ *  بطاقاتُ الأساتذة بنوعيها، القسمِ والشخصي، ورابطُ الطلب) في
+ *  src/utils/shareLinkLifetime.ts وحدها. الفصلُ لا يُقرأ إلا إن مضى تاريخُ الرابط. */
+async function shareLinkStillReadable(link: ScheduleShareLink): Promise<boolean> {
+  if (!link.expiresAt || Date.parse(String(link.expiresAt)) >= Date.now() || !readsUntilTermEnd(link.kind)) {
+    return shareLinkReadable(link, undefined as any);
+  }
+  const term = (await Repository.getTerms()).find(row => Number(row.AdTermId) === Number(link.AdTermId));
+  return shareLinkReadable(link, term);
+}
+
 /** Resolves a token to its live scope, or explains precisely why it cannot be read. */
 async function resolveShareToken(token: string) {
   const link = await Repository.getShareLink(String(token || ""));
   if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 as const };
-  if (new Date(link.expiresAt).getTime() < Date.now()) return { error: "انتهت صلاحية هذا الرابط", status: 410 as const };
+  if (!await shareLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 as const };
   return { link };
 }
 
@@ -12021,21 +12903,17 @@ async function buildSharePayload(link: ScheduleShareLink) {
  * nothing this term get the same answer, and the card never shows a civil ID,
  * a phone number or anyone else's row.
  */
-const staffAttempts = new Map<string, { count: number; first: number }>();
-const STAFF_WINDOW_MS = 10 * 60 * 1000;
-const STAFF_MAX_TRIES = 10;
+/* الحدّ مشترك بين الأبواب العامة كلها، ويعدّ الأخطاء لا الدخول — القاعدة في
+   ‎src/server/publicAttemptLimiter.ts‎. */
+const publicAttempts = createAttemptLimiter(limiterOptionsFromEnv());
+const publicAttemptKey = (scope: string, ip: string) => `${scope}|${ip}`;
+/* يُحجز قبل أوّل `await`: المحاولة تُحسب خطأً عند الدخول، ويُرجعها النجاح
+   وحده بـ`release()`. فلا يمرّ من الطلبات المتوازية أكثرُ من الحدّ. */
+const publicAttemptReserve = (scope: string, ip: string) => publicAttempts.reserve(publicAttemptKey(scope, ip));
 
+/** الأبواب التي لم تنتقل بعد إلى عدّ الأخطاء وحدها (استبيان الطلبة): كل طلبٍ يُعدّ. */
 function staffLookupAllowed(token: string, ip: string): boolean {
-  const key = `${token}|${ip}`;
-  const now = Date.now();
-  const seen = staffAttempts.get(key);
-  if (!seen || now - seen.first > STAFF_WINDOW_MS) {
-    staffAttempts.set(key, { count: 1, first: now });
-    return true;
-  }
-  seen.count += 1;
-  if (staffAttempts.size > 5000) staffAttempts.clear();
-  return seen.count <= STAFF_MAX_TRIES;
+  return publicAttempts.consume(publicAttemptKey(token, ip));
 }
 
 /**
@@ -12087,10 +12965,24 @@ function requestMovementEntries(requests: InstructorRequest[]): MovementEntry[] 
   return entries;
 }
 
-async function scheduleMovementEntries(instructorId: number, termId: number, rows: any[], courseById: Map<number, any>, options: { withRooms?: boolean } = {}): Promise<MovementEntry[]> {
+/**
+ * الأقسامُ التي تُقرأ حركتُه فيها: أقسامُ صفوفه الحالية وحدها كانت تُسقط القسمَ
+ * الذي حُذف منه كلُّ ما يدرّسه — فلا يرى «حُذفت من جدولك» أبداً. فتُضاف أقسامُ
+ * طلباته في الفصل، والقسمُ الذي أصدر الرابط.
+ */
+function movementHistoryScopes(requests: ReadonlyArray<{ AdCollegeId?: number; AdSectionId?: number }>, ...extra: Array<{ collegeId: number; sectionId: number }>) {
+  const scopes = new Map<string, { collegeId: number; sectionId: number }>();
+  for (const scope of [...extra, ...requests.map(request => ({ collegeId: Number(request.AdCollegeId || 0), sectionId: Number(request.AdSectionId || 0) }))]) {
+    if (scope.collegeId && scope.sectionId) scopes.set(`${scope.collegeId}:${scope.sectionId}`, scope);
+  }
+  return [...scopes.values()];
+}
+
+async function scheduleMovementEntries(instructorId: number, termId: number, rows: any[], courseById: Map<number, any>, options: { withRooms?: boolean; historyScopes?: Array<{ collegeId: number; sectionId: number }> } = {}): Promise<MovementEntry[]> {
   /* صفحةُ الطلب لا تحمل اسمَ قاعةٍ أبداً: تقول إن المكان تغيّر، ولا تقول أين. */
   const withRooms = options.withRooms !== false;
   const movementScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
+  for (const scope of options.historyScopes || []) movementScopeMap.set(`${scope.collegeId}:${scope.sectionId}`, scope);
   for (const row of rows) {
     const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
     if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
@@ -12101,7 +12993,7 @@ async function scheduleMovementEntries(instructorId: number, termId: number, row
   const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
   const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === instructorId).map(row => [Number(row.id),row]));
   for (const scope of movementScopeMap.values()) {
-    const versions = await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, termId, 30);
+    const versions = await hydrateVersionRows(await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, termId, 30));
     const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
     const liveSection = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);
     const states = ordered.map(version => ({ at:version.createdAt,label:version.label || "تعديل الجدول",rows:version.rows || [] }));
@@ -12125,21 +13017,37 @@ async function scheduleMovementEntries(instructorId: number, termId: number, row
 }
 
 async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedTermId = 0) {
-  const digits = String(civil || "").replace(/\D/g, "");
+  const digits = normalizeCivilId(civil);
   if (digits.length < 8) return null;
 
   const [instructors, courses, colleges, terms, sections] = await Promise.all([
     Repository.getInstructors(), Repository.getCourses(), Repository.getColleges(), Repository.getTerms(), Repository.getSections()
   ]);
-  const person = instructors.find(row => String(row.AdInstructorCivil || "").replace(/\D/g, "") === digits);
+  const person = instructors.find(row => sameCivilId(row.AdInstructorCivil, digits));
   if (!person) return null;
+  /* ── الرابطُ الشخصي لا يُفتح إلا لصاحبه ────────────────────────────────────
+   * رابطُ القسم مع رقمِ زميلٍ مدنيّ كان يفتح بطاقةَ الزميل وتاريخَ طلباته
+   * وقراراتِ القسم فيها. فالرابطُ الذي يرسله القسم لكل أستاذٍ مقيّدٌ برقمه:
+   * غيرُه يلقى الجوابَ الواحد نفسه (404). ورابطُ القسم العام يبقى للجدول
+   * وحده، بلا طلباتٍ ولا قراراتٍ ولا ملاحظات رفض. */
+  const personal = Number(link.AdInstructorId || 0) > 0;
+  if (personal && Number(link.AdInstructorId) !== Number(person.AdInstructorId)) return null;
 
   // Security gate: the instructor must actually appear in the link's OWN term, so
   // a wrong number and "teaches nothing" stay one indistinguishable 404 at the
   // door. Only after passing may they pin another term (Idea 2).
   const linkRows = (await Repository.getSchedulesByScope({ termId: link.AdTermId }))
     .filter(row => row.AdInstructorId === person.AdInstructorId);
-  if (!linkRows.length) return null;
+  const linkTermRequests = (await Repository.getInstructorRequests(0, 0, Number(link.AdTermId)))
+    .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
+  const linkHistoryScopes = movementHistoryScopes(linkTermRequests, { collegeId: Number(link.AdCollegeId), sectionId: Number(link.AdSectionId) });
+  /* ومن حُذف كلُّ ما يدرّسه في هذا الفصل بعد أن كان له فيه جدول، تُفتح بطاقتُه
+     فارغةً مع حركته — ليرى ما حدث لا «لا توجد بطاقة». ومن لم يدرّس هنا قطّ
+     يبقى جوابُه الـ404 الواحد نفسه. */
+  if (!linkRows.length) {
+    const trace = await scheduleMovementEntries(Number(person.AdInstructorId), Number(link.AdTermId), [], new Map(), { historyScopes: linkHistoryScopes });
+    if (!trace.some(entry => entry.tone === "gone")) return null;
+  }
 
   // The card covers the college that issued the link, so an instructor teaching
   // several of its sections sees one complete week rather than a fragment.
@@ -12153,11 +13061,11 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
 // A link issued by one campus must never hide requests from another campus.
   /* طلباتُه في الفصل كلِّه: الطلبُ يحمل جدولَه بكل كلياته، فلا يُبحث عنه
      بكليةٍ بعينها. */
-  const requestRows = (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
+  const requestRows = displayTermId === link.AdTermId ? linkTermRequests : (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
     .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
-  const requestLinks = (await Promise.all(requestRows.map(async request => {
+  const requestLinks = (await Promise.all((personal ? requestRows : []).map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
-    if (!requestLink || requestLink.revoked || (requestLink.expiresAt && Date.parse(requestLink.expiresAt) < Date.now())) return null;
+    if (!requestLink || requestLink.revoked || !await shareLinkStillReadable(requestLink)) return null;
     const windowOpen = requestWindowOpen(request);
     return {
       linkId: request.linkId,
@@ -12174,8 +13082,10 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   /* الحركةُ تُبنى في موضعٍ واحد لبطاقتي ولصفحة الطلب معاً، فلا تقول إحداهما
      غير ما تقوله الأخرى. */
   const movementHistory = [
-    ...requestMovementEntries(requestRows),
-    ...await scheduleMovementEntries(Number(person.AdInstructorId), Number(displayTermId), rows, courseById),
+    ...(personal ? requestMovementEntries(requestRows) : []),
+    ...await scheduleMovementEntries(Number(person.AdInstructorId), Number(displayTermId), rows, courseById, {
+      historyScopes: displayTermId === link.AdTermId ? linkHistoryScopes : movementHistoryScopes(requestRows),
+    }),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   const shaped = rows
@@ -12187,6 +13097,9 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
       college: colleges.find(item => Number(item.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeName || "",
       department: sections.find(item => Number(item.AdSectionId) === Number(row.AdSectionId))?.AdSectionName || "",
       start: row.fstarttime, end: row.fendtime,
+      /* النطاقُ يُعرض بعقد الجامعة الواحد (النهاية - البداية، معزولاً) من
+         ‎formatScheduleTimeRange‎، لا بترتيبٍ تكتبه الصفحةُ بنفسها. */
+      timeRange: formatScheduleTimeRange(row.fstarttime, row.fendtime),
       days: shareDayIndexes(row),
       room: row.AdRoomCode || "", hall: row.AdRoomHall || ""
     }))
@@ -12195,6 +13108,10 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   const weeklyMinutes = shaped.reduce(
     (total, row) => total + Math.max(0, toMinutes(row.end) - toMinutes(row.start)) * row.days.length, 0
   );
+  /* ساعاتُ التدريس على الساعة غيرُ ما يُحاسَب به النصاب: النصابُ يُعدّ بساعات
+     المقرّر المعتمدة لكل شعبة (‎weeklyLoadOf‎، القاعدة نفسها التي يحكم بها فحصُ
+     الطلبات). فتقول البطاقة الرقمين باسميهما، لا رقماً واحداً يُقرأ خطأً. */
+  const loadUnits = weeklyLoadOf(rows as any, courseById as any);
   const byDay = SHARE_DAY_NAMES.map((name, index) => {
     const dayRows = shaped.filter(row => row.days.includes(index));
     // A gap is idle time between two of the day's own lectures — the thing an
@@ -12213,6 +13130,51 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
 
   const teachingColleges = [...new Set(shaped.map(row => row.college).filter(Boolean))];
 
+  /* ── ما يقع في أسبوعيه القادمين، وحالةُ اعتماد كل قسمٍ يدرّس فيه ──────────
+   * الإلغاءُ والتغطيةُ بتاريخٍ محدّد كانا يصلان إلى تقويمه وحده؛ البطاقةُ نفسُها
+   * لا تقولهما. وحالةُ الاعتماد (قيد الإعداد… معتمد) تقول له هل جدولُه نهائي.
+   * كلاهما للقراءة فقط، ولا يُكشف فيهما جدولُ أحدٍ غيره. */
+  const kuwaitToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuwait", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const horizon = new Date(Date.parse(`${kuwaitToday}T00:00:00Z`) + 14 * 86400000).toISOString().slice(0, 10);
+  const [termExceptions, termApprovals, displayTermRows] = await Promise.all([
+    Repository.getScheduleWeekExceptions(Number(displayTermId)),
+    Repository.getScheduleApprovalsForTerm(Number(displayTermId)),
+    displayTermId === link.AdTermId ? Promise.resolve(null) : Repository.getSchedulesByScope({ termId: displayTermId }),
+  ]);
+  const allTermRows = (displayTermRows || await Repository.getSchedulesByScope({ termId: link.AdTermId })) as any[];
+  const termRowById = new Map(allTermRows.map(row => [Number(row.id), row]));
+  const ownIds = new Set(rows.map(row => Number(row.id)));
+  const courseLabel = (row: any) => row?.AdCourseName || courseById.get(row?.AdCourseId)?.CourseName || courseById.get(row?.AdCourseId)?.CourseCode || "محاضرة";
+  const upcomingExceptions = termExceptions
+    .filter(entry => entry.date >= kuwaitToday && entry.date <= horizon)
+    .filter(entry => ownIds.has(Number(entry.scheduleId)) || (entry.kind === "cover" && Number(entry.coverInstructorId) === Number(person.AdInstructorId)))
+    .map(entry => {
+      const row = termRowById.get(Number(entry.scheduleId));
+      const mine = ownIds.has(Number(entry.scheduleId));
+      return {
+        date: entry.date,
+        day: SHARE_DAY_NAMES[SHARE_DAY_KEYS.indexOf(weekExceptionDayKey(entry.date) as any)] || "",
+        course: courseLabel(row),
+        timeRange: row ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "",
+        kind: !mine ? "covering" as const : entry.kind === "cancel" ? "cancelled" as const : "handed" as const,
+        text: !mine ? "تغطّي هذه المحاضرة ليومٍ واحد"
+          : entry.kind === "cancel" ? "أُلغيت هذا اليوم"
+          : `يغطّيها ${entry.coverInstructorName || "زميل"} هذا اليوم`,
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const departmentScopes = new Map<string, { collegeId: number; sectionId: number }>();
+  for (const row of rows) departmentScopes.set(`${row.AdCollegeId}:${row.AdSectionId}`, { collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId) });
+  const departmentApprovals = [...departmentScopes.values()].map(scope => {
+    const approval = termApprovals.find(item => Number(item.AdCollegeId) === scope.collegeId && Number(item.AdSectionId) === scope.sectionId);
+    const status = approval?.status || "drafting";
+    return {
+      department: sections.find(item => Number(item.AdSectionId) === scope.sectionId)?.AdSectionName || "القسم",
+      college: colleges.find(item => Number(item.AdCollegeId) === scope.collegeId)?.AdCollegeName || "",
+      status, label: APPROVAL_STATUS_LABEL[status],
+    };
+  });
+
   return {
     name: person.AdInstructorName || "",
     college: teachingColleges.length > 1 ? "كل مواقعك" : (teachingColleges[0] || colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || ""),
@@ -12224,17 +13186,34 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     /* الفصل التشغيلي يأتي من حالة الفصول، لا من الرابط. رابطٌ قديم يظل باباً
        آمناً لبطاقة صاحبه، لكنه لا يجعل فصله جارياً إلى الأبد. */
     liveTermId: currentTermId(terms as any),
+    /* «سابق» لفصلٍ انقضى وحده؛ القادمُ قادمٌ، ويُضاف تقويمُه من الآن. */
+    termPhase: termPhase(terms.find(row => row.AdTermId === displayTermId) as any, currentTermId(terms as any)),
     expiresAt: link.expiresAt,
+    requestsCloseAt: link.requestsCloseAt || "",
     // The subscription key. Handed out only here — after the card has already
     // established who is holding it — so the civil ID never reaches a URL.
-    calendarKey: calendarKey(link.id, person.AdInstructorId),
+    calendarKey: await calendarKey(link.id, person.AdInstructorId),
     weeklyMinutes,
+    loadUnits,
+    /* أسماءُ الأعداد تُصاغ هنا بالقاعدة الواحدة (‎nounFor‎)، والصفحة تعرضها. */
+    countNouns: {
+      lectures: nounFor(shaped.length, AR.lecture),
+      days: nounFor(byDay.filter(day => day.rows.length).length, AR.day),
+      rooms: nounFor(new Set(shaped.map(row => `${row.room}/${row.hall}`).filter(value => value !== "/")).size, AR.room),
+      units: nounFor(loadUnits, AR.unit),
+    },
     lectureCount: shaped.length,
     dayCount: byDay.filter(day => day.rows.length).length,
     rooms: Array.from(new Set(shaped.map(row => `${row.room}/${row.hall}`).filter(value => value !== "/"))),
     longestGap: Math.max(0, ...byDay.flatMap(day => day.gaps.map(gap => gap.minutes))),
     byDay,
     rows: shaped,
+    /* بطاقةٌ من رابط القسم العام لا تحمل طلباتٍ ولا قرارات؛ تقول ذلك للأستاذ. */
+    personal,
+    instructorId: Number(person.AdInstructorId),
+    fingerprint: instructorScheduleFingerprint(rows as any),
+    upcomingExceptions,
+    departmentApprovals,
     requestLinks,
     movementHistory: movementHistory.slice(0, 100),
   };
@@ -12262,16 +13241,30 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
   const termName = terms.find(row => row.AdTermId === termId)?.AdTermName || "";
+  /* A survey collects requests for a term that is still ahead or running. A
+     link issued for an ended or closed term would only gather answers nobody
+     can act on. (Survey links only; other link kinds are unchanged.) */
+  if (kind === "survey" && surveyTermEnded(terms.find(row => Number(row.AdTermId) === termId))) {
+    res.status(409).json({ error: "انتهى هذا الفصل، فلا يُصدَر له رابط استبيان. اختر الفصل القادم.", code: "term-ended" });
+    return;
+  }
   const label = kind === "staff"
     ? `بطاقات الأساتذة · ${termName}`.trim()
     : kind === "survey"
       ? `استبيان المقررات · ${sectionName} · ${termName}`.trim()
       : `${sectionName} · ${termName}`.trim();
+  /* بطاقةُ الأستاذ تعيش الفصلَ كلَّه — التقويمُ في هاتفه يتبعها — وموعدُ
+     الطلبات يُحفظ منفصلاً ويحكم الكتابة وحدها. العمرُ يُحسب هنا، لا في المتصفح. */
+  const requestsCloseAt = kind === "staff" ? requestsCloseAtFromDate(req.body?.requestsCloseAt) : "";
+  const expiresAt = kind === "staff"
+    ? termLinkExpiresAt(terms.find(row => row.AdTermId === termId))
+    : new Date(Date.now() + days * 86400000).toISOString();
   const link = await Repository.createShareLink({
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
     label,
     kind,
-    expiresAt: new Date(Date.now() + days * 86400000).toISOString(),
+    expiresAt,
+    ...(requestsCloseAt ? { requestsCloseAt } : {}),
     SystemUserId: Number(req.user!.SystemUserId),
     userName: String(req.user!.Name || ""),
     showInstructors: req.body?.showInstructors !== false
@@ -12287,6 +13280,104 @@ app.delete("/api/share/:id", requirePermission(7), async (req: AuthenticatedRequ
   res.json({ ok: true });
 });
 
+/* ── الروابط الشخصية: رابطٌ لكل أستاذ، لا يُفتح إلا له ─────────────────────────
+ *
+ * تُسكّ من «تسليم البطاقة» في لوحة النشر: لكلِّ أستاذٍ في القائمة رابطُه، يُعاد
+ * استعمالُه إن وُجد (فلا تتكاثر الروابط مع كل ضغطة)، ويعيش حتى نهاية الفصل،
+ * ويرث موعدَ الطلبات من بطاقة القسم التي سُكّ منها. ويُسجَّل الإرسالُ لكل أستاذ
+ * مع بصمة جدوله، فيُعرف لاحقاً من تغيّر جدولُه منذ أُبلغ. */
+const isPersonalStaffLink = (link: ScheduleShareLink) => link.kind === "staff" && Number(link.AdInstructorId || 0) > 0;
+
+async function personalLinkEligibleIds(collegeId: number, sectionId: number, termId: number): Promise<Set<number>> {
+  const [rows, delegates] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getDepartmentDelegates(collegeId, sectionId).catch(() => [] as number[]),
+  ]);
+  return new Set([...rows.map(row => Number(row.AdInstructorId)), ...delegates.map(Number)].filter(id => id > 0));
+}
+
+app.post("/api/share/:id/personal", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const parent = await Repository.getShareLink(String(req.params.id || ""));
+  if (!parent || parent.revoked || parent.kind !== "staff" || isPersonalStaffLink(parent)) { res.status(404).json({ error: "بطاقة القسم غير موجودة أو موقوفة" }); return; }
+  if (!isScopeAllowed(req, parent.AdCollegeId, parent.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const wanted = [...new Set((Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : []).map(Number).filter((id: number) => id > 0))].slice(0, 300) as number[];
+  if (!wanted.length) { res.json({ links: [] }); return; }
+  const [eligible, existing, instructors, terms] = await Promise.all([
+    personalLinkEligibleIds(parent.AdCollegeId, parent.AdSectionId, parent.AdTermId),
+    Repository.getShareLinks(parent.AdCollegeId, parent.AdSectionId, parent.AdTermId),
+    Repository.getInstructors(),
+    Repository.getTerms(),
+  ]);
+  const live = new Map<number, ScheduleShareLink>();
+  for (const link of existing) {
+    if (!isPersonalStaffLink(link) || link.revoked || !await shareLinkStillReadable(link)) continue;
+    if (!live.has(Number(link.AdInstructorId))) live.set(Number(link.AdInstructorId), link);
+  }
+  const term = terms.find(row => Number(row.AdTermId) === Number(parent.AdTermId));
+  const nameOf = new Map(instructors.map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
+  const links: Array<{ instructorId: number; id: string; expiresAt: string; reused: boolean }> = [];
+  for (const instructorId of wanted) {
+    if (!eligible.has(instructorId)) continue;
+    const found = live.get(instructorId);
+    if (found) { links.push({ instructorId, id: found.id, expiresAt: found.expiresAt, reused: true }); continue; }
+    const created = await Repository.createShareLink({
+      AdCollegeId: parent.AdCollegeId, AdSectionId: parent.AdSectionId, AdTermId: parent.AdTermId,
+      label: `بطاقة شخصية · ${nameOf.get(instructorId) || instructorId}`,
+      kind: "staff",
+      AdInstructorId: instructorId,
+      expiresAt: termLinkExpiresAt(term),
+      ...(parent.requestsCloseAt ? { requestsCloseAt: parent.requestsCloseAt } : {}),
+      SystemUserId: Number(req.user!.SystemUserId),
+      userName: String(req.user!.Name || ""),
+      showInstructors: false,
+    });
+    links.push({ instructorId, id: created.id, expiresAt: created.expiresAt, reused: false });
+  }
+  res.json({ links });
+});
+
+/** يسجّل أن القسم فتح محادثة الإرسال لهذا الأستاذ، مع بصمة جدوله الآن. */
+app.post("/api/share/:id/sent", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const link = await Repository.getShareLink(String(req.params.id || ""));
+  if (!link || !isPersonalStaffLink(link)) { res.status(404).json({ error: "الرابط الشخصي غير موجود" }); return; }
+  if (!isScopeAllowed(req, link.AdCollegeId, link.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const rows = (await Repository.getSchedulesByScope({ termId: link.AdTermId }))
+    .filter(row => Number(row.AdInstructorId) === Number(link.AdInstructorId));
+  const sentAt = new Date().toISOString();
+  await Repository.markShareLinkInstructor(link.id, Number(link.AdInstructorId), { sentAt, sentFingerprint: instructorScheduleFingerprint(rows as any) });
+  res.json({ ok: true, sentAt });
+});
+
+/** الروابط الشخصية في النطاق، ومن تغيّر جدولُه منذ أُرسل إليه. */
+app.get("/api/share-personal", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const [links, termRows, instructors] = await Promise.all([
+    Repository.getShareLinks(collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getInstructors(),
+  ]);
+  const rowsOf = new Map<number, any[]>();
+  for (const row of termRows as any[]) {
+    const key = Number(row.AdInstructorId);
+    if (!rowsOf.has(key)) rowsOf.set(key, []);
+    rowsOf.get(key)!.push(row);
+  }
+  const nameOf = new Map(instructors.map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
+  res.json(links.filter(isPersonalStaffLink).map(link => {
+    const instructorId = Number(link.AdInstructorId);
+    const mark = link.marks?.[String(instructorId)] || {};
+    const now = instructorScheduleFingerprint(rowsOf.get(instructorId) || []);
+    return {
+      id: link.id, instructorId, name: nameOf.get(instructorId) || "",
+      expiresAt: link.expiresAt, revoked: Boolean(link.revoked), views: Number(link.views || 0),
+      lastSentAt: mark.sentAt || "", lastSeenAt: mark.seenAt || "",
+      changedSinceSent: Boolean(mark.sentFingerprint) && mark.sentFingerprint !== now,
+    };
+  }));
+});
+
 // --- Public surface (no account) --------------------------------------------
 
 app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
@@ -12294,6 +13385,9 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   // A staff link is a door to one card, never to the department's whole feed.
   if (resolved.link.kind === "staff") { res.status(404).json({ error: "هذا الرابط بطاقة أستاذ" }); return; }
+  /* A student survey link opens the survey and the student's status — never
+     the department's timetable. */
+  if (resolved.link.kind === "survey") { res.status(404).json({ error: "هذا الرابط استبيان للطلبة" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.json(await buildSharePayload(resolved.link));
@@ -12320,8 +13414,11 @@ const TERM_WEEKS = 16;
  */
 async function sendCalendar(req: Request, res: Response, name: string, termId: number, lectures: CalendarLecture[], singles: CalendarSingle[] = []) {
   const term = (await Repository.getTerms()).find(row => row.AdTermId === termId);
-  const startDate = term?.AdTermStart;
-  const weeks = Number(term?.AdTermWeeks) || TERM_WEEKS;
+  /* حدّا الفصل من ‎termWindow‎ (المعلَن، وإلا المستنبط من اسم الفصل)؛ «اليوم»
+     لم يعد مرساةً إلا لفصلٍ لا يُعرف عنه شيء — ويقول الملف ذلك. */
+  const span = calendarSpanForTerm(term, Number(term?.AdTermWeeks) || TERM_WEEKS);
+  const startDate = span.startDate;
+  const weeks = span.weeks;
   // Opt-in only, and named in the URL so the subscriber's own choice travels
   // with their subscription instead of being decided for everyone.
   const alarmMinutes = Math.max(0, Math.min(120, Number(req.query.alarm || 0)));
@@ -12330,11 +13427,13 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
     // A calendar that had to guess its own term says so in the name it puts on
     // the subscriber's phone, rather than presenting an invented semester as if
     // it were the registrar's.
-    name: startDate ? name : `${name} (تواريخ الفصل غير مسجّلة)`,
-    description: startDate
-      ? `${term?.AdTermName || ""} · يبدأ ${startDate} ويستمر ${weeks} أسبوعاً · للقراءة فقط، ويُحدَّث من نفسه.`
-      : `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة، والمدة تقديرية (${weeks} أسبوعاً) · للقراءة فقط.`,
-    weeks, startDate, alarmMinutes, lectures, singles,
+    name: span.source === "declared" ? name : span.source === "default" ? `${name} (تواريخ الفصل تقديرية)` : `${name} (تواريخ الفصل غير مسجّلة)`,
+    description: span.source === "declared"
+      ? `${term?.AdTermName || ""} · يبدأ ${startDate} ويستمر ${countOf(weeks, AR.week)} · للقراءة فقط، ويُحدَّث من نفسه.`
+      : span.source === "default"
+        ? `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة؛ الحدّان تقديريان من اسم الفصل (${span.startDate} ← ${span.endDate}) · للقراءة فقط.`
+        : `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة، والمدة تقديرية (${countOf(weeks, AR.week)}) · للقراءة فقط.`,
+    weeks, startDate, endDate: span.source === "default" ? span.endDate : undefined, alarmMinutes, lectures, singles,
   });
 
   /* Weak, because the only thing that must match is the meaning of the file:
@@ -12353,7 +13452,7 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
-  if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+  if (resolved.link.kind === "staff" || resolved.link.kind === "survey") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   /* A lecture cancelled on one specific date disappears from that one date in
@@ -12389,10 +13488,12 @@ app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
  * civil ID, cannot be reversed into one, cannot be guessed without the server's
  * secret, and dies the moment the link that produced it is revoked or expires.
  */
-const CALENDAR_SECRET = process.env.CALENDAR_SECRET || randomBytes(32).toString("hex");
+/* السرّ لا يولَد عشوائياً عند كل إقلاع: القاعدة كلّها في ‎src/server/calendarSecret.ts‎
+   (المتغيّر إن ضُبط، وإلا مشتقٌّ من السرّ المشترك المحفوظ). */
+const calendarSecret = createCalendarSecretResolver(() => process.env.CALENDAR_SECRET, () => Repository.getSharedServerSecret());
 
-const calendarKey = (token: string, instructorId: number) =>
-  createHmac("sha256", CALENDAR_SECRET).update(`${token}|${instructorId}`).digest("hex").slice(0, 32);
+const calendarKey = async (token: string, instructorId: number) =>
+  calendarFeedKey(await calendarSecret(), token, instructorId);
 
 app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const token = String(req.params.token || "");
@@ -12403,10 +13504,16 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
     Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(), Repository.getColleges(),
   ]);
   // The key names the instructor: whoever it verifies against is the owner.
-  const person = instructors.find(row => calendarKey(token, row.AdInstructorId) === String(req.params.key || ""));
+  const secret = await calendarSecret();
+  const person = instructors.find(row => calendarFeedKey(secret, token, row.AdInstructorId) === String(req.params.key || ""));
   if (!person) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
 
-  const liveTermId = currentTermId(terms as any);
+  /* الاشتراكُ يتبع الفصل الجاري. ومن أضافه من بطاقة فصلٍ قادم يحمل رقمَه في
+     الرابط، فيرى ذلك الفصل حتى يصير هو الجاري — ولا يُفتح به فصلٌ انقضى. */
+  const pinnedTerm = terms.find(row => Number(row.AdTermId) === Number(req.query.term || 0));
+  const liveTermId = pinnedTerm && termPhase(pinnedTerm as any, currentTermId(terms as any)) === "upcoming"
+    ? Number(pinnedTerm.AdTermId)
+    : currentTermId(terms as any);
   if (!liveTermId) {
     res.status(409).type("text/plain; charset=utf-8").send("لا يوجد فصل جارٍ متاح للتقويم");
     return;
@@ -12489,7 +13596,8 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
-  if (!staffLookupAllowed(token, req.ip || "unknown")) {
+  const attempt = publicAttemptReserve(token, req.ip || "unknown");
+  if (!attempt) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
@@ -12497,6 +13605,7 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
   const body = (req.body || {}) as Record<string, unknown>;
   const card = await buildStaffCard(resolved.link, String(body.civil || ""), Number(body.termId || 0));
   if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  attempt.release();
   if (!card.liveTermId || Number(card.termId) !== Number(card.liveTermId)) {
     res.status(409).json({ error: "هذا الفصل للاطلاع فقط. اختر الفصل الجاري للإبلاغ." });
     return;
@@ -12509,8 +13618,8 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
   if (!lecture) { res.status(404).json({ error: "هذا الموعد ليس ضمن جدولك" }); return; }
 
   const instructors = await Repository.getInstructors();
-  const digits = String(body.civil || "").replace(/\D/g, "");
-  const person = instructors.find(row => String(row.AdInstructorCivil || "").replace(/\D/g, "") === digits);
+  const digits = normalizeCivilId(body.civil);
+  const person = instructors.find(row => sameCivilId(row.AdInstructorCivil, digits));
   if (!person) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
 
   if (await Repository.countStaffNotesToday(person.AdInstructorId) >= STAFF_NOTES_PER_DAY) {
@@ -12563,9 +13672,12 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
  * girls' survey are two links, issued the same way as any other.
  *
  * The civil ID is checked against the Kuwaiti checksum — an invented number
- * never reaches the store — then hashed and discarded. The name and civil ID are stored with field-level encryption because the
- * authorised department explicitly needs them to act on a case. The key is
- * shared across server instances; the fingerprint remains the duplicate key.
+ * never reaches the store. It is then kept in two forms: a keyed HMAC
+ * fingerprint (the duplicate key, which identifies nobody on its own) AND,
+ * together with the name, a field-level AES-256-GCM ciphertext, because the
+ * authorised department and registration need to know who a case belongs to.
+ * Neither plaintext is logged or sent to anyone outside those screens; an
+ * existing case is opened on the public pages only with civil ID + case number.
  */
 let studentCaseSecretPromise: Promise<string> | null = null;
 const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getStudentCaseSecret();
@@ -12587,22 +13699,15 @@ const openStudentIdentity=async(value?:string)=>{
     // CALENDAR_SECRET was configured stably, old cases remain readable and can
     // coexist with new shared-key cases. Per-instance random legacy records are
     // cryptographically unrecoverable once the writing instance disappears.
-    try{return await decryptWith(createHmac("sha256",CALENDAR_SECRET).update("student-case-identity-v1").digest());}catch{return"";}
+    const legacyCalendarSecret=String(process.env.CALENDAR_SECRET||"").trim();
+    if(!legacyCalendarSecret) return "";
+    try{return await decryptWith(createHmac("sha256",legacyCalendarSecret).update("student-case-identity-v1").digest());}catch{return"";}
   }
 };
 
-type DegreeRule={degreeUnits:number;fieldTrainingRequired:number;graduateRegularPassed:number;graduateSummerPassed:number};
-/** Internal regulation table. It is never sent with the public survey; only
- * the eligibility verdict and the applied threshold are returned after proof. */
-const degreeRuleFromName=(sectionName:string):DegreeRule=>{
-  const name=String(sectionName||"");
-  const degreeUnits=/فرنسي/.test(name)?132:/انجليزي|إنجليزي|تربية خاصة|تفوق|إعاقة|صعوبات/.test(name)?134:130;
-  return degreeUnits===130
-    ?{degreeUnits,fieldTrainingRequired:102,graduateRegularPassed:107,graduateSummerPassed:109}
-    :degreeUnits===132
-      ?{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:109,graduateSummerPassed:111}
-      :{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:111,graduateSummerPassed:113};
-};
+/** The name-derived SUGGESTION lives once, in src/utils/degreeRules.ts. It is
+ * never a rule a student is measured against until the department saves it. */
+const degreeRuleFromName=suggestedDegreeRule;
 
 /**
  * The rule a department is actually judged by.
@@ -12618,7 +13723,7 @@ const degreeRuleFromName=(sectionName:string):DegreeRule=>{
  */
 const degreeRuleForSection=async(sectionId:number,sectionName:string):Promise<DegreeRule&{reviewed:boolean}>=>{
   const stored=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===Number(sectionId));
-  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:true};
+  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:false};
   return{
     degreeUnits:Number(stored.degreeUnits),
     fieldTrainingRequired:Number(stored.fieldTrainingRequired),
@@ -12652,13 +13757,44 @@ const storedDegreeRuleForSection=async(sectionId:number):Promise<DegreeRule|null
 const isSummerTerm=(termName:string)=>/صيفي|صيفى|summer/i.test(String(termName||""));
 const graduateThreshold=(rule:DegreeRule,termName:string)=>
   isSummerTerm(termName)?Number(rule.graduateSummerPassed):Number(rule.graduateRegularPassed);
+/** How long a verified graduation sheet stays usable in one page session. */
+const STUDENT_PROOF_TTL_MS=20*60_000;
 const issueStudentProof=async(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;degreeUnits:number;nameMatched:boolean;specializationMatched:boolean;documentKind:"graduation-sheet"})=>{
-  const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+20*60_000})).toString("base64url");
+  const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+STUDENT_PROOF_TTL_MS})).toString("base64url");
   const signature=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");return`${body}.${signature}`;
+};
+/** A genuine proof whose time ran out — told apart from a missing or forged one
+ * so the page can reopen the upload instead of a dead end. */
+const studentProofExpired=async(token:string)=>{
+  try{const[body,signature]=String(token||"").split("."),expected=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");if(!body||signature!==expected)return false;const payload=JSON.parse(Buffer.from(body,"base64url").toString("utf8"));return Number(payload.exp)<=Date.now();}catch{return false;}
 };
 const verifyStudentProof=async(token:string)=>{
   try{const[body,signature]=String(token||"").split("."),expected=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");if(!body||signature!==expected)return null;const payload=JSON.parse(Buffer.from(body,"base64url").toString("utf8"));return Number(payload.exp)>Date.now()?payload:null;}catch{return null;}
 };
+
+/**
+ * ── رقمُ الحالة هو المفتاح الثاني ───────────────────────────────────────────
+ *
+ * الرقمُ المدنيُّ ليس سرّاً: يعرفه الزميلُ والقريب، ويُكتب على كل استمارة.
+ * فكان من يعرف رقمَ زميلٍ يفتح الاستبيان فيرى اسمه وقسمه، ثم يُرسل باسمه
+ * طلباً يمحو طلبه. صار الطلبُ القائمُ لا يُقرأ ولا يُعدَّل ولا تُعاد إليه
+ * صحيفةُ التخرج المتحقَّق منها إلا بالرقم المدني **ورقم الحالة** الذي
+ * أُعطي لصاحبه عند الإرسال.
+ */
+const normalizeCaseRef=(value:unknown)=>toEnglishDigits(value).toUpperCase().replace(/[^0-9A-Z]/g,"").slice(0,16);
+/** The one stored request of this hand (fingerprint + term + survey department). */
+const priorNeedForHand=async(link:any,civil:string)=>{
+  const fingerprint=await surveyFingerprint(civil);
+  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  return (needs as any[])
+    .filter((need:any)=>String(need?.fingerprint||"")===fingerprint
+      &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId))
+    .sort((a:any,b:any)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0]||null;
+};
+const caseRefMatches=(need:any,supplied:unknown)=>Boolean(need)&&normalizeCaseRef(supplied)===normalizeCaseRef(caseRefFor(need));
+/** Only a first letter leaves the server before the case number is proven. */
+const maskedInitial=(name:string)=>{const first=Array.from(String(name||"").trim())[0]||"";return first?`${first}…`:"";};
+const CASE_REF_REQUIRED="لهذا الرقم المدني طلبٌ سابق في هذا الاستبيان. أدخل رقم الحالة الذي ظهر لك عند الإرسال لتعديله. فقدت الرقم؟ راجع القسم.";
 
 /** A successful graduation-sheet verification belongs to the student + own
  * section + survey department + term, not to one particular request type. A
@@ -12666,7 +13802,9 @@ const verifyStudentProof=async(token:string)=>{
  * of asking the student to upload the same official sheet again. The current
  * academic rule is re-applied every time; stale eligibility never survives a
  * rule change. */
-const reusableGraduateVerification=async(link:any,civil:string,sectionId:number)=>{
+const reusableGraduateVerification=async(link:any,civil:string,sectionId:number,caseRef:unknown)=>{
+  /* A verified sheet is reused only for the holder of the case number too. */
+  if(!caseRefMatches(await priorNeedForHand(link,civil),caseRef))return null;
   const fingerprint=await surveyFingerprint(civil);
   const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
   const prior=(needs as any[]).find((need:any)=>
@@ -12716,9 +13854,8 @@ const reusableStudentIdentity=async(link:any,civil:string)=>{
   return{fingerprint,name:name.trim(),civil:storedCivil,sectionId,needId:String(prior.id||"")};
 };
 
-const asciiDigits = (value: unknown) => String(value ?? "")
-  .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
-  .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
+/* One numeric alphabet: the shared converter, not a second copy of it. */
+const asciiDigits = toEnglishDigits;
 
 const surveyCohort = (sectionName: string) => {
   const text = String(sectionName || "");
@@ -12726,6 +13863,16 @@ const surveyCohort = (sectionName: string) => {
   if (/بنين|طلاب|ذكور/.test(text)) return { cohort: "boys", cohortLabel: "طلاب" };
   return { cohort: "mixed", cohortLabel: "طلبة القسم" };
 };
+
+/**
+ * The courses a survey treats as ACTIVE for one department — one rule for the
+ * page that lists them (GET), the answer that is checked (POST) and the
+ * department's reading of the answers (demand). GET used curriculumOverview,
+ * which drops catalogue courses that have no plan membership, while POST and
+ * demand used getOperationalCourseIds, which keeps them: a course could be
+ * accepted and counted but never offered, or the reverse.
+ */
+const surveyActiveCourseIds = (sectionId: number): Promise<Set<number>> => Repository.getOperationalCourseIds(sectionId);
 
 function surveyCourseIdsForSection(courses: any[], history: any[], sectionId: number) {
   const taught = new Map<number, number>();
@@ -12743,11 +13890,12 @@ app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res
   const byId=new Map(stored.map(row=>[Number(row.AdSectionId),row]));
   res.json(sections.map((section:any)=>{
     const saved=byId.get(Number(section.AdSectionId));
-    // Defaults are stable system values. A department may edit them explicitly,
-    // but no confirmation banner or approval gate is required merely to use them.
+    /* An unsaved row is a SUGGESTION from the department name, and says so.
+       Marking it reviewed made the screen present it as the current rule while
+       graduate proof (which requires a saved rule) refused every student. */
     const fixed=degreeRuleFromName(String(section.AdSectionName||""));
     const rule=saved||{...fixed,AdSectionId:section.AdSectionId,updatedAt:"",updatedBy:""};
-    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:true,suggested:false};
+    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:Boolean(saved),suggested:!saved};
   }));
 });
 
@@ -12774,8 +13922,18 @@ app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: Authen
     AdSectionId:sectionId,degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed,
     updatedAt:new Date().toISOString(),updatedBy:String(req.user?.Name||""),
   });
+  /* The public survey tells each department whether graduate proof is open;
+     a just-saved rule must not wait out the payload cache. */
+  surveyPayloadCache.clear();
   res.json(saved);
 });
+
+/**
+ * انتهى الفصلُ الذي يجمع له الاستبيان: مرّ تاريخُ نهايته، أو أعلن صاحبُ
+ * الصلاحية انتهاءه. قاعدةٌ واحدة يسألها إصدارُ الرابط، وقراءتُه، والإرسال.
+ */
+const surveyTermEnded = (term: any): boolean => Boolean(term) && (term.AdTermClosed === true || termHasEnded(term));
+const SURVEY_TERM_ENDED = "انتهى هذا الفصل، ولم يعد الاستبيان يستقبل طلبات. تابع طلبك السابق من «حالة طلبي» أو راجع القسم.";
 
 /* ── قائمةُ مقرّرات الاستبيان تُبنى مرّةً لكل رابط ────────────────────────
  * بناؤها يقرأ أرشيفَ الجداول كلّه (عشر سنوات) وخطةَ كل قسم. وكان يُعاد لكل
@@ -12789,6 +13947,14 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
   const cacheKey = `${Repository.isDemoRequest() ? getCookies(req as any)["session_id"] || "demo" : "live"}:${resolved.link.id}`;
+  /* Asked on every open, outside the payload cache: the term can end while a
+     cached payload is still fresh. */
+  const linkTerm = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId));
+  if (surveyTermEnded(linkTerm)) {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ termEnded: true, message: SURVEY_TERM_ENDED, term: String((linkTerm as any)?.AdTermName || ""), statusUrl: `/m/${encodeURIComponent(resolved.link.id)}` });
+    return;
+  }
   const cached = surveyPayloadCache.get(cacheKey);
   if (cached && Date.now() - cached.at < SURVEY_PAYLOAD_TTL_MS) {
     res.setHeader("Cache-Control", "no-store");
@@ -12803,14 +13969,18 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
      from its own history, newest first. A catalogue entry nobody has taught in
      a decade is not something to ask a student about. */
   const scientificSections=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  const linkTermName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const sectionOptions=(await Promise.all(scientificSections.map(async(section:any)=>{
     const sid=Number(section.AdSectionId),{taught}=surveyCourseIdsForSection(courses,history,sid);
-    const overview=await curriculumOverview(sid);
-    const operational=new Set((overview?.operationalCourseIds||[]).map(Number));
+    /* Graduate proof needs the department's SAVED rule. The page learns it
+       here, before the student uploads anything, instead of after OCR. */
+    const savedRule=await storedDegreeRuleForSection(sid);
+    const graduateRule=savedRule?{saved:true,threshold:graduateThreshold(savedRule,linkTermName)}:{saved:false};
+    const operational=await surveyActiveCourseIds(sid);
     const offered=courses.filter((course:any)=>Number(course.AdSectionId)===sid&&operational.has(Number(course.AdCourseId)))
       .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
       .sort((a:any,b:any)=>b.lastTaught-a.lastTaught||String(a.code).localeCompare(String(b.code),"ar"));
-    return{id:section.AdSectionId,name:section.AdSectionName,courses:offered};
+    return{id:section.AdSectionId,name:section.AdSectionName,courses:offered,graduateRule};
   }))).sort((a:any,b:any)=>String(a.name).localeCompare(String(b.name),"ar"));
   const offered=sectionOptions.find((section:any)=>Number(section.id)===Number(resolved.link.AdSectionId))?.courses||[];
 
@@ -12841,16 +14011,40 @@ app.post("/api/public/survey/:token/identity-status", async (req:Request,res:Res
   if(!staffLookupAllowed(`identity:${token}`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة."});return;}
   const civil=asciiDigits(req.body?.civil).replace(/\D/g,"");
   if(!validateCivilId(civil).isValid){res.status(400).json({error:"الرقم المدني غير صحيح"});return;}
-  const prior=await reusableStudentIdentity(resolved.link,civil);
-  if(!prior){res.setHeader("Cache-Control","no-store");res.json({verified:false});return;}
-  const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===Number(prior.sectionId)&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
-  if(!section){res.setHeader("Cache-Control","no-store");res.json({verified:false});return;}
   res.setHeader("Cache-Control","no-store");
+  const priorNeed=await priorNeedForHand(resolved.link,civil);
+  if(!priorNeed){res.json({exists:false,verified:false});return;}
+  const prior=await reusableStudentIdentity(resolved.link,civil);
+  const initial=maskedInitial(String(prior?.name||""));
+  const suppliedRef=normalizeCaseRef(req.body?.caseRef);
+  /* Without the case number: that a request exists, and one masked letter —
+     never the decrypted name or department. */
+  if(!suppliedRef){res.json({exists:true,verified:false,initial});return;}
+  if(!caseRefMatches(priorNeed,suppliedRef)){
+    res.status(403).json({exists:true,verified:false,initial,code:"case-ref-mismatch",error:"رقم الحالة لا يطابق الطلب المحفوظ لهذا الرقم المدني. فقدت الرقم؟ راجع القسم."});return;
+  }
+  const sections=await Repository.getSections();
+  const sectionId=Number(prior?.sectionId||priorNeed.studentSectionId||priorNeed.AdSectionId||0);
+  const section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  const courses=await Repository.getCourses();
+  const courseById=new Map((courses as any[]).map((row:any)=>[Number(row.AdCourseId),row]));
+  const stateOf=(id:number)=>(priorNeed.courseStates||[]).find((state:any)=>Number(state.courseId)===Number(id));
   res.json({
-    verified:true,identityMatched:true,
-    name:String(prior.name||""),
-    sectionId:Number(prior.sectionId),
-    sectionName:String((section as any).AdSectionName||"")
+    exists:true,verified:true,identityMatched:Boolean(prior),
+    name:String(prior?.name||""),
+    sectionId:section?Number(sectionId):0,
+    sectionName:String((section as any)?.AdSectionName||""),
+    /* What the new answer will update, shown before the student replaces it. */
+    summary:{
+      caseRef:caseRefFor(priorNeed),
+      requestType:String(priorNeed.requestType||"new-course"),
+      submittedAt:String(priorNeed.createdAt||""),
+      updatedAt:String(priorNeed.updatedAt||""),
+      graduateReason:String(priorNeed.graduateReason||""),
+      caseStatus:isCaseLevelNeed(priorNeed)?studentCaseStatus(priorNeed.caseState):"",
+      courses:(priorNeed.courseIds||[]).map((id:any)=>{const course:any=courseById.get(Number(id));const state:any=stateOf(Number(id));
+        return{id:Number(id),code:String(course?.CourseCode||""),name:String(course?.CourseName||`مقرر ${id}`),state:String(state?.state||"")};}),
+    },
   });
 });
 
@@ -12864,7 +14058,7 @@ app.post("/api/public/survey/:token/proof-status", async (req:Request,res:Respon
   const sections=await Repository.getSections();
   const section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
   if(!section){res.status(400).json({error:"القسم العلمي غير صالح"});return;}
-  const verified=await reusableGraduateVerification(resolved.link,civil,sectionId);
+  const verified=await reusableGraduateVerification(resolved.link,civil,sectionId,(req.body||{}).caseRef);
   res.setHeader("Cache-Control","no-store");
   if(!verified){res.json({verified:false});return;}
   res.json({
@@ -12873,15 +14067,34 @@ app.post("/api/public/survey/:token/proof-status", async (req:Request,res:Respon
   });
 });
 
-app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet-stream",limit:"14mb"}), async (req:Request,res:Response)=>{
+/* A sheet over the limit used to fall through to the generic error handler: the
+   student saw a raw failure with no hint that the FILE was the problem. The
+   limit is one number, told to the page and enforced here with a clear 413. */
+const STUDENT_PROOF_MAX_BYTES=14*1024*1024;
+const STUDENT_PROOF_TOO_LARGE="حجم الملف أكبر من 14 ميغابايت. صوّر الصفحة الرسمية وحدها أو احفظها PDF بحجمٍ أصغر ثم ارفعها.";
+const studentProofBody=express.raw({type:"application/octet-stream",limit:STUDENT_PROOF_MAX_BYTES});
+const readStudentProofBody=(req:Request,res:Response,next:NextFunction)=>{
+  if(Number(req.get("content-length")||0)>STUDENT_PROOF_MAX_BYTES){res.status(413).json({code:"file-too-large",error:STUDENT_PROOF_TOO_LARGE});return;}
+  studentProofBody(req,res,(error?:any)=>{
+    if(error&&(error.type==="entity.too.large"||Number(error.status)===413)){res.status(413).json({code:"file-too-large",error:STUDENT_PROOF_TOO_LARGE});return;}
+    next(error);
+  });
+};
+app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Request,res:Response)=>{
   const token=String(req.params.token||""),resolved=await resolveShareToken(token);
   if("error"in resolved){res.status(resolved.status).json({error:resolved.error});return;}
   if(resolved.link.kind!=="survey"){res.status(404).json({error:"هذا الرابط ليس استبياناً"});return;}
   if(!staffLookupAllowed(`${token}:proof`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة."});return;}
+  if(surveyTermEnded((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId)))){res.status(409).json({error:SURVEY_TERM_ENDED,code:"term-ended"});return;}
   const civil=asciiDigits(decodeURIComponent(String(req.get("x-student-civil")||""))).replace(/\D/g,""),name=decodeURIComponent(String(req.get("x-student-name")||"")).trim(),sectionId=Number(req.get("x-student-section")||0);
   if(!validateCivilId(civil).isValid||name.length<3){res.status(400).json({error:"أكمل الاسم والرقم المدني الصحيح أولاً"});return;}
   const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
   if(!section){res.status(400).json({error:"القسم العلمي غير صالح"});return;}
+  /* The saved academic rule is a precondition, checked BEFORE the expensive
+     OCR: without it no sheet can be judged, so reading one only burned the
+     student's upload and the server's memory to say «no rule» afterwards. */
+  const rule=await storedDegreeRuleForSection(sectionId);
+  if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم.",code:"no-degree-rule"});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!bytes.length){res.status(400).json({error:"ارفع صحيفة التخرج PDF أو صورة واضحة"});return;}
   const mime=String(req.get("x-file-type")||"application/pdf").slice(0,80);
   let ocr;
@@ -12895,7 +14108,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
      noise by checksum, then accept the entered civil when it appears either as
      one token or as digit groups on ONE visual line. No digit is repaired or
      guessed. This restores the official Authority screenshot where Tesseract
-     may emit «3041 0230 1536» instead of «304102301536». */
+     may emit «3000 1010 0122» instead of «300010100122». */
   const proofAscii=asciiDigits(String(ocr.text||""));
   const escapedCivil=civil.split("").map(d=>d.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("[ \t\u00a0\u200e\u200f.-]{0,3}");
   const civilVisible=civilCandidates.includes(civil)||new RegExp(`(?:^|[^0-9])${escapedCivil}(?:[^0-9]|$)`).test(proofAscii);
@@ -12913,12 +14126,16 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
      prints the full civil name. Civil ID remains the 100% identity gate. */
   const foldName=(value:string)=>String(value||"").replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
   const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.some(word=>documentName.includes(word));
-  const specializationMatched=academicSectionNameMatches(facts.normalizedText,String(section.AdSectionName||""));
+  /* Only the programme row decides the specialization — never words anywhere
+     else on the sheet. No readable programme row fails closed. */
+  const programmeText=String(facts.programmeText||"");
+  if(!programmeText){
+    res.status(422).json({code:"programme-unreadable",error:"لم أتعرف على سطر «البرنامج» في صحيفة التخرج. ارفع الصفحة الرسمية كاملة وبوضوح يظهر فيها البرنامج."});return;
+  }
+  const specializationMatched=academicSectionNameMatches(programmeText,String(section.AdSectionName||""));
   if(!specializationMatched){
     res.status(422).json({error:`التخصص الظاهر في صحيفة التخرج لا يطابق القسم المحدد «${String(section.AdSectionName||"")}». اختر قسمك الصحيح وارفع صحيفتك أنت.`});return;
   }
-  const rule=await storedDegreeRuleForSection(sectionId);
-  if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم."});return;}
   /* Required graduation units come from the selected department's reviewed
      academic rule. OCR only has to prove the student's PASSED units. The
      Authority screenshot lays its values in a visual row, so sparse OCR can
@@ -12945,10 +14162,10 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const required=graduateThreshold(rule,termName),summer=isSummerTerm(termName);
   const eligible=passedUnits>=required;
-  if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر ${passedUnits} وحدة مجتازة، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}.`});return;}
+  if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر اجتياز ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}.`});return;}
   const proofToken=await issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),nameMatched,specializationMatched,documentKind:"graduation-sheet"});
   res.json({eligible:true,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),termName,summer,
-    message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${passedUnits} وحدة، والمطلوب ${required} حسب بيانات قسمك. يمكنك متابعة الطلب.`,
+    message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} حسب بيانات قسمك. يمكنك متابعة الطلب.`,
     proofToken,confidence:ocr.confidence});
 });
 
@@ -12961,11 +14178,21 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
+  if (surveyTermEnded((await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId)))) {
+    res.status(409).json({ error: SURVEY_TERM_ENDED, code: "term-ended" });
+    return;
+  }
 
   const body = (req.body || {}) as Record<string, unknown>;
   const civil = asciiDigits(body.civil).replace(/\D/g, "");
   // The checksum is the whole gate: one person, one answer, and no account.
   if (!validateCivilId(civil).isValid) { res.status(400).json({ error: "الرقم المدني غير صحيح" }); return; }
+  /* Replacing an existing request needs its case number, not only a civil ID
+     anyone might know. */
+  const priorNeed=await priorNeedForHand(resolved.link,civil);
+  if(priorNeed&&!caseRefMatches(priorNeed,body.caseRef)){
+    res.status(409).json({error:CASE_REF_REQUIRED,code:"case-ref-required"});return;
+  }
   const submittedName = String(body.name || "").trim().slice(0, 60);
   const submittedSectionId=Number(body.sectionId||resolved.link.AdSectionId);
   const priorIdentity=await reusableStudentIdentity(resolved.link,civil);
@@ -12997,13 +14224,13 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
      the course being clashed with can belong to any department in the college. */
   const linkSectionId=Number(resolved.link.AdSectionId);
   const { allowed } = surveyCourseIdsForSection(courses, history, linkSectionId);
-  const operationalLinkIds=await Repository.getOperationalCourseIds(linkSectionId);
+  const operationalLinkIds=await surveyActiveCourseIds(linkSectionId);
   for(const id of [...allowed])if(!operationalLinkIds.has(Number(id)))allowed.delete(Number(id));
   courses.filter((course:any)=>Number(course.AdSectionId)===linkSectionId&&operationalLinkIds.has(Number(course.AdCourseId)))
     .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   if(requestType==="course-conflict"){
     const collegeSectionIds=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId)).map((row:any)=>Number(row.AdSectionId));
-    const operationalBySection=new Map<number,Set<number>>(await Promise.all(collegeSectionIds.map(async sid=>[sid,await Repository.getOperationalCourseIds(sid)] as [number,Set<number>])));
+    const operationalBySection=new Map<number,Set<number>>(await Promise.all(collegeSectionIds.map(async sid=>[sid,await surveyActiveCourseIds(sid)] as [number,Set<number>])));
     courses.filter((course:any)=>operationalBySection.get(Number(course.AdSectionId))?.has(Number(course.AdCourseId)))
       .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   }
@@ -13020,10 +14247,11 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     :"";
   let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,graduateNameMatched:boolean|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
   /* Keep a previously verified graduation sheet alive even when the student
-     changes this survey answer to another request type. saveStudentNeed replaces
-     the prior answer by design, so without this carry-forward the verified fact
-     would disappear and the next graduate request would wrongly demand upload. */
-  const reusableVerification=await reusableGraduateVerification(resolved.link,civil,sectionId);
+     changes this survey answer to another request type. saveStudentNeed updates
+     the record in place with the NEW answer's fields, so without this
+     carry-forward the verified fact would disappear and the next graduate
+     request would wrongly demand upload. */
+  const reusableVerification=await reusableGraduateVerification(resolved.link,civil,sectionId,body.caseRef);
   if(requestType!=="graduate"&&reusableVerification){
     passedUnits=reusableVerification.passedUnits;requiredUnits=reusableVerification.requiredUnits;degreeUnits=reusableVerification.degreeUnits;
     graduateNameMatched=reusableVerification.proofNameMatched;eligibility="eligible";
@@ -13035,10 +14263,17 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     }
     const currentRule=await storedDegreeRuleForSection(sectionId);
     if(!currentRule){res.status(400).json({error:"قواعد التخرج الأكاديمية لهذا القسم غير معتمدة في النظام"});return;}
-    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
-      res.status(400).json({error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
+    if(!proof&&await studentProofExpired(String(body.proofToken||""))){
+      res.status(400).json({code:"proof-expired",error:"انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان في الصفحة."});return;
     }
-    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
+    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
+      res.status(400).json({code:"proof-required",error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
+    }
+    /* The threshold is the CURRENT saved rule for THIS link's term — never the
+       figure carried inside the proof token, which was computed for whatever
+       term and rule applied when the sheet was read. */
+    const linkTermName=String((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
+    passedUnits=Number(proof.passedUnits||0);requiredUnits=graduateThreshold(currentRule,linkTermName);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=requiredUnits>0&&passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
     /* Graduate notes are mandatory, not an optional comment. The approved
@@ -13074,12 +14309,15 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     requestType,curriculumPlanId,nameCipher:await sealStudentIdentity(name),civilCipher:await sealStudentIdentity(civil),details,
     graduateReason,passedUnits,requiredUnits,degreeUnits,eligibility,proofNameMatched:graduateNameMatched,
   });
+  studentQueueMemo.invalidate();
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.status(201).json({ name, count: courseIds.length, requestType, caseRef: caseRefFor(savedNeed) });
 });
 
-/** What the students said, for the department. Never names, only numbers. */
+/** What the students said, for the department: the counts that plan sections,
+ * and the named case list (name + civil ID decrypted) for the authorised,
+ * scope-checked department only. Never cached by the service worker. */
 app.get("/api/schedules/demand", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -13111,7 +14349,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     Repository.getTerms().catch(() => []),
     Repository.getSections().catch(() => []),
   ]);
-  const operationalDemandIds=await Repository.getOperationalCourseIds(sectionId);
+  const operationalDemandIds=await surveyActiveCourseIds(sectionId);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId && operationalDemandIds.has(Number(course.AdCourseId)));
   const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
   const belongsToSurvey = (need:any) => {
@@ -13190,7 +14428,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode,sectionId:Number(course.AdSectionId||0)}]));
   const sectionNameById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
   const cases=(await Promise.all(needs.map(async(need:any)=>({
-    id:need.id,createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
+    id:need.id,caseRef:caseRefFor(need),createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
     studentSectionId:Number(need.studentSectionId||need.AdSectionId||0),studentSectionName:sectionNameById.get(Number(need.studentSectionId||need.AdSectionId||0))||"",
     surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
@@ -13280,9 +14518,13 @@ const grantedPermissions = async (req: AuthenticatedRequest): Promise<number[]> 
 const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
                          courses: Array<{ AdCourseId: number; AdSectionId: number }>,
                          sectionId: number): boolean => {
-  /* الطلبُ الحديث يحمل قسمَ استبياره صراحةً، فهو وحده الحَكَم. */
+  /* الطلبُ الحديث يحمل قسمَ استبيانه صراحةً، فهو صاحبُه. **ومعه** كلُّ قسمٍ
+     يملك مقرّراً فيه: طلبُ «تعارض مقررين» قد يسمّي مقرّراً من قسمٍ آخر، وكان
+     لا يراه إلا قسمُ الاستبيان — ولجنتُه لا تقرّر إلا في مقرّراتها — فيبقى
+     ذلك المقرّرُ بلا من يقرّر فيه أبداً. */
   const declared = Number(need.surveySectionId || 0);
-  if (declared) return declared === sectionId;
+  if (declared) return declared === sectionId || courses.some(row => Number(row.AdSectionId) === sectionId
+    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
 
   /* والقديمُ — وهو ما كُتب قبل وجود ذلك الحقل — يُنسب إلى **كلِّ** قسمٍ يملك
      مقرّراً من مقرّراته المطلوبة. وهذا مقصودٌ ولا يُختصر إلى واحد: طالبٌ طلب
@@ -13298,6 +14540,14 @@ const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number;
   const anyKnownOwner = courses.some(row => (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
   return !anyKnownOwner && Number(need.AdSectionId || 0) === sectionId;
 };
+
+/** أقسامُ نطاق الحساب التي تملك هذا الطلب — ما يُكتب به في المقرّر وفي الحالة كلها. */
+const owningSectionsInScopeFor = async (req: AuthenticatedRequest, need: any, allCourses: any[]): Promise<number[]> =>
+  (await Repository.getSections() as any[])
+    .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
+    .map(row => Number(row.AdSectionId))
+    .filter(candidate => sectionOwnsNeed(need, allCourses, candidate)
+      && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
 
 const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "committee-rejected", "registered", "rejected"]);
 const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "conflict", "closed", "other"]);
@@ -13371,16 +14621,54 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
 
   const viewer = registrationViewer(req);
   const rows = (await Promise.all(needs.map(async need => {
+    /* ── طلبُ الخريج: قرارٌ في الحالة كلها ────────────────────────────────
+       لا مقرّرَ فيه يُعلَّق عليه قرار، فكان يسقط من الكشف عند السطر التالي
+       ولا يُجاب أبداً. يُعرض بحقائق التحقق من صحيفة التخرج وقرارٍ واحدٍ
+       للّجنة ثم للتسجيل. والتسجيلُ لا يراه قبل موافقة اللجنة. */
+    if (isCaseLevelNeed(need)) {
+      const caseStatus = studentCaseStatus(need.caseState);
+      if (viewer === "registration" && (caseStatus === "pending" || caseStatus === "committee-rejected")) return null;
+      return {
+        id: String(need.id),
+        caseRef: caseRefFor(need),
+        name: await openStudentIdentity(need.nameCipher),
+        civil: await openStudentIdentity(need.civilCipher),
+        createdAt: String(need.createdAt || ""),
+        requestType: String(need.requestType || "graduate"),
+        studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+        details: String(need.details || ""),
+        caseLevel: true,
+        caseStatus,
+        caseState: need.caseState || {},
+        graduate: {
+          reason: need.graduateReason || "",
+          passedUnits: Number(need.passedUnits || 0),
+          requiredUnits: Number(need.requiredUnits || 0),
+          degreeUnits: Number(need.degreeUnits || 0),
+          eligibility: String(need.eligibility || "not-checked"),
+          nameMatched: Boolean(need.proofNameMatched),
+        },
+        courses: [] as any[],
+      };
+    }
     const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
     /* التسجيلُ لا يرى ما لم تسلّمه اللجنة: لا المنتظرَ عندها ولا ما لم توافق عليه. */
     /* واللجنةُ ترى مقرّرات قسمها وحدها (أو ما لا يُعرف مالكه): الطلبُ القديم
        لقسمين يُعرض على القسمين، وكلٌّ يقرّر في مقرّره هو. */
-    const visibleCourseIds = (need.courseIds || []).filter((id: any) => {
+    /* مقرّرٌ حذفه الطالبُ بعد أن قيل فيه شيء يبقى في الكشف معلَّماً، فلا يبقى
+       مقعدٌ محجوزاً باسم من لم يعد يريده دون أن يعرف أحد. */
+    const droppedIds = (need.courseStates || [])
+      .filter((state: any) => state?.droppedByStudent && !(need.courseIds || []).map(Number).includes(Number(state.courseId)))
+      .map((state: any) => Number(state.courseId));
+    /* كلُّ مقرّرٍ يُقرَّر في كشف القسم الذي يملكه. ومقرّرُ قسمٍ آخر في طلبٍ
+       قُدّم عبر استبيان هذا القسم يُعرض هنا للقراءة وحدها («يقرّره قسم …»)،
+       ويُقرَّر في كشف قسمه. */
+    const filedHere = Number(need.surveySectionId || need.AdSectionId || 0) === sectionId;
+    const ownerOf = (id: any) => Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
+    const decidedHere = (id: any) => { const owner = ownerOf(id); return !owner || owner === sectionId; };
+    const visibleCourseIds = [...(need.courseIds || []), ...droppedIds].filter((id: any) => {
+      if (!decidedHere(id) && !filedHere) return false;
       if (viewer === "registration") return reachedRegistration(states.get(Number(id)));
-      if (viewer === "committee") {
-        const owner = Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
-        return !owner || owner === sectionId;
-      }
       return true;
     });
     if (!visibleCourseIds.length) return null;
@@ -13394,6 +14682,17 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       createdAt: String(need.createdAt || ""),
       requestType: String(need.requestType || "new-course"),
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+      /* طلبُ خريجٍ قيل فيه شيءٌ ثم غيّره الطالب إلى طلب مقرّرات. */
+      caseDroppedAt: need.caseDroppedAt && need.caseState ? String(need.caseDroppedAt) : "",
+      details: String(need.details || ""),
+      /* «تعارض مقررين» يُفهم بطرفيه: المقرّرُ الآخر يُذكر ولو لم يكن في هذا الكشف. */
+      partnerCourses: String(need.requestType || "") === "course-conflict"
+        ? (need.courseIds || []).filter((id: any) => !visibleCourseIds.map(Number).includes(Number(id))).map((id: any) => {
+            const course: any = courseById.get(Number(id));
+            return { code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${id}`),
+              sectionName: sectionNameById.get(Number(course?.AdSectionId || 0)) || "" };
+          })
+        : [],
       courses: visibleCourseIds.map((id: any) => {
         const course: any = courseById.get(Number(id));
         const state: any = states.get(Number(id));
@@ -13410,12 +14709,20 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
           /* «لم يقل أحدٌ شيئاً» يختلف عن «سلّمه القسم وينتظر»: الأولى غيابُ
              سجلّ، والثانيةُ قولٌ مكتوب. والفرقُ يهمّ من يقرأ. */
           settled: Boolean(state),
+          readOnly: !decidedHere(id),
+          decidedBySectionName: decidedHere(id) ? undefined : (sectionNameById.get(ownerOf(id)) || "قسم آخر"),
+          droppedByStudent: Boolean(state?.droppedByStudent),
+          droppedLabel: state?.droppedByStudent ? droppedCourseLabel(state) : undefined,
         };
       }),
     };
   }))).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
-  const every = rows.flatMap(row => row.courses);
+  /* كلُّ بندٍ ينتظر قراراً — مقرّرٌ أو حالةُ خريجٍ كاملة — يُعدّ مرّةً بالتصنيف نفسه. */
+  const every: string[] = rows.flatMap((row: any) => row.caseLevel
+    ? [String(row.caseStatus)]
+    : row.courses.filter((course: any) => !course.readOnly).map((course: any) => !course.settled ? "pending"
+      : course.state === "awaiting-registration" ? "approved" : String(course.state)));
   res.setHeader("Cache-Control", "no-store");
   res.json({
     rows: rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
@@ -13423,12 +14730,12 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     viewer,
     totals: {
       students: rows.length,
-      courses: every.length,
-      pendingCommittee: every.filter(course => !course.settled).length,
-      committeeRejected: every.filter(course => course.state === "committee-rejected").length,
-      registered: every.filter(course => course.state === "registered").length,
-      rejected: every.filter(course => course.state === "rejected").length,
-      waiting: every.filter(course => course.settled && course.state === "awaiting-registration").length,
+      courses: rows.reduce((sum: number, row: any) => sum + row.courses.length, 0),
+      pendingCommittee: every.filter(status => status === "pending").length,
+      committeeRejected: every.filter(status => status === "committee-rejected").length,
+      registered: every.filter(status => status === "registered").length,
+      rejected: every.filter(status => status === "rejected").length,
+      waiting: every.filter(status => status === "approved").length,
     },
   });
 });
@@ -13448,11 +14755,7 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
      يملك هذا الطلبَ يستطيع أن يكتب فيه — فلا يُعرض ما لا يُكتب فيه، ولا
      يُكتب فيما لا يُعرض. */
   const allCourses = await Repository.getCourses() as any[];
-  const owningSectionsInScope = (await Repository.getSections() as any[])
-    .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
-    .map(row => Number(row.AdSectionId))
-    .filter(candidate => sectionOwnsNeed(need, allCourses, candidate)
-      && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
+  const owningSectionsInScope = await owningSectionsInScopeFor(req, need, allCourses);
   if (!owningSectionsInScope.length) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
@@ -13558,6 +14861,69 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
   res.json({ ok: true, courseStates: saved.courseStates || [] });
 });
 
+/**
+ * قرارٌ في الحالة كلها — طلبُ الخريج الذي لا يسمّي مقرّراً.
+ *
+ * الحراسُ أنفسُهم التي يمرّ بها قرارُ المقرّر: صلاحيةُ الكتابة، ونطاقُ القسم
+ * المالك بالاشتقاق نفسِه (`sectionOwnsNeed`)، وتوقيعا الجدول قبل أن يكتب
+ * التسجيل، والترتيبُ (`studentCaseRefusal`) يُسأل داخل المعاملة.
+ * والأسبابُ من القائمتين المغلقتين نفسيهما، والسطرُ الحرّ «سطرٌ للطالب».
+ */
+app.post("/api/student-registration/:id/case-state", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser), await grantedPermissions(req))) {
+    res.status(403).json({ error: "هذا الكشف للقراءة بصفتك." });
+    return;
+  }
+  const need = await Repository.getStudentNeedById(String(req.params.id || ""));
+  if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (!isCaseLevelNeed(need)) { res.status(400).json({ error: "هذا الطلب يُقرَّر مقرّراً مقرّراً." }); return; }
+  const owningSectionsInScope = await owningSectionsInScopeFor(req, need, await Repository.getCourses() as any[]);
+  if (!owningSectionsInScope.length) { res.status(403).json({ error: "هذا الطلب خارج نطاقك." }); return; }
+
+  const viewer = registrationViewer(req);
+  const requestedSide = String(req.body?.side || "");
+  const side: "committee" | "registrar" | null = requestedSide === "committee" || requestedSide === "registrar"
+    ? requestedSide : viewer === "registration" ? "registrar" : viewer === "committee" ? "committee" : null;
+  if (!side) { res.status(400).json({ error: "حدّد الجهة: اللجنة أو التسجيل." }); return; }
+  if (viewer === "committee" && side !== "committee") {
+    res.status(403).json({ error: "قرارُ التنفيذ أو الردّ للتسجيل. اللجنةُ توافق أو لا توافق." }); return;
+  }
+  if (viewer === "registration" && side !== "registrar") {
+    res.status(403).json({ error: "الموافقةُ وعدمُها قرارُ لجنة القسم، لا التسجيل." }); return;
+  }
+  if (side === "registrar") {
+    for (const section of owningSectionsInScope) {
+      const writeBlocked = await registrarBlockReason(req, Number(need.AdCollegeId), section, Number(need.AdTermId || 0));
+      if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
+    }
+  }
+  const decision = String(req.body?.decision || "");
+  if (!["approved", "rejected", "pending"].includes(decision)) { res.status(400).json({ error: "قرارٌ غير معروف." }); return; }
+  const reasonCode = String(req.body?.reasonCode || "");
+  if (decision === "rejected") {
+    const allowed = side === "committee" ? STUDENT_COMMITTEE_REASONS : STUDENT_REJECT_REASONS;
+    if (!allowed.has(reasonCode)) {
+      res.status(400).json({ error: side === "committee" ? "اختر سبب عدم الموافقة." : "اختر سبب الردّ." }); return;
+    }
+  }
+  const next = decision === "pending" ? null : {
+    state: decision as "approved" | "rejected",
+    ...(decision === "rejected" ? { reasonCode: reasonCode as any } : {}),
+    note: String(req.body?.note || "").trim().slice(0, 300) || undefined,
+    byRole: roleLabel(req.user?.Role) || undefined,
+    at: new Date().toISOString(),
+  };
+  let saved: any;
+  try { saved = await Repository.setStudentCaseDecision(need.id, side, next); }
+  catch (error: any) {
+    if (error instanceof StudentCourseStateConflict) { res.status(409).json({ error: error.message }); return; }
+    throw error;
+  }
+  if (!saved) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, caseState: saved.caseState || {}, caseStatus: studentCaseStatus(saved.caseState) });
+});
+
 /** The department's tray. Empty is the normal state and costs one scoped read. */
 app.get("/api/schedules/staff-inbox", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
@@ -13593,7 +14959,8 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
-  if (!staffLookupAllowed(token, req.ip || "unknown")) {
+  const attempt = publicAttemptReserve(token, req.ip || "unknown");
+  if (!attempt) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
@@ -13601,9 +14968,21 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
   // One answer for a wrong number and for someone with no lectures this term:
   // the page must not become a way to test which numbers exist.
   if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  attempt.release();
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  /* «منذ زيارتك الأخيرة»: ما حُفظ من الزيارة السابقة يُعاد، ثم تُسجَّل هذه. */
+  const { instructorId: cardInstructorId, fingerprint: cardFingerprint, ...visible } = card;
+  const previousVisit = resolved.link.marks?.[String(cardInstructorId)];
+  if (Number(card.termId) === Number(resolved.link.AdTermId)) {
+    void Repository.markShareLinkInstructor(resolved.link.id, cardInstructorId, { seenAt: new Date().toISOString(), seenFingerprint: cardFingerprint }).catch(() => undefined);
+  }
   res.setHeader("Cache-Control", "no-store");
-  res.json(card);
+  res.json({
+    ...visible,
+    lastSeenAt: previousVisit?.seenAt || "",
+    changedSinceLastVisit: Boolean(previousVisit?.seenFingerprint) && Number(card.termId) === Number(resolved.link.AdTermId)
+      && previousVisit!.seenFingerprint !== cardFingerprint,
+  });
 });
 
 /* The old `staff-ics?civil=…` route is gone. A subscription URL is stored by
@@ -13724,7 +15103,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
    phone width and left the fourth stranded alone on its own row; two by two
    is even at every width the card is read on. */
 .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px}
-@media (min-width:560px){.stats{grid-template-columns:repeat(4,1fr)}}
+@media (min-width:560px){.stats{grid-template-columns:repeat(5,1fr)}}
 .stat{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
 .stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .stat span{display:block;margin-top:2px;color:var(--dim);font-size:12px}
@@ -13802,6 +15181,17 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .movement-meta[data-decision=rejected]{color:#f87171}
 .requests-panel{margin-top:12px;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
 .requests-panel a.req-link{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;background:var(--jade);color:#04100d;font-weight:600;font-size:13.5px;text-decoration:none;margin-top:8px}
+.approvals{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.approvals span{padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:11.5px;color:var(--dim)}
+.approvals span[data-status=accepted]{border-color:var(--jade);color:var(--jade)}
+.approvals span[data-status=returned]{border-color:#f87171;color:#f87171}
+.soon{margin:0 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+.soon b{display:block;font-size:13px;margin-bottom:6px}
+.soon ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.soon li{font-size:12.5px;color:var(--dim);line-height:1.7}
+.soon li[data-kind=cancelled] strong{color:#f87171}
+.soon li[data-kind=covering] strong{color:var(--jade)}
+.movement-new{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--jade);color:#04100d;font-size:11px;font-weight:600}
 .pastnote{
   margin-block-end:14px;padding:11px 13px;border-radius:12px;
   border:1px solid var(--line);background:color-mix(in srgb,var(--brass) 9%,transparent);
@@ -13833,7 +15223,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   .wrap{max-width:none!important}.gate,.tools,.foot,.sub,.since,.term-switch,.card-tabs{display:none!important}
   .card{display:block!important;animation:none!important}.head{margin:0 0 12px;padding:0 0 10px;border-bottom:2px solid #222}
   .head h1{font-size:22px!important;letter-spacing:0!important}.head small,.stat span{color:#555!important}
-  .stats{grid-template-columns:repeat(4,1fr)!important;gap:6px;margin-bottom:12px}.stat{padding:8px 10px;border-radius:8px}
+  .stats{grid-template-columns:repeat(5,1fr)!important;gap:6px;margin-bottom:12px}.stat{padding:8px 10px;border-radius:8px}
   .stat b{font-size:18px;letter-spacing:0}.day{break-inside:avoid;border-radius:8px;margin-bottom:8px}
   .day,.stat{border-color:#bbb;background:#fff}.day>h2{padding:8px 10px}.slot{padding:7px 10px}.slot time{color:#111}
   .pastnote{display:none!important}
@@ -13868,7 +15258,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       <label for="termPick">الفصل الدراسي</label>
       <select id="termPick" aria-label="اختر الفصل الدراسي"></select>
     </div>
+    <div class="approvals" id="approvals" aria-label="حالة اعتماد جدول القسم"></div>
     <div class="stats" id="stats"></div>
+    <div class="soon" id="soon" hidden></div>
     <div class="card-tabs" role="tablist">
       <button type="button" class="card-tab" id="tab-week" role="tab" aria-selected="true">الجدول الأسبوعي</button>
       <button type="button" class="card-tab" id="tab-movement" role="tab" aria-selected="false">حركة الجدول</button>
@@ -13888,7 +15280,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       <a href="#" id="print">طباعة</a>
     </div>
     <div class="sub" id="sub" hidden>
-      <p>اشتراك دائم — التقويم يتابع الجدول من نفسه، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
+      <p id="subLife">اشتراك يتابع جدولك من نفسه حتى نهاية الفصل، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
       <label class="subalarm"><input type="checkbox" id="subAlarm"> ذكّرني قبل كل محاضرة بربع ساعة</label>
       <a id="subNow" href="#">اشتراك الآن · آيفون · ماك · أوتلوك</a>
       <button type="button" id="subCopy">نسخ الرابط لتقويم جوجل</button>
@@ -13944,17 +15336,23 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     var host=document.getElementById("movement");
     if(!host)return;
     var list=d.movementHistory||[];
+    /* رابطُ القسم العام لا يحمل طلباتٍ ولا قرارات: تُقال أين تجدها. */
+    var privateNote=d.personal?'':'<div class="pastnote">طلباتك وقرارات القسم فيها تظهر في رابطك الشخصي الذي يرسله إليك القسم، لا في رابط القسم العام.</div>';
     if(!list.length){
-      host.innerHTML='<h3 class="movement-head">حركة جدولك الرسمية</h3><div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل، ولم تُرسل طلب تعديل.</div>';
+      host.innerHTML=privateNote+'<h3 class="movement-head">حركة جدولك الرسمية</h3><div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل'+(d.personal?'، ولم تُرسل طلب تعديل.':'.')+'</div>';
       return;
     }
     /* قسمان كما في صفحة الطلب تماماً: طلباتُك وقرارُ القسم فيها، ثم حركةُ
        جدولك الرسمية. */
     var mine=list.filter(function(m){return m.source==="request"}),official=list.filter(function(m){return m.source!=="request"});
+    var since=Date.parse(visitSince||"")||0;
     var item=function(m){
-      return '<li class="movement-item t-'+esc(m.tone)+'">'+(m.day?'<b>'+esc(m.day)+'</b>: ':'')+esc(m.text)+' <small class="movement-meta"'+(m.decision?' data-decision="'+esc(m.decision)+'"':'')+'>'+esc(m.label)+' · <bdi>'+esc(friendlyDate(m.at,true))+'</bdi></small></li>';
+      /* حركةُ الجدول الرسمية «جديدة» فقط إن تغيّرت بصمةُ جدوله فعلاً — آخرُ فرقٍ
+         بين نسخةٍ والجدول الحالي يحمل وقتَ الآن دائماً. وقرارُ القسم يحمل وقتَه. */
+      var fresh=since&&Date.parse(m.at)>since&&(m.source==="request"||visitChanged);
+      return '<li class="movement-item t-'+esc(m.tone)+'">'+(fresh?'<span class="movement-new">جديد منذ زيارتك الأخيرة</span> ':'')+(m.day?'<b>'+esc(m.day)+'</b>: ':'')+esc(m.text)+' <small class="movement-meta"'+(m.decision?' data-decision="'+esc(m.decision)+'"':'')+'>'+esc(m.label)+' · <bdi>'+esc(friendlyDate(m.at,true))+'</bdi></small></li>';
     };
-    host.innerHTML=(mine.length?'<h3 class="movement-head">طلباتك</h3><ul class="movement-list">'+mine.map(item).join("")+'</ul>':'')+
+    host.innerHTML=privateNote+(mine.length?'<h3 class="movement-head">طلباتك</h3><ul class="movement-list">'+mine.map(item).join("")+'</ul>':'')+
       '<h3 class="movement-head">حركة جدولك الرسمية</h3>'+(official.length?'<ul class="movement-list">'+official.map(item).join("")+'</ul>':'<div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل.</div>');
   }
 
@@ -14007,10 +15405,16 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 
   function visibleCardCollege(value){var name=String(value||"");return /التربية\\s*الأساسية.*بنات/.test(name)?"":name}
   function shortCardCollege(value){return String(value||"").replace(/^\\s*[0-9٠-٩]+\\s*[·\\-–]?\\s*/,"").replace(/^\\s*كلية\\s+/,"").trim()}
+  /* «منذ زيارتك الأخيرة» تُحفظ من أول فتحٍ في هذه الجلسة: تبديلُ الفصل يعيد
+     الطلب فيسجّل زيارةً جديدة، ولا يجوز أن يمحو ما قيل للأستاذ قبل لحظة. */
+  var visitSince=null,visitChanged=false;
   function render(d,value){
+    if(visitSince===null){visitSince=d.lastSeenAt||"";visitChanged=Boolean(d.changedSinceLastVisit);}
     currentCivil=value;
     var currentTerm = { termId: Number(d.termId || 0) };
-    var live = Boolean(d.liveTermId) && Number(d.termId) === Number(d.liveTermId);
+    var phase = d.termPhase || ((Boolean(d.liveTermId) && Number(d.termId) === Number(d.liveTermId)) ? "current" : "past");
+    var live = phase === "current";
+    var calendarOpen = phase !== "past";
     document.getElementById("name").textContent=d.name;
     document.getElementById("scope").textContent=d.college||"";
     var termPick=document.getElementById("termPick");
@@ -14018,11 +15422,23 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       termPick.innerHTML=d.availableTerms.map(function(t){return '<option value="'+t.id+'"'+(t.id===d.termId?' selected':'')+'>'+esc(t.name)+'</option>'}).join("");
       termPick.onchange=function(){switchTerm(Number(termPick.value)||0)};
     }
+    /* حالةُ اعتماد كل قسمٍ يدرّس فيه — للقراءة فقط. */
+    document.getElementById("approvals").innerHTML=(d.departmentApprovals||[]).map(function(a){
+      return '<span data-status="'+esc(a.status)+'">'+esc(a.department)+' · '+esc(a.label)+'</span>'}).join("");
+    /* ما يقع في أسبوعيه القادمين: إلغاءٌ، أو تغطيةٌ له أو منه. */
+    var soon=document.getElementById("soon"),upcoming=d.upcomingExceptions||[];
+    if(upcoming.length){
+      soon.innerHTML='<b>خلال الأسبوعين القادمين</b><ul>'+upcoming.map(function(x){
+        return '<li data-kind="'+esc(x.kind)+'"><time dir="ltr">'+esc(x.date)+'</time> · '+esc(x.day)+' — <strong>'+esc(x.course)+'</strong> '+(x.timeRange?'<span>'+esc(x.timeRange)+'</span> ':'')+'· '+esc(x.text)+'</li>'}).join("")+'</ul>';
+      soon.removeAttribute("hidden");
+    } else { soon.innerHTML=""; soon.setAttribute("hidden",""); }
+    var nouns=d.countNouns||{};
     document.getElementById("stats").innerHTML=[
-      ["ساعة أسبوعياً",hours(d.weeklyMinutes)],
-      ["محاضرة",ar(d.lectureCount)],
-      ["أيام",ar(d.dayCount)],
-      ["قاعات",ar(d.rooms.length)]
+      ["ساعات تدريس أسبوعية",hours(d.weeklyMinutes)],
+      [(nouns.units||"وحدات")+" نصاب",ar(d.loadUnits||0)],
+      [nouns.lectures||"محاضرات",ar(d.lectureCount)],
+      [nouns.days||"أيام",ar(d.dayCount)],
+      [nouns.rooms||"قاعات",ar(d.rooms.length)]
     ].map(function(x){return '<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'}).join("");
 
     var starts=[];d.byDay.forEach(function(day){day.rows.forEach(function(r){if(starts.indexOf(r.start)<0)starts.push(r.start)})});starts.sort();
@@ -14032,9 +15448,8 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         return '<tr><th class="t" dir="ltr">'+esc(start)+'</th>'+d.byDay.map(function(day){
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
-              /* البدايةُ ثم النهاية، بترتيب القراءة؛ وعلى الهاتف تنكسر عند الشَّرطة
-                 سطرين نظيفين بدل ثلاثة أسطرٍ مقلوبة. */
-              '<time dir="ltr">'+esc(row.start)+'<wbr>–'+esc(row.end)+'</time>'+
+              /* النطاقُ كما صاغه الخادم بعقد الجامعة الواحد (النهاية - البداية). */
+              '<time>'+esc(row.timeRange||"")+'</time>'+
               /* المختصرُ هادئ: لا رقمَ مقرّر ولا كلمةَ «كلية» ولا اسمَ قسم،
                  والقاعةُ في سطرٍ يُقصّ داخل الخلية فلا يخرج عن حدودها. */
               [shortCardCollege(visibleCardCollege(row.college))].filter(Boolean).map(esc).map(function(v){return '<small class="wcollege">'+v+'</small>'}).join("")+
@@ -14043,22 +15458,28 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
     document.getElementById("days").innerHTML=weekTable;
-    if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
-    else if(!live) document.getElementById("days").insertAdjacentHTML("afterbegin",
+    if(visitChanged&&visitSince&&d.lectureCount) document.getElementById("days").insertAdjacentHTML("afterbegin",
+      '<div class="pastnote">تغيّر جدولك منذ زيارتك الأخيرة (<bdi>'+esc(friendlyDate(visitSince,true))+'</bdi>) — التفاصيل في «حركة الجدول».</div>');
+    if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل'+((d.movementHistory||[]).length?' — ما تغيّر في جدولك تجده في «حركة الجدول».':' — جرّب فصلاً آخر من الأعلى.')+'</div>';
+    else if(phase === "past") document.getElementById("days").insertAdjacentHTML("afterbegin",
       '<div class="pastnote">فصل سابق — للاطلاع فقط. الإبلاغ وإضافة التقويم متاحان في الفصل الحالي.</div>');
+    else if(phase === "upcoming") document.getElementById("days").insertAdjacentHTML("afterbegin",
+      '<div class="pastnote">فصل قادم — يمكنك إضافة تقويمه الآن. الإبلاغ عن محاضرة يُتاح حين يبدأ الفصل.</div>');
 
     renderMovement(d);
     renderRequests(d);
-    selectTab("week");
+    selectTab(!d.lectureCount && (d.movementHistory||[]).length ? "movement" : "week");
 
-    document.getElementById("ics").style.display = live ? "" : "none";
-    if(!live) document.getElementById("sub").setAttribute("hidden","");
+    document.getElementById("ics").style.display = calendarOpen ? "" : "none";
+    if(!calendarOpen) document.getElementById("sub").setAttribute("hidden","");
 
     var base = "/api/public/ics/"+encodeURIComponent(TOKEN)+"/"+encodeURIComponent(d.calendarKey||"");
+    var query = phase === "upcoming" ? ["term="+encodeURIComponent(String(d.termId||""))] : [];
     var alarmBox = document.getElementById("subAlarm");
     var feed = base, https = location.origin + base;
     function retune(){
-      feed = base + (alarmBox.checked ? "?alarm=15" : "");
+      var parts = query.concat(alarmBox.checked ? ["alarm=15"] : []);
+      feed = base + (parts.length ? "?" + parts.join("&") : "");
       https = location.origin + feed;
       document.getElementById("subNow").setAttribute("href", "webcal://" + location.host + feed);
     }
@@ -14083,7 +15504,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     };
     try{
       var until=new Intl.DateTimeFormat("ar-KW-u-nu-latn",{day:"numeric",month:"long",year:"numeric"}).format(new Date(d.expiresAt));
-      document.getElementById("foot").textContent="هذا الرابط صالح حتى "+until+" · للقراءة فقط";
+      document.getElementById("foot").textContent="هذا الرابط صالح حتى نهاية الفصل ("+until+") · للقراءة فقط";
+      var life=document.getElementById("subLife");
+      if(life) life.textContent="اشتراك يتابع جدولك من نفسه حتى "+until+" (نهاية الفصل)، ولا يحتاج إعادة إضافة بعد كل تعديل.";
     }catch(e){}
     gate.style.display="none";card.style.display="block";
     window.scrollTo(0,0);
@@ -14266,14 +15689,7 @@ function asciiDigits(value){
     .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d));})
     .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d));});
 }
-function arCourses(n){
-  n = Math.max(0, Number(n) || 0);
-  if (n === 1) return "مقرراً واحداً";
-  if (n === 2) return "مقررين";
-  var rest = n % 100;
-  if (rest >= 3 && rest <= 10) return n + " مقررات";
-  return n + " مقرراً";
-}
+${ARABIC_COUNT_SCRIPT}
 
 (function(){
   var TOKEN=${JSON.stringify(token)};
@@ -14402,7 +15818,7 @@ function arCourses(n){
         hits += shown;
       });
       nohit.hidden = hits>0;
-      seekCount.textContent = q ? arCourses(hits) : "";
+      seekCount.textContent = q ? countOf(hits, AR.course) : "";
     });
     document.addEventListener("input",function(e){
       var input=e.target;
@@ -14421,7 +15837,7 @@ function arCourses(n){
       send.textContent = picked.size===0 ? "اختر مقرراً واحداً على الأقل"
         : nm.length<3 ? "اكتب اسمك"
         : cv.length!==12 ? "أدخل الرقم المدني (12 رقماً)"
-        : "إرسال · "+picked.size+" مقرر";
+        : "إرسال · "+countOf(picked.size, AR.course);
     }
 
     send.onclick=function(){
@@ -14437,7 +15853,7 @@ function arCourses(n){
           document.getElementById("root").innerHTML=
             '<div class="done"><div class="tick">✓</div>'+
             '<h2>وصلت إجابتك</h2>'+
-            '<p>شكراً '+esc(x.d.name)+' — سجّلنا اختيارك: '+arCourses(x.d.count)+'.<br>'+
+            '<p>شكراً '+esc(x.d.name)+' — سجّلنا اختيارك: '+countOf(x.d.count, AR.course)+'.<br>'+
             'هذا ليس تسجيلاً؛ أكمل تسجيلك كالمعتاد. ويمكنك فتح الرابط مرة أخرى لتعديل اختيارك.</p></div>';
           window.scrollTo(0,0);
         })
@@ -14451,51 +15867,63 @@ function arCourses(n){
 
 function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
-</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
-(function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,identityMemoryKey="schedule-student-identity-"+TOKEN;var host=document.getElementById("host");
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:var(--muted);font-size:12px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
+.prior-case{margin:14px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card2);display:grid;gap:5px}.prior-case strong{font-size:14px}.prior-case small,.prior-case p{font-size:12.5px;color:var(--muted);margin:0}.prior-case ul{margin:4px 0;padding:0 18px;font-size:13px}.replace-note{margin:14px 0 0;padding:11px 13px;border-radius:12px;border:1px solid #806a3a;background:#231d10;color:#f1dfb5;font-size:13px}</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
+(function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,caseRef="",priorSummary=null,priorInitial="",needsCaseRef=false,proofAt=0,PROOF_TTL=20*60*1000,MAX_PROOF_BYTES=14*1024*1024;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
    any twelve digits, so a wrong number travelled through both remaining steps
    and was only refused by the server at the very end — the student learning at
    submit time that the first field was wrong. */
 function civilValid(v){v=String(v||"");if(!/^\\d{12}$/.test(v))return false;var w=[2,1,6,3,7,9,10,5,8,4,2],sum=0;for(var i=0;i<11;i++)sum+=Number(v[i])*w[i];return 11-(sum%11)===Number(v[11])}
-function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
-function rememberIdentity(){try{localStorage.setItem(identityMemoryKey,JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,verifiedAt:Date.now()}))}catch(e){}}
-function clearIdentityMemory(){try{localStorage.removeItem(identityMemoryKey)}catch(e){}identityLocked=false;identityChecked=false;student={name:"",civil:"",sectionId:0};identity()}
-function checkCivilIdentity(){var civilBox=document.getElementById("civil"),button=document.getElementById("checkCivil"),civil=digits(civilBox&&civilBox.value||"");if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!civilValid(civil))return fail("هذا الرقم المدني غير صحيح. راجع الأرقام كما هي في بطاقتك المدنية.");student={name:"",civil:civil,sectionId:0};button.disabled=true;button.textContent="جارٍ التحقق…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/identity-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:civil})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){button.disabled=false;button.textContent="التحقق والمتابعة";return fail(x.d.error||"تعذر التحقق من الرقم المدني")}identityChecked=true;if(x.d.verified){student={name:String(x.d.name||""),civil:civil,sectionId:Number(x.d.sectionId)||0};identityLocked=true;rememberIdentity()}else{identityLocked=false}identity()}).catch(function(){button.disabled=false;button.textContent="التحقق والمتابعة";fail("تعذر التحقق من الرقم المدني. تحقق من الاتصال ثم أعد المحاولة.")})}
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
+/* Nothing about the student is kept in the browser: the civil ID and name used
+   to be written to the browser's persistent storage on every shared or lab computer. */
+function resetIdentity(){identityLocked=false;identityChecked=false;needsCaseRef=false;caseRef="";priorSummary=null;priorInitial="";student={name:"",civil:"",sectionId:0};identity()}
+var TYPE_LABEL={"new-course":"طلب فتح مقرر","course-conflict":"تعارض مقررين","graduate":"خريج / متوقع تخرجه"};
+var STATE_LABEL={"awaiting-registration":"وافقت اللجنة · بانتظار التسجيل","committee-rejected":"لم توافق اللجنة","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+function sendLabel(){return priorSummary?"تحديث طلبي السابق":"إرسال الطلب إلى القسم"}
+function replaceNote(){return priorSummary?'<p class="replace-note" role="note">سيحلّ هذا الإرسال محل طلبك السابق (رقم الحالة '+esc(priorSummary.caseRef)+'). قرارات القسم على المقررات التي تُبقيها تبقى كما هي، وما تحذفه بعد قرارٍ يظهر للقسم أنك ألغيته.</p>':''}
+function priorSummaryHtml(){if(!priorSummary)return"";var p=priorSummary;return'<div class="prior-case" role="region" aria-label="طلبك الحالي"><strong>طلبك الحالي · رقم الحالة '+esc(p.caseRef)+'</strong><small>'+esc(TYPE_LABEL[p.requestType]||p.requestType)+(p.submittedAt?' · أُرسل '+esc(new Date(p.submittedAt).toLocaleDateString("ar-KW-u-nu-latn",{month:"long",day:"numeric"})):"")+'</small>'+((p.courses||[]).length?'<ul>'+p.courses.map(function(c){return'<li>'+esc(c.name)+(c.state?' — '+esc(STATE_LABEL[c.state]||c.state):'')+'</li>'}).join("")+'</ul>':'')+'<p>إذا أرسلت من جديد فسيُحدَّث هذا الطلب نفسه ولن يُنشأ طلبٌ ثانٍ.</p></div>'}
+function checkCivilIdentity(){var civilBox=document.getElementById("civil"),button=document.getElementById("checkCivil"),civil=digits(civilBox&&civilBox.value||"");if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!civilValid(civil))return fail("هذا الرقم المدني غير صحيح. راجع الأرقام كما هي في بطاقتك المدنية.");student={name:"",civil:civil,sectionId:0};button.disabled=true;button.textContent="جارٍ التحقق…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/identity-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:civil})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){button.disabled=false;button.textContent="التحقق والمتابعة";return fail(x.d.error||"تعذر التحقق من الرقم المدني")}identityChecked=true;identityLocked=false;priorSummary=null;if(x.d.exists){needsCaseRef=true;priorInitial=String(x.d.initial||"");caseRefStep();return}needsCaseRef=false;identity()}).catch(function(){button.disabled=false;button.textContent="التحقق والمتابعة";fail("تعذر التحقق من الرقم المدني. تحقق من الاتصال ثم أعد المحاولة.")})}
+
+/* A request already exists for this civil ID: it is opened only with its case
+   number. The page never learns the stored name or department before that. */
+function caseRefStep(){step=1;paintProgress();host.innerHTML='<div class="step-head"><b>1</b><div><strong>لديك طلبٌ سابق</strong><span>يوجد طلبٌ مرسلٌ بهذا الرقم المدني في هذا الاستبيان'+(priorInitial?' (الاسم يبدأ بـ «'+esc(priorInitial)+'»)':'')+'</span></div></div><div class="identity-start"><div class="field full"><label for="caseRef">رقم الحالة</label><input id="caseRef" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" enterkeyhint="go" placeholder="مثل 1B86022D" aria-describedby="caseRefHelp" style="direction:rtl"><small id="caseRefHelp" class="hint">الرقم الذي ظهر لك عند الإرسال. فقدت الرقم؟ راجع القسم — لا يُعدَّل الطلب القائم بالرقم المدني وحده.</small></div></div><button class="action" id="checkRef" type="button">فتح طلبي لتعديله</button><button type="button" class="identity-reset" id="identityReset">رقم مدني آخر</button><div id="err" role="alert" aria-live="assertive"></div>';var box=document.getElementById("caseRef"),go=document.getElementById("checkRef");document.getElementById("identityReset").onclick=resetIdentity;function verifyRef(){var ref=String(box.value||"").trim().toUpperCase();if(ref.length<6)return fail("أدخل رقم الحالة كما ظهر لك");go.disabled=true;go.textContent="جارٍ التحقق…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/identity-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,caseRef:ref})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){go.disabled=false;go.textContent="فتح طلبي لتعديله";if(!x.ok||!x.d.verified)return fail(x.d.error||"رقم الحالة لا يطابق. فقدت الرقم؟ راجع القسم.");caseRef=ref;priorSummary=x.d.summary||null;student={name:String(x.d.name||""),civil:student.civil,sectionId:Number(x.d.sectionId)||0};identityLocked=Boolean(x.d.name&&x.d.sectionId);needsCaseRef=false;identity()}).catch(function(){go.disabled=false;go.textContent="فتح طلبي لتعديله";fail("تعذر التحقق. تحقق من الاتصال ثم أعد المحاولة.")})}go.onclick=verifyRef;box.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();verifyRef()}};box.focus()}
 
 function identity(){step=1;paintProgress();
+  if(needsCaseRef){caseRefStep();return}
   if(!identityChecked){
-    host.innerHTML='<div class="step-head"><b>1</b><div><strong>ابدأ بالرقم المدني</strong><span>نتحقق أولاً، ثم نعرض المسار المناسب لك</span></div></div><div class="identity-start"><div class="field full"><label>الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="12 رقمًا" style="direction:rtl" value="'+esc(student.civil)+'"><small id="civilHint" class="hint"></small></div><p class="identity-start-note">لن تظهر بقية البيانات قبل التحقق من الرقم المدني. إذا سبق أن أرسلت طلبًا، سنعيد اسمك وقسمك المعتمد تلقائيًا.</p></div><button class="action" id="checkCivil" disabled>التحقق والمتابعة</button><p class="privacy">يُستخدم الرقم المدني للتعرّف على طلبك السابق ومنع تكرار الهوية، ويظهر للمسؤول المخوّل فقط.</p><div id="err"></div>';
+    host.innerHTML='<div class="step-head"><b>1</b><div><strong>ابدأ بالرقم المدني</strong><span>نتحقق أولاً، ثم نعرض المسار المناسب لك</span></div></div><div class="identity-start"><div class="field full"><label for="civil">الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" aria-describedby="civilHint" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="12 رقمًا" style="direction:rtl" value="'+esc(student.civil)+'"><small id="civilHint" class="hint"></small></div><p class="identity-start-note">لن تظهر بقية البيانات قبل التحقق من الرقم المدني. إذا سبق أن أرسلت طلبًا، سنعيد اسمك وقسمك المعتمد تلقائيًا.</p></div><button class="action" id="checkCivil" disabled>التحقق والمتابعة</button><p class="privacy">يُستخدم الرقم المدني للتعرّف على طلبك السابق ومنع تكرار الهوية، ويظهر للمسؤول المخوّل فقط.</p><div id="err" role="alert" aria-live="assertive"></div>';
     var civilBox=document.getElementById("civil"),hint=document.getElementById("civilHint"),button=document.getElementById("checkCivil");function paintCivil(){civilBox.value=digits(civilBox.value).slice(0,12);var value=civilBox.value;if(!value.length){hint.textContent="";hint.className="hint";button.disabled=true;return}if(value.length<12){hint.textContent="باقي "+(12-value.length)+" رقم";hint.className="hint";button.disabled=true;return}if(civilValid(value)){hint.textContent="رقم مدني صحيح · اضغط للمتابعة";hint.className="hint ok";button.disabled=false}else{hint.textContent="هذا الرقم المدني غير صحيح — راجع أرقام بطاقتك";hint.className="hint bad";button.disabled=true}}civilBox.oninput=paintCivil;civilBox.onkeydown=function(e){if(e.key==="Enter"&&!button.disabled){e.preventDefault();checkCivilIdentity()}};button.onclick=checkCivilIdentity;paintCivil();return;
   }
-  var locked=identityLocked;host.innerHTML='<div class="step-head"><b>1</b><div><strong>'+(locked?'بياناتك المتحققة':'أكمل بياناتك')+'</strong><span>'+(locked?'تم العثور على طلب سابق لهذا الرقم المدني':'هذا أول طلب محفوظ لهذا الرقم المدني')+'</span></div></div><div class="fields"><div class="field"><label>الرقم المدني</label><input id="civil" dir="ltr" value="'+esc(student.civil)+'" readonly aria-readonly="true"><small class="hint ok">تم التحقق من الرقم المدني</small></div><div class="field"><label>الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"'+(locked?' readonly aria-readonly="true"':'')+'></div><div class="field full"><label>القسم العلمي</label><select id="section"'+(locked?' disabled aria-disabled="true"':'')+'><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div>'+(locked?'<div class="identity-verified"><span><b>تم التحقق من بياناتك سابقًا.</b> الاسم والرقم المدني والقسم العلمي مثبتة ولا تحتاج إدخالها من جديد.</span><button type="button" class="identity-reset" id="identityReset">رقم مدني آخر</button></div>':'<div class="identity-verified"><span><b>طالب جديد.</b> أكمل الاسم والقسم مرة واحدة، وسيستعيدهما النظام تلقائيًا في طلبك القادم.</span><button type="button" class="identity-reset" id="identityReset">تغيير الرقم المدني</button></div>')+'</div><button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err"></div>';
-  var reset=document.getElementById("identityReset");if(reset)reset.onclick=clearIdentityMemory;document.getElementById("next").onclick=function(){if(!locked){student.name=String(document.getElementById("name").value||"").trim();student.sectionId=Number(document.getElementById("section").value)||0}if(student.name.length<3)return fail("اكتب اسمك كاملاً");if(!student.sectionId)return fail("اختر قسمك العلمي");kind="";picked=[];otherCourse=0;proofToken="";proofEligible=false;chooseType()}
+  var locked=identityLocked;host.innerHTML='<div class="step-head"><b>1</b><div><strong>'+(locked?'بياناتك المتحققة':'أكمل بياناتك')+'</strong><span>'+(locked?'تم العثور على طلب سابق لهذا الرقم المدني':'هذا أول طلب محفوظ لهذا الرقم المدني')+'</span></div></div><div class="fields"><div class="field"><label for="civil">الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" value="'+esc(student.civil)+'" readonly aria-readonly="true"><small class="hint ok">تم التحقق من الرقم المدني</small></div><div class="field"><label for="name">الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"'+(locked?' readonly aria-readonly="true"':'')+'></div><div class="field full"><label for="section">القسم العلمي</label><select id="section"'+(locked?' disabled aria-disabled="true"':'')+'><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div>'+(locked?'<div class="identity-verified"><span><b>تم التحقق من بياناتك سابقًا.</b> الاسم والرقم المدني والقسم العلمي مثبتة ولا تحتاج إدخالها من جديد.</span><button type="button" class="identity-reset" id="identityReset">رقم مدني آخر</button></div>':'<div class="identity-verified"><span><b>'+(priorSummary?'أكمل بياناتك.':'طالب جديد.')+'</b> أكمل الاسم والقسم. وإذا عدّلت طلبك لاحقاً فستحتاج رقم الحالة الذي سيظهر لك عند الإرسال.</span><button type="button" class="identity-reset" id="identityReset">تغيير الرقم المدني</button></div>')+'</div>'+priorSummaryHtml()+'<button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err" role="alert" aria-live="assertive"></div>';
+  var reset=document.getElementById("identityReset");if(reset)reset.onclick=resetIdentity;document.getElementById("next").onclick=function(){if(!locked){student.name=String(document.getElementById("name").value||"").trim();student.sectionId=Number(document.getElementById("section").value)||0}if(student.name.length<3)return fail("اكتب اسمك كاملاً");if(!student.sectionId)return fail("اختر قسمك العلمي");kind="";picked=[];otherCourse=0;proofToken="";proofEligible=false;chooseType()}
 }
 
-function chooseType(){step=2;paintProgress();host.innerHTML='<button class="back" id="back">← تعديل البيانات</button><div class="step-head"><b>2</b><div><strong>ما نوع طلبك؟</strong><span>اختر حالة واحدة</span></div></div><div class="types"><button class="type" data-kind="new-course"><i>＋</i><span><strong>فتح مقرر جديد</strong><small>مقرر تحتاج طرحه في الفصل</small></span><em>‹</em></button><button class="type" data-kind="course-conflict"><i>⇄</i><span><strong>مقرر يتعارض مع مقرر آخر</strong><small>اختر المقررين المتقاطعين</small></span><em>‹</em></button><button class="type" data-kind="graduate"><i>✓</i><span><strong>خريج أو متوقع تخرجه</strong><small>يتطلب كشف درجات للتحقق من الوحدات</small></span><em>‹</em></button></div>';document.getElementById("back").onclick=identity;host.querySelectorAll(".type").forEach(function(button){button.onclick=function(){kind=button.dataset.kind;picked=[];proofToken="";proofEligible=false;details()}})}
+function chooseType(){step=2;paintProgress();host.innerHTML='<button class="back" id="back">← تعديل البيانات</button><div class="step-head"><b>2</b><div><strong>ما نوع طلبك؟</strong><span>اختر حالة واحدة</span></div></div><div class="types"><button type="button" class="type" data-kind="new-course"><i>＋</i><span><strong>فتح مقرر جديد</strong><small>مقرر تحتاج طرحه في الفصل</small></span><em>‹</em></button><button type="button" class="type" data-kind="course-conflict"><i>⇄</i><span><strong>مقرر يتعارض مع مقرر آخر</strong><small>اختر المقررين المتقاطعين</small></span><em>‹</em></button><button type="button" class="type" data-kind="graduate"><i>✓</i><span><strong>خريج أو متوقع تخرجه</strong><small>يتطلب كشف درجات للتحقق من الوحدات</small></span><em>‹</em></button></div>';document.getElementById("back").onclick=identity;host.querySelectorAll(".type").forEach(function(button){button.onclick=function(){kind=button.dataset.kind;picked=[];proofToken="";proofEligible=false;details()}})}
 function linkCourses(){return data.courses||[]}
 function sectionById(id){return(data.sections||[]).find(function(s){return Number(s.id)===Number(id)})||{courses:[]}}
-function courseButton(c){return'<button type="button" class="course" data-id="'+c.id+'" data-find="'+esc((c.name+' '+c.code).toLowerCase())+'"><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>'}
+function press(el,on){el.classList.toggle("on",on);el.setAttribute("aria-pressed",on?"true":"false")}
+function courseButton(c){return'<button type="button" class="course" aria-pressed="'+(picked.indexOf(Number(c.id))>=0||Number(otherCourse)===Number(c.id)?"true":"false")+'" data-id="'+c.id+'" data-find="'+esc((c.name+' '+c.code).toLowerCase())+'"><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>'}
 /* The link decides which catalogue is on offer. A student who opened the
    Islamic Education form wants an Islamic Education course; showing them the
    department they happen to be enrolled in was answering a question nobody
    asked. */
-function ownCourseCards(){return'<details class="acc" open><summary><span>مقررات '+esc(data.section||"القسم")+'</span><em>'+linkCourses().length+'</em></summary><div class="acc-body"><input id="courseSearch" type="search" placeholder="ابحث باسم المقرر أو رمزه"><div class="courses" id="courses">'+linkCourses().map(courseButton).join("")+'</div></div></details>'}
+function ownCourseCards(){return'<details class="acc" open><summary><span>مقررات '+esc(data.section||"القسم")+'</span><em>'+linkCourses().length+'</em></summary><div class="acc-body"><input id="courseSearch" type="search" aria-label="ابحث في المقررات باسم المقرر أو رمزه" placeholder="ابحث باسم المقرر أو رمزه"><div class="courses" id="courses">'+linkCourses().map(courseButton).join("")+'</div></div></details>'}
 /* The second course can come from anywhere in the college, and listing every
    catalogue at once is a wall of names. Nothing is revealed until the student
    types, so the list is always an answer to something they asked for. */
-function otherCourseCards(){return'<div class="field" style="margin-top:12px"><label>القسم الآخر</label><select id="otherSection"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join("")+'</select></div><div class="course-tools"><input id="otherSearch" type="search" placeholder="اكتب جزءاً من اسم المقرر — مثلاً: تاريخ" disabled></div><div class="courses" id="otherCourses"></div><p class="privacy" id="otherHint">اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج.</p>'}
+function otherCourseCards(){return'<div class="field" style="margin-top:12px"><label for="otherSection">القسم الآخر</label><select id="otherSection"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join("")+'</select></div><div class="course-tools"><input id="otherSearch" type="search" aria-label="ابحث عن المقرر الآخر" placeholder="اكتب جزءاً من اسم المقرر — مثلاً: تاريخ" disabled></div><div class="courses" id="otherCourses"></div><p class="privacy" id="otherHint">اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج.</p>'}
 
-function wireOwnCourses(){var box=document.getElementById("courses"),search=document.getElementById("courseSearch");box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);if(kind==="course-conflict"){picked=picked[0]===id?[]:[id];box.querySelectorAll(".course").forEach(function(other){other.classList.toggle("on",Number(other.dataset.id)===picked[0])});return}var at=picked.indexOf(id);if(at>=0)picked.splice(at,1);else picked.push(id);button.classList.toggle("on",picked.indexOf(id)>=0)};search.oninput=function(){var q=this.value.trim().toLowerCase();box.querySelectorAll(".course").forEach(function(button){button.hidden=q&&button.dataset.find.indexOf(q)<0})}}
-function wireOtherCourse(){var pickSection=document.getElementById("otherSection"),search=document.getElementById("otherSearch"),box=document.getElementById("otherCourses"),hint=document.getElementById("otherHint");pickSection.onchange=function(){otherCourse=0;search.disabled=!this.value;search.value="";box.innerHTML="";hint.textContent=this.value?"اكتب جزءاً من اسم المقرر لتظهر النتائج.":"اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج."};search.oninput=function(){var q=this.value.trim().toLowerCase();if(q.length<2){box.innerHTML="";hint.textContent="اكتب حرفين على الأقل.";return}var list=(sectionById(pickSection.value).courses||[]).filter(function(c){return(c.name+" "+c.code).toLowerCase().indexOf(q)>=0}).slice(0,40);box.innerHTML=list.map(courseButton).join("");hint.textContent=list.length?"":"لا مقرر بهذا الاسم في القسم المختار."};box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);otherCourse=otherCourse===id?0:id;box.querySelectorAll(".course").forEach(function(other){other.classList.toggle("on",Number(other.dataset.id)===otherCourse)})}}
+function wireOwnCourses(){var box=document.getElementById("courses"),search=document.getElementById("courseSearch");box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);if(kind==="course-conflict"){picked=picked[0]===id?[]:[id];box.querySelectorAll(".course").forEach(function(other){press(other,Number(other.dataset.id)===picked[0])});return}var at=picked.indexOf(id);if(at>=0)picked.splice(at,1);else picked.push(id);press(button,picked.indexOf(id)>=0)};search.oninput=function(){var q=this.value.trim().toLowerCase();box.querySelectorAll(".course").forEach(function(button){button.hidden=q&&button.dataset.find.indexOf(q)<0})}}
+function wireOtherCourse(){var pickSection=document.getElementById("otherSection"),search=document.getElementById("otherSearch"),box=document.getElementById("otherCourses"),hint=document.getElementById("otherHint");pickSection.onchange=function(){otherCourse=0;search.disabled=!this.value;search.value="";box.innerHTML="";hint.textContent=this.value?"اكتب جزءاً من اسم المقرر لتظهر النتائج.":"اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج."};search.oninput=function(){var q=this.value.trim().toLowerCase();if(q.length<2){box.innerHTML="";hint.textContent="اكتب حرفين على الأقل.";return}var list=(sectionById(pickSection.value).courses||[]).filter(function(c){return(c.name+" "+c.code).toLowerCase().indexOf(q)>=0}).slice(0,40);box.innerHTML=list.map(courseButton).join("");hint.textContent=list.length?"":"لا مقرر بهذا الاسم في القسم المختار."};box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);otherCourse=otherCourse===id?0:id;box.querySelectorAll(".course").forEach(function(other){press(other,Number(other.dataset.id)===otherCourse)})}}
 
 function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح مقرر جديد":kind==="course-conflict"?"تعارض مقررين":"حالة خريج أو متوقع تخرجه";
 /* The free-text box is kept only where somebody reads it. On the two course
    requests the selected courses already say everything the department acts on,
    and an optional box invited an explanation nobody was going to open. */
-var content=kind==="graduate"?'<div class="proof"><strong id="proofTitle">صحيفة التخرج</strong><small class="lead" id="proofLead">نتحقق أولاً إن كانت صحيفتك موثقة من طلب سابق.</small><a class="proof-example" id="proofExample" href="/graduation-sheet-example.jpg" target="_blank" rel="noopener" hidden><img src="/graduation-sheet-example.jpg" alt="نموذج صحيفة التخرج أو الخطة الدراسية المقبولة" loading="lazy"><span><strong>هذا نموذج الصحيفة المطلوبة</strong><small>الصفحة الرسمية التي يظهر فيها الرقم المدني والبرنامج والوحدات المجتازة.</small><em>اضغط على النموذج لعرضه بالحجم الكامل</em></span></a><div class="proof-upload" id="proofUpload" hidden><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة صحيفة التخرج والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div></div><div id="proofStatus" class="proof-status">جارٍ التحقق من حالة الصحيفة السابقة…</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label></div><div class="graduate-detail" id="graduateDetail" hidden><label for="graduateDetails">ملاحظات الطلب وسبب الاحتياج · إلزامي</label><textarea id="graduateDetails" maxlength="600" minlength="3" required placeholder="اكتب ما تحتاجه بالتحديد وسبب الطلب، مثل المقرر أو الوقت أو الترتيب المطلوب."></textarea><small><span>لن يتم إرسال طلب الخريج قبل كتابة الملاحظات، وستظهر للقسم تحت نوع الطلب الذي اخترته.</span><b id="graduateDetailsCount">0 / 600</b></small></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
-host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate"){document.getElementById("send").disabled=true;wireProof()}else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
+var content=kind==="graduate"?'<div class="proof"><strong id="proofTitle">صحيفة التخرج</strong><small class="lead" id="proofLead">نتحقق أولاً إن كانت صحيفتك موثقة من طلب سابق.</small><a class="proof-example" id="proofExample" href="/graduation-sheet-example.jpg" target="_blank" rel="noopener" hidden><img src="/graduation-sheet-example.jpg" alt="نموذج صحيفة التخرج أو الخطة الدراسية المقبولة" loading="lazy"><span><strong>هذا نموذج الصحيفة المطلوبة</strong><small>الصفحة الرسمية التي يظهر فيها الرقم المدني والبرنامج والوحدات المجتازة.</small><em>اضغط على النموذج لعرضه بالحجم الكامل</em></span></a><div class="proof-upload" id="proofUpload" hidden><input id="proof" type="file" aria-label="ملف صحيفة التخرج" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة صحيفة التخرج والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div></div><div id="proofStatus" class="proof-status" role="status" aria-live="polite">جارٍ التحقق من حالة الصحيفة السابقة…</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label></div><div class="graduate-detail" id="graduateDetail" hidden><label for="graduateDetails">ملاحظات الطلب وسبب الاحتياج · إلزامي</label><textarea id="graduateDetails" maxlength="600" minlength="3" required placeholder="اكتب ما تحتاجه بالتحديد وسبب الطلب، مثل المقرر أو الوقت أو الترتيب المطلوب."></textarea><small><span>لن يتم إرسال طلب الخريج قبل كتابة الملاحظات، وستظهر للقسم تحت نوع الطلب الذي اخترته.</span><b id="graduateDetailsCount">0 / 600</b></small></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
+host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+replaceNote()+'<button class="action" id="send" type="button">'+sendLabel()+'</button><div id="err" role="alert" aria-live="assertive"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate"){document.getElementById("send").disabled=true;wireProof()}else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
 
 function refreshGraduateSubmit(){if(kind!=="graduate")return;var send=document.getElementById("send"),reason=host.querySelector('input[name=reason]:checked'),box=document.getElementById("graduateDetails");if(send)send.disabled=!(proofEligible&&reason&&box&&String(box.value||"").trim().length>=3)}
 function wireGraduateDetails(){var options=document.getElementById("graduateOptions"),detail=document.getElementById("graduateDetail"),box=document.getElementById("graduateDetails"),count=document.getElementById("graduateDetailsCount");if(!options||!detail||!box)return;options.querySelectorAll('input[name=reason]').forEach(function(input){input.onchange=function(){detail.hidden=false;refreshGraduateSubmit();window.setTimeout(function(){box.focus({preventScroll:true})},30)}});box.oninput=function(){if(count)count.textContent=String(box.value.length)+" / 600";refreshGraduateSubmit()};refreshGraduateSubmit()}
@@ -14503,11 +15931,11 @@ function wireGraduateDetails(){var options=document.getElementById("graduateOpti
 function compactProof(file){return new Promise(function(resolve){var type=String(file.type||"").toLowerCase(),name=String(file.name||"").toLowerCase();if(type.indexOf("image/")!==0||/heic|heif/.test(type)||/\.(heic|heif)$/.test(name)){resolve(file);return}var url=URL.createObjectURL(file),img=new Image();img.onload=function(){try{var max=2200,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1));if(scale>=.98&&file.size<1800000){URL.revokeObjectURL(url);resolve(file);return}var canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));var ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw 0;ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);canvas.toBlob(function(blob){URL.revokeObjectURL(url);resolve(blob&&blob.size<file.size?blob:file)},"image/jpeg",.86)}catch(e){URL.revokeObjectURL(url);resolve(file)}};img.onerror=function(){URL.revokeObjectURL(url);resolve(file)};img.src=url})}
 function formatBytes(n){if(!n)return"0 KB";if(n<1048576)return Math.max(1,Math.round(n/1024))+" KB";return(n/1048576).toFixed(1)+" MB"}
 function showProofUpload(message){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus");if(upload)upload.hidden=false;if(example)example.hidden=false;if(title)title.textContent="ارفع صحيفة التخرج";if(lead)lead.textContent="PDF أو صورة واضحة للصفحة الرسمية «الخطة الدراسية / صحيفة التخرج». يجب أن يظهر الرقم المدني والبرنامج والوحدات المجتازة بوضوح. الاسم يساعد في العرض ولا يشترط تطابقه حرفياً. أي مستند آخر لن يُقبل.";if(status){status.className="proof-status";status.textContent=message||"لم يتم التحقق بعد."}proofEligible=false;proofToken="";refreshGraduateSubmit()}
-function acceptVerifiedProof(d,reused){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus"),options=document.getElementById("graduateOptions");proofEligible=!!d.eligible;proofToken=d.proofToken||"";if(upload)upload.hidden=true;if(example)example.hidden=true;if(title)title.textContent=reused?"تم التحقق مسبقًا":"تم التحقق من صحيفة التخرج";if(lead)lead.textContent=reused?"لا حاجة لرفع الصحيفة مرة أخرى لهذا الفصل والقسم.":"تم اعتماد بيانات الصحيفة لهذه الجلسة.";if(status){status.className="proof-status "+(reused?"reused":"ok");status.textContent=d.message||"تم التحقق، ويمكنك متابعة الطلب."}if(options){options.hidden=false;wireGraduateDetails()}refreshGraduateSubmit()}
-function checkPriorGraduateProof(){if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
-function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
-function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}rememberIdentity();identityLocked=true;host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
-fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
+function acceptVerifiedProof(d,reused){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus"),options=document.getElementById("graduateOptions");proofEligible=!!d.eligible;proofToken=d.proofToken||"";proofAt=proofToken?Date.now():0;if(upload)upload.hidden=true;if(example)example.hidden=true;if(title)title.textContent=reused?"تم التحقق مسبقًا":"تم التحقق من صحيفة التخرج";if(lead)lead.textContent=reused?"لا حاجة لرفع الصحيفة مرة أخرى لهذا الفصل والقسم.":"تم اعتماد بيانات الصحيفة لهذه الجلسة.";if(status){status.className="proof-status "+(reused?"reused":"ok");status.textContent=d.message||"تم التحقق، ويمكنك متابعة الطلب."}if(options){options.hidden=false;wireGraduateDetails()}refreshGraduateSubmit()}
+function checkPriorGraduateProof(){var rule=section().graduateRule;if(rule&&rule.saved===false){var up=document.getElementById("proofUpload"),ex=document.getElementById("proofExample"),st=document.getElementById("proofStatus");if(up)up.hidden=true;if(ex)ex.hidden=true;if(st){st.className="proof-status bad";st.textContent="لم يعتمد قسمك العلمي قواعد التخرج في النظام بعد، فلا يمكن التحقق من صحيفة التخرج الآن. راجع القسم، ويمكنك اختيار نوع طلب آخر."}proofEligible=false;proofToken="";refreshGraduateSubmit();return}if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
+function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent>MAX_PROOF_BYTES){button.disabled=false;button.textContent="إعادة التحقق";meter.hidden=true;status.className="proof-status bad";status.textContent="حجم الملف "+formatBytes(sent)+" أكبر من الحد (14 MB). صوّر الصفحة الرسمية وحدها أو احفظها PDF بحجمٍ أصغر.";refreshGraduateSubmit();return}if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
+function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&proofEligible&&proofAt&&Date.now()-proofAt>PROOF_TTL-60000){showProofUpload("انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان.");var up=document.getElementById("proofUpload");if(up&&up.scrollIntoView)up.scrollIntoView({block:"center"});return fail("أعد التحقق من صحيفة التخرج ثم أرسل.")}if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent=sendLabel();if(kind==="graduate"&&(x.d.code==="proof-expired"||x.d.code==="proof-required")){showProofUpload(x.d.error);var up=document.getElementById("proofUpload");if(up&&up.scrollIntoView)up.scrollIntoView({block:"center"})}return fail(x.d.error||"تعذر الإرسال")}identityLocked=true;caseRef=String(x.d.caseRef||caseRef);host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'#'+encodeURIComponent(caseRef)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent=sendLabel();fail("تعذر الإرسال — تحقق من الاتصال.")})}
+fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}if(x.d.termEnded){host.innerHTML='<div class="done" role="status"><h2>انتهى هذا الفصل</h2><p>'+esc(x.d.message||"")+'</p><a href="'+esc(x.d.statusUrl||"#")+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">حالة طلبي</a></div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
 }
 
@@ -14746,7 +16174,7 @@ async function resolveRequestLink(token: string) {
   const link = await Repository.getShareLink(String(token || ""));
   if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 } as const;
   if (link.kind !== "request") return { error: "هذا الرابط ليس طلبَ جدول", status: 404 } as const;
-  if (link.expiresAt && Date.parse(link.expiresAt) < Date.now()) return { error: "انتهت صلاحية هذا الرابط", status: 410 } as const;
+  if (!await shareLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 } as const;
   const request = await Repository.getInstructorRequestByLink(link.id);
   if (!request) return { error: "لا يوجد طلبٌ مرتبطٌ بهذا الرابط", status: 404 } as const;
   return { link, request } as const;
@@ -15045,7 +16473,7 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
    * ينتظرون قراراً لا يمكن أن يقع، وهو أسوأُ من بابٍ لا يُفتح.
    *
    * والحارسُ هو نفسُه الذي يحرس الجدول، فلا قاعدةَ ثانيةٌ تفترق عنه. */
-  const issueLock = await scheduleLockRefusal(req, collegeId, sectionId, termId);
+  const issueLock = await scheduleLockRefusal(req, collegeId, sectionId, termId, { registrarLock: false });
   if (issueLock) { res.status(409).json({ error: issueLock, code: "schedule-locked" }); return; }
 
   const closesAt = String(req.body?.closesAt || "").trim();
@@ -15055,7 +16483,7 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
   }
   /* نافذةٌ انتهت قبل أن تبدأ ليست نافذة: الأساتذة يفتحون رابطاً مغلقاً ولا
      يعرفون لماذا، ويتّصلون بالقسم — وهو ما بُني الرابطُ ليُغنيَ عنه. */
-  if (Date.parse(`${closesAt}T23:59:59`) < Date.now()) {
+  if (Date.parse(requestsCloseAtFromDate(closesAt)) < Date.now()) {
     res.status(400).json({ error: "تاريخ الإغلاق في الماضي." });
     return;
   }
@@ -15067,13 +16495,15 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
   const sourceTermId = source === "previous-term"
     ? Number(req.body?.previousTermId || 0) || termId
     : termId;
-  const [rows, courses, existing, sourceTermRows, colleges] = await Promise.all([
+  const [rows, courses, existing, sourceTermRows, colleges, issueTerms] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId }),
     Repository.getCourses(),
     Repository.getInstructorRequests(collegeId, sectionId, termId),
     Repository.getSchedulesByScope({ termId: sourceTermId }),
     Repository.getColleges(),
+    Repository.getTerms(),
   ]);
+  const issueTerm = issueTerms.find(row => Number(row.AdTermId) === termId);
   const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
   const collegeNameById = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
   /* من يُصدَر له رابطٌ يحدّده جدولُ هذا القسم؛ وما في طلبه جدولُه كلُّه. */
@@ -15087,6 +16517,15 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
     if (!id) continue;
     const list = byInstructor.get(id);
     if (list) list.push(row); else byInstructor.set(id, [row]);
+  }
+
+  /* ── فصلٌ فارغ لا يُقال عنه «فُتحت الطلبات» ─────────────────────────────
+   * جدولٌ بلا صفوف — أو بصفوفٍ لم يُسنَد أيٌّ منها لأستاذ — لا يُصدَر فيه
+   * رابطٌ لأحد. كان الردّ نجاحاً فارغاً، فتقول الشاشة إن الطلبات فُتحت ولم
+   * يصل شيءٌ لأحد. فيُقال ذلك صراحةً، ويُسمّى السبب. */
+  if (!byInstructor.size) {
+    res.json({ issued: [], total: 0, fresh: 0, emptyTerm: true, reason: (rows as any[]).length ? "no-instructors" : "no-rows" });
+    return;
   }
 
   const issued: Array<{ instructorId: number; linkId: string; reissued: boolean }> = [];
@@ -15105,9 +16544,12 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
        * منها رأى أساتذتُه «انتهت صلاحية هذا الرابط» قبل الموعد الذي وعدهم
        * به — ولا شيءَ في الشاشة يقول لماذا. فتُشتقّ من الموعد نفسِه، ولا
        * تنزل عن الحدّ الأدنى حتى لا يُغلق رابطُ موعدٍ قريبٍ لحظةَ انتهائه. */
+      /* والقراءةُ تبقى حتى نهاية الفصل: قرارُ القسم وبدائلُه يصلان بعد الموعد،
+       * ورابطٌ يموت بعد يومٍ من الإغلاق يُخفي عن الأستاذ جوابَ ما طلبه. */
       expiresAt: new Date(Math.max(
-        Date.parse(`${closesAt}T23:59:59.999Z`) + 86400000,
+        Date.parse(requestsCloseAtFromDate(closesAt)) + 86400000,
         Date.now() + REQUEST_LINK_DAYS * 86400000,
+        Date.parse(termLinkExpiresAt(issueTerm)),
       )).toISOString(),
       SystemUserId: Number(req.user?.SystemUserId || 0),
       userName: String(req.user?.UserName || ""),
@@ -15120,7 +16562,7 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
       AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
       AdInstructorId: instructorId,
       linkId: link.id,
-      window: { opensAt, closesAt: `${closesAt}T23:59:59.999Z` },
+      window: { opensAt, closesAt: requestsCloseAtFromDate(closesAt) },
       source,
       status: "sent",
       items: (termRowsOf(instructorId).length ? termRowsOf(instructorId) : own).map(row =>
@@ -15251,8 +16693,10 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
 
   /* والقرارُ في فصلٍ مجمَّدٍ لا يقع: «ثُبّت» يحتاج كتابةً في الجدول وهي
      ممنوعة، و«رُفض» يُغلق بابَ أستاذٍ على حالٍ لا يملك القسمُ تغييرَها. */
+  /* وقفلُ التسجيل لا يقع عليه (R8): القرارُ يُحفظ في الجدول أولاً من شاشة
+     الوارد، فرفضُ تسجيله بعدها كان يُضيع القرار نفسه. يبقى حكمُ الفصل. */
   const decideLock = await scheduleLockRefusal(
-    req, itemScope.collegeId, itemScope.sectionId, Number(stored.AdTermId));
+    req, itemScope.collegeId, itemScope.sectionId, Number(stored.AdTermId), { registrarLock: false });
   if (decideLock) { res.status(409).json({ error: decideLock, code: "schedule-locked" }); return; }
 
   const state = req.body?.state === "fixed" ? "fixed" : req.body?.state === "rejected" ? "rejected" : null;
@@ -15434,11 +16878,13 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
    * بالحدّ نفسِه المفروض على بطاقة الأستاذ وحالة الطالب، وإلا صار البابُ
    * مجرَّبا عليه بالأرقام.
    */
-  if (!staffLookupAllowed(`request:${resolved.request.id}`, req.ip || "unknown")) {
+  const signScope = `request:${resolved.request.id}`;
+  const signAttempt = publicAttemptReserve(signScope, req.ip || "unknown");
+  if (!signAttempt) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
     return;
   }
-  const civil = asciiDigits(req.body?.civil).replace(/\D/g, "");
+  const civil = normalizeCivilId(req.body?.civil);
   const civilCheck = validateCivilId(civil);
   if (!civilCheck.isValid) {
     res.status(400).json({ error: civilCheck.message || "اكتب رقمك المدني كاملاً." });
@@ -15452,11 +16898,12 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
      فارسية — وبابُ الأساتذة يقبلها — كان `\D` يمحوه كلَّه فيصير فارغاً، فلا
      يطابق شيئاً أبداً. وصاحبُه يدخل رقمَه الصحيح فيُردّ، مرّةً بعد مرّة، بلا
      سببٍ يظهر له ولا للقسم. */
-  const storedCivil = asciiDigits(signer?.AdInstructorCivil).replace(/\D/g, "");
+  const storedCivil = normalizeCivilId(signer?.AdInstructorCivil);
   if (!storedCivil || storedCivil !== civil) {
     res.status(403).json({ error: "الرقم المدني لا يطابق صاحب هذا الرابط." });
     return;
   }
+  signAttempt.release();
 
   const sent = Array.isArray(req.body?.items) ? (req.body.items as any[]) : null;
   if (!sent) { res.status(400).json({ error: "لم يصل شيء." }); return; }
@@ -15555,6 +17002,18 @@ sectionId: allowedOption.sectionId,
     verifyCode: verificationCode(resolved.request.id, Number(resolved.request.AdInstructorId), at),
   };
   const changed = items.filter(item => item.action !== "keep").length;
+  /* «اخترتَ بديلاً» يُسجَّل حين يطابق ما أرسله بندٌ مرفوضٌ أحدَ بدائل القسم —
+     فيقرأ القسمُ في الخط الزمني أن ما عرضه قُبل، لا أنه طلبٌ جديد. */
+  const alternativeEvents = sent.flatMap((entry, index) => {
+    const rowId = entry?.rowId == null ? null : Number(entry.rowId);
+    const stored = rowId == null
+      ? (resolved.request.items || []).find(item => item.action === "add" && item.decision?.state === "rejected"
+          && Number(item.after?.courseId || 0) === Number(entry?.courseId || 0))
+      : before.get(String(rowId));
+    if (stored?.decision?.state !== "rejected") return [];
+    const chosen = chosenAlternativeIndex(stored.decision.alternatives as any, Array.isArray(entry?.days) ? entry.days.map(String) : [], String(entry?.start || ""));
+    return chosen >= 0 ? [{ kind: "alternative-chosen" as InstructorRequestEventKind, at, itemIndex: index, detail: String(chosen + 1) }] : [];
+  });
   const saved = await Repository.saveInstructorRequest({
     ...resolved.request,
     items: judged.items,
@@ -15563,6 +17022,7 @@ sectionId: allowedOption.sectionId,
     signature,
     timeline: [
       ...(resolved.request.timeline || []),
+      ...alternativeEvents,
       { kind: "submitted", at, detail: String(changed) },
       { kind: "received", at, by: "القسم" },
     ],
@@ -15632,6 +17092,7 @@ label.time input:focus,select:focus,textarea:focus,label.sign input:focus{outlin
 .verdict{margin:10px 0 0;font-size:13px;padding:10px 12px;border-radius:12px;display:none;font-weight:600}.verdict[data-tone=checking]{display:block;background:var(--bg);color:var(--muted)}.verdict[data-tone=ok]{display:block;background:var(--ok2);color:var(--ok)}.verdict[data-tone=warn]{display:block;background:var(--warn2);color:#735100}.verdict[data-tone=bad]{display:block;background:var(--bad2);color:var(--bad)}
 .alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .alts button{padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:12px;cursor:pointer}
+.alts-ro span{padding:7px 11px;border-radius:999px;border:1px dashed var(--line);background:var(--soft,#f4f6f5);color:var(--ink,#1d2b24);font-size:12px}
 textarea{width:100%;margin-top:9px;padding:11px;border-radius:11px;border:1px solid var(--line);font-size:14px;min-height:68px;background:#fff;display:none;resize:vertical}
 textarea[data-show="1"]{display:block}
 .add-card{border-style:dashed;border-color:#9fc8b5;background:rgba(255,255,255,.72)}.add-card header{margin-bottom:10px}.add-card header b{display:block}.add-card header small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
@@ -15706,8 +17167,8 @@ function collegeNameOf(it){return it.action==="add"?(it.collegeName||(it.after&&
 function manyColleges(){var seen={};state.forEach(function(it){var c=collegeNameOf(it);if(c)seen[c]=1});return Object.keys(seen).length>1}
 function collegeOf(it){return it.action==="add"||manyColleges()?collegeNameOf(it):""}
 function shortCollege(v){return String(v||"").replace(/^\\s*كلية\\s+/,"")}
-/* العددُ بلغته: «موعد واحد» و«موعدان» لا «1 مواعيد». */
-function countOf(n,one,two,few,many){return n===1?one:n===2?two:n<=10?n+" "+few:n+" "+many}
+/* العددُ بلغته: «موعد واحد» و«موعدان» لا «1 مواعيد» — القاعدة الواحدة من arabicCount.ts. */
+${ARABIC_COUNT_SCRIPT}
 function toneText(it){return it.tone==="ok"?"الوقت متاح":it.tone==="warn"?"يحتاج سبب استثناء":it.tone==="bad"?"يوجد مانع":it.tone==="checking"?"يُفحص الآن…":""}
 function wasText(it){var b=it.before||{};return it.action==="add"?"":((b.days||"")+(b.time?" · "+b.time:""))}
 var REASONS={room:"لا تتوفّر قاعة في هذا الوقت",instructor:"يتعارض مع أستاذ آخر",regulation:"مخالفة للائحة",cohort:"يتقاطع مع مقرّر يشترك طلبتُه",load:"النصاب",department:"قرار القسم",other:"سبب آخر"};
@@ -15717,7 +17178,9 @@ function decisionBox(it,i,open){var d=it.decision;if(!d||!d.state||d.state==="pe
  if(d.state==="fixed")return '<div class="dept" data-state="fixed"><i aria-hidden="true">✓</i>ثبّته القسم'+(d.note?' · '+esc(d.note):'')+'</div>';
  var alts=(d.alternatives||[]);
  return '<div class="dept" data-state="rejected"><b><i aria-hidden="true">✕</i>رفضه القسم'+(d.reasonCode&&REASONS[d.reasonCode]?' · '+esc(REASONS[d.reasonCode]):'')+'</b>'+(d.note?'<p>'+esc(d.note)+'</p>':'')+
-  (alts.length&&open?'<p>بدائل القسم:</p><div class="alts">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-dept-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div>'}
+  (alts.length&&open?'<p>بدائل القسم:</p><div class="alts">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-dept-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+
+  /* وبعد إغلاق الاستقبال تبقى البدائلُ مقروءة: هي جزءٌ من قرار القسم، لا زرٌّ فحسب. */
+  (alts.length&&!open?'<p>بدائل القسم (للاطلاع — أُغلق استقبال الطلبات):</p><div class="alts alts-ro">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<span>'+fmtDays(ds)+" "+esc(a.start)+'</span>'}).join("")+'</div>':'')+'</div>'}
 /* جدولُه كما سيكون، بترتيب تقرير الاستعلامات وألوانه: الأخضرُ مضاف،
    والأصفرُ معدّل، والأحمرُ محذوف. يُقرأ بنظرة، والضغطُ على صفٍّ ينزل إلى
    بطاقته ليعدّلها. */
@@ -15781,12 +17244,12 @@ function paint(){
  var r=data.request,open=data.windowOpen,approved=r.status==="settled";
  var changed=state.filter(function(it){return it.action!=="keep"}).length;
  var blocked=state.filter(function(it){return it.tone==="bad"||it.tone==="checking"}).length;
- var ready=blocked?"راجع الموانع":changed?countOf(changed,"تغيير واحد جاهز","تغييران جاهزان","تغييرات جاهزة","تغييراً جاهزاً"):"لم تغيّر شيئاً";
+ var ready=blocked?"راجع الموانع":changed?countOf(changed,AR.change)+" "+nounFor(changed,AR.readyAdj):"لم تغيّر شيئاً";
  var h='<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
-  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,"بند واحد يحتاج معالجة","بندان يحتاجان معالجة","بنود تحتاج معالجة","بنداً يحتاج معالجة"):"فحص مباشر قبل الإرسال")+'</small></div></div>'+
+  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,AR.item)+" "+nounFor(blocked,AR.needsVerb):"فحص مباشر قبل الإرسال")+'</small></div></div>'+
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
  var existing=state.filter(function(it){return it.rowId!==null}).length;
- h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable()+'<div class="section-head"><b>عدّل مواعيدك</b><small>'+countOf(existing,"موعد واحد","موعدان","مواعيد","موعداً")+' · اضغط «غيّر» أو «احذف»</small></div>';
+ h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable()+'<div class="section-head"><b>عدّل مواعيدك</b><small>'+countOf(existing,AR.appointment)+' · اضغط «غيّر» أو «احذف»</small></div>';
  state.forEach(function(it,i){var b=it.before||it.after||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
   /* البطاقةُ مطويّة: اسمُها وموعدُها وحالتُها سطرٌ واحد، وما فيها من أزرارٍ
      وأيامٍ وأوقات يُفتح بلمسة. وما يحتاج انتباهاً — ما يُعدَّل الآن أو فيه
@@ -15942,7 +17405,7 @@ function submit(){
   dirty=false;clearDraft();
   var code=x.d.request&&x.d.request.signature&&x.d.request.signature.verifyCode||"";
   host.innerHTML='<div class="done"><div class="tick">✓</div><h1>وصل طلبك إلى القسم</h1>'+
-   '<p class="sub">'+(x.d.changed?(x.d.changed===1?"تعديل واحد":x.d.changed===2?"تعديلان":x.d.changed<=10?esc(String(x.d.changed))+" تعديلات":esc(String(x.d.changed))+" تعديلاً"):"بلا تعديلات")+
+   '<p class="sub">'+esc(countOf(x.d.changed,AR.edit,"بلا تعديلات"))+
    ' · يمكنك فتح الرابط نفسه لمتابعة ما ثُبّت وما رُفض.</p>'+
    /* رمزُ التوقيع يُعطى لصاحبه: هو ما يُطابَق به طلبُه بعد شهرين. */
    (code?'<p class="sub">رمز توقيعك: <b dir="ltr">'+esc(code)+'</b></p>':'')+
@@ -16068,7 +17531,10 @@ app.get("/api/public/request/:token/movement", async (req: Request, res: Respons
   ]);
   const own = (termRows as any[]).filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
   const courseById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), row]));
-  const entries = (await scheduleMovementEntries(Number(request.AdInstructorId), Number(request.AdTermId), own, courseById, { withRooms: false }))
+  const entries = (await scheduleMovementEntries(Number(request.AdInstructorId), Number(request.AdTermId), own, courseById, {
+    withRooms: false,
+    historyScopes: movementHistoryScopes([request]),
+  }))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
     .slice(0, 100);
   res.setHeader("Cache-Control", "no-store");
@@ -16108,26 +17574,52 @@ ${resolved.error}</body></html>`);
      وصل الطلب، ومتى، وبأيّ مقرّرات. وادّعاءُ ما بعدها يصنع زحمةً أسوأ حين
      يكتشف الطالبُ أنه غير مسجَّل.
 
-   - **لا تكشف أحداً.** تُقرأ ببصمة الرقم المدني كما يُكتب بها، فالصفحةُ لا
-     تعرف اسماً ولا تعرضه. ومن لا طلبَ له يُقال له ذلك، لا «الرقم خطأ»:
-     الفرقُ بينهما يكشف من عبّأ ومن لم يعبّئ لمن يجرّب أرقاماً.
+   - **لا تكشف أحداً.** تُقرأ ببصمة الرقم المدني **ورقم الحالة** معاً، فالرقمُ
+     المدنيُّ وحده لا يفتح طلبَ أحد، والصفحةُ لا تعرض اسماً. ومن لا طلبَ له —
+     أو أخطأ في أحد الرقمين — يُقال له الجوابُ نفسُه، لا «الرقم خطأ»: الفرقُ
+     بينهما يكشف من عبّأ ومن لم يعبّئ لمن يجرّب أرقاماً.
 
    - **ولا تُفتح بالمحاولة.** حدُّ المحاولات نفسُه المفروضُ على بطاقة الأستاذ:
      عشرُ محاولاتٍ في النافذة، ثم انتظار.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * ── الحالةُ تعيش بعد باب الإرسال ───────────────────────────────────────────
+ *
+ * «حالة طلبي» كانت تُقرأ بالرابط نفسه الذي يُرسَل به، فإذا أوقفه القسم أو
+ * انتهت صلاحيته — وهو ما يحدث عادةً مع أسبوع السحب والإضافة، قبل أن يقرّر
+ * التسجيل — ماتت الحالة معه، ورجع الطالب إلى المكتب ليسأل. فالقراءةُ هنا
+ * تبقى مفتوحةً لرابط الاستبيان حتى ثلاثين يوماً بعد نهاية فصله، والإرسالُ
+ * يبقى مغلقاً كما هو (يمرّ بـ`resolveShareToken`).
+ */
+const SURVEY_STATUS_GRACE_MS = 30 * 86400000;
+async function resolveSurveyStatusToken(token: string): Promise<{ link: ScheduleShareLink } | { error: string; status: 404 | 410 }> {
+  const link = await Repository.getShareLink(String(token || ""));
+  if (!link || link.kind !== "survey") return { error: "الرابط غير موجود أو ليس استبياناً", status: 404 };
+  const open = !link.revoked && new Date(link.expiresAt).getTime() >= Date.now();
+  if (open) return { link };
+  const term = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(link.AdTermId));
+  const window = termWindow(term as any);
+  const readableUntil = Math.max(new Date(link.expiresAt).getTime() || 0, window?.to || 0) + SURVEY_STATUS_GRACE_MS;
+  if (Date.now() < readableUntil) return { link };
+  return { error: "انتهت مدة متابعة الطلبات لهذا الفصل. راجع القسم.", status: 410 };
+}
+
 app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response) => {
   const token = String(req.params.token || "");
-  const resolved = await resolveShareToken(token);
+  /* القراءةُ تتبع مهلةَ الحالة لا بابَ الإرسال. */
+  const resolved = await resolveSurveyStatusToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
-  if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
   if (!staffLookupAllowed(`mycase:${token}`, req.ip || "unknown")) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
     return;
   }
 
-  const civil = String(req.body?.civil || "").replace(/\D/g, "");
-  if (civil.length !== 12 || !validateCivilId(civil)) {
+  /* «٢٩٠…» و«۲۹۰…» رقمٌ صحيح كُتب بلوحةٍ عربية، لا خطأ. والتحقق يُقرأ من
+     `.isValid`: الدالة تُرجع كائناً، و`!كائن` لا يكون صحيحاً أبداً — فكان
+     أيُّ اثني عشر رقماً مخترعاً يمرّ إلى المخزن. */
+  const civil = toEnglishDigits(req.body?.civil).replace(/\D/g, "");
+  if (civil.length !== 12 || !validateCivilId(civil).isValid) {
     res.status(400).json({ error: "أدخل الرقم المدني من 12 رقماً كما في بطاقتك." });
     return;
   }
@@ -16138,9 +17630,12 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     Repository.getCourses(),
     Repository.getTerms(),
   ]);
+  /* بالرقم المدني **ورقم الحالة** معاً: الرقمُ المدنيُّ وحده يعرفه غيرُ
+     صاحبه. وخطأُ أيٍّ منهما جوابُه واحد: «لا طلب» — فلا يكشف لمن يجرّب. */
   const mine = (needs as any[]).find(need =>
     String(need?.fingerprint || "") === fingerprint
-    && Number(need?.surveySectionId || need?.AdSectionId || 0) === Number(resolved.link.AdSectionId));
+    && Number(need?.surveySectionId || need?.AdSectionId || 0) === Number(resolved.link.AdSectionId)
+    && caseRefMatches(need, req.body?.caseRef));
 
   res.setHeader("Cache-Control", "no-store");
   if (!mine) {
@@ -16152,6 +17647,38 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
 
   const nameOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
   const codeOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseCode || "")]));
+  /* «سلّمته للتسجيل» لا يُقال والتسجيلُ لا يرى الكشف أصلاً: التسجيلُ لا يقرأ
+     طلباتِ قسمٍ لم يوقّع جدولَه (registrarBlockReason). فما وافقت عليه اللجنة
+     وجدولُ قسمه غير موقّع يُقال فيه ما هو: بانتظار اكتمال اعتماد جدول القسم. */
+  const signedCache = new Map<number, boolean>();
+  const sectionSigned = async (sectionId: number) => {
+    if (!signedCache.has(sectionId)) signedCache.set(sectionId,
+      isFullySigned(await readApproval(Number(mine.AdCollegeId), sectionId, Number(mine.AdTermId))));
+    return Boolean(signedCache.get(sectionId));
+  };
+  const ownerOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), Number(row.AdSectionId || 0)]));
+  const surveySection = Number(mine.surveySectionId || mine.AdSectionId || 0);
+  const handedButUnsigned = async (courseId: number | null) =>
+    !(await sectionSigned(courseId === null ? surveySection : (ownerOf.get(courseId) || surveySection)));
+  const courseIdsForStudent = [
+    ...(Array.isArray(mine.courseIds) ? mine.courseIds : []),
+    ...(mine.courseStates || []).filter((entry: any) => entry?.droppedByStudent).map((entry: any) => entry.courseId),
+  ].filter((id: any, index: number, all: any[]) => all.map(Number).indexOf(Number(id)) === index);
+  const courseRows = await Promise.all(courseIdsForStudent.map(async (id: any) => {
+    const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
+    return {
+      code: codeOf.get(Number(id)) || "",
+      name: nameOf.get(Number(id)) || `مقرر ${id}`,
+      /* ما لم يُقل فيه شيءٌ بعد يبقى بلا حالة، ولا يُسمّى «بانتظار التسجيل»:
+         الانتظارُ قولٌ يقوله القسمُ حين يسلّم، لا حالةٌ تُفترض. */
+      state: state?.state === "awaiting-registration" && !state?.droppedByStudent && await handedButUnsigned(Number(id))
+        ? "awaiting-signatures" : (state?.state || ""),
+      reason: state?.reasonCode || "",
+      note: state?.note || "",
+      dropped: state?.droppedByStudent ? droppedCourseLabel(state) : "",
+    };
+  }));
+  const caseStatus = isCaseLevelNeed(mine) ? studentCaseStatus(mine.caseState) : "";
   res.json({
     found: true,
     /* الرقمُ نفسه الذي أُعطي له لحظةَ الإرسال، مشتقٌّ من معرّف السجلّ لا
@@ -16160,18 +17687,15 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     submittedAt: String(mine.createdAt || ""),
     requestType: String(mine.requestType || "new-course"),
     term: String((terms as any[]).find(row => Number(row.AdTermId) === Number(mine.AdTermId))?.AdTermName || ""),
-    courses: (Array.isArray(mine.courseIds) ? mine.courseIds : []).map((id: any) => {
-      const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
-      return {
-        code: codeOf.get(Number(id)) || "",
-        name: nameOf.get(Number(id)) || `مقرر ${id}`,
-        /* ما لم يُقل فيه شيءٌ بعد يبقى بلا حالة، ولا يُسمّى «بانتظار التسجيل»:
-           الانتظارُ قولٌ يقوله القسمُ حين يسلّم، لا حالةٌ تُفترض. */
-        state: state?.state || "",
-        reason: state?.reasonCode || "",
-        note: state?.note || "",
-      };
-    }),
+    /* طلبُ الخريج لا مقرّرات فيه: قرارُه قرارٌ في الحالة كلها، ويصل الطالبَ
+       بسببه وسطره كما تصل قراراتُ المقرّرات. */
+    caseLevel: isCaseLevelNeed(mine),
+    caseStatus: caseStatus === "approved" && await handedButUnsigned(null) ? "awaiting-signatures" : caseStatus,
+    caseDecision: isCaseLevelNeed(mine) ? {
+      committee: mine.caseState?.committee ? { state: mine.caseState.committee.state, reason: mine.caseState.committee.reasonCode || "", note: mine.caseState.committee.note || "" } : null,
+      registrar: mine.caseState?.registrar ? { state: mine.caseState.registrar.state, reason: mine.caseState.registrar.reasonCode || "", note: mine.caseState.registrar.note || "" } : null,
+    } : null,
+    courses: courseRows,
   });
 });
 
@@ -16214,19 +17738,33 @@ li span{display:flex;flex-direction:column;gap:3px}
 .st[data-s=rejected]{color:var(--bad);font-weight:700}
 .st[data-s=committee-rejected]{color:var(--bad);font-weight:700}
 .note{margin-top:15px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.sub,.reflabel,.st{font-size:13px}
 .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
+label.gap{margin-top:13px}
+.help{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
+.case{margin:0 0 12px;padding:11px 13px;border-radius:11px;background:#eef4f0;font-size:14px;font-weight:600}
+.case[data-s=registered]{color:var(--ok)}
+.case[data-s=rejected],.case[data-s=committee-rejected]{color:var(--bad);background:#fdeceb}
+.case small{font-weight:400;color:var(--ink)}
 </style></head><body><div class="wrap">
 <h1>حالة طلبي</h1>
-<p class="sub">أدخل رقمك المدني لترى ما أرسلتَه إلى القسم.</p>
+<p class="sub">أدخل رقمك المدني ورقم الحالة لترى ما أرسلتَه إلى القسم.</p>
 <label for="civil">الرقم المدني</label>
 <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا">
+<label for="ref" class="gap">رقم الحالة</label>
+<input id="ref" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" placeholder="الرقم الذي ظهر لك عند الإرسال" aria-describedby="refHelp">
+<small id="refHelp" class="help">فقدت رقم الحالة؟ راجع القسم. لا تُعرض الحالة بالرقم المدني وحده.</small>
 <button id="go" type="button">اعرض حالتي</button>
-<div id="out"></div>
+<div id="out" aria-live="polite"></div>
 </div>
 <script nonce="${nonce}">(function(){
-var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),
+var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),refBox=document.getElementById("ref"),
 go=document.getElementById("go"),out=document.getElementById("out");
-var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+/* رقمُ الحالة يصل من صفحة الإرسال في جزء الرابط بعد # — لا يُرسَل إلى الخادم ولا يُحفظ. */
+try{var fromHash=decodeURIComponent(String(location.hash||"").slice(1));if(fromHash)refBox.value=fromHash.toUpperCase().slice(0,16)}catch(e){}
+var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","awaiting-signatures":"وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+var TYPE={"new-course":"طلب فتح مقرر","course-conflict":"تعارض مقررين","graduate":"خريج / متوقع تخرجه"};
+var CASE={"pending":"وصل إلى القسم وينتظر نظر لجنة القسم","approved":"وافقت عليه لجنة القسم وسلّمته للتسجيل","awaiting-signatures":"وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم","committee-rejected":"لم توافق عليه لجنة القسم","registered":"نفّذه التسجيل","rejected":"ردّه التسجيل"};
 var REASON={"no-seat":"لا مقاعد","prerequisite":"متطلّب سابق","level":"المستوى",
 "conflict":"تعارض في جدولك","closed":"الشعبة مغلقة","other":"سبب آخر",
 "not-eligible":"لا تنطبق عليك الشروط","not-in-plan":"ليس من خطتك الدراسية","duplicate":"طلب مكرر أو سبق تسجيله"};
@@ -16239,42 +17777,51 @@ return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\\D/g,"")}
 box.addEventListener("input",function(){var v=digits(box.value).slice(0,12);if(v!==box.value)box.value=v});
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
 d.toLocaleDateString("ar-KW-u-nu-latn",{year:"numeric",month:"long",day:"numeric"})}
-function fail(m){out.innerHTML='<div class="err">'+esc(m)+'</div>'}
+function fail(m){out.innerHTML='<div class="err" role="alert">'+esc(m)+'</div>'}
+function caseLine(d){
+ var dec=d.caseDecision||{},last=dec.registrar||dec.committee,st=d.caseStatus||"pending";
+ return '<p class="case" data-s="'+esc(st)+'">'+esc(CASE[st]||CASE.pending)+
+  (last&&last.reason?' — '+esc(REASON[last.reason]||last.reason):'')+
+  (last&&last.note?'<br><small>'+esc(last.note)+'</small>':'')+'</p>'}
 function show(d){
  if(!d.found){out.innerHTML='<div class="card"><div class="empty">'+
-  'لا يوجد طلبٌ مسجّلٌ بهذا الرقم في '+esc(d.term||"هذا الفصل")+'.<br>'+
+  'لا يوجد طلبٌ بهذا الرقم المدني ورقم الحالة في '+esc(d.term||"هذا الفصل")+'.<br>'+
   'إن كنت قد عبّأت الاستبيان من رابطٍ آخر، افتح ذلك الرابط.</div></div>';return}
  out.innerHTML='<div class="card"><p class="ref">'+esc(d.caseRef)+'</p>'+
-  '<p class="reflabel">رقم حالتك · '+esc(d.term)+'</p>'+
+  '<p class="reflabel">رقم حالتك · '+esc(d.term)+(TYPE[d.requestType]?' · '+esc(TYPE[d.requestType]):'')+'</p>'+
+  (d.caseLevel?caseLine(d):'')+
   '<ul>'+(d.courses||[]).map(function(c){
    return '<li><span>'+esc(c.name)+(c.state?'<i class="st" data-s="'+esc(c.state)+'">'+
     esc(STATE[c.state]||c.state)+(c.reason?' — '+esc(REASON[c.reason]||c.reason):'')+
-    (c.note?' · '+esc(c.note):'')+'</i>':'')+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
+    (c.note?' · '+esc(c.note):'')+'</i>':'')+(c.dropped?'<i class="st" data-s="dropped">'+esc(c.dropped)+'</i>':'')+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
   '<p class="note">وصل طلبك إلى القسم يوم '+esc(dt(d.submittedAt))+'.<br>'+
   'هذه حالةُ طلبك عند القسم، وليست تسجيلاً في النظام الأكاديمي. '+
   'وإذا غيّرت اختيارك، افتح رابط الاستبيان وأرسل من جديد فيُحدَّث طلبك.</p></div>'}
 function run(){
  var civil=digits(box.value);
  if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");
+ var ref=String(refBox.value||"").trim().toUpperCase();
+ if(ref.length<6)return fail("أدخل رقم الحالة كما ظهر لك عند الإرسال");
  go.disabled=true;go.textContent="يقرأ…";out.innerHTML="";
  fetch("/api/public/survey/"+encodeURIComponent(TOKEN)+"/my-case",{method:"POST",
-  headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:civil})})
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:civil,caseRef:ref})})
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){go.disabled=false;go.textContent="اعرض حالتي";
   if(!x.ok)return fail(x.d.error||"تعذّر القراءة");show(x.d)})
  .catch(function(){go.disabled=false;go.textContent="اعرض حالتي";fail("تعذّر الاتصال.")})}
 go.onclick=run;
 box.addEventListener("keydown",function(e){if(e.key==="Enter")run()});
+refBox.addEventListener("keydown",function(e){if(e.key==="Enter")run()});
 })();</script></body></html>`;
 }
 
 /** بابُ «حالة طلبي». الرابطُ نفسه الذي عبّأ منه الطالب، بمسارٍ آخر. */
 app.get("/m/:token", async (req: Request, res: Response) => {
-  const resolved = await resolveShareToken(String(req.params.token || ""));
+  const resolved = await resolveSurveyStatusToken(String(req.params.token || ""));
   res.setHeader("Cache-Control", "no-store");
-  if ("error" in resolved || resolved.link.kind !== "survey") {
-    const message = "error" in resolved ? resolved.error : "هذا الرابط ليس استبياناً";
-    const status = "error" in resolved ? resolved.status : 404;
+  if ("error" in resolved) {
+    const message = resolved.error;
+    const status = resolved.status;
     res.status(status).type("text/html; charset=utf-8").send(
       `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
@@ -16324,6 +17871,11 @@ app.get("/s/:token", async (req: Request, res: Response) => {
    * والتحويلُ لا المنعُ: الرمزُ رمزُ صاحبه، وإنما أُخطئ في بابه. */
   if (resolved.link.kind === "request") {
     res.redirect(302, `/r/${encodeURIComponent(resolved.link.id)}`);
+    return;
+  }
+  /* والاستبيانُ كذلك: رابطُ الطلبة يفتح الاستبيان وحالةَ الطلب، لا جدولَ القسم. */
+  if (resolved.link.kind === "survey") {
+    res.redirect(302, `/q/${encodeURIComponent(resolved.link.id)}`);
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
@@ -16511,7 +18063,7 @@ async function migrateLegacyAccountsToCommitteeRole(): Promise<void> {
     for (const user of pending) {
       await Repository.updateUser(Number(user.SystemUserId), { Role: DEFAULT_MIGRATION_ROLE });
     }
-    console.log(`[roles] رُحّل ${pending.length} حساباً قائماً إلى صفة «${roleLabel(DEFAULT_MIGRATION_ROLE)}».`);
+    console.log(`[roles] رُحّل ${countOf(pending.length, AR.account)} إلى صفة «${roleLabel(DEFAULT_MIGRATION_ROLE)}».`);
   } catch (error) {
     /* الترحيل راحةٌ لا شرط: غيابُ الدور يُقرأ «رئيس لجنة» في كل موضع على أي
        حال، فلا يجوز أن يمنع فشلُه إقلاعَ الخادم. */
@@ -16542,7 +18094,7 @@ async function reconcileDepartmentHeadPermissions(): Promise<void> {
       await Repository.saveSecurityByUser(Number(user.SystemUserId), perms.filter(id => id !== SCHEDULE_WORKSPACE_FORM_ID));
       changed++;
     }
-    if (changed) console.log(`[roles] أُزيلت شاشةُ الورشة عن ${changed} حساب «رئيس قسم» — يقرأ ولا يعدّل.`);
+    if (changed) console.log(`[roles] أُزيلت شاشةُ الورشة عن ${countOf(changed, oblique(AR.account))} «رئيس قسم» — يقرأ ولا يعدّل.`);
   } catch (error) {
     console.error("[roles] تعذّرت مصالحةُ صلاحيات رؤساء الأقسام:", error instanceof Error ? error.message : error);
   }

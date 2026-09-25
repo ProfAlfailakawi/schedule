@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, ClipboardList, Clock3, LayoutList,
   CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X,
-  ShieldCheck,
+  ShieldCheck, FileSpreadsheet,
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
@@ -21,7 +21,11 @@ import {
   type VisitingHistoryPerson, type VisitingHistoryYear,
 } from "../utils/visitingHistory";
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { HISTORICAL_FINALITY_LABEL } from "../utils/finality";
+import { takeNotifyFocus } from "../utils/notifyFocus";
+import { buildFairnessEngine } from "../utils/livingSchedule";
+import { weeklyLoadOf } from "../utils/instructorRequestVerdict";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
@@ -148,12 +152,39 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
 const ROLE_LENSES: Record<string, Lens[]> = {
   /* العميدان يفتحان على الجداول نفسها — المعتمدة وحدها، يقصرها الخادم — ثم
      ما يُكمل الصورة. أسرعُ جوابٍ لمشغولٍ هو الجدولُ نفسه. */
-  dean:           ["list", "week", "balance", "fairness", "visiting"],
-  viceDean:       ["list", "week", "balance", "fairness", "visiting", "instructor", "room", "matrix"],
+  /* العميدان يفتحان على ميزان الأقسام: «أين وصلت الأقسام؟» سؤالُهما الأول،
+     والقائمةُ — المعتمدة وحدها — تكون فارغةً قبل أن يعتمد التسجيل شيئاً، فشاشةٌ
+     أولى فارغة لا تجيب أحداً. ثم الجداول نفسها وما يُكمل الصورة. */
+  dean:           ["balance", "list", "week", "fairness", "visiting"],
+  viceDean:       ["balance", "list", "week", "fairness", "visiting", "instructor", "room", "matrix"],
   registrarDean:  ["balance", "fairness"],
   registrarHead:  ["balance", "list", "room", "matrix"],
   registrarStaff: ["balance", "list", "room"],
 };
+
+/**
+ * ── أوّل عدسةٍ تُفتح ─────────────────────────────────────────────────────────
+ *
+ * المحفوظةُ أولاً إن كانت للصفة، ثم عدسةُ الشاشة التي فُتحت منها. والعميدان
+ * حين يفتحان تقرير القسم أو البحث المتقدّم يبدآن بميزان الأقسام. وعدسةٌ لا
+ * تملكها الصفة تُترجَم إلى أقرب ما تملكه (الوقت → المصفوفة لمن لا يملكه).
+ */
+function initialLensFor(roleId: string | undefined, mode: ReportMode, savedLens: unknown): Lens {
+  const allowed = roleId ? ROLE_LENSES[roleId] : undefined;
+  const fits = (lens: Lens) => !allowed || allowed.includes(lens) || (lens === "visitingHistory" && allowed.includes("visiting"));
+  const wanted = LENS_FOR_MODE[mode] || "list";
+  /* شاشةٌ لها سؤالها (الأساتذة، القاعات، الأوقات) تفتح عليه كما كانت. */
+  const generic = mode === "reportDepartment" || mode === "searchAdvanced";
+  if (!generic) {
+    if (fits(wanted)) return wanted;
+    if (wanted === "time" && fits("matrix")) return "matrix";
+  }
+  if (LENSES.some(item => item.id === savedLens) && fits(savedLens as Lens)) return savedLens as Lens;
+  const deanReader = roleId === "dean" || roleId === "viceDean";
+  if (deanReader && generic) return "balance";
+  if (fits(wanted)) return wanted;
+  return allowed?.[0] || "list";
+}
 
 const DAYS = [
   { key: "sun" as const, flag: "fsunday" as const, label: "الأحد" },
@@ -338,7 +369,7 @@ function VisitingHistoryTermCard({ term, courseById }: {
     <section className="visiting-history-term">
       <header>
         <span><CheckCircle2 aria-hidden="true" /><strong>{term.termName}</strong></span>
-        <b>{Number(term.sections || 0).toLocaleString("ar-KW-u-nu-latn")} شعب</b>
+        <b>{countOf(Number(term.sections || 0), AR.section)}</b>
       </header>
       {term.items?.length ? (
         <div className="visiting-history-sections">
@@ -388,7 +419,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   try { saved = JSON.parse(localStorage.getItem(prefKey) || "{}"); } catch { /* first run */ }
   try { workspaceSaved = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch { /* first run */ }
 
-  const [lens, setLens] = useState<Lens>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
+  const isDeanReader = roleId === "dean" || roleId === "viceDean";
+  const [lens, setLens] = useState<Lens>(() => initialLensFor(roleId, mode, saved.lens));
   const [colleges, setColleges] = useState<AdCollege[]>([]);
   const [sections, setSections] = useState<AdSection[]>([]);
   const [terms, setTerms] = useState<AdTerm[]>([]);
@@ -421,6 +453,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [scopeMenu, setScopeMenu] = useState<"comprehensive" | "authority" | null>(null);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
+  /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده («accepted» | «historical»)، من ترويسة
+     الخادم. فارغةٌ لغير العميدين. */
+  const [finality, setFinality] = useState<Record<string, "accepted" | "historical">>({});
+  /* لحظةُ آخر قراءةٍ ناجحة للنطاق — ليُحكم على «فارغ» بعد القراءة لا قبلها. */
+  const [scopeReadAt, setScopeReadAt] = useState(0);
+  const historicalScopeCount = useMemo(() => Object.values(finality).filter(value => value === "historical").length, [finality]);
   const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
   const [filters, setFilters] = useState<Filters>(() => ({
     ...fresh(),
@@ -437,6 +475,17 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     building: cleanOptionText(saved.filters?.building || ""),
     hall: cleanOptionText(saved.filters?.hall || ""),
   }));
+  /* مرشّحات الشاشة كما هي، لملفّ Excel (N12). */
+  const excelQuery = useMemo(() => {
+    const query = new URLSearchParams();
+    const put = (key: string, value: unknown) => { if (value !== undefined && value !== null && value !== "" && value !== 0 && value !== false) query.set(key, String(value)); };
+    put("termId", filters.termId); put("collegeId", filters.collegeId); put("sectionId", filters.sectionId);
+    put("instructorId", filters.instructorId); put("courseId", filters.courseId); put("courseCode", filters.courseCode);
+    put("building", filters.building); put("hall", filters.hall); put("civil", filters.civil);
+    if (filters.startTime && filters.endTime) { put("startTime", filters.startTime); put("endTime", filters.endTime); }
+    (["sun", "mon", "tue", "wed", "thr"] as const).forEach(day => { if (filters[day]) query.set(day, "true"); });
+    return query.toString();
+  }, [filters]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   /**
@@ -452,7 +501,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [printApproval, setPrintApproval] = useState<PrintApproval | null>(null);
   const [changesAppendix, setChangesAppendix] = useState<ChangesAppendix | null>(null);
   /** حال الاعتماد لكل قسمٍ في الفصل — تُقرأ مرّةً لميزان الأقسام كله. */
-  const [termApprovals, setTermApprovals] = useState<Map<number, { status: ScheduleApprovalStatus; late: boolean; round: number; deadline?: string }> | null>(null);
+  const [termApprovals, setTermApprovals] = useState<Map<number, BalanceApprovalState> | null>(null);
   const [appendixBusy, setAppendixBusy] = useState(false);
   const [authorityReport, setAuthorityReport] = useState<AuthorityReport | null>(null);
   /* تقرير التغييرات للقسم كله: تقرير لكل موقع، مرتبة كما تُقرأ — الموقع
@@ -476,8 +525,13 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
 
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
 
+  /* تبدّل الشاشة (mode) يفتح عدستها — بالدالّة نفسها التي تعرف الصفة (N2/N11).
+     أوّلُ تشغيلٍ يأخذ ما قرّرته `initialLensFor` (محفوظةً أو ميزاناً للعميدين)
+     ولا يمحوه بعدسة الشاشة الخام — كان يفعل، فيفتح العميدُ على قائمةٍ فارغة. */
+  const modeSeen = useRef(false);
   useEffect(() => {
-    const nextLens = LENS_FOR_MODE[mode] || "list";
+    const nextLens = modeSeen.current ? initialLensFor(roleId, mode, undefined) : lens;
+    modeSeen.current = true;
     setLens(nextLens);
     setPrintKind(nextLens);
   }, [mode]);
@@ -504,25 +558,31 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
        ميزانَ الأقسام — فمن ينظر في القاعات لا شأن له بحال الاعتماد. */
     if (lens !== "balance" || !filters.termId) { setTermApprovals(null); return; }
     const controller = new AbortController();
+    /* الحالات لكل كليات النطاق، لا للكلية المختارة وحدها (N4): الميزان يعرض
+       أقسام النطاق كله، وعميدٌ بكليتين لم يختر واحدةً كان يرى أقسام الثانية
+       «قيد الإعداد» وهي معتمدة. والخادم يُصفّي بالنطاق. */
     const query = new URLSearchParams({ termId: String(filters.termId) });
-    if (filters.collegeId) query.set("collegeId", String(filters.collegeId));
     fetch(`/api/approvals/term?${query}`, { signal: controller.signal })
       .then(response => (response.ok ? response.json() : null))
       .then(data => {
         if (!data?.approvals) { setTermApprovals(null); return; }
-        setTermApprovals(new Map(data.approvals.map((row: any) => [
+        const entry = (row: any): [number, BalanceApprovalState] => [
           Number(row.AdSectionId),
           {
-            status: row.status as ScheduleApprovalStatus,
-            late: Boolean(row.deadline?.past) && Number(row.currentRound || 0) === 0,
+            status: row.status,
+            /* التأخّر من الخادم، بالقاعدة الواحدة (src/utils/lateness.ts). */
+            late: Boolean(row.late),
             round: Number(row.currentRound || 0),
             deadline: row.deadline?.effective,
+            daysLeft: typeof row.deadline?.daysLeft === "number" ? row.deadline.daysLeft : undefined,
+            sectionName: row.sectionName, collegeName: row.collegeName, collegeId: Number(row.AdCollegeId || 0),
           },
-        ])));
+        ];
+        setTermApprovals(new Map([...data.approvals.map(entry), ...(data.notStarted || []).map(entry)]));
       })
       .catch(() => setTermApprovals(null));
     return () => controller.abort();
-  }, [lens, filters.termId, filters.collegeId]);
+  }, [lens, filters.termId]);
 
   useEffect(() => {
     const { collegeId, sectionId, termId } = filters;
@@ -556,9 +616,11 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   },[filters.collegeId,filters.sectionId]);
 
   useEffect(() => {
-    if(!filters.collegeId||!filters.sectionId||!filters.termId){setVisitingIds(new Set());return;}
+    /* مستوى الكلية مقبول (N7): الخادم يجيزه لمن يغطّي الكلية كلها. */
+    if(!filters.collegeId||!filters.termId){setVisitingIds(new Set());return;}
     const controller=new AbortController();
-    const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId),termId:String(filters.termId)});
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId),termId:String(filters.termId)});
+    if(filters.sectionId)qs.set("sectionId",String(filters.sectionId));
     fetch(`/api/reports/visiting-roster?${qs}`,{signal:controller.signal})
       .then(response=>response.ok?response.json():{instructorIds:[]})
       .then(data=>setVisitingIds(new Set((Array.isArray(data?.instructorIds)?data.instructorIds:[]).map(Number).filter(Boolean))))
@@ -567,9 +629,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   },[filters.collegeId,filters.sectionId,filters.termId]);
 
   useEffect(() => {
-    if(lens!=="visitingHistory"||!filters.collegeId||!filters.sectionId){return;}
+    if(lens!=="visitingHistory"||!filters.collegeId){return;}
     const controller=new AbortController();
-    const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId)});
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId)});
+    if(filters.sectionId)qs.set("sectionId",String(filters.sectionId));
     setVisitingHistoryLoading(true);
     fetch(`/api/reports/visiting-history?${qs}`,{signal:controller.signal})
       .then(response=>{if(!response.ok)throw new Error("تعذر تحميل تاريخ المنتدبين");return response.json();})
@@ -598,10 +661,17 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         // Keep the last academic workspace active after login/navigation. The
         // old code restored it in useState and then immediately zeroed it here,
         // which is why Reports looked like a first visit every time.
+        /* الإشعار يفتح على قسمه (N16): يتقدّم على آخر نطاقٍ محفوظ، ثم يمرّ
+           بالتصفية نفسها — فلا يفتح تركيزٌ ما لا يملكه القارئ. */
+        const focus = takeNotifyFocus("reportDepartment");
+        if (focus) {
+          setFocusSectionId(focus.sectionId || 0);
+          if (isDeanReader || roleId === "registrarDean") setLens("balance");
+        }
         setFilters(prev => {
-          let collegeId = Number(prev.collegeId || 0) || 0;
-          let sectionId = Number(prev.sectionId || 0) || 0;
-          let termId = Number(prev.termId || 0) || 0;
+          let collegeId = Number(focus?.collegeId || prev.collegeId || 0) || 0;
+          let sectionId = focus ? Number(focus.sectionId || 0) : Number(prev.sectionId || 0) || 0;
+          let termId = Number(focus?.termId || prev.termId || 0) || 0;
           if (isPowerAdmin) {
             if (collegeId && !data[0].some((row: AdCollege) => Number(row.AdCollegeId) === collegeId)) collegeId = 0;
             const section = data[1].find((row: AdSection) => Number(row.AdSectionId) === sectionId);
@@ -655,6 +725,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
    */
   const [balance, setBalance] = useState<any>(null);
   const [balanceSort, setBalanceSort] = useState<{ key: string; desc: boolean }>({ key: "rows", desc: true });
+  /** القسم الذي فُتح عليه التقرير من إشعار — يُبرَز في الميزان (N16/N20). */
+  const [focusSectionId, setFocusSectionId] = useState(0);
   const readScope = useCallback((signal?: AbortSignal, quiet = false) => {
     if (!filters.collegeId || !filters.termId) { setAll([]); return Promise.resolve(); }
     const query = new URLSearchParams({ termId: String(filters.termId) });
@@ -664,10 +736,14 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     return fetch(`/api/schedules?${query}`, { signal })
       .then(response => {
         if (!response.ok) throw new Error("تعذر تحميل مواعيد النطاق الحالي");
+        let nextFinality: Record<string, "accepted" | "historical"> = {};
+        try { nextFinality = JSON.parse(response.headers.get("X-Schedule-Finality") || "{}") || {}; } catch { nextFinality = {}; }
+        setFinality(nextFinality);
         return response.json();
       })
       .then(rows => {
         setAll(rows);
+        setScopeReadAt(Date.now());
         setLiveNudge(false);
         // A read that worked is the end of the previous failure. The banner used
         // to be set three times and cleared never, so one hiccup pinned a red
@@ -712,8 +788,19 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   useEffect(() => {
     if (!shownLenses.length) return;
     if (shownLenses.some(item => item.id === lens)) return;
+    /* «كل الفصول» وجهٌ ثانٍ لعدسة المنتدبين، يُبلغ من مفتاحها لا من شريط
+       العدسات: من يملك «المنتدبين» يملكه (N7) — وكان يُردّ فوراً إلى الأولى. */
+    if (lens === "visitingHistory" && shownLenses.some(item => item.id === "visiting")) return;
     setLens(shownLenses[0].id);
   }, [shownLenses, lens]);
+  /* العميدان على قائمةٍ محفوظة ولا جدولَ معتمداً بعد: تُفتح الموازين مرّةً
+     واحدة بدل شاشةٍ فارغة. مرّةً واحدة — من عاد إلى القائمة بنفسه لا يُردّ. */
+  const autoBalanceDone = useRef(false);
+  useEffect(() => {
+    if (!isDeanReader || autoBalanceDone.current || !scopeReadAt) return;
+    autoBalanceDone.current = true;
+    if (lens === "list" && !all.length && shownLenses.some(item => item.id === "balance")) setLens("balance");
+  }, [isDeanReader, scopeReadAt, lens, all.length, shownLenses]);
   useEffect(() => {
     if (lens !== "balance" || !filters.termId) return;
     const controller = new AbortController();
@@ -1154,7 +1241,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
      يغيّر شيئاً يوهم القارئ أن هناك ما يُخفى عنه. */
   const historyYearChoices = useMemo(() => {
     const total = historyModel.totals.years;
-    const options = [4, 6, 10].filter(value => value < total).map(value => ({ value, label: `آخر ${value.toLocaleString("ar-KW-u-nu-latn")} سنوات` }));
+    const options = [4, 6, 10].filter(value => value < total).map(value => ({ value, label: `آخر ${countOf(value, oblique(AR.year))}` }));
     return [...options, { value: 0, label: total ? `كل السنوات (${total.toLocaleString("ar-KW-u-nu-latn")})` : "كل السنوات" }];
   }, [historyModel.totals.years]);
   const visitingHistorySectionTotal = visitingHistoryRows.reduce((sum, person) => sum + Number(person.sections || 0), 0);
@@ -1173,15 +1260,28 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [results]);
 
+  /* ── عدالةُ الحمل: معادلةٌ واحدة (N6) ─────────────────────────────────
+     كانت العدسة تحسب مؤشرها بمعادلةٍ خاصّة (انحراف الدقائق)، والميزانُ بمحرّك
+     العدالة — فيقرأ العميدُ للقسم نفسه رقمين. وكانت «بدون أستاذ» و«هيئة
+     تدريسية» تدخلان الحساب كأنهما شخصان. فصار المؤشر من المحرّك نفسه
+     (buildFairnessEngine، يستثني غير الأشخاص)، و«متوسط النصاب» بالساعات
+     المعتمدة (weeklyLoadOf) كما تقوله اللوائح. */
   const fairness = useMemo(() => {
-    if (!byInstructor.length) return null;
-    const loads = byInstructor.map(x => x.load);
-    const average = loads.reduce((a, b) => a + b, 0) / loads.length;
-    const spread = Math.max(...loads) - Math.min(...loads);
-    const deviation = Math.sqrt(loads.reduce((total, value) => total + (value - average) ** 2, 0) / loads.length);
-    const score = Math.max(0, Math.min(100, Math.round(100 - (average ? (deviation / average) * 100 : 0))));
-    return { average, spread, deviation, score, rows: byInstructor.map(row => ({ ...row, delta: row.load - average })).sort((a, b) => b.load - a.load) };
-  }, [byInstructor]);
+    const engine = buildFairnessEngine(results, instructors);
+    if (!engine.profiles.length) return null;
+    const courseMap = new Map<number, AdCourse>(courses.map(course => [Number(course.AdCourseId), course] as [number, AdCourse]));
+    const people = engine.profiles.map(profile => ({
+      id: String(profile.id), name: profile.name, burden: profile.burden, load: profile.burden,
+      hours: weeklyLoadOf(results.filter(row => Number(row.AdInstructorId) === Number(profile.id)), courseMap),
+    }));
+    const hours = people.map(person => person.hours);
+    const average = hours.reduce((a, b) => a + b, 0) / hours.length;
+    const spread = Math.max(...hours) - Math.min(...hours);
+    return {
+      score: engine.score, label: engine.label, average, spread,
+      rows: people.map(person => ({ ...person, delta: person.hours - average })).sort((a, b) => b.burden - a.burden),
+    };
+  }, [results, instructors, courses]);
 
   const weekGrid = useMemo(() => DAYS.map(day => ({
     ...day,
@@ -1712,7 +1812,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     shownLenses.length === 9 ? "تسع عدسات" :
     shownLenses.length === 8 ? "ثماني عدسات" :
     shownLenses.length === 7 ? "سبع عدسات" :
-    `${shownLenses.length} عدسات`;
+    countOf(shownLenses.length, AR.lens);
 
   return (
     <div className="content-stack query-page visual-minimal">
@@ -1914,6 +2014,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       {(roleId === "dean" || roleId === "viceDean") && lens !== "balance" ? (
         <p className="final-only-note no-print" role="note">
           <ShieldCheck aria-hidden="true" /> تُعرض الجداول المعتمدة من التسجيل فقط. القسم الذي لم يُعتمد بعد لا يظهر هنا — حالته في «ميزان الأقسام».
+          {historicalScopeCount ? (
+            <> وفي هذا الفصل المنتهي {countOf(historicalScopeCount, AR.department)} بصفة «{HISTORICAL_FINALITY_LABEL}»: جدولٌ دُرِّس فعلاً ولم يمرّ بدورة الاعتماد.</>
+          ) : null}
         </p>
       ) : null}
 
@@ -1969,11 +2072,26 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       >
         <header className="query-canvas-head no-print">
           <div className="query-count" aria-live="polite" aria-atomic="true">
-            <b>{num(lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length)}</b>
-            <span>{lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
+            {/* الميزان يعدّ الأقسام لا المواعيد المعتمدة: «0 موعد» فوق جدولٍ فيه أقسامٌ
+                ومواعيد كان يقول للعميد شيئاً غير ما يراه تحته. */}
+            <b>{num(lens === "balance" ? Number(balance?.departments?.length || 0) : lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length)}</b>
+            <span>{lens === "balance" ? nounFor(Number(balance?.departments?.length || 0), AR.department) : lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
-          {!pending && (results.length || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
+          {!pending && (results.length || (lens === "balance" && balance) || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
+            {/* نشرة الميزان تُطبع قبل أول موعدٍ معتمد أيضاً (N14). */}
+            {!results.length && lens === "balance" && balance ? (
+              <button
+                type="button"
+                className="query-print-icon"
+                data-guide-ignore="طباعة نشرة ميزان الأقسام؛ قراءة فقط ولا تغيّر بيانات الجدول"
+                onClick={() => printReport("balance")}
+                aria-label="طباعة نشرة الميزان"
+                title="طباعة نشرة الميزان"
+              >
+                <Printer aria-hidden="true" />
+              </button>
+            ) : null}
             {results.length ? <>
               <button
                 type="button"
@@ -1984,6 +2102,19 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               >
                 <Printer aria-hidden="true" />
               </button>
+              {/* ── تصدير Excel (N12) ────────────────────────────────────────
+                  الملفّ بمرشّحات الشاشة نفسها، ومن قارئ الخادم نفسه: العميدان
+                  يُصدّران النهائيَّ وحده، والرقمُ المدني لا يخرج لصفات الاطّلاع. */}
+              <a
+                className="query-print-icon"
+                href={`/api/reports/excel/ListofTeacherCourseExcel?${excelQuery}`}
+                download
+                data-guide-ignore="تنزيل ملف Excel بمرشحات العرض الحالي؛ قراءة فقط ولا يغيّر بيانات الجدول"
+                aria-label="تصدير Excel"
+                title="تصدير Excel"
+              >
+                <FileSpreadsheet aria-hidden="true" />
+              </a>
               {/* ── السؤال يُطرح عند الضغط، لا قبله ────────────────────────────
                   زر لكل تقرير، ومفتاح دائم للنطاق: ثلاثة عناصر تشغل الشريط
                   طوال الوقت لأجل قرار يُتخذ لحظةَ الطباعة فقط. فصار الزر يسأل
@@ -2028,9 +2159,11 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         ) : !results.length && lens !== "room" && lens !== "balance" && lens !== "visitingHistory" ? (
           <div className="query-empty">
             <EmptyState
-              title={error ? "تعذّرت القراءة" : (roleId === "dean" || roleId === "viceDean") ? "لا جدول معتمد بعد" : "لا نتائج"}
+              title={error ? "تعذّرت القراءة" : isDeanReader && !filters.collegeId ? "اختر الكلية" : isDeanReader ? "لا جدول معتمد بعد" : "لا نتائج"}
               detail={error ? "لم تصل بيانات النطاق — أعد المحاولة من الشريط أعلاه."
-                : (roleId === "dean" || roleId === "viceDean") ? "لم يعتمد التسجيلُ جدولَ أي قسمٍ في هذا النطاق حتى الآن. تابع التقدّم في «ميزان الأقسام»."
+                /* عميدٌ بأكثر من كلية لم يختر واحدة: ليس «لم يُعتمد شيء» (N4). */
+                : isDeanReader && !filters.collegeId ? "نطاقك يشمل أكثر من كلية. اختر كليةً من الشريط أعلاه لعرض جداولها، أو افتح «ميزان الأقسام» لترى أقسام النطاق كله."
+                : isDeanReader ? "لم يعتمد التسجيلُ جدولَ أي قسمٍ في هذا النطاق حتى الآن. تابع التقدّم في «ميزان الأقسام»."
                 : "خفّف المرشحات"}
             />
           </div>
@@ -2063,6 +2196,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       <span className="code-chip">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</span>
                       <span>{row.SCode}</span>
                       <span className="report-instructor-with-badge"><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
+                      {finality[`${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] === "historical"
+                        ? <span className="finality-historical-chip" title="فصلٌ انتهى وقسمٌ لم يمرّ بدورة الاعتماد">{HISTORICAL_FINALITY_LABEL}</span>
+                        : null}
                     </div>
                   </div>
                   <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
@@ -2129,7 +2265,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   {locationRegistry.rooms.filter(room => (!matrixBuilding || room.buildingId === matrixBuilding) && results.some(row => row.roomId === room.id)).sort((a,b)=>byRoomPart(a.canonicalCode,b.canonicalCode)).map(room => <option key={room.id} value={room.id}>{room.canonicalCode}</option>)}
                 </select>
               </label>
-              {matrix ? <span className="matrix-count">{num(matrix.lines.length)} صف · {num(matrix.total)} موعد</span> : null}
+              {matrix ? <span className="matrix-count">{countOf(matrix.lines.length, AR.row)} · {countOf(matrix.total, AR.appointment)}</span> : null}
             </div>
             {matrix && matrix.lines.length ? (
               <div className="matrix-scroll">
@@ -2268,7 +2404,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${scheduleClockForDisplay(clock(roomPick.point))}`}</small>
                       <strong>{roomPick.room}</strong>
                     </div>
-                    <span className="occupancy-pick-count">{num(picked.length)} موعد</span>
+                    <span className="occupancy-pick-count">{countOf(picked.length, AR.appointment)}</span>
                     <button type="button" data-guide-ignore="إغلاق تفاصيل إشغال القاعة فقط" onClick={() => setRoomPick(null)} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></button>
                   </header>
                   {picked.length ? (
@@ -2346,7 +2482,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                     <span className="group-avatar"><UserPlus /></span>
                     <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
                     <span className="group-bar"><i style={{ width: share(group.sections, Math.max(1, ...visitingTermGroups.map(item => item.sections))) }} /></span>
-                    <b>{num(group.sections)} شعب</b>
+                    <b><bdi>{countOf(group.sections, AR.section)}</bdi> · <bdi>{countOf(Math.round(group.weeklyMinutes / 60), AR.hour)}</bdi> أسبوعياً</b>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {openGroup === `visiting-${group.id}` ? (
@@ -2391,9 +2527,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   ) : null}
                 </div>
                 <div className="visiting-history-summary-facts">
-                  <span><b>{num(visitingHistoryRows.length)}</b><small>منتدب</small></span>
-                  <span><b>{num(historyModel.totals.years)}</b><small>سنة أكاديمية</small></span>
-                  <span><b>{num(visitingHistorySectionTotal)}</b><small>شعبة تاريخيًا</small></span>
+                  <span><b>{num(visitingHistoryRows.length)}</b><small>{nounFor(visitingHistoryRows.length, AR.visitor)}</small></span>
+                  <span><b>{num(historyModel.totals.years)}</b><small>{nounFor(historyModel.totals.years, AR.academicYear)}</small></span>
+                  <span><b>{num(visitingHistorySectionTotal)}</b><small>{nounFor(visitingHistorySectionTotal, AR.section)} تاريخيًا</small></span>
                 </div>
               </section>
 
@@ -2407,7 +2543,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       {historyModel.archive ? (
                         <th scope="col" className="is-archive">
                           <bdi dir="ltr">{historyModel.archive.label}</bdi>
-                          <span>{num(historyModel.archive.yearCount)} سنوات سابقة</span>
+                          <span>قبلها {countOf(historyModel.archive.yearCount, AR.year)}</span>
                         </th>
                       ) : null}
                       {historyModel.years.map(year => (
@@ -2446,23 +2582,24 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                                 <span className="visiting-history-person-name">
                                   <strong>{person.name}</strong>
                                   {person.civil ? <small dir="ltr">{person.civil}</small> : null}
+                                  {person.listedNow === false ? <small className="visiting-history-left">لم يعد في دليل القسم</small> : null}
                                 </span>
                                 <ChevronDown aria-hidden="true" />
                               </button>
                             </th>
-                            <td className="is-total"><b>{num(person.times)}</b><small>فصل</small></td>
+                            <td className="is-total"><b>{num(person.times)}</b><small>{nounFor(person.times, AR.term)}</small></td>
                             <td className="is-total is-sections">
                               <span className="visiting-history-meter" aria-hidden="true">
                                 <i><b style={{ width: share(person.sections, maxVisitingSections) }} /></i>
                               </span>
-                              <b>{num(person.sections)}</b><small>شعبة</small>
+                              <b>{num(person.sections)}</b><small>{nounFor(person.sections, AR.section)}</small>
                             </td>
                             {historyModel.archive ? (
                               <td className="is-archive">
                                 {historyModel.archive.sectionsByPerson.get(Number(person.instructorId)) ? (
                                   <span className="visiting-history-archive-fact">
                                     <b>{num(historyModel.archive.sectionsByPerson.get(Number(person.instructorId)) || 0)}</b>
-                                    <small>{num(historyModel.archive.termsByPerson.get(Number(person.instructorId)) || 0)} فصل</small>
+                                    <small>{countOf(historyModel.archive.termsByPerson.get(Number(person.instructorId)) || 0, AR.term)}</small>
                                   </span>
                                 ) : <i className="visiting-history-cell is-empty" aria-label="بلا انتداب" />}
                               </td>
@@ -2483,7 +2620,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                                         data-guide-ignore="فتح شعب هذا الفصل للقراءة فقط"
                                         className={`visiting-history-cell level-${level}${openHistoryCell === cellKey ? " is-active" : ""}`}
                                         aria-pressed={openHistoryCell === cellKey}
-                                        title={`${cell?.termName || slot.term?.termName || ""} · ${sections} شعبة`}
+                                        title={`${cell?.termName || slot.term?.termName || ""} · ${countOf(sections, AR.section)}`}
                                         onClick={() => { setOpenHistoryCell(openHistoryCell === cellKey ? null : cellKey); setOpenGroup(null); }}
                                       >{num(sections)}</button>
                                     );
@@ -2519,15 +2656,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   <tfoot>
                     <tr>
                       <th scope="row" className="is-person">إجمالي القسم</th>
-                      <td className="is-total"><b>{num(historyModel.totals.terms)}</b><small>فصل</small></td>
-                      <td className="is-total is-sections"><b>{num(historyModel.totals.sections)}</b><small>شعبة</small></td>
+                      <td className="is-total"><b>{num(historyModel.totals.terms)}</b><small>{nounFor(historyModel.totals.terms, AR.term)}</small></td>
+                      <td className="is-total is-sections"><b>{num(historyModel.totals.sections)}</b><small>{nounFor(historyModel.totals.sections, AR.section)}</small></td>
                       {historyModel.archive ? (
                         <td className="is-archive"><b>{num(historyModel.archive.years.reduce((sum, year) => sum + year.sections, 0))}</b></td>
                       ) : null}
                       {historyModel.years.map(year => (
                         <td key={`total-${year.key}`} className="is-year">
                           <b>{num(year.sections)}</b>
-                          <small>{num(year.people)} منتدب</small>
+                          <small>{countOf(year.people, AR.visitor)}</small>
                         </td>
                       ))}
                     </tr>
@@ -2593,16 +2730,16 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       {slot.rooms.length > 4 ? <span>+{num(slot.rooms.length - 4)}</span> : null}
                     </div>
                     <div className="time-slot-facts" aria-hidden="true">
-                      <span>{num(slot.courses)} مقرر</span>
-                      <span>{num(slot.instructors)} أستاذ</span>
-                      <span>{num(slot.days)} أيام</span>
+                      <span>{countOf(slot.courses, AR.course)}</span>
+                      <span>{countOf(slot.instructors, AR.instructor)}</span>
+                      <span>{countOf(slot.days, AR.day)}</span>
                     </div>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {expanded ? (
                     <div className="time-slot-panel" id={`query-time-slot-${slot.key}`}>
                       <div className="time-slot-panel-head">
-                        <div><strong>{scheduleClockForDisplay(slot.key)}</strong><small>{num(slot.count)} موعد · {num(slot.courses)} مقرر · {num(slot.instructors)} أستاذ</small></div>
+                        <div><strong>{scheduleClockForDisplay(slot.key)}</strong><small>{countOf(slot.count, AR.appointment)} · {countOf(slot.courses, AR.course)} · {countOf(slot.instructors, AR.instructor)}</small></div>
                         <span>{slot.rooms.length ? countOf(slot.rooms.length, AR.room) : "بدون قاعات"}</span>
                       </div>
                       <div className="time-slot-grid">
@@ -2644,14 +2781,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             onSort={setBalanceSort}
             num={num}
             approvals={termApprovals || undefined}
+            focusSectionId={focusSectionId}
           />
         ) : fairness ? (
           <div className="lens-fairness">
             <div className="fairness-summary">
               <div className="fairness-score"><b>{num(fairness.score)}</b><small>/ 100</small></div>
               <div className="fairness-facts">
-                <div><small>متوسط النصاب</small><strong>{num(Math.round(fairness.average / 60))} س</strong></div>
-                <div><small>الفارق</small><strong>{num(Math.round(fairness.spread / 60))} س</strong></div>
+                <div><small>متوسط النصاب (ساعات معتمدة)</small><strong>{num(Math.round(fairness.average * 10) / 10)}</strong></div>
+                <div><small>الفارق (ساعات معتمدة)</small><strong>{num(fairness.spread)}</strong></div>
                 <div><small>أساتذة</small><strong>{num(fairness.rows.length)}</strong></div>
               </div>
             </div>
@@ -2659,8 +2797,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               {fairness.rows.map(row => (
                 <div key={row.id}>
                   <span>{row.name}</span>
-                  <i><b style={{ width: share(row.load, fairness.rows[0].load) }} /></i>
-                  <em>{num(Math.round(row.load / 60))}س</em>
+                  <i title="العبء: الأيام والفراغات والبكور والمساء والساعات"><b style={{ width: share(row.load, fairness.rows[0].load) }} /></i>
+                  <em>{num(row.hours)} س.م</em>
                 </div>
               ))}
             </div>
@@ -2692,6 +2830,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           siteGroups={branchSiteGroups}
           approval={printApproval}
           changesAppendix={changesAppendix}
+          balanceApprovals={termApprovals}
         />
       </PrintPortal>
       <PrintPortal className="authority-pdf-print-host">
@@ -2762,7 +2901,47 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
  * who carries it, how evenly, and what is still blocking it — and the sorting
  * is the point, because the question is always "which one is the outlier".
  */
-function BalancePanel({ balance, sort, onSort, num, approvals }: {
+/** حالُ قسمٍ في عمود الاعتماد — «notStarted» لقسمٍ بلا سجلّ بعد. */
+interface BalanceApprovalState {
+  status: ScheduleApprovalStatus | "notStarted";
+  late: boolean;
+  round: number;
+  deadline?: string;
+  daysLeft?: number;
+  sectionName?: string;
+  collegeName?: string;
+  collegeId?: number;
+}
+
+const formatBalanceDate = (iso: string) => {
+  const date = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" });
+};
+
+const balanceStatusLabel = (status: BalanceApprovalState["status"]) =>
+  status === "notStarted" ? "لم يبدأ" : APPROVAL_STATUS_LABEL[status];
+
+/**
+ * صفوف الميزان: أقسامٌ لها مواعيد (من الخادم)، ومعها أقسامُ النطاق التي لم
+ * تبدأ أو لم تكتب موعداً بعد (N3) — بأصفارٍ صريحة، لا غيابٍ صامت.
+ */
+export function mergeBalanceDepartments(departments: any[], approvals?: Map<number, BalanceApprovalState>): any[] {
+  const list = [...(departments || [])];
+  if (!approvals) return list;
+  const present = new Set(list.map(item => Number(item.sectionId)));
+  for (const [sectionId, state] of approvals) {
+    if (present.has(sectionId) || !state.sectionName) continue;
+    list.push({
+      sectionId, sectionName: state.sectionName, collegeName: state.collegeName || "",
+      rows: 0, instructors: 0, rooms: 0, morningPct: 0, eveningPct: 0, fairness: 0, quality: 0, conflicts: 0,
+      empty: true,
+    });
+  }
+  return list;
+}
+
+function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 0 }: {
+  focusSectionId?: number;
   balance: any;
   sort: { key: string; desc: boolean };
   onSort: React.Dispatch<React.SetStateAction<{ key: string; desc: boolean }>>;
@@ -2776,7 +2955,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
    * له صفٌّ واحد لكل قسم، وميزان الأقسام صفٌّ واحد لكل قسم. ولوحةٌ ثانية تقول
    * الشيء نفسه هي شاشةٌ تُصان مرّتين وتفترق عن أختها عند أول تعديل.
    */
-  approvals?: Map<number, { status: ScheduleApprovalStatus; late: boolean; round: number; deadline?: string }>;
+  approvals?: Map<number, BalanceApprovalState>;
 }) {
   const COLUMNS = [
     { key: "sectionName", label: "القسم العلمي" },
@@ -2792,18 +2971,19 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
   /* ترتيبٌ بالحال لا بالاسم: «متأخّر» أولاً لأنه أعجلُ ما في الجدول، ثم ما
      يُنتظر منه فعل، ثم ما اكتمل. والرقم يخدم الفرز وحده ولا يُعرض. */
   const APPROVAL_ORDER: Record<string, number> = {
-    late: 0, drafting: 1, committee: 2, head: 3, returned: 4, submitted: 5, accepted: 6,
+    late: 0, notStarted: 1, drafting: 2, committee: 3, head: 4, returned: 5, submitted: 6, accepted: 7,
   };
   /* ── فرزٌ لا يبقى معلّقاً على عمودٍ زال ────────────────────────────────
    * عمودُ الاعتماد لا يظهر إلا حين تُقرأ الحالات، وقد تُخفق القراءة أو تتبدّل
    * العدسة. وكان الفرزُ يبقى عليه: فتختفي علامةُ الترتيب من كل رأسٍ ظاهر،
    * ويُعرض الجدول بترتيبٍ لا يُنسب إلى أحد — والقارئُ لا يعرف أن اختياره سقط. */
+  const focusScrolled = useRef(false);
   useEffect(() => {
     if (sort.key === "approval" && !approvals) onSort({ key: "rows", desc: true });
   }, [approvals, sort.key, onSort]);
 
   const ordered = useMemo(() => {
-    const list = [...(balance?.departments || [])];
+    const list = mergeBalanceDepartments(balance?.departments || [], approvals);
     const direction = sort.desc ? -1 : 1;
     return list.sort((a: any, b: any) => {
       if (sort.key === "sectionName") return byArabic(a.sectionName, b.sectionName) * direction;
@@ -2825,14 +3005,16 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
       <header className="balance-head">
         <div>
           <span className="surface-kicker">ميزان الأقسام · {balance.termName}</span>
-          <h3>{num(balance.totals.departments)} قسماً · {num(balance.totals.rows)} موعداً</h3>
+          <h3><bdi>{countOf(Number(balance.totals.departments || 0), AR.department)}</bdi> · <bdi>{countOf(Number(balance.totals.rows || 0), AR.appointment)}</bdi></h3>
         </div>
+        {/* النطاقُ كما يقوله الخادم، وإلا «في نطاقك»: العميد لا يرى الجامعة (N5). */}
         {balance.totals.conflicts ? (
-          <span className="balance-flag">{num(balance.totals.conflicts)} مانع اعتماد على مستوى الجامعة</span>
+          <span className="balance-flag">موانع الاعتماد {balance.totals.scopeLabel ? `في ${balance.totals.scopeLabel}` : "في نطاقك"}: <bdi>{countOf(Number(balance.totals.conflicts), AR.blocker)}</bdi></span>
         ) : (
-          <span className="balance-clear">لا موانع اعتماد في أي قسم</span>
+          <span className="balance-clear">لا موانع اعتماد {balance.totals.scopeLabel ? `في ${balance.totals.scopeLabel}` : "في نطاقك"}</span>
         )}
       </header>
+      <p className="balance-note">يشمل الجداول قيد الإعداد — الأعداد هنا لما كُتب حتى الآن، معتمداً أو لم يُعتمد.</p>
       <div className="balance-scroll">
         <table className="balance-table">
           <thead>
@@ -2854,7 +3036,11 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
           </thead>
           <tbody>
             {ordered.map((item: any) => (
-              <tr key={item.sectionId} className={item.conflicts ? "has-conflicts" : ""}>
+              <tr
+                key={item.sectionId}
+                className={[item.conflicts ? "has-conflicts" : "", Number(item.sectionId) === focusSectionId ? "is-focused" : ""].filter(Boolean).join(" ") || undefined}
+                ref={Number(item.sectionId) === focusSectionId ? (node => { if (node && !focusScrolled.current) { focusScrolled.current = true; node.scrollIntoView({ block: "center" }); } }) : undefined}
+              >
                 <td>
                   <strong>{item.sectionName}</strong>
                   <small>{item.collegeName}</small>
@@ -2864,20 +3050,35 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
                     {(() => {
                       const state = approvals.get(Number(item.sectionId));
                       if (!state) return <span className="approval-chip" data-status="drafting">قيد الإعداد</span>;
+                      const handedOver = state.status === "submitted" || state.status === "accepted" || state.status === "returned";
                       return (
                         <>
                           <span className="approval-chip" data-status={state.late ? "late" : state.status}>
-                            {state.late ? "متأخّر عن الموعد" : APPROVAL_STATUS_LABEL[state.status]}
+                            {state.late ? "متأخّر عن الموعد" : balanceStatusLabel(state.status)}
                           </span>
                           {state.round > 1 ? <small>الجولة {num(state.round)}</small> : null}
+                          {state.deadline && !handedOver ? (
+                            <small className="balance-deadline">
+                              {state.late
+                                ? <>انقضى الموعد <bdi>{formatBalanceDate(state.deadline)}</bdi></>
+                                : typeof state.daysLeft === "number"
+                                  ? <>بقي <bdi>{countOf(state.daysLeft, AR.day, "اليوم آخر موعد")}</bdi> · <bdi>{formatBalanceDate(state.deadline)}</bdi></>
+                                  : <bdi>{formatBalanceDate(state.deadline)}</bdi>}
+                            </small>
+                          ) : null}
                         </>
                       );
                     })()}
                   </td>
                 ) : null}
                 <td>{num(item.rows)}</td>
-                <td>{num(item.instructors)}</td>
-                <td>{num(item.rooms)}</td>
+                <td>{item.empty ? "—" : num(item.instructors)}</td>
+                <td>{item.empty ? "—" : typeof item.verifiedRooms === "number"
+                  ? <>{num(item.rooms)} <small>(موثّقة {num(item.verifiedRooms)})</small></>
+                  : num(item.rooms)}</td>
+                {item.empty ? (
+                  <td colSpan={4} className="balance-empty-cells"><small>لا مواعيد بعد</small></td>
+                ) : (<>
                 <td>
                   {/* Morning against evening as one bar, rather than two numbers
                       to subtract in your head. */}
@@ -2898,6 +3099,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
                   </span>
                 </td>
                 <td>{item.conflicts ? <b className="balance-bad">{num(item.conflicts)}</b> : <span className="balance-ok">—</span>}</td>
+                </>)}
               </tr>
             ))}
           </tbody>
@@ -3031,8 +3233,8 @@ function PrintChangesAppendix({ appendix, collegeName, sectionName, termName, ap
 
       <p className="print-changes-summary">
         {appendix.firstReview
-          ? `جدولٌ جديد بـ${appendix.counts.added} موعداً — لا مراجعةَ سابقة يُقارن بها.`
-          : `${appendix.summary}. ولم يتغيّر ${appendix.counts.unchanged} موعداً.`}
+          ? `جدولٌ جديد بـ${countOf(appendix.counts.added, oblique(AR.appointment))} — لا مراجعةَ سابقة يُقارن بها.`
+          : `${appendix.summary}. ولم يتغيّر ${countOf(appendix.counts.unchanged, AR.appointment)}.`}
       </p>
 
       {appendix.entries.length ? (
@@ -3101,7 +3303,7 @@ function PrintSignatures({ approval }: { approval?: PrintApproval | null }) {
                 <b>{signed.userName}</b>
                 <small>{printStamp(signed.at)} · رمز التحقّق {signed.verifyCode}</small>
                 {signed.regulationNoticeCount
-                  ? <small>وقّع مع علمه بـ{signed.regulationNoticeCount} ملاحظةً لائحية</small>
+                  ? <small>وقّع مع علمه بـ{countOf(signed.regulationNoticeCount, oblique(AR.regulationNote))}</small>
                   : null}
               </em>
             ) : <i />}
@@ -3165,7 +3367,7 @@ function PrintSheet(props: React.ComponentProps<typeof PrintSheetBody>) {
   );
 }
 
-function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix }: {
+function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix, balanceApprovals }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -3194,6 +3396,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   approval?: PrintApproval | null;
   /** يُطبع خلف الشامل حين يُطلب الاثنان معاً. غيابه هو الحال المعتادة. */
   changesAppendix?: ChangesAppendix | null;
+  /** حال الاعتماد والموعد لكل قسم — لنشرة الميزان (N14). */
+  balanceApprovals?: Map<number, BalanceApprovalState> | null;
 }) {
   if (!kind) return null;
 
@@ -3209,7 +3413,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     visiting: "المنتدبون — الفصل الحالي",
     visitingHistory: "المنتدبون — كل الفصول",
     fairness: "عدالة توزيع العبء",
-    balance: "ميزان الأقسام",
+    balance: "نشرة المجلس — ميزان الأقسام",
     comprehensive: "تقرير الجدول الشامل",
     "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
   };
@@ -3424,9 +3628,9 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
           <section className="print-explicit-page" key={`list-page-${pageIndex + 1}`}>
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <div className="print-query-summaryline">
-              <span><b>{rows.length}</b> موعد</span>
-              <span><b>{distinctCourses}</b> مقرر</span>
-              <span><b>{distinctInstructors}</b> أستاذ</span>
+              <span><b>{rows.length}</b> {nounFor(rows.length, AR.appointment)}</span>
+              <span><b>{distinctCourses}</b> {nounFor(distinctCourses, AR.course)}</span>
+              <span><b>{distinctInstructors}</b> {nounFor(distinctInstructors, AR.instructor)}</span>
             </div>
             <div className="print-query-list">
               {pageRows.map((row, index) => {
@@ -3505,7 +3709,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               <section className="print-query-group">
                 <header>
                   <div><strong>{page.group.key}</strong>{instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}</div>
-                  <span><b>{page.group.rows.length}</b> موعد</span><span><b>{Math.round(load / 60)}</b> س</span><span><b>{days}</b> أيام</span>
+                  <span><b>{page.group.rows.length}</b> {nounFor(page.group.rows.length, AR.appointment)}</span><span><b>{Math.round(load / 60)}</b> س</span><span><b>{days}</b> {nounFor(days, AR.day)}</span>
                 </header>
                 <table>
                   <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
@@ -3551,7 +3755,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               <section className="print-explicit-page" key={`room-occupancy-${pageIndex + 1}`}>
                 <PrintLetterhead title={titles[kind]} scope={scope} college={collegeName} footer={false} />
                 <div className="print-query-summaryline">
-                  <span><b>{roomLoad.rooms.length}</b> قاعة</span>
+                  <span><b>{roomLoad.rooms.length}</b> {nounFor(roomLoad.rooms.length, AR.room)}</span>
                   <span><b>{roomLoad.totalRate}</b>٪ متوسط الإشغال</span>
                   <span>المربع الداكن = إشغال أعلى</span>
                 </div>
@@ -3700,9 +3904,9 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                     <strong>{page.group.key}</strong>
                     {instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}
                   </div>
-                  <span><b>{page.group.rows.length}</b> شعبة</span>
+                  <span><b>{page.group.rows.length}</b> {nounFor(page.group.rows.length, AR.section)}</span>
                   <span><b>{Math.round(load / 60)}</b> س أسبوعياً</span>
-                  <span><b>{days}</b> أيام</span>
+                  <span><b>{days}</b> {nounFor(days, AR.day)}</span>
                 </header>
                 <table>
                   <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
@@ -3744,9 +3948,9 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
           <section className="print-explicit-page print-visiting-history-page" key={`visiting-history-page-${page.peoplePageIndex + 1}-${page.yearPageIndex + 1}`}>
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <div className="print-query-summaryline print-history-summaryline">
-              <span><b>{sortedPeople.length}</b> منتدب فعلي</span>
-              <span><b>{model.totals.years}</b> سنوات أكاديمية</span>
-              {yearPages.length > 1 ? <span><b>{page.yearPageIndex + 1}</b> من <b>{yearPages.length}</b> نطاق سنوات</span> : null}
+              <span><b>{sortedPeople.length}</b> {nounFor(sortedPeople.length, AR.visitor)} فعلاً</span>
+              <span><b>{model.totals.years}</b> {nounFor(model.totals.years, AR.academicYear)}</span>
+              {yearPages.length > 1 ? <span>نطاق السنوات <b>{page.yearPageIndex + 1}</b> من <b>{yearPages.length}</b></span> : null}
               <span className="print-history-legend">داخل كل سنة: <b>الأول</b> ثم <b>الثاني</b> · الرقم = عدد الشعب</span>
             </div>
             <table className="print-history-matrix">
@@ -3780,8 +3984,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                         <strong>{person.name}</strong>
                         {person.civil ? <small className="print-ltr">{person.civil}</small> : null}
                       </td>
-                      <td className="print-history-total-cell"><strong>{person.times}</strong><small>فصل</small></td>
-                      <td className="print-history-total-cell is-sections"><strong>{person.sections}</strong><small>شعبة</small></td>
+                      <td className="print-history-total-cell"><strong>{person.times}</strong><small>{nounFor(person.times, AR.term)}</small></td>
+                      <td className="print-history-total-cell is-sections"><strong>{person.sections}</strong><small>{nounFor(person.sections, AR.section)}</small></td>
                       {page.pageYears.map(year => (
                         <td key={`${person.instructorId}-${year.key}`} className="print-history-year-cell">
                           <span className="print-history-term-slots" style={{ gridTemplateColumns: `repeat(${year.slots.length}, minmax(0, 1fr))` }}>
@@ -3805,11 +4009,11 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               <tfoot>
                 <tr>
                   <td className="print-history-person-cell"><strong>إجمالي القسم</strong></td>
-                  <td className="print-history-total-cell"><strong>{model.totals.terms}</strong><small>فصل</small></td>
-                  <td className="print-history-total-cell is-sections"><strong>{model.totals.sections}</strong><small>شعبة</small></td>
+                  <td className="print-history-total-cell"><strong>{model.totals.terms}</strong><small>{nounFor(model.totals.terms, AR.term)}</small></td>
+                  <td className="print-history-total-cell is-sections"><strong>{model.totals.sections}</strong><small>{nounFor(model.totals.sections, AR.section)}</small></td>
                   {page.pageYears.map(year => (
                     <td key={`total-${year.key}`} className="print-history-year-cell is-total">
-                      <strong>{year.sections}</strong><small>{year.people} منتدب</small>
+                      <strong>{year.sections}</strong><small>{countOf(year.people, AR.visitor)}</small>
                     </td>
                   ))}
                 </tr>
@@ -3835,14 +4039,14 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <section className="print-fairness-hero">
               <div><strong>{fairness.score}</strong><span>/ 100</span><small>مؤشر العدالة</small></div>
-              <dl><div><dt>متوسط النصاب</dt><dd>{Math.round(fairness.average / 60)} س</dd></div><div><dt>الفارق</dt><dd>{Math.round(fairness.spread / 60)} س</dd></div><div><dt>الأساتذة</dt><dd>{fairness.rows.length}</dd></div></dl>
+              <dl><div><dt>متوسط النصاب (ساعات معتمدة)</dt><dd>{Math.round(fairness.average * 10) / 10}</dd></div><div><dt>الفارق (ساعات معتمدة)</dt><dd>{fairness.spread}</dd></div><div><dt>الأساتذة</dt><dd>{fairness.rows.length}</dd></div></dl>
             </section>
             <div className="print-fairness-rows">
               {pageRows.map((row: any) => <div key={row.id}>
                 <span>{row.name}</span>
                 <i><b style={{ width: `${Math.max(4, Math.round((row.load / Math.max(1, fairness.rows[0].load)) * 100))}%` }} /></i>
-                <em>{Math.round(row.load / 60)} س</em>
-                <small className="print-ltr">{row.delta > 0 ? "+" : ""}{Math.round(row.delta / 60)}</small>
+                <em>{row.hours} س.م</em>
+                <small className="print-ltr">{row.delta > 0 ? "+" : ""}{Math.round(row.delta * 10) / 10}</small>
               </div>)}
             </div>
             {pageIndex === pages.length - 1 ? <div className="print-signatures"><div><span>منسق الجدول</span><i /></div><div><span>رئيس القسم العلمي</span><i /></div></div> : null}
@@ -3854,18 +4058,31 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   }
 
   if (kind === "balance") {
-    const pages = balance?.departments?.length ? paginateItems(balance.departments, PAGE_ROWS.balanceRows) : [];
+    /* نشرة المجلس (N14): تُطبع في أي وقت — ولو قبل أول اعتماد — وبعمود الاعتماد
+       والموعد، وبأقسام النطاق التي لم تبدأ. فهي ما يُعرض على المجلس. */
+    const approvals = balanceApprovals || undefined;
+    const departments = mergeBalanceDepartments(balance?.departments || [], approvals);
+    const pages = departments.length ? paginateItems(departments, PAGE_ROWS.balanceRows) : [];
+    const stateOf = (item: any) => approvals?.get(Number(item.sectionId));
     return (
       <div className="print-report print-wide print-query-report print-balance-report">
         {pages.length ? pages.map((pageDepartments: any[], pageIndex) => (
           <section className="print-explicit-page" key={`balance-page-${pageIndex + 1}`}>
-            <PrintLetterhead title={titles[kind]} scope={balance?.termName || scopeLine} college={collegeName} footer={false} />
-            <div className="print-query-summaryline"><span><b>{balance.totals.departments}</b> قسم</span><span><b>{balance.totals.rows}</b> موعد</span><span><b>{balance.totals.conflicts}</b> مانع اعتماد</span></div>
+            <PrintLetterhead title={titles[kind]} scope={`${balance?.termName || termName || scopeLine} · صادرة في ${issueDate}`} college={collegeName} footer={false} />
+            <div className="print-query-summaryline"><span>{countOf(departments.length, AR.department)}</span><span>{countOf(Number(balance?.totals?.rows || 0), AR.appointment)}</span><span>{countOf(Number(balance?.totals?.conflicts || 0), AR.blocker)}</span></div>
             <table>
-              <thead><tr><th>القسم العلمي</th><th>المواعيد</th><th>الأساتذة</th><th>القاعات</th><th>صباحي</th><th>العدالة</th><th>الجودة</th><th>موانع</th></tr></thead>
-              <tbody>{pageDepartments.map((item: any) => <tr key={item.sectionId}>
-                <td className="print-wrap"><strong>{item.sectionName}</strong><small>{item.collegeName}</small></td><td>{item.rows}</td><td>{item.instructors}</td><td>{item.rooms}</td><td>{item.morningPct}%</td><td>{item.fairness}</td><td>{item.quality}</td><td>{item.conflicts || "—"}</td>
-              </tr>)}</tbody>
+              <thead><tr><th>القسم العلمي</th>{approvals ? <><th>الاعتماد</th><th>الموعد</th></> : null}<th>المواعيد</th><th>الأساتذة</th><th>القاعات</th><th>صباحي</th><th>العدالة</th><th>الجودة</th><th>موانع</th></tr></thead>
+              <tbody>{pageDepartments.map((item: any) => {
+                const state = stateOf(item);
+                return <tr key={item.sectionId}>
+                <td className="print-wrap"><strong>{item.sectionName}</strong><small>{item.collegeName}</small></td>
+                {approvals ? <>
+                  <td>{state ? (state.late ? "متأخّر عن الموعد" : balanceStatusLabel(state.status)) : "قيد الإعداد"}</td>
+                  <td>{state?.deadline ? `${formatBalanceDate(state.deadline)}${typeof state.daysLeft === "number" && state.daysLeft >= 0 ? ` (بقي ${countOf(state.daysLeft, AR.day, "اليوم")})` : ""}` : "—"}</td>
+                </> : null}
+                <td>{item.rows}</td><td>{item.empty ? "—" : item.instructors}</td><td>{item.empty ? "—" : item.rooms}</td><td>{item.empty ? "—" : `${item.morningPct}%`}</td><td>{item.empty ? "—" : item.fairness}</td><td>{item.empty ? "—" : item.quality}</td><td>{item.conflicts || "—"}</td>
+              </tr>;
+              })}</tbody>
             </table>
             <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
           </section>

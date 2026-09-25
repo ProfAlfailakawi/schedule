@@ -71,12 +71,13 @@ import type {
   FSchedule,
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
-import { AR, countOf, nounFor } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
-import { findConflicts } from "../utils/scheduleIntelligence";
+import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import PagedImportPreview from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
 import { roomIdentityKey } from "../utils/locationRegistry";
@@ -156,9 +157,9 @@ type Tab = "command" | "copilot" | "twin" | "history" | "import";
 function PdfDifferenceBody({report,courses,instructors}:{report:any;courses:AdCourse[];instructors:AdInstructor[]}){
   return <>
     <div className="pdf-report-summary">
-      <article className="added"><strong>{report.counts.added}</strong><span>مقرر مضاف</span></article>
-      <article className="deleted"><strong>{report.counts.deleted}</strong><span>مقرر محذوف</span></article>
-      <article className="changed"><strong>{report.counts.changed}</strong><span>مقرر عُدّل</span></article>
+      <article className="added"><strong>{report.counts.added}</strong><span>{nounFor(report.counts.added, AR.course)} {nounFor(report.counts.added, AR.addedAdj)}</span></article>
+      <article className="deleted"><strong>{report.counts.deleted}</strong><span>{nounFor(report.counts.deleted, AR.course)} {nounFor(report.counts.deleted, AR.deletedAdj)}</span></article>
+      <article className="changed"><strong>{report.counts.changed}</strong><span>{nounFor(report.counts.changed, AR.course)} {nounFor(report.counts.changed, AR.editedVerb)}</span></article>
       <article><strong>{report.counts.unchanged}</strong><span>دون تغيير</span></article>
     </div>
     <div className="pdf-report-legend" aria-label="دليل الألوان"><span className="added"><i />إضافة جديدة — الرقم المرجعي فارغ</span><span className="deleted"><i />حذف</span><span className="changed"><i />الخانة المعدّلة</span></div>
@@ -611,7 +612,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       catch { const error=new Error(r.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${r.status}). أعد المحاولة بعد قليل.`);telemetryError("response.parse",error);throw error; }
     }
     if (!r.ok)
-      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), { issues: d.issues });
+      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), { issues: d.issues, code: d.code, changes: d.changes });
     return d;
   };
   useEffect(() => {
@@ -1134,6 +1135,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId }),
       });
+      /* An empty term answers with the way forward, not with rows. */
+      if (d?.empty) { setMessage(d.message); return; }
       setActiveDraftId(null);
       setScenario(d.rows);
       setScenarioEval({ baseline: d.before, scenario: d.after });
@@ -1181,7 +1184,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const stopSurvey = async (id: string) => {
     const ok = await visualConfirm({
       title: "إيقاف رابط الاستبيان",
-      message: "سيتوقف الرابط فوراً ولن يفتح لأي طالب بعد الآن. الحالات المرسلة تبقى محفوظة. يمكنك إصدار رابط جديد متى شئت.",
+      message: "يتوقف استقبال الطلبات من هذا الرابط فوراً. الحالات المرسلة تبقى محفوظة، ويبقى أصحابها قادرين على متابعة «حالة طلبي» بالرابط نفسه حتى 30 يوماً بعد نهاية الفصل. يمكنك إصدار رابط جديد متى شئت.",
       confirmLabel: "أوقف الرابط",
       tone: "danger",
     });
@@ -1189,7 +1192,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setBusy(true); setError(null);
     try {
       await fetchJson(`/api/share/${encodeURIComponent(id)}`, { method: "DELETE" });
-      setMessage("أُوقف رابط الاستبيان. لم يعد يفتح لأي طالب.");
+      setMessage("أُوقف استقبال الطلبات من هذا الرابط. متابعة «حالة طلبي» تبقى متاحة لمن أرسل حتى 30 يوماً بعد نهاية الفصل.");
       await reload();
     } catch (e: any) {
       setError(smartMessage(e));
@@ -1210,7 +1213,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId, kind: "survey", days: surveyDays }),
       });
-      setMessage(`صدر رابط الاستبيان لهذا القسم — صالح ${surveyDays.toLocaleString("ar-KW-u-nu-latn")} يوماً. انسخه أو اعرض رمز QR وعلّقه للطلاب.`);
+      setMessage(`صدر رابط الاستبيان لهذا القسم — صالح ${countOf(surveyDays, AR.day)}. انسخه أو اعرض رمز QR وعلّقه للطلاب.`);
       await reload();
     } catch (e: any) {
       setError(smartMessage(e));
@@ -1415,10 +1418,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     // no extra safety — and on iOS it can be suppressed permanently.
     setBusy(true);
     try {
-      await fetchJson(`/api/intelligence/drafts/${d.id}/publish`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "publish" },
-      });
+      /* A draft saved earlier may be published over edits made since; the
+         server names them and this asks before erasing them. */
+      const published = await applyWithOverwriteConfirm("publish",
+        confirm => fetchJson(`/api/intelligence/drafts/${d.id}/publish`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (published === null) return;
       setMessage("تم النشر بنجاح، وحُفظت نسخة زمنية قبل التغيير.");
       setScenario(null);
       setScenarioEval(null);
@@ -1435,10 +1443,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     // relying on a native confirm dialog.
     setBusy(true);
     try {
-      await fetchJson(`/api/intelligence/versions/${v.id}/restore`, {
-        method: "POST",
-        headers: { "x-schedule-confirm": "restore" },
-      });
+      const restored = await applyWithOverwriteConfirm("restore",
+        confirm => fetchJson(`/api/intelligence/versions/${v.id}/restore`, {
+          method: "POST",
+          headers: { "x-schedule-confirm": confirm },
+        }),
+        options => visualConfirm(options));
+      if (restored === null) return;
       setMessage("تم الاسترجاع، والنسخة التي كانت قبل الاسترجاع محفوظة أيضاً.");
       await reload();
     } catch (e: any) {
@@ -1738,12 +1749,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     if(preflight.length){
       setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
       setError(null);
-      setImportErrorModal(`يوجد ${preflight.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تحتاج معالجة قبل تعبئة الجدول.`);
+      setImportErrorModal(`يوجد ${countOf(preflight.length, AR.note)} بحاجة إلى معالجة قبل تعبئة الجدول.`);
       return;
     }
     const ok = await visualConfirm({
       title: "اعتماد الجدول المعتمد",
-      message: `سيُنشر ${Number(importPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")} موعداً في هذا الفصل الفارغ دفعة واحدة. تبقى الأرقام المرجعية محفوظة للتقرير دون أن تظهر في الجدول. هل تعتمد؟`,
+      message: `سيُنشر ${countOf(Number(importPreview.count || 0), AR.appointment)} في هذا الفصل الفارغ دفعة واحدة. تبقى الأرقام المرجعية محفوظة للتقرير دون أن تظهر في الجدول. هل تعتمد؟`,
       confirmLabel: "اعتمد وانشر",
       tone: "warning",
     });
@@ -1793,8 +1804,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const byRow: Record<string, string[]> = {};
     if (rows.length < 2) return byRow;
     const staged = rows.map((row, index) => ({ ...row, id: index + 1, AdTermId: termId })) as any[];
-    findConflicts(staged, staged)
-      .filter(item => item.severity === "high" || item.type === "duplicate")
+    blockingConflicts(staged, staged, { placeholderInstructorIds: placeholderInstructorIds(instructors) })
       .forEach(item => {
         const pair: Array<[number, number]> = [[Number(item.rowId), Number(item.otherId)], [Number(item.otherId), Number(item.rowId)]];
         pair.forEach(([at, partner]) => {
@@ -1806,7 +1816,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         });
       });
     return byRow;
-  }, [importPreview?.rows, termId]);
+  }, [importPreview?.rows, termId, instructors]);
 
   const importBlockingIssues = useMemo(() => {
     if (!importPreview) return [] as string[];
@@ -1891,18 +1901,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setWarBusy(true);
     setError(null);
     try {
-      setWarRoom(
-        await fetchJson("/api/intelligence/war-room", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            collegeId,
-            sectionId,
-            termId,
-            rowId: warRowId || undefined,
-          }),
+      const room = await fetchJson("/api/intelligence/war-room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collegeId,
+          sectionId,
+          termId,
+          rowId: warRowId || undefined,
         }),
-      );
+      });
+      if (room?.empty) { setWarRoom(null); setMessage(room.message); }
+      else setWarRoom(room);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -1913,18 +1923,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setAutopilotBusy(true);
     setError(null);
     try {
-      setAutopilot(
-        await fetchJson("/api/intelligence/autopilot", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            collegeId,
-            sectionId,
-            termId,
-            goal: autopilotGoal,
-          }),
+      const plan = await fetchJson("/api/intelligence/autopilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collegeId,
+          sectionId,
+          termId,
+          goal: autopilotGoal,
         }),
-      );
+      });
+      if (plan?.empty) { setAutopilot(null); setMessage(plan.message); }
+      else setAutopilot(plan);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -2310,17 +2320,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   }), [rows, reasonCourseById, reasonInstructorById]);
   const invalidReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => rows.filter(row => !row.AdInstructorId || !row.AdCourseId || !row.AdRoomCode || !row.AdRoomHall || twinMinutes(row.fendtime) <= twinMinutes(row.fstarttime) || !reasonDays(row)).slice(0, 12).map(row => {
     const missing = [!row.AdInstructorId ? "الأستاذ" : "", !row.AdCourseId ? "المقرر" : "", !row.AdRoomCode || !row.AdRoomHall ? "القاعة" : "", twinMinutes(row.fendtime) <= twinMinutes(row.fstarttime) ? "الوقت" : "", !reasonDays(row) ? "الأيام" : ""].filter(Boolean);
-    return { title: `${reasonCourse(row)} · شعبة ${row.SCode || "—"}`, meta: `ناقص: ${missing.join("، ")}`, value: `${missing.length} حقول` };
+    return { title: `${reasonCourse(row)} · شعبة ${row.SCode || "—"}`, meta: `ناقص: ${missing.join("، ")}`, value: countOf(missing.length, AR.field) };
   }), [rows, reasonCourseById]);
   const dayBalanceReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => {
     const load = Array.isArray(overview?.dayLoad) ? [...overview.dayLoad].sort((a:any,b:any)=>Number(b.count||0)-Number(a.count||0)) : [];
     const max = Math.max(1,...load.map((item:any)=>Number(item.count||0)));
-    return load.map((item:any) => ({ title:String(item.label || item.key || "يوم"), meta:`${Math.round(Number(item.count||0)/max*100)}٪ من أعلى يوم`, value:`${Number(item.count||0).toLocaleString("ar-KW-u-nu-latn")} موعد` }));
+    return load.map((item:any) => ({ title:String(item.label || item.key || "يوم"), meta:`${Math.round(Number(item.count||0)/max*100)}٪ من أعلى يوم`, value:countOf(Number(item.count||0), AR.appointment) }));
   }, [overview?.dayLoad]);
   const reasonForSmartAlert = (alert:any, index:number): InsightReason => {
     const title = String(alert?.title || "تنبيه ذكي");
     const base = { kicker:"تفاصيل التنبيه", title, metric:String(index + 1), tone:(alert?.severity === "critical" || alert?.severity === "high" || alert?.severity === "danger" ? "bad" : alert?.severity === "ok" ? "good" : "warn") as InsightReason["tone"] };
-    if (/مانع اعتماد|تعارض|حجز|مزدوج/.test(title)) return { ...base, icon:<ShieldAlert />, summary:"هذه هي الموانع الفعلية التي كوّنت الرقم:", items:conflictReasonItems, facts:[{label:"الموانع",value:String(overview?.metrics?.criticalConflicts || 0)},{label:"النوع",value:"حجز فعلي"},{label:"اللائحة",value:"تحذيرية"}] };
+    if (/مانع اعتماد|مانعا اعتماد|موانع اعتماد|تعارض|حجز|مزدوج/.test(title)) return { ...base, icon:<ShieldAlert />, summary:"هذه هي الموانع الفعلية التي كوّنت الرقم:", items:conflictReasonItems, facts:[{label:"الموانع",value:String(overview?.metrics?.criticalConflicts || 0)},{label:"النوع",value:"حجز فعلي"},{label:"اللائحة",value:"تحذيرية"}] };
     if (/فراغ/.test(title)) return { ...base, icon:<CalendarClock />, summary:"الأساتذة الذين تجاوز لديهم الفراغ 3 ساعات:", items:longGapReasonItems, facts:[{label:"الأساتذة",value:String(longGapReasonItems.length)},{label:"الحد",value:formatUnitMetricArabic(3,"ساعات",0)},{label:"القراءة",value:"إرشادية"}] };
     if (/متأخر|بعد 4|وقت/.test(title)) return { ...base, icon:<Clock3 />, summary:`المواعيد التي تبدأ من ${scheduleClockForDisplay("16:00")} فأكثر:`, items:lateReasonItems, facts:[{label:"المواعيد",value:String(lateReasonItems.length)},{label:"من",value:scheduleClockForDisplay("16:00")},{label:"النوع",value:"توقيت"}] };
     if (/بيانات|سجل/.test(title)) return { ...base, icon:<FileClock />, summary:"السجلات التي ينقصها شيء محدد:", items:invalidReasonItems, facts:[{label:"السجلات",value:String(invalidReasonItems.length)},{label:"الحالة",value:"تحتاج إكمال"}] };
@@ -2669,7 +2679,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 summary:overview.metrics.criticalConflicts?"هذه هي الموانع الموجودة الآن:":"لا تظهر موانع حفظ في النطاق الحالي.",
                 facts:[{label:"الموانع",value:String(overview.metrics.criticalConflicts)},{label:"حالة الاعتماد",value:overview.metrics.criticalConflicts?"متوقف":"جاهز"},{label:"اللائحة",value:"تحذيرية"}],
                 items:conflictReasonItems,
-                bars:[{label:"المتأثر",value:Number(overview.metrics.criticalConflicts||0),max:Math.max(1,Number(rows.length||1)),caption:`${overview.metrics.criticalConflicts} موضع`}]
+                bars:[{label:"المتأثر",value:Number(overview.metrics.criticalConflicts||0),max:Math.max(1,Number(rows.length||1)),caption:countOf(overview.metrics.criticalConflicts, AR.position)}]
               })}>
                 <strong>{overview.metrics.criticalConflicts}</strong>
                 <span>موضع يحتاج تحقق</span>
@@ -2711,7 +2721,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               })}>
                 <small>حالة الاعتماد</small>
                 <strong>{overview.metrics.criticalConflicts ? "يمنع الاعتماد" : "جاهز للاعتماد"}</strong>
-                <span>{overview.metrics.criticalConflicts ? `${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضع يحتاج تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span><ChevronLeft aria-hidden="true" />
+                <span>{overview.metrics.criticalConflicts ? `${countOf(overview.metrics.criticalConflicts, AR.position)} بحاجة إلى تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span><ChevronLeft aria-hidden="true" />
               </button>
               <button type="button" data-guide-ignore="يفتح شرح حالة النشر داخل القراءة الحالية فقط" className="publication-state" onClick={() => setInsightReason({
                 kicker:"حالة النشر", title:overview.publication?"الجدول منشور":"لم يُنشر بعد", metric:overview.publication?"✓":"—", tone:overview.publication?"good":"plain", icon:<Upload />,
@@ -2759,7 +2769,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             {overview.alerts.length > 3 ? (
               <details className="insight-disclosure alert-disclosure">
                 <summary>
-                  عرض {overview.alerts.length - 3} تنبيهات إضافية
+                  عرض الباقي ({countOf(overview.alerts.length - 3, AR.alert)})
                 </summary>
                 <div className="smart-alerts">
                   {overview.alerts.slice(3).map((a: any, i: number) => (
@@ -2939,7 +2949,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       {r.code} / {r.hall}
                     </strong>
                     <small>
-                      {r.sessions} مواعيد · استخدام تقديري {r.utilization}%
+                      {countOf(r.sessions, AR.appointment)} · استخدام تقديري {r.utilization}%
                     </small>
                     <i>
                       <b style={{ width: `${r.utilization}%` }} />
@@ -2978,12 +2988,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <div>
                     <strong>{p.name}</strong>
                     <small>
-                      {p.weeklyHours} ساعة · {p.days} أيام
+                      {countOf(p.weeklyHours, AR.hour)} · {countOf(p.days, AR.day)}
                     </small>
                   </div>
                   <span className={p.maxGap >= 180 ? "gap-warn" : ""}>
                     {p.maxGap
-                      ? `${formatCompactDurationArabic(p.maxGap)} فراغ`
+                      ? `فراغ ${formatCompactDurationArabic(p.maxGap)}`
                       : "بلا فراغ طويل"}
                   </span>
                   <ChevronLeft />
@@ -3035,12 +3045,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <div className="health-advanced-row">
               <article className={operationsReview?.anomalies?.length ? "hit" : ""}><span>منطقياً</span><b>{Number(operationsReview?.anomalies?.length||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>شذوذ محتمل</small></article>
               <article className={experienceHealth?.score<75 ? "hit" : ""}><span>تجربة القسم</span><b>{experienceHealth?.score ?? "—"}</b><small>{experienceHealth?.label || "تُقاس مع الاستخدام"}</small></article>
-              <article><span>زمن الاستجابة (المئين 95)</span><b>{experienceHealth?.p95 ? `${experienceHealth.p95} مللي ثانية` : "—"}</b><small>أبطأ 5٪</small></article>
+              <article><span>زمن الاستجابة (المئين 95)</span><b>{experienceHealth?.p95 ? countOf(experienceHealth.p95, AR.millisecond) : "—"}</b><small>أبطأ 5٪</small></article>
               <article className={experienceHealth?.failures ? "hit" : ""}><span>أخطاء الواجهة</span><b>{experienceHealth?.failures ?? 0}</b><small>آخر 14 يوماً</small></article>
             </div>
             {operationsReview?.anomalies?.length ? <details className="insight-disclosure"><summary>الشذوذ المنطقي ({operationsReview.anomalies.length})</summary><ul className="health-anomaly-list">{operationsReview.anomalies.slice(0,6).map((item:any,index:number)=><li key={`${item.kind}-${item.rowId||index}`} className={item.severity}><strong>{item.title}</strong><span>{item.detail}</span></li>)}</ul></details>:null}
             {experienceHealth?.replays?.length ? <details className="insight-disclosure"><summary>إعادة عرض الأعطال الأخيرة ({experienceHealth.replays.length})</summary><div className="failure-replays">{experienceHealth.replays.slice(0,4).map((item:any,index:number)=><article key={`${item.timestamp}-${index}`}><strong>{item.name}</strong><small>{new Date(item.timestamp).toLocaleString("ar-KW-u-nu-latn")}</small><p>{item.message}</p><ol>{(item.breadcrumbs||[]).slice(-6).map((b:any,i:number)=><li key={i}>{b.action}</li>)}</ol></article>)}</div></details>:null}
-            {experienceHealth?.slowest?.length ? <details className="insight-disclosure"><summary>أبطأ مسارات الخادم</summary><div className="slow-endpoints">{experienceHealth.slowest.map((item:any)=><span key={item.path}><code>{item.path}</code><b>{item.avg} مللي ثانية</b></span>)}</div></details>:null}
+            {experienceHealth?.slowest?.length ? <details className="insight-disclosure"><summary>أبطأ مسارات الخادم</summary><div className="slow-endpoints">{experienceHealth.slowest.map((item:any)=><span key={item.path}><code>{item.path}</code><b>{countOf(item.avg, AR.millisecond)}</b></span>)}</div></details>:null}
             <p>
               هذه القراءة لا تحذف ولا تصحح شيئاً تلقائياً؛ هدفها فقط كشف ما قد
               يفوت أثناء العمل السريع.
@@ -3146,7 +3156,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </div>
                       <div className="demand-actions">
                         <PrimaryButton data-guide-ignore="إصدار رابط استبيان عام له صلاحية محددة ولا يعدّل الجدول" onClick={issueSurvey} disabled={busy}>
-                          <QrCode /> أصدر رابط الاستبيان · {surveyDays.toLocaleString("ar-KW-u-nu-latn")} يوماً
+                          <QrCode /> أصدر رابط الاستبيان · {countOf(surveyDays, AR.day)}
                         </PrimaryButton>
                       </div>
                     </div>
@@ -3223,7 +3233,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
               <section className="student-cases-register">
                 <header>
-                  <div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{studentCases.length ? `${visibleStudentCases.length.toLocaleString("ar-KW-u-nu-latn")} من ${studentCases.length.toLocaleString("ar-KW-u-nu-latn")} حالة · الأحدث أولاً` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div>
+                  <div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{studentCases.length ? `${visibleStudentCases.length.toLocaleString("ar-KW-u-nu-latn")} من ${countOf(studentCases.length, oblique(AR.occurrence))} · الأحدث أولاً` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div>
                 </header>
                 {studentCases.length ? <>
                   <div className="student-case-toolbar">
@@ -3250,7 +3260,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     const detail=item.requestType==="graduate"?(graduateDetails?`${reason} — ${graduateDetails}`:reason):item.requestType==="course-conflict"?
                       <div className="student-conflict-courses">{courses.map((course:any,index:number)=><span key={`${course.id||course.code}-${index}`} className={Number(course.sectionId)===Number(sectionId)?"own":"other"}><b>{course.name}{course.code?` (${course.code})`:""}</b>{Number(course.sectionId)!==Number(sectionId)&&course.sectionName?<small>{course.sectionName}</small>:null}</span>)}</div>:
                       courses.map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||"—";
-                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{String(item.id||"").slice(0,8).toUpperCase()||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{detail}</td>{showStudentCaseVerification ? <td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:null}</td> : null}<td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
+                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{item.caseRef||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{detail}</td>{showStudentCaseVerification ? <td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} {nounFor(Number(item.requiredUnits||0), AR.unit)}</span>:null}</td> : null}<td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
                   })}</tbody></table></div>:<div className="empty-state-compact">لا توجد حالات من هذا النوع في الفصل الحالي.</div>}
                 </> : <div className="empty-state-compact">ستظهر هنا هوية الطالب، قسمه، نوع الطلب، المقررات، التحقق ورقم الحالة.</div>}
               </section>
@@ -3670,7 +3680,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       ) : (
                         <div className="nl-answer">
                           <strong>{item.answer?.title}</strong>
-                          {item.answer?.scope ? <small className="nl-scope-proof"><ShieldCheck aria-hidden="true" /> النطاق: {item.answer.scope.sectionName} · {item.answer.scope.rowCount} موعد</small> : null}
+                          {item.answer?.scope ? <small className="nl-scope-proof"><ShieldCheck aria-hidden="true" /> النطاق: {item.answer.scope.sectionName} · {countOf(item.answer.scope.rowCount, AR.appointment)}</small> : null}
 
                           {/* The assistant already measured these; a paragraph
                               is the slowest way to hand over a number. */}
@@ -3826,7 +3836,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </h2>
               <p>
                 {scenario
-                  ? `غيّرت ${countOf(changedRows.length, AR.appointment)} داخل السيناريو حتى الآن. لا شيء منها منشور.`
+                  ? `غيّرت ${countOf(changedRows.length, oblique(AR.appointment))} داخل السيناريو حتى الآن. لا شيء منها منشور.`
                   : "انسخ الجدول إلى مساحة تجريبية، حرّك الأوقات والقاعات، قارن النتيجة، وبعدها فقط احفظه كمسودة أو انشره."}
               </p>
             </div>
@@ -4196,7 +4206,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span>الوضع الحالي</span>
                       <b>{warRoom.baseline.score}/100</b>
                       <small>
-                        {warRoom.baseline.conflicts} مانع ·{" "}
+                        {countOf(warRoom.baseline.conflicts, AR.blocker)} ·{" "}
                         {warRoom.baseline.avgGap}د فراغ
                       </small>
                     </div>
@@ -4222,7 +4232,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               فرق
                             </span>
                             <span>
-                              <b>{o.conflicts}</b> مانع
+                              <b>{o.conflicts}</b> {nounFor(o.conflicts, AR.blocker)}
                             </span>
                             <span>
                               <b>{o.avgGap}د</b> فراغ عام
@@ -4309,7 +4319,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </div>
                 {policyResult?<div className="policy-result">
                   <div className="policy-result-hero"><strong>{Number(policyResult.affected||0).toLocaleString("ar-KW-u-nu-latn")}</strong><span>{policyDraft.type==="growth"?"موعد/شعبة إضافية تقديرياً":"موعداً سيتأثر"}</span><i style={{["--policy-share" as any]:`${Math.min(100,Number(policyResult.share||0))}%`}} /></div>
-                  <div className="policy-metrics"><article><b>{policyResult.share}%</b><span>الحالي</span></article><article><b>{policyResult.historicalShare}%</b><span>تاريخياً</span></article><article><b>{policyResult.impact?.sections||0}</b><span>أقسام</span></article><article><b>{policyResult.impact?.instructors||0}</b><span>أساتذة</span></article></div>
+                  <div className="policy-metrics"><article><b>{policyResult.share}%</b><span>الحالي</span></article><article><b>{policyResult.historicalShare}%</b><span>تاريخياً</span></article><article><b>{policyResult.impact?.sections||0}</b><span>{nounFor(policyResult.impact?.sections||0, AR.department)}</span></article><article><b>{policyResult.impact?.instructors||0}</b><span>{nounFor(policyResult.impact?.instructors||0, AR.instructor)}</span></article></div>
                   <p>{policyResult.summary}</p><small><ShieldCheck /> {policyResult.guardrail}</small>
                 </div>:<div className="innovation-empty">اختر سياسة واحدة. سترى أثرها على الواقع الحالي وعلى التاريخ قبل أن تتحول إلى قاعدة.</div>}
               </div>
@@ -4366,18 +4376,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             <span>#{o.rank}</span>
                             <div>
                               <strong>{o.title}</strong>
-                              <small>{o.changed} موعد يتغير</small>
+                              <small>{countOf(o.changed, AR.appointment)} {nounFor(o.changed, AR.changesVerb)}</small>
                             </div>
                             <b>{o.score}/100</b>
                           </div>
                           <div className="auto-metrics">
-                            <span>{o.conflicts} مانع</span>
+                            <span>{countOf(o.conflicts, AR.blocker)}</span>
                             <span>{o.avgGap}د فراغ</span>
                             <span>{o.imbalance}% عدم توازن</span>
                             <span
                               className={o.constraintViolations ? "warn" : "ok"}
                             >
-                              {o.constraintViolations} مخالفة قاعدة
+                              {countOf(o.constraintViolations, AR.breach)} للقواعد
                             </span>
                           </div>
                           <ul>
@@ -4620,7 +4630,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <div className="surface-head">
                     <div>
                       <span className="surface-kicker">سجل التعديلات</span>
-                      <h2>{changedRows.length === 1 ? "تعديل واحد" : `${changedRows.length} تعديلات`}</h2>
+                      <h2>{changedRows.length === 1 ? "تعديل واحد" : countOf(changedRows.length, AR.edit)}</h2>
                     </div>
                     <FileClock />
                   </div>
@@ -4830,7 +4840,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <strong>{d.name}</strong>
                       <small>
                         {new Date(d.updatedAt).toLocaleString("ar-KW-u-nu-latn")} ·{" "}
-                        {d.rows.length} موعد · {d.userName}
+                        {countOf(d.rows.length, AR.appointment)} · {d.userName}
                       </small>
                     </div>
                     <Badge
@@ -4875,7 +4885,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             {operationsReview?.accuracy ? (
               <div className="accuracy-strip">
                 <article><span>دقة الجدول</span><strong>{operationsReview.accuracy.available ? `${operationsReview.accuracy.accuracy}%` : "—"}</strong><small>{operationsReview.accuracy.available ? `${operationsReview.accuracy.unchanged} بقيت كما اعتمدت` : "تحتاج نسخة محفوظة"}</small></article>
-                <article><span>تغيّر</span><strong>{operationsReview.accuracy.changed || 0}</strong><small>موعداً</small></article>
+                <article><span>تغيّر</span><strong>{operationsReview.accuracy.changed || 0}</strong><small>{nounFor(operationsReview.accuracy.changed || 0, AR.appointment)}</small></article>
                 <article><span>أضيف / حُذف</span><strong>+{operationsReview.accuracy.added || 0} / -{operationsReview.accuracy.removed || 0}</strong><small>هوية شعبة</small></article>
               </div>
             ) : null}
@@ -4883,7 +4893,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="version-scrubber">
                 <div><span className="surface-kicker">الوضع الزمني</span><strong>{new Date(chronologicalVersions[Math.max(1,Math.min(chronologicalVersions.length-1,versionScrubIndex))]?.createdAt).toLocaleString("ar-KW-u-nu-latn")}</strong></div>
                 <input type="range" min="1" max={Math.max(1,chronologicalVersions.length-1)} value={Math.max(1,Math.min(chronologicalVersions.length-1,versionScrubIndex))} onChange={e=>setVersionScrubIndex(Number(e.target.value))} aria-label="اسحب عبر تاريخ الجدول" />
-                <small>{chronologicalVersions.length} محطات محفوظة</small>
+                <small>المحفوظ: {countOf(chronologicalVersions.length, AR.station)}</small>
               </div>
             ) : null}
             <div className="version-compare">
@@ -5027,7 +5037,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <strong>{v.label}</strong>
                       <small>
                         {new Date(v.createdAt).toLocaleString("ar-KW-u-nu-latn")} ·{" "}
-                        {v.userName} · {v.rowCount} موعد
+                        {v.userName} · {countOf(v.rowCount, AR.appointment)}
                       </small>
                     </div>
                     <Badge
@@ -5059,7 +5069,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="postmortem-card"><div><FileClock/><span><small>تشريح الفصل</small><strong>ماذا تعلّمنا من النسخ؟</strong></span></div><ul>{operationsReview.accuracy.postmortem.slice(0,4).map((line:string,index:number)=><li key={index}>{line}</li>)}</ul></div>
             ) : null}
             {versions.length ? (
-              <div className="edit-heatmap"><div className="edit-heatmap-head"><span><small>حرارة التعديلات البشرية</small><strong>متى يكثر التغيير</strong></span><Badge>{versions.length} نسخة</Badge></div><div className="edit-heatmap-grid"><i/>{versionActivityHeatmap.hours.map(hour=><small key={hour}>{scheduleClockForDisplay(`${String(hour).padStart(2,"0")}:00`)}</small>)}{versionActivityHeatmap.cells.map(day=><React.Fragment key={day.label}><b>{day.label}</b>{day.hours.map(cell=>{const strength=versionActivityHeatmap.max?cell.count/versionActivityHeatmap.max:0;return <span key={`${day.label}-${cell.hour}`} title={`${day.label} ${scheduleClockForDisplay(`${String(cell.hour).padStart(2,"0")}:00`)} · ${cell.count} تعديل`} style={{["--heat-pct" as any]:`${Math.max(10,Math.round(strength*85))}%`}}>{cell.count||""}</span>;})}</React.Fragment>)}</div></div>
+              <div className="edit-heatmap"><div className="edit-heatmap-head"><span><small>حرارة التعديلات البشرية</small><strong>متى يكثر التغيير</strong></span><Badge>{countOf(versions.length, AR.version)}</Badge></div><div className="edit-heatmap-grid"><i/>{versionActivityHeatmap.hours.map(hour=><small key={hour}>{scheduleClockForDisplay(`${String(hour).padStart(2,"0")}:00`)}</small>)}{versionActivityHeatmap.cells.map(day=><React.Fragment key={day.label}><b>{day.label}</b>{day.hours.map(cell=>{const strength=versionActivityHeatmap.max?cell.count/versionActivityHeatmap.max:0;return <span key={`${day.label}-${cell.hour}`} title={`${day.label} ${scheduleClockForDisplay(`${String(cell.hour).padStart(2,"0")}:00`)} · ${countOf(cell.count, AR.edit)}`} style={{["--heat-pct" as any]:`${Math.max(10,Math.round(strength*85))}%`}}>{cell.count||""}</span>;})}</React.Fragment>)}</div></div>
             ) : null}
           </Surface>
           ) : null}
@@ -5114,7 +5124,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="surface-head">
                 <div>
                   <span className="surface-kicker">معاينة</span>
-                  <h2>{importPreview.count} صفاً تم قراءتها</h2>
+                  <h2>قُرئ {countOf(importPreview.count, AR.row)}</h2>
                 </div>
                 <Badge tone={importPreview.valid ? "success" : "danger"}>
                   {importPreview.valid
@@ -5212,7 +5222,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ))}
               </RecordDeck>
               )}
-              {importBlockingIssues.length ? <button type="button" data-guide-ignore="ينقل المستخدم إلى ملاحظات الاستيراد داخل نفس المعاينة" className="import-review-jump" onClick={() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({behavior:"smooth",block:"center"})}>راجع {importBlockingIssues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة لتفعيل الحفظ والنشر</button> : null}
+              {importBlockingIssues.length ? <button type="button" data-guide-ignore="ينقل المستخدم إلى ملاحظات الاستيراد داخل نفس المعاينة" className="import-review-jump" onClick={() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({behavior:"smooth",block:"center"})}>راجع {countOf(importBlockingIssues.length, oblique(AR.note))} لتفعيل الحفظ والنشر</button> : null}
               <div className="import-actions">
                 <SecondaryButton
                   onClick={() => {
@@ -5316,7 +5326,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   const units = item.requestType === "graduate" ? `${item.passedUnits ?? "—"} / ${item.requiredUnits ?? "—"}` : "—";
                   return <tr key={item.id}>
                     <td className="num">{(pageIndex * CASES_PER_PAGE + index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
-                    <td dir="ltr">{String(item.id || "").slice(0, 8).toUpperCase() || "—"}</td>
+                    {/* رقمُ الحالة كما يحمله الطالب — من الخادم، لا اشتقاقٌ ثانٍ من معرّف السجلّ. */}
+                    <td dir="ltr">{item.caseRef || "—"}</td>
                     <td>{item.name || "—"}</td>
                     <td dir="ltr">{item.civil || "—"}</td>
                     <td>{item.studentSectionName || "—"}</td>
@@ -5369,14 +5380,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </div>
                 <div className="room-drawer-infographic">
                   <div className="drawer-metrics room-kpis">
-                    <article><span><CalendarClock /></span><strong>{detail.data.totalAppointments}</strong><small>موعد في الفصل</small></article>
-                    <article><span><Clock3 /></span><strong>{detail.data.freeWindows.length}</strong><small>نافذة متاحة</small></article>
+                    <article><span><CalendarClock /></span><strong>{detail.data.totalAppointments}</strong><small>{nounFor(detail.data.totalAppointments, AR.appointment)} في الفصل</small></article>
+                    <article><span><Clock3 /></span><strong>{detail.data.freeWindows.length}</strong><small>{nounFor(detail.data.freeWindows.length, AR.window)} {nounFor(detail.data.freeWindows.length, AR.availableFemAdj)}</small></article>
                   </div>
                   <section className="room-usage-block">
                     <header><div><small>الجهة الأبرز</small><strong>الأكثر استخدامًا</strong></div><Building2 /></header>
                     <div className="room-usage-grid">
                       {detail.data.departments.slice(0, 6).map((x: any, i: number) => (
-                        <article key={i}><strong>{x.name}</strong><span>{x.count.toLocaleString("ar-KW-u-nu-latn")} لقاء</span></article>
+                        <article key={i}><strong>{x.name}</strong><span>{countOf(x.count, AR.meeting)}</span></article>
                       ))}
                     </div>
                   </section>

@@ -944,6 +944,10 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   font:500 var(--t-xs)/1.4 var(--font-mono);
   direction:ltr;unicode-bidi:isolate;text-align:start;
 }
+/* منتدبٌ بلا جوّال: تنبيهٌ عربيٌّ هادئ، لا رقمٌ لاتيني. */
+.instructor-identity small.roster-no-mobile{
+  direction:rtl;font-family:inherit;color:var(--warn, #b07d00);
+}
 
 /* The list escapes a narrow field: a form column two hundred pixels wide is not
    a reason to show a department's names one letter at a time. */

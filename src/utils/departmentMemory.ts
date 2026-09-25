@@ -1,6 +1,6 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { SCHEDULE_DAYS, timeToMinutes, type DayKey } from "./scheduleIntelligence";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 import { normalizeLocationToken, roomIdentityKey } from "./locationRegistry";
 
 /**
@@ -152,10 +152,10 @@ export function readDepartmentMemory(
     // habit — a prayer, a meeting, a bus — and dropping a lecture into it is
     // worth a word before it happens, never a refusal.
     if (used.size === 0)
-      return { text: `قسمك لم يدرّس ${dayLabel(day)} في ${clock(hour)} في أيٍّ من ${countOf(termCount, AR.term)}.`,
+      return { text: `قسمك لم يدرّس ${dayLabel(day)} في ${clock(hour)} في أيٍّ من ${countOf(termCount, oblique(AR.term))}.`,
                strength: 100, terms: termCount };
     if (share <= RARE)
-      return { text: `${dayLabel(day)} ${clock(hour)} نادر في قسمك — ${countOf(used.size, AR.term)} من ${countOf(termCount, AR.term)}.`,
+      return { text: `${dayLabel(day)} ${clock(hour)} نادر في قسمك — ${countOf(used.size, AR.term)} من ${countOf(termCount, oblique(AR.term))}.`,
                strength: 100 - share, terms: termCount };
 
     /* The abandoned hour — the unexpected one. Used steadily, then stopped.
@@ -164,7 +164,7 @@ export function readDepartmentMemory(
     const recent = allTerms.slice(-Math.max(2, Math.floor(termCount / 3)));
     const usedRecently = recent.some(term => used.has(term));
     if (!usedRecently && used.size >= 3)
-      return { text: `${dayLabel(day)} ${clock(hour)} كان مستخدماً في ${countOf(used.size, AR.term)} ثم توقّف — لم يُستعمل منذ ${countOf(recent.length, AR.term)}.`,
+      return { text: `${dayLabel(day)} ${clock(hour)} كان مستخدماً في ${countOf(used.size, oblique(AR.term))} ثم توقّف — لم يُستعمل منذ ${countOf(recent.length, oblique(AR.term))}.`,
                strength: 92, terms: termCount, surprising: true };
 
     /* And nothing at all for an ordinary hour.
@@ -190,11 +190,11 @@ export function readDepartmentMemory(
        when one quietly falls out of use. */
     const recent = allTerms.slice(-Math.max(2, Math.floor(termCount / 3)));
     if (!recent.some(term => used.has(term)) && used.size >= 2)
-      return { text: `القاعة ${label} كانت من قاعات قسمك في ${countOf(used.size, AR.term)}، ولم تُستعمل منذ ${countOf(recent.length, AR.term)}.`,
+      return { text: `القاعة ${label} كانت من قاعات قسمك في ${countOf(used.size, oblique(AR.term))}، ولم تُستعمل منذ ${countOf(recent.length, oblique(AR.term))}.`,
                strength: 90, terms: termCount, surprising: true };
 
     if (share <= RARE)
-      return { text: `القاعة ${label} نادرة الاستخدام في قسمك — ${countOf(used.size, AR.term)} من ${countOf(termCount, AR.term)}.`,
+      return { text: `القاعة ${label} نادرة الاستخدام في قسمك — ${countOf(used.size, AR.term)} من ${countOf(termCount, oblique(AR.term))}.`,
                strength: 100 - share, terms: termCount };
 
     /* The hours a room is never used. A hall that is busy all morning and
@@ -229,19 +229,19 @@ export function readDepartmentMemory(
        been doing so by memory and by asking. */
     const earliest = Math.min(...mine.map(row => timeToMinutes(row.fstarttime)));
     if (earliest >= 10 * 60)
-      return { text: `${name} لم يبدأ قبل ${clock(Math.floor(earliest / 60))} في ${countOf(theirTerms.length, AR.term)} ولا مرّة.`,
+      return { text: `${name} لم يبدأ قبل ${clock(Math.floor(earliest / 60))} في ${countOf(theirTerms.length, oblique(AR.term))} ولا مرّة.`,
                strength: 95, terms: theirTerms.length, surprising: true };
 
     const latest = Math.max(...mine.map(row => timeToMinutes(row.fendtime)));
     if (latest <= 13 * 60)
-      return { text: `${name} لم يدرّس بعد ${clock(Math.ceil(latest / 60))} في ${countOf(theirTerms.length, AR.term)}.`,
+      return { text: `${name} لم يدرّس بعد ${clock(Math.ceil(latest / 60))} في ${countOf(theirTerms.length, oblique(AR.term))}.`,
                strength: 92, terms: theirTerms.length, surprising: true };
 
     /* A day they have never taught on. */
     for (const day of SCHEDULE_DAYS) {
       const onDay = mine.filter(row => Boolean((row as any)[day.key]));
       if (onDay.length === 0)
-        return { text: `${name} لم يُجدوَل يوم ${day.label} في ${countOf(theirTerms.length, AR.term)}.`,
+        return { text: `${name} لم يُجدوَل يوم ${day.label} في ${countOf(theirTerms.length, oblique(AR.term))}.`,
                  strength: 88, terms: theirTerms.length, surprising: true };
     }
     return null;
@@ -267,14 +267,14 @@ export function readDepartmentMemory(
     const share = pct(topCount, mine.length);
     if (share >= STRONG && ranked.length > 0) {
       const [day, start] = top.split("|");
-      return { text: `${name} في ${dayLabel(day as DayKey)} ${start} في ${countOf(topCount, AR.term)} من ${countOf(theirTerms.length, AR.term)}.`,
+      return { text: `${name} في ${dayLabel(day as DayKey)} ${start} في ${countOf(topCount, oblique(AR.term))} من ${countOf(theirTerms.length, oblique(AR.term))}.`,
                strength: share, terms: theirTerms.length };
     }
     /* …and its opposite, which is the more interesting one: a course that has
        never settled. That is usually a symptom — a shared instructor, a
        contested hall — and it is invisible unless someone counts. */
     if (ranked.length >= Math.max(3, Math.ceil(theirTerms.length * 0.8)))
-      return { text: `${name} لم يستقرّ في موضع — ${countOf(ranked.length, AR.point)} مختلفة في ${countOf(theirTerms.length, AR.term)}.`,
+      return { text: `${name} لم يستقرّ في موضع — ${countOf(ranked.length, AR.point)} مختلفة في ${countOf(theirTerms.length, oblique(AR.term))}.`,
                strength: 85, terms: theirTerms.length, surprising: true };
     return null;
   };
@@ -322,7 +322,7 @@ export function readDepartmentMemory(
       const nameB = courseById.get(b)?.CourseName || rows.find(r => r.AdCourseId === b)?.AdCourseName || "";
       if (!nameA || !nameB) continue;
       found.push({
-        text: `«${nameA}» و«${nameB}» متتاليان في ${countOf(terms.size, AR.term)} من ${countOf(termCount, AR.term)} — يبدو أنهما لدفعة واحدة.`,
+        text: `«${nameA}» و«${nameB}» متتاليان في ${countOf(terms.size, oblique(AR.term))} من ${countOf(termCount, oblique(AR.term))} — يبدو أنهما لدفعة واحدة.`,
         strength: pct(terms.size, termCount), terms: termCount, surprising: true,
       });
     }
@@ -339,7 +339,7 @@ export function readDepartmentMemory(
     for (const [day, count] of perDay) {
       if (!fairShare || count < fairShare * 1.35) continue;
       found.push({
-        text: `${dayLabel(day)} يحمل ${countOf(count, AR.lecture)} من ${countOf(totalMeetings, AR.lecture)} — أثقل من نصيبه بنحو ${Math.round((count / fairShare - 1) * 100)}٪ عبر ${countOf(termCount, AR.term)}.`,
+        text: `${dayLabel(day)} يحمل ${countOf(count, oblique(AR.lecture))} من ${countOf(totalMeetings, oblique(AR.lecture))} — أثقل من نصيبه بنحو ${Math.round((count / fairShare - 1) * 100)}٪ عبر ${countOf(termCount, oblique(AR.term))}.`,
         strength: Math.min(100, Math.round((count / fairShare) * 60)), terms: termCount, surprising: true,
       });
     }
@@ -354,7 +354,7 @@ export function readDepartmentMemory(
       const name = courseById.get(courseId)?.CourseName || mine[0]?.AdCourseName || "";
       if (!name) continue;
       found.push({
-        text: `«${name}» دُرِّس في ${countOf(theirs.length, AR.term)} ثم غاب — لا أثر له في آخر ${countOf(recent.length, AR.term)}.`,
+        text: `«${name}» دُرِّس في ${countOf(theirs.length, oblique(AR.term))} ثم غاب — لا أثر له في آخر ${countOf(recent.length, oblique(AR.term))}.`,
         strength: 94, terms: termCount, surprising: true,
       });
     }
@@ -374,7 +374,7 @@ export function readDepartmentMemory(
       const name = personById.get(instructorId)?.AdInstructorName || "";
       if (!name) continue;
       found.push({
-        text: `${name} يحمل ${countOf(now, AR.appointment)} هذا الفصل، ومعدّله عبر ${countOf(beforeTerms, AR.term)} كان ${Math.round(average)}.`,
+        text: `${name} يحمل ${countOf(now, oblique(AR.appointment))} هذا الفصل، ومعدّله عبر ${countOf(beforeTerms, oblique(AR.term))} كان ${Math.round(average)}.`,
         strength: Math.min(100, Math.round((now / average) * 50)), terms: beforeTerms, surprising: true,
       });
     }

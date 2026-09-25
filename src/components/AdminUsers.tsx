@@ -26,6 +26,7 @@ import {
   FormSecurity,
 } from "../types";
 import { ACADEMIC_ROLES, roleDefinition, roleMismatchHint, type AcademicRole } from "../utils/academicRoles";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 /* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
    rail beside the users, the scopes and the log. It keeps its own screen and
@@ -322,7 +323,7 @@ export default function AdminUsers({
         await new Promise(resolve => window.setTimeout(resolve, 140));
       }
       if (job.status === "ready") {
-        setBackupMessage(`اكتملت النسخة: ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل. اضغط «تنزيل النسخة» لحفظ الملف.`);
+        setBackupMessage(`اكتملت النسخة: ${countOf(job.documentCount, AR.record)}. اضغط «تنزيل النسخة» لحفظ الملف.`);
         const status = await api("/api/system-backup/status") as BackupStatus;
         if (runner === exportRunner.current) { setBackupStatus(status); setExportJob(status.latestExport || job); }
       } else if (job.status === "failed") {
@@ -351,7 +352,7 @@ export default function AdminUsers({
       }) as ExportJob;
       setExportJob(job);
       if (job.status === "ready") {
-        setBackupMessage(`النسخة جاهزة: ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل.`);
+        setBackupMessage(`النسخة جاهزة: ${countOf(job.documentCount, AR.record)}.`);
         setBackupBusy(null);
         return;
       }
@@ -446,7 +447,7 @@ export default function AdminUsers({
         setBackupFile(null);
         setBackupPreview(null);
         setImportUploadPercent(0);
-        setBackupMessage(`اكتمل الاستيراد والتحقق من ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل. نقطة التراجع محفوظة تلقائياً.`);
+        setBackupMessage(`اكتمل الاستيراد والتحقق من ${countOf(job.documentCount, oblique(AR.record))}. نقطة التراجع محفوظة تلقائياً.`);
         const status = await api("/api/system-backup/status") as BackupStatus;
         if (runner === importRunner.current) {
           setBackupStatus(status);
@@ -1033,6 +1034,14 @@ export default function AdminUsers({
                     <span>مقفل</span>
                   </label>
                 </div>
+                {/* «مدير» على صفة اطّلاع (N27): صلاحيةُ المدير تتجاوز الصفة —
+                    نطاقاً وقراءةً للمسوّدات والبيانات الشخصية — فتُبطل «للاطّلاع فقط»
+                    بصمت. يُقال ذلك هنا، لحظةَ الاختيار. */}
+                {isAdmin && roleDefinition(role).readOnly ? (
+                  <p className="admin-role-warning" role="alert">
+                    تنبيه: «مدير» تتجاوز صفة «{roleDefinition(role).label}» — يتخطّى الحسابُ النطاق ويقرأ المسوّدات والبيانات الشخصية كالمدير. صفاتُ الاطّلاع (العميدان والتسجيل ورئيس القسم) تُترك بلا «مدير».
+                  </p>
+                ) : null}
               </Field>
             </div>
             <FormActions onBack={back} />
@@ -1102,7 +1111,7 @@ export default function AdminUsers({
               })}
             </div>
             <div className="permission-selection-summary">
-              <span><b>{permSelections.length}</b> صلاحية محددة من <b>{forms.length}</b></span>
+              <span>المحدَّد <b>{permSelections.length}</b> من <b>{forms.length}</b> {nounFor(forms.length, AR.permission)}</span>
               {permSelections.length ? (
                 <button type="button" onClick={() => setPermSelections([])}>مسح الاختيار</button>
               ) : null}
@@ -1277,8 +1286,8 @@ export default function AdminUsers({
                   <i style={{ width: `${exportPercent}%` }} />
                 </div>
                 <div className="vault-export-progress-meta">
-                  <span><b>{exportJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> سجل جُمِع</span>
-                  <span><b>{exportJob.completedUnits.toLocaleString("ar-KW-u-nu-latn")}</b> / {exportJob.totalUnits.toLocaleString("ar-KW-u-nu-latn")} مرحلة</span>
+                  <span>جُمِع <b>{exportJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(exportJob.documentCount, AR.record)}</span>
+                  <span><b>{exportJob.completedUnits.toLocaleString("ar-KW-u-nu-latn")}</b> / {countOf(exportJob.totalUnits, AR.stage)}</span>
                   {exportJob.sizeBytes ? <span><b>{(exportJob.sizeBytes / 1024 / 1024).toFixed(exportJob.sizeBytes > 10 * 1024 * 1024 ? 1 : 2)}</b> MB</span> : null}
                 </div>
                 {exportJob.current && exportJob.status !== "ready" ? <small className="vault-export-current" dir="ltr">{exportJob.current}</small> : null}
@@ -1298,7 +1307,7 @@ export default function AdminUsers({
             ) : exportJob?.status === "failed" ? (
               <div className="vault-inline-actions">
                 <PrimaryButton type="button" data-guide-ignore="إجراء تصدير إداري حساس داخل خزنة النظام" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
-                  <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${exportJob.documentCount} سجل)` : `استكمال من ${exportJob.completedUnits}/${exportJob.totalUnits}`}
+                  <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${countOf(exportJob.documentCount, AR.record)})` : `استكمال من ${exportJob.completedUnits}/${exportJob.totalUnits}`}
                 </PrimaryButton>
                 <SecondaryButton type="button" data-guide-ignore="إجراء نسخ احتياطي إداري حساس له مسار تأكيد مستقل" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(true)}>
                   <RefreshCw /> بدء تصدير جديد
@@ -1310,7 +1319,7 @@ export default function AdminUsers({
             ) : (
               <div className="vault-inline-actions">
                 <PrimaryButton type="button" data-guide-ignore="إجراء تصدير إداري حساس داخل خزنة النظام" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
-                  <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${exportJob?.documentCount || 0} سجل)` : exportInProgress ? "استكمال التصدير" : "تصدير النظام كاملًا"}
+                  <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${countOf(exportJob?.documentCount || 0, AR.record)})` : exportInProgress ? "استكمال التصدير" : "تصدير النظام كاملًا"}
                 </PrimaryButton>
                 {exportJob && exportJob.status !== "ready" && (
                   <SecondaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={resetExportJobs}>
@@ -1338,8 +1347,8 @@ export default function AdminUsers({
                   <i style={{ width: `${importPercent}%` }} />
                 </div>
                 <div className="vault-export-progress-meta">
-                  {importJob ? <span><b>{importJob.completedUnits.toLocaleString("ar-KW-u-nu-latn")}</b> / {importJob.totalUnits.toLocaleString("ar-KW-u-nu-latn")} مرحلة</span> : <span><b>{importUploadPercent}%</b> رفع الملف</span>}
-                  {importJob ? <span><b>{importJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> سجل في النسخة</span> : null}
+                  {importJob ? <span><b>{importJob.completedUnits.toLocaleString("ar-KW-u-nu-latn")}</b> / {countOf(importJob.totalUnits, AR.stage)}</span> : <span><b>{importUploadPercent}%</b> رفع الملف</span>}
+                  {importJob ? <span><b>{importJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(importJob.documentCount, AR.record)} في النسخة</span> : null}
                 </div>
                 {importJob?.current ? <small className="vault-export-current">{importJob.current}</small> : null}
                 {importJob?.status === "failed" && importJob.error ? <p className="vault-export-error">{importJob.error}</p> : null}
@@ -1350,11 +1359,11 @@ export default function AdminUsers({
               <div className="vault-preview-card vault-preview-compact">
                 <div className="vault-preview-head">
                   <FileCheck2 />
-                  <div><strong>النسخة سليمة وجاهزة</strong><span>{new Date(backupPreview.createdAt).toLocaleString("ar-KW-u-nu-latn")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div>
+                  <div><strong>النسخة سليمة وجاهزة</strong><span>{new Date(backupPreview.createdAt).toLocaleString("ar-KW-u-nu-latn")} · {countOf(backupPreview.documentCount, AR.record)}</span></div>
                 </div>
                 <div className="vault-preview-summary" aria-label="ملخص النسخة">
-                  <span><b>{backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b><small>سجل</small></span>
-                  <span><b>{previewCollections.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>مجموعة</small></span>
+                  <span><b>{backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(backupPreview.documentCount, AR.record)}</small></span>
+                  <span><b>{previewCollections.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(previewCollections.length, AR.collection)}</small></span>
                   <span><b>{backupPreview.storage === "firestore" ? "Firestore" : "محلي"}</b><small>المصدر</small></span>
                 </div>
                 <details className="vault-preview-details">
@@ -1390,7 +1399,7 @@ export default function AdminUsers({
           <Surface className="system-vault-action vault-undo">
             <span className="vault-action-icon"><ArchiveRestore /></span>
             <div><small>04</small><h3>تراجع كامل</h3><p>{point ? `آخر نقطة أمان: ${point.action}` : "لا توجد عملية مدمرة محفوظة للتراجع عنها."}</p></div>
-            {point ? <div className="vault-restore-meta"><strong>{new Date(point.createdAt).toLocaleString("ar-KW-u-nu-latn")}</strong><span>{point.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div> : null}
+            {point ? <div className="vault-restore-meta"><strong>{new Date(point.createdAt).toLocaleString("ar-KW-u-nu-latn")}</strong><span>{countOf(point.documentCount, AR.record)}</span></div> : null}
             <PrimaryButton type="button" disabled={!point || vaultLocked} onClick={() => void undoSystemOperation()}>
               <ArchiveRestore /> {backupBusy === "undo" ? "أعيد الحالة…" : "تراجع عن آخر عملية"}
             </PrimaryButton>
@@ -1469,15 +1478,15 @@ export default function AdminUsers({
         <div className="admin-quiet-summary">
           <span>
             <UsersRound />
-            <b>{users.length}</b> مستخدم
+            <b>{users.length}</b> {nounFor(users.length, AR.user)}
           </span>
           <span>
             <ShieldCheck />
-            <b>{users.filter((u) => u.IsAdminUser).length}</b> مدير
+            <b>{users.filter((u) => u.IsAdminUser).length}</b> {nounFor(users.filter((u) => u.IsAdminUser).length, AR.manager)}
           </span>
           <span>
             <UserCog />
-            <b>{users.filter((u) => u.AdInstructorId).length}</b> لوحة شخصية
+            <b>{users.filter((u) => u.AdInstructorId).length}</b> {nounFor(users.filter((u) => u.AdInstructorId).length, AR.board)} {nounFor(users.filter((u) => u.AdInstructorId).length, AR.personalFemAdj)}
           </span>
         </div>
         <div className="master-detail-shell">

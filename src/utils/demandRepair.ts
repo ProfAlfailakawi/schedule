@@ -1,5 +1,5 @@
 import type { FSchedule } from "../types";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 import {
   SCHEDULE_DAYS,
   findConflicts,
@@ -241,7 +241,7 @@ export function describeRepair(repair: DemandRepair): string {
     ? `${repair.from.dayLabel} ${repair.from.start} ← ${repair.to.start}`
     : `${repair.from.dayLabel} ${repair.from.start} ← ${repair.to.dayLabel} ${repair.to.start}`;
   return `«${repair.courseName}» شعبة ${repair.sectionCode}: ${where} — ` +
-    `يزول تقاطعه مع «${repair.againstCourseName}» عند ${countOf(repair.shared, AR.student)}، ولا ينشأ تعارض جديد.`;
+    `يزول تقاطعه مع «${repair.againstCourseName}» عند ${countOf(repair.shared, oblique(AR.student))}، ولا ينشأ تعارض جديد.`;
 }
 
 /** The one line above the list, never written by hand. */

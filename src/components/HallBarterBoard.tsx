@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { GhostButton, PrimaryButton, SecondaryButton, PrintPortal } from "./ui";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 type Opportunity = {
   id: string;
@@ -323,7 +324,7 @@ export default function HallBarterBoard({
           <em>كل قاعة فارغة في الكلية بحسب جدول هذا الفصل، بنافذتها وساعتها.</em>
         </span>
         <span className="hall-barter-summary-stats">
-          <b><i>{board.opportunities.length}</i> نافذة</b>
+          <b><i>{board.opportunities.length}</i> {nounFor(board.opportunities.length, AR.window)}</b>
           {incomingPending.length ? <b className="needs-action"><i>{incomingPending.length}</i> بانتظارك</b> : null}
           {approved.length ? <b className="approved"><i>{approved.length}</i> معتمدة</b> : null}
         </span>
@@ -449,7 +450,7 @@ export default function HallBarterBoard({
               </div>
             ) : null}
             {board.truncated ? (
-              <p className="hall-barter-truncated">عُرضت {visibleOpportunities.length} من {board.total} نافذة — من كل قسم نصيبٌ منها. اختر قسماً أو يوماً أو مبنى لترى نوافذه كاملة.</p>
+              <p className="hall-barter-truncated">عُرضت {visibleOpportunities.length} من {countOf(board.total, oblique(AR.window))} — من كل قسم نصيبٌ منها. اختر قسماً أو يوماً أو مبنى لترى نوافذه كاملة.</p>
             ) : null}
             {visibleOpportunities.length ? (
               <div className="hall-barter-opportunity-grid">
@@ -457,7 +458,7 @@ export default function HallBarterBoard({
                   <article key={opportunity.id}>
                     <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{ownersOf(opportunity).map(owner => owner.name).join(" · ")}</small></div>
                     <div className="hall-barter-opportunity-meta">
-                      <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>دقيقة {opportunity.durationMinutes}</small></div>
+                      <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>{countOf(opportunity.durationMinutes, AR.minute)}</small></div>
                     </div>
                     <PrimaryButton type="button" disabled={busyId === opportunity.id} onClick={() => void request(opportunity)}><ArrowLeftRight />اطلب استعارة النطاق</PrimaryButton>
                   </article>

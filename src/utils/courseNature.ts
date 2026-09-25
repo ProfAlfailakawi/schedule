@@ -1,5 +1,6 @@
 import type { FSchedule } from "../types";
 import { DAY_KEYS, DAY_NAMES, type DayKey } from "./scheduleRegulations";
+import { AR, countOf } from "./arabicCount";
 
 /**
  * What a course actually is, learned from how it has been taught.
@@ -158,8 +159,8 @@ export function learnCourseNature(courseId: number, rows: FSchedule[]): CourseNa
   const hours = Math.round((weeklyMinutes / 60) * 10) / 10;
 
   const shapeLine = singleBlock
-    ? `كتلة واحدة ${arabicNumber(Math.round(meetingMinutes / 60))} ساعات`
-    : `${arabicNumber(meetingsPerWeek)} لقاءات × ${arabicNumber(meetingMinutes)}د (${arabicNumber(hours)} ساعة)`;
+    ? `كتلة واحدة ${countOf(Math.round(meetingMinutes / 60), AR.hour)}`
+    : `${countOf(meetingsPerWeek, AR.meeting)} × ${arabicNumber(meetingMinutes)}د (${countOf(hours, AR.hour)})`;
   const whereLine = buildings[0] ? ` · ${buildings[0].value}` : "";
   const whenLine = starts[0] ? ` · يبدأ ${starts[0].value}` : "";
   const settled = dominance >= 75 ? "" : dominance ? ` (${arabicNumber(dominance)}٪ من المرات)` : "";
@@ -227,10 +228,10 @@ export function departsFromNature(row: FSchedule, nature?: CourseNature | null):
   // a changeover allowance of the habit.
   const closeEnough = Math.abs(length - nature.meetingMinutes) <= 15;
   if (!closeEnough && !knownLengths.has(length)) {
-    return `المعتاد ${arabicNumber(nature.meetingMinutes)} دقيقة للقاء، وهذا ${arabicNumber(length)}`;
+    return `المعتاد ${countOf(nature.meetingMinutes, AR.minute)} للقاء، وهذا ${arabicNumber(length)}`;
   }
   if (days !== nature.meetingsPerWeek) {
-    return `المعتاد ${arabicNumber(nature.meetingsPerWeek)} لقاءات أسبوعياً، وهذا ${arabicNumber(days)}`;
+    return `المعتاد ${countOf(nature.meetingsPerWeek, AR.meeting)} أسبوعياً، وهذا ${arabicNumber(days)}`;
   }
   return null;
 }

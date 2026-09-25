@@ -3,7 +3,7 @@ import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,Chev
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor } from "../utils/arabicCount";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
 interface DashboardData{history?:Array<{termId:number;termName:string;schedules:number;rooms:number;instructors:number}>;previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;weekend?:boolean;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
@@ -328,7 +328,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    </section>:null}
 
    <section className="deck-metrics" aria-label="أرقام النطاق">
-    <article><BookOpen aria-hidden="true"/><b>{num(data.metrics.courses)}</b><span>مقرر</span></article>
+    <article><BookOpen aria-hidden="true"/><b>{num(data.metrics.courses)}</b><span>{nounFor(data.metrics.courses, AR.course)}</span></article>
     <article>
      <CalendarDays aria-hidden="true"/>
      <b>{num(data.metrics.schedules)}<Delta current={data.metrics.schedules} previous={data.previous?.schedules}/></b>
@@ -359,7 +359,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
      <b>{data.history[0]?.termName}</b>
      <i aria-hidden="true"><ArrowLeft /></i>
      <b>{data.history[data.history.length-1]?.termName}</b>
-     <em>{num(data.history.length)} فصول</em>
+     <em>{countOf(data.history.length, AR.term)}</em>
    </p>:data.previous?.termName?<p className="deck-compare-note"><span>المقارنة مع</span><b>{data.previous.termName}</b></p>:null}
 
    {ws?<section className="deck-charts dashboard-workload-preview" aria-label="قراءة حمل الجدول">
@@ -377,7 +377,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     {power?<><article className="deck-chart" aria-labelledby="dashboard-peak-hours-title">
      <header><Clock3 aria-hidden="true"/><span id="dashboard-peak-hours-title">ذروة الأوقات</span></header>
      {ws.busiestHours.length?<div className="bar-rows" role="list">
-      {ws.busiestHours.slice(0,5).map(slot=><div key={slot.hour} role="listitem" aria-label={`${scheduleClockForDisplay(slot.hour)}: ${num(slot.count)} موعد`} title={`${scheduleClockForDisplay(slot.hour)}: ${num(slot.count)}`}>
+      {ws.busiestHours.slice(0,5).map(slot=><div key={slot.hour} role="listitem" aria-label={`${scheduleClockForDisplay(slot.hour)}: ${countOf(slot.count, AR.appointment)}`} title={`${scheduleClockForDisplay(slot.hour)}: ${num(slot.count)}`}>
        <span dir="ltr" aria-hidden="true">{scheduleClockForDisplay(slot.hour)}</span>
        <i aria-hidden="true"><b style={{width:`${Math.round(slot.count/maxHour*100)}%`}}/></i>
        <em aria-hidden="true">{num(slot.count)}</em>
@@ -388,7 +388,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     <article className="deck-chart" aria-labelledby="dashboard-busiest-rooms-title">
      <header><Building2 aria-hidden="true"/><span id="dashboard-busiest-rooms-title">أكثر القاعات استخداماً</span></header>
      {ws.busiestRooms.length?<div className="rank-rows" role="list">
-      {ws.busiestRooms.slice(0,5).map((room,index)=><div key={room.room} role="listitem" aria-label={`${room.room}: ${num(room.count)} موعد`}>
+      {ws.busiestRooms.slice(0,5).map((room,index)=><div key={room.room} role="listitem" aria-label={`${room.room}: ${countOf(room.count, AR.appointment)}`}>
        <b aria-hidden="true">{index+1}</b>
        <span aria-hidden="true">{room.room}</span>
        <em aria-hidden="true">{num(room.count)}</em>
@@ -404,7 +404,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     </button>
     {detailsOpen?<div className="pulse-legacy-details">
      <div className="deck-facts">
-      <div><small>النطاق</small><strong>{ws.mode==="admin"?"كل الأقسام":ws.mode==="personal"?(ws.linkedInstructorName||user.Name):`${num(scopes.length)} نطاق`}</strong></div>
+      <div><small>النطاق</small><strong>{ws.mode==="admin"?"كل الأقسام":ws.mode==="personal"?(ws.linkedInstructorName||user.Name):countOf(scopes.length, AR.range)}</strong></div>
       <div><small>مواعيد فعّالة</small><strong>{num(ws.activeSchedules)}</strong></div>
       <div><small>أساتذة</small><strong>{num(ws.uniqueInstructors)}</strong></div>
       <div><small>ذروة الإشغال</small><strong>{num(ws.peakOccupiedRooms)} / {num(ws.uniqueRooms)}</strong></div>

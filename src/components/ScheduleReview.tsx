@@ -10,9 +10,9 @@ import {
 } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
-import { findConflicts } from "../utils/scheduleIntelligence";
+import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor } from "../utils/arabicCount";
 
 /**
  * The last read before a schedule is adopted.
@@ -104,7 +104,7 @@ function ReviewPersonGroup({ group, courses, visitingIds }: { group: { who: stri
           <small dir="ltr">{courses.get(rows[0].AdCourseId)?.CourseCode || rows[0].AdCourseName || "—"} · شعبة {rows[0].SCode}</small>
         ) : (
           <>
-            <span className="review-person-count" title={`${rows.length.toLocaleString("ar-KW-u-nu-latn")} موعد`}>{sectionCount.toLocaleString("ar-KW-u-nu-latn")} شعب</span>
+            <span className="review-person-count" title={countOf(rows.length, AR.appointment)}>{countOf(sectionCount, AR.section)}</span>
             <ChevronDown className="review-person-chevron" aria-hidden="true" />
           </>
         )}
@@ -133,12 +133,12 @@ function ReviewPersonGroup({ group, courses, visitingIds }: { group: { who: stri
 function HistoryInfographic({rows,courses}:{rows:FSchedule[];courses:Map<number,AdCourse>}){
   const distinctCourses=new Set(rows.map(row=>row.AdCourseId)).size;
   return <div className="history-review-infographic">
-    <div className="history-review-kpis"><article><History/><strong>10+</strong><span>سنوات في السجل</span></article><article><ClipboardCheck/><strong>{rows.length.toLocaleString("ar-KW-u-nu-latn")}</strong><span>موعد مختلف</span></article><article><CalendarDays/><strong>{distinctCourses.toLocaleString("ar-KW-u-nu-latn")}</strong><span>مقرر متأثر</span></article></div>
+    <div className="history-review-kpis"><article><History/><strong>10+</strong><span>سنوات في السجل</span></article><article><ClipboardCheck/><strong>{rows.length.toLocaleString("ar-KW-u-nu-latn")}</strong><span>{nounFor(rows.length, AR.appointment)} {nounFor(rows.length, AR.differentAdj)}</span></article><article><CalendarDays/><strong>{distinctCourses.toLocaleString("ar-KW-u-nu-latn")}</strong><span>{nounFor(distinctCourses, AR.course)} {nounFor(distinctCourses, AR.affectedAdj)}</span></article></div>
     <div className="history-review-cards">{rows.slice(0,8).map(row=>{
       const course=courses.get(row.AdCourseId),dayText=DAY_KEYS.filter(key=>(row as any)[key]).map(key=>DAY_NAMES[DAY_KEYS.indexOf(key)]).join(" · ");
       return <article key={row.id}><span className="history-review-icon"><Clock3/></span><div><strong>{course?.CourseName||row.AdCourseName||"مقرر"}</strong><small><b dir="ltr">{course?.CourseCode||"—"}</b> · شعبة {row.SCode}</small></div><time dir="ltr">{formatScheduleTimeRange(row.fstarttime,row.fendtime)}</time><p><CalendarDays/>{dayText||"بلا أيام"}<Building2/>{row.AdRoomCode}/{row.AdRoomHall}</p></article>;
     })}</div>
-    {rows.length>8?<small className="history-review-more">و{(rows.length-8).toLocaleString("ar-KW-u-nu-latn")} مواعيد أخرى في التقرير المطبوع</small>:null}
+    {rows.length>8?<small className="history-review-more">و{countOf(rows.length-8, AR.appointment)} {nounFor(rows.length-8, AR.otherAdj)} في التقرير المطبوع</small>:null}
   </div>;
 }
 
@@ -170,15 +170,16 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     return () => controller.abort();
   }, [collegeId, sectionId, termId, rows]);
 
-  const localBlockers = useMemo(() => findConflicts(rows, rows)
-    .filter(item => item.severity === "high" || item.type === "duplicate")
+  /* The offline fallback reads the same rule the server does — «هيئة تدريسية»
+     included — so losing the network never changes what counts as a blocker. */
+  const localBlockers = useMemo(() => blockingConflicts(rows, rows, { placeholderInstructorIds: placeholderInstructorIds(instructors.values()) })
     .map(item => ({
       id: `local-conflict:${[item.rowId, item.otherId].sort((a, b) => a - b).join(":")}`,
       type: item.type,
       title: item.message,
       detail: item.detail,
       rowIds: [Number(item.rowId), Number(item.otherId)].filter(Boolean),
-    })), [rows]);
+    })), [rows, instructors]);
   const activeBlockers = readinessChecked && !readinessError ? serverBlockers : localBlockers;
 
   const blockerFindings = useMemo<RegulationFinding[]>(() => activeBlockers.map((item, index) => ({
@@ -218,7 +219,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
       rowIds: [...bucket.rowIds],
       groupedItems: bucket.items,
       groupedCount: bucket.items.length,
-      detail: bucket.items.length > 1 ? `تم جمع ${bucket.items.length.toLocaleString("ar-KW-u-nu-latn")} تعارضاً متشابهاً في بند واحد.` : bucket.base.detail,
+      detail: bucket.items.length > 1 ? `جُمع هنا ${countOf(bucket.items.length, AR.conflict)} ${nounFor(bucket.items.length, AR.similarAdj)} في بند واحد.` : bucket.base.detail,
     }));
   }, [findings]);
   const blocking = findings.filter(finding => finding.approvalEffect === "block");
@@ -272,7 +273,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
 
   const findingPreview = (finding: ReviewFindingGroup) => {
     const entity = groupEntitySummary(finding);
-    if (finding.groupedCount > 1) return `${entity} · ${finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} تعارض`;
+    if (finding.groupedCount > 1) return `${entity} · ${countOf(finding.groupedCount, AR.conflict)}`;
     if (finding.approvalEffect === "block") return `${entity} · يحتاج معالجة قبل الاعتماد`;
     if (finding.source === "decision-1912") return `${entity} · تنبيه لائحي`;
     if (finding.source === "history") return `${entity} · استنتاج تاريخي`;
@@ -343,7 +344,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
             );
           })}
         </div>
-        {uniqueRows.length > limit ? <p className="review-more">و{(uniqueRows.length - limit).toLocaleString("ar-KW-u-nu-latn")} مواعيد أخرى…</p> : null}
+        {uniqueRows.length > limit ? <p className="review-more">و{countOf(uniqueRows.length - limit, AR.appointment)} {nounFor(uniqueRows.length - limit, AR.otherAdj)}…</p> : null}
       </>
     );
   };
@@ -357,8 +358,8 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
   }
   const renderPrintFinding = (finding: ReviewFindingGroup) => (
     <article className={`print-review-finding severity-${findingTone(finding)}`} key={finding.rule}>
-      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.groupedCount > 1 ? `${finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} تعارض · ${finding.detail}` : finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
-      {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, printRowPreviewLimit).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > printRowPreviewLimit ? <small>+ {(finding.rowIds.length - printRowPreviewLimit).toLocaleString("ar-KW-u-nu-latn")} موعد آخر</small> : null}</div> : null}
+      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.groupedCount > 1 ? `${countOf(finding.groupedCount, AR.conflict)} · ${finding.detail}` : finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
+      {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, printRowPreviewLimit).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > printRowPreviewLimit ? <small>+ {countOf(finding.rowIds.length - printRowPreviewLimit, AR.appointment)} {nounFor(finding.rowIds.length - printRowPreviewLimit, AR.otherAdj)}</small> : null}</div> : null}
     </article>
   );
 
@@ -399,7 +400,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                         <b>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")}</b>
                         <span>{finding.groupedCount === 1 ? "تعارض" : "تعارضات"}</span>
                         <i>·</i>
-                        <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد متأثر</span>
+                        <span>{countOf(finding.rowIds.length, AR.appointment)} {nounFor(finding.rowIds.length, AR.affectedAdj)}</span>
                       </span>
                       <span className="finding-share" aria-hidden="true">
                         <i style={{ width: `${Math.min(100, (finding.rowIds.length / spread.total) * 100)}%` }} />
@@ -418,7 +419,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                       <div className="review-finding-meta">
                         <span>{finding.article}</span>
                         <span>{findingStatus(finding)}</span>
-                        {finding.groupedCount > 1 ? <span>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} حالات</span> : null}
+                        {finding.groupedCount > 1 ? <span>{countOf(finding.groupedCount, AR.occurrence)}</span> : null}
                       </div>
                     </div>
                   ) : null}
@@ -440,7 +441,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                               <section key={key} className="review-subject">
                                 <header>
                                   <strong>{subject.label}</strong>
-                                  <small>{subject.items.length.toLocaleString("ar-KW-u-nu-latn")} تعارض</small>
+                                  <small>{countOf(subject.items.length, AR.conflict)}</small>
                                 </header>
                                 <div className="review-subject-cases">
                                   {(() => {
@@ -522,13 +523,13 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
           <div className="spread-bar">
             {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} title={`${spread.high} يمنع`} /> : null}
             {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} title={`${spread.medium} يراجَع`} /> : null}
-            {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={`${spread.low} ملاحظة`} /> : null}
+            {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={countOf(spread.low, AR.note)} /> : null}
             {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
           </div>
           <div className="spread-keys">
             <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
             <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
-            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>
+            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(spread.low, AR.note)}</small></span>
             <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
           </div>
         </div>
@@ -548,10 +549,10 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                   >
                     <span className="review-mark" aria-hidden="true"><CheckCircle2 /></span>
                     <span className="review-copy">
-                      <strong>{quietFindings.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظات لا تمنع الاعتماد</strong>
+                      <strong>{countOf(quietFindings.length, AR.note)} لا {nounFor(quietFindings.length, AR.blockFemVerb)} الاعتماد</strong>
                       <small>{quietPreview}</small>
                     </span>
-                    <i>{quietRows.toLocaleString("ar-KW-u-nu-latn")} موعد</i>
+                    <i>{countOf(quietRows, AR.appointment)}</i>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {quietOpen ? <div className="review-quiet-list">{quietFindings.map(renderFinding)}</div> : null}
@@ -604,7 +605,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                   {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} /> : null}
                   {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} /> : null}
                 </div>
-                <div className="print-spread-keys"><span className="seg-high"><b>{spread.high}</b> يمنع</span><span className="seg-medium"><b>{spread.medium}</b> يراجَع</span><span className="seg-low"><b>{spread.low}</b> ملاحظة</span><span className="seg-clean"><b>{spread.clean}</b> سليم</span></div>
+                <div className="print-spread-keys"><span className="seg-high"><b>{spread.high}</b> يمنع</span><span className="seg-medium"><b>{spread.medium}</b> يراجَع</span><span className="seg-low"><b>{spread.low}</b> {nounFor(spread.low, AR.note)}</span><span className="seg-clean"><b>{spread.clean}</b> سليم</span></div>
               </div>
               <section className="print-review-findings">
                 {findings.length ? firstPrintPage.map(renderPrintFinding) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>لا توجد موانع حفظ محلية، ولا تنبيهات لائحية ظاهرة ضمن النطاق الذي يفحصه النظام.</span></div>}

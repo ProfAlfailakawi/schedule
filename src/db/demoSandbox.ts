@@ -92,25 +92,72 @@ const INSTRUCTOR_BANDS: Record<number, ReadonlyArray<number>> = {
   3: [9, 10, 11, 12],
 };
 
+/* ── جدولٌ ممكن، وتعارضٌ مقصودٌ واحدٌ مشروح ──────────────────────────────
+ *
+ * The old generator cycled 30 rows over 18 courses with `SCode = index % 3`, so
+ * the same course and section came back eighteen rows later in the same hall at
+ * the same hour with a different doctor — an impossible duplicate — and the
+ * sections the demo shows as SUBMITTED and ACCEPTED carried approval blockers
+ * the product itself would have refused. A demo that contradicts the rules it
+ * is demonstrating teaches the wrong thing.
+ *
+ * Now each college's rows take distinct slots by construction: a row's slot is
+ * its position inside its college (pattern, then hour, then hall), and the
+ * rows that share a pattern and an hour never share a hall or a doctor. Every
+ * course's second pass is a NEW section (01, 02…), never the same one again.
+ *
+ * The conflict showcase is kept, but honestly: one department that is still
+ * drafting (ريادة الأعمال — no approval yet) carries one room clash and one
+ * doctor clash, each explained in its own note. `tests/blockers-stream-audit.ts`
+ * holds this with the approval-blocker oracle.
+ */
+export const DEMO_CONFLICT_SECTION_ID = 4;
 function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   const times = [["08:00", "09:15"], ["09:30", "10:45"], ["11:00", "12:15"], ["12:30", "13:45"], ["14:00", "15:15"], ["15:30", "16:45"]];
-  return Array.from({ length: 30 }, (_, index) => {
+  const positionInCollege = new Map<number, number>();
+  const rows: FSchedule[] = Array.from({ length: 30 }, (_, index) => {
     const course = courses[index % courses.length];
     const roomBand = ROOM_BANDS[course.AdCollegeId] ?? ROOM_BANDS[1];
     const instructorBand = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
-    const [start, end] = times[index % times.length];
-    const [code, hall] = roomBand[index % roomBand.length];
-    const pattern = index % 4;
+    const k = positionInCollege.get(course.AdCollegeId) ?? 0;
+    positionInCollege.set(course.AdCollegeId, k + 1);
+    /* pattern alternates, the hour advances every two rows, the hall and the
+       doctor advance every twelve — so two rows at one pattern+hour differ in both. */
+    const pattern = k % 2;
+    const [start, end] = times[Math.floor(k / 2) % times.length];
+    const lap = Math.floor(k / (2 * times.length));
+    const [code, hall] = roomBand[lap % roomBand.length];
     return {
       id: index + 1, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
-      AdCourseId: course.AdCourseId, AdCourseName: course.CourseName, SCode: `0${(index % 3) + 1}`,
-      AdInstructorId: instructorBand[index % instructorBand.length],
-      fsunday: pattern === 0 || pattern === 2, fmonday: pattern === 1 || pattern === 3,
-      ftuesday: pattern === 0 || pattern === 2, fwednesday: pattern === 1 || pattern === 3,
-      fthursday: index % 5 === 0, fstarttime: start, fendtime: end,
-      AdRoomCode: code, AdRoomHall: hall, fdetail: index % 7 === 0 ? "حالة تجريبية معدّة لاستعراض معالجة التعارضات" : "", rev: 0,
+      AdCourseId: course.AdCourseId, AdCourseName: course.CourseName,
+      SCode: `0${Math.floor(index / courses.length) + 1}`,
+      AdInstructorId: instructorBand[(lap + Math.floor(k / 2)) % instructorBand.length],
+      fsunday: pattern === 0, fmonday: pattern === 1,
+      ftuesday: pattern === 0, fwednesday: pattern === 1,
+      fthursday: false, fstarttime: start, fendtime: end,
+      AdRoomCode: code, AdRoomHall: hall, fdetail: "", rev: 0,
     };
   });
+  /* The two deliberate conflicts, in the drafting department only. */
+  const drafting = rows.filter(row => Number(row.AdSectionId) === DEMO_CONFLICT_SECTION_ID);
+  if (drafting.length >= 3) {
+    const [anchor, roomClash, teacherClash] = drafting;
+    Object.assign(roomClash, {
+      fsunday: anchor.fsunday, fmonday: anchor.fmonday, ftuesday: anchor.ftuesday, fwednesday: anchor.fwednesday, fthursday: anchor.fthursday,
+      fstarttime: anchor.fstarttime, fendtime: anchor.fendtime, AdRoomCode: anchor.AdRoomCode, AdRoomHall: anchor.AdRoomHall,
+      fdetail: "حالة تجريبية مقصودة: تعارض قاعة مع موعدٍ آخر في القسم نفسه — لاستعراض «معالجة التعارضات».",
+    });
+    const freeHall = (ROOM_BANDS[anchor.AdCollegeId] ?? ROOM_BANDS[1]).find(([c, h]) =>
+      !rows.some(other => other !== teacherClash && other.fstarttime === anchor.fstarttime && Boolean(other.fsunday) === Boolean(anchor.fsunday)
+        && Boolean(other.fmonday) === Boolean(anchor.fmonday) && other.AdRoomCode === c && other.AdRoomHall === h));
+    Object.assign(teacherClash, {
+      fsunday: anchor.fsunday, fmonday: anchor.fmonday, ftuesday: anchor.ftuesday, fwednesday: anchor.fwednesday, fthursday: anchor.fthursday,
+      fstarttime: anchor.fstarttime, fendtime: anchor.fendtime, AdInstructorId: anchor.AdInstructorId,
+      ...(freeHall ? { AdRoomCode: freeHall[0], AdRoomHall: freeHall[1] } : {}),
+      fdetail: "حالة تجريبية مقصودة: الأستاذ نفسه في قاعتين في الساعة نفسها — لاستعراض «معالجة التعارضات».",
+    });
+  }
+  return rows;
 }
 
 /*
@@ -220,13 +267,13 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
       {
         id: "demo-note-cs-1", createdAt: iso(3), SystemUserId: 13, userName: "أ. رئيس التسجيل",
         scheduleId: Number(stage[2].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
-        text: "القاعة محجوزة لقسمٍ آخر في هذا الوقت — يرجى مراجعتها.",
+        text: "سعة القاعة أقل من عدد المسجّلين المتوقّع — يرجى مراجعتها.",
         resolved: false, field: "room", valueAtNote: noteValue(stage[2], "room"), round: 2, origin: "registrar",
       },
       {
         id: "demo-note-cs-2", createdAt: iso(3), SystemUserId: 13, userName: "أ. رئيس التسجيل",
         scheduleId: Number(stage[3].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
-        text: "تأكّدوا من إسناد الأستاذ — يظهر لديه تعارضٌ في موعدٍ آخر.",
+        text: "تأكّدوا من إسناد الأستاذ — نصابه هذا الفصل يتجاوز المعتاد.",
         resolved: false, field: "instructor", valueAtNote: noteValue(stage[3], "instructor"), round: 2, origin: "registrar",
       },
       {

@@ -435,6 +435,9 @@ export interface ScheduleVersion {
   label: string;
   source: "manual" | "draft" | "publish" | "undo" | "copy" | "import";
   rows: FSchedule[];
+  /** The live scope right after the change this version protects (see scopeFingerprint). */
+  baseFingerprint?: string;
+  baseSignatures?: Record<string, string>;
 }
 
 export interface ScheduleDraft {
@@ -451,6 +454,9 @@ export interface ScheduleDraft {
   status: "draft" | "published" | "archived";
   source: "what-if" | "auto" | "import" | "manual";
   rows: FSchedule[];
+  /** The live scope the draft was built against (see scopeFingerprint). */
+  baseFingerprint?: string;
+  baseSignatures?: Record<string, string>;
   /** Original scanned table, kept immutable for the colour-coded change report. */
   baselineRows?: FSchedule[];
   sourceFileName?: string;
@@ -569,11 +575,37 @@ export interface StudentCourseState {
   /** الصفةُ لا الاسم: «موظف التسجيل»، «رئيس لجنة الجدول». */
   byRole?: string;
   at: string;
+  /** حذف الطالبُ هذا المقرّر من طلبه بعد أن قيل فيه شيء — يبقى القرارُ مقروءاً. */
+  droppedByStudent?: boolean;
+  droppedAt?: string;
+}
+
+/**
+ * قرارُ جهةٍ واحدةٍ في طلبٍ لا مقرّرات فيه (حالة الخريج).
+ *
+ * طلبُ الخريج لا يسمّي مقرّراً: يطلب ترتيباً للميداني بسببٍ من قائمةٍ مغلقة
+ * وملاحظاتٍ إلزامية. فالقرارُ فيه قرارٌ في الحالة كلها، لا في مقرّر — وكان
+ * الكشفُ يُسقطه لأنه لا يجد مقرّراً يعلّق عليه قراراً، فلا يُجاب أبداً.
+ * الترتيبُ نفسُه: اللجنةُ أولاً، ثم التسجيل.
+ */
+export interface StudentCaseDecision {
+  /** اللجنة: وافقت/لم توافق. التسجيل: نفّذه/ردّه. */
+  state: "approved" | "rejected";
+  reasonCode?: StudentCourseRejectReason | StudentCommitteeRejectReason;
+  /** «سطرٌ للطالب» — يصله في صفحة حالته. */
+  note?: string;
+  byRole?: string;
+  at: string;
+}
+
+export interface StudentCaseState {
+  committee?: StudentCaseDecision;
+  registrar?: StudentCaseDecision;
 }
 
 export interface StudentNeed {
   id: string;
-  /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
+  /** Keyed HMAC of the civil ID: the duplicate key. On its own it identifies nobody (the identity is in the ciphers below). */
   fingerprint: string;
   AdCollegeId: number;
   /** The student's own scientific section, validated in the link's college. */
@@ -593,6 +625,9 @@ export interface StudentNeed {
   /** Every course this student says they need. */
   courseIds: number[];
   requestType?: "new-course" | "course-conflict" | "graduate";
+  /** The student's name and civil ID, each sealed with field-level AES-256-GCM
+   * (server.ts sealStudentIdentity). Decrypted only for the authorised
+   * department/registration screens — the record is NOT anonymous. */
   nameCipher?: string;
   civilCipher?: string;
   details?: string;
@@ -611,6 +646,12 @@ export interface StudentNeed {
    * صفٌّ ليقول «لا جديد».
    */
   courseStates?: StudentCourseState[];
+  /** قرارُ الحالة كلها حين لا يسمّي الطلبُ مقرّراً (الخريج). */
+  caseState?: StudentCaseState;
+  /** غيّر الطالبُ طلبَ الخريج إلى نوعٍ آخر بعد قرارٍ فيه: متى. */
+  caseDroppedAt?: string;
+  /** آخر إعادة إرسال — السجلُّ يُحدَّث في مكانه ولا يُستبدل. */
+  updatedAt?: string;
   /**
    * رقمُ الحالة كما أُعطي للطالب، ثابتٌ عبر إعادة الإرسال.
    *
@@ -757,6 +798,12 @@ export interface ScheduleComment {
    * القسم — إعلاماً لا إجباراً، فلا شيء في النظام يقف عليه.
    */
   insistCount?: number;
+  /** ردودُ القسم السابقة التي أصرّ عليها التسجيل — تُحفظ ولا تُمحى. */
+  rebuttalHistory?: Array<{ text: string; at: string; SystemUserId: number; userName: string; insistedAt: string; insistedBy: string }>;
+  /** متى بلغ الإصرارُ حدَّ الرفع إلى رئيس القسم. */
+  escalatedAt?: string;
+  /** كيف أُغلقت: بقبول تبرير القسم، أو بقبول الجدول كلّه. */
+  resolution?: "rebuttal-accepted" | "closed-by-acceptance";
 }
 
 /** الحقول التي يجوز أن تُعلَّق عليها ملاحظةٌ بالنقر. */
@@ -867,6 +914,24 @@ export interface ScheduleShareLink {
   kind?: "department" | "staff" | "survey" | "request";
   /** صاحبُ الرابط حين يكون `kind === "request"`. لا معنى له في غيره. */
   AdInstructorId?: number;
+  /**
+   * آخرُ موعدٍ لاستقبال طلبات التعديل من بطاقة الأستاذ (ISO). يحكم الكتابة
+   * وحدها؛ الرابطُ نفسه يبقى صالحاً للقراءة حتى `expiresAt` (نهاية الفصل).
+   */
+  requestsCloseAt?: string;
+  /**
+   * ما يُعرف عن كل أستاذٍ فتح البطاقة أو أُرسلت إليه، مفتاحُه رقمُ الأستاذ.
+   * ‎sent*‎ لحظةُ آخر إرسالٍ من القسم وبصمةُ جدوله عندها («من تغيّر جدولهم»)،
+   * و‎seen*‎ لحظةُ آخر زيارةٍ وبصمتُها («منذ زيارتك الأخيرة»). لا شيء غير ذلك.
+   */
+  marks?: Record<string, ShareLinkInstructorMark>;
+}
+
+export interface ShareLinkInstructorMark {
+  sentAt?: string;
+  sentFingerprint?: string;
+  seenAt?: string;
+  seenFingerprint?: string;
 }
 
 /* ── طلبُ الأستاذ على مسوّدة جدوله ───────────────────────────────────────────
@@ -1152,6 +1217,23 @@ export interface ScheduleApprovalRound {
   reviewedVersionId?: string;
   /** النسخة كما قبِلها التسجيل — ما يراه العميد جدولاً نهائياً حتى يُقبل غيره. */
   acceptedVersionId?: string;
+  /**
+   * جولةُ تعديلٍ بعد القبول: فتحها أولُ تعديلٍ على جدولٍ مقبول، لا إرسالٌ من
+   * أحد. تتجمّع فيها التعديلات ما دام التسجيل لم يكتب فيها ملاحظة.
+   */
+  amendment?: boolean;
+  /** أساسُ مقارنة جولة التعديل: النسخة التي قُبلت آخر مرّة. */
+  baselineVersionId?: string;
+}
+
+/** حدثٌ واحد في سجلّ الدورة: من فعل ماذا، ومتى، وفي أيّ جولة. */
+export interface ScheduleApprovalEvent {
+  at: string;
+  by: string;
+  role?: string;
+  action: string;
+  round: number;
+  detail?: string;
 }
 
 /**
@@ -1187,5 +1269,24 @@ export interface ScheduleApproval {
   extensionReason?: string;
   extensionBy?: string;
   extensionAt?: string;
+  /** طلبُ تمديدٍ من القسم ينتظر رئيس التسجيل. يُمحى متى مُنح التمديد. */
+  extensionRequest?: { by: string; role?: string; at: string; reason: string; days: number };
+  /** إرجاعُ رئيس القسم للجنة قبل أن يعتمد: من، ومتى، ولماذا. */
+  headReturn?: { by: string; at: string; reason: string };
+  /**
+   * تعديلٌ على جدولٍ معتمد لم تُفتح له جولةُ تعديل لأن حفظ الوثيقة خسر سباق
+   * المراجعة مرّتين. علامةٌ تُحفظ فوق آخر مراجعة، وأوّلُ من يقرأ الوثيقة في
+   * الخادم (قرار، شريط القسم، الوارد، التعديل التالي) يفتح الجولة ويمحوها.
+   */
+  amendmentPending?: { at: string; by: string; role?: string; kind: "add" | "edit" | "delete" };
+  /**
+   * كم إضافةً بعد التوقيع زادت على ما تحفظه القائمة. تُعدّ ولا تُسمّى، وتمنع
+   * الإرسال كما تمنعه المسمّاة حتى يُقرّها رئيس القسم.
+   */
+  pendingAdditionsOverflow?: number;
+  /** رقمُ مراجعة الوثيقة: يزيد مع كل حفظ، ويُرفض الحفظ فوق مراجعةٍ أقدم. */
+  revision?: number;
+  /** سجلُّ ما جرى على الدورة، أحدثُه آخرُه، بسقفٍ ثابت. */
+  events?: ScheduleApprovalEvent[];
   updatedAt: string;
 }

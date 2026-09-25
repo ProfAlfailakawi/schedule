@@ -2,7 +2,7 @@ import type { AdCourse, AdInstructor } from "../types";
 import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "./authorityAcademicCodes";
 import { OFFICIAL_COLLEGE_SITE_PREFIXES } from "./locationCollegePrefixes";
 import { instructorCleanName, instructorIdentityTokens } from "./instructorIdentity";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, nounFor, oblique } from "./arabicCount";
 /* قانون هوية الاسم يعيش في وحدته المشتركة كي تقرأه المعاينة أيضاً؛ يُعاد
    تصديره هنا لأن الخادم والاختبارات تعرفه من هذا الملف. */
 export { instructorRegistryOutcome, uniqueExactIdentityMatch, instructorIdentityKey } from "./instructorIdentity";
@@ -58,7 +58,7 @@ const MAX_PAGES=12;
    الجدول الناقص أخطر من الرفض، فيُرفض الملف كله برسالة صريحة. */
 class PdfPageLimitError extends Error{}
 function assertPageLimit(pages:number){
-  if(pages>MAX_PAGES)throw new PdfPageLimitError(`الملف يحتوي ${pages} صفحة، والحد الأقصى ${MAX_PAGES} صفحة. قسّم الملف ثم ارفع كل جزء في قسمه — لم يُستورد أي صف.`);
+  if(pages>MAX_PAGES)throw new PdfPageLimitError(`الملف يحتوي ${countOf(pages, oblique(AR.page))}، والحد الأقصى ${countOf(MAX_PAGES, AR.page)}. قسّم الملف ثم ارفع كل جزء في قسمه — لم يُستورد أي صف.`);
 }
 /** A4 at ~300dpi. The old 157dpi render was the single largest cause of
  *  unreadable rows: Arabic table text at that size loses its dots. */
@@ -806,7 +806,7 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
         rows,
         ...(nativeGridRows.length?{gridRows:nativeGridRows}:{}),
         diagnostic:{page:index,visualRows:Math.max(nativeGridRows.length,keyedBodyRows)||rows.length,extractedRows:pageStructuralRows,gridDetected:Boolean(nativeGridRows.length),orientation:0,suspicious:gridShortfall,
-          ...(gridShortfall?{reason:`في الصفحة ${keyedBodyRows} صفاً مطبوعاً، ولم تثبت حدود الأعمدة إلا لـ ${nativeGridRows.length}. غالباً أُعيدت طباعة الملف بمقاس مختلف؛ ارفع الملف كما صدّرته الجهة (100٪)`}:{})},
+          ...(gridShortfall?{reason:`طُبع في الصفحة ${countOf(keyedBodyRows, AR.row)}، ولم تثبت حدود الأعمدة إلا لـ ${nativeGridRows.length}. غالباً أُعيدت طباعة الملف بمقاس مختلف؛ ارفع الملف كما صدّرته الجهة (100٪)`}:{})},
       });
     }
     const text=pageTexts.join("\n\n--- PAGE ---\n\n");
@@ -3743,7 +3743,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
      on a small render in well under a second. A page with no grid signal at
      all (a photographed transcript) falls back to one small OCR probe. */
   if(cachedPreflight?.header.source==="scan")
-    onProgress?.({phase:"read",page:0,pages:images.length,message:`تم التحقق من اتجاه ${images.length} صفحة · بدء القراءة`});
+    onProgress?.({phase:"read",page:0,pages:images.length,message:`تم التحقق من اتجاه ${countOf(images.length, oblique(AR.page))} · بدء القراءة`});
   else
     onProgress?.({phase:"orient",page:1,pages:images.length,message:"تحديد اتجاه الصفحة"});
   let orientation:-1|0|1=cachedPreflight?.header.source==="scan"?cachedPreflight.orientation:0;
@@ -3946,7 +3946,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
      pages after it can no longer change the outcome, only delay it. */
   suspiciousIndexes.sort((a,b)=>Number(!pages[a]?.diagnostic?.suspicious)-Number(!pages[b]?.diagnostic?.suspicious)||a-b);
   if(suspiciousIndexes.length){
-    onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`عدد الصفحات التي تحتاج فحصاً دقيقاً: ${suspiciousIndexes.length}`,notice:unreadPagesNotice(flaggedPages)});
+    onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${countOf(suspiciousIndexes.length, oblique(AR.page))} بحاجة إلى مراجعة دقيقة`,notice:unreadPagesNotice(flaggedPages)});
     let rescuedCount=0;
     for(const [position,index] of suspiciousIndexes.entries()){
       const rescuePool=pool;
@@ -5070,6 +5070,29 @@ export function transcriptFacts(text:string){
  * closed so another academic document can never be accepted merely because it
  * happens to contain a civil ID and a number of credits.
  */
+/**
+ * The student's programme as the sheet prints it: the text on the ONE visual
+ * line that carries the «البرنامج» label, after the label and before any
+ * other field label on that line.
+ *
+ * The specialization check used to search the whole OCR text, so a sheet whose
+ * course list or header merely mentioned another department's words could
+ * «match» it. Only the programme row decides; no programme row → "" and the
+ * caller fails closed.
+ */
+export function graduationProgrammeText(text:string):string{
+  for(const line of String(text||"").split(/\r?\n/)){
+    const folded=fold(line);
+    const label=folded.match(/(?:^|\s)(?:ال)?برنامج(?:\s*:)?(?=\s|$)/);
+    if(!label||label.index===undefined)continue;
+    const after=folded.slice(label.index+label[0].length)
+      .split(/\s(?:ال)?(?:وحدات|رقم|اسم|معدل|خطه|تاريخ|مستوي)(?:\s|$)/)[0]
+      .replace(/[:\d]+/g," ").replace(/\s+/g," ").trim();
+    return after;
+  }
+  return"";
+}
+
 export function graduationSheetFacts(text:string){
   const plain=toAscii(text),folded=fold(text);
   /* Civil IDs are sometimes OCR'd with spaces between digit groups. Recover
@@ -5080,7 +5103,7 @@ export function graduationSheetFacts(text:string){
   const lines=plain.split(/\r?\n/);
   const lineCivil=lines.map(line=>line.replace(/\D/g,""))
     .filter(value=>value.length===12);
-  /* Tesseract often inserts spaces between digit groups (3041 0230 1536).
+  /* Tesseract often inserts spaces between digit groups (3000 1010 0122).
      Recover a 12-digit run from one visual line even when unrelated text or a
      date also exists elsewhere on that line. The server checksum-filters these
      candidates and still requires the exact civil entered by the student. */
@@ -5128,8 +5151,9 @@ export function graduationSheetFacts(text:string){
      stricter than accepting an arbitrary transcript, while keeping the same
      substantive gates: official study-plan title + passed-units field. */
   const isGraduationSheet=titleOk&&passedLabelOk&&(programmeOk||requiredLabelOk||authorityOk);
+  const programmeText=graduationProgrammeText(text);
   return{
-    civil,civilCandidates,requiredUnits,passedUnits,isGraduationSheet,
+    civil,civilCandidates,requiredUnits,passedUnits,isGraduationSheet,programmeText,
     unitCandidates:allUnitCandidates,passedUnitCandidates,requiredUnitCandidates,
     signals:{title:titleOk,programme:programmeOk,requiredUnits:requiredLabelOk,passedUnits:passedLabelOk,authority:authorityOk},
     text:plain.slice(0,20000),normalizedText:folded.slice(0,20000),

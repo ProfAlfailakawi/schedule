@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePageAwake } from "../utils/pageAwake";
 import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, CheckCheck, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
+import { NOTIFY_FOCUS_KEY, writeNotifyFocus } from "../utils/notifyFocus";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 /**
  * ── مركز الإشعارات ──────────────────────────────────────────────────────────
@@ -34,19 +37,16 @@ const when = (iso?: string) => {
   if (Number.isNaN(date.getTime())) return "";
   const minutes = Math.round((Date.now() - date.getTime()) / 60000);
   if (minutes < 1) return "الآن";
-  if (minutes < 60) return minutes === 1 ? "قبل دقيقة" : minutes === 2 ? "قبل دقيقتين" : `قبل ${minutes} دقيقة`;
+  if (minutes < 60) return minutes === 1 ? "قبل دقيقة" : minutes === 2 ? "قبل دقيقتين" : `قبل ${countOf(minutes, oblique(AR.minute))}`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return hours === 1 ? "قبل ساعة" : hours === 2 ? "قبل ساعتين" : `قبل ${hours} ساعات`;
+  if (hours < 24) return hours === 1 ? "قبل ساعة" : hours === 2 ? "قبل ساعتين" : `قبل ${countOf(hours, oblique(AR.hour))}`;
   return date.toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" });
 };
 
-/* الإشعارُ يعرف قسمه: يُترك النطاقُ للشاشة التي يُفتح عليها، فتفتح عليه مباشرة. */
-export const NOTIFY_FOCUS_KEY = "schedule:notify-focus";
-const focusOn = (item: CenterNotification) => {
-  try {
-    if (item.collegeId) sessionStorage.setItem(NOTIFY_FOCUS_KEY, JSON.stringify({ view: item.view, collegeId: item.collegeId, sectionId: item.sectionId || 0, at: Date.now() }));
-  } catch { /* تخزينٌ ممنوع: تُفتح الشاشةُ على نطاقها المعتاد */ }
-};
+/* الإشعارُ يعرف قسمه: يُترك النطاقُ للشاشة التي يُفتح عليها، فتفتح عليه مباشرة
+   (src/utils/notifyFocus.ts — الكاتب والقارئ في ملفٍّ واحد). */
+export { NOTIFY_FOCUS_KEY };
+const focusOn = (item: CenterNotification) => writeNotifyFocus(item);
 
 export default function NotificationCenter({ userKey, onNavigate }: Props) {
   const [items, setItems] = useState<CenterNotification[]>([]);
@@ -89,7 +89,13 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
       .catch(() => undefined);
   }, []);
 
+  /* الجرسُ ينام مع اللسان (pageAwake.ts): لسانٌ منسيٌّ في الخلفية كان يسأل كل
+     دقيقة ويُبقي خيطاً مفتوحاً طوال الليل، وكلُّ سؤالٍ يقرأ الفصل. يبقى مستيقظاً
+     دقيقةً بعد الإخفاء (فيصل تنبيهُ سطح المكتب لما يجري حينها)، ثم ينام، ويسأل
+     فورَ عودة اللسان. */
+  const pageAwake = usePageAwake();
   useEffect(() => {
+    if (!pageAwake) return;
     load();
     const timer = window.setInterval(load, 60000);
     window.addEventListener("focus", load);
@@ -110,7 +116,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
       window.removeEventListener("focus", load);
       source?.close();
     };
-  }, [load]);
+  }, [load, pageAwake]);
 
   useEffect(() => {
     if (!toast) return;
@@ -188,7 +194,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
           <header>
             <div>
               <strong>الإشعارات</strong>
-              <small>{mine ? (mine === 1 ? "أمرٌ واحد ينتظرك" : mine === 2 ? "أمران ينتظرانك" : `${mine} أمور تنتظرك`) : "لا شيء مطلوبٌ منك الآن"}</small>
+              <small>{mine ? `${countOf(mine, AR.matter)} ${nounFor(mine, AR.waitsYouVerb)}` : "لا شيء مطلوبٌ منك الآن"}</small>
             </div>
             <span className="notify-actions">
               {fresh ? (

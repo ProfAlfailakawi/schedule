@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Building2, GraduationCap, Landmark, Trash2 } from "lucide-react";
 import { sortByName } from "../utils/sorting";
+import { suggestedDegreeRule } from "../utils/degreeRules";
 import {
   AddButton,
   EmbeddedAction,
@@ -70,41 +71,33 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
     void load();
   }, []);
   /**
-   * The rule a department is judged by, always shown.
+   * The rule a department is judged by, always shown — and honest about
+   * whether it is one.
    *
-   * The server sends the department's current stable values. If no row has ever
-   * been saved, the legacy defaults are used silently as the current values —
-   * no approval step and no "suggested" state. The coordinator changes them
-   * only by explicitly pressing تعديل القواعد and saving.
+   * A department nobody has saved a rule for gets a SUGGESTION derived from its
+   * name (src/utils/degreeRules.ts, the one copy). Graduate proof refuses to
+   * run on a suggestion, so the card says so and offers to save it.
    */
-  const seededRule = (name: string) => {
-    const degreeUnits = /فرنسي/.test(name) ? 132
-      : /انجليزي|إنجليزي|تربية خاصة|تفوق|إعاقة|صعوبات/.test(name) ? 134 : 130;
-    return degreeUnits === 130
-      ? { degreeUnits, fieldTrainingRequired: 102, graduateRegularPassed: 107, graduateSummerPassed: 109 }
-      : degreeUnits === 132
-        ? { degreeUnits, fieldTrainingRequired: 107, graduateRegularPassed: 109, graduateSummerPassed: 111 }
-        : { degreeUnits, fieldTrainingRequired: 107, graduateRegularPassed: 111, graduateSummerPassed: 113 };
-  };
   const ruleFor = (section: any) => {
     const stored = rules.find((row: any) => Number(row.AdSectionId) === Number(section?.AdSectionId));
     if (stored) return stored;
-    return { AdSectionId: section?.AdSectionId, ...seededRule(String(section?.AdSectionName || "")), reviewed: true, updatedBy: "" };
+    return { AdSectionId: section?.AdSectionId, ...suggestedDegreeRule(String(section?.AdSectionName || "")), reviewed: false, suggested: true, updatedBy: "" };
   };
-  const saveRule = async () => {
-    if (!ruleDraft) return;
+  const saveRule = async (explicit?: any) => {
+    const draftToSave = explicit || ruleDraft;
+    if (!draftToSave) return;
     setRuleBusy(true); setRuleNote(null);
     try {
-      const response = await fetch(`/api/degree-rules/${ruleDraft.AdSectionId}`, {
+      const response = await fetch(`/api/degree-rules/${draftToSave.AdSectionId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(ruleDraft),
+        body: JSON.stringify(draftToSave),
       });
       const saved = await response.json();
       if (!response.ok) throw new Error(saved.error || "تعذّر حفظ قواعد التخرج");
       setRules(current => current.some((row: any) => Number(row.AdSectionId) === Number(saved.AdSectionId))
-        ? current.map((row: any) => Number(row.AdSectionId) === Number(saved.AdSectionId) ? { ...row, ...saved, reviewed: true } : row)
-        : [...current, { ...saved, reviewed: true }]);
+        ? current.map((row: any) => Number(row.AdSectionId) === Number(saved.AdSectionId) ? { ...row, ...saved, reviewed: true, suggested: false } : row)
+        : [...current, { ...saved, reviewed: true, suggested: false }]);
       setRuleDraft(null);
       setRuleNote("حُفظت قواعد التخرج. الاستبيان يقيس كشوف الدرجات عليها من الآن.");
     } catch (e: any) {
@@ -355,7 +348,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                     <header>
                       <div>
                         <span className="surface-kicker"><GraduationCap aria-hidden="true" /> وحدات القسم وشروط التخرج</span>
-                        <small>{rule.updatedBy ? `آخر تعديل بواسطة ${rule.updatedBy}` : "قيم القسم الحالية"}</small>
+                        <small>{rule.suggested ? "اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين" : rule.updatedBy ? `آخر تعديل بواسطة ${rule.updatedBy}` : "قيم القسم المحفوظة"}</small>
                       </div>
                       <div className="degree-rule-actions degree-rule-actions-top">
                         {draft ? (
@@ -368,15 +361,31 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                             </SecondaryButton>
                           </>
                         ) : (
+                          <>
+                          {rule.suggested ? (
+                            <PrimaryButton
+                              data-guide-ignore="حفظ الاقتراح كما هو قاعدةً للقسم داخل شاشة الإدارة"
+                              onClick={() => void saveRule({ ...rule })}
+                              disabled={ruleBusy}
+                            >
+                              {ruleBusy ? "يحفظ…" : "احفظ الاقتراح"}
+                            </PrimaryButton>
+                          ) : null}
                           <SecondaryButton
                             data-guide-ignore="تحرير قواعد التخرج له حفظ صريح داخل نفس البطاقة"
                             onClick={() => { setRuleNote(null); setRuleDraft({ ...rule }); }}
                           >
                             تعديل القواعد
                           </SecondaryButton>
+                          </>
                         )}
                       </div>
                     </header>
+                    {rule.suggested ? (
+                      <Notice type="warning">
+                        اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين. هذه قيمٌ مقترحة من اسم القسم، ولا يُقاس عليها أي طالب قبل حفظها.
+                      </Notice>
+                    ) : null}
                     <p>
                       عليها يقيس استبيان الطلبة كشف الدرجات المرفوع قبل أن يفتح حالة الخريج أو المتوقع تخرجه،
                       ويُختار الرقم حسب نوع الفصل الذي صدر فيه الرابط — عادي أو صيفي.

@@ -31,7 +31,11 @@ const guard = server.slice(
 check(guard.length > 300, "حارسُ التعديل مقروءٌ للتدقيق");
 check(guard.includes("req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number,"),
   "ويعرف من يطلب، لا النطاقَ وحدَه — فالمنعُ يختلف بالصفة");
-check(guard.includes('term?.AdTermClosed === true && !isCommittee'),
+/* الحكمُ نفسُه صار في `approvalLockReason` (تدقيق الدورة R21): الحارسُ يقرؤه
+   منها، والشاشةُ تقرؤه منها — فلا نسختان. */
+const lockRule = fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8");
+check(guard.includes("term?.AdTermClosed === true") && guard.includes("approvalLockReason(")
+  && lockRule.includes("if (context.termClosed && !context.isCommittee)"),
   "وفصلٌ انتهى لا يُعدَّل إلا من لجنة الجدول");
 /* ── واللجنةُ تُعرف بصفتها المكتوبة، لا بالافتراض ──────────────────────────
  * `signatureStage` تسقط إلى `committeeChair` حين لا تُعرف الصفة، فحسابٌ بلا
@@ -40,7 +44,7 @@ check(guard.includes('term?.AdTermClosed === true && !isCommittee'),
  * البابُ الظاهرُ المسجَّل الذي وُضع ليكون الطريقَ الوحيد. */
 check(guard.includes("const isCommittee = isAcademicRole(role) && signatureStage(role) === \"committee\";"),
   "وتُشترط صفةٌ مكتوبةٌ صراحةً، فلا يمرّ حسابٌ بلا صفةٍ لأن الغيابَ يسقط إلى اللجنة");
-check(guard.includes("انتهى هذا الفصل."),
+check(lockRule.includes("انتهى هذا الفصل."),
   "ويُقال السببُ بلفظه، لا «غير مسموح»");
 
 /* والعلَمُ الصريحُ وحدَه: `isTermClosed` تعدّ كلَّ فصلٍ ليس الأحدثَ منتهياً،
@@ -125,7 +129,7 @@ const issueDoor = server.slice(
   server.indexOf('app.post("/api/instructor-requests/issue"'),
   server.indexOf('app.get("/api/instructor-requests"'),
 );
-check(issueDoor.includes("const issueLock = await scheduleLockRefusal(req, collegeId, sectionId, termId);"),
+check(issueDoor.includes("const issueLock = await scheduleLockRefusal(req, collegeId, sectionId, termId, { registrarLock: false });"),
   "فلا تُصدَر روابطُ رغباتٍ على فصلٍ مجمَّد");
 /* والحارسُ قبل إنشاء الروابط، لا بعده: رابطٌ أُنشئ ثم رُدّ الطلبُ يبقى في
    المخزن ويصل صاحبَه. */

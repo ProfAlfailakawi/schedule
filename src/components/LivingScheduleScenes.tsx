@@ -14,6 +14,7 @@ import {
 
 import { scheduleClockForDisplay } from "../utils/scheduleTime";import { Badge } from "./ui";
 import type { AdCourse, FSchedule } from "../types";
+import { AR, countOf } from "../utils/arabicCount";
 
 export type LivingScene =
   | "pulse"
@@ -213,7 +214,7 @@ export function TopologyScene({ topology }: { topology: any }) {
           </p>
         </div>
         <Badge tone={conflicts ? "warning" : "success"}>
-          {conflicts ? `${conflicts} موضع تحقق` : "بلا موانع"}
+          {conflicts ? `${countOf(conflicts, AR.position)} للتحقق` : "بلا موانع"}
         </Badge>
       </header>
 
@@ -234,7 +235,7 @@ export function TopologyScene({ topology }: { topology: any }) {
                 </div>
                 <div className="rank-weight">
                   <i aria-hidden="true"><b style={{ width: `${(issues / worst) * 100}%` }} /></i>
-                  <em>{issues} إشارة</em>
+                  <em>{countOf(issues, AR.signal)}</em>
                 </div>
               </li>
             );
@@ -442,7 +443,7 @@ export function HealthScene({ living }: { living: any }) {
             <ul>
               {singles.map((room: any) => (
                 <li key={room.key} className="danger">
-                  <span className="list-name">{room.code}/{room.hall}<small>{room.sessions} موعد</small></span>
+                  <span className="list-name">{room.code}/{room.hall}<small>{countOf(room.sessions, AR.appointment)}</small></span>
                   <i aria-hidden="true"><b style={{ width: `${Math.min(100, room.risk)}%` }} /></i>
                   <em>{room.risk}</em>
                 </li>

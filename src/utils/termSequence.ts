@@ -221,3 +221,56 @@ export function isTermClosed(
      سجل للقراءة وحدها. */
   return term.AdTermClosed === true;
 }
+
+/**
+ * ── موقعُ فصلٍ من الزمن، كما تقوله بطاقة الأستاذ ────────────────────────────
+ *
+ * كانت البطاقة تقول «فصل سابق» عن كل فصلٍ ليس الجاري — ومنه الفصلُ القادم
+ * الذي أُرسل للأستاذ جدولُه للتوّ — وتُخفي عنه التقويم. «سابق» لا يُقال إلا
+ * لفصلٍ انقضت نهايته (`termHasEnded`)؛ وما لم يبدأ ولم ينتهِ فهو «قادم».
+ */
+export type TermPhase = "current" | "past" | "upcoming";
+
+export function termPhase(
+  term: (Parameters<typeof termWindow>[0] & { AdTermId?: number }) | null | undefined,
+  liveTermId: number,
+  now: number = Date.now(),
+): TermPhase {
+  if (term && Number(term.AdTermId || 0) && Number(term.AdTermId) === Number(liveTermId || 0)) return "current";
+  const ended = termHasEnded(term, now);
+  return ended ? "past" : "upcoming";
+}
+
+/**
+ * ── فصلُ التخطيط ────────────────────────────────────────────────────────────
+ *
+ * الجرسُ والعدّاد كانا يقرآن الفصلَ الجاري وحده. لكنّ دورة الاعتماد تجري في
+ * الغالب على الفصل التالي — يُبنى جدولُه ويُرسَل ويُرجَع والجاري يُدرَّس. فكان
+ * القسمُ يُرجَع جدولُه للفصل القادم ولا يرنّ له شيء.
+ *
+ * فصلُ التخطيط هو أحدثُ فصلٍ لم ينتهِ (لم يُغلق ولم تنقضِ نافذته)، غيرُ
+ * الجاري، وفيه نشاطٌ فعلاً (مواعيد أو سجلُّ اعتماد). وبلا نشاطٍ لا فصلَ
+ * تخطيط: فصلٌ أُنشئ اسماً لا يُنبّه أحداً. صفرٌ حين لا يوجد.
+ */
+export function planningTermCandidates(
+  terms: ReadonlyArray<{ AdTermId?: number; AdTermName?: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean }>,
+  now: number = Date.now(),
+): number[] {
+  const current = currentTermId(terms, now);
+  const currentRank = termChronology(terms.find(item => Number(item.AdTermId) === current));
+  return sortTermsNewest(terms)
+    .filter(term => {
+      const id = Number(term.AdTermId || 0);
+      return Boolean(id) && id !== current && term.AdTermClosed !== true && !termHasEnded(term, now)
+        && termChronology(term) >= currentRank;
+    })
+    .map(term => Number(term.AdTermId));
+}
+
+export function planningTermId(
+  terms: ReadonlyArray<{ AdTermId?: number; AdTermName?: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean }>,
+  hasActivity: (termId: number) => boolean,
+  now: number = Date.now(),
+): number {
+  return planningTermCandidates(terms, now).find(hasActivity) || 0;
+}

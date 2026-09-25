@@ -678,12 +678,12 @@ const spacedCivilProof = graduationSheetFacts(`
 الهيئة العامة للتعليم التطبيقي والتدريب
 الخطة الدراسية
 240820260808
-نوره غازي عبيد الرحماني 3041 0230 1536
+طالب تجريبي 3000 1010 0122
 البرنامج اسلامية تربية خاصة
 الوحدات المطلوبة 134
 الوحدات المجتازة 114
 `);
-assert.ok(spacedCivilProof.civilCandidates.includes("304102301536"));
+assert.ok(spacedCivilProof.civilCandidates.includes("300010100122"));
 assert.ok(spacedCivilProof.civilCandidates.includes("240820260808"));
 
 /* ── الفرع: القسم الواحد في ثلاثة مواقع ────────────────────────────────────
