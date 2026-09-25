@@ -467,5 +467,12 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(server.includes("const key = `${Repository.currentDemoSessionId() || \"\"}:${termId}:${collegeId}:${sectionId}`;"), "R4 المفتاح يحمل جلسة العرض والفصل والقسم");
 }
 
+/* ── مراجعة 9: «اليوم» في الجرس بتوقيت الكويت ─────────────────────────── */
+{
+  const bell = fnBody("async function notificationItemsForTerm(");
+  check(bell.includes("const today = kuwaitDateISO();") && !bell.includes("toISOString().slice(0, 10)"), "R9 الجرسُ يعدّ الأيام بتوقيت الكويت كالوارد");
+  check(!/const today = new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/.test(server), "R9 لا «اليوم» بالساعة العالمية في الخادم");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

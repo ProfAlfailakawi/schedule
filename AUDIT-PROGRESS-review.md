@@ -10,3 +10,4 @@
 | 6 | FIXED | tests/relay-fixes-audit.ts «R6-review» (marker behaviour on demo repo + structural settle points); client not yet reading X-Approval-Amendment header |
 | 7 | FIXED | tests/relay-fixes-audit.ts «R7-review»; tests/blockers-stream-audit.ts B9 updated |
 | 8 | FIXED (decision: department + personal staff links and request links read to term end; writes close at requestsCloseAt/window.closesAt) | tests/doctor-journey-audit.ts «R8-review» |
+| 9 | FIXED | tests/dean-notify-audit.ts «R9» |

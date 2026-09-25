@@ -10428,7 +10428,9 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
   const inScope = (sections as any[]).filter(row =>
     req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
-  const today = new Date().toISOString().slice(0, 10);
+  /* «اليوم» بتوقيت الكويت كما في الوارد (R15): بين منتصف الليل والثالثة فجراً
+     كان الجرسُ يعدّ الأمسَ يوماً جارياً، فيقول «يومٌ باقٍ» والوارد «انقضى». */
+  const today = kuwaitDateISO();
   const department = role === "committeeChair" || role === "departmentHead";
   /* ── طلباتُ الأساتذة تصل من يعمل على الجدول، أيّاً كانت صفته ───────────────
    * كانت تُحسب للجنة ورئيس القسم وحدهما، وبقسم الطلب لا بقسم البند: فطلبٌ
