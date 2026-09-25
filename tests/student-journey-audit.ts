@@ -13,6 +13,7 @@ import { validateCivilId } from "../src/utils/civilId";
 import { suggestedDegreeRule } from "../src/utils/degreeRules";
 import { graduationProgrammeText, graduationSheetFacts } from "../src/utils/documentOcr";
 import { createCoalescer, createTtlMemo, studentQueueAggregate } from "../src/server/notificationCache";
+import { chooseStudentCaseSecret } from "../src/server/studentCaseSecret";
 import { applyStudentCaseDecision, isCaseLevelNeed, studentCaseRefusal, studentCaseStatus } from "../src/utils/studentCaseDecision";
 
 /* مخزنٌ محليٌّ معزول لكل تشغيل: لا يلمس بيانات أحد. */
@@ -458,6 +459,36 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const center = read("src/components/NotificationCenter.tsx");
   check(center.includes("const pageAwake = usePageAwake();") && center.includes("if (!pageAwake) return;") && center.includes("}, [load, pageAwake]);"),
     "R2 الجرس ينام مع اللسان المخفيّ");
+}
+
+/* ── مراجعة 3: سرُّ هوية الطلبة — المحفوظ هو الحَكَم ──────────────────── */
+{
+  const gen = () => "generated";
+  check(chooseStudentCaseSecret({ configured: "", stored: "S", generate: gen }).secret === "S", "R3 المحفوظ يُستعمل");
+  const conflict = chooseStudentCaseSecret({ configured: "ENV", stored: "S", generate: gen });
+  check(conflict.secret === "S" && conflict.conflict && !conflict.persist, "R3 متغيّرٌ يخالف المحفوظ يُرفض ولا يُفسد الختم");
+  const equal = chooseStudentCaseSecret({ configured: " S ", stored: "S", generate: gen });
+  check(equal.secret === "S" && !equal.conflict, "R3 متغيّرٌ يساوي المحفوظ مقبول");
+  const seeded = chooseStudentCaseSecret({ configured: "ENV", stored: "", generate: gen });
+  check(seeded.secret === "ENV" && seeded.persist, "R3 المتغيّر يبذر السرّ إن لم يُحفظ شيءٌ بعد، ويُثبَّت");
+  const fresh = chooseStudentCaseSecret({ configured: undefined, stored: undefined, generate: gen });
+  check(fresh.secret === "generated" && fresh.persist, "R3 وإلا يُولَّد ويُحفظ");
+
+  const repo = read("src/db/repository.ts");
+  const getter = between(repo, "async function getOrCreateStudentCaseSecret", "/** الأحدث أولاً");
+  check(!getter.includes("env.CALENDAR_SECRET") && getter.includes("process.env.STUDENT_CASE_SECRET") && getter.includes("chooseStudentCaseSecret("),
+    "R3 CALENDAR_SECRET لا يُقرأ في سرّ الطلبة، والقاعدة في مكانٍ واحد");
+  check((getter.match(/chooseStudentCaseSecret\(/g) || []).length >= 2 && getter.includes("console.error"), "R3 Firestore والملف المحلي بالقاعدة نفسها، والتعارض يُسجَّل");
+  const bridge = between(server, "const openStudentIdentity=async", "/** The name-derived SUGGESTION");
+  check(bridge.includes("process.env.CALENDAR_SECRET") && bridge.includes("decryptWith(createHmac"), "R3 فكُّ الختم القديم بـCALENDAR_SECRET باقٍ");
+
+  /* سلوكيّاً في المسار المحلي: ضبطُ CALENDAR_SECRET بعد الختم لا يغيّر السرّ. */
+  const before = await Repository.getStudentCaseSecret();
+  process.env.CALENDAR_SECRET = "late-calendar-secret";
+  const quietErr = console.error; const logged: string[] = []; console.error = (m: any) => { logged.push(String(m)); };
+  try {
+    check(await Repository.getStudentCaseSecret() === before, "R3 ضبطُ CALENDAR_SECRET لاحقاً لا يغيّر سرّ الطلبة");
+  } finally { delete process.env.CALENDAR_SECRET; console.error = quietErr; }
 }
 
 /* ── S20 تعليقات الخصوصية تقول الحقيقة ─────────────────────────────────── */

@@ -1,4 +1,5 @@
 import fs from "fs";
+import { chooseStudentCaseSecret, STUDENT_CASE_SECRET_CONFLICT_MESSAGE, type StudentCaseSecretChoice } from "../server/studentCaseSecret";
 import { AsyncLocalStorage } from "async_hooks";
 import { cachedReference, cachedSchedules, invalidateReference, invalidateSchedules, REFERENCE_KEYS } from "./referenceCache";
 import path from "path";
@@ -2177,43 +2178,52 @@ let localStudentCaseSecretCache = "";
  * Stable key material for student-case fingerprints and field-level identity
  * encryption. Cloud Run can serve two consecutive requests from two different
  * instances, so a per-process random secret makes a case written by instance A
- * unreadable to instance B. Prefer an operator-owned environment secret; when
- * that is not configured, create one shared secret once in Firestore. Local
- * mode keeps the same 0600 key beside the private database, outside the release.
+ * unreadable to instance B. The STORED secret (Firestore, or the 0600 local key
+ * beside the private database) always wins; STUDENT_CASE_SECRET only seeds it
+ * when nothing is stored yet, and is refused loudly if it differs. CALENDAR_SECRET
+ * is never read here (see src/server/studentCaseSecret.ts).
  */
 async function getOrCreateStudentCaseSecret(): Promise<string> {
-  const configured = String(process.env.STUDENT_CASE_SECRET || process.env.CALENDAR_SECRET || "").trim();
-  if (configured) return configured;
+  /* القاعدة في src/server/studentCaseSecret.ts: المحفوظ هو الحَكَم، و
+     CALENDAR_SECRET لا يُقرأ هنا. */
+  const configured = String(process.env.STUDENT_CASE_SECRET || "").trim();
+  const generate = () => randomBytes(32).toString("hex");
+  const warnConflict = (choice: StudentCaseSecretChoice) => {
+    if (choice.conflict) console.error(`[student-case-secret] ${STUDENT_CASE_SECRET_CONFLICT_MESSAGE}`);
+  };
 
   if (firestoreDb && !demoSandboxContext.getStore()) {
     if (studentCaseSecretCache) return studentCaseSecretCache;
     const ref = firestoreDb.doc(STUDENT_CASE_SECRET_DOC);
-    const secret = await firestoreDb.runTransaction(async tx => {
+    const choice = await firestoreDb.runTransaction(async tx => {
       const snap = await tx.get(ref);
-      const existing = String(snap.data()?.secret || "").trim();
-      if (existing) return existing;
-      const created = randomBytes(32).toString("hex");
-      tx.set(ref, { secret: created, createdAt: new Date().toISOString(), purpose: "student-case-identity-v1" });
-      return created;
+      const picked = chooseStudentCaseSecret({ configured, stored: snap.data()?.secret, generate });
+      if (picked.persist) {
+        tx.set(ref, { secret: picked.secret, createdAt: new Date().toISOString(), purpose: "student-case-identity-v1", source: configured ? "env" : "generated" });
+      }
+      return picked;
     });
-    studentCaseSecretCache = secret;
-    return secret;
+    warnConflict(choice);
+    studentCaseSecretCache = choice.secret;
+    return choice.secret;
   }
 
   if (localStudentCaseSecretCache) return localStudentCaseSecretCache;
   const file = path.join(DB_DIR, "student-case-identity.key");
-  if (fs.existsSync(file)) {
-    localStudentCaseSecretCache = fs.readFileSync(file, "utf8").trim();
-    if (localStudentCaseSecretCache) return localStudentCaseSecretCache;
+  const readStored = () => (fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : "");
+  let choice = chooseStudentCaseSecret({ configured, stored: readStored(), generate });
+  if (choice.persist) {
+    fs.mkdirSync(DB_DIR, { recursive: true, mode: 0o700 });
+    try { fs.writeFileSync(file, `${choice.secret}\n`, { mode: 0o600, flag: "wx" }); }
+    catch (error: any) {
+      if (error?.code !== "EEXIST") throw error;
+      /* سبقنا غيرُنا إلى الكتابة: ما كُتب هو الحَكَم. */
+      choice = chooseStudentCaseSecret({ configured, stored: readStored(), generate });
+    }
   }
-  fs.mkdirSync(DB_DIR, { recursive: true, mode: 0o700 });
-  const created = randomBytes(32).toString("hex");
-  try { fs.writeFileSync(file, `${created}\n`, { mode: 0o600, flag: "wx" }); }
-  catch (error: any) {
-    if (error?.code !== "EEXIST") throw error;
-  }
-  localStudentCaseSecretCache = fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : created;
-  return localStudentCaseSecretCache || created;
+  warnConflict(choice);
+  localStudentCaseSecretCache = choice.secret;
+  return localStudentCaseSecretCache;
 }
 
 /** الأحدث أولاً، ويحتمل ملاحظةً بلا تاريخ — من ترحيلٍ أو نسخةٍ احتياطية. */
