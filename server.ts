@@ -11745,8 +11745,9 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   const { termId, collegeId, sectionId, instructorId, building, hall, courseId, courseCode, civil, startTime, endTime } = req.query;
   let resolvedTermId=Number(termId||0);
   if(!resolvedTermId){const terms=await Repository.getTerms();resolvedTermId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
-  let schedules = await Repository.getSchedulesByScope({termId:resolvedTermId,collegeId:Number(collegeId||0),sectionId:Number(sectionId||0)});
-  schedules = filterByScope(req, schedules);
+  /* قارئ الطلب نفسه (N12): نطاقٌ من الحَكَم الواحد، والنهائيُّ وحده للعميدين —
+     كان الملفّ يُخرج المسوّدات التي لا تعرضها الشاشة لهما. */
+  let schedules = await readSchedulesForRequest(req, Number(collegeId||0), Number(sectionId||0), resolvedTermId);
 
   if (instructorId) schedules = schedules.filter(s => s.AdInstructorId === parseInt(instructorId as string));
   if (building) schedules = schedules.filter(s => String(s.AdRoomCode || "").includes(String(building)));
@@ -11770,7 +11771,8 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   ]);
   const collegeById = new Map(colleges.map(x => [x.AdCollegeId, x]));
   const sectionById = new Map(sections.map(x => [x.AdSectionId, x]));
-  const instructorById = new Map(instructors.map(x => [x.AdInstructorId, x]));
+  /* الرقم المدني لا يصل صفات الاطّلاع (N13) — ولا في الملفّ. */
+  const instructorById = new Map(instructorsForReader(req, instructors).map(x => [x.AdInstructorId, x]));
   const courseById = new Map(courses.map(x => [x.AdCourseId, x]));
 
   // These two read through a relation, so they wait for the maps above.

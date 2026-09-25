@@ -274,5 +274,16 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(load.includes("readsFinalSchedulesOnly(req) ? await finalRowsOnly(scoped.rows, termId)"), "N10: «قاعاتي» للعميدين من النهائي وحده");
 }
 
+/* ══ N12 — Excel بقارئ الطلب، وزرٌّ في مساحة التقرير ═════════════════════ */
+{
+  const excel = routeBody('app.get("/api/reports/excel/:type"');
+  check(excel.includes("readSchedulesForRequest(req, Number(collegeId||0), Number(sectionId||0), resolvedTermId)"), "N12: الملفّ يُقرأ بقارئ الطلب (النهائي للعميدين)");
+  check(!excel.includes("Repository.getSchedulesByScope({termId:resolvedTermId"), "N12: لا قراءةَ خامٍ في التصدير");
+  check(excel.includes("instructorsForReader(req, instructors)"), "N13: الرقم المدني لا يخرج في الملفّ لصفات الاطّلاع");
+  const reports = read("src/components/Reports.tsx");
+  const at = reports.indexOf("/api/reports/excel/ListofTeacherCourseExcel?");
+  check(at > 0 && reports.slice(at - 200, at + 400).includes("data-guide-ignore="), "N12: زرّ «تصدير Excel» في مساحة التقرير بسمة المرشد");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

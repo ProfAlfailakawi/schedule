@@ -4,7 +4,7 @@ import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, ClipboardList, Clock3, LayoutList,
   CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X,
-  ShieldCheck,
+  ShieldCheck, FileSpreadsheet,
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
@@ -469,6 +469,17 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     building: cleanOptionText(saved.filters?.building || ""),
     hall: cleanOptionText(saved.filters?.hall || ""),
   }));
+  /* مرشّحات الشاشة كما هي، لملفّ Excel (N12). */
+  const excelQuery = useMemo(() => {
+    const query = new URLSearchParams();
+    const put = (key: string, value: unknown) => { if (value !== undefined && value !== null && value !== "" && value !== 0 && value !== false) query.set(key, String(value)); };
+    put("termId", filters.termId); put("collegeId", filters.collegeId); put("sectionId", filters.sectionId);
+    put("instructorId", filters.instructorId); put("courseId", filters.courseId); put("courseCode", filters.courseCode);
+    put("building", filters.building); put("hall", filters.hall); put("civil", filters.civil);
+    if (filters.startTime && filters.endTime) { put("startTime", filters.startTime); put("endTime", filters.endTime); }
+    (["sun", "mon", "tue", "wed", "thr"] as const).forEach(day => { if (filters[day]) query.set(day, "true"); });
+    return query.toString();
+  }, [filters]);
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   /**
@@ -2056,6 +2067,19 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               >
                 <Printer aria-hidden="true" />
               </button>
+              {/* ── تصدير Excel (N12) ────────────────────────────────────────
+                  الملفّ بمرشّحات الشاشة نفسها، ومن قارئ الخادم نفسه: العميدان
+                  يُصدّران النهائيَّ وحده، والرقمُ المدني لا يخرج لصفات الاطّلاع. */}
+              <a
+                className="query-print-icon"
+                href={`/api/reports/excel/ListofTeacherCourseExcel?${excelQuery}`}
+                download
+                data-guide-ignore="تنزيل ملف Excel بمرشحات العرض الحالي؛ قراءة فقط ولا يغيّر بيانات الجدول"
+                aria-label="تصدير Excel"
+                title="تصدير Excel"
+              >
+                <FileSpreadsheet aria-hidden="true" />
+              </a>
               {/* ── السؤال يُطرح عند الضغط، لا قبله ────────────────────────────
                   زر لكل تقرير، ومفتاح دائم للنطاق: ثلاثة عناصر تشغل الشريط
                   طوال الوقت لأجل قرار يُتخذ لحظةَ الطباعة فقط. فصار الزر يسأل
