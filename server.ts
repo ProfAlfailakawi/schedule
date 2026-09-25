@@ -549,6 +549,16 @@ function rateLimitLogin(req: Request, res: Response, next: NextFunction) {
  * one library-backed limiter in the file, kept generous (thirty switches a
  * minute per address) so demoing every role never hits a wall.
  */
+/* تقرير التغييرات يقرأ الفصل ونسخه ويقارن: أثقلُ قراءةٍ يفتحها كل دور. حدٌّ
+   سخيٌّ لقارئٍ بشري، يمنع حلقةً مسعورة من تجميد الخادم للجميع. */
+const rateLimitHeavyReport = rateLimit({
+  windowMs: 60_000,
+  limit: 90,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "طلباتٌ كثيرة لهذا التقرير في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
+});
+
 const rateLimitDemoRole = rateLimit({
   windowMs: 60_000,
   limit: 30,
@@ -10737,7 +10747,7 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
  * والمحذوف والمعدّل. لقطات الجولات تبقى بديلاً للفصول القديمة التي لم
  * تُستورد لها وثيقة معتمدة.
  */
-app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }

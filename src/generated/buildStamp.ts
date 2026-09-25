@@ -1,2 +1,2 @@
 /** Generated each build by scripts/stamp-build.mjs — do not edit. */
-export const BUILD_STAMP = "20260925155857-jutina";
+export const BUILD_STAMP = "20260925160041-7smw24";
