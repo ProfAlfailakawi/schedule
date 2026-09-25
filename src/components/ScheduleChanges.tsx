@@ -32,6 +32,7 @@ import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
 import { DECISION_1912_LABEL, regulationScore, type RegulationFinding } from "../utils/scheduleRegulations";
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
+import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
 
 type NoteField = DiffFieldKey | "row";
 type NoteState = "open" | "changed" | "answered" | "resolved" | "removed";
@@ -133,6 +134,9 @@ interface Props {
   role: ScheduleChangesRole;
   /** نطاق القسم حين تُفتح الشاشة من جدول قسمٍ بعينه. */
   scope?: { collegeId: number; sectionId: number; collegeName?: string; sectionName?: string } | null;
+  /** صفوف نطاق القارئ كما وصلت الجلسة. */
+  scopes?: ScopeAssignmentLike[];
+  powerAdmin?: boolean;
 }
 
 const request = async (url: string, init?: RequestInit) => {
@@ -187,8 +191,11 @@ export function ApprovalChip({ status, late }: { status: ScheduleApprovalStatus;
 
 /* ── صندوق الوارد ───────────────────────────────────────────────────────── */
 
-function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onExtend }: {
+function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onExtend, scopes = [], powerAdmin = false }: {
   termId: number;
+  /** نطاق القارئ: منه وحده يُقرّر أيُرسم منتقي القسم (singleDepartmentOf). */
+  scopes?: ScopeAssignmentLike[];
+  powerAdmin?: boolean;
   terms: AdTerm[];
   onTermChange: (termId: number) => void;
   onOpen: (row: InboxRow) => void;
@@ -279,10 +286,11 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
       key: "college", label: "الكلية", value: collegeId, placeholder: "كل الكليات",
       options: collegeOptions,
     },
-    {
+    /* قسمٌ واحد في نطاق القارئ: لا منتقيَ له، كلوحة الجدول. */
+    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null ? [{
       key: "section", label: "القسم", value: sectionId, placeholder: "كل الأقسام",
       options: sectionOptions, disabled: sectionOptions.length === 0,
-    },
+    }] : []),
     {
       key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل",
       options: terms.map(row => ({ value: row.AdTermId, label: row.AdTermName })),
@@ -1263,7 +1271,7 @@ function Report({ termId, termName, scope, role, onBack }: {
 
 /* ── الشاشة ─────────────────────────────────────────────────────────────── */
 
-export default function ScheduleChanges({ role, scope }: Props) {
+export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin = false }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
   const [opened, setOpened] = useState<{ collegeId: number; sectionId: number; collegeName?: string; sectionName?: string } | null>(null);
@@ -1369,6 +1377,8 @@ export default function ScheduleChanges({ role, scope }: Props) {
             canExtend={role.canManageDeadline}
             onLoaded={setInboxRows}
             onExtend={(row) => setExtendFor({ row, nonce: Date.now() })}
+            scopes={scopes}
+            powerAdmin={powerAdmin}
             onOpen={(row) => setOpened({ collegeId: row.collegeId, sectionId: row.sectionId, collegeName: row.collegeName, sectionName: row.sectionName })}
           />
         </Surface>

@@ -41,6 +41,7 @@ import type { ReportMode } from "./components/Reports";
 import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
+import { singleDepartmentOf } from "./utils/scopeContext";
 import { warmStart } from "./utils/warmStart";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
 import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb, telemetryGuide } from "./utils/clientTelemetry";
@@ -1691,14 +1692,22 @@ export default function App() {
               canAnnotate: sessionRole.canAnnotate,
               signatureStage: sessionRole.signatureStage,
             }}
-            scope={scopes.length === 1 && Number(scopes[0]?.AdSectionId || 0) > 0 && !sessionRole.canReview
-              ? {
-                  collegeId: Number(scopes[0].AdCollegeId), sectionId: Number(scopes[0].AdSectionId),
-                  /* الاسمان يصلان مع النطاق نفسه؛ بدونهما كان رئيسُ القسم يقرأ
-                     في رأس تقريره «قسم 1» بدل اسم قسمه وكليته. */
-                  collegeName: String(scopes[0].AdCollegeName || ""), sectionName: String(scopes[0].AdSectionName || ""),
-                }
-              : null}
+            scopes={scopes}
+            powerAdmin={isPowerAdmin}
+            scope={(() => {
+              /* القسم الواحد يفتح على تقريره مباشرةً — بالقاعدة الواحدة نفسها
+                 التي تُخفي منتقي القسم في كل شاشة (singleDepartmentOf). */
+              const only = sessionRole.canReview ? null : singleDepartmentOf(scopes, 0, isPowerAdmin);
+              const row = only ? scopes.find((item: any) => Number(item?.AdSectionId) === only) : null;
+              return row
+                ? {
+                    collegeId: Number(row.AdCollegeId), sectionId: only as number,
+                    /* الاسمان يصلان مع النطاق نفسه؛ بدونهما كان رئيسُ القسم يقرأ
+                       في رأس تقريره «قسم 1» بدل اسم قسمه وكليته. */
+                    collegeName: String(row.AdCollegeName || ""), sectionName: String(row.AdSectionName || ""),
+                  }
+                : null;
+            })()}
           />
         ) : (
           unauthorized()
