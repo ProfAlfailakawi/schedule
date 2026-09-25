@@ -420,11 +420,13 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
               {/* طلبُ القسم يُقرأ في مكانه، و«تمديد» يُفتح مملوءاً بما طلب. */}
               {row.extensionRequest ? (
                 <small className="changes-extension-request">
-                  طلب تمديد {countOf(row.extensionRequest.days, oblique(AR.day))} — «{row.extensionRequest.reason}» · {row.extensionRequest.by}
+                  <b>طلب تمديد {countOf(row.extensionRequest.days, oblique(AR.day))}</b>
+                  <span>«{row.extensionRequest.reason}»</span>
+                  <i>· {row.extensionRequest.by}</i>
                 </small>
               ) : null}
               {canExtend && onExtend ? (
-                <button type="button" className="changes-extend" data-guide-ignore="يفتح ورقة الاستثناء في «مواعيد التسليم» على هذا القسم — التطبيق هناك هو الفعل" onClick={() => onExtend(row)}>
+                <button type="button" className="changes-extend" data-pending={row.extensionRequest ? "" : undefined} data-guide-ignore="يفتح ورقة الاستثناء في «مواعيد التسليم» على هذا القسم — التطبيق هناك هو الفعل" onClick={() => onExtend(row)}>
                   {row.extensionRequest ? "نظر الطلب" : row.deadline.extensionUntil ? "استثناء" : "تمديد"}
                 </button>
               ) : null}
