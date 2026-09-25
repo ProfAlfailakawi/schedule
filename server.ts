@@ -16435,6 +16435,38 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
 
   const nameOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
   const codeOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseCode || "")]));
+  /* «سلّمته للتسجيل» لا يُقال والتسجيلُ لا يرى الكشف أصلاً: التسجيلُ لا يقرأ
+     طلباتِ قسمٍ لم يوقّع جدولَه (registrarBlockReason). فما وافقت عليه اللجنة
+     وجدولُ قسمه غير موقّع يُقال فيه ما هو: بانتظار اكتمال اعتماد جدول القسم. */
+  const signedCache = new Map<number, boolean>();
+  const sectionSigned = async (sectionId: number) => {
+    if (!signedCache.has(sectionId)) signedCache.set(sectionId,
+      isFullySigned(await readApproval(Number(mine.AdCollegeId), sectionId, Number(mine.AdTermId))));
+    return Boolean(signedCache.get(sectionId));
+  };
+  const ownerOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), Number(row.AdSectionId || 0)]));
+  const surveySection = Number(mine.surveySectionId || mine.AdSectionId || 0);
+  const handedButUnsigned = async (courseId: number | null) =>
+    !(await sectionSigned(courseId === null ? surveySection : (ownerOf.get(courseId) || surveySection)));
+  const courseIdsForStudent = [
+    ...(Array.isArray(mine.courseIds) ? mine.courseIds : []),
+    ...(mine.courseStates || []).filter((entry: any) => entry?.droppedByStudent).map((entry: any) => entry.courseId),
+  ].filter((id: any, index: number, all: any[]) => all.map(Number).indexOf(Number(id)) === index);
+  const courseRows = await Promise.all(courseIdsForStudent.map(async (id: any) => {
+    const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
+    return {
+      code: codeOf.get(Number(id)) || "",
+      name: nameOf.get(Number(id)) || `مقرر ${id}`,
+      /* ما لم يُقل فيه شيءٌ بعد يبقى بلا حالة، ولا يُسمّى «بانتظار التسجيل»:
+         الانتظارُ قولٌ يقوله القسمُ حين يسلّم، لا حالةٌ تُفترض. */
+      state: state?.state === "awaiting-registration" && !state?.droppedByStudent && await handedButUnsigned(Number(id))
+        ? "awaiting-signatures" : (state?.state || ""),
+      reason: state?.reasonCode || "",
+      note: state?.note || "",
+      dropped: state?.droppedByStudent ? droppedCourseLabel(state) : "",
+    };
+  }));
+  const caseStatus = isCaseLevelNeed(mine) ? studentCaseStatus(mine.caseState) : "";
   res.json({
     found: true,
     /* الرقمُ نفسه الذي أُعطي له لحظةَ الإرسال، مشتقٌّ من معرّف السجلّ لا
@@ -16446,27 +16478,12 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     /* طلبُ الخريج لا مقرّرات فيه: قرارُه قرارٌ في الحالة كلها، ويصل الطالبَ
        بسببه وسطره كما تصل قراراتُ المقرّرات. */
     caseLevel: isCaseLevelNeed(mine),
-    caseStatus: isCaseLevelNeed(mine) ? studentCaseStatus(mine.caseState) : "",
+    caseStatus: caseStatus === "approved" && await handedButUnsigned(null) ? "awaiting-signatures" : caseStatus,
     caseDecision: isCaseLevelNeed(mine) ? {
       committee: mine.caseState?.committee ? { state: mine.caseState.committee.state, reason: mine.caseState.committee.reasonCode || "", note: mine.caseState.committee.note || "" } : null,
       registrar: mine.caseState?.registrar ? { state: mine.caseState.registrar.state, reason: mine.caseState.registrar.reasonCode || "", note: mine.caseState.registrar.note || "" } : null,
     } : null,
-    courses: [
-      ...(Array.isArray(mine.courseIds) ? mine.courseIds : []),
-      ...(mine.courseStates || []).filter((entry: any) => entry?.droppedByStudent).map((entry: any) => entry.courseId),
-    ].filter((id: any, index: number, all: any[]) => all.map(Number).indexOf(Number(id)) === index).map((id: any) => {
-      const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
-      return {
-        code: codeOf.get(Number(id)) || "",
-        name: nameOf.get(Number(id)) || `مقرر ${id}`,
-        /* ما لم يُقل فيه شيءٌ بعد يبقى بلا حالة، ولا يُسمّى «بانتظار التسجيل»:
-           الانتظارُ قولٌ يقوله القسمُ حين يسلّم، لا حالةٌ تُفترض. */
-        state: state?.state || "",
-        reason: state?.reasonCode || "",
-        note: state?.note || "",
-        dropped: state?.droppedByStudent ? droppedCourseLabel(state) : "",
-      };
-    }),
+    courses: courseRows,
   });
 });
 
@@ -16532,9 +16549,9 @@ var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),refBox=d
 go=document.getElementById("go"),out=document.getElementById("out");
 /* رقمُ الحالة يصل من صفحة الإرسال في جزء الرابط بعد # — لا يُرسَل إلى الخادم ولا يُحفظ. */
 try{var fromHash=decodeURIComponent(String(location.hash||"").slice(1));if(fromHash)refBox.value=fromHash.toUpperCase().slice(0,16)}catch(e){}
-var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","awaiting-signatures":"وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
 var TYPE={"new-course":"طلب فتح مقرر","course-conflict":"تعارض مقررين","graduate":"خريج / متوقع تخرجه"};
-var CASE={"pending":"وصل إلى القسم وينتظر نظر لجنة القسم","approved":"وافقت عليه لجنة القسم وسلّمته للتسجيل","committee-rejected":"لم توافق عليه لجنة القسم","registered":"نفّذه التسجيل","rejected":"ردّه التسجيل"};
+var CASE={"pending":"وصل إلى القسم وينتظر نظر لجنة القسم","approved":"وافقت عليه لجنة القسم وسلّمته للتسجيل","awaiting-signatures":"وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم","committee-rejected":"لم توافق عليه لجنة القسم","registered":"نفّذه التسجيل","rejected":"ردّه التسجيل"};
 var REASON={"no-seat":"لا مقاعد","prerequisite":"متطلّب سابق","level":"المستوى",
 "conflict":"تعارض في جدولك","closed":"الشعبة مغلقة","other":"سبب آخر",
 "not-eligible":"لا تنطبق عليك الشروط","not-in-plan":"ليس من خطتك الدراسية","duplicate":"طلب مكرر أو سبق تسجيله"};

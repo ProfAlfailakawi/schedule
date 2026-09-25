@@ -338,6 +338,17 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(sheet.includes("يقرّره قسم {course.decidedBySectionName") && sheet.includes("committeeActs && !course.readOnly"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
 }
 
+/* ── S15 «سلّمته للتسجيل» لا يُقال قبل التوقيعين ─────────────────────────── */
+{
+  const myCase = between(server, 'app.post("/api/public/survey/:token/my-case"', "function studentCaseStatusPage");
+  check(myCase.includes("isFullySigned(await readApproval(") && myCase.includes('"awaiting-signatures"'),
+    "S15 الموافقة قبل اكتمال توقيع جدول القسم تُعرض «بانتظار اكتمال الاعتماد»");
+  check(/state\?\.state === "awaiting-registration"[\s\S]{0,80}handedButUnsigned\(Number\(id\)\)/.test(myCase)
+    && myCase.includes('caseStatus === "approved" && await handedButUnsigned(null)'), "S15 للمقرّرات ولحالة الخريج معاً");
+  const page = between(server, "function studentCaseStatusPage", 'app.get("/m/:token"');
+  check(page.includes('"awaiting-signatures":"وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم"'), "S15 النصّ الصادق في صفحة الطالب");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
