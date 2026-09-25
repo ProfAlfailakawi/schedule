@@ -271,7 +271,7 @@ async function main() {
     check(issue.indexOf("emptyTerm: true") < issue.indexOf("for (const [instructorId, own] of byInstructor)"), "D11 قبل أي إصدار");
     const publish = read("src/components/SchedulePublish.tsx");
     check(publish.includes("data?.emptyTerm") && publish.includes("لم تُفتح طلبات تعديل لأحد"), "D11 الشاشة تقول الحقيقة لا «فُتحت»");
-    check(!publish.includes('.toLocaleString("ar-KW-u-nu-latn")} أستاذاً') && publish.includes("countOf(issued.created, AR.instructor)"), "D11 العدد بـcountOf");
+    check(!publish.includes('.toLocaleString("ar-KW-u-nu-latn")} أستاذاً') && publish.includes("countOf(issued.created, oblique(AR.instructor))"), "D11 العدد بـcountOf");
   }
 
 
