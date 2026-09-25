@@ -5152,6 +5152,22 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     blocked.push(...conflicts.filter((c: any) =>
       !c.soft && !movedIds.has(Number(c.rowId)) && (strict || isBlockingConflict(c))));
   }
+  /* ── المنقولةُ بعضُها مع بعض، في أماكنها الجديدة ─────────────────────────
+     الفحص أعلاه يقرأ كلَّ صفٍّ منقول مقابل الفصل كما هو الآن، ويتجاهل عمداً
+     الصفوفَ المنقولة الأخرى لأن أماكنها القديمة ستُخلى. لكنه بذلك لا يرى
+     أين ستقف هي: صفّان يُنقلان معاً إلى القاعة نفسها في الساعة نفسها كانا
+     يمرّان ثم يُكتبان حجزاً مزدوجاً. فيُقرأ المنقولُ بعضه مع بعض هنا، بالقاعدة
+     الواحدة نفسها. */
+  const movedRows: FSchedule[] = candidates.map((candidate: { row: FSchedule }) => candidate.row);
+  const movedById = new Map<number, FSchedule>(movedRows.map(row => [Number(row.id), row] as const));
+  for (const item of blockingConflicts(movedRows, movedRows, await approvalBlockerOptions())) {
+    const a = movedById.get(Number(item.rowId)), b = movedById.get(Number(item.otherId));
+    blocked.push({
+      ...item,
+      message: `${item.message} بين موعدين منقولين معاً`,
+      detail: `${a?.AdCourseName || "مقرر"} (شعبة ${a?.SCode || "—"}) و${b?.AdCourseName || "مقرر"} (شعبة ${b?.SCode || "—"}) في المكان والوقت الجديدين.`,
+    });
+  }
   if (blocked.length) {
     const first = blocked[0];
     res.status(409).json({
