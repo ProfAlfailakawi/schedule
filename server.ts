@@ -94,6 +94,7 @@ import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocat
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { fairShareByOwner } from "./src/utils/hallBarterFairness";
+import { scanRefusalMessage } from "./src/utils/documentOcr";
 import type { BranchScope } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
@@ -8285,9 +8286,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(422).json({error:message});return;
   }
   if(recognized.suspiciousExtraction){
-    const affected=recognized.pageDiagnostics.filter((page:any)=>page.suspicious);
-    const detail=affected.map((page:any)=>`الصفحة ${page.page}: ${page.reason||"لم تثبت هندسة الجدول"}`).join(" · ");
-    const message=`أوقفت الاستيراد لأن استخراج الجدول غير آمن. ${detail} لم يتم استيراد أي صف.`;
+    const message=scanRefusalMessage(recognized.pageDiagnostics);
     if(streaming){emit({type:"error",error:message,code:"SUSPICIOUS_EXTRACTION",pageDiagnostics:recognized.pageDiagnostics});res.end();return;}
     res.status(422).json({error:message,code:"SUSPICIOUS_EXTRACTION",pageDiagnostics:recognized.pageDiagnostics});return;
   }

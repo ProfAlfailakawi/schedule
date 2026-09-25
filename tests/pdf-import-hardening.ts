@@ -13,6 +13,7 @@ import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
+import { scanPageVerdict, scanRefusalMessage } from "../src/utils/documentOcr.ts";
 
 const passed:string[]=[];
 const check=(name:string,fn:()=>void)=>{fn();passed.push(name);};
@@ -223,6 +224,60 @@ check("separator-welded section, reference and code split only in their full sha
   assert.deepEqual(split("[18945|0101102"),["18945","0101102"]);
   assert.deepEqual(split("12/05"),["12/05"]);
 });
+
+/* The page verdict is calibrated on the owner's real scans (2026-09-24):
+   clean pages read every printed line; the failures lost 9–24 lines of 12–28. */
+check("a scanned page that lost most of its printed lines stops the file; a small loss stays a warning",()=>{
+  const page=(rows:number,printed:number,broken=0)=>scanPageVerdict({rows,filled:rows,printed,broken});
+  assert.equal(page(28,28).suspicious,false);
+  assert.equal(page(28,28).warning,undefined,"a complete page carries no note");
+  assert.equal(page(4,28).suspicious,true,"28 printed, 4 read: the second page of the 2026 scan");
+  assert.equal(page(1,22).suspicious,true);
+  assert.equal(page(3,12).suspicious,true);
+  assert.equal(page(4,13).suspicious,true);
+  assert.equal(page(0,5).suspicious,true,"a page with printed lines and no row at all");
+  assert.match(page(4,28).reason||"",/طُبع فيها 28 سطراً ولم يُقرأ منها إلا 4 صفوف/);
+  assert.match(page(0,5).reason||"",/ولم يُقرأ منها أي صف/);
+  /* The last page of a file: three printed lines, one read. Refusing the whole
+     file for it is what made every scan unreadable before #115. */
+  const tail=page(1,3);
+  assert.equal(tail.suspicious,false,"a two-line loss stays a warning");
+  assert.match(tail.warning||"",/طُبع فيها 3 أسطر وقُرئ منها صف واحد/);
+  assert.equal(page(23,28).suspicious,false,"five of 28 is within the tolerance (15%, rounded up)");
+  assert.equal(page(22,28).suspicious,true,"six of 28 is not");
+});
+check("a page read without its schedule side (no time, no building on most rows) stops the file",()=>{
+  /* Page 2 of the 2026 scan after its deep pass: all 28 rows kept their course
+     and days, none kept a time or a building, and one row read «3 1» where the
+     sheet prints «5 3 1». Rows the preview could only block are not a reading. */
+  const blind=scanPageVerdict({rows:28,filled:28,printed:28,broken:0,unscheduled:28});
+  assert.equal(blind.suspicious,true);
+  assert.match(blind.reason||"",/28 صفاً من 28 بلا وقت ولا مبنى/);
+  assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:0,unscheduled:14}).suspicious,false,"half is not most");
+  assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:0,unscheduled:15}).suspicious,true);
+  assert.equal(scanPageVerdict({rows:3,filled:3,printed:3,broken:0,unscheduled:2}).suspicious,false,"a last page of three rows is not refused for two");
+  assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:0}).suspicious,false,"the count is optional and defaults to none");
+});
+check("a page's two notes are said together, not one hiding the other",()=>{
+  const both=scanPageVerdict({rows:26,filled:26,printed:28,broken:3});
+  assert.equal(both.suspicious,false);
+  assert.match(both.warning||"",/3 صفوف بلا رقم مقرر واضح/);
+  assert.match(both.warning||"",/طُبع فيها 28 سطراً وقُرئ منها 26 صفاً/);
+  assert.equal(scanPageVerdict({rows:12,filled:4,printed:0,broken:0}).suspicious,true,"a thinly filled page still stops the file");
+});
+check("the refusal names each confirmed page, says nothing was imported, and names the files that read fully",()=>{
+  const diag=(page:number,extra:any)=>({page,visualRows:0,extractedRows:0,gridDetected:true,orientation:0 as const,suspicious:false,...extra});
+  const message=scanRefusalMessage([
+    diag(1,{}),
+    diag(2,{suspicious:true,reason:"طُبع فيها 28 سطراً ولم يُقرأ منها إلا 4 صفوف"}),
+    diag(3,{suspicious:true,unverified:true,reason:"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية"}),
+  ]);
+  assert.match(message,/الصفحة 2: طُبع فيها 28 سطراً ولم يُقرأ منها إلا 4 صفوف/);
+  assert.doesNotMatch(message,/الصفحة 3/,"a page never given its deep pass is not named as confirmed");
+  assert.match(message,/لم يُستورد أي صف/);
+  assert.match(message,/Excel أو PDF مُصدَّراً من النظام/);
+});
+
 
 check("a broken import stream says what broke instead of the one generic sentence",()=>{
   assert.match(interruptedImportMessage(200),/انقطع الاتصال بالخادم قبل أن تكتمل قراءة الملف/,"a stream cut mid-read (the instance killed for memory)");

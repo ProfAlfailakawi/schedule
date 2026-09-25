@@ -89,7 +89,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
      إلى كتالوج قسمٍ لا تمرّ بلا خبر. */
   const [plantedCourses, setPlantedCourses] = useState<string[]>([]);
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
-  const [readProgress, setReadProgress] = useState<{ pct: number; message: string } | null>(null);
+  const [readProgress, setReadProgress] = useState<{ pct: number; message: string; notice?: string } | null>(null);
   /* A PDF can prove that the open selector points at the wrong department.
      Keep that recovery explicit: the root admin may resolve/create the proven
      section, then the SAME file is retried under that section. */
@@ -821,7 +821,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               :phase==="orient"?15
               :phase==="render"?Math.min(14,4+Math.round((page/total)*10)):4;
             const fallback=phase==="rescue"?"تدقيق دقيق للصفحات المحتاجة":phase==="match"?"مطابقة البيانات مع السجل الرسمي":phase==="render"?"تجهيز صفحات PDF للقراءة":"قراءة الجدول";
-            setReadProgress({pct,message:String(event.message||fallback)});
+            /* A page the first reading could not read is named at once, not
+               only when the whole file is refused minutes later. */
+            setReadProgress({pct,message:String(event.message||fallback),notice:event.notice?String(event.notice):undefined});
           }
           else if(event.type==="done")data=event.result;
           else if(event.type==="error")failure=event;
@@ -1219,6 +1221,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 <div className="import-progress" role="status" aria-live="polite">
                   <div className="import-progress-track"><i style={{ width: `${readProgress.pct}%` }} /></div>
                   <span>{readProgress.message}</span>
+                  {readProgress.notice ? <p className="import-progress-notice"><AlertTriangle aria-hidden="true" />{readProgress.notice}</p> : null}
                 </div>
               ) : null}
 
