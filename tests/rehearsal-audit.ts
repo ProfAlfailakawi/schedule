@@ -9,9 +9,9 @@
 import fs from "fs";
 import path from "path";
 import {
-  additionsAwaitingHead, canSubmit, emptyApproval, needsHeadAcknowledgement, readDeadline, withRemainingSignatures,
+  additionsAwaitingHead, canSubmit, emptyApproval, extensionRequestRefusal, needsHeadAcknowledgement, readDeadline, withRemainingSignatures,
 } from "../src/utils/approvalWorkflow";
-import { buildNotifications, type CenterScope } from "../src/utils/notificationCenter";
+import { buildNotifications, pendingExtensionRequest, type CenterScope } from "../src/utils/notificationCenter";
 import type { ScheduleApproval } from "../src/types";
 
 let passed = 0, failed = 0;
@@ -132,6 +132,39 @@ const block = (source: string, start: string, end = "\napp.") => {
   check(two.detail === "جدولان لم يعتمدهما التسجيل بعد.", "R3: والمثنّى بضميره «لم يعتمدهما»");
   const center = read("src/utils/notificationCenter.ts");
   check(!/`المعتمد \$\{done\}|بقي \$\{total - done\}/.test(center), "R3: لا رقمَ خامٌ في ملخّص العميد");
+}
+
+/* ══ R4: طلبُ التمديد بالقاعدة التي يُعرض بها زرُّه ═══════════════════════════
+ * البروفة: رئيسُ قسمٍ جدولُه معتمد، والموعدُ بعد ثلاثة عشر يوماً، أرسل طلبَ
+ * تمديد فقُبل (200)، ووصل رئيسَ التسجيل «علوم الحاسب يطلب تمديد موعد التسليم»
+ * — وسطرُه يقول السبب ولا يقول كم يوماً طُلب. */
+{
+  const near = { effective: "2026-09-27", past: false, daysLeft: 2 };
+  const far = { effective: "2026-10-08", past: false, daysLeft: 13 };
+  const at = (status: any, extra: any = {}) => ({ status, ...extra });
+  check(extensionRequestRefusal(at("returned"), near) === null, "R4: جدولٌ مُرجَعٌ دنا موعدُه يُطلب له تمديد");
+  check(extensionRequestRefusal(at("drafting"), { effective: "2026-09-20", past: true, daysLeft: -5 }) === null, "R4: وبعد انقضاء الموعد");
+  check(Boolean(extensionRequestRefusal(at("accepted"), near)?.includes("معتمد")), "R4: ولا يُطلب لجدولٍ معتمد");
+  check(Boolean(extensionRequestRefusal(at("submitted"), near)?.includes("عند التسجيل")), "R4: ولا لجدولٍ عند التسجيل");
+  check(Boolean(extensionRequestRefusal(at("returned"), far)?.includes("3 أيام")), "R4: ولا والموعدُ بعيد — ويُقال متى يُطلب");
+  check(Boolean(extensionRequestRefusal(at("returned", { extensionRequest: { by: "س", role: "", at: "x", reason: "ص", days: 7 } }), near)),
+    "R4: ولا طلبٌ ثانٍ فوق طلبٍ معلّق");
+  check(Boolean(extensionRequestRefusal(at("returned"), { past: false })), "R4: ولا بلا موعد");
+
+  const route = block(server, 'app.post("/api/approvals/extension-request"');
+  check(route.includes("extensionRequestRefusal(approval, deadline)") && route.includes('code: "extension-request-refused"'),
+    "R4: المسارُ يسأل القاعدة الواحدة قبل أن يحفظ");
+  check(block(server, 'app.get("/api/approvals",').includes("canRequestExtension: extensionRequestRefusal(approval, deadline) === null"),
+    "R4: وزرُّ الشريط يُعرض بالقاعدة نفسها");
+
+  const ask = pendingExtensionRequest({ ...emptyApproval(1, 1, 1), extensionRequest: { by: "س", role: "committeeChair", at: "2026-09-25T00:00:00Z", reason: "تأخّر المنتدبين", days: 7 } } as ScheduleApproval);
+  check(ask?.days === 7, "R4: الجرسُ يقرأ عددَ الأيام المطلوبة");
+  const bell = buildNotifications({ role: "registrarHead", scopes: [{
+    approval: { ...emptyApproval(1, 1, 1), status: "returned", rounds: [{ number: 1 }], currentRound: 1,
+      extensionRequest: { by: "س", role: "committeeChair", at: "2026-09-25T00:00:00Z", reason: "تأخّر المنتدبين", days: 7 } },
+    collegeName: "ك", sectionName: "علوم الحاسب", rowCount: 7, openRegistrarNotes: 0, openRequests: 0,
+  } as unknown as CenterScope] }).find(item => item.title.includes("يطلب تمديد"));
+  check(Boolean(bell) && bell!.detail === "7 أيام — تأخّر المنتدبين", "R4: «7 أيام — السبب» في سطر رئيس التسجيل");
 }
 
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);

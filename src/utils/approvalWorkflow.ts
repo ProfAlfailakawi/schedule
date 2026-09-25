@@ -725,6 +725,32 @@ export function canRequestExtension(deadline: Pick<DeadlineState, "effective" | 
   return deadline.past || (deadline.daysLeft !== undefined && deadline.daysLeft <= EXTENSION_REQUEST_WINDOW_DAYS);
 }
 
+/** الحالاتُ التي ما زال فيها تسليمٌ يُمدَّد: الجدولُ لم يصل التسجيلَ ولم يُعتمد. */
+const EXTENSION_REQUEST_STATUSES = new Set(["drafting", "committee", "head", "returned"]);
+
+/**
+ * ── طلبُ التمديد: قاعدةٌ واحدة للزرّ وللخادم (مراجعة البروفة) ──────────────
+ *
+ * الشاشةُ تُظهر «طلب تمديد» لجدولٍ لم يُسلَّم ودنا موعدُه ولا طلبَ قبله. أمّا
+ * الخادمُ فكان يقبل الطلبَ في كل حال: رئيسُ قسمٍ جدولُه معتمدٌ منذ أيام أرسل
+ * طلباً قبل الموعد بثلاثة عشر يوماً، فوصل رئيسَ التسجيل «علوم الحاسب يطلب
+ * تمديد موعد التسليم» عن جدولٍ لا تسليمَ فيه. فالسببُ يُقال من هنا، ويقرؤه
+ * الزرُّ (`canRequestExtension` في قراءة الشريط) والمسارُ معاً.
+ */
+export function extensionRequestRefusal(
+  approval: Pick<ScheduleApproval, "status" | "extensionRequest">,
+  deadline: Pick<DeadlineState, "effective" | "past" | "daysLeft">,
+): string | null {
+  if (!deadline.effective) return "لا موعد تسليمٍ لهذا الفصل — لا شيء يُمدَّد.";
+  if (approval.status === "accepted") return "الجدول معتمدٌ من التسجيل — لا تسليمَ يُمدَّد.";
+  if (!EXTENSION_REQUEST_STATUSES.has(approval.status)) return "الجدول عند التسجيل الآن — لا تسليمَ يُمدَّد.";
+  if (approval.extensionRequest) return "طلبُ التمديد السابق ما زال ينتظر رئيس التسجيل.";
+  if (!canRequestExtension(deadline)) {
+    return `يُطلب التمديد حين يبقى على الموعد ${countOf(EXTENSION_REQUEST_WINDOW_DAYS, AR.day)} أو أقل، أو بعد انقضائه.`;
+  }
+  return null;
+}
+
 /** التاريخُ الذي يُقترح لرئيس التسجيل: الموعدُ الساري أو اليوم، أيّهما أبعد، مضافاً إليه الأيام المطلوبة. */
 export function suggestedExtensionDate(effective: string | undefined, days: number, todayISO: string): string {
   const base = effective && effective > todayISO ? effective : todayISO;

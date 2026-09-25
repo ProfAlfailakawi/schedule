@@ -46,7 +46,7 @@ import {
   acknowledgeAdditions, appendApprovalEvent, approvalLockReason, awaitsHeadSignature, canHeadReturn, canRequestExtension, canReturn, canWithdraw,
   CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, isOpenRegistrarNote, extensionRefusal, insistOutcome,
   isSwapEdit, kuwaitDateISO, mergePendingAdditions, openRound, pendingAdditionTotal, readViewExpectation,
-  additionsAwaitingHead, withRemainingSignatures,
+  additionsAwaitingHead, withRemainingSignatures, extensionRequestRefusal,
   roundBaselineVersionId, roundEndVersionId, staleViewRefusal, statusAfterSignatureChange, suggestedExtensionDate,
   TERM_CLOSED_APPROVAL_MESSAGE,
 } from "./src/utils/approvalWorkflow";
@@ -9841,8 +9841,8 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
     rowCount: rows.length,
     /* سببُ منع التعديل لهذا الناظر، من حارس الخادم نفسه (R21). */
     lockReason,
-    canRequestExtension: canRequestExtension(deadline) && !approval.extensionRequest
-      && (approval.status === "drafting" || approval.status === "committee" || approval.status === "head" || approval.status === "returned"),
+    /* من القاعدة نفسها التي يُسأل بها مسارُ الطلب (extensionRequestRefusal). */
+    canRequestExtension: extensionRequestRefusal(approval, deadline) === null,
     statusLabel: APPROVAL_STATUS_LABEL[approval.status],
     lastReviewedVersionId: lastReviewedVersionId(approval),
   });
@@ -10269,7 +10269,10 @@ app.post("/api/approvals/extension-request", requireAuth, async (req: Authentica
   await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const deadline = await readDeadlineFor(approval, termId);
-    if (!deadline.effective) { res.status(409).json({ error: "لا موعد تسليمٍ لهذا الفصل — لا شيء يُمدَّد." }); return; }
+    /* القاعدةُ التي يُعرض بها الزرّ هي التي يُقبل بها الطلب: جدولٌ معتمدٌ أو
+       عند التسجيل، أو موعدٌ بعيد، أو طلبٌ سابقٌ معلّق — كلٌّ يُردّ بسببه. */
+    const refusal = extensionRequestRefusal(approval, deadline);
+    if (refusal) { res.status(409).json({ error: refusal, code: "extension-request-refused" }); return; }
     const actor = approvalActor(req);
     let next: ScheduleApproval = {
       ...approval,

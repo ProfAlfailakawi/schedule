@@ -76,7 +76,7 @@ const lastAccepted = (approval: ScheduleApproval) =>
   [...approval.rounds].filter(round => round.acceptedAt).sort((a, b) => b.number - a.number)[0];
 
 /** طلبُ تمديدٍ معلّق على سجلّ الاعتماد، يُقرأ بحذر: الحقل يضيفه مسارٌ آخر. */
-export function pendingExtensionRequest(approval: ScheduleApproval): { until?: string; reason?: string; at?: string } | null {
+export function pendingExtensionRequest(approval: ScheduleApproval): { until?: string; reason?: string; at?: string; days?: number } | null {
   const ask: any = (approval as any)?.extensionRequest;
   if (!ask || typeof ask !== "object") return null;
   if (ask.resolvedAt || ask.decidedAt || (ask.status && ask.status !== "pending")) return null;
@@ -84,6 +84,9 @@ export function pendingExtensionRequest(approval: ScheduleApproval): { until?: s
     until: typeof ask.until === "string" ? ask.until : undefined,
     reason: typeof ask.reason === "string" ? ask.reason : undefined,
     at: typeof ask.requestedAt === "string" ? ask.requestedAt : typeof ask.at === "string" ? ask.at : undefined,
+    /* مسارُ الطلب يكتب عددَ الأيام لا تاريخاً (R17)، فكان الجرسُ يقول السببَ
+       وحده ولا يقول كم طُلب. */
+    days: Number.isFinite(Number(ask.days)) && Number(ask.days) > 0 ? Math.round(Number(ask.days)) : undefined,
   };
 }
 
@@ -170,7 +173,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
         items.push({
           id: key(scope, `extension-request-${ask.at || ""}`), tone: "action",
           title: `${placeOf(scope)} يطلب تمديد موعد التسليم`,
-          detail: [ask.until ? `حتى ${day(ask.until)}` : "", ask.reason || ""].filter(Boolean).join(" — ") || scope.collegeName,
+          detail: [ask.until ? `حتى ${day(ask.until)}` : ask.days ? countOf(ask.days, AR.day) : "", ask.reason || ""].filter(Boolean).join(" — ") || scope.collegeName,
           view: routeFor(role, "approval"), at: ask.at, ...target(scope),
         });
       }
