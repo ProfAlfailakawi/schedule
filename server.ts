@@ -52,7 +52,7 @@ import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type R
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
-import { buildCalendar, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
+import { buildCalendar, calendarSpanForTerm, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
 import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
@@ -12327,8 +12327,11 @@ const TERM_WEEKS = 16;
  */
 async function sendCalendar(req: Request, res: Response, name: string, termId: number, lectures: CalendarLecture[], singles: CalendarSingle[] = []) {
   const term = (await Repository.getTerms()).find(row => row.AdTermId === termId);
-  const startDate = term?.AdTermStart;
-  const weeks = Number(term?.AdTermWeeks) || TERM_WEEKS;
+  /* حدّا الفصل من ‎termWindow‎ (المعلَن، وإلا المستنبط من اسم الفصل)؛ «اليوم»
+     لم يعد مرساةً إلا لفصلٍ لا يُعرف عنه شيء — ويقول الملف ذلك. */
+  const span = calendarSpanForTerm(term, Number(term?.AdTermWeeks) || TERM_WEEKS);
+  const startDate = span.startDate;
+  const weeks = span.weeks;
   // Opt-in only, and named in the URL so the subscriber's own choice travels
   // with their subscription instead of being decided for everyone.
   const alarmMinutes = Math.max(0, Math.min(120, Number(req.query.alarm || 0)));
@@ -12337,11 +12340,13 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
     // A calendar that had to guess its own term says so in the name it puts on
     // the subscriber's phone, rather than presenting an invented semester as if
     // it were the registrar's.
-    name: startDate ? name : `${name} (تواريخ الفصل غير مسجّلة)`,
-    description: startDate
-      ? `${term?.AdTermName || ""} · يبدأ ${startDate} ويستمر ${weeks} أسبوعاً · للقراءة فقط، ويُحدَّث من نفسه.`
-      : `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة، والمدة تقديرية (${weeks} أسبوعاً) · للقراءة فقط.`,
-    weeks, startDate, alarmMinutes, lectures, singles,
+    name: span.source === "declared" ? name : span.source === "default" ? `${name} (تواريخ الفصل تقديرية)` : `${name} (تواريخ الفصل غير مسجّلة)`,
+    description: span.source === "declared"
+      ? `${term?.AdTermName || ""} · يبدأ ${startDate} ويستمر ${countOf(weeks, AR.week)} · للقراءة فقط، ويُحدَّث من نفسه.`
+      : span.source === "default"
+        ? `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة؛ الحدّان تقديريان من اسم الفصل (${span.startDate} ← ${span.endDate}) · للقراءة فقط.`
+        : `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة، والمدة تقديرية (${countOf(weeks, AR.week)}) · للقراءة فقط.`,
+    weeks, startDate, endDate: span.source === "default" ? span.endDate : undefined, alarmMinutes, lectures, singles,
   });
 
   /* Weak, because the only thing that must match is the meaning of the file:

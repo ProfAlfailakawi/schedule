@@ -8,7 +8,7 @@
 | D4 | TODO | |
 | D5 | TODO | |
 | D6 | TODO | |
-| D7 | TODO | |
+| D7 | FIXED — calendarSpanForTerm (icalendar.ts) uses termWindow start/end (declared or from term name); endDate→UNTIL; "today" anchor only when term unknown; honest feed label | tests/doctor-journey-audit.ts D7 |
 | D8 | TODO | |
 | D9 | TODO | |
 | D10 | TODO | |

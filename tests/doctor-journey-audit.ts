@@ -9,6 +9,7 @@ import { createHmac } from "crypto";
 import {
   CALENDAR_KEY_LABEL, calendarFeedKey, createCalendarSecretResolver, deriveCalendarSecret,
 } from "../src/server/calendarSecret";
+import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
 import { TERM_LINK_FALLBACK_DAYS, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
 
 let passed = 0, failed = 0;
@@ -88,6 +89,28 @@ async function main() {
     check(!server.includes("اشتراك دائم"), "D2 لا تقول البطاقة «اشتراك دائم» وهي تنتهي");
     check(server.includes("حتى نهاية الفصل"), "D2 البطاقة تقول صراحةً إن الاشتراك حتى نهاية الفصل");
     check(server.includes("window: { opensAt, closesAt: requestsCloseAtFromDate(closesAt) }"), "D2 نافذة الطلب تُحسب بالدالة نفسها");
+  }
+
+
+  /* ── D7: فصلٌ بلا تاريخ بداية لا يُرسى على «اليوم» ──────────────────────── */
+  {
+    const lecture = { id: 1, title: "t", start: "08:00", end: "09:15", days: [0, 2] };
+    const term = { AdTermName: "الأول 2026/2027" };
+    const span = calendarSpanForTerm(term, 16);
+    check(span.source === "default" && span.startDate === "2026-09-10" && span.endDate === "2026-12-31", "D7 حدّا الفصل من اسمه: ١٠ سبتمبر ← ٣١ ديسمبر");
+    const build = (now: string) => buildCalendar({ name: "t", weeks: span.weeks, startDate: span.startDate, endDate: span.endDate, now: new Date(now), lectures: [lecture] })
+      .split("\r\n").filter(line => line.startsWith("DTSTART;") || line.startsWith("RRULE:")).join("|");
+    const early = build("2026-09-20T08:00:00Z"), late = build("2026-11-20T08:00:00Z");
+    check(early === late, "D7 قراءتان للاشتراك في شهرين مختلفين تعطيان السلسلة نفسها");
+    check(early.includes("DTSTART;TZID=Asia/Kuwait:20260913T080000"), "D7 السلسلة تبدأ بأول أحدٍ في الفصل لا بعد اليوم");
+    check(early.includes("UNTIL=20261231T235959Z"), "D7 وتنتهي بآخر يوم في الفصل");
+    const declared = calendarSpanForTerm({ AdTermName: "x", AdTermStart: "2026-09-13", AdTermWeeks: 15 }, 16);
+    check(declared.source === "declared" && declared.startDate === "2026-09-13" && declared.weeks === 15, "D7 التاريخ المعلن يبقى الحَكَم");
+    const none = calendarSpanForTerm({ AdTermName: "فصل" }, 16);
+    check(none.source === "none" && !none.startDate && none.weeks === 16, "D7 فصلٌ مجهولٌ تماماً وحده يعود إلى التقدير");
+    const send = server.slice(server.indexOf("async function sendCalendar"), server.indexOf('app.get("/api/public/ics/:token", '));
+    check(send.includes("calendarSpanForTerm(term,") && !send.includes("const startDate = term?.AdTermStart"), "D7 sendCalendar يأخذ حدّيه من termWindow");
+    check(send.includes("تواريخ الفصل تقديرية"), "D7 والملف يقول إنها تقديرية حين تُستنبط من الاسم");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);
