@@ -5541,19 +5541,12 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
-  if (!collegeId || !termId) { res.json({ instructorIds: [] }); return; }
-  /* مستوى الكلية (N7): من يغطّي الكلية كلها (العميد) يرى منتدبي أقسامها جميعاً. */
-  const sectionIds = sectionId ? [sectionId] : await wholeCollegeSectionIds(req, collegeId);
-  if (!sectionIds.length || !sectionIds.every(id => isScopeAllowed(req, collegeId, id))) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const parts = await Promise.all(sectionIds.map(id => readLiveVisitingRoster(collegeId, id, termId)));
-  const instructorIds = [...new Set(parts.flatMap(part => part.instructorIds))];
-  const instructors = [...new Map(parts.flatMap(part => part.instructors).map((person: any) => [Number(person.AdInstructorId), person])).values()];
-  res.json({ instructorIds, instructors: instructorsForReader(req, instructors as any[]) });
+  if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const { instructorIds, instructors } = await readLiveVisitingRoster(collegeId, sectionId, termId);
+  res.json({ instructorIds, instructors });
 });
 
-/** Read-only counterpart for the inquiry centre. Report permissions must be
- * able to see the current visiting roster without granting the data-editing
- * permission used by the schedule transfer tool. */
 /** أقسامُ كليةٍ يغطّيها القارئ كلَّها — فارغةٌ إن لم يغطّها (الحَكَم الواحد). */
 async function wholeCollegeSectionIds(req: AuthenticatedRequest, collegeId: number): Promise<number[]> {
   const sections = await Repository.getSections();
@@ -5562,14 +5555,21 @@ async function wholeCollegeSectionIds(req: AuthenticatedRequest, collegeId: numb
   return sections.filter(row => Number(row.AdCollegeId) === collegeId).map(row => Number(row.AdSectionId)).filter(Boolean);
 }
 
+/** Read-only counterpart for the inquiry centre. Report permissions must be
+ * able to see the current visiting roster without granting the data-editing
+ * permission used by the schedule transfer tool. */
 app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const { instructorIds, instructors } = await readLiveVisitingRoster(collegeId, sectionId, termId);
-  res.json({ instructorIds, instructors });
+  if (!collegeId || !termId) { res.json({ instructorIds: [] }); return; }
+  /* مستوى الكلية (N7): من يغطّي الكلية كلها (العميد) يرى منتدبي أقسامها جميعاً. */
+  const sectionIds = sectionId ? [sectionId] : await wholeCollegeSectionIds(req, collegeId);
+  if (!sectionIds.length || !sectionIds.every(id => isScopeAllowed(req, collegeId, id))) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const parts = await Promise.all(sectionIds.map(id => readLiveVisitingRoster(collegeId, id, termId)));
+  const instructorIds = [...new Set(parts.flatMap(part => part.instructorIds))];
+  const instructors = [...new Map(parts.flatMap(part => part.instructors).map((person: any) => [Number(person.AdInstructorId), person])).values()];
+  res.json({ instructorIds, instructors: instructorsForReader(req, instructors as any[]) });
 });
 
 // A delegate badge is global to the person, but department directories are not.
