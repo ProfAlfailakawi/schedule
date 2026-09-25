@@ -58,7 +58,7 @@ import {
   signatureStage, watchesInbox,
   type AcademicRole,
 } from "./src/utils/academicRoles";
-import { AR, countOf, nounFor } from "./src/utils/arabicCount";
+import { AR, ARABIC_COUNT_SCRIPT, countOf, nounFor } from "./src/utils/arabicCount";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
@@ -15538,14 +15538,8 @@ function asciiDigits(value){
     .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d));})
     .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d));});
 }
-function arCourses(n){
-  n = Math.max(0, Number(n) || 0);
-  if (n === 1) return "مقرراً واحداً";
-  if (n === 2) return "مقررين";
-  var rest = n % 100;
-  if (rest >= 3 && rest <= 10) return n + " مقررات";
-  return n + " مقرراً";
-}
+${ARABIC_COUNT_SCRIPT}
+function arCourses(n){ return countOf(n, AR.course); }
 
 (function(){
   var TOKEN=${JSON.stringify(token)};
@@ -15693,7 +15687,7 @@ function arCourses(n){
       send.textContent = picked.size===0 ? "اختر مقرراً واحداً على الأقل"
         : nm.length<3 ? "اكتب اسمك"
         : cv.length!==12 ? "أدخل الرقم المدني (12 رقماً)"
-        : "إرسال · "+picked.size+" مقرر";
+        : "إرسال · "+arCourses(picked.size);
     }
 
     send.onclick=function(){
@@ -17023,8 +17017,8 @@ function collegeNameOf(it){return it.action==="add"?(it.collegeName||(it.after&&
 function manyColleges(){var seen={};state.forEach(function(it){var c=collegeNameOf(it);if(c)seen[c]=1});return Object.keys(seen).length>1}
 function collegeOf(it){return it.action==="add"||manyColleges()?collegeNameOf(it):""}
 function shortCollege(v){return String(v||"").replace(/^\\s*كلية\\s+/,"")}
-/* العددُ بلغته: «موعد واحد» و«موعدان» لا «1 مواعيد». */
-function countOf(n,one,two,few,many){return n===1?one:n===2?two:n<=10?n+" "+few:n+" "+many}
+/* العددُ بلغته: «موعد واحد» و«موعدان» لا «1 مواعيد» — القاعدة الواحدة من arabicCount.ts. */
+${ARABIC_COUNT_SCRIPT}
 function toneText(it){return it.tone==="ok"?"الوقت متاح":it.tone==="warn"?"يحتاج سبب استثناء":it.tone==="bad"?"يوجد مانع":it.tone==="checking"?"يُفحص الآن…":""}
 function wasText(it){var b=it.before||{};return it.action==="add"?"":((b.days||"")+(b.time?" · "+b.time:""))}
 var REASONS={room:"لا تتوفّر قاعة في هذا الوقت",instructor:"يتعارض مع أستاذ آخر",regulation:"مخالفة للائحة",cohort:"يتقاطع مع مقرّر يشترك طلبتُه",load:"النصاب",department:"قرار القسم",other:"سبب آخر"};
@@ -17100,12 +17094,12 @@ function paint(){
  var r=data.request,open=data.windowOpen,approved=r.status==="settled";
  var changed=state.filter(function(it){return it.action!=="keep"}).length;
  var blocked=state.filter(function(it){return it.tone==="bad"||it.tone==="checking"}).length;
- var ready=blocked?"راجع الموانع":changed?countOf(changed,"تغيير واحد جاهز","تغييران جاهزان","تغييرات جاهزة","تغييراً جاهزاً"):"لم تغيّر شيئاً";
+ var ready=blocked?"راجع الموانع":changed?countOf(changed,AR.change)+" "+nounFor(changed,AR.readyAdj):"لم تغيّر شيئاً";
  var h='<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
-  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,"بند واحد يحتاج معالجة","بندان يحتاجان معالجة","بنود تحتاج معالجة","بنداً يحتاج معالجة"):"فحص مباشر قبل الإرسال")+'</small></div></div>'+
+  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,AR.item)+" "+nounFor(blocked,AR.needsVerb):"فحص مباشر قبل الإرسال")+'</small></div></div>'+
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
  var existing=state.filter(function(it){return it.rowId!==null}).length;
- h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable()+'<div class="section-head"><b>عدّل مواعيدك</b><small>'+countOf(existing,"موعد واحد","موعدان","مواعيد","موعداً")+' · اضغط «غيّر» أو «احذف»</small></div>';
+ h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable()+'<div class="section-head"><b>عدّل مواعيدك</b><small>'+countOf(existing,AR.appointment)+' · اضغط «غيّر» أو «احذف»</small></div>';
  state.forEach(function(it,i){var b=it.before||it.after||{},tag=it.action!=="keep"?'<span class="tag" data-tone="'+it.action+'">'+actionName(it.action)+'</span>':'';
   /* البطاقةُ مطويّة: اسمُها وموعدُها وحالتُها سطرٌ واحد، وما فيها من أزرارٍ
      وأيامٍ وأوقات يُفتح بلمسة. وما يحتاج انتباهاً — ما يُعدَّل الآن أو فيه

@@ -146,6 +146,8 @@ export const AR = {
   unchangedVerb: { one: "لم يتغيّر", two: "لم يتغيّرا", few: "لم تتغيّر", many: "لم تتغيّر" },
   affectedAdj:   { one: "متأثر", two: "متأثران", few: "متأثرة", many: "متأثراً" },
   otherAdj:      { one: "آخر", two: "آخران", few: "أخرى", many: "آخر" },
+  readyAdj:      { one: "جاهز", two: "جاهزان", few: "جاهزة", many: "جاهزة" },
+  needsVerb:     { one: "يحتاج معالجة", two: "يحتاجان معالجة", few: "تحتاج معالجة", many: "تحتاج معالجة" },
   otherFemAdj:   { one: "أخرى", two: "أخريان", few: "أخرى", many: "أخرى" },
 } as const satisfies Record<string, ArabicNoun>;
 
