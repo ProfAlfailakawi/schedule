@@ -26,6 +26,7 @@ import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { expandScopeSections, resolveSmartScope } from "./src/server/readScope";
 import { finalSourceFor, type Finality } from "./src/utils/finality";
 import { isLate } from "./src/utils/lateness";
+import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -1556,14 +1557,8 @@ function branchOwnScopes(colleges:any[],sections:any[],collegeId:number,sectionI
    ساعة واحدة «تعارضاً» لا يملك أحد إصلاحه. وكلمة «هيئة» لا يُسمّى بها الناس،
    فصدرُ الاسم وحده يعرّف السجل مهما كتبت بقيته. */
 function placeholderInstructorIds(instructors: Array<{ AdInstructorId?: unknown; AdInstructorName?: unknown }>): Set<number> {
-  const head = instructorIdentityTokens("هيئة")[0];
-  const ids = new Set<number>();
-  for (const person of instructors || []) {
-    const tokens = instructorIdentityTokens(String(person?.AdInstructorName || ""));
-    const id = Number(person?.AdInstructorId || 0);
-    if (id > 0 && tokens[0] === head) ids.add(id);
-  }
-  return ids;
+  /* القاعدة في src/utils/placeholderInstructor.ts — يسألها محرّك العدالة أيضاً. */
+  return placeholderInstructorIdsOf(instructors);
 }
 
 function blockingImportConflicts(

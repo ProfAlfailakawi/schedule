@@ -14,6 +14,8 @@ import { finalSourceFor, HISTORICAL_FINALITY_LABEL } from "../src/utils/finality
 import { buildNotifications, routeFor, type CenterScope } from "../src/utils/notificationCenter";
 import { emptyApproval } from "../src/utils/approvalWorkflow";
 import { daysLeftUntil, isLate } from "../src/utils/lateness";
+import { buildFairnessEngine } from "../src/utils/livingSchedule";
+import { placeholderInstructorIdsOf } from "../src/utils/placeholderInstructor";
 import { mergeBalanceDepartments } from "../src/components/Reports";
 
 let passed = 0, failed = 0;
@@ -224,6 +226,29 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   const merged = mergeBalanceDepartments([{ sectionId: 11, sectionName: "أ", rows: 4 }],
     new Map([[11, { status: "drafting", late: false, round: 0 }], [12, { status: "notStarted", late: true, round: 0, sectionName: "ب", collegeName: "ك" }]]) as any);
   check(merged.length === 2 && merged[1].empty === true && merged[1].rows === 0, "N3: القسم الذي لم يبدأ صفٌّ بأصفارٍ صريحة");
+}
+
+/* ══ N6 — عدالةُ الحمل بمعادلةٍ واحدة، بلا غير الأشخاص ════════════════════ */
+{
+  const row = (id: number, instructor: number, start: string, end: string, day: string): any =>
+    ({ id, AdInstructorId: instructor, AdCourseId: 1, SCode: String(id), fstarttime: start, fendtime: end, [day]: true });
+  const people = [
+    { AdInstructorId: 1, AdInstructorName: "أستاذ أول" },
+    { AdInstructorId: 2, AdInstructorName: "أستاذ ثان" },
+    { AdInstructorId: 9, AdInstructorName: "هيئة تدريسية" },
+  ] as any[];
+  const rows = [row(1, 1, "08:00", "09:00", "fsunday"), row(2, 2, "08:00", "09:00", "fmonday"),
+    ...Array.from({ length: 12 }, (_, i) => row(10 + i, 9, "10:00", "11:00", ["fsunday", "fmonday", "ftuesday"][i % 3]))];
+  const engine = buildFairnessEngine(rows, people);
+  check(engine.profiles.length === 2 && !engine.profiles.some((p: any) => p.id === 9), "N6: «هيئة تدريسية» لا تدخل ميزان العدالة");
+  check(engine.score >= 90, "N6: أستاذان متساويان عادلان، لا يُفسدهما سجلٌّ ليس شخصاً");
+  check(placeholderInstructorIdsOf(people).has(9) && placeholderInstructorIdsOf(people).size === 1, "N6: قاعدة «هيئة» في موضعٍ واحد");
+  check(fnBody("function placeholderInstructorIds(").includes("placeholderInstructorIdsOf(instructors)"), "N6: الخادم يسأل القاعدة المشتركة ولا يكرّرها");
+  const reports = read("src/components/Reports.tsx");
+  const memo = reports.slice(reports.indexOf("const fairness = useMemo("), reports.indexOf("const fairness = useMemo(") + 1200);
+  check(memo.includes("buildFairnessEngine(results, instructors)") && memo.includes("weeklyLoadOf("), "N6: العدسة تحسب بالمحرّك نفسه، والنصاب بالساعات المعتمدة");
+  check(!memo.includes("Math.sqrt("), "N6: لا معادلةَ عدالةٍ ثانية في العدسة");
+  check(reports.includes("متوسط النصاب (ساعات معتمدة)"), "N6: وحدة النصاب مكتوبة");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

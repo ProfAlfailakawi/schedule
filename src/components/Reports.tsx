@@ -23,6 +23,8 @@ import {
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 import { HISTORICAL_FINALITY_LABEL } from "../utils/finality";
+import { buildFairnessEngine } from "../utils/livingSchedule";
+import { weeklyLoadOf } from "../utils/instructorRequestVerdict";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
@@ -1221,15 +1223,28 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       .sort((a, b) => a.key.localeCompare(b.key));
   }, [results]);
 
+  /* ── عدالةُ الحمل: معادلةٌ واحدة (N6) ─────────────────────────────────
+     كانت العدسة تحسب مؤشرها بمعادلةٍ خاصّة (انحراف الدقائق)، والميزانُ بمحرّك
+     العدالة — فيقرأ العميدُ للقسم نفسه رقمين. وكانت «بدون أستاذ» و«هيئة
+     تدريسية» تدخلان الحساب كأنهما شخصان. فصار المؤشر من المحرّك نفسه
+     (buildFairnessEngine، يستثني غير الأشخاص)، و«متوسط النصاب» بالساعات
+     المعتمدة (weeklyLoadOf) كما تقوله اللوائح. */
   const fairness = useMemo(() => {
-    if (!byInstructor.length) return null;
-    const loads = byInstructor.map(x => x.load);
-    const average = loads.reduce((a, b) => a + b, 0) / loads.length;
-    const spread = Math.max(...loads) - Math.min(...loads);
-    const deviation = Math.sqrt(loads.reduce((total, value) => total + (value - average) ** 2, 0) / loads.length);
-    const score = Math.max(0, Math.min(100, Math.round(100 - (average ? (deviation / average) * 100 : 0))));
-    return { average, spread, deviation, score, rows: byInstructor.map(row => ({ ...row, delta: row.load - average })).sort((a, b) => b.load - a.load) };
-  }, [byInstructor]);
+    const engine = buildFairnessEngine(results, instructors);
+    if (!engine.profiles.length) return null;
+    const courseMap = new Map<number, AdCourse>(courses.map(course => [Number(course.AdCourseId), course] as [number, AdCourse]));
+    const people = engine.profiles.map(profile => ({
+      id: String(profile.id), name: profile.name, burden: profile.burden, load: profile.burden,
+      hours: weeklyLoadOf(results.filter(row => Number(row.AdInstructorId) === Number(profile.id)), courseMap),
+    }));
+    const hours = people.map(person => person.hours);
+    const average = hours.reduce((a, b) => a + b, 0) / hours.length;
+    const spread = Math.max(...hours) - Math.min(...hours);
+    return {
+      score: engine.score, label: engine.label, average, spread,
+      rows: people.map(person => ({ ...person, delta: person.hours - average })).sort((a, b) => b.burden - a.burden),
+    };
+  }, [results, instructors, courses]);
 
   const weekGrid = useMemo(() => DAYS.map(day => ({
     ...day,
@@ -2706,8 +2721,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             <div className="fairness-summary">
               <div className="fairness-score"><b>{num(fairness.score)}</b><small>/ 100</small></div>
               <div className="fairness-facts">
-                <div><small>متوسط النصاب</small><strong>{num(Math.round(fairness.average / 60))} س</strong></div>
-                <div><small>الفارق</small><strong>{num(Math.round(fairness.spread / 60))} س</strong></div>
+                <div><small>متوسط النصاب (ساعات معتمدة)</small><strong>{num(Math.round(fairness.average * 10) / 10)}</strong></div>
+                <div><small>الفارق (ساعات معتمدة)</small><strong>{num(fairness.spread)}</strong></div>
                 <div><small>أساتذة</small><strong>{num(fairness.rows.length)}</strong></div>
               </div>
             </div>
@@ -2715,8 +2730,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               {fairness.rows.map(row => (
                 <div key={row.id}>
                   <span>{row.name}</span>
-                  <i><b style={{ width: share(row.load, fairness.rows[0].load) }} /></i>
-                  <em>{num(Math.round(row.load / 60))}س</em>
+                  <i title="العبء: الأيام والفراغات والبكور والمساء والساعات"><b style={{ width: share(row.load, fairness.rows[0].load) }} /></i>
+                  <em>{num(row.hours)} س.م</em>
                 </div>
               ))}
             </div>
@@ -3948,14 +3963,14 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <section className="print-fairness-hero">
               <div><strong>{fairness.score}</strong><span>/ 100</span><small>مؤشر العدالة</small></div>
-              <dl><div><dt>متوسط النصاب</dt><dd>{Math.round(fairness.average / 60)} س</dd></div><div><dt>الفارق</dt><dd>{Math.round(fairness.spread / 60)} س</dd></div><div><dt>الأساتذة</dt><dd>{fairness.rows.length}</dd></div></dl>
+              <dl><div><dt>متوسط النصاب (ساعات معتمدة)</dt><dd>{Math.round(fairness.average * 10) / 10}</dd></div><div><dt>الفارق (ساعات معتمدة)</dt><dd>{fairness.spread}</dd></div><div><dt>الأساتذة</dt><dd>{fairness.rows.length}</dd></div></dl>
             </section>
             <div className="print-fairness-rows">
               {pageRows.map((row: any) => <div key={row.id}>
                 <span>{row.name}</span>
                 <i><b style={{ width: `${Math.max(4, Math.round((row.load / Math.max(1, fairness.rows[0].load)) * 100))}%` }} /></i>
-                <em>{Math.round(row.load / 60)} س</em>
-                <small className="print-ltr">{row.delta > 0 ? "+" : ""}{Math.round(row.delta / 60)}</small>
+                <em>{row.hours} س.م</em>
+                <small className="print-ltr">{row.delta > 0 ? "+" : ""}{Math.round(row.delta * 10) / 10}</small>
               </div>)}
             </div>
             {pageIndex === pages.length - 1 ? <div className="print-signatures"><div><span>منسق الجدول</span><i /></div><div><span>رئيس القسم العلمي</span><i /></div></div> : null}
