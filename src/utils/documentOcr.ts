@@ -24,7 +24,10 @@ const fold=(value:string)=>toAscii(value).replace(/[ً-ْـ]/g,"").replace(/[أ�
 export type OcrCell={text:string;x0:number;x1:number};
 /** One physical table row, right-to-left, with the columns still apart. */
 export type OcrRow={cells:OcrCell[];line:string;y:number};
-export type OcrPageDiagnostic={page:number;visualRows:number;extractedRows:number;gridDetected:boolean;orientation:-1|0|1;suspicious:boolean;reason?:string;warning?:string};
+export type OcrPageDiagnostic={page:number;visualRows:number;extractedRows:number;gridDetected:boolean;orientation:-1|0|1;suspicious:boolean;reason?:string;warning?:string;
+  /** Flagged by the first reading but never given its deep pass, because an
+   *  earlier page already stopped the file. Its reason is not a confirmed one. */
+  unverified?:boolean};
 export type OcrPage={rows:OcrRow[];gridRows?:GridRow[];diagnostic?:OcrPageDiagnostic};
 export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
@@ -45,7 +48,9 @@ export type AuthorityPdfHeader={
 };
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type GraduationSheetOcrResult={text:string;pageCount:number;confidence:number;legibility:Legibility};
-export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:number;pages:number;message:string})=>void;
+/** `notice` names the pages the first reading could not read, as soon as it
+ *  finds them — the reviewer learns early that the file may be stopped. */
+export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:number;pages:number;message:string;notice?:string})=>void;
 export type OcrDocumentOptions={authorityCourseKeys?:string[]};
 
 const MAX_PAGES=12;
@@ -240,7 +245,27 @@ export async function takeScanReadingTurn(waitMs=Number.POSITIVE_INFINITY,onWait
   }};
 }
 /** Full readings in progress, by document fingerprint (content + course keys). */
-const inflightScanReads=new Map<string,Promise<OcrResult>>();
+const inflightScanReads=new Map<string,Promise<unknown>>();
+/**
+ * Read one scanned document in its turn, sharing it with the same file sent
+ * again while it waits or runs. The fingerprint is registered BEFORE waiting
+ * for the turn: registered only after, two requests for one uncached file
+ * could both miss the entry, and the second would wait behind the first and
+ * be refused as busy instead of sharing it (review of #117).
+ */
+export async function readScanInTurn<T>(fingerprint:string,read:()=>Promise<T>,events:{waiting?:()=>void;sharing?:()=>void}={},waitMs=SCAN_TURN_WAIT_MS):Promise<T>{
+  const running=inflightScanReads.get(fingerprint) as Promise<T>|undefined;
+  if(running){events.sharing?.();return structuredClone(await running);}
+  const reading=(async()=>{
+    const turn=await takeScanReadingTurn(waitMs,events.waiting);
+    if(!turn)throw new ScanReadingBusyError();
+    try{return await read();}
+    finally{await turn.release(true);}
+  })();
+  inflightScanReads.set(fingerprint,reading);
+  try{return await reading;}
+  finally{if(inflightScanReads.get(fingerprint)===reading)inflightScanReads.delete(fingerprint);}
+}
 /** Terminate every table-reading worker so its WASM memory returns to the
  *  system; the getters create fresh ones on the next reading. */
 async function releaseTableWorkers():Promise<void>{
@@ -1820,6 +1845,62 @@ export function unclearRowCount(rows:GridRow[]):number{
 export function unreadableIdentityRows(rows:GridRow[]):number{
   const broken=unclearRowCount(rows);
   return broken>=3&&broken>=rows.length*.25?broken:0;
+}
+/* ── حكم الصفحة الممسوحة: متى يكون النقص تنبيهاً، ومتى يوقف الملف ─────────────
+ *
+ * سطرٌ مطبوع لم يخرج له صف لا يظهر في المعاينة أصلاً، فلا شيء يمنع نشر الجدول
+ * ناقصاً. كان كل نقصٍ قد صار تنبيهاً (#115)، فمرّت صفحةٌ طُبع فيها 28 سطراً ولم
+ * يُقرأ منها إلا 4، ولم يذكر تنبيهها إلا «3 صفوف غير واضحة».
+ *
+ * نقصٌ حتى سطرين، أو حتى 15٪ من أسطر الصفحة، يبقى تنبيهاً على الصفحة: آخر صفحة
+ * في الملف قد تُطبع فيها ثلاثة أسطر يُقرأ منها واحد، ورفضُ الملف كله لأجلها هو
+ * ما جعل الملفات لا تُقرأ قبل #115. ما زاد على ذلك يعني أن المسح لم يُقرأ: تُعلَّم
+ * الصفحة مشبوهة ويتوقف الملف برسالة تسمّي العددين. أما الصف المقروء بخانة غير
+ * واضحة فيبقى في المعاينة فارغ الخانة يمنع نشر صفّه وحده، فيبقى تنبيهاً. وإن
+ * اجتمع التنبيهان قيلا معاً، لا يُخفي أحدهما الآخر.
+ *
+ * وصفوفٌ أكثرها بلا وقت ولا مبنى صفحةٌ لم يُقرأ نصفها المجدول: الجدول يطبع
+ * لكل شعبة وقتاً ومبنى، والقراءة التي تأتي بأرقام المقررات وحدها لا تُنشر إلا
+ * بإعادة كتابة الصفحة يدوياً، وقد تحمل يوماً ناقصاً لا يلفت النظر (قيس على
+ * الصفحة 2 من جدول 2026: 28 صفاً بلا وقت ولا مبنى، وفي أحدها «3 1» والمطبوع
+ * «5 3 1»). فأكثر من نصف الصفوف (وأكثر من صفّين) بلا وقت ولا مبنى يوقف الملف. */
+export type ScanPageVerdict={suspicious:boolean;reason?:string;warning?:string};
+export function scanPageVerdict({rows,filled,printed,broken,unscheduled=0}:{rows:number;filled:number;printed:number;broken:number;unscheduled?:number}):ScanPageVerdict{
+  const thin=rows>=3&&filled<Math.ceil(rows*0.55);
+  const missed=Math.max(0,printed-rows);
+  const severeMiss=missed>Math.max(2,Math.ceil(printed*0.15));
+  const blindSchedule=unscheduled>Math.max(2,rows/2);
+  const lines=`طُبع فيها ${countOf(printed,AR.line)}`;
+  const reason=severeMiss
+    ?`${lines} ${rows?`ولم يُقرأ منها إلا ${countOf(rows,AR.row)}`:"ولم يُقرأ منها أي صف"}`
+    :blindSchedule?`${countOf(unscheduled,AR.row)} من ${rows.toLocaleString("ar-KW-u-nu-latn")} بلا وقت ولا مبنى، والجدول يطبعهما لكل شعبة`
+    :thin?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined;
+  const notes=[
+    broken>0?`${countOf(broken,AR.row)} بلا رقم مقرر واضح أو بلا أيام ووقت، وخاناتها غير الواضحة فارغة للمراجعة`:"",
+    missed>0&&!severeMiss?`${lines} ${rows?`وقُرئ منها ${countOf(rows,AR.row)}`:"ولم يُقرأ منها أي صف"} — راجع الصفحة وأضف الناقص يدوياً`:"",
+  ].filter(Boolean);
+  return{suspicious:thin||severeMiss||blindSchedule,reason,warning:notes.length?notes.join("؛ "):undefined};
+}
+/** Rows the reader gave neither a time nor a building: their schedule side was not read. */
+export const unscheduledRowCount=(rows:GridRow[])=>rows.filter(row=>!row.start&&!(row.building||row.buildingRaw)).length;
+/** The one sentence that stops a scanned file: it names each page that could
+ *  not be read and why, says nothing was imported, and says what reads fully.
+ *  Pages that were never given their deep pass (an earlier page had already
+ *  stopped the file) are not named: only confirmed pages are. */
+export function scanRefusalMessage(pages:OcrPageDiagnostic[]):string{
+  const suspicious=pages.filter(page=>page.suspicious);
+  const confirmed=suspicious.filter(page=>!page.unverified);
+  const named=(confirmed.length?confirmed:suspicious).map(page=>`الصفحة ${page.page}: ${page.reason||"لم تثبت هندسة الجدول"}`).join(" · ");
+  return `أوقفت الاستيراد لأن جزءاً من الجدول لم يُقرأ. ${named}. لم يُستورد أي صف. ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)، أو اطلب ملف Excel أو PDF مُصدَّراً من النظام، فهو يُقرأ كاملاً في ثوانٍ.`;
+}
+/** «الصفحة 2» / «الصفحتان 1 و3» / «الصفحات 1، 3، 4» — the pages a notice names. */
+function unreadPagesNotice(pages:number[]):string|undefined{
+  if(!pages.length)return undefined;
+  const sorted=[...pages].sort((a,b)=>a-b);
+  const named=sorted.length===1?`الصفحة ${sorted[0]} غير واضحة`
+    :sorted.length===2?`الصفحتان ${sorted[0]} و${sorted[1]} غير واضحتين`
+    :`الصفحات ${sorted.join("، ")} غير واضحة`;
+  return `${named} — تُفحص بدقة الآن، وإن بقي نقصها يتوقف الاستيراد ولا يُستورد أي صف.`;
 }
 /** Contrast-stretch a scanned page and erase long table rules (runs of dark
  *  pixels far longer than any glyph) so digits touching a rule separate. */
@@ -3612,25 +3693,16 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   }
   /* The same file sent again while it is being read (a reviewer who reloaded
      the page mid-read) shares that reading instead of queueing a second one. */
-  const sharing=inflightScanReads.get(fingerprint);
-  if(sharing){
-    onProgress?.({phase:"read",page:0,pages:0,message:"هذا الملف نفسه يُقرأ الآن — تظهر نتيجته حين تكتمل قراءته"});
-    return structuredClone(await sharing);
-  }
-  const turn=await takeScanReadingTurn(SCAN_TURN_WAIT_MS,()=>onProgress?.({phase:"render",page:0,pages:0,message:"الخادم يقرأ ملفاً آخر الآن — ينتظر ملفك دوره"}));
-  if(!turn)throw new ScanReadingBusyError();
-  const reading=(async()=>{
-    try{
-      /* A file that waited for its turn behind its own first reading finds that
-         reading remembered now, and returns at once. */
-      const finished=cachedOcr(fingerprint);
-      if(finished){onProgress?.({phase:"read",page:finished.pageCount,pages:finished.pageCount,message:"تم استرجاع القراءة المحفوظة"});return finished;}
-      return await readScannedDocument(input,mime,fingerprint,optionKeys,onProgress);
-    }finally{await turn.release(true);}
-  })();
-  inflightScanReads.set(fingerprint,reading);
-  try{return await reading;}
-  finally{if(inflightScanReads.get(fingerprint)===reading)inflightScanReads.delete(fingerprint);}
+  return readScanInTurn(fingerprint,async()=>{
+    /* A file that waited for its turn behind its own first reading finds that
+       reading remembered now, and returns at once. */
+    const finished=cachedOcr(fingerprint);
+    if(finished){onProgress?.({phase:"read",page:finished.pageCount,pages:finished.pageCount,message:"تم استرجاع القراءة المحفوظة"});return finished;}
+    return await readScannedDocument(input,mime,fingerprint,optionKeys,onProgress);
+  },{
+    waiting:()=>onProgress?.({phase:"render",page:0,pages:0,message:"الخادم يقرأ ملفاً آخر الآن — ينتظر ملفك دوره"}),
+    sharing:()=>onProgress?.({phase:"read",page:0,pages:0,message:"هذا الملف نفسه يُقرأ الآن — تظهر نتيجته حين تكتمل قراءته"}),
+  });
 }
 
 /** The image path of ocrDocument. It runs only while holding the scan-reading
@@ -3722,10 +3794,13 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
      `processPage` always receives the complete warm pool; multi-page documents
      are sequenced below so every page gets exactly the one-page behaviour. */
   let pagesDone=0;
+  /* الصفحات التي لم تقرأها القراءة الأولى تُسمّى للمراجع لحظة اكتشافها، لا بعد
+     انتهاء الملف كله («إذا تعذّر يظهر من البداية»). */
+  const flaggedPages:number[]=[];
   const processPage=async(index:number,lanePool:OcrWorkerPool)=>{
     /* Move the UI out of the orientation stage before the expensive grid read.
        `page` here means completed pages, so zero is intentional on page 1. */
-    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${index+1} من ${images.length}`});
+    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${index+1} من ${images.length}`,notice:unreadPagesNotice(flaggedPages)});
     const pageImage=images[index];
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
@@ -3797,7 +3872,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
       texts[index]="";scores[index]=85;
       pages[index]={rows:[],diagnostic:{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation:pageOrientation,suspicious:false,reason:"صفحة بلا صفوف جدول"}};
       pagesDone++;
-      onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
+      onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`,notice:unreadPagesNotice(flaggedPages)});
       return;
     }
     if(gridRows){
@@ -3814,18 +3889,12 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
       const filled=gridRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
       scores[index]=Math.min(85,55+filled*2);
       /* أسطر مطبوعة يراها طريق الكلمات بأرقامها ولم يخرج لها صف = صفوف كانت
-         ستسقط بصمت. تُعلَّم الصفحة مشبوهة ويتوقف الاستيراد برسالة. */
+         ستسقط بصمت. نقصها الكبير يوقف الملف، والصغير تنبيه (scanPageVerdict). */
       const printedRows=wordLane?.printedRows||0;
       pagePrintedRows[index]=printedRows;
-      const missedRows=printedRows>gridRows.length;
-      const brokenRows=unreadableIdentityRows(gridRows);
-      /* صفحةٌ قليلةُ الامتلاء وحدها توقف الملف كما كانت. سطرٌ مطبوع لم يخرج له صف،
-         أو صفٌّ بلا رقم مقرر أو بلا أيامٍ ووقت، يُعرض تنبيهاً على الصفحة في المعاينة:
-         خاناته الفارغة لا تُخمَّن وتبقى للمراجعة، وبقية الملف تُقرأ. */
-      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55);
-      const warning=brokenRows>0?`${countOf(brokenRows, AR.row)} لم يتضح ${nounFor(brokenRows, AR.inItPron)} رقم المقرر أو الأيام والوقت — خاناتها فارغة للمراجعة`:missedRows?`طُبع فيها ${countOf(printedRows, AR.line)} قُرئ منها ${gridRows.length} — راجع الصفحة وأضف الناقص يدوياً`:undefined;
-      pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:Math.max(gridRows.length,printedRows),extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,warning,
-        reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+      const verdict=scanPageVerdict({rows:gridRows.length,filled,printed:printedRows,broken:unreadableIdentityRows(gridRows),unscheduled:unscheduledRowCount(gridRows)});
+      pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:Math.max(gridRows.length,printedRows),extractedRows:filled,gridDetected:true,orientation:pageOrientation,...verdict}};
+      if(verdict.suspicious)flaggedPages.push(index+1);
     }else{
       const grid=await spreadColumns(upright);
       await lanePool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
@@ -3835,9 +3904,10 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
       scores[index]=Number(surface.confidence||0);
       const flatRows=tableFromWords(wordsOf(surface),grid.columns);
       pages[index]={rows:flatRows,diagnostic:{page:index+1,visualRows:grid.bands.length>1?grid.bands.length-1:0,extractedRows:flatRows.length,gridDetected:false,orientation:pageOrientation,suspicious:true,reason:"لم يتم إثبات هندسة الجدول في هذه الصفحة؛ أوقفت المعاينة الآمنة"}};
+      flaggedPages.push(index+1);
     }
     pagesDone++;
-    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
+    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`,notice:unreadPagesNotice(flaggedPages)});
   
   };
   /* MULTI-PAGE GOLDEN PATH — now with ISOLATED PAGE LANES
@@ -3871,10 +3941,14 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
      pool rather than spawning a second OCR engine. Clean pages are never re-read,
      and a weak page cannot make the rest of the document pay a retry. */
   const suspiciousIndexes=pages.map((page,index)=>page?.diagnostic?.suspicious||page?.diagnostic?.warning?index:-1).filter(index=>index>=0);
+  /* A page that is still unreadable after its deep pass stops the whole file,
+     so such pages go first, and the first one confirmed ends the rescue: the
+     pages after it can no longer change the outcome, only delay it. */
+  suspiciousIndexes.sort((a,b)=>Number(!pages[a]?.diagnostic?.suspicious)-Number(!pages[b]?.diagnostic?.suspicious)||a-b);
   if(suspiciousIndexes.length){
-    onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${countOf(suspiciousIndexes.length, oblique(AR.page))} بحاجة إلى مراجعة دقيقة`});
+    onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${countOf(suspiciousIndexes.length, oblique(AR.page))} بحاجة إلى مراجعة دقيقة`,notice:unreadPagesNotice(flaggedPages)});
     let rescuedCount=0;
-    for(const index of suspiciousIndexes){
+    for(const [position,index] of suspiciousIndexes.entries()){
       const rescuePool=pool;
       const pageImage=images[index];
       let bestRows=pages[index]?.gridRows||[];
@@ -3905,7 +3979,11 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
          صفحة ما زالت ناقصة: تُعاد من الملف بدقة عالية، ويُمدّ تباينها، وتُمحى
          خطوط الجدول الطويلة الملاصقة للأرقام، ثم تُقرأ كلماتها من جديد. تُعتمد
          القراءة المحسّنة إن أخرجت صفوفاً أكثر، ويبقى فحص الأسطر المطبوعة حكماً. */
-      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length||unreadableIdentityRows(bestRows)>0){
+      /* A page read without its schedule side (scanPageVerdict) gets this read
+         too: it is the reading trusted to restore times, so without it such a
+         page could only ever be refused, even when a re-read would recover it. */
+      const scheduleBlind=unscheduledRowCount(bestRows)>Math.max(2,bestRows.length/2);
+      if(bestRows.length<(pagePrintedRows[index]||0)||!bestRows.length||unreadableIdentityRows(bestRows)>0||scheduleBlind){
         try{
           /* صورة مرفوعة مباشرة (JPG/PNG/HEIC) لا عرض PDF لها: تُحسَّن الصفحة المعدّلة نفسها. */
           const sharp=(wordLaneSources?(await wordLaneSources)[index]:undefined)||bestUpright;
@@ -3915,19 +3993,16 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
             pagePrintedRows[index]=Math.max(pagePrintedRows[index]||0,lane.printedRows);
             const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
             if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)
-              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))){bestRows=lane.rows;bestFilled=filled;}
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){bestRows=lane.rows;bestFilled=filled;}
           }
         }catch{/* the earlier reading and its warning stand */}
       }
       if(bestRows.length){
         /* إعادة القراءة لا تمسح دليل الأسطر المطبوعة: صفوف أقل منها = مشبوهة. */
         const printedRows=pagePrintedRows[index]||0;
-        const missedRows=printedRows>bestRows.length;
-        const brokenRows=unreadableIdentityRows(bestRows);
-        const suspicious=bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55);
-        const warning=brokenRows>0?`${countOf(brokenRows, AR.row)} لم يتضح ${nounFor(brokenRows, AR.inItPron)} رقم المقرر أو الأيام والوقت — خاناتها فارغة للمراجعة`:missedRows?`طُبع فيها ${countOf(printedRows, AR.line)} قُرئ منها ${bestRows.length} — راجع الصفحة وأضف الناقص يدوياً`:undefined;
-        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:Math.max(bestRows.length,printedRows),extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,warning,
-          reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+        const verdict=scanPageVerdict({rows:bestRows.length,filled:bestFilled,printed:printedRows,broken:unreadableIdentityRows(bestRows),unscheduled:unscheduledRowCount(bestRows)});
+        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:Math.max(bestRows.length,printedRows),extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,...verdict}};
         scores[index]=Math.min(92,60+bestFilled*2);
         if(index===0&&(!texts[index]||!parseAuthorityHeaderText(texts[index]).term||!parseAuthorityHeaderText(texts[index]).branch||!parseAuthorityHeaderText(texts[index]).department)){
           const cachedHeader=cachedPreflight?.header;
@@ -3937,7 +4012,14 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
         }
       }
       rescuedCount++;
-      onProgress?.({phase:"rescue",page:rescuedCount,pages:suspiciousIndexes.length,message:`تدقيق الصفحة ${index+1} بدقة`});
+      if(pages[index]?.diagnostic?.suspicious){
+        for(const rest of suspiciousIndexes.slice(position+1)){const later=pages[rest]?.diagnostic;if(later?.suspicious)later.unverified=true;}
+        onProgress?.({phase:"rescue",page:suspiciousIndexes.length,pages:suspiciousIndexes.length,message:`الصفحة ${index+1} لم تُقرأ حتى بعد الفحص الدقيق — يتوقف الاستيراد`,notice:unreadPagesNotice(flaggedPages)});
+        break;
+      }
+      const cleared=flaggedPages.indexOf(index+1);
+      if(cleared>=0)flaggedPages.splice(cleared,1);
+      onProgress?.({phase:"rescue",page:rescuedCount,pages:suspiciousIndexes.length,message:`تدقيق الصفحة ${index+1} بدقة`,notice:unreadPagesNotice(flaggedPages)});
     }
   }
 
@@ -3954,11 +4036,17 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
      suspiciousExtraction. The authority-PDF endpoint explicitly blocks that
      flag, while transcript/survey OCR is not accidentally forced to contain a
      timetable grid. */
+  /* A table in which one page lost its ruled geometry is still a table: its
+     refusal names the unread pages (scanRefusalMessage), not «لم أتبيّن نصاً
+     كافياً» — grid pages skip whole-page OCR, so their prose text is near empty
+     and that sentence was false. The outcome is unchanged (the import refuses a
+     suspicious extraction either way); only the sentence the reviewer reads is. */
+  const tableRefused=suspiciousExtraction&&pageDiagnostics.some(page=>page.gridDetected);
   const legibility=allGrid
     ?(!suspiciousExtraction
       ?{readable:true,confidence,charactersPerPage:Math.round(text.replace(/\s+/g,"").length/Math.max(1,images.length)),reason:""}
-      :{...proseLegibility,readable:false,reason:pageDiagnostics.find(page=>page.suspicious)?.reason||proseLegibility.reason||"استخراج الجدول غير مكتمل ويحتاج إلى ملف أوضح"})
-    :proseLegibility;
+      :{...proseLegibility,readable:false,reason:scanRefusalMessage(pageDiagnostics)})
+    :tableRefused?{...proseLegibility,readable:false,reason:scanRefusalMessage(pageDiagnostics)}:proseLegibility;
   const header=parseAuthorityHeaderText(text);
   const finalResult:OcrResult={
     pages:pages.map(page=>page||{rows:[]}),

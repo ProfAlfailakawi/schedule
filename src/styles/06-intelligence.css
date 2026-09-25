@@ -4109,6 +4109,8 @@ button.twin-delta{width:100%}
 .import-progress-track{height:5px;border-radius:999px;background:var(--surface-3,var(--line));overflow:hidden}
 .import-progress-track i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .45s var(--ease,ease);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent)}
 .import-progress span{font-size:var(--t-xs);color:var(--muted);text-align:center;font-weight:600}
+.import-progress-notice{display:flex;align-items:flex-start;gap:6px;margin:0;padding:6px 8px;border-radius:9px;background:color-mix(in srgb,var(--warning) 9%,transparent);color:var(--ink);font-size:var(--t-xs);font-weight:600;line-height:1.6;text-align:start}
+.import-progress-notice svg{width:14px;height:14px;flex:none;margin-top:2px;color:var(--warning)}
 /* The card is a centred column: the lede and the footnote were reading ragged
    against the buttons because only the buttons were centred. */
 .import-drop{text-align:center}

@@ -523,7 +523,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [versionTo, setVersionTo] = useState(""),
     [versionCompare, setVersionCompare] = useState<any>(null),
     [timeTravel, setTimeTravel] = useState(50);
-  const [importProgress, setImportProgress] = useState<{ phase: string; page: number; pages: number; message: string } | null>(null);
+  const [importProgress, setImportProgress] = useState<{ phase: string; page: number; pages: number; message: string; notice?: string } | null>(null);
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [importInstructorIds, setImportInstructorIds] = useState<number[]>([]),
@@ -1653,7 +1653,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             cut = buffer.indexOf("\n");
             if (!line) continue;
             let event: any; try { event = JSON.parse(line); } catch { continue; }
-            if (event.type === "progress") setImportProgress({ phase: event.phase, page: event.page, pages: event.pages, message: event.message });
+            if (event.type === "progress") setImportProgress({ phase: event.phase, page: event.page, pages: event.pages, message: event.message, notice: event.notice ? String(event.notice) : undefined });
             else if (event.type === "done") data = event.result;
             else if (event.type === "error") failure = event.error;
           }
@@ -5114,6 +5114,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <div className="import-progress" role="status" aria-live="polite">
                   <div className="import-progress-track"><i style={{ width: `${pct}%` }} /></div>
                   <span>{importProgress.message}{importProgress.pages ? ` · ${(importProgress.page || 0).toLocaleString("ar-KW-u-nu-latn")}/${importProgress.pages.toLocaleString("ar-KW-u-nu-latn")}` : ""}</span>
+                  {importProgress.notice ? <p className="import-progress-notice"><AlertTriangle aria-hidden="true" />{importProgress.notice}</p> : null}
                 </div>
               );
             })() : null}
