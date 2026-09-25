@@ -377,6 +377,29 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(/kind === "survey"\)\s*\{\s*res\.redirect\(302, `\/q\//.test(share), "S17 و/s/ لرابط الاستبيان يحوّل إلى الاستبيان");
 }
 
+/* ── S18 إتاحة صفحتي الطالب ────────────────────────────────────────────── */
+{
+  const unlabeled = [...surveyPageSource.matchAll(/<label(?![^>]*\bfor=)(?![^>]*class="reason")[^>]*>/g)].map(match => match[0]);
+  check(unlabeled.length === 0, `S18 كل label مربوطٌ بحقله (${unlabeled.join(" ")})`);
+  check(surveyPageSource.includes('aria-pressed="') && surveyPageSource.includes('function press(el,on){el.classList.toggle("on",on);el.setAttribute("aria-pressed"')
+    && !/classList\.toggle\("on",(?:Number\(other|picked\.indexOf)/.test(surveyPageSource), "S18 أزرار اختيار المقررات تعلن حالتها aria-pressed");
+  check(!surveyPageSource.includes('<div id="err"></div>'), "S18 كل رسائل الخطأ role=alert aria-live");
+  check(surveyPageSource.includes('<input id="civil" dir="ltr" inputmode="numeric"'), "S18 حقل الرقم المدني numeric");
+  const privacy = (surveyPageSource.match(/\.privacy\{[^}]*\}/) || [""])[0];
+  const size = Number((privacy.match(/font-size:([\d.]+)px/) || [])[1] || 0);
+  const hex = (name: string) => (surveyPageSource.match(new RegExp(`--${name}:(#[0-9a-fA-F]{6})`)) || [])[1] || "";
+  const lum = (color: string) => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const muted = hex("muted"), bg = hex("bg");
+  const ratio = muted && bg ? (lum(muted) + 0.05) / (lum(bg) + 0.05) : 0;
+  check(size >= 12 && privacy.includes("color:var(--muted)") && ratio >= 4.5, `S18 نص الخصوصية ≥12px وتباينه ≥4.5:1 (${size}px, ${ratio.toFixed(2)}:1)`);
+  const status = between(server, "function studentCaseStatusPage", 'app.get("/m/:token"');
+  check(status.includes('<label for="civil">') && status.includes('<label for="ref"') && status.includes('inputmode="numeric"')
+    && status.includes('<div id="out" aria-live="polite">') && status.includes('class="err" role="alert"'), "S18 صفحة الحالة: labels وaria-live وnumeric");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
