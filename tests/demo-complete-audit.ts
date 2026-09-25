@@ -17,6 +17,7 @@ import { createDataContextKey } from "../src/server/dataContextCache";
 import { createDemoSandboxState } from "../src/db/demoSandbox";
 import { locationPreflight } from "../src/server/locationRegistryEngine";
 import { isDemoLinkToken, publicLinkTokenFromPath, DEMO_LINK_TOKEN_PREFIX } from "../src/utils/demoLinkToken";
+import { requestFullySettled } from "../src/utils/instructorRequestVerdict";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -177,7 +178,7 @@ async function p4Stories() {
     "(b) بقراراتٍ مختلفة: عند التسجيل، ومسجَّل، ولم توافق اللجنة — وتعارضٌ ينتظر اللجنة");
   check(seed.includes("surveyFingerprint(civil)") && seed.includes("sealStudentIdentity(name)") && seed.includes("generateSyntheticCivilId()"),
     "(b) بالبصمة والختم نفسيهما، وبأرقامٍ وهمية");
-  check(seed.includes("judgeRequestItems(") && seed.includes('status: "settled"') && seed.includes("alternatives: offered"),
+  check(seed.includes("judgeRequestItems(") && seed.includes("requestFullySettled(decidedItems)") && seed.includes("alternatives: offered"),
     "(c) طلبا أستاذين يحكم عليهما النظام نفسُه: واحدٌ ينتظر، وآخرُ رُفض ببدائل");
   check(seed.includes("Repository.saveDegreeRule(rule)"), "(d) قاعدةُ تخرّجٍ محفوظة لعلوم الحاسب");
   const demoRoute = body('app.post("/api/auth/demo"');
@@ -197,7 +198,22 @@ async function p4Stories() {
   check((await Repository.withDemoSandbox(session, () => Repository.getDemoGuide()))?.freshStudentCivil === "1", "ويُقرأ داخله");
 }
 
+/* ── P5: ما كشفته الجولة الحيّة ────────────────────────────────────────────── */
+function p5Findings() {
+  /* رفضٌ ببدائل كان يُغلق الطلب فلا يختار الأستاذ منها شيئاً. */
+  const alt = { day: "fsunday", start: "08:00", end: "08:50" };
+  check(!requestFullySettled([{ action: "change", decision: { state: "rejected", alternatives: [alt] } }]),
+    "رفضٌ ببدائل لا يُغلق الطلب — الأستاذ يختار منها");
+  check(requestFullySettled([{ action: "change", decision: { state: "rejected" } }, { action: "keep" }, { action: "delete", decision: { state: "fixed" } }]),
+    "رفضٌ بلا بدائل وتثبيتٌ وإبقاء: يُغلق الطلب");
+  check(!requestFullySettled([{ action: "change" }]), "بندٌ لم يُقرَّر بعد يُبقي الطلب مفتوحاً");
+  const decide = server.slice(server.indexOf('app.post("/api/instructor-requests/:id/decide"'), server.indexOf('app.get("/api/public/request/:token"'));
+  check(decide.includes("const decided = requestFullySettled(items);"), "مسارُ القرار يسأل القاعدة الواحدة");
+  check(!/decision\?\.state === "rejected"\)/.test(decide), "ولا نسخةَ ثانيةً من الشرط فيه");
+}
+
 async function main() {
+  p5Findings();
   await p4Stories();
   await p3PublicLinks();
   p2Registry();

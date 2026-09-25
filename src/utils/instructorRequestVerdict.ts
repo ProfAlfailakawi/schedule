@@ -521,3 +521,23 @@ export function describeRequest(verdicts: RequestVerdict[]): string {
   if (conflict) parts.push(`${conflict} متعارض`);
   return parts.join(" · ");
 }
+
+/**
+ * ── «أُغلق الطلب» حين لا يبقى فيه ما ينتظر أحداً ─────────────────────────────
+ *
+ * كان القسمُ حين يقرّر آخرَ بندٍ في الطلب يُغلقه («settled») — ولو كان قرارُه
+ * رفضاً مع بدائل. والطلبُ المغلق بابُه مغلق (`requestWindowOpen`)، فتظهر
+ * البدائلُ للأستاذ «للاطلاع» ولا يملك أن يختار منها شيئاً: يعرض القسمُ عليه
+ * خياراً لا يستطيع قبوله، ويعود الأمرُ إلى الهاتف.
+ *
+ * فالرفضُ مع بدائل لم يُختر منها بعدُ ينتظر الأستاذ، والطلبُ يبقى مفتوحاً له
+ * حتى يختار — فإذا أرسل اختيارَه عاد إلى القسم («submitted») كأيّ إرسال.
+ */
+export function requestFullySettled(items: ReadonlyArray<{
+  action: RequestAction;
+  decision?: { state?: string; alternatives?: readonly unknown[] };
+}>): boolean {
+  return items.every(item => item.action === "keep"
+    || item.decision?.state === "fixed"
+    || (item.decision?.state === "rejected" && !(item.decision.alternatives || []).length));
+}

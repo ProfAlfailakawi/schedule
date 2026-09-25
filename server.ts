@@ -72,7 +72,7 @@ import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { endForRequest, judgeRequest, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
+import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
@@ -2191,15 +2191,17 @@ async function seedDemoStories(): Promise<void> {
     const decidedAt = iso(-1);
     const offered = candidateSlots.filter(slot => slot.days.length > 1).slice(2, 4)
       .map(slot => ({ day: slot.days[0], days: slot.days, start: slot.start, end: endForRequest(slot.days, slot.start) }));
+    const decidedItems = signed.items.map((item, at) => at !== target ? item : {
+      ...item, decision: { state: "rejected" as const, reasonCode: "room" as const, note: "لا قاعة مناسبة في هذا الموعد؛ اختر أحد البديلين.", alternatives: offered, decidedBy: committee.role, decidedAt },
+    });
+    /* الحالةُ من القاعدة نفسها التي يحكم بها مسارُ القرار: رفضٌ ببدائل ينتظر الأستاذ. */
+    const settled = requestFullySettled(decidedItems);
     await Repository.saveInstructorRequest({
-      ...signed, status: "settled",
-      items: signed.items.map((item, at) => at !== target ? item : {
-        ...item, decision: { state: "rejected", reasonCode: "room", note: "لا قاعة مناسبة في هذا الموعد؛ اختر أحد البديلين.", alternatives: offered, decidedBy: committee.role, decidedAt },
-      }),
+      ...signed, status: settled ? "settled" : "in-review", items: decidedItems,
       timeline: [...signed.timeline,
         { kind: "item-rejected", at: decidedAt, by: committee.role, itemIndex: target, detail: "room" },
         { kind: "alternative-offered", at: decidedAt, by: committee.role, itemIndex: target },
-        { kind: "settled", at: decidedAt, by: committee.role }],
+        ...(settled ? [{ kind: "settled" as const, at: decidedAt, by: committee.role }] : [])],
     });
   }
 }
@@ -17049,7 +17051,8 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
   }];
   if (alternatives.length) timeline.push({ kind: "alternative-offered" as InstructorRequestEventKind, at: now, by, itemIndex: index });
 
-  const decided = items.every(entry => entry.action === "keep" || entry.decision?.state === "fixed" || entry.decision?.state === "rejected");
+  /* رفضٌ ببدائل ينتظر اختيارَ الأستاذ، فلا يُغلق الطلب (requestFullySettled). */
+  const decided = requestFullySettled(items);
   if (decided) timeline.push({ kind: "settled" as InstructorRequestEventKind, at: now, by });
 
   const saved = await Repository.saveInstructorRequest({

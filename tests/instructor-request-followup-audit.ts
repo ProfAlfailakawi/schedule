@@ -100,7 +100,7 @@ check(eaten === 0, "لا تعبيرَ نمطيَّ في صفحةٍ عامة يف
 const staffSrc = server.slice(server.indexOf("function staffCardPage"), server.indexOf("</html>`", server.indexOf("function staffCardPage")) + 9) + ";}";
 const staffHtml = (() => {
   const sb: any = {};
-  vm.runInNewContext(staffSrc.replace("function staffCardPage(token: string, label: string, nonce: string): string {", "function staffCardPage(token, label, nonce) {")
+  vm.runInNewContext(staffSrc.replace("function staffCardPage(token: string, label: string, nonce: string, demoHint = \"\"): string {", "function staffCardPage(token, label, nonce, demoHint = \"\") {")
     + "\nthis.html = staffCardPage('t','قسم','n');", sb);
   return String(sb.html);
 })();
