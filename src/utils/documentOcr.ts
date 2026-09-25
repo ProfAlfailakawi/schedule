@@ -1922,6 +1922,14 @@ export function clearImplausibleScanDays(rows:GridRow[]){
     row.days=authorityDaysCellLooksPlausible(mirrored)?mirrored.replace(/[^1-5]/g,"").split("").join(" "):"";
   }
 }
+/** The reason an empty day cell gives the reviewer. A cell the scanner did
+ *  read — and this reader or the server's hours check then emptied — says what
+ *  it read, isolated left-to-right as it stands on the sheet, so the reviewer
+ *  sets the days from the paper knowing why the cell is blank. */
+export function unresolvedDaysReason(raw:unknown):string{
+  const seen=String(raw||"").trim();
+  return/^[\d\s]+$/.test(seen)?`لم تثبت أيام المحاضرة؛ قُرئت الخلية «\u2066${seen}\u2069»`:"لم تثبت أيام المحاضرة";
+}
 /** «الصفحة 2» / «الصفحتان 1 و3» / «الصفحات 1، 3، 4» — the pages a notice names. */
 function unreadPagesNotice(pages:number[]):string|undefined{
   if(!pages.length)return undefined;

@@ -13,7 +13,7 @@ import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
-import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays } from "../src/utils/documentOcr.ts";
+import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
@@ -272,6 +272,10 @@ check("a scanned day cell the Authority could never print is left blank for revi
   const mirrored=["31 5","1 53","2 4 3 1"].map(days=>({days,daysRaw:days})) as any[];
   clearImplausibleScanDays(mirrored);
   assert.deepEqual(mirrored.map(row=>row.days),["5 3 1","5 3 1",""],"only a word-order mirror is repaired, never a digit set");
+  /* The emptied cell tells the reviewer what the scanner read, left-to-right as on the sheet. */
+  assert.equal(unresolvedDaysReason("3 2 4"),"لم تثبت أيام المحاضرة؛ قُرئت الخلية «\u20663 2 4\u2069»");
+  assert.equal(unresolvedDaysReason(""),"لم تثبت أيام المحاضرة");
+  assert.equal(unresolvedDaysReason("fsunday ftuesday"),"لم تثبت أيام المحاضرة","a fallback row's flag names are not a reading");
 });
 check("a page accepted with printed lines that have no row waits for «راجعت الصفحة» before publishing",()=>{
   /* The last page of file 1 as the server read it: 3 printed, 1 read. */
