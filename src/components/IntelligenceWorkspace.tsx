@@ -79,7 +79,7 @@ import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import StudentCasesTable from "./StudentCasesTable";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
-import PagedImportPreview from "./PagedImportPreview";
+import PagedImportPreview, { PageReviewWait } from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
 import { roomIdentityKey } from "../utils/locationRegistry";
 import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
@@ -94,7 +94,7 @@ import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetric
 
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
-import { pageReviewIssues, pageReviewWaitLine, pagesAwaitingReview } from "../utils/importPageReview";
+import { pageReviewIssues, pagesAwaitingReview } from "../utils/importPageReview";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -1809,6 +1809,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0);
   /* Scanned pages still waiting for «راجعت الصفحة» — named beside save and publish. */
   const importPagesPendingReview = importPreview?.importLayout === "authority-pdf" ? pagesAwaitingReview(importPreview.pageDiagnostics, reviewedImportPages) : [];
+  const confirmImportPage = (page: number) => setReviewedImportPages(prev => prev.includes(page) ? prev : [...prev, page]);
 
   const scopedCourses = useMemo(
     () => sortByName(
@@ -5135,7 +5136,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   pageDiagnostics={Array.isArray(importPreview.pageDiagnostics)?importPreview.pageDiagnostics:[]}
                   pageSummaries={Array.isArray(importPreview.pageSummaries)?importPreview.pageSummaries:[]}
                   reviewedPages={reviewedImportPages}
-                  onReviewPage={page => setReviewedImportPages(prev => prev.includes(page) ? prev : [...prev, page])}
+                  onReviewPage={confirmImportPage}
                   courses={courses as any}
                   instructors={instructors as any}
                   departmentIds={importInstructorIds}
@@ -5181,9 +5182,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               )}
               {/* ملاحظات صفحات PDF لا تُسرد فوق الجدول؛ فالصفحة التي تنتظر «راجعت الصفحة»
                   تُسمّى هنا بجوار الحفظ والنشر، كما في شاشة نقل الجدول. */}
-              {importPagesPendingReview.length ? (
-                <p className="transfer-preflight-wait" role="status">{pageReviewWaitLine(importPagesPendingReview)}</p>
-              ) : null}
+              <PageReviewWait pages={importPagesPendingReview} onReviewPage={confirmImportPage} withButtons={!importPreview.rows?.length} />
               {importBlockingIssues.length ? <button type="button" data-guide-ignore="ينقل المستخدم إلى ملاحظات الاستيراد داخل نفس المعاينة" className="import-review-jump" onClick={() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({behavior:"smooth",block:"center"})}>راجع {countOf(importBlockingIssues.length, oblique(AR.note))} لتفعيل الحفظ والنشر</button> : null}
               <div className="import-actions">
                 <SecondaryButton

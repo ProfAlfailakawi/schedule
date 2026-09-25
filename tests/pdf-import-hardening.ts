@@ -13,7 +13,7 @@ import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
-import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason } from "../src/utils/documentOcr.ts";
+import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
@@ -276,6 +276,13 @@ check("a scanned day cell the Authority could never print is left blank for revi
   assert.equal(unresolvedDaysReason("3 2 4"),"لم تثبت أيام المحاضرة؛ قُرئت الخلية «\u20663 2 4\u2069»");
   assert.equal(unresolvedDaysReason(""),"لم تثبت أيام المحاضرة");
   assert.equal(unresolvedDaysReason("fsunday ftuesday"),"لم تثبت أيام المحاضرة","a fallback row's flag names are not a reading");
+  /* The repair reads the digits the check read: Arabic-Indic digits are normalized first, never dropped. */
+  const indic=[{days:"٣1 5"},{days:"٣١ ٥"}] as any[];
+  clearImplausibleScanDays(indic);
+  assert.deepEqual(indic.map(row=>row.days),["5 3 1","5 3 1"]);
+  /* A cell filled from history says what was refused, instead of claiming it was empty. */
+  assert.equal(restoredDaysReason("3 2 4"),"قُرئت خلية الأيام «\u20663 2 4\u2069» ولم تُقبل؛ استعيدت الأيام من تطابق تاريخي فريد");
+  assert.equal(restoredDaysReason(""),"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة");
 });
 check("a page accepted with printed lines that have no row waits for «راجعت الصفحة» before publishing",()=>{
   /* The last page of file 1 as the server read it: 3 printed, 1 read. */
@@ -297,6 +304,25 @@ check("a page accepted with printed lines that have no row waits for «راجع�
   const empty=scanPageVerdict({rows:0,filled:0,printed:2,broken:0});
   assert.equal(empty.suspicious,false);
   assert.equal(empty.missedLines,2);
+  /* The page's own note says where the missing lines go; the preview cannot add a row. */
+  assert.match(tail.warning||"",/أضف الناقص في الجدول بعد الاستيراد/);
+  assert.doesNotMatch(tail.warning||"",/يدوياً/);
+});
+check("a page the deep pass still leaves with no row is judged again by the lines its enhanced read counted",()=>{
+  const first:OcrPageDiagnostic={page:3,visualRows:2,extractedRows:0,gridDetected:true,orientation:0,...scanPageVerdict({rows:0,filled:0,printed:2,broken:0})};
+  assert.equal(first.suspicious,false,"2 printed, 0 read: accepted with a note on the first count");
+  const again=rejudgeEmptyPage(first,5);
+  assert.equal(again.suspicious,true,"the enhanced read counted 5: the whole page is lost, so the file stops");
+  assert.equal(again.missedLines,undefined,"a refused page asks for no review");
+  assert.equal(again.visualRows,5);
+  assert.equal(again.reason,"طُبع فيها 5 أسطر ولم يُقرأ منها أي صف");
+  assert.equal(again.warning,undefined,"the first count's note does not survive");
+  assert.equal(rejudgeEmptyPage(first,2),first,"the same count: the first verdict stands");
+  assert.equal(rejudgeEmptyPage(first,1),first,"a count never shrinks a verdict");
+  const refused={...first,suspicious:true,reason:"x"};
+  assert.equal(rejudgeEmptyPage(refused,9),refused,"an already refused page keeps its reason");
+  const gridless={...first,gridDetected:false};
+  assert.equal(rejudgeEmptyPage(gridless,9),gridless,"a page with no grid keeps its own diagnostic");
 });
 check("a page's two notes are said together, not one hiding the other",()=>{
   const both=scanPageVerdict({rows:26,filled:26,printed:28,broken:3});

@@ -1,12 +1,32 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { instructorIdentityKey, uniqueExactIdentityMatch } from "../utils/instructorIdentity";
 import { AlertTriangle, CheckCircle2, FileText } from "lucide-react";
 import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
 import { AR, countOf } from "../utils/arabicCount";
+import { pageReviewWaitLine } from "../utils/importPageReview";
 
 type TableProps = React.ComponentProps<typeof ImportPreviewTable>;
 type PageDiagnostic = { page?: number; extractedRows?: number; visualRows?: number; suspicious?: boolean; reason?: string; warning?: string; missedLines?: number };
 type PageSummary = { page?: number; rows?: number; ready?: number; review?: number; suspicious?: boolean; diagnostic?: PageDiagnostic };
+
+/**
+ * The line beside save / publish while scanned pages wait for «راجعت الصفحة».
+ * Each page's own button lives on its page. When the page preview is not on
+ * screen at all — every row deleted in review, or a file whose pages produced
+ * none — the buttons come here, or publishing would wait for a button nobody
+ * can reach. One component for both import screens.
+ */
+export function PageReviewWait({ pages, onReviewPage, withButtons = false }: { pages: number[]; onReviewPage?: (page: number) => void; withButtons?: boolean }) {
+  if (!pages.length) return null;
+  return (
+    <p className="transfer-preflight-wait" role="status">
+      <span>{pageReviewWaitLine(pages)}</span>
+      {withButtons && onReviewPage ? pages.map(page => (
+        <button key={page} type="button" className="import-page-review-confirm" title="أؤكد أني قارنت هذه الصفحة بالورقة، وسأضيف أسطرها الناقصة في الجدول بعد الاستيراد" data-guide-ignore="تأكيد مراجعة صفحة ناقصة في المعاينة فقط؛ لا يحفظ ولا ينشر" onClick={() => onReviewPage(page)}>راجعت الصفحة {page.toLocaleString("ar-KW-u-nu-latn")}</button>
+      )) : null}
+    </p>
+  );
+}
 
 /**
  * Page-scoped Authority PDF review.
@@ -222,6 +242,7 @@ export default function PagedImportPreview({
      والمعاينة تعدّل الصفوف ولا تضيفها. فيُطلب تأكيدٌ صريح أن الصفحة قورنت بالورقة،
      والحفظ والنشر ينتظرانه، وتُضاف الأسطر الناقصة في الجدول بعد الاستيراد
      (importPageReview). */
+  const focusReviewed = useRef(0);
   const awaitingReview = (diagnostic?: PageDiagnostic) => {
     const page = Number(diagnostic?.page || 0);
     return Boolean(onReviewPage && page && Number(diagnostic?.missedLines) > 0 && !reviewedPages.includes(page));
@@ -229,9 +250,10 @@ export default function PagedImportPreview({
   const reviewControl = (diagnostic?: PageDiagnostic) => {
     const page = Number(diagnostic?.page || 0);
     if (!onReviewPage || !page || !(Number(diagnostic?.missedLines) > 0)) return null;
+    /* الزرّ يختفي بالضغط، فتنتقل البؤرة إلى العبارة التي حلّت محلّه ولا تسقط إلى أول الصفحة. */
     return reviewedPages.includes(page)
-      ? <span className="import-page-reviewed"><CheckCircle2 aria-hidden="true" />رُوجعت الصفحة · أضف الناقص بعد الاستيراد</span>
-      : <button type="button" className="import-page-review-confirm" title="أؤكد أني قارنت هذه الصفحة بالورقة، وسأضيف أسطرها الناقصة في الجدول بعد الاستيراد" data-guide-ignore="تأكيد مراجعة صفحة ناقصة في المعاينة فقط؛ لا يحفظ ولا ينشر" onClick={() => onReviewPage(page)}>راجعت الصفحة</button>;
+      ? <span className="import-page-reviewed" tabIndex={-1} ref={element => { if (element && focusReviewed.current === page) { focusReviewed.current = 0; element.focus(); } }}><CheckCircle2 aria-hidden="true" />رُوجعت الصفحة · أضف الناقص بعد الاستيراد</span>
+      : <button type="button" className="import-page-review-confirm" title="أؤكد أني قارنت هذه الصفحة بالورقة، وسأضيف أسطرها الناقصة في الجدول بعد الاستيراد" data-guide-ignore="تأكيد مراجعة صفحة ناقصة في المعاينة فقط؛ لا يحفظ ولا ينشر" onClick={() => { focusReviewed.current = page; onReviewPage(page); }}>راجعت الصفحة</button>;
   };
 
   const mergePageRows = (nextPageRows: ImportRow[]) => {
@@ -286,7 +308,9 @@ export default function PagedImportPreview({
           const diagnostic = diagnosticByPage.get(page) || summary?.diagnostic;
           const liveReview = pageRows.filter(rowNeedsReview).length;
           const review = pageRows.length ? liveReview : Number(summary?.review ?? 0);
-          const suspicious = Boolean(summary?.suspicious || diagnostic?.suspicious || diagnostic?.warning || review > 0 || (pageRows.length === 0 && Number(diagnostic?.extractedRows || 0) > 0));
+          /* صفحةٌ رُوجعت أسطرها الناقصة لا يبقى تنبيه قراءتها مثلثاً على لسانها؛ صفوفها الحيّة تحكم. */
+          const acknowledged = Number(diagnostic?.missedLines) > 0 && reviewedPages.includes(page);
+          const suspicious = Boolean(summary?.suspicious || diagnostic?.suspicious || (diagnostic?.warning && !acknowledged) || review > 0 || (pageRows.length === 0 && Number(diagnostic?.extractedRows || 0) > 0));
           const empty = pageRows.length === 0;
           const active = activePage === page;
           return (
@@ -328,9 +352,15 @@ export default function PagedImportPreview({
       {currentRows.length ? (
         <ImportPreviewTable rows={currentRows} onRows={mergePageRows} {...displayProps} />
       ) : (
-        Number(diagnosticByPage.get(activePage)?.missedLines) > 0
-          ? <div className="import-page-empty"><FileText /><strong>لم يُقرأ صف من هذه الصفحة</strong><small>ما طُبع فيها ولم يُقرأ يُضاف في الجدول بعد الاستيراد.</small></div>
-          : <div className="import-page-empty"><FileText /><strong>لا توجد صفوف في هذه الصفحة</strong><small>لن تُضاف أي بيانات منها ما لم تكن الصفحة تحتوي جدولًا فعليًا.</small></div>
+        (() => {
+          const diagnostic = diagnosticByPage.get(activePage);
+          if (!(Number(diagnostic?.missedLines) > 0)) return <div className="import-page-empty"><FileText /><strong>لا توجد صفوف في هذه الصفحة</strong><small>لن تُضاف أي بيانات منها ما لم تكن الصفحة تحتوي جدولًا فعليًا.</small></div>;
+          /* الصفحة المدينة بأسطر تبقى ولو فرغت: فرغت لأن المراجع حذف صفوفها، أو لأنه لم يُقرأ منها صف. */
+          const readRows = Number(summaryByPage.get(activePage)?.rows ?? diagnostic?.extractedRows ?? 0);
+          return readRows > 0
+            ? <div className="import-page-empty"><FileText /><strong>حُذفت صفوف هذه الصفحة في المعاينة</strong><small>وما طُبع فيها ولم يُقرأ يُضاف في الجدول بعد الاستيراد.</small></div>
+            : <div className="import-page-empty"><FileText /><strong>لم يُقرأ صف من هذه الصفحة</strong><small>ما طُبع فيها ولم يُقرأ يُضاف في الجدول بعد الاستيراد.</small></div>;
+        })()
       )}
     </section>
   );
