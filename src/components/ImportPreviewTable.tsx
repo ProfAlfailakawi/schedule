@@ -7,7 +7,7 @@ import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { expectedMinutesForDay, type DayKey as RegulationDayKey } from "../utils/scheduleRegulations";
 import { cleanBuildingCode, cleanHallCode } from "../utils/cleanRoom";
 import { roomIdentityKey } from "../utils/locationRegistry";
-import { instructorIdentityTokens } from "../utils/instructorIdentity";
+import { displayInstructorText, instructorIdentityTokens } from "../utils/instructorIdentity";
 import { authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
 
 /**
@@ -182,8 +182,11 @@ export default function ImportPreviewTable({
      الأول لا شيء يُفعل حياله، والثاني اسم أمام المراجع يختاره من القائمة في
      ثانية. فيُعرض النص المقروء كما هو، موسوماً بأنه غير مرتبط — نصّ مصدر
      للعرض فقط، لا يُحفظ ولا يصير هوية. */
-  const readInstructorText = (row: ImportRow) =>
-    String(row.sourceInstructorText || row.importEvidence?.instructor?.raw || "").trim().slice(0, 60);
+  const rawInstructorText = (row: ImportRow) =>
+    String(row.sourceInstructorText || row.importEvidence?.instructor?.raw || "").trim();
+  /* ما شوّهه المسح («وفى»ف0[ف[]»أ88 در محمد…») لا يُعرض اسماً: تُعرض الكلمات
+     النظيفة وحدها، والوسم يقول «اسم غير واضح» (readableInstructorName). */
+  const readInstructorText = (row: ImportRow) => displayInstructorText(rawInstructorText(row)).slice(0, 60);
   /* ── السبب يُقرأ في الخانة، لا تحت الفأرة ────────────────────────────────
      التشخيص كان تلميحاً يحتاج تمرير مؤشر: من يراجع جدولاً على شاشة لمس، أو
      يصوّره ليسأل عنه، لا يراه أبداً. الخانة غير المربوطة تكتب سببها تحت
@@ -195,6 +198,7 @@ export default function ImportPreviewTable({
       الاختيار — والتلميح يسمّي المرشحين بأسمائهم وأرقامهم. */
   const unlinkedLabel = (row: ImportRow) => {
     const method = row.importEvidence?.instructor?.method;
+    if (method === "UNREADABLE_NAME") return "اسم غير واضح";
     if (method === "UNREGISTERED") return "غير مسجّل";
     if (method === "DUPLICATE_REGISTRATION") return "مسجّل أكثر من مرة";
     return "غير محسوم";
@@ -433,7 +437,7 @@ export default function ImportPreviewTable({
                     )}
                   </td>
                   <td className={outsideNote?"import-cell-review":cellClass("instructor",missing.instructor(row))} title={[cellTitle("instructor"),outsideNote].filter(Boolean).join(" · ")||undefined}>
-                    {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} suggestedName={readInstructorText(row)} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} strictDepartmentOnly onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}{outsideNote ? <button type="button" data-guide-ignore="تثبيت هوية مطابَقة داخل معاينة الاستيراد قبل أي حفظ" className="import-instructor-confirm" title="تثبيت هذا الأستاذ لهذا الصف" onClick={() => patchManual(index, "instructor", { AdInstructorId: Number(row.AdInstructorId) })}>تثبيت</button> : null}</span> : (readInstructorText(row) ? <span className="import-instructor-name import-instructor-unlinked"><span className="import-unlinked-head"><span>{readInstructorText(row)}</span><small>{unlinkedLabel(row)}</small></span>{unlinkedReason(row) ? <em className="import-unlinked-why">{unlinkedReason(row)}</em> : null}</span> : "—"))}
+                    {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} suggestedName={readInstructorText(row)} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} strictDepartmentOnly onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}{outsideNote ? <button type="button" data-guide-ignore="تثبيت هوية مطابَقة داخل معاينة الاستيراد قبل أي حفظ" className="import-instructor-confirm" title="تثبيت هذا الأستاذ لهذا الصف" onClick={() => patchManual(index, "instructor", { AdInstructorId: Number(row.AdInstructorId) })}>تثبيت</button> : null}</span> : (rawInstructorText(row) ? <span className="import-instructor-name import-instructor-unlinked"><span className="import-unlinked-head">{readInstructorText(row) ? <span>{readInstructorText(row)}</span> : null}<small>{unlinkedLabel(row)}</small></span>{unlinkedReason(row) ? <em className="import-unlinked-why">{unlinkedReason(row)}</em> : null}</span> : "—"))}
                   </td>
                   <td className="import-row-tools">
                     <button type="button" data-guide-ignore="تحرير صف داخل معاينة الاستيراد قبل أي حفظ" className={open ? "confirm" : ""} title={open ? "تم" : "تعديل سريع"} onClick={() => open ? setEditing(null) : beginEdit(index)}>{open ? <Check /> : <Pencil />}</button>

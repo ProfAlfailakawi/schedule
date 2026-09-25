@@ -1,6 +1,7 @@
 import React from "react";
 import { AdCourse, AdInstructor, FSchedule } from "../types";
 import VisitingBadge from "./VisitingBadge";
+import { displayInstructorText } from "../utils/instructorIdentity";
 
 export type AuthorityReportEntry = {
   status: "added" | "deleted" | "changed" | "unchanged";
@@ -184,7 +185,7 @@ export default function AuthorityPdfReport({
                           النظام لا من المستند، وفي الصفوف المعدَّلة وحدها
                           حتى لا يمتلئ العمود بأرقام لا تخصّ التغيير. */}
                       <div role="cell" className={`print-wrap print-instructor-name authority-pdf-instructor ${cell(fieldChanged(entry, "AdInstructorId"))}`}>
-                        <span>{instructor?.AdInstructorName || row.sourceInstructorText || "—"}</span>
+                        <span>{instructor?.AdInstructorName || displayInstructorText(row.sourceInstructorText) || "—"}</span>
                         {fieldChanged(entry, "AdInstructorId") && instructor?.AdInstructorCivil
                           ? <bdi className="authority-pdf-civil print-ltr">{String(instructor.AdInstructorCivil).trim()}</bdi>
                           : null}

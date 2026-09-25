@@ -109,7 +109,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { instructorCleanName, foldInstructorText, instructorIdentityTokens, registryCandidatesFor } from "./src/utils/instructorIdentity";
+import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
@@ -125,6 +125,7 @@ import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, par
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { fairShareByOwner } from "./src/utils/hallBarterFairness";
 import { scanRefusalMessage, unresolvedDaysReason, restoredDaysReason } from "./src/utils/documentOcr";
+import { pageReviewWaitLine, pagesAwaitingReview, unconfirmedReviewPages } from "./src/utils/importPageReview";
 import type { BranchScope } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
@@ -1410,7 +1411,10 @@ function safeImportEvidence(input:any){
   return Object.keys(safe).length?safe:undefined;
 }
 
-type PdfImportReceipt={v:1;collegeId:number;sectionId:number;termId:number;sourceTerm:string;sourceBranch:string;sourceDepartment:string;issuedAt:string};
+/* reviewPages: scanned pages accepted with printed lines that have no row. The
+   draft is refused until the request confirms each one (importPageReview). A
+   receipt signed before this field existed carries none and asks for none. */
+type PdfImportReceipt={v:1;collegeId:number;sectionId:number;termId:number;sourceTerm:string;sourceBranch:string;sourceDepartment:string;issuedAt:string;reviewPages?:number[]};
 async function signPdfImportReceipt(payload:PdfImportReceipt){
   const body=Buffer.from(JSON.stringify(payload),"utf8").toString("base64url");
   const secret=await Repository.getStudentCaseSecret();
@@ -8950,7 +8954,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
     /* المرشحون المعروضون أساتذةُ القسم وحدهم: أسماء الجامعة كلها ضجيجٌ أمام
        المراجع، والاختيار الصحيح يكاد يكون دائماً من أهل القسم. */
-    const {exact:allExact,partial:allPartial}=registryCandidatesFor(written,(instructors as any[]).filter(person=>departmentMembership.has(Number(person.AdInstructorId))) as any);
+    /* اسمٌ شوّهه المسح يُبحث له بما بقي منه نظيفاً (readableInstructorName):
+       ضجيج «ف0» و«ا88» لا يشارك اسماً حقيقياً في شيء. والاسم النظيف يبقى كما كان. */
+    const readable=readableInstructorName(written);
+    const {exact:allExact,partial:allPartial}=registryCandidatesFor(readable.garbled&&readable.text?readable.text:written,(instructors as any[]).filter(person=>departmentMembership.has(Number(person.AdInstructorId))) as any);
     const exact=allExact,partial=allPartial;
     if(exact.length>=2){
       return{method:"DUPLICATE_REGISTRATION",reason:`مسجّل أكثر من مرة: ${exact.map(describeCandidate).join("، ")}.`};
@@ -8961,6 +8968,8 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     if(partial.length){
       return{method:"AMBIGUOUS",reason:`الأقرب: ${partial.map(describeCandidate).join("، ")}.`};
     }
+    /* «غير مسجّل» حكمٌ على شخص؛ لا يُقال عن اسمٍ لم يُقرأ بوضوح. */
+    if(readable.garbled)return{method:"UNREADABLE_NAME",reason:"قُرئ الاسم من المسح ناقصاً أو مشوّهاً ولم يطابق أحداً من أساتذة القسم؛ اختر الأستاذ من القائمة."};
     return{method:"UNREGISTERED",reason:"غير موجود بين أساتذة القسم."};
   };
   const unresolvedInstructorOutcome=(row:any)=>unresolvedInstructorDiagnosis(row).method;
@@ -9064,7 +9073,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
         const where=clashAt?` (يدرّس «${person}» في ${collegeName.get(Number(clashAt.AdCollegeId))||"كلية أخرى"} في الوقت نفسه)`:"";
         row.AdInstructorId=0;
         row.instructorMatchMethod="";
-        row.instructorAmbiguousShortName=`«${String(row.sourceInstructorText||"").trim()}» يطابق «${person}» بالاسم المختصر فقط${where}؛ غالباً شخص آخر بالاسم نفسه — اختر الأستاذ أو أضفه.`;
+        row.instructorAmbiguousShortName=`«${displayInstructorText(row.sourceInstructorText)}» يطابق «${person}» بالاسم المختصر فقط${where}؛ غالباً شخص آخر بالاسم نفسه — اختر الأستاذ أو أضفه.`;
       }
     }
   }
@@ -9205,9 +9214,11 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     ...parserNotes.filter((issue:string)=>/^تحذير:/.test(String(issue))),
   ])];
   const issues=[...new Set([...blocking,...parserNotes])];
+  const reviewPages=pagesAwaitingReview(recognized.pageDiagnostics,[]);
   const importReceipt=await signPdfImportReceipt({
     v:1,collegeId,sectionId,termId,issuedAt:new Date().toISOString(),
     sourceTerm:headerPreflight.term.label,sourceBranch:headerPreflight.branch.label,sourceDepartment:headerPreflight.department.label,
+    ...(reviewPages.length?{reviewPages}:{}),
   });
   const evidenceFields=["course","section","days","time","instructor","building","room"];
   let confirmedCells=0,derivedCells=0,reviewCells=0,readyRows=0;
@@ -9274,8 +9285,19 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const importLayout=req.body?.importLayout==="authority-pdf"?"authority-pdf":req.body?.importLayout==="worksheet"?"worksheet":undefined;
   const importReceipt=importLayout==="authority-pdf"?String(req.body?.importReceipt||""):"";
-  if(importLayout==="authority-pdf"&&!await verifyPdfImportReceipt(importReceipt,{collegeId,sectionId,termId})){
+  const receipt=importLayout==="authority-pdf"?await verifyPdfImportReceipt(importReceipt,{collegeId,sectionId,termId}):null;
+  if(importLayout==="authority-pdf"&&!receipt){
     res.status(409).json({error:"انتهت أو غابت شهادة فحص ترويسة PDF. أعد رفع الملف؛ لا يمكن تجاوز فحص الفصل والكلية والقسم من الواجهة.",code:"PDF_IMPORT_RECEIPT_REQUIRED"});return;
+  }
+  /* «راجعت الصفحة» يُفرض هنا أيضاً: زرّ الواجهة المعطّل لا يراه تطبيقٌ قديم في
+     ذاكرة المتصفح ولا طلبٌ مباشر، والإيصال الموقّع يعرف الصفحات التي تنتظره. */
+  const unconfirmedPages=unconfirmedReviewPages(receipt?.reviewPages,req.body?.reviewedPages);
+  if(unconfirmedPages.length){
+    /* نافذةٌ من إصدارٍ سابق لا ترسل قائمة المراجعة أصلاً، وشاشتُها قد تقول «رُوجعت
+       الصفحة». لا يُطلب من أحدٍ «تحديث الصفحة» (src/main.tsx): إغلاقُ النافذة
+       يُحدّث البرنامجَ نفسه، ولم يُحفظ شيء. */
+    const outdated=!Array.isArray(req.body?.reviewedPages);
+    res.status(400).json({error:outdated?"هذه النافذة من إصدار سابق للنظام. أغلقها ثم أعد رفع الملف؛ لم يُحفظ شيء.":pageReviewWaitLine(unconfirmedPages),code:"PDF_PAGE_REVIEW_REQUIRED",pages:unconfirmedPages});return;
   }
   const rows=importLayout==="authority-pdf"
     ?assignAuthoritySections(safeDraftRows(req.body?.rows,collegeId,sectionId,termId))

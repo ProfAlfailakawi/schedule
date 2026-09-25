@@ -44,6 +44,39 @@ export const instructorCleanName = (value: string) => foldInstructorText(value)
   .replace(/\s+/g, " ")
   .trim();
 
+/* ── اسمٌ للعرض، لا ضجيجٌ مقروء ────────────────────────────────────────────
+ * خانة الأستاذ في المسح قد تُقرأ ومعها ضجيج الحدود والأعمدة المجاورة:
+ * «وفى»ف0[ف[]»أ88 در محمد…» و«حمد ail سعود المحيلبي ١». الاسم لا يحمل
+ * أرقاماً ولا حروفاً لاتينية ولا أقواساً، فالكلمة التي فيها شيءٌ من ذلك ضجيجٌ
+ * تسقط كلها؛ لا يُستخرج منها حرف، لأن ما يبقى من حروفها لا يصنع كلمة.
+ * وتسقط قبل الاسم الألقابُ والشظايا القصيرة («د.»، «در»). ما يبقى يُعرض
+ * للمراجع دليلاً يختار به من القائمة لا هويةً، ويُقال معه إن المسح شوّهه
+ * (garbled) — فلا يُوصف شخصٌ بأنه «غير مسجّل» لأن اسمه قُرئ مشوّهاً. */
+const ARABIC_NAME_WORD = /^[\u0621-\u063A\u0641-\u064A\u0670-\u06D3\u0640\u064B-\u0652]+\.?$/;
+const NAME_TITLE = /^(?:ا\.?د|أ\.?د|د|أ|ا|م|دكتور|الدكتور|دكتورة|الدكتورة|أستاذ|الأستاذ|استاذ|الاستاذ)\.?$/;
+const nameLetters = (word: string) => word.replace(/[.\u0640\u064B-\u0652]/g, "");
+export function readableInstructorName(raw: unknown): { text: string; garbled: boolean } {
+  const source = stripPresentation(String(raw || "")).replace(/\./g, ". ").replace(/\s+/g, " ").trim();
+  if (!source) return { text: "", garbled: false };
+  let garbled = false;
+  const words = source.split(" ").filter(word => {
+    if (ARABIC_NAME_WORD.test(word)) return true;
+    garbled = true;
+    return false;
+  });
+  while (words.length && (NAME_TITLE.test(words[0]) || nameLetters(words[0]).length <= 2)) words.shift();
+  while (words.length && nameLetters(words[words.length - 1]).length <= 1) { words.pop(); garbled = true; }
+  return { text: words.map(word => word.replace(/\.$/, "")).join(" "), garbled };
+}
+
+/** The scanned instructor text as any screen may show it: clean words only
+ *  when the scan garbled it, otherwise exactly as printed. One rule for the
+ *  preview, the import report and the server's sentences. */
+export const displayInstructorText = (raw: unknown): string => {
+  const readable = readableInstructorName(raw);
+  return readable.garbled ? readable.text : String(raw || "").trim();
+};
+
 /** «عبد الله» و«عبدالله» اسم واحد، و«ال أنصاري» المشطورة هي «الأنصاري»،
  *  و«يحيى» بعد طيّ الألف المقصورة هي «يحي». يُبنى الاسم رموزَ هويةٍ تُدمج
  *  فيها هذه الشظايا قبل أي مقارنة. */

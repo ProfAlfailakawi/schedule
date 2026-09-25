@@ -34,6 +34,16 @@ export function pageReviewWaitLine(pages: readonly number[]): string {
   return `بانتظار مراجعة ${named}: قارن أسطرها بالورقة ثم اضغط «راجعت الصفحة». الأسطر الناقصة تُضاف في الجدول بعد الاستيراد.`;
 }
 
+/** Pages a request did not confirm among those the import receipt requires.
+ *  The server's own check: the client's gate is a disabled button, which an
+ *  outdated cached app or a direct request never sees. Inputs are untrusted,
+ *  so anything that is not a positive whole page number is ignored. */
+export function unconfirmedReviewPages(required: unknown, reviewed: unknown): number[] {
+  const pagesOf = (value: unknown) => (Array.isArray(value) ? value : []).map(Number).filter(page => Number.isInteger(page) && page > 0);
+  const done = new Set(pagesOf(reviewed));
+  return [...new Set(pagesOf(required))].filter(page => !done.has(page)).sort((a, b) => a - b);
+}
+
 /** All blocking lines for the pages still waiting, ready to merge into the issues. */
 export function pageReviewIssues(pages: ReviewablePage[] | undefined, reviewed: readonly number[]): string[] {
   const byPage = new Map((Array.isArray(pages) ? pages : []).map(page => [Number(page?.page), Number(page?.missedLines) || 0] as const));
