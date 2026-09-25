@@ -12049,13 +12049,19 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
   let termId = Number(req.query.termId || 0);
   // القاعات الظاهرة للمستخدم العادي تظل داخل قسمه. نحتاج جدول الفصل
   // الكامل فقط لمعرفة أن قاعته محجوزة من جهة أخرى، لا لعرض قاعات الآخرين.
-  if (!req.user.IsAdminUser && (!collegeId || !sectionId || !isScopeAllowed(req, collegeId, sectionId))) {
+  /* مستوى الكلية (N10): من يغطّي الكلية كلها (العميد والعميد المساعد) يرى
+     قاعاتها بلا اختيار قسم — كان يُردّ بـ403 لأن القسم صفر. */
+  const collegeWide = !sectionId && Boolean(collegeId) && (await wholeCollegeSectionIds(req, collegeId)).length > 0;
+  if (!req.user.IsAdminUser && (!collegeId || (!collegeWide && (!sectionId || !isScopeAllowed(req, collegeId, sectionId))))) {
     res.status(403).json({ error: "خارج نطاق القسم المسموح لك" });
     return;
   }
   if (!termId) { const terms = await Repository.getTerms(); termId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0); }
 
-  const { rows, universe } = await scopedScheduleUniverse(collegeId, sectionId, termId);
+  const scoped = await scopedScheduleUniverse(collegeId, sectionId, termId);
+  const universe = scoped.universe;
+  /* «قاعاتي» للعميدين من الجداول النهائية وحدها، كسائر ما يقرآن. */
+  const rows = readsFinalSchedulesOnly(req) ? await finalRowsOnly(scoped.rows, termId) : scoped.rows;
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   // Room utilization is intentionally official-only. Pending and historical
   // unresolved locations are separate data-quality signals and must never

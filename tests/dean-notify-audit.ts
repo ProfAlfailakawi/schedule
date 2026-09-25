@@ -267,5 +267,12 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(!reports.includes("if(!filters.collegeId||!filters.sectionId||!filters.termId){setVisitingIds"), "N7: الواجهة لا تشترط قسماً لقراءة المنتدبين");
 }
 
+/* ══ N10 — إشغال القاعات على مستوى الكلية ═══════════════════════════════ */
+{
+  const load = routeBody('app.get("/api/reports/room-load"');
+  check(load.includes("await wholeCollegeSectionIds(req, collegeId)") && load.includes("!collegeWide &&"), "N10: العميد المساعد يقرأ إشغال قاعات كليته بلا قسم");
+  check(load.includes("readsFinalSchedulesOnly(req) ? await finalRowsOnly(scoped.rows, termId)"), "N10: «قاعاتي» للعميدين من النهائي وحده");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
