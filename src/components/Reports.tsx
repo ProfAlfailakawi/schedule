@@ -12,7 +12,7 @@ import { APPROVAL_STATUS_LABEL } from "../utils/approvalWorkflow";
 import type { ScheduleApprovalStatus } from "../types";
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
-import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
+import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { currentTermId, sortTermsNewest, termChronology } from "../utils/termSequence";
@@ -1882,7 +1882,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               {collegeOptions.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{cleanOptionText(row.AdCollegeName)}</option>)}
             </select>
           </Field>
-          {isPowerAdmin || !scopeState.lockSection ? (
+          {singleDepartmentOf(scopes, filters.collegeId, isPowerAdmin) === null ? (
             <Field label="القسم">
               <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => set("sectionId", Number(event.target.value) || 0)}>
                 <option value="">كل الأقسام</option>

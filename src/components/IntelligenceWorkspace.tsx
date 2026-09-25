@@ -72,7 +72,7 @@ import type {
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
-import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
+import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
@@ -1961,7 +1961,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       terms={terms}
       online={online}
       lockCollege={scopedContext.lockCollege}
-      lockSection={scopedContext.lockSection}
+      lockSection={singleDepartmentOf(scopes, collegeId, isPowerAdmin) !== null}
       hideSection={!isPowerAdmin}
       onCollegeChange={(nextCollegeId, firstSectionId) => {
         setCollegeId(nextCollegeId);

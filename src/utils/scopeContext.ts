@@ -85,7 +85,6 @@ export function resolveScopeSelection(
       defaultCollegeId: 0,
       defaultSectionId: 0,
       lockCollege: false,
-      lockSection: false,
       collegeIds: [] as number[],
       sectionIds: [] as number[],
     };
@@ -110,8 +109,6 @@ export function resolveScopeSelection(
     defaultCollegeId,
     defaultSectionId: sectionIds.length === 1 ? sectionIds[0] : 0,
     lockCollege: collegeIds.length === 1,
-    /* القرار نفسه في موضعه الواحد — لا نسخةَ ثانية تفترق عنه. */
-    lockSection: singleDepartmentOf(scopes, activeCollegeId) !== null,
     collegeIds,
     sectionIds,
   };
