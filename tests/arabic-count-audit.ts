@@ -40,7 +40,9 @@ for (const [key, noun] of Object.entries(AR)) {
 // Nouns counted in this product that are not (yet) needed in AR as whole
 // entries but must still never follow a raw number.
 for (const extra of ["موعدا", "طلبة"]) forms.add(extra);
-const nounAlternation = [...forms].sort((a, b) => b.length - a.length).map(f => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+/* Harakat are not letters: «صفّاً» is «صفا» to the matcher, on both sides. */
+const bare = (text: string) => text.replace(/[\u064B-\u0652\u0640]/g, "");
+const nounAlternation = [...new Set([...forms].map(bare))].sort((a, b) => b.length - a.length).map(f => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 
 const ISO = "[\\u2066-\\u2069\\u200e\\u200f\\s]*";
 const TAGS = "(?:\\s*<\\/?[a-zA-Z][^<>]*>)*";
@@ -81,8 +83,9 @@ export function scan(files = sourceFiles(), read = (f: string) => fs.readFileSyn
   const used = new Set<number>();
   for (const file of files) {
     read(file).split("\n").forEach((raw, i) => {
-      const line = codeOf(raw);
-      if (line === null) return;
+      const code = codeOf(raw);
+      if (code === null) return;
+      const line = bare(code);
       PATTERN.lastIndex = 0;
       for (const m of line.matchAll(PATTERN)) {
         // An interpolation that is itself countOf/nounFor already carries its

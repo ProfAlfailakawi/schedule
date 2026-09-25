@@ -220,7 +220,7 @@ check(server.includes("changedRowCount = moved.counts.added + moved.counts.remov
   "كلُّ جولةٍ تحمل عدد الصفوف التي تحرّكت رداً على ملاحظاتها");
 check(server.includes("/* عددٌ يُعرض، لا شرطٌ يُحتسب: تعذّره لا يمنع الإرسال. */"),
   "وحسابُه لا يمنع إرسالاً");
-check(changes.includes("فتحرّك ${round.changedRowCount} صفّاً"),
+check(changes.includes("فتحرّك ${countOf(round.changedRowCount, AR.row)}"),
   "ويُقرأ في الشريط الزمني بجانب ما طُلب");
 
 /* ── ٧) خلافٌ لم يُحسم ──────────────────────────────────────────────────── */

@@ -26,7 +26,7 @@ import { EMPTY_INBOX_ASK, matchesInboxAsk, parseInboxAsk, type InboxAsk, type In
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { APPROVAL_STATUS_LABEL, CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, ESCALATE_AFTER_INSISTS } from "../utils/approvalWorkflow";
 import { isViewerOnlyRole } from "../utils/academicRoles";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
 import { DECISION_1912_LABEL, regulationScore, type RegulationFinding } from "../utils/scheduleRegulations";
 import { currentTermId } from "../utils/termSequence";
@@ -156,10 +156,10 @@ const arabicDate = (iso?: string) => {
 function deadlineSentence(deadline: InboxRow["deadline"]): string {
   if (!deadline.effective) return "لا موعد تسليمٍ محدَّد لهذا الفصل";
   const days = deadline.daysLeft ?? 0;
-  if (deadline.past) return `انقضى الموعد ${arabicDate(deadline.effective)} — بعده بـ${Math.abs(days)} يوماً`;
+  if (deadline.past) return `انقضى الموعد ${arabicDate(deadline.effective)} — بعده بـ${countOf(Math.abs(days), oblique(AR.day), "ساعات")}`;
   if (days === 0) return `آخر موعد للتسليم اليوم — ${arabicDate(deadline.effective)}`;
   if (days === 1) return `آخر موعد للتسليم غداً — ${arabicDate(deadline.effective)}`;
-  return `آخر موعد للتسليم ${arabicDate(deadline.effective)} — بقي ${days} يوماً`;
+  return `آخر موعد للتسليم ${arabicDate(deadline.effective)} — بقي ${countOf(days, AR.day)}`;
 }
 
 export function DeadlineStrip({ deadline }: { deadline?: InboxRow["deadline"] }) {
@@ -502,7 +502,7 @@ function FindingRows({ rowIds, rowsById, onJump }: { rowIds: number[]; rowsById:
       {people.length ? people.slice(0, 12).map(([who, rows]) => (
         <React.Fragment key={who}><FindingPerson who={who} rows={rows} onJump={onJump} /></React.Fragment>
       )) : <p className="review-more">المواعيد المعنيّة خارج ما يعرضه هذا التقرير.</p>}
-      {people.length > 12 ? <p className="review-more">و{(people.length - 12).toLocaleString("ar-KW-u-nu-latn")} أساتذة غيرهم…</p> : null}
+      {people.length > 12 ? <p className="review-more">و{countOf(people.length - 12, AR.instructor)} غيرهم…</p> : null}
     </div>
   );
 }
@@ -519,7 +519,7 @@ function FindingPerson({ who, rows, onJump }: { who: string; rows: DisplayRow[];
           <small>{rows[0].course}{rows[0].courseCode ? <> · <bdi dir="ltr">{rows[0].courseCode}</bdi></> : null} · شعبة {rows[0].sectionCode}</small>
         ) : (
           <>
-            <span className="review-person-count" title={`${rows.length.toLocaleString("ar-KW-u-nu-latn")} موعد`}>{sectionCount.toLocaleString("ar-KW-u-nu-latn")} شعب</span>
+            <span className="review-person-count" title={countOf(rows.length, AR.appointment)}>{countOf(sectionCount, AR.section)}</span>
             <ChevronDown className="review-person-chevron" aria-hidden="true" />
           </>
         )}
@@ -559,10 +559,10 @@ function RegulationReview({ notices, onJump, rowsById }: { notices: RegulationNo
       >
         <span className="review-mark" aria-hidden="true"><CheckCircle2 /></span>
         <span className="review-copy">
-          <strong>{notices.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظات لا تمنع الاعتماد</strong>
+          <strong>{countOf(notices.length, AR.note)} لا {nounFor(notices.length, AR.blockFemVerb)} الاعتماد</strong>
           <small>{preview}{notices.length > 3 ? ` · و${(notices.length - 3).toLocaleString("ar-KW-u-nu-latn")} غيرها` : ""}</small>
         </span>
-        <i>{new Set(notices.flatMap(item => item.rowIds)).size.toLocaleString("ar-KW-u-nu-latn")} موعد</i>
+        <i>{countOf(new Set(notices.flatMap(item => item.rowIds)).size, AR.appointment)}</i>
         <ChevronDown aria-hidden="true" />
       </button>
       {open ? (
@@ -581,7 +581,7 @@ function RegulationReview({ notices, onJump, rowsById }: { notices: RegulationNo
                   <span className="review-mark" aria-hidden="true">{medium ? <Info /> : <CheckCircle2 />}</span>
                   <span className="review-copy">
                     <strong>{notice.title}</strong>
-                    <small>{notice.rowIds.length ? `${notice.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد متأثر` : "تنبيه لائحي"}</small>
+                    <small>{notice.rowIds.length ? `${countOf(notice.rowIds.length, AR.appointment)} ${nounFor(notice.rowIds.length, AR.affectedAdj)}` : "تنبيه لائحي"}</small>
                   </span>
                   <em>{notice.article}</em>
                   <i>{medium ? "مراجعة لائحية" : "ملاحظة لائحية"}</i>
@@ -665,7 +665,7 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
     <section className={`changes-review-overview ${open ? "open" : ""}`} aria-label="مراجعة الاعتماد">
       <button type="button" className="changes-review-toggle" data-guide-ignore="طيّ ملخص مراجعة الاعتماد وفتحه — عرض فقط ولا يغيّر بيانات" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className={`review-mini-dot tone-${tone}`} aria-hidden="true" />
-        <span><strong>مراجعة الاعتماد</strong><small>{blockedCount ? `${blockedCount.toLocaleString("ar-KW-u-nu-latn")} يمنع الاعتماد` : notices.length ? `${notices.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة` : "لا ملاحظات"}</small></span>
+        <span><strong>مراجعة الاعتماد</strong><small>{blockedCount ? countOf(blockedCount, AR.approvalBlocker) : notices.length ? countOf(notices.length, AR.note) : "لا ملاحظات"}</small></span>
         <ChevronDown aria-hidden="true" />
       </button>
       {open ? <div className="changes-review-panel">
@@ -687,13 +687,13 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
         <div className="spread-bar">
           {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} title={`${spread.high} يمنع`} /> : null}
           {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} title={`${spread.medium} يراجَع`} /> : null}
-          {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={`${spread.low} ملاحظة`} /> : null}
+          {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={countOf(spread.low, AR.note)} /> : null}
           {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
         </div>
         <div className="spread-keys">
           <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
           <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
-          <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>
+          <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(spread.low, AR.note)}</small></span>
           <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
         </div>
       </div>
@@ -707,7 +707,7 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
                 <span className="review-mark" aria-hidden="true"><AlertTriangle /></span>
                 <span className="review-copy">
                   <strong>{blocker.title || "يوجد مانع اعتماد"}</strong>
-                  <small>{blocker.subjectLabel || (blocker.rowIds.length ? `${blocker.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد متأثر` : "يحتاج معالجة قبل الاعتماد")}</small>
+                  <small>{blocker.subjectLabel || (blocker.rowIds.length ? `${countOf(blocker.rowIds.length, AR.appointment)} ${nounFor(blocker.rowIds.length, AR.affectedAdj)}` : "يحتاج معالجة قبل الاعتماد")}</small>
                 </span>
                 <em>موانع الحفظ</em>
                 <i>يمنع الاعتماد</i>
@@ -1105,7 +1105,7 @@ function Report({ termId, termName, scope, role, onBack }: {
         <div className="changes-summary">
           <FileDiff aria-hidden="true" />
           <strong>{report.summary}</strong>
-          {report.diff.counts.unchanged ? <small>{report.diff.counts.unchanged} موعداً لم يتغيّر</small> : null}
+          {report.diff.counts.unchanged ? <small>{countOf(report.diff.counts.unchanged, AR.appointment)} {nounFor(report.diff.counts.unchanged, AR.unchangedVerb)}</small> : null}
           {/* ── من أين تبدأ المقارنة ──────────────────────────────────────
               «كلُّ صفٍّ مضاف» تعني أحد أمرين لا ثالثَ لهما: جدولٌ جديدٌ فعلاً،
               أو أساسٌ لم يُوجد فقُورن الجدولُ بالعدم. والفرقُ بينهما هو الفرقُ
@@ -1164,9 +1164,9 @@ function Report({ termId, termName, scope, role, onBack }: {
                   {round.submittedAt ? <span>أُرسلت {arabicDate(round.submittedAt)}{round.submittedBy ? ` — ${round.submittedBy}` : ""}</span> : null}
                   {round.returnedAt ? (
                     <span>
-                      أُرجعت {arabicDate(round.returnedAt)} بـ{round.returnedNoteCount || 0} ملاحظة
+                      أُرجعت {arabicDate(round.returnedAt)} {round.returnedNoteCount ? `بـ${countOf(round.returnedNoteCount, oblique(AR.note))}` : "بلا ملاحظات"}
                       {/* عددُ الملاحظات يقول ما طُلب، وعددُ الصفوف يقول ما فُعل. */}
-                      {round.changedRowCount !== undefined ? ` — فتحرّك ${round.changedRowCount} صفّاً` : ""}
+                      {round.changedRowCount !== undefined ? (round.changedRowCount ? ` — فتحرّك ${countOf(round.changedRowCount, AR.row)}` : " — ولم يتحرّك صف") : ""}
                     </span>
                   ) : null}
                   {round.acceptedAt ? <span>قُبلت {arabicDate(round.acceptedAt)}{round.acceptedBy ? ` — ${round.acceptedBy}` : ""}</span> : null}
