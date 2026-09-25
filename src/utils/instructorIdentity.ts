@@ -201,3 +201,22 @@ export function instructorRegistryOutcome(
   };
   return instructors.some(candidate) ? "AMBIGUOUS" : "UNREGISTERED";
 }
+
+/* ── معرّفات «هيئة تدريسية» في السجل — قاعدة واحدة ─────────────────────────
+   سجلٌّ اسمه هذا ليس شخصاً بل معنى تتشاركه الجامعة: تُكتب حين لا يكون للشعبة
+   اسم مدرّس ثابت. فلا يُقاس عليه الحجز المزدوج، وإلا صار كل قسمين استعملاه في
+   ساعة واحدة «تعارضاً» لا يملك أحد إصلاحه. وكلمة «هيئة» لا يُسمّى بها الناس،
+   فصدرُ الاسم وحده يعرّف السجل مهما كتبت بقيته.
+   كانت هذه القراءة مكتوبة في الخادم وفي شاشة النقل كلٌّ على حدة؛ صارت هنا
+   ويستوردها الجميع (`scheduleBlockers` يعيد تصديرها). */
+export function placeholderInstructorIds(
+  instructors: Iterable<{ AdInstructorId?: unknown; AdInstructorName?: unknown } | null | undefined> | null | undefined,
+): Set<number> {
+  const head = instructorIdentityTokens("هيئة")[0];
+  const ids = new Set<number>();
+  for (const person of instructors || []) {
+    const id = Number(person?.AdInstructorId || 0);
+    if (id > 0 && instructorIdentityTokens(String(person?.AdInstructorName || ""))[0] === head) ids.add(id);
+  }
+  return ids;
+}

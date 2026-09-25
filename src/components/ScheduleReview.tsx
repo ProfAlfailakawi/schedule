@@ -10,7 +10,7 @@ import {
 } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
-import { findConflicts } from "../utils/scheduleIntelligence";
+import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 import { AR, countOf } from "../utils/arabicCount";
 
@@ -170,15 +170,16 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     return () => controller.abort();
   }, [collegeId, sectionId, termId, rows]);
 
-  const localBlockers = useMemo(() => findConflicts(rows, rows)
-    .filter(item => item.severity === "high" || item.type === "duplicate")
+  /* The offline fallback reads the same rule the server does — «هيئة تدريسية»
+     included — so losing the network never changes what counts as a blocker. */
+  const localBlockers = useMemo(() => blockingConflicts(rows, rows, { placeholderInstructorIds: placeholderInstructorIds(instructors.values()) })
     .map(item => ({
       id: `local-conflict:${[item.rowId, item.otherId].sort((a, b) => a - b).join(":")}`,
       type: item.type,
       title: item.message,
       detail: item.detail,
       rowIds: [Number(item.rowId), Number(item.otherId)].filter(Boolean),
-    })), [rows]);
+    })), [rows, instructors]);
   const activeBlockers = readinessChecked && !readinessError ? serverBlockers : localBlockers;
 
   const blockerFindings = useMemo<RegulationFinding[]>(() => activeBlockers.map((item, index) => ({

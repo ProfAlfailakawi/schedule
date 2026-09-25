@@ -14,7 +14,7 @@ import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
 import { byRoom } from "./src/utils/sorting";
-import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
+import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { currentTermId } from "./src/utils/termSequence";
@@ -29,7 +29,7 @@ import {
   type DeadlineState, type WholesaleAction,
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
-import { blockingConflictDetails } from "./src/utils/scheduleBlockers";
+import { approvalBlockerCount, blockingConflictDetails, blockingConflicts, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { buildNotifications } from "./src/utils/notificationCenter";
 import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
@@ -1553,26 +1553,32 @@ function branchOwnScopes(colleges:any[],sections:any[],collegeId:number,sectionI
    ساعة واحدة «تعارضاً» لا يملك أحد إصلاحه. وكلمة «هيئة» لا يُسمّى بها الناس،
    فصدرُ الاسم وحده يعرّف السجل مهما كتبت بقيته. */
 function placeholderInstructorIds(instructors: Array<{ AdInstructorId?: unknown; AdInstructorName?: unknown }>): Set<number> {
-  const head = instructorIdentityTokens("هيئة")[0];
-  const ids = new Set<number>();
-  for (const person of instructors || []) {
-    const tokens = instructorIdentityTokens(String(person?.AdInstructorName || ""));
-    const id = Number(person?.AdInstructorId || 0);
-    if (id > 0 && tokens[0] === head) ids.add(id);
-  }
-  return ids;
+  /* القاعدة في `instructorIdentity` وحدها؛ هنا اسمُها القديم لمن يناديه. */
+  return sharedPlaceholderInstructorIds(instructors);
+}
+
+/* ── خيارات قاعدة المانع كما تقرؤها بوابة الحفظ ────────────────────────────
+   «هيئة تدريسية» ليست شخصاً، والقاعة تُعرف بعد طيّ أسمائها القديمة على السجل
+   الرسمي. كل عدٍّ أو قائمةٍ لموانع الاعتماد يأخذ الخيارين من هنا، فلا يرى
+   أحدٌ مانعاً لا تراه البوابة ولا العكس. */
+async function approvalBlockerOptions(): Promise<ApprovalBlockerOptions> {
+  const [instructors, registry] = await Promise.all([Repository.getInstructors(), readLocationRegistry()]);
+  return {
+    placeholderInstructorIds: placeholderInstructorIds(instructors as any),
+    normalizeRow: (row: any) => canonicalizeHistoricalLocationForRuntime(row as FSchedule, registry),
+  };
 }
 
 function blockingImportConflicts(
   targetRows:any[],termRows:any[],collegeId:number,sectionId:number,
   ownScopeList:Array<{collegeId:number;sectionId:number}>,
   placeholderIds?:Set<number>,
+  normalizeRow?:(row:any)=>any,
 ){
   const ownScopes=new Set<string>([`${collegeId}:${sectionId}`,...ownScopeList.map(scope=>`${scope.collegeId}:${scope.sectionId}`)]);
   const external=termRows.filter(item=>!ownScopes.has(`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`));
   const universe=[...external,...targetRows];
-  return findConflicts(targetRows as any,universe as any,{placeholderInstructorIds:placeholderIds})
-    .filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+  return blockingConflicts(targetRows,universe,{placeholderInstructorIds:placeholderIds,normalizeRow});
 }
 
 /* ── نطاق أساتذة القسم الذي لا تاريخ له ──────────────────────────────────────
@@ -1720,7 +1726,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
      * ويرفض الصف بحجّة «حجز مزدوج لأستاذ المقرر»، والحقيقة أنه يتعارض مع نفسه
      * قبل أن يُستبدل. ومواقع القسم كلها ستُستبدل بهذه العملية نفسها، فلا تدخل
      * فحص التعارض. أما بقية الأقسام فتبقى كما هي: حجزها حقيقي ويُحترم. */
-    const conflicts = blockingImportConflicts(rows, currentSchedules, collegeId, sectionId, departmentScopes, placeholderInstructorIds(instructors as any));
+    const conflicts = blockingImportConflicts(rows, currentSchedules, collegeId, sectionId, departmentScopes, placeholderInstructorIds(instructors as any), (await approvalBlockerOptions()).normalizeRow);
     conflicts.slice(0, 20).forEach((item:any) => errors.push(item.message || item.detail || "يوجد تعارض يمنع الاعتماد"));
   }
   return [...new Set(errors)].slice(0, 30);
@@ -4723,6 +4729,7 @@ app.post("/api/schedules/import-preflight", requirePermission(7), async (req: Au
     rows,termRows as any[],collegeId,sectionId,
     branchOwnScopes(colleges as any,sections as any,collegeId,sectionId),
     placeholderInstructorIds(allInstructors as any),
+    (await approvalBlockerOptions()).normalizeRow,
   );
   /* ── الموضع يُقرأ من الترتيب الحالي، لا من المعرّف ──────────────────────────
      المعرّفات السالبة تُمنح مرة واحدة ثم تبقى مع الصف، فحذف صف من المعاينة
@@ -4792,8 +4799,7 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
   const seen=new Set<string>();
   const add=(item:any)=>{const key=String(item.id||`${item.type}:${(item.rowIds||[]).join(":")}`);if(seen.has(key))return;seen.add(key);blockers.push(item);};
 
-  findConflicts(scopeRows as any,termRows as any)
-    .filter((item:any)=>item.severity==="high"||item.type==="duplicate")
+  blockingConflicts(scopeRows,termRows,await approvalBlockerOptions())
     .forEach((item:any)=>{
       const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
       if(!ownIds.has(ownId))return;
@@ -4883,7 +4889,8 @@ app.get("/api/schedules/outside-clashes", requirePermission(7), async (req: Auth
   const termRows=termRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
   /* The rule itself lives beside the conflict sweep in scheduleIntelligence,
      so this route holds no copy of it and `tests/run-tests.ts` can hold it. */
-  const outside=outsideScopeClashes(scopeRows as any,termRows as any);
+  const outside=outsideScopeClashes(scopeRows as any,termRows as any,
+    {placeholderInstructorIds:(await approvalBlockerOptions()).placeholderInstructorIds});
 
   const scopeKey=(row:any)=>`${Number(row?.AdCollegeId||0)}:${Number(row?.AdSectionId||0)}`;
   const scopeNames=new Map<string,string>();
@@ -4948,7 +4955,7 @@ app.post("/api/intelligence/nl-move", requirePermission(7), async (req: Authenti
   const issues=schedulePayloadIssues(after);
   if(issues.length){res.json({ok:false,hint:issues[0]});return;}
   const conflicts=await scheduleConflicts(req,{...after,AdTermId:termId},target.id);
-  const blocking=conflicts.filter((c:any)=>!c.soft&&(c.severity==="high"||c.type==="duplicate"));
+  const blocking=conflicts.filter(isBlockingConflict);
   res.json({
     ok:true,
     move:{id:target.id,fields},
@@ -4995,7 +5002,7 @@ async function previewNaturalLanguageMove(req: AuthenticatedRequest, q: string, 
   const issues=schedulePayloadIssues(after);
   if(issues.length)return{ok:false,hint:issues[0]};
   const conflicts=await scheduleConflicts(req,{...after,AdTermId:context.termId},target.id);
-  const blocking=conflicts.filter((c:any)=>!c.soft&&(c.severity==="high"||c.type==="duplicate"));
+  const blocking=conflicts.filter(isBlockingConflict);
   const external=scheduleData.universe.filter(row=>!(row.AdCollegeId===context.collegeId&&row.AdSectionId===context.sectionId));
   const beforeAnalysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
   const scenario=rows.map(row=>Number(row.id)===Number(target.id)?after:row);
@@ -5143,7 +5150,7 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     }
     const conflicts = await scheduleConflicts(req, candidate.row, candidate.row.id);
     blocked.push(...conflicts.filter((c: any) =>
-      !c.soft && !movedIds.has(Number(c.rowId)) && (strict || c.severity === "high" || c.type === "duplicate")));
+      !c.soft && !movedIds.has(Number(c.rowId)) && (strict || isBlockingConflict(c))));
   }
   if (blocked.length) {
     const first = blocked[0];
@@ -5403,7 +5410,7 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     else if(locationResult.check.canonical)Object.assign(row,locationResult.check.canonical);
   }
   if(!importPreflightIssues.length){
-    const conflicts=findConflicts(ready as any,[...existing,...ready] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+    const conflicts=blockingConflicts(ready,[...existing,...ready],await approvalBlockerOptions());
     conflicts.slice(0,20).forEach((item:any)=>importPreflightIssues.push(item.message||item.detail||"يوجد تعارض يمنع الاستيراد"));
   }
   if(importPreflightIssues.length){
@@ -6063,8 +6070,7 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: 
   const candidates = rows.map(row => ({ ...row, AdInstructorId: toId || 0 }));
   const remaining = termRows.filter(row => !movedIds.has(Number(row.id)));
   const conflicts = toId
-    ? findConflicts(candidates as any, [...remaining, ...candidates] as any)
-        .filter((item:any) => item.severity === "high" || item.type === "duplicate")
+    ? blockingConflicts(candidates, [...remaining, ...candidates], await approvalBlockerOptions())
         .filter((item:any) => movedIds.has(Number(item.rowId)) || movedIds.has(Number(item.otherId)))
         .slice(0, 20)
     : [];
@@ -7185,7 +7191,7 @@ app.get("/api/intelligence/open-decisions", requirePermission(7), async (req: Au
     scopedScheduleUniverse(collegeId,sectionId,termId),
     Repository.getCoursesBySection(sectionId),Repository.getInstructorsByScope(sectionId,0),Repository.getSchedulesByScope({collegeId,sectionId}),
   ]);
-  const analysis=analyzeSchedule(scheduleData.rows,scheduleData.universe,courses,instructors);
+  const analysis=analyzeSchedule(scheduleData.rows,scheduleData.universe,courses,instructors,await approvalBlockerOptions());
   const anomalies=logicalAnomalies(scheduleData.rows,history);
   const inferred=[
     ...(analysis.alerts||[]).slice(0,5).map((item:any,index:number)=>({id:`inferred:alert:${index}`,title:item.title||"قرار يحتاج مراجعة",detail:item.detail||"",priority:index===0?"high":"medium",source:"inferred"})),
@@ -7261,7 +7267,7 @@ app.get("/api/intelligence/overview", requirePermission(7), async (req: Authenti
     Repository.getScheduleDrafts(collegeId, sectionId, termId), Repository.getSchedulePublication(collegeId, sectionId, termId), Repository.getCampusMobilityProfile(collegeId)
   ]);
   const {rows:target,universe:termRows}=scheduleData;
-  const analysis = analyzeSchedule(target, termRows, courses, instructors);
+  const analysis = analyzeSchedule(target, termRows, courses, instructors, await approvalBlockerOptions());
   const spatial = roomCastlingProposals(target, termRows, mobilityProfile, instructors);
   const universityHeatmap:any[]=[];
   for(const day of SCHEDULE_DAYS){for(let minute=SCHEDULE_DAY_START;minute<SCHEDULE_DAY_END;minute+=SCHEDULE_SLOT_MINUTES){const count=termRows.filter(row=>Boolean((row as any)[day.key])&&timeToMinutes(row.fstarttime)<minute+SCHEDULE_SLOT_MINUTES&&timeToMinutes(row.fendtime)>minute).length;universityHeatmap.push({day:day.key,label:day.label,time:minutesToTime(minute),count})}}
@@ -7419,7 +7425,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const [scheduleData,courses,instructors,sections]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getSections()]);
   const target=scheduleData.rows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId&&Number(row.AdTermId)===termId);
   const universe=scheduleData.universe;
-  const analysis=analyzeSchedule(target,universe,courses,instructors); const bullets:string[]=[]; let title="قراءة ذكية للجدول";
+  const analysis=analyzeSchedule(target,universe,courses,instructors,await approvalBlockerOptions()); const bullets:string[]=[]; let title="قراءة ذكية للجدول";
   /**
    * ── الإجابة المرسومة ──────────────────────────────────────────────────────
    *
@@ -7544,7 +7550,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     investigation.causes.forEach((x:any)=>bars.push(x));
   } else if(normalized.includes("إذا نقلت")||normalized.includes("اذا نقلت")){
     title="محاكاة نقل موعد"; const code=courses.find(c=>normalized.includes(String(c.CourseCode).toLowerCase())); const row=code?target.find(r=>r.AdCourseId===code.AdCourseId):target[0];
-    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const before=findConflicts([row],universe).length,after=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate)).length;summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
+    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const moveOpts=await approvalBlockerOptions();const before=approvalBlockerCount([row],universe,moveOpts),after=approvalBlockerCount([candidate],universe.filter(x=>x.id!==row.id).concat(candidate),moveOpts);summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
       shape="move";
       shift={label:"موانع الحفظ",before,after,better:after<=before};
       figures.push({label:"الوقت المقترح",value:formatScheduleTimeRange(candidate.fstarttime,candidate.fendtime),hint:"",tone:after===0?"good":"bad"});}
@@ -7601,7 +7607,7 @@ app.get("/api/intelligence/context/:id", requirePermission(7), async (req: Authe
     course:termVisible.filter(r=>r.AdCourseId===selected.AdCourseId),
     room:termVisible.filter(r=>Boolean(roomIdentityKey(selected))&&roomIdentityKey(r)===roomIdentityKey(selected)).sort((a,b)=>a.fstarttime.localeCompare(b.fstarttime))
   };
-  const externalConflicts=findConflicts([selected],termRows).map(c=>({...c,otherId:visible.some(v=>v.id===c.otherId)?c.otherId:0}));
+  const externalConflicts=findConflicts([selected],termRows,{placeholderInstructorIds:placeholderInstructorIds(instructors as any)}).map(c=>({...c,otherId:visible.some(v=>v.id===c.otherId)?c.otherId:0}));
   /* ── ما تقوله عشر سنوات عن هذا الموعد بالذات ─────────────────────────────
    *
    * Three questions, each about a thing already named on this panel — the
@@ -8980,31 +8986,19 @@ async function wholesaleRefusal(collegeId: number, sectionId: number, termId: nu
  * كاملاً مرّةً لكل قسم — عشرين قراءةً كاملة لشاشةٍ تُفتح عشرين مرّةً في اليوم.
  * فتُقرأ مرّةً في الأعلى، وتُمرَّر.
  */
-function countBlockingConflicts(scopeRows: any[], termRows: any[]): number {
-  const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
-  const scopeOf = new Map(termRows.map((row: any) => [Number(row.id), `${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] as const));
-  const seen = new Set<string>();
-  let count = 0;
-  for (const item of findConflicts(scopeRows as any, termRows as any)) {
-    if (item.severity !== "high" && item.type !== "duplicate") continue;
-    const a = Number(item.rowId), b = Number(item.otherId);
-    if (!ownIds.has(a) && !ownIds.has(b)) continue;
-    if (item.type === "instructor" && scopeOf.get(a) !== scopeOf.get(b)) continue;
-    const key = [Math.min(a, b), Math.max(a, b), item.type].join(":");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    count += 1;
-  }
-  return count;
+function countBlockingConflicts(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): number {
+  /* القاعدة نفسها في `scheduleBlockers` — هذا اسمها القديم فقط. */
+  return approvalBlockerCount(scopeRows, termRows, options);
 }
 
 /** السؤال عن قسمٍ واحد، حين لا يكون في اليد جدولُ الفصل أصلاً. */
 async function blockingConflictCount(collegeId: number, sectionId: number, termId: number): Promise<number> {
-  const [scopeRows, termRows] = await Promise.all([
+  const [scopeRows, termRows, options] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
     Repository.getSchedulesByScope({ termId }),
+    approvalBlockerOptions(),
   ]);
-  return countBlockingConflicts(scopeRows, termRows);
+  return countBlockingConflicts(scopeRows, termRows, options);
 }
 
 /** الملاحظات اللائحية الظاهرة وقت التوقيع — تُسجَّل ولا تمنع. */
@@ -9501,8 +9495,7 @@ async function noteSuggestions(collegeId: number, sectionId: number, termId: num
 
     /* التعارضُ المادّي أدقُّ ما يُقترح: يقول الخانة ويقول مع من. */
     const ownIds = new Set(scopeRows.map((row: any) => Number(row.id)));
-    for (const item of findConflicts(scopeRows as any, termRows as any)) {
-      if (item.severity !== "high" && item.type !== "duplicate") continue;
+    for (const item of blockingConflicts(scopeRows, termRows, await approvalBlockerOptions())) {
       const ownId = ownIds.has(Number(item.rowId)) ? Number(item.rowId) : Number(item.otherId);
       if (!ownIds.has(ownId)) continue;
       const other = byId.get(Number(item.rowId) === ownId ? Number(item.otherId) : Number(item.rowId));
@@ -9898,9 +9891,10 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
    * للمقارنة — ثم يُوزَّع على الأقسام في الذاكرة. والعدد ثابتٌ مهما كثرت
    * الأقسام، وهو ما طُلب صراحةً: الأقسام كثيرة.
    */
-  const [allTermRows, allNotes] = await Promise.all([
+  const [allTermRows, allNotes, blockerOptions] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
     Repository.getScheduleCommentsForTerm(termId),
+    approvalBlockerOptions(),
   ]);
   const rowsByScope = new Map<string, any[]>();
   for (const row of allTermRows as any[]) {
@@ -9930,7 +9924,7 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
   const rows = visible.map(approval => {
     const key = `${approval.AdCollegeId}:${approval.AdSectionId}`;
     const scheduleRows = rowsByScope.get(key) || [];
-    const blocking = countBlockingConflicts(scheduleRows, allTermRows as any[]);
+    const blocking = countBlockingConflicts(scheduleRows, allTermRows as any[], blockerOptions);
     const scopeRowById = rowByIdForScope(key);
     const notes = (notesByScope.get(key) || [])
       .filter(note => note.origin === "registrar" || note.origin === "department")
@@ -10227,7 +10221,8 @@ app.get("/api/reports/schedule-changes", requireAuth, async (req: AuthenticatedR
       const instructors = await Repository.getInstructors();
       return blockingConflictDetails(scopeRows as any[], termRows as any[],
         new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")])),
-        new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])));
+        new Map((instructors as any[]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
+        await approvalBlockerOptions());
     })(),
     regulationNotices: await regulationNoticesForScope(collegeId, sectionId, termId),
   });
@@ -10285,7 +10280,7 @@ app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asyn
   const issues = await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
-  const conflictRows = findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate");
+  const conflictRows = blockingConflicts(rows, [...external, ...rows], await approvalBlockerOptions());
   const rowIssues = mapSmartIssuesToRows(rows, issues, conflictRows);
   const issueRowIds = Object.keys(rowIssues).map(Number);
   const updated = await Repository.updateScheduleDraft(draft.id, { rows });
@@ -10304,7 +10299,7 @@ app.delete("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asy
   const issues = rows.length ? await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"}) : [];
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
-  const conflictRows = rows.length ? findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate") : [];
+  const conflictRows = rows.length ? blockingConflicts(rows, [...external, ...rows], await approvalBlockerOptions()) : [];
   const rowIssues = rows.length ? mapSmartIssuesToRows(rows, issues, conflictRows) : {};
   const issueRowIds = Object.keys(rowIssues).map(Number);
   const updated = await Repository.updateScheduleDraft(draft.id, { rows });
@@ -10373,7 +10368,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   if(issues.length){
     const termRows=await Repository.getSchedulesByScope({termId:draft.AdTermId});
     const externalRows=termRows.filter(row=>!(Number(row.AdCollegeId)===draft.AdCollegeId&&Number(row.AdSectionId)===draft.AdSectionId));
-    const conflictRows=findConflicts(publishRows as any,[...externalRows,...publishRows] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+    const conflictRows=blockingConflicts(publishRows,[...externalRows,...publishRows],await approvalBlockerOptions());
     const rowIssues=mapSmartIssuesToRows(publishRows,issues,conflictRows);
     const issueRowIds=Object.keys(rowIssues).map(Number);
     res.status(400).json({error:"لا يمكن نشر المسودة قبل معالجة البيانات",issues,issueRowIds,rowIssues});return;
@@ -10996,7 +10991,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
   }
   const adjustedRows=rows.filter((row,index)=>row.fstarttime!==initialRows[index]?.fstarttime||row.fendtime!==initialRows[index]?.fendtime).length;
   const issues=await validateSmartRows(rows,collegeId,sectionId);
-  const genesisConflicts=findConflicts(rows as any,[...external,...rows] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+  const genesisConflicts=blockingConflicts(rows,[...external,...rows],await approvalBlockerOptions());
   const rowIssues=mapSmartIssuesToRows(rows,issues,genesisConflicts);
   const issueRowIds=Object.keys(rowIssues).map(Number);
   const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
@@ -11861,10 +11856,12 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
     if (list) list.push(row); else bySection.set(Number(row.AdSectionId), [row]);
   }
   const MORNING_END = 14 * 60;
+  /* The dean's «مانع اعتماد» is the registrar's: one rule, one set of options. */
+  const balanceBlockerOptions = await approvalBlockerOptions();
   const departments = [...bySection.entries()].map(([sectionId, rows]) => {
     const section = sections.find(item => item.AdSectionId === sectionId);
     const fairness = buildFairnessEngine(rows, instructors);
-    const analysis = analyzeSchedule(rows, termRows, courses, instructors);
+    const analysis = analyzeSchedule(rows, termRows, courses, instructors, balanceBlockerOptions);
     let morning = 0, evening = 0;
     for (const row of rows) {
       const meetings = Math.max(1, activeDays(row).length);

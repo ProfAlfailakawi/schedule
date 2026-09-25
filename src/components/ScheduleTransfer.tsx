@@ -6,9 +6,8 @@ import { numericText } from "../utils/digits";
 import { AR, countOf } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
-import { instructorIdentityTokens } from "../utils/instructorIdentity";
 import SchedulePublish from "./SchedulePublish";
-import { findConflicts } from "../utils/scheduleIntelligence";
+import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
@@ -369,7 +368,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
    * مرتين أو قاعة محجوزة مرتين كان يبدو نظيفاً تماماً، ويظهر زر «تعبئة ونشرها»
    * كأن كل شيء تمّ، حتى إذا ضُغط ردّ الخادم بالرفض وعندها فقط احمرّت الخلايا.
    *
-   * الفحص نفسه الذي يرفض به الخادم يُقرأ هنا — `findConflicts` ذاتها، لا نسخة
+   * الفحص نفسه الذي يرفض به الخادم يُقرأ هنا — `blockingConflicts` ذاتها، لا نسخة
    * منها — فلا يمكن أن يرى أحدهما تعارضاً يعمى عنه الآخر. والنتيجة تسقط على
    * الخليتين معاً وعلى الصفين كليهما، لأن الحجز المزدوج ليس خطأ صفٍّ واحد.
    *
@@ -382,12 +381,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     if (rows.length < 2) return empty;
     const staged = rows.map((row, index) => ({ ...row, id: index + 1, AdTermId: termId })) as any[];
     /* «هيئة تدريسية» معنى مشترك لا شخص: صفّان يحملانها ليسا حجزاً مزدوجاً. */
-    const placeholderHead = instructorIdentityTokens("هيئة")[0];
-    const placeholderIds = new Set([...instructors, ...directoryPeople, ...((xlsxPreview?.resolvedInstructors || []) as any[])]
-      .filter(person => instructorIdentityTokens(String(person?.AdInstructorName || ""))[0] === placeholderHead)
-      .map(person => Number(person.AdInstructorId)).filter(Boolean));
-    const blocking = findConflicts(staged, staged, { placeholderInstructorIds: placeholderIds })
-      .filter(item => item.severity === "high" || item.type === "duplicate");
+    const placeholderIds = placeholderInstructorIds([...instructors, ...directoryPeople, ...((xlsxPreview?.resolvedInstructors || []) as any[])]);
+    const blocking = blockingConflicts(staged, staged, { placeholderInstructorIds: placeholderIds });
     const notes: Record<string, string[]> = {};
     const issues: string[] = [];
     const place = (at: number, partner: number, message: string) => {

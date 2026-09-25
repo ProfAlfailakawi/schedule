@@ -13,6 +13,7 @@ import type {
 import { SCHEDULE_DAY_END } from "../../utils/scheduleTime";
 import { expectedMinutesForDay } from "../../utils/scheduleRegulations";
 import { roomIdentityKey } from "../../utils/locationRegistry";
+import { isBlockingConflict } from "../../utils/scheduleIntelligence";
 
 export const PHYSICS_DAYS: Array<{ key: ScheduleDayKey; label: string }> = [
   { key: "fsunday", label: "الأحد" },
@@ -70,9 +71,7 @@ export function classifyDecision(ripple: any, why: any, conflicts: any[] = [], h
   /* Soft notes ride in the same array as real collisions. Counting them here
      made an advisory refuse a move outright — the drag returned home and the
      board reported «تعذّر النقل» for a hall that was merely unfashionable. */
-  const hasHighConflict = conflicts.some(item =>
-    item?.soft !== true && item?.type !== "memory"
-    && (item?.severity === "high" || item?.type === "duplicate"));
+  const hasHighConflict = conflicts.some(isBlockingConflict);
   const hasWhyWarning = Array.isArray(why?.warnings) && why.warnings.length > 0;
   if (hasHighConflict) return "impossible";
   if (conflictDelta > 0 || hasWhyWarning || ruleDelta > 0 || qualityDelta <= -2 || gapDelta >= 90 || pressureDelta >= 20 || spatialDelta <= -6) return "suboptimal";

@@ -1,6 +1,7 @@
 import { roomIdentityKey } from "./locationRegistry";
 import type { AdCourse, AdInstructor, FSchedule, ScheduleConstraint, ScheduleDecisionMemory } from "../types";
-import { activeDays, analyzeSchedule, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
+import { placeholderInstructorIds } from "./instructorIdentity";
+import { activeDays, analyzeSchedule, findConflicts, isBlockingConflict, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { evaluateScheduleConstraints } from "./scheduleInnovation";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START } from "./scheduleTime";
 
@@ -30,7 +31,8 @@ function conflictCountForRow(candidate:FSchedule, universe:FSchedule[]){
 function computeConflictTopology(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
   const courseById=new Map(courses.map(c=>[c.AdCourseId,c]));
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
-  const conflicts=findConflicts(rows,universe);
+  /* «هيئة تدريسية» is never a person here either (scheduleBlockers). */
+  const conflicts=findConflicts(rows,universe,{placeholderInstructorIds:placeholderInstructorIds(instructors as any)});
   const issueWeight=new Map<number,number>();
   for(const item of conflicts){issueWeight.set(item.rowId,(issueWeight.get(item.rowId)||0)+(item.severity==="high"?3:1));issueWeight.set(item.otherId,(issueWeight.get(item.otherId)||0)+(item.severity==="high"?3:1))}
   const nodes=new Map<string,any>(); const edges:any[]=[];
@@ -111,7 +113,7 @@ function computeFairnessEngine(rows:FSchedule[], instructors:AdInstructor[]){
 function roomFreeFor(row:FSchedule, room:RoomPlacement, universe:FSchedule[]){
   const candidate=placeInRoom(row,room);
   const conflicts=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate));
-  return !conflicts.some(c=>c.severity==="high"&&(c.rowId===candidate.id||c.otherId===candidate.id));
+  return !conflicts.some(c=>isBlockingConflict(c)&&(c.rowId===candidate.id||c.otherId===candidate.id));
 }
 
 function computeRoomResilience(rows:FSchedule[], universe:FSchedule[]){

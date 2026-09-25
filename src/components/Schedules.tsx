@@ -134,7 +134,8 @@ import ScheduleTransfer from "./ScheduleTransfer";
 import VisitingBadge from "./VisitingBadge";
 import { usePageAwake } from "../utils/pageAwake";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
-import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
+import { fastConflictScan, findConflicts, isBlockingConflict } from "../utils/scheduleIntelligence";
+import { placeholderInstructorIds } from "../utils/instructorIdentity";
 import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
@@ -674,17 +675,10 @@ type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: s
  * لم تُستعمل منذ ٤ فصول» — a fact about the past standing in the way of the
  * present.
  */
-export const isBlockingConflict = (item: any): boolean => {
-  if (!item) return false;
-  if (item.soft === true) return false;
-  if (item.type === "memory" || item.type === "advice" || item.type === "regulation") return false;
-  /* The user's law, and the server's own save gate, in one line: a real
-     double-booking of a TIME, a ROOM or an INSTRUCTOR arrives as severity
-     "high"; a duplicate row is data integrity. Everything else the system
-     knows — cohort overlap, doorway walking time, hall history, day rhythm —
-     is a remark beside a move that succeeded, never a wall in front of it. */
-  return item.severity === "high" || item.type === "duplicate";
-};
+/* The user's law, and the server's own save gate, in one line — which now
+   lives beside the conflict sweep (`isBlockingConflict` in scheduleIntelligence)
+   so the board, the editor, the review and the server read one predicate. */
+export { isBlockingConflict };
 
 const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string; soft?: boolean; severity?: string }>): RefusalReason[] =>
   (items || []).filter(isBlockingConflict).slice(0, 3).map((item): RefusalReason => {
@@ -3187,7 +3181,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":"",
     outsideTeachingDay?`وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}.`:"",
   ].filter(Boolean);
-  const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
+  const blockingConflicts=conflicts.filter(isBlockingConflict);
   const editorTimingNote = historicalTimingNote(form);
   const formDurationMinutes = form.fstarttime && form.fendtime ? Math.max(0, mins(form.fendtime) - mins(form.fstarttime)) : 0;
   const currentInstructorName = instructorById.get(Number(form.AdInstructorId || 0))?.AdInstructorName || "";
@@ -3236,7 +3230,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
      * stopped anything — «انتقال ضيّق بين الحرم الرئيسي والجهراء» — read as a
      * refusal, which is how people learn to stop reading the colour entirely.
      */
-    const blocks = conflict?.severity === "high" || conflict?.type === "duplicate";
+    const blocks = isBlockingConflict(conflict);
     const typeLabel = isRoom ? (isScope ? "نطاق القاعة" : "تعارض قاعة")
       : isInstructor ? "تعارض أستاذ"
         : conflict.type === "duplicate" ? "تكرار"
@@ -4804,7 +4798,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         : " مع الإبقاء على أيامه الحالية";
     try {
       const check=await fetchJson("/api/schedules/check-conflicts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...payload,excludeId:row.id})});
-      const blocking=Array.isArray(check.conflicts)?check.conflicts.filter((c:any)=>c?.severity==="high"||c?.type==="duplicate"):[];
+      const blocking=Array.isArray(check.conflicts)?check.conflicts.filter(isBlockingConflict):[];
       if(blocking.length){const reasons=blocking.slice(0,3).map((c:any)=>[c?.message,c?.detail].filter(Boolean).join(" — ")).filter(Boolean);const reason=reasons.join(" | ")||"هذا النقل يسبب تعارضاً ولا يمكن حفظه.";setError(`تعذر نقل الموعد: ${reason}`);setPhysicsNotice(`رفض النقل: ${reason}`);return;}
     } catch(e:any){setError(friendlyError(e));return;}
     const decisionRipple =
@@ -7464,7 +7458,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    * the same review the approval sheet prints, run quietly on the open scope.
    * The colliding cards themselves wear the ring in every view.
    */
-  const localClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+  const boardPlaceholderIds = useMemo(() => placeholderInstructorIds(instructorById.values()), [instructorById]);
+  const localClash = useMemo(() => fastConflictScan(filteredRows, { placeholderInstructorIds: boardPlaceholderIds }), [filteredRows, boardPlaceholderIds]);
   /**
    * ── التعارض مع خارج النطاق، على اللوحة نفسها ────────────────────────────
    *
