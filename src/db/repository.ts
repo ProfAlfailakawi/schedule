@@ -231,6 +231,16 @@ interface DBState {
   locationReviewCases?: LocationReviewCase[];
   locationMigrationLogs?: LocationMigrationLog[];
   locationMigrationRuns?: LocationMigrationRun[];
+  /** دليلُ البيئة التجريبية وحدها: الأرقامُ الوهمية التي تُقترح على الصفحات العامة. */
+  demoGuide?: DemoGuide;
+}
+
+/** ما تقترحه الصفحاتُ العامة على زائر البيئة التجريبية ليجرّب. كلُّه وهمي. */
+export interface DemoGuide {
+  /** رقمٌ مدنيٌّ وهمي لطالبٍ جديد لم يرسل شيئاً — لتجربة الاستبيان. */
+  freshStudentCivil: string;
+  /** حالاتٌ مبذورة تُفتح في «حالة طلبي» برقمَيها. */
+  cases: Array<{ label: string; civil: string; caseRef: string }>;
 }
 
 interface LegacySnapshot extends DBState {
@@ -2348,6 +2358,9 @@ export const Repository = {
     }
     return await demoSandboxContext.run({ sessionId, state: record.state }, fn);
   },
+  /** دليلُ الصندوق الحاضر — ولا شيء خارج الصندوق أبداً. */
+  getDemoGuide: (): DemoGuide | undefined => demoSandboxContext.getStore() ? db.demoGuide : undefined,
+  setDemoGuide: (guide: DemoGuide): void => { if (demoSandboxContext.getStore()) db.demoGuide = guide; },
   /** الصندوقُ الحيّ الذي يملك هذا الرمز التجريبي، أو "". */
   demoSandboxForLinkToken: (token: string): string => {
     if (!isDemoLinkToken(token)) return "";

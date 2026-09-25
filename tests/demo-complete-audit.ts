@@ -158,7 +158,40 @@ async function p3PublicLinks() {
     "سرُّ هويات الطلبة المحفوظ للعملية يُقرأ خارج الصندوق — لا يحفظ زائرٌ مفتاحَ صندوقه للطلبة الحقيقيين");
 }
 
+/* ── P4: قصّةٌ لكل صفة، والتلميحُ في التجريبي وحده ──────────────────────────── */
+async function p4Stories() {
+  const body = (name: string) => { const at = server.indexOf(name); return at < 0 ? "" : server.slice(at, server.indexOf("\n}\n", at)); };
+  const seed = body("async function seedDemoStories(");
+  check(seed.startsWith("async function seedDemoStories(") && seed.includes("if (!Repository.isDemoRequest()) return;"), "البذرُ لا يعمل إلا داخل صندوقٍ تجريبي");
+  check(seed.includes('kind: "staff"') && seed.includes('kind: "survey"') && seed.includes("shareLinkLabel("), "(a) رابطا بطاقات الأساتذة والاستبيان، بعنوان لوحة النشر نفسه");
+  check(seed.includes('requestType: "graduate"') && seed.includes('requestType: "course-conflict"') && seed.includes('requestType: "new-course"'),
+    "(b) حالاتُ خريجٍ وتعارضِ مقرّرين وفتحِ مقرّر");
+  check(seed.includes('setStudentCaseDecision(graduate.id, "committee"') && seed.includes('state: "registered"') && seed.includes('state: "committee-rejected"'),
+    "(b) بقراراتٍ مختلفة: عند التسجيل، ومسجَّل، ولم توافق اللجنة — وتعارضٌ ينتظر اللجنة");
+  check(seed.includes("surveyFingerprint(civil)") && seed.includes("sealStudentIdentity(name)") && seed.includes("generateSyntheticCivilId()"),
+    "(b) بالبصمة والختم نفسيهما، وبأرقامٍ وهمية");
+  check(seed.includes("judgeRequestItems(") && seed.includes('status: "settled"') && seed.includes("alternatives: offered"),
+    "(c) طلبا أستاذين يحكم عليهما النظام نفسُه: واحدٌ ينتظر، وآخرُ رُفض ببدائل");
+  check(seed.includes("Repository.saveDegreeRule(rule)"), "(d) قاعدةُ تخرّجٍ محفوظة لعلوم الحاسب");
+  const demoRoute = body('app.post("/api/auth/demo"');
+  check(demoRoute.includes("await seedDemoStories()"), "تُبذر القصصُ عند دخول التجربة");
+  check(body('app.post("/api/demo/reset"').includes("seedDemoStories()"), "وعند إعادة ضبط الصندوق");
+
+  const hint = body("async function demoPageHint(");
+  check(hint.includes('if (!Repository.isDemoRequest()) return "";'), "تلميحُ الرقم الوهمي لا يُكتب خارج البيئة التجريبية أبداً");
+  for (const [route, page] of [['app.get("/s/:token"', '"staff"'], ['app.get("/q/:token"', '"survey"'], ['app.get("/m/:token"', '"status"'], ['app.get("/r/:token"', '"request"']] as const) {
+    check(body(route).includes(`await demoPageHint(resolved.link, ${page})`), `${route.slice(9, 20)} تعرض التلميح في التجريبي`);
+  }
+  const guideOutside = Repository.getDemoGuide();
+  const session = `demo_guide_${Date.now()}`;
+  Repository.createDemoSandbox(session, 60_000);
+  await Repository.withDemoSandbox(session, () => Repository.setDemoGuide({ freshStudentCivil: "1", cases: [] }));
+  check(guideOutside === undefined && Repository.getDemoGuide() === undefined, "دليلُ الأرقام الوهمية لا يُقرأ خارج الصندوق");
+  check((await Repository.withDemoSandbox(session, () => Repository.getDemoGuide()))?.freshStudentCivil === "1", "ويُقرأ داخله");
+}
+
 async function main() {
+  await p4Stories();
   await p3PublicLinks();
   p2Registry();
   p1Structure();
