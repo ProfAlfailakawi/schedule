@@ -10,7 +10,8 @@ import {
 } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
-import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { blockingConflicts, blockingRowIds, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { blockingSummaryPhrase } from "../utils/approvalWorkflow";
 import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
 
@@ -151,6 +152,8 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
   const decisionFindings = useMemo(() => baseFindings.filter(isDecision1912Finding), [baseFindings]);
   const score = useMemo(() => regulationScore(decisionFindings, rows.length), [decisionFindings, rows.length]);
   const [serverBlockers, setServerBlockers] = useState<Array<{id:string;type:string;title:string;detail:string;rowIds:number[];subjectKey?:string;subjectLabel?:string}>>([]);
+  /* The bar's two numbers, as the server read them for the same scope. */
+  const [serverSummary, setServerSummary] = useState<{ conflicts: number; rows: number } | null>(null);
   const [readinessChecked, setReadinessChecked] = useState(false);
   const [readinessError, setReadinessError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -164,7 +167,10 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     setReadinessError(false);
     void fetch(`/api/schedules/review-readiness?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { credentials: "include", signal: controller.signal })
       .then(async response => response.ok ? response.json() : Promise.reject(new Error("readiness")))
-      .then(data => setServerBlockers(Array.isArray(data?.blockers) ? data.blockers : []))
+      .then(data => {
+        setServerBlockers(Array.isArray(data?.blockers) ? data.blockers : []);
+        setServerSummary({ conflicts: Number(data?.blockingConflicts || 0), rows: Number(data?.blockingRows || 0) });
+      })
       .catch(error => { if (error?.name !== "AbortError") { setServerBlockers([]); setReadinessError(true); } })
       .finally(() => { if (!controller.signal.aborted) setReadinessChecked(true); });
     return () => controller.abort();
@@ -172,15 +178,22 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
 
   /* The offline fallback reads the same rule the server does — «هيئة تدريسية»
      included — so losing the network never changes what counts as a blocker. */
-  const localBlockers = useMemo(() => blockingConflicts(rows, rows, { placeholderInstructorIds: placeholderInstructorIds(instructors.values()) })
+  const localConflicts = useMemo(() => blockingConflicts(rows, rows, { placeholderInstructorIds: placeholderInstructorIds(instructors.values()) }), [rows, instructors]);
+  const localBlockers = useMemo(() => localConflicts
     .map(item => ({
       id: `local-conflict:${[item.rowId, item.otherId].sort((a, b) => a - b).join(":")}`,
       type: item.type,
       title: item.message,
       detail: item.detail,
       rowIds: [Number(item.rowId), Number(item.otherId)].filter(Boolean),
-    })), [rows, instructors]);
-  const activeBlockers = readinessChecked && !readinessError ? serverBlockers : localBlockers;
+    })), [localConflicts]);
+  const serverRead = readinessChecked && !readinessError;
+  const activeBlockers = serverRead ? serverBlockers : localBlockers;
+  /* The headline is the ApprovalBar's: blocking conflicts (pairs), then the
+     appointments they touch — the same `approvalBlockerSummary` reading. */
+  const blockerSummary = serverRead && serverSummary
+    ? serverSummary
+    : { conflicts: localConflicts.length, rows: blockingRowIds(localConflicts, rows).length };
 
   const blockerFindings = useMemo<RegulationFinding[]>(() => activeBlockers.map((item, index) => ({
     rule: item.id || `approval-blocker-${index}`,
@@ -248,6 +261,12 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     return { ...counts, clean: Math.max(0, rows.length - flagged), total: Math.max(1, rows.length) };
   }, [findings, rows.length]);
   const share = (value: number) => `${(value / spread.total) * 100}%`;
+  const spreadLabel = {
+    high: `${countOf(spread.high, AR.appointment)} ${nounFor(spread.high, AR.blockVerb)} الاعتماد`,
+    medium: `${countOf(spread.medium, AR.appointment)} للمراجعة`,
+    low: countOf(spread.low, AR.note),
+    clean: `${countOf(spread.clean, AR.appointment)} ${nounFor(spread.clean, AR.soundAdj)}`,
+  };
   const tone = blocking.length ? "danger" : score >= 85 ? "good" : "warn";
   // A ring drawn as a single arc: circumference 100 makes the maths the score.
   const ringLength = 2 * Math.PI * 26;
@@ -513,6 +532,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
             <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
             <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
             <p>{scopeLine}</p>
+            {readinessChecked && blockerSummary.conflicts > 0 ? <strong className="review-blocker-headline" data-review-headline="blocking">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows)}</strong> : null}
             {readinessError ? <small>تمت مراجعة قرار 1913/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
@@ -521,16 +541,18 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
         {/* The whole term as one bar: every appointment counted once. */}
         <div className="review-spread" role="img" aria-label="توزيع المواعيد حسب الملاحظات">
           <div className="spread-bar">
-            {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} title={`${spread.high} يمنع`} /> : null}
-            {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} title={`${spread.medium} يراجَع`} /> : null}
-            {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={countOf(spread.low, AR.note)} /> : null}
-            {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
+            {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} title={spreadLabel.high} /> : null}
+            {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} title={spreadLabel.medium} /> : null}
+            {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={spreadLabel.low} /> : null}
+            {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={spreadLabel.clean} /> : null}
           </div>
+          {/* Appointments, said with their noun: «5 مواعيد تمنع» can never be
+              read as «5 موانع» beside the bar's conflict count. */}
           <div className="spread-keys">
-            <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
-            <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
-            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(spread.low, AR.note)}</small></span>
-            <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
+            <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{countOf(spread.high, AR.appointment)}</b><small>{nounFor(spread.high, AR.blockVerb)}</small></span>
+            <span className="seg-medium"><Info aria-hidden="true" /><b>{countOf(spread.medium, AR.appointment)}</b><small>للمراجعة</small></span>
+            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{countOf(spread.low, AR.note)}</b></span>
+            <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{countOf(spread.clean, AR.appointment)}</b><small>{nounFor(spread.clean, AR.soundAdj)}</small></span>
           </div>
         </div>
 
@@ -605,7 +627,8 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                   {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} /> : null}
                   {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} /> : null}
                 </div>
-                <div className="print-spread-keys"><span className="seg-high"><b>{spread.high}</b> يمنع</span><span className="seg-medium"><b>{spread.medium}</b> يراجَع</span><span className="seg-low"><b>{spread.low}</b> {nounFor(spread.low, AR.note)}</span><span className="seg-clean"><b>{spread.clean}</b> سليم</span></div>
+                {blockerSummary.conflicts > 0 ? <p className="print-blocker-headline">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows)}</p> : null}
+                <div className="print-spread-keys"><span className="seg-high">{spreadLabel.high}</span><span className="seg-medium">{spreadLabel.medium}</span><span className="seg-low">{spreadLabel.low}</span><span className="seg-clean">{spreadLabel.clean}</span></div>
               </div>
               <section className="print-review-findings">
                 {findings.length ? firstPrintPage.map(renderPrintFinding) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>لا توجد موانع حفظ محلية، ولا تنبيهات لائحية ظاهرة ضمن النطاق الذي يفحصه النظام.</span></div>}

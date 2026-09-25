@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Clock3, CornerUpLeft, History, MessageSquareText, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
-  APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, awaitsHeadSignature, blockingConflictPhrase, deadlinePassed, pendingAdditionTotal,
+  APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed, pendingAdditionTotal,
 } from "../utils/approvalWorkflow";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
@@ -32,6 +32,8 @@ interface Payload {
   approval: ScheduleApproval;
   deadline: DeadlineShape;
   blockingConflicts: number;
+  /** المواعيدُ التي تقف في تلك التعارضات (approvalBlockerSummary على الخادم). */
+  blockingRows?: number;
   /** ملاحظاتُ التسجيل التي لم تُعالَج ولم يُردّ عليها: تمنع إعادة الإرسال. */
   openRegistrarNotes: number;
   /** عددُ مواعيد الجدول: لا يُوقَّع على جدولٍ فارغ. */
@@ -313,7 +315,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
         {/* المانعُ سطرٌ هادئ بجانب الزرّ، لا تنبيهٌ عائمٌ يعود كلما تحرّكت الشاشة. */}
         {canSignNow && blockingConflicts > 0 ? (
-          <span className="approval-blocked">يمنع التوقيع: {blockingConflictPhrase(blockingConflicts)}</span>
+          <span className="approval-blocked">يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</span>
         ) : null}
         {canSignNow ? (
           <PrimaryButton type="button" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
@@ -340,7 +342,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {!readyToSubmit && Boolean(committee && head) && !locked && (signatureStage || powerAdmin) && pendingAdditions === 0 ? (
           accepted ? null
           : blockingConflicts > 0 ? (
-            <span className="approval-blocked">يمنع الإرسال: {blockingConflictPhrase(blockingConflicts)}</span>
+            <span className="approval-blocked">يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</span>
           ) : openNotes > 0 ? (
             <span className="approval-blocked">
               {countOf(openNotes, AR.note)} من التسجيل تنتظر معالجةً أو ردّاً

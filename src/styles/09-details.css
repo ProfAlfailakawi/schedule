@@ -739,6 +739,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-title{min-width:0}
 .review-title h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
 .review-title p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm)}
+.review-title .review-blocker-headline{display:block;margin-top:var(--s1);color:var(--danger);font-size:var(--t-sm);font-weight:700}
 
 /* The term as one bar. Its clean stretch is the answer at a glance. */
 .review-spread{

@@ -215,6 +215,8 @@ export const AR = {
   lateAdj:       { one: "متأخر", two: "متأخران", few: "متأخرة", many: "متأخراً" },
   possibleAdj:   { one: "محتمل", two: "محتملان", few: "محتملة", many: "محتملاً" },
   blockFemVerb:  { one: "تمنع", two: "تمنعان", few: "تمنع", many: "تمنع" },
+  blockVerb:     { one: "يمنع", two: "يمنعان", few: "تمنع", many: "تمنع" },
+  soundAdj:      { one: "سليم", two: "سليمان", few: "سليمة", many: "سليماً" },
   differentAdj:  { one: "مختلف", two: "مختلفان", few: "مختلفة", many: "مختلفاً" },
   similarAdj:    { one: "متشابه", two: "متشابهان", few: "متشابهة", many: "متشابهاً" },
   linkedAdj:     { one: "مرتبط", two: "مرتبطان", few: "مرتبطة", many: "مرتبطاً" },

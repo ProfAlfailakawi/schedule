@@ -74,6 +74,39 @@ export function approvalBlockerCount(scopeRows: any[], termRows: any[], options:
 }
 
 /**
+ * ── الموانع وما تمسّه من مواعيد — رقمان، لا رقمٌ يُقرأ بمعنيين ─────────────
+ *
+ * The owner's screen showed «4 تعارضات مادّية» on the bar and «5 يمنع» in the
+ * review: both were right, and nothing said the second counted appointments.
+ * The headline unit everywhere is the number of blocking CONFLICTS (pairs);
+ * where appointments are shown, they are these — the distinct rows of the
+ * scope that stand in at least one blocking pair — and are named as such.
+ */
+export function blockingRowIds(conflicts: Array<{ rowId: unknown; otherId: unknown }>, scopeRows: any[]): number[] {
+  const own = new Set((scopeRows || []).map((row: any) => Number(row?.id)));
+  const touched = new Set<number>();
+  for (const item of conflicts || []) {
+    for (const id of [Number(item.rowId), Number(item.otherId)]) if (own.has(id)) touched.add(id);
+  }
+  return [...touched].sort((a, b) => a - b);
+}
+
+export interface ApprovalBlockerSummary {
+  /** Blocking pairs — the headline number (`approvalBlockerCount`). */
+  conflicts: number;
+  /** Distinct own appointments standing in those pairs. */
+  rows: number;
+  rowIds: number[];
+}
+
+/** Both numbers from ONE list, so they can never be read from two rules. */
+export function approvalBlockerSummary(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ApprovalBlockerSummary {
+  const list = blockingConflicts(scopeRows, termRows, options);
+  const rowIds = blockingRowIds(list, scopeRows);
+  return { conflicts: list.length, rows: rowIds.length, rowIds };
+}
+
+/**
  * ── ما يمنع الاعتماد، بتفاصيله — داخل حدود القسم ─────────────────────────
  *
  * كلُّ مانعٍ يصل بمواعيد هذا القسم المعنيّة به، بمقرّراتها وأساتذتها. وتعارضٌ

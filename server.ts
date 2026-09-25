@@ -49,7 +49,7 @@ import {
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
 import { describeScopeChanges, fingerprintOfSignatures, replacementLoss, scopeBase, scopeSignatures, type ScopeBase } from "./src/utils/scopeFingerprint";
-import { approvalBlockerCount, blockingConflictDetails, blockingConflicts, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
+import { approvalBlockerCount, approvalBlockerSummary, blockingConflictDetails, blockingConflicts, blockingRowIds, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { buildNotifications } from "./src/utils/notificationCenter";
 import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
@@ -5012,7 +5012,11 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
   const seen=new Set<string>();
   const add=(item:any)=>{const key=String(item.id||`${item.type}:${(item.rowIds||[]).join(":")}`);if(seen.has(key))return;seen.add(key);blockers.push(item);};
 
-  blockingConflicts(scopeRows,termRows,await approvalBlockerOptions())
+  /* One list: the items below, the headline count and the appointments it
+     touches are all read from it — the ApprovalBar's two numbers exactly. */
+  const conflictList=blockingConflicts(scopeRows,termRows,await approvalBlockerOptions());
+  const touchedRowIds=blockingRowIds(conflictList,scopeRows);
+  conflictList
     .forEach((item:any)=>{
       const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
       if(!ownIds.has(ownId))return;
@@ -5038,7 +5042,10 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
         ? `${courseById.get(Number(other.AdCourseId))?.CourseCode||String(other.AdCourseName||"موعد آخر")} · ${formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))}`
         : "موعد خارج نطاق العرض الحالي";
       const detail=`${ownCourse}${own?.SCode?` · شعبة ${own.SCode}`:""}${ownDays?` · ${ownDays}`:""}${ownTime?` · ${ownTime}`:""} ↔ ${external}`;
-      add({id:`conflict:${[ownId,otherId].sort((a,b)=>a-b).join(":")}`,type:item.type,title,detail,rowIds:[ownId],subjectKey,subjectLabel});
+      /* Both feet of a pair inside this department are both flagged, so the
+         review's «مواعيد تمنع» is `blockingRows`, not half of it. */
+      const pairOwn=[ownId,otherId].filter(id=>ownIds.has(id));
+      add({id:`conflict:${[ownId,otherId].sort((a,b)=>a-b).join(":")}`,type:item.type,title,detail,rowIds:pairOwn,subjectKey,subjectLabel});
     });
 
   const roomKey=(row:any)=>roomIdentityKey(row);
@@ -5060,7 +5067,7 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
       add({id:`barter-window:${row.id}`,type:"hallBarterWindow",title:"الموعد يتجاوز نافذة الاستعارة المعتمدة",detail:"استخدم القاعة داخل اليوم والوقت المعتمدين، أو اطلب نافذة إضافية قبل الاعتماد.",rowIds:[Number(row.id)]});
     }
   }
-  res.json({blockers,checkedRows:scopeRows.length,termRows:termRows.length});
+  res.json({blockers,blockingConflicts:conflictList.length,blockingRows:touchedRowIds.length,checkedRows:scopeRows.length,termRows:termRows.length});
 });
 
 /**
@@ -5217,9 +5224,9 @@ async function previewNaturalLanguageMove(req: AuthenticatedRequest, q: string, 
   const conflicts=await scheduleConflicts(req,{...after,AdTermId:context.termId},target.id);
   const blocking=conflicts.filter(isBlockingConflict);
   const external=scheduleData.universe.filter(row=>!(row.AdCollegeId===context.collegeId&&row.AdSectionId===context.sectionId));
-  const beforeAnalysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
+  const beforeAnalysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors,await approvalBlockerOptions());
   const scenario=rows.map(row=>Number(row.id)===Number(target.id)?after:row);
-  const afterAnalysis=analyzeSchedule(scenario,[...external,...scenario],courses,instructors);
+  const afterAnalysis=analyzeSchedule(scenario,[...external,...scenario],courses,instructors,await approvalBlockerOptions());
   return{
     ok:true,kind:"move-preview",commitRequired:true,
     move:{id:target.id,fields,rev:target.rev},
@@ -5254,7 +5261,7 @@ async function executeGeminiScheduleCalls(req: AuthenticatedRequest, calls: Gemi
       const move=await previewNaturalLanguageMove(req,q,context,call.args);
       results.push({call,result:move});
     }else if(call.name==="check_conflicts"){
-      const analysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
+      const analysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors,await approvalBlockerOptions());
       results.push({call,result:{criticalConflicts:analysis.metrics?.criticalConflicts||0,alerts:(analysis.alerts||[]).slice(0,6)}});
     }else if(call.name==="find_rooms"){
       const termRows=scheduleData.universe;
@@ -7739,7 +7746,7 @@ app.post("/api/intelligence/evaluate", requirePermission(7), async (req: Authent
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);
   const {rows:baseline,universe}=scheduleData;
   const external=universe.filter(row=>!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
-  res.json({baseline:analyzeSchedule(baseline,universe,courses,instructors),scenario:analyzeSchedule(rows,[...external,...rows],courses,instructors),constraints:{baseline:evaluateScheduleConstraints(baseline,constraints),scenario:evaluateScheduleConstraints(rows,constraints)}});
+  res.json({baseline:analyzeSchedule(baseline,universe,courses,instructors,await approvalBlockerOptions()),scenario:analyzeSchedule(rows,[...external,...rows],courses,instructors,await approvalBlockerOptions()),constraints:{baseline:evaluateScheduleConstraints(baseline,constraints),scenario:evaluateScheduleConstraints(rows,constraints)}});
 });
 
 app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -7751,8 +7758,8 @@ app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: Au
   if(!target.length){res.json(emptyScopeGuidance("المقترح التلقائي"));return;}
   const proposal=autoScheduleProposal(target,universe);
   const external=universe.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
-  const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors);
-  const proposedAnalysis=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors);
+  const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors,await approvalBlockerOptions());
+  const proposedAnalysis=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors,await approvalBlockerOptions());
   const safeImprovement=proposedAnalysis.metrics.criticalConflicts<before.metrics.criticalConflicts||(proposedAnalysis.metrics.criticalConflicts===before.metrics.criticalConflicts&&proposedAnalysis.score>=before.score);
   const chosenRows=safeImprovement?proposal.rows:target,changed=safeImprovement?proposal.changed:0,after=safeImprovement?proposedAnalysis:before;
   const summary=changed?`اقتراح آمن غيّر وقت ${countOf(changed, oblique(AR.appointment))} فقط، مع إبقاء المقرر والأستاذ والأيام والقاعة كما هي. موانع الحفظ ${before.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts}، والجودة ${before.score} ← ${after.score}.`:`حللت البدائل ولم أجد تغييراً آمناً أفضل من الجدول الحالي ضمن القيود نفسها؛ لذلك لم أقترح أي تعديل تلقائي.`;
@@ -7897,7 +7904,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
       figures.push({label:"الوقت المقترح",value:formatScheduleTimeRange(candidate.fstarttime,candidate.fendtime),hint:"",tone:after===0?"good":"bad"});}
     else summary="حدد رمز المقرر والساعة في السؤال، مثال: إذا نقلت 101 إلى الساعة 11، فما الذي سيتأثر؟";
   } else if(normalized.includes("أفضل توزيع")||normalized.includes("افضل توزيع")||normalized.includes("قلل الفراغ")||normalized.includes("تقليل الفراغ")){
-    title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
+    title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors,await approvalBlockerOptions()); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
     summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${countOf(proposal.changed, oblique(AR.appointment))}: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
     if(dayMatch)bullets.push(`ذكرت ${dayMatch.label}. سأتعامل معه كأولوية تحليل، لكن لن أغيّر نمط أيام المقرر تلقائياً لأن ذلك قد يكون قيداً أكاديمياً.`);
     bullets.push("افتح «المحاكاة» لمراجعة كل تغيير قبل اعتماده.");
@@ -8029,7 +8036,7 @@ app.get("/api/intelligence/room", requirePermission(7), async (req: Authenticate
 });
 
 app.get("/api/intelligence/professor/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const instructorId=Number(req.params.id||0),termId=Number(req.query.termId||0); if(!instructorId||!termId){res.status(400).json({error:"حدد الأستاذ والفصل الدراسي"});return;} const [termRows,courses,instructors]=await Promise.all([Repository.getSchedulesByScope({termId}),Repository.getCourses(),Repository.getInstructors()]); const rows=termRows.filter(r=>r.AdInstructorId===instructorId); const visible=req.user.IsAdminUser?rows:filterByScope(req,rows); if(!req.user.IsAdminUser&&!visible.length){res.status(403).json({error:"الأستاذ لا يظهر ضمن نطاق القسم المسموح لك"});return;} const analysis=analyzeSchedule(rows,termRows,courses,instructors); const load=analysis.professorLoads.find((x:any)=>x.id===instructorId)||null; res.json({instructor:instructors.find(i=>i.AdInstructorId===instructorId)||null,load,visibleRows:visible,externalCommitments:Math.max(0,rows.length-visible.length),conflicts:analysis.conflicts.length});
+  const instructorId=Number(req.params.id||0),termId=Number(req.query.termId||0); if(!instructorId||!termId){res.status(400).json({error:"حدد الأستاذ والفصل الدراسي"});return;} const [termRows,courses,instructors]=await Promise.all([Repository.getSchedulesByScope({termId}),Repository.getCourses(),Repository.getInstructors()]); const rows=termRows.filter(r=>r.AdInstructorId===instructorId); const visible=req.user.IsAdminUser?rows:filterByScope(req,rows); if(!req.user.IsAdminUser&&!visible.length){res.status(403).json({error:"الأستاذ لا يظهر ضمن نطاق القسم المسموح لك"});return;} const analysis=analyzeSchedule(rows,termRows,courses,instructors,await approvalBlockerOptions()); const load=analysis.professorLoads.find((x:any)=>x.id===instructorId)||null; res.json({instructor:instructors.find(i=>i.AdInstructorId===instructorId)||null,load,visibleRows:visible,externalCommitments:Math.max(0,rows.length-visible.length),conflicts:analysis.conflicts.length});
 });
 
 app.get("/api/intelligence/comments/:scheduleId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -9486,6 +9493,16 @@ async function blockingConflictCount(collegeId: number, sectionId: number, termI
   return countBlockingConflicts(scopeRows, termRows, options);
 }
 
+/** The bar's two numbers — conflicts and the appointments they touch — from one list. */
+async function blockingSummaryFor(collegeId: number, sectionId: number, termId: number) {
+  const [scopeRows, termRows, options] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getSchedulesByScope({ termId }),
+    approvalBlockerOptions(),
+  ]);
+  return approvalBlockerSummary(scopeRows, termRows, options);
+}
+
 /** الملاحظات اللائحية الظاهرة وقت التوقيع — تُسجَّل ولا تمنع. */
 async function regulationNoticesForScope(collegeId: number, sectionId: number, termId: number) {
   try {
@@ -9588,7 +9605,7 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
   }
   const [deadline, blocking, notices, notes, rows, lockReason] = await Promise.all([
     readDeadlineFor(approval, termId),
-    blockingConflictCount(collegeId, sectionId, termId),
+    blockingSummaryFor(collegeId, sectionId, termId),
     regulationNoticeCount(collegeId, sectionId, termId),
     notesWithState(collegeId, sectionId, termId),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
@@ -9597,7 +9614,9 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
   res.json({
     approval,
     deadline,
-    blockingConflicts: blocking,
+    blockingConflicts: blocking.conflicts,
+    /* المواعيدُ التي تقف في تلك التعارضات — من القائمة نفسها (approvalBlockerSummary). */
+    blockingRows: blocking.rows,
     regulationNotices: notices,
     /* ── ما يمنع الإرسال يُقال قبل الضغط ────────────────────────────────────
      * من العدّاد الواحد نفسه الذي يقرؤه الإرسالُ والإرجاعُ والوارد (R4). */
@@ -11387,8 +11406,8 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: Aut
     }),
     fromTermName:terms.find(t=>t.AdTermId===fromTermId)?.AdTermName||"",
     toTermName:terms.find(t=>t.AdTermId===toTermId)?.AdTermName||"",
-    fromScore:analyzeSchedule(from,fromData.universe,courses,instructors).score,
-    toScore:analyzeSchedule(to,toData.universe,courses,instructors).score
+    fromScore:analyzeSchedule(from,fromData.universe,courses,instructors,await approvalBlockerOptions()).score,
+    toScore:analyzeSchedule(to,toData.universe,courses,instructors,await approvalBlockerOptions()).score
   });
 });
 
@@ -11463,19 +11482,23 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
     scopedScheduleUniverse(collegeId,sectionId,termId), Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(), Repository.getScheduleConstraints(collegeId, sectionId, termId)
   ]);
   const {rows,universe}=scheduleData;
-  const pulse = buildSchedulePulse(rows, universe, courses, instructors); await breathe();
-  const health = buildScheduleHealth2(rows, universe, courses, instructors); await breathe();
+  /* «حالة الجدول — N مانع اعتماد» is the ApprovalBar's number: the same
+     placeholder exemption and the same hall identity (approvalBlockerOptions),
+     one options object so every memoised reading below shares it. */
+  const blockerOptions = await approvalBlockerOptions();
+  const pulse = buildSchedulePulse(rows, universe, courses, instructors, blockerOptions); await breathe();
+  const health = buildScheduleHealth2(rows, universe, courses, instructors, blockerOptions); await breathe();
   const fairness = buildFairnessEngine(rows, instructors); await breathe();
-  const fragility = buildFragilityMap(rows, universe, courses, instructors); await breathe();
+  const fragility = buildFragilityMap(rows, universe, courses, instructors, blockerOptions); await breathe();
   const roomIntelligence = buildRoomResilience(rows, universe); await breathe();
-  const topology = buildConflictTopology(rows, universe, courses, instructors); await breathe();
+  const topology = buildConflictTopology(rows, universe, courses, instructors, blockerOptions); await breathe();
   /* Cheap by comparison: every reading it needs is memoised above and answers
      from cache, so it is left to run without a further pause. */
   /* The one-minute brief was also served alone at /api/intelligence/brief,
      which no screen ever called — so the living layer's «ملخص الدقيقة» never
      said what changed. It now carries the same «since the last safety point»
      reading, from the same helper. */
-  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows));
+  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows), blockerOptions);
   const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
   const livingPayload = {
     context:{collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
@@ -11835,7 +11858,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
   const genesisConflicts=blockingConflicts(rows,[...external,...rows],await approvalBlockerOptions());
   const rowIssues=mapSmartIssuesToRows(rows,issues,genesisConflicts);
   const issueRowIds=Object.keys(rowIssues).map(Number);
-  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,...scopeBase(targetUniverse.filter(r=>Number(r.AdCollegeId)===collegeId&&Number(r.AdSectionId)===sectionId)),name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
+  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors,await approvalBlockerOptions()); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,...scopeBase(targetUniverse.filter(r=>Number(r.AdCollegeId)===collegeId&&Number(r.AdSectionId)===sectionId)),name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
   const courseById=new Map(courses.map(course=>[Number(course.AdCourseId),course]));
   const instructorById=new Map(instructors.map(instructor=>[Number(instructor.AdInstructorId),instructor]));
   const previewRows=draft.rows.map((row,index)=>({
@@ -11849,7 +11872,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]); const {rows,universe}=scheduleData; const changedSince=await briefChangedSince(collegeId,sectionId,termId,rows); res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince));
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]); const {rows,universe}=scheduleData; const changedSince=await briefChangedSince(collegeId,sectionId,termId,rows); res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince,await approvalBlockerOptions()));
 });
 
 app.post("/api/intelligence/meeting-minutes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
