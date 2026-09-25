@@ -757,6 +757,12 @@ export interface ScheduleComment {
    * القسم — إعلاماً لا إجباراً، فلا شيء في النظام يقف عليه.
    */
   insistCount?: number;
+  /** ردودُ القسم السابقة التي أصرّ عليها التسجيل — تُحفظ ولا تُمحى. */
+  rebuttalHistory?: Array<{ text: string; at: string; SystemUserId: number; userName: string; insistedAt: string; insistedBy: string }>;
+  /** متى بلغ الإصرارُ حدَّ الرفع إلى رئيس القسم. */
+  escalatedAt?: string;
+  /** كيف أُغلقت: بقبول تبرير القسم، أو بقبول الجدول كلّه. */
+  resolution?: "rebuttal-accepted" | "closed-by-acceptance";
 }
 
 /** الحقول التي يجوز أن تُعلَّق عليها ملاحظةٌ بالنقر. */
@@ -1152,6 +1158,23 @@ export interface ScheduleApprovalRound {
   reviewedVersionId?: string;
   /** النسخة كما قبِلها التسجيل — ما يراه العميد جدولاً نهائياً حتى يُقبل غيره. */
   acceptedVersionId?: string;
+  /**
+   * جولةُ تعديلٍ بعد القبول: فتحها أولُ تعديلٍ على جدولٍ مقبول، لا إرسالٌ من
+   * أحد. تتجمّع فيها التعديلات ما دام التسجيل لم يكتب فيها ملاحظة.
+   */
+  amendment?: boolean;
+  /** أساسُ مقارنة جولة التعديل: النسخة التي قُبلت آخر مرّة. */
+  baselineVersionId?: string;
+}
+
+/** حدثٌ واحد في سجلّ الدورة: من فعل ماذا، ومتى، وفي أيّ جولة. */
+export interface ScheduleApprovalEvent {
+  at: string;
+  by: string;
+  role?: string;
+  action: string;
+  round: number;
+  detail?: string;
 }
 
 /**
@@ -1187,5 +1210,18 @@ export interface ScheduleApproval {
   extensionReason?: string;
   extensionBy?: string;
   extensionAt?: string;
+  /** طلبُ تمديدٍ من القسم ينتظر رئيس التسجيل. يُمحى متى مُنح التمديد. */
+  extensionRequest?: { by: string; role?: string; at: string; reason: string; days: number };
+  /** إرجاعُ رئيس القسم للجنة قبل أن يعتمد: من، ومتى، ولماذا. */
+  headReturn?: { by: string; at: string; reason: string };
+  /**
+   * كم إضافةً بعد التوقيع زادت على ما تحفظه القائمة. تُعدّ ولا تُسمّى، وتمنع
+   * الإرسال كما تمنعه المسمّاة حتى يُقرّها رئيس القسم.
+   */
+  pendingAdditionsOverflow?: number;
+  /** رقمُ مراجعة الوثيقة: يزيد مع كل حفظ، ويُرفض الحفظ فوق مراجعةٍ أقدم. */
+  revision?: number;
+  /** سجلُّ ما جرى على الدورة، أحدثُه آخرُه، بسقفٍ ثابت. */
+  events?: ScheduleApprovalEvent[];
   updatedAt: string;
 }

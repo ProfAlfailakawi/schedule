@@ -18,7 +18,8 @@
  */
 
 import type {
-  ScheduleApproval, ScheduleApprovalRound, ScheduleApprovalSignature, ScheduleApprovalStatus,
+  ScheduleAdditionPending, ScheduleApproval, ScheduleApprovalEvent, ScheduleApprovalRound,
+  ScheduleApprovalSignature, ScheduleApprovalStatus,
 } from "../types";
 import { AR, countOf } from "./arabicCount";
 
@@ -144,20 +145,92 @@ export function statusAfterSignature(approval: ScheduleApproval): ScheduleApprov
  * وافق عليه رئيس القسم؛ وإضافةُ شعبةٍ تُنشئ التزاماً لم يوافق عليه أصلاً.
  */
 export function needsHeadAcknowledgement(approval: ScheduleApproval): boolean {
-  return approval.pendingAdditions.length > 0;
+  return pendingAdditionTotal(approval) > 0;
+}
+
+/** كلُّ ما ينتظر الإقرار: المسمّى في القائمة وما زاد عليها. */
+export function pendingAdditionTotal(approval: Pick<ScheduleApproval, "pendingAdditions" | "pendingAdditionsOverflow">): number {
+  return (approval.pendingAdditions?.length || 0) + Math.max(0, Number(approval.pendingAdditionsOverflow || 0));
+}
+
+/** سقفُ ما يُسمّى من الإضافات. ما زاد يُعدّ ولا يُسقط. */
+export const PENDING_ADDITIONS_CAP = 60;
+
+/**
+ * ضمُّ إضافاتٍ جديدة إلى قائمة الانتظار.
+ *
+ * كانت القائمة تُقصّ عند ستين فيسقط ما بعدها بلا أثر: استيرادٌ من ثلاثمئة صفٍّ
+ * بعد التوقيع يصير «ستون شعبة» ويُقرّ رئيس القسم ستين ويُرسل الباقي بلا علمه.
+ * فيُسمّى ما يُقرأ، ويُعدّ الباقي، ويمنع الإرسالَ كلُّه حتى يُقرّ.
+ */
+export function mergePendingAdditions(
+  approval: Pick<ScheduleApproval, "pendingAdditions" | "pendingAdditionsOverflow">,
+  fresh: ScheduleAdditionPending[],
+): { pendingAdditions: ScheduleAdditionPending[]; pendingAdditionsOverflow: number } {
+  const known = new Set(approval.pendingAdditions.map(item => Number(item.scheduleId)));
+  const unique = fresh.filter(item => !known.has(Number(item.scheduleId)));
+  const room = Math.max(0, PENDING_ADDITIONS_CAP - approval.pendingAdditions.length);
+  return {
+    pendingAdditions: [...approval.pendingAdditions, ...unique.slice(0, room)],
+    pendingAdditionsOverflow: Math.max(0, Number(approval.pendingAdditionsOverflow || 0)) + Math.max(0, unique.length - room),
+  };
+}
+
+/**
+ * إقرارُ رئيس القسم بما رآه، لا بما وصل بعد أن فتح الشاشة.
+ *
+ * يُقرّ المعرّفاتِ التي عُرضت عليه وحدها، والزائدَ المعدودَ إن كان العددُ هو
+ * نفسُه ما رآه. وما أُضيف بين فتحه الشاشةَ وضغطه «موافق» يبقى ينتظره. وحين
+ * لا يُرسل الطرفُ ما رآه (واجهةٌ قديمة) يُقرّ الكلّ كما كان.
+ */
+export function acknowledgeAdditions(
+  approval: ScheduleApproval,
+  seen?: { ids?: number[]; overflow?: number },
+): { next: ScheduleApproval; acknowledged: number; remaining: number } {
+  if (!seen || !Array.isArray(seen.ids)) {
+    const acknowledged = pendingAdditionTotal(approval);
+    return { next: { ...approval, pendingAdditions: [], pendingAdditionsOverflow: 0 }, acknowledged, remaining: 0 };
+  }
+  const ids = new Set(seen.ids.map(Number));
+  const kept = approval.pendingAdditions.filter(item => !ids.has(Number(item.scheduleId)));
+  const overflowNow = Math.max(0, Number(approval.pendingAdditionsOverflow || 0));
+  const overflowSeen = Number(seen.overflow ?? 0) === overflowNow;
+  const overflow = overflowSeen ? 0 : overflowNow;
+  const next = { ...approval, pendingAdditions: kept, pendingAdditionsOverflow: overflow };
+  const acknowledged = pendingAdditionTotal(approval) - pendingAdditionTotal(next);
+  return { next, acknowledged, remaining: pendingAdditionTotal(next) };
+}
+
+/**
+ * ── تبديلُ المقرر أو الشعبة بعد التوقيع إضافةٌ لا تعديل ────────────────────
+ *
+ * تغييرُ القاعة يُبدّل خانةً في صفٍّ وافق عليه رئيس القسم. أمّا تبديلُ المقرر
+ * أو رقمِ الشعبة فيُنشئ التزاماً آخر في مكان الأول — وهو بالضبط ما وُجدت له
+ * قائمة الانتظار.
+ */
+export function isSwapEdit(before: { AdCourseId?: unknown; SCode?: unknown } | undefined, after: { AdCourseId?: unknown; SCode?: unknown } | undefined): boolean {
+  if (!before || !after) return false;
+  return Number(before.AdCourseId || 0) !== Number(after.AdCourseId || 0)
+    || String(before.SCode ?? "").trim() !== String(after.SCode ?? "").trim();
 }
 
 /** أيجوز الإرسال للتسجيل الآن؟ */
 export type SubmitVerdict =
   | { ok: true }
-  | { ok: false; code: "not-signed" | "pending-additions" | "unresolved-notes" | "already-submitted" | "deadline"; message: string };
+  | { ok: false; code: "not-signed" | "pending-additions" | "unresolved-notes" | "already-submitted" | "already-accepted" | "blocking-conflicts" | "deadline"; message: string };
 
 export function canSubmit(
   approval: ScheduleApproval,
-  context: { openNoteCount: number; deadlineState: DeadlineState },
+  context: { openNoteCount: number; deadlineState: DeadlineState; blockingConflicts?: number },
 ): SubmitVerdict {
   if (approval.status === "submitted") {
     return { ok: false, code: "already-submitted", message: "الجدول مُرسَلٌ بالفعل وينتظر التسجيل." };
+  }
+  /* ── المقبول لا يُرسل ثانيةً وهو على حاله ──────────────────────────────
+     جدولٌ قبِله التسجيل ولم يتغيّر بعده ليس فيه ما يُراجَع. وأيُّ تعديلٍ عليه
+     يفتح جولةَ تعديلٍ من تلقاء نفسه، فلا حاجة إلى زرّ إرسالٍ يعيده كما هو. */
+  if (approval.status === "accepted") {
+    return { ok: false, code: "already-accepted", message: "الجدول معتمدٌ من التسجيل ولم يتغيّر بعد القبول — لا شيء يُرسل." };
   }
   if (!isFullySigned(approval)) {
     return { ok: false, code: "not-signed", message: "يلزم توقيع رئيس لجنة الجدول ثم رئيس القسم قبل الإرسال." };
@@ -167,7 +240,17 @@ export function canSubmit(
        «شعبة» و«شعبتان» و«خمس شعب» — لا «1 شعبة» و«2 شعبة». */
     return {
       ok: false, code: "pending-additions",
-      message: `بانتظار موافقة رئيس القسم على ${countOf(approval.pendingAdditions.length, AR.section)} أُضيفت بعد اعتماده.`,
+      message: `بانتظار موافقة رئيس القسم على ${countOf(pendingAdditionTotal(approval), AR.section)} أُضيفت بعد اعتماده.`,
+    };
+  }
+  /* ── التعارضُ المادّي يمنع الإرسال كما يمنع التوقيع والقبول ─────────────
+     كان يُفحص عند التوقيع وعند القبول، ولا يُفحص عند الإرسال: فجدولٌ نشأ فيه
+     تعارضٌ بعد التوقيع يصل التسجيلَ ولا يملك التسجيلُ قبوله. فيُقال هنا، قبل
+     أن يُرسل، لمن يملك إصلاحه. */
+  if (Number(context.blockingConflicts || 0) > 0) {
+    return {
+      ok: false, code: "blocking-conflicts",
+      message: `يوجد ${blockingConflictPhrase(Number(context.blockingConflicts))} يمنع الإرسال. عالِجه أولاً — التسجيل لا يقبل جدولاً فيه تعارض.`,
     };
   }
   if (context.openNoteCount > 0) {
@@ -212,6 +295,31 @@ export function daysBetween(fromISO: string, toISO: string): number {
 
 const NEAR_DAYS = 7;
 
+/* ── الموعد بتوقيت الكويت ─────────────────────────────────────────────────
+ *
+ * كان «اليوم» يُقرأ من الساعة العالمية: `new Date().toISOString().slice(0,10)`.
+ * والكويت تسبقها بثلاث ساعات، فبين منتصف الليل والثالثة فجراً كان الخادم يعدّ
+ * أمسِ يوماً قائماً — وموعدٌ انقضى عند منتصف الليل يبقى مفتوحاً ثلاث ساعات،
+ * ويقول الشريط «آخر موعد اليوم» عن يومٍ مضى. فالموعدُ ينتهي في آخر ثانيةٍ من
+ * يومه بتوقيت الكويت، ويُقرأ من هنا وحده خادماً وواجهة. */
+export const KUWAIT_UTC_OFFSET_HOURS = 3;
+
+/** تاريخ اليوم في الكويت، بصيغة YYYY-MM-DD. */
+export function kuwaitDateISO(now: Date = new Date()): string {
+  return new Date(now.getTime() + KUWAIT_UTC_OFFSET_HOURS * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** اللحظةُ التي ينتهي فيها يومُ الموعد: ٢٣:٥٩:٥٩ بتوقيت الكويت. */
+export function deadlineEndsAt(dateISO: string): string {
+  return `${dateISO.slice(0, 10)}T23:59:59+03:00`;
+}
+
+/** أمضى الموعد؟ بعد آخر ثانيةٍ من يومه في الكويت، لا قبلها. */
+export function deadlinePassed(dateISO: string | undefined, now: Date = new Date()): boolean {
+  if (!dateISO) return false;
+  return now.getTime() > Date.parse(deadlineEndsAt(dateISO));
+}
+
 /**
  * الموعد كما يُقرأ في الشاشة.
  *
@@ -221,14 +329,18 @@ const NEAR_DAYS = 7;
  */
 export function readDeadline(
   input: { termDeadline?: string; extensionUntil?: string; extensionReason?: string },
-  todayISO: string,
+  /** لحظةُ السؤال، أو تاريخٌ في الكويت بصيغة YYYY-MM-DD. */
+  today: Date | string = new Date(),
 ): DeadlineState {
   const effective = input.extensionUntil || input.termDeadline;
   if (!effective) {
     return { termDeadline: input.termDeadline, extensionUntil: input.extensionUntil, past: false, tone: "none" };
   }
+  const todayISO = typeof today === "string" ? today.slice(0, 10) : kuwaitDateISO(today);
   const daysLeft = daysBetween(todayISO, effective);
-  const past = daysLeft < 0;
+  /* يومٌ كاملٌ في الكويت يسبق «مضى»: بتاريخٍ مجرّد يُقارن اليومان، وبلحظةٍ
+     تُقارن بنهاية يوم الموعد بتوقيت الكويت — وهما الحكم نفسه. */
+  const past = typeof today === "string" ? daysLeft < 0 : deadlinePassed(effective, today);
   return {
     effective,
     termDeadline: input.termDeadline,
@@ -301,4 +413,310 @@ export function inboxPriority(approval: ScheduleApproval, blockingConflicts: num
   if (approval.status === "returned") return 3;
   if (approval.status === "accepted") return 5;
   return 4;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   قواعدُ الدورة بعد تدقيق الأدوار الستّة
+   ══════════════════════════════════════════════════════════════════════════
+   كلُّ قاعدةٍ هنا كانت مكتوبةً مرّتين أو غيرَ مكتوبةٍ أصلاً. فصارت في موضعٍ
+   واحد، يقرؤه الخادم والواجهة، ويُختبر مرّةً واحدة. */
+
+/** رسالةُ الشاشة التي تغيّر ما تحتها بعد أن فُتحت. */
+export const STALE_VIEW_MESSAGE = "تغيّر الجدول منذ فتحت الشاشة — حدّث";
+
+/** نصُّ الإغلاق حين يُقبل الجدول وفيه ملاحظةٌ لم تُحسم. */
+export const CLOSED_BY_ACCEPTANCE_LABEL = "أُغلقت بالقبول";
+
+/** رسالةُ الفصل المنتهي لكل فعلٍ في الدورة. */
+export const TERM_CLOSED_APPROVAL_MESSAGE =
+  "انتهى هذا الفصل. دورةُ اعتماده مغلقة: لا توقيع ولا إرسال ولا قرار. ومن أراد فتحه يرفع علامة «منتهٍ» من شاشة الفصول.";
+
+/* ── R4: ملاحظةُ التسجيل المفتوحة — عدٌّ واحد لكل من يعدّ ─────────────────
+ *
+ * كان يُعدّ في أربعة مواضع بثلاث قواعد: الإرجاعُ يعدّ ملاحظات الجولة الجارية
+ * وحدها، فملاحظةٌ أصرّ عليها التسجيل من جولةٍ سابقة لا تُحسب ولا يُرجَع بها
+ * الجدول؛ والواردُ وشريطُ القرار يعدّان ملاحظات القسم الداخلية معها، فيرى
+ * الموظّف «ثلاث ملاحظات ستُرسل مع الإرجاع» واثنتان منها لرئيس القسم إلى لجنته.
+ *
+ * والقاعدة الواحدة: من التسجيل، وحالُها «تنتظر» — أيّاً كانت جولتُها. */
+export function isOpenRegistrarNote(note: { origin?: string; state?: string }): boolean {
+  return note.origin === "registrar" && note.state === "open";
+}
+
+export function countOpenRegistrarNotes(notes: ReadonlyArray<{ origin?: string; state?: string }>): number {
+  return notes.filter(isOpenRegistrarNote).length;
+}
+
+/** ردودُ القسم على ملاحظات التسجيل التي تنتظر قرار التسجيل. */
+export function countAnsweredRegistrarNotes(notes: ReadonlyArray<{ origin?: string; state?: string }>): number {
+  return notes.filter(note => note.origin === "registrar" && note.state === "answered").length;
+}
+
+/* ── R1: سحبُ التوقيع ──────────────────────────────────────────────────── */
+
+export type WithdrawVerdict =
+  | { ok: true }
+  | { ok: false; code: "locked" | "accepted" | "not-signed"; message: string };
+
+export function canWithdraw(approval: ScheduleApproval, stage: "committee" | "head"): WithdrawVerdict {
+  if (approval.status === "submitted") {
+    return { ok: false, code: "locked", message: "الجدول عند التسجيل. لا يُسحب توقيعٌ بنى عليه الطرف الآخر عمله." };
+  }
+  /* بعد القبول صار التوقيعُ جزءاً من جدولٍ معتمد. وسحبُه كان يُسقط الجدول
+     صامتاً إلى «قيد الإعداد» — فيختفي من عين العميد ولا يعرف التسجيل. */
+  if (approval.status === "accepted") {
+    return { ok: false, code: "accepted", message: "الجدول معتمدٌ من التسجيل. لا يُسحب توقيعٌ على جدولٍ معتمد؛ عدّل الجدول فتُفتح جولةُ تعديل." };
+  }
+  if (!signatureOf(approval, stage)) {
+    return { ok: false, code: "not-signed", message: "لا يوجد توقيعٌ لك على هذا الجدول." };
+  }
+  return { ok: true };
+}
+
+/**
+ * الحالة بعد تغيّر التواقيع.
+ *
+ * كالحالة بعد التوقيع، إلا أن جدولاً مُرجَعاً يبقى مُرجَعاً: سحبُ توقيعٍ أو
+ * إعادتُه في جولةٍ مفتوحة لا يمحو أن التسجيل أرجعه وينتظر إعادته.
+ */
+export function statusAfterSignatureChange(approval: ScheduleApproval): ScheduleApprovalStatus {
+  if (approval.status === "returned") return "returned";
+  return statusAfterSignature(approval);
+}
+
+/* ── R6: القرار مشدودٌ إلى ما رآه صاحبه ─────────────────────────────────── */
+
+export interface ViewExpectation {
+  expectedRound?: number;
+  expectedRowCount?: number;
+  expectedStatus?: string;
+}
+
+/** يقرأ ما رآه الطرف من جسم الطلب. ما لم يُرسل لا يُفحص — توافقاً مع الواجهات القديمة. */
+export function readViewExpectation(body: any): ViewExpectation {
+  const num = (value: unknown) => value === undefined || value === null || value === "" || !Number.isFinite(Number(value)) ? undefined : Number(value);
+  return {
+    expectedRound: num(body?.expectedRound),
+    expectedRowCount: num(body?.expectedRowCount),
+    expectedStatus: typeof body?.expectedStatus === "string" && body.expectedStatus ? body.expectedStatus : undefined,
+  };
+}
+
+export function staleViewRefusal(
+  current: { round: number; rowCount?: number; status?: string },
+  expected: ViewExpectation,
+): string | null {
+  if (expected.expectedRound !== undefined && expected.expectedRound !== Number(current.round)) return STALE_VIEW_MESSAGE;
+  if (expected.expectedStatus !== undefined && current.status !== undefined && expected.expectedStatus !== current.status) return STALE_VIEW_MESSAGE;
+  if (expected.expectedRowCount !== undefined && current.rowCount !== undefined && expected.expectedRowCount !== Number(current.rowCount)) return STALE_VIEW_MESSAGE;
+  return null;
+}
+
+/* ── R8: بناءُ الجولة — من موضعٍ واحد لكل من يفتحها ───────────────────── */
+
+export function openRound(
+  approval: ScheduleApproval,
+  input: {
+    at: string; by: string;
+    reviewedVersionId?: string;
+    amendment?: boolean; baselineVersionId?: string;
+    /** ما تحرّك في الجولة المنتهية، يُكتب عليها لحظةَ إغلاقها. */
+    closingChangedRowCount?: number;
+  },
+): { rounds: ScheduleApprovalRound[]; currentRound: number } {
+  const number = approval.currentRound + 1;
+  const fresh: ScheduleApprovalRound = {
+    number,
+    submittedAt: input.at,
+    submittedBy: input.by,
+    ...(input.reviewedVersionId ? { reviewedVersionId: input.reviewedVersionId } : {}),
+    ...(input.amendment ? { amendment: true } : {}),
+    ...(input.baselineVersionId ? { baselineVersionId: input.baselineVersionId } : {}),
+  };
+  const rounds = [...approval.rounds
+    .filter(round => round.number !== number)
+    .map(round => round.number === approval.currentRound && input.closingChangedRowCount !== undefined
+      ? { ...round, changedRowCount: input.closingChangedRowCount }
+      : round), fresh].sort((a, b) => a.number - b.number);
+  return { rounds, currentRound: number };
+}
+
+/**
+ * جولةُ التعديل مفتوحةٌ للتعديل ما دام التسجيل لم يكتب فيها ملاحظة.
+ *
+ * كان أولُ تعديلٍ بعد القبول يفتح جولةً ويُقفل الجدول بعدها: فالتعديلُ الثاني
+ * يُرفض، واستثناءُ الأسبوع يُرفض، وقرارُ طلب الأستاذ يُحفظ في الجدول ثم يُرفض
+ * تسجيلُه فيضيع. والتعديلاتُ بعد القبول تأتي متتابعة — قاعةٌ ثم أستاذ ثم وقت —
+ * فتتجمّع في الجولة نفسها حتى ينظر فيها التسجيل.
+ */
+export function amendmentStillOpen(approval: ScheduleApproval, registrarNotesInCurrentRound: number): boolean {
+  if (approval.status !== "submitted") return false;
+  return Boolean(currentRound(approval)?.amendment) && registrarNotesInCurrentRound <= 0;
+}
+
+/**
+ * سببُ منع التعديل، أو `null`.
+ *
+ * القاعدة التي يقرؤها حارسُ الخادم وتقرؤها الشاشة قبل أن يمدّ أحدٌ يده.
+ * `registrarLock: false` لما لا يقفله التسجيل أصلاً — استثناءُ أسبوعٍ، وقرارُ
+ * طلب أستاذ، وإصدارُ روابط الطلبات — ويبقى عليه حكمُ الفصل المنتهي.
+ */
+export function approvalLockReason(
+  approval: ScheduleApproval | undefined,
+  context: { termClosed: boolean; isCommittee: boolean; registrarNotesInCurrentRound: number; registrarLock?: boolean },
+): string | null {
+  if (context.termClosed && !context.isCommittee) {
+    return "انتهى هذا الفصل. جدولُه محفوظٌ للاطّلاع والتقارير، ولجنةُ الجدول وحدَها تعمل فيه.";
+  }
+  if (context.registrarLock === false || !approval) return null;
+  if (approval.status === "submitted" && !amendmentStillOpen(approval, context.registrarNotesInCurrentRound)) {
+    return "الجدول عند التسجيل الآن وينتظر قراره. التعديل يُفتح متى قُبل أو أُرجع بملاحظات.";
+  }
+  return null;
+}
+
+/* ── R9: أساسُ المقارنة — قاعدةٌ واحدة ─────────────────────────────────── */
+
+/**
+ * النسخة التي رآها التسجيل آخر مرّة قبل جولةٍ بعينها.
+ *
+ * كانت تُقرأ مرّتين: تقريرُ التغييرات يأخذ «ما رآه» وحده، وجدولُ العميد يأخذ
+ * «ما قبِله» أولاً — فيفترقان حين يختلفان. والحكم واحد: جولةُ التعديل أساسُها
+ * ما قُبل قبلها؛ وغيرُها أساسُها أحدثُ جولةٍ سابقةٍ نظر فيها التسجيل، وما قبِله
+ * منها يتقدّم على ما رآه لأنه آخرُ ما نظر فيه.
+ *
+ * `acceptedOnly` لمن يريد آخرَ جدولٍ قُبل (العميد): تُقرأ الجولات المقبولة
+ * وحدها، بالترتيب نفسه والتفضيل نفسه.
+ */
+export function roundBaselineVersionId(
+  approval: Pick<ScheduleApproval, "rounds" | "currentRound">,
+  round: number,
+  options: { acceptedOnly?: boolean } = {},
+): string | undefined {
+  const target = approval.rounds.find(item => item.number === round);
+  if (!options.acceptedOnly && target?.amendment && target.baselineVersionId) return target.baselineVersionId;
+  const earlier = approval.rounds
+    .filter(item => (options.acceptedOnly ? item.number <= round : item.number < round))
+    .filter(item => !options.acceptedOnly || Boolean(item.acceptedAt))
+    .sort((a, b) => b.number - a.number);
+  for (const item of earlier) {
+    const id = item.acceptedVersionId || item.reviewedVersionId || (options.acceptedOnly ? item.baselineVersionId : undefined);
+    if (id) return id;
+  }
+  return undefined;
+}
+
+/**
+ * نهايةُ جولةٍ منتهية: ما قُبل فيها أو ما رآه التسجيل فيها، وإلا أساسُ الجولة
+ * التي بعدها. والجولةُ الجارية لا نهاية لها بعد — يُقارن بالجدول الحيّ.
+ */
+export function roundEndVersionId(approval: Pick<ScheduleApproval, "rounds" | "currentRound">, round: number): string | undefined {
+  if (round >= approval.currentRound) return undefined;
+  const target = approval.rounds.find(item => item.number === round);
+  const next = approval.rounds.find(item => item.number === round + 1);
+  return target?.acceptedVersionId
+    || target?.reviewedVersionId
+    || (next?.amendment ? next.baselineVersionId : undefined)
+    || next?.reviewedVersionId
+    || undefined;
+}
+
+/* ── R10: الإرجاع ─────────────────────────────────────────────────────── */
+
+export type ReturnVerdict =
+  | { ok: true; reopensAccepted: boolean }
+  | { ok: false; code: "not-reviewable" | "no-notes"; message: string };
+
+/**
+ * أيجوز الإرجاع؟ من «عند التسجيل»، ومن «معتمد» أيضاً: التسجيلُ الذي يكتشف
+ * خطأً بعد القبول كان لا يملك إلا الهاتف. فيُرجعه بملاحظةٍ واحدةٍ على الأقل،
+ * في جولةٍ جديدة تبدأ من الجدول كما قُبل.
+ */
+export function canReturn(approval: ScheduleApproval, openRegistrarNotes: number): ReturnVerdict {
+  if (approval.status !== "submitted" && approval.status !== "accepted") {
+    return { ok: false, code: "not-reviewable", message: "هذا الجدول ليس عند التسجيل ولا معتمداً الآن." };
+  }
+  if (openRegistrarNotes <= 0) {
+    return { ok: false, code: "no-notes", message: "لا يُرجَع جدولٌ بلا ملاحظة. اكتب ملاحظةً واحدةً على الأقل." };
+  }
+  return { ok: true, reopensAccepted: approval.status === "accepted" };
+}
+
+/* ── R11: رئيسُ القسم يُرجع للجنة ──────────────────────────────────────── */
+
+export type HeadReturnVerdict = { ok: true } | { ok: false; code: "wrong-status" | "reason"; message: string };
+
+export function canHeadReturn(approval: ScheduleApproval, reason: string): HeadReturnVerdict {
+  if (approval.status !== "committee") {
+    return { ok: false, code: "wrong-status", message: "الإرجاع للجنة يكون بعد توقيعها وقبل اعتمادك." };
+  }
+  if (String(reason || "").trim().length < 3) {
+    return { ok: false, code: "reason", message: "اكتب سبب الإرجاع. اللجنة تحتاج أن تعرف ما تُصلح." };
+  }
+  return { ok: true };
+}
+
+/* ── R16/R17: التمديد وطلبُه ───────────────────────────────────────────── */
+
+/** التمديدُ لا يكون قبل موعد الفصل: تمديدٌ يُقرّب الموعد ليس تمديداً. */
+export function extensionRefusal(until: string, termDeadline?: string): string | null {
+  if (!until) return null;
+  if (termDeadline && until < termDeadline) {
+    return `التمديد لا يسبق موعد الفصل (${termDeadline}). اختر تاريخاً بعده أو يساويه.`;
+  }
+  return null;
+}
+
+/** كم يوماً قبل الموعد يُعرض «طلب تمديد». */
+export const EXTENSION_REQUEST_WINDOW_DAYS = 3;
+
+export function canRequestExtension(deadline: Pick<DeadlineState, "effective" | "past" | "daysLeft">): boolean {
+  if (!deadline.effective) return false;
+  return deadline.past || (deadline.daysLeft !== undefined && deadline.daysLeft <= EXTENSION_REQUEST_WINDOW_DAYS);
+}
+
+/** التاريخُ الذي يُقترح لرئيس التسجيل: الموعدُ الساري أو اليوم، أيّهما أبعد، مضافاً إليه الأيام المطلوبة. */
+export function suggestedExtensionDate(effective: string | undefined, days: number, todayISO: string): string {
+  const base = effective && effective > todayISO ? effective : todayISO;
+  const at = Date.UTC(Number(base.slice(0, 4)), Number(base.slice(5, 7)) - 1, Number(base.slice(8, 10))) + Math.max(1, Math.round(days)) * 86_400_000;
+  return new Date(at).toISOString().slice(0, 10);
+}
+
+/* ── R18: سجلُّ الدورة ─────────────────────────────────────────────────── */
+
+export const APPROVAL_EVENT_CAP = 200;
+
+export function appendApprovalEvent(
+  approval: ScheduleApproval,
+  event: Omit<ScheduleApprovalEvent, "at" | "round"> & { at?: string; round?: number },
+): ScheduleApproval {
+  const entry: ScheduleApprovalEvent = {
+    at: event.at || new Date().toISOString(),
+    by: event.by,
+    ...(event.role ? { role: event.role } : {}),
+    action: event.action,
+    round: event.round ?? approval.currentRound,
+    ...(event.detail ? { detail: event.detail } : {}),
+  };
+  return { ...approval, events: [...(approval.events || []), entry].slice(-APPROVAL_EVENT_CAP) };
+}
+
+/** أسماءُ الأفعال كما تُقرأ في «السجلّ». */
+export const APPROVAL_EVENT_LABEL: Record<string, string> = {
+  sign: "توقيع", withdraw: "سحب توقيع", "acknowledge-additions": "إقرار شعب مضافة",
+  submit: "إرسال إلى التسجيل", return: "إرجاع بملاحظات", accept: "قبول نهائي",
+  "head-return": "إرجاع رئيس القسم للجنة", extension: "تمديد", "extension-request": "طلب تمديد",
+  "amendment-open": "فتح جولة تعديل", "closed-term-edit": "تعديل في فصلٍ منتهٍ",
+};
+
+/* ── R19: الإصرارُ الثالث ──────────────────────────────────────────────── */
+
+export const ESCALATE_AFTER_INSISTS = 3;
+
+/** ما يُكتب على الملاحظة حين يُصرّ التسجيل: العدّ، ولحظةُ بلوغ الحدّ مرّةً واحدة. */
+export function insistOutcome(note: { insistCount?: number; escalatedAt?: string }, at: string): { insistCount: number; escalatedAt?: string } {
+  const insistCount = Number(note.insistCount || 0) + 1;
+  const escalatedAt = note.escalatedAt || (insistCount >= ESCALATE_AFTER_INSISTS ? at : undefined);
+  return { insistCount, ...(escalatedAt ? { escalatedAt } : {}) };
 }

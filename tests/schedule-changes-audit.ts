@@ -128,7 +128,9 @@ check(server.includes('app.post("/api/schedule-notes/:id/verdict"'), "قرار �
    الكتابة، فيبقى الردّ وتبقى الخانة رماديةً إلى الأبد. */
 check(server.includes('rebuttalVerdict: "insisted",') && server.includes('}, ["rebuttal"]);'),
   "الإصرار يمحو الردّ: الخانة تعود برتقاليةً تنتظر، لا رماديةً أُجيب عنها");
-check(server.includes("insistCount: Number(note.insistCount || 0) + 1"),
+/* العدُّ صار في `insistOutcome` (R19)، يُكتب معه لحظةُ بلوغ الحدّ. */
+check(server.includes("const outcome = insistOutcome(note, at);")
+  && fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8").includes("const insistCount = Number(note.insistCount || 0) + 1;"),
   "ويُعدّ: الخلافُ الذي تكرّر ثلاثاً لم يعد خلافاً على قاعة");
 
 /* ── الدورة تُغلق فعلاً ───────────────────────────────────────────────────
@@ -139,11 +141,11 @@ check(server.includes("insistCount: Number(note.insistCount || 0) + 1"),
  *
  * والسبب الوحيد الذي يوقعها فيه: أن يُعدّ المفتوحُ من علَمٍ مخزّن لا من
  * الحالة المحسوبة. ولذلك يُحرس العدّ هنا صراحةً. */
-const submitAt = server.indexOf('app.post("/api/approvals/submit"');
+const submitAt = server.indexOf("async function submitToRegistrar(");
 const submitBody = server.slice(submitAt, submitAt + 3000);
-check(submitBody.includes("await notesWithState("),
+check(submitBody.includes("countOpenRegistrarNotes(await notesWithState("),
   "عدّ الملاحظات قبل الإرسال من الحالة المحسوبة");
-check(submitBody.includes('note.state === "open"'),
+check(fs.readFileSync(path.join(process.cwd(), "src/utils/approvalWorkflow.ts"), "utf8").includes('return note.origin === "registrar" && note.state === "open";'),
   "المفتوح وحده يمنع الإرسال: ما عُولج لا يُحسب");
 check(!submitBody.includes("!note.resolved"),
   "لا يُقرأ علَم `resolved`: لا شيء يرفعه عن ملاحظةٍ عالجها القسم، فقراءته تقفل الدورة إلى الأبد");

@@ -2260,6 +2260,23 @@ export class StudentCourseStateConflict extends Error {
   constructor(message: string) { super(message); this.name = "StudentCourseStateConflict"; }
 }
 
+/**
+ * ── وثيقةُ الاعتماد كُتبت فوقها ─────────────────────────────────────────────
+ *
+ * كلُّ قرارٍ في الدورة يقرأ الوثيقة ثم يكتبها كاملة. والطابورُ في الذاكرة يحمي
+ * خادماً واحداً، وCloud Run يشغّل أكثر من واحد: موظّفان يقبل أحدهما ويُرجع
+ * الآخر في اللحظة نفسها على خادمين، فيكتب الثاني فوق الأول بلا أن يعرف أحد.
+ *
+ * فللوثيقة رقمُ مراجعة، والحفظُ يُرفض إن لم يكن الرقمُ المقروءُ هو الرقمَ
+ * المحفوظ. والخاسر يُعاد مرّةً واحدة على ما صار، ثم يُقال له.
+ */
+export class ApprovalRevisionConflict extends Error {
+  constructor(public current?: ScheduleApproval) {
+    super("سبق قرارٌ آخر على هذا الجدول في اللحظة نفسها.");
+    this.name = "ApprovalRevisionConflict";
+  }
+}
+
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
   /** Lets the server drop any cached identity the moment accounts change. */
@@ -4197,13 +4214,24 @@ export const Repository = {
    * قرارٍ ونصفُها من قرارٍ آخر.
    */
   saveScheduleApproval: async (approval: ScheduleApproval): Promise<ScheduleApproval> => {
-    const row: ScheduleApproval = { ...approval, updatedAt: new Date().toISOString() };
+    /* المراجعةُ المقروءة هي ما يُشترط. وثيقةٌ قديمة بلا رقمٍ تُقرأ صفراً، وقسمٌ
+       لم يُكتب له سجلٌّ بعد صفرٌ كذلك — فلا ينكسر شيءٌ مما كُتب قبل هذا. */
+    const expected = Math.max(0, Number(approval.revision || 0));
+    const row: ScheduleApproval = { ...approval, revision: expected + 1, updatedAt: new Date().toISOString() };
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      await firestoreDb.collection("scheduleApprovals").doc(row.scopeKey.replace(/:/g, "_")).set(row);
-      return row;
+      const ref = firestoreDb.collection("scheduleApprovals").doc(row.scopeKey.replace(/:/g, "_"));
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        const stored = doc.exists ? (doc.data() as ScheduleApproval) : undefined;
+        if (Math.max(0, Number(stored?.revision || 0)) !== expected) throw new ApprovalRevisionConflict(stored);
+        transaction.set(ref, row);
+        return row;
+      });
     }
     if (!Array.isArray(db.scheduleApprovals)) db.scheduleApprovals = [];
     const index = db.scheduleApprovals.findIndex(item => item.scopeKey === row.scopeKey);
+    const stored = index === -1 ? undefined : db.scheduleApprovals[index];
+    if (Math.max(0, Number(stored?.revision || 0)) !== expected) throw new ApprovalRevisionConflict(stored);
     if (index === -1) db.scheduleApprovals.push(row); else db.scheduleApprovals[index] = row;
     saveDatabase();
     return row;
