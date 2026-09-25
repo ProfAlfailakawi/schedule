@@ -168,7 +168,33 @@ export function statusAfterSignature(approval: ScheduleApproval): ScheduleApprov
  * وافق عليه رئيس القسم؛ وإضافةُ شعبةٍ تُنشئ التزاماً لم يوافق عليه أصلاً.
  */
 export function needsHeadAcknowledgement(approval: ScheduleApproval): boolean {
-  return pendingAdditionTotal(approval) > 0;
+  return additionsAwaitingHead(approval) > 0;
+}
+
+/**
+ * ── الإضافاتُ تنتظر رئيسَ القسم ما دام توقيعُه قائماً ─────────────────────
+ *
+ * الإضافةُ تُسجَّل لأنها وقعت بعد اعتمادٍ قائم. فإن سقط ذلك الاعتماد (سحبت
+ * اللجنةُ توقيعها فسقط توقيعه معه، أو أرجع هو الجدولَ للجنة) لم يبقَ ما أُضيف
+ * «بعد اعتماده»: توقيعُه القادم يقع على الجدول كلِّه بما فيه. وكانت القائمةُ
+ * تبقى، فيُقال لرئيس القسم «أُضيفت شعبةٌ بعد اعتمادك» ولا اعتمادَ له، ويُعدّ
+ * في عدّاد اللجنة ما لا تملك فيه فعلاً. هذا هو العدُّ الذي يقرؤه كلُّ من يعرض
+ * الإضافات أو يمنع بها: الشريط، والجرس، والعدّاد، والوارد، والإرسال.
+ */
+export function additionsAwaitingHead(
+  approval: Pick<ScheduleApproval, "signatures" | "pendingAdditions" | "pendingAdditionsOverflow">,
+): number {
+  return (approval.signatures || []).some(item => item.stage === "head") ? pendingAdditionTotal(approval) : 0;
+}
+
+/**
+ * التواقيعُ الباقية بعد سحبٍ أو إرجاع. وإن لم يبقَ توقيعُ رئيس القسم طُويت معه
+ * قائمةُ الإضافات التي كانت تنتظره (additionsAwaitingHead): مكانٌ واحد يُسقط
+ * التوقيعَ وما عُلّق عليه، لا مساران يتذكّر أحدُهما وينسى الآخر.
+ */
+export function withRemainingSignatures(approval: ScheduleApproval, signatures: ScheduleApprovalSignature[]): ScheduleApproval {
+  if (signatures.some(item => item.stage === "head")) return { ...approval, signatures };
+  return { ...approval, signatures, pendingAdditions: [], pendingAdditionsOverflow: 0 };
 }
 
 /** كلُّ ما ينتظر الإقرار: المسمّى في القائمة وما زاد عليها. */

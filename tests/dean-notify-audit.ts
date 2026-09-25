@@ -387,13 +387,15 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(summary(one) === summary(two), "N22: ملخّص العميد بمعرّفٍ ثابت ما دام الحال «جزئياً»");
   const reg = (n: number) => buildNotifications({ role: "registrarHead", now, scopes: Array.from({ length: n }, (_, i) => base("drafting", { name: `ق${i}` })) }).find(item => item.id.startsWith("not-submitted"))?.id;
   check(reg(3) === reg(4), "N22: «لم يسلّم بعد» بمعرّفٍ ثابت");
-  const withAdd = (n: number) => idsOf([base("committee", { pendingAdditions: Array.from({ length: n }, (_, i) => ({ scheduleId: i })) })], "departmentHead");
+  /* الإضافاتُ تنتظر رئيسَ القسم ما دام توقيعُه قائماً (additionsAwaitingHead) — فالمثالُ يحمل التوقيعين كما يقع فعلاً. */
+  const signedBoth = [{ stage: "committee" }, { stage: "head" }];
+  const withAdd = (n: number) => idsOf([base("head", { approval: { signatures: signedBoth }, pendingAdditions: Array.from({ length: n }, (_, i) => ({ scheduleId: i })) })], "departmentHead");
   check(withAdd(1) === withAdd(2), "N22: الإضافات بمعرّفٍ ثابت");
   const nc = read("src/utils/notificationCenter.ts");
   check(!/\$\{(queue\.pendingCommittee|queue\.awaitingRegistration|entry\.count|notYet|done|total|approval\.pendingAdditions\.length)\}/.test(nc.split("id:").slice(1).map(part => part.split(",")[0]).join("\n")), "N22: لا عددَ في أيِّ معرّف");
 
   /* N23 */
-  const returned = buildNotifications({ role: "committeeChair", now, scopes: [base("returned", { rounds: [{ number: 1, returnedAt: "x" }], pendingAdditions: [{ scheduleId: 1 }] })] });
+  const returned = buildNotifications({ role: "committeeChair", now, scopes: [base("returned", { approval: { signatures: signedBoth }, rounds: [{ number: 1, returnedAt: "x" }], pendingAdditions: [{ scheduleId: 1 }] })] });
   const back = returned.find(item => item.title.includes("أرجع"));
   check(Boolean(back) && !back!.detail.includes("بقي إعادة الإرسال") && back!.detail.includes("إقرارَ رئيس القسم") && back!.tone === "waiting", "N23: «أُرجع» يقول الحقيقة حين تمنع الإضافاتُ إعادة الإرسال");
 

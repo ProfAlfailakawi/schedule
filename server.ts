@@ -46,6 +46,7 @@ import {
   acknowledgeAdditions, appendApprovalEvent, approvalLockReason, awaitsHeadSignature, canHeadReturn, canRequestExtension, canReturn, canWithdraw,
   CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, isOpenRegistrarNote, extensionRefusal, insistOutcome,
   isSwapEdit, kuwaitDateISO, mergePendingAdditions, openRound, pendingAdditionTotal, readViewExpectation,
+  additionsAwaitingHead, withRemainingSignatures,
   roundBaselineVersionId, roundEndVersionId, staleViewRefusal, statusAfterSignatureChange, suggestedExtensionDate,
   TERM_CLOSED_APPROVAL_MESSAGE,
 } from "./src/utils/approvalWorkflow";
@@ -9984,7 +9985,7 @@ app.post("/api/approvals/withdraw", requireAuth, async (req: AuthenticatedReques
     /* سحبُ توقيع اللجنة يُسقط توقيع رئيس القسم معه: الترتيب جزءٌ من المعنى،
        وتوقيعُ رئيس قسمٍ فوق لجنةٍ سحبت توقيعها لا يقول شيئاً. */
     const dropped = stage === "committee" ? [] : approval.signatures.filter(item => item.stage === "committee");
-    let next: ScheduleApproval = { ...approval, signatures: dropped };
+    let next: ScheduleApproval = withRemainingSignatures(approval, dropped);
     /* وجدولٌ مُرجَعٌ يبقى مُرجَعاً: السحبُ لا يمحو أن التسجيل ينتظره. */
     next.status = statusAfterSignatureChange(next);
     next = withEvent(req, next, "withdraw", roleLabel(actor.role));
@@ -10014,8 +10015,7 @@ app.post("/api/approvals/head-return", requireAuth, async (req: AuthenticatedReq
     if (verdict.ok !== true) { res.status(verdict.code === "reason" ? 400 : 409).json({ error: verdict.message, code: verdict.code }); return; }
     const actor = approvalActor(req);
     let next: ScheduleApproval = {
-      ...approval,
-      signatures: approval.signatures.filter(item => item.stage !== "committee" && item.stage !== "head"),
+      ...withRemainingSignatures(approval, approval.signatures.filter(item => item.stage !== "committee" && item.stage !== "head")),
       status: "drafting",
       headReturn: { by: actor.name, at: new Date().toISOString(), reason },
     };
@@ -10034,7 +10034,7 @@ app.post("/api/approvals/acknowledge-additions", requireAuth, async (req: Authen
   if (await refuseIfTermClosed(res, termId)) return;
   await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
-    if (!pendingAdditionTotal(approval)) { res.json({ approval, acknowledged: 0, remaining: 0 }); return; }
+    if (!additionsAwaitingHead(approval)) { res.json({ approval, acknowledged: 0, remaining: 0 }); return; }
     /* ── يُقرّ ما رآه وحده (R6/R14) ───────────────────────────────────────
      * الشاشةُ ترسل المعرّفات التي عرضتها وعدد ما زاد عليها. وما أُضيف بعد أن
      * فتحها يبقى ينتظره، بدل أن يُقرّ بضغطةٍ على قائمةٍ لم تكن فيها. */
@@ -10824,7 +10824,9 @@ async function approvalBadgeForTerm(req: AuthenticatedRequest, termId: number): 
     let open = 0;
     for (const approval of approvals) {
       if (stage === "head" && awaitsHeadSignature(approval)) open += 1;
-      open += pendingAdditionTotal(approval);
+      /* الإضافاتُ تنتظر رئيسَ القسم وحده، وما دام توقيعُه قائماً (additionsAwaitingHead):
+         كانت تُعدّ في عدّاد اللجنة أيضاً، وهي لا تملك فيها فعلاً. */
+      if (stage === "head") open += additionsAwaitingHead(approval);
       /* والجدولُ عند التسجيل ملاحظاتُه مراجعةٌ جارية لا يملك القسم فيها فعلاً. */
       if (approval.status === "submitted") continue;
       const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
@@ -10944,7 +10946,7 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
          للجنته داخليةٌ لا تنتظر التسجيل ولا تُضخّم عدّاده. */
       openNotes: countOpenRegistrarNotes(notes),
       answeredNotes: countAnsweredRegistrarNotes(notes),
-      pendingAdditions: pendingAdditionTotal(approval),
+      pendingAdditions: additionsAwaitingHead(approval),
       deadline,
       /* طلبُ تمديدٍ من القسم، والتاريخُ الذي يُقترح لمنحه (R17). */
       extensionRequest: approval.extensionRequest,

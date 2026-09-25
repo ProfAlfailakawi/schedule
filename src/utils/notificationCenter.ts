@@ -9,6 +9,7 @@ import type { ScheduleApproval } from "../types";
 import { roleDefinition } from "./academicRoles";
 import { isLate } from "./lateness";
 import { AR, countOf, nounFor, oblique } from "./arabicCount";
+import { additionsAwaitingHead, awaitsHeadSignature, signatureOf } from "./approvalWorkflow";
 
 export type NotificationTone = "action" | "waiting" | "done" | "alert";
 export type NotificationView = "scheduleChanges" | "schedules" | "instructorRequests" | "reportDepartment" | "studentRegistration";
@@ -182,17 +183,31 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       const { approval } = scope;
       const accepted = lastAccepted(approval);
       if (approval.status === "returned") {
+        /* ── على مَن الدورُ بعد معالجة الملاحظات؟ (مراجعة البروفة) ──────────
+           التوقيعان يبقيان بعد إرجاع التسجيل، لكنّ اللجنة قد تسحب توقيعها
+           فيسقط توقيعُ رئيس القسم معه. فكان الجرسُ يقول «بقي إعادة الإرسال»
+           أو «أُضيفت بعد اعتمادك» وليس لرئيس القسم اعتمادٌ قائم. فيُقرأ
+           الدورُ من التواقيع نفسها: لجنةٌ لم توقّع، ثم رئيسٌ لم يعتمد، ثم
+           إضافاتٌ تنتظر إقراره (additionsAwaitingHead)، ثم الإرسال. */
+        const additions = additionsAwaitingHead(approval);
+        const notesDone = scope.openRegistrarNotes === 0;
+        const committeeSigned = Boolean(signatureOf(approval, "committee"));
+        const headTurn = notesDone && (awaitsHeadSignature(approval) || additions > 0);
+        const committeeTurn = !notesDone || !committeeSigned || (!headTurn && Boolean(signatureOf(approval, "head")));
         items.push({
           id: key(scope, "returned"),
-          tone: isHead ? (approval.pendingAdditions.length && scope.openRegistrarNotes === 0 ? "action" : "waiting")
-            : (approval.pendingAdditions.length && scope.openRegistrarNotes === 0 ? "waiting" : "action"),
+          tone: isHead ? (headTurn ? "action" : "waiting") : (committeeTurn ? "action" : "waiting"),
           title: `أرجع التسجيل جدول ${placeOf(scope)}`,
           /* الصدق فيما بقي (N23): إضافاتٌ تنتظر إقرار رئيس القسم تمنع إعادة
              الإرسال، فلا يُقال «بقي إعادة الإرسال» واللجنة لا تملكها. */
-          detail: scope.openRegistrarNotes > 0
+          detail: !notesDone
             ? `بقيت ${countOf(scope.openRegistrarNotes, AR.note)} ${nounFor(scope.openRegistrarNotes, AR.waitFemVerb)} المعالجة أو الردّ، ثم يُعاد الإرسال.`
-            : approval.pendingAdditions.length
-              ? `عولجت الملاحظات — وتنتظر ${countOf(approval.pendingAdditions.length, AR.section)} أُضيفت إقرارَ رئيس القسم قبل إعادة الإرسال.`
+            : !committeeSigned
+              ? (isHead ? "عولجت الملاحظات — بانتظار توقيع لجنة الجدول، ثم اعتمادك." : "عولجت الملاحظات — وقّع الجدول ليصل رئيسَ القسم فيعتمده.")
+            : awaitsHeadSignature(approval)
+              ? (isHead ? "عولجت الملاحظات ووقّعت اللجنة — اعتمادُك يعيد إرساله إلى التسجيل." : "عولجت الملاحظات — بانتظار اعتماد رئيس القسم، واعتمادُه يعيد الإرسال.")
+            : additions > 0
+              ? `عولجت الملاحظات — وتنتظر ${countOf(additions, AR.section)} أُضيفت إقرارَ رئيس القسم قبل إعادة الإرسال.`
               : "عولجت الملاحظات — بقي إعادة الإرسال إلى التسجيل.",
           view: routeFor(role, "returned"), ...target(scope),
         });
@@ -252,10 +267,11 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           view: routeFor(role, "notes"), ...target(scope),
         });
       }
-      if (isHead && approval.pendingAdditions.length && !accepted) {
+      const additionsForHead = additionsAwaitingHead(approval);
+      if (isHead && additionsForHead && !accepted) {
         items.push({
           id: key(scope, "additions"), tone: "action",
-          title: `${countOf(approval.pendingAdditions.length, AR.section)} ${nounFor(approval.pendingAdditions.length, AR.addedFemVerb)} بعد اعتمادك`,
+          title: `${countOf(additionsForHead, AR.section)} ${nounFor(additionsForHead, AR.addedFemVerb)} بعد اعتمادك`,
           detail: "وافق عليها ليُعاد الإرسال.",
           view: routeFor(role, "approval"), ...target(scope),
         });
