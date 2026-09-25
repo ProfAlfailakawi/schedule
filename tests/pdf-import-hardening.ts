@@ -13,7 +13,8 @@ import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
-import { scanPageVerdict, scanRefusalMessage } from "../src/utils/documentOcr.ts";
+import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason } from "../src/utils/documentOcr.ts";
+import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
 const check=(name:string,fn:()=>void)=>{fn();passed.push(name);};
@@ -257,6 +258,45 @@ check("a page read without its schedule side (no time, no building on most rows)
   assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:0,unscheduled:15}).suspicious,true);
   assert.equal(scanPageVerdict({rows:3,filled:3,printed:3,broken:0,unscheduled:2}).suspicious,false,"a last page of three rows is not refused for two");
   assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:0}).suspicious,false,"the count is optional and defaults to none");
+});
+check("a scanned day cell the Authority could never print is left blank for review, its raw text kept",()=>{
+  /* Measured: «3 2 4» on a clean 200-dpi render of sample B where the sheet
+     prints «4 2»; «1 53» and «2 4 3» on the 2026 scan; «10» on the CamScanner copy. */
+  const rows=["3 2 4","2 4 3","10","8","5 3 1","4 2","2 4","531","5 4 3 2 1","3",""].map(days=>({code:"0101102",reference:"18945",scode:"501",days,daysRaw:days,start:"08:00"})) as any[];
+  clearImplausibleScanDays(rows);
+  assert.deepEqual(rows.map(row=>row.days),["","","","","5 3 1","4 2","2 4","531","5 4 3 2 1","3",""]);
+  assert.equal(rows[0].daysRaw,"3 2 4","the raw reading stays as evidence for the reviewer");
+  /* A Latin run inside an Arabic page can come out with its words in reverse
+     order: «5 3 1» read as «31 5» (three clean sample-B renders) or «1 53» (2026
+     scan). Reversing the word order alone — no digit added or dropped — restores it. */
+  const mirrored=["31 5","1 53","2 4 3 1"].map(days=>({days,daysRaw:days})) as any[];
+  clearImplausibleScanDays(mirrored);
+  assert.deepEqual(mirrored.map(row=>row.days),["5 3 1","5 3 1",""],"only a word-order mirror is repaired, never a digit set");
+  /* The emptied cell tells the reviewer what the scanner read, left-to-right as on the sheet. */
+  assert.equal(unresolvedDaysReason("3 2 4"),"لم تثبت أيام المحاضرة؛ قُرئت الخلية «\u20663 2 4\u2069»");
+  assert.equal(unresolvedDaysReason(""),"لم تثبت أيام المحاضرة");
+  assert.equal(unresolvedDaysReason("fsunday ftuesday"),"لم تثبت أيام المحاضرة","a fallback row's flag names are not a reading");
+});
+check("a page accepted with printed lines that have no row waits for «راجعت الصفحة» before publishing",()=>{
+  /* The last page of file 1 as the server read it: 3 printed, 1 read. */
+  const tail=scanPageVerdict({rows:1,filled:1,printed:3,broken:0});
+  assert.equal(tail.suspicious,false);
+  assert.equal(tail.missedLines,2,"the verdict carries the count, not only a sentence");
+  assert.equal(scanPageVerdict({rows:4,filled:4,printed:28,broken:0}).missedLines,undefined,"a refused page does not ask for review");
+  assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:3}).missedLines,undefined,"unclear rows are visible and block their own row");
+  const pages=[{page:1,missedLines:0},{page:2},{page:5,missedLines:2},{page:3,missedLines:1}];
+  assert.deepEqual(pagesAwaitingReview(pages,[]),[3,5]);
+  assert.deepEqual(pagesAwaitingReview(pages,[5]),[3],"a confirmed page no longer waits");
+  assert.deepEqual(pageReviewIssues(pages,[3]),["الصفحة 5: سطران بلا صف في المعاينة — قارنها بالورقة ثم اضغط «راجعت الصفحة»، وأضف الناقص في الجدول بعد الاستيراد."]);
+  assert.deepEqual(pageReviewIssues(undefined,[]),[],"a file without page diagnostics (Excel, native PDF) waits for nothing");
+  /* The preview edits rows but cannot add one: no sentence may claim the reviewer already added them. */
+  assert.equal(pageReviewWaitLine([3,5]),"بانتظار مراجعة الصفحات 3، 5: قارن أسطرها بالورقة ثم اضغط «راجعت الصفحة». الأسطر الناقصة تُضاف في الجدول بعد الاستيراد.");
+  assert.equal(pageReviewWaitLine([]),"");
+  for(const line of [...pageReviewIssues(pages,[]),pageReviewWaitLine([3])])assert.doesNotMatch(line,/أضفت|أضف الناقص يدوياً ثم/);
+  /* A short page that produced no row at all (2 printed, 0 read) is accepted with its note; it must still get the button. */
+  const empty=scanPageVerdict({rows:0,filled:0,printed:2,broken:0});
+  assert.equal(empty.suspicious,false);
+  assert.equal(empty.missedLines,2);
 });
 check("a page's two notes are said together, not one hiding the other",()=>{
   const both=scanPageVerdict({rows:26,filled:26,printed:28,broken:3});

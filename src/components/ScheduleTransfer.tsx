@@ -16,6 +16,7 @@ import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 import { campusOf } from "../utils/campusTravel";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
+import { pageReviewIssues, pageReviewWaitLine, pagesAwaitingReview } from "../utils/importPageReview";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -91,6 +92,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const [plantedCourses, setPlantedCourses] = useState<string[]>([]);
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
   const [readProgress, setReadProgress] = useState<{ pct: number; message: string; notice?: string } | null>(null);
+  /* Scanned pages whose missing printed lines the reviewer confirmed (importPageReview). */
+  const [reviewedImportPages, setReviewedImportPages] = useState<number[]>([]);
   /* A PDF can prove that the open selector points at the wrong department.
      Keep that recovery explicit: the root admin may resolve/create the proven
      section, then the SAME file is retried under that section. */
@@ -439,8 +442,10 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     previewConflicts.issues.forEach(issue => issues.add(issue));
     if (termConflictsFresh) (termConflicts?.issues || []).forEach(issue => issues.add(issue));
     if (importKind === "authority-pdf") (Array.isArray(xlsxPreview.saveIssues) ? xlsxPreview.saveIssues : []).forEach((issue: unknown) => { const text = String(issue || "").trim(); if (text) issues.add(text); });
+    /* صفحة قُبلت بأسطر مطبوعة بلا صف تنتظر «راجعت الصفحة» قبل النشر. */
+    if (importKind === "authority-pdf") pageReviewIssues(xlsxPreview.pageDiagnostics, reviewedImportPages).forEach(issue => issues.add(issue));
     return [...issues];
-  }, [xlsxPreview, importKind, departmentIds, roster, previewConflicts, termConflicts, termConflictsFresh]);
+  }, [xlsxPreview, importKind, departmentIds, roster, previewConflicts, termConflicts, termConflictsFresh, reviewedImportPages]);
   /* Server notes arrive as «السطر N: …» against the whole draft. They are moved
      onto the rows they name so the table can colour the offending cell, instead
      of printing the same sentence five times under a table that looks fine. */
@@ -480,6 +485,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
      baseline must still generate a report with every source row marked deleted. */
   const authorityBaselineCount = importKind === "authority-pdf" && Array.isArray(xlsxPreview?.baselineRows) ? xlsxPreview.baselineRows.length : 0;
   const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0);
+  /* Pages still waiting for «راجعت الصفحة» — named beside the publish button,
+     which otherwise just disappears with no word about why. */
+  const pagesPendingReview = importKind === "authority-pdf" ? pagesAwaitingReview(xlsxPreview?.pageDiagnostics, reviewedImportPages) : [];
   /* Reviewing a scanned timetable is reading a PAGE, not a card. In a 620px
      sheet the table needed a second, horizontal scrollbar, and a plain mouse
      had to travel in two directions to read one row. While the PDF preview is
@@ -778,7 +786,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     setSmartPicked(new Set());
   };
   const readPdf = async (file: File, targetSectionId = sectionId) => {
-    setError(null); setPdfScopeFix(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
+    setError(null); setPdfScopeFix(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true); setReviewedImportPages([]);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(file);
     setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
     try {
@@ -1375,6 +1383,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         pageCount={Number(xlsxPreview.pages||0)}
                         pageDiagnostics={Array.isArray(xlsxPreview.pageDiagnostics)?xlsxPreview.pageDiagnostics:[]}
                         pageSummaries={Array.isArray(xlsxPreview.pageSummaries)?xlsxPreview.pageSummaries:[]}
+                        reviewedPages={reviewedImportPages}
+                        onReviewPage={page => setReviewedImportPages(prev => prev.includes(page) ? prev : [...prev, page])}
                         courses={deptCourses as any}
                         instructors={instructors as any}
                         departmentIds={departmentIds}
@@ -1444,6 +1454,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         </div>
                       ) : null}
                       <div className="transfer-import-commit">
+                        {pagesPendingReview.length ? (
+                          <p className="transfer-preflight-wait" role="status">{pageReviewWaitLine(pagesPendingReview)}</p>
+                        ) : null}
                         {importReady && !publishGateSatisfied ? (
                           <p className="transfer-preflight-wait" role="status">جارٍ فحص التعارض مع بقية الأقسام في هذا الفصل…</p>
                         ) : null}
