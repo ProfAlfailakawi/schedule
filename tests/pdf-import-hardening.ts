@@ -13,7 +13,7 @@ import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
-import { scanPageVerdict, scanRefusalMessage } from "../src/utils/documentOcr.ts";
+import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays } from "../src/utils/documentOcr.ts";
 
 const passed:string[]=[];
 const check=(name:string,fn:()=>void)=>{fn();passed.push(name);};
@@ -257,6 +257,20 @@ check("a page read without its schedule side (no time, no building on most rows)
   assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:0,unscheduled:15}).suspicious,true);
   assert.equal(scanPageVerdict({rows:3,filled:3,printed:3,broken:0,unscheduled:2}).suspicious,false,"a last page of three rows is not refused for two");
   assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:0}).suspicious,false,"the count is optional and defaults to none");
+});
+check("a scanned day cell the Authority could never print is left blank for review, its raw text kept",()=>{
+  /* Measured: «3 2 4» on a clean 200-dpi render of sample B where the sheet
+     prints «4 2»; «1 53» and «2 4 3» on the 2026 scan; «10» on the CamScanner copy. */
+  const rows=["3 2 4","2 4 3","10","8","5 3 1","4 2","2 4","531","5 4 3 2 1","3",""].map(days=>({code:"0101102",reference:"18945",scode:"501",days,daysRaw:days,start:"08:00"})) as any[];
+  clearImplausibleScanDays(rows);
+  assert.deepEqual(rows.map(row=>row.days),["","","","","5 3 1","4 2","2 4","531","5 4 3 2 1","3",""]);
+  assert.equal(rows[0].daysRaw,"3 2 4","the raw reading stays as evidence for the reviewer");
+  /* A Latin run inside an Arabic page can come out with its words in reverse
+     order: «5 3 1» read as «31 5» (three clean sample-B renders) or «1 53» (2026
+     scan). Reversing the word order alone — no digit added or dropped — restores it. */
+  const mirrored=["31 5","1 53","2 4 3 1"].map(days=>({days,daysRaw:days})) as any[];
+  clearImplausibleScanDays(mirrored);
+  assert.deepEqual(mirrored.map(row=>row.days),["5 3 1","5 3 1",""],"only a word-order mirror is repaired, never a digit set");
 });
 check("a page's two notes are said together, not one hiding the other",()=>{
   const both=scanPageVerdict({rows:26,filled:26,printed:28,broken:3});

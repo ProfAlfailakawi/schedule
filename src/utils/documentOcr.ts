@@ -1893,6 +1893,30 @@ export function scanRefusalMessage(pages:OcrPageDiagnostic[]):string{
   const named=(confirmed.length?confirmed:suspicious).map(page=>`الصفحة ${page.page}: ${page.reason||"لم تثبت هندسة الجدول"}`).join(" · ");
   return `أوقفت الاستيراد لأن جزءاً من الجدول لم يُقرأ. ${named}. لم يُستورد أي صف. ارفع مسحاً أوضح (300 نقطة، أبيض وأسود)، أو اطلب ملف Excel أو PDF مُصدَّراً من النظام، فهو يُقرأ كاملاً في ثوانٍ.`;
 }
+/* ── خانة أيامٍ لا تطبعها الجهة لا تدخل الجدول ───────────────────────────────
+ *
+ * الجهة تطبع أيام المحاضرة تسلسلاً مرتّباً من أرقام 1–5 بلا تكرار («5 3 1»،
+ * «4 2»، «5 4 3 2 1»). وقارئ الشبكة كان يقيس الخلية بهذا الفاحص ليختار بين
+ * قراءتيها، ثم يرجع إلى النص الخام حين يرفضهما معاً — فدخلت «3 2 4» (والمطبوع
+ * «4 2») أياماً ثلاثة خاطئة في نسخة نظيفة بدقة 200 نقطة، ومثلها «1 53» و«2 4 3»
+ * في مسح 2026. هذه قراءة خاطئة لا قيمة: تُفرَّغ للمراجعة، ويبقى نصها الخام في
+ * daysRaw دليلاً يراه المراجع، ويبقى للخادم أن يستعيدها من تطابق تاريخي فريد.
+ * القراءة الناقصة المرتّبة («3» بدل «4 2») يلتقطها الخادم بمطابقة الأيام مع
+ * مدة المحاضرة وساعات المقرر. الملفات النصية لا تمرّ من هنا.
+ *
+ * إلا خانةً قُرئت كلماتُها معكوسة الترتيب: رقمٌ لاتيني داخل صفحة عربية قد تخرج
+ * كلماته من اليمين إلى اليسار، فتصير «5 3 1» «31 5» أو «1 53» (قيس في ثلاث نسخ
+ * نظيفة من العيّنة B وفي مسح 2026). عكسُ ترتيب الكلمات وحده — لا رقم يُزاد ولا
+ * يُحذف — يعيدها تسلسلاً صحيحاً، فتُقبل. و«3 2 4» تبقى خاطئة معكوسةً أيضاً. */
+export function clearImplausibleScanDays(rows:GridRow[]){
+  for(const row of rows){
+    const days=String(row.days||"").trim();
+    if(!days||authorityDaysCellLooksPlausible(days))continue;
+    row.daysRaw=row.daysRaw||days;
+    const mirrored=days.split(/\s+/).filter(Boolean).reverse().join(" ");
+    row.days=authorityDaysCellLooksPlausible(mirrored)?mirrored.replace(/[^1-5]/g,"").split("").join(" "):"";
+  }
+}
 /** «الصفحة 2» / «الصفحتان 1 و3» / «الصفحات 1، 3، 4» — the pages a notice names. */
 function unreadPagesNotice(pages:number[]):string|undefined{
   if(!pages.length)return undefined;
@@ -4023,6 +4047,9 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
     }
   }
 
+  /* Every row is now final: a day cell the Authority could never have printed
+     leaves the reading here (clearImplausibleScanDays). */
+  for(const page of pages)if(page?.gridRows)clearImplausibleScanDays(page.gridRows);
   const text=texts.join("\n\n--- PAGE ---\n\n");
   const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));
   const pageDiagnostics=pages.map((page,index)=>page?.diagnostic||{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation,suspicious:true,reason:"لم تنتج الصفحة نتيجة قابلة للمراجعة"});
