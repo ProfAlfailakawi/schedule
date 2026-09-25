@@ -260,6 +260,17 @@ async function main() {
     check(page.includes("esc(row.timeRange") && !page.includes("esc(row.start)+'<wbr>–'+esc(row.end)"), "D10 الصفحة لا تكتب ترتيب البداية–النهاية بنفسها");
   }
 
+
+  /* ── D11: فصلٌ فارغ لا يُعلن فتح الطلبات ────────────────────────────────── */
+  {
+    const issue = server.slice(server.indexOf('app.post("/api/instructor-requests/issue"'), server.indexOf('app.post("/api/instructor-requests/issue"') + 9000);
+    check(issue.includes("if (!byInstructor.size) {") && issue.includes("emptyTerm: true"), "D11 الخادم يقول إن الفصل فارغ");
+    check(issue.indexOf("emptyTerm: true") < issue.indexOf("for (const [instructorId, own] of byInstructor)"), "D11 قبل أي إصدار");
+    const publish = read("src/components/SchedulePublish.tsx");
+    check(publish.includes("data?.emptyTerm") && publish.includes("لم تُفتح طلبات تعديل لأحد"), "D11 الشاشة تقول الحقيقة لا «فُتحت»");
+    check(!publish.includes('.toLocaleString("ar-KW-u-nu-latn")} أستاذاً') && publish.includes("countOf(issued.created, AR.instructor)"), "D11 العدد بـcountOf");
+  }
+
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }

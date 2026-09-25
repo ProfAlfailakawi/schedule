@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
+import { AR, countOf } from "../utils/arabicCount";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
 
 interface ShareLink {
@@ -94,7 +95,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     [closesAt, setClosesAt] = useState(""),
     /* ومع البطاقة تُفتح نافذةُ طلبات التعديل ما لم يُطفئها المنسّق. */
     [openRequests, setOpenRequests] = useState(true),
-    [issued, setIssued] = useState<{ created: number; reissued: number } | null>(null),
+    [issued, setIssued] = useState<{ created: number; reissued: number; empty?: "no-rows" | "no-instructors" } | null>(null),
     [qr, setQr] = useState<{ id: string; svg: string } | null>(null);
 
   const scoped = Boolean(collegeId && sectionId && termId);
@@ -135,6 +136,10 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
       body: JSON.stringify({ collegeId, sectionId, termId, closesAt, source: "draft" }),
     });
     const data = await readReply(response, "تعذر فتح طلبات التعديل");
+    if (data?.emptyTerm) {
+      setIssued({ created: 0, reissued: 0, empty: data.reason === "no-instructors" ? "no-instructors" : "no-rows" });
+      return;
+    }
     const rows: Array<{ reissued?: boolean }> = data?.issued || [];
     /* والفرقُ يُقال: جديدٌ، ومُعادٌ صاحبُه يحمل طلبَه من قبل. فلا يظنُّ القسمُ
        أنه فتح لعشرين وقد فتح لثلاثة. */
@@ -475,14 +480,20 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               ) : null}
               {/* طلباتُ التعديل تُفتح من البطاقة نفسها، فلا روابطَ منفصلةً تُنسخ
                   هنا. يُقال ما وقع، ويُدلُّ على موضع متابعته. */}
-              {issued ? (
+              {issued?.empty ? (
+                <p className="share-created share-created-empty" role="status">
+                  {issued.empty === "no-instructors"
+                    ? "أُنشئت البطاقة، لكن لم تُفتح طلبات تعديل لأحد: لا محاضرة في جدول هذا القسم لهذا الفصل مُسندةٌ إلى أستاذ بعد."
+                    : "أُنشئت البطاقة، لكن لم تُفتح طلبات تعديل لأحد: جدول هذا القسم لهذا الفصل فارغ. انسخ الجدول أو أضف محاضراته ثم افتح الطلبات."}
+                </p>
+              ) : issued ? (
                 <p className="share-created" role="status">
                   <Check aria-hidden="true" />
                   {issued.created
-                    ? `فُتحت طلبات التعديل لـ${issued.created.toLocaleString("ar-KW-u-nu-latn")} أستاذاً`
+                    ? `فُتحت طلبات التعديل لـ${countOf(issued.created, AR.instructor)}`
                     : "طلبات التعديل مفتوحة من قبل"}
                   {issued.reissued
-                    ? ` · ${issued.reissued.toLocaleString("ar-KW-u-nu-latn")} أستاذاً يحملون طلباتهم من قبل`
+                    ? ` · ${countOf(issued.reissued, AR.instructor)} يحملون طلباتهم من قبل`
                     : ""}
                   {" — يطلبون من بطاقتهم، وتتابعها في «وارد الأساتذة»."}
                 </p>

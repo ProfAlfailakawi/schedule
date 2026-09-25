@@ -15184,6 +15184,15 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
     if (list) list.push(row); else byInstructor.set(id, [row]);
   }
 
+  /* ── فصلٌ فارغ لا يُقال عنه «فُتحت الطلبات» ─────────────────────────────
+   * جدولٌ بلا صفوف — أو بصفوفٍ لم يُسنَد أيٌّ منها لأستاذ — لا يُصدَر فيه
+   * رابطٌ لأحد. كان الردّ نجاحاً فارغاً، فتقول الشاشة إن الطلبات فُتحت ولم
+   * يصل شيءٌ لأحد. فيُقال ذلك صراحةً، ويُسمّى السبب. */
+  if (!byInstructor.size) {
+    res.json({ issued: [], total: 0, fresh: 0, emptyTerm: true, reason: (rows as any[]).length ? "no-instructors" : "no-rows" });
+    return;
+  }
+
   const issued: Array<{ instructorId: number; linkId: string; reissued: boolean }> = [];
   for (const [instructorId, own] of byInstructor) {
     /* أستاذٌ له رابطٌ في هذا الفصل لا يُعطى ثانياً: رابطان يعنيان طلبين،
