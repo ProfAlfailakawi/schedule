@@ -37,6 +37,7 @@ import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
 import { instructorScheduleFingerprint } from "./src/utils/scheduleFingerprint";
 import { coversWholeCollege, expandScopeSections, resolveSmartScope } from "./src/server/readScope";
 import { finalSourceFor, type Finality } from "./src/utils/finality";
+import { movementAttribution } from "./src/utils/movementAttribution";
 import { isLate } from "./src/utils/lateness";
 import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
 import {
@@ -13245,7 +13246,9 @@ async function scheduleMovementEntries(instructorId: number, termId: number, row
     if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
   }
   const movementHistory: MovementEntry[] = [];
-  const movementDay = (row:any) => SHARE_DAY_NAMES[shareDayIndexes(row)[0] ?? 0] || "";
+  /* أيامُ المحاضرة كلُّها: «الأحد» وحده عن محاضرة الأحد والثلاثاء كان يوحي
+     بأن الثلاثاء لم يتغيّر. */
+  const movementDay = (row:any) => shareDayIndexes(row).map(index => SHARE_DAY_NAMES[index]).filter(Boolean).join(" · ");
   const movementName = (row:any) => row?.AdCourseName || courseById.get(Number(row?.AdCourseId))?.CourseName || courseById.get(Number(row?.AdCourseId))?.CourseCode || "مقرر";
   const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
   const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === instructorId).map(row => [Number(row.id),row]));
@@ -13257,7 +13260,8 @@ async function scheduleMovementEntries(instructorId: number, termId: number, row
     states.push({ at:new Date().toISOString(),label:"الجدول الحالي",rows:liveSection });
     for (let i=1;i<states.length;i++) {
       const before=movementShape(states[i-1].rows), after=movementShape(states[i].rows);
-      const at=states[i].at,label=states[i].label;
+      /* ما تغيّر بين لقطتين وقع بعد الأولى، بالفعل الذي أُخذت قبله (movementAttribution). */
+      const {at,label}=movementAttribution(states[i-1]);
       for (const [id,now] of after) {
         const was=before.get(id);
         if (!was) { movementHistory.push({at,label,tone:"add",day:movementDay(now),source:"schedule",text:`${movementName(now)} أُضيفت ${now.fstarttime}–${now.fendtime}${withRooms ? ` · ${movementRoom(now)}` : ""}`}); continue; }

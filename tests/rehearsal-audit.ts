@@ -13,6 +13,7 @@ import {
 } from "../src/utils/approvalWorkflow";
 import { buildNotifications, pendingExtensionRequest, type CenterScope } from "../src/utils/notificationCenter";
 import { judgeRequest, type VerdictContext } from "../src/utils/instructorRequestVerdict";
+import { movementAttribution } from "../src/utils/movementAttribution";
 import type { AdCourse, AdInstructor, FSchedule, ScheduleApproval } from "../src/types";
 
 let passed = 0, failed = 0;
@@ -210,6 +211,26 @@ const block = (source: string, start: string, end = "\napp.") => {
     "R6: والبديلُ بأيام المحاضرة كلها، غيرُ الوقت المطلوب نفسه");
   check(block(server, "async function judgeRequestItems(", "\n/* ──").includes("offerAlternatives: Boolean(options.forDepartment)"),
     "R6: الواردُ وحده (forDepartment) يطلب البدائل، وصفحةُ الأستاذ لا");
+}
+
+/* ══ R7: حركةُ الجدول تُنسب إلى فعلها ووقته ══════════════════════════════════════
+ * البروفة: نُقلت محاضرةُ الأستاذة عند 17:44:40، فقرأت في بطاقتها «تغيّر موعدها
+ * … الجدول الحالي» بوقت فتحها البطاقة، و«أُضيفت … قبل تعديل موعد دراسي» بوقت
+ * النقل لا بوقت الإسناد — واليومُ «الأحد» وحده عن محاضرة الأحد والثلاثاء. */
+{
+  const edit = movementAttribution({ at: "2026-09-25T17:40:56.000Z", label: "قبل تعديل موعد دراسي" });
+  check(edit.at === "2026-09-25T17:40:56.000Z" && edit.label === "تعديل موعد دراسي",
+    "R7: ما تغيّر بعد «قبل تعديل موعد دراسي» هو «تعديل موعد دراسي» بوقت تلك اللقطة");
+  check(movementAttribution({ at: "x", label: "قبل استبدال الأستاذ: أ ← ب" }).label === "استبدال الأستاذ: أ ← ب",
+    "R7: وكلُّ فعلٍ باسمه");
+  check(movementAttribution({ at: "x", label: "توقيع رئيس القسم العلمي" }).label === "تعديل الجدول"
+    && movementAttribution({ at: "x", label: "" }).label === "تعديل الجدول",
+    "R7: ولقطةٌ لا تسبق فعلاً (توقيع، إرسال) لا تُنسب إليها حركةٌ باسمها");
+  const movement = block(server, "async function scheduleMovementEntries(", "\nasync function buildStaffCard");
+  check(movement.includes("const {at,label}=movementAttribution(states[i-1]);") && !movement.includes("const at=states[i].at"),
+    "R7: الحركةُ تُنسب إلى اللقطة السابقة لا اللاحقة");
+  check(movement.includes('shareDayIndexes(row).map(index => SHARE_DAY_NAMES[index]).filter(Boolean).join(" · ")'),
+    "R7: وأيامُ المحاضرة كلُّها تُذكر، لا أولُها");
 }
 
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);
