@@ -7,7 +7,7 @@
 | S3 | TODO | |
 | S4 | TODO | |
 | S5 | TODO | |
-| S6 | TODO | |
+| S6 | FIXED — my-case uses toEnglishDigits + validateCivilId(...).isValid; server asciiDigits is now an alias of the shared toEnglishDigits; survey page digits() accepts ۰-۹; student-case-status audit no longer encodes the object test | tests/student-journey-audit.ts §S6 (incl. repo-wide `!validateCivilId(x)` guard, executes the page's digits()) |
 | S7 | TODO | |
 | S8 | TODO | |
 | S9 | TODO | |

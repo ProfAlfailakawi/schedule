@@ -12714,9 +12714,8 @@ const reusableStudentIdentity=async(link:any,civil:string)=>{
   return{fingerprint,name:name.trim(),civil:storedCivil,sectionId,needId:String(prior.id||"")};
 };
 
-const asciiDigits = (value: unknown) => String(value ?? "")
-  .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
-  .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
+/* One numeric alphabet: the shared converter, not a second copy of it. */
+const asciiDigits = toEnglishDigits;
 
 const surveyCohort = (sectionName: string) => {
   const text = String(sectionName || "");
@@ -14558,7 +14557,7 @@ function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
    and was only refused by the server at the very end — the student learning at
    submit time that the first field was wrong. */
 function civilValid(v){v=String(v||"");if(!/^\\d{12}$/.test(v))return false;var w=[2,1,6,3,7,9,10,5,8,4,2],sum=0;for(var i=0;i<11;i++)sum+=Number(v[i])*w[i];return 11-(sum%11)===Number(v[11])}
-function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
 function rememberIdentity(){try{localStorage.setItem(identityMemoryKey,JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,verifiedAt:Date.now()}))}catch(e){}}
 function clearIdentityMemory(){try{localStorage.removeItem(identityMemoryKey)}catch(e){}identityLocked=false;identityChecked=false;student={name:"",civil:"",sectionId:0};identity()}
 function checkCivilIdentity(){var civilBox=document.getElementById("civil"),button=document.getElementById("checkCivil"),civil=digits(civilBox&&civilBox.value||"");if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!civilValid(civil))return fail("هذا الرقم المدني غير صحيح. راجع الأرقام كما هي في بطاقتك المدنية.");student={name:"",civil:civil,sectionId:0};button.disabled=true;button.textContent="جارٍ التحقق…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/identity-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:civil})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){button.disabled=false;button.textContent="التحقق والمتابعة";return fail(x.d.error||"تعذر التحقق من الرقم المدني")}identityChecked=true;if(x.d.verified){student={name:String(x.d.name||""),civil:civil,sectionId:Number(x.d.sectionId)||0};identityLocked=true;rememberIdentity()}else{identityLocked=false}identity()}).catch(function(){button.disabled=false;button.textContent="التحقق والمتابعة";fail("تعذر التحقق من الرقم المدني. تحقق من الاتصال ثم أعد المحاولة.")})}
@@ -16225,8 +16224,11 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     return;
   }
 
-  const civil = String(req.body?.civil || "").replace(/\D/g, "");
-  if (civil.length !== 12 || !validateCivilId(civil)) {
+  /* «٢٩٠…» و«۲۹۰…» رقمٌ صحيح كُتب بلوحةٍ عربية، لا خطأ. والتحقق يُقرأ من
+     `.isValid`: الدالة تُرجع كائناً، و`!كائن` لا يكون صحيحاً أبداً — فكان
+     أيُّ اثني عشر رقماً مخترعاً يمرّ إلى المخزن. */
+  const civil = toEnglishDigits(req.body?.civil).replace(/\D/g, "");
+  if (civil.length !== 12 || !validateCivilId(civil).isValid) {
     res.status(400).json({ error: "أدخل الرقم المدني من 12 رقماً كما في بطاقتك." });
     return;
   }

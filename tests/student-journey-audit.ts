@@ -123,6 +123,22 @@ const between = (source: string, start: string, end: string) => {
     "S2 الكشف يعرض أزرار قرار الحالة للجنة ثم للتسجيل");
 }
 
+/* ── S6 «حالة طلبي» تتحقق من الرقم فعلاً وتقبل الأرقام العربية والفارسية ──── */
+{
+  const myCase = between(server, 'app.post("/api/public/survey/:token/my-case"', "function studentCaseStatusPage");
+  check(myCase.includes("validateCivilId(civil).isValid"), "S6 my-case يقرأ .isValid لا الكائن نفسه");
+  check(myCase.includes("toEnglishDigits(req.body?.civil)"), "S6 my-case يحوّل الأرقام العربية/الفارسية بالمحوّل المشترك");
+  const objectTests = [...server.matchAll(/!\s*validateCivilId\([^()]*\)(?!\.isValid)/g)].map(match => match[0]);
+  check(objectTests.length === 0, `S6 لا اختبار لكائن التحقق بدل .isValid في الخادم${objectTests.length ? " — " + objectTests.join(" | ") : ""}`);
+  check(server.includes("const asciiDigits = toEnglishDigits;"), "S6 asciiDigits هو المحوّل المشترك لا نسخةٌ ثانية منه");
+  const surveyPage = between(server, "function studentCaseSurveyPage", "\n}\n");
+  const digitsSource = (surveyPage.match(/function digits\(v\)\{[^\n]*?\}function section/) || [""])[0].replace(/function section$/, "");
+  let pageDigits: ((v: string) => string) | null = null;
+  try { pageDigits = new Function(`${digitsSource.replace(/\\\\/g, "\\")};return digits;`)(); } catch { pageDigits = null; }
+  check(Boolean(pageDigits) && pageDigits!("٣٠٠٠١٠١٠٠١٢٢") === "300010100122" && pageDigits!("۳۰۰۰۱۰۱۰۰۱۲۲") === "300010100122",
+    "S6 صفحة الاستبيان تقبل ٠-٩ و۰-۹");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
