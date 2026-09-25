@@ -40,6 +40,10 @@ import { coversWholeCollege, expandScopeSections, resolveSmartScope } from "./sr
 import { finalSourceFor, type Finality } from "./src/utils/finality";
 import { movementAttribution } from "./src/utils/movementAttribution";
 import { isLate } from "./src/utils/lateness";
+import {
+  exceptionDaysLabel, exceptionRefusal, normalizeExceptionDays, planException, withException, withoutException, withoutExtensionRequest,
+  type ExceptionAmount,
+} from "./src/utils/submissionDeadlines";
 import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
@@ -9511,18 +9515,30 @@ async function termIsClosed(termId: number): Promise<boolean> {
 async function approvalTransaction(
   res: Response, collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>,
 ): Promise<void> {
+  const outcome = await approvalTransactionOutcome(collegeId, sectionId, termId, task, () => !res.headersSent);
+  if (outcome === "conflict") {
+    res.status(409).json({ error: "سبقك قرارٌ آخر على هذا الجدول في اللحظة نفسها — حدّث الشاشة وأعد المحاولة.", code: "approval-revision" });
+  }
+}
+
+/**
+ * الطابورُ والمراجعة نفسُهما، بلا ردٍّ على الطلب: لقرارٍ يقع على أقسامٍ كثيرة
+ * في طلبٍ واحد (استثناءاتُ مواعيد التسليم)، فيُقال لكل قسمٍ ما جرى له.
+ */
+async function approvalTransactionOutcome(
+  collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>, canRetry: () => boolean,
+): Promise<"done" | "conflict"> {
+  let outcome: "done" | "conflict" = "done";
   await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
     /* تعديلٌ على المعتمد ينتظر جولته يُفتح قبل أي قرار (مراجعة 6). */
     await settlePendingAmendmentInLock(collegeId, sectionId, termId).catch(error =>
       console.error("[approval] تعذّر فتحُ جولة التعديل المنتظرة:", error instanceof Error ? error.message : error));
-    const outcome = await runApprovalAttempts(task, {
+    outcome = await runApprovalAttempts(task, {
       isConflict: error => error instanceof ApprovalRevisionConflict,
-      canRetry: () => !res.headersSent,
+      canRetry,
     });
-    if (outcome === "conflict") {
-      res.status(409).json({ error: "سبقك قرارٌ آخر على هذا الجدول في اللحظة نفسها — حدّث الشاشة وأعد المحاولة.", code: "approval-revision" });
-    }
   });
+  return outcome;
 }
 
 /**
@@ -10259,6 +10275,9 @@ app.post("/api/approvals/deadline", requireAuth, async (req: AuthenticatedReques
   if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) { res.status(400).json({ error: "التاريخ يُكتب هكذا: 2026-10-15" }); return; }
   const term = await Repository.getTermById(termId);
   if (!term) { res.status(404).json({ error: "الفصل غير موجود" }); return; }
+  if (deadline && ((term as any).AdTermClosed === true || termHasEnded(term as any))) {
+    res.status(409).json({ error: "انتهى هذا الفصل — لا يُوضع له موعد تسليم.", code: "term-closed" }); return;
+  }
   /* تاريخٌ فارغ يرفع الموعد بدل أن يكتب قيمةً مستحيلة: رفعُ القيد قرارٌ وارد
      كما وضعُه، ولا ينبغي أن يُجبَر صاحبه على حيلة. */
   await Repository.setTermSubmissionDeadline(termId, deadline || undefined);
@@ -10286,20 +10305,134 @@ app.post("/api/approvals/extension", requireAuth, async (req: AuthenticatedReque
   await approvalTransaction(res, collegeId, sectionId, termId, async () => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const actor = approvalActor(req);
-    let next: ScheduleApproval = {
-      ...approval,
-      extensionUntil: until || undefined,
-      extensionReason: until ? (reason || undefined) : undefined,
-      extensionBy: until ? actor.name : undefined,
-      extensionAt: until ? new Date().toISOString() : undefined,
-      extensionRequest: until ? undefined : approval.extensionRequest,
-    };
+    /* الكتابةُ نفسُها التي يكتبها المسارُ الجماعي (submissionDeadlines). */
+    let next: ScheduleApproval = until ? withException(approval, { until, reason, by: actor.name }) : withoutException(approval);
     next = withEvent(req, next, "extension", until ? `${until}${reason ? ` — ${reason}` : ""}` : "إلغاء التمديد");
     const saved = await Repository.saveScheduleApproval(next);
     const where = await approvalScopeLabel(collegeId, sectionId, termId);
     res.locals.auditChanges = until ? `تمديد تسليم ${where} إلى ${until}${reason ? ` — ${reason}` : ""}` : `إلغاء تمديد تسليم ${where}`;
     res.json({ approval: saved });
   });
+});
+
+/**
+ * ── استثناءاتُ مواعيد التسليم، دفعةً واحدة ──────────────────────────────────
+ *
+ * رئيسُ التسجيل يضع موعد الفصل، ثم يستثني بالأيام: كلَّ الأقسام، أو كليةً، أو
+ * أقساماً يختارها. وطلبُ القسم يُمنح أو يُرفض من هنا أيضاً. فالقرارُ الواحد
+ * يقع على أقسامٍ كثيرة، وكلُّ قسمٍ يُكتب على طابوره وبمراجعته كما يُكتب أيُّ
+ * قرار اعتماد، ويُقال لكل قسمٍ ما جرى له.
+ *
+ * والقواعدُ من `submissionDeadlines` وحدها: الأيامُ من موعد الفصل أو من
+ * استثناء القسم إن كان أبعد، ولا استثناءَ قبل موعد الفصل ولا بلا سبب، والرفعُ
+ * يعيد القسم إلى موعد الفصل.
+ */
+const EXTENSION_ACTIONS = new Set(["grant", "remove", "reject"]);
+const EXTENSIONS_MAX_TARGETS = 500;
+
+app.post("/api/approvals/extensions", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canManageDeadline(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "الاستثناءاتُ يمنحها رئيس التسجيل." }); return; }
+  const termId = Number(req.body?.termId || 0);
+  const action = String(req.body?.action || "grant");
+  if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
+  if (!EXTENSION_ACTIONS.has(action)) { res.status(400).json({ error: "فعلٌ غير معروف." }); return; }
+  const term = await Repository.getTermById(termId);
+  if (!term) { res.status(404).json({ error: "الفصل غير موجود" }); return; }
+  if ((term as any).AdTermClosed === true || termHasEnded(term as any)) {
+    res.status(409).json({ error: "انتهى هذا الفصل — لا تُعدَّل مواعيدُ تسليمه.", code: "term-closed" }); return;
+  }
+  const termDeadline = String((term as any).AdTermSubmissionDeadline || "") || undefined;
+  const reason = String(req.body?.reason || "").trim().slice(0, 240);
+  const until = String(req.body?.until || "").trim();
+
+  let amount: ExceptionAmount | undefined;
+  if (action === "grant") {
+    const refusal = exceptionRefusal({ termDeadline, amount: { days: req.body?.days, until: until || undefined }, reason });
+    if (refusal) { res.status(400).json({ error: refusal, code: "exception-refused" }); return; }
+    amount = until ? { until } : { days: normalizeExceptionDays(req.body?.days)! };
+  } else if (action === "reject" && reason.length < 3) {
+    res.status(400).json({ error: "اكتب سبب الرفض — يراه القسم.", code: "exception-refused" }); return;
+  }
+
+  /* ── النطاق: الكلُّ، أو كلية، أو أقسامٌ بأعيانها ─────────────────────────
+   * الكلُّ والكليةُ يُقرآن من سجلّ الأقسام في نطاق صاحب القرار وحده؛ والأقسامُ
+   * المسمّاة يُسأل عن كلٍّ منها، فما خرج عن نطاقه يُقال له لا يُسكت عنه. */
+  const scope = req.body?.scope || {};
+  const kind = String(scope.kind || "");
+  const sections = await Repository.getSections() as any[];
+  const sectionKey = (collegeId: number, sectionId: number) => `${collegeId}:${sectionId}`;
+  const known = new Map(sections.map(row => [sectionKey(Number(row.AdCollegeId), Number(row.AdSectionId)), row]));
+  const allowed = (collegeId: number, sectionId: number) => Boolean(req.user?.IsAdminUser) || isScopeAllowed(req, collegeId, sectionId);
+  let targets: Array<{ collegeId: number; sectionId: number; named: boolean }> = [];
+  if (kind === "all" || kind === "college") {
+    const collegeId = Number(scope.collegeId || 0);
+    if (kind === "college" && !collegeId) { res.status(400).json({ error: "اختر الكلية." }); return; }
+    targets = sections
+      .filter(row => kind === "all" || Number(row.AdCollegeId) === collegeId)
+      .filter(row => allowed(Number(row.AdCollegeId), Number(row.AdSectionId)))
+      .map(row => ({ collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId), named: false }));
+  } else if (kind === "departments") {
+    const seen = new Set<string>();
+    for (const item of Array.isArray(scope.departments) ? scope.departments : []) {
+      const collegeId = Number(item?.collegeId || 0), sectionId = Number(item?.sectionId || 0);
+      if (!collegeId || !sectionId || seen.has(sectionKey(collegeId, sectionId))) continue;
+      seen.add(sectionKey(collegeId, sectionId));
+      targets.push({ collegeId, sectionId, named: true });
+    }
+  } else {
+    res.status(400).json({ error: "اختر النطاق: كل الأقسام، أو كلية، أو أقساماً بأعيانها." }); return;
+  }
+  if (!targets.length) { res.status(400).json({ error: "لا قسمَ في هذا النطاق." }); return; }
+  if (targets.length > EXTENSIONS_MAX_TARGETS) { res.status(400).json({ error: "النطاقُ أوسع مما يُطبَّق دفعةً واحدة." }); return; }
+
+  const actor = approvalActor(req);
+  const results: Array<{
+    collegeId: number; sectionId: number; sectionName: string; ok: boolean; unchanged?: boolean;
+    until?: string; from?: string; daysAfterTerm?: number; error?: string;
+  }> = [];
+  for (const target of targets) {
+    const { collegeId, sectionId } = target;
+    const sectionName = String(known.get(sectionKey(collegeId, sectionId))?.AdSectionName || `قسم ${sectionId}`);
+    if (!known.has(sectionKey(collegeId, sectionId))) { results.push({ collegeId, sectionId, sectionName, ok: false, error: "قسمٌ غير موجود." }); continue; }
+    if (!allowed(collegeId, sectionId)) { results.push({ collegeId, sectionId, sectionName, ok: false, error: "خارج صلاحيات الأقسام المسموحة لك" }); continue; }
+    let result: Omit<(typeof results)[number], "collegeId" | "sectionId" | "sectionName"> = { ok: false };
+    try {
+      const outcome = await approvalTransactionOutcome(collegeId, sectionId, termId, async () => {
+        const approval = await readApproval(collegeId, sectionId, termId);
+        let next: ScheduleApproval;
+        if (action === "reject") {
+          if (!approval.extensionRequest) { result = { ok: false, unchanged: true, error: "لا طلبَ تمديدٍ معلّقاً لهذا القسم." }; return; }
+          next = withEvent(req, withoutExtensionRequest(approval), "extension-request-rejected", reason);
+          result = { ok: true, until: approval.extensionUntil || termDeadline };
+        } else if (action === "remove") {
+          if (!approval.extensionUntil) { result = { ok: true, unchanged: true, until: termDeadline }; return; }
+          next = withEvent(req, withoutException(approval), "extension", "رفع الاستثناء — العودة إلى موعد الفصل");
+          result = { ok: true, until: termDeadline };
+        } else {
+          const plan = planException(termDeadline!, approval.extensionUntil, amount!);
+          next = withEvent(req, withException(approval, { until: plan.until, reason, by: actor.name }), "extension",
+            `${plan.until} (${exceptionDaysLabel(plan.daysAfterTerm)}) — ${reason}`);
+          result = { ok: true, until: plan.until, from: plan.from, daysAfterTerm: plan.daysAfterTerm };
+        }
+        await Repository.saveScheduleApproval(next);
+      }, () => true);
+      if (outcome === "conflict") result = { ok: false, error: "سبقك قرارٌ آخر على هذا القسم في اللحظة نفسها — أعد المحاولة." };
+    } catch (error) {
+      console.error("[deadlines] تعذّر حفظُ استثناء:", error instanceof Error ? error.message : error);
+      result = { ok: false, error: "تعذّر الحفظ لهذا القسم." };
+    }
+    results.push({ collegeId, sectionId, sectionName, ...result });
+  }
+
+  const applied = results.filter(row => row.ok && !row.unchanged).length;
+  const failed = results.filter(row => !row.ok && !row.unchanged).length;
+  const verb = action === "reject" ? "رفض طلب تمديد" : action === "remove" ? "رفع استثناء تسليم" : "استثناء تسليم";
+  const termName = String((term as any).AdTermName || `فصل ${termId}`);
+  res.locals.auditChanges = `${verb} — ${termName}: ${countOf(applied, AR.department)}`
+    + (action === "grant" ? ` (${until ? until : `+${countOf(Number(req.body?.days), AR.day)}`})` : "")
+    + (reason ? ` — ${reason}` : "")
+    + (failed ? ` · تعذّر ${countOf(failed, AR.department)}` : "");
+  res.json({ termId, termDeadline: termDeadline || null, action, applied, failed, results });
 });
 
 /**
@@ -11017,6 +11150,9 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
       deadline,
       /* طلبُ تمديدٍ من القسم، والتاريخُ الذي يُقترح لمنحه (R17). */
       extensionRequest: approval.extensionRequest,
+      /* من منح الاستثناء ومتى — تُعرض في «مواعيد التسليم». */
+      extensionBy: approval.extensionBy,
+      extensionAt: approval.extensionAt,
       suggestedExtensionUntil: approval.extensionRequest
         ? suggestedExtensionDate(deadline.effective, approval.extensionRequest.days, today)
         : undefined,

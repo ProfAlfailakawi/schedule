@@ -781,7 +781,7 @@ export function appendApprovalEvent(
 export const APPROVAL_EVENT_LABEL: Record<string, string> = {
   sign: "توقيع", withdraw: "سحب توقيع", "acknowledge-additions": "إقرار شعب مضافة",
   submit: "إرسال إلى التسجيل", return: "إرجاع بملاحظات", accept: "قبول نهائي",
-  "head-return": "إرجاع رئيس القسم للجنة", extension: "تمديد", "extension-request": "طلب تمديد",
+  "head-return": "إرجاع رئيس القسم للجنة", extension: "تمديد", "extension-request": "طلب تمديد", "extension-request-rejected": "رفض طلب التمديد",
   "amendment-open": "فتح جولة تعديل", "closed-term-edit": "تعديل في فصلٍ منتهٍ",
 };
 
