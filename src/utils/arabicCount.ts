@@ -121,4 +121,5 @@ export const AR = {
   visit:       { one: "مرة", two: "مرتان", few: "مرات", many: "مرة" },
   link:        { one: "علاقة", two: "علاقتان", few: "علاقات", many: "علاقة" },
   row:         { one: "صف", two: "صفان", few: "صفوف", many: "صفاً" },
+  unit:        { one: "وحدة", two: "وحدتان", few: "وحدات", many: "وحدة" },
 } as const satisfies Record<string, ArabicNoun>;

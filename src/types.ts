@@ -571,6 +571,29 @@ export interface StudentCourseState {
   at: string;
 }
 
+/**
+ * قرارُ جهةٍ واحدةٍ في طلبٍ لا مقرّرات فيه (حالة الخريج).
+ *
+ * طلبُ الخريج لا يسمّي مقرّراً: يطلب ترتيباً للميداني بسببٍ من قائمةٍ مغلقة
+ * وملاحظاتٍ إلزامية. فالقرارُ فيه قرارٌ في الحالة كلها، لا في مقرّر — وكان
+ * الكشفُ يُسقطه لأنه لا يجد مقرّراً يعلّق عليه قراراً، فلا يُجاب أبداً.
+ * الترتيبُ نفسُه: اللجنةُ أولاً، ثم التسجيل.
+ */
+export interface StudentCaseDecision {
+  /** اللجنة: وافقت/لم توافق. التسجيل: نفّذه/ردّه. */
+  state: "approved" | "rejected";
+  reasonCode?: StudentCourseRejectReason | StudentCommitteeRejectReason;
+  /** «سطرٌ للطالب» — يصله في صفحة حالته. */
+  note?: string;
+  byRole?: string;
+  at: string;
+}
+
+export interface StudentCaseState {
+  committee?: StudentCaseDecision;
+  registrar?: StudentCaseDecision;
+}
+
 export interface StudentNeed {
   id: string;
   /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
@@ -611,6 +634,8 @@ export interface StudentNeed {
    * صفٌّ ليقول «لا جديد».
    */
   courseStates?: StudentCourseState[];
+  /** قرارُ الحالة كلها حين لا يسمّي الطلبُ مقرّراً (الخريج). */
+  caseState?: StudentCaseState;
   /**
    * رقمُ الحالة كما أُعطي للطالب، ثابتٌ عبر إعادة الإرسال.
    *

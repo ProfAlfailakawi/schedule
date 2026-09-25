@@ -8,7 +8,24 @@
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import os from "os";
 import { validateCivilId } from "../src/utils/civilId";
+import { applyStudentCaseDecision, isCaseLevelNeed, studentCaseRefusal, studentCaseStatus } from "../src/utils/studentCaseDecision";
+
+/* مخزنٌ محليٌّ معزول لكل تشغيل: لا يلمس بيانات أحد. */
+const privateDir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-student-journey-"));
+fs.writeFileSync(path.join(privateDir, "db.json"), JSON.stringify({
+  schedules: [], colleges: [], sections: [], terms: [], courses: [], instructors: [],
+  systemUsers: [], formSecurity: [], adCollegeUserAssigns: [], formNames: [], sessions: [], studentNeeds: [],
+}), { mode: 0o600 });
+process.env.NODE_ENV = "test";
+process.env.DATA_MODE = "demo";
+process.env.SCHEDULE_PRIVATE_DIR = privateDir;
+const quiet = console.warn; console.warn = () => {};
+const repositoryModule = await import("../src/db/repository");
+const { Repository, initDatabase, StudentCourseStateConflict } = repositoryModule;
+await initDatabase();
+console.warn = quiet;
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -55,7 +72,59 @@ const between = (source: string, start: string, end: string) => {
   check(leaks.length === 0, `S1 لا رقم مدني صالح غير وهمي في الشيفرة أو الاختبارات${leaks.length ? " — " + leaks.join(", ") : ""}`);
 }
 
+/* ── S2 طلبُ الخريج يُجاب: قرارٌ في الحالة كلها ──────────────────────────── */
+{
+  check(isCaseLevelNeed({ requestType: "graduate", courseIds: [] }), "S2 طلب الخريج بلا مقرّرات يُقرَّر على مستوى الحالة");
+  check(!isCaseLevelNeed({ requestType: "new-course", courseIds: [5] }), "S2 طلب المقرّر يبقى قراراً لكل مقرّر");
+  check(studentCaseStatus(undefined) === "pending", "S2 بلا قرار: بانتظار اللجنة");
+  const approved = { state: "approved" as const, at: "2026-09-25T08:00:00.000Z" };
+  check(studentCaseRefusal(undefined, "registrar", approved) !== null, "S2 التسجيل لا يقرّر قبل موافقة اللجنة");
+  const afterCommittee = applyStudentCaseDecision(undefined, "committee", approved);
+  check(studentCaseStatus(afterCommittee) === "approved", "S2 بعد موافقة اللجنة: بانتظار التسجيل");
+  check(studentCaseRefusal(afterCommittee, "registrar", approved) === null, "S2 وبعدها يقرّر التسجيل");
+  const done = applyStudentCaseDecision(afterCommittee, "registrar", approved);
+  check(studentCaseStatus(done) === "registered", "S2 نفّذه التسجيل");
+  check(studentCaseRefusal(done, "committee", { ...approved, state: "rejected" }) !== null, "S2 اللجنة لا تنقض قرار التسجيل");
+  check(studentCaseStatus(applyStudentCaseDecision(done, "registrar", null)) === "approved", "S2 سحبُ قرار التسجيل يعيده للانتظار");
+
+  const need = await Repository.saveStudentNeed({
+    fingerprint: "fp-graduate-1", AdCollegeId: 1, AdSectionId: 2, studentSectionId: 2, surveySectionId: 2,
+    AdTermId: 9, courseIds: [], requestType: "graduate", graduateReason: "field-conflict", details: "ملاحظة تجريبية",
+    passedUnits: 112, requiredUnits: 111, degreeUnits: 134, eligibility: "eligible",
+  } as any);
+  let refused = false;
+  try { await Repository.setStudentCaseDecision(need.id, "registrar", approved); }
+  catch (error) { refused = error instanceof StudentCourseStateConflict; }
+  check(refused, "S2 المخزن يرفض قرار التسجيل قبل اللجنة داخل الكتابة نفسها");
+  const committeeSaved = await Repository.setStudentCaseDecision(need.id, "committee",
+    { state: "rejected", reasonCode: "not-eligible", note: "راجع القسم", at: approved.at });
+  check(committeeSaved?.caseState?.committee?.reasonCode === "not-eligible" && committeeSaved?.caseState?.committee?.note === "راجع القسم",
+    "S2 عدم موافقة اللجنة يُحفظ بسببه وسطره للطالب");
+  await Repository.setStudentCaseDecision(need.id, "committee", approved);
+  const registrarSaved = await Repository.setStudentCaseDecision(need.id, "registrar", approved);
+  check(studentCaseStatus(registrarSaved?.caseState) === "registered", "S2 اللجنة ثم التسجيل على المخزن المحلي");
+  check((await Repository.getStudentNeedById(need.id))?.caseState?.registrar?.state === "approved", "S2 القرار يُقرأ من المخزن");
+
+  const list = between(server, 'app.get("/api/student-registration"', 'app.post("/api/student-registration/:id/course-state"');
+  const caseAt = list.indexOf("isCaseLevelNeed(need)"), dropAt = list.indexOf("if (!visibleCourseIds.length) return null;");
+  check(caseAt > 0 && dropAt > caseAt, "S2 الكشف يعرض حالة الخريج قبل أن يُسقط ما لا مقرّرات فيه");
+  check(/graduate:\s*\{[\s\S]*passedUnits[\s\S]*requiredUnits/.test(list) && list.includes("details:"),
+    "S2 الكشف يحمل حقائق التحقق وملاحظات الطالب");
+  const caseRoute = between(server, 'app.post("/api/student-registration/:id/case-state"', "/** The department's tray.");
+  check(caseRoute.includes("canWriteRegistration(") && caseRoute.includes("owningSectionsInScopeFor(") && caseRoute.includes("registrarBlockReason(")
+    && caseRoute.includes("STUDENT_COMMITTEE_REASONS") && caseRoute.includes("STUDENT_REJECT_REASONS")
+    && caseRoute.includes("Repository.setStudentCaseDecision("), "S2 مسار قرار الحالة يمرّ بالحراس والأسباب نفسها");
+  const myCase = between(server, 'app.post("/api/public/survey/:token/my-case"', "function studentCaseStatusPage");
+  check(myCase.includes("caseDecision") && myCase.includes("studentCaseStatus("), "S2 صفحة الحالة تعيد قرار الحالة للطالب");
+  const statusPage = between(server, "function studentCaseStatusPage", 'app.get("/m/:token"');
+  check(statusPage.includes("caseLine(d)") && statusPage.includes("TYPE[d.requestType]"), "S2 صفحة الحالة تعرض نوع الطلب وقرار الحالة");
+  const sheet = read("src/components/StudentRegistration.tsx");
+  check(sheet.includes("/case-state") && sheet.includes("row.caseLevel") && sheet.includes('setCaseState(row, "registrar"'),
+    "S2 الكشف يعرض أزرار قرار الحالة للجنة ثم للتسجيل");
+}
+
 export function finish() {
+  fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
 }

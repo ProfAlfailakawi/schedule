@@ -42,6 +42,7 @@ import {
   DepartmentRoomDirectory,
   StudentNeed,
   StudentCourseState,
+  StudentCaseDecision,
   HallBarterRequest,
   ScheduleWeekException,
   MasterBuilding,
@@ -53,6 +54,7 @@ import {
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
 import { createDemoSandboxState } from "./demoSandbox";
+import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -4533,6 +4535,38 @@ export const Repository = {
     const at = db.studentNeeds.findIndex(row => row.id === needId);
     if (at < 0) return undefined;
     check(db.studentNeeds[at]);
+    db.studentNeeds[at] = merge(db.studentNeeds[at]);
+    saveDatabase();
+    return db.studentNeeds[at];
+  },
+
+  /**
+   * قرارُ جهةٍ واحدةٍ في الحالة كلها (طلبُ الخريج بلا مقرّرات).
+   *
+   * النمطُ نفسُه الذي يكتب به `setStudentCourseState`: القاعدةُ تُسأل داخل
+   * المعاملة على الحالة كما هي لحظتَها (`studentCaseRefusal`)، فقرارا اللجنة
+   * والتسجيل في اللحظة نفسها لا يمرّ أحدهما على حالةٍ قديمة. `next === null`
+   * يسحب قرارَ تلك الجهة.
+   */
+  setStudentCaseDecision: async (needId: string, side: StudentCaseSide, next: StudentCaseDecision | null): Promise<StudentNeed | undefined> => {
+    const merge = (current: StudentNeed): StudentNeed => {
+      const refusal = studentCaseRefusal(current.caseState, side, next);
+      if (refusal) throw new StudentCourseStateConflict(refusal);
+      return { ...current, caseState: applyStudentCaseDecision(current.caseState, side, next) };
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("studentNeeds").doc(needId);
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        if (!doc.exists) return undefined;
+        const merged = merge(doc.data() as StudentNeed);
+        transaction.set(ref, merged);
+        return merged;
+      });
+    }
+    if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
+    const at = db.studentNeeds.findIndex(row => row.id === needId);
+    if (at < 0) return undefined;
     db.studentNeeds[at] = merge(db.studentNeeds[at]);
     saveDatabase();
     return db.studentNeeds[at];

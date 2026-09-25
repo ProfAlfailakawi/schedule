@@ -45,6 +45,7 @@ import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
+import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -13296,6 +13297,14 @@ const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number;
   return !anyKnownOwner && Number(need.AdSectionId || 0) === sectionId;
 };
 
+/** أقسامُ نطاق الحساب التي تملك هذا الطلب — ما يُكتب به في المقرّر وفي الحالة كلها. */
+const owningSectionsInScopeFor = async (req: AuthenticatedRequest, need: any, allCourses: any[]): Promise<number[]> =>
+  (await Repository.getSections() as any[])
+    .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
+    .map(row => Number(row.AdSectionId))
+    .filter(candidate => sectionOwnsNeed(need, allCourses, candidate)
+      && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
+
 const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "committee-rejected", "registered", "rejected"]);
 const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "conflict", "closed", "other"]);
 const STUDENT_COMMITTEE_REASONS = new Set(["not-eligible", "not-in-plan", "prerequisite", "duplicate", "other"]);
@@ -13368,6 +13377,36 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
 
   const viewer = registrationViewer(req);
   const rows = (await Promise.all(needs.map(async need => {
+    /* ── طلبُ الخريج: قرارٌ في الحالة كلها ────────────────────────────────
+       لا مقرّرَ فيه يُعلَّق عليه قرار، فكان يسقط من الكشف عند السطر التالي
+       ولا يُجاب أبداً. يُعرض بحقائق التحقق من صحيفة التخرج وقرارٍ واحدٍ
+       للّجنة ثم للتسجيل. والتسجيلُ لا يراه قبل موافقة اللجنة. */
+    if (isCaseLevelNeed(need)) {
+      const caseStatus = studentCaseStatus(need.caseState);
+      if (viewer === "registration" && (caseStatus === "pending" || caseStatus === "committee-rejected")) return null;
+      return {
+        id: String(need.id),
+        caseRef: caseRefFor(need),
+        name: await openStudentIdentity(need.nameCipher),
+        civil: await openStudentIdentity(need.civilCipher),
+        createdAt: String(need.createdAt || ""),
+        requestType: String(need.requestType || "graduate"),
+        studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+        details: String(need.details || ""),
+        caseLevel: true,
+        caseStatus,
+        caseState: need.caseState || {},
+        graduate: {
+          reason: need.graduateReason || "",
+          passedUnits: Number(need.passedUnits || 0),
+          requiredUnits: Number(need.requiredUnits || 0),
+          degreeUnits: Number(need.degreeUnits || 0),
+          eligibility: String(need.eligibility || "not-checked"),
+          nameMatched: Boolean(need.proofNameMatched),
+        },
+        courses: [] as any[],
+      };
+    }
     const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
     /* التسجيلُ لا يرى ما لم تسلّمه اللجنة: لا المنتظرَ عندها ولا ما لم توافق عليه. */
     /* واللجنةُ ترى مقرّرات قسمها وحدها (أو ما لا يُعرف مالكه): الطلبُ القديم
@@ -13412,7 +13451,11 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     };
   }))).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
-  const every = rows.flatMap(row => row.courses);
+  /* كلُّ بندٍ ينتظر قراراً — مقرّرٌ أو حالةُ خريجٍ كاملة — يُعدّ مرّةً بالتصنيف نفسه. */
+  const every: string[] = rows.flatMap((row: any) => row.caseLevel
+    ? [String(row.caseStatus)]
+    : row.courses.map((course: any) => !course.settled ? "pending"
+      : course.state === "awaiting-registration" ? "approved" : String(course.state)));
   res.setHeader("Cache-Control", "no-store");
   res.json({
     rows: rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
@@ -13420,12 +13463,12 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     viewer,
     totals: {
       students: rows.length,
-      courses: every.length,
-      pendingCommittee: every.filter(course => !course.settled).length,
-      committeeRejected: every.filter(course => course.state === "committee-rejected").length,
-      registered: every.filter(course => course.state === "registered").length,
-      rejected: every.filter(course => course.state === "rejected").length,
-      waiting: every.filter(course => course.settled && course.state === "awaiting-registration").length,
+      courses: rows.reduce((sum: number, row: any) => sum + row.courses.length, 0),
+      pendingCommittee: every.filter(status => status === "pending").length,
+      committeeRejected: every.filter(status => status === "committee-rejected").length,
+      registered: every.filter(status => status === "registered").length,
+      rejected: every.filter(status => status === "rejected").length,
+      waiting: every.filter(status => status === "approved").length,
     },
   });
 });
@@ -13445,11 +13488,7 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
      يملك هذا الطلبَ يستطيع أن يكتب فيه — فلا يُعرض ما لا يُكتب فيه، ولا
      يُكتب فيما لا يُعرض. */
   const allCourses = await Repository.getCourses() as any[];
-  const owningSectionsInScope = (await Repository.getSections() as any[])
-    .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
-    .map(row => Number(row.AdSectionId))
-    .filter(candidate => sectionOwnsNeed(need, allCourses, candidate)
-      && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
+  const owningSectionsInScope = await owningSectionsInScopeFor(req, need, allCourses);
   if (!owningSectionsInScope.length) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
@@ -13553,6 +13592,69 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
 
   res.setHeader("Cache-Control", "no-store");
   res.json({ ok: true, courseStates: saved.courseStates || [] });
+});
+
+/**
+ * قرارٌ في الحالة كلها — طلبُ الخريج الذي لا يسمّي مقرّراً.
+ *
+ * الحراسُ أنفسُهم التي يمرّ بها قرارُ المقرّر: صلاحيةُ الكتابة، ونطاقُ القسم
+ * المالك بالاشتقاق نفسِه (`sectionOwnsNeed`)، وتوقيعا الجدول قبل أن يكتب
+ * التسجيل، والترتيبُ (`studentCaseRefusal`) يُسأل داخل المعاملة.
+ * والأسبابُ من القائمتين المغلقتين نفسيهما، والسطرُ الحرّ «سطرٌ للطالب».
+ */
+app.post("/api/student-registration/:id/case-state", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser), await grantedPermissions(req))) {
+    res.status(403).json({ error: "هذا الكشف للقراءة بصفتك." });
+    return;
+  }
+  const need = await Repository.getStudentNeedById(String(req.params.id || ""));
+  if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (!isCaseLevelNeed(need)) { res.status(400).json({ error: "هذا الطلب يُقرَّر مقرّراً مقرّراً." }); return; }
+  const owningSectionsInScope = await owningSectionsInScopeFor(req, need, await Repository.getCourses() as any[]);
+  if (!owningSectionsInScope.length) { res.status(403).json({ error: "هذا الطلب خارج نطاقك." }); return; }
+
+  const viewer = registrationViewer(req);
+  const requestedSide = String(req.body?.side || "");
+  const side: "committee" | "registrar" | null = requestedSide === "committee" || requestedSide === "registrar"
+    ? requestedSide : viewer === "registration" ? "registrar" : viewer === "committee" ? "committee" : null;
+  if (!side) { res.status(400).json({ error: "حدّد الجهة: اللجنة أو التسجيل." }); return; }
+  if (viewer === "committee" && side !== "committee") {
+    res.status(403).json({ error: "قرارُ التنفيذ أو الردّ للتسجيل. اللجنةُ توافق أو لا توافق." }); return;
+  }
+  if (viewer === "registration" && side !== "registrar") {
+    res.status(403).json({ error: "الموافقةُ وعدمُها قرارُ لجنة القسم، لا التسجيل." }); return;
+  }
+  if (side === "registrar") {
+    for (const section of owningSectionsInScope) {
+      const writeBlocked = await registrarBlockReason(req, Number(need.AdCollegeId), section, Number(need.AdTermId || 0));
+      if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
+    }
+  }
+  const decision = String(req.body?.decision || "");
+  if (!["approved", "rejected", "pending"].includes(decision)) { res.status(400).json({ error: "قرارٌ غير معروف." }); return; }
+  const reasonCode = String(req.body?.reasonCode || "");
+  if (decision === "rejected") {
+    const allowed = side === "committee" ? STUDENT_COMMITTEE_REASONS : STUDENT_REJECT_REASONS;
+    if (!allowed.has(reasonCode)) {
+      res.status(400).json({ error: side === "committee" ? "اختر سبب عدم الموافقة." : "اختر سبب الردّ." }); return;
+    }
+  }
+  const next = decision === "pending" ? null : {
+    state: decision as "approved" | "rejected",
+    ...(decision === "rejected" ? { reasonCode: reasonCode as any } : {}),
+    note: String(req.body?.note || "").trim().slice(0, 300) || undefined,
+    byRole: roleLabel(req.user?.Role) || undefined,
+    at: new Date().toISOString(),
+  };
+  let saved: any;
+  try { saved = await Repository.setStudentCaseDecision(need.id, side, next); }
+  catch (error: any) {
+    if (error instanceof StudentCourseStateConflict) { res.status(409).json({ error: error.message }); return; }
+    throw error;
+  }
+  if (!saved) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, caseState: saved.caseState || {}, caseStatus: studentCaseStatus(saved.caseState) });
 });
 
 /** The department's tray. Empty is the normal state and costs one scoped read. */
@@ -16157,6 +16259,14 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     submittedAt: String(mine.createdAt || ""),
     requestType: String(mine.requestType || "new-course"),
     term: String((terms as any[]).find(row => Number(row.AdTermId) === Number(mine.AdTermId))?.AdTermName || ""),
+    /* طلبُ الخريج لا مقرّرات فيه: قرارُه قرارٌ في الحالة كلها، ويصل الطالبَ
+       بسببه وسطره كما تصل قراراتُ المقرّرات. */
+    caseLevel: isCaseLevelNeed(mine),
+    caseStatus: isCaseLevelNeed(mine) ? studentCaseStatus(mine.caseState) : "",
+    caseDecision: isCaseLevelNeed(mine) ? {
+      committee: mine.caseState?.committee ? { state: mine.caseState.committee.state, reason: mine.caseState.committee.reasonCode || "", note: mine.caseState.committee.note || "" } : null,
+      registrar: mine.caseState?.registrar ? { state: mine.caseState.registrar.state, reason: mine.caseState.registrar.reasonCode || "", note: mine.caseState.registrar.note || "" } : null,
+    } : null,
     courses: (Array.isArray(mine.courseIds) ? mine.courseIds : []).map((id: any) => {
       const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
       return {
@@ -16212,6 +16322,10 @@ li span{display:flex;flex-direction:column;gap:3px}
 .st[data-s=committee-rejected]{color:var(--bad);font-weight:700}
 .note{margin-top:15px;font-size:12.5px;color:var(--muted);line-height:1.6}
 .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
+.case{margin:0 0 12px;padding:11px 13px;border-radius:11px;background:#eef4f0;font-size:14px;font-weight:600}
+.case[data-s=registered]{color:var(--ok)}
+.case[data-s=rejected],.case[data-s=committee-rejected]{color:var(--bad);background:#fdeceb}
+.case small{font-weight:400;color:var(--ink)}
 </style></head><body><div class="wrap">
 <h1>حالة طلبي</h1>
 <p class="sub">أدخل رقمك المدني لترى ما أرسلتَه إلى القسم.</p>
@@ -16224,6 +16338,8 @@ li span{display:flex;flex-direction:column;gap:3px}
 var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),
 go=document.getElementById("go"),out=document.getElementById("out");
 var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+var TYPE={"new-course":"طلب فتح مقرر","course-conflict":"تعارض مقررين","graduate":"خريج / متوقع تخرجه"};
+var CASE={"pending":"وصل إلى القسم وينتظر نظر لجنة القسم","approved":"وافقت عليه لجنة القسم وسلّمته للتسجيل","committee-rejected":"لم توافق عليه لجنة القسم","registered":"نفّذه التسجيل","rejected":"ردّه التسجيل"};
 var REASON={"no-seat":"لا مقاعد","prerequisite":"متطلّب سابق","level":"المستوى",
 "conflict":"تعارض في جدولك","closed":"الشعبة مغلقة","other":"سبب آخر",
 "not-eligible":"لا تنطبق عليك الشروط","not-in-plan":"ليس من خطتك الدراسية","duplicate":"طلب مكرر أو سبق تسجيله"};
@@ -16237,12 +16353,18 @@ box.addEventListener("input",function(){var v=digits(box.value).slice(0,12);if(v
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
 d.toLocaleDateString("ar-KW-u-nu-latn",{year:"numeric",month:"long",day:"numeric"})}
 function fail(m){out.innerHTML='<div class="err">'+esc(m)+'</div>'}
+function caseLine(d){
+ var dec=d.caseDecision||{},last=dec.registrar||dec.committee,st=d.caseStatus||"pending";
+ return '<p class="case" data-s="'+esc(st)+'">'+esc(CASE[st]||CASE.pending)+
+  (last&&last.reason?' — '+esc(REASON[last.reason]||last.reason):'')+
+  (last&&last.note?'<br><small>'+esc(last.note)+'</small>':'')+'</p>'}
 function show(d){
  if(!d.found){out.innerHTML='<div class="card"><div class="empty">'+
   'لا يوجد طلبٌ مسجّلٌ بهذا الرقم في '+esc(d.term||"هذا الفصل")+'.<br>'+
   'إن كنت قد عبّأت الاستبيان من رابطٍ آخر، افتح ذلك الرابط.</div></div>';return}
  out.innerHTML='<div class="card"><p class="ref">'+esc(d.caseRef)+'</p>'+
-  '<p class="reflabel">رقم حالتك · '+esc(d.term)+'</p>'+
+  '<p class="reflabel">رقم حالتك · '+esc(d.term)+(TYPE[d.requestType]?' · '+esc(TYPE[d.requestType]):'')+'</p>'+
+  (d.caseLevel?caseLine(d):'')+
   '<ul>'+(d.courses||[]).map(function(c){
    return '<li><span>'+esc(c.name)+(c.state?'<i class="st" data-s="'+esc(c.state)+'">'+
     esc(STATE[c.state]||c.state)+(c.reason?' — '+esc(REASON[c.reason]||c.reason):'')+
