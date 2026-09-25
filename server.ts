@@ -26,6 +26,7 @@ import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
 import { termPhase } from "./src/utils/termSequence";
+import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -12025,21 +12026,16 @@ async function buildSharePayload(link: ScheduleShareLink) {
  * nothing this term get the same answer, and the card never shows a civil ID,
  * a phone number or anyone else's row.
  */
-const staffAttempts = new Map<string, { count: number; first: number }>();
-const STAFF_WINDOW_MS = 10 * 60 * 1000;
-const STAFF_MAX_TRIES = 10;
+/* الحدّ مشترك بين الأبواب العامة كلها، ويعدّ الأخطاء لا الدخول — القاعدة في
+   ‎src/server/publicAttemptLimiter.ts‎. */
+const publicAttempts = createAttemptLimiter(limiterOptionsFromEnv());
+const publicAttemptKey = (scope: string, ip: string) => `${scope}|${ip}`;
+const publicAttemptBlocked = (scope: string, ip: string) => publicAttempts.blocked(publicAttemptKey(scope, ip));
+const publicAttemptFailed = (scope: string, ip: string) => publicAttempts.fail(publicAttemptKey(scope, ip));
 
+/** الأبواب التي لم تنتقل بعد إلى عدّ الأخطاء وحدها (استبيان الطلبة): كل طلبٍ يُعدّ. */
 function staffLookupAllowed(token: string, ip: string): boolean {
-  const key = `${token}|${ip}`;
-  const now = Date.now();
-  const seen = staffAttempts.get(key);
-  if (!seen || now - seen.first > STAFF_WINDOW_MS) {
-    staffAttempts.set(key, { count: 1, first: now });
-    return true;
-  }
-  seen.count += 1;
-  if (staffAttempts.size > 5000) staffAttempts.clear();
-  return seen.count <= STAFF_MAX_TRIES;
+  return publicAttempts.consume(publicAttemptKey(token, ip));
 }
 
 /**
@@ -12516,14 +12512,14 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
-  if (!staffLookupAllowed(token, req.ip || "unknown")) {
+  if (publicAttemptBlocked(token, req.ip || "unknown")) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
 
   const body = (req.body || {}) as Record<string, unknown>;
   const card = await buildStaffCard(resolved.link, String(body.civil || ""), Number(body.termId || 0));
-  if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  if (!card) { publicAttemptFailed(token, req.ip || "unknown"); res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
   if (!card.liveTermId || Number(card.termId) !== Number(card.liveTermId)) {
     res.status(409).json({ error: "هذا الفصل للاطلاع فقط. اختر الفصل الجاري للإبلاغ." });
     return;
@@ -13622,14 +13618,14 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
-  if (!staffLookupAllowed(token, req.ip || "unknown")) {
+  if (publicAttemptBlocked(token, req.ip || "unknown")) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
   const card = await buildStaffCard(resolved.link, String(req.body?.civil || ""), Number(req.body?.termId || 0));
   // One answer for a wrong number and for someone with no lectures this term:
   // the page must not become a way to test which numbers exist.
-  if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  if (!card) { publicAttemptFailed(token, req.ip || "unknown"); res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.json(card);
@@ -15471,13 +15467,15 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
    * بالحدّ نفسِه المفروض على بطاقة الأستاذ وحالة الطالب، وإلا صار البابُ
    * مجرَّبا عليه بالأرقام.
    */
-  if (!staffLookupAllowed(`request:${resolved.request.id}`, req.ip || "unknown")) {
+  const signScope = `request:${resolved.request.id}`;
+  if (publicAttemptBlocked(signScope, req.ip || "unknown")) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
     return;
   }
   const civil = normalizeCivilId(req.body?.civil);
   const civilCheck = validateCivilId(civil);
   if (!civilCheck.isValid) {
+    publicAttemptFailed(signScope, req.ip || "unknown");
     res.status(400).json({ error: civilCheck.message || "اكتب رقمك المدني كاملاً." });
     return;
   }
@@ -15491,6 +15489,7 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
      سببٍ يظهر له ولا للقسم. */
   const storedCivil = normalizeCivilId(signer?.AdInstructorCivil);
   if (!storedCivil || storedCivil !== civil) {
+    publicAttemptFailed(signScope, req.ip || "unknown");
     res.status(403).json({ error: "الرقم المدني لا يطابق صاحب هذا الرابط." });
     return;
   }

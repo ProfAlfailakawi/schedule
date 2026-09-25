@@ -10,6 +10,7 @@ import {
   CALENDAR_KEY_LABEL, calendarFeedKey, createCalendarSecretResolver, deriveCalendarSecret,
 } from "../src/server/calendarSecret";
 import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
+import { createAttemptLimiter, limiterOptionsFromEnv } from "../src/server/publicAttemptLimiter";
 import { termPhase } from "../src/utils/termSequence";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
 import { TERM_LINK_FALLBACK_DAYS, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
@@ -152,6 +153,35 @@ async function main() {
     check(page.includes('"term="+encodeURIComponent'), "D5 اشتراك الفصل القادم يحمل رقمه");
     const ics = server.slice(server.indexOf('app.get("/api/public/ics/:token/:key"'), server.indexOf('app.get("/api/public/ics/:token/:key"') + 2000);
     check(ics.includes('termPhase(pinnedTerm as any, currentTermId(terms as any)) === "upcoming"'), "D5 التقويم يخدم الفصل القادم المثبّت ولا يفتح به فصلاً انقضى");
+  }
+
+
+  /* ── D6: الحدّ يعدّ الأخطاء لا الدخول ────────────────────────────────────── */
+  {
+    let t = 0;
+    const limiter = createAttemptLimiter({ maxFailures: 3, windowMs: 60_000, now: () => t });
+    check(Array.from({ length: 50 }, () => limiter.blocked("tok|ip")).every(blocked => !blocked), "D6 خمسون دخولاً صحيحاً لا تُغلق الباب");
+    limiter.fail("tok|ip"); limiter.fail("tok|ip");
+    check(!limiter.blocked("tok|ip"), "D6 خطآن تحت الحدّ");
+    limiter.fail("tok|ip");
+    check(limiter.blocked("tok|ip"), "D6 الخطأ الثالث يغلق");
+    check(!limiter.blocked("tok|other"), "D6 عنوانٌ آخر لا يتأثر");
+    t += 61_000;
+    check(!limiter.blocked("tok|ip"), "D6 النافذة تنقضي فيعود الباب");
+    const env = limiterOptionsFromEnv({ PUBLIC_ATTEMPT_MAX_FAILURES: "25", PUBLIC_ATTEMPT_WINDOW_MINUTES: "5" });
+    check(env.maxFailures === 25 && env.windowMs === 300_000, "D6 البيئة تضبط الحدّ والنافذة");
+    const fallback = limiterOptionsFromEnv({ PUBLIC_ATTEMPT_MAX_FAILURES: "x" });
+    check(fallback.maxFailures === 10 && fallback.windowMs === 600_000, "D6 القيم الافتراضية عشرةٌ في عشر دقائق");
+    const legacy = createAttemptLimiter({ maxFailures: 2, windowMs: 60_000, now: () => 0 });
+    check(legacy.consume("s") && legacy.consume("s") && !legacy.consume("s"), "D6 الأبواب القديمة (استبيان) تبقى على العدّ الكامل");
+
+    const staffPost = server.slice(server.indexOf('app.post("/api/public/staff/:token", '), server.indexOf('app.post("/api/public/staff/:token", ') + 1200);
+    check(staffPost.includes("publicAttemptBlocked(token") && staffPost.includes("if (!card) { publicAttemptFailed(token") && !staffPost.includes("staffLookupAllowed"),
+      "D6 بطاقتي تُسأل الحدّ وتسجّل الفشل وحده");
+    const note = server.slice(server.indexOf('app.post("/api/public/staff/:token/note"'), server.indexOf('app.post("/api/public/staff/:token/note"') + 1500);
+    check(note.includes("publicAttemptBlocked(token") && note.includes("publicAttemptFailed(token") && !note.includes("staffLookupAllowed"), "D6 ملاحظة بطاقتي كذلك");
+    check(server.includes("publicAttemptBlocked(signScope") && (server.match(/publicAttemptFailed\(signScope/g) || []).length === 2, "D6 التوقيع يسجّل الرقم الخاطئ وحده");
+    check(!server.includes("staffAttempts") && !server.includes("STAFF_MAX_TRIES"), "D6 لا عدّاد ثانٍ في الخادم");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

@@ -53,7 +53,7 @@ check(route.indexOf("لا يطابق صاحب هذا الرابط") < route.inde
 
 /* ── ولا يُجرَّب عليه ─────────────────────────────────────────────────── */
 
-check(route.includes("staffLookupAllowed(`request:${resolved.request.id}`"),
+check(route.includes("const signScope = `request:${resolved.request.id}`") && route.includes("publicAttemptBlocked(signScope"),
   "وحدُّ المحاولات مفروضٌ كما على بطاقة الأستاذ وحالة الطالب");
 /* والجوابُ واحدٌ سواءٌ أخطأ الرقمَ أم لم يكن في سجلّه رقمٌ: التفريقُ بينهما
    يقول لمن يجرّب أيُّ الأساتذة مسجَّلٌ رقمُه. */
