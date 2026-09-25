@@ -2,7 +2,7 @@
 
 | ID | Status | Covered by |
 |----|--------|------------|
-| D1 | TODO | |
+| D1 | FIXED — calendar key: env CALENDAR_SECRET wins, else HMAC("calendar-feed-key-v1") of the Firestore-shared secret (src/server/calendarSecret.ts), lazy awaited resolver, demo cache separated, legacy bridge only for configured env | tests/doctor-journey-audit.ts D1 |
 | D2 | TODO | |
 | D3 | TODO | |
 | D4 | TODO | |

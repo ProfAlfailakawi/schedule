@@ -23,6 +23,7 @@ import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleCo
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
+import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -12224,7 +12225,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     expiresAt: link.expiresAt,
     // The subscription key. Handed out only here — after the card has already
     // established who is holding it — so the civil ID never reaches a URL.
-    calendarKey: calendarKey(link.id, person.AdInstructorId),
+    calendarKey: await calendarKey(link.id, person.AdInstructorId),
     weeklyMinutes,
     lectureCount: shaped.length,
     dayCount: byDay.filter(day => day.rows.length).length,
@@ -12386,10 +12387,12 @@ app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
  * civil ID, cannot be reversed into one, cannot be guessed without the server's
  * secret, and dies the moment the link that produced it is revoked or expires.
  */
-const CALENDAR_SECRET = process.env.CALENDAR_SECRET || randomBytes(32).toString("hex");
+/* السرّ لا يولَد عشوائياً عند كل إقلاع: القاعدة كلّها في ‎src/server/calendarSecret.ts‎
+   (المتغيّر إن ضُبط، وإلا مشتقٌّ من السرّ المشترك المحفوظ). */
+const calendarSecret = createCalendarSecretResolver(() => process.env.CALENDAR_SECRET, () => Repository.getSharedServerSecret());
 
-const calendarKey = (token: string, instructorId: number) =>
-  createHmac("sha256", CALENDAR_SECRET).update(`${token}|${instructorId}`).digest("hex").slice(0, 32);
+const calendarKey = async (token: string, instructorId: number) =>
+  calendarFeedKey(await calendarSecret(), token, instructorId);
 
 app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const token = String(req.params.token || "");
@@ -12400,7 +12403,8 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
     Repository.getInstructors(), Repository.getCourses(), Repository.getTerms(), Repository.getColleges(),
   ]);
   // The key names the instructor: whoever it verifies against is the owner.
-  const person = instructors.find(row => calendarKey(token, row.AdInstructorId) === String(req.params.key || ""));
+  const secret = await calendarSecret();
+  const person = instructors.find(row => calendarFeedKey(secret, token, row.AdInstructorId) === String(req.params.key || ""));
   if (!person) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
 
   const liveTermId = currentTermId(terms as any);
@@ -12584,7 +12588,9 @@ const openStudentIdentity=async(value?:string)=>{
     // CALENDAR_SECRET was configured stably, old cases remain readable and can
     // coexist with new shared-key cases. Per-instance random legacy records are
     // cryptographically unrecoverable once the writing instance disappears.
-    try{return await decryptWith(createHmac("sha256",CALENDAR_SECRET).update("student-case-identity-v1").digest());}catch{return"";}
+    const legacyCalendarSecret=String(process.env.CALENDAR_SECRET||"").trim();
+    if(!legacyCalendarSecret) return "";
+    try{return await decryptWith(createHmac("sha256",legacyCalendarSecret).update("student-case-identity-v1").digest());}catch{return"";}
   }
 };
 
