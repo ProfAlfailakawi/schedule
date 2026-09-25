@@ -147,5 +147,12 @@ await (async () => {
   check(/kind: "bulk-delete", deleting: loss\.deleting, total: loss\.total/.test(server), "B10 قاعدة الحذف الجماعي موصولة");
 }
 
+/* B11 — a registrar note is never closed through the generic comments door. */
+{
+  const put = route('app.put("/api/intelligence/comments/:scheduleId/:commentId"');
+  const guard = put.indexOf('(comment as any).origin==="registrar"'), write = put.indexOf("setScheduleCommentResolved(");
+  check(guard > 0 && guard < write && put.includes("getScheduleComments(scheduleId)"), "B11 ملاحظة التسجيل تُردّ قبل أي كتابة، والتعليق يجب أن يخصّ الموعد");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

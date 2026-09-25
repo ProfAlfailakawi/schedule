@@ -7801,7 +7801,15 @@ app.post("/api/intelligence/comments/:scheduleId", requirePermission(7), async (
   const scheduleId=Number(req.params.scheduleId||0),text=String(req.body?.text||"").trim(); const row=await Repository.getScheduleById(scheduleId); if(!row){res.status(404).json({error:"الموعد غير موجود"});return;} if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(text.length<2||text.length>600){res.status(400).json({error:"اكتب ملاحظة واضحة لا تتجاوز 600 حرف"});return;} const comment=await Repository.createScheduleComment({SystemUserId:req.user.SystemUserId,userName:req.user.Name,scheduleId,AdCollegeId:row.AdCollegeId,AdSectionId:row.AdSectionId,AdTermId:row.AdTermId,text}); res.status(201).json(comment);
 });
 app.put("/api/intelligence/comments/:scheduleId/:commentId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const scheduleId=Number(req.params.scheduleId||0); const row=await Repository.getScheduleById(scheduleId); if(!row){res.status(404).json({error:"الموعد غير موجود"});return;} if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} await Repository.setScheduleCommentResolved(String(req.params.commentId),Boolean(req.body?.resolved)); res.json({success:true});
+  const scheduleId=Number(req.params.scheduleId||0); const row=await Repository.getScheduleById(scheduleId); if(!row){res.status(404).json({error:"الموعد غير موجود"});return;} if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  /* ── ملاحظة التسجيل لا تُغلق من هنا ─────────────────────────────────────
+     ملاحظات التسجيل تمنع الإرسال حتى تُعالج في مسار الاعتماد نفسه. وهذا الباب
+     العام للتعليقات كان يغلق أي تعليقٍ بمعرّفه — فيكفي نداءٌ واحد ليختفي
+     مانعٌ كتبه التسجيل دون أن يُعالَج. ويُتحقق كذلك أن التعليق لهذا الموعد. */
+  const comment=(await Repository.getScheduleComments(scheduleId)).find((item:any)=>String(item?.id)===String(req.params.commentId));
+  if(!comment){res.status(404).json({error:"التعليق غير موجود على هذا الموعد"});return;}
+  if((comment as any).origin==="registrar"){res.status(403).json({error:"ملاحظة التسجيل تُعالَج من مسار ملاحظات الاعتماد، ولا تُغلق من التعليقات.",code:"registrar-note"});return;}
+  await Repository.setScheduleCommentResolved(String(req.params.commentId),Boolean(req.body?.resolved)); res.json({success:true});
 });
 
 app.get("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

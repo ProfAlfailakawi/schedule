@@ -12,7 +12,7 @@
 | B8 | FIXED | tests/blockers-stream-audit.ts (B8) |
 | B9 | FIXED | tests/blockers-stream-audit.ts (B9) — base = draft creation / state right after the versioned change; branch sites of a multi-site PDF publish are not base-checked (only the draft scope) |
 | B10 | FIXED | tests/blockers-stream-audit.ts (B10) — measured via replacementLoss + isWholesaleChange(bulk-delete); genesis drafts count as copy-term |
-| B11 | TODO | |
+| B11 | FIXED | tests/blockers-stream-audit.ts (B11) |
 | B12 | TODO | |
 | B13 | TODO | |
 | B14 | TODO | |
