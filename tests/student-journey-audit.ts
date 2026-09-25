@@ -269,6 +269,18 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(demand.includes("surveyActiveCourseIds(sectionId)") && !demand.includes("getOperationalCourseIds("), "S9 وقراءة القسم تعدّ بها");
 }
 
+/* ── S10 مهلة العشرين دقيقة لا تُسقط الطالب ─────────────────────────────── */
+{
+  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  check(post.includes('code:"proof-expired"') && post.includes("studentProofExpired("), "S10 الخادم يميّز انتهاء مهلة الإثبات برمز خاص");
+  check(server.includes("const STUDENT_PROOF_TTL_MS=20*60_000;") && server.includes("exp:Date.now()+STUDENT_PROOF_TTL_MS"), "S10 المهلة ثابتٌ واحد");
+  check(surveyPageSource.includes("PROOF_TTL") && surveyPageSource.includes("proofAt=proofToken?Date.now():0"), "S10 الصفحة تعرف متى تنتهي المهلة");
+  check(/x\.d\.code==="proof-expired"[\s\S]{0,120}showProofUpload\(x\.d\.error\)/.test(surveyPageSource),
+    "S10 رمز الخادم يعيد فتح الرفع (والملاحظات باقية)");
+  const showUpload = (surveyPageSource.match(/function showProofUpload\(message\)\{[^\n]*/) || [""])[0];
+  check(showUpload.length > 0 && !showUpload.includes("graduateDetails") && !showUpload.includes("graduateOptions"), "S10 إعادة فتح الرفع لا تمسح الملاحظات ولا نوع الطلب");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
