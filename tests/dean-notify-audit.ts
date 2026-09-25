@@ -11,6 +11,8 @@ import fs from "fs";
 import path from "path";
 import { coversWholeCollege, expandScopeSections, resolveSmartScope, type ScopePredicate } from "../src/server/readScope";
 import { finalSourceFor, HISTORICAL_FINALITY_LABEL } from "../src/utils/finality";
+import { buildNotifications, routeFor, type CenterScope } from "../src/utils/notificationCenter";
+import { emptyApproval } from "../src/utils/approvalWorkflow";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -132,6 +134,28 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(fn.includes("fits(savedLens as Lens)"), "N11: عدسةٌ محفوظة لا تملكها الصفة لا تُفتح");
   check(/if \(lens === "list" && !all\.length && shownLenses\.some\(item => item\.id === "balance"\)\) setLens\("balance"\);/.test(reports)
     && reports.includes("autoBalanceDone.current = true"), "N2: قائمةٌ محفوظة فارغة تُحوَّل إلى الميزان مرّةً واحدة بعد القراءة");
+}
+
+/* ══ N15 — الإشعار يأخذ إلى شاشةٍ يملكها صاحبه ═══════════════════════════ */
+{
+  const scopeOf = (status: string, over: any = {}): CenterScope => ({
+    approval: { ...emptyApproval(1, 11, 9), status, rounds: over.rounds || [], pendingAdditions: over.pendingAdditions || [], currentRound: (over.rounds || []).length } as any,
+    collegeName: "كلية اختبار", sectionName: "قسم اختبار", rowCount: 5, openRegistrarNotes: 0, openRequests: 0,
+    pendingRequests: over.pendingRequests, ...over,
+  });
+  const request = [{ requestId: "r1", instructorName: "أستاذ اختبار", count: 1, at: "2026-09-01T00:00:00Z" }];
+  const headItems = buildNotifications({ role: "departmentHead", scopes: [scopeOf("committee", { pendingRequests: request }), scopeOf("returned", { rounds: [{ number: 1, returnedAt: "x" }] })] });
+  check(headItems.length > 0 && headItems.every(item => item.view !== "schedules"), "N15: لا إشعارَ لرئيس القسم يشير إلى ورشة الجدول (صلاحية ٧ ليست له)");
+  check(headItems.some(item => item.view === "scheduleChanges"), "N15: رئيس القسم يُؤخذ إلى تغييرات الجدول");
+  check(!headItems.some(item => item.id.startsWith("request:")), "N15: طلبات الأساتذة لا تُعرض لمن لا يملك شاشتها");
+  const committeeItems = buildNotifications({ role: "committeeChair", scopes: [scopeOf("returned", { rounds: [{ number: 1, returnedAt: "x" }], pendingRequests: request })] });
+  check(committeeItems.find(item => item.title.includes("أرجع"))?.view === "scheduleChanges", "N15: «أُرجع» يأخذ اللجنة إلى الملاحظات في تغييرات الجدول");
+  check(committeeItems.some(item => item.id.startsWith("request:") && item.view === "instructorRequests"), "N15: اللجنة (صلاحية ٧) ترى طلبات الأساتذة");
+  check(routeFor("registrarHead", "approval") === "scheduleChanges" && routeFor("registrarStaff", "approval") === "scheduleChanges", "N15: التسجيل → تغييرات الجدول");
+  check(routeFor("committeeChair", "approval") === "schedules", "N15: بقية إشعارات اللجنة → الورشة");
+  check(routeFor("departmentHead", "request") === undefined && routeFor("committeeChair", "request") === "instructorRequests", "N15: طلبات الأساتذة لصلاحية ٧ وحدها");
+  const nc = read("src/utils/notificationCenter.ts");
+  check(!/view: "(schedules|scheduleChanges|instructorRequests|reportDepartment|studentRegistration)"/.test(nc), "N15: لا وجهةَ مكتوبةً بجانب routeFor");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
