@@ -23,7 +23,7 @@ import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleCo
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
-import { expandScopeSections, resolveSmartScope } from "./src/server/readScope";
+import { coversWholeCollege, expandScopeSections, resolveSmartScope } from "./src/server/readScope";
 import { finalSourceFor, type Finality } from "./src/utils/finality";
 import { isLate } from "./src/utils/lateness";
 import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
@@ -5541,15 +5541,27 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const { instructorIds, instructors } = await readLiveVisitingRoster(collegeId, sectionId, termId);
-  res.json({ instructorIds, instructors });
+  if (!collegeId || !termId) { res.json({ instructorIds: [] }); return; }
+  /* مستوى الكلية (N7): من يغطّي الكلية كلها (العميد) يرى منتدبي أقسامها جميعاً. */
+  const sectionIds = sectionId ? [sectionId] : await wholeCollegeSectionIds(req, collegeId);
+  if (!sectionIds.length || !sectionIds.every(id => isScopeAllowed(req, collegeId, id))) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const parts = await Promise.all(sectionIds.map(id => readLiveVisitingRoster(collegeId, id, termId)));
+  const instructorIds = [...new Set(parts.flatMap(part => part.instructorIds))];
+  const instructors = [...new Map(parts.flatMap(part => part.instructors).map((person: any) => [Number(person.AdInstructorId), person])).values()];
+  res.json({ instructorIds, instructors: instructorsForReader(req, instructors as any[]) });
 });
 
 /** Read-only counterpart for the inquiry centre. Report permissions must be
  * able to see the current visiting roster without granting the data-editing
  * permission used by the schedule transfer tool. */
+/** أقسامُ كليةٍ يغطّيها القارئ كلَّها — فارغةٌ إن لم يغطّها (الحَكَم الواحد). */
+async function wholeCollegeSectionIds(req: AuthenticatedRequest, collegeId: number): Promise<number[]> {
+  const sections = await Repository.getSections();
+  const allowed = (c: number, s: number) => isScopeAllowed(req, c, s);
+  if (!coversWholeCollege(sections, allowed, collegeId)) return [];
+  return sections.filter(row => Number(row.AdCollegeId) === collegeId).map(row => Number(row.AdSectionId)).filter(Boolean);
+}
+
 app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -5750,32 +5762,41 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
 
 app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
-  if(!collegeId||!sectionId){res.status(400).json({error:"حدد الكلية والقسم."});return;}
-  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [rosters,instructors,terms,directory]=await Promise.all([
-    Repository.getVisitingRosterHistory(collegeId,sectionId),
+  if(!collegeId){res.status(400).json({error:"حدد الكلية."});return;}
+  /* مستوى الكلية (N7): أقسامُ الكلية كلها لمن يغطّيها. */
+  const sectionIds=sectionId?[sectionId]:await wholeCollegeSectionIds(req,collegeId);
+  if(!sectionIds.length||!sectionIds.every(id=>isScopeAllowed(req,collegeId,id))){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [rosterGroups,instructors,terms,directories]=await Promise.all([
+    Promise.all(sectionIds.map(id=>Repository.getVisitingRosterHistory(collegeId,id).then(list=>list.map((row:any)=>({...row,sectionId:id}))))),
     Repository.getInstructors(),
     Repository.getTerms(),
-    Repository.getDepartmentDelegates(collegeId,sectionId),
+    Promise.all(sectionIds.map(id=>Repository.getDepartmentDelegates(collegeId,id))),
   ]);
-  const activeDelegateIds=new Set(directory.map(Number));
+  const rosters=rosterGroups.flat();
+  /* التاريخُ تاريخ: من كان منتدباً في فصلٍ مضى يبقى فيه ولو خرج من دليل القسم
+     اليوم (N7). كان يُسقَط، فيقرأ العميدُ «لم ينتدب القسم أحداً» عن فصلٍ انتُدب
+     فيه ثلاثة. ويُعلَّم من لم يعد في الدليل. */
+  const activeDelegateIds=new Set(directories.flat().map(Number));
   const peopleById=new Map(instructors.map(person=>[Number(person.AdInstructorId),person]));
   const termsById=new Map(terms.map(term=>[Number(term.AdTermId),term]));
   const termIds=[...new Set(rosters.map(row=>Number(row.termId)).filter(Boolean))];
-  const rowsByTerm=new Map<number,any[]>();
-  await Promise.all(termIds.map(async termId=>{
-    rowsByTerm.set(termId,await Repository.getSchedulesByScope({collegeId,sectionId,termId}));
+  const rowsByTerm=new Map<string,any[]>();
+  await Promise.all(rosters.map(async (roster:any)=>{
+    const key=`${Number(roster.sectionId)}:${Number(roster.termId||0)}`;
+    if(rowsByTerm.has(key))return;
+    rowsByTerm.set(key,[]);
+    rowsByTerm.set(key,await Repository.getSchedulesByScope({collegeId,sectionId:Number(roster.sectionId),termId:Number(roster.termId||0)}));
   }));
-  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[]}>();
+  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[];listedNow:boolean}>();
   for(const roster of rosters){
     const termId=Number(roster.termId||0);
     const term=termsById.get(termId);
-    const ids=[...new Set(
-      (roster.instructorIds||[])
+    const ids:number[]=[...new Set<number>(
+      ((roster.instructorIds||[]) as unknown[])
         .map(Number)
-        .filter((id:number)=>Boolean(id)&&activeDelegateIds.has(id)&&peopleById.has(id))
+        .filter((id:number)=>Boolean(id)&&peopleById.has(id))
     )];
-    const termRows=rowsByTerm.get(termId)||[];
+    const termRows=rowsByTerm.get(`${Number(roster.sectionId)}:${termId}`)||[];
     for(const instructorId of ids){
       const mine=termRows.filter(row=>Number(row.AdInstructorId)===instructorId);
       const distinctCourses=new Set(mine.map(row=>Number(row.AdCourseId||0)).filter(Boolean)).size;
@@ -5783,27 +5804,32 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
       const current=people.get(instructorId)||{
         instructorId,
         name:person?.AdInstructorName||`منتدب ${instructorId}`,
-        civil:person?.AdInstructorCivil||"",
+        civil:person ? instructorsForReader(req,[person])[0].AdInstructorCivil||"" : "",
         times:0,
         sections:0,
         courses:0,
         terms:[],
+        listedNow:activeDelegateIds.has(instructorId),
       };
-      current.times+=1;
       current.sections+=mine.length;
       current.courses+=distinctCourses;
+      const items=mine.map((row:any)=>({
+        scheduleId:Number(row.id||0),
+        courseId:Number(row.AdCourseId||0),
+        courseName:String(row.AdCourseName||""),
+        sectionCode:String(row.SCode||"").trim(),
+      }));
+      /* على مستوى الكلية قد يُنتدب الشخص في قسمين في الفصل نفسه: فصلٌ واحد. */
+      const sameTerm=current.terms.find((entry:any)=>entry.termId===termId);
+      if(sameTerm){sameTerm.sections+=mine.length;sameTerm.courses+=distinctCourses;sameTerm.items.push(...items);people.set(instructorId,current);continue;}
+      current.times+=1;
       current.terms.push({
         termId,
         termName:term?.AdTermName||String(termId),
         rostered:true,
         sections:mine.length,
         courses:distinctCourses,
-        items:mine.map((row:any)=>({
-          scheduleId:Number(row.id||0),
-          courseId:Number(row.AdCourseId||0),
-          courseName:String(row.AdCourseName||""),
-          sectionCode:String(row.SCode||"").trim(),
-        })),
+        items,
       });
       people.set(instructorId,current);
     }

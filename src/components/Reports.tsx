@@ -170,7 +170,7 @@ const ROLE_LENSES: Record<string, Lens[]> = {
  */
 function initialLensFor(roleId: string | undefined, mode: ReportMode, savedLens: unknown): Lens {
   const allowed = roleId ? ROLE_LENSES[roleId] : undefined;
-  const fits = (lens: Lens) => !allowed || allowed.includes(lens);
+  const fits = (lens: Lens) => !allowed || allowed.includes(lens) || (lens === "visitingHistory" && allowed.includes("visiting"));
   if (LENSES.some(item => item.id === savedLens) && fits(savedLens as Lens)) return savedLens as Lens;
   const deanReader = roleId === "dean" || roleId === "viceDean";
   if (deanReader && (mode === "reportDepartment" || mode === "searchAdvanced")) return "balance";
@@ -594,9 +594,11 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   },[filters.collegeId,filters.sectionId]);
 
   useEffect(() => {
-    if(!filters.collegeId||!filters.sectionId||!filters.termId){setVisitingIds(new Set());return;}
+    /* مستوى الكلية مقبول (N7): الخادم يجيزه لمن يغطّي الكلية كلها. */
+    if(!filters.collegeId||!filters.termId){setVisitingIds(new Set());return;}
     const controller=new AbortController();
-    const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId),termId:String(filters.termId)});
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId),termId:String(filters.termId)});
+    if(filters.sectionId)qs.set("sectionId",String(filters.sectionId));
     fetch(`/api/reports/visiting-roster?${qs}`,{signal:controller.signal})
       .then(response=>response.ok?response.json():{instructorIds:[]})
       .then(data=>setVisitingIds(new Set((Array.isArray(data?.instructorIds)?data.instructorIds:[]).map(Number).filter(Boolean))))
@@ -605,9 +607,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   },[filters.collegeId,filters.sectionId,filters.termId]);
 
   useEffect(() => {
-    if(lens!=="visitingHistory"||!filters.collegeId||!filters.sectionId){return;}
+    if(lens!=="visitingHistory"||!filters.collegeId){return;}
     const controller=new AbortController();
-    const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId)});
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId)});
+    if(filters.sectionId)qs.set("sectionId",String(filters.sectionId));
     setVisitingHistoryLoading(true);
     fetch(`/api/reports/visiting-history?${qs}`,{signal:controller.signal})
       .then(response=>{if(!response.ok)throw new Error("تعذر تحميل تاريخ المنتدبين");return response.json();})
@@ -754,6 +757,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   useEffect(() => {
     if (!shownLenses.length) return;
     if (shownLenses.some(item => item.id === lens)) return;
+    /* «كل الفصول» وجهٌ ثانٍ لعدسة المنتدبين، يُبلغ من مفتاحها لا من شريط
+       العدسات: من يملك «المنتدبين» يملكه (N7) — وكان يُردّ فوراً إلى الأولى. */
+    if (lens === "visitingHistory" && shownLenses.some(item => item.id === "visiting")) return;
     setLens(shownLenses[0].id);
   }, [shownLenses, lens]);
   /* العميدان على قائمةٍ محفوظة ولا جدولَ معتمداً بعد: تُفتح الموازين مرّةً
@@ -2417,7 +2423,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                     <span className="group-avatar"><UserPlus /></span>
                     <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
                     <span className="group-bar"><i style={{ width: share(group.sections, Math.max(1, ...visitingTermGroups.map(item => item.sections))) }} /></span>
-                    <b>{num(group.sections)} شعب</b>
+                    <b><bdi>{countOf(group.sections, AR.section)}</bdi> · <bdi>{countOf(Math.round(group.weeklyMinutes / 60), AR.hour)}</bdi> أسبوعياً</b>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {openGroup === `visiting-${group.id}` ? (
@@ -2517,6 +2523,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                                 <span className="visiting-history-person-name">
                                   <strong>{person.name}</strong>
                                   {person.civil ? <small dir="ltr">{person.civil}</small> : null}
+                                  {person.listedNow === false ? <small className="visiting-history-left">لم يعد في دليل القسم</small> : null}
                                 </span>
                                 <ChevronDown aria-hidden="true" />
                               </button>

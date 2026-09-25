@@ -33,6 +33,8 @@ export interface VisitingHistoryPerson {
   sections: number;
   courses: number;
   terms: VisitingHistoryTermEntry[];
+  /** هل ما زال في دليل القسم اليوم؟ التاريخ يُبقيه ولو خرج منه. */
+  listedNow?: boolean;
 }
 
 export interface VisitingHistoryTerm { termId: number; termName: string }
