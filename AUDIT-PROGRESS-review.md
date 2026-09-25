@@ -13,3 +13,4 @@
 | 9 | FIXED | tests/dean-notify-audit.ts «R9» |
 | 10 | FIXED | tests/doctor-journey-audit.ts «R10-review» (requestsCloseAtFromDate = deadlineEndsAt; issue route + SchedulePublish use it) |
 | 11 | FIXED | tests/relay-fixes-audit.ts «R11-review» (awaitsHeadSignature used by canHeadReturn, badge, ApprovalBar) |
+| 12 | FIXED | tests/dean-notify-audit.ts «R12» (onboardingSeen honours v4 for the unchanged general tour) |

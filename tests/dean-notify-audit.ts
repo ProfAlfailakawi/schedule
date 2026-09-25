@@ -20,7 +20,7 @@ import { mergeBalanceDepartments } from "../src/components/Reports";
 import { NOTIFY_FOCUS_KEY, takeNotifyFocus, writeNotifyFocus } from "../src/utils/notifyFocus";
 import { currentTermId as currentTermIdOf, planningTermCandidates, planningTermId } from "../src/utils/termSequence";
 import { onboardingScenesFor } from "../src/components/Onboarding";
-import { onboardingSeenKey } from "../src/utils/onboardingKey";
+import { legacyOnboardingSeenKey, onboardingSeen, onboardingSeenKey, ROLES_WITH_OWN_TOUR } from "../src/utils/onboardingKey";
 import { createDemoSandboxState, DEMO_ROLE_ACCOUNTS } from "../src/db/demoSandbox";
 
 let passed = 0, failed = 0;
@@ -326,7 +326,7 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
 /* ══ N17 / N19 — عدّاد رئيس القسم، وملاحظات التسجيل في كل حال ═════════════ */
 {
   const badge = fnBody("async function approvalBadgeForTerm(");
-  check(badge.includes('if (stage === "head" && approval.status === "committee") open += 1;'), "N17: جدولٌ ينتظر توقيع رئيس القسم يُعدّ في عدّاده");
+  check(badge.includes('if (stage === "head" && awaitsHeadSignature(approval)) open += 1;'), "N17: جدولٌ ينتظر توقيع رئيس القسم يُعدّ في عدّاده");
   check(!badge.includes('if (approval.status !== "returned" && !approval.pendingAdditions.length) continue;'), "N19: ملاحظات التسجيل تُعدّ في كل حال، لا في «أُرجع» وحده");
   const bell = fnBody("async function notificationItemsForTerm(");
   check(!bell.includes('department && approval.status === "returned"'), "N19: الجرس يقرأ ملاحظات التسجيل المفتوحة في أي حال");
@@ -427,7 +427,22 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(onboardingScenesFor("viceDean").scenes.length === onboardingScenesFor("dean").scenes.length + 1, "N26: العميد المساعد يُزاد الأساتذة والقاعات");
   check(onboardingSeenKey(7, "dean") === "schedule-onboarding-v5-7-dean" && onboardingSeenKey(7, "dean") !== onboardingSeenKey(7, "committeeChair"), "N26: علامة «رأى الجولة» تحمل الصفة");
   const app = read("src/App.tsx");
-  check(!app.includes("schedule-onboarding-v4-") && (app.match(/onboardingSeenKey\(user\.SystemUserId, sessionRole\.id\)/g) || []).length === 3, "N26: التطبيق يقرأ العلامة ويكتبها ويمحوها بالصفة");
+  check(!app.includes("schedule-onboarding-v4-") && app.includes("onboardingSeen(key => safeStorage.get(key), user.SystemUserId, sessionRole.id)")
+    && (app.match(/onboardingSeenKey\(user\.SystemUserId, sessionRole\.id\)/g) || []).length === 2, "N26: التطبيق يقرأ العلامة ويكتبها ويمحوها بالصفة");
+  /* مراجعة 12: من أنهى الجولة العامّة (v4) لا تُعاد عليه؛ الصفات ذات الجولة الجديدة تراها مرّة. */
+  const store = new Map<string, string>([["schedule-onboarding-v4-7", "done"]]);
+  const get = (key: string) => store.get(key);
+  check(onboardingSeen(get, 7, "committeeChair") && onboardingSeen(get, 7, undefined), "R12 اللجنة: «رأى» القديمة تكفي — لم تتغيّر جولتها");
+  check(!onboardingSeen(get, 7, "departmentHead") && !onboardingSeen(get, 7, "dean") && !onboardingSeen(get, 7, "registrarStaff"), "R12 ذوو الجولة الجديدة يرونها مرّة");
+  check(!onboardingSeen(get, 8, "committeeChair"), "R12 القديمةُ لصاحبها وحده");
+  store.set(onboardingSeenKey(7, "dean"), "done");
+  check(onboardingSeen(get, 7, "dean"), "R12 وبعد جولته الجديدة لا تُعاد");
+  check(legacyOnboardingSeenKey(7, "dean") === null && legacyOnboardingSeenKey(7, "committeeChair") === "schedule-onboarding-v4-7", "R12 العلامة القديمة للجولة العامّة وحدها");
+  const scenesSwitch = read("src/components/Onboarding.tsx").slice(read("src/components/Onboarding.tsx").indexOf("export function onboardingScenesFor"));
+  const casesWithOwnTour = [...scenesSwitch.slice(0, scenesSwitch.indexOf("default:")).matchAll(/case "(\w+)"/g)].map(m => m[1]);
+  check(casesWithOwnTour.length === ROLES_WITH_OWN_TOUR.size && casesWithOwnTour.every(role => ROLES_WITH_OWN_TOUR.has(role)),
+    "R12 قائمةُ ذوي الجولة الخاصة تطابق onboardingScenesFor حرفاً بحرف");
+  check(app.includes("const legacy = legacyOnboardingSeenKey(user.SystemUserId, sessionRole.id);"), "R12 إعادةُ الجولة تمحو العلامة القديمة أيضاً");
   check(app.includes("roleId={sessionRole.id}") && app.includes("}, [user?.SystemUserId, sessionRole.id]);"), "N26: الجولة تُمرَّر لها الصفة وتُعاد عند تبدّلها");
 }
 

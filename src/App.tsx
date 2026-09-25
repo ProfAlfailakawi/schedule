@@ -105,7 +105,7 @@ const Schedules = safeLazy(loadSchedules);
 const Reports = safeLazy(loadReports);
 const AdminUsers = safeLazy(loadAdminUsers);
 const About = safeLazy(loadAbout);
-import { onboardingSeenKey } from "./utils/onboardingKey";
+import { legacyOnboardingSeenKey, onboardingSeen, onboardingSeenKey } from "./utils/onboardingKey";
 /* The welcome stage is a first-run surface: it must not sit in the payload
    every returning user downloads. */
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
@@ -1547,7 +1547,7 @@ export default function App() {
     if (!user) return;
     setUsage(safeStorage.json(`schedule-usage-${user.SystemUserId}`, {}));
     setEntityFavorites(safeStorage.json(`schedule-entity-favorites-${user.SystemUserId}`, []));
-    if (!safeStorage.get(onboardingSeenKey(user.SystemUserId, sessionRole.id))) setOnboardingStep(0);
+    if (!onboardingSeen(key => safeStorage.get(key), user.SystemUserId, sessionRole.id)) setOnboardingStep(0);
   }, [user?.SystemUserId, sessionRole.id]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2202,7 +2202,12 @@ export default function App() {
      محو المفتاح قبل الفتح يجعل الإعادة كالمرة الأولى تماماً: لو أُغلقت في
      منتصفها لا تبقى «منتهية» بغير أن تُرى. */
   const replayOnboarding = () => {
-    if (user) safeStorage.remove(onboardingSeenKey(user.SystemUserId, sessionRole.id));
+    if (user) {
+      safeStorage.remove(onboardingSeenKey(user.SystemUserId, sessionRole.id));
+      /* والعلامةُ القديمة كذلك، وإلا عُدّت الجولةُ «مرئية» بعد الإعادة. */
+      const legacy = legacyOnboardingSeenKey(user.SystemUserId, sessionRole.id);
+      if (legacy) safeStorage.remove(legacy);
+    }
     setSidebarOpen(false);
     setOnboardingStep(0);
   };
