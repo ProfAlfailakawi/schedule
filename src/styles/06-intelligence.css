@@ -4275,6 +4275,9 @@ button.twin-delta{width:100%}
   .student-cases-table td{display:grid;gap:1px;padding:0;border:0!important;min-width:0}
   .student-cases-table td::before{content:attr(data-label);font-size:9.5px;font-weight:600;color:var(--muted)}
   .student-cases-table td.student-case-detail-cell{grid-column:1/-1;min-width:0}
+  .student-cases-table td:empty{display:none}
+  .student-case-filters,.student-case-print-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .student-case-filters button{justify-content:space-between;white-space:nowrap}
   .student-case-actions{width:100%}
   .student-case-actions .changes-chip{flex:1;justify-content:center;min-height:34px}
 }
