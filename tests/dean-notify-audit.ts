@@ -21,6 +21,7 @@ import { NOTIFY_FOCUS_KEY, takeNotifyFocus, writeNotifyFocus } from "../src/util
 import { currentTermId as currentTermIdOf, planningTermCandidates, planningTermId } from "../src/utils/termSequence";
 import { onboardingScenesFor } from "../src/components/Onboarding";
 import { onboardingSeenKey } from "../src/utils/onboardingKey";
+import { createDemoSandboxState, DEMO_ROLE_ACCOUNTS } from "../src/db/demoSandbox";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -431,6 +432,20 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   const admin = read("src/components/AdminUsers.tsx");
   check(admin.includes("isAdmin && roleDefinition(role).readOnly ?") && admin.includes("تتجاوز صفة"), "N27: اختيار «مدير» لصفة اطّلاع يُظهر تنبيهاً");
   check(fnBody("function readsFinalSchedulesOnly(").includes("!req.user?.IsAdminUser"), "N27: (سببه) المدير يتجاوز «النهائي وحده»");
+}
+
+/* ══ N28 — بحث العميد المساعد (نطاق كلية) لم يعد فارغاً ════════════════════ */
+{
+  const state = createDemoSandboxState();
+  const vice = DEMO_ROLE_ACCOUNTS.find(account => account.role === "viceDean")!;
+  const assigns = state.collegeUserAssign.filter(row => row.SystemUserId === vice.SystemUserId);
+  /* صورةُ `isScopeAllowed` لصفةٍ نطاقُها «college»: صفٌّ بقسمٍ صفر يجيز الكلية كلها. */
+  const allowed: ScopePredicate = (c, s) => assigns.some(row => row.AdCollegeId === c && (Number(row.AdSectionId) === 0 || row.AdSectionId === s));
+  const own = expandScopeSections(state.sections as any, allowed);
+  check(assigns.every(row => Number(row.AdSectionId) === 0) && own.size > 0, "N28: نطاق العميد المساعد (قسم صفر) يتوسّع إلى أقسام كليته");
+  const natural = resolveSmartScope({ requested: { collegeId: 0, sectionId: 0 }, sections: state.sections as any, allowed, allowCollegeWide: true });
+  check(natural.allowed && natural.sectionId === 0 && natural.collegeId === assigns[0].AdCollegeId, "N28: البحث بالجملة يقرأ له مستوى كليته");
+  check(fnBody("async function readScopedTermRows(").includes("expandScopeSections(sections, allowed)"), "N28: البحث العام يقرأ أقسامه من التوسيع نفسه");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
