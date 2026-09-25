@@ -31,6 +31,7 @@ interface Instructor {
   AdInstructorId: number;
   AdInstructorName: string;
   AdInstructorCivil?: string;
+  AdInstructorMobile?: string;
 }
 
 interface Props {
@@ -112,11 +113,13 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   // the college-wide instructor registry.
   const [newName, setNewName] = useState("");
   const [newCivil, setNewCivil] = useState("");
+  const [newMobile, setNewMobile] = useState("");
   const [directoryPeople, setDirectoryPeople] = useState<Instructor[]>([]);
   const [directoryIds, setDirectoryIds] = useState<number[]>([]);
   const [editingDelegate, setEditingDelegate] = useState<number>(0);
   const [editName, setEditName] = useState("");
   const [editCivil, setEditCivil] = useState("");
+  const [editMobile, setEditMobile] = useState("");
   const [copyPeople, setCopyPeople] = useState<Instructor[]>([]);
   const [copyIds, setCopyIds] = useState<number[]>([]);
   const [copySelected, setCopySelected] = useState<number[]>([]);
@@ -178,12 +181,12 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     try {
       const response = await fetch("/api/department-delegates/instructor", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, AdInstructorCivil: civil, AdInstructorName: name }),
+        body: JSON.stringify({ collegeId, sectionId, termId, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: newMobile.trim() }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذّر إضافة المنتدب.");
       const person: Instructor = data.person;
-      setNewName(""); setNewCivil("");
+      setNewName(""); setNewCivil(""); setNewMobile("");
       setDirectoryIds(data.instructorIds || currentUnique([...directoryIds, person.AdInstructorId]));
       setDirectoryPeople(current => sortByName(mergePeople(current, [person]), row => row.AdInstructorName));
       setRoster(data.roster || currentUnique([...roster, Number(person.AdInstructorId)]));
@@ -200,7 +203,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
     try {
       const response = await fetch(`/api/department-delegates/${id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, AdInstructorName: editName.trim(), AdInstructorCivil: editCivil }),
+        body: JSON.stringify({ collegeId, sectionId, AdInstructorName: editName.trim(), AdInstructorCivil: editCivil, AdInstructorMobile: editMobile.trim() }),
       });
       const person = await response.json();
       if (!response.ok) throw new Error(person.error || "تعذر تعديل المنتدب.");
@@ -1529,6 +1532,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 <div className="roster-add-fields">
                   <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="اسم المنتدب" aria-label="اسم المنتدب الجديد" />
                   <input value={newCivil} onChange={e => setNewCivil(numericText(e.target.value).slice(0, 12))} onBlur={()=>{if(newCivil&& !validateCivilId(newCivil).isValid)setError(validateCivilId(newCivil).message||"الرقم المدني غير صحيح.");}} placeholder="12 رقمًا" inputMode="numeric" maxLength={12} aria-label="الرقم المدني للمنتدب الجديد" />
+                  <input value={newMobile} onChange={e => setNewMobile(numericText(e.target.value).slice(0, 15))} placeholder="الجوّال (اختياري)" inputMode="tel" maxLength={15} aria-label="جوّال المنتدب الجديد" data-guide-ignore="حقل جوّال المنتدب داخل نموذج الإضافة نفسه" />
                   <PrimaryButton type="button" data-guide-ignore="إضافة منتدب إلى دليل القسم إجراء إداري واضح داخل أداة المنتدبين" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}><Plus />أضف للقسم</PrimaryButton>
                 </div>
                 <small className="roster-rule-note">يمكن أن يكون المنتدب نفسه مسجلاً في أكثر من قسم، لكن لا يمكن إضافته مرتين داخل القسم نفسه.</small>
@@ -1545,6 +1549,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                       <div className="roster-edit-fields">
                       <input value={editName} onChange={e=>setEditName(e.target.value)} aria-label="تعديل اسم المنتدب"/>
                       <input value={editCivil} onChange={e=>setEditCivil(numericText(e.target.value).slice(0, 12))} onBlur={()=>{if(editCivil && !validateCivilId(editCivil).isValid)setError(validateCivilId(editCivil).message||"الرقم المدني غير صحيح.");}} placeholder="12 رقمًا" inputMode="numeric" maxLength={12} aria-label="تعديل الرقم المدني"/>
+                      <input value={editMobile} onChange={e=>setEditMobile(numericText(e.target.value).slice(0, 15))} placeholder="الجوّال" inputMode="tel" maxLength={15} aria-label="تعديل جوّال المنتدب" data-guide-ignore="حقل جوّال المنتدب داخل نموذج التعديل نفسه"/>
                       <PrimaryButton type="button" data-guide-ignore="حفظ تعديل بيانات منتدب داخل أداة المنتدبين" onClick={()=>void saveDelegateEdit(person.AdInstructorId)} disabled={busy}>حفظ</PrimaryButton>
                       <SecondaryButton type="button" data-guide-ignore="إلغاء تحرير منتدب لا يغير البيانات" onClick={()=>{setEditingDelegate(0);setError(null);}} disabled={busy}>إلغاء</SecondaryButton>
                       </div>
@@ -1552,9 +1557,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                       <button type="button" data-guide-ignore="تحديد عضوية المنتدب في الفصل الحالي إجراء واضح داخل أداة المنتدبين" className={`roster-term-toggle ${on?"on":""}`} onClick={()=>void saveRoster(on?roster.filter(id=>id!==person.AdInstructorId):[...roster,person.AdInstructorId])} aria-pressed={on}>
                         {on?<Check aria-hidden="true"/>:<Plus aria-hidden="true"/>}<span>{on?"يدرّس هذا الفصل":"أضفه لهذا الفصل"}</span>
                       </button>
-                      <span className="instructor-identity"><b>{person.AdInstructorName}</b><small dir="ltr">{person.AdInstructorCivil||"—"}</small></span>
+                      <span className="instructor-identity"><b>{person.AdInstructorName}</b><small dir="ltr">{person.AdInstructorCivil||"—"}</small>{person.AdInstructorMobile ? null : <small className="roster-no-mobile">بلا جوّال — لن تصله بطاقته</small>}</span>
                       <div className="roster-row-actions">
-                        <button type="button" data-guide-ignore="فتح تحرير المنتدب داخل صفه" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
+                        <button type="button" data-guide-ignore="فتح تحرير المنتدب داخل صفه" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setEditMobile(String(person.AdInstructorMobile||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
                         <button type="button" data-guide-ignore="حذف المنتدب من دليل القسم له تأكيد مستقل قبل التنفيذ" className="danger" onClick={()=>void removeDelegate(person.AdInstructorId)} aria-label={`حذف ${person.AdInstructorName} من قائمة القسم`} title="حذف من قائمة القسم"><Trash2/></button>
                       </div>
                     </>}

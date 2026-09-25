@@ -12,6 +12,7 @@ import {
 import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "../src/server/publicAttemptLimiter";
 import { termPhase } from "../src/utils/termSequence";
+import { storableMobile, whatsappNumber } from "../src/utils/reachInstructor";
 import { AR, nounFor } from "../src/utils/arabicCount";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
 import { coverConflict } from "../src/utils/coverAvailability";
@@ -293,6 +294,23 @@ async function main() {
     const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
     check(page.includes('id="approvals"') && page.includes('id="soon"') && page.includes("خلال الأسبوعين القادمين"), "D16 الصفحة تعرضهما للقراءة فقط");
     check(!/id="approvals"[^>]*<button|id="soon"[^>]*<button/.test(page), "D16 لا أزرار فيهما");
+  }
+
+
+  /* ── D17: القسم يكتب جوّال منتدبيه ──────────────────────────────────────── */
+  {
+    check(storableMobile("٩٩١٢٣٤٥٦") === "99123456" && whatsappNumber("٩٩١٢٣٤٥٦") === "96599123456", "D17 الأرقام العربية في الجوّال تُقرأ ولا تُمحى");
+    check(storableMobile("") === "" && storableMobile("1234") === null && storableMobile("+965 5555 1234") === "96555551234", "D17 فارغٌ مقبول، والناقصُ مرفوض، والدوليّ الكامل مقبول");
+    const post = server.slice(server.indexOf('app.post("/api/department-delegates/instructor"'), server.indexOf('app.put("/api/department-delegates/:instructorId"'));
+    check(post.includes("isScopeAllowed(req,collegeId,sectionId)") && post.includes("storableMobile(req.body?.AdInstructorMobile)") && post.includes("Repository.createInstructor(civil,name,mobile)"),
+      "D17 إضافة المنتدب تحفظ جوّاله ضمن نطاق القسم");
+    check(post.includes("mobile&&!whatsappNumber(person.AdInstructorMobile)"), "D17 لا يُكتب فوق رقمٍ سجّله قسمٌ آخر");
+    const put = server.slice(server.indexOf('app.put("/api/department-delegates/:instructorId"'), server.indexOf('app.delete("/api/department-delegates/:instructorId"'));
+    check(put.includes("if(!directory.includes(instructorId))") && put.includes('hasOwnProperty.call(req.body||{},"AdInstructorMobile")'), "D17 التعديل لمن في قائمة القسم وحده، وغياب الحقل يُبقي الرقم");
+    check(put.includes("(existing as any).AdInstructorLoad??null"), "D17 تعديل المنتدب لا يمحو نصابه");
+    check(server.includes('app.post("/api/department-delegates/instructor", requirePermission(7)') && server.includes('app.put("/api/department-delegates/:instructorId", requirePermission(7)'), "D17 الشاشة ٧ وحدها");
+    const ui = read("src/components/ScheduleTransfer.tsx");
+    check(ui.includes("AdInstructorMobile: newMobile.trim()") && ui.includes("AdInstructorMobile: editMobile.trim()") && ui.includes("بلا جوّال — لن تصله بطاقته"), "D17 الواجهة تكتب الجوّال وتنبّه لغيابه");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

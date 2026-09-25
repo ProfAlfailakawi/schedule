@@ -29,6 +29,7 @@ import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
+import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -5591,8 +5592,14 @@ app.post("/api/department-delegates/instructor", requirePermission(7), async (re
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const check=validateCivilId(civil);
   if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
+  /* المنتدبُ بلا جوّالٍ لا تصله بطاقته: القسمُ الذي يضيفه يكتب رقمه. */
+  const mobile=storableMobile(req.body?.AdInstructorMobile);
+  if(mobile===null){res.status(400).json({error:"رقم الجوّال غير صالح — ثمانية أرقام تبدأ بـ5 أو 6 أو 9، أو رقمٌ دوليّ كامل."});return;}
   let person=await Repository.getInstructorByCivil(civil);
-  if(!person) person=await Repository.createInstructor(civil,name,"");
+  if(!person) person=await Repository.createInstructor(civil,name,mobile);
+  /* شخصٌ موجودٌ من قبل (منتدبٌ لقسمٍ آخر): يُكمَّل رقمُه إن كان بلا رقم، ولا
+     يُكتب فوق رقمٍ سجّله غيرُ هذا القسم. */
+  else if(mobile&&!whatsappNumber(person.AdInstructorMobile)) person=await Repository.updateInstructor(Number(person.AdInstructorId),String(person.AdInstructorCivil||civil),String(person.AdInstructorName||name),mobile,(person as any).AdInstructorStatus||null,(person as any).AdInstructorLoad??null);
   const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
   if(directory.includes(Number(person.AdInstructorId))){res.status(409).json({error:"هذا المنتدب موجود بالفعل في قائمة هذا القسم.",person});return;}
   await Repository.addDepartmentDelegate(collegeId,sectionId,Number(person.AdInstructorId));
@@ -5615,7 +5622,13 @@ app.put("/api/department-delegates/:instructorId", requirePermission(7), async (
   if(collision&&Number(collision.AdInstructorId)!==instructorId){res.status(409).json({error:"هذا الرقم المدني مرتبط بمنتدب آخر."});return;}
   const existing=await Repository.getInstructorById(instructorId);
   if(!existing){res.status(404).json({error:"المنتدب غير موجود"});return;}
-  const person=await Repository.updateInstructor(instructorId,civil,name,String(existing.AdInstructorMobile||""),(existing as any).AdInstructorStatus||null);
+  /* الجوّالُ لمن يديره هذا القسم (تحقّقنا أعلاه أنه في قائمته). غيابُ الحقل
+     يُبقي الرقم كما هو؛ والحقلُ الفارغ يمحوه صراحةً. */
+  const hasMobile=Object.prototype.hasOwnProperty.call(req.body||{},"AdInstructorMobile");
+  const mobile=hasMobile?storableMobile(req.body?.AdInstructorMobile):String(existing.AdInstructorMobile||"");
+  if(mobile===null){res.status(400).json({error:"رقم الجوّال غير صالح — ثمانية أرقام تبدأ بـ5 أو 6 أو 9، أو رقمٌ دوليّ كامل."});return;}
+  /* والنصابُ يُحمل كما هو: التعديلُ هنا لا يمسّه، وكان يمحوه. */
+  const person=await Repository.updateInstructor(instructorId,civil,name,mobile,(existing as any).AdInstructorStatus||null,(existing as any).AdInstructorLoad??null);
   res.json(person);
 });
 

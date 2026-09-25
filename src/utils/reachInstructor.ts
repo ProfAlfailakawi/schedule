@@ -1,4 +1,5 @@
 import type { AdInstructor } from "../types";
+import { digitsOnly } from "./digits";
 
 /**
  * ── كيف نصل إلى الأستاذ ─────────────────────────────────────────────────────
@@ -46,7 +47,8 @@ const COUNTRY = "965";
  * the correct answer when it is not met.
  */
 export function whatsappNumber(raw: string | undefined | null): string | null {
-  const digits = String(raw || "").replace(/\D/g, "");
+  /* الأرقام العربية والفارسية تُقرأ أرقاماً، لا تُمحى. */
+  const digits = digitsOnly(raw);
   if (!digits) return null;
   // Already carries the country code.
   if (digits.length === 11 && digits.startsWith(COUNTRY)) return digits;
@@ -55,6 +57,17 @@ export function whatsappNumber(raw: string | undefined | null): string | null {
   // An international number written in full, with or without a leading zero.
   if (digits.length >= 11 && digits.length <= 15) return digits.replace(/^0+/, "");
   return null;
+}
+
+/**
+ * الجوّال كما يُخزَّن: أرقامٌ لاتينية فقط، أو فارغ. ويُقبل فقط ما يستطيع
+ * ‎whatsappNumber‎ أن يصل إليه — القاعدةُ التي يُرسل بها هي التي يُحفظ بها.
+ * ‎null‎ = رقمٌ مكتوبٌ لا يصلح (يُردّ على كاتبه، لا يُحفظ صامتاً).
+ */
+export function storableMobile(raw: unknown): string | null {
+  const digits = digitsOnly(raw);
+  if (!digits) return "";
+  return whatsappNumber(digits) ? digits : null;
 }
 
 export interface ReachMessage {

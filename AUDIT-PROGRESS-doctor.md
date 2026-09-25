@@ -18,4 +18,4 @@
 | D14 | TODO | |
 | D15 | FIXED — roleGuard allows `/public/` prefix for authenticated read-only roles (token governs) | tests/role-guard-audit.ts (public section) |
 | D16 | FIXED — buildStaffCard returns upcomingExceptions (own cancellations/hand-offs and covers he does, next 14 days, Kuwait date) and departmentApprovals (status via APPROVAL_STATUS_LABEL, drafting when no record); card renders both read-only | tests/doctor-journey-audit.ts D16 |
-| D17 | TODO | |
+| D17 | FIXED — delegate POST/PUT (form 7, scope + directory checked) accept AdInstructorMobile via storableMobile (reachInstructor.ts, same rule as whatsappNumber; Arabic digits now read); POST fills gap only, never overwrites; PUT no longer wipes AdInstructorLoad; ScheduleTransfer add/edit mobile inputs + «بلا جوّال» hint | tests/doctor-journey-audit.ts D17 |
