@@ -33,39 +33,44 @@ export interface ArabicNoun {
   many: string;
 }
 
-/** Latin numerals inside Arabic text, matching this program's convention. */
-const ar = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
-
 /**
  * The counted phrase, whole.
  *
+ * واحد or واحدة — the adjective agrees with the noun it follows. Half this
+ * dictionary is feminine (محاضرة، قاعة، دقيقة، حركة …) and every one of them
+ * was reading «محاضرة واحد». The ة is the marker, and it is the only one
+ * needed here: no noun in this program is feminine without it.
+ *
+ * Numerals are Latin inside Arabic text, matching this program's convention.
+ *
  * @param zero  what to say for none. Defaults to «لا …», which reads better
  *              than «٠ …» in every place this program counts something.
- */
-/**
- * واحد or واحدة — the adjective agrees with the noun it follows.
  *
- * Half this dictionary is feminine (محاضرة، قاعة، دقيقة، حركة …) and every one
- * of them was reading «محاضرة واحد». The ة is the marker, and it is the only
- * one needed here: no noun in this program is feminine without it.
+ * SELF-CONTAINED ON PURPOSE: no helper, no closure, no nested function. The
+ * server-rendered public pages do not load the client bundle, so they receive
+ * this very function as source text (ARABIC_COUNT_SCRIPT below). Anything this
+ * body referenced from outside would be undefined in the browser.
  */
-const one = (noun: ArabicNoun) => (noun.one.endsWith("ة") ? "واحدة" : "واحد");
-
 export function countOf(value: number, noun: ArabicNoun, zero?: string): string {
   const n = Math.max(0, Math.round(Number(value) || 0));
-  if (n === 0) return zero ?? `لا ${noun.few}`;
-  if (n === 1) return `${noun.one} ${one(noun)}`;
+  if (n === 0) return zero ?? "لا " + noun.few;
+  if (n === 1) return noun.one + " " + (noun.one.slice(-1) === "ة" ? "واحدة" : "واحد");
   if (n === 2) return noun.two;
-
+  const shown = n.toLocaleString("ar-KW-u-nu-latn");
   const rest = n % 100;
   // A compound takes the form its last part demands, so ١٠٣ is «مواعيد» while
   // ١١١ is «موعداً» and ٢٠٠ is «موعد».
-  if (rest === 0 || rest === 1 || rest === 2) return `${ar(n)} ${noun.one}`;
-  if (rest >= 3 && rest <= 10) return `${ar(n)} ${noun.few}`;
-  return `${ar(n)} ${noun.many}`;
+  if (rest === 0 || rest === 1 || rest === 2) return shown + " " + noun.one;
+  if (rest >= 3 && rest <= 10) return shown + " " + noun.few;
+  return shown + " " + noun.many;
 }
 
-/** Just the noun in its correct form, when the number is displayed separately. */
+/**
+ * Just the noun in its correct form, when the number is displayed separately.
+ * Also agrees any four-form word with a count — a verb or an adjective that
+ * follows the counted noun (see the agreement forms at the end of AR).
+ * Self-contained for the same reason as countOf.
+ */
 export function nounFor(value: number, noun: ArabicNoun): string {
   const n = Math.max(0, Math.round(Number(value) || 0));
   if (n === 0) return noun.few;
@@ -125,4 +130,31 @@ export const AR = {
   link:        { one: "علاقة", two: "علاقتان", few: "علاقات", many: "علاقة" },
   row:         { one: "صف", two: "صفان", few: "صفوف", many: "صفاً" },
   department:  { one: "قسم", two: "قسمان", few: "أقسام", many: "قسماً" },
+  schedule:    { one: "جدول", two: "جدولان", few: "جداول", many: "جدولاً" },
+  position:    { one: "موضع", two: "موضعان", few: "مواضع", many: "موضعاً" },
+  gap:         { one: "فراغ", two: "فراغان", few: "فراغات", many: "فراغاً" },
+  edit:        { one: "تعديل", two: "تعديلان", few: "تعديلات", many: "تعديلاً" },
+  item:        { one: "بند", two: "بندان", few: "بنود", many: "بنداً" },
+  slot:        { one: "خانة", two: "خانتان", few: "خانات", many: "خانة" },
+  offering:    { one: "طرح", two: "طرحان", few: "طروح", many: "طرحاً" },
+
+  /* ── Agreement forms, read with nounFor(n, …) after a counted noun ──────
+   * A verb or adjective that follows a counted non-human noun is singular for
+   * one, dual for two, and feminine singular for the plural: «موعد لم يتغيّر»،
+   * «موعدان لم يتغيّرا»، «٤ مواعيد لم تتغيّر». Not nouns, but the same four
+   * slots, so they live in the same table and go through the same rule. */
+  unchangedVerb: { one: "لم يتغيّر", two: "لم يتغيّرا", few: "لم تتغيّر", many: "لم تتغيّر" },
+  affectedAdj:   { one: "متأثر", two: "متأثران", few: "متأثرة", many: "متأثراً" },
+  otherAdj:      { one: "آخر", two: "آخران", few: "أخرى", many: "آخر" },
+  otherFemAdj:   { one: "أخرى", two: "أخريان", few: "أخرى", many: "أخرى" },
 } as const satisfies Record<string, ArabicNoun>;
+
+/**
+ * The same rule, as browser source, for the server-rendered public pages that
+ * do not load the client bundle. It is not a second copy: it is the text of
+ * countOf and nounFor above plus the dictionary, so a correction here reaches
+ * every page. Inject once per page script: `${ARABIC_COUNT_SCRIPT}` defines
+ * `countOf`, `nounFor` and `AR` with the same signatures.
+ */
+export const ARABIC_COUNT_SCRIPT =
+  `var countOf=(${countOf.toString()});var nounFor=(${nounFor.toString()});var AR=${JSON.stringify(AR)};`;
