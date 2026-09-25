@@ -8,3 +8,4 @@ every role, through the same APIs the screens call. Test file: `tests/rehearsal-
 |----|--------------------------------|--------|------------|
 | R1 | Pending additions outlive the head's withdrawn/returned signature: head told «أُضيفت بعد اعتمادك» with no approval, committee badge counts additions it cannot act on, returned bell says «إقرار» instead of «اعتماد» | FIXED | rehearsal-audit R1 |
 | R2 | Head-return reaches the committee bell as a plain «وقّع جدول…»: neither the return nor its reason is said | FIXED | rehearsal-audit R2 |
+| R3 | Dean / vice-dean bell summary printed raw digits: «المعتمد 1 من جدولين», «بقي 1 لم يعتمده التسجيل بعد» | FIXED | rehearsal-audit R3, notification-center-audit |

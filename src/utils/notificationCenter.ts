@@ -366,10 +366,16 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
     const total = scopes.length;
     const done = scopes.filter(scope => lastAccepted(scope.approval)).length;
     if (total > 0) {
+      /* العددُ بصيغته العربية (countOf) في العنوان والتفصيل معاً: كان «المعتمد 1
+         من جدولين» و«بقي 1 لم يعتمده» — رقمٌ لاتينيٌّ وحده بلا معدود. */
+      const left = total - done;
       items.push({
         id: `final-summary:${done === total ? "all" : "partial"}`, tone: done === total ? "done" : "waiting",
-        title: done === total ? "كل جداول الأقسام معتمدة" : `المعتمد ${done} من ${countOf(total, oblique(AR.schedule))}`,
-        detail: done === total ? "الجداول النهائية جاهزة للاطّلاع." : `بقي ${total - done} لم يعتمده التسجيل بعد.`,
+        title: done === total ? "كل جداول الأقسام معتمدة"
+          : done === 0 ? (total === 1 ? "لم يُعتمد الجدول بعد" : `لم يُعتمد بعدُ أيٌّ من ${countOf(total, oblique(AR.schedule))}`)
+          : `اعتُمد ${countOf(done, AR.schedule)} من ${countOf(total, oblique(AR.schedule))}`,
+        detail: done === total ? "الجداول النهائية جاهزة للاطّلاع."
+          : `${countOf(left, AR.schedule)} ${left === 1 ? "لم يعتمده" : left === 2 ? "لم يعتمدهما" : "لم يعتمدها"} التسجيل بعد.`,
         view: routeFor(role, "final"),
       });
     }

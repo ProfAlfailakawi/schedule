@@ -112,5 +112,27 @@ const block = (source: string, start: string, end = "\napp.") => {
   check(head.some(entry => entry.tone === "waiting" && entry.title.includes("أرجعتَ")), "R2: ورئيسُ القسم يرى أنه ينتظر اللجنة");
 }
 
+/* ══ R3: ملخّصُ العميد بالعدّ العربي ═════════════════════════════════════════
+ * البروفة: جرسُ العميد والعميد المساعد قال «المعتمد 1 من جدولين» و«بقي 1 لم
+ * يعتمده التسجيل بعد» — رقمٌ لاتينيٌّ بلا معدود، خلافَ قاعدة countOf. */
+{
+  const accepted = [{ number: 1, submittedAt: "2026-09-01T00:00:00Z", acceptedAt: "2026-09-02T00:00:00Z" }];
+  const scopeOf = (status: any, rounds: any[] = []) => ({
+    approval: { ...emptyApproval(1, 1, 1), status, rounds, currentRound: rounds.length },
+    collegeName: "ك", sectionName: `ق${Math.random()}`, rowCount: 7, openRegistrarNotes: 0, openRequests: 0,
+  } as unknown as CenterScope);
+  const summary = (scopes: CenterScope[]) => buildNotifications({ role: "dean", scopes }).find(item => item.id.startsWith("final-summary"))!;
+  const one = summary([scopeOf("accepted", accepted), scopeOf("submitted")]);
+  check(one.title === "اعتُمد جدول واحد من جدولين" && one.detail === "جدول واحد لم يعتمده التسجيل بعد.",
+    "R3: «اعتُمد جدول واحد من جدولين» و«جدول واحد لم يعتمده التسجيل بعد»");
+  const none = summary([scopeOf("submitted"), scopeOf("drafting"), scopeOf("returned")]);
+  check(none.title === "لم يُعتمد بعدُ أيٌّ من 3 جداول" && none.detail === "3 جداول لم يعتمدها التسجيل بعد.",
+    "R3: ولا «المعتمد 0»: «لم يُعتمد بعدُ أيٌّ من 3 جداول»");
+  const two = summary([scopeOf("accepted", accepted), scopeOf("submitted"), scopeOf("drafting")]);
+  check(two.detail === "جدولان لم يعتمدهما التسجيل بعد.", "R3: والمثنّى بضميره «لم يعتمدهما»");
+  const center = read("src/utils/notificationCenter.ts");
+  check(!/`المعتمد \$\{done\}|بقي \$\{total - done\}/.test(center), "R3: لا رقمَ خامٌ في ملخّص العميد");
+}
+
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
