@@ -13,6 +13,8 @@ import { coversWholeCollege, expandScopeSections, resolveSmartScope, type ScopeP
 import { finalSourceFor, HISTORICAL_FINALITY_LABEL } from "../src/utils/finality";
 import { buildNotifications, routeFor, type CenterScope } from "../src/utils/notificationCenter";
 import { emptyApproval } from "../src/utils/approvalWorkflow";
+import { daysLeftUntil, isLate } from "../src/utils/lateness";
+import { mergeBalanceDepartments } from "../src/components/Reports";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -179,6 +181,49 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(fn.includes("isReadOnlyRole(req.user?.Role)") && fn.includes('AdInstructorCivil: ""') && fn.includes('AdInstructorMobile: ""'), "N13: صفات الاطّلاع لا ترى الرقم المدني ولا الهاتف");
   const search = routeBody('app.get("/api/search"');
   check(search.includes("instructorsForReader(req, instructors)") && search.includes("readerInstructorCivil(ins)"), "N13: البحث العام لا يكشف الرقم المدني ولا يطابق عليه للقارئ");
+}
+
+/* ══ N3 / N21 — «متأخّر» قاعدةٌ واحدة ════════════════════════════════════ */
+{
+  const now = "2026-09-25T09:00:00Z";
+  check(isLate({ approvalStatus: null, submittedRounds: 0, deadline: "2026-09-20", now }), "N3: قسمٌ لم يبدأ بعد انقضاء الموعد متأخّر");
+  check(isLate({ approvalStatus: "drafting", rowCount: 0, deadline: "2026-09-20", now }), "N3: «قيد الإعداد» يتأخّر أيضاً (كان لا يتأخّر أبداً)");
+  check(!isLate({ approvalStatus: "drafting", deadline: "2026-09-20", extension: "2026-10-01", now }), "N21: التمديد يتقدّم على موعد الفصل");
+  check(!isLate({ approvalStatus: "submitted", submittedRounds: 1, deadline: "2026-09-20", now }), "N3: من سلّم ليس متأخّراً");
+  check(!isLate({ approvalStatus: "drafting", submittedRounds: 2, deadline: "2026-09-20", now }), "N3: من سلّم من قبل ليس متأخّراً");
+  check(!isLate({ approvalStatus: null, deadline: "2026-09-25", now }), "N3: اليوم الأخير نفسه ليس تأخّراً");
+  check(!isLate({ approvalStatus: null, now }), "N3: بلا موعدٍ لا تأخّر");
+  check(daysLeftUntil({ deadline: "2026-09-28", now }) === 3, "N4: الأيام الباقية من الدالّة نفسها");
+  const term = routeBody('app.get("/api/approvals/term"');
+  check(term.includes("notStarted") && term.includes('statusLabel: "لم يبدأ"'), "N3: الخادم يعيد أقسام النطاق التي لم تبدأ");
+  check((term.match(/isLate\(/g) || []).length === 2, "N3: التأخّر في الخادم من isLate وحدها");
+  const reports = read("src/components/Reports.tsx");
+  check(reports.includes("late: Boolean(row.late)") && !reports.includes("Boolean(row.deadline?.past) && Number(row.currentRound"),
+    "N3: الميزان لا يحسب التأخّر بنفسه");
+  check(reports.includes("mergeBalanceDepartments(balance?.departments || [], approvals)"), "N3: أقسامُ النطاق بلا مواعيد تُدمج في الميزان");
+  const nc = read("src/utils/notificationCenter.ts");
+  check(nc.includes("isLate({") && !nc.includes('tone: input.deadline?.past ? "alert"'), "N21: جرس التسجيل يحكم بالقاعدة الواحدة وبتمديد كل قسم");
+  const extended = buildNotifications({ role: "registrarHead", now: Date.parse(now), deadline: { effective: "2026-09-20", past: true },
+    scopes: [{ approval: { ...emptyApproval(1, 11, 9) } as any, collegeName: "ك", sectionName: "ق", rowCount: 0, openRegistrarNotes: 0, openRequests: 0, deadline: { effective: "2026-10-05", past: false } }] });
+  check(extended.find(item => item.id.startsWith("not-submitted"))?.tone === "waiting", "N21: قسمٌ مُدِّد له لا يُنبَّه عليه «متأخّراً»");
+  const bell = routeBody('app.get("/api/notifications"');
+  check(bell.includes("|| watchesSubmission;"), "N21: الجرس يعدّ أقسام النطاق التي لم تكتب شيئاً لمن يُحاسِب على التسليم");
+}
+
+/* ══ N4 / N5 — الميزان لكل النطاق، ويقول نطاقه ═══════════════════════════ */
+{
+  const reports = read("src/components/Reports.tsx");
+  const fetchAt = reports.indexOf("fetch(`/api/approvals/term?${query}`");
+  const before = reports.slice(fetchAt - 700, fetchAt);
+  check(fetchAt > 0 && !before.includes('query.set("collegeId"'), "N4: حالات الاعتماد تُقرأ لكل كليات النطاق");
+  check(reports.includes("countOf(state.daysLeft, AR.day"), "N4: الموعد والأيام الباقية لكل قسم (countOf)");
+  check(reports.includes('isDeanReader && !filters.collegeId ? "اختر الكلية"'), "N4: عميدٌ بكليتين لم يختر يُقال له ذلك، لا «لم يُعتمد شيء»");
+  check(!reports.includes("على مستوى الجامعة</span>") && reports.includes('balance.totals.scopeLabel || "في نطاقك"'), "N5: لا «على مستوى الجامعة» للعميد");
+  check(reports.includes("(موثّقة {num(item.verifiedRooms)})"), "N5: القاعات الموثّقة تُذكر حين يرسلها الخادم");
+  check(reports.includes("يشمل الجداول قيد الإعداد"), "N5: الميزان يقول إنه يشمل ما لم يُعتمد");
+  const merged = mergeBalanceDepartments([{ sectionId: 11, sectionName: "أ", rows: 4 }],
+    new Map([[11, { status: "drafting", late: false, round: 0 }], [12, { status: "notStarted", late: true, round: 0, sectionName: "ب", collegeName: "ك" }]]) as any);
+  check(merged.length === 2 && merged[1].empty === true && merged[1].rows === 0, "N3: القسم الذي لم يبدأ صفٌّ بأصفارٍ صريحة");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

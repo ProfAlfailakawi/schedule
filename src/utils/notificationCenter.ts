@@ -7,6 +7,8 @@
  */
 import type { ScheduleApproval } from "../types";
 import { roleDefinition } from "./academicRoles";
+import { isLate } from "./lateness";
+import { AR, countOf } from "./arabicCount";
 
 export type NotificationTone = "action" | "waiting" | "done" | "alert";
 export type NotificationView = "scheduleChanges" | "schedules" | "instructorRequests" | "reportDepartment" | "studentRegistration";
@@ -121,14 +123,21 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
         view: routeFor(role, "approval"), at: round?.submittedAt, ...target(scope),
       });
     }
-    const notYet = scopes.filter(scope => !scope.approval.rounds.length).length;
+    const notYetScopes = scopes.filter(scope => !scope.approval.rounds.length);
+    const notYet = notYetScopes.length;
+    /* التأخّر بالقاعدة الواحدة، وبموعد كل قسمٍ (تمديده إن وُجد) — لا بموعد
+       الفصل وحده: قسمٌ مُدِّد له ليس متأخّراً (N21). */
+    const lateCount = notYetScopes.filter(scope => isLate({
+      approvalStatus: scope.approval.status, submittedRounds: scope.approval.currentRound,
+      deadline: scope.deadline?.effective ?? input.deadline?.effective, now: input.now,
+    })).length;
     if (notYet > 0) {
       items.push({
-        id: `not-submitted:${notYet}`, tone: input.deadline?.past ? "alert" : "waiting",
+        id: `not-submitted:${notYet}`, tone: lateCount > 0 ? "alert" : "waiting",
         title: notYet === 1 ? "قسمٌ واحد لم يسلّم جدوله بعد" : notYet === 2 ? "قسمان لم يسلّما جدولَيهما بعد" : `${notYet} ${notYet <= 10 ? "أقسام" : "قسماً"} لم تسلّم جداولها بعد`,
-        detail: input.deadline?.effective
-          ? (input.deadline.past ? "انقضى موعد التسليم." : `آخر موعد للتسليم ${day(input.deadline.effective)}.`)
-          : "لم يُحدَّد موعد التسليم بعد.",
+        detail: lateCount > 0
+          ? (lateCount === notYet ? "انقضى موعد التسليم." : `${countOf(lateCount, AR.department)} منها تجاوز موعده.`)
+          : input.deadline?.effective ? `آخر موعد للتسليم ${day(input.deadline.effective)}.` : "لم يُحدَّد موعد التسليم بعد.",
         view: routeFor(role, "final"),
       });
     }

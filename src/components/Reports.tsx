@@ -482,7 +482,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [printApproval, setPrintApproval] = useState<PrintApproval | null>(null);
   const [changesAppendix, setChangesAppendix] = useState<ChangesAppendix | null>(null);
   /** حال الاعتماد لكل قسمٍ في الفصل — تُقرأ مرّةً لميزان الأقسام كله. */
-  const [termApprovals, setTermApprovals] = useState<Map<number, { status: ScheduleApprovalStatus; late: boolean; round: number; deadline?: string }> | null>(null);
+  const [termApprovals, setTermApprovals] = useState<Map<number, BalanceApprovalState> | null>(null);
   const [appendixBusy, setAppendixBusy] = useState(false);
   const [authorityReport, setAuthorityReport] = useState<AuthorityReport | null>(null);
   /* تقرير التغييرات للقسم كله: تقرير لكل موقع، مرتبة كما تُقرأ — الموقع
@@ -534,25 +534,31 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
        ميزانَ الأقسام — فمن ينظر في القاعات لا شأن له بحال الاعتماد. */
     if (lens !== "balance" || !filters.termId) { setTermApprovals(null); return; }
     const controller = new AbortController();
+    /* الحالات لكل كليات النطاق، لا للكلية المختارة وحدها (N4): الميزان يعرض
+       أقسام النطاق كله، وعميدٌ بكليتين لم يختر واحدةً كان يرى أقسام الثانية
+       «قيد الإعداد» وهي معتمدة. والخادم يُصفّي بالنطاق. */
     const query = new URLSearchParams({ termId: String(filters.termId) });
-    if (filters.collegeId) query.set("collegeId", String(filters.collegeId));
     fetch(`/api/approvals/term?${query}`, { signal: controller.signal })
       .then(response => (response.ok ? response.json() : null))
       .then(data => {
         if (!data?.approvals) { setTermApprovals(null); return; }
-        setTermApprovals(new Map(data.approvals.map((row: any) => [
+        const entry = (row: any): [number, BalanceApprovalState] => [
           Number(row.AdSectionId),
           {
-            status: row.status as ScheduleApprovalStatus,
-            late: Boolean(row.deadline?.past) && Number(row.currentRound || 0) === 0,
+            status: row.status,
+            /* التأخّر من الخادم، بالقاعدة الواحدة (src/utils/lateness.ts). */
+            late: Boolean(row.late),
             round: Number(row.currentRound || 0),
             deadline: row.deadline?.effective,
+            daysLeft: typeof row.deadline?.daysLeft === "number" ? row.deadline.daysLeft : undefined,
+            sectionName: row.sectionName, collegeName: row.collegeName, collegeId: Number(row.AdCollegeId || 0),
           },
-        ])));
+        ];
+        setTermApprovals(new Map([...data.approvals.map(entry), ...(data.notStarted || []).map(entry)]));
       })
       .catch(() => setTermApprovals(null));
     return () => controller.abort();
-  }, [lens, filters.termId, filters.collegeId]);
+  }, [lens, filters.termId]);
 
   useEffect(() => {
     const { collegeId, sectionId, termId } = filters;
@@ -2073,9 +2079,11 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         ) : !results.length && lens !== "room" && lens !== "balance" && lens !== "visitingHistory" ? (
           <div className="query-empty">
             <EmptyState
-              title={error ? "تعذّرت القراءة" : (roleId === "dean" || roleId === "viceDean") ? "لا جدول معتمد بعد" : "لا نتائج"}
+              title={error ? "تعذّرت القراءة" : isDeanReader && !filters.collegeId ? "اختر الكلية" : isDeanReader ? "لا جدول معتمد بعد" : "لا نتائج"}
               detail={error ? "لم تصل بيانات النطاق — أعد المحاولة من الشريط أعلاه."
-                : (roleId === "dean" || roleId === "viceDean") ? "لم يعتمد التسجيلُ جدولَ أي قسمٍ في هذا النطاق حتى الآن. تابع التقدّم في «ميزان الأقسام»."
+                /* عميدٌ بأكثر من كلية لم يختر واحدة: ليس «لم يُعتمد شيء» (N4). */
+                : isDeanReader && !filters.collegeId ? "نطاقك يشمل أكثر من كلية. اختر كليةً من الشريط أعلاه لعرض جداولها، أو افتح «ميزان الأقسام» لترى أقسام النطاق كله."
+                : isDeanReader ? "لم يعتمد التسجيلُ جدولَ أي قسمٍ في هذا النطاق حتى الآن. تابع التقدّم في «ميزان الأقسام»."
                 : "خفّف المرشحات"}
             />
           </div>
@@ -2810,6 +2818,45 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
  * who carries it, how evenly, and what is still blocking it — and the sorting
  * is the point, because the question is always "which one is the outlier".
  */
+/** حالُ قسمٍ في عمود الاعتماد — «notStarted» لقسمٍ بلا سجلّ بعد. */
+interface BalanceApprovalState {
+  status: ScheduleApprovalStatus | "notStarted";
+  late: boolean;
+  round: number;
+  deadline?: string;
+  daysLeft?: number;
+  sectionName?: string;
+  collegeName?: string;
+  collegeId?: number;
+}
+
+const formatBalanceDate = (iso: string) => {
+  const date = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" });
+};
+
+const balanceStatusLabel = (status: BalanceApprovalState["status"]) =>
+  status === "notStarted" ? "لم يبدأ" : APPROVAL_STATUS_LABEL[status];
+
+/**
+ * صفوف الميزان: أقسامٌ لها مواعيد (من الخادم)، ومعها أقسامُ النطاق التي لم
+ * تبدأ أو لم تكتب موعداً بعد (N3) — بأصفارٍ صريحة، لا غيابٍ صامت.
+ */
+export function mergeBalanceDepartments(departments: any[], approvals?: Map<number, BalanceApprovalState>): any[] {
+  const list = [...(departments || [])];
+  if (!approvals) return list;
+  const present = new Set(list.map(item => Number(item.sectionId)));
+  for (const [sectionId, state] of approvals) {
+    if (present.has(sectionId) || !state.sectionName) continue;
+    list.push({
+      sectionId, sectionName: state.sectionName, collegeName: state.collegeName || "",
+      rows: 0, instructors: 0, rooms: 0, morningPct: 0, eveningPct: 0, fairness: 0, quality: 0, conflicts: 0,
+      empty: true,
+    });
+  }
+  return list;
+}
+
 function BalancePanel({ balance, sort, onSort, num, approvals }: {
   balance: any;
   sort: { key: string; desc: boolean };
@@ -2824,7 +2871,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
    * له صفٌّ واحد لكل قسم، وميزان الأقسام صفٌّ واحد لكل قسم. ولوحةٌ ثانية تقول
    * الشيء نفسه هي شاشةٌ تُصان مرّتين وتفترق عن أختها عند أول تعديل.
    */
-  approvals?: Map<number, { status: ScheduleApprovalStatus; late: boolean; round: number; deadline?: string }>;
+  approvals?: Map<number, BalanceApprovalState>;
 }) {
   const COLUMNS = [
     { key: "sectionName", label: "القسم العلمي" },
@@ -2840,7 +2887,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
   /* ترتيبٌ بالحال لا بالاسم: «متأخّر» أولاً لأنه أعجلُ ما في الجدول، ثم ما
      يُنتظر منه فعل، ثم ما اكتمل. والرقم يخدم الفرز وحده ولا يُعرض. */
   const APPROVAL_ORDER: Record<string, number> = {
-    late: 0, drafting: 1, committee: 2, head: 3, returned: 4, submitted: 5, accepted: 6,
+    late: 0, notStarted: 1, drafting: 2, committee: 3, head: 4, returned: 5, submitted: 6, accepted: 7,
   };
   /* ── فرزٌ لا يبقى معلّقاً على عمودٍ زال ────────────────────────────────
    * عمودُ الاعتماد لا يظهر إلا حين تُقرأ الحالات، وقد تُخفق القراءة أو تتبدّل
@@ -2851,7 +2898,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
   }, [approvals, sort.key, onSort]);
 
   const ordered = useMemo(() => {
-    const list = [...(balance?.departments || [])];
+    const list = mergeBalanceDepartments(balance?.departments || [], approvals);
     const direction = sort.desc ? -1 : 1;
     return list.sort((a: any, b: any) => {
       if (sort.key === "sectionName") return byArabic(a.sectionName, b.sectionName) * direction;
@@ -2873,14 +2920,16 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
       <header className="balance-head">
         <div>
           <span className="surface-kicker">ميزان الأقسام · {balance.termName}</span>
-          <h3>{num(balance.totals.departments)} قسماً · {num(balance.totals.rows)} موعداً</h3>
+          <h3><bdi>{countOf(Number(balance.totals.departments || 0), AR.department)}</bdi> · <bdi>{countOf(Number(balance.totals.rows || 0), AR.appointment)}</bdi></h3>
         </div>
+        {/* النطاقُ كما يقوله الخادم، وإلا «في نطاقك»: العميد لا يرى الجامعة (N5). */}
         {balance.totals.conflicts ? (
-          <span className="balance-flag">{num(balance.totals.conflicts)} مانع اعتماد على مستوى الجامعة</span>
+          <span className="balance-flag">موانع الاعتماد {balance.totals.scopeLabel || "في نطاقك"}: <bdi>{countOf(Number(balance.totals.conflicts), AR.blocker)}</bdi></span>
         ) : (
-          <span className="balance-clear">لا موانع اعتماد في أي قسم</span>
+          <span className="balance-clear">لا موانع اعتماد {balance.totals.scopeLabel || "في نطاقك"}</span>
         )}
       </header>
+      <p className="balance-note">يشمل الجداول قيد الإعداد — الأعداد هنا لما كُتب حتى الآن، معتمداً أو لم يُعتمد.</p>
       <div className="balance-scroll">
         <table className="balance-table">
           <thead>
@@ -2912,20 +2961,35 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
                     {(() => {
                       const state = approvals.get(Number(item.sectionId));
                       if (!state) return <span className="approval-chip" data-status="drafting">قيد الإعداد</span>;
+                      const handedOver = state.status === "submitted" || state.status === "accepted" || state.status === "returned";
                       return (
                         <>
                           <span className="approval-chip" data-status={state.late ? "late" : state.status}>
-                            {state.late ? "متأخّر عن الموعد" : APPROVAL_STATUS_LABEL[state.status]}
+                            {state.late ? "متأخّر عن الموعد" : balanceStatusLabel(state.status)}
                           </span>
                           {state.round > 1 ? <small>الجولة {num(state.round)}</small> : null}
+                          {state.deadline && !handedOver ? (
+                            <small className="balance-deadline">
+                              {state.late
+                                ? <>انقضى الموعد <bdi>{formatBalanceDate(state.deadline)}</bdi></>
+                                : typeof state.daysLeft === "number"
+                                  ? <>بقي <bdi>{countOf(state.daysLeft, AR.day, "اليوم آخر موعد")}</bdi> · <bdi>{formatBalanceDate(state.deadline)}</bdi></>
+                                  : <bdi>{formatBalanceDate(state.deadline)}</bdi>}
+                            </small>
+                          ) : null}
                         </>
                       );
                     })()}
                   </td>
                 ) : null}
                 <td>{num(item.rows)}</td>
-                <td>{num(item.instructors)}</td>
-                <td>{num(item.rooms)}</td>
+                <td>{item.empty ? "—" : num(item.instructors)}</td>
+                <td>{item.empty ? "—" : typeof item.verifiedRooms === "number"
+                  ? <>{num(item.rooms)} <small>(موثّقة {num(item.verifiedRooms)})</small></>
+                  : num(item.rooms)}</td>
+                {item.empty ? (
+                  <td colSpan={4} className="balance-empty-cells"><small>لا مواعيد بعد</small></td>
+                ) : (<>
                 <td>
                   {/* Morning against evening as one bar, rather than two numbers
                       to subtract in your head. */}
@@ -2946,6 +3010,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals }: {
                   </span>
                 </td>
                 <td>{item.conflicts ? <b className="balance-bad">{num(item.conflicts)}</b> : <span className="balance-ok">—</span>}</td>
+                </>)}
               </tr>
             ))}
           </tbody>

@@ -25,6 +25,7 @@ import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { expandScopeSections, resolveSmartScope } from "./src/server/readScope";
 import { finalSourceFor, type Finality } from "./src/utils/finality";
+import { isLate } from "./src/utils/lateness";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -9207,13 +9208,33 @@ app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, re
   const today = new Date().toISOString().slice(0, 10);
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
   const visible = rows.filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
+  /* ── الأقسام التي لم تبدأ (N3) ─────────────────────────────────────────
+   * لا سجلَّ لها، فكانت تغيب عن الميزان كلياً — وهي أهمّ ما يسأل عنه العميد.
+   * تُبنى هنا من سجلّ الأقسام في نطاق القارئ، بحال «لم يبدأ»، ويُحكم على
+   * تأخّرها وتأخّر غيرها بالقاعدة الواحدة `isLate` (src/utils/lateness.ts). */
+  const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const collegeName = new Map(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const started = new Set(rows.map(row => `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`));
+  const notStarted = sections
+    .filter((row: any) => (!collegeId || Number(row.AdCollegeId) === collegeId)
+      && !started.has(`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`)
+      && (req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))))
+    .map((row: any) => ({
+      AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId),
+      sectionName: String(row.AdSectionName || ""), collegeName: collegeName.get(Number(row.AdCollegeId)) || "",
+      status: "notStarted" as const, statusLabel: "لم يبدأ",
+      deadline: readDeadline({ termDeadline }, today),
+      late: isLate({ approvalStatus: null, submittedRounds: 0, deadline: termDeadline }),
+    }));
   res.json({
     termDeadline,
     approvals: visible.map(row => ({
       ...row,
       statusLabel: APPROVAL_STATUS_LABEL[row.status],
       deadline: readDeadline({ termDeadline, extensionUntil: row.extensionUntil, extensionReason: row.extensionReason }, today),
+      late: isLate({ approvalStatus: row.status, submittedRounds: row.currentRound, deadline: termDeadline, extension: row.extensionUntil }),
     })),
+    notStarted,
   });
 });
 
@@ -9891,9 +9912,13 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
       }
     }
   }
+  const watchesSubmission = registrarReader || role === "registrarDean" || role === "dean" || role === "viceDean";
   const active = inScope.filter(row => {
     const key = `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`;
-    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || studentQueueByScope.has(key) || department;
+    /* من يُحاسِب على التسليم (التسجيل، والعميدان، وعميد التسجيل) يُعدّ له كلُّ
+       قسمٍ في نطاقه — قسمٌ لم يكتب شيئاً ولم يبدأ الدورة هو أوّلُ من يتأخّر،
+       وكان يسقط من الجرس لأنه بلا صفوف ولا سجلّ (N21). */
+    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || studentQueueByScope.has(key) || department || watchesSubmission;
   });
   const scopes = await Promise.all(active.map(async row => {
     const collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
