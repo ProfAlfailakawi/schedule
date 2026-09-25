@@ -170,10 +170,10 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
       const failed = (data.results || []).filter((row: any) => !row.ok && !row.unchanged);
       if (failed.length) {
         setFailures(failed);
-        setError(`طُبّق على ${countOf(Number(data.applied || 0), AR.department)}، وتعذّر ${countOf(failed.length, oblique(AR.department))}.`);
+        setError(`طُبّق على ${countOf(Number(data.applied || 0), oblique(AR.department))}، وتعذّر ${countOf(failed.length, AR.department)}.`);
         onApplied("");
       } else {
-        onApplied(`طُبّق الاستثناء على ${countOf(Number(data.applied || 0), AR.department)}.`);
+        onApplied(`طُبّق الاستثناء على ${countOf(Number(data.applied || 0), oblique(AR.department))}.`);
         onClose();
       }
     } catch (e: any) { setError(e.message); }
@@ -249,12 +249,13 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
             <div className="sd-chips">
               {EXCEPTION_DAY_CHIPS.map(value => (
                 <button key={value} type="button" className="sd-chip" data-active={days === value || undefined} aria-pressed={days === value}
+                  aria-label={`${countOf(value, AR.day)} إضافية`} title={countOf(value, AR.day)}
                   data-guide-ignore="اختيار عدد الأيام داخل الورقة — اختيارٌ لا فعل" onClick={() => setDays(value)}>
-                  +{countOf(value, AR.day)}
+                  <bdi dir="ltr">+{value}</bdi>
                 </button>
               ))}
               <label className="sd-days-input">
-                <span>أو</span>
+                <span>أو اكتب</span>
                 <input type="number" min={1} max={EXCEPTION_MAX_DAYS} value={days} onChange={e => setDays(Math.round(Number(e.target.value) || 0))} aria-label="عدد الأيام" />
                 <span>{nounFor(days, AR.day)}</span>
               </label>
@@ -297,7 +298,7 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
         <div className="changes-extend-actions">
           <SecondaryButton type="button" data-guide-ignore="إلغاء الاستثناء قبل تطبيقه — لا يغيّر شيئاً" onClick={onClose}>إلغاء</SecondaryButton>
           <PrimaryButton type="button" data-guide-target="changes.action.exceptions" disabled={busy || Boolean(refusal) || !targets.length} onClick={apply}>
-            {busy ? "يطبّق…" : targets.length ? `طبّق على ${countOf(targets.length, AR.department)}` : "طبّق"}
+            {busy ? "يطبّق…" : targets.length ? `طبّق على ${countOf(targets.length, oblique(AR.department))}` : "طبّق"}
           </PrimaryButton>
         </div>
       </div>

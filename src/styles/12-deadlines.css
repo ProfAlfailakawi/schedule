@@ -215,12 +215,12 @@
 .sd-seg button:focus-visible{outline:none;box-shadow:var(--ring)}
 .sd-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .sd-chip{
-  padding:6px 13px;border-radius:var(--r-full);cursor:pointer;font:inherit;font-size:.85rem;font-weight:700;
+  min-inline-size:48px;padding:6px 13px;font-variant-numeric:tabular-nums;border-radius:var(--r-full);cursor:pointer;font:inherit;font-size:.85rem;font-weight:700;
   border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-2);
 }
 .sd-chip[data-active]{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
 .sd-chip:focus-visible{outline:none;box-shadow:var(--ring)}
-.sd-days-input{display:inline-flex;align-items:center;gap:6px;font-size:.84rem;color:var(--muted)}
+.sd-days-input,.changes-extend-card .sd-days-input{display:inline-flex;align-items:center;gap:6px;font-size:.84rem;color:var(--muted)}
 .sd-days-input input{inline-size:74px;min-block-size:34px;padding:4px 8px;text-align:center}
 
 .sd-picker{display:grid;gap:8px}
@@ -242,7 +242,7 @@
 }
 .sd-picker-college[data-on] .sd-check{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
 .sd-check svg{inline-size:12px;block-size:12px}
-.sd-picker-row{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 6px;padding-inline-start:28px;border-radius:var(--r-xs);cursor:pointer;font-size:.86rem;color:var(--ink)}
+.sd-picker-row,.changes-extend-card .sd-picker-row{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 6px;padding-inline-start:28px;border-radius:var(--r-xs);cursor:pointer;font-size:.86rem;color:var(--ink)}
 .sd-picker-row:hover{background:var(--surface)}
 .sd-picker-row input{accent-color:var(--accent);inline-size:16px;block-size:16px}
 .sd-picker-row small{margin-inline-start:auto;color:var(--brass);font-size:.74rem}
@@ -264,6 +264,7 @@
   .sd-hero{gap:12px}
   .sd-tile{inline-size:74px}
   .sd-tile b{font-size:1.75rem}
+  .sd-hero-text{flex-basis:150px}
   .sd-edit{inline-size:100%;justify-content:center}
   .sd-strip{flex-wrap:wrap}
   .sd-strip .sd-toggle{margin-inline-start:auto}
@@ -280,3 +281,7 @@
   .sd-preset{transition:none}
   .sd-preset:hover:not(:disabled){transform:none}
 }
+
+/* حقولُ الورقة المنبثقة عامّةٌ (40px)؛ مربّعُ الاختيار وحقلُ الأيام ليسا منها. */
+.changes-extend-card .sd-picker-row input{min-block-size:0;padding:0;inline-size:16px;block-size:16px}
+.changes-extend-card .sd-days-input input{min-block-size:34px;inline-size:74px;padding:4px 8px}
