@@ -1348,6 +1348,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ...(importLayout ? { importLayout } : {}),
                 ...(importLayout === "authority-pdf" ? {
                   importReceipt: importPreview?.importReceipt,
+                  reviewedPages: reviewedImportPages,
                   sourceFileName: importPreview?.fileName,
                   sourceBranchCode: importPreview?.headerBranch?.code,
                   sourceBranchName: importPreview?.headerBranch?.name,
@@ -1739,7 +1740,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId, source: "import", importLayout: "authority-pdf",
           name: `نسخة PDF المعتمدة — ${importPreview.fileName || ""}`.trim(),
-          sourceFileName: importPreview.fileName, rows: importPreview.rows,importReceipt:importPreview.importReceipt,
+          sourceFileName: importPreview.fileName, rows: importPreview.rows,importReceipt:importPreview.importReceipt,reviewedPages:reviewedImportPages,
           previewIssues:importBlockingIssues,sourceBranchCode:importPreview.headerBranch?.code,sourceBranchName:importPreview.headerBranch?.name }),
       });
       await fetchJson(`/api/intelligence/drafts/${draft.id}/publish`, {

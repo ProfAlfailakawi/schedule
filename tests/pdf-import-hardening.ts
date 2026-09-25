@@ -15,7 +15,7 @@ import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMa
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
 import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
-import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine } from "../src/utils/importPageReview.ts";
+import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine, unconfirmedReviewPages } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
 const check=(name:string,fn:()=>void)=>{fn();passed.push(name);};
@@ -332,6 +332,34 @@ check("a scanned instructor name garbled by noise is shown as its clean words an
   const report=readFileSync(new URL("../src/components/AuthorityPdfReport.tsx",import.meta.url),"utf8");
   assert.match(report,/displayInstructorText\(row\.sourceInstructorText\)/);
   assert.doesNotMatch(report,/\|\| row\.sourceInstructorText \|\|/);
+});
+check("the server refuses a scanned draft whose waiting pages were not confirmed, whatever the client",()=>{
+  /* The rule: pages the signed receipt requires, minus the pages the request confirms. */
+  assert.deepEqual(unconfirmedReviewPages([5,2],[]),[2,5]);
+  assert.deepEqual(unconfirmedReviewPages([2,5],[5]),[2]);
+  assert.deepEqual(unconfirmedReviewPages([2,5],[2,5,9]),[],"confirming more pages than required is harmless");
+  assert.deepEqual(unconfirmedReviewPages(undefined,undefined),[],"a receipt signed before this field asks for nothing");
+  assert.deepEqual(unconfirmedReviewPages([2],["2"]),[],"a page number sent as text still counts");
+  assert.deepEqual(unconfirmedReviewPages([2],"2"),[2],"a request that is not a list confirms nothing");
+  assert.deepEqual(unconfirmedReviewPages([2,"x",-1,1.5],[]),[2],"only whole positive page numbers are pages");
+  /* Wired end to end: signed at preview, checked at draft, sent by every scanned-draft request. */
+  const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
+  assert.match(server,/const reviewPages=pagesAwaitingReview\(recognized\.pageDiagnostics,\[\]\);[\s\S]{0,400}\.\.\.\(reviewPages\.length\?\{reviewPages\}:\{\}\)/,"the preview signs the waiting pages into its receipt");
+  const draftRoute=server.slice(server.indexOf('app.post("/api/intelligence/drafts", '),server.indexOf('\napp.',server.indexOf('app.post("/api/intelligence/drafts", ')+10));
+  assert.match(draftRoute,/unconfirmedReviewPages\(receipt\?\.reviewPages,req\.body\?\.reviewedPages\)/);
+  assert.match(draftRoute,/code:"PDF_PAGE_REVIEW_REQUIRED"/);
+  /* A window from the previous release sends no list at all: it is told so, never told to "refresh". */
+  assert.match(draftRoute,/const outdated=!Array\.isArray\(req\.body\?\.reviewedPages\);/);
+  assert.match(draftRoute,/هذه النافذة من إصدار سابق للنظام\. أغلقها ثم أعد رفع الملف؛ لم يُحفظ شيء\./);
+  assert.doesNotMatch(draftRoute,/حدّث الصفحة/);
+  assert.ok(draftRoute.indexOf("PDF_PAGE_REVIEW_REQUIRED")<draftRoute.indexOf("createScheduleDraft"),"the refusal comes before anything is saved");
+  for(const file of ["ScheduleTransfer.tsx","IntelligenceWorkspace.tsx"]){
+    const source=readFileSync(new URL(`../src/components/${file}`,import.meta.url),"utf8");
+    const receipts=source.match(/importReceipt\s*:\s*[^,\n]*importReceipt/g)||[];
+    const confirmations=source.match(/reviewedPages\s*:\s*[^,\n]*reviewedImportPages/g)||[];
+    assert.ok(receipts.length>0,`${file} sends a receipt`);
+    assert.equal(confirmations.length,receipts.length,`${file}: every request that sends a scanned-draft receipt also sends the confirmed pages`);
+  }
 });
 check("a page the deep pass still leaves with no row is judged again by the lines its enhanced read counted",()=>{
   const first:OcrPageDiagnostic={page:3,visualRows:2,extractedRows:0,gridDetected:true,orientation:0,...scanPageVerdict({rows:0,filled:0,printed:2,broken:0})};

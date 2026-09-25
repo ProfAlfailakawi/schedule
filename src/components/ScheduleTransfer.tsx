@@ -959,6 +959,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           sourceBranchCode:importKind==="authority-pdf"?xlsxPreview.sourceBranchCode:undefined,
           sourceBranchName:importKind==="authority-pdf"?xlsxPreview.sourceBranchName:undefined,
           importReceipt:importKind==="authority-pdf"?xlsxPreview.importReceipt:undefined,
+          /* The server checks these against the pages its receipt says need «راجعت الصفحة». */
+          reviewedPages:importKind==="authority-pdf"?reviewedImportPages:undefined,
           previewIssues: importBlockingIssues,
         }),
       });

@@ -124,6 +124,7 @@ import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, par
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { fairShareByOwner } from "./src/utils/hallBarterFairness";
 import { scanRefusalMessage, unresolvedDaysReason, restoredDaysReason } from "./src/utils/documentOcr";
+import { pageReviewWaitLine, pagesAwaitingReview, unconfirmedReviewPages } from "./src/utils/importPageReview";
 import type { BranchScope } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
@@ -1407,7 +1408,10 @@ function safeImportEvidence(input:any){
   return Object.keys(safe).length?safe:undefined;
 }
 
-type PdfImportReceipt={v:1;collegeId:number;sectionId:number;termId:number;sourceTerm:string;sourceBranch:string;sourceDepartment:string;issuedAt:string};
+/* reviewPages: scanned pages accepted with printed lines that have no row. The
+   draft is refused until the request confirms each one (importPageReview). A
+   receipt signed before this field existed carries none and asks for none. */
+type PdfImportReceipt={v:1;collegeId:number;sectionId:number;termId:number;sourceTerm:string;sourceBranch:string;sourceDepartment:string;issuedAt:string;reviewPages?:number[]};
 async function signPdfImportReceipt(payload:PdfImportReceipt){
   const body=Buffer.from(JSON.stringify(payload),"utf8").toString("base64url");
   const secret=await Repository.getStudentCaseSecret();
@@ -9207,9 +9211,11 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     ...parserNotes.filter((issue:string)=>/^تحذير:/.test(String(issue))),
   ])];
   const issues=[...new Set([...blocking,...parserNotes])];
+  const reviewPages=pagesAwaitingReview(recognized.pageDiagnostics,[]);
   const importReceipt=await signPdfImportReceipt({
     v:1,collegeId,sectionId,termId,issuedAt:new Date().toISOString(),
     sourceTerm:headerPreflight.term.label,sourceBranch:headerPreflight.branch.label,sourceDepartment:headerPreflight.department.label,
+    ...(reviewPages.length?{reviewPages}:{}),
   });
   const evidenceFields=["course","section","days","time","instructor","building","room"];
   let confirmedCells=0,derivedCells=0,reviewCells=0,readyRows=0;
@@ -9276,8 +9282,19 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const importLayout=req.body?.importLayout==="authority-pdf"?"authority-pdf":req.body?.importLayout==="worksheet"?"worksheet":undefined;
   const importReceipt=importLayout==="authority-pdf"?String(req.body?.importReceipt||""):"";
-  if(importLayout==="authority-pdf"&&!await verifyPdfImportReceipt(importReceipt,{collegeId,sectionId,termId})){
+  const receipt=importLayout==="authority-pdf"?await verifyPdfImportReceipt(importReceipt,{collegeId,sectionId,termId}):null;
+  if(importLayout==="authority-pdf"&&!receipt){
     res.status(409).json({error:"انتهت أو غابت شهادة فحص ترويسة PDF. أعد رفع الملف؛ لا يمكن تجاوز فحص الفصل والكلية والقسم من الواجهة.",code:"PDF_IMPORT_RECEIPT_REQUIRED"});return;
+  }
+  /* «راجعت الصفحة» يُفرض هنا أيضاً: زرّ الواجهة المعطّل لا يراه تطبيقٌ قديم في
+     ذاكرة المتصفح ولا طلبٌ مباشر، والإيصال الموقّع يعرف الصفحات التي تنتظره. */
+  const unconfirmedPages=unconfirmedReviewPages(receipt?.reviewPages,req.body?.reviewedPages);
+  if(unconfirmedPages.length){
+    /* نافذةٌ من إصدارٍ سابق لا ترسل قائمة المراجعة أصلاً، وشاشتُها قد تقول «رُوجعت
+       الصفحة». لا يُطلب من أحدٍ «تحديث الصفحة» (src/main.tsx): إغلاقُ النافذة
+       يُحدّث البرنامجَ نفسه، ولم يُحفظ شيء. */
+    const outdated=!Array.isArray(req.body?.reviewedPages);
+    res.status(400).json({error:outdated?"هذه النافذة من إصدار سابق للنظام. أغلقها ثم أعد رفع الملف؛ لم يُحفظ شيء.":pageReviewWaitLine(unconfirmedPages),code:"PDF_PAGE_REVIEW_REQUIRED",pages:unconfirmedPages});return;
   }
   const rows=importLayout==="authority-pdf"
     ?assignAuthoritySections(safeDraftRows(req.body?.rows,collegeId,sectionId,termId))
