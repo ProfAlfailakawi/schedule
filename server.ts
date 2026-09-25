@@ -108,7 +108,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { instructorCleanName, foldInstructorText, instructorIdentityTokens, registryCandidatesFor } from "./src/utils/instructorIdentity";
+import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
@@ -8947,7 +8947,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
     /* المرشحون المعروضون أساتذةُ القسم وحدهم: أسماء الجامعة كلها ضجيجٌ أمام
        المراجع، والاختيار الصحيح يكاد يكون دائماً من أهل القسم. */
-    const {exact:allExact,partial:allPartial}=registryCandidatesFor(written,(instructors as any[]).filter(person=>departmentMembership.has(Number(person.AdInstructorId))) as any);
+    /* اسمٌ شوّهه المسح يُبحث له بما بقي منه نظيفاً (readableInstructorName):
+       ضجيج «ف0» و«ا88» لا يشارك اسماً حقيقياً في شيء. والاسم النظيف يبقى كما كان. */
+    const readable=readableInstructorName(written);
+    const {exact:allExact,partial:allPartial}=registryCandidatesFor(readable.garbled&&readable.text?readable.text:written,(instructors as any[]).filter(person=>departmentMembership.has(Number(person.AdInstructorId))) as any);
     const exact=allExact,partial=allPartial;
     if(exact.length>=2){
       return{method:"DUPLICATE_REGISTRATION",reason:`مسجّل أكثر من مرة: ${exact.map(describeCandidate).join("، ")}.`};
@@ -8958,6 +8961,8 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     if(partial.length){
       return{method:"AMBIGUOUS",reason:`الأقرب: ${partial.map(describeCandidate).join("، ")}.`};
     }
+    /* «غير مسجّل» حكمٌ على شخص؛ لا يُقال عن اسمٍ لم يُقرأ بوضوح. */
+    if(readable.garbled)return{method:"UNREADABLE_NAME",reason:"قُرئ الاسم من المسح ناقصاً أو مشوّهاً ولم يطابق أحداً من أساتذة القسم؛ اختر الأستاذ من القائمة."};
     return{method:"UNREGISTERED",reason:"غير موجود بين أساتذة القسم."};
   };
   const unresolvedInstructorOutcome=(row:any)=>unresolvedInstructorDiagnosis(row).method;
@@ -9061,7 +9066,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
         const where=clashAt?` (يدرّس «${person}» في ${collegeName.get(Number(clashAt.AdCollegeId))||"كلية أخرى"} في الوقت نفسه)`:"";
         row.AdInstructorId=0;
         row.instructorMatchMethod="";
-        row.instructorAmbiguousShortName=`«${String(row.sourceInstructorText||"").trim()}» يطابق «${person}» بالاسم المختصر فقط${where}؛ غالباً شخص آخر بالاسم نفسه — اختر الأستاذ أو أضفه.`;
+        row.instructorAmbiguousShortName=`«${displayInstructorText(row.sourceInstructorText)}» يطابق «${person}» بالاسم المختصر فقط${where}؛ غالباً شخص آخر بالاسم نفسه — اختر الأستاذ أو أضفه.`;
       }
     }
   }

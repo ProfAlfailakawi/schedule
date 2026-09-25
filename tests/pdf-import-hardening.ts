@@ -7,10 +7,11 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, takeScanReadingTurn, ScanReadingBusyError, readScanInTurn, type OcrPage } from "../src/utils/documentOcr.ts";
 import { interruptedImportMessage } from "../src/utils/importStreamFailure.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
-import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
+import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch, readableInstructorName, displayInstructorText } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
 import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
@@ -307,6 +308,30 @@ check("a page accepted with printed lines that have no row waits for «راجع�
   /* The page's own note says where the missing lines go; the preview cannot add a row. */
   assert.match(tail.warning||"",/أضف الناقص في الجدول بعد الاستيراد/);
   assert.doesNotMatch(tail.warning||"",/يدوياً/);
+});
+check("a scanned instructor name garbled by noise is shown as its clean words and called unclear, never «غير مسجّل»",()=>{
+  /* The owner's screen on 2026-09-25: noise from the cell border and a neighbouring column read into the name. */
+  assert.deepEqual(readableInstructorName("«وفى»ف0[ف[]»أ88 در محمد عبدالكريم راشد الد"),{text:"محمد عبدالكريم راشد الد",garbled:true});
+  assert.deepEqual(readableInstructorName("حمد ail سعود المحيلبي ١"),{text:"حمد سعود المحيلبي",garbled:true});
+  /* A word with noise inside is dropped whole: its leftover letters are not a word. */
+  assert.equal(readableInstructorName("0[]«»").text,"");
+  /* A clean name is not garbled, whatever titles it carries, and is displayed exactly as printed. */
+  assert.deepEqual(readableInstructorName("أ.د. فاطمة علي"),{text:"فاطمة علي",garbled:false});
+  assert.deepEqual(readableInstructorName("د.محمد العتيبي"),{text:"محمد العتيبي",garbled:false});
+  assert.equal(readableInstructorName("هيئة تدريسية").garbled,false);
+  assert.equal(displayInstructorText("د. إقبال عبدالعزيز المطوع"),"د. إقبال عبدالعزيز المطوع");
+  assert.equal(displayInstructorText("حمد ail سعود المحيلبي ١"),"حمد سعود المحيلبي");
+  /* Wired: the server calls such a name unclear and searches candidates with its clean words; every screen shows the same text. */
+  const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
+  assert.match(server,/registryCandidatesFor\(readable\.garbled&&readable\.text\?readable\.text:written,/);
+  assert.match(server,/if\(readable\.garbled\)return\{method:"UNREADABLE_NAME",reason:"قُرئ الاسم من المسح ناقصاً أو مشوّهاً/);
+  assert.match(server,/instructorAmbiguousShortName=`«\$\{displayInstructorText\(row\.sourceInstructorText\)\}»/);
+  const table=readFileSync(new URL("../src/components/ImportPreviewTable.tsx",import.meta.url),"utf8");
+  assert.match(table,/method === "UNREADABLE_NAME"\) return "اسم غير واضح"/);
+  assert.match(table,/const readInstructorText = \(row: ImportRow\) => displayInstructorText\(/);
+  const report=readFileSync(new URL("../src/components/AuthorityPdfReport.tsx",import.meta.url),"utf8");
+  assert.match(report,/displayInstructorText\(row\.sourceInstructorText\)/);
+  assert.doesNotMatch(report,/\|\| row\.sourceInstructorText \|\|/);
 });
 check("a page the deep pass still leaves with no row is judged again by the lines its enhanced read counted",()=>{
   const first:OcrPageDiagnostic={page:3,visualRows:2,extractedRows:0,gridDetected:true,orientation:0,...scanPageVerdict({rows:0,filled:0,printed:2,broken:0})};
