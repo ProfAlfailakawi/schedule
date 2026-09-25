@@ -162,8 +162,9 @@ const noDeadline = readDeadline({}, "2026-10-01");
     "R8 وما لا يقفله التسجيل يمرّ");
   check(approvalLockReason(plainSubmitted, { termClosed: true, isCommittee: false, registrarNotesInCurrentRound: 0, registrarLock: false }) !== null,
     "R8 ويبقى عليه حكمُ الفصل المنتهي");
-  const mutation = between(server, "async function applyScheduleMutation(", "\n/**");
-  check(mutation.includes("openRound(next, {") && mutation.includes("amendment: true") && !mutation.includes("rounds: [...next.rounds, {"),
+  const mutation = between(server, "async function amendmentAfterEdit(", "\n}\n");
+  check(between(server, "async function applyScheduleMutation(", "\n/**").includes("amendmentAfterEdit(next, termId, by, change.kind,")
+    && mutation.includes("openRound(approval, {") && mutation.includes("amendment: true") && !mutation.includes("rounds: [...approval.rounds, {"),
     "R8 فتحُ الجولة بعد التعديل يستعمل الدالّة نفسها التي يستعملها الإرسال");
   check(between(server, "async function submitToRegistrar(", "\napp.").includes("openRound(approval, {"), "R8 والإرسالُ يبني جولته بها");
   check(server.includes("scheduleLockRefusal(req, Number(row.AdCollegeId), Number(row.AdSectionId), Number(row.AdTermId), { registrarLock: false })"),
@@ -305,7 +306,7 @@ const noDeadline = readDeadline({}, "2026-10-01");
   const writeRoutes = ["sign", "withdraw", "head-return", "acknowledge-additions", "return", "accept", "extension", "extension-request"];
   check(writeRoutes.every(name => route(`app.post("/api/approvals/${name}"`).includes("withEvent(req,")), "R18 كلُّ مسارٍ يكتب حدثه");
   check(between(server, "async function submitToRegistrar(", "\napp.").includes('"submit"'), "R18 والإرسال");
-  check(between(server, "async function applyScheduleMutation(", "\n/**").includes('"amendment-open"'), "R18 وفتحُ جولة التعديل");
+  check(between(server, "async function amendmentAfterEdit(", "\n}\n").includes('"amendment-open"'), "R18 وفتحُ جولة التعديل");
   check(writeRoutes.every(name => route(`app.post("/api/approvals/${name}"`).includes("approvalScopeLabel(")), "R18 وسطرُ التدقيق يسمّي الكلية والقسم والفصل");
   check(bar.includes("السجلّ") && bar.includes("approval-history"), "R18 والشريطُ يعرضه مطويّاً");
 }
@@ -352,7 +353,7 @@ check(!bar.includes("ملوّنةٌ في مكانها من الجدول") && bar
     && route('app.post("/api/schedule-notes/:id/rebut"').includes("await refuseIfTermClosed(res, Number(note.AdTermId))")
     && route('app.post("/api/schedule-notes/:id/verdict"').includes("await refuseIfTermClosed(res, Number(note.AdTermId))"),
     "R23 والملاحظةُ والردُّ والقرارُ عليه كذلك");
-  const mutation = between(server, "async function applyScheduleMutation(", "\n/**");
+  const mutation = between(server, "async function amendmentAfterEdit(", "\n}\n");
   check(mutation.includes("if (await termIsClosed(termId))") && mutation.includes('"closed-term-edit"'),
     "R23 وتعديلُ اللجنة في فصلٍ منتهٍ يُسجَّل حدثاً ولا يفتح جولة");
 }
@@ -392,6 +393,29 @@ async function revisionBehaviour() {
     let threw = false;
     try { await runApprovalAttempts(async () => { throw new ApprovalRevisionConflict(); }, { isConflict, canRetry: () => false }); } catch { threw = true; }
     check(threw, "R5-review لا إعادةَ بعد أن بدأ الردّ");
+
+    /* ── مراجعة 6: تعديلُ المعتمد لا يضيع إذا خسر سباقه ─────────────────── */
+    const marked = [9201, 9202, 9203] as const;
+    const base = await Repository.saveScheduleApproval({ ...emptyApproval(...marked), status: "accepted", currentRound: 1 });
+    const marker = { at: "2026-09-25T08:00:00.000Z", by: "لجنة", role: "committeeChair", kind: "edit" as const };
+    check(await Repository.markScheduleApprovalAmendmentPending(...marked, marker), "R6-review العلامةُ تُكتب فوق آخر مراجعة");
+    const after = (await Repository.getScheduleApproval(...marked))!;
+    check(after.amendmentPending?.kind === "edit" && after.revision === Number(base.revision) + 1 && after.status === "accepted",
+      "R6-review وترفع المراجعة ولا تمسّ الحالة");
+    let stale = false;
+    try { await Repository.saveScheduleApproval({ ...base, events: [] }); } catch (error) { stale = error instanceof ApprovalRevisionConflict; }
+    check(stale, "R6-review حفظٌ كاملٌ قرأ قبلها يخسر، فلا يمحو العلامة");
+    check(!(await Repository.markScheduleApprovalAmendmentPending(9301, 9302, 9303, marker)), "R6-review ولا تُنشئ وثيقةً لقسمٍ لم يُعتمد");
+    const note = between(server, "async function noteScheduleMutation(", "\n/**");
+    check(note.includes("Repository.markScheduleApprovalAmendmentPending(collegeId, sectionId, termId,") && note.includes('setHeader("X-Approval-Amendment", "pending")'),
+      "R6-review الفشلُ الأخير يُعلِّم ويُقال للشاشة، لا يُبلع");
+    const settle = between(server, "async function settleAmendmentMarker(", "\n}\n");
+    check(settle.includes("amendmentAfterEdit(rest as ScheduleApproval, approval.AdTermId, marker.by, marker.kind, event)"), "R6-review التصفية تفتح الجولة بالدالّة نفسها باسم صاحب التعديل");
+    check(between(server, "async function approvalTransaction(", "\n}\n").includes("settlePendingAmendmentInLock(collegeId, sectionId, termId)")
+      && route('app.get("/api/approvals", ').includes("await settlePendingAmendment(collegeId, sectionId, termId)")
+      && route('app.get("/api/approvals/inbox"').includes("await settlePendingAmendment(")
+      && between(server, "async function applyScheduleMutation(", "\n/**").includes("await settleAmendmentMarker(approval)"),
+      "R6-review تُصفّى عند كل قرار، وفي شريط القسم، والوارد، والتعديل التالي");
 
     const acceptRoute = route('app.post("/api/approvals/accept"');
     check(acceptRoute.indexOf("await Repository.saveScheduleApproval(next)") < acceptRoute.indexOf("updateScheduleComment(note.id")

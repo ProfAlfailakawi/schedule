@@ -7,3 +7,4 @@
 | 3 | FIXED | tests/student-journey-audit.ts «R3» (chooseStudentCaseSecret + structural, legacy bridge kept) |
 | 4 | FIXED | tests/dean-notify-audit.ts «R4» (structural; memo semantics tested in R2) |
 | 5 | FIXED | tests/relay-fixes-audit.ts «R5-review» (behavioural retry on demo repo + structural) |
+| 6 | FIXED | tests/relay-fixes-audit.ts «R6-review» (marker behaviour on demo repo + structural settle points); client not yet reading X-Approval-Amendment header |

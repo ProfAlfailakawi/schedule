@@ -9218,6 +9218,9 @@ async function approvalTransaction(
   res: Response, collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>,
 ): Promise<void> {
   await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
+    /* تعديلٌ على المعتمد ينتظر جولته يُفتح قبل أي قرار (مراجعة 6). */
+    await settlePendingAmendmentInLock(collegeId, sectionId, termId).catch(error =>
+      console.error("[approval] تعذّر فتحُ جولة التعديل المنتظرة:", error instanceof Error ? error.message : error));
     const outcome = await runApprovalAttempts(task, {
       isConflict: error => error instanceof ApprovalRevisionConflict,
       canRetry: () => !res.headersSent,
@@ -9280,6 +9283,79 @@ async function noteScheduleMutation(
     });
   } catch (error) {
     console.error("[approval] تعذّر تحديث سجلّ الاعتماد بعد تعديل الجدول:", error instanceof Error ? error.message : error);
+    /* ── لا يمرّ تعديلُ المعتمد بلا جولة (مراجعة 6) ─────────────────────────
+     * كان الفشلُ هنا يُبلع: جدولٌ معتمد يُعدَّل ويبقى «معتمداً» ولا يعلم
+     * التسجيل. فتُكتب علامةٌ فوق آخر مراجعة، ويفتح الجولةَ أوّلُ من يقرأ
+     * الوثيقة (settlePendingAmendment)، ويُقال للشاشة في ترويسة الردّ. */
+    try {
+      const marked = await Repository.markScheduleApprovalAmendmentPending(collegeId, sectionId, termId, {
+        at: new Date().toISOString(),
+        by: String(req.user?.Name || req.user?.SystemUserLogin || ""),
+        role: String(req.user?.Role || (req.user?.IsAdminUser ? "admin" : "")),
+        kind: change.kind,
+      });
+      if (marked) {
+        console.error(`[approval] عُلّم ${collegeId}:${sectionId}:${termId} بتعديلٍ ينتظر جولته.`);
+        if (req.res && !req.res.headersSent) req.res.setHeader("X-Approval-Amendment", "pending");
+      }
+    } catch (markError) {
+      console.error("[approval] تعذّر حتى تعليمُ التعديل المنتظر:", markError instanceof Error ? markError.message : markError);
+      if (req.res && !req.res.headersSent) req.res.setHeader("X-Approval-Amendment", "failed");
+    }
+  }
+}
+
+/**
+ * ── ما بعد تعديل جدولٍ معتمد: جولةُ تعديل (R8)، أو حدثٌ في فصلٍ منتهٍ (R23) ──
+ * مكانٌ واحد يقرؤه التعديلُ نفسه (applyScheduleMutation) ومن يُصفّي علامةَ
+ * تعديلٍ لم تُفتح جولتُه (settleAmendmentMarker). `event` يكتب الحدث باسم صاحب
+ * التعديل، لا باسم من صادف أن قرأ الوثيقة.
+ */
+type ApprovalEventWriter = (approval: ScheduleApproval, action: string, detail?: string, round?: number) => ScheduleApproval;
+async function amendmentAfterEdit(
+  approval: ScheduleApproval, termId: number, by: string, kind: "add" | "edit" | "delete", event: ApprovalEventWriter,
+): Promise<ScheduleApproval> {
+  if (approval.status !== "accepted") return approval;
+  /* ── الفصلُ المنتهي لا تُفتح فيه جولة (R23) ─────────────────────────
+   * لجنةُ الجدول تعمل في فصلٍ منتهٍ، والتسجيلُ لا يراجع فيه شيئاً. فتعديلُها
+   * يُسجَّل حدثاً ظاهراً في السجلّ، ولا يُرسل الجدول إلى وارد لا ينتظره. */
+  if (await termIsClosed(termId)) {
+    return event(approval, "closed-term-edit", kind === "add" ? "إضافة" : kind === "delete" ? "حذف" : "تعديل");
+  }
+  /* ── جولةُ تعديل، لا قفل (R8) ─────────────────────────────────────
+   * أولُ تعديلٍ على جدولٍ مقبول يفتح جولةً أساسُها ما قُبل، ويبقى
+   * التعديل فيها مفتوحاً حتى يكتب التسجيل ملاحظة. والجولةُ تُبنى من
+   * الدالّة نفسها التي يبني بها الإرسالُ جولته. */
+  const baselineVersionId = roundBaselineVersionId(approval, approval.currentRound + 1, { acceptedOnly: true });
+  const opened = openRound(approval, { at: new Date().toISOString(), by, amendment: true, baselineVersionId });
+  return event({ ...approval, status: "submitted", ...opened }, "amendment-open", undefined, opened.currentRound);
+}
+
+/** تُصفّى العلامة في الذاكرة: تُمحى، وتُفتح الجولة إن كان الجدول ما زال معتمداً. */
+async function settleAmendmentMarker(approval: ScheduleApproval): Promise<ScheduleApproval> {
+  const marker = approval.amendmentPending;
+  if (!marker) return approval;
+  const { amendmentPending: _settled, ...rest } = approval;
+  const event: ApprovalEventWriter = (row, action, detail, round) => appendApprovalEvent(row, { by: marker.by, role: marker.role || "", action, detail, round });
+  return amendmentAfterEdit(rest as ScheduleApproval, approval.AdTermId, marker.by, marker.kind, event);
+}
+
+/** داخل قفل النطاق: تُقرأ الوثيقة، وتُصفّى علامتُها وتُحفظ إن وُجدت. */
+async function settlePendingAmendmentInLock(collegeId: number, sectionId: number, termId: number): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
+    if (!approval?.amendmentPending) return;
+    try { await Repository.saveScheduleApproval(await settleAmendmentMarker(approval)); return; }
+    catch (error) { if (!(error instanceof ApprovalRevisionConflict) || attempt === 1) throw error; }
+  }
+}
+
+/** لمن يقرأ خارج القفل (شريط القسم، الوارد): يأخذ القفل ويُصفّي، ولا يُسقط القراءة إن تعذّر. */
+async function settlePendingAmendment(collegeId: number, sectionId: number, termId: number): Promise<void> {
+  try {
+    await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, () => settlePendingAmendmentInLock(collegeId, sectionId, termId));
+  } catch (error) {
+    console.error("[approval] تعذّر فتحُ جولة التعديل المنتظرة:", error instanceof Error ? error.message : error);
   }
 }
 
@@ -9290,7 +9366,8 @@ async function applyScheduleMutation(
 ): Promise<void> {
   const approval = await Repository.getScheduleApproval(collegeId, sectionId, termId);
   if (!approval) return;
-  let next: ScheduleApproval = approval;
+  /* علامةُ تعديلٍ سابقٍ لم تُفتح جولتُه تُصفّى أوّلاً (مراجعة 6). */
+  let next: ScheduleApproval = await settleAmendmentMarker(approval);
   const by = String(req.user?.Name || req.user?.SystemUserLogin || "");
 
   /* الإضافة بعد توقيع رئيس القسم وحدها ما ينتظر إقراره: تغييرُ قاعةٍ يُبدّل
@@ -9329,22 +9406,7 @@ async function applyScheduleMutation(
     next = { ...next, pendingAdditions: next.pendingAdditions.filter(item => Number(item.scheduleId) !== Number(change.row.id)) };
   }
 
-  if (next.status === "accepted") {
-    /* ── الفصلُ المنتهي لا تُفتح فيه جولة (R23) ─────────────────────────
-     * لجنةُ الجدول تعمل في فصلٍ منتهٍ، والتسجيلُ لا يراجع فيه شيئاً. فتعديلُها
-     * يُسجَّل حدثاً ظاهراً في السجلّ، ولا يُرسل الجدول إلى وارد لا ينتظره. */
-    if (await termIsClosed(termId)) {
-      next = withEvent(req, next, "closed-term-edit", change.kind === "add" ? "إضافة" : change.kind === "delete" ? "حذف" : "تعديل");
-    } else {
-      /* ── جولةُ تعديل، لا قفل (R8) ─────────────────────────────────────
-       * أولُ تعديلٍ على جدولٍ مقبول يفتح جولةً أساسُها ما قُبل، ويبقى
-       * التعديل فيها مفتوحاً حتى يكتب التسجيل ملاحظة. والجولةُ تُبنى من
-       * الدالّة نفسها التي يبني بها الإرسالُ جولته. */
-      const baselineVersionId = roundBaselineVersionId(next, next.currentRound + 1, { acceptedOnly: true });
-      const opened = openRound(next, { at: new Date().toISOString(), by, amendment: true, baselineVersionId });
-      next = withEvent(req, { ...next, status: "submitted", ...opened }, "amendment-open", undefined, opened.currentRound);
-    }
-  }
+  next = await amendmentAfterEdit(next, termId, by, change.kind, (row, action, detail, round) => withEvent(req, row, action, detail, round));
 
   if (next !== approval) await Repository.saveScheduleApproval(next);
 }
@@ -9485,7 +9547,11 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const approval = await readApproval(collegeId, sectionId, termId);
+  let approval = await readApproval(collegeId, sectionId, termId);
+  if (approval.amendmentPending) {
+    await settlePendingAmendment(collegeId, sectionId, termId);
+    approval = await readApproval(collegeId, sectionId, termId);
+  }
   const [deadline, blocking, notices, notes, rows, lockReason] = await Promise.all([
     readDeadlineFor(approval, termId),
     blockingConflictCount(collegeId, sectionId, termId),
@@ -10513,12 +10579,17 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
   const termId = Number(req.query.termId || 0);
   if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
 
-  const [approvals, term, colleges, sections] = await Promise.all([
+  const [storedApprovals, term, colleges, sections] = await Promise.all([
     Repository.getScheduleApprovalsForTerm(termId),
     Repository.getTermById(termId),
     Repository.getColleges(),
     Repository.getSections(),
   ]);
+  /* ما عُلّم بتعديلٍ ينتظر جولته يُصفّى قبل أن يُعرض (مراجعة 6) — نادر، فلا يُقرأ
+     الفصلُ ثانيةً إلا إن وُجد. */
+  const marked = storedApprovals.filter(row => row.amendmentPending);
+  for (const row of marked) await settlePendingAmendment(Number(row.AdCollegeId), Number(row.AdSectionId), termId);
+  const approvals = marked.length ? await Repository.getScheduleApprovalsForTerm(termId) : storedApprovals;
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
   /* «اليوم» بتوقيت الكويت، لا بالساعة العالمية (R15). */
   const now = new Date();

@@ -4299,6 +4299,32 @@ export const Repository = {
     return row;
   },
 
+  /**
+   * علامةُ «تعديلٌ ينتظر جولته» فوق آخر مراجعة (مراجعة 6). ليست حفظاً مشروطاً:
+   * تقرأ الأحدث وتضيف العلامة وترفع المراجعة، فكلُّ من قرأ قبلها يخسر سباقه
+   * ويعيد القراءة فيراها — فلا يمحوها حفظٌ كاملٌ قديم. لا تُنشئ وثيقةً غائبة:
+   * قسمٌ بلا وثيقة لم يُعتمد، فلا جولة تُنتظر له.
+   */
+  markScheduleApprovalAmendmentPending: async (collegeId: number, sectionId: number, termId: number, marker: NonNullable<ScheduleApproval["amendmentPending"]>): Promise<boolean> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("scheduleApprovals").doc(scopeKey.replace(/:/g, "_"));
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        if (!doc.exists) return false;
+        const stored = doc.data() as ScheduleApproval;
+        transaction.set(ref, { ...stored, amendmentPending: marker, revision: Math.max(0, Number(stored.revision || 0)) + 1, updatedAt: new Date().toISOString() });
+        return true;
+      });
+    }
+    const index = (db.scheduleApprovals || []).findIndex(item => item.scopeKey === scopeKey);
+    if (index === -1) return false;
+    const stored = db.scheduleApprovals![index];
+    db.scheduleApprovals![index] = { ...stored, amendmentPending: marker, revision: Math.max(0, Number(stored.revision || 0)) + 1, updatedAt: new Date().toISOString() };
+    saveDatabase();
+    return true;
+  },
+
   getShareLink: async (id: string): Promise<ScheduleShareLink | undefined> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleShareLinks").doc(id).get();
