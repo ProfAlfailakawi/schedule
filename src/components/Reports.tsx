@@ -504,7 +504,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   /** حال الاعتماد لكل قسمٍ في الفصل — تُقرأ مرّةً لميزان الأقسام كله. */
   const [termApprovals, setTermApprovals] = useState<Map<number, BalanceApprovalState> | null>(null);
   /** الفصلُ نفسه كما تقرؤه لوحة «مواعيد التسليم» — شريطُ قراءةٍ فوق الميزان. */
-  const [deadlineView, setDeadlineView] = useState<{ termDeadline?: string; rows: DeadlineRow[] } | null>(null);
+  const [deadlineView, setDeadlineView] = useState<{ termId: number; termDeadline?: string; rows: DeadlineRow[] } | null>(null);
   const [appendixBusy, setAppendixBusy] = useState(false);
   const [authorityReport, setAuthorityReport] = useState<AuthorityReport | null>(null);
   /* تقرير التغييرات للقسم كله: تقرير لكل موقع، مرتبة كما تُقرأ — الموقع
@@ -559,7 +559,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     /* نداءٌ واحد لحالات الفصل كله، لا نداءٌ لكل قسم: كليةٌ فيها عشرون قسماً
        كانت ستكلّف عشرين رحلةً في كل فتحةِ شاشة. ويُقرأ فقط حين تكون العدسة
        ميزانَ الأقسام — فمن ينظر في القاعات لا شأن له بحال الاعتماد. */
-    if (lens !== "balance" || !filters.termId) { setTermApprovals(null); setDeadlineView(null); return; }
+    if (lens !== "balance" || !filters.termId) { setTermApprovals(null); return; }
     const controller = new AbortController();
     /* الحالات لكل كليات النطاق، لا للكلية المختارة وحدها (N4): الميزان يعرض
        أقسام النطاق كله، وعميدٌ بكليتين لم يختر واحدةً كان يرى أقسام الثانية
@@ -582,7 +582,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           },
         ];
         setTermApprovals(new Map([...data.approvals.map(entry), ...(data.notStarted || []).map(entry)]));
-        setDeadlineView({ termDeadline: data.termDeadline || undefined, rows: termDeadlineRows(data) });
+        setDeadlineView({ termId: Number(filters.termId), termDeadline: data.termDeadline || undefined, rows: termDeadlineRows(data) });
       })
       .catch(() => setTermApprovals(null));
     return () => controller.abort();
@@ -2780,7 +2780,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           </div>
         ) : lens === "balance" ? (
           <>
-          {deadlineView && filters.termId ? (
+          {deadlineView && deadlineView.termId === Number(filters.termId) ? (
             <SubmissionDeadlines
               terms={terms.filter(row => Number(row.AdTermId) === Number(filters.termId)).map(row => ({ ...row, AdTermSubmissionDeadline: deadlineView.termDeadline }))}
               termId={Number(filters.termId)}

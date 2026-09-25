@@ -193,7 +193,10 @@ check(changes.includes("setReport(null);\n      setError(e.message);"),
   "وتقريرٌ أخفقت قراءتُه لا يبقى معروضاً تحت رأس قسمٍ آخر");
 check(changes.includes("setShowRounds(false);") && changes.includes("}, [scope.collegeId, scope.sectionId, termId]);"),
   "وتبدّلُ القسم يُفرغ ما قبله قبل أن تصل القراءة");
-check(changes.includes("}, [term.AdTermId]);"),
+/* حقلُ الموعد انتقل إلى لوحة «مواعيد التسليم»، والقاعدةُ معه: تُمحى الرسالة
+   عند تبدّل الفصل وحده، لا عند تبدّل الموعد الذي يبدّله الحفظ. */
+const deadlinesPanel = fs.readFileSync(path.join(process.cwd(), "src/components/SubmissionDeadlines.tsx"), "utf8");
+check(deadlinesPanel.includes("setMessage(null); }, [termId]);") && !deadlinesPanel.includes("[termId, termDeadline]"),
   "ورسالةُ «محفوظ» لا يمحوها الحفظُ نفسه");
 
 const reportsSrc = fs.readFileSync(path.join(process.cwd(), "src/components/Reports.tsx"), "utf8");

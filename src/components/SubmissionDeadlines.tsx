@@ -339,7 +339,10 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
   const [highlight, setHighlight] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => { setDraft(termDeadline); setEditing(false); setError(null); setMessage(null); }, [termId, termDeadline]);
+  /* الرسائلُ تُمحى عند تبدّل الفصل وحده — الحفظُ نفسه يبدّل الموعد، فلو مُحيت
+     عنده لاختفت «ثُبّت الموعد» في اللحظة التي تستحقّ أن تظهر فيها. */
+  useEffect(() => { setEditing(false); setError(null); setMessage(null); }, [termId]);
+  useEffect(() => { setDraft(termDeadline); }, [termDeadline]);
 
   /* ما ينتظر صاحبَ القرار لا يُطوى عنه: فصلٌ بلا موعد، أو طلبٌ معلّق. */
   const needsAttention = canEdit && (phase === "none" || requests.length > 0);
