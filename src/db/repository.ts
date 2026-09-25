@@ -35,7 +35,7 @@ import {
   AdDegreeRule,
   ScheduleDecisionMemory,
   CampusMobilityProfile,
-  ScheduleShareLink,
+  ScheduleShareLink, ShareLinkInstructorMark,
   InstructorRequest,
   VisitingRoster,
   DepartmentDelegateDirectory,
@@ -4083,7 +4083,8 @@ export const Repository = {
   getShareLinks: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleShareLink[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(50).get();
+      /* الروابطُ الشخصية رابطٌ لكل أستاذ في القسم؛ خمسون كانت تُسقط بعضها. */
+      const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(300).get();
       return snap.docs.map(doc => doc.data() as ScheduleShareLink).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
     return (db.scheduleShareLinks || []).filter(row => row.scopeKey === scopeKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -4232,6 +4233,21 @@ export const Repository = {
     const row = (db.scheduleShareLinks || []).find(item => item.id === id);
     if (!row) throw new Error("الرابط غير موجود");
     row.revoked = true;
+    saveDatabase();
+  },
+
+  /** يسجّل إرسالاً أو زيارةً لأستاذٍ على رابط (دمجٌ لا استبدال). */
+  markShareLinkInstructor: async (id: string, instructorId: number, patch: ShareLinkInstructorMark): Promise<void> => {
+    const key = String(Number(instructorId) || 0);
+    if (key === "0") return;
+    const clean = Object.fromEntries(Object.entries(patch).filter(([, value]) => typeof value === "string" && value)) as ShareLinkInstructorMark;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleShareLinks").doc(id).set({ marks: { [key]: clean } }, { merge: true });
+      return;
+    }
+    const row = (db.scheduleShareLinks || []).find(item => item.id === id);
+    if (!row) return;
+    row.marks = { ...(row.marks || {}), [key]: { ...(row.marks?.[key] || {}), ...clean } };
     saveDatabase();
   },
 

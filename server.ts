@@ -30,6 +30,7 @@ import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/public
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
+import { instructorScheduleFingerprint } from "./src/utils/scheduleFingerprint";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -12193,6 +12194,13 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   ]);
   const person = instructors.find(row => sameCivilId(row.AdInstructorCivil, digits));
   if (!person) return null;
+  /* ── الرابطُ الشخصي لا يُفتح إلا لصاحبه ────────────────────────────────────
+   * رابطُ القسم مع رقمِ زميلٍ مدنيّ كان يفتح بطاقةَ الزميل وتاريخَ طلباته
+   * وقراراتِ القسم فيها. فالرابطُ الذي يرسله القسم لكل أستاذٍ مقيّدٌ برقمه:
+   * غيرُه يلقى الجوابَ الواحد نفسه (404). ورابطُ القسم العام يبقى للجدول
+   * وحده، بلا طلباتٍ ولا قراراتٍ ولا ملاحظات رفض. */
+  const personal = Number(link.AdInstructorId || 0) > 0;
+  if (personal && Number(link.AdInstructorId) !== Number(person.AdInstructorId)) return null;
 
   // Security gate: the instructor must actually appear in the link's OWN term, so
   // a wrong number and "teaches nothing" stay one indistinguishable 404 at the
@@ -12224,7 +12232,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
      بكليةٍ بعينها. */
   const requestRows = displayTermId === link.AdTermId ? linkTermRequests : (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
     .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
-  const requestLinks = (await Promise.all(requestRows.map(async request => {
+  const requestLinks = (await Promise.all((personal ? requestRows : []).map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
     if (!requestLink || requestLink.revoked || !await personalLinkStillReadable(requestLink)) return null;
     const windowOpen = requestWindowOpen(request);
@@ -12243,7 +12251,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   /* الحركةُ تُبنى في موضعٍ واحد لبطاقتي ولصفحة الطلب معاً، فلا تقول إحداهما
      غير ما تقوله الأخرى. */
   const movementHistory = [
-    ...requestMovementEntries(requestRows),
+    ...(personal ? requestMovementEntries(requestRows) : []),
     ...await scheduleMovementEntries(Number(person.AdInstructorId), Number(displayTermId), rows, courseById, {
       historyScopes: displayTermId === link.AdTermId ? linkHistoryScopes : movementHistoryScopes(requestRows),
     }),
@@ -12369,6 +12377,10 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     longestGap: Math.max(0, ...byDay.flatMap(day => day.gaps.map(gap => gap.minutes))),
     byDay,
     rows: shaped,
+    /* بطاقةٌ من رابط القسم العام لا تحمل طلباتٍ ولا قرارات؛ تقول ذلك للأستاذ. */
+    personal,
+    instructorId: Number(person.AdInstructorId),
+    fingerprint: instructorScheduleFingerprint(rows as any),
     upcomingExceptions,
     departmentApprovals,
     requestLinks,
@@ -12428,6 +12440,104 @@ app.delete("/api/share/:id", requirePermission(7), async (req: AuthenticatedRequ
   if (!isScopeAllowed(req, link.AdCollegeId, link.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   await Repository.revokeShareLink(link.id);
   res.json({ ok: true });
+});
+
+/* ── الروابط الشخصية: رابطٌ لكل أستاذ، لا يُفتح إلا له ─────────────────────────
+ *
+ * تُسكّ من «تسليم البطاقة» في لوحة النشر: لكلِّ أستاذٍ في القائمة رابطُه، يُعاد
+ * استعمالُه إن وُجد (فلا تتكاثر الروابط مع كل ضغطة)، ويعيش حتى نهاية الفصل،
+ * ويرث موعدَ الطلبات من بطاقة القسم التي سُكّ منها. ويُسجَّل الإرسالُ لكل أستاذ
+ * مع بصمة جدوله، فيُعرف لاحقاً من تغيّر جدولُه منذ أُبلغ. */
+const isPersonalStaffLink = (link: ScheduleShareLink) => link.kind === "staff" && Number(link.AdInstructorId || 0) > 0;
+
+async function personalLinkEligibleIds(collegeId: number, sectionId: number, termId: number): Promise<Set<number>> {
+  const [rows, delegates] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getDepartmentDelegates(collegeId, sectionId).catch(() => [] as number[]),
+  ]);
+  return new Set([...rows.map(row => Number(row.AdInstructorId)), ...delegates.map(Number)].filter(id => id > 0));
+}
+
+app.post("/api/share/:id/personal", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const parent = await Repository.getShareLink(String(req.params.id || ""));
+  if (!parent || parent.revoked || parent.kind !== "staff" || isPersonalStaffLink(parent)) { res.status(404).json({ error: "بطاقة القسم غير موجودة أو موقوفة" }); return; }
+  if (!isScopeAllowed(req, parent.AdCollegeId, parent.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const wanted = [...new Set((Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : []).map(Number).filter((id: number) => id > 0))].slice(0, 300) as number[];
+  if (!wanted.length) { res.json({ links: [] }); return; }
+  const [eligible, existing, instructors, terms] = await Promise.all([
+    personalLinkEligibleIds(parent.AdCollegeId, parent.AdSectionId, parent.AdTermId),
+    Repository.getShareLinks(parent.AdCollegeId, parent.AdSectionId, parent.AdTermId),
+    Repository.getInstructors(),
+    Repository.getTerms(),
+  ]);
+  const live = new Map<number, ScheduleShareLink>();
+  for (const link of existing) {
+    if (!isPersonalStaffLink(link) || link.revoked || !await personalLinkStillReadable(link)) continue;
+    if (!live.has(Number(link.AdInstructorId))) live.set(Number(link.AdInstructorId), link);
+  }
+  const term = terms.find(row => Number(row.AdTermId) === Number(parent.AdTermId));
+  const nameOf = new Map(instructors.map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
+  const links: Array<{ instructorId: number; id: string; expiresAt: string; reused: boolean }> = [];
+  for (const instructorId of wanted) {
+    if (!eligible.has(instructorId)) continue;
+    const found = live.get(instructorId);
+    if (found) { links.push({ instructorId, id: found.id, expiresAt: found.expiresAt, reused: true }); continue; }
+    const created = await Repository.createShareLink({
+      AdCollegeId: parent.AdCollegeId, AdSectionId: parent.AdSectionId, AdTermId: parent.AdTermId,
+      label: `بطاقة شخصية · ${nameOf.get(instructorId) || instructorId}`,
+      kind: "staff",
+      AdInstructorId: instructorId,
+      expiresAt: termLinkExpiresAt(term),
+      ...(parent.requestsCloseAt ? { requestsCloseAt: parent.requestsCloseAt } : {}),
+      SystemUserId: Number(req.user!.SystemUserId),
+      userName: String(req.user!.Name || ""),
+      showInstructors: false,
+    });
+    links.push({ instructorId, id: created.id, expiresAt: created.expiresAt, reused: false });
+  }
+  res.json({ links });
+});
+
+/** يسجّل أن القسم فتح محادثة الإرسال لهذا الأستاذ، مع بصمة جدوله الآن. */
+app.post("/api/share/:id/sent", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const link = await Repository.getShareLink(String(req.params.id || ""));
+  if (!link || !isPersonalStaffLink(link)) { res.status(404).json({ error: "الرابط الشخصي غير موجود" }); return; }
+  if (!isScopeAllowed(req, link.AdCollegeId, link.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const rows = (await Repository.getSchedulesByScope({ termId: link.AdTermId }))
+    .filter(row => Number(row.AdInstructorId) === Number(link.AdInstructorId));
+  const sentAt = new Date().toISOString();
+  await Repository.markShareLinkInstructor(link.id, Number(link.AdInstructorId), { sentAt, sentFingerprint: instructorScheduleFingerprint(rows as any) });
+  res.json({ ok: true, sentAt });
+});
+
+/** الروابط الشخصية في النطاق، ومن تغيّر جدولُه منذ أُرسل إليه. */
+app.get("/api/share-personal", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const [links, termRows, instructors] = await Promise.all([
+    Repository.getShareLinks(collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getInstructors(),
+  ]);
+  const rowsOf = new Map<number, any[]>();
+  for (const row of termRows as any[]) {
+    const key = Number(row.AdInstructorId);
+    if (!rowsOf.has(key)) rowsOf.set(key, []);
+    rowsOf.get(key)!.push(row);
+  }
+  const nameOf = new Map(instructors.map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")]));
+  res.json(links.filter(isPersonalStaffLink).map(link => {
+    const instructorId = Number(link.AdInstructorId);
+    const mark = link.marks?.[String(instructorId)] || {};
+    const now = instructorScheduleFingerprint(rowsOf.get(instructorId) || []);
+    return {
+      id: link.id, instructorId, name: nameOf.get(instructorId) || "",
+      expiresAt: link.expiresAt, revoked: Boolean(link.revoked), views: Number(link.views || 0),
+      lastSentAt: mark.sentAt || "", lastSeenAt: mark.seenAt || "",
+      changedSinceSent: Boolean(mark.sentFingerprint) && mark.sentFingerprint !== now,
+    };
+  }));
 });
 
 // --- Public surface (no account) --------------------------------------------
@@ -13760,8 +13870,19 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
   // the page must not become a way to test which numbers exist.
   if (!card) { publicAttemptFailed(token, req.ip || "unknown"); res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  /* «منذ زيارتك الأخيرة»: ما حُفظ من الزيارة السابقة يُعاد، ثم تُسجَّل هذه. */
+  const { instructorId: cardInstructorId, fingerprint: cardFingerprint, ...visible } = card;
+  const previousVisit = resolved.link.marks?.[String(cardInstructorId)];
+  if (Number(card.termId) === Number(resolved.link.AdTermId)) {
+    void Repository.markShareLinkInstructor(resolved.link.id, cardInstructorId, { seenAt: new Date().toISOString(), seenFingerprint: cardFingerprint }).catch(() => undefined);
+  }
   res.setHeader("Cache-Control", "no-store");
-  res.json(card);
+  res.json({
+    ...visible,
+    lastSeenAt: previousVisit?.seenAt || "",
+    changedSinceLastVisit: Boolean(previousVisit?.seenFingerprint) && Number(card.termId) === Number(resolved.link.AdTermId)
+      && previousVisit!.seenFingerprint !== cardFingerprint,
+  });
 });
 
 /* The old `staff-ics?civil=…` route is gone. A subscription URL is stored by
@@ -13970,6 +14091,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .soon li{font-size:12.5px;color:var(--dim);line-height:1.7}
 .soon li[data-kind=cancelled] strong{color:#f87171}
 .soon li[data-kind=covering] strong{color:var(--jade)}
+.movement-new{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--jade);color:#04100d;font-size:11px;font-weight:600}
 .pastnote{
   margin-block-end:14px;padding:11px 13px;border-radius:12px;
   border:1px solid var(--line);background:color-mix(in srgb,var(--brass) 9%,transparent);
@@ -14114,17 +14236,23 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     var host=document.getElementById("movement");
     if(!host)return;
     var list=d.movementHistory||[];
+    /* رابطُ القسم العام لا يحمل طلباتٍ ولا قرارات: تُقال أين تجدها. */
+    var privateNote=d.personal?'':'<div class="pastnote">طلباتك وقرارات القسم فيها تظهر في رابطك الشخصي الذي يرسله إليك القسم، لا في رابط القسم العام.</div>';
     if(!list.length){
-      host.innerHTML='<h3 class="movement-head">حركة جدولك الرسمية</h3><div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل، ولم تُرسل طلب تعديل.</div>';
+      host.innerHTML=privateNote+'<h3 class="movement-head">حركة جدولك الرسمية</h3><div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل'+(d.personal?'، ولم تُرسل طلب تعديل.':'.')+'</div>';
       return;
     }
     /* قسمان كما في صفحة الطلب تماماً: طلباتُك وقرارُ القسم فيها، ثم حركةُ
        جدولك الرسمية. */
     var mine=list.filter(function(m){return m.source==="request"}),official=list.filter(function(m){return m.source!=="request"});
+    var since=Date.parse(visitSince||"")||0;
     var item=function(m){
-      return '<li class="movement-item t-'+esc(m.tone)+'">'+(m.day?'<b>'+esc(m.day)+'</b>: ':'')+esc(m.text)+' <small class="movement-meta"'+(m.decision?' data-decision="'+esc(m.decision)+'"':'')+'>'+esc(m.label)+' · <bdi>'+esc(friendlyDate(m.at,true))+'</bdi></small></li>';
+      /* حركةُ الجدول الرسمية «جديدة» فقط إن تغيّرت بصمةُ جدوله فعلاً — آخرُ فرقٍ
+         بين نسخةٍ والجدول الحالي يحمل وقتَ الآن دائماً. وقرارُ القسم يحمل وقتَه. */
+      var fresh=since&&Date.parse(m.at)>since&&(m.source==="request"||visitChanged);
+      return '<li class="movement-item t-'+esc(m.tone)+'">'+(fresh?'<span class="movement-new">جديد منذ زيارتك الأخيرة</span> ':'')+(m.day?'<b>'+esc(m.day)+'</b>: ':'')+esc(m.text)+' <small class="movement-meta"'+(m.decision?' data-decision="'+esc(m.decision)+'"':'')+'>'+esc(m.label)+' · <bdi>'+esc(friendlyDate(m.at,true))+'</bdi></small></li>';
     };
-    host.innerHTML=(mine.length?'<h3 class="movement-head">طلباتك</h3><ul class="movement-list">'+mine.map(item).join("")+'</ul>':'')+
+    host.innerHTML=privateNote+(mine.length?'<h3 class="movement-head">طلباتك</h3><ul class="movement-list">'+mine.map(item).join("")+'</ul>':'')+
       '<h3 class="movement-head">حركة جدولك الرسمية</h3>'+(official.length?'<ul class="movement-list">'+official.map(item).join("")+'</ul>':'<div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل.</div>');
   }
 
@@ -14177,7 +14305,11 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 
   function visibleCardCollege(value){var name=String(value||"");return /التربية\\s*الأساسية.*بنات/.test(name)?"":name}
   function shortCardCollege(value){return String(value||"").replace(/^\\s*[0-9٠-٩]+\\s*[·\\-–]?\\s*/,"").replace(/^\\s*كلية\\s+/,"").trim()}
+  /* «منذ زيارتك الأخيرة» تُحفظ من أول فتحٍ في هذه الجلسة: تبديلُ الفصل يعيد
+     الطلب فيسجّل زيارةً جديدة، ولا يجوز أن يمحو ما قيل للأستاذ قبل لحظة. */
+  var visitSince=null,visitChanged=false;
   function render(d,value){
+    if(visitSince===null){visitSince=d.lastSeenAt||"";visitChanged=Boolean(d.changedSinceLastVisit);}
     currentCivil=value;
     var currentTerm = { termId: Number(d.termId || 0) };
     var phase = d.termPhase || ((Boolean(d.liveTermId) && Number(d.termId) === Number(d.liveTermId)) ? "current" : "past");
@@ -14226,6 +14358,8 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
     document.getElementById("days").innerHTML=weekTable;
+    if(visitChanged&&visitSince&&d.lectureCount) document.getElementById("days").insertAdjacentHTML("afterbegin",
+      '<div class="pastnote">تغيّر جدولك منذ زيارتك الأخيرة (<bdi>'+esc(friendlyDate(visitSince,true))+'</bdi>) — التفاصيل في «حركة الجدول».</div>');
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل'+((d.movementHistory||[]).length?' — ما تغيّر في جدولك تجده في «حركة الجدول».':' — جرّب فصلاً آخر من الأعلى.')+'</div>';
     else if(phase === "past") document.getElementById("days").insertAdjacentHTML("afterbegin",
       '<div class="pastnote">فصل سابق — للاطلاع فقط. الإبلاغ وإضافة التقويم متاحان في الفصل الحالي.</div>');

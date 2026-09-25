@@ -13,6 +13,7 @@ import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "../src/server/publicAttemptLimiter";
 import { termPhase } from "../src/utils/termSequence";
 import { storableMobile, whatsappNumber } from "../src/utils/reachInstructor";
+import { instructorScheduleFingerprint } from "../src/utils/scheduleFingerprint";
 import { AR, nounFor } from "../src/utils/arabicCount";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
 import { coverConflict } from "../src/utils/coverAvailability";
@@ -311,6 +312,51 @@ async function main() {
     check(server.includes('app.post("/api/department-delegates/instructor", requirePermission(7)') && server.includes('app.put("/api/department-delegates/:instructorId", requirePermission(7)'), "D17 الشاشة ٧ وحدها");
     const ui = read("src/components/ScheduleTransfer.tsx");
     check(ui.includes("AdInstructorMobile: newMobile.trim()") && ui.includes("AdInstructorMobile: editMobile.trim()") && ui.includes("بلا جوّال — لن تصله بطاقته"), "D17 الواجهة تكتب الجوّال وتنبّه لغيابه");
+  }
+
+
+  /* ── D12: الرابط الشخصي لصاحبه، ورابط القسم بلا طلبات ولا قرارات ─────────── */
+  {
+    const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
+    check(card.includes("if (personal && Number(link.AdInstructorId) !== Number(person.AdInstructorId)) return null;"), "D12 الرابط الشخصي لا يُفتح برقم زميل");
+    check(card.indexOf("return null;", card.indexOf("const personal")) < card.indexOf("getSchedulesByScope({ termId: link.AdTermId })"), "D12 والرفض قبل قراءة أي جدول");
+    check(card.includes("(personal ? requestRows : []).map") && card.includes("...(personal ? requestMovementEntries(requestRows) : [])"), "D12 رابط القسم لا يحمل روابط الطلب ولا تاريخها ولا ملاحظات الرفض");
+    const minting = server.slice(server.indexOf('app.post("/api/share/:id/personal"'), server.indexOf("// --- Public surface (no account)"));
+    check(minting.includes('app.post("/api/share/:id/personal", requirePermission(7)') && minting.includes("isScopeAllowed(req, parent.AdCollegeId, parent.AdSectionId)"), "D12 سكّ الروابط الشخصية للشاشة ٧ ضمن النطاق");
+    check(minting.includes("if (!eligible.has(instructorId)) continue;") && minting.includes("live.get(instructorId)"), "D12 لأساتذة القسم وحدهم، ويُعاد استعمال الرابط القائم");
+    check(minting.includes("expiresAt: termLinkExpiresAt(term)") && minting.includes("AdInstructorId: instructorId"), "D12 الرابط الشخصي مقيّدٌ بصاحبه ويعيش الفصل");
+    check(minting.includes('app.get("/api/share-personal", requirePermission(7)'), "D12 قائمة الروابط الشخصية للقسم");
+    const publish = read("src/components/SchedulePublish.tsx");
+    check(!publish.includes("reachAboutCard(person, publicUrl(link.id))"), "D12 التسليم لا يرسل رابط القسم العام لأحد");
+    check(publish.includes("reachAboutCard(person, personalUrl(personalId))") && publish.includes("/personal`"), "D12 التسليم يرسل لكل أستاذٍ رابطه الشخصي");
+    check(publish.includes("share-personal-revoke") && publish.includes("data-guide-ignore=\"إيقاف الرابط الشخصي"), "D12 إيقاف رابطٍ شخصيٍّ لكل أستاذ، بسمة المرشد");
+    check(publish.includes('!(link.kind === "staff" && Number(link.AdInstructorId || 0) > 0)'), "D12 الروابط الشخصية لا تختلط بقائمة روابط النشر");
+    const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(page.includes("طلباتك وقرارات القسم فيها تظهر في رابطك الشخصي"), "D12 رابط القسم يقول أين تُقرأ الطلبات");
+  }
+
+  /* ── D14: «من تغيّر جدولهم» و«منذ زيارتك الأخيرة» ─────────────────────────── */
+  {
+    const base = [{ id: 1, AdCourseId: 5, SCode: "01", fsunday: true, fstarttime: "08:00", fendtime: "09:15", AdRoomCode: "A", AdRoomHall: "1" }];
+    const fp = instructorScheduleFingerprint(base);
+    check(fp === instructorScheduleFingerprint([...base].reverse()), "D14 البصمة لا تتأثر بالترتيب");
+    check(fp !== instructorScheduleFingerprint([{ ...base[0], fstarttime: "09:30", fendtime: "10:45" }]), "D14 تغيّر الموعد يغيّر البصمة");
+    check(fp !== instructorScheduleFingerprint([{ ...base[0], AdRoomHall: "2" }]), "D14 تغيّر القاعة يغيّر البصمة");
+    check(fp !== instructorScheduleFingerprint([]), "D14 الحذف يغيّر البصمة");
+    check(!fp.includes("08:00") && !fp.includes("A"), "D14 البصمة لا تحمل شيئاً من الجدول");
+    check(repository.includes("markShareLinkInstructor: async") && repository.includes("{ marks: { [key]: clean } }, { merge: true }") && repository.includes("row.marks = { ...(row.marks || {})"),
+      "D14 العلامات تُحفظ في Firestore وفي المسار المحلي");
+    const sent = server.slice(server.indexOf('app.post("/api/share/:id/sent"'), server.indexOf('app.get("/api/share-personal"'));
+    check(sent.includes("sentFingerprint: instructorScheduleFingerprint(rows as any)") && sent.includes("requirePermission(7)"), "D14 الإرسال يُسجَّل مع بصمة الجدول لكل أستاذ");
+    const list = server.slice(server.indexOf('app.get("/api/share-personal"'), server.indexOf("// --- Public surface (no account)"));
+    check(list.includes("changedSinceSent: Boolean(mark.sentFingerprint) && mark.sentFingerprint !== now"), "D14 من تغيّر جدولُه منذ أُرسل إليه");
+    const publish = read("src/components/SchedulePublish.tsx");
+    check(publish.includes('reachAboutCard(person, personalUrl(entry.id), "changed")') && publish.includes("أبلغ من تغيّر جدولهم"), "D14 رسالة «طرأ تعديل» صار لها من يرسلها");
+    const staffPost = server.slice(server.indexOf('app.post("/api/public/staff/:token", '), server.indexOf('app.post("/api/public/staff/:token", ') + 2500);
+    check(staffPost.includes("markShareLinkInstructor(resolved.link.id, cardInstructorId, { seenAt:") && staffPost.includes("lastSeenAt: previousVisit?.seenAt"), "D14 البطاقة تسجّل الزيارة وتعيد السابقة");
+    check(staffPost.includes("const { instructorId: cardInstructorId, fingerprint: cardFingerprint, ...visible } = card;"), "D14 البصمة ورقم الأستاذ لا يُرسلان للصفحة");
+    const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(page.includes("تغيّر جدولك منذ زيارتك الأخيرة") && page.includes("جديد منذ زيارتك الأخيرة"), "D14 البطاقة تقول ما تغيّر منذ الزيارة الأخيرة");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

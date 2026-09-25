@@ -872,6 +872,19 @@ export interface ScheduleShareLink {
    * وحدها؛ الرابطُ نفسه يبقى صالحاً للقراءة حتى `expiresAt` (نهاية الفصل).
    */
   requestsCloseAt?: string;
+  /**
+   * ما يُعرف عن كل أستاذٍ فتح البطاقة أو أُرسلت إليه، مفتاحُه رقمُ الأستاذ.
+   * ‎sent*‎ لحظةُ آخر إرسالٍ من القسم وبصمةُ جدوله عندها («من تغيّر جدولهم»)،
+   * و‎seen*‎ لحظةُ آخر زيارةٍ وبصمتُها («منذ زيارتك الأخيرة»). لا شيء غير ذلك.
+   */
+  marks?: Record<string, ShareLinkInstructorMark>;
+}
+
+export interface ShareLinkInstructorMark {
+  sentAt?: string;
+  sentFingerprint?: string;
+  seenAt?: string;
+  seenFingerprint?: string;
 }
 
 /* ── طلبُ الأستاذ على مسوّدة جدوله ───────────────────────────────────────────
