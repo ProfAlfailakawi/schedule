@@ -15,7 +15,7 @@
 | S11 | FIXED — readStudentProofBody: content-length pre-check + raw-parser entity.too.large → 413 {code:file-too-large} with Arabic guidance; STUDENT_PROOF_MAX_BYTES shared value; page checks the (compressed) size before upload | tests/student-journey-audit.ts §S11 |
 | S12 | FIXED — graduationProgrammeText (documentOcr.ts): text of the single «البرنامج» line up to the next field label; graduationSheetFacts exposes programmeText; proof matches the department against it only; no programme line → 422 programme-unreadable (fail closed) | tests/student-journey-audit.ts §S12 (synthetic sheets); location-registry-audit 122 updated |
 | S13 | FIXED — /api/schedules/demand cases carry caseRef (caseRefFor); IntelligenceWorkspace table + printable list show item.caseRef; the id→caseRef derivation exists only in src/utils/studentNeedMerge.ts (repository caseRefOf aliases it) | tests/student-journey-audit.ts §S13 |
-| S14 | TODO | |
+| S14 | FIXED — sectionOwnsNeed: a declared-survey need also belongs to every section owning one of its courses (read + write scope, one derivation); sheet shows each course on its owner's sheet as decidable, and on the survey sheet a foreign course read-only «يقرّره قسم …» (no buttons, excluded from totals/approve-all). NOT touched: notification bell counts (~9781, dean/notificationCenter stream) | tests/student-journey-audit.ts §S14 |
 | S15 | TODO | |
 | S16 | TODO | |
 | S17 | TODO | |

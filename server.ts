@@ -13405,9 +13405,13 @@ const grantedPermissions = async (req: AuthenticatedRequest): Promise<number[]> 
 const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
                          courses: Array<{ AdCourseId: number; AdSectionId: number }>,
                          sectionId: number): boolean => {
-  /* الطلبُ الحديث يحمل قسمَ استبياره صراحةً، فهو وحده الحَكَم. */
+  /* الطلبُ الحديث يحمل قسمَ استبيانه صراحةً، فهو صاحبُه. **ومعه** كلُّ قسمٍ
+     يملك مقرّراً فيه: طلبُ «تعارض مقررين» قد يسمّي مقرّراً من قسمٍ آخر، وكان
+     لا يراه إلا قسمُ الاستبيان — ولجنتُه لا تقرّر إلا في مقرّراتها — فيبقى
+     ذلك المقرّرُ بلا من يقرّر فيه أبداً. */
   const declared = Number(need.surveySectionId || 0);
-  if (declared) return declared === sectionId;
+  if (declared) return declared === sectionId || courses.some(row => Number(row.AdSectionId) === sectionId
+    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
 
   /* والقديمُ — وهو ما كُتب قبل وجود ذلك الحقل — يُنسب إلى **كلِّ** قسمٍ يملك
      مقرّراً من مقرّراته المطلوبة. وهذا مقصودٌ ولا يُختصر إلى واحد: طالبٌ طلب
@@ -13543,12 +13547,15 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     const droppedIds = (need.courseStates || [])
       .filter((state: any) => state?.droppedByStudent && !(need.courseIds || []).map(Number).includes(Number(state.courseId)))
       .map((state: any) => Number(state.courseId));
+    /* كلُّ مقرّرٍ يُقرَّر في كشف القسم الذي يملكه. ومقرّرُ قسمٍ آخر في طلبٍ
+       قُدّم عبر استبيان هذا القسم يُعرض هنا للقراءة وحدها («يقرّره قسم …»)،
+       ويُقرَّر في كشف قسمه. */
+    const filedHere = Number(need.surveySectionId || need.AdSectionId || 0) === sectionId;
+    const ownerOf = (id: any) => Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
+    const decidedHere = (id: any) => { const owner = ownerOf(id); return !owner || owner === sectionId; };
     const visibleCourseIds = [...(need.courseIds || []), ...droppedIds].filter((id: any) => {
+      if (!decidedHere(id) && !filedHere) return false;
       if (viewer === "registration") return reachedRegistration(states.get(Number(id)));
-      if (viewer === "committee") {
-        const owner = Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
-        return !owner || owner === sectionId;
-      }
       return true;
     });
     if (!visibleCourseIds.length) return null;
@@ -13580,6 +13587,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
           /* «لم يقل أحدٌ شيئاً» يختلف عن «سلّمه القسم وينتظر»: الأولى غيابُ
              سجلّ، والثانيةُ قولٌ مكتوب. والفرقُ يهمّ من يقرأ. */
           settled: Boolean(state),
+          readOnly: !decidedHere(id),
+          decidedBySectionName: decidedHere(id) ? undefined : (sectionNameById.get(ownerOf(id)) || "قسم آخر"),
           droppedByStudent: Boolean(state?.droppedByStudent),
           droppedLabel: state?.droppedByStudent ? droppedCourseLabel(state) : undefined,
         };
@@ -13590,7 +13599,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
   /* كلُّ بندٍ ينتظر قراراً — مقرّرٌ أو حالةُ خريجٍ كاملة — يُعدّ مرّةً بالتصنيف نفسه. */
   const every: string[] = rows.flatMap((row: any) => row.caseLevel
     ? [String(row.caseStatus)]
-    : row.courses.map((course: any) => !course.settled ? "pending"
+    : row.courses.filter((course: any) => !course.readOnly).map((course: any) => !course.settled ? "pending"
       : course.state === "awaiting-registration" ? "approved" : String(course.state)));
   res.setHeader("Cache-Control", "no-store");
   res.json({

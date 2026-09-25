@@ -53,6 +53,9 @@ interface CaseCourse {
   reasonCode?: StudentCourseRejectReason | StudentCommitteeRejectReason;
   note?: string; by?: string; byRole?: string; at?: string;
   settled: boolean;
+  /** مقرّرُ قسمٍ آخر في طلبٍ قُدّم عبر استبيان هذا القسم: يُعرض ويُقرَّر في كشف قسمه. */
+  readOnly?: boolean;
+  decidedBySectionName?: string;
   /** حذفه الطالبُ من طلبه بعد القرار: يُعرض ولا يُقرَّر فيه. */
   droppedByStudent?: boolean;
   droppedLabel?: string;
@@ -148,7 +151,7 @@ const GRADUATE_REASON_LABEL: Record<string, string> = {
 };
 /** البنودُ التي تنتظر قراراً في صفٍّ واحد: مقرّراته، أو حالتُه كلها. */
 const rowStatuses = (row: CaseRow): Array<Exclude<StatusFilter, "all">> =>
-  row.caseLevel ? [row.caseStatus || "pending"] : row.courses.map(statusOf);
+  row.caseLevel ? [row.caseStatus || "pending"] : row.courses.filter(course => !course.readOnly).map(statusOf);
 
 const arabicDate = (iso?: string) => {
   if (!iso) return "";
@@ -381,7 +384,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   /* موافقةُ اللجنة على كل ما ينتظرها في طلب طالبٍ واحد — لا على الكشف كله:
      النظرُ في كل طالب هو عملُ اللجنة، والزرُّ يختصر النقرات لا المراجعة. */
   const approveAll = async (row: CaseRow) => {
-    const pending = row.courses.filter(course => !course.settled && !course.droppedByStudent);
+    const pending = row.courses.filter(course => !course.settled && !course.droppedByStudent && !course.readOnly);
     if (!pending.length) return;
     setBusyKey(`${row.id}:all`);
     setError(null);
@@ -536,7 +539,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                       </small>
                     </div>
                     <span className="registration-count">{row.caseLevel ? "حالة خريج" : countOf(row.courses.length, AR.course)}</span>
-                    {committeeActs && !row.caseLevel && row.courses.some(course => !course.settled) ? (
+                    {committeeActs && !row.caseLevel && row.courses.some(course => !course.settled && !course.readOnly && !course.droppedByStudent) ? (
                       <button
                         type="button" className="changes-chip"
                         disabled={busyKey === `${row.id}:all`}
@@ -652,9 +655,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                               <em>{reasonLabel(course.reasonCode)}{course.note ? ` · ${course.note}` : ""}</em>
                             ) : course.note ? <em>{course.note}</em> : null}
                             {course.droppedByStudent ? <em className="registration-dropped">{course.droppedLabel || "ألغاه الطالب بعد التسجيل"}</em> : null}
+                            {course.readOnly ? <em className="registration-readonly-course">يقرّره قسم {course.decidedBySectionName || "آخر"}</em> : null}
                           </div>
 
-                          {committeeActs && !course.droppedByStudent && !decidedByRegistration(course) ? (
+                          {committeeActs && !course.readOnly && !course.droppedByStudent && !decidedByRegistration(course) ? (
                             <div className="registration-course-actions" aria-label="قرار اللجنة">
                               <button
                                 type="button" className="changes-chip"
@@ -676,7 +680,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                               </button>
                             </div>
                           ) : null}
-                          {registrationActs && !course.droppedByStudent && course.settled && course.state !== "committee-rejected" ? (
+                          {registrationActs && !course.readOnly && !course.droppedByStudent && course.settled && course.state !== "committee-rejected" ? (
                             <div className="registration-course-actions" aria-label="قرار التسجيل">
                               <button
                                 type="button" className="changes-chip"

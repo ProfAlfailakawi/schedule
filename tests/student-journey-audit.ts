@@ -323,6 +323,21 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(derivations.length === 1 && derivations[0] === "src/utils/studentNeedMerge.ts", `S13 اشتقاق رقم الحالة في مكانٍ واحد (${derivations.join(", ")})`);
 }
 
+/* ── S14 مقرّر القسم الآخر في «تعارض مقررين» يُقرَّر في كشف قسمه ─────────── */
+{
+  const owns = between(server, "const sectionOwnsNeed = ", "const STUDENT_COURSE_STATES");
+  check(/if \(declared\) return declared === sectionId \|\| courses\.some\(row => Number\(row\.AdSectionId\) === sectionId/.test(owns),
+    "S14 القسم المالك لمقرّرٍ في الطلب يراه (لا قسم الاستبيان وحده)");
+  const list = between(server, 'app.get("/api/student-registration"', 'app.post("/api/student-registration/:id/course-state"');
+  check(list.includes("readOnly: !decidedHere(id)") && list.includes("decidedBySectionName"), "S14 مقرّر القسم الآخر يظهر في كشف الاستبيان للقراءة");
+  check(list.includes("if (!decidedHere(id) && !filedHere) return false;"), "S14 وكشف القسم المالك لا يعرض إلا مقرّره");
+  check(list.includes("row.courses.filter((course: any) => !course.readOnly)"), "S14 الأعداد لا تحسب ما يقرّره قسمٌ آخر");
+  const write = between(server, 'app.post("/api/student-registration/:id/course-state"', 'app.post("/api/student-registration/:id/case-state"');
+  check(write.includes("هذا المقرّر لقسمٍ آخر؛ تقرّر فيه لجنةُ ذلك القسم."), "S14 ولجنة قسم الاستبيان لا تقرّر في مقرّر غيرها");
+  const sheet = read("src/components/StudentRegistration.tsx");
+  check(sheet.includes("يقرّره قسم {course.decidedBySectionName") && sheet.includes("committeeActs && !course.readOnly"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
