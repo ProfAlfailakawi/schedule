@@ -47,6 +47,7 @@ import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departm
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
+import { termHasEnded, termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -16218,11 +16219,33 @@ ${resolved.error}</body></html>`);
      عشرُ محاولاتٍ في النافذة، ثم انتظار.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * ── الحالةُ تعيش بعد باب الإرسال ───────────────────────────────────────────
+ *
+ * «حالة طلبي» كانت تُقرأ بالرابط نفسه الذي يُرسَل به، فإذا أوقفه القسم أو
+ * انتهت صلاحيته — وهو ما يحدث عادةً مع أسبوع السحب والإضافة، قبل أن يقرّر
+ * التسجيل — ماتت الحالة معه، ورجع الطالب إلى المكتب ليسأل. فالقراءةُ هنا
+ * تبقى مفتوحةً لرابط الاستبيان حتى ثلاثين يوماً بعد نهاية فصله، والإرسالُ
+ * يبقى مغلقاً كما هو (يمرّ بـ`resolveShareToken`).
+ */
+const SURVEY_STATUS_GRACE_MS = 30 * 86400000;
+async function resolveSurveyStatusToken(token: string): Promise<{ link: ScheduleShareLink } | { error: string; status: 404 | 410 }> {
+  const link = await Repository.getShareLink(String(token || ""));
+  if (!link || link.kind !== "survey") return { error: "الرابط غير موجود أو ليس استبياناً", status: 404 };
+  const open = !link.revoked && new Date(link.expiresAt).getTime() >= Date.now();
+  if (open) return { link };
+  const term = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(link.AdTermId));
+  const window = termWindow(term as any);
+  const readableUntil = Math.max(new Date(link.expiresAt).getTime() || 0, window?.to || 0) + SURVEY_STATUS_GRACE_MS;
+  if (Date.now() < readableUntil) return { link };
+  return { error: "انتهت مدة متابعة الطلبات لهذا الفصل. راجع القسم.", status: 410 };
+}
+
 app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response) => {
   const token = String(req.params.token || "");
-  const resolved = await resolveShareToken(token);
+  /* القراءةُ تتبع مهلةَ الحالة لا بابَ الإرسال. */
+  const resolved = await resolveSurveyStatusToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
-  if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
   if (!staffLookupAllowed(`mycase:${token}`, req.ip || "unknown")) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
     return;
@@ -16395,11 +16418,11 @@ box.addEventListener("keydown",function(e){if(e.key==="Enter")run()});
 
 /** بابُ «حالة طلبي». الرابطُ نفسه الذي عبّأ منه الطالب، بمسارٍ آخر. */
 app.get("/m/:token", async (req: Request, res: Response) => {
-  const resolved = await resolveShareToken(String(req.params.token || ""));
+  const resolved = await resolveSurveyStatusToken(String(req.params.token || ""));
   res.setHeader("Cache-Control", "no-store");
-  if ("error" in resolved || resolved.link.kind !== "survey") {
-    const message = "error" in resolved ? resolved.error : "هذا الرابط ليس استبياناً";
-    const status = "error" in resolved ? resolved.status : 404;
+  if ("error" in resolved) {
+    const message = resolved.error;
+    const status = resolved.status;
     res.status(status).type("text/html; charset=utf-8").send(
       `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>

@@ -1181,7 +1181,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const stopSurvey = async (id: string) => {
     const ok = await visualConfirm({
       title: "إيقاف رابط الاستبيان",
-      message: "سيتوقف الرابط فوراً ولن يفتح لأي طالب بعد الآن. الحالات المرسلة تبقى محفوظة. يمكنك إصدار رابط جديد متى شئت.",
+      message: "يتوقف استقبال الطلبات من هذا الرابط فوراً. الحالات المرسلة تبقى محفوظة، ويبقى أصحابها قادرين على متابعة «حالة طلبي» بالرابط نفسه حتى 30 يوماً بعد نهاية الفصل. يمكنك إصدار رابط جديد متى شئت.",
       confirmLabel: "أوقف الرابط",
       tone: "danger",
     });
@@ -1189,7 +1189,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setBusy(true); setError(null);
     try {
       await fetchJson(`/api/share/${encodeURIComponent(id)}`, { method: "DELETE" });
-      setMessage("أُوقف رابط الاستبيان. لم يعد يفتح لأي طالب.");
+      setMessage("أُوقف استقبال الطلبات من هذا الرابط. متابعة «حالة طلبي» تبقى متاحة لمن أرسل حتى 30 يوماً بعد نهاية الفصل.");
       await reload();
     } catch (e: any) {
       setError(smartMessage(e));

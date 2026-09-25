@@ -170,6 +170,23 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
     "S7 حفظ القاعدة يُسقط نسخة الاستبيان المؤقتة");
 }
 
+/* ── S3 الحالة لا تموت مع رابط الاستبيان ─────────────────────────────────── */
+{
+  const helper = between(server, "async function resolveSurveyStatusToken", "\n}\n");
+  check(helper.includes("termWindow(") && helper.includes("SURVEY_STATUS_GRACE_MS") && helper.includes("link.revoked"),
+    "S3 مهلة القراءة: نهاية الفصل + 30 يوماً، للرابط الموقوف أو المنتهي");
+  check(server.includes("const SURVEY_STATUS_GRACE_MS = 30 * 86400000;"), "S3 المهلة ثلاثون يوماً");
+  const myCase = between(server, 'app.post("/api/public/survey/:token/my-case"', "function studentCaseStatusPage");
+  const statusRoute = between(server, 'app.get("/m/:token"', 'app.get("/q/:token"');
+  check(myCase.includes("resolveSurveyStatusToken(token)") && !myCase.includes("resolveShareToken("), "S3 my-case يقرأ بمهلة الحالة");
+  check(statusRoute.includes("resolveSurveyStatusToken(") && !statusRoute.includes("resolveShareToken("), "S3 /m/ يفتح بمهلة الحالة");
+  const submit = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  check(submit.includes("resolveShareToken(token)") && !submit.includes("resolveSurveyStatusToken"), "S3 الإرسال يبقى مغلقاً بإغلاق الرابط");
+  const workspace = read("src/components/IntelligenceWorkspace.tsx");
+  check(workspace.includes("حتى 30 يوماً بعد نهاية الفصل") && !workspace.includes("سيتوقف الرابط فوراً ولن يفتح لأي طالب بعد الآن"),
+    "S3 تحذير «أوقف الرابط» يقول الحقيقة: تتوقف الطلبات وتبقى المتابعة");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -4,7 +4,7 @@
 |----|--------|------------|
 | S1 | FIXED — real portal screenshot replaced by generated synthetic example (scripts/make-graduation-sheet-example.mjs); real civil ID/name replaced with synthetic 300010100122 / «طالب تجريبي» in server.ts, documentOcr.ts, pdf-import-regression.ts. NOTE: the old image and values remain in git history / the public GitHub repo — owner must purge history (not done here: never push). | tests/student-journey-audit.ts §S1 (EXIF-free generated asset + repo-wide checksum-valid civil-ID guard) |
 | S2 | FIXED — StudentNeed.caseState {committee, registrar} (src/utils/studentCaseDecision.ts = the one ordering rule), Repository.setStudentCaseDecision (transaction, both paths), POST /api/student-registration/:id/case-state (same guards/reason lists, «سطرٌ للطالب»), sheet shows graduate rows with verification facts + committee→registrar buttons, my-case/m/ show request type + case decision | tests/student-journey-audit.ts §S2 |
-| S3 | TODO | |
+| S3 | FIXED — resolveSurveyStatusToken: my-case and /m/ stay readable for a revoked/expired survey link until max(link expiry, term end)+30 days; submission still uses resolveShareToken (closed); «أوقف الرابط» confirm + toast now say requests stop but status stays readable | tests/student-journey-audit.ts §S3 |
 | S4 | TODO | |
 | S5 | TODO | |
 | S6 | FIXED — my-case uses toEnglishDigits + validateCivilId(...).isValid; server asciiDigits is now an alias of the shared toEnglishDigits; survey page digits() accepts ۰-۹; student-case-status audit no longer encodes the object test | tests/student-journey-audit.ts §S6 (incl. repo-wide `!validateCivilId(x)` guard, executes the page's digits()) |
