@@ -49,9 +49,9 @@ const everyCount = (scope: any[], term: any[], options: any = {}) => {
   const normalize = opts.normalizeRow || ((r: any) => r);
   const analysis = analyzeSchedule(scope, term, [], instructors, opts);
   const scopeIds = new Set(scope.map(r => r.id));
-  const inside = scope.map(normalize);
+  const inside: any[] = scope.map(normalize);
   const scan = fastConflictScan(inside, { placeholderInstructorIds: placeholders });
-  const outside = outsideScopeClashes(inside, term.map(normalize), { placeholderInstructorIds: placeholders });
+  const outside = outsideScopeClashes(inside, term.map(normalize) as any[], { placeholderInstructorIds: placeholders });
   return {
     count: approvalBlockerCount(scope, term, opts),
     list: approvalBlockers(scope, term, opts).length,

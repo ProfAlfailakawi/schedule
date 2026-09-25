@@ -11838,6 +11838,14 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
  * محكوماً بالنطاق كغيره: العميد يرى كليته، وعميد التسجيل يرى الجميع، ومن لا
  * نطاق له لا يرى شيئاً. والإدارة الرئيسية تبقى كما كانت، ترى الكل.
  */
+function balanceScopeLabel(req: AuthenticatedRequest): "الجامعة" | "الكلية" | "النطاق" {
+  if (req.user?.IsAdminUser || roleDefinition(req.user?.Role).scopeMode === "allColleges") return "الجامعة";
+  const colleges = new Set((req.scopes || []).map(scope => Number(scope.AdCollegeId)).filter(Boolean));
+  const wholeCollege = (req.scopes || []).some(scope => !Number(scope.AdSectionId));
+  if (colleges.size === 1 && (wholeCollege || roleDefinition(req.user?.Role).scopeMode === "college")) return "الكلية";
+  return "النطاق";
+}
+
 app.get("/api/reports/department-balance", requirePermission(14), async (req: AuthenticatedRequest, res: Response) => {
   let termId = Number(req.query.termId || 0);
   const terms = await Repository.getTerms();
@@ -11868,7 +11876,16 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
       (timeToMinutes(row.fstarttime) < MORNING_END ? (morning += meetings) : (evening += meetings));
     }
     const meetings = Math.max(1, morning + evening);
-    const rooms = new Set(rows.map(row => verifiedRoomKey(row)).filter(Boolean));
+    /* Every hall the department actually teaches in — a legacy spelling is
+       folded onto its registered hall first, blanks and «---» are not halls —
+       beside the subset already verified in the registry. Counting only the
+       verified ones printed «0 قاعات» for a department teaching in twelve. */
+    const verifiedRooms = new Set(rows.map(row => verifiedRoomKey(row)).filter(Boolean));
+    const rooms = new Set(rows.map(row => {
+      const canonical: any = balanceBlockerOptions.normalizeRow ? balanceBlockerOptions.normalizeRow(row) : row;
+      if (!canonical.roomId && (isInvalidLocationToken(canonical.AdRoomHall) || isInvalidLocationToken(canonical.AdRoomCode))) return "";
+      return roomIdentityKey(canonical);
+    }).filter(Boolean));
     return {
       sectionId,
       sectionName: section?.AdSectionName || `قسم ${sectionId}`,
@@ -11876,6 +11893,7 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
       rows: rows.length,
       instructors: new Set(rows.map(row => row.AdInstructorId).filter(Boolean)).size,
       rooms: rooms.size,
+      verifiedRooms: verifiedRooms.size,
       morningPct: Math.round((morning / meetings) * 100),
       eveningPct: Math.round((evening / meetings) * 100),
       fairness: fairness.score,
@@ -11893,6 +11911,11 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
       departments: departments.length,
       rows: departments.reduce((sum, item) => sum + item.rows, 0),
       conflicts: departments.reduce((sum, item) => sum + item.conflicts, 0),
+      /* What «all» means for THIS reader: a dean reads a college, the
+         registrar and the administration read the university, anyone else
+         reads the departments of their scope. The screen printed
+         «على مستوى الجامعة» to a dean who can see one college. */
+      scopeLabel: balanceScopeLabel(req),
     },
   });
 });
