@@ -216,6 +216,33 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(myCase.includes("droppedCourseLabel("), "S4 وصفحة الطالب تقول له إنه ألغاه");
 }
 
+/* ── S5 الرقم المدني وحده لا يكشف الاسم ولا يُعدِّل طلب غيره ───────────────── */
+{
+  const identityRoute = between(server, 'app.post("/api/public/survey/:token/identity-status"', 'app.post("/api/public/survey/:token/proof-status"');
+  const beforeProof = identityRoute.slice(0, identityRoute.indexOf("if(!caseRefMatches(priorNeed,suppliedRef))"));
+  check(beforeProof.includes("res.json({exists:true,verified:false,initial})") && !/name:|sectionName:|openStudentIdentity/.test(beforeProof.replace("maskedInitial(String(prior?.name", "")),
+    "S5 بلا رقم الحالة: «يوجد طلب» وحرفٌ مقنّع فقط، لا اسم ولا قسم");
+  check(identityRoute.indexOf("caseRefMatches(priorNeed,suppliedRef)") < identityRoute.indexOf("name:String(prior?.name"),
+    "S5 الاسم والقسم وملخّص الطلب بعد إثبات رقم الحالة فقط");
+  const submitRoute = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  check(submitRoute.includes('if(priorNeed&&!caseRefMatches(priorNeed,body.caseRef))') && submitRoute.includes('code:"case-ref-required"'),
+    "S5 استبدال طلبٍ قائم يتطلب رقم الحالة");
+  check(submitRoute.indexOf("caseRefMatches(priorNeed,body.caseRef)") < submitRoute.indexOf("Repository.saveStudentNeed("),
+    "S5 والفحص قبل الكتابة");
+  check(server.includes("فقدت الرقم؟ راجع القسم"), "S5 «فقدت الرقم؟ راجع القسم»");
+  const reuse = between(server, "const reusableGraduateVerification=", "const normalizeStudentIdentityName=");
+  check(reuse.includes("caseRefMatches(await priorNeedForHand(link,civil),caseRef)"), "S5 إعادة استعمال صحيفة التخرج تتطلب رقم الحالة");
+  check((server.match(/reusableGraduateVerification\(resolved\.link,civil,sectionId,(?:\(req\.body\|\|\{\}\)|body)\.caseRef\)/g) || []).length === 2
+    && (server.match(/reusableGraduateVerification\(/g) || []).length === 2,
+    "S5 كلا مستدعيي إعادة الاستعمال يمرّران رقم الحالة");
+  const myCase = between(server, 'app.post("/api/public/survey/:token/my-case"', "function studentCaseStatusPage");
+  check(myCase.includes("caseRefMatches(need, req.body?.caseRef)"), "S5 «حالة طلبي» بالرقم المدني ورقم الحالة معاً");
+  const statusPage = between(server, "function studentCaseStatusPage", 'app.get("/m/:token"');
+  check(statusPage.includes('id="ref"') && statusPage.includes("caseRef:ref") && statusPage.includes("location.hash"), "S5 صفحة الحالة تطلب رقم الحالة (ويملؤه رابط الإرسال بعد #)");
+  check(surveyPageSource.includes("caseRefStep()") && surveyPageSource.includes("caseRef:caseRef") && surveyPageSource.includes("priorSummaryHtml()")
+    && surveyPageSource.includes("replaceNote()"), "S5/S4 الصفحة تطلب رقم الحالة وتعرض الطلب القائم وتنبّه قبل استبداله");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
