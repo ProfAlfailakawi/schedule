@@ -239,7 +239,27 @@ export async function takeScanReadingTurn(waitMs=Number.POSITIVE_INFINITY,onWait
   }};
 }
 /** Full readings in progress, by document fingerprint (content + course keys). */
-const inflightScanReads=new Map<string,Promise<OcrResult>>();
+const inflightScanReads=new Map<string,Promise<unknown>>();
+/**
+ * Read one scanned document in its turn, sharing it with the same file sent
+ * again while it waits or runs. The fingerprint is registered BEFORE waiting
+ * for the turn: registered only after, two requests for one uncached file
+ * could both miss the entry, and the second would wait behind the first and
+ * be refused as busy instead of sharing it (review of #117).
+ */
+export async function readScanInTurn<T>(fingerprint:string,read:()=>Promise<T>,events:{waiting?:()=>void;sharing?:()=>void}={},waitMs=SCAN_TURN_WAIT_MS):Promise<T>{
+  const running=inflightScanReads.get(fingerprint) as Promise<T>|undefined;
+  if(running){events.sharing?.();return structuredClone(await running);}
+  const reading=(async()=>{
+    const turn=await takeScanReadingTurn(waitMs,events.waiting);
+    if(!turn)throw new ScanReadingBusyError();
+    try{return await read();}
+    finally{await turn.release(true);}
+  })();
+  inflightScanReads.set(fingerprint,reading);
+  try{return await reading;}
+  finally{if(inflightScanReads.get(fingerprint)===reading)inflightScanReads.delete(fingerprint);}
+}
 /** Terminate every table-reading worker so its WASM memory returns to the
  *  system; the getters create fresh ones on the next reading. */
 async function releaseTableWorkers():Promise<void>{
@@ -3611,25 +3631,16 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   }
   /* The same file sent again while it is being read (a reviewer who reloaded
      the page mid-read) shares that reading instead of queueing a second one. */
-  const sharing=inflightScanReads.get(fingerprint);
-  if(sharing){
-    onProgress?.({phase:"read",page:0,pages:0,message:"هذا الملف نفسه يُقرأ الآن — تظهر نتيجته حين تكتمل قراءته"});
-    return structuredClone(await sharing);
-  }
-  const turn=await takeScanReadingTurn(SCAN_TURN_WAIT_MS,()=>onProgress?.({phase:"render",page:0,pages:0,message:"الخادم يقرأ ملفاً آخر الآن — ينتظر ملفك دوره"}));
-  if(!turn)throw new ScanReadingBusyError();
-  const reading=(async()=>{
-    try{
-      /* A file that waited for its turn behind its own first reading finds that
-         reading remembered now, and returns at once. */
-      const finished=cachedOcr(fingerprint);
-      if(finished){onProgress?.({phase:"read",page:finished.pageCount,pages:finished.pageCount,message:"تم استرجاع القراءة المحفوظة"});return finished;}
-      return await readScannedDocument(input,mime,fingerprint,optionKeys,onProgress);
-    }finally{await turn.release(true);}
-  })();
-  inflightScanReads.set(fingerprint,reading);
-  try{return await reading;}
-  finally{if(inflightScanReads.get(fingerprint)===reading)inflightScanReads.delete(fingerprint);}
+  return readScanInTurn(fingerprint,async()=>{
+    /* A file that waited for its turn behind its own first reading finds that
+       reading remembered now, and returns at once. */
+    const finished=cachedOcr(fingerprint);
+    if(finished){onProgress?.({phase:"read",page:finished.pageCount,pages:finished.pageCount,message:"تم استرجاع القراءة المحفوظة"});return finished;}
+    return await readScannedDocument(input,mime,fingerprint,optionKeys,onProgress);
+  },{
+    waiting:()=>onProgress?.({phase:"render",page:0,pages:0,message:"الخادم يقرأ ملفاً آخر الآن — ينتظر ملفك دوره"}),
+    sharing:()=>onProgress?.({phase:"read",page:0,pages:0,message:"هذا الملف نفسه يُقرأ الآن — تظهر نتيجته حين تكتمل قراءته"}),
+  });
 }
 
 /** The image path of ocrDocument. It runs only while holding the scan-reading
