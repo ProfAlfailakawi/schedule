@@ -450,7 +450,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const bell = between(server, "async function notificationItemsForTerm", 'app.get("/api/notifications"');
   check(bell.includes("await studentQueueForTerm(termId)") && !bell.includes("getStudentNeedsForTerm"), "R2 الجرس يقرأ المجموع المحفوظ لا الفصل");
   check((server.match(/getStudentNeedsForTerm\(/g) || []).length === 1 && server.includes("return studentQueueMemo.get(key,"), "R2 قراءةُ الفصل كلّه في مكانٍ واحد، خلف الذاكرة");
-  check(server.includes("const key = `${Repository.currentDemoSessionId() || \"\"}:${termId}`;"), "R2 مفتاح الذاكرة يحمل جلسة العرض");
+  check(server.includes("const key = dataContextCacheKey(termId);"), "R2 مفتاح الذاكرة يحمل جلسة العرض (dataContextCacheKey)");
   const survey = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
   check(survey.indexOf("studentQueueMemo.invalidate()") > survey.indexOf("await Repository.saveStudentNeed("), "R2 الاستبيان يمحو المحفوظ بعد الحفظ");
   check(between(server, "const broadcastStudentNotifySoon", "/* A mark older than this").includes("studentQueueMemo.invalidate();"), "R2 كتابة الكشف تمحو المحفوظ");
