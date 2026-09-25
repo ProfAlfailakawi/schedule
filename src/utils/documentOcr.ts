@@ -2202,6 +2202,30 @@ async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:
 /** Rows whose identity is proven: a full course code and a reference number. */
 const identityRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(String(row.code||""))&&/^\d{4,8}$/.test(String(row.reference||""))).length;
 const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(row.code)&&/^\d{4,8}$/.test(row.reference)&&Boolean(row.start)&&Boolean(row.building||row.buildingRaw)).length;
+/** القراءة الفائزة بالهوية لا تُفقد ما قرأته الأخرى من الجدولة: الخانة
+ *  الفارغة وحدها تُملأ من صف القراءة الأخرى نفسه (بالمرجعي، أو بالمقرر
+ *  والشعبة)، ولا تُمسّ قيمة قرأها الأساس. الصفحة 1 من جدول 2026: طريق
+ *  الكلمات أثبت 28 هوية بلا وقت ولا مبنى، والشبكة قرأت الأوقات — فكان
+ *  الاستبدال الكامل يوقف الملف «بلا وقت ولا مبنى» بعدما كان يُقرأ. */
+export function fillScheduleCellsFrom(base:GridRow[],donor:GridRow[]|null|undefined){
+  if(!donor?.length)return;
+  const byReference=new Map<string,GridRow>(),byCourseSection=new Map<string,GridRow>();
+  for(const row of donor){
+    const reference=String(row.reference||"").trim();
+    if(reference&&!byReference.has(reference))byReference.set(reference,row);
+    const course=`${row.code}|${row.scode}`;
+    if(row.code&&row.scode&&!byCourseSection.has(course))byCourseSection.set(course,row);
+  }
+  for(const row of base){
+    const match=byReference.get(String(row.reference||"").trim())||((row.code&&row.scode)?byCourseSection.get(`${row.code}|${row.scode}`):undefined);
+    if(!match)continue;
+    if(!row.start&&match.start){row.start=match.start;row.end=row.end||match.end;row.timeRaw=row.timeRaw||match.timeRaw;}
+    if(!row.building&&!row.buildingRaw&&(match.building||match.buildingRaw)){row.building=match.building;row.buildingRaw=match.buildingRaw;}
+    if(!row.hall&&!row.hallRaw&&(match.hall||match.hallRaw)){row.hall=match.hall;row.hallRaw=match.hallRaw;}
+    if(!String(row.days||"").trim()&&!row.daysRaw&&(match.days||match.daysRaw)){row.days=match.days;row.daysRaw=match.daysRaw;}
+    if(!row.instructorText&&match.instructorText)row.instructorText=match.instructorText;
+  }
+}
 
 async function readGrid(
   upright:Buffer,
@@ -3902,6 +3926,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
     /* أو حين يثبت هويةَ صفوفٍ أكثر (رقم مقرر كامل ومرجعي): شبكة أزاحت أعمدتها
        (المقرر فارغ، والكود في خانة المرجعي) لا تغلب قراءةً صحيحة الهوية. */
     if(wordLane&&wordLane.rows.length&&(soundScanRows(wordLane.rows)>soundScanRows(gridRows)||identityRows(wordLane.rows)>identityRows(gridRows))){
+      fillScheduleCellsFrom(wordLane.rows,gridRows);
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
@@ -4051,7 +4076,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
             const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
             if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)
               ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))
-              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){bestRows=lane.rows;bestFilled=filled;}
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){fillScheduleCellsFrom(lane.rows,bestRows);bestRows=lane.rows;bestFilled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;}
           }
         }catch{/* the earlier reading and its warning stand */}
       }
