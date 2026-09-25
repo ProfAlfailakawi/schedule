@@ -45,7 +45,7 @@ check(items[0]?.tone === "action" && items[items.length - 1]?.tone === "done", "
 
 // الخادم
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
-check(/if \(stage === "head"\) \{\s*const sent = await submitToRegistrar/.test(server), "اعتماد رئيس القسم يرسل للتسجيل في الخطوة نفسها");
+check(server.includes('const sent = stage === "head" ? await submitToRegistrar('), "اعتماد رئيس القسم يرسل للتسجيل في الخطوة نفسها");
 check(server.includes("const everAccepted = next.rounds.some(round => Boolean(round.acceptedAt));"), "بعد أول قبول لا تُسجَّل إضافاتٌ تنتظر رئيس القسم");
 check(/status: "accepted", rounds, pendingAdditions: \[\]/.test(server), "القبول يُسقط ما بقي من إقرارات");
 check(server.includes("acceptedVersionId: accepted.id"), "القبول يحفظ نسخة ما قُبل");

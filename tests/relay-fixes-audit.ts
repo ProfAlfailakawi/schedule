@@ -17,6 +17,7 @@ import {
   staleViewRefusal, statusAfterSignatureChange, suggestedExtensionDate,
 } from "../src/utils/approvalWorkflow";
 import { ApprovalRevisionConflict, Repository } from "../src/db/repository";
+import { runApprovalAttempts } from "../src/server/approvalAttempts";
 import type { ScheduleAdditionPending, ScheduleApproval, ScheduleApprovalSignature } from "../src/types";
 
 let passed = 0, failed = 0;
@@ -133,7 +134,7 @@ const noDeadline = readDeadline({}, "2026-10-01");
   const save = between(repo, "saveScheduleApproval: async", "getShareLink:");
   check(save.includes("runTransaction") && save.includes("throw new ApprovalRevisionConflict"), "R7 الحفظُ في Firestore معاملةٌ تشترط المراجعة");
   check(save.includes("revision: expected + 1"), "R7 وكلُّ حفظٍ يرفع المراجعة");
-  check(server.includes("async function approvalTransaction(") && server.includes("if (attempt === 0) continue;"),
+  check(server.includes("async function approvalTransaction(") && between(server, "async function approvalTransaction(", "\n}\n").includes("runApprovalAttempts(task,"),
     "R7 الخاسرُ يُعاد مرّةً واحدة ثم يُقال له");
   const writeRoutes = ["sign", "withdraw", "head-return", "acknowledge-additions", "submit", "return", "accept", "extension", "extension-request"];
   check(writeRoutes.every(name => route(`app.post("/api/approvals/${name}"`).includes("await approvalTransaction(res,")),
@@ -369,6 +370,39 @@ async function revisionBehaviour() {
     check(conflicted, "R7 حفظٌ ثانٍ فوق المراجعة القديمة يُرفض ولا يمحو الأول");
     const second = await Repository.saveScheduleApproval({ ...first, status: "committee" });
     check(second.revision === 2, "R7 وحفظٌ فوق المراجعة الحاضرة يمرّ");
+
+    /* ── مراجعة 5: الإعادةُ لا تكرّر الآثار الجانبية ─────────────────────── */
+    const scope = [9101, 9102, 9103] as const;
+    await Repository.saveScheduleApproval({ ...emptyApproval(...scope), status: "submitted" });
+    let captures = 0, closes = 0, raced = false;
+    const isConflict = (error: unknown) => error instanceof ApprovalRevisionConflict;
+    const accept = (raceTimes: number) => runApprovalAttempts(async once => {
+      const approval = (await Repository.getScheduleApproval(...scope))!;
+      const version = await once("accept-version", async () => { captures += 1; return { id: `v${captures}` }; });
+      if (raceTimes > 0) { raceTimes -= 1; raced = true; await Repository.saveScheduleApproval({ ...approval, events: [] }); }
+      await Repository.saveScheduleApproval({ ...approval, status: "accepted", rounds: [{ number: 1, acceptedVersionId: version.id } as any] });
+      closes += 1;
+    }, { isConflict, canRetry: () => true });
+    check(await accept(1) === "done" && raced, "R5-review قبولٌ سبقه قرارٌ آخر يُعاد فينجح");
+    check(captures === 1, "R5-review النسخةُ تُلتقط مرّةً واحدة عبر المحاولتين");
+    check(closes === 1, "R5-review إغلاقُ الملاحظات بعد الحفظ الناجح وحده، مرّةً واحدة");
+    await Repository.saveScheduleApproval({ ...(await Repository.getScheduleApproval(...scope))!, status: "submitted" });
+    captures = 0; closes = 0;
+    check(await accept(2) === "conflict" && closes === 0 && captures === 1, "R5-review تعارضٌ متكرّر: 409 ولا ملاحظةٌ أُغلقت");
+    let threw = false;
+    try { await runApprovalAttempts(async () => { throw new ApprovalRevisionConflict(); }, { isConflict, canRetry: () => false }); } catch { threw = true; }
+    check(threw, "R5-review لا إعادةَ بعد أن بدأ الردّ");
+
+    const acceptRoute = route('app.post("/api/approvals/accept"');
+    check(acceptRoute.indexOf("await Repository.saveScheduleApproval(next)") < acceptRoute.indexOf("updateScheduleComment(note.id")
+      && acceptRoute.includes('once("accept-version", () => captureScopeVersion('), "R5-review مسارُ القبول: نسخةٌ مرّةً، وإغلاقٌ بعد الحفظ");
+    const signRoute = route('app.post("/api/approvals/sign"');
+    check((signRoute.match(/saveScheduleApproval\(/g) || []).length === 1 && signRoute.includes("sent?.ok === true ? sent.next : next"),
+      "R5-review توقيعُ رئيس القسم وإرسالُه حفظٌ واحد");
+    const submitFn = between(server, "async function submitToRegistrar(", "\napp.");
+    check(!submitFn.includes("saveScheduleApproval(") && submitFn.includes('once("submit-version"'), "R5-review الإرسالُ يبني ولا يحفظ");
+    check(!/await captureScopeVersion\(req, collegeId, sectionId, termId, "(قبول التسجيل|إرجاع للقسم|إرجاع جدولٍ معتمد|إرسال إلى التسجيل)"/.test(server),
+      "R5-review لا التقاطَ نسخةٍ داخل قرار اعتمادٍ إلا عبر once");
   });
 }
 

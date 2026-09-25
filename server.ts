@@ -27,6 +27,7 @@ import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/cale
 import { personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
 import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
+import { runApprovalAttempts, type ApprovalOnce } from "./src/server/approvalAttempts";
 import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueueEntry } from "./src/server/notificationCache";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
@@ -9206,19 +9207,23 @@ async function termIsClosed(termId: number): Promise<boolean> {
  * كلُّ قرارٍ يقرأ الوثيقة ويكتبها كاملة. الطابورُ يحمي خادماً واحداً، ورقمُ
  * المراجعة يحمي الخوادم كلها (R7): إن كُتب فوق ما قرأناه أُعيد القرار مرّةً
  * واحدة على ما صار، فإن تكرّر قيل لصاحبه بدل أن يُمحى قرارُ غيره.
+ *
+ * ولأن القرار قد يُعاد، فعقدُه (مراجعة 5):
+ *   - حفظٌ واحد للوثيقة في كل محاولة، وهو آخرُ ما يُكتب قبل الردّ.
+ *   - كلُّ أثرٍ جانبيٍّ لا يُعاد (إغلاقُ ملاحظات) يأتي **بعد** نجاح الحفظ.
+ *   - وما يجب أن يسبق الحفظ لأن الوثيقة تحمل معرّفه (التقاطُ نسخة) يمرّ بـ
+ *     `once`: يُنفَّذ مرّةً واحدة عبر المحاولتين، وتأخذ الثانيةُ نتيجةَ الأولى.
  */
 async function approvalTransaction(
-  res: Response, collegeId: number, sectionId: number, termId: number, task: () => Promise<void>,
+  res: Response, collegeId: number, sectionId: number, termId: number, task: (once: ApprovalOnce) => Promise<void>,
 ): Promise<void> {
   await withSerialLock(`approval:${collegeId}:${sectionId}:${termId}`, async () => {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try { await task(); return; }
-      catch (error) {
-        if (!(error instanceof ApprovalRevisionConflict) || res.headersSent) throw error;
-        if (attempt === 0) continue;
-        res.status(409).json({ error: "سبقك قرارٌ آخر على هذا الجدول في اللحظة نفسها — حدّث الشاشة وأعد المحاولة.", code: "approval-revision" });
-        return;
-      }
+    const outcome = await runApprovalAttempts(task, {
+      isConflict: error => error instanceof ApprovalRevisionConflict,
+      canRetry: () => !res.headersSent,
+    });
+    if (outcome === "conflict") {
+      res.status(409).json({ error: "سبقك قرارٌ آخر على هذا الجدول في اللحظة نفسها — حدّث الشاشة وأعد المحاولة.", code: "approval-revision" });
     }
   });
 }
@@ -9573,7 +9578,7 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
   if (!stage) { res.status(403).json({ error: "التوقيع لرئيس لجنة الجدول ولرئيس القسم العلمي فقط." }); return; }
   if (await refuseIfTermClosed(res, termId)) return;
 
-  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
     if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
@@ -9582,7 +9587,7 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
 
     const notices = await regulationNoticeCount(collegeId, sectionId, termId);
-    const version = await captureScopeVersion(req, collegeId, sectionId, termId, `توقيع ${roleLabel(actor.role)}`, "manual");
+    const version = await once("sign-version", () => captureScopeVersion(req, collegeId, sectionId, termId, `توقيع ${roleLabel(actor.role)}`, "manual"));
     const at = new Date().toISOString();
     const signature: ScheduleApprovalSignature = {
       stage,
@@ -9600,16 +9605,18 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     if (stage === "committee" && next.headReturn) { const { headReturn: _answered, ...rest } = next; next = rest as ScheduleApproval; }
     next.status = statusAfterSignatureChange(next);
     next = withEvent(req, next, "sign", `${signature.roleLabel} — ${countOf(rows.length, AR.appointment)} — ${signature.verifyCode}`);
-    const saved = await Repository.saveScheduleApproval(next);
+    /* اعتمادُ رئيس القسم هو الإرسال: يوقّع فيصل الجدولُ إلى التسجيل مباشرة.
+       فإن منعه مانعٌ (موعدٌ منقضٍ، ملاحظةٌ معلّقة، تعارض) بقي التوقيع وقيل السبب.
+       والتوقيعُ والإرسال حفظٌ واحد (مراجعة 5): كانا حفظين، فإن سبق الثانيَ
+       قرارٌ آخر أُعيد كلُّ شيء ووجد التوقيعَ محفوظاً فرُدّ رئيسُ القسم بـ409. */
+    const sent = stage === "head" ? await submitToRegistrar(req, collegeId, sectionId, termId, next, once) : undefined;
+    const saved = await Repository.saveScheduleApproval(sent?.ok === true ? sent.next : next);
     const where = await approvalScopeLabel(collegeId, sectionId, termId);
     res.locals.auditChanges = `توقيع ${signature.roleLabel} على جدول ${where}: ${countOf(rows.length, AR.appointment)}، برمز ${signature.verifyCode}`;
-    /* اعتمادُ رئيس القسم هو الإرسال: يوقّع فيصل الجدولُ إلى التسجيل مباشرة.
-       فإن منعه مانعٌ (موعدٌ منقضٍ، ملاحظةٌ معلّقة، تعارض) بقي التوقيع وقيل السبب. */
-    if (stage === "head") {
-      const sent = await submitToRegistrar(req, collegeId, sectionId, termId, saved);
+    if (sent) {
       if (sent.ok === true) {
         res.locals.auditChanges += ` — وأُرسل إلى التسجيل (الجولة ${sent.round})`;
-        res.json({ approval: sent.approval, signature, regulationNotices: notices, submitted: true, round: sent.round });
+        res.json({ approval: saved, signature, regulationNotices: notices, submitted: true, round: sent.round });
         return;
       }
       res.json({ approval: saved, signature, regulationNotices: notices, submitted: false, submitBlocked: sent.error });
@@ -9704,10 +9711,10 @@ app.post("/api/approvals/acknowledge-additions", requireAuth, async (req: Authen
 });
 
 /**
- * الإرسال للتسجيل، بلا قفل: يستدعيه مسارُ الإرسال ومسارُ توقيع رئيس القسم،
- * وكلاهما يمسك قفلَ النطاق قبله.
+ * الإرسال للتسجيل، بلا قفلٍ ولا حفظ: يستدعيه مسارُ الإرسال ومسارُ توقيع رئيس
+ * القسم، وكلاهما يمسك قفلَ النطاق قبله ويحفظ ما يعيده (`next`) حفظاً واحداً.
  */
-async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, approval: ScheduleApproval) {
+async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, approval: ScheduleApproval, once: ApprovalOnce) {
   const deadline = await readDeadlineFor(approval, termId);
   /* ── «عُولجت» تُحسب، ولا تُقرأ من علَم ──────────────────────────────────
    *
@@ -9721,7 +9728,7 @@ async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, s
   if (verdict.ok !== true) return { ok: false as const, error: verdict.message, code: verdict.code };
 
   const actor = approvalActor(req);
-  const version = await captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual");
+  const version = await once("submit-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual"));
 
   /* ── ما طُلب، وما فُعل ──────────────────────────────────────────────────
    * الجولةُ المنتهية تحمل عدد ملاحظاتها — وهو ما طُلب. ويُضاف إليها الآن عدد
@@ -9747,8 +9754,7 @@ async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, s
     reviewedVersionId: version?.id, closingChangedRowCount: changedRowCount,
   });
   const next = withEvent(req, { ...approval, status: "submitted", ...opened, extensionRequest: undefined }, "submit", undefined, opened.currentRound);
-  const saved = await Repository.saveScheduleApproval(next);
-  return { ok: true as const, approval: saved, round: opened.currentRound };
+  return { ok: true as const, next, round: opened.currentRound };
 }
 
 /** الإرسال للتسجيل. يفتح جولةً جديدة ويقفل التعديل حتى يقبل التسجيل أو يُرجع. */
@@ -9758,13 +9764,14 @@ app.post("/api/approvals/submit", requireAuth, async (req: AuthenticatedRequest,
   if (!signatureStage(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "الإرسال للتسجيل من القسم: لجنة الجدول أو رئيس القسم." }); return; }
   if (await refuseIfTermClosed(res, termId)) return;
 
-  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
     if (refuseIfStale(req, res, { round: approval.currentRound, status: approval.status })) return;
-    const result = await submitToRegistrar(req, collegeId, sectionId, termId, approval);
+    const result = await submitToRegistrar(req, collegeId, sectionId, termId, approval, once);
     if (result.ok !== true) { res.status(409).json({ error: result.error, code: result.code }); return; }
+    const saved = await Repository.saveScheduleApproval(result.next);
     res.locals.auditChanges = `إرسال جدول ${await approvalScopeLabel(collegeId, sectionId, termId)} إلى التسجيل — الجولة ${result.round}`;
-    res.json({ approval: result.approval, round: result.round });
+    res.json({ approval: saved, round: result.round });
   });
 });
 
@@ -9780,7 +9787,7 @@ app.post("/api/approvals/return", requireAuth, async (req: AuthenticatedRequest,
   if (!canReviewSubmissions(req.user?.Role)) { res.status(403).json({ error: "الإرجاع للتسجيل وحده." }); return; }
   if (await refuseIfTermClosed(res, termId)) return;
 
-  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
     const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
     if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
@@ -9793,12 +9800,12 @@ app.post("/api/approvals/return", requireAuth, async (req: AuthenticatedRequest,
     let base: ScheduleApproval = approval;
     if (verdict.reopensAccepted) {
       /* المعتمدُ يُرجع في جولةٍ جديدة، أساسُها ما رآه التسجيل الآن. */
-      const seen = await captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع جدولٍ معتمد", "manual");
+      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع جدولٍ معتمد", "manual"));
       base = { ...approval, ...openRound(approval, { at, by: actor.name, reviewedVersionId: seen?.id }) };
     } else if (!base.rounds.find(round => round.number === base.currentRound)?.reviewedVersionId) {
       /* جولةُ التعديل لم تحمل نسخةً: ما رآه التسجيل يُلتقط لحظةَ الإرجاع،
          فيصير أساسَ الجولة التالية بدل أن يُقارن بما قبلها. */
-      const seen = await captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع للقسم", "manual");
+      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع للقسم", "manual"));
       if (seen?.id) base = { ...base, rounds: base.rounds.map(round => round.number === base.currentRound ? { ...round, reviewedVersionId: seen.id } : round) };
     }
     const rounds = base.rounds.map(round => round.number === base.currentRound
@@ -9818,7 +9825,7 @@ app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest,
   if (!canReviewSubmissions(req.user?.Role)) { res.status(403).json({ error: "القبول للتسجيل وحده." }); return; }
   if (await refuseIfTermClosed(res, termId)) return;
 
-  await approvalTransaction(res, collegeId, sectionId, termId, async () => {
+  await approvalTransaction(res, collegeId, sectionId, termId, async once => {
     const approval = await readApproval(collegeId, sectionId, termId);
     if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
     const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
@@ -9829,22 +9836,27 @@ app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest,
       return;
     }
     const actor = approvalActor(req);
-    const accepted = await captureScopeVersion(req, collegeId, sectionId, termId, "قبول التسجيل", "manual");
+    const accepted = await once("accept-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "قبول التسجيل", "manual"));
     const rounds = approval.rounds.map(round => round.number === approval.currentRound
       ? { ...round, acceptedAt: new Date().toISOString(), acceptedBy: actor.name, ...(accepted?.id ? { acceptedVersionId: accepted.id } : {}) }
       : round);
     /* ── القبولُ يُغلق ما بقي من ملاحظات التسجيل (R5) ─────────────────────
      * ملاحظةٌ مفتوحة على جدولٍ قُبل كانت تبقى حيّة، فتمنع أوّلَ إعادة إرسالٍ
      * بعد أي تعديلٍ لاحق — والقسمُ لا يعرف أنها ما زالت هناك. فقبولُ الجدول
-     * قرارٌ فيها أيضاً: تُغلق «بالقبول» ويبقى نصُّها. */
+     * قرارٌ فيها أيضاً: تُغلق «بالقبول» ويبقى نصُّها.
+     * والإغلاقُ بعد نجاح حفظ القبول لا قبله (مراجعة 5): قبولٌ خسر سباق
+     * المراجعة فرُدّ بـ409 كان قد أغلق ملاحظاتِ جدولٍ لم يُقبل. */
     const notes = await notesWithState(collegeId, sectionId, termId);
     const closing = notes.filter(note => note.origin === "registrar" && (note.state === "open" || note.state === "answered"));
-    for (const note of closing) {
-      await Repository.updateScheduleComment(note.id, { resolved: true, resolution: "closed-by-acceptance" });
-    }
     const next = withEvent(req, { ...approval, status: "accepted", rounds, pendingAdditions: [], pendingAdditionsOverflow: 0 },
       "accept", closing.length ? `${countOf(closing.length, AR.note)} ${CLOSED_BY_ACCEPTANCE_LABEL}` : undefined);
     const saved = await Repository.saveScheduleApproval(next);
+    /* القبولُ محفوظ: تعذّرُ إغلاق ملاحظةٍ يُسجَّل ولا يُبطله (والإغلاقُ نفسه
+       لا ضرر في تكراره). */
+    for (const note of closing) {
+      try { await Repository.updateScheduleComment(note.id, { resolved: true, resolution: "closed-by-acceptance" }); }
+      catch (error) { console.error("[approval] تعذّر إغلاق ملاحظةٍ بعد القبول:", error instanceof Error ? error.message : error); }
+    }
     res.locals.auditChanges = `قبول جدول ${await approvalScopeLabel(collegeId, sectionId, termId)} نهائياً — الجولة ${approval.currentRound}`
       + (closing.length ? ` (${countOf(closing.length, AR.note)} ${CLOSED_BY_ACCEPTANCE_LABEL})` : "");
     res.json({ approval: saved, closedNotes: closing.length });

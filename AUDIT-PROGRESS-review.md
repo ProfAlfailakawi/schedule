@@ -6,3 +6,4 @@
 | 2 | FIXED | tests/student-journey-audit.ts «R2» (memo/coalescer behaviour + structural wiring + NotificationCenter pageAwake) |
 | 3 | FIXED | tests/student-journey-audit.ts «R3» (chooseStudentCaseSecret + structural, legacy bridge kept) |
 | 4 | FIXED | tests/dean-notify-audit.ts «R4» (structural; memo semantics tested in R2) |
+| 5 | FIXED | tests/relay-fixes-audit.ts «R5-review» (behavioural retry on demo repo + structural) |
