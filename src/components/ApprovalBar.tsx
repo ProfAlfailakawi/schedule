@@ -15,13 +15,17 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ChevronDown, Clock3, CornerUpLeft, History, MessageSquareText, Send, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle, BadgeCheck, CalendarClock, CalendarPlus, CalendarX, Check, ChevronDown, CornerUpLeft, FilePenLine, Flag, History,
+  Hourglass, Landmark, ListChecks, ListPlus, Lock, MessageSquareText, PenLine, Quote, Send, ShieldCheck, Undo2, X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
 } from "../utils/approvalWorkflow";
-import { AR, countOf, oblique } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { deadlineDateLong, departmentDeadlineLine, lastExtensionRejection } from "../utils/submissionDeadlines";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
@@ -93,6 +97,15 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [reason, setReason] = useState("");
   const [days, setDays] = useState(7);
   const [historyOpen, setHistoryOpen] = useState(false);
+  /* تلميحٌ واحد مثبَّتٌ بالنقر في كل لحظة؛ يُطوى بـ Esc أو بنقرةٍ خارج الشريط. */
+  const [openTip, setOpenTip] = useState<string | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openTip) return;
+    const away = (event: PointerEvent) => { if (!barRef.current?.contains(event.target as Node)) setOpenTip(null); };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [openTip]);
   /* الشريط مطويٌّ افتراضاً: سطرٌ واحد بالحال والموعد والفعل. التواقيع والتفاصيل
      لمن يطلبها — ويُذكَر اختيارُه على هذا الجهاز. */
   const [expanded, setExpanded] = useState<boolean>(() => {
@@ -271,85 +284,217 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   if (!signatureStage && !locked && status !== "accepted" && status !== "returned") return null;
   const canHeadReturnNow = signatureStage === "head" && awaitsHeadSignature(approval) && !locked;
 
+  /* ── الشريط إنفوجرافيك: الحالُ تُرى، ونصُّها كاملاً في التلميح ─────────────
+   *
+   * طلب صاحب النظام أن يكون الشريط «بجمالية باقي الموقع: أيقونات بلا كلام
+   * وإنفوجرافيك». فصار السطرُ المطويّ: أيقونةَ الحال وعنوانها، ومِرقاةَ
+   * الدورة (لجنة ← رئيس قسم ← تسجيل ← معتمد)، وحلقةَ الموعد برقم أيامه،
+   * وشاراتٍ بأعدادها، والفعلَ الأول. وكلُّ جملةٍ كانت تُكتب سطراً باقيةٌ كما هي
+   * في تلميح عنصرها (يُفتح بالمرور وبالتركيز وبالنقر على الهاتف)، وفي نصٍّ
+   * مخفيٍّ لقارئ الشاشة — لا تضيع معلومةٌ، وإنما تنتقل من السطر إلى موضعها.
+   */
+  const acting = Boolean(signatureStage || powerAdmin);
+  const submitShown = readyToSubmit && acting;
+  const primaryTaken = headMustAcknowledge || canSignNow || submitShown;
+  const notesShown = Boolean(onOpenNotes) && (openNotes > 0 || status === "returned");
+  const notesLine = openNotes
+    ? `${countOf(openNotes, AR.note)} من التسجيل تنتظر معالجةً أو ردّاً — ${notesWhere}`
+    : status === "returned" ? "عُولجت ملاحظات التسجيل كلها" : "";
+  const headReturned = status === "drafting" && Boolean(headReturn);
+  const signatureTip = (sig: typeof committee, fallback: string) => sig
+    ? [sig.roleLabel || fallback, sig.userName, arabicDate(sig.at), `رمز التحقق: ${sig.verifyCode}`]
+    : [];
+
+  /* ── مِرقاةُ الدورة ─────────────────────────────────────────────────────
+     أين الجدول الآن، ومن وقّع، ومن أرجعه. الحالُ من البيانات نفسها التي
+     كانت تُكتب سطوراً: التوقيعان، والحال، والإرجاع، والإضافات المنتظِرة. */
+  const steps: StepModel[] = [
+    {
+      key: "committee", label: "لجنة الجدول", Icon: PenLine,
+      state: committee ? "done" : "current",
+      turn: !committee || status === "returned",
+      sig: signatureTip(committee, "لجنة الجدول"),
+      initials: initialsOf(committee?.userName),
+    },
+    {
+      key: "head", label: "رئيس القسم", Icon: BadgeCheck,
+      state: pendingAdditions > 0 ? "pending" : head ? "done" : headReturned ? "returned" : committee ? "current" : "waiting",
+      turn: (Boolean(committee) && !head && status !== "returned") || pendingAdditions > 0,
+      sig: signatureTip(head, "رئيس القسم"),
+      initials: initialsOf(head?.userName),
+      badge: pendingAdditions > 0 ? `+${(pendingAdditions + overflow).toLocaleString("ar-KW-u-nu-latn")}` : undefined,
+    },
+    {
+      key: "registrar", label: "التسجيل", Icon: Landmark,
+      state: accepted ? "done" : locked ? "current" : status === "returned" ? "returned" : "waiting",
+      turn: locked || (Boolean(committee && head) && !accepted && status !== "returned" && pendingAdditions === 0),
+      badge: approval.currentRound > 0 ? `ج${Number(approval.currentRound).toLocaleString("ar-KW-u-nu-latn")}` : undefined,
+      badgeTone: amendmentOpen ? "info" : undefined,
+    },
+    {
+      key: "accepted", label: "معتمد", Icon: ShieldCheck,
+      state: accepted ? "done" : "waiting",
+      turn: false,
+    },
+  ];
+  const returnFrom = status === "returned" ? 2 : headReturned ? 1 : 0;
+  const stepWord = (step: StepModel) =>
+    step.state === "done" ? (step.key === "accepted" ? "اعتُمد" : step.key === "registrar" ? "قبِل الجدول" : "وقّع")
+    : step.state === "returned" ? "أرجع الجدول للجنة"
+    : step.state === "pending" ? "شُعبٌ مضافة تنتظر إقراره"
+    : step.turn || step.state === "current" ? "الدور عنده الآن"
+    : "لم يصل إليه بعد";
+  const stepsTip = [
+    ...steps.map(step => `${step.label}: ${stepWord(step)}${step.sig?.length ? ` — ${step.sig[1]} · ${step.sig[2]}` : ""}`),
+    approval.currentRound > 0 ? `الجولة ${approval.currentRound}${amendmentOpen ? " (جولة تعديل)" : ""}` : "",
+  ].filter(Boolean);
+
+  /* ── حلقةُ الموعد ─────────────────────────────────────────────────────── */
+  const daysLeft = Math.max(0, Number(deadline?.daysLeft ?? 0));
+  const ringTone = deadlineGone ? "past" : deadline?.tone === "near" || daysLeft <= 7 ? "near" : "ok";
+  const ringFill = deadlineGone ? 1 : Math.max(0.06, Math.min(1, daysLeft / 14));
+  const ringBadge: RingBadge | null =
+    extensionRequest ? { tone: "warning", Icon: Hourglass }
+    : rejected ? { tone: "danger", Icon: X }
+    : deadline?.extensionUntil ? { tone: "info", Icon: CalendarPlus }
+    : null;
+  const ringTip = countdown ? [
+    countdown,
+    extensionRequest ? `طُلب تمديد ${countOf(extensionRequest.days, oblique(AR.day))} (${arabicDate(extensionRequest.at)}) — بانتظار رئيس التسجيل` : "",
+    deadline?.extensionUntil && deadline.extensionReason && !deadlineGone ? `سبب الاستثناء: ${deadline.extensionReason}` : "",
+    rejected ? `رُفض طلب التمديد (${arabicDate(rejected.at)})${rejected.detail ? `: ${rejected.detail}` : ""}` : "",
+  ].filter(Boolean) : [];
+
+  const tipProps = (id: string) => ({ open: openTip === id, onToggle: () => setOpenTip(current => current === id ? null : id) });
+
+  const ring = (size: "sm" | "lg") => countdown ? (
+    <InfoTip {...tipProps(`ring-${size}`)} label={countdown} tip={ringTip} className="apb-ring" data-tone={ringTone} data-size={size}
+      guide="حلقة موعد التسليم — تلميحٌ يعرض التاريخ وحال التمديد، لا فعل">
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <circle className="apb-ring-track" cx="18" cy="18" r="15" />
+        <circle className="apb-ring-value" cx="18" cy="18" r="15" pathLength={100} strokeDasharray={`${ringFill * 100} 100`} />
+      </svg>
+      <span className="apb-ring-core" aria-hidden="true">
+        {deadlineGone ? <CalendarX /> : daysLeft === 0 ? <Hourglass /> : <b>{daysLeft.toLocaleString("ar-KW-u-nu-latn")}</b>}
+        {size === "lg" && !deadlineGone && daysLeft > 0 ? <small>{nounFor(daysLeft, AR.day)}</small> : null}
+      </span>
+      {ringBadge ? <span className="apb-ring-badge" data-tone={ringBadge.tone} aria-hidden="true"><ringBadge.Icon /></span> : null}
+    </InfoTip>
+  ) : null;
+
   return (
-    <div className="approval-bar" data-tone={tone} data-expanded={expanded || undefined}>
-      <Icon aria-hidden="true" />
-      <div className="approval-bar-text">
-        <div className="approval-bar-head">
-          <strong>{headline}</strong>
-          {!expanded && countdown ? (
-            <span className="approval-chip" data-past={deadlineGone || undefined}><Clock3 aria-hidden="true" />{countdown}</span>
-          ) : null}
-          <button type="button" className="approval-expand" aria-expanded={expanded} data-guide-ignore="طيّ تفاصيل شريط الاعتماد وفتحها — عرضٌ لا فعل" onClick={toggleExpanded}>
-            <span>{expanded ? "إخفاء التفاصيل" : "التفاصيل"}</span><ChevronDown aria-hidden="true" />
-          </button>
-        </div>
-        {expanded ? <>
-        {detail ? <small>{detail}</small> : null}
-        {/* التواقيع تُعرض في كل حال. ومن يسأل «مَن وقّع؟» يسأله حين يكون
-            الجدول عند التسجيل قبل غيرها — فإخفاؤها هناك بالذات إخفاءٌ في
-            اللحظة الوحيدة التي تُطلب فيها. */}
-        {committee || head ? (
-          <div className="approval-signed">
-            {committee ? <span>اللجنة: <b>{committee.userName}</b> · {arabicDate(committee.at)} · <code>{committee.verifyCode}</code></span> : null}
-            {head ? <span>رئيس القسم: <b>{head.userName}</b> · {arabicDate(head.at)} · <code>{head.verifyCode}</code></span> : null}
-          </div>
+    <div className="approval-bar" data-tone={tone} data-expanded={expanded || undefined} ref={barRef}
+      onKeyDown={(event) => { if (event.key === "Escape" && openTip) { event.stopPropagation(); setOpenTip(null); } }}>
+      <InfoTip {...tipProps("status")} label={headline} tip={detail ? [detail] : [headline]} className="apb-status" align="start"
+        guide="أيقونة حال الدورة — تلميحٌ يعرض تفصيل الحال، لا فعل">
+        <Icon aria-hidden="true" />
+      </InfoTip>
+      <strong className="apb-headline">{headline}</strong>
+
+      {/* لقارئ الشاشة: كلُّ ما كان يُكتب سطوراً، كما هو. */}
+      <p className="sr-only">
+        {detail}{detail ? " " : ""}{countdown}
+      </p>
+      {committee || head ? (
+        <p className="sr-only">
+          {committee ? `اللجنة: ${committee.userName} · ${arabicDate(committee.at)} · رمز التحقق ${committee.verifyCode}. ` : ""}
+          {head ? `رئيس القسم: ${head.userName} · ${arabicDate(head.at)} · رمز التحقق ${head.verifyCode}.` : ""}
+        </p>
+      ) : null}
+
+      <div className="apb-visuals">
+        {!expanded ? (
+          <InfoTip {...tipProps("steps")} label={`مراحل الاعتماد — ${headline}`} tip={stepsTip} className="apb-steps-tip"
+            guide="مِرقاة مراحل الاعتماد المصغّرة — تلميحٌ يعرض من وقّع وأين الجدول، لا فعل">
+            <Stepper steps={steps} size="sm" returnFrom={returnFrom} />
+          </InfoTip>
         ) : null}
-        {countdown ? (
-          <small className="approval-countdown" data-past={deadlineGone || undefined}>
-            <Clock3 aria-hidden="true" /> {countdown}
-            {extensionRequest ? ` · طُلب تمديد ${countOf(extensionRequest.days, oblique(AR.day))} (${arabicDate(extensionRequest.at)}) — بانتظار رئيس التسجيل` : ""}
-            {deadline?.extensionUntil && deadline.extensionReason && !deadlineGone ? ` — ${deadline.extensionReason}` : ""}
-            {rejected ? ` · رُفض طلب التمديد (${arabicDate(rejected.at)})${rejected.detail ? `: ${rejected.detail}` : ""}` : ""}
-          </small>
+        {!expanded ? ring("sm") : null}
+
+        {pendingAdditions > 0 && !headMustAcknowledge ? (
+          <InfoTip {...tipProps("additions")} label={`${countOf(pendingAdditions + overflow, AR.section)} تنتظر إقرار رئيس القسم`} tip={[additionsLine]}
+            className="apb-badge" data-tone="info" guide="شارة الشعب المضافة بعد الاعتماد — تلميحٌ لا فعل">
+            <ListPlus aria-hidden="true" /><b>{(pendingAdditions + overflow).toLocaleString("ar-KW-u-nu-latn")}</b>
+          </InfoTip>
         ) : null}
-        </> : null}
+
+        {headReturned && headReturn ? (
+          <InfoTip {...tipProps("head-return")} label="سبب إرجاع رئيس القسم" tip={[detail]} className="apb-badge" data-tone="warning"
+            guide="شارة سبب إرجاع رئيس القسم — تلميحٌ لا فعل">
+            <Quote aria-hidden="true" />
+          </InfoTip>
+        ) : null}
+
+        {!onOpenNotes && openNotes > 0 ? (
+          <InfoTip {...tipProps("notes")} label={countOf(openNotes, AR.note)} tip={[notesLine]} className="apb-badge" data-tone="warning"
+            guide="شارة ملاحظات التسجيل المفتوحة — الملاحظات معروضةٌ أسفل الشاشة، والشارة تلميحٌ لا فعل">
+            <MessageSquareText aria-hidden="true" /><b>{openNotes.toLocaleString("ar-KW-u-nu-latn")}</b>
+          </InfoTip>
+        ) : null}
+
         {/* الخلافُ الذي تكرّر ثلاثاً يُعرض لرئيس القسم هنا — وهذا ما تَعِد به شاشةُ الملاحظات. */}
         {escalated > 0 && signatureStage === "head" ? (
-          <small className="approval-escalated">
-            <MessageSquareText aria-hidden="true" /> {countOf(escalated, AR.note)} أصرّ عليها التسجيل ثلاثاً بعد ردّ اللجنة — تحتاج نظرك.
-          </small>
+          <InfoTip {...tipProps("escalated")} label={`${countOf(escalated, AR.note)} مرفوعة إليك`} className="apb-badge" data-tone="warning"
+            tip={<>{countOf(escalated, AR.note)} أصرّ عليها التسجيل ثلاثاً بعد ردّ اللجنة — تحتاج نظرك.</>}
+            guide="شارة الخلاف المرفوع لرئيس القسم — تلميحٌ لا فعل">
+            <Flag aria-hidden="true" /><b>{escalated.toLocaleString("ar-KW-u-nu-latn")}</b>
+          </InfoTip>
+        ) : null}
+
+        {/* المانعُ شارةٌ بعدده في مكان الزرّ، وسببُه كاملاً في تلميحها. */}
+        {canSignNow && blockingConflicts > 0 ? (
+          <InfoTip {...tipProps("sign-blocked")} label="يمنع التوقيع" className="apb-badge apb-blocked" data-tone="danger"
+            tip={<>يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</>}
+            guide="شارة مانع التوقيع — تلميحٌ بالسبب، لا فعل">
+            <AlertTriangle aria-hidden="true" /><b>{blockingConflicts.toLocaleString("ar-KW-u-nu-latn")}</b>
+          </InfoTip>
+        ) : null}
+        {!readyToSubmit && Boolean(committee && head) && !locked && (signatureStage || powerAdmin) && pendingAdditions === 0 ? (
+          accepted ? null
+          : blockingConflicts > 0 ? (
+            <InfoTip {...tipProps("submit-blocked")} label="يمنع الإرسال" className="apb-badge apb-blocked" data-tone="danger"
+              tip={<>يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</>}
+              guide="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
+              <AlertTriangle aria-hidden="true" /><b>{blockingConflicts.toLocaleString("ar-KW-u-nu-latn")}</b>
+            </InfoTip>
+          ) : openNotes > 0 ? (
+            <InfoTip {...tipProps("submit-blocked")} label="يمنع الإرسال" className="apb-badge apb-blocked" data-tone="danger"
+              tip={<>يمنع الإرسال: {countOf(openNotes, AR.note)} من التسجيل تنتظر معالجةً أو ردّاً</>}
+              guide="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
+              <AlertTriangle aria-hidden="true" /><b>{openNotes.toLocaleString("ar-KW-u-nu-latn")}</b>
+            </InfoTip>
+          ) : pastDeadline ? (
+            <InfoTip {...tipProps("submit-blocked")} label="يمنع الإرسال" className="apb-badge apb-blocked" data-tone="danger"
+              tip={<>انقضى موعد التسليم — يلزم تمديدٌ من رئيس التسجيل</>}
+              guide="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
+              <CalendarX aria-hidden="true" />
+            </InfoTip>
+          ) : null
         ) : null}
       </div>
 
       <div className="approval-sign">
-        {headMustAcknowledge ? (
-          <PrimaryButton type="button" data-guide-ignore="إقرار رئيس القسم بالشُّعب المضافة — ضغطةٌ واحدة، لا توقيعٌ جديد" disabled={busy} onClick={() => void act("/api/approvals/acknowledge-additions", {
-            /* يُقرّ ما عُرض عليه وحده، لا ما وصل بعد أن فتح الشاشة. */
-            expectedPendingIds: approval.pendingAdditions.map(item => Number(item.scheduleId)),
-            expectedOverflow: overflow,
-          })}>
-            {busy ? "يحفظ…" : "موافق"}
-          </PrimaryButton>
-        ) : null}
-
+        {/* الأفعالُ الثانوية أيقونات، واسمُها في تلميحها وفي aria-label. */}
         {/* الملاحظاتُ تُقرأ حيث هي: زرٌّ يفتح شاشة التغييرات بدل وعدٍ بتلوينٍ لا يقع. */}
-        {onOpenNotes && (openNotes > 0 || status === "returned") ? (
-          <SecondaryButton type="button" data-guide-ignore="انتقالٌ إلى شاشة تغييرات الجدول لقراءة الملاحظات — تنقّلٌ لا فعل" onClick={onOpenNotes}>
-            <MessageSquareText aria-hidden="true" /> افتح الملاحظات{openNotes ? ` (${openNotes.toLocaleString("ar-KW-u-nu-latn")})` : ""}
-          </SecondaryButton>
+        {notesShown && primaryTaken ? (
+          <IconButton label={`افتح الملاحظات${openNotes ? ` — ${countOf(openNotes, AR.note)}` : ""}`} count={openNotes}
+            guide="انتقالٌ إلى شاشة تغييرات الجدول لقراءة الملاحظات — تنقّلٌ لا فعل" onClick={onOpenNotes!}>
+            <MessageSquareText aria-hidden="true" />
+          </IconButton>
         ) : null}
 
         {canHeadReturnNow ? (
-          <SecondaryButton type="button" data-guide-ignore="يفتح ورقة سبب إرجاع الجدول للجنة — الإرسال داخلها وهو مسجّل" disabled={busy} onClick={() => { setSheet("head-return"); setReason(""); }}>
-            <CornerUpLeft aria-hidden="true" /> إرجاع للجنة
-          </SecondaryButton>
+          <IconButton label="إرجاع للجنة — بسببٍ تقرؤه اللجنة" disabled={busy} data-active={sheet === "head-return" || undefined}
+            guide="يفتح ورقة سبب إرجاع الجدول للجنة — الإرسال داخلها وهو مسجّل" onClick={() => { setSheet("head-return"); setReason(""); }}>
+            <CornerUpLeft aria-hidden="true" />
+          </IconButton>
         ) : null}
 
         {state.canRequestExtension && signatureStage ? (
-          <SecondaryButton type="button" data-guide-ignore="يفتح ورقة طلب تمديد التسليم — الإرسال داخلها وهو مسجّل" disabled={busy} onClick={() => { setSheet("extension"); setReason(""); setDays(7); }}>
-            <Clock3 aria-hidden="true" /> طلب تمديد
-          </SecondaryButton>
-        ) : null}
-
-        {/* المانعُ سطرٌ هادئ بجانب الزرّ، لا تنبيهٌ عائمٌ يعود كلما تحرّكت الشاشة. */}
-        {canSignNow && blockingConflicts > 0 ? (
-          <span className="approval-blocked">يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</span>
-        ) : null}
-        {canSignNow ? (
-          <PrimaryButton type="button" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0} onClick={() => void act("/api/approvals/sign")}>
-            {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
-          </PrimaryButton>
+          <IconButton label="طلب تمديد لموعد التسليم" disabled={busy} data-active={sheet === "extension" || undefined}
+            guide="يفتح ورقة طلب تمديد التسليم — الإرسال داخلها وهو مسجّل" onClick={() => { setSheet("extension"); setReason(""); setDays(7); }}>
+            <CalendarClock aria-hidden="true" />
+          </IconButton>
         ) : null}
 
         {/* ── السحب متاحٌ حتى يُرسَل، لا حتى يكتمل التوقيعان ──────────────
@@ -358,39 +503,96 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             يقبله ما دام الجدول لم يُرسَل. */}
         {/* ولا بعد القبول: سحبُ توقيعٍ على جدولٍ معتمد كان يُسقطه صامتاً إلى الإعداد. */}
         {mine && !locked && !accepted ? (
-          <SecondaryButton type="button" data-guide-ignore="سحب توقيعٍ أثبته صاحبه قبل الإرسال — تراجعٌ عن فعلٍ مسجّل" disabled={busy} onClick={() => void act("/api/approvals/withdraw")}>
-            سحب توقيعي
-          </SecondaryButton>
+          <IconButton label="سحب توقيعي" disabled={busy}
+            guide="سحب توقيعٍ أثبته صاحبه قبل الإرسال — تراجعٌ عن فعلٍ مسجّل" onClick={() => void act("/api/approvals/withdraw")}>
+            <Undo2 aria-hidden="true" />
+          </IconButton>
+        ) : null}
+
+        {events.length ? (
+          <IconButton label={historyOpen ? "إخفاء السجلّ" : "السجلّ"} aria-expanded={historyOpen}
+            guide="طيّ سجلّ الدورة وفتحه — عرضٌ لا فعل" onClick={() => setHistoryOpen(open => !open)}>
+            <History aria-hidden="true" />
+          </IconButton>
+        ) : null}
+
+        {/* ── الفعلُ الأول: زرٌّ واضح بأيقونةٍ وكلمة ─────────────────────── */}
+        {headMustAcknowledge ? (
+          <PrimaryButton type="button" className="apb-primary" title={`إقرار ${countOf(pendingAdditions + overflow, AR.section)} أُضيفت بعد اعتمادك`}
+            data-guide-ignore="إقرار رئيس القسم بالشُّعب المضافة — ضغطةٌ واحدة، لا توقيعٌ جديد" disabled={busy} onClick={() => void act("/api/approvals/acknowledge-additions", {
+            /* يُقرّ ما عُرض عليه وحده، لا ما وصل بعد أن فتح الشاشة. */
+            expectedPendingIds: approval.pendingAdditions.map(item => Number(item.scheduleId)),
+            expectedOverflow: overflow,
+          })}>
+            <ListChecks aria-hidden="true" /> {busy ? "يحفظ…" : "موافق"}
+          </PrimaryButton>
+        ) : null}
+
+        {canSignNow ? (
+          <PrimaryButton type="button" className="apb-primary" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0}
+            aria-label={signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
+            title={signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
+            onClick={() => void act("/api/approvals/sign")}>
+            {signatureStage === "head" ? <BadgeCheck aria-hidden="true" /> : <PenLine aria-hidden="true" />}
+            {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد وإرسال" : "توقيع"}
+          </PrimaryButton>
         ) : null}
 
         {/* ── الزرّ الذي كان مفقوداً ────────────────────────────────────────
             يظهر متى اكتمل التوقيعان ولم يكن الجدول عند التسجيل — سواءٌ كان
             أوّلَ إرسالٍ أم إعادةَ إرسالٍ بعد إرجاع. والتوقيعان يبقيان بعد
-            الإرجاع، فلا يُطلبان مرّةً ثانية. */}
-        {/* وحين يمنعه ما يمنعه، يُقال السببُ في مكان الزرّ لا بعد ضغطه. */}
-        {!readyToSubmit && Boolean(committee && head) && !locked && (signatureStage || powerAdmin) && pendingAdditions === 0 ? (
-          accepted ? null
-          : blockingConflicts > 0 ? (
-            <span className="approval-blocked">يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</span>
-          ) : openNotes > 0 ? (
-            <span className="approval-blocked">
-              {countOf(openNotes, AR.note)} من التسجيل تنتظر معالجةً أو ردّاً
-            </span>
-          ) : pastDeadline ? (
-            <span className="approval-blocked">انقضى موعد التسليم — يلزم تمديدٌ من رئيس التسجيل</span>
-          ) : null
-        ) : null}
+            الإرجاع، فلا يُطلبان مرّةً ثانية. وحين يمنعه ما يمنعه، تقف شارةُ
+            المانع في مكانه وسببُه في تلميحها. */}
         {readyToSubmit && (signatureStage || powerAdmin) ? (
-          <PrimaryButton type="button" data-guide-target="approval.action.submit" disabled={busy} onClick={() => void act("/api/approvals/submit")}>
-            <Send aria-hidden="true" /> {busy ? "يرسل…" : status === "returned" ? "إعادة الإرسال إلى التسجيل" : "إرسال إلى التسجيل"}
+          <PrimaryButton type="button" className="apb-primary" data-guide-target="approval.action.submit" disabled={busy}
+            aria-label={status === "returned" ? "إعادة الإرسال إلى التسجيل" : "إرسال إلى التسجيل"}
+            title={status === "returned" ? "إعادة الإرسال إلى التسجيل" : "إرسال إلى التسجيل"}
+            onClick={() => void act("/api/approvals/submit")}>
+            <Send aria-hidden="true" /> {busy ? "يرسل…" : status === "returned" ? "إعادة الإرسال" : "إرسال"}
           </PrimaryButton>
         ) : null}
-        {events.length ? (
-          <button type="button" className="approval-history-toggle" aria-expanded={historyOpen} data-guide-ignore="طيّ سجلّ الدورة وفتحه — عرضٌ لا فعل" onClick={() => setHistoryOpen(open => !open)}>
-            <History aria-hidden="true" /> السجلّ
-          </button>
+
+        {notesShown && !primaryTaken ? (
+          <PrimaryButton type="button" className="apb-primary" data-guide-ignore="انتقالٌ إلى شاشة تغييرات الجدول لقراءة الملاحظات — تنقّلٌ لا فعل"
+            aria-label={`افتح الملاحظات${openNotes ? ` — ${countOf(openNotes, AR.note)}` : ""}`} title={notesLine || "افتح الملاحظات"} onClick={onOpenNotes}>
+            <MessageSquareText aria-hidden="true" /> الملاحظات
+            {openNotes ? <span className="apb-count-inline" aria-hidden="true">{openNotes.toLocaleString("ar-KW-u-nu-latn")}</span> : null}
+          </PrimaryButton>
         ) : null}
+
+        <IconButton label={expanded ? "إخفاء التفاصيل" : "التفاصيل"} aria-expanded={expanded} className="apb-expand"
+          guide="طيّ تفاصيل شريط الاعتماد وفتحها — عرضٌ لا فعل" onClick={toggleExpanded}>
+          <ChevronDown aria-hidden="true" />
+        </IconButton>
       </div>
+
+      {expanded ? (
+        <div className="apb-expanded">
+          <div className="apb-expanded-row">
+            <Stepper steps={steps} size="lg" returnFrom={returnFrom}
+              stamp={(step) => step.sig?.length ? (
+                <InfoTip {...tipProps(`stamp-${step.key}`)} label={`${step.label}: ${step.sig.join(" · ")}`} tip={step.sig} className="apb-stamp"
+                  guide="ختم توقيع — تلميحٌ بالاسم والتاريخ ورمز التحقق، لا فعل">
+                  <span className="apb-stamp-initials" aria-hidden="true">{step.initials}</span>
+                  <span className="apb-stamp-check" aria-hidden="true"><Check /></span>
+                </InfoTip>
+              ) : null} />
+            {ring("lg")}
+          </div>
+          {/* ما كتبه إنسانٌ يُعرض بنصّه: سببُ الإرجاع وأسماءُ الشعب المضافة. */}
+          {headReturned && headReturn ? (
+            <blockquote className="apb-quote"><CornerUpLeft aria-hidden="true" /><span>«{headReturn.reason}»<small> — {headReturn.by}{headReturn.at ? ` · ${arabicDate(headReturn.at)}` : ""}</small></span></blockquote>
+          ) : null}
+          {pendingAdditions > 0 ? (
+            <ul className="apb-additions" aria-label="الشعب المضافة بعد الاعتماد">
+              {approval.pendingAdditions.map(item => (
+                <li key={String(item.scheduleId)}><ListPlus aria-hidden="true" />{item.courseName || "مقرر"} · شعبة {item.sectionCode || "—"}</li>
+              ))}
+              {overflow ? <li>و{countOf(overflow, AR.section)} أخرى</li> : null}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       {sheet ? (
         <div className="approval-sheet" role="group" aria-label={sheet === "head-return" ? "سبب الإرجاع للجنة" : "طلب تمديد"}>
@@ -418,19 +620,127 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         </div>
       ) : null}
 
+      {/* السجلّ خطٌّ زمنيّ: أيقونةُ الفعل وتاريخه، ومن فعله وتفصيلُه تحتهما صغيراً. */}
       {historyOpen && events.length ? (
         <ol className="approval-history">
-          {events.map((event, index) => (
-            <li key={`${event.at}:${index}`}>
-              <time>{arabicDate(event.at)}</time>
-              <strong>{APPROVAL_EVENT_LABEL[event.action] || event.action}</strong>
-              <span>{event.by}{event.round ? ` · الجولة ${event.round}` : ""}{event.detail ? ` — ${event.detail}` : ""}</span>
-            </li>
-          ))}
+          {events.map((event, index) => {
+            const EventIcon = EVENT_ICON[event.action] || History;
+            const label = APPROVAL_EVENT_LABEL[event.action] || event.action;
+            const who = `${event.by}${event.round ? ` · الجولة ${event.round}` : ""}${event.detail ? ` — ${event.detail}` : ""}`;
+            return (
+              <li key={`${event.at}:${index}`} data-kind={EVENT_TONE[event.action] || "neutral"} title={`${label} · ${arabicDate(event.at)}\n${who}`}>
+                <span className="apb-event-dot" aria-hidden="true"><EventIcon /></span>
+                <strong>{label}</strong>
+                <time>{arabicDate(event.at)}</time>
+                <span className="apb-event-who">{who}</span>
+              </li>
+            );
+          })}
         </ol>
       ) : null}
 
       {error ? <Notice type="error">{error}</Notice> : null}
     </div>
+  );
+}
+
+/* ── قطعُ الإنفوجرافيك ──────────────────────────────────────────────────── */
+
+type StepState = "done" | "current" | "waiting" | "returned" | "pending";
+interface StepModel {
+  key: "committee" | "head" | "registrar" | "accepted";
+  label: string;
+  Icon: LucideIcon;
+  state: StepState;
+  /** الدور عنده الآن: نبضةٌ هادئة حول عقدته. */
+  turn: boolean;
+  /** سطورُ التوقيع للتلميح: الدور، الاسم، التاريخ، رمز التحقق. */
+  sig?: string[];
+  initials?: string;
+  badge?: string;
+  badgeTone?: "info";
+}
+interface RingBadge { tone: "warning" | "danger" | "info"; Icon: LucideIcon }
+
+/** حرفان من الاسم للختم، بلا لقب «د.» — ومفصولان لئلّا يتّصلا كلمةً. */
+function initialsOf(name?: string): string {
+  const words = String(name || "").replace(/^\s*(د|أ\.?\s*د|م)\s*\.\s*/u, "").split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map(word => Array.from(word)[0]).join("‌");
+}
+
+const EVENT_ICON: Record<string, LucideIcon> = {
+  sign: PenLine, withdraw: Undo2, "acknowledge-additions": ListChecks, submit: Send, return: CornerUpLeft, accept: ShieldCheck,
+  "head-return": CornerUpLeft, extension: CalendarPlus, "extension-request": CalendarClock, "extension-request-rejected": CalendarX,
+  "amendment-open": FilePenLine, "closed-term-edit": Lock,
+};
+const EVENT_TONE: Record<string, string> = {
+  sign: "accent", accept: "success", submit: "info", return: "warning", "head-return": "warning",
+  "extension-request-rejected": "danger", withdraw: "muted",
+};
+
+function Stepper({ steps, size, returnFrom, stamp }: {
+  steps: StepModel[]; size: "sm" | "lg"; returnFrom: number;
+  stamp?: (step: StepModel) => React.ReactNode;
+}) {
+  return (
+    <ol className="apb-steps" data-size={size} aria-hidden={size === "sm" ? true : undefined} aria-label={size === "lg" ? "مراحل الاعتماد" : undefined}>
+      {returnFrom ? <span className="apb-return" data-from={returnFrom} aria-hidden="true">{size === "lg" ? <CornerUpLeft /> : null}</span> : null}
+      {steps.map((step, index) => {
+        const reached = step.state !== "waiting" || step.turn;
+        const stamped = size === "lg" && stamp ? stamp(step) : null;
+        return (
+          <li key={step.key} data-state={step.state} data-turn={step.turn || undefined} data-reached={reached || undefined} data-index={index}>
+            {stamped || (
+              <span className="apb-node">
+                {step.state === "done" && size === "sm" ? <Check aria-hidden="true" />
+                  : step.state === "returned" ? <CornerUpLeft aria-hidden="true" />
+                  : <step.Icon aria-hidden="true" />}
+              </span>
+            )}
+            {step.badge ? <span className="apb-node-badge" data-tone={step.badgeTone || (step.state === "pending" ? "info" : undefined)}>{step.badge}</span> : null}
+            {size === "lg" ? <span className="apb-step-label">{step.label}</span> : null}
+            {size === "lg" ? <span className="sr-only">{step.state === "done" ? "مكتملة" : step.state === "returned" ? "أُرجع منها" : step.turn ? "الدور عندها" : "لم تصل بعد"}</span> : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/**
+ * عنصرٌ يُرى ويُسأل: أيقونةٌ أو شارةٌ أو حلقة، وتلميحُها يظهر بالمرور وبالتركيز،
+ * ويُثبَّت بالنقر (للهاتف حيث لا مرور). ونصُّه مربوطٌ بـ aria-describedby.
+ */
+function InfoTip({ label, tip, open, onToggle, className = "", align, guide, children, ...rest }: {
+  label: string; tip: React.ReactNode | string[]; open: boolean; onToggle: () => void; className?: string;
+  align?: "start" | "end"; guide: string; children: React.ReactNode; [data: `data-${string}`]: unknown;
+}) {
+  const id = React.useId();
+  const lines = Array.isArray(tip) ? tip.filter(Boolean) : null;
+  return (
+    <span className="apb-tip" data-open={open || undefined} data-align={align}>
+      <button type="button" className={`apb-tip-target ${className}`.trim()} aria-label={label} aria-describedby={id} aria-expanded={open}
+        data-guide-ignore={guide} onClick={(event) => { event.stopPropagation(); onToggle(); }} {...rest}>
+        {children}
+      </button>
+      <span className="apb-pop" role="tooltip" id={id}>
+        {lines ? lines.map((line, index) => <span key={index}>{line}</span>) : tip}
+      </span>
+    </span>
+  );
+}
+
+/** زرُّ فعلٍ بأيقونةٍ وحدها: اسمُه في aria-label، وفي تلميحٍ يظهر بالمرور والتركيز. */
+function IconButton({ label, count, guide, className = "", children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string; count?: number; guide: string; [data: `data-${string}`]: unknown;
+}) {
+  return (
+    <span className="apb-tip" data-align="end">
+      <button type="button" {...props} className={`apb-icon-btn ${className}`.trim()} aria-label={label} data-guide-ignore={guide}>
+        {children}
+        {count ? <span className="apb-count" aria-hidden="true">{count.toLocaleString("ar-KW-u-nu-latn")}</span> : null}
+      </button>
+      <span className="apb-pop" aria-hidden="true">{label}</span>
+    </span>
   );
 }
