@@ -4427,6 +4427,7 @@ function listenForScheduleChangesAcrossInstances() {
     // beacon straight back out and the two instances would echo forever.
     clearScheduleCacheQuietly();
     studentQueueMemo.invalidate();
+    bellBlockingMemo.invalidate();
     hallBarterSerial += 1;
     hallBarterBoardCache.clear();
     livingResponseCache.clear();
@@ -10289,6 +10290,21 @@ function studentQueueForTerm(termId: number): Promise<Map<string, StudentQueueEn
   });
 }
 
+/* موانعُ القسم المعتمد في جرس العميدين (N20): كانت تُسأل بـblockingConflictCount
+   لكل قسمٍ معتمد مع كل نداء — قراءتان لجدول الفصل وفحصُ تعارضٍ كامل لكل قسم.
+   فصار جدولُ الفصل الذي قرأه الجرس مرّةً يُعدّ لكل قسمٍ في الذاكرة (كما يفعل
+   الوارد)، ويُحفظ العدُّ لكل فصلٍ وقسم حتى يتغيّر جدولٌ (onSchedulesInvalidated
+   ونبضُ النسخ الأخرى) أو تمضي دقيقة. */
+const bellBlockingMemo = createTtlMemo<number>({ ttlMs: 60_000 });
+onSchedulesInvalidated(() => bellBlockingMemo.invalidate());
+function bellBlockingCount(collegeId: number, sectionId: number, termId: number, termRows: any[]): Promise<number> {
+  const key = `${Repository.currentDemoSessionId() || ""}:${termId}:${collegeId}:${sectionId}`;
+  return bellBlockingMemo.get(key, async () => {
+    const scopeRows = termRows.filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId);
+    return countBlockingConflicts(scopeRows, termRows, await approvalBlockerOptions());
+  });
+}
+
 async function bellPlanningTermId(terms: any[]): Promise<number> {
   for (const candidate of planningTermCandidates(terms as any)) {
     const [approvals, rows] = await Promise.all([
@@ -10387,7 +10403,7 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
     const escalatedNotes = deptNotes.filter((note: any) => Number(note.insistCount || 0) >= 3 || Boolean(note.escalatedAt)).length;
     /* قسمٌ معتمد ظهر فيه مانع (N20) — للعميدين وحدهما، وللمعتمد وحده. */
     const blockingConflicts = (role === "dean" || role === "viceDean") && approval.status === "accepted"
-      ? await blockingConflictCount(collegeId, sectionId, termId)
+      ? await bellBlockingCount(collegeId, sectionId, termId, termRows as any[])
       : 0;
     const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
     const openRequests = pendingRequests.reduce((sum, entry) => sum + entry.count, 0);

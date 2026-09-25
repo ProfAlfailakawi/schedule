@@ -452,5 +452,20 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(fnBody("async function readScopedTermRows(").includes("expandScopeSections(sections, allowed)"), "N28: البحث العام يقرأ أقسامه من التوسيع نفسه");
 }
 
+/* ── مراجعة 4: موانعُ جرس العميدين تُعدّ من جدول الفصل المقروء مرّة ─────── */
+{
+  const bell = fnBody("async function notificationItemsForTerm(");
+  check(bell.includes("await bellBlockingCount(collegeId, sectionId, termId, termRows as any[])") && !bell.includes("blockingConflictCount("),
+    "R4 الجرس لا يقرأ جدول الفصل ولا يفحصه لكل قسمٍ معتمد");
+  const counter = fnBody("function bellBlockingCount(");
+  check(counter.includes("termRows.filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId)")
+    && counter.includes("countBlockingConflicts(scopeRows, termRows, await approvalBlockerOptions())") && counter.includes("bellBlockingMemo.get(key,"),
+    "R4 يُعدّ لكل قسمٍ في الذاكرة بالقاعدة نفسها، محفوظاً");
+  check(server.includes("onSchedulesInvalidated(() => bellBlockingMemo.invalidate());")
+    && fnBody("function listenForScheduleChangesAcrossInstances(").includes("bellBlockingMemo.invalidate();"),
+    "R4 ويُمحى المحفوظ حين يتغيّر جدولٌ هنا أو في نسخةٍ أخرى");
+  check(server.includes("const key = `${Repository.currentDemoSessionId() || \"\"}:${termId}:${collegeId}:${sectionId}`;"), "R4 المفتاح يحمل جلسة العرض والفصل والقسم");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
