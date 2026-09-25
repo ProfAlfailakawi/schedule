@@ -15,3 +15,12 @@ every role, through the same APIs the screens call. Test file: `tests/rehearsal-
 | R7 | Instructor movement history stamped each change with the NEXT snapshot (time of a later edit, or «now» with label «الجدول الحالي») and its «قبل …» label, and named only the first lecture day | FIXED | rehearsal-audit R7 |
 | R8 | A demo sandbox lost mid-session (a deploy restarted the server during the rehearsal) answered every call «الرجاء تسجيل الدخول أولاً» — a login prompt for a visitor with no account | FIXED | rehearsal-audit R8 |
 | R9 | Department head bell showed the committee's registration-sheet queue as an action for him («ينتظر قرار اللجنة», tone action) though the sheet is read-only for his role | FIXED | rehearsal-audit R9 |
+
+## Observed, not changed (policy or out of reach)
+
+- The committee cannot save its department's degree rule: `PUT /api/degree-rules/:id` needs form 4, which is admin-only (403 «هذه الشاشة مخصصة لإدارة النظام الرئيسية»). Role policy for the owner to decide.
+- The demo's instructor-request reject sheet can never offer alternatives: the department start ladder is learned from history (`learnRhythm`, min 8 lectures) and the demo departments have 7–8 rows, so `nearestFree` returns nothing. The rule is intentional («بلا سُلّمٍ معروفٍ للقسم لا يُقترح شيء»). R6 matters in production data.
+- A course-conflict case that includes another department's course cannot be finished in the demo: that course is decided by the other department's committee, and the demo has one committee account (CS only).
+- Graduate proof by OCR not exercised (no synthetic graduation sheet exists; real sheets must not be used). Only the verified-proof reuse path (`proof-status`) was used.
+- `GET /api/schedule-notes` `open` counts department notes too (3 against the bar's 2 registrar notes). No screen reads that endpoint.
+- The demo sandbox lives in memory. A deploy during the rehearsal (build 20260925174951) wiped it. R8 fixes only the wording of what the visitor sees.
