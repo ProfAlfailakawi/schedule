@@ -166,5 +166,25 @@ await (async () => {
     "B12 الشاشات تعرض الإرشاد ولا تحاول رسم جدولٍ غير موجود");
 }
 
+/* B13 — the brief is reachable from the living layer; flags say only what a screen reaches. */
+{
+  const living = route('app.get("/api/intelligence/living"');
+  check(living.includes("buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows))"),
+    "B13 ملخص الدقيقة في الطبقة الحية يقول ما تغيّر منذ آخر نقطة أمان");
+  check(living.includes("emergency:false"), "B13 خطة الطوارئ بلا شاشة لا تُعلن متاحة");
+  check(route('app.get("/api/intelligence/brief"').includes("await briefChangedSince(collegeId,sectionId,termId,rows)"), "B13 والملخص المنفرد يقرأ من المساعد نفسه");
+}
+
+/* B14 — anything comparing against a version reads its rows, not the row-less list. */
+{
+  check(/async function hydrateVersionRows[\s\S]{0,700}Repository\.getScheduleVersionById\(version\.id\)/.test(server), "B14 اللقطة تُطلب بمعرّفها");
+  check(/async function briefChangedSince[\s\S]{0,300}hydrateVersionRows\(await Repository\.getScheduleVersions/.test(server), "B14 الملخص لا يرى كل موعد «تغيّر»");
+  const movement = server.slice(server.indexOf("async function scheduleMovementEntries"), server.indexOf("async function buildStaffCard"));
+  check(movement.includes("await hydrateVersionRows(await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, termId, 30))"),
+    "B14 سجلّ الأستاذ لا يقول عن كل محاضرة «أُضيفت»");
+  const repo = read("src/db/repository.ts");
+  check(/\.select\("id", "scopeKey"[^)]*"rowCount"\)/.test(repo), "B14 (القائمة ما زالت خفيفة عمداً — الإصلاح عند القارئ)");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

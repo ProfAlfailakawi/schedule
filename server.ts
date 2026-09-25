@@ -10731,6 +10731,29 @@ app.post("/api/intelligence/import-preview", requirePermission(7), async (req: A
   raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=normalizeClock(String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5)),end=normalizeClock(String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5));const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId,{resolveHistorical:true}); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
 });
 
+/* ── قائمة النسخ لا تحمل صفوفها ──────────────────────────────────────────
+   في Firestore تُقرأ قائمة النسخ بلا لقطاتها عمداً (getScheduleVersions)،
+   فمن يقارن بها يجد نسخةً فارغة: «الملخص» قال إن كل موعد تغيّر، وسجلّ الأستاذ
+   قال عن كل محاضرة «أُضيفت». ما يحتاج اللقطة يطلبها بمعرّفها. */
+async function hydrateVersionRows<T extends { id: string; rows?: any[]; rowCount?: number }>(versions: T[]): Promise<T[]> {
+  return Promise.all(versions.map(async version => {
+    /* rowCount 0 is a genuinely empty snapshot; an older document without a
+       count is fetched too, since an empty list there proves nothing. */
+    if ((version.rows && version.rows.length) || version.rowCount === 0) return version;
+    const full = await Repository.getScheduleVersionById(version.id).catch(() => undefined);
+    return full ? { ...version, rows: full.rows || [] } : version;
+  }));
+}
+
+/* ما تغيّر منذ آخر نقطة أمان — القراءة نفسها للملخص وللطبقة الحية. */
+async function briefChangedSince(collegeId: number, sectionId: number, termId: number, rows: any[]): Promise<number | undefined> {
+  const [latest] = await hydrateVersionRows(await Repository.getScheduleVersions(collegeId, sectionId, termId, 1));
+  if (!latest) return undefined;
+  const before = new Map((latest.rows || []).map((r: any) => [r.id, rowSignatureServer(r)]));
+  return rows.filter(r => before.get(r.id) !== rowSignatureServer(r)).length
+    + (latest.rows || []).filter((r: any) => !rows.some(x => x.id === r.id)).length;
+}
+
 function rowSignatureServer(row:any){return `${row.AdCourseId||0}:${row.SCode||""}:${row.AdInstructorId||0}:${activeDays(row).join(",")}:${row.fstarttime||""}:${row.fendtime||""}:${row.AdRoomCode||""}|${row.AdRoomHall||""}`}
 
 
@@ -10782,7 +10805,11 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
   const topology = buildConflictTopology(rows, universe, courses, instructors); await breathe();
   /* Cheap by comparison: every reading it needs is memoised above and answers
      from cache, so it is left to run without a further pause. */
-  const brief = buildOneMinuteBrief(rows, universe, courses, instructors);
+  /* The one-minute brief was also served alone at /api/intelligence/brief,
+     which no screen ever called — so the living layer's «ملخص الدقيقة» never
+     said what changed. It now carries the same «since the last safety point»
+     reading, from the same helper. */
+  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows));
   const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
   const livingPayload = {
     context:{collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
@@ -10790,7 +10817,9 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
     topology,brief,
     memory:buildDecisionMemoryInsight(memories),
     constraints:{count:constraints.filter(c=>c.enabled).length},
-    capabilities:{powerAdmin:true,emergency:true,genesis:true,decisionMemory:true,meetingIntelligence:true}
+    /* A flag says what a screen can actually reach. The emergency planner has
+       an endpoint but no screen yet, so it is not advertised as available. */
+    capabilities:{powerAdmin:true,emergency:false,genesis:true,decisionMemory:true,meetingIntelligence:true,brief:true}
   };
   if (!isDemoLiving) livingResponseCache.set(livingKey, { at: Date.now(), body: JSON.stringify(livingPayload) });
   res.json(livingPayload);
@@ -11154,7 +11183,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,versions]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleVersions(collegeId,sectionId,termId,2)]); const {rows,universe}=scheduleData; let changedSince: number|undefined=undefined; if(versions[0]){const before=new Map(versions[0].rows.map(r=>[r.id,rowSignatureServer(r)]));changedSince=rows.filter(r=>before.get(r.id)!==rowSignatureServer(r)).length+versions[0].rows.filter(r=>!rows.some(x=>x.id===r.id)).length;} res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince));
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]); const {rows,universe}=scheduleData; const changedSince=await briefChangedSince(collegeId,sectionId,termId,rows); res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince));
 });
 
 app.post("/api/intelligence/meeting-minutes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -12264,7 +12293,7 @@ async function scheduleMovementEntries(instructorId: number, termId: number, row
   const movementRoom = (row:any) => [row?.AdRoomCode,row?.AdRoomHall].filter(Boolean).join("/") || "—";
   const movementShape = (list:any[]) => new Map(list.filter(row => Number(row.AdInstructorId) === instructorId).map(row => [Number(row.id),row]));
   for (const scope of movementScopeMap.values()) {
-    const versions = await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, termId, 30);
+    const versions = await hydrateVersionRows(await Repository.getScheduleVersions(scope.collegeId, scope.sectionId, termId, 30));
     const ordered = [...versions].sort((a,b) => Date.parse(a.createdAt)-Date.parse(b.createdAt));
     const liveSection = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);
     const states = ordered.map(version => ({ at:version.createdAt,label:version.label || "تعديل الجدول",rows:version.rows || [] }));

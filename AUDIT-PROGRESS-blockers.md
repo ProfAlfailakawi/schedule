@@ -14,8 +14,8 @@
 | B10 | FIXED | tests/blockers-stream-audit.ts (B10) — measured via replacementLoss + isWholesaleChange(bulk-delete); genesis drafts count as copy-term |
 | B11 | FIXED | tests/blockers-stream-audit.ts (B11) |
 | B12 | FIXED | tests/blockers-stream-audit.ts (B12) |
-| B13 | TODO | |
-| B14 | TODO | |
+| B13 | FIXED (brief wired; emergency flag made truthful — no emergency UI built) | tests/blockers-stream-audit.ts (B13) |
+| B14 | FIXED | tests/blockers-stream-audit.ts (B14) |
 | B15 | TODO | |
 
 ## Notes
