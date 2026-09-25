@@ -278,3 +278,18 @@ export function previewExceptions(termDeadline: string, targets: readonly Previe
     : groups.map(group => `سيصبح موعد ${countOf(group.count, AR.department)}: ${deadlineDateShort(group.until)}`).join(" · ");
   return { groups, fromExtension, sentence };
 }
+
+/**
+ * رفضُ رئيس التسجيل لآخر طلب تمديد، إن كان هو آخرَ ما جرى على الطلب: يُقال
+ * للقسم في شريطه بسببه، ويسقط متى طلب من جديد أو مُنح.
+ */
+export function lastExtensionRejection(approval: Pick<ScheduleApproval, "events" | "extensionRequest">): { at: string; detail?: string } | null {
+  if (approval.extensionRequest) return null;
+  const events = approval.events || [];
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.action === "extension-request-rejected") return { at: event.at, detail: event.detail };
+    if (event.action === "extension-request" || event.action === "extension") return null;
+  }
+  return null;
+}
