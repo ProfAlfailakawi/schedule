@@ -148,5 +148,16 @@ check(!/function placeholderInstructorIds[\s\S]{0,200}instructorIdentityTokens\(
 const intelligence = readFileSync(join(ROOT, "src/utils/scheduleIntelligence.ts"), "utf8");
 check(intelligence.includes("const critical=conflicts.filter(isBlockingConflict).length;"), "تنبيه «مانع اعتماد» في التحليل يعدّ بالشرط نفسه");
 
+/* القاعة التاريخية المكتوبة نصّاً ليست «بيانات ناقصة» ولا تحجب الجاهزية. */
+{
+  const legacy: any = { id: 901, AdCollegeId: 1, AdSectionId: 1, AdTermId: 1, AdCourseId: 5, AdInstructorId: 7, SCode: "01",
+    fsunday: true, ftuesday: true, fstarttime: "08:00", fendtime: "09:15", AdRoomCode: "012B09", AdRoomHall: "F13" };
+  const noPlace: any = { ...legacy, id: 902, SCode: "02", fstarttime: "10:00", fendtime: "11:15", AdRoomCode: "", AdRoomHall: "" };
+  const a = analyzeSchedule([legacy], [legacy], [], []);
+  check(a.metrics.invalidRows === 0 && a.readiness !== "blocked", "قاعةٌ تاريخية نصّية بلا معرّف سجلٍّ ليست ناقصة ولا تحجب");
+  const b = analyzeSchedule([legacy, noPlace], [legacy, noPlace], [], []);
+  check(b.metrics.invalidRows === 1, "وموعدٌ بلا مكانٍ أصلاً يبقى ناقصاً");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

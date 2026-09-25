@@ -633,7 +633,11 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   const activeDayCounts=dayLoad.map(x=>x.count); const maxDay=Math.max(0,...activeDayCounts),minDay=Math.min(...activeDayCounts);
   const gaps=instructorGapStats(targetRows); const gapValues=[...gaps.values()]; const totalGap=gapValues.reduce((s,g)=>s+g.gapMinutes,0); const avgGap=gapValues.length?Math.round(totalGap/gapValues.length):0;
   const lateRows=targetRows.filter(row=>timeToMinutes(row.fstarttime)>=16*60).length;
-  const invalidRows=targetRows.filter(row=>!row.AdInstructorId||!row.AdCourseId||!row.buildingId||(row.locationStatus!=="PENDING_ROOM"&&!row.roomId)||duration(row)<=0||activeDays(row).length===0).length;
+  /* «ناقص» ما لا يُعرف مكانُه أصلاً، لا ما كُتب مكانُه نصّاً قبل سجل المباني: القاعة
+     التاريخية غير الموثّقة بيانٌ صحيح ينتظر التوثيق (قاعدة الحالة الذهبية)، وعدُّها
+     «ناقصة» كان يجعل كل جدولٍ قديمٍ «محجوباً» بمانعٍ لا تعرفه بوابة الحفظ. */
+  const hasPlace=(row:any)=>Boolean(row.buildingId||String(row.AdRoomCode||"").trim())&&(row.locationStatus==="PENDING_ROOM"||Boolean(row.roomId)||Boolean(String(row.AdRoomHall||"").trim()));
+  const invalidRows=targetRows.filter(row=>!row.AdInstructorId||!row.AdCourseId||!hasPlace(row)||duration(row)<=0||activeDays(row).length===0).length;
   const imbalance=maxDay?Math.round((maxDay-minDay)/maxDay*100):0;
   // Conflict counts can become large in imported/legacy semesters because every overlapping
   // pair is counted. A square-root curve keeps the score sensitive to meaningful reductions
