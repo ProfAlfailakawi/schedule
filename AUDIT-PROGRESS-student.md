@@ -12,7 +12,7 @@
 | S8 | FIXED — surveyTermEnded(term) = AdTermClosed || termHasEnded (one rule); survey POST and proof upload refuse (409 term-ended); GET returns termEnded + «انتهى هذا الفصل» (checked outside the payload cache) and the page shows it with a «حالة طلبي» link; /api/share refuses survey links for ended/closed terms (survey branch only) | tests/student-journey-audit.ts §S8 |
 | S9 | FIXED — surveyActiveCourseIds(sectionId) (= Repository.getOperationalCourseIds) used by survey GET, POST (link + college-wide conflict set) and /api/schedules/demand; GET no longer uses curriculumOverview's narrower set | tests/student-journey-audit.ts §S9 |
 | S10 | FIXED — STUDENT_PROOF_TTL_MS constant; POST returns code proof-expired (genuine but expired token, studentProofExpired) vs proof-required; page records proof time, reopens the upload before submit when the 20 minutes are nearly up, and on either server code; notes/reason untouched | tests/student-journey-audit.ts §S10 |
-| S11 | TODO | |
+| S11 | FIXED — readStudentProofBody: content-length pre-check + raw-parser entity.too.large → 413 {code:file-too-large} with Arabic guidance; STUDENT_PROOF_MAX_BYTES shared value; page checks the (compressed) size before upload | tests/student-journey-audit.ts §S11 |
 | S12 | TODO | |
 | S13 | TODO | |
 | S14 | TODO | |

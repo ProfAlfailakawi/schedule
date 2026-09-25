@@ -281,6 +281,15 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(showUpload.length > 0 && !showUpload.includes("graduateDetails") && !showUpload.includes("graduateOptions"), "S10 إعادة فتح الرفع لا تمسح الملاحظات ولا نوع الطلب");
 }
 
+/* ── S11 الملف الكبير يُردّ بسببٍ واضح ────────────────────────────────── */
+{
+  check(server.includes('app.post("/api/public/survey/:token/proof", readStudentProofBody,'), "S11 مسار الإثبات يقرأ جسمه بحارسٍ خاص");
+  const guard = between(server, "const readStudentProofBody=", "app.post(\"/api/public/survey/:token/proof\"");
+  check(guard.includes("res.status(413)") && guard.includes('error.type==="entity.too.large"') && guard.includes("content-length"), "S11 413 برسالة عربية قبل القراءة وعند تجاوز الحدّ");
+  check(server.includes("const STUDENT_PROOF_MAX_BYTES=14*1024*1024;") && surveyPageSource.includes("MAX_PROOF_BYTES=14*1024*1024"), "S11 حدٌّ واحد: 14 ميغابايت في الخادم والصفحة");
+  check(surveyPageSource.includes("if(sent>MAX_PROOF_BYTES)"), "S11 الصفحة تفحص الحجم قبل الرفع");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);
