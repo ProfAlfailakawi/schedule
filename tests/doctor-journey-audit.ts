@@ -13,6 +13,7 @@ import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "../src/server/publicAttemptLimiter";
 import { termPhase } from "../src/utils/termSequence";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
+import { coverConflict } from "../src/utils/coverAvailability";
 import { chosenAlternativeIndex } from "../src/utils/requestAlternatives";
 import { TERM_LINK_FALLBACK_DAYS, personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
 
@@ -222,6 +223,32 @@ async function main() {
     const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
     check(page.includes('selectTab(!d.lectureCount && (d.movementHistory||[]).length ? "movement" : "week")') && page.includes("لا محاضرات لك في هذا الفصل"),
       "D8 البطاقة الفارغة تقول «لا محاضرات لك» وتفتح على الحركة");
+  }
+
+
+  /* ── D9: لا تغطيتان في الساعة نفسها ────────────────────────────────────── */
+  {
+    const rows = [
+      { id: 1, AdInstructorId: 10, fstarttime: "08:00", fendtime: "09:15", fsunday: true },  // المطلوب تغطيتها
+      { id: 2, AdInstructorId: 11, fstarttime: "08:30", fendtime: "09:45", fsunday: true },  // موعدٌ آخر في الساعة نفسها
+      { id: 3, AdInstructorId: 20, fstarttime: "08:00", fendtime: "09:15", fsunday: true },  // محاضرة المرشّح نفسه
+      { id: 4, AdInstructorId: 21, fstarttime: "11:00", fendtime: "12:15", fsunday: true },
+    ];
+    const base = { date: "2026-10-04", dayKey: "fsunday", start: "08:00", end: "09:15", termRows: rows, coveringScheduleId: 1 };
+    check(coverConflict({ ...base, instructorId: 21, exceptions: [] }) === null, "D9 مرشّحٌ حرٌّ في تلك الساعة");
+    check(coverConflict({ ...base, instructorId: 20, exceptions: [] })?.kind === "weekly", "D9 محاضرته الأسبوعية في الساعة نفسها تمنع");
+    check(coverConflict({ ...base, instructorId: 20, exceptions: [{ scheduleId: 3, date: "2026-10-04", kind: "cancel" }] }) === null,
+      "D9 محاضرته الملغاة ذلك اليوم لا تمنع");
+    const doubled = [{ scheduleId: 2, date: "2026-10-04", kind: "cover" as const, coverInstructorId: 21 }];
+    check(coverConflict({ ...base, instructorId: 21, exceptions: doubled })?.kind === "cover", "D9 تغطيةٌ أخرى في الساعة نفسها تمنع");
+    check(coverConflict({ ...base, instructorId: 21, exceptions: doubled.map(e => ({ ...e, date: "2026-10-11" })) }) === null, "D9 تغطيةٌ في تاريخٍ آخر لا تمنع");
+    check(coverConflict({ ...base, instructorId: 21, exceptions: [{ scheduleId: 1, date: "2026-10-04", kind: "cover", coverInstructorId: 21 }] }) === null,
+      "D9 الموعد نفسه لا يتعارض مع نفسه");
+
+    const record = server.slice(server.indexOf('app.post("/api/schedules/:id/exceptions"'), server.indexOf('app.delete("/api/schedules/:id/exceptions/:exceptionId"'));
+    check(record.includes("coverConflict({") && record.includes("res.status(409)") && record.includes('"cover-double-booked"'), "D9 التسجيل يرفض التغطية المزدوجة بـ409");
+    const rank = server.slice(server.indexOf('app.get("/api/schedules/:id/substitutes"'), server.indexOf('app.get("/api/schedules/:id/substitutes"') + 3000);
+    check(rank.includes("busyAtSlot(person.AdInstructorId)") && rank.includes("coverConflict({") && !rank.includes("mine.some(overlapsSlot)"), "D9 الترتيب يستبعد بالقاعدة نفسها");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

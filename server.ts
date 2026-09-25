@@ -28,6 +28,7 @@ import { personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from
 import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
+import { coverConflict } from "./src/utils/coverAvailability";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -6333,6 +6334,25 @@ app.post("/api/schedules/:id/exceptions", requirePermission(7), async (req: Auth
     if (coverInstructorId === Number(row.AdInstructorId)) { res.status(400).json({ error: "التغطية تكون بأستاذ آخر غير أستاذ الشعبة" }); return; }
     const person = (await Repository.getInstructors()).find(item => item.AdInstructorId === coverInstructorId);
     if (!person) { res.status(404).json({ error: "الأستاذ البديل غير موجود" }); return; }
+    /* لا تغطيتان في الساعة نفسها، ولا تغطيةٌ فوق محاضرته: القاعدةُ نفسها التي
+       يرتّب بها «بديل اليوم» مرشّحيه. */
+    const [coverTermRows, coverTermExceptions] = await Promise.all([
+      Repository.getSchedulesByScope({ termId: Number(row.AdTermId) }),
+      Repository.getScheduleWeekExceptions(Number(row.AdTermId)),
+    ]);
+    const busy = coverConflict({
+      instructorId: coverInstructorId, date, dayKey, start: row.fstarttime, end: row.fendtime,
+      termRows: coverTermRows as any, exceptions: coverTermExceptions, coveringScheduleId: Number(row.id),
+    });
+    if (busy) {
+      res.status(409).json({
+        error: busy.kind === "cover"
+          ? `${person.AdInstructorName || "هذا الأستاذ"} مكلَّفٌ بتغطيةٍ أخرى في الساعة نفسها من هذا اليوم.`
+          : `${person.AdInstructorName || "هذا الأستاذ"} لديه محاضرةٌ في الساعة نفسها من هذا اليوم.`,
+        code: busy.kind === "cover" ? "cover-double-booked" : "cover-busy",
+      });
+      return;
+    }
     coverInstructorName = person.AdInstructorName;
   }
   const created = await Repository.createScheduleWeekException({
@@ -6375,14 +6395,17 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
   const dayKey = weekExceptionDayKey(date);
   if (!dayKey || !(row as any)[dayKey]) { res.status(400).json({ error: "هذا الموعد لا يُعقد في اليوم المحدد" }); return; }
 
-  const [instructors, termRows, collegeHistory] = await Promise.all([
+  const [instructors, termRows, collegeHistory, termExceptions] = await Promise.all([
     Repository.getInstructors(),
     Repository.getSchedulesByScope({ termId: Number(row.AdTermId) }),
     Repository.getSchedulesByScope({ collegeId: Number(row.AdCollegeId) }),
+    Repository.getScheduleWeekExceptions(Number(row.AdTermId)),
   ]);
-  const start = timeToMinutes(row.fstarttime), end = timeToMinutes(row.fendtime);
-  const overlapsSlot = (item: FSchedule) =>
-    Boolean((item as any)[dayKey]) && timeToMinutes(item.fstarttime) < end && timeToMinutes(item.fendtime) > start;
+  /* الحريةُ في تلك الساعة من ذلك التاريخ: القاعدةُ نفسها التي يُحرس بها التسجيل. */
+  const busyAtSlot = (instructorId: number) => Boolean(coverConflict({
+    instructorId, date, dayKey, start: row.fstarttime, end: row.fendtime,
+    termRows: termRows as any, exceptions: termExceptions, coveringScheduleId: Number(row.id),
+  }));
 
   const rowsByInstructor = new Map<number, FSchedule[]>();
   for (const item of termRows) {
@@ -6403,7 +6426,7 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
     .filter(person => !person.AdInstructorStatus)
     .map(person => {
       const mine = rowsByInstructor.get(person.AdInstructorId) || [];
-      if (mine.some(overlapsSlot)) return null;
+      if (busyAtSlot(person.AdInstructorId)) return null;
       const taughtTerms = taughtTermsByInstructor.get(person.AdInstructorId)?.size || 0;
       const inSection = mine.some(item =>
         Number(item.AdCollegeId) === Number(row.AdCollegeId) && Number(item.AdSectionId) === Number(row.AdSectionId));

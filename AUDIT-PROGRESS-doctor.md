@@ -10,7 +10,7 @@
 | D6 | FIXED — src/server/publicAttemptLimiter.ts (blocked/fail, env PUBLIC_ATTEMPT_MAX_FAILURES / PUBLIC_ATTEMPT_WINDOW_MINUTES); staff card, card note and request signing count only failures. Survey routes still use legacy consume() via staffLookupAllowed (student stream owns them) | tests/doctor-journey-audit.ts D6 |
 | D7 | FIXED — calendarSpanForTerm (icalendar.ts) uses termWindow start/end (declared or from term name); endDate→UNTIL; "today" anchor only when term unknown; honest feed label | tests/doctor-journey-audit.ts D7 |
 | D8 | FIXED — movementHistoryScopes adds request departments + issuing department to scheduleMovementEntries (option historyScopes; version loading untouched); card opens empty with movement when he lost all rows in the link term, generic 404 otherwise | tests/doctor-journey-audit.ts D8 (structural) |
-| D9 | TODO | |
+| D9 | FIXED — coverConflict() in src/utils/coverAvailability.ts (weekly rows not cancelled that date + existing covers that date); exception POST returns 409 cover-busy/cover-double-booked; substitutes ranking excludes via same rule | tests/doctor-journey-audit.ts D9 |
 | D10 | TODO | |
 | D11 | TODO | |
 | D12 | TODO | |
