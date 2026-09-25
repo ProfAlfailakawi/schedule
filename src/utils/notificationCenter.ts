@@ -22,6 +22,9 @@ export interface CenterNotification {
   collegeId?: number;
   sectionId?: number;
   at?: string;
+  /** فصلُ البند — يضعه الخادم؛ الجرسُ يقرأ الجاري وفصلَ التخطيط معاً (N18). */
+  termId?: number;
+  termName?: string;
 }
 
 export interface CenterScope {

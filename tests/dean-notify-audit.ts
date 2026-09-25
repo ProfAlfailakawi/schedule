@@ -18,6 +18,7 @@ import { buildFairnessEngine } from "../src/utils/livingSchedule";
 import { placeholderInstructorIdsOf } from "../src/utils/placeholderInstructor";
 import { mergeBalanceDepartments } from "../src/components/Reports";
 import { NOTIFY_FOCUS_KEY, takeNotifyFocus, writeNotifyFocus } from "../src/utils/notifyFocus";
+import { currentTermId as currentTermIdOf, planningTermCandidates, planningTermId } from "../src/utils/termSequence";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -211,7 +212,7 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   const extended = buildNotifications({ role: "registrarHead", now: Date.parse(now), deadline: { effective: "2026-09-20", past: true },
     scopes: [{ approval: { ...emptyApproval(1, 11, 9) } as any, collegeName: "ك", sectionName: "ق", rowCount: 0, openRegistrarNotes: 0, openRequests: 0, deadline: { effective: "2026-10-05", past: false } }] });
   check(extended.find(item => item.id.startsWith("not-submitted"))?.tone === "waiting", "N21: قسمٌ مُدِّد له لا يُنبَّه عليه «متأخّراً»");
-  const bell = routeBody('app.get("/api/notifications"');
+  const bell = fnBody("async function notificationItemsForTerm(");
   check(bell.includes("|| watchesSubmission;"), "N21: الجرس يعدّ أقسام النطاق التي لم تكتب شيئاً لمن يُحاسِب على التسليم");
 }
 
@@ -320,16 +321,37 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
 
 /* ══ N17 / N19 — عدّاد رئيس القسم، وملاحظات التسجيل في كل حال ═════════════ */
 {
-  const badge = routeBody('app.get("/api/approvals/badge"');
+  const badge = fnBody("async function approvalBadgeForTerm(");
   check(badge.includes('if (stage === "head" && approval.status === "committee") open += 1;'), "N17: جدولٌ ينتظر توقيع رئيس القسم يُعدّ في عدّاده");
   check(!badge.includes('if (approval.status !== "returned" && !approval.pendingAdditions.length) continue;'), "N19: ملاحظات التسجيل تُعدّ في كل حال، لا في «أُرجع» وحده");
-  const bell = routeBody('app.get("/api/notifications"');
+  const bell = fnBody("async function notificationItemsForTerm(");
   check(!bell.includes('department && approval.status === "returned"'), "N19: الجرس يقرأ ملاحظات التسجيل المفتوحة في أي حال");
   const mk = (status: string, notes: number): CenterScope => ({ approval: { ...emptyApproval(1, 11, 9), status } as any, collegeName: "ك", sectionName: "ق", rowCount: 3, openRegistrarNotes: notes, openRequests: 0 });
   const drafting = buildNotifications({ role: "committeeChair", scopes: [mk("drafting", 2)] });
   check(drafting.some(item => item.title.includes("ملاحظات التسجيل") && item.tone === "action" && item.view === "scheduleChanges"), "N19: ملاحظاتٌ والجدول قيد الإعداد تُنبّه اللجنة");
   const acceptedNotes = buildNotifications({ role: "departmentHead", scopes: [mk("accepted", 1)] });
   check(acceptedNotes.some(item => item.title.includes("ملاحظات التسجيل")), "N19: …وبعد الاعتماد تُنبّه القسم");
+}
+
+/* ══ N18 — الجرس للجاري ولفصل التخطيط ═══════════════════════════════════ */
+{
+  const now = Date.parse("2026-09-25T09:00:00Z");
+  const terms = [
+    { AdTermId: 1, AdTermName: "الفصل الثاني 2025/2026" },
+    { AdTermId: 2, AdTermName: "الفصل الصيفي 2025/2026" },
+    { AdTermId: 3, AdTermName: "الفصل الأول 2026/2027" },
+    { AdTermId: 4, AdTermName: "الفصل الثاني 2026/2027" },
+  ];
+  check(currentTermIdOf(terms, now) === 3, "N18: الجاري هو الأول 2026/2027 (تمهيد)");
+  check(planningTermId(terms, id => id === 4, now) === 4, "N18: الفصل التالي بنشاطٍ هو فصل التخطيط");
+  check(planningTermId(terms, () => false, now) === 0, "N18: فصلٌ بلا نشاط لا يُنبّه أحداً");
+  check(!planningTermCandidates(terms, now).includes(1) && !planningTermCandidates(terms, now).includes(2), "N18: الفصول المنتهية ليست فصل تخطيط");
+  check(planningTermId([...terms.slice(0, 2), { ...terms[2], AdTermClosed: false } as any, { AdTermId: 4, AdTermName: "الفصل الثاني 2026/2027", AdTermClosed: true } as any], () => true, now) === 0, "N18: المغلق ليس فصل تخطيط");
+  const route = routeBody('app.get("/api/notifications", requireAuth');
+  check(route.includes("bellPlanningTermId(terms as any[])") && route.includes("termName: planningName"), "N18: الجرس يضمّ فصل التخطيط ويسمّي فصل كل بند");
+  check(route.includes("id: `term-${planning}:${item.id}`"), "N18: بنود فصل التخطيط لا تتصادم معرّفاتها مع الجاري");
+  check(fnBody("async function bellPlanningTermId(").includes("planningTermCandidates("), "N18: المرشّحون من termSequence وحده");
+  check(routeBody('app.get("/api/approvals/badge", requireAuth').includes("approvalBadgeForTerm(req, planning)"), "N18: العدّاد يجمع الفصلين");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

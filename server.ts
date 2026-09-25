@@ -17,7 +17,7 @@ import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
-import { currentTermId, termHasEnded } from "./src/utils/termSequence";
+import { currentTermId, planningTermCandidates, termHasEnded } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
@@ -9845,10 +9845,26 @@ app.delete("/api/schedule-notes/:id", requireAuth, async (req: AuthenticatedRequ
  * النطاق هنا هو النطاق في كل مكان — لا يرى أحدٌ إشعاراً عن قسمٍ خارج نطاقه.
  */
 const REGISTRAR_NOTIFY_ROLES = new Set(["registrarHead", "registrarStaff"]);
-app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const terms = await Repository.getTerms();
-  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
-  if (!termId) { res.json({ termId: 0, items: [] }); return; }
+/**
+ * ── الجرس لفصلين: الجاري، وفصل التخطيط (N18) ────────────────────────────────
+ *
+ * دورةُ الاعتماد تجري غالباً على الفصل التالي والجاري يُدرَّس. فيُقرأ الجرس
+ * للجاري ولفصل التخطيط (planningTermCandidates في termSequence.ts: أحدثُ فصلٍ
+ * لم ينتهِ وفيه نشاط)، وكلُّ بندٍ من فصل التخطيط يحمل اسمَ فصله ومعرّفه.
+ * ومن سأل عن فصلٍ بعينه (termId) يُجاب عنه وحده.
+ */
+async function bellPlanningTermId(terms: any[]): Promise<number> {
+  for (const candidate of planningTermCandidates(terms as any)) {
+    const [approvals, rows] = await Promise.all([
+      Repository.getScheduleApprovalsForTerm(candidate),
+      Repository.getSchedulesByScope({ termId: candidate }),
+    ]);
+    if (approvals.length || rows.length) return candidate;
+  }
+  return 0;
+}
+
+async function notificationItemsForTerm(req: AuthenticatedRequest, termId: number) {
   const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
   const [approvals, term, colleges, sections] = await Promise.all([
     Repository.getScheduleApprovalsForTerm(termId),
@@ -9970,13 +9986,34 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     role, scopes,
     deadline: readDeadline({ termDeadline }, today),
   });
-  res.json({ termId, termName: String((term as any)?.AdTermName || ""), items });
+  return { term, items };
+}
+
+app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const explicit = Number(req.query.termId || 0);
+  const termId = explicit || currentTermId(terms as any);
+  if (!termId) { res.json({ termId: 0, items: [] }); return; }
+  const current = await notificationItemsForTerm(req, termId);
+  const termName = String((current.term as any)?.AdTermName || "");
+  let items = current.items.map(item => ({ ...item, termId, termName }));
+  const planning = explicit ? 0 : await bellPlanningTermId(terms as any[]);
+  let planningName = "";
+  if (planning && planning !== termId) {
+    const next = await notificationItemsForTerm(req, planning);
+    planningName = String((next.term as any)?.AdTermName || "");
+    items = [...items, ...next.items.map(item => ({
+      ...item, id: `term-${planning}:${item.id}`, termId: planning, termName: planningName,
+      detail: [planningName, item.detail].filter(Boolean).join(" — "),
+    }))];
+    const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
+    items.sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
+  }
+  res.json({ termId, termName, planningTermId: planning || 0, planningTermName: planningName, items });
 });
 
-app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const terms = await Repository.getTerms();
-  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
-  if (!termId) { res.json({ count: 0 }); return; }
+/** عدّادُ فصلٍ واحد — يُجمع للجاري ولفصل التخطيط (N18). */
+async function approvalBadgeForTerm(req: AuthenticatedRequest, termId: number): Promise<{ count: number; kind?: string }> {
 
   const approvals = (await Repository.getScheduleApprovalsForTerm(termId))
     .filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
@@ -9984,8 +10021,7 @@ app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, r
   /* من يفتح الوارد يرى عدّاده، ولو لم يقرّر فيه: سؤالُ عميد التسجيل هو
      «كم جدولاً ينتظر؟»، لا «أيّها أقبل؟». */
   if (canReviewSubmissions(req.user?.Role) || watchesInbox(req.user?.Role)) {
-    res.json({ count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" });
-    return;
+    return { count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" };
   }
   const stage = signatureStage(req.user?.Role);
   if (stage) {
@@ -10002,10 +10038,21 @@ app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, r
       const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
       open += notes.filter(note => note.origin === "registrar" && note.state === "open").length;
     }
-    res.json({ count: open, kind: "notes" });
-    return;
+    return { count: open, kind: "notes" };
   }
-  res.json({ count: 0 });
+  return { count: 0 } as { count: number; kind?: string };
+}
+
+app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const explicit = Number(req.query.termId || 0);
+  const termId = explicit || currentTermId(terms as any);
+  if (!termId) { res.json({ count: 0 }); return; }
+  const current = await approvalBadgeForTerm(req, termId);
+  const planning = explicit ? 0 : await bellPlanningTermId(terms as any[]);
+  if (!planning || planning === termId) { res.json(current); return; }
+  const next = await approvalBadgeForTerm(req, planning);
+  res.json({ count: current.count + next.count, kind: current.kind || next.kind, planningTermId: planning });
 });
 
 /** سطرُ قسمٍ في صندوق الوارد: حالته وموعده وملاحظاته وموانعه في نداءٍ واحد. */
