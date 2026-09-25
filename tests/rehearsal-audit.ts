@@ -233,5 +233,18 @@ const block = (source: string, start: string, end = "\napp.") => {
     "R7: وأيامُ المحاضرة كلُّها تُذكر، لا أولُها");
 }
 
+/* ══ R8: الجلسةُ التجريبية المفقودة تُسمّى باسمها ═════════════════════════════════
+ * البروفة: نُشرت نسخةٌ جديدة أثناء الدورة فضاع الصندوقُ التجريبيّ من الذاكرة،
+ * وصار كلُّ طلبٍ يُردّ «الرجاء تسجيل الدخول أولاً» — لمن لا حسابَ له أصلاً. */
+{
+  check(!server.includes('{ error: "الرجاء تسجيل الدخول أولاً" }'), "R8: لا حارسَ يكتب رسالة الدخول بيده");
+  check((server.match(/\{ error: signInRequiredMessage\(req\) \}/g) || []).length >= 5, "R8: الحرّاسُ الخمسة يسألون signInRequiredMessage");
+  const helper = block(server, "function signInRequiredMessage(", "\n}");
+  check(helper.includes('startsWith("demo_") ? DEMO_SESSION_GONE : "الرجاء تسجيل الدخول أولاً"'),
+    "R8: كعكةُ جلسةٍ تجريبية ⇒ «انتهت الجلسة التجريبية… ابدأ تجربةً جديدة»، وغيرها كما كان");
+  check(block(server, 'app.post("/api/demo/reset"').includes("DEMO_SESSION_GONE") && block(server, 'app.post("/api/demo/role"').includes("DEMO_SESSION_GONE"),
+    "R8: وتبديلُ الصفة وإعادةُ الضبط يقولان الجملة نفسها");
+}
+
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

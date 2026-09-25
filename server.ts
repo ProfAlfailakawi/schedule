@@ -1025,10 +1025,23 @@ app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) =
   next();
 });
 
+/*
+ * ── «سجّل الدخول» لمن لا حسابَ له: الجلسةُ التجريبية المفقودة ─────────────────
+ *
+ * الصندوقُ التجريبيُّ في ذاكرة الخادم. فإن انقضت ساعتُه أو أُعيد تشغيلُ الخادم
+ * (نشرُ نسخةٍ جديدة) ضاع، وصار كلُّ طلبٍ من المجرِّب يُردّ «الرجاء تسجيل الدخول
+ * أولاً» — لمن لم يملك حساباً قطّ، وفي منتصف دورةٍ يؤدّيها. وقد وقع هذا في
+ * البروفة الحيّة بعد نشرٍ جرى أثناءها. فيُقال له ما حدث وما يفعل.
+ */
+const DEMO_SESSION_GONE = "انتهت الجلسة التجريبية أو أُعيد تشغيل الخادم فمُحيت بياناتها. ابدأ تجربةً جديدة من صفحة الدخول.";
+function signInRequiredMessage(req: Request): string {
+  return String(getCookies(req)["session_id"] || "").startsWith("demo_") ? DEMO_SESSION_GONE : "الرجاء تسجيل الدخول أولاً";
+}
+
 // Require authenticated user
 function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user) {
-    res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" });
+    res.status(401).json({ error: signInRequiredMessage(req) });
     return;
   }
   next();
@@ -1044,14 +1057,14 @@ function isPowerUser(req: AuthenticatedRequest): boolean {
   return Boolean(req.user && (req.user.IsAdminUser || Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID));
 }
 function requirePowerAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (!req.user) { res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" }); return; }
+  if (!req.user) { res.status(401).json({ error: signInRequiredMessage(req) }); return; }
   if (!isPowerUser(req)) { res.status(403).json({ error: "هذه الأداة مخصصة لإدارة النظام الرئيسية" }); return; }
   next();
 }
 
 const ROOT_ADMIN_USER_ID = Math.max(1, Number(process.env.ROOT_ADMIN_USER_ID || 1) || 1);
 function requireRootAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  if (!req.user) { res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" }); return; }
+  if (!req.user) { res.status(401).json({ error: signInRequiredMessage(req) }); return; }
   if (Number(req.user.SystemUserId) !== ROOT_ADMIN_USER_ID) {
     res.status(403).json({ error: "هذه الخزنة مخصصة لحساب الإدارة الرئيسي فقط" });
     return;
@@ -1155,7 +1168,7 @@ const documentReadingGate = limitConcurrency(2, 8);
 function requirePermission(formNameId: number) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" });
+      res.status(401).json({ error: signInRequiredMessage(req) });
       return;
     }
     // Keep the single department scheduler inside the operational workspace even if
@@ -1180,7 +1193,7 @@ function requirePermission(formNameId: number) {
 function requireAnyPermission(formNameIds: number[]) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
-      res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" });
+      res.status(401).json({ error: signInRequiredMessage(req) });
       return;
     }
     if (formNameIds.every(id => powerOnlyFormIds.has(id)) && !isPowerUser(req)) {
@@ -2249,7 +2262,7 @@ app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) 
 app.post("/api/demo/role", rateLimitDemoRole, requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
-  if (!sessionId) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
+  if (!sessionId) { res.status(401).json({ error: DEMO_SESSION_GONE }); return; }
   const requested = String(req.body?.role || "");
   const targetId = requested === "admin"
     ? ROOT_ADMIN_USER_ID
@@ -2417,7 +2430,7 @@ app.post("/api/auth/heartbeat", requireAuth, async (req: AuthenticatedRequest, r
 app.post("/api/demo/reset", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
-  if (!sessionId || !Repository.resetDemoSandbox(sessionId, DEMO_SESSION_TTL_MS)) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
+  if (!sessionId || !Repository.resetDemoSandbox(sessionId, DEMO_SESSION_TTL_MS)) { res.status(401).json({ error: DEMO_SESSION_GONE }); return; }
   /* الصندوقُ الجديد يبدأ بقصصه كما بدأ الأول. */
   await Repository.withDemoSandbox(sessionId, () => seedDemoStories()).catch(error => console.error("[demo] seeding stories failed:", error));
   forgetAuthSession(sessionId);
