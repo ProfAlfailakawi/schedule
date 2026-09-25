@@ -5214,6 +5214,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       room: { code: building, hall },
     };
     const after = buildPhysicsTargetCandidate(row, target);
+    /* ── القاعة الهدف بهويتها، لا باسمها وحده ──────────────────────────────
+       الصفّ الموثّق يحمل معرّف قاعته القديمة، فإن أُرسل الاسم الجديد وحده
+       عاد الخادم فحسم المكان من المعرّف القديم. فتُرسل هوية القاعة الهدف كما
+       يعرفها صفٌّ موثّقٌ فيها على اللوحة، أو تُفرَّغ صراحةً ليحسمها الخادم من
+       الاسم. */
+    const targetHallKey = roomIdentity(after.AdRoomCode, after.AdRoomHall).key;
+    const hallChanged = roomIdentity(row.AdRoomCode, row.AdRoomHall).key !== targetHallKey;
+    const knownTargetHall = hallChanged
+      ? rows.find(item => item.roomId && item.locationStatus === "VERIFIED" && roomIdentity(item.AdRoomCode, item.AdRoomHall).key === targetHallKey)
+      : undefined;
+    const targetLocation: Record<string, unknown> = !hallChanged ? {}
+      : knownTargetHall
+        ? { buildingId: knownTargetHall.buildingId, roomId: knownTargetHall.roomId, locationStatus: "VERIFIED" }
+        : { buildingId: null, roomId: null, locationStatus: null };
+    if (knownTargetHall) Object.assign(after, { buildingId: knownTargetHall.buildingId, roomId: knownTargetHall.roomId, locationStatus: "VERIFIED" });
     const unchanged =
       row.fstarttime === after.fstarttime && row.fendtime === after.fendtime &&
       roomIdentity(row.AdRoomCode, row.AdRoomHall).key === roomIdentity(after.AdRoomCode, after.AdRoomHall).key &&
@@ -5284,6 +5299,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 fendtime: after.fendtime,
                 AdRoomCode: after.AdRoomCode,
                 AdRoomHall: after.AdRoomHall,
+                ...targetLocation,
               },
             }],
           }),

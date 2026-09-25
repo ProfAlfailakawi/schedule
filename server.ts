@@ -5108,6 +5108,15 @@ app.post("/api/intelligence/nl-schedule", requirePermission(7), async (req: Auth
  * whole party through one atomic batch. 409 carries the human-readable reason;
  * nothing is written when anything is refused.
  */
+/** The hall text moved but the registry identity it carried did not. */
+function hallTextChangedWithoutIdentity(original: any, fields: any): boolean {
+  if (!("AdRoomCode" in fields) && !("AdRoomHall" in fields)) return false;
+  const before = roomKeyOf("", original?.AdRoomCode, original?.AdRoomHall);
+  const after = roomKeyOf("", fields.AdRoomCode ?? original?.AdRoomCode, fields.AdRoomHall ?? original?.AdRoomHall);
+  if (before === after) return false;
+  return !fields.roomId || String(fields.roomId) === String(original?.roomId || "");
+}
+
 app.post("/api/schedules/move-batch", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const rawMoves = Array.isArray(req.body?.moves) ? req.body.moves : [];
   const strict = Boolean(req.body?.strict);
@@ -5136,7 +5145,20 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     const fields: any = {};
     for (const key of ALLOWED) if (move?.fields && key in move.fields) fields[key] = move.fields[key];
     fields.fdetail = legacyFDetail({ ...originals[index], ...fields });
-    return { row: { ...originals[index], ...fields } as FSchedule, fields };
+    const row = { ...originals[index], ...fields } as FSchedule;
+    /* ── القاعة الجديدة تُقرأ من اسمها لا من معرّف القديمة ─────────────────
+       لوحة القاعات تنقل المحاضرة بكتابة المبنى والقاعة الجديدين. والصفّ
+       الموثّق يحمل معرّفَ قاعته القديمة، والمعرّفُ يسبق الاسمَ عند التوثيق —
+       فكانت القاعة القديمة تُكتب من جديد فوق الاسم الجديد، ويقول النقلُ «تم»
+       والمحاضرةُ في مكانها. فمتى تغيّر الاسم ولم يتغيّر المعرّف، يُسقَط
+       المعرّفُ القديم ويُحسم المكان من الاسم كما يُحسم في أي كتابةٍ جديدة. */
+    if (hallTextChangedWithoutIdentity(originals[index], fields)) {
+      for (const key of ["roomId", "buildingId", "locationStatus"] as const) {
+        (row as any)[key] = undefined;
+        fields[key] = undefined;
+      }
+    }
+    return { row, fields };
   });
   const blocked: any[] = [];
   for (const candidate of candidates) {

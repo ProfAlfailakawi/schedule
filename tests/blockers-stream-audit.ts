@@ -52,5 +52,16 @@ const route = (signature: string) => {
   check(blockingConflicts(landed, landed).length === 1, "B4 صفّان يهبطان في القاعة نفسها والساعة نفسها مانعٌ واحد");
 }
 
+/* B5 — a rooms-board drag changes the hall of a verified row. */
+{
+  const schedules = read("src/components/Schedules.tsx");
+  const commit = schedules.slice(schedules.indexOf("const commitRoomMove"), schedules.indexOf("const commitRoomMove") + 9000);
+  check(commit.includes("...targetLocation,") && commit.includes("{ buildingId: null, roomId: null, locationStatus: null }"),
+    "B5 لوحة القاعات ترسل هوية القاعة الهدف أو تفرّغها صراحةً");
+  const move = route('app.post("/api/schedules/move-batch"');
+  check(move.includes("if (hallTextChangedWithoutIdentity(originals[index], fields))") && /function hallTextChangedWithoutIdentity[\s\S]*?String\(fields\.roomId\) === String\(original\?\.roomId/.test(server),
+    "B5 الخادم يحسم القاعة من اسمها متى تغيّر الاسم وبقي المعرّف القديم");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
