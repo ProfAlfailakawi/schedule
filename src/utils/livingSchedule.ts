@@ -2,7 +2,7 @@ import { roomIdentityKey } from "./locationRegistry";
 import { placeholderInstructorIdsOf } from "./placeholderInstructor";
 import type { AdCourse, AdInstructor, FSchedule, ScheduleConstraint, ScheduleDecisionMemory } from "../types";
 import { placeholderInstructorIds } from "./instructorIdentity";
-import { activeDays, analyzeSchedule, findConflicts, isBlockingConflict, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
+import { activeDays, analyzeSchedule, findConflicts, type AnalyzeOptions, isBlockingConflict, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { evaluateScheduleConstraints } from "./scheduleInnovation";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START } from "./scheduleTime";
 import { AR, countOf, oblique } from "./arabicCount";
@@ -30,11 +30,12 @@ function conflictCountForRow(candidate:FSchedule, universe:FSchedule[]){
   return findConflicts([candidate],universe.filter(row=>row.id!==candidate.id).concat(candidate)).filter(item=>item.rowId===candidate.id||item.otherId===candidate.id).length;
 }
 
-function computeConflictTopology(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
+function computeConflictTopology(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], options:AnalyzeOptions={}){
   const courseById=new Map(courses.map(c=>[c.AdCourseId,c]));
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   /* «هيئة تدريسية» is never a person here either (scheduleBlockers). */
-  const conflicts=findConflicts(rows,universe,{placeholderInstructorIds:placeholderInstructorIds(instructors as any)});
+  const normalize=options.normalizeRow||((row:FSchedule)=>row);
+  const conflicts=findConflicts(rows.map(normalize),universe.map(normalize),{placeholderInstructorIds:options.placeholderInstructorIds??placeholderInstructorIds(instructors as any)});
   const issueWeight=new Map<number,number>();
   for(const item of conflicts){issueWeight.set(item.rowId,(issueWeight.get(item.rowId)||0)+(item.severity==="high"?3:1));issueWeight.set(item.otherId,(issueWeight.get(item.otherId)||0)+(item.severity==="high"?3:1))}
   const nodes=new Map<string,any>(); const edges:any[]=[];
@@ -127,8 +128,8 @@ function computeRoomResilience(rows:FSchedule[], universe:FSchedule[]){
   return {rooms,topRisk:rooms[0]||null,singlePoints:rooms.filter(r=>r.singlePoint)};
 }
 
-function computeFragilityMap(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
-  const analysis=analyze(rows,universe,courses,instructors);const total=Math.max(1,rows.length);const room=buildRoomResilience(rows,universe);const fairness=buildFairnessEngine(rows,instructors);
+function computeFragilityMap(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], options?:AnalyzeOptions){
+  const analysis=analyze(rows,universe,courses,instructors,options);const total=Math.max(1,rows.length);const room=buildRoomResilience(rows,universe);const fairness=buildFairnessEngine(rows,instructors);
   const instructorCounts=new Map<number,number>();rows.forEach(r=>instructorCounts.set(r.AdInstructorId,(instructorCounts.get(r.AdInstructorId)||0)+1));
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const professorRisk=[...instructorCounts.entries()].map(([id,count])=>({type:"instructor",key:String(id),label:instructorById.get(id)?.AdInstructorName||`أستاذ ${id}`,affected:count,impactPct:Math.round(count/total*100),severity:count/total>.12?"high":count/total>.07?"medium":"low"})).sort((a,b)=>b.affected-a.affected).slice(0,5);
@@ -138,14 +139,14 @@ function computeFragilityMap(rows:FSchedule[], universe:FSchedule[], courses:AdC
   return {resilience,label:resilience>=88?"مرن":resilience>=72?"متماسك":resilience>=55?"هش جزئيًا":"هش",quality:analysis.score,roomRisk,professorRisk,dayRisk,roomIntelligence:room};
 }
 
-function computeScheduleHealth2(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
-  const quality=analyze(rows,universe,courses,instructors);const fragility=buildFragilityMap(rows,universe,courses,instructors);const fairness=buildFairnessEngine(rows,instructors);const composite=Math.round(quality.score*.58+fragility.resilience*.28+fairness.score*.14);
+function computeScheduleHealth2(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], options?:AnalyzeOptions){
+  const quality=analyze(rows,universe,courses,instructors,options);const fragility=buildFragilityMap(rows,universe,courses,instructors,options);const fairness=buildFairnessEngine(rows,instructors);const composite=Math.round(quality.score*.58+fragility.resilience*.28+fairness.score*.14);
   const descriptor=quality.score>=90&&fragility.resilience<65?"ممتاز… لكنه هش":quality.score>=85&&fairness.score<70?"قوي… لكنه غير متوازن":composite>=88?"صحي ومرن":composite>=75?"جيد مع نقاط تحسين":"يحتاج تدخل";
   return {score:composite,descriptor,quality:quality.score,resilience:fragility.resilience,fairness:fairness.score,readiness:quality.readiness,fragility};
 }
 
-function computeSchedulePulse(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
-  const analysis=analyze(rows,universe,courses,instructors);const health=buildScheduleHealth2(rows,universe,courses,instructors);const issues:Array<any>=[];
+function computeSchedulePulse(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], options?:AnalyzeOptions){
+  const analysis=analyze(rows,universe,courses,instructors,options);const health=buildScheduleHealth2(rows,universe,courses,instructors,options);const issues:Array<any>=[];
   analysis.alerts.filter((alert:any)=>alert.title!=="الوضع مستقر").forEach((alert:any)=>issues.push({type:"quality",severity:alert.severity,title:alert.title,detail:alert.detail,score:alert.severity==="critical"?100:alert.severity==="warning"?70:30}));
   const room=health.fragility.roomIntelligence.topRisk;if(room?.singlePoint)issues.push({type:"room",severity:"warning",title:`نقطة اعتماد حساسة: ${room.code}/${room.hall}`,detail:`ترتبط بـ${countOf(room.sessions, oblique(AR.appointment))}، ويمكن استيعاب ${room.recoverabilityPct}% منها فقط في قاعات بديلة بنفس الوقت.`,score:82});
   if(health.fairness<75)issues.push({type:"fairness",severity:"warning",title:"عدالة التوزيع تحتاج مراجعة",detail:`مؤشر العدالة ${health.fairness}/100؛ يوجد تفاوت ملحوظ في الأيام والفراغات والأوقات الثقيلة.`,score:74});
@@ -170,8 +171,8 @@ export function explainScheduleDecision(baseRows:FSchedule[], universe:FSchedule
   return {verdict,headline:`${current.AdCourseName} · شعبة ${current.SCode}`,before:{score:before.score,conflicts:before.metrics.criticalConflicts,gap:beforeGap.total,imbalance:before.metrics.imbalance,rules:beforeRules.total},after:{score:after.score,conflicts:after.metrics.criticalConflicts,gap:afterGap.total,imbalance:after.metrics.imbalance,rules:afterRules.total},delta:{score:qualityDelta,conflicts:conflictDelta,gap:gapDelta,imbalance:imbalanceDelta,rules:ruleDelta},positives,tradeoffs,warnings,candidate:{id:candidate.id,start:candidate.fstarttime,end:candidate.fendtime,room:`${candidate.AdRoomCode}/${candidate.AdRoomHall}`,days:activeDays(candidate).map(d=>DAY_LABEL.get(d)||d)}};
 }
 
-export function buildOneMinuteBrief(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], changedSince?:number){
-  const pulse=buildSchedulePulse(rows,universe,courses,instructors);const health=buildScheduleHealth2(rows,universe,courses,instructors);const topology=buildConflictTopology(rows,universe,courses,instructors);const risk=health.fragility;
+export function buildOneMinuteBrief(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[], changedSince?:number, options?:AnalyzeOptions){
+  const pulse=buildSchedulePulse(rows,universe,courses,instructors,options);const health=buildScheduleHealth2(rows,universe,courses,instructors,options);const topology=buildConflictTopology(rows,universe,courses,instructors,options);const risk=health.fragility;
   const biggest=topology.hotspots[0];const riskItem=[...(risk.roomRisk||[]),...(risk.professorRisk||[]),...(risk.dayRisk||[])].sort((a:any,b:any)=>b.impactPct-a.impactPct)[0];
   return {title:`الجدول ${health.descriptor}`,summary:`الجودة ${health.quality}/100، المرونة ${health.resilience}/100، والعدالة ${health.fairness}/100. ${pulse.items[0]?.title||"لا توجد مشكلة حرجة ظاهرة."}`,topIssues:pulse.items.slice(0,3),changeSummary:changedSince==null?"لا توجد نقطة مقارنة محددة.":changedSince===0?"لا تغيير منذ نقطة المقارنة.":`تغيّر ${countOf(changedSince, AR.appointment)} منذ نقطة المقارنة.`,bestDecision:biggest?`ابدأ من ${biggest.label}؛ هي العقدة الأكثر اتصالًا بالمشكلات الحالية.`:"لا توجد عقدة اختناق بارزة.",largestRisk:riskItem?`${riskItem.label}: قد يتأثر نحو ${riskItem.impactPct}% من مواعيد القسم إذا خرج من الخدمة.`:"لا توجد نقطة هشاشة كبيرة ظاهرة.",seconds:60};
 }

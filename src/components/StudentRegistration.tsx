@@ -19,10 +19,11 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, ClipboardList, Clock3, Download, Search, X } from "lucide-react";
+import { Check, CheckCheck, ClipboardList, Clock3, Download, X } from "lucide-react";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
+import StudentCasesTable, { GRADUATE_REASON_LABEL, STUDENT_CASE_TYPE_LABEL, type StudentCaseView } from "./StudentCasesTable";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { AR, nounFor } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, StudentCommitteeRejectReason, StudentCourseRejectReason, StudentCourseStateValue } from "../types";
 import type { StudentCaseStatus } from "../utils/studentCaseDecision";
@@ -59,6 +60,9 @@ interface CaseCourse {
   /** حذفه الطالبُ من طلبه بعد القرار: يُعرض ولا يُقرَّر فيه. */
   droppedByStudent?: boolean;
   droppedLabel?: string;
+  /** مالكُ المقرّر وقسمه (من الخادم). */
+  sectionId?: number;
+  sectionName?: string;
 }
 
 interface CaseDecisionView {
@@ -72,7 +76,7 @@ interface CaseRow {
   details?: string;
   caseDroppedAt?: string;
   /** الطرفُ الآخر في «تعارض مقررين» حين لا يكون في هذا الكشف. */
-  partnerCourses?: Array<{ code: string; name: string; sectionName: string }>;
+  partnerCourses?: Array<{ id?: number; code: string; name: string; sectionId?: number; sectionName: string }>;
   courses: CaseCourse[];
   /** طلبُ الخريج: قرارٌ واحدٌ في الحالة كلها بدل قرارات المقرّرات. */
   caseLevel?: boolean;
@@ -146,26 +150,13 @@ const CASE_STATUS_LABEL: Record<StudentCaseStatus, string> = {
   registered: "نفّذه التسجيل",
   rejected: "ردّه التسجيل",
 };
-const GRADUATE_REASON_LABEL: Record<string, string> = {
-  "field-conflict": "مقرر يتعارض مع وقت الميداني",
-  "field-prerequisite-conflict": "مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني",
-  other: "سبب آخر",
-};
 /** البنودُ التي تنتظر قراراً في صفٍّ واحد: مقرّراته، أو حالتُه كلها. */
 const rowStatuses = (row: CaseRow): Array<Exclude<StatusFilter, "all">> =>
   row.caseLevel ? [row.caseStatus || "pending"] : row.courses.filter(course => !course.readOnly).map(statusOf);
 
-const REQUEST_TYPE_LABEL: Record<string, string> = {
-  "new-course": "طلب فتح مقرر",
-  "course-conflict": "تعارض مقررين",
-  graduate: "خريج / متوقع تخرجه",
-};
-
-const arabicDate = (iso?: string) => {
-  if (!iso) return "";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("ar-KW-u-nu-latn", { month: "long", day: "numeric" });
-};
+/* Type and graduate-reason words come from the shared register, so the
+   sheet, its Excel file and the intelligence centre say the same thing. */
+const REQUEST_TYPE_LABEL: Record<string, string> = STUDENT_CASE_TYPE_LABEL;
 
 /* ── ورقةُ الردّ ────────────────────────────────────────────────────────── */
 
@@ -450,6 +441,193 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
     finally { setBusyKey(null); }
   };
 
+  /* ── الكشفُ في شكل السجلّ ────────────────────────────────────────────────
+     كلُّ صفٍّ يُقرأ كما يقرؤه سجلُّ مركز الذكاء: الاسم والرقم المدني وقسم
+     الطالب ونوع الطلب والمقررات بطرفيها. والقرار يُرسم داخل الخانة نفسها. */
+  const rowById = useMemo(() => new Map((rows || []).map(row => [row.id, row] as const)), [rows]);
+  const visibleCases = useMemo<StudentCaseView[]>(() => visible.map(row => ({
+    id: row.id, caseRef: row.caseRef, name: row.name, civil: row.civil,
+    studentSectionName: row.studentSectionName, requestType: row.requestType, createdAt: row.createdAt,
+    details: row.details,
+    graduateReason: row.graduate?.reason,
+    passedUnits: row.graduate ? row.graduate.passedUnits : undefined,
+    requiredUnits: row.graduate ? row.graduate.requiredUnits : undefined,
+    eligibility: row.graduate?.eligibility,
+    courses: [
+      ...row.courses.map(course => ({ id: course.id, name: course.name, code: course.code, sectionId: course.sectionId, sectionName: course.sectionName || course.decidedBySectionName })),
+      /* الطرفُ الآخر في «تعارض مقررين» يُعرض مكدَّساً مع طرفه، بلا قرارٍ هنا. */
+      ...(row.partnerCourses || []).map((course, index) => ({ id: `partner-${course.id ?? index}`, name: course.name, code: course.code, sectionId: course.sectionId ?? -1, sectionName: course.sectionName })),
+    ],
+  })), [visible]);
+  const printScope = [
+    sectionOptions.find(item => item.value === sectionId)?.label,
+    (terms || []).find(item => Number(item.AdTermId) === termId)?.AdTermName,
+  ].filter(Boolean).join(" · ");
+  const courseStateLabel = (course: CaseCourse) => course.droppedByStudent ? (course.droppedLabel || "ألغاه الطالب")
+    : course.readOnly ? `يقرّره قسم ${course.decidedBySectionName || "آخر"}`
+    : course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE;
+
+  const courseDecision = (row: CaseRow, course: CaseCourse) => {
+    const key = `${row.id}:${course.id}`;
+    return (
+      <span className="student-case-decision" data-state={course.settled ? course.state : "pending"}>
+        <span className="student-case-state" data-state={course.readOnly ? "readonly" : course.settled ? course.state : "pending"}>
+          {course.readOnly ? `يقرّره قسم ${course.decidedBySectionName || "آخر"}` : course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE}
+        </span>
+        {course.reasonCode ? <em>{reasonLabel(course.reasonCode)}{course.note ? ` · ${course.note}` : ""}</em>
+          : course.note ? <em>{course.note}</em> : null}
+        {course.droppedByStudent ? <em className="registration-dropped">{course.droppedLabel || "ألغاه الطالب بعد التسجيل"}</em> : null}
+        {committeeActs && !course.readOnly && !course.droppedByStudent && !decidedByRegistration(course) ? (
+          <span className="student-case-actions" aria-label="قرار اللجنة">
+            <button
+              type="button" className="changes-chip"
+              data-active={(course.settled && course.state === "awaiting-registration") || undefined}
+              disabled={busyKey === key || busyKey === `${row.id}:all`}
+              data-guide-target="registration.action.state"
+              onClick={() => void setState(row, course, "awaiting-registration")}
+            >
+              <Check aria-hidden="true" /> موافقة
+            </button>
+            <button
+              type="button" className="changes-chip"
+              data-active={course.state === "committee-rejected" || undefined}
+              disabled={busyKey === key || busyKey === `${row.id}:all`}
+              data-guide-target="registration.action.state"
+              onClick={() => setRejecting({ row, course, committee: true })}
+            >
+              <X aria-hidden="true" /> لا توافق
+            </button>
+          </span>
+        ) : null}
+        {registrationActs && !course.readOnly && !course.droppedByStudent && course.settled && course.state !== "committee-rejected" ? (
+          <span className="student-case-actions" aria-label="قرار التسجيل">
+            <button
+              type="button" className="changes-chip"
+              data-active={course.state === "registered" || undefined}
+              disabled={busyKey === key}
+              data-guide-target="registration.action.state"
+              onClick={() => void setState(row, course, "registered")}
+            >
+              <Check aria-hidden="true" /> سُجّل
+            </button>
+            <button
+              type="button" className="changes-chip"
+              data-active={course.state === "rejected" || undefined}
+              disabled={busyKey === key}
+              data-guide-target="registration.action.state"
+              onClick={() => setRejecting({ row, course, committee: false })}
+            >
+              <X aria-hidden="true" /> رُدّ
+            </button>
+            {course.state !== "awaiting-registration" ? (
+              <button
+                type="button" className="changes-chip"
+                disabled={busyKey === key}
+                data-guide-target="registration.action.state"
+                onClick={() => void setState(row, course, "awaiting-registration")}
+              >
+                <Clock3 aria-hidden="true" /> أعِده للانتظار
+              </button>
+            ) : null}
+          </span>
+        ) : null}
+      </span>
+    );
+  };
+
+  /* طلبُ الخريج: قرارٌ واحدٌ في الحالة كلها — اللجنةُ ثم التسجيل. */
+  const caseDecision = (row: CaseRow) => {
+    const key = `${row.id}:case`;
+    const status = row.caseStatus || "pending";
+    const last = row.caseState?.registrar || row.caseState?.committee;
+    return (
+      <span className="student-case-decision" data-state={status}>
+        <span className="student-case-state" data-state={status}>{CASE_STATUS_LABEL[status]}</span>
+        {last?.reasonCode ? <em>{reasonLabel(last.reasonCode)}{last.note ? ` · ${last.note}` : ""}</em>
+          : last?.note ? <em>{last.note}</em> : null}
+        {row.graduate && !row.graduate.nameMatched ? <em>الاسم في صحيفة التخرج لم يُطابق حرفياً</em> : null}
+        {committeeActs && !row.caseState?.registrar ? (
+          <span className="student-case-actions" aria-label="قرار اللجنة في الحالة">
+            <button
+              type="button" className="changes-chip"
+              data-active={status === "approved" || undefined}
+              disabled={busyKey === key}
+              data-guide-target="registration.action.state"
+              onClick={() => void setCaseState(row, "committee", "approved")}
+            >
+              <Check aria-hidden="true" /> موافقة
+            </button>
+            <button
+              type="button" className="changes-chip"
+              data-active={status === "committee-rejected" || undefined}
+              disabled={busyKey === key}
+              data-guide-target="registration.action.state"
+              onClick={() => setRejecting({ row, course: null, committee: true })}
+            >
+              <X aria-hidden="true" /> لا توافق
+            </button>
+          </span>
+        ) : null}
+        {registrationActs && row.caseState?.committee?.state === "approved" ? (
+          <span className="student-case-actions" aria-label="قرار التسجيل في الحالة">
+            <button
+              type="button" className="changes-chip"
+              data-active={status === "registered" || undefined}
+              disabled={busyKey === key}
+              data-guide-target="registration.action.state"
+              onClick={() => void setCaseState(row, "registrar", "approved")}
+            >
+              <Check aria-hidden="true" /> نُفّذ
+            </button>
+            <button
+              type="button" className="changes-chip"
+              data-active={status === "rejected" || undefined}
+              disabled={busyKey === key}
+              data-guide-target="registration.action.state"
+              onClick={() => setRejecting({ row, course: null, committee: false })}
+            >
+              <X aria-hidden="true" /> رُدّ
+            </button>
+            {row.caseState?.registrar ? (
+              <button
+                type="button" className="changes-chip"
+                disabled={busyKey === key}
+                data-guide-target="registration.action.state"
+                onClick={() => void setCaseState(row, "registrar", "pending")}
+              >
+                <Clock3 aria-hidden="true" /> أعِده للانتظار
+              </button>
+            ) : null}
+          </span>
+        ) : null}
+      </span>
+    );
+  };
+
+  /* ما يُقال عن الحالة تحت مقرّراتها: ملاحظاتُ الطالب، وطلبُ خريجٍ استُبدل،
+     و«موافقة على الكل» لطالبٍ واحد. */
+  const caseNote = (row: CaseRow) => {
+    const pendingHere = committeeActs && !row.caseLevel && row.courses.some(course => !course.settled && !course.readOnly && !course.droppedByStudent);
+    if (row.caseLevel) return null;
+    if (!row.details && !row.caseDroppedAt && !pendingHere) return null;
+    return (
+      <span className="student-case-notes">
+        {row.details ? <em className="registration-details">ملاحظات الطالب: {row.details}</em> : null}
+        {row.caseDroppedAt ? <em className="registration-dropped">ألغى الطالب طلب الخريج السابق بعد قرارٍ فيه، واستبدله بهذا الطلب.</em> : null}
+        {pendingHere ? (
+          <button
+            type="button" className="changes-chip student-case-approve-all"
+            disabled={busyKey === `${row.id}:all`}
+            data-guide-target="registration.action.state"
+            onClick={() => void approveAll(row)}
+          >
+            <CheckCheck aria-hidden="true" /> موافقة على الكل
+          </button>
+        ) : null}
+      </span>
+    );
+  };
+
   const selects: ScopeAskSelect[] = [
     { key: "college", label: "الكلية", value: collegeId, placeholder: "اختر الكلية", options: collegeOptions },
     { key: "section", label: "القسم", value: sectionId, placeholder: "اختر القسم", options: sectionOptions, disabled: !collegeId },
@@ -504,248 +682,72 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
             <div><b>{totals?.registered ?? 0}</b><span>{nounFor(totals?.registered ?? 0, AR.course)} {nounFor(totals?.registered ?? 0, AR.registeredVerb)}</span></div>
           </Surface>
 
-          <div className="registration-filter" role="group" aria-label="تصفية حسب الحالة">
-            <button
-              type="button" className="changes-chip registration-export"
-              disabled={!visible.length}
-              onClick={() => void exportVisible()}
-              data-guide-ignore="تصدير ما يُعرض إلى Excel — لا يغيّر شيئاً"
-            >
-              <Download aria-hidden="true" /> تصدير Excel
-            </button>
-            {([
-              ["all", "الكل"],
-              ...(viewer !== "registration" ? [["pending", PENDING_COMMITTEE], ["committee-rejected", "لم توافق اللجنة"]] : []),
-              ["approved", "بانتظار التسجيل"],
-              ["registered", "سُجّل"],
-              ["rejected", "ردّه التسجيل"],
-            ] as Array<[StatusFilter, string]>).map(([value, label]) => (
-              <button
-                key={value} type="button" className="changes-chip"
-                data-active={statusFilter === value || undefined}
-                onClick={() => { filterChosen.current = true; setStatusFilter(value); }}
-                data-guide-ignore="تصفية العرض — لا يغيّر شيئاً"
-              >
-                {label}{value !== "all" && statusCounts[value] ? ` · ${statusCounts[value]}` : ""}
-              </button>
-            ))}
-          </div>
-
           {!canWrite ? (
             <p className="registration-readonly">
               <Clock3 aria-hidden="true" /> هذا الكشف للقراءة بصفتك. الموافقةُ فيه للجنة القسم، والتسجيلُ لموظفي التسجيل.
             </p>
           ) : null}
 
-          {!visible.length ? (
-            <EmptyState
-              title="لا نتائج"
-              detail="لا طالبَ يطابق البحث أو الحالة المختارة."
-              action={<SecondaryButton type="button" onClick={() => { setAsk(""); filterChosen.current = true; setStatusFilter("all"); }} data-guide-ignore="مسح البحث — عرضٌ لا فعل">اعرض الكل</SecondaryButton>}
-            />
-          ) : (
-            <div className="request-deck">
-              {visible.map(row => (
-                <article key={row.id} className="request-card">
-                  <header className="request-card-head">
-                    <div>
-                      <strong>{row.name || "طالب"}</strong>
-                      <small>
-                        {row.caseRef}
-                        {` · ${REQUEST_TYPE_LABEL[row.requestType] || row.requestType}`}
-                        {row.studentSectionName ? ` · ${row.studentSectionName}` : ""}
-                        {row.createdAt ? ` · ${arabicDate(row.createdAt)}` : ""}
-                      </small>
-                    </div>
-                    <span className="registration-count">{row.caseLevel ? "حالة خريج" : countOf(row.courses.length, AR.course)}</span>
-                    {committeeActs && !row.caseLevel && row.courses.some(course => !course.settled && !course.readOnly && !course.droppedByStudent) ? (
-                      <button
-                        type="button" className="changes-chip"
-                        disabled={busyKey === `${row.id}:all`}
-                        data-guide-target="registration.action.state"
-                        onClick={() => void approveAll(row)}
-                      >
-                        <CheckCheck aria-hidden="true" /> موافقة على الكل
-                      </button>
-                    ) : null}
-                  </header>
-
-                  {row.caseLevel ? (() => {
-                    const key = `${row.id}:case`;
-                    const status = row.caseStatus || "pending";
-                    const last = row.caseState?.registrar || row.caseState?.committee;
-                    const g = row.graduate;
-                    return (
-                      <div className="request-items">
-                        <div className="registration-course registration-case" data-state={status}>
-                          <div className="registration-course-name">
-                            <strong>{GRADUATE_REASON_LABEL[g?.reason || ""] || "طلب خريج / متوقع تخرجه"}</strong>
-                            {g ? (
-                              <small>
-                                صحيفة التخرج متحقَّق منها: {countOf(g.passedUnits, AR.unit)} مجتازة من {countOf(g.requiredUnits, oblique(AR.unit))} مطلوبة
-                                {g.degreeUnits ? ` (مجموع الدرجة ${g.degreeUnits})` : ""}
-                                {g.eligibility === "eligible" ? " · مستوفٍ" : g.eligibility === "ineligible" ? " · غير مستوفٍ" : ""}
-                                {g.nameMatched ? "" : " · الاسم لم يُطابق حرفياً"}
-                              </small>
-                            ) : null}
-                            {row.details ? <em className="registration-details">ملاحظات الطالب: {row.details}</em> : null}
-                          </div>
-                          <div className="registration-course-state">
-                            <span data-state={status}>{CASE_STATUS_LABEL[status]}</span>
-                            {last?.reasonCode ? <em>{reasonLabel(last.reasonCode)}{last.note ? ` · ${last.note}` : ""}</em>
-                              : last?.note ? <em>{last.note}</em> : null}
-                          </div>
-                          {committeeActs && !row.caseState?.registrar ? (
-                            <div className="registration-course-actions" aria-label="قرار اللجنة في الحالة">
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={status === "approved" || undefined}
-                                disabled={busyKey === key}
-                                data-guide-target="registration.action.state"
-                                onClick={() => void setCaseState(row, "committee", "approved")}
-                              >
-                                <Check aria-hidden="true" /> موافقة
-                              </button>
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={status === "committee-rejected" || undefined}
-                                disabled={busyKey === key}
-                                data-guide-target="registration.action.state"
-                                onClick={() => setRejecting({ row, course: null, committee: true })}
-                              >
-                                <X aria-hidden="true" /> لا توافق
-                              </button>
-                            </div>
-                          ) : null}
-                          {registrationActs && row.caseState?.committee?.state === "approved" ? (
-                            <div className="registration-course-actions" aria-label="قرار التسجيل في الحالة">
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={status === "registered" || undefined}
-                                disabled={busyKey === key}
-                                data-guide-target="registration.action.state"
-                                onClick={() => void setCaseState(row, "registrar", "approved")}
-                              >
-                                <Check aria-hidden="true" /> نُفّذ
-                              </button>
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={status === "rejected" || undefined}
-                                disabled={busyKey === key}
-                                data-guide-target="registration.action.state"
-                                onClick={() => setRejecting({ row, course: null, committee: false })}
-                              >
-                                <X aria-hidden="true" /> رُدّ
-                              </button>
-                              {row.caseState?.registrar ? (
-                                <button
-                                  type="button" className="changes-chip"
-                                  disabled={busyKey === key}
-                                  data-guide-target="registration.action.state"
-                                  onClick={() => void setCaseState(row, "registrar", "pending")}
-                                >
-                                  <Clock3 aria-hidden="true" /> أعِده للانتظار
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })() : (
-                  <div className="request-items">
-                    {row.partnerCourses?.length ? (
-                      <p className="registration-partner">
-                        يتعارض مع: {row.partnerCourses.map(course => `${course.name}${course.code ? ` (${course.code})` : ""}${course.sectionName ? ` — ${course.sectionName}` : ""}`).join("، ")}
-                      </p>
-                    ) : null}
-                    {row.details ? <p className="registration-details">ملاحظات الطالب: {row.details}</p> : null}
-                    {row.caseDroppedAt ? (
-                      <p className="registration-dropped">ألغى الطالب طلب الخريج السابق بعد قرارٍ فيه، واستبدله بهذا الطلب.</p>
-                    ) : null}
-                    {row.courses.map(course => {
-                      const key = `${row.id}:${course.id}`;
-                      return (
-                        <div key={course.id} className="registration-course" data-state={course.state}>
-                          <div className="registration-course-name">
-                            <strong>{course.name}</strong>
-                            {course.code ? <small>{course.code}</small> : null}
-                          </div>
-
-                          <div className="registration-course-state">
-                            <span data-state={course.settled ? course.state : "pending"}>
-                              {course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE}
-                            </span>
-                            {course.reasonCode ? (
-                              <em>{reasonLabel(course.reasonCode)}{course.note ? ` · ${course.note}` : ""}</em>
-                            ) : course.note ? <em>{course.note}</em> : null}
-                            {course.droppedByStudent ? <em className="registration-dropped">{course.droppedLabel || "ألغاه الطالب بعد التسجيل"}</em> : null}
-                            {course.readOnly ? <em className="registration-readonly-course">يقرّره قسم {course.decidedBySectionName || "آخر"}</em> : null}
-                          </div>
-
-                          {committeeActs && !course.readOnly && !course.droppedByStudent && !decidedByRegistration(course) ? (
-                            <div className="registration-course-actions" aria-label="قرار اللجنة">
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={(course.settled && course.state === "awaiting-registration") || undefined}
-                                disabled={busyKey === key || busyKey === `${row.id}:all`}
-                                data-guide-target="registration.action.state"
-                                onClick={() => void setState(row, course, "awaiting-registration")}
-                              >
-                                <Check aria-hidden="true" /> موافقة
-                              </button>
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={course.state === "committee-rejected" || undefined}
-                                disabled={busyKey === key || busyKey === `${row.id}:all`}
-                                data-guide-target="registration.action.state"
-                                onClick={() => setRejecting({ row, course, committee: true })}
-                              >
-                                <X aria-hidden="true" /> لا توافق
-                              </button>
-                            </div>
-                          ) : null}
-                          {registrationActs && !course.readOnly && !course.droppedByStudent && course.settled && course.state !== "committee-rejected" ? (
-                            <div className="registration-course-actions" aria-label="قرار التسجيل">
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={course.state === "registered" || undefined}
-                                disabled={busyKey === key}
-                                data-guide-target="registration.action.state"
-                                onClick={() => void setState(row, course, "registered")}
-                              >
-                                <Check aria-hidden="true" /> سُجّل
-                              </button>
-                              <button
-                                type="button" className="changes-chip"
-                                data-active={course.state === "rejected" || undefined}
-                                disabled={busyKey === key}
-                                data-guide-target="registration.action.state"
-                                onClick={() => setRejecting({ row, course, committee: false })}
-                              >
-                                <X aria-hidden="true" /> رُدّ
-                              </button>
-                              {course.state !== "awaiting-registration" ? (
-                                <button
-                                  type="button" className="changes-chip"
-                                  disabled={busyKey === key}
-                                  data-guide-target="registration.action.state"
-                                  onClick={() => void setState(row, course, "awaiting-registration")}
-                                >
-                                  <Clock3 aria-hidden="true" /> أعِده للانتظار
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
+          {/* ── السجلّ نفسه الذي في مركز الذكاء ─────────────────────────────
+              «كشف التسجيل هنا خله نفس اللي في مركز الذكاء»: الجدول والتصفية
+              بالنوع والطباعة من StudentCasesTable، والقرار طبقةٌ داخله. */}
+          <StudentCasesTable
+            cases={visibleCases}
+            total={rows.length}
+            sectionId={sectionId}
+            emptyText="لا طالبَ يطابق البحث أو الحالة المختارة."
+            print={{ scope: printScope, college: collegeOptions.find(item => item.value === collegeId)?.label || "" }}
+            toolbarExtra={
+              <div className="registration-filter" role="group" aria-label="تصفية حسب الحالة">
+                {([
+                  ["all", "الكل"],
+                  ...(viewer !== "registration" ? [["pending", PENDING_COMMITTEE], ["committee-rejected", "لم توافق اللجنة"]] : []),
+                  ["approved", "بانتظار التسجيل"],
+                  ["registered", "سُجّل"],
+                  ["rejected", "ردّه التسجيل"],
+                ] as Array<[StatusFilter, string]>).map(([value, label]) => (
+                  <button
+                    key={value} type="button" className="changes-chip"
+                    data-active={statusFilter === value || undefined}
+                    onClick={() => { filterChosen.current = true; setStatusFilter(value); }}
+                    data-guide-ignore="تصفية العرض — لا يغيّر شيئاً"
+                  >
+                    {label}{value !== "all" && statusCounts[value] ? ` · ${statusCounts[value]}` : ""}
+                  </button>
+                ))}
+                <button
+                  type="button" className="changes-chip registration-export"
+                  disabled={!visible.length}
+                  onClick={() => void exportVisible()}
+                  data-guide-ignore="تصدير ما يُعرض إلى Excel — لا يغيّر شيئاً"
+                >
+                  <Download aria-hidden="true" /> تصدير Excel
+                </button>
+                {!visible.length && (needle || statusFilter !== "all") ? (
+                  <SecondaryButton type="button" onClick={() => { setAsk(""); filterChosen.current = true; setStatusFilter("all"); }} data-guide-ignore="مسح البحث — عرضٌ لا فعل">اعرض الكل</SecondaryButton>
+                ) : null}
+              </div>
+            }
+            renderCourseDecision={(item, view) => {
+              const row = rowById.get(item.id);
+              const course = row?.courses.find(entry => String(entry.id) === String(view.id));
+              return row && course ? courseDecision(row, course) : null;
+            }}
+            renderCaseDecision={item => {
+              const row = rowById.get(item.id);
+              return row?.caseLevel ? caseDecision(row) : null;
+            }}
+            renderCaseNote={item => {
+              const row = rowById.get(item.id);
+              return row ? caseNote(row) : null;
+            }}
+            printStatus={item => {
+              const row = rowById.get(item.id);
+              if (!row) return "";
+              if (row.caseLevel) return CASE_STATUS_LABEL[row.caseStatus || "pending"];
+              return row.courses.map(course => `${course.name}: ${courseStateLabel(course)}`).join(" · ");
+            }}
+          />
         </>
       )}
 

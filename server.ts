@@ -51,7 +51,7 @@ import {
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
 import { describeScopeChanges, fingerprintOfSignatures, replacementLoss, scopeBase, scopeSignatures, type ScopeBase } from "./src/utils/scopeFingerprint";
-import { approvalBlockerCount, blockingConflictDetails, blockingConflicts, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
+import { approvalBlockerCount, approvalBlockerSummary, blockingConflictDetails, blockingConflicts, blockingRowIds, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { buildNotifications } from "./src/utils/notificationCenter";
 import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
@@ -68,6 +68,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
+import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { termWindow } from "./src/utils/termSequence";
@@ -5224,7 +5225,11 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
   const seen=new Set<string>();
   const add=(item:any)=>{const key=String(item.id||`${item.type}:${(item.rowIds||[]).join(":")}`);if(seen.has(key))return;seen.add(key);blockers.push(item);};
 
-  blockingConflicts(scopeRows,termRows,await approvalBlockerOptions())
+  /* One list: the items below, the headline count and the appointments it
+     touches are all read from it — the ApprovalBar's two numbers exactly. */
+  const conflictList=blockingConflicts(scopeRows,termRows,await approvalBlockerOptions());
+  const touchedRowIds=blockingRowIds(conflictList,scopeRows);
+  conflictList
     .forEach((item:any)=>{
       const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
       if(!ownIds.has(ownId))return;
@@ -5250,7 +5255,10 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
         ? `${courseById.get(Number(other.AdCourseId))?.CourseCode||String(other.AdCourseName||"موعد آخر")} · ${formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))}`
         : "موعد خارج نطاق العرض الحالي";
       const detail=`${ownCourse}${own?.SCode?` · شعبة ${own.SCode}`:""}${ownDays?` · ${ownDays}`:""}${ownTime?` · ${ownTime}`:""} ↔ ${external}`;
-      add({id:`conflict:${[ownId,otherId].sort((a,b)=>a-b).join(":")}`,type:item.type,title,detail,rowIds:[ownId],subjectKey,subjectLabel});
+      /* Both feet of a pair inside this department are both flagged, so the
+         review's «مواعيد تمنع» is `blockingRows`, not half of it. */
+      const pairOwn=[ownId,otherId].filter(id=>ownIds.has(id));
+      add({id:`conflict:${[ownId,otherId].sort((a,b)=>a-b).join(":")}`,type:item.type,title,detail,rowIds:pairOwn,subjectKey,subjectLabel});
     });
 
   const roomKey=(row:any)=>roomIdentityKey(row);
@@ -5272,7 +5280,7 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
       add({id:`barter-window:${row.id}`,type:"hallBarterWindow",title:"الموعد يتجاوز نافذة الاستعارة المعتمدة",detail:"استخدم القاعة داخل اليوم والوقت المعتمدين، أو اطلب نافذة إضافية قبل الاعتماد.",rowIds:[Number(row.id)]});
     }
   }
-  res.json({blockers,checkedRows:scopeRows.length,termRows:termRows.length});
+  res.json({blockers,blockingConflicts:conflictList.length,blockingRows:touchedRowIds.length,checkedRows:scopeRows.length,termRows:termRows.length});
 });
 
 /**
@@ -5429,9 +5437,9 @@ async function previewNaturalLanguageMove(req: AuthenticatedRequest, q: string, 
   const conflicts=await scheduleConflicts(req,{...after,AdTermId:context.termId},target.id);
   const blocking=conflicts.filter(isBlockingConflict);
   const external=scheduleData.universe.filter(row=>!(row.AdCollegeId===context.collegeId&&row.AdSectionId===context.sectionId));
-  const beforeAnalysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
+  const beforeAnalysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors,await approvalBlockerOptions());
   const scenario=rows.map(row=>Number(row.id)===Number(target.id)?after:row);
-  const afterAnalysis=analyzeSchedule(scenario,[...external,...scenario],courses,instructors);
+  const afterAnalysis=analyzeSchedule(scenario,[...external,...scenario],courses,instructors,await approvalBlockerOptions());
   return{
     ok:true,kind:"move-preview",commitRequired:true,
     move:{id:target.id,fields,rev:target.rev},
@@ -5466,7 +5474,7 @@ async function executeGeminiScheduleCalls(req: AuthenticatedRequest, calls: Gemi
       const move=await previewNaturalLanguageMove(req,q,context,call.args);
       results.push({call,result:move});
     }else if(call.name==="check_conflicts"){
-      const analysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
+      const analysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors,await approvalBlockerOptions());
       results.push({call,result:{criticalConflicts:analysis.metrics?.criticalConflicts||0,alerts:(analysis.alerts||[]).slice(0,6)}});
     }else if(call.name==="find_rooms"){
       const termRows=scheduleData.universe;
@@ -7951,7 +7959,7 @@ app.post("/api/intelligence/evaluate", requirePermission(7), async (req: Authent
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);
   const {rows:baseline,universe}=scheduleData;
   const external=universe.filter(row=>!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
-  res.json({baseline:analyzeSchedule(baseline,universe,courses,instructors),scenario:analyzeSchedule(rows,[...external,...rows],courses,instructors),constraints:{baseline:evaluateScheduleConstraints(baseline,constraints),scenario:evaluateScheduleConstraints(rows,constraints)}});
+  res.json({baseline:analyzeSchedule(baseline,universe,courses,instructors,await approvalBlockerOptions()),scenario:analyzeSchedule(rows,[...external,...rows],courses,instructors,await approvalBlockerOptions()),constraints:{baseline:evaluateScheduleConstraints(baseline,constraints),scenario:evaluateScheduleConstraints(rows,constraints)}});
 });
 
 app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -7963,8 +7971,8 @@ app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: Au
   if(!target.length){res.json(emptyScopeGuidance("المقترح التلقائي"));return;}
   const proposal=autoScheduleProposal(target,universe);
   const external=universe.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
-  const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors);
-  const proposedAnalysis=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors);
+  const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors,await approvalBlockerOptions());
+  const proposedAnalysis=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors,await approvalBlockerOptions());
   const safeImprovement=proposedAnalysis.metrics.criticalConflicts<before.metrics.criticalConflicts||(proposedAnalysis.metrics.criticalConflicts===before.metrics.criticalConflicts&&proposedAnalysis.score>=before.score);
   const chosenRows=safeImprovement?proposal.rows:target,changed=safeImprovement?proposal.changed:0,after=safeImprovement?proposedAnalysis:before;
   const summary=changed?`اقتراح آمن غيّر وقت ${countOf(changed, oblique(AR.appointment))} فقط، مع إبقاء المقرر والأستاذ والأيام والقاعة كما هي. موانع الحفظ ${before.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts}، والجودة ${before.score} ← ${after.score}.`:`حللت البدائل ولم أجد تغييراً آمناً أفضل من الجدول الحالي ضمن القيود نفسها؛ لذلك لم أقترح أي تعديل تلقائي.`;
@@ -8109,7 +8117,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
       figures.push({label:"الوقت المقترح",value:formatScheduleTimeRange(candidate.fstarttime,candidate.fendtime),hint:"",tone:after===0?"good":"bad"});}
     else summary="حدد رمز المقرر والساعة في السؤال، مثال: إذا نقلت 101 إلى الساعة 11، فما الذي سيتأثر؟";
   } else if(normalized.includes("أفضل توزيع")||normalized.includes("افضل توزيع")||normalized.includes("قلل الفراغ")||normalized.includes("تقليل الفراغ")){
-    title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
+    title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors,await approvalBlockerOptions()); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
     summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${countOf(proposal.changed, oblique(AR.appointment))}: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
     if(dayMatch)bullets.push(`ذكرت ${dayMatch.label}. سأتعامل معه كأولوية تحليل، لكن لن أغيّر نمط أيام المقرر تلقائياً لأن ذلك قد يكون قيداً أكاديمياً.`);
     bullets.push("افتح «المحاكاة» لمراجعة كل تغيير قبل اعتماده.");
@@ -8241,7 +8249,7 @@ app.get("/api/intelligence/room", requirePermission(7), async (req: Authenticate
 });
 
 app.get("/api/intelligence/professor/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const instructorId=Number(req.params.id||0),termId=Number(req.query.termId||0); if(!instructorId||!termId){res.status(400).json({error:"حدد الأستاذ والفصل الدراسي"});return;} const [termRows,courses,instructors]=await Promise.all([Repository.getSchedulesByScope({termId}),Repository.getCourses(),Repository.getInstructors()]); const rows=termRows.filter(r=>r.AdInstructorId===instructorId); const visible=req.user.IsAdminUser?rows:filterByScope(req,rows); if(!req.user.IsAdminUser&&!visible.length){res.status(403).json({error:"الأستاذ لا يظهر ضمن نطاق القسم المسموح لك"});return;} const analysis=analyzeSchedule(rows,termRows,courses,instructors); const load=analysis.professorLoads.find((x:any)=>x.id===instructorId)||null; res.json({instructor:instructors.find(i=>i.AdInstructorId===instructorId)||null,load,visibleRows:visible,externalCommitments:Math.max(0,rows.length-visible.length),conflicts:analysis.conflicts.length});
+  const instructorId=Number(req.params.id||0),termId=Number(req.query.termId||0); if(!instructorId||!termId){res.status(400).json({error:"حدد الأستاذ والفصل الدراسي"});return;} const [termRows,courses,instructors]=await Promise.all([Repository.getSchedulesByScope({termId}),Repository.getCourses(),Repository.getInstructors()]); const rows=termRows.filter(r=>r.AdInstructorId===instructorId); const visible=req.user.IsAdminUser?rows:filterByScope(req,rows); if(!req.user.IsAdminUser&&!visible.length){res.status(403).json({error:"الأستاذ لا يظهر ضمن نطاق القسم المسموح لك"});return;} const analysis=analyzeSchedule(rows,termRows,courses,instructors,await approvalBlockerOptions()); const load=analysis.professorLoads.find((x:any)=>x.id===instructorId)||null; res.json({instructor:instructors.find(i=>i.AdInstructorId===instructorId)||null,load,visibleRows:visible,externalCommitments:Math.max(0,rows.length-visible.length),conflicts:analysis.conflicts.length});
 });
 
 app.get("/api/intelligence/comments/:scheduleId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -9698,6 +9706,16 @@ async function blockingConflictCount(collegeId: number, sectionId: number, termI
   return countBlockingConflicts(scopeRows, termRows, options);
 }
 
+/** The bar's two numbers — conflicts and the appointments they touch — from one list. */
+async function blockingSummaryFor(collegeId: number, sectionId: number, termId: number) {
+  const [scopeRows, termRows, options] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getSchedulesByScope({ termId }),
+    approvalBlockerOptions(),
+  ]);
+  return approvalBlockerSummary(scopeRows, termRows, options);
+}
+
 /** الملاحظات اللائحية الظاهرة وقت التوقيع — تُسجَّل ولا تمنع. */
 async function regulationNoticesForScope(collegeId: number, sectionId: number, termId: number) {
   try {
@@ -9800,7 +9818,7 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
   }
   const [deadline, blocking, notices, notes, rows, lockReason] = await Promise.all([
     readDeadlineFor(approval, termId),
-    blockingConflictCount(collegeId, sectionId, termId),
+    blockingSummaryFor(collegeId, sectionId, termId),
     regulationNoticeCount(collegeId, sectionId, termId),
     notesWithState(collegeId, sectionId, termId),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
@@ -9809,7 +9827,9 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
   res.json({
     approval,
     deadline,
-    blockingConflicts: blocking,
+    blockingConflicts: blocking.conflicts,
+    /* المواعيدُ التي تقف في تلك التعارضات — من القائمة نفسها (approvalBlockerSummary). */
+    blockingRows: blocking.rows,
     regulationNotices: notices,
     /* ── ما يمنع الإرسال يُقال قبل الضغط ────────────────────────────────────
      * من العدّاد الواحد نفسه الذي يقرؤه الإرسالُ والإرجاعُ والوارد (R4). */
@@ -11604,8 +11624,8 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: Aut
     }),
     fromTermName:terms.find(t=>t.AdTermId===fromTermId)?.AdTermName||"",
     toTermName:terms.find(t=>t.AdTermId===toTermId)?.AdTermName||"",
-    fromScore:analyzeSchedule(from,fromData.universe,courses,instructors).score,
-    toScore:analyzeSchedule(to,toData.universe,courses,instructors).score
+    fromScore:analyzeSchedule(from,fromData.universe,courses,instructors,await approvalBlockerOptions()).score,
+    toScore:analyzeSchedule(to,toData.universe,courses,instructors,await approvalBlockerOptions()).score
   });
 });
 
@@ -11680,19 +11700,23 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
     scopedScheduleUniverse(collegeId,sectionId,termId), Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(), Repository.getScheduleConstraints(collegeId, sectionId, termId)
   ]);
   const {rows,universe}=scheduleData;
-  const pulse = buildSchedulePulse(rows, universe, courses, instructors); await breathe();
-  const health = buildScheduleHealth2(rows, universe, courses, instructors); await breathe();
+  /* «حالة الجدول — N مانع اعتماد» is the ApprovalBar's number: the same
+     placeholder exemption and the same hall identity (approvalBlockerOptions),
+     one options object so every memoised reading below shares it. */
+  const blockerOptions = await approvalBlockerOptions();
+  const pulse = buildSchedulePulse(rows, universe, courses, instructors, blockerOptions); await breathe();
+  const health = buildScheduleHealth2(rows, universe, courses, instructors, blockerOptions); await breathe();
   const fairness = buildFairnessEngine(rows, instructors); await breathe();
-  const fragility = buildFragilityMap(rows, universe, courses, instructors); await breathe();
+  const fragility = buildFragilityMap(rows, universe, courses, instructors, blockerOptions); await breathe();
   const roomIntelligence = buildRoomResilience(rows, universe); await breathe();
-  const topology = buildConflictTopology(rows, universe, courses, instructors); await breathe();
+  const topology = buildConflictTopology(rows, universe, courses, instructors, blockerOptions); await breathe();
   /* Cheap by comparison: every reading it needs is memoised above and answers
      from cache, so it is left to run without a further pause. */
   /* The one-minute brief was also served alone at /api/intelligence/brief,
      which no screen ever called — so the living layer's «ملخص الدقيقة» never
      said what changed. It now carries the same «since the last safety point»
      reading, from the same helper. */
-  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows));
+  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows), blockerOptions);
   const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
   const livingPayload = {
     context:{collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
@@ -12052,7 +12076,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
   const genesisConflicts=blockingConflicts(rows,[...external,...rows],await approvalBlockerOptions());
   const rowIssues=mapSmartIssuesToRows(rows,issues,genesisConflicts);
   const issueRowIds=Object.keys(rowIssues).map(Number);
-  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,...scopeBase(targetUniverse.filter(r=>Number(r.AdCollegeId)===collegeId&&Number(r.AdSectionId)===sectionId)),name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
+  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors,await approvalBlockerOptions()); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,...scopeBase(targetUniverse.filter(r=>Number(r.AdCollegeId)===collegeId&&Number(r.AdSectionId)===sectionId)),name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
   const courseById=new Map(courses.map(course=>[Number(course.AdCourseId),course]));
   const instructorById=new Map(instructors.map(instructor=>[Number(instructor.AdInstructorId),instructor]));
   const previewRows=draft.rows.map((row,index)=>({
@@ -12066,7 +12090,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]); const {rows,universe}=scheduleData; const changedSince=await briefChangedSince(collegeId,sectionId,termId,rows); res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince));
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]); const {rows,universe}=scheduleData; const changedSince=await briefChangedSince(collegeId,sectionId,termId,rows); res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince,await approvalBlockerOptions()));
 });
 
 app.post("/api/intelligence/meeting-minutes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -13931,6 +13955,20 @@ const openStudentIdentity=async(value?:string)=>{
   }
 };
 
+/**
+ * ── من يرى اسمَ الطالب ورقمه المدني ─────────────────────────────────────────
+ * One rule for the two screens that show them (the intelligence centre's case
+ * register and the registration sheet): the department and registration staff
+ * who act on a case see who it belongs to; the view-only roles (dean, vice
+ * dean, registrar dean) read the same register without the identity.
+ */
+const canSeeStudentIdentity = (req: AuthenticatedRequest): boolean => !isViewerOnlyRole(req.user?.Role);
+const studentIdentityFor = async (req: AuthenticatedRequest, need: any): Promise<{ name: string; civil: string }> => {
+  if (!canSeeStudentIdentity(req)) return { name: "", civil: "" };
+  const [name, civil] = await Promise.all([openStudentIdentity(need?.nameCipher), openStudentIdentity(need?.civilCipher)]);
+  return { name, civil };
+};
+
 /** The name-derived SUGGESTION lives once, in src/utils/degreeRules.ts. It is
  * never a rule a student is measured against until the department saves it. */
 const degreeRuleFromName=suggestedDegreeRule;
@@ -14578,15 +14616,9 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const operationalDemandIds=await surveyActiveCourseIds(sectionId);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId && operationalDemandIds.has(Number(course.AdCourseId)));
   const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
-  const belongsToSurvey = (need:any) => {
-    const explicit = Number(need?.surveySectionId || 0);
-    if (explicit) return explicit === sectionId;
-    if (Number(need?.AdSectionId || 0) === sectionId) return true;
-    // Legacy new-course/conflict records did not carry survey provenance. The
-    // requested course is still authoritative enough to return them to the
-    // department that owns that course.
-    return Array.isArray(need?.courseIds) && need.courseIds.some((id:any) => targetCourseIds.has(Number(id)));
-  };
+  /* The register's rule; the registration sheet reads a superset of it
+     (src/utils/studentCaseScope.ts), so a case shown here is never missing there. */
+  const belongsToSurvey = (need:any) => surveyOwnsNeed(need, sectionId, targetCourseIds);
   const needs = (allTermNeeds as any[]).filter(belongsToSurvey);
   const history = (allHistory as any[]).filter(belongsToSurvey);
   const analyticalNeeds=needs.filter((need:any)=>Array.isArray(need.courseIds)&&need.courseIds.length>0);
@@ -14654,7 +14686,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode,sectionId:Number(course.AdSectionId||0)}]));
   const sectionNameById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
   const cases=(await Promise.all(needs.map(async(need:any)=>({
-    id:need.id,caseRef:caseRefFor(need),createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
+    id:need.id,caseRef:caseRefFor(need),createdAt:need.createdAt,...await studentIdentityFor(req,need),
     studentSectionId:Number(need.studentSectionId||need.AdSectionId||0),studentSectionName:sectionNameById.get(Number(need.studentSectionId||need.AdSectionId||0))||"",
     surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
@@ -14733,40 +14765,10 @@ const grantedPermissions = async (req: AuthenticatedRequest): Promise<number[]> 
     : []);
 
 /**
- * قسمُ الاستبيان الذي يملك هذا الطلب.
- *
- * اشتقاقٌ واحدٌ للقراءة والكتابة معاً. وكانا يفترقان: القراءةُ تنسب السجلّ
- * القديم — وهو ما كُتب قبل وجود `surveySectionId` — إلى القسم الذي يملك
- * مقرّراته المطلوبة، والكتابةُ تسأل عن قسم الطالب نفسه. فطالبٌ من قسمٍ آخرَ
- * طلب مقرّراً من هذا القسم يظهر في كشفه ولا تستطيع لجنتُه أن تكتب فيه — كشفٌ
- * يُعرض ولا يُعمل به.
+ * قسمُ الاستبيان الذي يملك هذا الطلب — `sectionOwnsNeed` في
+ * src/utils/studentCaseScope.ts: اشتقاقٌ واحدٌ للقراءة والكتابة معاً، وهو ما
+ * يعرضه سجلُّ مركز الذكاء (`surveyOwnsNeed`) وزيادةُ كلِّ قسمٍ يملك مقرّراً فيه.
  */
-const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
-                         courses: Array<{ AdCourseId: number; AdSectionId: number }>,
-                         sectionId: number): boolean => {
-  /* الطلبُ الحديث يحمل قسمَ استبيانه صراحةً، فهو صاحبُه. **ومعه** كلُّ قسمٍ
-     يملك مقرّراً فيه: طلبُ «تعارض مقررين» قد يسمّي مقرّراً من قسمٍ آخر، وكان
-     لا يراه إلا قسمُ الاستبيان — ولجنتُه لا تقرّر إلا في مقرّراتها — فيبقى
-     ذلك المقرّرُ بلا من يقرّر فيه أبداً. */
-  const declared = Number(need.surveySectionId || 0);
-  if (declared) return declared === sectionId || courses.some(row => Number(row.AdSectionId) === sectionId
-    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
-
-  /* والقديمُ — وهو ما كُتب قبل وجود ذلك الحقل — يُنسب إلى **كلِّ** قسمٍ يملك
-     مقرّراً من مقرّراته المطلوبة. وهذا مقصودٌ ولا يُختصر إلى واحد: طالبٌ طلب
-     مقرّراً من الإسلامية وآخرَ من اللغة العربية يخصّ القسمين معاً، وكلٌّ
-     منهما يحتاج أن يراه ليقرّر في مقرّره هو.
-     واختصارُه إلى «أولِ مالك» يُخفي الطلبَ عن القسم الثاني بصمت. */
-  const owned = courses.some(row => Number(row.AdSectionId) === sectionId
-    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
-  if (owned) return true;
-
-  /* ولو لم يُعرف مالكُ أيٍّ من مقرّراته — مقرّرٌ حُذف من الكتالوج مثلاً — فلا
-     يضيع الطلبُ بلا قسم: يبقى عند قسم صاحبه. */
-  const anyKnownOwner = courses.some(row => (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
-  return !anyKnownOwner && Number(need.AdSectionId || 0) === sectionId;
-};
-
 /** أقسامُ نطاق الحساب التي تملك هذا الطلب — ما يُكتب به في المقرّر وفي الحالة كلها. */
 const owningSectionsInScopeFor = async (req: AuthenticatedRequest, need: any, allCourses: any[]): Promise<number[]> =>
   (await Repository.getSections() as any[])
@@ -14857,8 +14859,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       return {
         id: String(need.id),
         caseRef: caseRefFor(need),
-        name: await openStudentIdentity(need.nameCipher),
-        civil: await openStudentIdentity(need.civilCipher),
+        ...await studentIdentityFor(req, need),
         createdAt: String(need.createdAt || ""),
         requestType: String(need.requestType || "graduate"),
         studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
@@ -14903,8 +14904,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       /* رقمُ الحالة هو نفسه الذي يحمله الطالب، مشتقٌّ من معرّف السجلّ — فيبحث
          به موظّفُ التسجيل عمّن يقف أمامه بلا أن يسأله عن رقمه المدني. */
       caseRef: caseRefFor(need),
-      name: await openStudentIdentity(need.nameCipher),
-      civil: await openStudentIdentity(need.civilCipher),
+      /* الاسمُ والرقمُ المدنيّ كما يعرضهما سجلُّ مركز الذكاء، للقاعدة نفسها. */
+      ...await studentIdentityFor(req, need),
       createdAt: String(need.createdAt || ""),
       requestType: String(need.requestType || "new-course"),
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
@@ -14915,7 +14916,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       partnerCourses: String(need.requestType || "") === "course-conflict"
         ? (need.courseIds || []).filter((id: any) => !visibleCourseIds.map(Number).includes(Number(id))).map((id: any) => {
             const course: any = courseById.get(Number(id));
-            return { code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${id}`),
+            return { id: Number(id), code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${id}`),
+              sectionId: Number(course?.AdSectionId || 0),
               sectionName: sectionNameById.get(Number(course?.AdSectionId || 0)) || "" };
           })
         : [],
@@ -14926,6 +14928,9 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
           id: Number(id),
           code: String(course?.CourseCode || ""),
           name: String(course?.CourseName || `مقرر ${id}`),
+          /* مالكُ المقرّر، ليقرأه السجلُّ المشترك «لهذا القسم» أو «لقسمٍ آخر». */
+          sectionId: ownerOf(id),
+          sectionName: sectionNameById.get(ownerOf(id)) || "",
           state: String(state?.state || "awaiting-registration"),
           reasonCode: state?.reasonCode,
           note: state?.note,

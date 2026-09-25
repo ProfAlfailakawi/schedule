@@ -77,6 +77,7 @@ import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import StudentCasesTable from "./StudentCasesTable";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import PagedImportPreview from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
@@ -91,13 +92,6 @@ import {
 } from "./IntelligenceVersionCanvas";
 import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetricArabic, formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES, scheduleClockForDisplay } from "../utils/scheduleTime";
 
-/** A calendar day for print: «٢٣ أغسطس ٢٠٢٦», no seconds, no comma, no clock —
- *  the register already carries the moment; the report needs the date. */
-const printableCaseDate = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(date);
-};
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
 import { pageReviewIssues, pageReviewWaitLine, pagesAwaitingReview } from "../utils/importPageReview";
@@ -546,31 +540,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
      Loaded with everything else, and empty is the ordinary state: a department
      that has never opened the survey sees the door and nothing more. */
   const [demand, setDemand] = useState<any>(null);
-  const [studentCaseFilter, setStudentCaseFilter] = useState<"all" | "new-course" | "course-conflict" | "graduate">("all");
-  const [studentCasePrintMode, setStudentCasePrintMode] = useState<"all" | "new-course" | "course-conflict" | "graduate">("all");
   const studentCases = Array.isArray(demand?.cases) ? demand.cases : [];
-  const visibleStudentCases = useMemo(() => studentCaseFilter === "all"
-    ? studentCases
-    : studentCases.filter((item: any) => item.requestType === studentCaseFilter), [demand?.cases, studentCaseFilter]);
-  const showStudentCaseVerification = useMemo(() => visibleStudentCases.some((item:any)=>item.requestType === "graduate"), [visibleStudentCases]);
-  const studentCaseCounts = useMemo(() => ({
-    all: studentCases.length,
-    "new-course": studentCases.filter((item: any) => item.requestType === "new-course").length,
-    "course-conflict": studentCases.filter((item: any) => item.requestType === "course-conflict").length,
-    graduate: studentCases.filter((item: any) => item.requestType === "graduate").length,
-  }), [demand?.cases]);
-  const studentCasesForPrint = useMemo(() => studentCasePrintMode === "all"
-    ? studentCases
-    : studentCases.filter((item: any) => item.requestType === studentCasePrintMode), [demand?.cases, studentCasePrintMode]);
-  const printStudentCases = (mode: "all" | "new-course" | "course-conflict" | "graduate") => {
-    setStudentCasePrintMode(mode);
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-      document.documentElement.dataset.printKind = "student-cases";
-      const clear = () => { delete document.documentElement.dataset.printKind; window.removeEventListener("afterprint", clear); };
-      window.addEventListener("afterprint", clear);
-      window.print();
-    }));
-  };
   const [genome, setGenome] = useState<any>(null),
     [constraints, setConstraints] = useState<any[]>([]),
     [innovationMode, setInnovationMode] = useState<
@@ -3239,39 +3209,16 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </article>
               </div>
 
-              <section className="student-cases-register">
-                <header>
-                  <div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{studentCases.length ? `${visibleStudentCases.length.toLocaleString("ar-KW-u-nu-latn")} من ${countOf(studentCases.length, oblique(AR.occurrence))} · الأحدث أولاً` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div>
-                </header>
-                {studentCases.length ? <>
-                  <div className="student-case-toolbar">
-                    <div className="student-case-filters" role="group" aria-label="فلترة حالات الطلبة">
-                      {([
-                        ["all", "الكل"],
-                        ["new-course", "فتح مقرر"],
-                        ["course-conflict", "تعارض مقررين"],
-                        ["graduate", "خريج / متوقع"],
-                      ] as const).map(([value, label]) => <button key={value} type="button" className={studentCaseFilter === value ? "active" : ""} aria-pressed={studentCaseFilter === value} data-guide-ignore="فلتر محلي لسجل حالات الطلبة لا يغير البيانات" onClick={() => setStudentCaseFilter(value)}><span>{label}</span><b>{studentCaseCounts[value].toLocaleString("ar-KW-u-nu-latn")}</b></button>)}
-                    </div>
-                    <div className="student-case-print-actions" aria-label="خيارات طباعة حالات الطلبة">
-                      <SecondaryButton data-guide-ignore="طباعة شاملة لسجل حالات الطلبة فقط" onClick={() => printStudentCases("all")}><Printer />الشاملة</SecondaryButton>
-                      <SecondaryButton data-guide-ignore="طباعة حالات فتح المقرر فقط" onClick={() => printStudentCases("new-course")} disabled={!studentCaseCounts["new-course"]}><Printer />فتح مقرر</SecondaryButton>
-                      <SecondaryButton data-guide-ignore="طباعة حالات التعارض فقط" onClick={() => printStudentCases("course-conflict")} disabled={!studentCaseCounts["course-conflict"]}><Printer />التعارض</SecondaryButton>
-                      <SecondaryButton data-guide-ignore="طباعة حالات الخريج والمتوقع فقط" onClick={() => printStudentCases("graduate")} disabled={!studentCaseCounts.graduate}><Printer />الخريج</SecondaryButton>
-                    </div>
-                  </div>
-                  {visibleStudentCases.length ? <div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>رقم الحالة</th><th>الطالب</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th>{showStudentCaseVerification ? <th>تحقق التخرج</th> : null}<th>التاريخ</th></tr></thead><tbody>{visibleStudentCases.map((item:any)=>{
-                    const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";
-                    const reason=item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني":"—";
-                    const courses=item.courses||[];
-                    const graduateDetails=String(item.details||"").trim();
-                    const detail=item.requestType==="graduate"?(graduateDetails?`${reason} — ${graduateDetails}`:reason):item.requestType==="course-conflict"?
-                      <div className="student-conflict-courses">{courses.map((course:any,index:number)=><span key={`${course.id||course.code}-${index}`} className={Number(course.sectionId)===Number(sectionId)?"own":"other"}><b>{course.name}{course.code?` (${course.code})`:""}</b>{Number(course.sectionId)!==Number(sectionId)&&course.sectionName?<small>{course.sectionName}</small>:null}</span>)}</div>:
-                      courses.map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||"—";
-                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{item.caseRef||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{detail}</td>{showStudentCaseVerification ? <td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} {nounFor(Number(item.requiredUnits||0), AR.unit)}</span>:null}</td> : null}<td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
-                  })}</tbody></table></div>:<div className="empty-state-compact">لا توجد حالات من هذا النوع في الفصل الحالي.</div>}
-                </> : <div className="empty-state-compact">ستظهر هنا هوية الطالب، قسمه، نوع الطلب، المقررات، التحقق ورقم الحالة.</div>}
-              </section>
+              {/* The case register — the same component the registration sheet
+                  draws (StudentCasesTable), so both screens read alike. */}
+              <StudentCasesTable
+                cases={studentCases}
+                sectionId={Number(sectionId)}
+                print={{
+                  scope: [demand.sectionName, terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName].filter(Boolean).join(" · "),
+                  college: colleges.find((college: any) => Number(college.AdCollegeId) === Number(collegeId))?.AdCollegeName || "",
+                }}
+              />
 
               {/* ── الشعب ────────────────────────────────────────────────────
                   السؤال الذي يُرسَل الاستبيان لأجله: الطلب مقابل سعة المقرر،
@@ -5296,63 +5243,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     ? <ul>{answer.bullets.map((b: string, j: number) => <li key={j}>{b}</li>)}</ul> : null}
                 </section>;
               })}
-              <footer className="print-explicit-page-meta">
-                <span>{scopeLine || "الجدول الأكاديمي"}</span>
-                <bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi>
-                <time dir="ltr">{stamp}</time>
-              </footer>
-            </section>
-          ))}
-        </div></PrintPortal>;
-      })() : null}
-      {studentCasesForPrint.length ? (() => {
-        /* Paginated into explicit landscape pages, the way every other report in
-           the program is built. That structure is what the wide-print path and
-           the Safari rotate path both key on — a single unpaginated table met a
-           portrait page and lost every column past the fold. */
-        const anyGraduate = studentCasesForPrint.some((c: any) => c.requestType === "graduate");
-        const CASES_PER_PAGE = 14;
-        const pages: any[][] = [];
-        for (let at = 0; at < studentCasesForPrint.length; at += CASES_PER_PAGE) pages.push(studentCasesForPrint.slice(at, at + CASES_PER_PAGE));
-        const scopeLine = [demand.sectionName, terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName].filter(Boolean).join(" · ");
-        const collegeName = colleges.find((college: any) => Number(college.AdCollegeId) === Number(collegeId))?.AdCollegeName || "";
-        const stamp = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
-        return <PrintPortal className="student-cases-print-host"><div className="print-report print-wide student-cases-print">
-          {pages.map((pageCases, pageIndex) => (
-            <section className="print-explicit-page" key={`cases-${pageIndex}`}>
-              <PrintLetterhead title={studentCasePrintMode === "all" ? "حالات استبيان الطلبة — التقرير الشامل" : studentCasePrintMode === "new-course" ? "حالات فتح مقرر جديد" : studentCasePrintMode === "course-conflict" ? "حالات تعارض المقررات" : "حالات الخريج والمتوقع تخرجه"} scope={scopeLine} college={collegeName} footer={false} />
-              <table>
-                <colgroup>
-                  <col style={{ width: "4%" }} /><col style={{ width: "8%" }} /><col style={{ width: "16%" }} /><col style={{ width: "11%" }} />
-                  <col style={{ width: "13%" }} /><col style={{ width: "13%" }} /><col style={{ width: anyGraduate ? "20%" : "27%" }} />
-                  {anyGraduate ? <col style={{ width: "8%" }} /> : null}<col style={{ width: "7%" }} />
-                </colgroup>
-                <thead><tr>
-                  <th>م</th><th>رقم الحالة</th><th>الاسم</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th>
-                  {anyGraduate ? <th>تحقق التخرج</th> : null}<th>التاريخ</th>
-                </tr></thead>
-                <tbody>{pageCases.map((item: any, index: number) => {
-                  const type = item.requestType === "graduate" ? "خريج / متوقع تخرجه" : item.requestType === "course-conflict" ? "تعارض مقررين" : "فتح مقرر جديد";
-                  const detail = item.requestType === "graduate"
-                    ? [item.graduateReason === "field-conflict" ? "مقرر يتعارض مع وقت الميداني" : item.graduateReason === "field-prerequisite-conflict" ? "مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني" : "", String(item.details || "").trim()].filter(Boolean).join(" — ") || "—"
-                    : item.requestType === "course-conflict"
-                      ? (item.courses || []).map((course:any) => Number(course.sectionId) === Number(sectionId) ? course.name : `${course.name}${course.sectionName ? ` — ${course.sectionName}` : ""}`).filter(Boolean).join(" · ") || "—"
-                      : (item.courses || []).map((course: any) => course.name).filter(Boolean).join(" · ") || item.details || "—";
-                  const units = item.requestType === "graduate" ? `${item.passedUnits ?? "—"} / ${item.requiredUnits ?? "—"}` : "—";
-                  return <tr key={item.id}>
-                    <td className="num">{(pageIndex * CASES_PER_PAGE + index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
-                    {/* رقمُ الحالة كما يحمله الطالب — من الخادم، لا اشتقاقٌ ثانٍ من معرّف السجلّ. */}
-                    <td dir="ltr">{item.caseRef || "—"}</td>
-                    <td>{item.name || "—"}</td>
-                    <td dir="ltr">{item.civil || "—"}</td>
-                    <td>{item.studentSectionName || "—"}</td>
-                    <td>{type}</td>
-                    <td className="print-break-any">{detail}</td>
-                    {anyGraduate ? <td className="num">{units}</td> : null}
-                    <td>{printableCaseDate(item.createdAt)}</td>
-                  </tr>;
-                })}</tbody>
-              </table>
               <footer className="print-explicit-page-meta">
                 <span>{scopeLine || "الجدول الأكاديمي"}</span>
                 <bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi>

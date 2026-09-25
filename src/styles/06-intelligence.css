@@ -4246,6 +4246,52 @@ button.twin-delta{width:100%}
 .student-conflict-courses small{font-size:9.5px;font-weight:500;color:var(--muted);line-height:1.35}
 .student-conflict-courses .other small{color:var(--brass)}
 
+/* ── The shared case register (StudentCasesTable) ───────────────────────────
+   One look for the intelligence centre and the registration sheet. The sheet
+   adds a decision layer inside the courses cell: a quiet state pill and the
+   committee / registration chips, under each course, never a second table. */
+.student-case-toolbar--extra{justify-content:flex-start}
+.student-case-toolbar--extra .registration-filter{width:100%}
+.student-case-detail{display:grid;gap:7px;min-width:0}
+.student-case-reason{color:var(--ink)}
+.student-conflict-courses.with-decisions{display:grid;gap:8px}
+.student-conflict-courses.with-decisions>span+span{padding-inline-start:0;border-inline-start:0;padding-top:8px;border-top:1px dashed var(--line)}
+.student-case-decision{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin-top:3px}
+.student-case-decision em{font-style:normal;font-size:10px;color:var(--muted)}
+.student-case-state{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;font-size:10px;font-weight:700;background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.student-case-state[data-state="pending"]{background:var(--warning-soft);color:var(--warning)}
+.student-case-state[data-state="awaiting-registration"],.student-case-state[data-state="approved"]{background:var(--accent-softer);color:var(--accent-ink)}
+.student-case-state[data-state="registered"]{background:color-mix(in srgb,var(--success) 14%,var(--surface));color:var(--success)}
+.student-case-state[data-state="rejected"],.student-case-state[data-state="committee-rejected"]{background:var(--danger-soft);color:var(--danger)}
+.student-case-actions{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+.student-case-actions .changes-chip,.student-case-approve-all{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding-inline:9px;font-size:10.5px}
+.student-case-actions .changes-chip svg,.student-case-approve-all svg{width:12px;height:12px}
+.student-case-actions .changes-chip:disabled,.student-case-approve-all:disabled{opacity:.5;cursor:not-allowed}
+.student-case-notes{display:grid;gap:4px;justify-items:start}
+.student-case-notes em{font-style:normal;font-size:10px;color:var(--muted)}
+.student-cases-register--decisions .student-cases-table td.student-case-detail-cell{min-width:320px}
+/* Phone: the register becomes a stack of cards, each field labelled — no
+   sideways scroll, the coloured type edge kept on the card. */
+@media(max-width:760px){
+  .student-cases-register{padding:12px}
+  .student-cases-table-wrap{overflow:visible;border:0;border-radius:0}
+  .student-cases-table{min-width:0!important;display:block}
+  .student-cases-table thead{display:none}
+  .student-cases-table tbody{display:grid;gap:10px}
+  .student-cases-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 12px;padding:12px;border:1px solid var(--line);border-inline-start:4px solid var(--line);border-radius:13px;background:var(--surface)}
+  .student-cases-table tr.case-new-course{border-inline-start-color:var(--success)}
+  .student-cases-table tr.case-course-conflict{border-inline-start-color:var(--danger)}
+  .student-cases-table tr.case-graduate{border-inline-start-color:var(--warning)}
+  .student-cases-table td{display:grid;gap:1px;padding:0;border:0!important;min-width:0}
+  .student-cases-table td::before{content:attr(data-label);font-size:9.5px;font-weight:600;color:var(--muted)}
+  .student-cases-table td.student-case-detail-cell{grid-column:1/-1;min-width:0}
+  .student-cases-table td:empty{display:none}
+  .student-case-filters,.student-case-print-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .student-case-filters button{justify-content:space-between;white-space:nowrap}
+  .student-case-actions{width:100%}
+  .student-case-actions .changes-chip{flex:1;justify-content:center;min-height:34px}
+}
+
 /* Import editing deliberately mirrors Add/Edit Schedule: start/end labels,
    department room history, a quick hall popover, and warnings beside the row. */
 .import-time-editor{display:grid;grid-template-columns:minmax(92px,1fr) auto minmax(92px,1fr);align-items:end;gap:7px;min-width:220px;direction:rtl}

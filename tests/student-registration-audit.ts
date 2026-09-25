@@ -16,6 +16,7 @@ import fs from "fs";
 import path from "path";
 import { caseRefFor, caseRefOf } from "../src/db/repository";
 import { APPROVAL_WRITE_PREFIXES, roleWriteDecision } from "../src/server/roleGuard";
+import { sectionOwnsNeed, surveyOwnsNeed } from "../src/utils/studentCaseScope";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -177,22 +178,37 @@ check(server.includes("if (isViewerOnlyRole(role)) return false;"),
 /* ٢) القراءةُ والكتابةُ كانتا تنسبان السجلَّ القديم إلى قسمين مختلفين: القراءةُ
       إلى مالك المقرّرات، والكتابةُ إلى قسم الطالب. فطالبٌ من قسمٍ آخرَ طلب
       مقرّراً من هذا القسم يظهر في كشفه ولا تستطيع لجنتُه أن تكتب فيه. */
-check(server.includes("const sectionOwnsNeed = "), "ونسبةُ الطلب إلى قسمه قاعدةٌ واحدة");
+check(server.includes('import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";')
+  && !/const sectionOwnsNeed = |const belongsToSurvey = \(need:any\) => \{/.test(server),
+  "ونسبةُ الطلب إلى قسمه قاعدةٌ واحدة (studentCaseScope) — لا نسخةَ في الخادم");
 check((server.match(/sectionOwnsNeed\(/g) || []).length === 2,
   "تقرأ بها الشاشةُ وتكتب بها — موضعان لا ثالثَ لهما، فلا يُعرض ما لا يُكتب فيه");
 check(!server.includes("Number(need.surveySectionId || need.AdSectionId || 0);"),
   "ولم يبقَ الاشتقاقُ القديمُ في مسار الكتابة");
-
-/* والطلبُ القديم يُنسب إلى **كلِّ** قسمٍ يملك مقرّراً من مقرّراته، لا إلى
-   أوّلِهم. وهو موضعٌ كسرتُه ثم أصلحتُه: «أولُ مالك» كان يُخفي طلبَ طالبٍ
-   طلب مقرّراً من قسمين عن ثانيهما بصمت — فيرى القسمُ عدداً أقلّ ولا يعرف
-   لماذا، ولا شيء في الشاشة يقول إن طلباً سقط. */
-check(server.includes("courses.some(row => Number(row.AdSectionId) === sectionId"),
-  "والقديمُ يخصّ كلَّ قسمٍ يملك مقرّراً من المطلوب");
 check(!/for \(const id of need\.courseIds \|\| \[\]\) \{[\s\S]{0,120}return section;/.test(server),
   "ولم يبقَ «أولُ مالكٍ» الذي كان يُخفي الطلبَ عن ثانيهما");
-check(server.includes("const anyKnownOwner") && server.includes("!anyKnownOwner"),
-  "وطلبٌ لا يُعرف مالكُ أيٍّ من مقرّراته يبقى عند قسم صاحبه، فلا يضيع بلا قسم");
+{
+  /* السلوك: الكشفُ يعرض كلَّ ما يعرضه سجلُّ مركز الذكاء، وزيادة. */
+  const catalogue = [{ AdCourseId: 11, AdSectionId: 3 }, { AdCourseId: 12, AdSectionId: 3 }, { AdCourseId: 22, AdSectionId: 4 }];
+  const ownCourses = new Set([11, 12]);
+  const cases: Array<[string, any]> = [
+    /* خريجٌ من قسمٍ آخر أجاب استبيانَ هذا القسم — الحالةُ التي غابت عن الكشف. */
+    ["خريج طالبُه من قسمٍ آخر", { requestType: "graduate", surveySectionId: 3, AdSectionId: 9, studentSectionId: 9, courseIds: [] }],
+    ["خريج قديم بلا قسم استبيان", { requestType: "graduate", AdSectionId: 3, courseIds: [] }],
+    ["طلبٌ قديم في هذا القسم لمقرّر قسمٍ آخر", { requestType: "new-course", AdSectionId: 3, courseIds: [22] }],
+    ["طلبٌ قديم لمقرّر هذا القسم من قسمٍ آخر", { requestType: "new-course", AdSectionId: 9, courseIds: [11] }],
+    ["طلبٌ قديم لمقرّرٍ حُذف من الكتالوج", { requestType: "new-course", AdSectionId: 3, courseIds: [999] }],
+    ["تعارضٌ قُدّم عبر استبيانٍ آخر ويسمّي مقرّرنا", { requestType: "course-conflict", surveySectionId: 4, AdSectionId: 4, courseIds: [22, 11] }],
+  ];
+  const missing = cases.filter(([, need]) => surveyOwnsNeed(need, 3, ownCourses) && !sectionOwnsNeed(need, catalogue, 3)).map(([name]) => name);
+  check(missing.length === 0, `كلُّ حالةٍ في سجلّ مركز الذكاء تظهر في كشف القسم نفسه (${missing.join("، ") || "لا ناقص"})`);
+  check(sectionOwnsNeed(cases[0][1], catalogue, 3) && !sectionOwnsNeed(cases[0][1], catalogue, 9),
+    "وحالةُ الخريج تُقرَّر في قسم الاستبيان لا في قسم الطالب");
+  check(sectionOwnsNeed(cases[5][1], catalogue, 3) && !surveyOwnsNeed(cases[5][1], 3, ownCourses),
+    "وتعارضٌ يسمّي مقرّر هذا القسم يصل كشفَه ليقرّر فيه، ولو قُدّم عبر استبيان غيره");
+  check(!sectionOwnsNeed({ requestType: "new-course", surveySectionId: 4, courseIds: [22] } as any, catalogue, 3),
+    "ولا يصل كشفَ قسمٍ طلبٌ لا يخصّه");
+}
 
 /* ٣) قراران في لحظةٍ واحدةٍ كان أحدُهما يمحو الآخر: كلٌّ يقرأ الوثيقةَ ثم
       يكتبها كاملة. والشاشةُ تسمح به لأنها تُعطّل المقرّرَ المشغولَ وحدَه. */
@@ -263,6 +279,7 @@ const inboxSrc = fs.readFileSync(path.join(process.cwd(), "src/components/Instru
 const regSrc = fs.readFileSync(path.join(process.cwd(), "src/components/StudentRegistration.tsx"), "utf8");
 const appSrc = fs.readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
 const approvalCss = fs.readFileSync(path.join(process.cwd(), "src/styles/11-approval.css"), "utf8");
+const intelligenceCss = fs.readFileSync(path.join(process.cwd(), "src/styles/06-intelligence.css"), "utf8");
 const responsiveCss = fs.readFileSync(path.join(process.cwd(), "src/styles/07-responsive.css"), "utf8");
 
 for (const [name, src] of [["وارد الأساتذة", inboxSrc], ["كشف التسجيل", regSrc]] as const) {
@@ -286,8 +303,37 @@ check(responsiveCss.includes(".sidebar .side-nav-link{")
   "وقائمة الهاتف ترتّب مداخل تغييرات الجدول ورغبات الأساتذة وكشف التسجيل في صفٍّ واضح");
 check(approvalCss.includes(".request-card-head{align-items:flex-start;flex-direction:column}")
   && approvalCss.includes(".request-diff>div{display:grid;grid-template-columns:minmax(54px,auto) minmax(0,1fr)")
-  && approvalCss.includes(".registration-course{align-items:stretch;display:grid"),
-  "وشاشتا رغبات الأساتذة وكشف التسجيل لهما ترتيب هاتف صريح لا يترك البطاقات تتزاحم");
+  && intelligenceCss.includes(".student-cases-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)")
+  && intelligenceCss.includes(".student-cases-table td::before{content:attr(data-label)"),
+  "وشاشتا رغبات الأساتذة وكشف التسجيل لهما ترتيب هاتف صريح: السجلّ بطاقاتٌ بحقولٍ معنونة، بلا تمريرٍ جانبي");
+
+/* ── كشف التسجيل بشكل سجلّ مركز الذكاء — مكوّنٌ واحد ─────────────────── */
+const registerSrc = fs.readFileSync(path.join(process.cwd(), "src/components/StudentCasesTable.tsx"), "utf8");
+const workspaceSrc = fs.readFileSync(path.join(process.cwd(), "src/components/IntelligenceWorkspace.tsx"), "utf8");
+check(regSrc.includes("<StudentCasesTable") && workspaceSrc.includes("<StudentCasesTable"),
+  "الشاشتان ترسمان السجلّ نفسه (StudentCasesTable)");
+const tableCopies = [["IntelligenceWorkspace", workspaceSrc], ["StudentRegistration", regSrc]]
+  .filter(([, src]) => /className="student-cases-table"|student-case-filters|student-cases-print"|<th>الرقم المدني<\/th>/.test(src)).map(([name]) => name);
+check(tableCopies.length === 0, `ولا نسخةَ ثانية من الجدول أو الفلاتر أو الطباعة (${tableCopies.join("، ") || "لا نسخ"})`);
+check(!regSrc.includes('{row.name || "طالب"}') && registerSrc.includes('{item.name || "—"}') && registerSrc.includes('{item.civil || "—"}'),
+  "الكشف يعرض اسم الطالب ورقمه المدني، و«—» بصدقٍ حين يغيبان، لا كلمة «طالب»");
+check(["الشاملة", "فتح مقرر", "التعارض", "الخريج"].every(label => registerSrc.includes(`<Printer />${label}</SecondaryButton>`))
+  && registerSrc.includes('document.documentElement.dataset.printKind = "student-cases"'),
+  "وأزرار الطباعة الأربعة والورقة المطبوعة في المكوّن المشترك");
+check(registerSrc.includes("renderCourseDecision") && registerSrc.includes("renderCaseDecision")
+  && regSrc.includes("renderCourseDecision=") && regSrc.includes("renderCaseDecision="),
+  "والقرار طبقةٌ داخل السجلّ: لكل مقرّر، وللحالة كلها في طلب الخريج");
+check(["الكل", "PENDING_COMMITTEE", "لم توافق اللجنة", "بانتظار التسجيل", "سُجّل", "ردّه التسجيل", "تصدير Excel", "اسأل: رقم الحالة أو اسم الطالب", "سطرٌ للطالب", "موافقة على الكل"].every(text => regSrc.includes(text)),
+  "وبقي كلُّ ما في الكشف: مرشّحات الحالة، والتصدير، والبحث، وسطرُ الطالب، والموافقة على الكل");
+
+/* ── الهوية لمن يعمل على الحالة، لا لصفة العرض ─────────────────────────── */
+check(server.includes("const canSeeStudentIdentity = (req: AuthenticatedRequest): boolean => !isViewerOnlyRole(req.user?.Role);"),
+  "من يرى الاسم والرقم المدني: قاعدةٌ واحدة، وصفةُ العرض (العميد، عميد التسجيل) لا تراهما");
+const registrationList = server.slice(server.indexOf('app.get("/api/student-registration"'), server.indexOf('app.post("/api/student-registration/:id/course-state"'));
+const demandList = server.slice(server.indexOf('app.get("/api/schedules/demand"'), server.indexOf('const sectionOwnsNeed') > 0 ? server.indexOf('const sectionOwnsNeed') : server.indexOf("/** أقسامُ نطاق الحساب"));
+check((registrationList.match(/\.\.\.await studentIdentityFor\(req, need\)/g) || []).length === 2 && !registrationList.includes("openStudentIdentity(")
+  && demandList.includes("...await studentIdentityFor(req,need)") && !demandList.includes("openStudentIdentity("),
+  "والكشفُ وسجلُّ مركز الذكاء يفكّان الهوية بالمساعد نفسه");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

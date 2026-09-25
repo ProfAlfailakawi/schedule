@@ -42,6 +42,17 @@ export function blockingConflictPhrase(count: number): string {
   return countOf(count, BLOCKING_CONFLICT);
 }
 
+/**
+ * The bar's whole sentence: the conflicts, then the appointments they touch —
+ * each with its own noun, so «4» and «5» on one screen never read as two
+ * answers to one question. `rows` comes from `approvalBlockerSummary`.
+ */
+export function blockingSummaryPhrase(conflicts: number, rows?: number): string {
+  const head = blockingConflictPhrase(conflicts);
+  const touched = Math.max(0, Math.round(Number(rows) || 0));
+  return touched > 0 ? `${head} · تمسّ ${countOf(touched, AR.appointment)}` : head;
+}
+
 export const APPROVAL_STATUS_LABEL: Record<ScheduleApprovalStatus, string> = {
   drafting: "قيد الإعداد",
   committee: "موقّع من اللجنة",
