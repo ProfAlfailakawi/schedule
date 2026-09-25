@@ -10040,7 +10040,7 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     const approval = stored.get(`${collegeId}:${sectionId}`) || emptyApproval(collegeId, sectionId, termId);
     const rowCount = rowsPer.get(`${collegeId}:${sectionId}`) || 0;
     const openRegistrarNotes = department && approval.status === "returned"
-      ? (await notesWithState(collegeId, sectionId, termId)).filter(note => note.origin === "registrar" && note.state === "open").length
+      ? countOpenRegistrarNotes(await notesWithState(collegeId, sectionId, termId))
       : 0;
     const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
     const openRequests = pendingRequests.reduce((sum, entry) => sum + entry.count, 0);

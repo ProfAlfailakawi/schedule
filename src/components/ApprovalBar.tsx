@@ -210,8 +210,8 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       : APPROVAL_STATUS_LABEL[status];
 
   /* ── ما يُقال عن الملاحظات يُقال صادقاً ────────────────────────────────
-     كان الشريط يقول «الخانات المعلَّق عليها ملوّنةٌ في مكانها من الجدول» —
-     والجدولُ هنا لا يقرأ الملاحظات أصلاً. فيُقال العددُ ومكانُها الحقيقي. */
+     كان الشريط يَعِد بأن الخانات المعلَّق عليها ملوّنةٌ في الجدول — والجدولُ
+     هنا لا يقرأ الملاحظات أصلاً. فيُقال العددُ ومكانُها الحقيقي. */
   const notesWhere = onOpenNotes ? "تُقرأ على مواعيدها في شاشة تغييرات الجدول." : "معروضةٌ أدناه على مواعيدها.";
   const amendmentOpen = locked && Boolean(round?.amendment) && !state.lockReason;
   const detail =
