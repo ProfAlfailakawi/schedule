@@ -1033,6 +1033,14 @@ export default function AdminUsers({
                     <span>مقفل</span>
                   </label>
                 </div>
+                {/* «مدير» على صفة اطّلاع (N27): صلاحيةُ المدير تتجاوز الصفة —
+                    نطاقاً وقراءةً للمسوّدات والبيانات الشخصية — فتُبطل «للاطّلاع فقط»
+                    بصمت. يُقال ذلك هنا، لحظةَ الاختيار. */}
+                {isAdmin && roleDefinition(role).readOnly ? (
+                  <p className="admin-role-warning" role="alert">
+                    تنبيه: «مدير» تتجاوز صفة «{roleDefinition(role).label}» — يتخطّى الحسابُ النطاق ويقرأ المسوّدات والبيانات الشخصية كالمدير. صفاتُ الاطّلاع (العميدان والتسجيل ورئيس القسم) تُترك بلا «مدير».
+                  </p>
+                ) : null}
               </Field>
             </div>
             <FormActions onBack={back} />

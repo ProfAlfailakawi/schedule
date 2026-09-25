@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, CheckCheck, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
+import { NOTIFY_FOCUS_KEY, writeNotifyFocus } from "../utils/notifyFocus";
 
 /**
  * ── مركز الإشعارات ──────────────────────────────────────────────────────────
@@ -40,13 +41,10 @@ const when = (iso?: string) => {
   return date.toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" });
 };
 
-/* الإشعارُ يعرف قسمه: يُترك النطاقُ للشاشة التي يُفتح عليها، فتفتح عليه مباشرة. */
-export const NOTIFY_FOCUS_KEY = "schedule:notify-focus";
-const focusOn = (item: CenterNotification) => {
-  try {
-    if (item.collegeId) sessionStorage.setItem(NOTIFY_FOCUS_KEY, JSON.stringify({ view: item.view, collegeId: item.collegeId, sectionId: item.sectionId || 0, at: Date.now() }));
-  } catch { /* تخزينٌ ممنوع: تُفتح الشاشةُ على نطاقها المعتاد */ }
-};
+/* الإشعارُ يعرف قسمه: يُترك النطاقُ للشاشة التي يُفتح عليها، فتفتح عليه مباشرة
+   (src/utils/notifyFocus.ts — الكاتب والقارئ في ملفٍّ واحد). */
+export { NOTIFY_FOCUS_KEY };
+const focusOn = (item: CenterNotification) => writeNotifyFocus(item);
 
 export default function NotificationCenter({ userKey, onNavigate }: Props) {
   const [items, setItems] = useState<CenterNotification[]>([]);

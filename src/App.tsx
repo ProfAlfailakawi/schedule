@@ -104,6 +104,7 @@ const Schedules = safeLazy(loadSchedules);
 const Reports = safeLazy(loadReports);
 const AdminUsers = safeLazy(loadAdminUsers);
 const About = safeLazy(loadAbout);
+import { onboardingSeenKey } from "./utils/onboardingKey";
 /* The welcome stage is a first-run surface: it must not sit in the payload
    every returning user downloads. */
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
@@ -1545,8 +1546,8 @@ export default function App() {
     if (!user) return;
     setUsage(safeStorage.json(`schedule-usage-${user.SystemUserId}`, {}));
     setEntityFavorites(safeStorage.json(`schedule-entity-favorites-${user.SystemUserId}`, []));
-    if (!safeStorage.get(`schedule-onboarding-v4-${user.SystemUserId}`)) setOnboardingStep(0);
-  }, [user?.SystemUserId]);
+    if (!safeStorage.get(onboardingSeenKey(user.SystemUserId, sessionRole.id))) setOnboardingStep(0);
+  }, [user?.SystemUserId, sessionRole.id]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
@@ -2193,14 +2194,14 @@ export default function App() {
     go(mode === "copyTerm" ? ("scheduleCopy" as View) : (mode as unknown as View));
 
   const finishOnboarding = () => {
-    if (user) safeStorage.set(`schedule-onboarding-v4-${user.SystemUserId}`, "done");
+    if (user) safeStorage.set(onboardingSeenKey(user.SystemUserId, sessionRole.id), "done");
     setOnboardingStep(-1);
   };
   /* الجولة تُعرض مرة واحدة ثم يُختم المفتاح، فلم يكن لمن أراد مراجعتها باب.
      محو المفتاح قبل الفتح يجعل الإعادة كالمرة الأولى تماماً: لو أُغلقت في
      منتصفها لا تبقى «منتهية» بغير أن تُرى. */
   const replayOnboarding = () => {
-    if (user) safeStorage.remove(`schedule-onboarding-v4-${user.SystemUserId}`);
+    if (user) safeStorage.remove(onboardingSeenKey(user.SystemUserId, sessionRole.id));
     setSidebarOpen(false);
     setOnboardingStep(0);
   };
@@ -2939,6 +2940,7 @@ export default function App() {
         <Suspense fallback={null}>
           <Onboarding
             isPowerAdmin={isPowerAdmin}
+            roleId={sessionRole.id}
             workspaceQuery={scheduleScopeQuery(Number(user.SystemUserId) || 0)}
             onFinish={finishOnboarding}
           />

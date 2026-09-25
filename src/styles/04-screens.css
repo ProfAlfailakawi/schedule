@@ -831,6 +831,11 @@
   background:var(--danger-soft);color:var(--danger);
   font-size:var(--t-sm);font-weight:700;
 }
+.balance-table tr.is-focused td{background:var(--accent-soft,#eef4ff)}
+.balance-note{margin:0 0 10px;font-size:12.5px;color:var(--muted,#66707a)}
+.balance-deadline{display:block;margin-top:3px;font-size:11.5px;color:var(--muted,#66707a)}
+.balance-empty-cells small{color:var(--muted,#66707a)}
+.approval-chip[data-status="notStarted"]{background:var(--surface-2,#f1f2f4);color:var(--muted,#55606b)}
 .balance-clear{
   padding:var(--s2) var(--s4);border-radius:var(--r-full);
   background:var(--success-soft);color:var(--success);
@@ -1016,6 +1021,7 @@
    ========================================================================== */
 
 .admin-page{display:flex;flex-direction:column;gap:var(--s5)}
+.admin-role-warning{margin:8px 0 0;padding:8px 12px;border-radius:10px;background:var(--warning-soft,#fff5e0);color:var(--warning,#8a5a00);font-size:12.5px;line-height:1.7}
 /* The count leads and the word follows it on its own line. Set inline, a
    four-figure total and its label ran together as one string of text. */
 .admin-quiet-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--s3)}

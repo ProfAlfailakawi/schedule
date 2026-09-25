@@ -17,7 +17,7 @@ import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
-import { currentTermId } from "./src/utils/termSequence";
+import { currentTermId, planningTermCandidates, termHasEnded } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
@@ -31,12 +31,16 @@ import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
 import { instructorScheduleFingerprint } from "./src/utils/scheduleFingerprint";
+import { coversWholeCollege, expandScopeSections, resolveSmartScope } from "./src/server/readScope";
+import { finalSourceFor, type Finality } from "./src/utils/finality";
+import { isLate } from "./src/utils/lateness";
+import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
   acknowledgeAdditions, appendApprovalEvent, approvalLockReason, canHeadReturn, canRequestExtension, canReturn, canWithdraw,
-  CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, extensionRefusal, insistOutcome,
+  CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, isOpenRegistrarNote, extensionRefusal, insistOutcome,
   isSwapEdit, kuwaitDateISO, mergePendingAdditions, openRound, pendingAdditionTotal, readViewExpectation,
   roundBaselineVersionId, roundEndVersionId, staleViewRefusal, statusAfterSignatureChange, suggestedExtensionDate,
   TERM_CLOSED_APPROVAL_MESSAGE,
@@ -62,7 +66,7 @@ import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/stude
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
-import { termHasEnded, termWindow } from "./src/utils/termSequence";
+import { termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -1841,21 +1845,33 @@ function smartContextFrom(req: AuthenticatedRequest) {
 }
 
 
-async function resolveSmartContext(req: AuthenticatedRequest) {
+/**
+ * ── السياق الذكي لا يُصدِّق الطلبَ على نطاقه ────────────────────────────────
+ *
+ * كان يأخذ القسمَ والكليةَ من الطلب كما جاءا، ولا يسأل عنهما أحداً — فكان
+ * البحثُ بالجملة يقرأ لرئيس لجنةٍ مسوّداتِ أيِّ قسمٍ يكتب رقمَه في الرابط.
+ * وحين لا يُسمّى قسمٌ كان يختار من أرقام صفوف النطاق الخام، فيسقط صفُّ «الكلية
+ * كلها» ويقرأ للعميد الجامعةَ كلها بقسمٍ صفر.
+ *
+ * صار القرار في `resolveSmartScope` (src/server/readScope.ts) بحَكَمٍ واحد هو
+ * `isScopeAllowed`، ومعه `allowed` يلتزم به كلُّ من يستدعي هذه الدالّة.
+ */
+async function resolveSmartContext(req: AuthenticatedRequest, options: { allowCollegeWide?: boolean } = {}) {
   const requested = smartContextFrom(req);
   const [terms, sections] = await Promise.all([Repository.getTerms(), Repository.getSections()]);
   const termId = requested.termId || Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
-  let sectionId = requested.sectionId;
-  if (!sectionId) {
+  let busiest: Map<number, number> | undefined;
+  if (!requested.sectionId) {
     const schedules = await Repository.getSchedulesByScope({ termId });
-    const allowedSectionIds = req.user?.IsAdminUser ? new Set(sections.map(row=>row.AdSectionId)) : new Set((req.scopes||[]).map(row=>Number(row.AdSectionId)));
-    const counts = new Map<number,number>();
-    schedules.filter(row=>allowedSectionIds.has(row.AdSectionId)).forEach(row=>counts.set(row.AdSectionId,(counts.get(row.AdSectionId)||0)+1));
-    sectionId = [...allowedSectionIds].sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0))[0] || 0;
+    busiest = new Map<number, number>();
+    for (const row of schedules) busiest.set(Number(row.AdSectionId), (busiest.get(Number(row.AdSectionId)) || 0) + 1);
   }
-  const section = sections.find(row=>row.AdSectionId===sectionId);
-  const collegeId = requested.collegeId || Number(section?.AdCollegeId || 0);
-  return { collegeId, sectionId, termId, section };
+  const scope = resolveSmartScope({
+    requested, sections, busiest, allowCollegeWide: options.allowCollegeWide,
+    allowed: (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+  });
+  const section = sections.find(row => row.AdSectionId === scope.sectionId);
+  return { collegeId: scope.collegeId, sectionId: scope.sectionId, termId, section, allowed: scope.allowed };
 }
 
 /**
@@ -2253,9 +2269,12 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges, scheduleCount] = await Promise.all([
     Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.countSchedules()
   ]);
-  const assignedSectionIds = new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)));
+  /* أقسامُ القارئ من الحَكَم الواحد: صفُّ «الكلية كلها» يُقرأ لأقسامها (N8)،
+     والعميدان يُعطيان النهائيَّ وحده كما في كل شاشة. */
+  const assignedSectionIds = await scopeSectionIdsFor(req);
 
-  const latestScopedSchedules = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const latestScopedSchedulesRaw = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const latestScopedSchedules = readsFinalSchedulesOnly(req) ? await finalRowsOnly(latestScopedSchedulesRaw, latestTermId) : latestScopedSchedulesRaw;
   const scopedCourses = allCourses.filter(course => assignedSectionIds.has(Number(course.AdSectionId)));
 
   // ASP.NET DayOfWeek returned 0 for Sunday, but the legacy view checked d == 7.
@@ -2289,9 +2308,10 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
    * two numbers from the same page contradicting each other, and the one the
    * reader trusts is the one that is wrong. A coordinator's view is unchanged.
    */
+  const finalIds = readsFinalSchedulesOnly(req) ? new Set(latestScopedSchedules.map(row => Number(row.id))) : null;
   const visibleTableRows = req.user.IsAdminUser
     ? daySchedules
-    : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+    : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)) && (!finalIds || finalIds.has(Number(row.id))));
   const instructorIds = new Set(latestScopedSchedules.map(row => row.AdInstructorId));
   const coursesById = new Map(allCourses.map(course => [course.AdCourseId, course]));
   const instructorsById = new Map(allInstructors.map(instructor => [instructor.AdInstructorId, instructor]));
@@ -2507,9 +2527,8 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   if (q.length < 2) { res.json({ schedules: [], instructors: [], courses: [], rooms: [] }); return; }
   const terms = await Repository.getTerms();
   const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
-  const scheduleRead = req.user.IsAdminUser
-    ? Repository.getSchedulesByScope({ termId: latestTermId })
-    : Promise.all([...new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)).filter(Boolean))].map(sectionId => Repository.getSchedulesByScope({ sectionId, termId: latestTermId }))).then(groups => groups.flat());
+  /* النطاقُ من الحَكَم الواحد (صفُّ الكلية كلها يُقرأ)، والعميدُ يُعطى النهائي. */
+  const scheduleRead = readScopedTermRows(req, latestTermId);
   const [allSchedules, instructors, courses, sections, colleges, security] = await Promise.all([
     scheduleRead, Repository.getInstructors(), Repository.getCourses(), Repository.getSections(), Repository.getColleges(), Repository.getSecurityByUser(req.user!.SystemUserId)
   ]);
@@ -2525,9 +2544,10 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   const sectionById = new Map(sections.map(item => [item.AdSectionId, item]));
   const collegeById = new Map(colleges.map(item => [item.AdCollegeId, item]));
   const matches = (value: unknown) => String(value ?? "").toLocaleLowerCase("ar").includes(q);
+  const readerInstructorCivil = (person?: { AdInstructorCivil?: string; AdInstructorMobile?: string }) => (person ? instructorsForReader(req, [person])[0].AdInstructorCivil : "");
   const matchedSchedules = schedules.filter(row => {
     const ins = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
-    return [ins?.AdInstructorName, ins?.AdInstructorCivil, course?.CourseName, course?.CourseCode, row.SCode, row.AdRoomCode, row.AdRoomHall, sectionById.get(row.AdSectionId)?.AdSectionName, collegeById.get(row.AdCollegeId)?.AdCollegeName].some(matches);
+    return [ins?.AdInstructorName, readerInstructorCivil(ins), course?.CourseName, course?.CourseCode, row.SCode, row.AdRoomCode, row.AdRoomHall, sectionById.get(row.AdSectionId)?.AdSectionName, collegeById.get(row.AdCollegeId)?.AdCollegeName].some(matches);
   });
   const visibleInstructorIds = new Set(schedules.map(row => row.AdInstructorId));
   const visibleCourseIds = new Set(schedules.map(row => row.AdCourseId));
@@ -2536,7 +2556,8 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
     subtitle: `${canInstructor || canSchedule || canAdvanced ? instructorById.get(row.AdInstructorId)?.AdInstructorName || "" : ""}${canRoom || canSchedule || canAdvanced ? ` — ${row.AdRoomCode}/${row.AdRoomHall}` : ""} — ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
     meta: `${courseById.get(row.AdCourseId)?.CourseCode || ""} / شعبة ${row.SCode}`
   })) : [];
-  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? sortArabicNamed(instructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || matches(item.AdInstructorCivil))), item => item.AdInstructorName).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
+  const readerInstructors = instructorsForReader(req, instructors);
+  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? sortArabicNamed(readerInstructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || (item.AdInstructorCivil && matches(item.AdInstructorCivil)))), item => item.AdInstructorName).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
   const courseResults = (canSchedule || canAdvanced) ? sortCoursesByName(courses.filter(item => visibleCourseIds.has(item.AdCourseId) && (matches(item.CourseName) || matches(item.CourseCode)))).slice(0, 8).map(item => ({ id: item.AdCourseId, kind: "course", title: item.CourseName, subtitle: item.CourseCode, meta: sectionById.get(item.AdSectionId)?.AdSectionName || "" })) : [];
   const roomMap = new Map<string, {building:string;hall:string;count:number;roomId:string;buildingId?:string}>();
   schedules.forEach(row => { const key=verifiedRoomKey(row); if(!key)return; const prev=roomMap.get(key); roomMap.set(key,{building:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),roomId:String(row.roomId||""),buildingId:row.buildingId,count:(prev?.count||0)+1}); });
@@ -2821,12 +2842,26 @@ app.delete("/api/terms/:id", requirePermission(5), async (req: Request, res: Res
  * the moment someone searches beyond their own department; that search itself
  * returns at most forty matching people instead of the whole register.
  */
+/**
+ * ── بياناتُ الأستاذ الشخصية لا تصل القارئ ───────────────────────────────────
+ *
+ * صفاتُ الاطّلاع (العميدان، التسجيل، رئيس القسم) تفتح تقرير القسم (١٤) فتقرأ
+ * دليلَ الأساتذة — وكان يصلها الرقمُ المدني والهاتف لكل أستاذ. لا عمل لها بهما:
+ * لا تُنشئ أستاذاً ولا تطابق هويةً. فيُحذفان هنا، لكل مسارٍ يعيد الدليل.
+ */
+function instructorsForReader<T extends { AdInstructorCivil?: string; AdInstructorMobile?: string }>(req: AuthenticatedRequest, list: T[]): T[] {
+  if (req.user?.IsAdminUser || !isReadOnlyRole(req.user?.Role)) return list;
+  return list.map(person => ({ ...person, AdInstructorCivil: "", AdInstructorMobile: "" }));
+}
+
 app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = Number(req.query.sectionId || 0);
   const collegeId = Number(req.query.collegeId || 0);
   const termId = Number(req.query.termId || 0);
   const query = String(req.query.q || "").trim();
   const limit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
+  /* القارئ (صفات الاطّلاع) يرى الاسم ولا يرى الرقم المدني ولا الهاتف (N13). */
+  const send = <T extends { AdInstructorCivil?: string; AdInstructorMobile?: string }>(list: T[]) => res.json(instructorsForReader(req, list));
 
   // If query is provided, search across the university instructors catalog
   if (query) {
@@ -2859,12 +2894,14 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       const civil = String(person.AdInstructorCivil || "").trim();
       return Boolean(digits) && digits.length === civil.length && digits === civil;
     });
-    res.json(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
+    send(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
     return;
   }
 
   if (sectionId) {
-    const canReadSection = Boolean(req.user?.IsAdminUser || req.scopes?.some(scope => scope.AdSectionId === sectionId));
+    /* الحَكَم الواحد: صفُّ «الكلية كلها» يجيز أقسامها (N8). */
+    const sectionRow = (await Repository.getSections()).find(row => Number(row.AdSectionId) === sectionId);
+    const canReadSection = Boolean(sectionRow && isScopeAllowed(req, Number(sectionRow.AdCollegeId), sectionId));
     if (!canReadSection) { res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" }); return; }
     const termScoped = termId ? await Repository.getInstructorsByScope(sectionId, termId) : [];
     const allDeptHistorical = await Repository.getInstructorsByScope(sectionId, 0);
@@ -2879,7 +2916,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       ? (await Repository.getInstructors()).filter(person => manualIds.includes(Number(person.AdInstructorId)))
       : [];
     const merged = [...new Map([...allDeptHistorical, ...termScoped, ...manualPeople].map(person => [Number(person.AdInstructorId), person])).values()];
-    res.json(sortArabicNamed(merged, row => row.AdInstructorName));
+    send(sortArabicNamed(merged, row => row.AdInstructorName));
     return;
   }
 
@@ -2891,7 +2928,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const instructors = collegeId
     ? await Repository.getInstructorsByScheduleScope({ collegeId, termId })
     : await Repository.getInstructors();
-  res.json(sortArabicNamed(instructors, row => row.AdInstructorName));
+  send(sortArabicNamed(instructors, row => row.AdInstructorName));
 });
 
 /* ── الإضافة السريعة أثناء بناء الجدول ────────────────────────────────────────
@@ -4563,8 +4600,16 @@ function readsFinalSchedulesOnly(req: AuthenticatedRequest): boolean {
   return !req.user?.IsAdminUser && (id === "dean" || id === "viceDean");
 }
 
-async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedule[]> {
-  const approvals = await Repository.getScheduleApprovalsForTerm(termId);
+/**
+ * الفصلُ منتهٍ؟ أُغلق صراحةً أو انقضت نافذته (القاعدة المستقرّة: termHasEnded).
+ */
+async function termEndedForReading(termId: number): Promise<boolean> {
+  const term = (await Repository.getTerms()).find(item => Number(item.AdTermId) === Number(termId));
+  return Boolean(term && (term.AdTermClosed === true || termHasEnded(term as any)));
+}
+
+async function finalRowsWithFinality(rows: FSchedule[], termId: number): Promise<{ rows: FSchedule[]; finality: Record<string, Finality> }> {
+  const [approvals, termEnded] = await Promise.all([Repository.getScheduleApprovalsForTerm(termId), termEndedForReading(termId)]);
   const byScope = new Map<string, typeof approvals[number]>(approvals.map(item => [`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`, item]));
   const groups = new Map<string, FSchedule[]>();
   for (const row of rows) {
@@ -4572,21 +4617,66 @@ async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedu
     groups.set(key, [...(groups.get(key) || []), row]);
   }
   const out: FSchedule[] = [];
+  const finality: Record<string, Finality> = {};
   for (const [key, live] of groups) {
-    const approval = byScope.get(key);
-    if (!approval) continue;
-    if (approval.status === "accepted") { out.push(...live); continue; }
-    /* آخرُ ما قُبل، من القاعدة الواحدة التي يقرأ بها تقريرُ التغييرات أساسَه (R9). */
-    const versionId = roundBaselineVersionId(approval, approval.currentRound, { acceptedOnly: true });
-    if (!versionId) continue;
-    const version = await Repository.getScheduleVersionById(versionId);
-    if (version?.rows?.length) out.push(...(version.rows as FSchedule[]));
+    const source = finalSourceFor(byScope.get(key), termEnded);
+    if (source.kind === "none") continue;
+    if (source.kind === "live") { out.push(...live); finality[key] = source.finality; continue; }
+    const version = await Repository.getScheduleVersionById(source.versionId);
+    if (version?.rows?.length) { out.push(...(version.rows as FSchedule[])); finality[key] = "accepted"; }
+    else if (termEnded) { out.push(...live); finality[key] = "historical"; }
   }
-  return out;
+  return { rows: out, finality };
 }
 
-async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number): Promise<FSchedule[]> {
+async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedule[]> {
+  return (await finalRowsWithFinality(rows, termId)).rows;
+}
+
+/**
+ * `out.finality` — لمن يرى النهائيَّ وحده: صفةُ كل قسمٍ ظهر («accepted» أو
+ * «historical»)، ليقول التقرير أيَّها معتمدٌ وأيَّها منفَّذٌ قبل دورة الاعتماد.
+ */
+async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, out?: { finality?: Record<string, Finality> }): Promise<FSchedule[]> {
   const rows = await readLiveSchedulesForRequest(req, collegeId, sectionId, termId);
+  if (!readsFinalSchedulesOnly(req)) return rows;
+  const final = await finalRowsWithFinality(rows, termId);
+  if (out) out.finality = final.finality;
+  return final.rows;
+}
+
+/**
+ * ── كل ما في نطاق القارئ لفصلٍ واحد ─────────────────────────────────────────
+ *
+ * البحث ولوحة البداية وقائمة الأساتذة كانت تجمع أرقامَ الأقسام من صفوف النطاق
+ * الخام، فيسقط صفُّ «الكلية كلها» (قسم صفر) ويرى العميدُ ومساعدُه لا شيء.
+ * هنا تُشتقّ الأقسامُ من الحَكَم (`expandScopeSections`)، وتُقرأ الكليةُ
+ * المغطّاة كاملةً بقراءةٍ واحدة. ومن يقرأ النهائيَّ وحده (العميد) يُعطى النهائي.
+ */
+async function scopeSectionIdsFor(req: AuthenticatedRequest): Promise<Set<number>> {
+  const sections = await Repository.getSections();
+  return expandScopeSections(sections, (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId));
+}
+
+async function readScopedTermRows(req: AuthenticatedRequest, termId: number): Promise<FSchedule[]> {
+  if (req.user?.IsAdminUser) return Repository.getSchedulesByScope({ termId });
+  const sections = await Repository.getSections();
+  const allowed = (collegeId: number, sectionId: number) => isScopeAllowed(req, collegeId, sectionId);
+  const own = expandScopeSections(sections, allowed);
+  const byCollege = new Map<number, number[]>();
+  for (const section of sections) {
+    const collegeId = Number(section.AdCollegeId);
+    if (!byCollege.has(collegeId)) byCollege.set(collegeId, []);
+    byCollege.get(collegeId)!.push(Number(section.AdSectionId));
+  }
+  const reads: Promise<FSchedule[]>[] = [];
+  for (const [collegeId, ids] of byCollege) {
+    const mine = ids.filter(id => own.has(id));
+    if (!mine.length) continue;
+    if (mine.length === ids.length) reads.push(Repository.getSchedulesByScope({ collegeId, termId }));
+    else mine.forEach(sectionId => reads.push(Repository.getSchedulesByScope({ sectionId, termId })));
+  }
+  const rows = filterByScope(req, (await Promise.all(reads)).flat());
   return readsFinalSchedulesOnly(req) ? finalRowsOnly(rows, termId) : rows;
 }
 
@@ -4619,7 +4709,11 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
   // available by sending termId explicitly, but a blank filter can no longer scan
   // the university's entire ten-year schedule collection.
   if(!termId){const terms=await Repository.getTerms();termId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
-  let list = await readSchedulesForRequest(req, collegeId, sectionId, termId);
+  const finalityOut: { finality?: Record<string, Finality> } = {};
+  let list = await readSchedulesForRequest(req, collegeId, sectionId, termId, finalityOut);
+  /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده: معتمدٌ أم منفَّذٌ قبل دورة الاعتماد.
+     في ترويسةٍ لا في الجسم، فلا يتغيّر شكلُ المصفوفة لأيِّ شاشةٍ تقرؤها. */
+  if (finalityOut.finality) res.setHeader("X-Schedule-Finality", JSON.stringify(finalityOut.finality));
 
   if (req.query.instructorId) {
     list = list.filter(s => s.AdInstructorId === parseInt(req.query.instructorId as string));
@@ -5593,6 +5687,14 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   res.json({ instructorIds, instructors });
 });
 
+/** أقسامُ كليةٍ يغطّيها القارئ كلَّها — فارغةٌ إن لم يغطّها (الحَكَم الواحد). */
+async function wholeCollegeSectionIds(req: AuthenticatedRequest, collegeId: number): Promise<number[]> {
+  const sections = await Repository.getSections();
+  const allowed = (c: number, s: number) => isScopeAllowed(req, c, s);
+  if (!coversWholeCollege(sections, allowed, collegeId)) return [];
+  return sections.filter(row => Number(row.AdCollegeId) === collegeId).map(row => Number(row.AdSectionId)).filter(Boolean);
+}
+
 /** Read-only counterpart for the inquiry centre. Report permissions must be
  * able to see the current visiting roster without granting the data-editing
  * permission used by the schedule transfer tool. */
@@ -5600,10 +5702,14 @@ app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 1
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const { instructorIds, instructors } = await readLiveVisitingRoster(collegeId, sectionId, termId);
-  res.json({ instructorIds, instructors });
+  if (!collegeId || !termId) { res.json({ instructorIds: [] }); return; }
+  /* مستوى الكلية (N7): من يغطّي الكلية كلها (العميد) يرى منتدبي أقسامها جميعاً. */
+  const sectionIds = sectionId ? [sectionId] : await wholeCollegeSectionIds(req, collegeId);
+  if (!sectionIds.length || !sectionIds.every(id => isScopeAllowed(req, collegeId, id))) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const parts = await Promise.all(sectionIds.map(id => readLiveVisitingRoster(collegeId, id, termId)));
+  const instructorIds = [...new Set(parts.flatMap(part => part.instructorIds))];
+  const instructors = [...new Map(parts.flatMap(part => part.instructors).map((person: any) => [Number(person.AdInstructorId), person])).values()];
+  res.json({ instructorIds, instructors: instructorsForReader(req, instructors as any[]) });
 });
 
 // A delegate badge is global to the person, but department directories are not.
@@ -5808,32 +5914,41 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
 
 app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
-  if(!collegeId||!sectionId){res.status(400).json({error:"حدد الكلية والقسم."});return;}
-  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [rosters,instructors,terms,directory]=await Promise.all([
-    Repository.getVisitingRosterHistory(collegeId,sectionId),
+  if(!collegeId){res.status(400).json({error:"حدد الكلية."});return;}
+  /* مستوى الكلية (N7): أقسامُ الكلية كلها لمن يغطّيها. */
+  const sectionIds=sectionId?[sectionId]:await wholeCollegeSectionIds(req,collegeId);
+  if(!sectionIds.length||!sectionIds.every(id=>isScopeAllowed(req,collegeId,id))){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [rosterGroups,instructors,terms,directories]=await Promise.all([
+    Promise.all(sectionIds.map(id=>Repository.getVisitingRosterHistory(collegeId,id).then(list=>list.map((row:any)=>({...row,sectionId:id}))))),
     Repository.getInstructors(),
     Repository.getTerms(),
-    Repository.getDepartmentDelegates(collegeId,sectionId),
+    Promise.all(sectionIds.map(id=>Repository.getDepartmentDelegates(collegeId,id))),
   ]);
-  const activeDelegateIds=new Set(directory.map(Number));
+  const rosters=rosterGroups.flat();
+  /* التاريخُ تاريخ: من كان منتدباً في فصلٍ مضى يبقى فيه ولو خرج من دليل القسم
+     اليوم (N7). كان يُسقَط، فيقرأ العميدُ «لم ينتدب القسم أحداً» عن فصلٍ انتُدب
+     فيه ثلاثة. ويُعلَّم من لم يعد في الدليل. */
+  const activeDelegateIds=new Set(directories.flat().map(Number));
   const peopleById=new Map(instructors.map(person=>[Number(person.AdInstructorId),person]));
   const termsById=new Map(terms.map(term=>[Number(term.AdTermId),term]));
   const termIds=[...new Set(rosters.map(row=>Number(row.termId)).filter(Boolean))];
-  const rowsByTerm=new Map<number,any[]>();
-  await Promise.all(termIds.map(async termId=>{
-    rowsByTerm.set(termId,await Repository.getSchedulesByScope({collegeId,sectionId,termId}));
+  const rowsByTerm=new Map<string,any[]>();
+  await Promise.all(rosters.map(async (roster:any)=>{
+    const key=`${Number(roster.sectionId)}:${Number(roster.termId||0)}`;
+    if(rowsByTerm.has(key))return;
+    rowsByTerm.set(key,[]);
+    rowsByTerm.set(key,await Repository.getSchedulesByScope({collegeId,sectionId:Number(roster.sectionId),termId:Number(roster.termId||0)}));
   }));
-  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[]}>();
+  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[];listedNow:boolean}>();
   for(const roster of rosters){
     const termId=Number(roster.termId||0);
     const term=termsById.get(termId);
-    const ids=[...new Set(
-      (roster.instructorIds||[])
+    const ids:number[]=[...new Set<number>(
+      ((roster.instructorIds||[]) as unknown[])
         .map(Number)
-        .filter((id:number)=>Boolean(id)&&activeDelegateIds.has(id)&&peopleById.has(id))
+        .filter((id:number)=>Boolean(id)&&peopleById.has(id))
     )];
-    const termRows=rowsByTerm.get(termId)||[];
+    const termRows=rowsByTerm.get(`${Number(roster.sectionId)}:${termId}`)||[];
     for(const instructorId of ids){
       const mine=termRows.filter(row=>Number(row.AdInstructorId)===instructorId);
       const distinctCourses=new Set(mine.map(row=>Number(row.AdCourseId||0)).filter(Boolean)).size;
@@ -5841,27 +5956,32 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
       const current=people.get(instructorId)||{
         instructorId,
         name:person?.AdInstructorName||`منتدب ${instructorId}`,
-        civil:person?.AdInstructorCivil||"",
+        civil:person ? instructorsForReader(req,[person])[0].AdInstructorCivil||"" : "",
         times:0,
         sections:0,
         courses:0,
         terms:[],
+        listedNow:activeDelegateIds.has(instructorId),
       };
-      current.times+=1;
       current.sections+=mine.length;
       current.courses+=distinctCourses;
+      const items=mine.map((row:any)=>({
+        scheduleId:Number(row.id||0),
+        courseId:Number(row.AdCourseId||0),
+        courseName:String(row.AdCourseName||""),
+        sectionCode:String(row.SCode||"").trim(),
+      }));
+      /* على مستوى الكلية قد يُنتدب الشخص في قسمين في الفصل نفسه: فصلٌ واحد. */
+      const sameTerm=current.terms.find((entry:any)=>entry.termId===termId);
+      if(sameTerm){sameTerm.sections+=mine.length;sameTerm.courses+=distinctCourses;sameTerm.items.push(...items);people.set(instructorId,current);continue;}
+      current.times+=1;
       current.terms.push({
         termId,
         termName:term?.AdTermName||String(termId),
         rostered:true,
         sections:mine.length,
         courses:distinctCourses,
-        items:mine.map((row:any)=>({
-          scheduleId:Number(row.id||0),
-          courseId:Number(row.AdCourseId||0),
-          courseName:String(row.AdCourseName||""),
-          sectionCode:String(row.SCode||"").trim(),
-        })),
+        items,
       });
       people.set(instructorId,current);
     }
@@ -9394,13 +9514,33 @@ app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, re
   const now = new Date();
   const termDeadline = (term as any)?.AdTermSubmissionDeadline as string | undefined;
   const visible = rows.filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
+  /* ── الأقسام التي لم تبدأ (N3) ─────────────────────────────────────────
+   * لا سجلَّ لها، فكانت تغيب عن الميزان كلياً — وهي أهمّ ما يسأل عنه العميد.
+   * تُبنى هنا من سجلّ الأقسام في نطاق القارئ، بحال «لم يبدأ»، ويُحكم على
+   * تأخّرها وتأخّر غيرها بالقاعدة الواحدة `isLate` (src/utils/lateness.ts). */
+  const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const collegeName = new Map(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const started = new Set(rows.map(row => `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`));
+  const notStarted = sections
+    .filter((row: any) => (!collegeId || Number(row.AdCollegeId) === collegeId)
+      && !started.has(`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`)
+      && (req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))))
+    .map((row: any) => ({
+      AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId),
+      sectionName: String(row.AdSectionName || ""), collegeName: collegeName.get(Number(row.AdCollegeId)) || "",
+      status: "notStarted" as const, statusLabel: "لم يبدأ",
+      deadline: readDeadline({ termDeadline }, now),
+      late: isLate({ approvalStatus: null, submittedRounds: 0, deadline: termDeadline }),
+    }));
   res.json({
     termDeadline,
     approvals: visible.map(row => ({
       ...row,
       statusLabel: APPROVAL_STATUS_LABEL[row.status],
       deadline: readDeadline({ termDeadline, extensionUntil: row.extensionUntil, extensionReason: row.extensionReason }, now),
+      late: isLate({ approvalStatus: row.status, submittedRounds: row.currentRound, deadline: termDeadline, extension: row.extensionUntil }),
     })),
+    notStarted,
   });
 });
 
@@ -10116,10 +10256,26 @@ app.delete("/api/schedule-notes/:id", requireAuth, async (req: AuthenticatedRequ
  * النطاق هنا هو النطاق في كل مكان — لا يرى أحدٌ إشعاراً عن قسمٍ خارج نطاقه.
  */
 const REGISTRAR_NOTIFY_ROLES = new Set(["registrarHead", "registrarStaff"]);
-app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const terms = await Repository.getTerms();
-  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
-  if (!termId) { res.json({ termId: 0, items: [] }); return; }
+/**
+ * ── الجرس لفصلين: الجاري، وفصل التخطيط (N18) ────────────────────────────────
+ *
+ * دورةُ الاعتماد تجري غالباً على الفصل التالي والجاري يُدرَّس. فيُقرأ الجرس
+ * للجاري ولفصل التخطيط (planningTermCandidates في termSequence.ts: أحدثُ فصلٍ
+ * لم ينتهِ وفيه نشاط)، وكلُّ بندٍ من فصل التخطيط يحمل اسمَ فصله ومعرّفه.
+ * ومن سأل عن فصلٍ بعينه (termId) يُجاب عنه وحده.
+ */
+async function bellPlanningTermId(terms: any[]): Promise<number> {
+  for (const candidate of planningTermCandidates(terms as any)) {
+    const [approvals, rows] = await Promise.all([
+      Repository.getScheduleApprovalsForTerm(candidate),
+      Repository.getSchedulesByScope({ termId: candidate }),
+    ]);
+    if (approvals.length || rows.length) return candidate;
+  }
+  return 0;
+}
+
+async function notificationItemsForTerm(req: AuthenticatedRequest, termId: number) {
   const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
   const [approvals, term, colleges, sections] = await Promise.all([
     Repository.getScheduleApprovalsForTerm(termId),
@@ -10204,16 +10360,30 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
       }
     }
   }
+  const watchesSubmission = registrarReader || role === "registrarDean" || role === "dean" || role === "viceDean";
   const active = inScope.filter(row => {
     const key = `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`;
-    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || studentQueueByScope.has(key) || department;
+    /* من يُحاسِب على التسليم (التسجيل، والعميدان، وعميد التسجيل) يُعدّ له كلُّ
+       قسمٍ في نطاقه — قسمٌ لم يكتب شيئاً ولم يبدأ الدورة هو أوّلُ من يتأخّر،
+       وكان يسقط من الجرس لأنه بلا صفوف ولا سجلّ (N21). */
+    return rowsPer.has(key) || stored.has(key) || pendingByScope.has(key) || studentQueueByScope.has(key) || department || watchesSubmission;
   });
   const scopes = await Promise.all(active.map(async row => {
     const collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
     const approval = stored.get(`${collegeId}:${sectionId}`) || emptyApproval(collegeId, sectionId, termId);
     const rowCount = rowsPer.get(`${collegeId}:${sectionId}`) || 0;
-    const openRegistrarNotes = department && approval.status === "returned"
-      ? countOpenRegistrarNotes(await notesWithState(collegeId, sectionId, termId))
+    /* ملاحظاتُ التسجيل المفتوحة في أي حال (N19): تُكتب والجدول قيد الإعداد أو
+       بعد اعتماده أيضاً، وكان القسم لا يُنبَّه بها إلا بعد «أُرجع». */
+    const deptNotes = department && (stored.has(`${collegeId}:${sectionId}`))
+      ? (await notesWithState(collegeId, sectionId, termId)).filter(isOpenRegistrarNote)
+      : [];
+    const openRegistrarNotes = deptNotes.length;
+    /* ملاحظةٌ أصرّ عليها التسجيل ثلاثاً أو صُعّدت (N24) — تُقرأ بحذر: حقلُ
+       التصعيد يضيفه مسارٌ آخر. */
+    const escalatedNotes = deptNotes.filter((note: any) => Number(note.insistCount || 0) >= 3 || Boolean(note.escalatedAt)).length;
+    /* قسمٌ معتمد ظهر فيه مانع (N20) — للعميدين وحدهما، وللمعتمد وحده. */
+    const blockingConflicts = (role === "dean" || role === "viceDean") && approval.status === "accepted"
+      ? await blockingConflictCount(collegeId, sectionId, termId)
       : 0;
     const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
     const openRequests = pendingRequests.reduce((sum, entry) => sum + entry.count, 0);
@@ -10225,7 +10395,7 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
       awaitingRegistration: registrarReader && !isFullySigned(approval) ? 0 : queue.awaitingRegistration,
     } : undefined;
     return {
-      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue,
+      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue, escalatedNotes, blockingConflicts,
       collegeName: collegeName.get(collegeId) || "",
       sectionName: String(row.AdSectionName || ""),
       deadline: readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today),
@@ -10235,13 +10405,34 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     role, scopes,
     deadline: readDeadline({ termDeadline }, today),
   });
-  res.json({ termId, termName: String((term as any)?.AdTermName || ""), items });
+  return { term, items };
+}
+
+app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const explicit = Number(req.query.termId || 0);
+  const termId = explicit || currentTermId(terms as any);
+  if (!termId) { res.json({ termId: 0, items: [] }); return; }
+  const current = await notificationItemsForTerm(req, termId);
+  const termName = String((current.term as any)?.AdTermName || "");
+  let items = current.items.map(item => ({ ...item, termId, termName }));
+  const planning = explicit ? 0 : await bellPlanningTermId(terms as any[]);
+  let planningName = "";
+  if (planning && planning !== termId) {
+    const next = await notificationItemsForTerm(req, planning);
+    planningName = String((next.term as any)?.AdTermName || "");
+    items = [...items, ...next.items.map(item => ({
+      ...item, id: `term-${planning}:${item.id}`, termId: planning, termName: planningName,
+      detail: [planningName, item.detail].filter(Boolean).join(" — "),
+    }))];
+    const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
+    items.sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
+  }
+  res.json({ termId, termName, planningTermId: planning || 0, planningTermName: planningName, items });
 });
 
-app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const terms = await Repository.getTerms();
-  const termId = Number(req.query.termId || 0) || currentTermId(terms as any);
-  if (!termId) { res.json({ count: 0 }); return; }
+/** عدّادُ فصلٍ واحد — يُجمع للجاري ولفصل التخطيط (N18). */
+async function approvalBadgeForTerm(req: AuthenticatedRequest, termId: number): Promise<{ count: number; kind?: string }> {
 
   const approvals = (await Repository.getScheduleApprovalsForTerm(termId))
     .filter(row => req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
@@ -10249,21 +10440,38 @@ app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, r
   /* من يفتح الوارد يرى عدّاده، ولو لم يقرّر فيه: سؤالُ عميد التسجيل هو
      «كم جدولاً ينتظر؟»، لا «أيّها أقبل؟». */
   if (canReviewSubmissions(req.user?.Role) || watchesInbox(req.user?.Role)) {
-    res.json({ count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" });
-    return;
+    return { count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" };
   }
-  if (signatureStage(req.user?.Role)) {
+  const stage = signatureStage(req.user?.Role);
+  if (stage) {
+    /* ما ينتظر هذا الشخص بعينه (N17/N19):
+       - رئيس القسم: كلُّ جدولٍ وقّعته اللجنة وينتظر توقيعه («committee») —
+         كان العدّاد يتجاهله، وهو أوّلُ ما يُطلب منه.
+       - الإضافاتُ التي تنتظر إقراره.
+       - ملاحظاتُ التسجيل المفتوحة في أي حال — لا في «أُرجع» وحده: ملاحظةٌ
+         كُتبت والجدول قيد الإعداد أو بعد اعتماده ملاحظةٌ تنتظر ردّاً أيضاً. */
     let open = 0;
     for (const approval of approvals) {
-      if (approval.status !== "returned" && !pendingAdditionTotal(approval)) continue;
+      if (stage === "head" && approval.status === "committee") open += 1;
+      open += pendingAdditionTotal(approval);
       const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
       open += countOpenRegistrarNotes(notes);
-      open += pendingAdditionTotal(approval);
     }
-    res.json({ count: open, kind: "notes" });
-    return;
+    return { count: open, kind: "notes" };
   }
-  res.json({ count: 0 });
+  return { count: 0 } as { count: number; kind?: string };
+}
+
+app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const explicit = Number(req.query.termId || 0);
+  const termId = explicit || currentTermId(terms as any);
+  if (!termId) { res.json({ count: 0 }); return; }
+  const current = await approvalBadgeForTerm(req, termId);
+  const planning = explicit ? 0 : await bellPlanningTermId(terms as any[]);
+  if (!planning || planning === termId) { res.json(current); return; }
+  const next = await approvalBadgeForTerm(req, planning);
+  res.json({ count: current.count + next.count, kind: current.kind || next.kind, planningTermId: planning });
 });
 
 /** سطرُ قسمٍ في صندوق الوارد: حالته وموعده وملاحظاته وموانعه في نداءٍ واحد. */
@@ -10367,7 +10575,7 @@ app.get("/api/approvals/inbox", requireAuth, async (req: AuthenticatedRequest, r
         : undefined,
       /* متأخّر: انقضى موعده ولم يُسلّم بعد. حالةٌ تُحسب ولا تُخزَّن، لأنها
          تتغيّر بمرور اليوم لا بفعل أحد. */
-      late: deadline.past && approval.currentRound === 0,
+      late: isLate({ approvalStatus: approval.status, submittedRounds: approval.currentRound, deadline: termDeadline, extension: approval.extensionUntil }),
       priority: inboxPriority(approval, blocking),
       updatedAt: approval.updatedAt,
     };
@@ -12092,8 +12300,9 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   const { termId, collegeId, sectionId, instructorId, building, hall, courseId, courseCode, civil, startTime, endTime } = req.query;
   let resolvedTermId=Number(termId||0);
   if(!resolvedTermId){const terms=await Repository.getTerms();resolvedTermId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
-  let schedules = await Repository.getSchedulesByScope({termId:resolvedTermId,collegeId:Number(collegeId||0),sectionId:Number(sectionId||0)});
-  schedules = filterByScope(req, schedules);
+  /* قارئ الطلب نفسه (N12): نطاقٌ من الحَكَم الواحد، والنهائيُّ وحده للعميدين —
+     كان الملفّ يُخرج المسوّدات التي لا تعرضها الشاشة لهما. */
+  let schedules = await readSchedulesForRequest(req, Number(collegeId||0), Number(sectionId||0), resolvedTermId);
 
   if (instructorId) schedules = schedules.filter(s => s.AdInstructorId === parseInt(instructorId as string));
   if (building) schedules = schedules.filter(s => String(s.AdRoomCode || "").includes(String(building)));
@@ -12117,7 +12326,8 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   ]);
   const collegeById = new Map(colleges.map(x => [x.AdCollegeId, x]));
   const sectionById = new Map(sections.map(x => [x.AdSectionId, x]));
-  const instructorById = new Map(instructors.map(x => [x.AdInstructorId, x]));
+  /* الرقم المدني لا يصل صفات الاطّلاع (N13) — ولا في الملفّ. */
+  const instructorById = new Map(instructorsForReader(req, instructors).map(x => [x.AdInstructorId, x]));
   const courseById = new Map(courses.map(x => [x.AdCourseId, x]));
 
   // These two read through a relation, so they wait for the maps above.
@@ -12189,15 +12399,20 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
   const parsed = parseNaturalQuery(String(req.query.q || ""));
   if (parsed.intent === "unknown") { res.json({ intent: "unknown", title: "", rows: [] }); return; }
 
-  const { collegeId, sectionId, termId } = await resolveSmartContext(req);
+  /* النطاق يُفرض هنا لكل صفة: قسمٌ أو كليةٌ خارج نطاق القارئ تُرفض صراحةً،
+     والصفوف تُقرأ بقارئ الطلب نفسه — مُصفّاةً بالنطاق، ونهائيةً للعميد. أما
+     «الكون» فلا يُستعمل إلا لإشغال القاعات وفراغات الأستاذ: وقتٌ ومكانٌ بلا
+     مقرّرٍ ولا قسم. */
+  const { collegeId, sectionId, termId, allowed } = await resolveSmartContext(req, { allowCollegeWide: true });
+  if (!allowed) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (!termId) { res.json({ intent: parsed.intent, title: "", rows: [] }); return; }
 
-  const [scoped, courses, instructors] = await Promise.all([
-    scopedScheduleUniverse(collegeId, sectionId, termId),
+  const [rows, universe, courses, instructors] = await Promise.all([
+    readSchedulesForRequest(req, collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId }),
     Repository.getCourses(),
     Repository.getInstructors()
   ]);
-  const { rows, universe } = scoped;
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
@@ -12416,13 +12631,19 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
   let termId = Number(req.query.termId || 0);
   // القاعات الظاهرة للمستخدم العادي تظل داخل قسمه. نحتاج جدول الفصل
   // الكامل فقط لمعرفة أن قاعته محجوزة من جهة أخرى، لا لعرض قاعات الآخرين.
-  if (!req.user.IsAdminUser && (!collegeId || !sectionId || !isScopeAllowed(req, collegeId, sectionId))) {
+  /* مستوى الكلية (N10): من يغطّي الكلية كلها (العميد والعميد المساعد) يرى
+     قاعاتها بلا اختيار قسم — كان يُردّ بـ403 لأن القسم صفر. */
+  const collegeWide = !sectionId && Boolean(collegeId) && (await wholeCollegeSectionIds(req, collegeId)).length > 0;
+  if (!req.user.IsAdminUser && (!collegeId || (!collegeWide && (!sectionId || !isScopeAllowed(req, collegeId, sectionId))))) {
     res.status(403).json({ error: "خارج نطاق القسم المسموح لك" });
     return;
   }
   if (!termId) { const terms = await Repository.getTerms(); termId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0); }
 
-  const { rows, universe } = await scopedScheduleUniverse(collegeId, sectionId, termId);
+  const scoped = await scopedScheduleUniverse(collegeId, sectionId, termId);
+  const universe = scoped.universe;
+  /* «قاعاتي» للعميدين من الجداول النهائية وحدها، كسائر ما يقرآن. */
+  const rows = readsFinalSchedulesOnly(req) ? await finalRowsOnly(scoped.rows, termId) : scoped.rows;
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   // Room utilization is intentionally official-only. Pending and historical
   // unresolved locations are separate data-quality signals and must never

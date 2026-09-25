@@ -1,4 +1,5 @@
 import { roomIdentityKey } from "./locationRegistry";
+import { placeholderInstructorIdsOf } from "./placeholderInstructor";
 import type { AdCourse, AdInstructor, FSchedule, ScheduleConstraint, ScheduleDecisionMemory } from "../types";
 import { placeholderInstructorIds } from "./instructorIdentity";
 import { activeDays, analyzeSchedule, findConflicts, isBlockingConflict, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
@@ -96,7 +97,9 @@ const analyze = memoizeByIdentity(analyzeSchedule);
 
 function computeFairnessEngine(rows:FSchedule[], instructors:AdInstructor[]){
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
-  const ids=[...new Set(rows.map(r=>r.AdInstructorId).filter(Boolean))];
+  /* «هيئة تدريسية» وصفٌّ بلا أستاذ ليسا أشخاصاً: لا يدخلان ميزان العدالة. */
+  const placeholders=placeholderInstructorIdsOf(instructors);
+  const ids=[...new Set(rows.map(r=>r.AdInstructorId).filter(Boolean))].filter(id=>!placeholders.has(Number(id)));
   const profiles=ids.map(id=>{
     const own=rows.filter(r=>r.AdInstructorId===id),days=new Set(activeDays({fsunday:own.some(r=>r.fsunday),fmonday:own.some(r=>r.fmonday),ftuesday:own.some(r=>r.ftuesday),fwednesday:own.some(r=>r.fwednesday),fthursday:own.some(r=>r.fthursday)} as any));
     const gap=instructorGap(rows,id);let early=0,late=0,weeklyMinutes=0;

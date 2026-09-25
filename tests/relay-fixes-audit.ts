@@ -193,7 +193,9 @@ const noDeadline = readDeadline({}, "2026-10-01");
   check(roundBaselineVersionId(history, 4, { acceptedOnly: true }) === "a2", "R9 والعميدُ يرى آخرَ ما قُبل بالقاعدة نفسها");
   check(roundEndVersionId(history, 2) === "a2" && roundEndVersionId(history, 4) === undefined,
     "R9 الجولةُ الماضية تنتهي بما قُبل فيها، والجارية بالجدول الحيّ");
-  check(between(server, "async function finalRowsOnly(", "\nasync function").includes("roundBaselineVersionId(approval, approval.currentRound, { acceptedOnly: true })"),
+  check(between(server, "async function finalRowsWithFinality(", "\nasync function").includes("finalSourceFor(")
+    && fs.readFileSync(path.join(process.cwd(), "src/utils/finality.ts"), "utf8").includes("{ acceptedOnly: true }")
+    && fs.readFileSync(path.join(process.cwd(), "src/utils/finality.ts"), "utf8").includes("roundBaselineVersionId("),
     "R9 جدولُ العميد يقرأ القاعدة الواحدة");
   const report = route('app.get("/api/reports/schedule-changes"');
   check(report.includes("const roundBaselineId = roundBaselineVersionId(approval, round);") && report.includes("roundEndVersionId(approval, round)"),

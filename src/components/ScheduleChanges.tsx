@@ -13,7 +13,8 @@
  * لكل خانة — الخانة نفسها هي الرسالة.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { takeNotifyFocus, type NotifyFocus } from "../utils/notifyFocus";
 import {
   AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardCheck, ClipboardList, Clock3,
   CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
@@ -1377,6 +1378,19 @@ export default function ScheduleChanges({ role, scope }: Props) {
 
   useEffect(() => { void loadTerms(); }, [loadTerms]);
   useEffect(() => { setOpened(null); }, [termId]);
+  /* ── الإشعار يفتح على قسمه (N16) ─────────────────────────────────────
+     يُؤخذ التركيز مرّةً بعد أن يُعرف الفصل: فصلُ الإشعار إن اختلف، ثم القسم.
+     ويأتي بعد مسح «المفتوح» عند تغيّر الفصل، فلا يُمحى ما فتحه. */
+  const focusRef = useRef<NotifyFocus | null | undefined>(undefined);
+  useEffect(() => {
+    if (!termId || !terms) return;
+    if (focusRef.current === undefined) focusRef.current = takeNotifyFocus("scheduleChanges");
+    const focus = focusRef.current;
+    if (!focus) return;
+    if (focus.termId && focus.termId !== termId && terms.some(row => Number(row.AdTermId) === focus.termId)) { setTermId(focus.termId); return; }
+    focusRef.current = null;
+    if (focus.sectionId) setOpened({ collegeId: focus.collegeId, sectionId: focus.sectionId });
+  }, [termId, terms]);
 
   const term = useMemo(() => (terms || []).find(row => Number(row.AdTermId) === termId), [terms, termId]);
 
