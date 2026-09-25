@@ -9963,8 +9963,16 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
     const rowCount = rowsPer.get(`${collegeId}:${sectionId}`) || 0;
     /* ملاحظاتُ التسجيل المفتوحة في أي حال (N19): تُكتب والجدول قيد الإعداد أو
        بعد اعتماده أيضاً، وكان القسم لا يُنبَّه بها إلا بعد «أُرجع». */
-    const openRegistrarNotes = department && (stored.has(`${collegeId}:${sectionId}`))
-      ? (await notesWithState(collegeId, sectionId, termId)).filter(note => note.origin === "registrar" && note.state === "open").length
+    const deptNotes = department && (stored.has(`${collegeId}:${sectionId}`))
+      ? (await notesWithState(collegeId, sectionId, termId)).filter(note => note.origin === "registrar" && note.state === "open")
+      : [];
+    const openRegistrarNotes = deptNotes.length;
+    /* ملاحظةٌ أصرّ عليها التسجيل ثلاثاً أو صُعّدت (N24) — تُقرأ بحذر: حقلُ
+       التصعيد يضيفه مسارٌ آخر. */
+    const escalatedNotes = deptNotes.filter((note: any) => Number(note.insistCount || 0) >= 3 || Boolean(note.escalatedAt)).length;
+    /* قسمٌ معتمد ظهر فيه مانع (N20) — للعميدين وحدهما، وللمعتمد وحده. */
+    const blockingConflicts = (role === "dean" || role === "viceDean") && approval.status === "accepted"
+      ? await blockingConflictCount(collegeId, sectionId, termId)
       : 0;
     const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
     const openRequests = pendingRequests.reduce((sum, entry) => sum + entry.count, 0);
@@ -9976,7 +9984,7 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
       awaitingRegistration: registrarReader && !isFullySigned(approval) ? 0 : queue.awaitingRegistration,
     } : undefined;
     return {
-      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue,
+      approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue, escalatedNotes, blockingConflicts,
       collegeName: collegeName.get(collegeId) || "",
       sectionName: String(row.AdSectionName || ""),
       deadline: readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today),

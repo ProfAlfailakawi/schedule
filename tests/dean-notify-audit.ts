@@ -11,7 +11,7 @@ import fs from "fs";
 import path from "path";
 import { coversWholeCollege, expandScopeSections, resolveSmartScope, type ScopePredicate } from "../src/server/readScope";
 import { finalSourceFor, HISTORICAL_FINALITY_LABEL } from "../src/utils/finality";
-import { buildNotifications, routeFor, type CenterScope } from "../src/utils/notificationCenter";
+import { buildNotifications, pendingExtensionRequest, routeFor, type CenterScope } from "../src/utils/notificationCenter";
 import { emptyApproval } from "../src/utils/approvalWorkflow";
 import { daysLeftUntil, isLate } from "../src/utils/lateness";
 import { buildFairnessEngine } from "../src/utils/livingSchedule";
@@ -352,6 +352,57 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(route.includes("id: `term-${planning}:${item.id}`"), "N18: بنود فصل التخطيط لا تتصادم معرّفاتها مع الجاري");
   check(fnBody("async function bellPlanningTermId(").includes("planningTermCandidates("), "N18: المرشّحون من termSequence وحده");
   check(routeBody('app.get("/api/approvals/badge", requireAuth').includes("approvalBadgeForTerm(req, planning)"), "N18: العدّاد يجمع الفصلين");
+}
+
+/* ══ N20 / N22 / N23 / N24 / N25 — ما يقوله الجرس، وبأيّ معرّف ═════════════ */
+{
+  const now = Date.parse("2026-09-25T09:00:00Z");
+  const base = (status: string, over: any = {}): CenterScope => ({
+    approval: { ...emptyApproval(1, 11, 9), status, rounds: over.rounds || [], currentRound: (over.rounds || []).length, pendingAdditions: over.pendingAdditions || [], ...(over.approval || {}) } as any,
+    collegeName: "ك", sectionName: over.name || "ق", rowCount: over.rowCount ?? 5, openRegistrarNotes: over.notes || 0, openRequests: 0,
+    deadline: over.deadline, blockingConflicts: over.blockers, escalatedNotes: over.escalated,
+  });
+  const dean = buildNotifications({ role: "dean", now, scopes: [
+    base("drafting", { deadline: { effective: "2026-09-20" }, name: "أ" }),
+    base("returned", { rounds: [{ number: 1, submittedAt: "2026-09-10T00:00:00Z", returnedAt: "2026-09-18T00:00:00Z" }], name: "ب" }),
+    base("accepted", { rounds: [{ number: 1, acceptedAt: "2026-09-12T00:00:00Z" }], blockers: 2, name: "ج" }),
+  ] });
+  check(dean.some(item => item.tone === "alert" && item.title.includes("تجاوز موعد التسليم") && item.view === "reportDepartment" && item.sectionId === 11), "N20: العميد يُنبَّه على قسمٍ متأخّر، ويُفتح الميزان على قسمه");
+  check(dean.some(item => item.tone === "alert" && item.title.includes("مُرجَعٌ منذ")), "N20: …وعلى جدولٍ مُرجَعٍ بلا حراكٍ أكثر من ثلاثة أيام");
+  check(dean.some(item => item.tone === "alert" && item.title.includes("المعتمد") && item.title.includes("مانع")), "N20: …وعلى معتمدٍ ظهر فيه مانع");
+  check(dean.every(item => item.tone !== "action"), "N20: والعميد لا يُطلب منه فعل");
+
+  /* N22: المعرّف لا يتغيّر بتغيّر العدد. */
+  const idsOf = (scopes: CenterScope[], role: string) => buildNotifications({ role, scopes, now }).map(item => item.id).sort().join("|");
+  const one = [base("accepted", { rounds: [{ number: 1, acceptedAt: "x" }] }), base("drafting", { name: "د" })];
+  const two = [base("accepted", { rounds: [{ number: 1, acceptedAt: "x" }] }), base("accepted", { name: "د", rounds: [{ number: 1, acceptedAt: "y" }] }), base("drafting", { name: "هـ" })];
+  const summary = (list: CenterScope[]) => buildNotifications({ role: "dean", scopes: list, now }).find(item => item.id.startsWith("final-summary"))?.id;
+  check(summary(one) === summary(two), "N22: ملخّص العميد بمعرّفٍ ثابت ما دام الحال «جزئياً»");
+  const reg = (n: number) => buildNotifications({ role: "registrarHead", now, scopes: Array.from({ length: n }, (_, i) => base("drafting", { name: `ق${i}` })) }).find(item => item.id.startsWith("not-submitted"))?.id;
+  check(reg(3) === reg(4), "N22: «لم يسلّم بعد» بمعرّفٍ ثابت");
+  const withAdd = (n: number) => idsOf([base("committee", { pendingAdditions: Array.from({ length: n }, (_, i) => ({ scheduleId: i })) })], "departmentHead");
+  check(withAdd(1) === withAdd(2), "N22: الإضافات بمعرّفٍ ثابت");
+  const nc = read("src/utils/notificationCenter.ts");
+  check(!/\$\{(queue\.pendingCommittee|queue\.awaitingRegistration|entry\.count|notYet|done|total|approval\.pendingAdditions\.length)\}/.test(nc.split("id:").slice(1).map(part => part.split(",")[0]).join("\n")), "N22: لا عددَ في أيِّ معرّف");
+
+  /* N23 */
+  const returned = buildNotifications({ role: "committeeChair", now, scopes: [base("returned", { rounds: [{ number: 1, returnedAt: "x" }], pendingAdditions: [{ scheduleId: 1 }] })] });
+  const back = returned.find(item => item.title.includes("أرجع"));
+  check(Boolean(back) && !back!.detail.includes("بقي إعادة الإرسال") && back!.detail.includes("إقرارَ رئيس القسم") && back!.tone === "waiting", "N23: «أُرجع» يقول الحقيقة حين تمنع الإضافاتُ إعادة الإرسال");
+
+  /* N24 */
+  const head = buildNotifications({ role: "departmentHead", now, scopes: [base("returned", { rounds: [{ number: 1, returnedAt: "x" }], notes: 2, escalated: 1 })] });
+  check(head.some(item => item.tone === "action" && item.title.includes("يُصرّ") && item.view === "scheduleChanges"), "N24: إصرارٌ ثالث يصير فعلاً مطلوباً من رئيس القسم");
+  const bell = fnBody("async function notificationItemsForTerm(");
+  check(bell.includes("Number(note.insistCount || 0) >= 3 || Boolean(note.escalatedAt)"), "N24: الخادم يقرأ الإصرار والتصعيد بحذر");
+
+  /* N25 */
+  const ext = (extra: any) => buildNotifications({ role: "registrarHead", now, scopes: [base("drafting", { approval: { extensionRequest: extra } })] });
+  const asked = ext({ until: "2026-10-05", reason: "سبب", requestedAt: "2026-09-24T00:00:00Z" }).find(item => item.title.includes("يطلب تمديد"));
+  check(Boolean(asked) && asked!.tone === "action" && asked!.view === "scheduleChanges" && asked!.sectionId === 11, "N25: طلبُ التمديد فعلٌ لرئيس التسجيل، يفتح القسم");
+  check(!ext({ until: "2026-10-05", status: "granted" }).some(item => item.title.includes("يطلب تمديد")), "N25: الطلب المحسوم لا يُنبّه");
+  check(!buildNotifications({ role: "registrarStaff", now, scopes: [base("drafting", { approval: { extensionRequest: { until: "2026-10-05" } } })] }).some(item => item.title.includes("يطلب تمديد")), "N25: موظف التسجيل لا يمدّد فلا يُطلب منه");
+  check(pendingExtensionRequest({ ...emptyApproval(1, 1, 1) } as any) === null, "N25: غيابُ الحقل لا يُعطب شيئاً");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

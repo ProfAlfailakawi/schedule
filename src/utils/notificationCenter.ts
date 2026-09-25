@@ -44,6 +44,10 @@ export interface CenterScope {
   studentQueue?: { pendingCommittee: number; awaitingRegistration: number; oldestPendingAt?: string; latestApprovedAt?: string };
   /** موعد هذا القسم: تمديده إن وُجد، وإلا موعد الفصل. */
   deadline?: { effective?: string; past?: boolean; daysLeft?: number } | null;
+  /** موانع الاعتماد القائمة الآن (للعميدين: قسمٌ معتمد ظهر فيه مانع — N20). */
+  blockingConflicts?: number;
+  /** ملاحظاتٌ أصرّ عليها التسجيل ثلاثاً أو صُعّدت (N24). */
+  escalatedNotes?: number;
 }
 
 export interface CenterInput {
@@ -71,6 +75,18 @@ const plural = (count: number, one: string, two: string, many: string) =>
 
 const lastAccepted = (approval: ScheduleApproval) =>
   [...approval.rounds].filter(round => round.acceptedAt).sort((a, b) => b.number - a.number)[0];
+
+/** طلبُ تمديدٍ معلّق على سجلّ الاعتماد، يُقرأ بحذر: الحقل يضيفه مسارٌ آخر. */
+export function pendingExtensionRequest(approval: ScheduleApproval): { until?: string; reason?: string; at?: string } | null {
+  const ask: any = (approval as any)?.extensionRequest;
+  if (!ask || typeof ask !== "object") return null;
+  if (ask.resolvedAt || ask.decidedAt || (ask.status && ask.status !== "pending")) return null;
+  return {
+    until: typeof ask.until === "string" ? ask.until : undefined,
+    reason: typeof ask.reason === "string" ? ask.reason : undefined,
+    at: typeof ask.requestedAt === "string" ? ask.requestedAt : typeof ask.at === "string" ? ask.at : undefined,
+  };
+}
 
 const REGISTRAR = new Set(["registrarHead", "registrarStaff"]);
 const WATCHERS = new Set(["registrarDean"]);
@@ -136,13 +152,29 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
     })).length;
     if (notYet > 0) {
       items.push({
-        id: `not-submitted:${notYet}`, tone: lateCount > 0 ? "alert" : "waiting",
+        /* المعرّف بالحال لا بالعدد (N22): قسمٌ يسلّم لا يصنع إشعاراً «جديداً». */
+        id: `not-submitted:${lateCount > 0 ? "late" : "open"}`, tone: lateCount > 0 ? "alert" : "waiting",
         title: notYet === 1 ? "قسمٌ واحد لم يسلّم جدوله بعد" : notYet === 2 ? "قسمان لم يسلّما جدولَيهما بعد" : `${notYet} ${notYet <= 10 ? "أقسام" : "قسماً"} لم تسلّم جداولها بعد`,
         detail: lateCount > 0
           ? (lateCount === notYet ? "انقضى موعد التسليم." : `${countOf(lateCount, AR.department)} منها تجاوز موعده.`)
           : input.deadline?.effective ? `آخر موعد للتسليم ${day(input.deadline.effective)}.` : "لم يُحدَّد موعد التسليم بعد.",
         view: routeFor(role, "final"),
       });
+    }
+    /* ── طلبُ تمديد (N25) ─────────────────────────────────────────────────
+       يكتبه مسارُ الطلب على سجلّ الاعتماد؛ يُقرأ هنا بحذر (قد لا يوجد الحقل).
+       ورئيسُ التسجيل وحده يمدّد، فهو وحده يُطلب منه. */
+    if (role === "registrarHead") {
+      for (const scope of scopes) {
+        const ask = pendingExtensionRequest(scope.approval);
+        if (!ask) continue;
+        items.push({
+          id: key(scope, `extension-request-${ask.at || ""}`), tone: "action",
+          title: `${placeOf(scope)} يطلب تمديد موعد التسليم`,
+          detail: [ask.until ? `حتى ${day(ask.until)}` : "", ask.reason || ""].filter(Boolean).join(" — ") || scope.collegeName,
+          view: routeFor(role, "approval"), at: ask.at, ...target(scope),
+        });
+      }
     }
   }
 
@@ -153,11 +185,17 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       const accepted = lastAccepted(approval);
       if (approval.status === "returned") {
         items.push({
-          id: key(scope, "returned"), tone: isHead ? "waiting" : "action",
+          id: key(scope, "returned"),
+          tone: isHead ? (approval.pendingAdditions.length && scope.openRegistrarNotes === 0 ? "action" : "waiting")
+            : (approval.pendingAdditions.length && scope.openRegistrarNotes === 0 ? "waiting" : "action"),
           title: `أرجع التسجيل جدول ${placeOf(scope)}`,
+          /* الصدق فيما بقي (N23): إضافاتٌ تنتظر إقرار رئيس القسم تمنع إعادة
+             الإرسال، فلا يُقال «بقي إعادة الإرسال» واللجنة لا تملكها. */
           detail: scope.openRegistrarNotes > 0
             ? `بقيت ${plural(scope.openRegistrarNotes, "ملاحظةٌ واحدة", "ملاحظتان", "ملاحظات")} تنتظر المعالجة أو الردّ، ثم يُعاد الإرسال.`
-            : "عولجت الملاحظات — بقي إعادة الإرسال إلى التسجيل.",
+            : approval.pendingAdditions.length
+              ? `عولجت الملاحظات — وتنتظر ${countOf(approval.pendingAdditions.length, AR.section)} أُضيفت إقرارَ رئيس القسم قبل إعادة الإرسال.`
+              : "عولجت الملاحظات — بقي إعادة الإرسال إلى التسجيل.",
           view: routeFor(role, "returned"), ...target(scope),
         });
       } else if (approval.status === "submitted") {
@@ -205,9 +243,18 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           view: routeFor(role, "notes"), ...target(scope),
         });
       }
+      /* ملاحظةٌ أصرّ عليها التسجيل ثلاثاً (N24): لم تعد شأنَ اللجنة وحدها. */
+      if (isHead && Number(scope.escalatedNotes || 0) > 0) {
+        items.push({
+          id: key(scope, "escalated-notes"), tone: "action",
+          title: `التسجيل يُصرّ على ${plural(Number(scope.escalatedNotes), "ملاحظةٍ واحدة", "ملاحظتين", "ملاحظات")} في جدول ${placeOf(scope)}`,
+          detail: "تكرّر الإصرار ثلاث مرّات — تحتاج قرارك مع اللجنة.",
+          view: routeFor(role, "notes"), ...target(scope),
+        });
+      }
       if (isHead && approval.pendingAdditions.length && !accepted) {
         items.push({
-          id: key(scope, `additions-${approval.pendingAdditions.length}`), tone: "action",
+          id: key(scope, "additions"), tone: "action",
           title: `${plural(approval.pendingAdditions.length, "شعبةٌ أُضيفت", "شعبتان أُضيفتا", "شعب أُضيفت")} بعد اعتمادك`,
           detail: "وافق عليها ليُعاد الإرسال.",
           view: routeFor(role, "approval"), ...target(scope),
@@ -246,7 +293,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
     /* طلبٌ مرتبط: قسمٌ آخر لا يستطيع أن يُكمل حتى يُقرّر هذا القسمُ حذفَه. */
     const linked = entry.linkedPlaces.length > 0;
     items.push({
-      id: `request:${requestId}:${entry.count}:${entry.at || ""}${linked ? ":linked" : ""}`, tone: linked ? "alert" : "action",
+      id: `request:${requestId}:${entry.at || ""}${linked ? ":linked" : ""}`, tone: linked ? "alert" : "action",
       title: linked
         ? `${entry.name}: قسمٌ آخر ينتظر قرارك`
         : `${entry.name} ${entry.count === 1 ? "طلب تعديلاً" : `طلب ${plural(entry.count, "تعديلاً", "تعديلين", "تعديلات")}`}`,
@@ -269,7 +316,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       const waitedDays = queue.oldestPendingAt ? Math.floor((now - new Date(queue.oldestPendingAt).getTime()) / 86400000) : 0;
       const late = waitedDays > 3;
       items.push({
-        id: key(scope, `students-committee-${queue.pendingCommittee}`), tone: late ? "alert" : "action",
+        id: key(scope, `students-committee-${late ? "late" : "open"}`), tone: late ? "alert" : "action",
         title: `${plural(queue.pendingCommittee, "مقرّرٌ واحد", "مقرّران", "مقرّرات")} في كشف التسجيل ${queue.pendingCommittee <= 2 ? "ينتظر" : "تنتظر"} قرار اللجنة`,
         detail: late ? `${placeOf(scope)} — أقدمُها ينتظر منذ ${waitedDays} أيام` : placeOf(scope),
         view: routeFor(role, "students"), at: queue.oldestPendingAt, ...target(scope),
@@ -277,7 +324,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
     }
     if (queue.awaitingRegistration > 0 && REGISTRAR.has(role)) {
       items.push({
-        id: key(scope, `students-registration-${queue.awaitingRegistration}-${queue.latestApprovedAt || ""}`), tone: "action",
+        id: key(scope, `students-registration-${queue.latestApprovedAt || ""}`), tone: "action",
         title: `وافقت لجنة ${placeOf(scope)} على ${plural(queue.awaitingRegistration, "مقرّرٍ واحد", "مقرّرين", "مقرّرات")} للتسجيل`,
         detail: "تنتظر التسجيل أو الردّ في كشف التسجيل.",
         view: routeFor(role, "students"), at: queue.latestApprovedAt, ...target(scope),
@@ -290,11 +337,45 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
     const done = scopes.filter(scope => lastAccepted(scope.approval)).length;
     if (total > 0) {
       items.push({
-        id: `final:${done}:${total}`, tone: done === total ? "done" : "waiting",
+        id: `final-summary:${done === total ? "all" : "partial"}`, tone: done === total ? "done" : "waiting",
         title: done === total ? "كل جداول الأقسام معتمدة" : `المعتمد ${done} من ${total} جداول`,
         detail: done === total ? "الجداول النهائية جاهزة للاطّلاع." : `بقي ${total - done} لم يعتمده التسجيل بعد.`,
         view: routeFor(role, "final"),
       });
+    }
+    /* ── ما يستحقّ التنبيه (N20) ─────────────────────────────────────────
+       العميدان لا يُطلب منهما فعل، لكن يُنبَّهان: قسمٌ تجاوز موعده، وجدولٌ
+       أُرجع وبقي بلا حراكٍ أكثر من ثلاثة أيام، وجدولٌ معتمد ظهر فيه مانع.
+       كلٌّ يفتح الميزان على قسمه. */
+    const now = input.now ?? Date.now();
+    for (const scope of scopes) {
+      const { approval } = scope;
+      if (isLate({ approvalStatus: approval.status, submittedRounds: approval.currentRound, deadline: scope.deadline?.effective ?? input.deadline?.effective, now })) {
+        items.push({
+          id: key(scope, "dean-late"), tone: "alert",
+          title: `جدول ${placeOf(scope)} تجاوز موعد التسليم`,
+          detail: scope.rowCount > 0 ? "لم يُرسَل إلى التسجيل بعد." : "لم يبدأ القسم جدوله بعد.",
+          view: routeFor(role, "final"), ...target(scope),
+        });
+      }
+      const round = approval.rounds.find(item => item.number === approval.currentRound);
+      const idleDays = approval.status === "returned" && round?.returnedAt ? Math.floor((now - new Date(round.returnedAt).getTime()) / 86_400_000) : 0;
+      if (idleDays > 3) {
+        items.push({
+          id: key(scope, "dean-returned-idle"), tone: "alert",
+          title: `جدول ${placeOf(scope)} مُرجَعٌ منذ ${countOf(idleDays, AR.day)}`,
+          detail: "لم يُعِد القسم إرساله بعد.",
+          view: routeFor(role, "final"), at: round?.returnedAt, ...target(scope),
+        });
+      }
+      if (approval.status === "accepted" && Number(scope.blockingConflicts || 0) > 0) {
+        items.push({
+          id: key(scope, "dean-accepted-blocker"), tone: "alert",
+          title: `ظهر ${countOf(Number(scope.blockingConflicts), AR.blocker)} في جدول ${placeOf(scope)} المعتمد`,
+          detail: "تعارضٌ جدّ بعد الاعتماد — من جدول قسمٍ آخر غالباً.",
+          view: routeFor(role, "final"), ...target(scope),
+        });
+      }
     }
     for (const scope of scopes) {
       const accepted = lastAccepted(scope.approval);
