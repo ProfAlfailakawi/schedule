@@ -24,6 +24,7 @@ import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQue
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
+import { requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -12223,6 +12224,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
        آمناً لبطاقة صاحبه، لكنه لا يجعل فصله جارياً إلى الأبد. */
     liveTermId: currentTermId(terms as any),
     expiresAt: link.expiresAt,
+    requestsCloseAt: link.requestsCloseAt || "",
     // The subscription key. Handed out only here — after the card has already
     // established who is holding it — so the civil ID never reaches a URL.
     calendarKey: await calendarKey(link.id, person.AdInstructorId),
@@ -12265,11 +12267,18 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
     : kind === "survey"
       ? `استبيان المقررات · ${sectionName} · ${termName}`.trim()
       : `${sectionName} · ${termName}`.trim();
+  /* بطاقةُ الأستاذ تعيش الفصلَ كلَّه — التقويمُ في هاتفه يتبعها — وموعدُ
+     الطلبات يُحفظ منفصلاً ويحكم الكتابة وحدها. العمرُ يُحسب هنا، لا في المتصفح. */
+  const requestsCloseAt = kind === "staff" ? requestsCloseAtFromDate(req.body?.requestsCloseAt) : "";
+  const expiresAt = kind === "staff"
+    ? termLinkExpiresAt(terms.find(row => row.AdTermId === termId))
+    : new Date(Date.now() + days * 86400000).toISOString();
   const link = await Repository.createShareLink({
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
     label,
     kind,
-    expiresAt: new Date(Date.now() + days * 86400000).toISOString(),
+    expiresAt,
+    ...(requestsCloseAt ? { requestsCloseAt } : {}),
     SystemUserId: Number(req.user!.SystemUserId),
     userName: String(req.user!.Name || ""),
     showInstructors: req.body?.showInstructors !== false
@@ -13891,7 +13900,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       <a href="#" id="print">طباعة</a>
     </div>
     <div class="sub" id="sub" hidden>
-      <p>اشتراك دائم — التقويم يتابع الجدول من نفسه، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
+      <p id="subLife">اشتراك يتابع جدولك من نفسه حتى نهاية الفصل، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
       <label class="subalarm"><input type="checkbox" id="subAlarm"> ذكّرني قبل كل محاضرة بربع ساعة</label>
       <a id="subNow" href="#">اشتراك الآن · آيفون · ماك · أوتلوك</a>
       <button type="button" id="subCopy">نسخ الرابط لتقويم جوجل</button>
@@ -14086,7 +14095,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     };
     try{
       var until=new Intl.DateTimeFormat("ar-KW-u-nu-latn",{day:"numeric",month:"long",year:"numeric"}).format(new Date(d.expiresAt));
-      document.getElementById("foot").textContent="هذا الرابط صالح حتى "+until+" · للقراءة فقط";
+      document.getElementById("foot").textContent="هذا الرابط صالح حتى نهاية الفصل ("+until+") · للقراءة فقط";
+      var life=document.getElementById("subLife");
+      if(life) life.textContent="اشتراك يتابع جدولك من نفسه حتى "+until+" (نهاية الفصل)، ولا يحتاج إعادة إضافة بعد كل تعديل.";
     }catch(e){}
     gate.style.display="none";card.style.display="block";
     window.scrollTo(0,0);
@@ -15123,7 +15134,7 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
       AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
       AdInstructorId: instructorId,
       linkId: link.id,
-      window: { opensAt, closesAt: `${closesAt}T23:59:59.999Z` },
+      window: { opensAt, closesAt: requestsCloseAtFromDate(closesAt) },
       source,
       status: "sent",
       items: (termRowsOf(instructorId).length ? termRowsOf(instructorId) : own).map(row =>

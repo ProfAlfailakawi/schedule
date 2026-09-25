@@ -9,6 +9,7 @@ import { createHmac } from "crypto";
 import {
   CALENDAR_KEY_LABEL, calendarFeedKey, createCalendarSecretResolver, deriveCalendarSecret,
 } from "../src/server/calendarSecret";
+import { TERM_LINK_FALLBACK_DAYS, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
 
 let passed = 0, failed = 0;
 function check(condition: unknown, name: string) {
@@ -60,6 +61,33 @@ async function main() {
       "D1 السرّ المشترك يُقرأ خارج صندوق العرض");
     check(repository.includes("localStudentCaseSecretCache"), "D1 سرُّ الملف المحلي لا يلوّث ذاكرة السرّ المشترك");
     check(server.includes('if(!legacyCalendarSecret) return "";'), "D1 جسرُ الحالات القديمة يبقى للسرّ المضبوط وحده");
+  }
+
+
+  /* ── D2: بطاقة الأستاذ تعيش الفصل، والموعدُ يحكم الطلبات وحدها ───────────── */
+  {
+    const now = Date.parse("2026-09-25T10:00:00Z");
+    const declared = { AdTermName: "الأول 2026/2027", AdTermStart: "2026-09-13", AdTermWeeks: 16 };
+    const end = termLinkExpiresAt(declared, now);
+    check(end === new Date(Date.parse("2026-09-13T00:00:00") + 16 * 7 * 86400000).toISOString(), "D2 الرابط ينتهي بنهاية الفصل المعلن");
+    const named = termLinkExpiresAt({ AdTermName: "الفصل الثاني 2026/2027" }, now);
+    check(Date.parse(named) > Date.parse("2027-05-01") && Date.parse(named) < Date.parse("2027-06-15"), "D2 فصلٌ بلا تاريخ يُستنبط من اسمه (الثاني ينتهي في مايو)");
+    const unknown = termLinkExpiresAt({ AdTermName: "فصل" }, now);
+    check(unknown === new Date(now + TERM_LINK_FALLBACK_DAYS * 86400000).toISOString(), "D2 فصلٌ مجهول ← ‎+150‎ يوماً");
+    const past = termLinkExpiresAt({ AdTermName: "الأول 2020/2021" }, now);
+    check(Date.parse(past) > now, "D2 رابطٌ لفصلٍ مضى لا يولد منتهياً");
+    check(requestsCloseAtFromDate("2026-10-08") === "2026-10-08T23:59:59.999Z" && requestsCloseAtFromDate("غدا") === "", "D2 صيغةُ آخر موعد واحدة");
+
+    const shareRoute = server.slice(server.indexOf('app.post("/api/share"'), server.indexOf('app.delete("/api/share/:id"'));
+    check(shareRoute.includes("termLinkExpiresAt(terms.find(row => row.AdTermId === termId))") && shareRoute.includes('kind === "staff"'),
+      "D2 الخادم يحسب عمر البطاقة من الفصل");
+    check(shareRoute.includes("requestsCloseAt"), "D2 الرابط يحفظ موعد الطلبات منفصلاً");
+    const publish = read("src/components/SchedulePublish.tsx");
+    check(publish.includes('const linkDays = kind === "survey" && closesAt'), "D2 المتصفح لا يقصّ عمر البطاقة على موعد الطلبات");
+    check(publish.includes("requestsCloseAt: closesAt"), "D2 الموعد يُرسل موعداً للطلبات لا مدّةً للرابط");
+    check(!server.includes("اشتراك دائم"), "D2 لا تقول البطاقة «اشتراك دائم» وهي تنتهي");
+    check(server.includes("حتى نهاية الفصل"), "D2 البطاقة تقول صراحةً إن الاشتراك حتى نهاية الفصل");
+    check(server.includes("window: { opensAt, closesAt: requestsCloseAtFromDate(closesAt) }"), "D2 نافذة الطلب تُحسب بالدالة نفسها");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

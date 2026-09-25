@@ -3,7 +3,7 @@
 | ID | Status | Covered by |
 |----|--------|------------|
 | D1 | FIXED — calendar key: env CALENDAR_SECRET wins, else HMAC("calendar-feed-key-v1") of the Firestore-shared secret (src/server/calendarSecret.ts), lazy awaited resolver, demo cache separated, legacy bridge only for configured env | tests/doctor-journey-audit.ts D1 |
-| D2 | TODO | |
+| D2 | FIXED — staff links live to term end (termLinkExpiresAt in src/utils/shareLinkLifetime.ts, fallback +150d), requestsCloseAt stored separately, /issue uses same close format, card/publish wording truthful | tests/doctor-journey-audit.ts D2 |
 | D3 | TODO | |
 | D4 | TODO | |
 | D5 | TODO | |

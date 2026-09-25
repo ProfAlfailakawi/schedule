@@ -867,6 +867,11 @@ export interface ScheduleShareLink {
   kind?: "department" | "staff" | "survey" | "request";
   /** صاحبُ الرابط حين يكون `kind === "request"`. لا معنى له في غيره. */
   AdInstructorId?: number;
+  /**
+   * آخرُ موعدٍ لاستقبال طلبات التعديل من بطاقة الأستاذ (ISO). يحكم الكتابة
+   * وحدها؛ الرابطُ نفسه يبقى صالحاً للقراءة حتى `expiresAt` (نهاية الفصل).
+   */
+  requestsCloseAt?: string;
 }
 
 /* ── طلبُ الأستاذ على مسوّدة جدوله ───────────────────────────────────────────

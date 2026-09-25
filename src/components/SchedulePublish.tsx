@@ -10,6 +10,8 @@ interface ShareLink {
   label: string;
   createdAt: string;
   expiresAt: string;
+  /** بطاقة الأستاذ: آخر موعدٍ لاستقبال الطلبات. الرابط يبقى للقراءة حتى expiresAt. */
+  requestsCloseAt?: string;
   revoked?: boolean;
   views: number;
   showInstructors: boolean;
@@ -140,11 +142,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     setIssued({ created: rows.length - reissued, reissued });
   };
 
-  /* بطاقة الأستاذ: موعدٌ واحد يحكم كل شيء — الطلبات مفتوحة، والرابط صالحٌ حتى
-     ذلك الموعد. مدّتان معاً كانتا تتناقضان: رابطٌ لسبعة أيام وطلباتٌ لشهر. */
+  /* بطاقة الأستاذ: الموعدُ يحكم استقبالَ الطلبات وحده. الرابطُ نفسه — والتقويم
+     الذي يتبعه في هاتف الأستاذ — يعيش حتى نهاية الفصل، ويحسب الخادمُ ذلك من
+     تاريخ الفصل لا من هذا الموعد. الاستبيانُ وحده يموت مع موعده. */
   const withRequests = kind === "staff";
   const byDate = kind === "staff" || kind === "survey";
-  const linkDays = byDate && closesAt
+  const linkDays = kind === "survey" && closesAt
     ? Math.max(1, Math.ceil((new Date(`${closesAt}T23:59:59`).getTime() - Date.now()) / 86400000))
     : days;
 
@@ -156,7 +159,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
       const response = await fetch("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, days: linkDays, showInstructors, kind })
+        body: JSON.stringify({ collegeId, sectionId, termId, days: linkDays, showInstructors, kind, ...(withRequests ? { requestsCloseAt: closesAt } : {}) })
       });
       const data = await readReply(response, "تعذر إنشاء الرابط");
       setLinks(current => [data, ...current]);
@@ -512,7 +515,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                             <strong className="share-status">{status}</strong>
                             {!dead ? (
                               <time className="share-expiry" dateTime={link.expiresAt}>
-                                ينتهي {new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.expiresAt))}
+                                {link.kind === "staff" ? "صالح حتى نهاية الفصل " : "ينتهي "}{new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.expiresAt))}
+                              </time>
+                            ) : null}
+                            {!dead && link.kind === "staff" && link.requestsCloseAt ? (
+                              <time className="share-expiry" dateTime={link.requestsCloseAt}>
+                                {" · "}{Date.parse(link.requestsCloseAt) < Date.now() ? "أُغلقت الطلبات" : "الطلبات حتى"} {new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.requestsCloseAt))}
                               </time>
                             ) : null}
                             {" · "}
