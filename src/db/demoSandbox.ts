@@ -232,6 +232,37 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   return rows;
 }
 
+/* ── فصلان يتبعان التاريخ، لا تاريخاً مكتوباً ───────────────────────────────
+ *
+ * كان الفصلُ مكتوباً بتاريخه («الأول 2026/2027» يبدأ 2026-09-06)، فيأتي يومٌ
+ * ينتهي فيه ويقول الاستبيانُ لكل زائر «انتهى هذا الفصل». فالفصلُ الجاري يبدأ
+ * قبل ثلاثة أسابيع من الدخول أيّاً كان يومه، واسمُه من تقويم الجامعة
+ * (سبتمبر→ديسمبر الأول، فبراير→مايو الثاني، يونيو→يوليو الصيفي)، والفصلُ
+ * السابق قبله بفصلٍ كامل وقد انتهى. */
+export const DEMO_PREVIOUS_TERM_ID = 2;
+function demoTermName(start: Date): string {
+  const month = start.getUTCMonth() + 1, year = start.getUTCFullYear();
+  if (month >= 8) return `الفصل الأول ${year}/${year + 1}`;
+  if (month >= 6) return `الفصل الصيفي ${year - 1}/${year}`;
+  return `الفصل الثاني ${year - 1}/${year}`;
+}
+function demoTerms(now: Date): AdTerm[] {
+  const day = 86_400_000;
+  const start = new Date(now.getTime() - 21 * day);
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay()); // الأحد
+  const previous = new Date(start.getTime() - 22 * 7 * day);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return [
+    { AdTermId: 1, AdTermName: demoTermName(start), AdTermStart: iso(start), AdTermWeeks: 15, AdTermSubmissionDeadline: iso(new Date(now.getTime() + 7 * day)) },
+    { AdTermId: DEMO_PREVIOUS_TERM_ID, AdTermName: demoTermName(previous), AdTermStart: iso(previous), AdTermWeeks: 15 },
+  ];
+}
+function previousTermRows(current: FSchedule[]): FSchedule[] {
+  const top = Math.max(0, ...current.map(row => Number(row.id)));
+  return current.filter(row => !String(row.fdetail || "").includes("حالة تجريبية مقصودة"))
+    .map((row, index) => ({ ...structuredClone(row), id: top + 1000 + index, AdTermId: DEMO_PREVIOUS_TERM_ID, rev: 0 }));
+}
+
 /*
  * ── حسابٌ لكل صفة داخل البيئة التجريبية ─────────────────────────────────────
  *
@@ -444,7 +475,12 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
 export function createDemoSandboxState(): DemoSandboxState {
   const instructors = syntheticInstructors();
   const courses = syntheticCourses();
-  const schedules = syntheticSchedules(courses);
+  const schedules = [...syntheticSchedules(courses)];
+  /* الفصلُ السابق: جدولُ الأقسام نفسُه قبل فصل — تاريخٌ تتعلّم منه القراءاتُ
+     (إيقاعُ القسم، ما دُرِّس فعلاً في الاستبيان)، ومصدرٌ يُبنى منه الفصلُ الجديد
+     («بداية الفصل»). والحالتان التجريبيتان المقصودتان لا تُورَّثان. */
+  const history = previousTermRows(schedules);
+
   const formNames: FormName[] = Array.from({ length: 17 }, (_, index) => ({ FormNameId: index + 1, FormName: `صلاحية ${index + 1}` }));
 
   const users: SystemUser[] = [
@@ -476,9 +512,9 @@ export function createDemoSandboxState(): DemoSandboxState {
 
   return {
     users, formNames, formSecurity, collegeUserAssign,
-    terms: [{ AdTermId: 1, AdTermName: "الفصل الأول 2026/2027", AdTermStart: "2026-09-06", AdTermWeeks: 15, AdTermSubmissionDeadline: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10) }],
+    terms: demoTerms(new Date()),
     colleges: structuredClone(colleges), sections: structuredClone(sections), instructors, courses,
-    schedules, rooms,
+    schedules: [...schedules, ...history], rooms,
     auditLogs: [], scheduleVersions: seeded.versions, scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: seeded.comments,
     studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [],
     campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: seeded.approvals,

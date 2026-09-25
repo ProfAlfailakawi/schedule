@@ -110,11 +110,18 @@ function p2Registry() {
     const building = state.locationBuildings.find(b => b.id === row.buildingId);
     return room && building && row.AdRoomCode === building.officialCode && row.AdRoomHall === room.canonicalCode;
   }), "والكودان المكتوبان في الصفّ هما كودا السجلّ");
-  const csHalls = new Set(state.schedules.filter(r => r.AdCollegeId === 1 && r.AdSectionId === 1).map(r => r.roomId));
+  const csHalls = new Set(state.schedules.filter(r => r.AdTermId === 1 && r.AdCollegeId === 1 && r.AdSectionId === 1).map(r => r.roomId));
   check(csHalls.size >= 3, `محاضراتُ علوم الحاسب موزّعةٌ على قاعاتها (${csHalls.size})، لا في قاعةٍ واحدة`);
   const perHall = new Map<string, number>();
-  state.schedules.forEach(r => perHall.set(String(r.roomId), (perHall.get(String(r.roomId)) || 0) + 1));
+  state.schedules.filter(r => r.AdTermId === 1).forEach(r => perHall.set(String(r.roomId), (perHall.get(String(r.roomId)) || 0) + 1));
   check(Math.max(...perHall.values()) <= 5, "ولا قاعةٌ تحمل أكثر من خمس محاضرات — فلا «نقطة اعتماد حساسة» مصطنعة");
+  /* فصلٌ جارٍ حيّ أيّاً كان يوم الدخول، وفصلٌ سابقٌ انتهى يُبنى منه الجديد. */
+  const [current, previous] = state.terms;
+  const day = 86_400_000, startOf = (t: any) => Date.parse(t.AdTermStart), endOf = (t: any) => startOf(t) + t.AdTermWeeks * 7 * day;
+  check(startOf(current) <= Date.now() && endOf(current) > Date.now(), `الفصل الجاري جارٍ اليوم (${current.AdTermName})`);
+  check(!!previous && endOf(previous) < Date.now() && state.schedules.some(r => r.AdTermId === previous.AdTermId && r.AdSectionId === 1),
+    `وفصلٌ سابقٌ انتهى وله جدولٌ لعلوم الحاسب (${previous?.AdTermName}) — مصدرُ «بداية الفصل»`);
+  check(!state.schedules.some(r => r.AdTermId === previous?.AdTermId && /حالة تجريبية مقصودة/.test(String(r.fdetail || ""))), "والحالتان المقصودتان لا تُورَّثان للتاريخ");
   const server = read("src/db/repository.ts");
   check(server.includes("return [...(db.locationBuildings||[])];") && server.includes("return [...(db.locationRooms||[])];"),
     "Repository يقرأ سجلَّ الصندوق داخل الجلسة التجريبية");
