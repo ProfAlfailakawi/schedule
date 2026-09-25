@@ -4173,7 +4173,9 @@ function broadcastNotify() {
     try { response.write(payload); } catch { scheduleEventClients.delete(response); }
   }
 }
-for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests"]) {
+/* «/api/student-registration»: قرارُ اللجنة يصل التسجيلَ، وقرارُ التسجيل يصل
+   القسمَ، في لحظته — كما يصل طلبُ الأستاذ. */
+for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests", "/api/student-registration"]) {
   app.use(prefix, (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(); });
     next();

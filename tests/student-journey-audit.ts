@@ -400,6 +400,13 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
     && status.includes('<div id="out" aria-live="polite">') && status.includes('class="err" role="alert"'), "S18 صفحة الحالة: labels وaria-live وnumeric");
 }
 
+/* ── S19 كتابة الكشف تنبض للشاشات المفتوحة ────────────────────────────── */
+{
+  check(server.includes('for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests", "/api/student-registration"])'),
+    "S19 قرارات الكشف ترسل نبضة الإشعارات");
+  check(read("src/components/StudentRegistration.tsx").includes('source.addEventListener("notify", soon)'), "S19 والكشف المفتوح يعيد القراءة عندها");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

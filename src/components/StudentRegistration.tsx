@@ -303,6 +303,15 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
 
   useEffect(() => { void load(); }, [load]);
 
+  /* النبضةُ الحيّة: قرارٌ كتبته اللجنة أو التسجيل من شاشةٍ أخرى يُقرأ هنا فوراً. */
+  useEffect(() => {
+    if (!collegeId || !sectionId || !termId || typeof EventSource === "undefined") return;
+    let source: EventSource | null = null, pending = 0;
+    const soon = () => { window.clearTimeout(pending); pending = window.setTimeout(() => { void load(); }, 800); };
+    try { source = new EventSource("/api/schedules/events"); source.addEventListener("notify", soon); } catch { source = null; }
+    return () => { window.clearTimeout(pending); source?.close(); };
+  }, [collegeId, sectionId, termId, load]);
+
   const collegeOptions = useMemo(() => {
     if (catalog) {
       return catalog.colleges
