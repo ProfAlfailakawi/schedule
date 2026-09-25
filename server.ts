@@ -12892,7 +12892,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
      noise by checksum, then accept the entered civil when it appears either as
      one token or as digit groups on ONE visual line. No digit is repaired or
      guessed. This restores the official Authority screenshot where Tesseract
-     may emit «3041 0230 1536» instead of «304102301536». */
+     may emit «3000 1010 0122» instead of «300010100122». */
   const proofAscii=asciiDigits(String(ocr.text||""));
   const escapedCivil=civil.split("").map(d=>d.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("[ \t\u00a0\u200e\u200f.-]{0,3}");
   const civilVisible=civilCandidates.includes(civil)||new RegExp(`(?:^|[^0-9])${escapedCivil}(?:[^0-9]|$)`).test(proofAscii);

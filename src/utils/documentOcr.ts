@@ -4991,7 +4991,7 @@ export function graduationSheetFacts(text:string){
   const lines=plain.split(/\r?\n/);
   const lineCivil=lines.map(line=>line.replace(/\D/g,""))
     .filter(value=>value.length===12);
-  /* Tesseract often inserts spaces between digit groups (3041 0230 1536).
+  /* Tesseract often inserts spaces between digit groups (3000 1010 0122).
      Recover a 12-digit run from one visual line even when unrelated text or a
      date also exists elsewhere on that line. The server checksum-filters these
      candidates and still requires the exact civil entered by the student. */
