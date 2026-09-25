@@ -1275,13 +1275,13 @@ async function scopeOverwriteRefusal(
    استيرادُ ملفٍّ ونسخُ فصلٍ تسليمٌ شامل بطبيعته. أما نشرُ مسودةٍ عادية أو
    استرجاعُ نسخةٍ أو التراجعُ عن قرار فيُقاس بما يمحوه فعلاً من الجدول الحيّ،
    بقاعدة الحذف الجماعي نفسها (isWholesaleChange). */
-async function replacementWholesaleRefusal(
+async function replacementAction(
   collegeId: number, sectionId: number, termId: number, nextRows: any[], kind?: "import" | "copy-term",
-): Promise<string | null> {
-  if (kind) return wholesaleRefusal(collegeId, sectionId, termId, { kind });
+): Promise<WholesaleAction> {
+  if (kind) return { kind };
   const live = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
   const loss = replacementLoss(live, nextRows);
-  return wholesaleRefusal(collegeId, sectionId, termId, { kind: "bulk-delete", deleting: loss.deleting, total: loss.total });
+  return { kind: "bulk-delete", deleting: loss.deleting, total: loss.total };
 }
 
 function safeImportEvidence(input:any){
@@ -5167,6 +5167,36 @@ app.post("/api/intelligence/nl-schedule", requirePermission(7), async (req: Auth
  * whole party through one atomic batch. 409 carries the human-readable reason;
  * nothing is written when anything is refused.
  */
+/* ── القاعة الجديدة تُقرأ من اسمها لا من معرّف القديمة ─────────────────────
+   لوحة القاعات تنقل المحاضرة بكتابة المبنى والقاعة الجديدين. والصفّ الموثّق
+   يحمل معرّفَ قاعته القديمة، والمعرّفُ يسبق الاسمَ عند التوثيق — فكانت القاعة
+   القديمة تُكتب من جديد فوق الاسم الجديد، ويقول النقلُ «تم» والمحاضرةُ في
+   مكانها. فمتى تغيّر الاسم ولم يتغيّر المعرّف، يُسقَط المعرّفُ القديم ويُحسم
+   المكان من الاسم كما يُحسم في أي كتابةٍ جديدة. */
+function dropStaleHallIdentity(row: any, fields: any): void {
+  for (const key of ["roomId", "buildingId", "locationStatus"] as const) {
+    row[key] = undefined;
+    fields[key] = undefined;
+  }
+}
+
+/* ── المنقولةُ بعضُها مع بعض، في أماكنها الجديدة ────────────────────────────
+   فحص النقل الجماعي يقرأ كلَّ صفٍّ منقول مقابل الفصل كما هو الآن، ويتجاهل عمداً
+   الصفوفَ المنقولة الأخرى لأن أماكنها القديمة ستُخلى. لكنه بذلك لا يرى أين
+   ستقف هي: صفّان يُنقلان معاً إلى القاعة نفسها في الساعة نفسها كانا يمرّان ثم
+   يُكتبان حجزاً مزدوجاً. فيُقرأ المنقولُ بعضه مع بعض هنا، بالقاعدة الواحدة. */
+async function movedRowsCollisions(movedRows: FSchedule[]): Promise<any[]> {
+  const movedById = new Map<number, FSchedule>(movedRows.map(row => [Number(row.id), row] as const));
+  return blockingConflicts(movedRows, movedRows, await approvalBlockerOptions()).map(item => {
+    const a = movedById.get(Number(item.rowId)), b = movedById.get(Number(item.otherId));
+    return {
+      ...item,
+      message: `${item.message} بين موعدين منقولين معاً`,
+      detail: `${a?.AdCourseName || "مقرر"} (شعبة ${a?.SCode || "—"}) و${b?.AdCourseName || "مقرر"} (شعبة ${b?.SCode || "—"}) في المكان والوقت الجديدين.`,
+    };
+  });
+}
+
 /** The hall text moved but the registry identity it carried did not. */
 function hallTextChangedWithoutIdentity(original: any, fields: any): boolean {
   if (!("AdRoomCode" in fields) && !("AdRoomHall" in fields)) return false;
@@ -5205,18 +5235,7 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     for (const key of ALLOWED) if (move?.fields && key in move.fields) fields[key] = move.fields[key];
     fields.fdetail = legacyFDetail({ ...originals[index], ...fields });
     const row = { ...originals[index], ...fields } as FSchedule;
-    /* ── القاعة الجديدة تُقرأ من اسمها لا من معرّف القديمة ─────────────────
-       لوحة القاعات تنقل المحاضرة بكتابة المبنى والقاعة الجديدين. والصفّ
-       الموثّق يحمل معرّفَ قاعته القديمة، والمعرّفُ يسبق الاسمَ عند التوثيق —
-       فكانت القاعة القديمة تُكتب من جديد فوق الاسم الجديد، ويقول النقلُ «تم»
-       والمحاضرةُ في مكانها. فمتى تغيّر الاسم ولم يتغيّر المعرّف، يُسقَط
-       المعرّفُ القديم ويُحسم المكان من الاسم كما يُحسم في أي كتابةٍ جديدة. */
-    if (hallTextChangedWithoutIdentity(originals[index], fields)) {
-      for (const key of ["roomId", "buildingId", "locationStatus"] as const) {
-        (row as any)[key] = undefined;
-        fields[key] = undefined;
-      }
-    }
+    if (hallTextChangedWithoutIdentity(originals[index], fields)) dropStaleHallIdentity(row, fields);
     return { row, fields };
   });
   const blocked: any[] = [];
@@ -5233,22 +5252,7 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     blocked.push(...conflicts.filter((c: any) =>
       !c.soft && !movedIds.has(Number(c.rowId)) && (strict || isBlockingConflict(c))));
   }
-  /* ── المنقولةُ بعضُها مع بعض، في أماكنها الجديدة ─────────────────────────
-     الفحص أعلاه يقرأ كلَّ صفٍّ منقول مقابل الفصل كما هو الآن، ويتجاهل عمداً
-     الصفوفَ المنقولة الأخرى لأن أماكنها القديمة ستُخلى. لكنه بذلك لا يرى
-     أين ستقف هي: صفّان يُنقلان معاً إلى القاعة نفسها في الساعة نفسها كانا
-     يمرّان ثم يُكتبان حجزاً مزدوجاً. فيُقرأ المنقولُ بعضه مع بعض هنا، بالقاعدة
-     الواحدة نفسها. */
-  const movedRows: FSchedule[] = candidates.map((candidate: { row: FSchedule }) => candidate.row);
-  const movedById = new Map<number, FSchedule>(movedRows.map(row => [Number(row.id), row] as const));
-  for (const item of blockingConflicts(movedRows, movedRows, await approvalBlockerOptions())) {
-    const a = movedById.get(Number(item.rowId)), b = movedById.get(Number(item.otherId));
-    blocked.push({
-      ...item,
-      message: `${item.message} بين موعدين منقولين معاً`,
-      detail: `${a?.AdCourseName || "مقرر"} (شعبة ${a?.SCode || "—"}) و${b?.AdCourseName || "مقرر"} (شعبة ${b?.SCode || "—"}) في المكان والوقت الجديدين.`,
-    });
-  }
+  blocked.push(...await movedRowsCollisions(candidates.map((candidate: { row: FSchedule }) => candidate.row)));
   if (blocked.length) {
     const first = blocked[0];
     res.status(409).json({
@@ -5507,12 +5511,7 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     else if(locationResult.check.canonical)Object.assign(row,locationResult.check.canonical);
   }
   if(!importPreflightIssues.length){
-    /* ── ضد الفصل كله، لا ضد القسم وحده ────────────────────────────────────
-       الاستيراد يضيف ولا يستبدل، فكلُّ موعدٍ قائمٍ في الفصل — في أي قسم —
-       يبقى كما هو ويجب ألا يُحجز فوقه. كان الفحص يقرأ صفوف القسم وحدها،
-       فيمرّ صفٌّ يأخذ قاعةَ قسمٍ آخر أو أستاذَه ثم ترفضه بوابةُ الحفظ صفّاً
-       صفّاً بعد أن كُتب. والصفوف الجديدة بلا معرّفات بعد، فتُمنح معرّفاتٍ
-       سالبة للفحص وحده — وإلا عدّ المحرّكُ كلَّ صفّين منها «الصفَّ نفسه». */
+    /* ضد الفصل كله لا القسم وحده؛ ومعرّفاتٌ سالبة للفحص كي يتعارض الجديد بعضه مع بعض. */
     const termRowsForImport=await Repository.getSchedulesByScope({termId});
     const staged=ready.map((row:any,index:number)=>({...row,id:-(index+1)}));
     const conflicts=blockingConflicts(staged,termRowsForImport,await approvalBlockerOptions());
@@ -10614,7 +10613,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
         code:"schedule-locked",
       });return;
     }
-    const groupDeadline=await replacementWholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows,draftWholesaleKind);
+    const groupDeadline=await wholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,await replacementAction(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows,draftWholesaleKind));
     if(groupDeadline){
       res.status(409).json({
         error:`«${group.scope.siteLabel}» — ${groupDeadline} لم يُنشر أي صف.`,
@@ -10692,7 +10691,7 @@ app.get("/api/intelligence/versions/compare", requirePermission(7), async (req: 
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
 });
 app.post("/api/intelligence/versions/:id/restore", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(!confirmTokens(req).has("restore")){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const restoreOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(restoreOverwrite){res.status(409).json(restoreOverwrite);return;} const restoreDeadline=await replacementWholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); if(restoreDeadline){res.status(409).json({error:restoreDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
+  if(!confirmTokens(req).has("restore")){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const restoreOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(restoreOverwrite){res.status(409).json(restoreOverwrite);return;} const restoreDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(restoreDeadline){res.status(409).json({error:restoreDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
 });
 
 app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -11195,7 +11194,7 @@ app.get("/api/intelligence/safety-net", requirePermission(7), async (req: Authen
 });
 
 app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(!confirmTokens(req).has("decision-undo")){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const undoOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(undoOverwrite){res.status(409).json(undoOverwrite);return;} const undoDeadline=await replacementWholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); if(undoDeadline){res.status(409).json({error:undoDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
+  if(!confirmTokens(req).has("decision-undo")){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const undoOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(undoOverwrite){res.status(409).json(undoOverwrite);return;} const undoDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(undoDeadline){res.status(409).json({error:undoDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
 });
 
 

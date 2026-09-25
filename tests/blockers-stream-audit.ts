@@ -47,7 +47,8 @@ const route = (signature: string) => {
 /* B4 — rows moved together are checked against each other in their NEW places. */
 {
   const move = route('app.post("/api/schedules/move-batch"');
-  check(move.includes("blockingConflicts(movedRows, movedRows, await approvalBlockerOptions())") && move.indexOf("blockingConflicts(movedRows") < move.indexOf("if (blocked.length)"),
+  check(move.includes("blocked.push(...await movedRowsCollisions(") && move.indexOf("movedRowsCollisions(") < move.indexOf("if (blocked.length)")
+    && /async function movedRowsCollisions[\s\S]{0,300}blockingConflicts\(movedRows, movedRows, await approvalBlockerOptions\(\)\)/.test(server),
     "B4 النقل الجماعي يفحص المنقولة بعضها مع بعض قبل الكتابة");
   const at = (id: number, hall: string) => ({ id, AdTermId: 1, AdCollegeId: 1, AdSectionId: 1, AdCourseId: id, SCode: "1", AdInstructorId: id,
     fsunday: true, fstarttime: "10:00", fendtime: "10:50", AdRoomCode: "B", AdRoomHall: hall, roomId: `r-${hall}` });
@@ -141,11 +142,11 @@ await (async () => {
   check(JSON.stringify(replacementLoss(live, live.map(x => ({ ...x, id: x.id + 100 })))) === JSON.stringify({ deleting: 0, total: 4 }), "B10 إعادة كتابة الصفوف نفسها بمعرّفات جديدة ليست حذفاً");
   check(replacementLoss(live, [live[0], { ...live[1], fstarttime: "09:00" }]).deleting === 3, "B10 ما يُمحى أو يتغيّر يُعدّ");
   const publish = route('app.post("/api/intelligence/drafts/:id/publish"');
-  check(publish.includes("replacementWholesaleRefusal(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows,draftWholesaleKind)")
+  check(publish.includes("await replacementAction(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows,draftWholesaleKind)")
     && !publish.includes('{kind:"import"});'), "B10 نشر مسودة عادية لا يُرفض بوصفه استيراداً");
-  check(route('app.post("/api/intelligence/versions/:id/restore"').includes("replacementWholesaleRefusal(") && route('app.post("/api/intelligence/safety-net/:id/undo"').includes("replacementWholesaleRefusal("),
+  check(route('app.post("/api/intelligence/versions/:id/restore"').includes("await replacementAction(") && route('app.post("/api/intelligence/safety-net/:id/undo"').includes("await replacementAction("),
     "B10 والاسترجاع والتراجع يُقاسان بالقاعدة نفسها");
-  check(/kind: "bulk-delete", deleting: loss\.deleting, total: loss\.total/.test(server), "B10 قاعدة الحذف الجماعي موصولة");
+  check(/return \{ kind: "bulk-delete", deleting: loss\.deleting, total: loss\.total \}/.test(server), "B10 قاعدة الحذف الجماعي موصولة");
 }
 
 /* B11 — a registrar note is never closed through the generic comments door. */
