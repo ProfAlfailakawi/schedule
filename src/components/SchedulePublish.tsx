@@ -626,7 +626,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                                       something tries to use them. */}
                                   {missing.length ? (
                                     <p className="share-deliver-missing">
-                                      {missing.length.toLocaleString("ar-KW-u-nu-latn")} أستاذاً بلا رقم جوّال صالح:{" "}
+                                      {countOf(missing.length, AR.instructor)} بلا رقم جوّال صالح:{" "}
                                       {missing.slice(0, 6).map(person => person.AdInstructorName).join(" · ")}
                                       {missing.length > 6 ? " …" : ""}
                                     </p>
