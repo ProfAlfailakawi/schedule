@@ -4138,6 +4138,10 @@ button.twin-delta{width:100%}
 .import-page-review-confirm:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .import-page-reviewed{margin-inline-start:auto;flex:none;display:inline-flex;align-items:center;gap:5px;font-weight:700;color:var(--success)}
 .import-page-reviewed svg{color:var(--success)}
+.import-page-reviewed:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+/* حين لا تظهر معاينة الصفحة، يقف زرّ «راجعت الصفحة» في سطر الانتظار نفسه. */
+.transfer-preflight-wait:has(>.import-page-review-confirm){display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.transfer-preflight-wait>.import-page-review-confirm{margin-inline-start:0}
 @media(max-width:560px){
   .import-page-status:has(>.import-page-review-confirm),.import-page-status:has(>.import-page-reviewed){flex-wrap:wrap}
   .import-page-status:has(>.import-page-review-confirm)>span,.import-page-status:has(>.import-page-reviewed)>span:not(.import-page-reviewed){flex:1 1 0;min-width:0}
