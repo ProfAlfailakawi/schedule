@@ -27,7 +27,11 @@ export type OcrRow={cells:OcrCell[];line:string;y:number};
 export type OcrPageDiagnostic={page:number;visualRows:number;extractedRows:number;gridDetected:boolean;orientation:-1|0|1;suspicious:boolean;reason?:string;warning?:string;
   /** Flagged by the first reading but never given its deep pass, because an
    *  earlier page already stopped the file. Its reason is not a confirmed one. */
-  unverified?:boolean};
+  unverified?:boolean;
+  /** Printed lines that produced no row, within the tolerance that keeps the
+   *  page a warning. They have no row in the preview, so publishing waits for
+   *  the reviewer to confirm the page (importPageReview). */
+  missedLines?:number};
 export type OcrPage={rows:OcrRow[];gridRows?:GridRow[];diagnostic?:OcrPageDiagnostic};
 export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
@@ -1864,7 +1868,7 @@ export function unreadableIdentityRows(rows:GridRow[]):number{
  * بإعادة كتابة الصفحة يدوياً، وقد تحمل يوماً ناقصاً لا يلفت النظر (قيس على
  * الصفحة 2 من جدول 2026: 28 صفاً بلا وقت ولا مبنى، وفي أحدها «3 1» والمطبوع
  * «5 3 1»). فأكثر من نصف الصفوف (وأكثر من صفّين) بلا وقت ولا مبنى يوقف الملف. */
-export type ScanPageVerdict={suspicious:boolean;reason?:string;warning?:string};
+export type ScanPageVerdict={suspicious:boolean;reason?:string;warning?:string;missedLines?:number};
 export function scanPageVerdict({rows,filled,printed,broken,unscheduled=0}:{rows:number;filled:number;printed:number;broken:number;unscheduled?:number}):ScanPageVerdict{
   const thin=rows>=3&&filled<Math.ceil(rows*0.55);
   const missed=Math.max(0,printed-rows);
@@ -1879,7 +1883,8 @@ export function scanPageVerdict({rows,filled,printed,broken,unscheduled=0}:{rows
     broken>0?`${countOf(broken,AR.row)} بلا رقم مقرر واضح أو بلا أيام ووقت، وخاناتها غير الواضحة فارغة للمراجعة`:"",
     missed>0&&!severeMiss?`${lines} ${rows?`وقُرئ منها ${countOf(rows,AR.row)}`:"ولم يُقرأ منها أي صف"} — راجع الصفحة وأضف الناقص يدوياً`:"",
   ].filter(Boolean);
-  return{suspicious:thin||severeMiss||blindSchedule,reason,warning:notes.length?notes.join("؛ "):undefined};
+  return{suspicious:thin||severeMiss||blindSchedule,reason,warning:notes.length?notes.join("؛ "):undefined,
+    missedLines:missed>0&&!severeMiss?missed:undefined};
 }
 /** Rows the reader gave neither a time nor a building: their schedule side was not read. */
 export const unscheduledRowCount=(rows:GridRow[])=>rows.filter(row=>!row.start&&!(row.building||row.buildingRaw)).length;

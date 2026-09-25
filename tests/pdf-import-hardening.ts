@@ -14,6 +14,7 @@ import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMa
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
 import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays } from "../src/utils/documentOcr.ts";
+import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
 const check=(name:string,fn:()=>void)=>{fn();passed.push(name);};
@@ -271,6 +272,27 @@ check("a scanned day cell the Authority could never print is left blank for revi
   const mirrored=["31 5","1 53","2 4 3 1"].map(days=>({days,daysRaw:days})) as any[];
   clearImplausibleScanDays(mirrored);
   assert.deepEqual(mirrored.map(row=>row.days),["5 3 1","5 3 1",""],"only a word-order mirror is repaired, never a digit set");
+});
+check("a page accepted with printed lines that have no row waits for «راجعت الصفحة» before publishing",()=>{
+  /* The last page of file 1 as the server read it: 3 printed, 1 read. */
+  const tail=scanPageVerdict({rows:1,filled:1,printed:3,broken:0});
+  assert.equal(tail.suspicious,false);
+  assert.equal(tail.missedLines,2,"the verdict carries the count, not only a sentence");
+  assert.equal(scanPageVerdict({rows:4,filled:4,printed:28,broken:0}).missedLines,undefined,"a refused page does not ask for review");
+  assert.equal(scanPageVerdict({rows:28,filled:28,printed:28,broken:3}).missedLines,undefined,"unclear rows are visible and block their own row");
+  const pages=[{page:1,missedLines:0},{page:2},{page:5,missedLines:2},{page:3,missedLines:1}];
+  assert.deepEqual(pagesAwaitingReview(pages,[]),[3,5]);
+  assert.deepEqual(pagesAwaitingReview(pages,[5]),[3],"a confirmed page no longer waits");
+  assert.deepEqual(pageReviewIssues(pages,[3]),["الصفحة 5: سطران بلا صف في المعاينة — قارنها بالورقة ثم اضغط «راجعت الصفحة»، وأضف الناقص في الجدول بعد الاستيراد."]);
+  assert.deepEqual(pageReviewIssues(undefined,[]),[],"a file without page diagnostics (Excel, native PDF) waits for nothing");
+  /* The preview edits rows but cannot add one: no sentence may claim the reviewer already added them. */
+  assert.equal(pageReviewWaitLine([3,5]),"بانتظار مراجعة الصفحات 3، 5: قارن أسطرها بالورقة ثم اضغط «راجعت الصفحة». الأسطر الناقصة تُضاف في الجدول بعد الاستيراد.");
+  assert.equal(pageReviewWaitLine([]),"");
+  for(const line of [...pageReviewIssues(pages,[]),pageReviewWaitLine([3])])assert.doesNotMatch(line,/أضفت|أضف الناقص يدوياً ثم/);
+  /* A short page that produced no row at all (2 printed, 0 read) is accepted with its note; it must still get the button. */
+  const empty=scanPageVerdict({rows:0,filled:0,printed:2,broken:0});
+  assert.equal(empty.suspicious,false);
+  assert.equal(empty.missedLines,2);
 });
 check("a page's two notes are said together, not one hiding the other",()=>{
   const both=scanPageVerdict({rows:26,filled:26,printed:28,broken:3});

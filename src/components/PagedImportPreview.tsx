@@ -5,7 +5,7 @@ import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
 import { AR, countOf } from "../utils/arabicCount";
 
 type TableProps = React.ComponentProps<typeof ImportPreviewTable>;
-type PageDiagnostic = { page?: number; extractedRows?: number; visualRows?: number; suspicious?: boolean; reason?: string; warning?: string };
+type PageDiagnostic = { page?: number; extractedRows?: number; visualRows?: number; suspicious?: boolean; reason?: string; warning?: string; missedLines?: number };
 type PageSummary = { page?: number; rows?: number; ready?: number; review?: number; suspicious?: boolean; diagnostic?: PageDiagnostic };
 
 /**
@@ -23,11 +23,16 @@ export default function PagedImportPreview({
   pageCount = 0,
   pageDiagnostics = [],
   pageSummaries = [],
+  reviewedPages = [],
+  onReviewPage,
   ...tableProps
 }: TableProps & {
   pageCount?: number;
   pageDiagnostics?: PageDiagnostic[];
   pageSummaries?: PageSummary[];
+  /** Pages whose missing printed lines the reviewer has confirmed (importPageReview). */
+  reviewedPages?: number[];
+  onReviewPage?: (page: number) => void;
 }) {
   const rowPage = (row: ImportRow) => {
     const page = Number(row.sourcePage || 1);
@@ -45,8 +50,12 @@ export default function PagedImportPreview({
      were emptied stay visible (they fall under maxRowPage) so a gap between two
      populated pages is never hidden; only trailing emptied pages fall away.
      Using pageCount here kept a deleted last page on screen as a permanent
-     "empty" tab that looked like an unresolved problem. */
-  const totalPages = Math.max(1, maxRowPage);
+     "empty" tab that looked like an unresolved problem.
+     The one exception is a page that still owes printed lines (missedLines):
+     a short last page read with no row at all has no row to keep its tab, yet
+     publishing waits for the «راجعت الصفحة» button that lives on that tab. */
+  const owedPage = pageDiagnostics.reduce((max, item) => Number(item?.missedLines) > 0 ? Math.max(max, Math.floor(Number(item?.page) || 0)) : max, 0);
+  const totalPages = Math.max(1, maxRowPage, owedPage);
   const [activePage, setActivePage] = useState(1);
 
   useEffect(() => {
@@ -209,6 +218,22 @@ export default function PagedImportPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, activePeople]);
 
+  /* صفحةٌ قُبلت وفيها أسطر مطبوعة بلا صف: الصفوف الناقصة لا تظهر في الجدول أصلاً،
+     والمعاينة تعدّل الصفوف ولا تضيفها. فيُطلب تأكيدٌ صريح أن الصفحة قورنت بالورقة،
+     والحفظ والنشر ينتظرانه، وتُضاف الأسطر الناقصة في الجدول بعد الاستيراد
+     (importPageReview). */
+  const awaitingReview = (diagnostic?: PageDiagnostic) => {
+    const page = Number(diagnostic?.page || 0);
+    return Boolean(onReviewPage && page && Number(diagnostic?.missedLines) > 0 && !reviewedPages.includes(page));
+  };
+  const reviewControl = (diagnostic?: PageDiagnostic) => {
+    const page = Number(diagnostic?.page || 0);
+    if (!onReviewPage || !page || !(Number(diagnostic?.missedLines) > 0)) return null;
+    return reviewedPages.includes(page)
+      ? <span className="import-page-reviewed"><CheckCircle2 aria-hidden="true" />رُوجعت الصفحة · أضف الناقص بعد الاستيراد</span>
+      : <button type="button" className="import-page-review-confirm" title="أؤكد أني قارنت هذه الصفحة بالورقة، وسأضيف أسطرها الناقصة في الجدول بعد الاستيراد" data-guide-ignore="تأكيد مراجعة صفحة ناقصة في المعاينة فقط؛ لا يحفظ ولا ينشر" onClick={() => onReviewPage(page)}>راجعت الصفحة</button>;
+  };
+
   const mergePageRows = (nextPageRows: ImportRow[]) => {
     const stamped = nextPageRows.map(row => ({ ...row, sourcePage: activePage }));
     const others = rows.filter(row => rowPage(row) !== activePage);
@@ -233,10 +258,11 @@ export default function PagedImportPreview({
 
   if (totalPages <= 1) {
     /* ملفٌّ بصفحة واحدة لا شريطَ صفحاتٍ له، فتنبيهُ قراءتها (سطرٌ مطبوع لم يُقرأ) يُقال فوق جدولها. */
-    const warning = String(pageDiagnostics.find(item => item?.warning)?.warning || "");
+    const warned = pageDiagnostics.find(item => item?.warning);
+    const warning = String(warned?.warning || "");
     return (
       <>
-        {warning ? <div className="import-page-status" role="alert"><AlertTriangle /><span>{warning}.</span></div> : null}
+        {warning ? <div className="import-page-status" role="alert" data-import-issue={awaitingReview(warned) ? "true" : undefined}><AlertTriangle /><span>{warning}.</span>{reviewControl(warned)}</div> : null}
         <ImportPreviewTable rows={rows} onRows={onRows} {...displayProps} />
       </>
     );
@@ -270,6 +296,7 @@ export default function PagedImportPreview({
               role="tab"
               aria-selected={active}
               data-guide-ignore="تنقّل داخلي بين صفحات معاينة PDF فقط ولا ينفذ إجراءً على الجدول أو البيانات"
+              data-import-issue={awaitingReview(diagnostic) ? "true" : undefined}
               className={`${active ? "active" : ""} ${suspicious ? "review" : empty ? "empty" : "ready"}`.trim()}
               onClick={() => setActivePage(page)}
             >
@@ -288,9 +315,11 @@ export default function PagedImportPreview({
           const liveReview = currentRows.filter(rowNeedsReview).length;
           const review = currentRows.length ? liveReview : Number(summary?.review ?? 0);
           const suspicious = Boolean(summary?.suspicious || diagnostic?.suspicious || review > 0);
-          if (!currentRows.length) return <><AlertTriangle /><span>لم تُستخرج صفوف من هذه الصفحة. راجع جودة الصفحة قبل النشر.</span></>;
+          /* صفحةٌ لم يُقرأ منها صف وأسطرها المطبوعة قليلة تُقبل بتنبيهها؛ فزرّ مراجعتها
+             يظهر هنا أيضاً، وإلا بقي النشر ينتظر زراً لا يُرى. */
+          if (!currentRows.length) return <><AlertTriangle /><span>{diagnostic?.warning ? `${String(diagnostic.warning)}.` : "لم تُستخرج صفوف من هذه الصفحة. راجع جودة الصفحة قبل النشر."}</span>{reviewControl(diagnostic)}</>;
           /* تنبيهُ القراءة (سطرٌ مطبوع لم يُقرأ) يُقال على صفحته ولو اكتملت صفوفها المقروءة. */
-          if (diagnostic?.warning) return <><AlertTriangle /><span>{String(diagnostic.warning)}{review ? ` · ${countOf(review, AR.row)} بحاجة إلى مراجعة` : ""}.</span></>;
+          if (diagnostic?.warning) return <><AlertTriangle /><span>{String(diagnostic.warning)}{review ? ` · ${countOf(review, AR.row)} بحاجة إلى مراجعة` : ""}.</span>{reviewControl(diagnostic)}</>;
           if (suspicious) return <><AlertTriangle /><span>هذه الصفحة تحتاج مراجعة: {review ? countOf(review, AR.row) : String(diagnostic?.reason || "بعض الخلايا لم تُحسم بعد")}.</span></>;
           return <><CheckCircle2 /><span>تمت قراءة الصفحة {activePage.toLocaleString("ar-KW-u-nu-latn")} بنجاح · {countOf(currentRows.length, AR.row)}.</span></>;
         })()}
@@ -299,7 +328,9 @@ export default function PagedImportPreview({
       {currentRows.length ? (
         <ImportPreviewTable rows={currentRows} onRows={mergePageRows} {...displayProps} />
       ) : (
-        <div className="import-page-empty"><FileText /><strong>لا توجد صفوف في هذه الصفحة</strong><small>لن تُضاف أي بيانات منها ما لم تكن الصفحة تحتوي جدولًا فعليًا.</small></div>
+        Number(diagnosticByPage.get(activePage)?.missedLines) > 0
+          ? <div className="import-page-empty"><FileText /><strong>لم يُقرأ صف من هذه الصفحة</strong><small>ما طُبع فيها ولم يُقرأ يُضاف في الجدول بعد الاستيراد.</small></div>
+          : <div className="import-page-empty"><FileText /><strong>لا توجد صفوف في هذه الصفحة</strong><small>لن تُضاف أي بيانات منها ما لم تكن الصفحة تحتوي جدولًا فعليًا.</small></div>
       )}
     </section>
   );
