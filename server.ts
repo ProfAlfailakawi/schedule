@@ -46,6 +46,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
+import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, rowFromRequest, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -12589,18 +12590,9 @@ const openStudentIdentity=async(value?:string)=>{
   }
 };
 
-type DegreeRule={degreeUnits:number;fieldTrainingRequired:number;graduateRegularPassed:number;graduateSummerPassed:number};
-/** Internal regulation table. It is never sent with the public survey; only
- * the eligibility verdict and the applied threshold are returned after proof. */
-const degreeRuleFromName=(sectionName:string):DegreeRule=>{
-  const name=String(sectionName||"");
-  const degreeUnits=/فرنسي/.test(name)?132:/انجليزي|إنجليزي|تربية خاصة|تفوق|إعاقة|صعوبات/.test(name)?134:130;
-  return degreeUnits===130
-    ?{degreeUnits,fieldTrainingRequired:102,graduateRegularPassed:107,graduateSummerPassed:109}
-    :degreeUnits===132
-      ?{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:109,graduateSummerPassed:111}
-      :{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:111,graduateSummerPassed:113};
-};
+/** The name-derived SUGGESTION lives once, in src/utils/degreeRules.ts. It is
+ * never a rule a student is measured against until the department saves it. */
+const degreeRuleFromName=suggestedDegreeRule;
 
 /**
  * The rule a department is actually judged by.
@@ -12616,7 +12608,7 @@ const degreeRuleFromName=(sectionName:string):DegreeRule=>{
  */
 const degreeRuleForSection=async(sectionId:number,sectionName:string):Promise<DegreeRule&{reviewed:boolean}>=>{
   const stored=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===Number(sectionId));
-  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:true};
+  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:false};
   return{
     degreeUnits:Number(stored.degreeUnits),
     fieldTrainingRequired:Number(stored.fieldTrainingRequired),
@@ -12740,11 +12732,12 @@ app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res
   const byId=new Map(stored.map(row=>[Number(row.AdSectionId),row]));
   res.json(sections.map((section:any)=>{
     const saved=byId.get(Number(section.AdSectionId));
-    // Defaults are stable system values. A department may edit them explicitly,
-    // but no confirmation banner or approval gate is required merely to use them.
+    /* An unsaved row is a SUGGESTION from the department name, and says so.
+       Marking it reviewed made the screen present it as the current rule while
+       graduate proof (which requires a saved rule) refused every student. */
     const fixed=degreeRuleFromName(String(section.AdSectionName||""));
     const rule=saved||{...fixed,AdSectionId:section.AdSectionId,updatedAt:"",updatedBy:""};
-    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:true,suggested:false};
+    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:Boolean(saved),suggested:!saved};
   }));
 });
 
@@ -12771,6 +12764,9 @@ app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: Authen
     AdSectionId:sectionId,degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed,
     updatedAt:new Date().toISOString(),updatedBy:String(req.user?.Name||""),
   });
+  /* The public survey tells each department whether graduate proof is open;
+     a just-saved rule must not wait out the payload cache. */
+  surveyPayloadCache.clear();
   res.json(saved);
 });
 
@@ -12800,14 +12796,19 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
      from its own history, newest first. A catalogue entry nobody has taught in
      a decade is not something to ask a student about. */
   const scientificSections=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  const linkTermName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const sectionOptions=(await Promise.all(scientificSections.map(async(section:any)=>{
     const sid=Number(section.AdSectionId),{taught}=surveyCourseIdsForSection(courses,history,sid);
+    /* Graduate proof needs the department's SAVED rule. The page learns it
+       here, before the student uploads anything, instead of after OCR. */
+    const savedRule=await storedDegreeRuleForSection(sid);
+    const graduateRule=savedRule?{saved:true,threshold:graduateThreshold(savedRule,linkTermName)}:{saved:false};
     const overview=await curriculumOverview(sid);
     const operational=new Set((overview?.operationalCourseIds||[]).map(Number));
     const offered=courses.filter((course:any)=>Number(course.AdSectionId)===sid&&operational.has(Number(course.AdCourseId)))
       .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
       .sort((a:any,b:any)=>b.lastTaught-a.lastTaught||String(a.code).localeCompare(String(b.code),"ar"));
-    return{id:section.AdSectionId,name:section.AdSectionName,courses:offered};
+    return{id:section.AdSectionId,name:section.AdSectionName,courses:offered,graduateRule};
   }))).sort((a:any,b:any)=>String(a.name).localeCompare(String(b.name),"ar"));
   const offered=sectionOptions.find((section:any)=>Number(section.id)===Number(resolved.link.AdSectionId))?.courses||[];
 
@@ -12879,6 +12880,11 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   if(!validateCivilId(civil).isValid||name.length<3){res.status(400).json({error:"أكمل الاسم والرقم المدني الصحيح أولاً"});return;}
   const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
   if(!section){res.status(400).json({error:"القسم العلمي غير صالح"});return;}
+  /* The saved academic rule is a precondition, checked BEFORE the expensive
+     OCR: without it no sheet can be judged, so reading one only burned the
+     student's upload and the server's memory to say «no rule» afterwards. */
+  const rule=await storedDegreeRuleForSection(sectionId);
+  if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم.",code:"no-degree-rule"});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!bytes.length){res.status(400).json({error:"ارفع صحيفة التخرج PDF أو صورة واضحة"});return;}
   const mime=String(req.get("x-file-type")||"application/pdf").slice(0,80);
   let ocr;
@@ -12914,8 +12920,6 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   if(!specializationMatched){
     res.status(422).json({error:`التخصص الظاهر في صحيفة التخرج لا يطابق القسم المحدد «${String(section.AdSectionName||"")}». اختر قسمك الصحيح وارفع صحيفتك أنت.`});return;
   }
-  const rule=await storedDegreeRuleForSection(sectionId);
-  if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم."});return;}
   /* Required graduation units come from the selected department's reviewed
      academic rule. OCR only has to prove the student's PASSED units. The
      Authority screenshot lays its values in a visual row, so sparse OCR can
@@ -14602,7 +14606,7 @@ function compactProof(file){return new Promise(function(resolve){var type=String
 function formatBytes(n){if(!n)return"0 KB";if(n<1048576)return Math.max(1,Math.round(n/1024))+" KB";return(n/1048576).toFixed(1)+" MB"}
 function showProofUpload(message){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus");if(upload)upload.hidden=false;if(example)example.hidden=false;if(title)title.textContent="ارفع صحيفة التخرج";if(lead)lead.textContent="PDF أو صورة واضحة للصفحة الرسمية «الخطة الدراسية / صحيفة التخرج». يجب أن يظهر الرقم المدني والبرنامج والوحدات المجتازة بوضوح. الاسم يساعد في العرض ولا يشترط تطابقه حرفياً. أي مستند آخر لن يُقبل.";if(status){status.className="proof-status";status.textContent=message||"لم يتم التحقق بعد."}proofEligible=false;proofToken="";refreshGraduateSubmit()}
 function acceptVerifiedProof(d,reused){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus"),options=document.getElementById("graduateOptions");proofEligible=!!d.eligible;proofToken=d.proofToken||"";if(upload)upload.hidden=true;if(example)example.hidden=true;if(title)title.textContent=reused?"تم التحقق مسبقًا":"تم التحقق من صحيفة التخرج";if(lead)lead.textContent=reused?"لا حاجة لرفع الصحيفة مرة أخرى لهذا الفصل والقسم.":"تم اعتماد بيانات الصحيفة لهذه الجلسة.";if(status){status.className="proof-status "+(reused?"reused":"ok");status.textContent=d.message||"تم التحقق، ويمكنك متابعة الطلب."}if(options){options.hidden=false;wireGraduateDetails()}refreshGraduateSubmit()}
-function checkPriorGraduateProof(){if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
+function checkPriorGraduateProof(){var rule=section().graduateRule;if(rule&&rule.saved===false){var up=document.getElementById("proofUpload"),ex=document.getElementById("proofExample"),st=document.getElementById("proofStatus");if(up)up.hidden=true;if(ex)ex.hidden=true;if(st){st.className="proof-status bad";st.textContent="لم يعتمد قسمك العلمي قواعد التخرج في النظام بعد، فلا يمكن التحقق من صحيفة التخرج الآن. راجع القسم، ويمكنك اختيار نوع طلب آخر."}proofEligible=false;proofToken="";refreshGraduateSubmit();return}if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
 function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
 function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}rememberIdentity();identityLocked=true;host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
 fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();

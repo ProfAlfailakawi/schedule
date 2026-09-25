@@ -8,7 +8,7 @@
 | S4 | TODO | |
 | S5 | TODO | |
 | S6 | FIXED — my-case uses toEnglishDigits + validateCivilId(...).isValid; server asciiDigits is now an alias of the shared toEnglishDigits; survey page digits() accepts ۰-۹; student-case-status audit no longer encodes the object test | tests/student-journey-audit.ts §S6 (incl. repo-wide `!validateCivilId(x)` guard, executes the page's digits()) |
-| S7 | TODO | |
+| S7 | FIXED — GET /api/degree-rules reviewed=Boolean(saved), suggested=!saved; degreeRuleForSection reviewed:false for unsaved; name-derived guess now only in src/utils/degreeRules.ts (server + Sections.tsx import it); Sections shows «اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين» + «احفظ الاقتراح»; survey GET sends per-dept graduateRule {saved, threshold}; page blocks upload for a dept without saved rule; proof checks saved rule BEFORE OCR (code no-degree-rule); rule PUT clears survey payload cache | tests/student-journey-audit.ts §S7 |
 | S8 | TODO | |
 | S9 | TODO | |
 | S10 | TODO | |

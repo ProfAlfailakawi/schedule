@@ -10,6 +10,7 @@ import path from "path";
 import { execSync } from "child_process";
 import os from "os";
 import { validateCivilId } from "../src/utils/civilId";
+import { suggestedDegreeRule } from "../src/utils/degreeRules";
 import { applyStudentCaseDecision, isCaseLevelNeed, studentCaseRefusal, studentCaseStatus } from "../src/utils/studentCaseDecision";
 
 /* مخزنٌ محليٌّ معزول لكل تشغيل: لا يلمس بيانات أحد. */
@@ -41,6 +42,8 @@ const between = (source: string, start: string, end: string) => {
   const to = source.indexOf(end, from + start.length);
   return source.slice(from, to < 0 ? undefined : to);
 };
+
+const surveyPageSource = between(server, "function studentCaseSurveyPage", "</script></body></html>`;");
 
 /* ── S1 الخصوصية: لا بيانات طالبٍ حقيقي في المستودع ─────────────────────── */
 {
@@ -131,12 +134,40 @@ const between = (source: string, start: string, end: string) => {
   const objectTests = [...server.matchAll(/!\s*validateCivilId\([^()]*\)(?!\.isValid)/g)].map(match => match[0]);
   check(objectTests.length === 0, `S6 لا اختبار لكائن التحقق بدل .isValid في الخادم${objectTests.length ? " — " + objectTests.join(" | ") : ""}`);
   check(server.includes("const asciiDigits = toEnglishDigits;"), "S6 asciiDigits هو المحوّل المشترك لا نسخةٌ ثانية منه");
-  const surveyPage = between(server, "function studentCaseSurveyPage", "\n}\n");
+  const surveyPage = surveyPageSource;
   const digitsSource = (surveyPage.match(/function digits\(v\)\{[^\n]*?\}function section/) || [""])[0].replace(/function section$/, "");
   let pageDigits: ((v: string) => string) | null = null;
   try { pageDigits = new Function(`${digitsSource.replace(/\\\\/g, "\\")};return digits;`)(); } catch { pageDigits = null; }
   check(Boolean(pageDigits) && pageDigits!("٣٠٠٠١٠١٠٠١٢٢") === "300010100122" && pageDigits!("۳۰۰۰۱۰۱۰۰۱۲۲") === "300010100122",
     "S6 صفحة الاستبيان تقبل ٠-٩ و۰-۹");
+}
+
+/* ── S7 قواعد التخرج: الاقتراح لا يُعرض قاعدةً، والتحقق يسأل عنها قبل القراءة ── */
+{
+  const rulesRoute = between(server, 'app.get("/api/degree-rules"', 'app.put("/api/degree-rules/:sectionId"');
+  check(rulesRoute.includes("reviewed:Boolean(saved)") && rulesRoute.includes("suggested:!saved"), "S7 الاقتراح غير المحفوظ لا يُعلَّم reviewed");
+  check(!/reviewed:true/.test(rulesRoute), "S7 لا reviewed:true ثابتة في مسار القواعد");
+  check(between(server, "const degreeRuleForSection=", "const storedDegreeRuleForSection=").includes("reviewed:false"),
+    "S7 degreeRuleForSection لا تدّعي المراجعة لقاعدةٍ غير محفوظة");
+  const sections = read("src/components/Sections.tsx");
+  check(sections.includes("اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين") && sections.includes("rule.suggested"),
+    "S7 شاشة الأقسام تقول إن القيمة اقتراحٌ غير محفوظ");
+  const guessPattern = /\/فرنسي\/\.test\(/;
+  const copies = ["server.ts", "src/components/Sections.tsx", "src/utils/degreeRules.ts"].filter(file => guessPattern.test(read(file)));
+  check(copies.length === 1 && copies[0] === "src/utils/degreeRules.ts", `S7 تخمين القاعدة من اسم القسم في مكانٍ واحد (${copies.join(", ")})`);
+  check(server.includes("const degreeRuleFromName=suggestedDegreeRule;") && sections.includes("suggestedDegreeRule("), "S7 الخادم والشاشة يقرآن التخمين نفسه");
+  check(suggestedDegreeRule("اللغة الفرنسية").degreeUnits === 132 && suggestedDegreeRule("تربية خاصة").degreeUnits === 134
+    && suggestedDegreeRule("قسم آخر").degreeUnits === 130, "S7 الاقتراح نفسه قيمةً");
+  const proof = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
+  const ruleAt = proof.indexOf("storedDegreeRuleForSection(sectionId)"), ocrAt = proof.indexOf("ocrGraduationSheetDocument(");
+  check(ruleAt > 0 && ocrAt > ruleAt, "S7 التحقق يسأل عن القاعدة المحفوظة قبل قراءة الصحيفة");
+  check((proof.match(/storedDegreeRuleForSection\(/g) || []).length === 1, "S7 والسؤال مرّة واحدة في مسار التحقق");
+  const surveyGet = between(server, 'app.get("/api/public/survey/:token"', 'app.post("/api/public/survey/:token/identity-status"');
+  check(surveyGet.includes("graduateRule") && surveyGet.includes("storedDegreeRuleForSection(sid)") && surveyGet.includes("threshold:graduateThreshold("),
+    "S7 الاستبيان يخبر الصفحة لكل قسم إن كانت له قاعدةٌ محفوظة وحدّها");
+  check(surveyPageSource.includes("rule.saved===false"), "S7 الصفحة لا تطلب الرفع لقسمٍ بلا قاعدة محفوظة");
+  check(between(server, 'app.put("/api/degree-rules/:sectionId"', "const surveyPayloadCache").includes("surveyPayloadCache.clear()"),
+    "S7 حفظ القاعدة يُسقط نسخة الاستبيان المؤقتة");
 }
 
 export function finish() {
