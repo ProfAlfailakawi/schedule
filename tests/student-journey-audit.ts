@@ -359,6 +359,24 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(sheet.includes('"نوع الطلب"') && sheet.includes('"ملاحظات الطالب"'), "S16 والتصدير يحملها");
 }
 
+/* ── S17 لا بيانات طالب في المتصفح، ولا جدول قسم برابط الطلبة ─────────────── */
+{
+  check(!surveyPageSource.includes("localStorage") && !between(server, "function studentCaseStatusPage", 'app.get("/m/:token"').includes("localStorage"),
+    "S17 صفحتا الطالب لا تحفظان الرقم المدني ولا الاسم في المتصفح");
+  const sw = read("public/sw.js");
+  const swHead = sw.slice(0, sw.indexOf("const isHashedAsset="));
+  const isCacheableApi = new Function(`${swHead};return isCacheableApi;`)() as (path: string) => boolean;
+  check(!isCacheableApi("/api/schedules/demand") && !isCacheableApi("/api/schedules/demand?sectionId=1") && !isCacheableApi("/api/student-registration"),
+    "S17 عامل الخدمة لا يخزّن طلبات الطلبة");
+  check(isCacheableApi("/api/schedules") && isCacheableApi("/api/terms"), "S17 وطبقة السرعة للبيانات الأخرى باقية");
+  const schedule = between(server, 'app.get("/api/public/schedule/:token"', "const TERM_WEEKS");
+  check(schedule.includes('resolved.link.kind === "survey"'), "S17 رابط الاستبيان لا يعيد جدول القسم");
+  const ics = between(server, 'app.get("/api/public/ics/:token"', 'app.get("/api/public/ics/:token/:key"');
+  check(ics.includes('resolved.link.kind === "survey"'), "S17 ولا تقويمه");
+  const share = between(server, 'app.get("/s/:token"', "buildSharePayload(resolved.link)");
+  check(/kind === "survey"\)\s*\{\s*res\.redirect\(302, `\/q\//.test(share), "S17 و/s/ لرابط الاستبيان يحوّل إلى الاستبيان");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

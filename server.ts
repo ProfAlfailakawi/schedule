@@ -12302,6 +12302,9 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   // A staff link is a door to one card, never to the department's whole feed.
   if (resolved.link.kind === "staff") { res.status(404).json({ error: "هذا الرابط بطاقة أستاذ" }); return; }
+  /* A student survey link opens the survey and the student's status — never
+     the department's timetable. */
+  if (resolved.link.kind === "survey") { res.status(404).json({ error: "هذا الرابط استبيان للطلبة" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.json(await buildSharePayload(resolved.link));
@@ -12361,7 +12364,7 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
-  if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+  if (resolved.link.kind === "staff" || resolved.link.kind === "survey") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   /* A lecture cancelled on one specific date disappears from that one date in
@@ -14714,7 +14717,7 @@ function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
 function civilValid(v){v=String(v||"");if(!/^\\d{12}$/.test(v))return false;var w=[2,1,6,3,7,9,10,5,8,4,2],sum=0;for(var i=0;i<11;i++)sum+=Number(v[i])*w[i];return 11-(sum%11)===Number(v[11])}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
 /* Nothing about the student is kept in the browser: the civil ID and name used
-   to be written to localStorage on every shared or lab computer. */
+   to be written to the browser's persistent storage on every shared or lab computer. */
 function resetIdentity(){identityLocked=false;identityChecked=false;needsCaseRef=false;caseRef="";priorSummary=null;priorInitial="";student={name:"",civil:"",sectionId:0};identity()}
 var TYPE_LABEL={"new-course":"طلب فتح مقرر","course-conflict":"تعارض مقررين","graduate":"خريج / متوقع تخرجه"};
 var STATE_LABEL={"awaiting-registration":"وافقت اللجنة · بانتظار التسجيل","committee-rejected":"لم توافق اللجنة","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
@@ -16667,6 +16670,11 @@ app.get("/s/:token", async (req: Request, res: Response) => {
    * والتحويلُ لا المنعُ: الرمزُ رمزُ صاحبه، وإنما أُخطئ في بابه. */
   if (resolved.link.kind === "request") {
     res.redirect(302, `/r/${encodeURIComponent(resolved.link.id)}`);
+    return;
+  }
+  /* والاستبيانُ كذلك: رابطُ الطلبة يفتح الاستبيان وحالةَ الطلب، لا جدولَ القسم. */
+  if (resolved.link.kind === "survey") {
+    res.redirect(302, `/q/${encodeURIComponent(resolved.link.id)}`);
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
