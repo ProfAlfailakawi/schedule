@@ -10,7 +10,7 @@ import fs from "fs";
 import path from "path";
 import {
   acknowledgeAdditions, amendmentStillOpen, appendApprovalEvent, APPROVAL_EVENT_CAP, approvalLockReason,
-  canHeadReturn, canRequestExtension, canReturn, canSubmit, canWithdraw, countAnsweredRegistrarNotes,
+  awaitsHeadSignature, canHeadReturn, canRequestExtension, canReturn, canSubmit, canWithdraw, countAnsweredRegistrarNotes,
   countOpenRegistrarNotes, deadlineEndsAt, deadlinePassed, emptyApproval, extensionRefusal, insistOutcome,
   isSwapEdit, kuwaitDateISO, mergePendingAdditions, openRound, PENDING_ADDITIONS_CAP, pendingAdditionTotal,
   readDeadline, readViewExpectation, roundBaselineVersionId, roundEndVersionId, STALE_VIEW_MESSAGE,
@@ -128,6 +128,23 @@ const noDeadline = readDeadline({}, "2026-10-01");
   check(server.includes('res.status(409).json({ error: refusal, code: "stale-view" })'), "R6 الرفضُ ٤٠٩ برسالةٍ واحدة");
   check(bar.includes("expectedRound: state.approval.currentRound") && changes.includes("expectedRound: report.approval.currentRound"),
     "R6 الشريطُ وشاشةُ القرار يرسلان ما رأيا");
+}
+
+/* ── مراجعة 11: جدولٌ أرجعه التسجيل ووقّعته اللجنة ينتظر رئيس القسم ────── */
+{
+  const reSigned = approvalWith({ status: "returned", currentRound: 1, signatures: [sig("committee")] });
+  const statusKept = statusAfterSignatureChange(reSigned);
+  check(statusKept === "returned", "R11-review توقيعُ اللجنة بعد إرجاع التسجيل يُبقي «أُرجع» (الحالة التي كانت تُفلت)");
+  check(awaitsHeadSignature(reSigned) && awaitsHeadSignature(approvalWith({ status: "committee", signatures: [sig("committee")] })),
+    "R11-review ينتظر رئيسَ القسم: «لجنة»، و«أُرجع» بتوقيع اللجنة وحده");
+  check(!awaitsHeadSignature(approvalWith({ status: "returned", signatures: [sig("committee"), sig("head")] }))
+    && !awaitsHeadSignature(approvalWith({ status: "returned", signatures: [] })) && !awaitsHeadSignature(approvalWith({ status: "drafting" })),
+    "R11-review ولا ينتظره ما وقّعه أو ما لم توقّعه اللجنة");
+  check(canHeadReturn(reSigned, "راجعوا القاعات").ok === true, "R11-review رئيسُ القسم يُرجعه للجنة");
+  check(canHeadReturn(approvalWith({ status: "returned", signatures: [sig("committee"), sig("head")] }), "سبب").ok === false, "R11-review لا إرجاعَ بعد اعتماده");
+  check(between(server, "async function approvalBadgeForTerm(", "\n}\n").includes('stage === "head" && awaitsHeadSignature(approval)'), "R11-review وعدّادُه يعدّه");
+  check(read("src/components/ApprovalBar.tsx").includes('signatureStage === "head" && awaitsHeadSignature(approval) && !locked'), "R11-review وشريطُه يعرض زرّ الإرجاع");
+  check(!/approval\.status !== "committee"/.test(read("src/utils/approvalWorkflow.ts").slice(read("src/utils/approvalWorkflow.ts").indexOf("export function canHeadReturn"))), "R11-review canHeadReturn بالقاعدة الواحدة");
 }
 
 /* ── R7: حفظٌ بمراجعة ─────────────────────────────────────────────────────── */

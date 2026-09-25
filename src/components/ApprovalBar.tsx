@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Clock3, CornerUpLeft, History, MessageSquareText, Send, ShieldCheck } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
-  APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, blockingConflictPhrase, deadlinePassed, pendingAdditionTotal,
+  APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, awaitsHeadSignature, blockingConflictPhrase, deadlinePassed, pendingAdditionTotal,
 } from "../utils/approvalWorkflow";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
@@ -250,7 +250,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   /* من لا يوقّع ولا ينتظره شيء لا يُعرض عليه الشريط أصلاً. */
   if (!signatureStage && !locked && status !== "accepted" && status !== "returned") return null;
-  const canHeadReturnNow = signatureStage === "head" && status === "committee" && !locked;
+  const canHeadReturnNow = signatureStage === "head" && awaitsHeadSignature(approval) && !locked;
 
   return (
     <div className="approval-bar" data-tone={tone}>

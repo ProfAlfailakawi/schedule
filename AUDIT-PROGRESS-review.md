@@ -12,3 +12,4 @@
 | 8 | FIXED (decision: department + personal staff links and request links read to term end; writes close at requestsCloseAt/window.closesAt) | tests/doctor-journey-audit.ts «R8-review» |
 | 9 | FIXED | tests/dean-notify-audit.ts «R9» |
 | 10 | FIXED | tests/doctor-journey-audit.ts «R10-review» (requestsCloseAtFromDate = deadlineEndsAt; issue route + SchedulePublish use it) |
+| 11 | FIXED | tests/relay-fixes-audit.ts «R11-review» (awaitsHeadSignature used by canHeadReturn, badge, ApprovalBar) |

@@ -41,7 +41,7 @@ import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
   type DeadlineState, type WholesaleAction,
-  acknowledgeAdditions, appendApprovalEvent, approvalLockReason, canHeadReturn, canRequestExtension, canReturn, canWithdraw,
+  acknowledgeAdditions, appendApprovalEvent, approvalLockReason, awaitsHeadSignature, canHeadReturn, canRequestExtension, canReturn, canWithdraw,
   CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, isOpenRegistrarNote, extensionRefusal, insistOutcome,
   isSwapEdit, kuwaitDateISO, mergePendingAdditions, openRound, pendingAdditionTotal, readViewExpectation,
   roundBaselineVersionId, roundEndVersionId, staleViewRefusal, statusAfterSignatureChange, suggestedExtensionDate,
@@ -10573,7 +10573,7 @@ async function approvalBadgeForTerm(req: AuthenticatedRequest, termId: number): 
          كُتبت والجدول قيد الإعداد أو بعد اعتماده ملاحظةٌ تنتظر ردّاً أيضاً. */
     let open = 0;
     for (const approval of approvals) {
-      if (stage === "head" && approval.status === "committee") open += 1;
+      if (stage === "head" && awaitsHeadSignature(approval)) open += 1;
       open += pendingAdditionTotal(approval);
       /* والجدولُ عند التسجيل ملاحظاتُه مراجعةٌ جارية لا يملك القسم فيها فعلاً. */
       if (approval.status === "submitted") continue;

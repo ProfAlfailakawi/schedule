@@ -66,6 +66,18 @@ export function signatureOf(approval: ScheduleApproval, stage: "committee" | "he
   return approval.signatures.find(item => item.stage === stage);
 }
 
+/**
+ * ── ينتظر توقيعَ رئيس القسم؟ (مراجعة 11) ──────────────────────────────────
+ * «committee» هي الحالة المعتادة. لكن جدولاً أرجعه التسجيل يبقى «أُرجع» بعد
+ * أن تعيد اللجنة توقيعها (statusAfterSignatureChange يحفظ الإرجاع)، فكان
+ * رئيسُ القسم لا يستطيع إرجاعه للجنة، ولا يعدّه عدّادُه وهو ينتظر توقيعه.
+ * القاعدة هنا وحدها: الإرجاعُ للجنة، وعدّادُ رئيس القسم، وشريطُه.
+ */
+export function awaitsHeadSignature(approval: ScheduleApproval): boolean {
+  if (approval.status === "committee") return true;
+  return approval.status === "returned" && Boolean(signatureOf(approval, "committee")) && !signatureOf(approval, "head");
+}
+
 /** التوقيعان معاً: هما شرط الإرسال الأول، وهما ما يُبطله الإرجاع. */
 export function isFullySigned(approval: ScheduleApproval): boolean {
   return Boolean(signatureOf(approval, "committee") && signatureOf(approval, "head"));
@@ -648,7 +660,7 @@ export function canReturn(approval: ScheduleApproval, openRegistrarNotes: number
 export type HeadReturnVerdict = { ok: true } | { ok: false; code: "wrong-status" | "reason"; message: string };
 
 export function canHeadReturn(approval: ScheduleApproval, reason: string): HeadReturnVerdict {
-  if (approval.status !== "committee") {
+  if (!awaitsHeadSignature(approval)) {
     return { ok: false, code: "wrong-status", message: "الإرجاع للجنة يكون بعد توقيعها وقبل اعتمادك." };
   }
   if (String(reason || "").trim().length < 3) {
