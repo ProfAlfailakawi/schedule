@@ -7,7 +7,7 @@
  * for review. The positive cases prove the proven golden behaviour survives.
  */
 import assert from "node:assert/strict";
-import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, takeScanReadingTurn, ScanReadingBusyError, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, takeScanReadingTurn, ScanReadingBusyError, readScanInTurn, type OcrPage } from "../src/utils/documentOcr.ts";
 import { interruptedImportMessage } from "../src/utils/importStreamFailure.ts";
 import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch } from "../src/utils/instructorIdentity.ts";
@@ -269,5 +269,33 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
 }
 assert.match(new ScanReadingBusyError().message,/يقرأ الآن ملفاً ممسوحاً آخر.*لم يُستورد أي صف/,"a busy refusal says why and that nothing was imported");
 passed.push("a scan refused as busy says so in words");
+
+/* The same file sent twice at the same moment is ONE reading. Registered only
+   after the turn was taken, the second request missed the entry, waited behind
+   the first and was refused as busy (review of #117). */
+{
+  let reads=0;
+  const slowRead=async()=>{reads++;await settle();await settle();return{rows:[1,2,3]};};
+  const [a,b]=await Promise.all([readScanInTurn("same-file",slowRead),readScanInTurn("same-file",slowRead)]);
+  assert.equal(reads,1,"the file is read once for both requests");
+  assert.deepEqual(a,b);
+  assert.notEqual(a,b,"each request gets its own copy of the result");
+
+  const holder=(await takeScanReadingTurn())!;
+  reads=0;let shared=0;
+  const first=readScanInTurn("queued-file",slowRead,{},Number.POSITIVE_INFINITY);
+  const second=readScanInTurn("queued-file",slowRead,{sharing:()=>{shared++;}},Number.POSITIVE_INFINITY);
+  await settle();
+  assert.equal(shared,1,"a same-file request arriving while the first still waits for its turn shares it");
+  await holder.release(false);
+  await Promise.all([first,second]);
+  assert.equal(reads,1,"one reading after the turn came");
+
+  const busy=(await takeScanReadingTurn())!;
+  await assert.rejects(readScanInTurn("other-file",slowRead,{},20),ScanReadingBusyError,"a different file that waits out its turn is refused as busy");
+  await busy.release(false);
+  assert.deepEqual(await readScanInTurn("other-file",slowRead),{rows:[1,2,3]},"a refused file leaves no stale entry behind: it reads normally afterwards");
+  passed.push("the same file sent twice is one reading, shared even while it waits for its turn; a different file waits a bounded time");
+}
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));

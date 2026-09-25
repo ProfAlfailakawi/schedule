@@ -80,7 +80,7 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { instructorCleanName, foldInstructorText, instructorIdentityTokens, registryCandidatesFor } from "./src/utils/instructorIdentity";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -8204,8 +8204,12 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     recognized=await ocrDocument(bytes,"application/pdf",stage=>emit({type:"progress",...stage}),{authorityCourseKeys});
   }catch(error:any){
     const message=String(error?.message||"تعذّرت قراءة ملف PDF");
-    if(streaming){emit({type:"error",error:message});res.end();return;}
-    res.status(422).json({error:message});return;
+    /* A reading that waited out its turn is the same temporary «busy» the
+       preflight answers with, not an invalid document: same code, and 503
+       wherever the status line has not been sent yet. */
+    const busy=error instanceof ScanReadingBusyError?{code:"SCAN_READING_BUSY"}:{};
+    if(streaming){emit({type:"error",error:message,...busy});res.end();return;}
+    res.status(error instanceof ScanReadingBusyError?503:422).json({error:message,...busy});return;
   }
 
   /* The full reader may recover header glyphs that were too small for the cheap
