@@ -9946,6 +9946,9 @@ app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, re
     termDeadline,
     approvals: visible.map(row => ({
       ...row,
+      /* الاسمان لشريط «مواعيد التسليم» عند العميدين (استثناءاتٌ بأسماء أقسامها). */
+      sectionName: String((sections as any[]).find(item => Number(item.AdSectionId) === Number(row.AdSectionId) && Number(item.AdCollegeId) === Number(row.AdCollegeId))?.AdSectionName || ""),
+      collegeName: collegeName.get(Number(row.AdCollegeId)) || "",
       statusLabel: APPROVAL_STATUS_LABEL[row.status],
       deadline: readDeadline({ termDeadline, extensionUntil: row.extensionUntil, extensionReason: row.extensionReason }, now),
       late: isLate({ approvalStatus: row.status, submittedRounds: row.currentRound, deadline: termDeadline, extension: row.extensionUntil }),
