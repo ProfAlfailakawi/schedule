@@ -23,4 +23,4 @@
 | S19 | FIXED — /api/student-registration added to the broadcastNotify write-prefix list; the open registration sheet reloads (debounced) on the notify pulse | tests/student-journey-audit.ts §S19 |
 | S20 | FIXED — survey header comment, /api/schedules/demand doc, my-case «لا تكشف أحداً» comment, repository saveStudentNeed/history docs and types.ts StudentNeed field docs now say the truth: fingerprint + field-encrypted name/civil ID, decrypted only for authorised screens, opened publicly only with civil ID + case number | tests/student-journey-audit.ts §S20 |
 | S21 | FIXED — readStudentNeedsWhere pages studentNeeds by document id (1000/page, single-field index only) for getStudentNeeds, getStudentNeedsForTerm and getStudentNeedHistory; no silent 5000/20000 cap | tests/student-journey-audit.ts §S21 |
-| S22 | TODO | |
+| S22 | FIXED — survey POST recomputes requiredUnits = graduateThreshold(current saved rule, link term name) instead of trusting proof.requiredUnits; eligibility requires a positive threshold | tests/student-journey-audit.ts §S22 |

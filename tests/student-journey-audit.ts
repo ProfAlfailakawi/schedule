@@ -426,6 +426,14 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(!/collection\("studentNeeds"\)[\s\S]{0,120}\.limit\((?:5000|20000)\)/.test(repo), "S21 لا limit(5000) ولا limit(20000) على طلبات الطلبة");
 }
 
+/* ── S22 حدّ الخريج يُحسب لفصل الرابط لا يُؤخذ من الرمز ──────────────────── */
+{
+  const post = between(server, 'app.post("/api/public/survey/:token", async', "/** What the students said");
+  check(post.includes("requiredUnits=graduateThreshold(currentRule,linkTermName)") && !post.includes("requiredUnits=Number(proof.requiredUnits"),
+    "S22 الحدّ من القاعدة المحفوظة لفصل الرابط");
+  check(post.includes("Number(row.AdTermId)===Number(resolved.link.AdTermId)"), "S22 وفصلُ الرابط هو المرجع");
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

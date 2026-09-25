@@ -13171,7 +13171,11 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
       res.status(400).json({code:"proof-required",error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
     }
-    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
+    /* The threshold is the CURRENT saved rule for THIS link's term — never the
+       figure carried inside the proof token, which was computed for whatever
+       term and rule applied when the sheet was read. */
+    const linkTermName=String((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
+    passedUnits=Number(proof.passedUnits||0);requiredUnits=graduateThreshold(currentRule,linkTermName);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=requiredUnits>0&&passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
     /* Graduate notes are mandatory, not an optional comment. The approved
