@@ -246,5 +246,21 @@ const block = (source: string, start: string, end = "\napp.") => {
     "R8: وتبديلُ الصفة وإعادةُ الضبط يقولان الجملة نفسها");
 }
 
+/* ══ R9: كشفُ التسجيل لا يُطلب من رئيس القسم ════════════════════════════════════
+ * البروفة: جرسُ رئيس القسم عرض «مقرر واحد في كشف التسجيل ينتظر قرار اللجنة» فعلاً
+ * مطلوباً منه (action)، والكشفُ بصفته للقراءة («هذا الكشف للقراءة بصفتك»). */
+{
+  const scope = {
+    approval: { ...emptyApproval(1, 1, 1), status: "accepted", rounds: [{ number: 1, acceptedAt: "2026-09-20T00:00:00Z" }], currentRound: 1 },
+    collegeName: "ك", sectionName: "علوم الحاسب", rowCount: 8, openRegistrarNotes: 0, openRequests: 0,
+    studentQueue: { pendingCommittee: 1, awaitingRegistration: 0, oldestPendingAt: "2026-09-25T10:00:00Z" },
+  } as unknown as CenterScope;
+  const now = Date.parse("2026-09-25T12:00:00Z");
+  const find = (role: string, at = now) => buildNotifications({ role, scopes: [scope], now: at }).find(item => item.view === "studentRegistration");
+  check(find("committeeChair")?.tone === "action", "R9: اللجنةُ يُطلب منها القرار");
+  check(find("departmentHead")?.tone === "waiting", "R9: ورئيسُ القسم يُخبَر ولا يُطلب منه");
+  check(find("departmentHead", Date.parse("2026-09-30T12:00:00Z"))?.tone === "alert", "R9: إلا أن يطول الانتظار فيُنبَّه");
+}
+
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

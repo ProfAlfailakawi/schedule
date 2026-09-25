@@ -349,7 +349,10 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       const waitedDays = queue.oldestPendingAt ? Math.floor((now - new Date(queue.oldestPendingAt).getTime()) / 86400000) : 0;
       const late = waitedDays > 3;
       items.push({
-        id: key(scope, `students-committee-${late ? "late" : "open"}`), tone: late ? "alert" : "action",
+        /* رئيسُ القسم يقرأ الكشف ولا يقرّر فيه (canWriteRegistration): القرارُ للجنة،
+           فلا يُعرض عليه فعلاً مطلوباً منه — إلا تأخّرُها، فهو ما يُسأل عنه. */
+        id: key(scope, `students-committee-${late ? "late" : "open"}`),
+        tone: late ? "alert" : role === "departmentHead" ? "waiting" : "action",
         title: `${countOf(queue.pendingCommittee, AR.course)} في كشف التسجيل ${nounFor(queue.pendingCommittee, AR.waitVerb)} قرار اللجنة`,
         detail: late ? `${placeOf(scope)} — أقدمُها ينتظر منذ ${countOf(waitedDays, oblique(AR.day))}` : placeOf(scope),
         view: routeFor(role, "students"), at: queue.oldestPendingAt, ...target(scope),
