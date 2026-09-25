@@ -113,6 +113,19 @@ check(roleWriteDecision({ method: "POST", path: "/schedules", authenticated: fal
 check(roleWriteDecision({ method: "post", path: "/schedules", authenticated: true, powerUser: false, role: "dean" }).allowed === false, "الطريقة تُقرأ بلا حساسيةٍ لحالة الأحرف");
 check(!roleWriteDecision({ method: "POST", path: "/schedules", authenticated: true, powerUser: false, role: undefined }).allowed === false, "حسابٌ بلا صفة يكتب: الترحيل راحةٌ لا شرط");
 
+/* الصفحات العامة يحكمها الرمز لا الحساب: عضو هيئة مسجّلُ الدخول بصفة اطّلاع
+   (رئيس قسم، عميد) يُرسل بطاقته ويوقّع طلبه كأيّ زائر. */
+for (const role of READERS) {
+  for (const p of ["/public/staff/abc", "/public/staff/abc/note", "/public/request/abc", "/public/request/abc/check", "/public/survey/abc"]) {
+    const v = roleWriteDecision({ method: "POST", path: p, authenticated: true, powerUser: false, role });
+    check(v.allowed && v.reason === "public", `«${roleLabel(role)}» يكتب في الصفحة العامة ${p} بصفته صاحب الرابط`);
+  }
+}
+check(!roleWriteDecision({ method: "POST", path: "/publications", authenticated: true, powerUser: false, role: "dean" }).allowed,
+  "البابُ العام بمساره الكامل ‎/public/‎ لا بما يبدأ بحروفه");
+check(!roleWriteDecision({ method: "POST", path: "/schedules/public/1", authenticated: true, powerUser: false, role: "dean" }).allowed,
+  "كلمةُ public في وسط المسار لا تفتح شيئاً");
+
 const refusal = readOnlyRefusal("dean");
 check(refusal.readOnly === true && refusal.role === "dean", "الرفض يُسمّي الصفة للواجهة");
 check(refusal.error.includes("عميد الكلية"), "الرفض يُقرأ بالعربية ويسمّي الصفة لصاحبه");
