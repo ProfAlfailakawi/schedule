@@ -191,7 +191,8 @@ export function deadlineHeadline(state: Pick<DeadlineState, "effective" | "past"
 
 /** «+3 أيام» — قدرُ الاستثناء بعد موعد الفصل. */
 export function exceptionDaysLabel(daysAfterTerm: number): string {
-  if (daysAfterTerm <= 0) return "بموعد الفصل";
+  if (daysAfterTerm < 0) return "قبل موعد الفصل";
+  if (daysAfterTerm === 0) return "بموعد الفصل";
   return `+${countOf(daysAfterTerm, AR.day)}`;
 }
 
