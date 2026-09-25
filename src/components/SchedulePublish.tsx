@@ -588,7 +588,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                             ) : null}
                             {!dead && link.kind === "staff" && link.requestsCloseAt ? (
                               <time className="share-expiry" dateTime={link.requestsCloseAt}>
-                                {" · "}{Date.parse(link.requestsCloseAt) < Date.now() ? "أُغلقت الطلبات" : "الطلبات حتى"} {new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.requestsCloseAt))}
+                                {" · "}{Date.parse(link.requestsCloseAt) < Date.now() ? "أُغلقت الطلبات" : "الطلبات حتى"} {new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(link.requestsCloseAt))}
                               </time>
                             ) : null}
                             {" · "}
