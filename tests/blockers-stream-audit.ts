@@ -63,5 +63,16 @@ const route = (signature: string) => {
     "B5 الخادم يحسم القاعة من اسمها متى تغيّر الاسم وبقي المعرّف القديم");
 }
 
+/* B6 — undoing an editor edit restores the whole row, and says so only when it did. */
+{
+  const schedules = read("src/components/Schedules.tsx");
+  const undo = schedules.slice(schedules.indexOf("const runUndoEntry"), schedules.indexOf("const offerUndo"));
+  check(undo.includes("undoStepIsPlacementOnly(step.body, currentOf(step))"), "B6 باب النقل للتراجع عن النقل وحده");
+  check(undo.includes("{ ...step.body, rev: current.rev }") && undo.includes("تراجعٌ ناقص"), "B6 تعديل المحرّر يُعاد كاملاً بالمراجعة الحالية، والنقص يُقال");
+  check(undo.indexOf("تراجعٌ ناقص") < undo.indexOf("setMessage(`تم التراجع"), "B6 «تم التراجع» بعد نجاح كل الخطوات فقط");
+  check(/UNDO_PLACEMENT_FIELDS = new Set\(\[[^\]]*"fstarttime"[^\]]*\]\)/.test(schedules) && !/UNDO_PLACEMENT_FIELDS = new Set\(\[[^\]]*"AdInstructorId"/.test(schedules),
+    "B6 الأستاذ ليس من حقول الموضع");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

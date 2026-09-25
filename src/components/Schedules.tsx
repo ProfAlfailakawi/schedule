@@ -675,6 +675,19 @@ type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: s
  * لم تُستعمل منذ ٤ فصول» — a fact about the past standing in the way of the
  * present.
  */
+/* ── ما يحمله باب النقل وحده ────────────────────────────────────────────────
+   Days, time and hall — and nothing else. An undo step whose snapshot differs
+   from the current row in any other editable field is not a move and must be
+   restored whole. Bookkeeping fields are not edits. */
+const UNDO_PLACEMENT_FIELDS = new Set(["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday", "fstarttime", "fendtime", "AdRoomCode", "AdRoomHall", "buildingId", "roomId", "locationStatus", "fdetail"]);
+const UNDO_BOOKKEEPING_FIELDS = new Set(["id", "rev", "updatedAt", "updatedBy", "createdAt", "createdBy", "AdCourseName"]);
+export const undoStepIsPlacementOnly = (snapshot: any, current: any): boolean => {
+  if (!snapshot || !current) return false;
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  return Object.keys(snapshot).every(key =>
+    UNDO_PLACEMENT_FIELDS.has(key) || UNDO_BOOKKEEPING_FIELDS.has(key) || same(snapshot[key], current[key]));
+};
+
 /* The user's law, and the server's own save gate, in one line — which now
    lives beside the conflict sweep (`isBlockingConflict` in scheduleIntelligence)
    so the board, the editor, the review and the server read one predicate. */
@@ -1584,11 +1597,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     setError(null);
     try {
       /* An undo of moves goes back through the same atomic door the moves came
-         in by — all restored or none, with the server judging conflicts. Steps
-         that are not schedule placements fall back to the sequential path. */
+         in by — all restored or none, with the server judging conflicts. That
+         door only carries a PLACEMENT (days, time, hall), so it is used only
+         when a placement is all that changed. An editor edit — the instructor,
+         the course, the section — used to go through it too: the time came
+         back, the instructor did not, and the bar still said «تم التراجع».
+         Such a step is now restored whole, against the row's current revision,
+         and success is only announced when every step came back. */
       const scheduleStep = /^\/api\/schedules\/(\d+)$/;
+      const currentOf = (step: UndoStep) => {
+        const match = scheduleStep.exec(step.url);
+        return match ? rows.find(item => Number(item.id) === Number(match[1])) : undefined;
+      };
       const allPlacements = entry.steps.length > 0 &&
-        entry.steps.every(step => step.method === "PUT" && scheduleStep.test(step.url) && step.body);
+        entry.steps.every(step => step.method === "PUT" && scheduleStep.test(step.url) && step.body
+          && undoStepIsPlacementOnly(step.body, currentOf(step)));
       if (allPlacements) {
         await fetchJson("/api/schedules/move-batch", {
           method: "POST",
@@ -1597,6 +1620,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             strict: false,
             moves: entry.steps.map(step => ({
               id: Number(scheduleStep.exec(step.url)![1]),
+              rev: currentOf(step)?.rev,
               fields: {
                 fsunday: Boolean(step.body.fsunday),
                 fmonday: Boolean(step.body.fmonday),
@@ -1607,18 +1631,35 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 fendtime: step.body.fendtime,
                 AdRoomCode: step.body.AdRoomCode,
                 AdRoomHall: step.body.AdRoomHall,
+                buildingId: step.body.buildingId ?? null,
+                roomId: step.body.roomId ?? null,
+                locationStatus: step.body.locationStatus ?? null,
               },
             })),
           }),
         });
       } else {
-        for (const step of entry.steps) {
-          await fetchJson(step.url, {
-            method: step.method,
-            ...(step.body === undefined
-              ? {}
-              : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.body) }),
-          });
+        let restored = 0;
+        try {
+          for (const step of entry.steps) {
+            const current = step.method === "PUT" ? currentOf(step) : undefined;
+            /* The snapshot carries the revision it was taken at; the row has
+               moved on since (that is what is being undone), so the restore is
+               sent against the revision the coordinator is looking at now. */
+            const body = current && step.body ? { ...step.body, rev: current.rev } : step.body;
+            await fetchJson(step.url, {
+              method: step.method,
+              ...(body === undefined
+                ? {}
+                : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+            });
+            restored += 1;
+          }
+        } catch (stepError: any) {
+          await loadRows();
+          throw new Error(restored
+            ? `تراجعٌ ناقص: أُعيد ${countOf(restored, AR.change)} من ${countOf(entry.steps.length, AR.change)} — ${friendlyError(stepError)}`
+            : friendlyError(stepError));
         }
       }
       setUndoLog(current => current.map(item => (item.id === entry.id ? { ...item, usedAt: Date.now() } : item)));

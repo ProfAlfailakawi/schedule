@@ -7,7 +7,7 @@
 | B3 | FIXED | tests/blockers-stream-audit.ts (B3) + oracle behaviour in blocker-oracle-audit |
 | B4 | FIXED | tests/blockers-stream-audit.ts (B4) |
 | B5 | FIXED | tests/blockers-stream-audit.ts (B5) |
-| B6 | TODO | |
+| B6 | FIXED | tests/blockers-stream-audit.ts (B6) |
 | B7 | TODO | |
 | B8 | TODO | |
 | B9 | TODO | |
