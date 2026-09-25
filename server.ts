@@ -7481,15 +7481,28 @@ app.delete("/api/intelligence/constraints/:id", requirePermission(7), requirePow
   const item=(await Repository.getScheduleConstraints(collegeId,sectionId,termId)).find(c=>c.id===String(req.params.id));if(!item){res.status(404).json({error:"القاعدة غير موجودة في هذا النطاق"});return;}await Repository.deleteScheduleConstraint(item.id);res.json({success:true});
 });
 
+/* ── قسمٌ بلا مواعيد بعد: جوابٌ يدلّ على الطريق، لا خطأ ────────────────────
+   غرفة القرار والجدولة المساعدة والمقترح التلقائي تعمل على جدولٍ قائم. وحين
+   لا جدول بعد كانت تردّ 400 «لا يوجد جدول» — خطأٌ أحمر لشيءٍ ليس خطأ، ولا يقول
+   ما العمل. فالجواب الآن 200 يقول إن الفصل فارغ ويشير إلى «بداية الفصل»
+   (نسخ الفصل السابق مسودةً) أو إلى الاستيراد. */
+function emptyScopeGuidance(what: string) {
+  return {
+    empty: true,
+    message: `${what} يحتاج جدولاً قائماً، وهذا الفصل لا مواعيد فيه لهذا القسم بعد. ابدأ بـ«بداية الفصل من الفصل السابق» (مسودة لا تغيّر شيئاً قبل النشر) أو باستيراد الجدول من أدوات البيانات.`,
+    nextStep: { kind: "genesis", endpoint: "/api/intelligence/genesis", label: "بداية الفصل من الفصل السابق" },
+  };
+}
+
 app.post("/api/intelligence/war-room", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.status(400).json({error:"لا يوجد جدول لبناء غرفة قرار"});return;}
+  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.json(emptyScopeGuidance("غرفة القرار"));return;}
   res.json(buildWarRoom(base,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined));
 });
 
 app.post("/api/intelligence/autopilot", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req),goal=String(req.body?.goal||"حافظ على خلو الجدول من الموانع وقلل الفراغات بأقل تغيير ممكن").trim().slice(0,240);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.status(400).json({error:"لا توجد مواعيد لتشغيل الجدولة المساعدة"});return;}
+  const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.json(emptyScopeGuidance("الجدولة المساعدة"));return;}
   res.json(runScheduleAutopilot(base,universe,courses,instructors,constraints,goal,240));
 });
 
@@ -7510,7 +7523,7 @@ app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: Au
   const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]);
   const target=scheduleData.rows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId&&Number(row.AdTermId)===termId);
   const universe=scheduleData.universe;
-  if(!target.length){res.status(400).json({error:"لا توجد مواعيد في هذا القسم والفصل لإنشاء مقترح"});return;}
+  if(!target.length){res.json(emptyScopeGuidance("المقترح التلقائي"));return;}
   const proposal=autoScheduleProposal(target,universe);
   const external=universe.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
   const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors);

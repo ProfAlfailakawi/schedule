@@ -1135,6 +1135,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId }),
       });
+      /* An empty term answers with the way forward, not with rows. */
+      if (d?.empty) { setMessage(d.message); return; }
       setActiveDraftId(null);
       setScenario(d.rows);
       setScenarioEval({ baseline: d.before, scenario: d.after });
@@ -1899,18 +1901,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setWarBusy(true);
     setError(null);
     try {
-      setWarRoom(
-        await fetchJson("/api/intelligence/war-room", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            collegeId,
-            sectionId,
-            termId,
-            rowId: warRowId || undefined,
-          }),
+      const room = await fetchJson("/api/intelligence/war-room", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collegeId,
+          sectionId,
+          termId,
+          rowId: warRowId || undefined,
         }),
-      );
+      });
+      if (room?.empty) { setWarRoom(null); setMessage(room.message); }
+      else setWarRoom(room);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -1921,18 +1923,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setAutopilotBusy(true);
     setError(null);
     try {
-      setAutopilot(
-        await fetchJson("/api/intelligence/autopilot", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            collegeId,
-            sectionId,
-            termId,
-            goal: autopilotGoal,
-          }),
+      const plan = await fetchJson("/api/intelligence/autopilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collegeId,
+          sectionId,
+          termId,
+          goal: autopilotGoal,
         }),
-      );
+      });
+      if (plan?.empty) { setAutopilot(null); setMessage(plan.message); }
+      else setAutopilot(plan);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {

@@ -154,5 +154,17 @@ await (async () => {
   check(guard > 0 && guard < write && put.includes("getScheduleComments(scheduleId)"), "B11 ملاحظة التسجيل تُردّ قبل أي كتابة، والتعليق يجب أن يخصّ الموعد");
 }
 
+/* B12 — an empty scope gets a 200 that points to genesis, and the screens show it. */
+{
+  for (const path of ["war-room", "autopilot", "auto-schedule"]) {
+    const body = route(`app.post("/api/intelligence/${path}"`);
+    check(body.includes("res.json(emptyScopeGuidance(") && !/res\.status\(400\)\.json\(\{error:"لا (يوجد جدول|توجد مواعيد)/.test(body), `B12 ${path} يردّ بالطريق لا بخطأ`);
+  }
+  check(/function emptyScopeGuidance[\s\S]{0,700}kind: "genesis"/.test(server), "B12 والطريق هو بداية الفصل");
+  const iw = read("src/components/IntelligenceWorkspace.tsx"), xp = read("src/components/ScheduleExperienceLayer.tsx");
+  check(iw.includes("if (d?.empty) { setMessage(d.message); return; }") && iw.includes("if (room?.empty)") && iw.includes("if (plan?.empty)") && xp.includes("if (room?.empty)"),
+    "B12 الشاشات تعرض الإرشاد ولا تحاول رسم جدولٍ غير موجود");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
