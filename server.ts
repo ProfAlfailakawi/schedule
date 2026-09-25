@@ -23,6 +23,7 @@ import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleCo
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
+import { expandScopeSections, resolveSmartScope } from "./src/server/readScope";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -1759,21 +1760,33 @@ function smartContextFrom(req: AuthenticatedRequest) {
 }
 
 
-async function resolveSmartContext(req: AuthenticatedRequest) {
+/**
+ * ── السياق الذكي لا يُصدِّق الطلبَ على نطاقه ────────────────────────────────
+ *
+ * كان يأخذ القسمَ والكليةَ من الطلب كما جاءا، ولا يسأل عنهما أحداً — فكان
+ * البحثُ بالجملة يقرأ لرئيس لجنةٍ مسوّداتِ أيِّ قسمٍ يكتب رقمَه في الرابط.
+ * وحين لا يُسمّى قسمٌ كان يختار من أرقام صفوف النطاق الخام، فيسقط صفُّ «الكلية
+ * كلها» ويقرأ للعميد الجامعةَ كلها بقسمٍ صفر.
+ *
+ * صار القرار في `resolveSmartScope` (src/server/readScope.ts) بحَكَمٍ واحد هو
+ * `isScopeAllowed`، ومعه `allowed` يلتزم به كلُّ من يستدعي هذه الدالّة.
+ */
+async function resolveSmartContext(req: AuthenticatedRequest, options: { allowCollegeWide?: boolean } = {}) {
   const requested = smartContextFrom(req);
   const [terms, sections] = await Promise.all([Repository.getTerms(), Repository.getSections()]);
   const termId = requested.termId || Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
-  let sectionId = requested.sectionId;
-  if (!sectionId) {
+  let busiest: Map<number, number> | undefined;
+  if (!requested.sectionId) {
     const schedules = await Repository.getSchedulesByScope({ termId });
-    const allowedSectionIds = req.user?.IsAdminUser ? new Set(sections.map(row=>row.AdSectionId)) : new Set((req.scopes||[]).map(row=>Number(row.AdSectionId)));
-    const counts = new Map<number,number>();
-    schedules.filter(row=>allowedSectionIds.has(row.AdSectionId)).forEach(row=>counts.set(row.AdSectionId,(counts.get(row.AdSectionId)||0)+1));
-    sectionId = [...allowedSectionIds].sort((a,b)=>(counts.get(b)||0)-(counts.get(a)||0))[0] || 0;
+    busiest = new Map<number, number>();
+    for (const row of schedules) busiest.set(Number(row.AdSectionId), (busiest.get(Number(row.AdSectionId)) || 0) + 1);
   }
-  const section = sections.find(row=>row.AdSectionId===sectionId);
-  const collegeId = requested.collegeId || Number(section?.AdCollegeId || 0);
-  return { collegeId, sectionId, termId, section };
+  const scope = resolveSmartScope({
+    requested, sections, busiest, allowCollegeWide: options.allowCollegeWide,
+    allowed: (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+  });
+  const section = sections.find(row => row.AdSectionId === scope.sectionId);
+  return { collegeId: scope.collegeId, sectionId: scope.sectionId, termId, section, allowed: scope.allowed };
 }
 
 /**
@@ -2425,9 +2438,8 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   if (q.length < 2) { res.json({ schedules: [], instructors: [], courses: [], rooms: [] }); return; }
   const terms = await Repository.getTerms();
   const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
-  const scheduleRead = req.user.IsAdminUser
-    ? Repository.getSchedulesByScope({ termId: latestTermId })
-    : Promise.all([...new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)).filter(Boolean))].map(sectionId => Repository.getSchedulesByScope({ sectionId, termId: latestTermId }))).then(groups => groups.flat());
+  /* النطاقُ من الحَكَم الواحد (صفُّ الكلية كلها يُقرأ)، والعميدُ يُعطى النهائي. */
+  const scheduleRead = readScopedTermRows(req, latestTermId);
   const [allSchedules, instructors, courses, sections, colleges, security] = await Promise.all([
     scheduleRead, Repository.getInstructors(), Repository.getCourses(), Repository.getSections(), Repository.getColleges(), Repository.getSecurityByUser(req.user!.SystemUserId)
   ]);
@@ -4499,6 +4511,41 @@ async function finalRowsOnly(rows: FSchedule[], termId: number): Promise<FSchedu
 
 async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number): Promise<FSchedule[]> {
   const rows = await readLiveSchedulesForRequest(req, collegeId, sectionId, termId);
+  return readsFinalSchedulesOnly(req) ? finalRowsOnly(rows, termId) : rows;
+}
+
+/**
+ * ── كل ما في نطاق القارئ لفصلٍ واحد ─────────────────────────────────────────
+ *
+ * البحث ولوحة البداية وقائمة الأساتذة كانت تجمع أرقامَ الأقسام من صفوف النطاق
+ * الخام، فيسقط صفُّ «الكلية كلها» (قسم صفر) ويرى العميدُ ومساعدُه لا شيء.
+ * هنا تُشتقّ الأقسامُ من الحَكَم (`expandScopeSections`)، وتُقرأ الكليةُ
+ * المغطّاة كاملةً بقراءةٍ واحدة. ومن يقرأ النهائيَّ وحده (العميد) يُعطى النهائي.
+ */
+async function scopeSectionIdsFor(req: AuthenticatedRequest): Promise<Set<number>> {
+  const sections = await Repository.getSections();
+  return expandScopeSections(sections, (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId));
+}
+
+async function readScopedTermRows(req: AuthenticatedRequest, termId: number): Promise<FSchedule[]> {
+  if (req.user?.IsAdminUser) return Repository.getSchedulesByScope({ termId });
+  const sections = await Repository.getSections();
+  const allowed = (collegeId: number, sectionId: number) => isScopeAllowed(req, collegeId, sectionId);
+  const own = expandScopeSections(sections, allowed);
+  const byCollege = new Map<number, number[]>();
+  for (const section of sections) {
+    const collegeId = Number(section.AdCollegeId);
+    if (!byCollege.has(collegeId)) byCollege.set(collegeId, []);
+    byCollege.get(collegeId)!.push(Number(section.AdSectionId));
+  }
+  const reads: Promise<FSchedule[]>[] = [];
+  for (const [collegeId, ids] of byCollege) {
+    const mine = ids.filter(id => own.has(id));
+    if (!mine.length) continue;
+    if (mine.length === ids.length) reads.push(Repository.getSchedulesByScope({ collegeId, termId }));
+    else mine.forEach(sectionId => reads.push(Repository.getSchedulesByScope({ sectionId, termId })));
+  }
+  const rows = filterByScope(req, (await Promise.all(reads)).flat());
   return readsFinalSchedulesOnly(req) ? finalRowsOnly(rows, termId) : rows;
 }
 
@@ -11704,15 +11751,20 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
   const parsed = parseNaturalQuery(String(req.query.q || ""));
   if (parsed.intent === "unknown") { res.json({ intent: "unknown", title: "", rows: [] }); return; }
 
-  const { collegeId, sectionId, termId } = await resolveSmartContext(req);
+  /* النطاق يُفرض هنا لكل صفة: قسمٌ أو كليةٌ خارج نطاق القارئ تُرفض صراحةً،
+     والصفوف تُقرأ بقارئ الطلب نفسه — مُصفّاةً بالنطاق، ونهائيةً للعميد. أما
+     «الكون» فلا يُستعمل إلا لإشغال القاعات وفراغات الأستاذ: وقتٌ ومكانٌ بلا
+     مقرّرٍ ولا قسم. */
+  const { collegeId, sectionId, termId, allowed } = await resolveSmartContext(req, { allowCollegeWide: true });
+  if (!allowed) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (!termId) { res.json({ intent: parsed.intent, title: "", rows: [] }); return; }
 
-  const [scoped, courses, instructors] = await Promise.all([
-    scopedScheduleUniverse(collegeId, sectionId, termId),
+  const [rows, universe, courses, instructors] = await Promise.all([
+    readSchedulesForRequest(req, collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId }),
     Repository.getCourses(),
     Repository.getInstructors()
   ]);
-  const { rows, universe } = scoped;
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
