@@ -110,6 +110,7 @@ export const AR = {
   breach:      { one: "مخالفة", two: "مخالفتان", few: "مخالفات", many: "مخالفة" },
   decision:    { one: "قرار", two: "قراران", few: "قرارات", many: "قراراً" },
   record:      { one: "سجل", two: "سجلان", few: "سجلات", many: "سجلاً" },
+  unit:        { one: "وحدة", two: "وحدتان", few: "وحدات", many: "وحدة" },
   move:        { one: "حركة", two: "حركتان", few: "حركات", many: "حركة" },
   change:      { one: "تغيير", two: "تغييران", few: "تغييرات", many: "تغييراً" },
   point:       { one: "نقطة", two: "نقطتان", few: "نقاط", many: "نقطة" },

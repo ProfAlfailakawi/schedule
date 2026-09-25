@@ -35,7 +35,7 @@ import {
   AdDegreeRule,
   ScheduleDecisionMemory,
   CampusMobilityProfile,
-  ScheduleShareLink,
+  ScheduleShareLink, ShareLinkInstructorMark,
   InstructorRequest,
   VisitingRoster,
   DepartmentDelegateDirectory,
@@ -2167,6 +2167,9 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
 
 const STUDENT_CASE_SECRET_DOC = "systemSecrets/student-case-identity-v1";
 let studentCaseSecretCache = "";
+/* ذاكرةُ الملف المحلي منفصلةٌ عن ذاكرة السرّ المشترك: طلبٌ من صندوق العرض يقرأ
+   ملفاً محلياً، ولا يجوز أن يلتصق سرُّه بالذاكرة فتقرأه النسخة الحقيقية بعده. */
+let localStudentCaseSecretCache = "";
 /**
  * Stable key material for student-case fingerprints and field-level identity
  * encryption. Cloud Run can serve two consecutive requests from two different
@@ -2178,9 +2181,9 @@ let studentCaseSecretCache = "";
 async function getOrCreateStudentCaseSecret(): Promise<string> {
   const configured = String(process.env.STUDENT_CASE_SECRET || process.env.CALENDAR_SECRET || "").trim();
   if (configured) return configured;
-  if (studentCaseSecretCache) return studentCaseSecretCache;
 
   if (firestoreDb && !demoSandboxContext.getStore()) {
+    if (studentCaseSecretCache) return studentCaseSecretCache;
     const ref = firestoreDb.doc(STUDENT_CASE_SECRET_DOC);
     const secret = await firestoreDb.runTransaction(async tx => {
       const snap = await tx.get(ref);
@@ -2194,10 +2197,11 @@ async function getOrCreateStudentCaseSecret(): Promise<string> {
     return secret;
   }
 
+  if (localStudentCaseSecretCache) return localStudentCaseSecretCache;
   const file = path.join(DB_DIR, "student-case-identity.key");
   if (fs.existsSync(file)) {
-    studentCaseSecretCache = fs.readFileSync(file, "utf8").trim();
-    if (studentCaseSecretCache) return studentCaseSecretCache;
+    localStudentCaseSecretCache = fs.readFileSync(file, "utf8").trim();
+    if (localStudentCaseSecretCache) return localStudentCaseSecretCache;
   }
   fs.mkdirSync(DB_DIR, { recursive: true, mode: 0o700 });
   const created = randomBytes(32).toString("hex");
@@ -2205,8 +2209,8 @@ async function getOrCreateStudentCaseSecret(): Promise<string> {
   catch (error: any) {
     if (error?.code !== "EEXIST") throw error;
   }
-  studentCaseSecretCache = fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : created;
-  return studentCaseSecretCache || created;
+  localStudentCaseSecretCache = fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : created;
+  return localStudentCaseSecretCache || created;
 }
 
 /** الأحدث أولاً، ويحتمل ملاحظةً بلا تاريخ — من ترحيلٍ أو نسخةٍ احتياطية. */
@@ -2279,6 +2283,9 @@ export class ApprovalRevisionConflict extends Error {
 
 export const Repository = {
   getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
+  /** السرّ المشترك بين نسخ الخادم، مقروءاً خارج صندوق العرض دائماً: مفتاحُ
+   *  التقويم مادةٌ للخادم كله لا لجلسة عرضٍ بعينها. */
+  getSharedServerSecret: async (): Promise<string> => demoSandboxContext.exit(() => getOrCreateStudentCaseSecret()),
   /** Lets the server drop any cached identity the moment accounts change. */
   onIdentityChanged: (listener: () => void) => { identityListeners.add(listener); },
 
@@ -4109,7 +4116,8 @@ export const Repository = {
   getShareLinks: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleShareLink[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(50).get();
+      /* الروابطُ الشخصية رابطٌ لكل أستاذ في القسم؛ خمسون كانت تُسقط بعضها. */
+      const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(300).get();
       return snap.docs.map(doc => doc.data() as ScheduleShareLink).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
     return (db.scheduleShareLinks || []).filter(row => row.scopeKey === scopeKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -4269,6 +4277,21 @@ export const Repository = {
     const row = (db.scheduleShareLinks || []).find(item => item.id === id);
     if (!row) throw new Error("الرابط غير موجود");
     row.revoked = true;
+    saveDatabase();
+  },
+
+  /** يسجّل إرسالاً أو زيارةً لأستاذٍ على رابط (دمجٌ لا استبدال). */
+  markShareLinkInstructor: async (id: string, instructorId: number, patch: ShareLinkInstructorMark): Promise<void> => {
+    const key = String(Number(instructorId) || 0);
+    if (key === "0") return;
+    const clean = Object.fromEntries(Object.entries(patch).filter(([, value]) => typeof value === "string" && value)) as ShareLinkInstructorMark;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleShareLinks").doc(id).set({ marks: { [key]: clean } }, { merge: true });
+      return;
+    }
+    const row = (db.scheduleShareLinks || []).find(item => item.id === id);
+    if (!row) return;
+    row.marks = { ...(row.marks || {}), [key]: { ...(row.marks?.[key] || {}), ...clean } };
     saveDatabase();
   },
 
