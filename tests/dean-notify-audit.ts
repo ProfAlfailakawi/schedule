@@ -119,5 +119,20 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(reports.includes('X-Schedule-Finality') && reports.includes("HISTORICAL_FINALITY_LABEL"), "N1: التقرير يقرأ الصفة ويسمّيها");
 }
 
+/* ══ N2 / N11 — أوّل ما يراه العميدان ═══════════════════════════════════ */
+{
+  const reports = read("src/components/Reports.tsx");
+  const lenses = reports.slice(reports.indexOf("const ROLE_LENSES"), reports.indexOf("const ROLE_LENSES") + 900);
+  check(/dean:\s*\["balance"/.test(lenses) && /viceDean:\s*\["balance"/.test(lenses), "N2: العميد والعميد المساعد يبدآن بميزان الأقسام");
+  check(reports.includes("initialLensFor(roleId, mode, saved.lens)"), "N2: العدسة الأولى من دالّةٍ واحدة تعرف الصفة");
+  const fn = reports.slice(reports.indexOf("function initialLensFor("), reports.indexOf("function initialLensFor(") + 900);
+  check(fn.includes('if (deanReader && (mode === "reportDepartment" || mode === "searchAdvanced")) return "balance";'),
+    "N2: تقرير القسم يفتح للعميدين على الميزان");
+  check(fn.includes('if (wanted === "time" && fits("matrix")) return "matrix";'), "N11: شاشة ١٦ (الوقت) تُفتح للعميد المساعد على المصفوفة");
+  check(fn.includes("fits(savedLens as Lens)"), "N11: عدسةٌ محفوظة لا تملكها الصفة لا تُفتح");
+  check(/if \(lens === "list" && !all\.length && shownLenses\.some\(item => item\.id === "balance"\)\) setLens\("balance"\);/.test(reports)
+    && reports.includes("autoBalanceDone.current = true"), "N2: قائمةٌ محفوظة فارغة تُحوَّل إلى الميزان مرّةً واحدة بعد القراءة");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

@@ -149,12 +149,34 @@ const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNo
 const ROLE_LENSES: Record<string, Lens[]> = {
   /* العميدان يفتحان على الجداول نفسها — المعتمدة وحدها، يقصرها الخادم — ثم
      ما يُكمل الصورة. أسرعُ جوابٍ لمشغولٍ هو الجدولُ نفسه. */
-  dean:           ["list", "week", "balance", "fairness", "visiting"],
-  viceDean:       ["list", "week", "balance", "fairness", "visiting", "instructor", "room", "matrix"],
+  /* العميدان يفتحان على ميزان الأقسام: «أين وصلت الأقسام؟» سؤالُهما الأول،
+     والقائمةُ — المعتمدة وحدها — تكون فارغةً قبل أن يعتمد التسجيل شيئاً، فشاشةٌ
+     أولى فارغة لا تجيب أحداً. ثم الجداول نفسها وما يُكمل الصورة. */
+  dean:           ["balance", "list", "week", "fairness", "visiting"],
+  viceDean:       ["balance", "list", "week", "fairness", "visiting", "instructor", "room", "matrix"],
   registrarDean:  ["balance", "fairness"],
   registrarHead:  ["balance", "list", "room", "matrix"],
   registrarStaff: ["balance", "list", "room"],
 };
+
+/**
+ * ── أوّل عدسةٍ تُفتح ─────────────────────────────────────────────────────────
+ *
+ * المحفوظةُ أولاً إن كانت للصفة، ثم عدسةُ الشاشة التي فُتحت منها. والعميدان
+ * حين يفتحان تقرير القسم أو البحث المتقدّم يبدآن بميزان الأقسام. وعدسةٌ لا
+ * تملكها الصفة تُترجَم إلى أقرب ما تملكه (الوقت → المصفوفة لمن لا يملكه).
+ */
+function initialLensFor(roleId: string | undefined, mode: ReportMode, savedLens: unknown): Lens {
+  const allowed = roleId ? ROLE_LENSES[roleId] : undefined;
+  const fits = (lens: Lens) => !allowed || allowed.includes(lens);
+  if (LENSES.some(item => item.id === savedLens) && fits(savedLens as Lens)) return savedLens as Lens;
+  const deanReader = roleId === "dean" || roleId === "viceDean";
+  if (deanReader && (mode === "reportDepartment" || mode === "searchAdvanced")) return "balance";
+  const wanted = LENS_FOR_MODE[mode] || "list";
+  if (fits(wanted)) return wanted;
+  if (wanted === "time" && fits("matrix")) return "matrix";
+  return allowed?.[0] || "list";
+}
 
 const DAYS = [
   { key: "sun" as const, flag: "fsunday" as const, label: "الأحد" },
@@ -389,7 +411,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   try { saved = JSON.parse(localStorage.getItem(prefKey) || "{}"); } catch { /* first run */ }
   try { workspaceSaved = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch { /* first run */ }
 
-  const [lens, setLens] = useState<Lens>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
+  const isDeanReader = roleId === "dean" || roleId === "viceDean";
+  const [lens, setLens] = useState<Lens>(() => initialLensFor(roleId, mode, saved.lens));
   const [colleges, setColleges] = useState<AdCollege[]>([]);
   const [sections, setSections] = useState<AdSection[]>([]);
   const [terms, setTerms] = useState<AdTerm[]>([]);
@@ -425,6 +448,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده («accepted» | «historical»)، من ترويسة
      الخادم. فارغةٌ لغير العميدين. */
   const [finality, setFinality] = useState<Record<string, "accepted" | "historical">>({});
+  /* لحظةُ آخر قراءةٍ ناجحة للنطاق — ليُحكم على «فارغ» بعد القراءة لا قبلها. */
+  const [scopeReadAt, setScopeReadAt] = useState(0);
   const historicalScopeCount = useMemo(() => Object.values(finality).filter(value => value === "historical").length, [finality]);
   const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
   const [filters, setFilters] = useState<Filters>(() => ({
@@ -676,6 +701,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       })
       .then(rows => {
         setAll(rows);
+        setScopeReadAt(Date.now());
         setLiveNudge(false);
         // A read that worked is the end of the previous failure. The banner used
         // to be set three times and cleared never, so one hiccup pinned a red
@@ -722,6 +748,14 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     if (shownLenses.some(item => item.id === lens)) return;
     setLens(shownLenses[0].id);
   }, [shownLenses, lens]);
+  /* العميدان على قائمةٍ محفوظة ولا جدولَ معتمداً بعد: تُفتح الموازين مرّةً
+     واحدة بدل شاشةٍ فارغة. مرّةً واحدة — من عاد إلى القائمة بنفسه لا يُردّ. */
+  const autoBalanceDone = useRef(false);
+  useEffect(() => {
+    if (!isDeanReader || autoBalanceDone.current || !scopeReadAt) return;
+    autoBalanceDone.current = true;
+    if (lens === "list" && !all.length && shownLenses.some(item => item.id === "balance")) setLens("balance");
+  }, [isDeanReader, scopeReadAt, lens, all.length, shownLenses]);
   useEffect(() => {
     if (lens !== "balance" || !filters.termId) return;
     const controller = new AbortController();
