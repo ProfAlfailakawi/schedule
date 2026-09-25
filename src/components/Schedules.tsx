@@ -923,6 +923,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   const [mobileViewGate, setMobileViewGate] = useState<"list" | "week" | "rooms" | null>(null);
   const [phoneReadOnly, setPhoneReadOnly] = useState(() => isPhoneDevice());
   const [livingPanelOpen, setLivingPanelOpen] = useState(false);
+  /* ── فصلٌ فارغ ليس طريقاً مسدوداً ───────────────────────────────────────
+     «بداية الفصل» تعيش في الطبقة الحية، والطبقة لا تُركَّب إلا حين يكون في
+     الجدول صفّ — أي أن الفصل الذي يحتاجها أكثر من غيره لم يكن يراها. فالحالة
+     الفارغة تطلبها صراحةً، وتُركَّب الطبقة مفتوحةً عليها، وتُغلق معها. */
+  const [genesisFromEmpty, setGenesisFromEmpty] = useState(false);
+  const onLivingPanelOpenChange = useCallback((open: boolean) => {
+    setLivingPanelOpen(open);
+    if (!open) setGenesisFromEmpty(false);
+  }, []);
   const [returnNote] = useState(() => {
     const note = sessionStorage.getItem("schedule-return-note") || "";
     sessionStorage.removeItem("schedule-return-note");
@@ -9768,7 +9777,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           technology and diagnostics; blocking problems still use the existing
           conflict/error UI, and undo remains in the compact undo bar. */}
       {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
-      {!rowsForeign && rows.length > 0 ? (
+      {!rowsForeign && (rows.length > 0 || genesisFromEmpty) ? (
       <div className="schedule-overview-stack no-print">
         <section className="schedule-mini-stats">
           <StatCard
@@ -9802,7 +9811,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           onRefresh={loadRows}
           experience={experience}
           onEnsureWeek={() => setViewMode("week")}
-          onPanelOpenChange={setLivingPanelOpen}
+          onPanelOpenChange={onLivingPanelOpenChange}
+          initialScene={genesisFromEmpty ? "genesis" : null}
         />
       </div>
       ) : null}
@@ -10264,6 +10274,24 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     </div>
                   ) : null}
                   <PrimaryButton onClick={openCreate}>إضافة موعد</PrimaryButton>
+                  {filterCollege && filterSection && filterTerm && !rowsForeign ? (
+                    <SecondaryButton
+                      type="button"
+                      data-guide-ignore="يفتح «بداية الفصل» في الطبقة الحية: مسودة من الفصل السابق لا تغيّر الجدول قبل النشر"
+                      onClick={() => { if (!showMobileReadOnlyGate()) setGenesisFromEmpty(true); }}
+                    >
+                      بداية الفصل من الفصل السابق
+                    </SecondaryButton>
+                  ) : null}
+                  {filterCollege && filterSection && filterTerm ? (
+                    <GhostButton
+                      type="button"
+                      data-guide-ignore="يفتح أدوات البيانات (استيراد جدول) من الحالة الفارغة نفسها"
+                      onClick={() => { if (!showMobileReadOnlyGate()) setTransferOpen(true); }}
+                    >
+                      <ArrowLeftRight /> استيراد من أدوات البيانات
+                    </GhostButton>
+                  ) : null}
                 </>
               }
             />

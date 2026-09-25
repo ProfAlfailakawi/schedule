@@ -74,5 +74,18 @@ const route = (signature: string) => {
     "B6 الأستاذ ليس من حقول الموضع");
 }
 
+/* B7 — an empty term is not a dead end: «بداية الفصل» and the data tools are offered on the empty state. */
+{
+  const schedules = read("src/components/Schedules.tsx");
+  const layer = read("src/components/LivingScheduleLayer.tsx");
+  check(schedules.includes("(rows.length > 0 || genesisFromEmpty)") && schedules.includes('initialScene={genesisFromEmpty ? "genesis" : null}'),
+    "B7 الطبقة الحية تُركَّب لفصلٍ فارغ حين تُطلب بداية الفصل");
+  const empty = schedules.slice(schedules.indexOf('title="لا توجد مواعيد ضمن الاختيار الحالي"'), schedules.indexOf('title="لا توجد مواعيد ضمن الاختيار الحالي"') + 3000);
+  check(empty.includes("بداية الفصل من الفصل السابق") && empty.includes("setGenesisFromEmpty(true)") && empty.includes("setTransferOpen(true)"),
+    "B7 الحالة الفارغة تعرض بداية الفصل وأدوات البيانات");
+  check(layer.includes("useState<Scene | null>(initialScene)"), "B7 الطبقة تُفتح على المشهد المطلوب من أول لحظة");
+  check(/const onLivingPanelOpenChange = useCallback\(/.test(schedules), "B7 ردّ الإغلاق ثابت الهوية فلا يُغلق المشهد عند كل رسم");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

@@ -92,6 +92,8 @@ interface Props {
   experience?: ScheduleExperience;
   onEnsureWeek?: () => void;
   onPanelOpenChange?: (open: boolean) => void;
+  /** Opens the layer already on a scene — the empty term asks for «بداية الفصل». */
+  initialScene?: Scene | null;
 }
 
 export default function LivingScheduleLayer({
@@ -108,12 +110,13 @@ export default function LivingScheduleLayer({
   experience,
   onEnsureWeek,
   onPanelOpenChange,
+  initialScene = null,
 }: Props) {
   const power = Boolean(user?.SystemUserId);
   const reducedMotion = useReducedMotion();
   const genesisPreviewRef = useRef<HTMLElement | null>(null);
   const [living, setLiving] = useState<any>(null),
-    [scene, setScene] = useState<Scene | null>(null),
+    [scene, setScene] = useState<Scene | null>(initialScene),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
