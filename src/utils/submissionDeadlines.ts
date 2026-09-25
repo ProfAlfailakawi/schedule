@@ -293,3 +293,95 @@ export function lastExtensionRejection(approval: Pick<ScheduleApproval, "events"
   }
   return null;
 }
+
+/* ── قرارُ المسار الجماعي، قسماً قسماً — دالّةٌ صرفة يقرؤها الخادم والاختبار ── */
+
+export type ExceptionAction = "grant" | "remove" | "reject";
+
+export interface ExceptionOutcome {
+  ok: boolean;
+  unchanged?: boolean;
+  until?: string;
+  from?: ExceptionPlan["from"];
+  daysAfterTerm?: number;
+  error?: string;
+  /** ما يُكتب في سجلّ الدورة، إن كُتب شيء. */
+  event?: { action: string; detail: string };
+}
+
+/**
+ * ما يجري لسجلّ قسمٍ واحد. لا يُكتب شيءٌ إن لم يُرجَع `next`.
+ * (الأساسُ الذي تُعدّ منه الأيام يُقرأ من السجلّ الحاضر داخل الطابور، لا من الشاشة.)
+ */
+export function decideException(
+  approval: ScheduleApproval,
+  input: { action: ExceptionAction; termDeadline?: string; amount?: ExceptionAmount; reason?: string; by: string; at?: string },
+): { next?: ScheduleApproval; outcome: ExceptionOutcome } {
+  const reason = String(input.reason || "").trim().slice(0, 240);
+  if (input.action === "reject") {
+    if (!approval.extensionRequest) return { outcome: { ok: false, unchanged: true, error: "لا طلبَ تمديدٍ معلّقاً لهذا القسم." } };
+    return {
+      next: withoutExtensionRequest(approval),
+      outcome: { ok: true, until: approval.extensionUntil || input.termDeadline, event: { action: "extension-request-rejected", detail: reason } },
+    };
+  }
+  if (input.action === "remove") {
+    if (!approval.extensionUntil) return { outcome: { ok: true, unchanged: true, until: input.termDeadline } };
+    return {
+      next: withoutException(approval),
+      outcome: { ok: true, until: input.termDeadline, event: { action: "extension", detail: "رفع الاستثناء — العودة إلى موعد الفصل" } },
+    };
+  }
+  if (!input.termDeadline || !input.amount) return { outcome: { ok: false, error: "ضع آخر موعدٍ للفصل أولاً — الاستثناءُ يُعدّ منه." } };
+  const plan = planException(input.termDeadline, approval.extensionUntil, input.amount);
+  return {
+    next: withException(approval, { until: plan.until, reason, by: input.by, at: input.at }),
+    outcome: {
+      ok: true, until: plan.until, from: plan.from, daysAfterTerm: plan.daysAfterTerm,
+      event: { action: "extension", detail: `${plan.until} (${exceptionDaysLabel(plan.daysAfterTerm)}) — ${reason}` },
+    },
+  };
+}
+
+export type ExceptionScope =
+  | { kind: "all" }
+  | { kind: "college"; collegeId: number }
+  | { kind: "departments"; departments: Array<{ collegeId: number; sectionId: number }> };
+
+/**
+ * الأقسامُ التي يقع عليها القرار. الكلُّ والكليةُ من سجلّ الأقسام في نطاق صاحب
+ * القرار وحده (ما خرج عنه لا يُذكر)؛ والمسمّاةُ يُسأل عن كلٍّ منها، فما خرج عن
+ * نطاقه أو لم يوجد يُقال له.
+ */
+export function resolveExceptionTargets(
+  scope: unknown,
+  sections: ReadonlyArray<{ AdCollegeId: number; AdSectionId: number; AdSectionName?: string }>,
+  allowed: (collegeId: number, sectionId: number) => boolean,
+): { error?: string; targets: Array<{ collegeId: number; sectionId: number; sectionName: string; refusal?: string }> } {
+  const raw = (scope || {}) as any;
+  const kind = String(raw.kind || "");
+  const name = new Map(sections.map(row => [`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`, String(row.AdSectionName || "")]));
+  if (kind === "all" || kind === "college") {
+    const collegeId = Number(raw.collegeId || 0);
+    if (kind === "college" && !collegeId) return { error: "اختر الكلية.", targets: [] };
+    const targets = sections
+      .filter(row => kind === "all" || Number(row.AdCollegeId) === collegeId)
+      .filter(row => allowed(Number(row.AdCollegeId), Number(row.AdSectionId)))
+      .map(row => ({ collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId), sectionName: String(row.AdSectionName || "") }));
+    return targets.length ? { targets } : { error: "لا قسمَ في هذا النطاق.", targets };
+  }
+  if (kind === "departments") {
+    const seen = new Set<string>();
+    const targets: Array<{ collegeId: number; sectionId: number; sectionName: string; refusal?: string }> = [];
+    for (const item of Array.isArray(raw.departments) ? raw.departments : []) {
+      const collegeId = Number(item?.collegeId || 0), sectionId = Number(item?.sectionId || 0);
+      const key = `${collegeId}:${sectionId}`;
+      if (!collegeId || !sectionId || seen.has(key)) continue;
+      seen.add(key);
+      const refusal = !name.has(key) ? "قسمٌ غير موجود." : !allowed(collegeId, sectionId) ? "خارج صلاحيات الأقسام المسموحة لك" : undefined;
+      targets.push({ collegeId, sectionId, sectionName: name.get(key) || `قسم ${sectionId}`, ...(refusal ? { refusal } : {}) });
+    }
+    return targets.length ? { targets } : { error: "اختر قسماً واحداً على الأقل.", targets };
+  }
+  return { error: "اختر النطاق: كل الأقسام، أو كلية، أو أقساماً بأعيانها.", targets: [] };
+}

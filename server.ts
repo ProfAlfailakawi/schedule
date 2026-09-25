@@ -41,8 +41,8 @@ import { finalSourceFor, type Finality } from "./src/utils/finality";
 import { movementAttribution } from "./src/utils/movementAttribution";
 import { isLate } from "./src/utils/lateness";
 import {
-  exceptionDaysLabel, exceptionRefusal, normalizeExceptionDays, planException, withException, withoutException, withoutExtensionRequest,
-  type ExceptionAmount,
+  decideException, exceptionRefusal, normalizeExceptionDays, resolveExceptionTargets, withException, withoutException,
+  type ExceptionAction, type ExceptionAmount, type ExceptionOutcome,
 } from "./src/utils/submissionDeadlines";
 import { placeholderInstructorIdsOf } from "./src/utils/placeholderInstructor";
 import {
@@ -10349,74 +10349,35 @@ app.post("/api/approvals/extensions", requireAuth, async (req: AuthenticatedRequ
     res.status(400).json({ error: "اكتب سبب الرفض — يراه القسم.", code: "exception-refused" }); return;
   }
 
-  /* ── النطاق: الكلُّ، أو كلية، أو أقسامٌ بأعيانها ─────────────────────────
-   * الكلُّ والكليةُ يُقرآن من سجلّ الأقسام في نطاق صاحب القرار وحده؛ والأقسامُ
-   * المسمّاة يُسأل عن كلٍّ منها، فما خرج عن نطاقه يُقال له لا يُسكت عنه. */
-  const scope = req.body?.scope || {};
-  const kind = String(scope.kind || "");
-  const sections = await Repository.getSections() as any[];
-  const sectionKey = (collegeId: number, sectionId: number) => `${collegeId}:${sectionId}`;
-  const known = new Map(sections.map(row => [sectionKey(Number(row.AdCollegeId), Number(row.AdSectionId)), row]));
+  /* ── النطاق: الكلُّ، أو كلية، أو أقسامٌ بأعيانها (resolveExceptionTargets) ── */
   const allowed = (collegeId: number, sectionId: number) => Boolean(req.user?.IsAdminUser) || isScopeAllowed(req, collegeId, sectionId);
-  let targets: Array<{ collegeId: number; sectionId: number; named: boolean }> = [];
-  if (kind === "all" || kind === "college") {
-    const collegeId = Number(scope.collegeId || 0);
-    if (kind === "college" && !collegeId) { res.status(400).json({ error: "اختر الكلية." }); return; }
-    targets = sections
-      .filter(row => kind === "all" || Number(row.AdCollegeId) === collegeId)
-      .filter(row => allowed(Number(row.AdCollegeId), Number(row.AdSectionId)))
-      .map(row => ({ collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId), named: false }));
-  } else if (kind === "departments") {
-    const seen = new Set<string>();
-    for (const item of Array.isArray(scope.departments) ? scope.departments : []) {
-      const collegeId = Number(item?.collegeId || 0), sectionId = Number(item?.sectionId || 0);
-      if (!collegeId || !sectionId || seen.has(sectionKey(collegeId, sectionId))) continue;
-      seen.add(sectionKey(collegeId, sectionId));
-      targets.push({ collegeId, sectionId, named: true });
-    }
-  } else {
-    res.status(400).json({ error: "اختر النطاق: كل الأقسام، أو كلية، أو أقساماً بأعيانها." }); return;
-  }
-  if (!targets.length) { res.status(400).json({ error: "لا قسمَ في هذا النطاق." }); return; }
-  if (targets.length > EXTENSIONS_MAX_TARGETS) { res.status(400).json({ error: "النطاقُ أوسع مما يُطبَّق دفعةً واحدة." }); return; }
+  const resolved = resolveExceptionTargets(req.body?.scope, await Repository.getSections() as any[], allowed);
+  if (resolved.error) { res.status(400).json({ error: resolved.error }); return; }
+  if (resolved.targets.length > EXTENSIONS_MAX_TARGETS) { res.status(400).json({ error: "النطاقُ أوسع مما يُطبَّق دفعةً واحدة." }); return; }
 
   const actor = approvalActor(req);
-  const results: Array<{
-    collegeId: number; sectionId: number; sectionName: string; ok: boolean; unchanged?: boolean;
-    until?: string; from?: string; daysAfterTerm?: number; error?: string;
-  }> = [];
-  for (const target of targets) {
-    const { collegeId, sectionId } = target;
-    const sectionName = String(known.get(sectionKey(collegeId, sectionId))?.AdSectionName || `قسم ${sectionId}`);
-    if (!known.has(sectionKey(collegeId, sectionId))) { results.push({ collegeId, sectionId, sectionName, ok: false, error: "قسمٌ غير موجود." }); continue; }
-    if (!allowed(collegeId, sectionId)) { results.push({ collegeId, sectionId, sectionName, ok: false, error: "خارج صلاحيات الأقسام المسموحة لك" }); continue; }
-    let result: Omit<(typeof results)[number], "collegeId" | "sectionId" | "sectionName"> = { ok: false };
+  const results: Array<{ collegeId: number; sectionId: number; sectionName: string } & Omit<ExceptionOutcome, "event">> = [];
+  for (const target of resolved.targets) {
+    const { collegeId, sectionId, sectionName } = target;
+    if (target.refusal) { results.push({ collegeId, sectionId, sectionName, ok: false, error: target.refusal }); continue; }
+    let outcome: ExceptionOutcome = { ok: false };
     try {
-      const outcome = await approvalTransaction(null, collegeId, sectionId, termId, async () => {
+      const written = await approvalTransaction(null, collegeId, sectionId, termId, async () => {
+        /* يُقرأ السجلُّ داخل الطابور: الأيامُ تُعدّ من استثنائه الحاضر لا مما رأته الشاشة. */
         const approval = await readApproval(collegeId, sectionId, termId);
-        let next: ScheduleApproval;
-        if (action === "reject") {
-          if (!approval.extensionRequest) { result = { ok: false, unchanged: true, error: "لا طلبَ تمديدٍ معلّقاً لهذا القسم." }; return; }
-          next = withEvent(req, withoutExtensionRequest(approval), "extension-request-rejected", reason);
-          result = { ok: true, until: approval.extensionUntil || termDeadline };
-        } else if (action === "remove") {
-          if (!approval.extensionUntil) { result = { ok: true, unchanged: true, until: termDeadline }; return; }
-          next = withEvent(req, withoutException(approval), "extension", "رفع الاستثناء — العودة إلى موعد الفصل");
-          result = { ok: true, until: termDeadline };
-        } else {
-          const plan = planException(termDeadline!, approval.extensionUntil, amount!);
-          next = withEvent(req, withException(approval, { until: plan.until, reason, by: actor.name }), "extension",
-            `${plan.until} (${exceptionDaysLabel(plan.daysAfterTerm)}) — ${reason}`);
-          result = { ok: true, until: plan.until, from: plan.from, daysAfterTerm: plan.daysAfterTerm };
-        }
+        const decision = decideException(approval, { action: action as ExceptionAction, termDeadline, amount, reason, by: actor.name });
+        outcome = decision.outcome;
+        if (!decision.next) return;
+        const next = decision.outcome.event ? withEvent(req, decision.next, decision.outcome.event.action, decision.outcome.event.detail) : decision.next;
         await Repository.saveScheduleApproval(next);
       });
-      if (outcome === "conflict") result = { ok: false, error: "سبقك قرارٌ آخر على هذا القسم في اللحظة نفسها — أعد المحاولة." };
+      if (written === "conflict") outcome = { ok: false, error: "سبقك قرارٌ آخر على هذا القسم في اللحظة نفسها — أعد المحاولة." };
     } catch (error) {
       console.error("[deadlines] تعذّر حفظُ استثناء:", error instanceof Error ? error.message : error);
-      result = { ok: false, error: "تعذّر الحفظ لهذا القسم." };
+      outcome = { ok: false, error: "تعذّر الحفظ لهذا القسم." };
     }
-    results.push({ collegeId, sectionId, sectionName, ...result });
+    const { event: _event, ...shown } = outcome;
+    results.push({ collegeId, sectionId, sectionName, ...shown });
   }
 
   const applied = results.filter(row => row.ok && !row.unchanged).length;
