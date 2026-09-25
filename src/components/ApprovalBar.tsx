@@ -15,7 +15,8 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Clock3, CornerUpLeft, History, MessageSquareText, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ChevronDown, Clock3, CornerUpLeft, History, MessageSquareText, Send, ShieldCheck } from "lucide-react";
+import { safeStorage } from "../utils/safeStorage";
 import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
@@ -92,6 +93,16 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [reason, setReason] = useState("");
   const [days, setDays] = useState(7);
   const [historyOpen, setHistoryOpen] = useState(false);
+  /* الشريط مطويٌّ افتراضاً: سطرٌ واحد بالحال والموعد والفعل. التواقيع والتفاصيل
+     لمن يطلبها — ويُذكَر اختيارُه على هذا الجهاز. */
+  const [expanded, setExpanded] = useState<boolean>(() => {
+    try { return safeStorage.get("schedule-approval-bar-open") === "1"; } catch { return false; }
+  });
+  const toggleExpanded = () => setExpanded(open => {
+    const next = !open;
+    try { safeStorage.set("schedule-approval-bar-open", next ? "1" : "0"); } catch { /* تفضيلٌ لا يلزم حفظه */ }
+    return next;
+  });
 
   const load = useCallback(async () => {
     if (!collegeId || !sectionId || !termId) { setState(null); return; }
@@ -261,10 +272,19 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const canHeadReturnNow = signatureStage === "head" && awaitsHeadSignature(approval) && !locked;
 
   return (
-    <div className="approval-bar" data-tone={tone}>
+    <div className="approval-bar" data-tone={tone} data-expanded={expanded || undefined}>
       <Icon aria-hidden="true" />
       <div className="approval-bar-text">
-        <strong>{headline}</strong>
+        <div className="approval-bar-head">
+          <strong>{headline}</strong>
+          {!expanded && countdown ? (
+            <span className="approval-chip" data-past={deadlineGone || undefined}><Clock3 aria-hidden="true" />{countdown}</span>
+          ) : null}
+          <button type="button" className="approval-expand" aria-expanded={expanded} data-guide-ignore="طيّ تفاصيل شريط الاعتماد وفتحها — عرضٌ لا فعل" onClick={toggleExpanded}>
+            <span>{expanded ? "إخفاء التفاصيل" : "التفاصيل"}</span><ChevronDown aria-hidden="true" />
+          </button>
+        </div>
+        {expanded ? <>
         {detail ? <small>{detail}</small> : null}
         {/* التواقيع تُعرض في كل حال. ومن يسأل «مَن وقّع؟» يسأله حين يكون
             الجدول عند التسجيل قبل غيرها — فإخفاؤها هناك بالذات إخفاءٌ في
@@ -283,6 +303,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             {rejected ? ` · رُفض طلب التمديد (${arabicDate(rejected.at)})${rejected.detail ? `: ${rejected.detail}` : ""}` : ""}
           </small>
         ) : null}
+        </> : null}
         {/* الخلافُ الذي تكرّر ثلاثاً يُعرض لرئيس القسم هنا — وهذا ما تَعِد به شاشةُ الملاحظات. */}
         {escalated > 0 && signatureStage === "head" ? (
           <small className="approval-escalated">
