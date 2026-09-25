@@ -25,6 +25,7 @@ import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
+import { termPhase } from "./src/utils/termSequence";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -12227,6 +12228,8 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     /* الفصل التشغيلي يأتي من حالة الفصول، لا من الرابط. رابطٌ قديم يظل باباً
        آمناً لبطاقة صاحبه، لكنه لا يجعل فصله جارياً إلى الأبد. */
     liveTermId: currentTermId(terms as any),
+    /* «سابق» لفصلٍ انقضى وحده؛ القادمُ قادمٌ، ويُضاف تقويمُه من الآن. */
+    termPhase: termPhase(terms.find(row => row.AdTermId === displayTermId) as any, currentTermId(terms as any)),
     expiresAt: link.expiresAt,
     requestsCloseAt: link.requestsCloseAt || "",
     // The subscription key. Handed out only here — after the card has already
@@ -12425,7 +12428,12 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const person = instructors.find(row => calendarFeedKey(secret, token, row.AdInstructorId) === String(req.params.key || ""));
   if (!person) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
 
-  const liveTermId = currentTermId(terms as any);
+  /* الاشتراكُ يتبع الفصل الجاري. ومن أضافه من بطاقة فصلٍ قادم يحمل رقمَه في
+     الرابط، فيرى ذلك الفصل حتى يصير هو الجاري — ولا يُفتح به فصلٌ انقضى. */
+  const pinnedTerm = terms.find(row => Number(row.AdTermId) === Number(req.query.term || 0));
+  const liveTermId = pinnedTerm && termPhase(pinnedTerm as any, currentTermId(terms as any)) === "upcoming"
+    ? Number(pinnedTerm.AdTermId)
+    : currentTermId(terms as any);
   if (!liveTermId) {
     res.status(409).type("text/plain; charset=utf-8").send("لا يوجد فصل جارٍ متاح للتقويم");
     return;
@@ -14031,7 +14039,9 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   function render(d,value){
     currentCivil=value;
     var currentTerm = { termId: Number(d.termId || 0) };
-    var live = Boolean(d.liveTermId) && Number(d.termId) === Number(d.liveTermId);
+    var phase = d.termPhase || ((Boolean(d.liveTermId) && Number(d.termId) === Number(d.liveTermId)) ? "current" : "past");
+    var live = phase === "current";
+    var calendarOpen = phase !== "past";
     document.getElementById("name").textContent=d.name;
     document.getElementById("scope").textContent=d.college||"";
     var termPick=document.getElementById("termPick");
@@ -14065,21 +14075,25 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       }).join("")+'</tbody></table>';
     document.getElementById("days").innerHTML=weekTable;
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
-    else if(!live) document.getElementById("days").insertAdjacentHTML("afterbegin",
+    else if(phase === "past") document.getElementById("days").insertAdjacentHTML("afterbegin",
       '<div class="pastnote">فصل سابق — للاطلاع فقط. الإبلاغ وإضافة التقويم متاحان في الفصل الحالي.</div>');
+    else if(phase === "upcoming") document.getElementById("days").insertAdjacentHTML("afterbegin",
+      '<div class="pastnote">فصل قادم — يمكنك إضافة تقويمه الآن. الإبلاغ عن محاضرة يُتاح حين يبدأ الفصل.</div>');
 
     renderMovement(d);
     renderRequests(d);
     selectTab("week");
 
-    document.getElementById("ics").style.display = live ? "" : "none";
-    if(!live) document.getElementById("sub").setAttribute("hidden","");
+    document.getElementById("ics").style.display = calendarOpen ? "" : "none";
+    if(!calendarOpen) document.getElementById("sub").setAttribute("hidden","");
 
     var base = "/api/public/ics/"+encodeURIComponent(TOKEN)+"/"+encodeURIComponent(d.calendarKey||"");
+    var query = phase === "upcoming" ? ["term="+encodeURIComponent(String(d.termId||""))] : [];
     var alarmBox = document.getElementById("subAlarm");
     var feed = base, https = location.origin + base;
     function retune(){
-      feed = base + (alarmBox.checked ? "?alarm=15" : "");
+      var parts = query.concat(alarmBox.checked ? ["alarm=15"] : []);
+      feed = base + (parts.length ? "?" + parts.join("&") : "");
       https = location.origin + feed;
       document.getElementById("subNow").setAttribute("href", "webcal://" + location.host + feed);
     }

@@ -6,7 +6,7 @@
 | D2 | FIXED — staff links live to term end (termLinkExpiresAt in src/utils/shareLinkLifetime.ts, fallback +150d), requestsCloseAt stored separately, /issue uses same close format, card/publish wording truthful | tests/doctor-journey-audit.ts D2 |
 | D3 | TODO | |
 | D4 | FIXED — normalizeCivilId/sameCivilId in src/utils/civilId.ts used by staff card, card note, request signing, both imports, delegate routes, instructor create/update. Student survey routes (asciiDigits+\\D, same result) left to the student stream (DO NOT TOUCH) | tests/doctor-journey-audit.ts D4, tests/request-signature-audit.ts |
-| D5 | TODO | |
+| D5 | FIXED — termPhase() in termSequence.ts (past only if termHasEnded); card shows «فصل قادم», keeps calendar; ics feed serves a pinned upcoming term (?term=) | tests/doctor-journey-audit.ts D5 |
 | D6 | TODO | |
 | D7 | FIXED — calendarSpanForTerm (icalendar.ts) uses termWindow start/end (declared or from term name); endDate→UNTIL; "today" anchor only when term unknown; honest feed label | tests/doctor-journey-audit.ts D7 |
 | D8 | TODO | |

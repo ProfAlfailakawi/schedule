@@ -10,6 +10,7 @@ import {
   CALENDAR_KEY_LABEL, calendarFeedKey, createCalendarSecretResolver, deriveCalendarSecret,
 } from "../src/server/calendarSecret";
 import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
+import { termPhase } from "../src/utils/termSequence";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
 import { TERM_LINK_FALLBACK_DAYS, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
 
@@ -131,6 +132,26 @@ async function main() {
     check(server.includes("const storedCivil = normalizeCivilId(signer?.AdInstructorCivil)"), "D4 التوقيع يطبّع بالدالة الواحدة");
     check(server.includes("new Map(instructors.map(row => [normalizeCivilId(row.AdInstructorCivil), row]))"), "D4 الاستيراد يطبّع بالدالة الواحدة");
     check((server.match(/const AdInstructorCivil = normalizeCivilId\(req\.body\?\.AdInstructorCivil\)/g) || []).length === 2, "D4 إضافة الأستاذ وتعديله يخزّنان الصيغة الواحدة");
+  }
+
+
+  /* ── D5: الفصل القادم ليس «سابقاً» ───────────────────────────────────────── */
+  {
+    const now = Date.parse("2026-09-25T10:00:00Z");
+    const current = { AdTermId: 10, AdTermName: "الأول 2026/2027" };
+    const upcoming = { AdTermId: 11, AdTermName: "الثاني 2026/2027" };
+    const past = { AdTermId: 9, AdTermName: "الصيفي 2025/2026" };
+    check(termPhase(current, 10, now) === "current", "D5 الجاري جارٍ");
+    check(termPhase(upcoming, 10, now) === "upcoming", "D5 الفصل الذي لم ينتهِ ليس سابقاً");
+    check(termPhase(past, 10, now) === "past", "D5 السابق ما انقضت نهايته");
+    check(termPhase({ AdTermId: 12, AdTermName: "فصل" }, 10, now) === "upcoming", "D5 فصلٌ بلا نافذة لا يُوصم بالسابق");
+    const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
+    check(card.includes("termPhase: termPhase("), "D5 البطاقة تحمل موقع الفصل من الزمن");
+    const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(page.includes('phase === "past"') && page.includes("فصل قادم") && page.includes('calendarOpen = phase !== "past"'), "D5 الصفحة تقول «قادم» وتُبقي التقويم");
+    check(page.includes('"term="+encodeURIComponent'), "D5 اشتراك الفصل القادم يحمل رقمه");
+    const ics = server.slice(server.indexOf('app.get("/api/public/ics/:token/:key"'), server.indexOf('app.get("/api/public/ics/:token/:key"') + 2000);
+    check(ics.includes('termPhase(pinnedTerm as any, currentTermId(terms as any)) === "upcoming"'), "D5 التقويم يخدم الفصل القادم المثبّت ولا يفتح به فصلاً انقضى");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

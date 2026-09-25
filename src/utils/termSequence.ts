@@ -221,3 +221,22 @@ export function isTermClosed(
      سجل للقراءة وحدها. */
   return term.AdTermClosed === true;
 }
+
+/**
+ * ── موقعُ فصلٍ من الزمن، كما تقوله بطاقة الأستاذ ────────────────────────────
+ *
+ * كانت البطاقة تقول «فصل سابق» عن كل فصلٍ ليس الجاري — ومنه الفصلُ القادم
+ * الذي أُرسل للأستاذ جدولُه للتوّ — وتُخفي عنه التقويم. «سابق» لا يُقال إلا
+ * لفصلٍ انقضت نهايته (`termHasEnded`)؛ وما لم يبدأ ولم ينتهِ فهو «قادم».
+ */
+export type TermPhase = "current" | "past" | "upcoming";
+
+export function termPhase(
+  term: (Parameters<typeof termWindow>[0] & { AdTermId?: number }) | null | undefined,
+  liveTermId: number,
+  now: number = Date.now(),
+): TermPhase {
+  if (term && Number(term.AdTermId || 0) && Number(term.AdTermId) === Number(liveTermId || 0)) return "current";
+  const ended = termHasEnded(term, now);
+  return ended ? "past" : "upcoming";
+}
