@@ -17,7 +17,7 @@
 | S13 | FIXED — /api/schedules/demand cases carry caseRef (caseRefFor); IntelligenceWorkspace table + printable list show item.caseRef; the id→caseRef derivation exists only in src/utils/studentNeedMerge.ts (repository caseRefOf aliases it) | tests/student-journey-audit.ts §S13 |
 | S14 | FIXED — sectionOwnsNeed: a declared-survey need also belongs to every section owning one of its courses (read + write scope, one derivation); sheet shows each course on its owner's sheet as decidable, and on the survey sheet a foreign course read-only «يقرّره قسم …» (no buttons, excluded from totals/approve-all). NOT touched: notification bell counts (~9781, dean/notificationCenter stream) | tests/student-journey-audit.ts §S14 |
 | S15 | FIXED — my-case reports awaiting-signatures (per course owner section / survey section for graduate cases) when the committee approved but readApproval is not fully signed; /m/ shows «وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم» | tests/student-journey-audit.ts §S15 |
-| S16 | TODO | |
+| S16 | FIXED — sheet rows carry details + partnerCourses (other side of a course-conflict not on this sheet); StudentRegistration shows request type label, «يتعارض مع: …», «ملاحظات الطالب»; Excel export adds نوع الطلب + ملاحظات الطالب | tests/student-journey-audit.ts §S16 |
 | S17 | TODO | |
 | S18 | TODO | |
 | S19 | TODO | |

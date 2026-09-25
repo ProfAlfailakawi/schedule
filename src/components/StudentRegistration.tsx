@@ -71,6 +71,8 @@ interface CaseRow {
   createdAt: string; requestType: string; studentSectionName: string;
   details?: string;
   caseDroppedAt?: string;
+  /** الطرفُ الآخر في «تعارض مقررين» حين لا يكون في هذا الكشف. */
+  partnerCourses?: Array<{ code: string; name: string; sectionName: string }>;
   courses: CaseCourse[];
   /** طلبُ الخريج: قرارٌ واحدٌ في الحالة كلها بدل قرارات المقرّرات. */
   caseLevel?: boolean;
@@ -152,6 +154,12 @@ const GRADUATE_REASON_LABEL: Record<string, string> = {
 /** البنودُ التي تنتظر قراراً في صفٍّ واحد: مقرّراته، أو حالتُه كلها. */
 const rowStatuses = (row: CaseRow): Array<Exclude<StatusFilter, "all">> =>
   row.caseLevel ? [row.caseStatus || "pending"] : row.courses.filter(course => !course.readOnly).map(statusOf);
+
+const REQUEST_TYPE_LABEL: Record<string, string> = {
+  "new-course": "طلب فتح مقرر",
+  "course-conflict": "تعارض مقررين",
+  graduate: "خريج / متوقع تخرجه",
+};
 
 const arabicDate = (iso?: string) => {
   if (!iso) return "";
@@ -356,24 +364,25 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
      نفسها — فلا يخرج مقرّرٌ لم توافق عليه اللجنة في ملفّ التسجيل. */
   const exportVisible = async () => {
     const XLSX = await import("xlsx");
-    const headers = ["رقم الحالة", "اسم الطالب", "الرقم المدني", "رمز المقرر", "المقرر", "الحالة", "السبب", "ملاحظة"];
+    const headers = ["رقم الحالة", "اسم الطالب", "الرقم المدني", "نوع الطلب", "رمز المقرر", "المقرر", "الحالة", "السبب", "ملاحظة", "ملاحظات الطالب"];
     const body = visible.flatMap(row => row.caseLevel
       ? [(() => {
           const last = row.caseState?.registrar || row.caseState?.committee;
           return [
-            row.caseRef, row.name || "", row.civil || "", "", `حالة خريج — ${GRADUATE_REASON_LABEL[row.graduate?.reason || ""] || ""}`,
-            CASE_STATUS_LABEL[row.caseStatus || "pending"], reasonLabel(last?.reasonCode), last?.note || row.details || "",
+            row.caseRef, row.name || "", row.civil || "", REQUEST_TYPE_LABEL[row.requestType] || row.requestType, "", `حالة خريج — ${GRADUATE_REASON_LABEL[row.graduate?.reason || ""] || ""}`,
+            CASE_STATUS_LABEL[row.caseStatus || "pending"], reasonLabel(last?.reasonCode), last?.note || "", row.details || "",
           ];
         })()]
       : row.courses
       .filter(course => statusFilter === "all" || statusOf(course) === statusFilter)
       .map(course => [
-        row.caseRef, row.name || "", row.civil || "", course.code || "", course.name || "",
-        course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE,
-        reasonLabel(course.reasonCode), course.note || "",
+        row.caseRef, row.name || "", row.civil || "", REQUEST_TYPE_LABEL[row.requestType] || row.requestType, course.code || "", course.name || "",
+        course.droppedByStudent ? (course.droppedLabel || "ألغاه الطالب") : course.readOnly ? `يقرّره قسم ${course.decidedBySectionName || "آخر"}`
+          : course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE,
+        reasonLabel(course.reasonCode), course.note || "", row.details || "",
       ]));
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...body]);
-    (sheet as any)["!cols"] = [{ wch: 11 }, { wch: 26 }, { wch: 14 }, { wch: 11 }, { wch: 30 }, { wch: 26 }, { wch: 22 }, { wch: 24 }];
+    (sheet as any)["!cols"] = [{ wch: 11 }, { wch: 26 }, { wch: 14 }, { wch: 16 }, { wch: 11 }, { wch: 30 }, { wch: 26 }, { wch: 22 }, { wch: 24 }, { wch: 30 }];
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "كشف التسجيل");
     const section = sectionOptions.find(item => item.value === sectionId)?.label || "القسم";
@@ -534,6 +543,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                       <strong>{row.name || "طالب"}</strong>
                       <small>
                         {row.caseRef}
+                        {` · ${REQUEST_TYPE_LABEL[row.requestType] || row.requestType}`}
                         {row.studentSectionName ? ` · ${row.studentSectionName}` : ""}
                         {row.createdAt ? ` · ${arabicDate(row.createdAt)}` : ""}
                       </small>
@@ -635,6 +645,12 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                     );
                   })() : (
                   <div className="request-items">
+                    {row.partnerCourses?.length ? (
+                      <p className="registration-partner">
+                        يتعارض مع: {row.partnerCourses.map(course => `${course.name}${course.code ? ` (${course.code})` : ""}${course.sectionName ? ` — ${course.sectionName}` : ""}`).join("، ")}
+                      </p>
+                    ) : null}
+                    {row.details ? <p className="registration-details">ملاحظات الطالب: {row.details}</p> : null}
                     {row.caseDroppedAt ? (
                       <p className="registration-dropped">ألغى الطالب طلب الخريج السابق بعد قرارٍ فيه، واستبدله بهذا الطلب.</p>
                     ) : null}

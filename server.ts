@@ -13571,6 +13571,15 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
       /* طلبُ خريجٍ قيل فيه شيءٌ ثم غيّره الطالب إلى طلب مقرّرات. */
       caseDroppedAt: need.caseDroppedAt && need.caseState ? String(need.caseDroppedAt) : "",
+      details: String(need.details || ""),
+      /* «تعارض مقررين» يُفهم بطرفيه: المقرّرُ الآخر يُذكر ولو لم يكن في هذا الكشف. */
+      partnerCourses: String(need.requestType || "") === "course-conflict"
+        ? (need.courseIds || []).filter((id: any) => !visibleCourseIds.map(Number).includes(Number(id))).map((id: any) => {
+            const course: any = courseById.get(Number(id));
+            return { code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${id}`),
+              sectionName: sectionNameById.get(Number(course?.AdSectionId || 0)) || "" };
+          })
+        : [],
       courses: visibleCourseIds.map((id: any) => {
         const course: any = courseById.get(Number(id));
         const state: any = states.get(Number(id));
