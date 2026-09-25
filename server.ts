@@ -24,7 +24,7 @@ import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQue
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
-import { personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
+import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
 import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
 import { runApprovalAttempts, type ApprovalOnce } from "./src/server/approvalAttempts";
@@ -12820,20 +12820,22 @@ function shareDayIndexes(row: FSchedule): number[] {
   return SHARE_DAY_KEYS.map((key, index) => (row as any)[key] ? index : -1).filter(index => index >= 0);
 }
 
-/** الروابط الشخصية (بطاقة الأستاذ، رابط الطلب) تُقرأ حتى نهاية فصلها — حتى ما صدر
- *  منها قبل القاعدة بتاريخ موعد الطلبات. رابطُ القسم والاستبيان على تاريخهما. */
-async function personalLinkStillReadable(link: ScheduleShareLink): Promise<boolean> {
-  if (Date.parse(String(link.expiresAt || "")) >= Date.now() || !link.expiresAt) return true;
-  if (link.kind !== "staff" && link.kind !== "request") return false;
+/** هل ما زال الرابطُ مقروءاً؟ القاعدة (وأيُّ الأنواع يُقرأ حتى نهاية فصله —
+ *  بطاقاتُ الأساتذة بنوعيها، القسمِ والشخصي، ورابطُ الطلب) في
+ *  src/utils/shareLinkLifetime.ts وحدها. الفصلُ لا يُقرأ إلا إن مضى تاريخُ الرابط. */
+async function shareLinkStillReadable(link: ScheduleShareLink): Promise<boolean> {
+  if (!link.expiresAt || Date.parse(String(link.expiresAt)) >= Date.now() || !readsUntilTermEnd(link.kind)) {
+    return shareLinkReadable(link, undefined as any);
+  }
   const term = (await Repository.getTerms()).find(row => Number(row.AdTermId) === Number(link.AdTermId));
-  return personalLinkReadable(link.expiresAt, term);
+  return shareLinkReadable(link, term);
 }
 
 /** Resolves a token to its live scope, or explains precisely why it cannot be read. */
 async function resolveShareToken(token: string) {
   const link = await Repository.getShareLink(String(token || ""));
   if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 as const };
-  if (!await personalLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 as const };
+  if (!await shareLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 as const };
   return { link };
 }
 
@@ -13048,7 +13050,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
   const requestLinks = (await Promise.all((personal ? requestRows : []).map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
-    if (!requestLink || requestLink.revoked || !await personalLinkStillReadable(requestLink)) return null;
+    if (!requestLink || requestLink.revoked || !await shareLinkStillReadable(requestLink)) return null;
     const windowOpen = requestWindowOpen(request);
     return {
       linkId: request.linkId,
@@ -13293,7 +13295,7 @@ app.post("/api/share/:id/personal", requirePermission(7), async (req: Authentica
   ]);
   const live = new Map<number, ScheduleShareLink>();
   for (const link of existing) {
-    if (!isPersonalStaffLink(link) || link.revoked || !await personalLinkStillReadable(link)) continue;
+    if (!isPersonalStaffLink(link) || link.revoked || !await shareLinkStillReadable(link)) continue;
     if (!live.has(Number(link.AdInstructorId))) live.set(Number(link.AdInstructorId), link);
   }
   const term = terms.find(row => Number(row.AdTermId) === Number(parent.AdTermId));
@@ -16157,7 +16159,7 @@ async function resolveRequestLink(token: string) {
   const link = await Repository.getShareLink(String(token || ""));
   if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 } as const;
   if (link.kind !== "request") return { error: "هذا الرابط ليس طلبَ جدول", status: 404 } as const;
-  if (!await personalLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 } as const;
+  if (!await shareLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 } as const;
   const request = await Repository.getInstructorRequestByLink(link.id);
   if (!request) return { error: "لا يوجد طلبٌ مرتبطٌ بهذا الرابط", status: 404 } as const;
   return { link, request } as const;

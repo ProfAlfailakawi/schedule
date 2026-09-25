@@ -18,7 +18,7 @@ import { AR, nounFor } from "../src/utils/arabicCount";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
 import { coverConflict } from "../src/utils/coverAvailability";
 import { chosenAlternativeIndex } from "../src/utils/requestAlternatives";
-import { TERM_LINK_FALLBACK_DAYS, personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
+import { TERM_LINK_FALLBACK_DAYS, readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
 
 let passed = 0, failed = 0;
 function check(condition: unknown, name: string) {
@@ -231,9 +231,24 @@ async function main() {
     check(chosenAlternativeIndex(alts, ["fsunday"], "11:00") === -1 && chosenAlternativeIndex([], ["fsunday"], "10:00") === -1, "D3 لا مطابقة بلا بديلٍ مطابق");
     const now = Date.parse("2026-10-20T10:00:00Z");
     const term = { AdTermName: "الأول 2026/2027" };
-    check(personalLinkReadable("2026-10-09T00:00:00Z", term, now), "D3 رابطٌ قديمٌ انتهى بموعد الطلبات يبقى مقروءاً حتى نهاية الفصل");
-    check(!personalLinkReadable("2026-10-09T00:00:00Z", { AdTermName: "الأول 2025/2026" }, now), "D3 فصلٌ انقضى لا يمدّ رابطاً منتهياً");
-    check(!personalLinkReadable("2026-10-09T00:00:00Z", { AdTermName: "فصل" }, now), "D3 فصلٌ مجهول لا يمدّ رابطاً منتهياً");
+    const old = "2026-10-09T00:00:00Z";
+    check(shareLinkReadable({ kind: "request", expiresAt: old }, term, now), "D3 رابطٌ قديمٌ انتهى بموعد الطلبات يبقى مقروءاً حتى نهاية الفصل");
+    check(!shareLinkReadable({ kind: "request", expiresAt: old }, { AdTermName: "الأول 2025/2026" }, now), "D3 فصلٌ انقضى لا يمدّ رابطاً منتهياً");
+    check(!shareLinkReadable({ kind: "request", expiresAt: old }, { AdTermName: "فصل" }, now), "D3 فصلٌ مجهول لا يمدّ رابطاً منتهياً");
+    /* مراجعة 8: القرار المكتوب — بطاقاتُ الأساتذة بنوعيها (القسم والشخصي) ورابطُ الطلب حتى نهاية الفصل (D2)،
+       والجدولُ العام والاستبيان على تاريخهما. */
+    check(readsUntilTermEnd("staff") && readsUntilTermEnd("request") && !readsUntilTermEnd("survey") && !readsUntilTermEnd("schedule") && !readsUntilTermEnd(undefined),
+      "R8-review أيُّ الأنواع يُقرأ حتى نهاية فصله: قاعدةٌ واحدة");
+    check(shareLinkReadable({ kind: "staff", expiresAt: old }, term, now), "R8-review رابطُ بطاقات القسم يبقى حتى نهاية الفصل كما وعدت البطاقة (D2)");
+    check(!shareLinkReadable({ kind: "survey", expiresAt: old }, term, now) && !shareLinkReadable({ kind: "schedule", expiresAt: old }, term, now),
+      "R8-review الاستبيانُ والجدولُ العام لا يمتدّان");
+    check(shareLinkReadable({ kind: "survey", expiresAt: "2026-12-01T00:00:00Z" }, undefined as any, now) && shareLinkReadable({ kind: "survey" }, undefined as any, now),
+      "R8-review تاريخٌ لم يمضِ (أو بلا تاريخ) مقروء");
+    const lifetime = read("src/utils/shareLinkLifetime.ts");
+    check(lifetime.includes("**رابطُ القسم**") && lifetime.includes("requestWindowOpen") && !/export function personalLinkReadable/.test(lifetime),
+      "R8-review التعليقُ يقول القرار كما هو، ولا اسمٌ يقول «شخصي» عن قاعدةٍ تشمل رابط القسم");
+    check(!server.includes("personalLinkStillReadable") && !server.includes('link.kind !== "staff" && link.kind !== "request"'),
+      "R8-review الخادم لا يكتب قائمة الأنواع ثانيةً");
 
     const page = server.slice(server.indexOf("function decisionBox("), server.indexOf("function planTable()"));
     check(page.includes("alts.length&&!open") && page.includes("alts-ro") && page.includes("أُغلق استقبال الطلبات"), "D3 البدائل تُعرض للاطلاع بعد الإغلاق");
@@ -241,7 +256,7 @@ async function main() {
     check(submit.includes('kind: "alternative-chosen"') && submit.includes("...alternativeEvents"), "D3 اختيار البديل يُسجَّل في الخط الزمني");
     const issue = server.slice(server.indexOf('app.post("/api/instructor-requests/issue"'), server.indexOf('app.post("/api/instructor-requests/issue"') + 9000);
     check(issue.includes("Date.parse(termLinkExpiresAt(issueTerm))"), "D3 رابط الطلب يصدر حتى نهاية الفصل");
-    check(server.includes("if (!await personalLinkStillReadable(link)) return { error: \"انتهت صلاحية هذا الرابط\", status: 410 } as const;"), "D3 رابط الطلب القديم يُقرأ حتى نهاية فصله");
+    check(server.includes("if (!await shareLinkStillReadable(link)) return { error: \"انتهت صلاحية هذا الرابط\", status: 410 } as const;"), "D3 رابط الطلب القديم يُقرأ حتى نهاية فصله");
     check(submit.includes("requestWindowOpen(resolved.request)"), "D3 الكتابة تبقى محكومةً بنافذة الطلبات");
   }
 

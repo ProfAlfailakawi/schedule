@@ -32,15 +32,38 @@ export function requestsCloseAtFromDate(date: unknown): string {
 }
 
 /**
- * هل ما زال الرابطُ الشخصي (بطاقة الأستاذ، رابط الطلب) مقروءاً؟
+ * ── أيُّ الروابط تُقرأ حتى نهاية فصلها؟ (قرارٌ مكتوبٌ هنا وحده) ──────────────
  *
- * روابطُ صدرت قبل هذه القاعدة تحمل `expiresAt` = موعد الطلبات. فالقراءةُ تبقى
- * ما دام أحدُ الحدّين قائماً: تاريخُ الرابط المخزون، أو نهايةُ فصله المعروفة.
- * فصلٌ انقضى لا يمدّ عمرَ رابطٍ منتهٍ — والإيقافُ اليدوي يُحترم قبل هذا كله.
+ *   - `staff`: بطاقاتُ الأساتذة — **رابطُ القسم** (بطاقات الأساتذة كلهم، يختار
+ *     كلٌّ رقمه) و**الرابطُ الشخصي** (AdInstructorId > 0) معاً. هذا مطلبُ D2:
+ *     البطاقةُ تَعِد بـ«اشتراكٍ دائم» في التقويم، والتقويمُ في هاتف الأستاذ
+ *     يتبع الرابطَ الذي أضافه منه — أيّاً كان نوعُه. فلا يُفرَّق بينهما هنا.
+ *   - `request`: رابطُ طلب الأستاذ — قرارُ القسم وبدائلُه تصل بعد الموعد.
+ *   - غيرُهما (رابطُ الجدول العام، الاستبيان): على تاريخ `expiresAt` وحده.
+ *
+ * و«القراءة حتى نهاية الفصل» لا تمدّ **الكتابة**: موعدُ الطلبات يبقى حيث كتبه
+ * القسم — `requestsCloseAt` على رابط البطاقات (يرثه الرابطُ الشخصي منه)، و
+ * `window.closesAt` على الطلب (من التاريخ نفسه بـ`requestsCloseAtFromDate`)،
+ * وهو ما يُغلق باب الطلب في الخادم (requestWindowOpen).
  */
-export function personalLinkReadable(expiresAt: string | undefined | null, term: TermLike, now: number = Date.now()): boolean {
-  const stored = Date.parse(String(expiresAt || ""));
+export function readsUntilTermEnd(kind: string | undefined | null): boolean {
+  return kind === "staff" || kind === "request";
+}
+
+/**
+ * هل ما زال الرابطُ مقروءاً؟ تاريخُه المخزون إن لم يمضِ؛ وإلا فالروابطُ التي
+ * تُقرأ حتى نهاية فصلها (readsUntilTermEnd) تبقى ما دامت نهايةُ فصلها المعروفة
+ * لم تأتِ — ومنها روابطُ صدرت قبل هذه القاعدة بتاريخ موعد الطلبات. فصلٌ انقضى
+ * أو مجهولُ التاريخ لا يمدّ رابطاً منتهياً، والإيقافُ اليدوي يُحترم قبل هذا كله.
+ */
+export function shareLinkReadable(
+  link: { kind?: string | null; expiresAt?: string | null },
+  term: TermLike,
+  now: number = Date.now(),
+): boolean {
+  const stored = Date.parse(String(link.expiresAt || ""));
   if (!Number.isFinite(stored) || stored >= now) return true;
+  if (!readsUntilTermEnd(link.kind)) return false;
   const window = termWindow(term);
   return Boolean(window && now < window.to);
 }
