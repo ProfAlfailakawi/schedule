@@ -251,6 +251,15 @@ async function main() {
     check(rank.includes("busyAtSlot(person.AdInstructorId)") && rank.includes("coverConflict({") && !rank.includes("mine.some(overlapsSlot)"), "D9 الترتيب يستبعد بالقاعدة نفسها");
   }
 
+
+  /* ── D10: البطاقة بعقد الوقت الواحد ─────────────────────────────────────── */
+  {
+    const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
+    check(card.includes("timeRange: formatScheduleTimeRange(row.fstarttime, row.fendtime)"), "D10 الخادم يصوغ النطاق بـformatScheduleTimeRange");
+    const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(page.includes("esc(row.timeRange") && !page.includes("esc(row.start)+'<wbr>–'+esc(row.end)"), "D10 الصفحة لا تكتب ترتيب البداية–النهاية بنفسها");
+  }
+
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }

@@ -12245,6 +12245,9 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
       college: colleges.find(item => Number(item.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeName || "",
       department: sections.find(item => Number(item.AdSectionId) === Number(row.AdSectionId))?.AdSectionName || "",
       start: row.fstarttime, end: row.fendtime,
+      /* النطاقُ يُعرض بعقد الجامعة الواحد (النهاية - البداية، معزولاً) من
+         ‎formatScheduleTimeRange‎، لا بترتيبٍ تكتبه الصفحةُ بنفسها. */
+      timeRange: formatScheduleTimeRange(row.fstarttime, row.fendtime),
       days: shareDayIndexes(row),
       room: row.AdRoomCode || "", hall: row.AdRoomHall || ""
     }))
@@ -14117,9 +14120,8 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         return '<tr><th class="t" dir="ltr">'+esc(start)+'</th>'+d.byDay.map(function(day){
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
-              /* البدايةُ ثم النهاية، بترتيب القراءة؛ وعلى الهاتف تنكسر عند الشَّرطة
-                 سطرين نظيفين بدل ثلاثة أسطرٍ مقلوبة. */
-              '<time dir="ltr">'+esc(row.start)+'<wbr>–'+esc(row.end)+'</time>'+
+              /* النطاقُ كما صاغه الخادم بعقد الجامعة الواحد (النهاية - البداية). */
+              '<time>'+esc(row.timeRange||"")+'</time>'+
               /* المختصرُ هادئ: لا رقمَ مقرّر ولا كلمةَ «كلية» ولا اسمَ قسم،
                  والقاعةُ في سطرٍ يُقصّ داخل الخلية فلا يخرج عن حدودها. */
               [shortCardCollege(visibleCardCollege(row.college))].filter(Boolean).map(esc).map(function(v){return '<small class="wcollege">'+v+'</small>'}).join("")+

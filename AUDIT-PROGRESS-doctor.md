@@ -11,7 +11,7 @@
 | D7 | FIXED — calendarSpanForTerm (icalendar.ts) uses termWindow start/end (declared or from term name); endDate→UNTIL; "today" anchor only when term unknown; honest feed label | tests/doctor-journey-audit.ts D7 |
 | D8 | FIXED — movementHistoryScopes adds request departments + issuing department to scheduleMovementEntries (option historyScopes; version loading untouched); card opens empty with movement when he lost all rows in the link term, generic 404 otherwise | tests/doctor-journey-audit.ts D8 (structural) |
 | D9 | FIXED — coverConflict() in src/utils/coverAvailability.ts (weekly rows not cancelled that date + existing covers that date); exception POST returns 409 cover-busy/cover-double-booked; substitutes ranking excludes via same rule | tests/doctor-journey-audit.ts D9 |
-| D10 | TODO | |
+| D10 | FIXED — card rows carry timeRange = formatScheduleTimeRange (END - START, isolated); page renders it, no own ordering. Movement texts in scheduleMovementEntries and /r/ stored item times left (shared with blockers stream / stored data) | tests/doctor-journey-audit.ts D10 |
 | D11 | TODO | |
 | D12 | TODO | |
 | D13 | TODO | |
