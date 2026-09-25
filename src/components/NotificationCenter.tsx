@@ -5,6 +5,7 @@ import { AlertTriangle, Bell, CheckCheck, CheckCircle2, ChevronLeft, Clock3, X, 
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
 import { NOTIFY_FOCUS_KEY, writeNotifyFocus } from "../utils/notifyFocus";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { SEEN_LIMIT, seenKey } from "../utils/notificationSeen";
 
 /**
  * ── مركز الإشعارات ──────────────────────────────────────────────────────────
@@ -61,6 +62,16 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
      أوّلُ قراءةٍ تُعرّف «ما كان»، وكلُّ قراءةٍ بعدها تسأل: ما المطلوبُ منّي
      الذي لم يكن قبل لحظة؟ فيطفو سطرُه تحت الجرس ولو كانت الشاشةُ في عملٍ آخر. */
   const known = useRef<Set<string> | null>(null);
+  const synced = useRef(false);
+  const seenRef = useRef(seen);
+  seenRef.current = seen;
+  /* «المقروء» يُحفظ على الخادم أيضاً (src/utils/notificationSeen.ts). فشلُ الإرسال
+     لا يُسقط شيئاً: العلامة محفوظةٌ على هذا الجهاز، ويُرسل ما فات منها عند
+     فتح الصفحة التالي (أوّل قراءةٍ أدناه). */
+  const sendSeen = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    fetch("/api/notifications/seen", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).catch(() => undefined);
+  }, []);
   const [toast, setToast] = useState<CenterNotification | null>(null);
   const [toastMore, setToastMore] = useState(0);
 
@@ -85,9 +96,25 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
         }
         known.current = new Set(next.map(item => item.id));
         setItems(next);
+        /* ما قُرئ على جهازٍ آخر يصل هنا مقروءاً. وفي أوّل قراءة، ما قُرئ على
+           هذا الجهاز قبل أن يحفظه الخادم يُرسل إليه مرّةً واحدة. */
+        const fromServer = new Set<string>(Array.isArray(data.seen) ? data.seen.map(String) : []);
+        if (!synced.current) {
+          synced.current = true;
+          let stored: unknown = [];
+          try { stored = JSON.parse(localStorage.getItem(`notify-seen:${userKey}`) || "[]"); } catch { stored = []; }
+          const here = new Set((Array.isArray(stored) ? stored : []).map(String));
+          sendSeen(next.map(item => seenKey(item)).filter(key => here.has(key) && !fromServer.has(key)));
+        }
+        if (fromServer.size) setSeen(previous => {
+          const merged = new Set([...previous, ...fromServer]);
+          if (merged.size === previous.size) return previous;
+          try { localStorage.setItem(`notify-seen:${userKey}`, JSON.stringify([...merged].slice(-SEEN_LIMIT))); } catch { /* تفضيلٌ لا أكثر */ }
+          return merged;
+        });
       })
       .catch(() => undefined);
-  }, []);
+  }, [userKey, sendSeen]);
 
   /* الجرسُ ينام مع اللسان (pageAwake.ts): لسانٌ منسيٌّ في الخلفية كان يسأل كل
      دقيقة ويُبقي خيطاً مفتوحاً طوال الليل، وكلُّ سؤالٍ يقرأ الفصل. يبقى مستيقظاً
@@ -128,7 +155,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
   const mineCount = items.filter(item => item.tone === "alert" || item.tone === "action").length;
   useEffect(() => {
     const base = document.title.replace(/^\(\d+\+?\)\s*/, "");
-    const unread = items.filter(item => (item.tone === "alert" || item.tone === "action") && !seen.has(item.id)).length;
+    const unread = items.filter(item => (item.tone === "alert" || item.tone === "action") && !seen.has(seenKey(item))).length;
     document.title = unread ? `(${unread > 99 ? "99+" : unread}) ${base}` : base;
   }, [items, seen]);
 
@@ -147,20 +174,25 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
 
   /* المقروءُ ما ضُغط عليه وحده، أو ما قُرئ كلُّه بالزرّ الصامت أعلى اللوحة:
      فتحُ الجرس وحده لا يُسقط علامةَ «جديد» عن شيءٍ لم يُنظر فيه. */
-  const markRead = useCallback((ids: string[]) => {
+  /* «المقروء» يُحفظ بمفتاح الفصل (seenKey): إشعارُ الفصل الماضي لا يُخفي إشعار
+     هذا الفصل ذي المعرّف نفسه. الضغطة ترسل ما لم يُقرأ بعد وحده، و«قراءة الكل»
+     ترسل القائمة كلها فتبقى إشعاراتها الحاضرة أحدثَ ما حُفظ. */
+  const markRead = useCallback((keys: string[], refresh = false) => {
+    const unseen = keys.filter(key => !seenRef.current.has(key));
     setSeen(previous => {
-      const next = new Set([...previous, ...ids]);
+      const next = new Set([...previous, ...keys]);
       if (next.size === previous.size) return previous;
-      try { localStorage.setItem(`notify-seen:${userKey}`, JSON.stringify([...next].slice(-300))); } catch { /* تفضيلٌ لا أكثر */ }
+      try { localStorage.setItem(`notify-seen:${userKey}`, JSON.stringify([...next].slice(-SEEN_LIMIT))); } catch { /* تفضيلٌ لا أكثر */ }
       return next;
     });
-  }, [userKey]);
+    sendSeen(refresh ? keys : unseen);
+  }, [userKey, sendSeen]);
 
   const mine = mineCount;
-  const fresh = items.filter(item => !seen.has(item.id)).length;
+  const fresh = items.filter(item => !seen.has(seenKey(item))).length;
   /* رقمُ الجرس هو المطلوبُ منك الذي لم تقرأه بعد: يقلّ مع كل إشعارٍ تضغطه ويختفي بـ«قراءة الكل»،
      ويعود إن جدّ أمرٌ جديد. */
-  const unreadMine = items.filter(item => (item.tone === "alert" || item.tone === "action") && !seen.has(item.id)).length;
+  const unreadMine = items.filter(item => (item.tone === "alert" || item.tone === "action") && !seen.has(seenKey(item))).length;
   const groups = useMemo(() => GROUPS
     .map(group => ({ ...group, rows: items.filter(item => group.tones.includes(item.tone)) }))
     .filter(group => group.rows.length), [items]);
@@ -198,7 +230,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
             </div>
             <span className="notify-actions">
               {fresh ? (
-                <button type="button" className="notify-read-all" aria-label="تعليم الكل كمقروء" title="تعليم الكل كمقروء" data-guide-ignore="تعليم الإشعارات كمقروءة تفضيلٌ محلي لا يعدّل البيانات" onClick={() => markRead(items.map(item => item.id))}><CheckCheck aria-hidden="true" /></button>
+                <button type="button" className="notify-read-all" aria-label="تعليم الكل كمقروء" title="تعليم الكل كمقروء" data-guide-ignore="تعليم الإشعارات كمقروءة تفضيلٌ لصاحب الحساب على أجهزته كلها ولا يعدّل البيانات" onClick={() => markRead(items.map(item => seenKey(item)), true)}><CheckCheck aria-hidden="true" /></button>
               ) : null}
               <button type="button" aria-label="إغلاق" data-guide-ignore="إغلاق لوحة الإشعارات لا يعدّل البيانات" onClick={() => setOpen(false)}><X aria-hidden="true" /></button>
             </span>
@@ -214,12 +246,12 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
                       className="notify-item"
                       data-guide-ignore="فتح الشاشة التي يخصّها الإشعار — تنقّلٌ لا يعدّل البيانات"
                       data-tone={item.tone}
-                      data-read={seen.has(item.id) ? "true" : undefined}
-                      onClick={() => { markRead([item.id]); if (item.view) { focusOn(item); setOpen(false); onNavigate(item.view); } }}
+                      data-read={seen.has(seenKey(item)) ? "true" : undefined}
+                      onClick={() => { markRead([seenKey(item)]); if (item.view) { focusOn(item); setOpen(false); onNavigate(item.view); } }}
                     >
                       <span className="notify-icon">{ICON[item.tone]}</span>
                       <span className="notify-text">
-                        <strong>{item.title}{!seen.has(item.id) ? <em>جديد</em> : null}</strong>
+                        <strong>{item.title}{!seen.has(seenKey(item)) ? <em>جديد</em> : null}</strong>
                         {item.detail ? <small>{item.detail}</small> : null}
                         {item.at ? <time dateTime={item.at}>{when(item.at)}</time> : null}
                       </span>
@@ -240,7 +272,7 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
             type="button"
             className="notify-toast-body"
             data-guide-ignore="فتح الشاشة التي يخصّها الإشعار الجديد — تنقّلٌ لا يعدّل البيانات"
-            onClick={() => { const view = toast.view; markRead([toast.id]); focusOn(toast); setToast(null); if (view) onNavigate(view); else setOpen(true); }}
+            onClick={() => { const view = toast.view; markRead([seenKey(toast)]); focusOn(toast); setToast(null); if (view) onNavigate(view); else setOpen(true); }}
           >
             <span className="notify-icon">{ICON[toast.tone]}</span>
             <span className="notify-text">
