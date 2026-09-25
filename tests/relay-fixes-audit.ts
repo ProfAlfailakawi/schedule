@@ -345,6 +345,10 @@ check(!bar.includes("ملوّنةٌ في مكانها من الجدول") && bar
   for (const name of ["sign", "withdraw", "head-return", "acknowledge-additions", "submit", "return", "accept", "extension", "extension-request"]) {
     check(route(`app.post("/api/approvals/${name}"`).includes("await refuseIfTermClosed(res, termId)"), `R23 مسارُ ${name} يُرفض في فصلٍ منتهٍ`);
   }
+  check(route('app.post("/api/schedule-notes"').includes("await refuseIfTermClosed(res, Number(row.AdTermId))")
+    && route('app.post("/api/schedule-notes/:id/rebut"').includes("await refuseIfTermClosed(res, Number(note.AdTermId))")
+    && route('app.post("/api/schedule-notes/:id/verdict"').includes("await refuseIfTermClosed(res, Number(note.AdTermId))"),
+    "R23 والملاحظةُ والردُّ والقرارُ عليه كذلك");
   const mutation = between(server, "async function applyScheduleMutation(", "\n/**");
   check(mutation.includes("if (await termIsClosed(termId))") && mutation.includes('"closed-term-edit"'),
     "R23 وتعديلُ اللجنة في فصلٍ منتهٍ يُسجَّل حدثاً ولا يفتح جولة");

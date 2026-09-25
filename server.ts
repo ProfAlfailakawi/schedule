@@ -9788,6 +9788,8 @@ app.post("/api/schedule-notes", requireAuth, async (req: AuthenticatedRequest, r
   const row = await Repository.getScheduleById(scheduleId);
   if (!row) { res.status(404).json({ error: "الموعد غير موجود" }); return; }
   if (!isScopeAllowed(req, row.AdCollegeId, row.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  /* الملاحظةُ فعلٌ في الدورة، والدورةُ في فصلٍ منتهٍ مغلقة (R23). */
+  if (await refuseIfTermClosed(res, Number(row.AdTermId))) return;
 
   const fromRegistrar = canReviewSubmissions(req.user?.Role);
   /* المصدر يُشتقّ من الصفة، والإذنُ يُقرأ من الدالّة نفسها التي تقرؤها
@@ -9852,6 +9854,7 @@ app.post("/api/schedule-notes/:id/rebut", requireAuth, async (req: Authenticated
   if (!note) { res.status(404).json({ error: "الملاحظة غير موجودة" }); return; }
   if (!isScopeAllowed(req, note.AdCollegeId, note.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (note.origin !== "registrar") { res.status(409).json({ error: "الردّ يكون على ملاحظات التسجيل." }); return; }
+  if (await refuseIfTermClosed(res, Number(note.AdTermId))) return;
   if (signatureStage(req.user?.Role) === null && !isPowerUser(req)) { res.status(403).json({ error: "الردّ على الملاحظة من القسم." }); return; }
   const text = String(req.body?.text || "").trim().slice(0, 600);
   if (text.length < 3) { res.status(400).json({ error: "اكتب سبب الإبقاء. ردٌّ بلا سببٍ لا يفيد التسجيل." }); return; }
@@ -9878,6 +9881,7 @@ app.post("/api/schedule-notes/:id/verdict", requireAuth, async (req: Authenticat
   if (!isScopeAllowed(req, note.AdCollegeId, note.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (!canReviewSubmissions(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "القرار على الردّ للتسجيل." }); return; }
   if (!note.rebuttal) { res.status(409).json({ error: "لا يوجد ردٌّ من القسم على هذه الملاحظة." }); return; }
+  if (await refuseIfTermClosed(res, Number(note.AdTermId))) return;
   const verdict = String(req.body?.verdict || "");
   if (verdict !== "accepted" && verdict !== "insisted") { res.status(400).json({ error: "القرار إمّا قبولٌ للتبرير وإمّا إصرارٌ على التغيير." }); return; }
   const at = new Date().toISOString();
