@@ -25,6 +25,7 @@ import StudentCasesTable, { GRADUATE_REASON_LABEL, STUDENT_CASE_TYPE_LABEL, type
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { AR, nounFor } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
+import { singleDepartmentOf } from "../utils/scopeContext";
 import type { AdTerm, StudentCommitteeRejectReason, StudentCourseRejectReason, StudentCourseStateValue } from "../types";
 import type { StudentCaseStatus } from "../utils/studentCaseDecision";
 
@@ -268,9 +269,19 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   useEffect(() => {
     /* ومن له الكلُّ لا يُختار له شيء. */
     if (collegeId || powerAdmin || !scopes.length) return;
-    setCollegeId(Number(scopes[0].AdCollegeId) || 0);
-    if (scopes.length === 1) setSectionId(Number(scopes[0].AdSectionId) || 0);
+    const first = Number(scopes[0].AdCollegeId) || 0;
+    setCollegeId(first);
+    /* قسمٌ واحد في الكلية: يُختار له، ومنتقيه لا يُرسم (singleDepartmentOf). */
+    const only = singleDepartmentOf(scopes, first);
+    if (only) setSectionId(only);
   }, [scopes, collegeId, powerAdmin]);
+
+  /* والمنتقي المخفيّ لا يترك القيمة فارغة: أيّ طريقٍ وصل بالكلية (إشعار، تبديل)
+     يُعاد قسمُه إلى القسم الوحيد، فيبقى الطلبُ يحمل sectionId. */
+  useEffect(() => {
+    const only = singleDepartmentOf(scopes, collegeId, powerAdmin);
+    if (only && sectionId !== only) setSectionId(only);
+  }, [scopes, collegeId, sectionId, powerAdmin]);
 
   const load = useCallback(async () => {
     if (!collegeId || !sectionId || !termId) { setRows(null); return; }
@@ -630,7 +641,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
 
   const selects: ScopeAskSelect[] = [
     { key: "college", label: "الكلية", value: collegeId, placeholder: "اختر الكلية", options: collegeOptions },
-    { key: "section", label: "القسم", value: sectionId, placeholder: "اختر القسم", options: sectionOptions, disabled: !collegeId },
+    /* من لا يملك في الكلية إلا قسماً واحداً يرى «الكلية + الفصل» كلوحة الجدول. */
+    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null
+      ? [{ key: "section", label: "القسم", value: sectionId, placeholder: "اختر القسم", options: sectionOptions, disabled: !collegeId }]
+      : []),
     { key: "term", label: "الفصل", value: termId, placeholder: "اختر الفصل", options: (terms || []).map(row => ({ value: row.AdTermId, label: row.AdTermName })) },
   ];
 
@@ -656,7 +670,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         selects={selects}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
-          if (key === "college") { setCollegeId(id); setSectionId(0); }
+          if (key === "college") { setCollegeId(id); setSectionId(singleDepartmentOf(scopes, id, powerAdmin) ?? 0); }
           else if (key === "section") setSectionId(id);
           else setTermId(id);
         }}
