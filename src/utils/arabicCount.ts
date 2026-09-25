@@ -94,7 +94,12 @@ export function nounFor(value: number, noun: ArabicNoun): string {
  * rule, applied to the oblique dual.
  */
 export function oblique(noun: ArabicNoun): ArabicNoun {
-  return { ...noun, two: noun.two.replace(/ان$/, "ين").replace(/ا (?=\S)/, "ي ") };
+  const [head, ...rest] = noun.two.split(" ");
+  // «ملاحظتان لائحيتان» → «ملاحظتين لائحيتين»; «مانعا اعتماد» → «مانعي اعتماد».
+  const two = rest.length && /[^ن]ا$/.test(head)
+    ? [head.replace(/ا$/, "ي"), ...rest].join(" ")
+    : [head, ...rest].map(word => word.replace(/ان$/, "ين")).join(" ");
+  return { ...noun, two };
 }
 
 /* ── The nouns this program counts ────────────────────────────────────────
@@ -128,6 +133,9 @@ export const AR = {
   /* مضافٌ إلى «اعتماد»: المثنّى تسقط نونه، والتمييز لا تنوين له. */
   approvalBlocker: { one: "مانع اعتماد", two: "مانعا اعتماد", few: "موانع اعتماد", many: "مانع اعتماد" },
   saveBlocker: { one: "مانع حفظ", two: "مانعا حفظ", few: "موانع حفظ", many: "مانع حفظ" },
+  regulationNote: { one: "ملاحظة لائحية", two: "ملاحظتان لائحيتان", few: "ملاحظات لائحية", many: "ملاحظة لائحية" },
+  visitor:     { one: "منتدب", two: "منتدبان", few: "منتدبين", many: "منتدباً" },
+  academicYear: { one: "سنة أكاديمية", two: "سنتان أكاديميتان", few: "سنوات أكاديمية", many: "سنة أكاديمية" },
   breach:      { one: "مخالفة", two: "مخالفتان", few: "مخالفات", many: "مخالفة" },
   decision:    { one: "قرار", two: "قراران", few: "قرارات", many: "قراراً" },
   record:      { one: "سجل", two: "سجلان", few: "سجلات", many: "سجلاً" },
@@ -155,6 +163,33 @@ export const AR = {
   bond:        { one: "ارتباط", two: "ارتباطان", few: "ارتباطات", many: "ارتباطاً" },
   booking:     { one: "حجز", two: "حجزان", few: "حجوزات", many: "حجزاً" },
   line:        { one: "سطر", two: "سطران", few: "أسطر", many: "سطراً" },
+  character:   { one: "حرف", two: "حرفان", few: "أحرف", many: "حرفاً" },
+  element:     { one: "عنصر", two: "عنصران", few: "عناصر", many: "عنصراً" },
+  update:      { one: "تحديث", two: "تحديثان", few: "تحديثات", many: "تحديثاً" },
+  year:        { one: "سنة", two: "سنتان", few: "سنوات", many: "سنة" },
+  window:      { one: "نافذة", two: "نافذتان", few: "نوافذ", many: "نافذة" },
+  second:      { one: "ثانية", two: "ثانيتان", few: "ثوانٍ", many: "ثانية" },
+  millisecond: { one: "مللي ثانية", two: "مللي ثانية", few: "مللي ثانية", many: "مللي ثانية" },
+  signal:      { one: "إشارة", two: "إشارتان", few: "إشارات", many: "إشارة" },
+  lens:        { one: "عدسة", two: "عدستان", few: "عدسات", many: "عدسة" },
+  field:       { one: "حقل", two: "حقلان", few: "حقول", many: "حقلاً" },
+  alert:       { one: "تنبيه", two: "تنبيهان", few: "تنبيهات", many: "تنبيهاً" },
+  version:     { one: "نسخة", two: "نسختان", few: "نسخ", many: "نسخة" },
+  station:     { one: "محطة", two: "محطتان", few: "محطات", many: "محطة" },
+  occurrence:  { one: "حالة", two: "حالتان", few: "حالات", many: "حالة" },
+  step:        { one: "خطوة", two: "خطوتان", few: "خطوات", many: "خطوة" },
+  collection:  { one: "مجموعة", two: "مجموعتان", few: "مجموعات", many: "مجموعة" },
+  user:        { one: "مستخدم", two: "مستخدمان", few: "مستخدمين", many: "مستخدماً" },
+  manager:     { one: "مدير", two: "مديران", few: "مديرين", many: "مديراً" },
+  permission:  { one: "صلاحية", two: "صلاحيتان", few: "صلاحيات", many: "صلاحية" },
+  variant:     { one: "صيغة", two: "صيغتان", few: "صيغ", many: "صيغة" },
+  stage:       { one: "مرحلة", two: "مرحلتان", few: "مراحل", many: "مرحلة" },
+  participant: { one: "مشارك", two: "مشاركان", few: "مشاركين", many: "مشاركاً" },
+  constraint:  { one: "قيد", two: "قيدان", few: "قيود", many: "قيداً" },
+  board:       { one: "لوحة", two: "لوحتان", few: "لوحات", many: "لوحة" },
+  card:        { one: "بطاقة", two: "بطاقتان", few: "بطاقات", many: "بطاقة" },
+  range:       { one: "نطاق", two: "نطاقان", few: "نطاقات", many: "نطاقاً" },
+  shift:       { one: "تغيّر", two: "تغيّران", few: "تغيّرات", many: "تغيّراً" },
   offering:    { one: "طرح", two: "طرحان", few: "طروح", many: "طرحاً" },
 
   /* ── Agreement forms, read with nounFor(n, …) after a counted noun ──────

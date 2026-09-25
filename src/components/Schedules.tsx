@@ -140,7 +140,7 @@ import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roo
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { handoffNotice, takeHandoff, type RequestHandoff } from "../utils/requestHandoff";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
 import { claimWarmStart } from "../utils/warmStart";
@@ -321,23 +321,9 @@ const normalizeArabicDigits = (value: string) => String(value || "")
 
 const displayClockCompact = (value: string) => scheduleClockForDisplay(value);
 
-const formatTermLabel = (value: number) => {
-  const count = Number(value || 0);
-  if (!count) return "—";
-  if (count === 1) return "فصل واحد";
-  if (count === 2) return "فصلان";
-  if (count <= 10) return `فصول ${count}`;
-  return `فصلًا ${count}`;
-};
+const formatTermLabel = (value: number) => countOf(Number(value || 0), AR.term, "—");
 
-const formatChangeLabel = (value: number) => {
-  const count = Number(value || 0);
-  if (!count) return "بلا تغيّر";
-  if (count === 1) return "تغيّر واحد";
-  if (count === 2) return "تغيّران";
-  if (count <= 10) return `${count} تغيّرات`;
-  return `${count} تغيّرًا`;
-};
+const formatChangeLabel = (value: number) => countOf(Number(value || 0), AR.shift, "بلا تغيّر");
 
 const formatLifeSummary = (terms: number, changes?: number | null) => {
   const parts = [formatTermLabel(terms)];
@@ -350,7 +336,8 @@ const isolateLtrText = (value: string) => `\u2066${String(value || "")}\u2069`;
 type RegulationMetric = { kind: "minutes" | "meetings"; usual: number; current: number; delta: number; unit: string };
 const parseRegulationMetric = (value: string): RegulationMetric | null => {
   const text = normalizeArabicDigits(String(value || ""));
-  let match = text.match(/المعتاد\s+(\d+)\s+دقيقة[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
+  // The prose comes from countOf, so the unit follows the count's own form.
+  let match = text.match(/المعتاد\s+(\d+)\s+(?:دقيقة|دقائق)[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
   if (match) {
     const usual = Number(match[1]);
     const current = Number(match[2]);
@@ -358,8 +345,9 @@ const parseRegulationMetric = (value: string): RegulationMetric | null => {
       return { kind: "minutes", usual, current, delta: current - usual, unit: "د" };
     }
   }
-  match = text.match(/المعتاد\s+(\d+)\s+لقاءات[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
+  match = text.match(/المعتاد\s+(?:(\d+)\s+(?:لقاءات|لقاءً|لقاء)|(لقاء واحد)|(لقاءان))[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
   if (match) {
+    match = [match[0], match[1] ?? (match[2] ? "1" : "2"), match[4]] as unknown as RegExpMatchArray;
     const usual = Number(match[1]);
     const current = Number(match[2]);
     if (Number.isFinite(usual) && Number.isFinite(current)) {

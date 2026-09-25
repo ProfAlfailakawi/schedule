@@ -21,7 +21,7 @@ import {
   type VisitingHistoryPerson, type VisitingHistoryYear,
 } from "../utils/visitingHistory";
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { HISTORICAL_FINALITY_LABEL } from "../utils/finality";
 import { takeNotifyFocus } from "../utils/notifyFocus";
 import { buildFairnessEngine } from "../utils/livingSchedule";
@@ -369,7 +369,7 @@ function VisitingHistoryTermCard({ term, courseById }: {
     <section className="visiting-history-term">
       <header>
         <span><CheckCircle2 aria-hidden="true" /><strong>{term.termName}</strong></span>
-        <b>{Number(term.sections || 0).toLocaleString("ar-KW-u-nu-latn")} شعب</b>
+        <b>{countOf(Number(term.sections || 0), AR.section)}</b>
       </header>
       {term.items?.length ? (
         <div className="visiting-history-sections">
@@ -2263,7 +2263,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   {locationRegistry.rooms.filter(room => (!matrixBuilding || room.buildingId === matrixBuilding) && results.some(row => row.roomId === room.id)).sort((a,b)=>byRoomPart(a.canonicalCode,b.canonicalCode)).map(room => <option key={room.id} value={room.id}>{room.canonicalCode}</option>)}
                 </select>
               </label>
-              {matrix ? <span className="matrix-count">{num(matrix.lines.length)} صف · {num(matrix.total)} موعد</span> : null}
+              {matrix ? <span className="matrix-count">{countOf(matrix.lines.length, AR.row)} · {countOf(matrix.total, AR.appointment)}</span> : null}
             </div>
             {matrix && matrix.lines.length ? (
               <div className="matrix-scroll">
@@ -2402,7 +2402,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${scheduleClockForDisplay(clock(roomPick.point))}`}</small>
                       <strong>{roomPick.room}</strong>
                     </div>
-                    <span className="occupancy-pick-count">{num(picked.length)} موعد</span>
+                    <span className="occupancy-pick-count">{countOf(picked.length, AR.appointment)}</span>
                     <button type="button" data-guide-ignore="إغلاق تفاصيل إشغال القاعة فقط" onClick={() => setRoomPick(null)} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></button>
                   </header>
                   {picked.length ? (
@@ -2525,9 +2525,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   ) : null}
                 </div>
                 <div className="visiting-history-summary-facts">
-                  <span><b>{num(visitingHistoryRows.length)}</b><small>منتدب</small></span>
-                  <span><b>{num(historyModel.totals.years)}</b><small>سنة أكاديمية</small></span>
-                  <span><b>{num(visitingHistorySectionTotal)}</b><small>شعبة تاريخيًا</small></span>
+                  <span><b>{num(visitingHistoryRows.length)}</b><small>{nounFor(visitingHistoryRows.length, AR.visitor)}</small></span>
+                  <span><b>{num(historyModel.totals.years)}</b><small>{nounFor(historyModel.totals.years, AR.academicYear)}</small></span>
+                  <span><b>{num(visitingHistorySectionTotal)}</b><small>{nounFor(visitingHistorySectionTotal, AR.section)} تاريخيًا</small></span>
                 </div>
               </section>
 
@@ -2585,19 +2585,19 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                                 <ChevronDown aria-hidden="true" />
                               </button>
                             </th>
-                            <td className="is-total"><b>{num(person.times)}</b><small>فصل</small></td>
+                            <td className="is-total"><b>{num(person.times)}</b><small>{nounFor(person.times, AR.term)}</small></td>
                             <td className="is-total is-sections">
                               <span className="visiting-history-meter" aria-hidden="true">
                                 <i><b style={{ width: share(person.sections, maxVisitingSections) }} /></i>
                               </span>
-                              <b>{num(person.sections)}</b><small>شعبة</small>
+                              <b>{num(person.sections)}</b><small>{nounFor(person.sections, AR.section)}</small>
                             </td>
                             {historyModel.archive ? (
                               <td className="is-archive">
                                 {historyModel.archive.sectionsByPerson.get(Number(person.instructorId)) ? (
                                   <span className="visiting-history-archive-fact">
                                     <b>{num(historyModel.archive.sectionsByPerson.get(Number(person.instructorId)) || 0)}</b>
-                                    <small>{num(historyModel.archive.termsByPerson.get(Number(person.instructorId)) || 0)} فصل</small>
+                                    <small>{countOf(historyModel.archive.termsByPerson.get(Number(person.instructorId)) || 0, AR.term)}</small>
                                   </span>
                                 ) : <i className="visiting-history-cell is-empty" aria-label="بلا انتداب" />}
                               </td>
@@ -2618,7 +2618,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                                         data-guide-ignore="فتح شعب هذا الفصل للقراءة فقط"
                                         className={`visiting-history-cell level-${level}${openHistoryCell === cellKey ? " is-active" : ""}`}
                                         aria-pressed={openHistoryCell === cellKey}
-                                        title={`${cell?.termName || slot.term?.termName || ""} · ${sections} شعبة`}
+                                        title={`${cell?.termName || slot.term?.termName || ""} · ${countOf(sections, AR.section)}`}
                                         onClick={() => { setOpenHistoryCell(openHistoryCell === cellKey ? null : cellKey); setOpenGroup(null); }}
                                       >{num(sections)}</button>
                                     );
@@ -2654,8 +2654,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   <tfoot>
                     <tr>
                       <th scope="row" className="is-person">إجمالي القسم</th>
-                      <td className="is-total"><b>{num(historyModel.totals.terms)}</b><small>فصل</small></td>
-                      <td className="is-total is-sections"><b>{num(historyModel.totals.sections)}</b><small>شعبة</small></td>
+                      <td className="is-total"><b>{num(historyModel.totals.terms)}</b><small>{nounFor(historyModel.totals.terms, AR.term)}</small></td>
+                      <td className="is-total is-sections"><b>{num(historyModel.totals.sections)}</b><small>{nounFor(historyModel.totals.sections, AR.section)}</small></td>
                       {historyModel.archive ? (
                         <td className="is-archive"><b>{num(historyModel.archive.years.reduce((sum, year) => sum + year.sections, 0))}</b></td>
                       ) : null}
@@ -2728,16 +2728,16 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       {slot.rooms.length > 4 ? <span>+{num(slot.rooms.length - 4)}</span> : null}
                     </div>
                     <div className="time-slot-facts" aria-hidden="true">
-                      <span>{num(slot.courses)} مقرر</span>
-                      <span>{num(slot.instructors)} أستاذ</span>
-                      <span>{num(slot.days)} أيام</span>
+                      <span>{countOf(slot.courses, AR.course)}</span>
+                      <span>{countOf(slot.instructors, AR.instructor)}</span>
+                      <span>{countOf(slot.days, AR.day)}</span>
                     </div>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {expanded ? (
                     <div className="time-slot-panel" id={`query-time-slot-${slot.key}`}>
                       <div className="time-slot-panel-head">
-                        <div><strong>{scheduleClockForDisplay(slot.key)}</strong><small>{num(slot.count)} موعد · {num(slot.courses)} مقرر · {num(slot.instructors)} أستاذ</small></div>
+                        <div><strong>{scheduleClockForDisplay(slot.key)}</strong><small>{countOf(slot.count, AR.appointment)} · {countOf(slot.courses, AR.course)} · {countOf(slot.instructors, AR.instructor)}</small></div>
                         <span>{slot.rooms.length ? countOf(slot.rooms.length, AR.room) : "بدون قاعات"}</span>
                       </div>
                       <div className="time-slot-grid">
@@ -3231,8 +3231,8 @@ function PrintChangesAppendix({ appendix, collegeName, sectionName, termName, ap
 
       <p className="print-changes-summary">
         {appendix.firstReview
-          ? `جدولٌ جديد بـ${appendix.counts.added} موعداً — لا مراجعةَ سابقة يُقارن بها.`
-          : `${appendix.summary}. ولم يتغيّر ${appendix.counts.unchanged} موعداً.`}
+          ? `جدولٌ جديد بـ${countOf(appendix.counts.added, AR.appointment)} — لا مراجعةَ سابقة يُقارن بها.`
+          : `${appendix.summary}. ولم يتغيّر ${countOf(appendix.counts.unchanged, AR.appointment)}.`}
       </p>
 
       {appendix.entries.length ? (
@@ -3301,7 +3301,7 @@ function PrintSignatures({ approval }: { approval?: PrintApproval | null }) {
                 <b>{signed.userName}</b>
                 <small>{printStamp(signed.at)} · رمز التحقّق {signed.verifyCode}</small>
                 {signed.regulationNoticeCount
-                  ? <small>وقّع مع علمه بـ{signed.regulationNoticeCount} ملاحظةً لائحية</small>
+                  ? <small>وقّع مع علمه بـ{countOf(signed.regulationNoticeCount, oblique(AR.regulationNote))}</small>
                   : null}
               </em>
             ) : <i />}
@@ -3626,9 +3626,9 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
           <section className="print-explicit-page" key={`list-page-${pageIndex + 1}`}>
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <div className="print-query-summaryline">
-              <span><b>{rows.length}</b> موعد</span>
-              <span><b>{distinctCourses}</b> مقرر</span>
-              <span><b>{distinctInstructors}</b> أستاذ</span>
+              <span><b>{rows.length}</b> {nounFor(rows.length, AR.appointment)}</span>
+              <span><b>{distinctCourses}</b> {nounFor(distinctCourses, AR.course)}</span>
+              <span><b>{distinctInstructors}</b> {nounFor(distinctInstructors, AR.instructor)}</span>
             </div>
             <div className="print-query-list">
               {pageRows.map((row, index) => {
@@ -3707,7 +3707,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               <section className="print-query-group">
                 <header>
                   <div><strong>{page.group.key}</strong>{instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}</div>
-                  <span><b>{page.group.rows.length}</b> موعد</span><span><b>{Math.round(load / 60)}</b> س</span><span><b>{days}</b> أيام</span>
+                  <span><b>{page.group.rows.length}</b> {nounFor(page.group.rows.length, AR.appointment)}</span><span><b>{Math.round(load / 60)}</b> س</span><span><b>{days}</b> {nounFor(days, AR.day)}</span>
                 </header>
                 <table>
                   <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
@@ -3753,7 +3753,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               <section className="print-explicit-page" key={`room-occupancy-${pageIndex + 1}`}>
                 <PrintLetterhead title={titles[kind]} scope={scope} college={collegeName} footer={false} />
                 <div className="print-query-summaryline">
-                  <span><b>{roomLoad.rooms.length}</b> قاعة</span>
+                  <span><b>{roomLoad.rooms.length}</b> {nounFor(roomLoad.rooms.length, AR.room)}</span>
                   <span><b>{roomLoad.totalRate}</b>٪ متوسط الإشغال</span>
                   <span>المربع الداكن = إشغال أعلى</span>
                 </div>
@@ -3902,9 +3902,9 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                     <strong>{page.group.key}</strong>
                     {instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}
                   </div>
-                  <span><b>{page.group.rows.length}</b> شعبة</span>
+                  <span><b>{page.group.rows.length}</b> {nounFor(page.group.rows.length, AR.section)}</span>
                   <span><b>{Math.round(load / 60)}</b> س أسبوعياً</span>
-                  <span><b>{days}</b> أيام</span>
+                  <span><b>{days}</b> {nounFor(days, AR.day)}</span>
                 </header>
                 <table>
                   <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
@@ -3982,8 +3982,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                         <strong>{person.name}</strong>
                         {person.civil ? <small className="print-ltr">{person.civil}</small> : null}
                       </td>
-                      <td className="print-history-total-cell"><strong>{person.times}</strong><small>فصل</small></td>
-                      <td className="print-history-total-cell is-sections"><strong>{person.sections}</strong><small>شعبة</small></td>
+                      <td className="print-history-total-cell"><strong>{person.times}</strong><small>{nounFor(person.times, AR.term)}</small></td>
+                      <td className="print-history-total-cell is-sections"><strong>{person.sections}</strong><small>{nounFor(person.sections, AR.section)}</small></td>
                       {page.pageYears.map(year => (
                         <td key={`${person.instructorId}-${year.key}`} className="print-history-year-cell">
                           <span className="print-history-term-slots" style={{ gridTemplateColumns: `repeat(${year.slots.length}, minmax(0, 1fr))` }}>
@@ -4007,8 +4007,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               <tfoot>
                 <tr>
                   <td className="print-history-person-cell"><strong>إجمالي القسم</strong></td>
-                  <td className="print-history-total-cell"><strong>{model.totals.terms}</strong><small>فصل</small></td>
-                  <td className="print-history-total-cell is-sections"><strong>{model.totals.sections}</strong><small>شعبة</small></td>
+                  <td className="print-history-total-cell"><strong>{model.totals.terms}</strong><small>{nounFor(model.totals.terms, AR.term)}</small></td>
+                  <td className="print-history-total-cell is-sections"><strong>{model.totals.sections}</strong><small>{nounFor(model.totals.sections, AR.section)}</small></td>
                   {page.pageYears.map(year => (
                     <td key={`total-${year.key}`} className="print-history-year-cell is-total">
                       <strong>{year.sections}</strong><small>{year.people} منتدب</small>
