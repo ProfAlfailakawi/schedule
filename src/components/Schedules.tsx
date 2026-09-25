@@ -9788,6 +9788,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
       {!rowsForeign && (rows.length > 0 || genesisFromEmpty) ? (
       <div className="schedule-overview-stack no-print">
+        {/* An empty term shows no zero counters — only the genesis scene it asked for. */}
+        {!rowsForeign && rows.length > 0 ? (
         <section className="schedule-mini-stats">
           <StatCard
             icon={<CalendarDays />}
@@ -9807,6 +9809,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             label="أستاذ مقرر"
           />
         </section>
+        ) : null}
         <LivingScheduleLayer
           user={user}
           rows={filteredRows}
