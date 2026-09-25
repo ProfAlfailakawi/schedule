@@ -206,7 +206,7 @@ check(!/for \(const id of need\.courseIds \|\| \[\]\) \{[\s\S]{0,120}return sect
     "وحالةُ الخريج تُقرَّر في قسم الاستبيان لا في قسم الطالب");
   check(sectionOwnsNeed(cases[5][1], catalogue, 3) && !surveyOwnsNeed(cases[5][1], 3, ownCourses),
     "وتعارضٌ يسمّي مقرّر هذا القسم يصل كشفَه ليقرّر فيه، ولو قُدّم عبر استبيان غيره");
-  check(!sectionOwnsNeed({ requestType: "new-course", surveySectionId: 4, courseIds: [22] }, catalogue, 3),
+  check(!sectionOwnsNeed({ requestType: "new-course", surveySectionId: 4, courseIds: [22] } as any, catalogue, 3),
     "ولا يصل كشفَ قسمٍ طلبٌ لا يخصّه");
 }
 

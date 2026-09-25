@@ -78,7 +78,7 @@ const noDeadline = readDeadline({}, "2026-10-01");
   check(submitFn.includes("blockingConflicts: blocking") && submitFn.includes("await blockingConflictCount("),
     "R3 الإرسالُ يعدّ التعارضات ويمرّرها إلى canSubmit");
   check(bar.includes("!locked && !accepted && blockingConflicts === 0"), "R2/R3 شرطُ زرّ الإرسال في الشاشة هو شرط الخادم");
-  check(bar.includes("يمنع الإرسال: {blockingConflictPhrase(blockingConflicts)}"), "R3 ويُقال السببُ مكان الزرّ");
+  check(bar.includes("يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}"), "R3 ويُقال السببُ مكان الزرّ — بالتعارضات وما تمسّه من مواعيد");
 }
 
 /* ── R4: عدّادٌ واحد لملاحظات التسجيل المفتوحة ─────────────────────────────── */

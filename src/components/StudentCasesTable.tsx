@@ -74,7 +74,7 @@ const printableCaseDate = (value: string) => {
 };
 const graduateReasonText = (item: StudentCaseView) => {
   const reason = GRADUATE_REASON_LABEL[String(item.graduateReason || "")] || "";
-  return [reason, String(item.details || "").trim()].filter(Boolean).join(" — ") || "—";
+  return [reason, String(item.details||"").trim()].filter(Boolean).join(" — ") || "—";
 };
 
 const PRINT_TITLE: Record<TypeFilter, string> = {

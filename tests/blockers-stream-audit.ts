@@ -172,7 +172,7 @@ await (async () => {
 /* B13 — the brief is reachable from the living layer; flags say only what a screen reaches. */
 {
   const living = route('app.get("/api/intelligence/living"');
-  check(living.includes("buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows))"),
+  check(living.includes("buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows), blockerOptions)"),
     "B13 ملخص الدقيقة في الطبقة الحية يقول ما تغيّر منذ آخر نقطة أمان");
   check(living.includes("emergency:false"), "B13 خطة الطوارئ بلا شاشة لا تُعلن متاحة");
   check(route('app.get("/api/intelligence/brief"').includes("await briefChangedSince(collegeId,sectionId,termId,rows)"), "B13 والملخص المنفرد يقرأ من المساعد نفسه");
