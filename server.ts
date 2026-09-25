@@ -16729,6 +16729,8 @@ async function judgeRequestItems(request: InstructorRequest, options: { forDepar
       startLadder: rules.startLadder,
       windowOpen: open,
       instructorLoad: Number(context.instructors.get(Number(request.AdInstructorId))?.AdInstructorLoad || 0) || null,
+      /* ورقةُ رفض القسم تعرض بدائلَ لكل بند، ولو كان متاحاً (مراجعة البروفة). */
+      offerAlternatives: Boolean(options.forDepartment),
     });
     return {
       ...item,

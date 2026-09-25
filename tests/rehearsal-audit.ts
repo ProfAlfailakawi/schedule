@@ -12,7 +12,8 @@ import {
   additionsAwaitingHead, canSubmit, emptyApproval, extensionRequestRefusal, needsHeadAcknowledgement, readDeadline, withRemainingSignatures,
 } from "../src/utils/approvalWorkflow";
 import { buildNotifications, pendingExtensionRequest, type CenterScope } from "../src/utils/notificationCenter";
-import type { ScheduleApproval } from "../src/types";
+import { judgeRequest, type VerdictContext } from "../src/utils/instructorRequestVerdict";
+import type { AdCourse, AdInstructor, FSchedule, ScheduleApproval } from "../src/types";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -176,6 +177,39 @@ const block = (source: string, start: string, end = "\napp.") => {
     "R5: حالُ القسم بلا سجلٍّ تُقرأ من مواعيده في الفصل");
   check(term.includes('status: drafting ? "drafting" as const : "notStarted" as const'),
     "R5: مواعيدُ بلا توقيع ⇒ «قيد الإعداد» كما في الوارد والشريط، ولا شيء ⇒ «لم يبدأ»");
+}
+
+/* ══ R6: رفضُ بندٍ متاح يعرض بدائل ═════════════════════════════════════════════
+ * البروفة: طلبت الأستاذة نقل محاضرتها إلى وقتٍ متاح، فرفضته اللجنة لسببٍ لا يراه
+ * الفاحص (دفعةٌ مشتركة). ورقةُ الرفض تعرض بدائلها من «أقرب الأوقات»، وكانت
+ * القائمةُ فارغةً لكل بندٍ متاح — فلا يجد المنسّق ما يعرضه، ويُغلق البابَ رفضٌ
+ * بلا بديل. */
+{
+  const TEACHER = 6;
+  const row = (over: Partial<FSchedule> = {}): FSchedule => ({
+    id: 17, AdCollegeId: 1, AdSectionId: 1, AdTermId: 1, AdCourseId: 17, SCode: "01", AdInstructorId: TEACHER,
+    fsunday: true, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false,
+    fstarttime: "12:30", fendtime: "13:20", AdRoomCode: "901A02", AdRoomHall: "L01", ...over,
+  } as FSchedule);
+  const course: AdCourse = { AdCourseId: 17, AdCollegeId: 1, AdSectionId: 1, CourseCode: "CS350", CourseName: "أمن الأنظمة", CourseCredit: 3, CourseHours: 3 } as AdCourse;
+  const teacher = { AdInstructorId: TEACHER, AdInstructorCivil: "000000000006", AdInstructorName: "د. 6" } as AdInstructor;
+  const moved = row({ fstarttime: "11:00", fendtime: "11:50" });
+  const context: VerdictContext = {
+    instructorId: TEACHER, allRows: [row()], instructorRowsAfter: [moved],
+    courses: new Map([[17, course]]), instructors: new Map([[TEACHER, teacher]]),
+    knownRoomKeys: [], startLadder: ["08:00", "09:30", "11:00", "12:30", "14:00"],
+  };
+  const ask = { rowId: 17, action: "change" as const, AdCourseId: 17, days: ["fsunday", "ftuesday"] as any, start: "11:00" };
+  const forTeacher = judgeRequest(ask, context);
+  check(forTeacher.kind === "clear" && forTeacher.nearestTimes.length === 0 && forTeacher.headline === "الوقت متاح",
+    "R6: صفحةُ الأستاذ لا تُعرض عليها «أقرب الأوقات» وطلبُه متاح");
+  const forDepartment = judgeRequest(ask, { ...context, offerAlternatives: true });
+  check(forDepartment.kind === "clear" && forDepartment.nearestTimes.length > 0 && forDepartment.headline === "الوقت متاح",
+    "R6: وللقسم تُحسب البدائل ولو كان البندُ متاحاً — والحكمُ باقٍ «متاح»");
+  check(forDepartment.nearestTimes.every(slot => slot.days.join() === "fsunday,ftuesday" && slot.start !== "11:00"),
+    "R6: والبديلُ بأيام المحاضرة كلها، غيرُ الوقت المطلوب نفسه");
+  check(block(server, "async function judgeRequestItems(", "\n/* ──").includes("offerAlternatives: Boolean(options.forDepartment)"),
+    "R6: الواردُ وحده (forDepartment) يطلب البدائل، وصفحةُ الأستاذ لا");
 }
 
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);

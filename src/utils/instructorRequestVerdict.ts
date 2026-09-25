@@ -148,6 +148,15 @@ export interface VerdictContext {
    * ويبقى القيدُ صامتاً كما كان قبل أن يوجد.
    */
   instructorLoad?: number | null;
+  /**
+   * أقربُ الأوقات تُحسب لكل بندٍ يطلب موضعاً، لا لما يمنعه وحده.
+   *
+   * للقسم وحده (وارد الأساتذة): رفضُ بندٍ «متاح» يكون لسببٍ لا يراه الفاحص —
+   * دفعةٌ مشتركة، أو نصاب، أو قرار القسم — وورقةُ الرفض تعرض بدائلها من هذه
+   * القائمة. فكانت فارغةً لكل بندٍ متاح، ولا يجد المنسّقُ ما يعرضه على الأستاذ.
+   * وصفحةُ الأستاذ لا تمرّره، فلا يُقال له «أقربُ الأوقات» وطلبُه متاح.
+   */
+  offerAlternatives?: boolean;
 }
 
 const dayLabel = (day: DayKey) => DAY_NAMES[DAY_KEYS.indexOf(day)];
@@ -496,7 +505,7 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
   const verdict = verdictOf();
   verdict.roomAvailable = roomAvailable;
   verdict.roomCandidates = candidates;
-  verdict.nearestTimes = verdict.sendable ? [] : nearestFree(request, context, roomKeys, week, identity);
+  verdict.nearestTimes = verdict.sendable && !context.offerAlternatives ? [] : nearestFree(request, context, roomKeys, week, identity);
   if (!verdict.sendable && verdict.nearestTimes.length) {
     verdict.headline = `${verdict.headline} أقربُ الأوقات المتاحة: ${verdict.nearestTimes.map(slot => `${slot.dayLabel} ${slot.start}`).join(" · ")}`;
   }
