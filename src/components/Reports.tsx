@@ -2056,7 +2056,20 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             <span>{lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
-          {!pending && (results.length || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
+          {!pending && (results.length || (lens === "balance" && balance) || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
+            {/* نشرة الميزان تُطبع قبل أول موعدٍ معتمد أيضاً (N14). */}
+            {!results.length && lens === "balance" && balance ? (
+              <button
+                type="button"
+                className="query-print-icon"
+                data-guide-ignore="طباعة نشرة ميزان الأقسام؛ قراءة فقط ولا تغيّر بيانات الجدول"
+                onClick={() => printReport("balance")}
+                aria-label="طباعة نشرة الميزان"
+                title="طباعة نشرة الميزان"
+              >
+                <Printer aria-hidden="true" />
+              </button>
+            ) : null}
             {results.length ? <>
               <button
                 type="button"
@@ -2794,6 +2807,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           siteGroups={branchSiteGroups}
           approval={printApproval}
           changesAppendix={changesAppendix}
+          balanceApprovals={termApprovals}
         />
       </PrintPortal>
       <PrintPortal className="authority-pdf-print-host">
@@ -3324,7 +3338,7 @@ function PrintSheet(props: React.ComponentProps<typeof PrintSheetBody>) {
   );
 }
 
-function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix }: {
+function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix, balanceApprovals }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -3353,6 +3367,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   approval?: PrintApproval | null;
   /** يُطبع خلف الشامل حين يُطلب الاثنان معاً. غيابه هو الحال المعتادة. */
   changesAppendix?: ChangesAppendix | null;
+  /** حال الاعتماد والموعد لكل قسم — لنشرة الميزان (N14). */
+  balanceApprovals?: Map<number, BalanceApprovalState> | null;
 }) {
   if (!kind) return null;
 
@@ -3368,7 +3384,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     visiting: "المنتدبون — الفصل الحالي",
     visitingHistory: "المنتدبون — كل الفصول",
     fairness: "عدالة توزيع العبء",
-    balance: "ميزان الأقسام",
+    balance: "نشرة المجلس — ميزان الأقسام",
     comprehensive: "تقرير الجدول الشامل",
     "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
   };
@@ -4013,18 +4029,31 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   }
 
   if (kind === "balance") {
-    const pages = balance?.departments?.length ? paginateItems(balance.departments, PAGE_ROWS.balanceRows) : [];
+    /* نشرة المجلس (N14): تُطبع في أي وقت — ولو قبل أول اعتماد — وبعمود الاعتماد
+       والموعد، وبأقسام النطاق التي لم تبدأ. فهي ما يُعرض على المجلس. */
+    const approvals = balanceApprovals || undefined;
+    const departments = mergeBalanceDepartments(balance?.departments || [], approvals);
+    const pages = departments.length ? paginateItems(departments, PAGE_ROWS.balanceRows) : [];
+    const stateOf = (item: any) => approvals?.get(Number(item.sectionId));
     return (
       <div className="print-report print-wide print-query-report print-balance-report">
         {pages.length ? pages.map((pageDepartments: any[], pageIndex) => (
           <section className="print-explicit-page" key={`balance-page-${pageIndex + 1}`}>
-            <PrintLetterhead title={titles[kind]} scope={balance?.termName || scopeLine} college={collegeName} footer={false} />
-            <div className="print-query-summaryline"><span><b>{balance.totals.departments}</b> قسم</span><span><b>{balance.totals.rows}</b> موعد</span><span><b>{balance.totals.conflicts}</b> مانع اعتماد</span></div>
+            <PrintLetterhead title={titles[kind]} scope={`${balance?.termName || termName || scopeLine} · صادرة في ${issueDate}`} college={collegeName} footer={false} />
+            <div className="print-query-summaryline"><span>{countOf(departments.length, AR.department)}</span><span>{countOf(Number(balance?.totals?.rows || 0), AR.appointment)}</span><span>{countOf(Number(balance?.totals?.conflicts || 0), AR.blocker)}</span></div>
             <table>
-              <thead><tr><th>القسم العلمي</th><th>المواعيد</th><th>الأساتذة</th><th>القاعات</th><th>صباحي</th><th>العدالة</th><th>الجودة</th><th>موانع</th></tr></thead>
-              <tbody>{pageDepartments.map((item: any) => <tr key={item.sectionId}>
-                <td className="print-wrap"><strong>{item.sectionName}</strong><small>{item.collegeName}</small></td><td>{item.rows}</td><td>{item.instructors}</td><td>{item.rooms}</td><td>{item.morningPct}%</td><td>{item.fairness}</td><td>{item.quality}</td><td>{item.conflicts || "—"}</td>
-              </tr>)}</tbody>
+              <thead><tr><th>القسم العلمي</th>{approvals ? <><th>الاعتماد</th><th>الموعد</th></> : null}<th>المواعيد</th><th>الأساتذة</th><th>القاعات</th><th>صباحي</th><th>العدالة</th><th>الجودة</th><th>موانع</th></tr></thead>
+              <tbody>{pageDepartments.map((item: any) => {
+                const state = stateOf(item);
+                return <tr key={item.sectionId}>
+                <td className="print-wrap"><strong>{item.sectionName}</strong><small>{item.collegeName}</small></td>
+                {approvals ? <>
+                  <td>{state ? (state.late ? "متأخّر عن الموعد" : balanceStatusLabel(state.status)) : "قيد الإعداد"}</td>
+                  <td>{state?.deadline ? `${formatBalanceDate(state.deadline)}${typeof state.daysLeft === "number" && state.daysLeft >= 0 ? ` (بقي ${countOf(state.daysLeft, AR.day, "اليوم")})` : ""}` : "—"}</td>
+                </> : null}
+                <td>{item.rows}</td><td>{item.empty ? "—" : item.instructors}</td><td>{item.empty ? "—" : item.rooms}</td><td>{item.empty ? "—" : `${item.morningPct}%`}</td><td>{item.empty ? "—" : item.fairness}</td><td>{item.empty ? "—" : item.quality}</td><td>{item.conflicts || "—"}</td>
+              </tr>;
+              })}</tbody>
             </table>
             <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
           </section>

@@ -285,5 +285,17 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(at > 0 && reports.slice(at - 200, at + 400).includes("data-guide-ignore="), "N12: زرّ «تصدير Excel» في مساحة التقرير بسمة المرشد");
 }
 
+/* ══ N14 — نشرة المجلس تُطبع في أي وقت، بعمود الاعتماد ═══════════════════ */
+{
+  const reports = read("src/components/Reports.tsx");
+  check(reports.includes('balance: "نشرة المجلس — ميزان الأقسام"'), "N14: عنوان النشرة");
+  check(reports.includes('!results.length && lens === "balance" && balance ?') && reports.includes('printReport("balance")'), "N14: الميزان يُطبع قبل أول موعدٍ معتمد");
+  const printAt = reports.indexOf('if (kind === "balance") {');
+  const printBody = reports.slice(printAt, printAt + 3500);
+  check(printBody.includes("<th>الاعتماد</th><th>الموعد</th>") && printBody.includes("balanceStatusLabel(state.status)"), "N14: الطباعة تحمل عمود الاعتماد والموعد");
+  check(printBody.includes("mergeBalanceDepartments(") && printBody.includes("صادرة في ${issueDate}"), "N14: النشرة تشمل الأقسام التي لم تبدأ، وتحمل الفصل والتاريخ");
+  check(reports.includes("balanceApprovals={termApprovals}"), "N14: حال الاعتماد تصل ورقة الطباعة");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
