@@ -616,8 +616,8 @@
 .apb-ring[data-size="lg"]{inline-size:58px;block-size:58px}
 .apb-ring[data-tone="near"]{--ring-tone:var(--warning)}
 .apb-ring[data-tone="past"]{--ring-tone:var(--danger)}
-.apb-ring svg{position:absolute;inset:0;inline-size:100%;block-size:100%;transform:rotate(-90deg)}
-.apb-ring circle{fill:none;stroke-width:3.4;stroke-linecap:round}
+.apb-ring>svg{position:absolute;inset:0;inline-size:100%;block-size:100%;transform:rotate(-90deg)}
+.apb-ring>svg circle{fill:none;stroke-width:3.4;stroke-linecap:round}
 .apb-ring-track{stroke:color-mix(in srgb,var(--ring-tone) 16%,var(--line))}
 .apb-ring-value{stroke:var(--ring-tone);transition:stroke-dasharray .8s var(--ease-out)}
 .apb-ring-core{position:relative;display:grid;place-items:center;line-height:1;color:var(--ring-tone)}
@@ -714,7 +714,7 @@
 }
 .approval-history li{
   --event-tone:var(--muted);
-  position:relative;display:grid;grid-template-columns:26px auto 1fr;align-items:center;column-gap:10px;
+  position:relative;display:grid;grid-template-columns:26px max-content 1fr;align-items:center;column-gap:10px;
   padding-block:5px;font-size:.82rem;color:var(--muted);
 }
 .approval-history li+li::before{
@@ -754,7 +754,7 @@
   .apb-step-label{display:none}
   .apb-steps[data-size="lg"]{--node:38px;inline-size:100%}
   .apb-pop,.apb-tip[data-align] .apb-pop{
-    position:fixed;left:16px;right:16px;inset-block-start:auto;bottom:16px;inset-inline:16px;
+    position:fixed;left:16px;right:16px;inset-block-start:auto;bottom:calc(128px + env(safe-area-inset-bottom,0px));inset-inline:16px;
     inline-size:auto;max-inline-size:none;transform:translateY(6px);
     padding:12px 14px;font-size:.86rem;border-radius:var(--r-md);
   }

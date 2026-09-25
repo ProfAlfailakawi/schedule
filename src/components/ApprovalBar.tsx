@@ -218,7 +218,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   const tone =
     headMustAcknowledge ? "pending"
-    : status === "returned" ? "returned"
+    : status === "returned" || (status === "drafting" && approval.headReturn) ? "returned"
     : pendingAdditions > 0 ? "pending"
     : locked || status === "accepted" ? "locked"
     : undefined;
@@ -275,7 +275,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   const Icon =
     headMustAcknowledge ? AlertTriangle
-    : status === "returned" ? CornerUpLeft
+    : status === "returned" || (status === "drafting" && headReturn) ? CornerUpLeft
     : pendingAdditions > 0 ? AlertTriangle
     : locked ? Send
     : ShieldCheck;
@@ -322,7 +322,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       turn: (Boolean(committee) && !head && status !== "returned") || pendingAdditions > 0,
       sig: signatureTip(head, "رئيس القسم"),
       initials: initialsOf(head?.userName),
-      badge: pendingAdditions > 0 ? `+${(pendingAdditions + overflow).toLocaleString("ar-KW-u-nu-latn")}` : undefined,
+      badge: pendingAdditions > 0 ? `+${(pendingAdditions).toLocaleString("ar-KW-u-nu-latn")}` : undefined,
     },
     {
       key: "registrar", label: "التسجيل", Icon: Landmark,
@@ -412,9 +412,9 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {!expanded ? ring("sm") : null}
 
         {pendingAdditions > 0 && !headMustAcknowledge ? (
-          <InfoTip {...tipProps("additions")} label={`${countOf(pendingAdditions + overflow, AR.section)} تنتظر إقرار رئيس القسم`} tip={[additionsLine]}
+          <InfoTip {...tipProps("additions")} label={`${countOf(pendingAdditions, AR.section)} تنتظر إقرار رئيس القسم`} tip={[additionsLine]}
             className="apb-badge" data-tone="info" data-guide-ignore="شارة الشعب المضافة بعد الاعتماد — تلميحٌ لا فعل">
-            <ListPlus aria-hidden="true" /><b>{(pendingAdditions + overflow).toLocaleString("ar-KW-u-nu-latn")}</b>
+            <ListPlus aria-hidden="true" /><b>{(pendingAdditions).toLocaleString("ar-KW-u-nu-latn")}</b>
           </InfoTip>
         ) : null}
 
@@ -434,7 +434,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
         {/* الخلافُ الذي تكرّر ثلاثاً يُعرض لرئيس القسم هنا — وهذا ما تَعِد به شاشةُ الملاحظات. */}
         {escalated > 0 && signatureStage === "head" ? (
-          <InfoTip {...tipProps("escalated")} label={`${countOf(escalated, AR.note)} مرفوعة إليك`} className="apb-badge" data-tone="warning"
+          <InfoTip {...tipProps("escalated")} label={`${countOf(escalated, AR.note)} أصرّ عليها التسجيل ثلاثاً`} className="apb-badge" data-tone="warning"
             tip={<>{countOf(escalated, AR.note)} أصرّ عليها التسجيل ثلاثاً بعد ردّ اللجنة — تحتاج نظرك.</>}
             data-guide-ignore="شارة الخلاف المرفوع لرئيس القسم — تلميحٌ لا فعل">
             <Flag aria-hidden="true" /><b>{escalated.toLocaleString("ar-KW-u-nu-latn")}</b>
@@ -518,7 +518,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
         {/* ── الفعلُ الأول: زرٌّ واضح بأيقونةٍ وكلمة ─────────────────────── */}
         {headMustAcknowledge ? (
-          <PrimaryButton type="button" className="apb-primary" title={`إقرار ${countOf(pendingAdditions + overflow, AR.section)} أُضيفت بعد اعتمادك`}
+          <PrimaryButton type="button" className="apb-primary" title={`إقرار ${countOf(pendingAdditions, AR.section)} أُضيفت بعد اعتمادك`}
             data-guide-ignore="إقرار رئيس القسم بالشُّعب المضافة — ضغطةٌ واحدة، لا توقيعٌ جديد" disabled={busy} onClick={() => void act("/api/approvals/acknowledge-additions", {
             /* يُقرّ ما عُرض عليه وحده، لا ما وصل بعد أن فتح الشاشة. */
             expectedPendingIds: approval.pendingAdditions.map(item => Number(item.scheduleId)),
