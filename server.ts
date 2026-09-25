@@ -9870,20 +9870,31 @@ app.get("/api/approvals/term", requireAuth, async (req: AuthenticatedRequest, re
    * لا سجلَّ لها، فكانت تغيب عن الميزان كلياً — وهي أهمّ ما يسأل عنه العميد.
    * تُبنى هنا من سجلّ الأقسام في نطاق القارئ، بحال «لم يبدأ»، ويُحكم على
    * تأخّرها وتأخّر غيرها بالقاعدة الواحدة `isLate` (src/utils/lateness.ts). */
-  const [sections, colleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const [sections, colleges, termRows] = await Promise.all([
+    Repository.getSections(), Repository.getColleges(), Repository.getSchedulesByScope({ termId }),
+  ]);
   const collegeName = new Map(colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
   const started = new Set(rows.map(row => `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`));
+  /* ── قسمٌ كتب مواعيده ولم يوقّع ليس «لم يبدأ» (مراجعة البروفة) ──────────
+   * بلا سجلّ اعتماد، كان كلُّ قسمٍ يُقال عنه «لم يبدأ» — وميزانُ العميد يعرض
+   * بجانبه ستةَ مواعيد، والواردُ وشريطُ القسم يقولان عنه «قيد الإعداد». فالحالُ
+   * من الجدول نفسه: مواعيدُ في الفصل ⇒ قيد الإعداد، ولا شيء ⇒ لم يبدأ. */
+  const withRows = new Set((termRows as any[]).map(row => `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`));
   const notStarted = sections
     .filter((row: any) => (!collegeId || Number(row.AdCollegeId) === collegeId)
       && !started.has(`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`)
       && (req.user?.IsAdminUser || isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))))
-    .map((row: any) => ({
+    .map((row: any) => {
+      const drafting = withRows.has(`${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`);
+      return {
       AdCollegeId: Number(row.AdCollegeId), AdSectionId: Number(row.AdSectionId),
       sectionName: String(row.AdSectionName || ""), collegeName: collegeName.get(Number(row.AdCollegeId)) || "",
-      status: "notStarted" as const, statusLabel: "لم يبدأ",
+      status: drafting ? "drafting" as const : "notStarted" as const,
+      statusLabel: drafting ? APPROVAL_STATUS_LABEL.drafting : "لم يبدأ",
       deadline: readDeadline({ termDeadline }, now),
       late: isLate({ approvalStatus: null, submittedRounds: 0, deadline: termDeadline }),
-    }));
+      };
+    });
   res.json({
     termDeadline,
     approvals: visible.map(row => ({

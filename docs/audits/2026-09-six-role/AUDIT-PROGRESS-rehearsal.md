@@ -10,3 +10,4 @@ every role, through the same APIs the screens call. Test file: `tests/rehearsal-
 | R2 | Head-return reaches the committee bell as a plain «وقّع جدول…»: neither the return nor its reason is said | FIXED | rehearsal-audit R2 |
 | R3 | Dean / vice-dean bell summary printed raw digits: «المعتمد 1 من جدولين», «بقي 1 لم يعتمده التسجيل بعد» | FIXED | rehearsal-audit R3, notification-center-audit |
 | R4 | Extension request accepted on an accepted (or submitted) schedule, 13 days before the deadline, and over a pending request — the button rule lived only in the bar; registrar bell line omitted the requested days | FIXED | rehearsal-audit R4 |
+| R5 | `/api/approvals/term` labelled a department with written appointments but no approval record «لم يبدأ» (dean balance showed «لم يبدأ» beside 6 appointments) while the inbox and the bar said «قيد الإعداد» | FIXED | rehearsal-audit R5, dean-notify-audit N3 |

@@ -167,5 +167,16 @@ const block = (source: string, start: string, end = "\napp.") => {
   check(Boolean(bell) && bell!.detail === "7 أيام — تأخّر المنتدبين", "R4: «7 أيام — السبب» في سطر رئيس التسجيل");
 }
 
+/* ══ R5: قسمٌ كتب مواعيده ليس «لم يبدأ» ═════════════════════════════════════
+ * البروفة: ميزانُ العميد وعميد التسجيل قال عن «ريادة الأعمال» «لم يبدأ» وبجانبه
+ * ستةُ مواعيد، والواردُ وشريطُ القسم (/api/approvals) يقولان «قيد الإعداد». */
+{
+  const term = block(server, 'app.get("/api/approvals/term"');
+  check(term.includes("Repository.getSchedulesByScope({ termId })") && term.includes("withRows.has("),
+    "R5: حالُ القسم بلا سجلٍّ تُقرأ من مواعيده في الفصل");
+  check(term.includes('status: drafting ? "drafting" as const : "notStarted" as const'),
+    "R5: مواعيدُ بلا توقيع ⇒ «قيد الإعداد» كما في الوارد والشريط، ولا شيء ⇒ «لم يبدأ»");
+}
+
 console.log(`\nRehearsal audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

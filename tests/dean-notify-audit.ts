@@ -204,7 +204,7 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(!isLate({ approvalStatus: null, now }), "N3: بلا موعدٍ لا تأخّر");
   check(daysLeftUntil({ deadline: "2026-09-28", now }) === 3, "N4: الأيام الباقية من الدالّة نفسها");
   const term = routeBody('app.get("/api/approvals/term"');
-  check(term.includes("notStarted") && term.includes('statusLabel: "لم يبدأ"'), "N3: الخادم يعيد أقسام النطاق التي لم تبدأ");
+  check(term.includes("notStarted") && term.includes('statusLabel: drafting ? APPROVAL_STATUS_LABEL.drafting : "لم يبدأ"'), "N3: الخادم يعيد أقسام النطاق التي لم تبدأ (وما كتب مواعيده «قيد الإعداد»)");
   check((term.match(/isLate\(/g) || []).length === 2, "N3: التأخّر في الخادم من isLate وحدها");
   const reports = read("src/components/Reports.tsx");
   check(reports.includes("late: Boolean(row.late)") && !reports.includes("Boolean(row.deadline?.past) && Number(row.currentRound"),
