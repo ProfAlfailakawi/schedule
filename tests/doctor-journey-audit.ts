@@ -13,7 +13,8 @@ import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "../src/server/publicAttemptLimiter";
 import { termPhase } from "../src/utils/termSequence";
 import { normalizeCivilId, sameCivilId } from "../src/utils/civilId";
-import { TERM_LINK_FALLBACK_DAYS, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
+import { chosenAlternativeIndex } from "../src/utils/requestAlternatives";
+import { TERM_LINK_FALLBACK_DAYS, personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from "../src/utils/shareLinkLifetime";
 
 let passed = 0, failed = 0;
 function check(condition: unknown, name: string) {
@@ -182,6 +183,29 @@ async function main() {
     check(note.includes("publicAttemptBlocked(token") && note.includes("publicAttemptFailed(token") && !note.includes("staffLookupAllowed"), "D6 ملاحظة بطاقتي كذلك");
     check(server.includes("publicAttemptBlocked(signScope") && (server.match(/publicAttemptFailed\(signScope/g) || []).length === 2, "D6 التوقيع يسجّل الرقم الخاطئ وحده");
     check(!server.includes("staffAttempts") && !server.includes("STAFF_MAX_TRIES"), "D6 لا عدّاد ثانٍ في الخادم");
+  }
+
+
+  /* ── D3: القرار وبدائله مقروءان بعد الإغلاق، والرابط حتى نهاية الفصل ─────── */
+  {
+    const alts = [{ day: "fsunday", start: "10:00" }, { days: ["ftuesday", "fsunday"], start: "08:00" }];
+    check(chosenAlternativeIndex(alts, ["fsunday"], "10:00") === 0, "D3 مطابقة بديلٍ بيومٍ واحد");
+    check(chosenAlternativeIndex(alts, ["fsunday", "ftuesday"], "8:00") === 1, "D3 مطابقة بديلٍ بأيام بلا اعتبار للترتيب");
+    check(chosenAlternativeIndex(alts, ["fsunday"], "11:00") === -1 && chosenAlternativeIndex([], ["fsunday"], "10:00") === -1, "D3 لا مطابقة بلا بديلٍ مطابق");
+    const now = Date.parse("2026-10-20T10:00:00Z");
+    const term = { AdTermName: "الأول 2026/2027" };
+    check(personalLinkReadable("2026-10-09T00:00:00Z", term, now), "D3 رابطٌ قديمٌ انتهى بموعد الطلبات يبقى مقروءاً حتى نهاية الفصل");
+    check(!personalLinkReadable("2026-10-09T00:00:00Z", { AdTermName: "الأول 2025/2026" }, now), "D3 فصلٌ انقضى لا يمدّ رابطاً منتهياً");
+    check(!personalLinkReadable("2026-10-09T00:00:00Z", { AdTermName: "فصل" }, now), "D3 فصلٌ مجهول لا يمدّ رابطاً منتهياً");
+
+    const page = server.slice(server.indexOf("function decisionBox("), server.indexOf("function planTable()"));
+    check(page.includes("alts.length&&!open") && page.includes("alts-ro") && page.includes("أُغلق استقبال الطلبات"), "D3 البدائل تُعرض للاطلاع بعد الإغلاق");
+    const submit = server.slice(server.indexOf('app.post("/api/public/request/:token", '), server.indexOf('app.post("/api/public/request/:token/check"'));
+    check(submit.includes('kind: "alternative-chosen"') && submit.includes("...alternativeEvents"), "D3 اختيار البديل يُسجَّل في الخط الزمني");
+    const issue = server.slice(server.indexOf('app.post("/api/instructor-requests/issue"'), server.indexOf('app.post("/api/instructor-requests/issue"') + 9000);
+    check(issue.includes("Date.parse(termLinkExpiresAt(issueTerm))"), "D3 رابط الطلب يصدر حتى نهاية الفصل");
+    check(server.includes("if (!await personalLinkStillReadable(link)) return { error: \"انتهت صلاحية هذا الرابط\", status: 410 } as const;"), "D3 رابط الطلب القديم يُقرأ حتى نهاية فصله");
+    check(submit.includes("requestWindowOpen(resolved.request)"), "D3 الكتابة تبقى محكومةً بنافذة الطلبات");
   }
 
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);

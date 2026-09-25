@@ -30,3 +30,17 @@ export function requestsCloseAtFromDate(date: unknown): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) return "";
   return `${value}T23:59:59.999Z`;
 }
+
+/**
+ * هل ما زال الرابطُ الشخصي (بطاقة الأستاذ، رابط الطلب) مقروءاً؟
+ *
+ * روابطُ صدرت قبل هذه القاعدة تحمل `expiresAt` = موعد الطلبات. فالقراءةُ تبقى
+ * ما دام أحدُ الحدّين قائماً: تاريخُ الرابط المخزون، أو نهايةُ فصله المعروفة.
+ * فصلٌ انقضى لا يمدّ عمرَ رابطٍ منتهٍ — والإيقافُ اليدوي يُحترم قبل هذا كله.
+ */
+export function personalLinkReadable(expiresAt: string | undefined | null, term: TermLike, now: number = Date.now()): boolean {
+  const stored = Date.parse(String(expiresAt || ""));
+  if (!Number.isFinite(stored) || stored >= now) return true;
+  const window = termWindow(term);
+  return Boolean(window && now < window.to);
+}

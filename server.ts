@@ -24,9 +24,10 @@ import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQue
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
-import { requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
+import { personalLinkReadable, requestsCloseAtFromDate, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
 import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
+import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import {
   APPROVAL_STATUS_LABEL, blockingConflictPhrase, canSign, canSubmit, describeWholesaleRefusal, emptyApproval, inboxPriority,
   isFullySigned, isWholesaleChange, lastReviewedVersionId, readDeadline, statusAfterSignature, verificationCode,
@@ -11969,11 +11970,20 @@ function shareDayIndexes(row: FSchedule): number[] {
   return SHARE_DAY_KEYS.map((key, index) => (row as any)[key] ? index : -1).filter(index => index >= 0);
 }
 
+/** الروابط الشخصية (بطاقة الأستاذ، رابط الطلب) تُقرأ حتى نهاية فصلها — حتى ما صدر
+ *  منها قبل القاعدة بتاريخ موعد الطلبات. رابطُ القسم والاستبيان على تاريخهما. */
+async function personalLinkStillReadable(link: ScheduleShareLink): Promise<boolean> {
+  if (Date.parse(String(link.expiresAt || "")) >= Date.now() || !link.expiresAt) return true;
+  if (link.kind !== "staff" && link.kind !== "request") return false;
+  const term = (await Repository.getTerms()).find(row => Number(row.AdTermId) === Number(link.AdTermId));
+  return personalLinkReadable(link.expiresAt, term);
+}
+
 /** Resolves a token to its live scope, or explains precisely why it cannot be read. */
 async function resolveShareToken(token: string) {
   const link = await Repository.getShareLink(String(token || ""));
   if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 as const };
-  if (new Date(link.expiresAt).getTime() < Date.now()) return { error: "انتهت صلاحية هذا الرابط", status: 410 as const };
+  if (!await personalLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 as const };
   return { link };
 }
 
@@ -12157,7 +12167,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
   const requestLinks = (await Promise.all(requestRows.map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
-    if (!requestLink || requestLink.revoked || (requestLink.expiresAt && Date.parse(requestLink.expiresAt) < Date.now())) return null;
+    if (!requestLink || requestLink.revoked || !await personalLinkStillReadable(requestLink)) return null;
     const windowOpen = requestWindowOpen(request);
     return {
       linkId: request.linkId,
@@ -14779,7 +14789,7 @@ async function resolveRequestLink(token: string) {
   const link = await Repository.getShareLink(String(token || ""));
   if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 } as const;
   if (link.kind !== "request") return { error: "هذا الرابط ليس طلبَ جدول", status: 404 } as const;
-  if (link.expiresAt && Date.parse(link.expiresAt) < Date.now()) return { error: "انتهت صلاحية هذا الرابط", status: 410 } as const;
+  if (!await personalLinkStillReadable(link)) return { error: "انتهت صلاحية هذا الرابط", status: 410 } as const;
   const request = await Repository.getInstructorRequestByLink(link.id);
   if (!request) return { error: "لا يوجد طلبٌ مرتبطٌ بهذا الرابط", status: 404 } as const;
   return { link, request } as const;
@@ -15100,13 +15110,15 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
   const sourceTermId = source === "previous-term"
     ? Number(req.body?.previousTermId || 0) || termId
     : termId;
-  const [rows, courses, existing, sourceTermRows, colleges] = await Promise.all([
+  const [rows, courses, existing, sourceTermRows, colleges, issueTerms] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId }),
     Repository.getCourses(),
     Repository.getInstructorRequests(collegeId, sectionId, termId),
     Repository.getSchedulesByScope({ termId: sourceTermId }),
     Repository.getColleges(),
+    Repository.getTerms(),
   ]);
+  const issueTerm = issueTerms.find(row => Number(row.AdTermId) === termId);
   const courseName = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
   const collegeNameById = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
   /* من يُصدَر له رابطٌ يحدّده جدولُ هذا القسم؛ وما في طلبه جدولُه كلُّه. */
@@ -15138,9 +15150,12 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
        * منها رأى أساتذتُه «انتهت صلاحية هذا الرابط» قبل الموعد الذي وعدهم
        * به — ولا شيءَ في الشاشة يقول لماذا. فتُشتقّ من الموعد نفسِه، ولا
        * تنزل عن الحدّ الأدنى حتى لا يُغلق رابطُ موعدٍ قريبٍ لحظةَ انتهائه. */
+      /* والقراءةُ تبقى حتى نهاية الفصل: قرارُ القسم وبدائلُه يصلان بعد الموعد،
+       * ورابطٌ يموت بعد يومٍ من الإغلاق يُخفي عن الأستاذ جوابَ ما طلبه. */
       expiresAt: new Date(Math.max(
         Date.parse(`${closesAt}T23:59:59.999Z`) + 86400000,
         Date.now() + REQUEST_LINK_DAYS * 86400000,
+        Date.parse(termLinkExpiresAt(issueTerm)),
       )).toISOString(),
       SystemUserId: Number(req.user?.SystemUserId || 0),
       userName: String(req.user?.UserName || ""),
@@ -15591,6 +15606,18 @@ sectionId: allowedOption.sectionId,
     verifyCode: verificationCode(resolved.request.id, Number(resolved.request.AdInstructorId), at),
   };
   const changed = items.filter(item => item.action !== "keep").length;
+  /* «اخترتَ بديلاً» يُسجَّل حين يطابق ما أرسله بندٌ مرفوضٌ أحدَ بدائل القسم —
+     فيقرأ القسمُ في الخط الزمني أن ما عرضه قُبل، لا أنه طلبٌ جديد. */
+  const alternativeEvents = sent.flatMap((entry, index) => {
+    const rowId = entry?.rowId == null ? null : Number(entry.rowId);
+    const stored = rowId == null
+      ? (resolved.request.items || []).find(item => item.action === "add" && item.decision?.state === "rejected"
+          && Number(item.after?.courseId || 0) === Number(entry?.courseId || 0))
+      : before.get(String(rowId));
+    if (stored?.decision?.state !== "rejected") return [];
+    const chosen = chosenAlternativeIndex(stored.decision.alternatives as any, Array.isArray(entry?.days) ? entry.days.map(String) : [], String(entry?.start || ""));
+    return chosen >= 0 ? [{ kind: "alternative-chosen" as InstructorRequestEventKind, at, itemIndex: index, detail: String(chosen + 1) }] : [];
+  });
   const saved = await Repository.saveInstructorRequest({
     ...resolved.request,
     items: judged.items,
@@ -15599,6 +15626,7 @@ sectionId: allowedOption.sectionId,
     signature,
     timeline: [
       ...(resolved.request.timeline || []),
+      ...alternativeEvents,
       { kind: "submitted", at, detail: String(changed) },
       { kind: "received", at, by: "القسم" },
     ],
@@ -15668,6 +15696,7 @@ label.time input:focus,select:focus,textarea:focus,label.sign input:focus{outlin
 .verdict{margin:10px 0 0;font-size:13px;padding:10px 12px;border-radius:12px;display:none;font-weight:600}.verdict[data-tone=checking]{display:block;background:var(--bg);color:var(--muted)}.verdict[data-tone=ok]{display:block;background:var(--ok2);color:var(--ok)}.verdict[data-tone=warn]{display:block;background:var(--warn2);color:#735100}.verdict[data-tone=bad]{display:block;background:var(--bad2);color:var(--bad)}
 .alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .alts button{padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:12px;cursor:pointer}
+.alts-ro span{padding:7px 11px;border-radius:999px;border:1px dashed var(--line);background:var(--soft,#f4f6f5);color:var(--ink,#1d2b24);font-size:12px}
 textarea{width:100%;margin-top:9px;padding:11px;border-radius:11px;border:1px solid var(--line);font-size:14px;min-height:68px;background:#fff;display:none;resize:vertical}
 textarea[data-show="1"]{display:block}
 .add-card{border-style:dashed;border-color:#9fc8b5;background:rgba(255,255,255,.72)}.add-card header{margin-bottom:10px}.add-card header b{display:block}.add-card header small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
@@ -15753,7 +15782,9 @@ function decisionBox(it,i,open){var d=it.decision;if(!d||!d.state||d.state==="pe
  if(d.state==="fixed")return '<div class="dept" data-state="fixed"><i aria-hidden="true">✓</i>ثبّته القسم'+(d.note?' · '+esc(d.note):'')+'</div>';
  var alts=(d.alternatives||[]);
  return '<div class="dept" data-state="rejected"><b><i aria-hidden="true">✕</i>رفضه القسم'+(d.reasonCode&&REASONS[d.reasonCode]?' · '+esc(REASONS[d.reasonCode]):'')+'</b>'+(d.note?'<p>'+esc(d.note)+'</p>':'')+
-  (alts.length&&open?'<p>بدائل القسم:</p><div class="alts">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-dept-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div>'}
+  (alts.length&&open?'<p>بدائل القسم:</p><div class="alts">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-dept-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+
+  /* وبعد إغلاق الاستقبال تبقى البدائلُ مقروءة: هي جزءٌ من قرار القسم، لا زرٌّ فحسب. */
+  (alts.length&&!open?'<p>بدائل القسم (للاطلاع — أُغلق استقبال الطلبات):</p><div class="alts alts-ro">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<span>'+fmtDays(ds)+" "+esc(a.start)+'</span>'}).join("")+'</div>':'')+'</div>'}
 /* جدولُه كما سيكون، بترتيب تقرير الاستعلامات وألوانه: الأخضرُ مضاف،
    والأصفرُ معدّل، والأحمرُ محذوف. يُقرأ بنظرة، والضغطُ على صفٍّ ينزل إلى
    بطاقته ليعدّلها. */
