@@ -330,6 +330,64 @@ const SCENES: Scene[] = [
   },
 ];
 
+/* ── جولةٌ لكل صفة (N26) ───────────────────────────────────────────────────
+ *
+ * الجولة كانت جولة اللجنة لكل من يدخل: سحبٌ وإفلاتٌ وسلسلة إصلاح لرئيس قسمٍ
+ * لا يعدّل، ولعميدٍ لا يرى إلا المعتمد. وجولةٌ تعرض ما لا يجده صاحبها أسوأ من
+ * لا جولة. فاللجنة (ومن يبني الجدول) ترى المسرح كما هو بفصوله الستة، ولكل صفةٍ
+ * أخرى خطواتُ عملها هي — تُقرأ قائمةً، لأن المسرح يمثّل بناء جدولٍ لا يبنونه.
+ */
+const HEAD_SCENES: Scene[] = [
+  { key: "head-changes", eyebrow: "بابك", title: "«تغييرات الجدول»", copy: "ترى جدول قسمك كاملاً قراءةً، وما تحرّك منذ آخر مراجعة — لا تعديل ولا حذف.", icon: <History /> },
+  { key: "head-notes", eyebrow: "ملاحظاتك", title: "علّق على أي خانة", copy: "اللجنة تعالج الملاحظة أو تردّ عليها، وترى أنت أين وصلت.", icon: <UsersRound /> },
+  { key: "head-sign", eyebrow: "التوقيع", title: "بعد اللجنة يصلك الجدول", copy: "اعتمادك يرسله إلى التسجيل مباشرة. والجرس يعدّ ما ينتظر توقيعك.", icon: <CalendarClock /> },
+  { key: "head-additions", eyebrow: "بعد اعتمادك", title: "الإضافات تنتظر إقرارك", copy: "شعبةٌ أُضيفت بعد توقيعك لا تُرسَل حتى تقرّها.", icon: <Waypoints /> },
+];
+
+const REGISTRAR_SCENES: Scene[] = [
+  { key: "reg-inbox", eyebrow: "الوارد", title: "كل جدولٍ أُرسل ينتظرك", copy: "مرتّباً بالأعجل: المتأخّر، ثم ما عاد بعد إرجاع، ثم الجديد.", icon: <History /> },
+  { key: "reg-diff", eyebrow: "ما تحرّك", title: "لا الجدول كله", copy: "المقارنة بالنسخة التي راجعتها آخر مرّة — تقرأ الفرق وحده.", icon: <Waypoints /> },
+  { key: "reg-notes", eyebrow: "القرار", title: "ملاحظة، قبول، أو إرجاع", copy: "ملاحظاتك المفتوحة تمنع إعادة الإرسال حتى تُعالَج أو يُردّ عليها.", icon: <UsersRound /> },
+  { key: "reg-balance", eyebrow: "ميزان الأقسام", title: "من سلّم ومن تأخّر", copy: "كل قسمٍ في نطاقك بموعده وحاله — ومنها ما لم يبدأ بعد.", icon: <CalendarClock /> },
+];
+
+const REGISTRAR_HEAD_EXTRA: Scene = {
+  key: "reg-deadline", eyebrow: "الموعد", title: "أنت وحدك تضع موعد التسليم", copy: "وتمدّده لقسمٍ بعينه بسببٍ مكتوب؛ طلبات التمديد تصلك في الجرس.", icon: <AlarmClockOff />,
+};
+
+const DEAN_SCENES: Scene[] = [
+  { key: "dean-balance", eyebrow: "ميزان الأقسام", title: "أين وصلت الأقسام؟", copy: "كل قسمٍ في كليتك: حاله، موعده والأيام الباقية، ومن تأخّر — ومنها ما لم يبدأ.", icon: <CalendarClock /> },
+  { key: "dean-final", eyebrow: "الجداول", title: "المعتمد وحده", copy: "ترى كل قسمٍ كما قبِله التسجيل. والفصول المنتهية بلا دورة اعتماد تظهر بصفة «جدول نُفّذ».", icon: <History /> },
+  { key: "dean-fairness", eyebrow: "العدالة والمنتدبون", title: "حمل الأساتذة بالساعات المعتمدة", copy: "المؤشر نفسه في الميزان والعدسة، والمنتدبون بساعاتهم الأسبوعية وتاريخهم.", icon: <UsersRound /> },
+  { key: "dean-bulletin", eyebrow: "نشرة المجلس", title: "اطبع الميزان في أي وقت", copy: "بعمود الاعتماد والموعد، ولو قبل أول اعتماد.", icon: <QrCode /> },
+  { key: "dean-bell", eyebrow: "الجرس", title: "يُنبّهك بما يستحقّ", copy: "قسمٌ تجاوز موعده، جدولٌ مُرجَعٌ بلا حراك، معتمدٌ ظهر فيه مانع — كلٌّ يفتح الميزان على قسمه.", icon: <AlarmClockOff /> },
+];
+
+const VICE_DEAN_EXTRA: Scene = {
+  key: "vice-lenses", eyebrow: "أعمق درجة", title: "الأساتذة والقاعات والمصفوفة", copy: "إشغال قاعات كليتك كلها، والقاعات × الأوقات — قراءةً.", icon: <Waypoints />,
+};
+
+/** جولةُ الصفة، و«هل تُمثَّل على المسرح؟» — المسرح لمن يبني الجدول وحده. */
+export function onboardingScenesFor(roleId: string | undefined): { scenes: Scene[]; staged: boolean } {
+  switch (roleId) {
+    case "departmentHead": return { scenes: HEAD_SCENES, staged: false };
+    case "registrarHead": return { scenes: [REGISTRAR_SCENES[0], REGISTRAR_SCENES[1], REGISTRAR_SCENES[2], REGISTRAR_HEAD_EXTRA, REGISTRAR_SCENES[3]], staged: false };
+    case "registrarStaff": return { scenes: REGISTRAR_SCENES, staged: false };
+    case "dean": case "registrarDean": return { scenes: DEAN_SCENES, staged: false };
+    case "viceDean": return { scenes: [...DEAN_SCENES.slice(0, 3), VICE_DEAN_EXTRA, ...DEAN_SCENES.slice(3)], staged: false };
+    default: return { scenes: SCENES, staged: true };
+  }
+}
+
+const ROLE_GREETING: Record<string, string> = {
+  departmentHead: " جدول قسمك بين يديك قراءةً وتوقيعاً.",
+  registrarHead: " وارد الكليات بين يديك.",
+  registrarStaff: " وارد كلياتك بين يديك.",
+  dean: " كليتك بين يديك اطّلاعاً.",
+  viceDean: " كليتك بين يديك اطّلاعاً.",
+  registrarDean: " الكليات كلها بين يديك اطّلاعاً.",
+};
+
 function prefersReducedMotion() {
   return typeof window !== "undefined"
     && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -449,13 +507,17 @@ function Stage({ scene, board }: { scene: string; board: StageBoard }) {
   );
 }
 
-export default function Onboarding({ isPowerAdmin, workspaceQuery, onFinish }: {
+export default function Onboarding({ isPowerAdmin, roleId, workspaceQuery, onFinish }: {
   isPowerAdmin: boolean;
+  /** صفة الحساب — تختار الجولة (N26). */
+  roleId?: string;
   /** The same scoped query App.tsx warm-starts, so this usually costs nothing. */
   workspaceQuery?: string;
   onFinish: () => void;
 }) {
-  const still = useMemo(prefersReducedMotion, []);
+  const { scenes: SCENES_FOR_ROLE, staged } = useMemo(() => onboardingScenesFor(roleId), [roleId]);
+  /* صفةٌ لا تبني الجدول تُقرأ جولتُها قائمةً: المسرح يمثّل ما لا تفعله. */
+  const still = useMemo(() => prefersReducedMotion() || !staged, [staged]);
   const [act, setAct] = useState(0);
   const [manual, setManual] = useState(false);
   const [board, setBoard] = useState<StageBoard>(SAMPLE_STAGE);
@@ -481,7 +543,7 @@ export default function Onboarding({ isPowerAdmin, workspaceQuery, onFinish }: {
   const playing = !still && !manual && act < AUTOPLAY_THROUGH;
   useEffect(() => {
     if (!playing) return;
-    const timer = window.setTimeout(() => setAct(current => current + 1), holdFor(SCENES[act]));
+    const timer = window.setTimeout(() => setAct(current => current + 1), holdFor(SCENES_FOR_ROLE[act]));
     return () => window.clearTimeout(timer);
   }, [act, playing]);
 
@@ -495,11 +557,11 @@ export default function Onboarding({ isPowerAdmin, workspaceQuery, onFinish }: {
 
   const go = useCallback((next: number) => {
     setManual(true);
-    setAct(Math.max(0, Math.min(SCENES.length - 1, next)));
+    setAct(Math.max(0, Math.min(SCENES_FOR_ROLE.length - 1, next)));
   }, []);
 
-  const scene = SCENES[act];
-  const last = act === SCENES.length - 1;
+  const scene = SCENES_FOR_ROLE[act];
+  const last = act === SCENES_FOR_ROLE.length - 1;
 
   const body = (
     <div className="ob-root no-print" role="dialog" aria-modal="true" aria-label="جولة تعريفية">
@@ -508,14 +570,14 @@ export default function Onboarding({ isPowerAdmin, workspaceQuery, onFinish }: {
           <span className="ob-brand">SCHEDULE</span>
           <p>
             عشر سنوات تشغيل… وهذه أحدث إضافاتها.
-            <b>{isPowerAdmin ? " مساحة القرار الأكاديمي كاملةً بين يديك." : " مساحة قسمك جاهزة."}</b>
+            <b>{isPowerAdmin ? " مساحة القرار الأكاديمي كاملةً بين يديك." : (roleId && ROLE_GREETING[roleId]) || " مساحة قسمك جاهزة."}</b>
           </p>
         </header>
 
         {still ? (
           /* No motion: the same six facts, all present, none animated. */
           <ul className="ob-list">
-            {SCENES.map(item => (
+            {SCENES_FOR_ROLE.map(item => (
               <li key={item.key}>
                 <span className="ob-list-icon">{item.icon}</span>
                 <div>
@@ -551,7 +613,7 @@ export default function Onboarding({ isPowerAdmin, workspaceQuery, onFinish }: {
               role="tablist"
               aria-label="فصول الجولة"
             >
-              {SCENES.map((item, index) => (
+              {SCENES_FOR_ROLE.map((item, index) => (
                 <button
                   key={item.key}
                   type="button"

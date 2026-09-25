@@ -19,6 +19,8 @@ import { placeholderInstructorIdsOf } from "../src/utils/placeholderInstructor";
 import { mergeBalanceDepartments } from "../src/components/Reports";
 import { NOTIFY_FOCUS_KEY, takeNotifyFocus, writeNotifyFocus } from "../src/utils/notifyFocus";
 import { currentTermId as currentTermIdOf, planningTermCandidates, planningTermId } from "../src/utils/termSequence";
+import { onboardingScenesFor } from "../src/components/Onboarding";
+import { onboardingSeenKey } from "../src/utils/onboardingKey";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -403,6 +405,25 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(!ext({ until: "2026-10-05", status: "granted" }).some(item => item.title.includes("يطلب تمديد")), "N25: الطلب المحسوم لا يُنبّه");
   check(!buildNotifications({ role: "registrarStaff", now, scopes: [base("drafting", { approval: { extensionRequest: { until: "2026-10-05" } } })] }).some(item => item.title.includes("يطلب تمديد")), "N25: موظف التسجيل لا يمدّد فلا يُطلب منه");
   check(pendingExtensionRequest({ ...emptyApproval(1, 1, 1) } as any) === null, "N25: غيابُ الحقل لا يُعطب شيئاً");
+}
+
+/* ══ N26 — جولةٌ لكل صفة ═════════════════════════════════════════════════ */
+{
+  const committee = onboardingScenesFor("committeeChair");
+  check(committee.staged && committee.scenes.length === 6, "N26: اللجنة ترى المسرح بفصوله الستة كما هو");
+  check(onboardingScenesFor(undefined).staged, "N26: حسابٌ بلا صفة (أو مدير) يرى جولة البناء");
+  for (const role of ["departmentHead", "registrarHead", "registrarStaff", "dean", "viceDean", "registrarDean"]) {
+    const tour = onboardingScenesFor(role);
+    check(!tour.staged && tour.scenes.length >= 4 && !tour.scenes.some(scene => ["build", "clash", "repair"].includes(scene.key)),
+      `N26: «${role}» يرى خطوات عمله، لا مسرح البناء`);
+  }
+  check(onboardingScenesFor("registrarHead").scenes.some(scene => scene.key === "reg-deadline") && !onboardingScenesFor("registrarStaff").scenes.some(scene => scene.key === "reg-deadline"),
+    "N26: الموعد والتمديد في جولة رئيس التسجيل وحده");
+  check(onboardingScenesFor("viceDean").scenes.length === onboardingScenesFor("dean").scenes.length + 1, "N26: العميد المساعد يُزاد الأساتذة والقاعات");
+  check(onboardingSeenKey(7, "dean") === "schedule-onboarding-v5-7-dean" && onboardingSeenKey(7, "dean") !== onboardingSeenKey(7, "committeeChair"), "N26: علامة «رأى الجولة» تحمل الصفة");
+  const app = read("src/App.tsx");
+  check(!app.includes("schedule-onboarding-v4-") && (app.match(/onboardingSeenKey\(user\.SystemUserId, sessionRole\.id\)/g) || []).length === 3, "N26: التطبيق يقرأ العلامة ويكتبها ويمحوها بالصفة");
+  check(app.includes("roleId={sessionRole.id}") && app.includes("}, [user?.SystemUserId, sessionRole.id]);"), "N26: الجولة تُمرَّر لها الصفة وتُعاد عند تبدّلها");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

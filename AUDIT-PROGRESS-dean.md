@@ -30,3 +30,4 @@ Test file: `tests/dean-notify-audit.ts` (`npm run test:dean-notify`).
 | N23 | FIXED — «أرجع…» says pending additions await the head before resubmission; committee tone waiting, head tone action in that case | dean-notify-audit §N23 |
 | N24 | FIXED — server counts open registrar notes with insistCount>=3 or escalatedAt (read defensively) → head action item «التسجيل يُصرّ…» → scheduleChanges | dean-notify-audit §N24 |
 | N25 | FIXED — pendingExtensionRequest() reads approval.extensionRequest defensively; registrarHead action item routed to scheduleChanges with dept focus | dean-notify-audit §N25 |
+| N26 | FIXED — onboardingScenesFor(role): committee/admin keep the 6-scene stage; head, registrarHead (+deadline), registrarStaff, dean/registrarDean, viceDean (+lenses) get their own step lists (read as list; stage not shown); seen key onboardingSeenKey(userId, role) = schedule-onboarding-v5-${userId}-${role}, effect re-runs on role change | dean-notify-audit §N26 |
