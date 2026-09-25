@@ -171,7 +171,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
         id: "deadline-missing", tone: "action",
         title: "حدّد موعد تسليم الجداول لهذا الفصل",
         detail: "موعدٌ واحد لكل الأقسام، ثم التمديد لمن يحتاج من القسم نفسه.",
-        view: "scheduleChanges",
+        view: routeFor(role, "approval"),
       });
     }
     /* ── طلبُ تمديد (N25) ─────────────────────────────────────────────────
