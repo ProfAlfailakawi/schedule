@@ -1021,6 +1021,7 @@
    ========================================================================== */
 
 .admin-page{display:flex;flex-direction:column;gap:var(--s5)}
+.admin-role-warning{margin:8px 0 0;padding:8px 12px;border-radius:10px;background:var(--warning-soft,#fff5e0);color:var(--warning,#8a5a00);font-size:12.5px;line-height:1.7}
 /* The count leads and the word follows it on its own line. Set inline, a
    four-figure total and its label ran together as one string of text. */
 .admin-quiet-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--s3)}

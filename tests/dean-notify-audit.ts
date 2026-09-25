@@ -426,5 +426,12 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(app.includes("roleId={sessionRole.id}") && app.includes("}, [user?.SystemUserId, sessionRole.id]);"), "N26: الجولة تُمرَّر لها الصفة وتُعاد عند تبدّلها");
 }
 
+/* ══ N27 — «مدير» على صفة اطّلاع يُنبَّه عليه ════════════════════════════ */
+{
+  const admin = read("src/components/AdminUsers.tsx");
+  check(admin.includes("isAdmin && roleDefinition(role).readOnly ?") && admin.includes("تتجاوز صفة"), "N27: اختيار «مدير» لصفة اطّلاع يُظهر تنبيهاً");
+  check(fnBody("function readsFinalSchedulesOnly(").includes("!req.user?.IsAdminUser"), "N27: (سببه) المدير يتجاوز «النهائي وحده»");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
