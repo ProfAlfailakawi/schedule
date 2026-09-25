@@ -18,6 +18,7 @@ import {
 } from "../src/utils/approvalWorkflow";
 import { ApprovalRevisionConflict, Repository } from "../src/db/repository";
 import { runApprovalAttempts } from "../src/server/approvalAttempts";
+import { scopeBase } from "../src/utils/scopeFingerprint";
 import type { ScheduleAdditionPending, ScheduleApproval, ScheduleApprovalSignature } from "../src/types";
 
 let passed = 0, failed = 0;
@@ -416,6 +417,28 @@ async function revisionBehaviour() {
       && route('app.get("/api/approvals/inbox"').includes("await settlePendingAmendment(")
       && between(server, "async function applyScheduleMutation(", "\n/**").includes("await settleAmendmentMarker(approval)"),
       "R6-review تُصفّى عند كل قرار، وفي شريط القسم، والوارد، والتعديل التالي");
+
+    /* ── مراجعة 7: «ما صار» يُحسب من صفوف العملية، لا من قراءةٍ بعد الردّ ──── */
+    {
+      const row = (id: number, hall: string) => ({ id, AdCourseId: 7, SCode: String(id), fsunday: true, fstarttime: "08:00", fendtime: "09:15", AdRoomCode: "B", AdRoomHall: hall, AdInstructorId: 3 });
+      const before = [row(1, "1"), row(2, "2")];
+      const ours = [before[0], { ...before[1], AdRoomHall: "9" }];
+      const colleagueAfterUs = [...ours, row(3, "3")];
+      check(scopeBase(ours).baseFingerprint !== scopeBase(colleagueAfterUs).baseFingerprint,
+        "R7-review تعديلُ زميلٍ بعدنا يغيّر الأساس — فلو التُقط لمُحي بلا سؤال");
+      const capture = between(server, "async function captureScopeVersion(", "\n}\n");
+      check(!capture.includes('once("finish"') && !capture.includes("getSchedulesByScope({ collegeId, sectionId, termId })\n        .then"),
+        "R7-review لا قراءةَ للنطاق بعد انتهاء الردّ");
+      check(capture.includes("if (options.unchanged) await recordVersionAfter(version, rows);"), "R7-review ما لا يكتب صفوفاً أساسُه ما التُقط");
+      const callers = [...server.matchAll(/captureScopeVersion\(req,[^\n]*/g)].map(match => match[0]);
+      const unchanged = callers.filter(line => line.includes("{ unchanged: true }"));
+      check(unchanged.length === 5, "R7-review قراراتُ الاعتماد الخمسة بلا كتابة صفوف");
+      check(callers.length - unchanged.length === 9 && (server.match(/await recordVersionAfter\(/g) || []).length === 10,
+        "R7-review كلُّ عمليةٍ تكتب صفوفاً تسجّل ما صار من صفوفها (الإضافة، التعديل ونقله، الحذف، الاستبدال، النسخ، النشر، الاسترجاع، التراجع)");
+      const add = route('app.post("/api/schedules", ');
+      check(add.indexOf("recordVersionAfter(addVersion, before => [...before, newSched])") > add.indexOf("Repository.createSchedule(")
+        && add.indexOf("recordVersionAfter(addVersion") < add.indexOf("res.status(201)"), "R7-review والتسجيلُ داخل الطلب وقبل الردّ");
+    }
 
     const acceptRoute = route('app.post("/api/approvals/accept"');
     check(acceptRoute.indexOf("await Repository.saveScheduleApproval(next)") < acceptRoute.indexOf("updateScheduleComment(note.id")

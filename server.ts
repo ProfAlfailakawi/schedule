@@ -1240,28 +1240,39 @@ function safeSystemUser(user: any) {
 }
 
 
-async function captureScopeVersion(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, label: string, source: "manual"|"draft"|"publish"|"undo"|"copy"|"import" = "manual") {
+/**
+ * ── ما بعد التغيير هو أساسُ التراجع عنه ────────────────────────────────
+ * النسخة تُؤخذ قبل التغيير الذي تحميه. فحين يُطلب التراجع لاحقاً، السؤال
+ * ليس «هل تغيّر الجدول منذ النسخة؟» — تغيّر، وهذا هو التغيير نفسه — بل «هل
+ * تغيّر شيءٌ آخر بعده؟». فيُسجَّل الجدولُ كما صار، ويُقارن به عند الاسترجاع
+ * (scopeOverwriteRefusal).
+ *
+ * و«كما صار» يُحسب من الصفوف التي كتبها الطلب نفسه، داخل الطلب وقبل الردّ
+ * (recordVersionAfter) — لا بإعادة قراءة النطاق بعد انتهاء الردّ: تلك القراءة
+ * كانت تلتقط تعديلَ زميلٍ وقع بينهما، فيُحسب من «ما صار» بعد عمليتنا، ثم
+ * يمحوه التراجعُ بلا سؤال. ومن لا يكتب صفوفاً (قرارات الاعتماد) يقول
+ * `{ unchanged: true }` فيكون أساسُها ما التُقط.
+ */
+async function captureScopeVersion(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number, label: string, source: "manual"|"draft"|"publish"|"undo"|"copy"|"import" = "manual", options: { unchanged?: boolean } = {}) {
   if (!req.user) return undefined;
   const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
   const version = await Repository.createScheduleVersion({
     SystemUserId: Number(req.user.SystemUserId), userName: String(req.user.Name || req.user.SystemUserLogin || ""),
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, label, source, rows
   });
-  /* ── ما بعد التغيير هو أساسُ التراجع عنه ────────────────────────────────
-     النسخة تُؤخذ قبل التغيير الذي تحميه. فحين يُطلب التراجع لاحقاً، السؤال
-     ليس «هل تغيّر الجدول منذ النسخة؟» — تغيّر، وهذا هو التغيير نفسه — بل «هل
-     تغيّر شيءٌ آخر بعده؟». فيُسجَّل الجدولُ كما صار حين ينجح الطلب، ويُقارن به
-     عند الاسترجاع (scopeOverwriteRefusal). */
-  const response = (req as any).res as Response | undefined;
-  if (version?.id && response && typeof response.once === "function") {
-    response.once("finish", () => {
-      if (response.statusCode >= 400) return;
-      void Repository.getSchedulesByScope({ collegeId, sectionId, termId })
-        .then(after => Repository.setScheduleVersionBase(version.id, scopeBase(after)))
-        .catch(() => undefined);
-    });
-  }
+  if (options.unchanged) await recordVersionAfter(version, rows);
   return version;
+}
+
+/** «ما صار» بعد العملية، من صفوفها هي: دالّةٌ على ما قبلها، أو الصفوف المكتوبة نفسها. */
+async function recordVersionAfter(
+  version: { id?: string; rows?: any[] } | undefined,
+  after: any[] | ((before: any[]) => any[]),
+): Promise<void> {
+  if (!version?.id) return;
+  const rows = typeof after === "function" ? after(version.rows || []) : after;
+  try { await Repository.setScheduleVersionBase(version.id, scopeBase(rows)); }
+  catch (error) { console.error("[versions] تعذّر تسجيل أساس النسخة:", error instanceof Error ? error.message : error); }
 }
 
 /* ── «x-schedule-confirm» قد يحمل أكثر من موافقة ───────────────────────────
@@ -6362,6 +6373,8 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: 
   const toName = toId ? (instructors.find(i => Number(i.AdInstructorId) === toId)?.AdInstructorName || `أستاذ ${toId}`) : "بلا أستاذ";
   const undoVersion = await captureScopeVersion(req, collegeId, sectionId, termId, `قبل استبدال الأستاذ: ${fromName} ← ${toName}`, "manual");
   for (const row of rows) await Repository.updateSchedule(row.id, { AdInstructorId: toId || 0 } as any);
+  const replacedIds = new Set(rows.map((row: any) => Number(row.id)));
+  await recordVersionAfter(undoVersion, before => before.map(row => replacedIds.has(Number(row.id)) ? { ...row, AdInstructorId: toId || 0 } : row));
   if (rows.length) await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "edit" });
   res.json({ preview: false, moved: rows.length, cleared: !toId, compatible: true, undoVersionId: undoVersion?.id });
 });
@@ -6883,7 +6896,7 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
   const addLock = await scheduleLockRefusal(req,collegeId, sectionId, termId);
   if (addLock) { res.status(409).json({ error: addLock, code: "schedule-locked" }); return; }
 
-  await captureScopeVersion(req, collegeId, sectionId, termId, "قبل إضافة موعد دراسي", "manual");
+  const addVersion = await captureScopeVersion(req, collegeId, sectionId, termId, "قبل إضافة موعد دراسي", "manual");
 
   const newSched = await Repository.createSchedule({
     AdCollegeId: collegeId,
@@ -6919,6 +6932,7 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
     fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday })
   });
 
+  await recordVersionAfter(addVersion, before => [...before, newSched]);
   await noteScheduleMutation(req, collegeId, sectionId, termId, { kind: "add", row: newSched });
 
   res.status(201).json(newSched);
@@ -7010,10 +7024,10 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   if (editLock) { res.status(409).json({ error: editLock, code: "schedule-locked" }); return; }
 
   try {
-    await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
-    if (existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId) {
-      await captureScopeVersion(req, collegeId, sectionId, termId, "قبل نقل موعد إلى هذا الجدول", "manual");
-    }
+    const editVersion = await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
+    const arrivalVersion = existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId
+      ? await captureScopeVersion(req, collegeId, sectionId, termId, "قبل نقل موعد إلى هذا الجدول", "manual")
+      : undefined;
     const updated = await Repository.updateSchedule(id, {
       AdCollegeId: collegeId,
       AdSectionId: sectionId,
@@ -7047,6 +7061,10 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
     // Hand the audit trail the sentence describing what actually moved.
     res.locals.auditChanges = describeScheduleChange(existing, updated) || undefined;
     const movedScope = existing.AdCollegeId !== collegeId || existing.AdSectionId !== sectionId || existing.AdTermId !== termId;
+    await recordVersionAfter(editVersion, before => movedScope
+      ? before.filter(row => Number(row.id) !== Number(id))
+      : before.map(row => Number(row.id) === Number(id) ? updated : row));
+    await recordVersionAfter(arrivalVersion, before => [...before.filter(row => Number(row.id) !== Number(id)), updated]);
     /* ── الموعد المنتقل إضافةٌ عند وجهته، لا تعديلاً ──────────────────────
      * كان يُبلَّغ القسمُ المستقبِل بـ«تعديل»، فلا يُسجَّل في انتظار الإقرار.
      * لكنّ شعبةً ظهرت في جدوله بعد توقيع رئيسه هي بالضبط ما وُجدت قائمةُ
@@ -7089,14 +7107,16 @@ app.delete("/api/schedules/:id", requirePermission(7), async (req: Authenticated
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
+  let deleteVersion: Awaited<ReturnType<typeof captureScopeVersion>>;
   if (sched) {
     const deleteLock = await scheduleLockRefusal(req,sched.AdCollegeId, sched.AdSectionId, sched.AdTermId);
     if (deleteLock) { res.status(409).json({ error: deleteLock, code: "schedule-locked" }); return; }
-    await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
+    deleteVersion = await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
     // A deletion has no "after", so the record keeps what was standing there.
     res.locals.auditChanges = `حُذف: ${sched.AdCourseName || "موعد"} · شعبة ${sched.SCode} · ${formatScheduleTimeRange(sched.fstarttime, sched.fendtime)} · ${sched.AdRoomCode}/${sched.AdRoomHall}`;
   }
   await Repository.deleteSchedule(id);
+  await recordVersionAfter(deleteVersion, before => before.filter(row => Number(row.id) !== Number(id)));
   if (sched) await noteScheduleMutation(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, { kind: "delete", row: sched });
   res.json({ success: true });
 });
@@ -7161,6 +7181,7 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
   if (copyRefusal) { res.status(409).json({ error: copyRefusal, code: "deadline-wholesale" }); return; }
   const undoVersion = await captureScopeVersion(req, collegeId, sectionId, targetTermId, "قبل نسخ الفصل الدراسي", "copy");
   const written = await Repository.replaceScheduleScope(collegeId, sectionId, targetTermId, copiedRows as FSchedule[]);
+  await recordVersionAfter(undoVersion, written as any[]);
   await noteScheduleMutation(req, collegeId, sectionId, targetTermId, { kind: "add", rows: written as any[] });
   res.json({ success: true, count: written.length, message: "تم نسخ الفصل الدراسي بالقيم الرسمية للمباني والقاعات", undoVersion: undoVersion ? { id: undoVersion.id, label: undoVersion.label } : null });
 });
@@ -9653,7 +9674,7 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
 
     const notices = await regulationNoticeCount(collegeId, sectionId, termId);
-    const version = await once("sign-version", () => captureScopeVersion(req, collegeId, sectionId, termId, `توقيع ${roleLabel(actor.role)}`, "manual"));
+    const version = await once("sign-version", () => captureScopeVersion(req, collegeId, sectionId, termId, `توقيع ${roleLabel(actor.role)}`, "manual", { unchanged: true }));
     const at = new Date().toISOString();
     const signature: ScheduleApprovalSignature = {
       stage,
@@ -9794,7 +9815,7 @@ async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, s
   if (verdict.ok !== true) return { ok: false as const, error: verdict.message, code: verdict.code };
 
   const actor = approvalActor(req);
-  const version = await once("submit-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual"));
+  const version = await once("submit-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرسال إلى التسجيل", "manual", { unchanged: true }));
 
   /* ── ما طُلب، وما فُعل ──────────────────────────────────────────────────
    * الجولةُ المنتهية تحمل عدد ملاحظاتها — وهو ما طُلب. ويُضاف إليها الآن عدد
@@ -9866,12 +9887,12 @@ app.post("/api/approvals/return", requireAuth, async (req: AuthenticatedRequest,
     let base: ScheduleApproval = approval;
     if (verdict.reopensAccepted) {
       /* المعتمدُ يُرجع في جولةٍ جديدة، أساسُها ما رآه التسجيل الآن. */
-      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع جدولٍ معتمد", "manual"));
+      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع جدولٍ معتمد", "manual", { unchanged: true }));
       base = { ...approval, ...openRound(approval, { at, by: actor.name, reviewedVersionId: seen?.id }) };
     } else if (!base.rounds.find(round => round.number === base.currentRound)?.reviewedVersionId) {
       /* جولةُ التعديل لم تحمل نسخةً: ما رآه التسجيل يُلتقط لحظةَ الإرجاع،
          فيصير أساسَ الجولة التالية بدل أن يُقارن بما قبلها. */
-      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع للقسم", "manual"));
+      const seen = await once("return-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "إرجاع للقسم", "manual", { unchanged: true }));
       if (seen?.id) base = { ...base, rounds: base.rounds.map(round => round.number === base.currentRound ? { ...round, reviewedVersionId: seen.id } : round) };
     }
     const rounds = base.rounds.map(round => round.number === base.currentRound
@@ -9902,7 +9923,7 @@ app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest,
       return;
     }
     const actor = approvalActor(req);
-    const accepted = await once("accept-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "قبول التسجيل", "manual"));
+    const accepted = await once("accept-version", () => captureScopeVersion(req, collegeId, sectionId, termId, "قبول التسجيل", "manual", { unchanged: true }));
     const rounds = approval.rounds.map(round => round.number === approval.currentRound
       ? { ...round, acceptedAt: new Date().toISOString(), acceptedBy: actor.name, ...(accepted?.id ? { acceptedVersionId: accepted.id } : {}) }
       : round);
@@ -11293,14 +11314,16 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   }
 
   /* نقاط الأمان أولاً ولكل موقع، حتى يكون لكل جدول ما يعود إليه. */
+  const publishVersions=new Map<any,Awaited<ReturnType<typeof captureScopeVersion>>>();
   for(const group of groups){
-    await captureScopeVersion(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish");
+    publishVersions.set(group,await captureScopeVersion(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish"));
   }
   const written:any[]=[];
   let publication:any=null;
   const publishedScopes:Array<{siteLabel:string;count:number}>=[];
   for(const group of groups){
     const rows=await Repository.replaceScheduleScope(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows);
+    await recordVersionAfter(publishVersions.get(group),rows as any[]);
     /* وكلُّ موقعٍ يُبلَّغ عن نشره: جدولٌ مقبولٌ يعود جولةً جديدة، وصفٌّ يصل
        بعد توقيع رئيس القسم ينتظر إقراره — في موقعه هو، لا في موقع المسودة. */
     await noteScheduleMutation(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,{kind:"add",rows:rows as any[]});
@@ -11320,7 +11343,7 @@ app.get("/api/intelligence/versions/compare", requirePermission(7), async (req: 
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
 });
 app.post("/api/intelligence/versions/:id/restore", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(!confirmTokens(req).has("restore")){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const restoreOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(restoreOverwrite){res.status(409).json(restoreOverwrite);return;} const restoreDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(restoreDeadline){res.status(409).json({error:restoreDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
+  if(!confirmTokens(req).has("restore")){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const restoreOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(restoreOverwrite){res.status(409).json(restoreOverwrite);return;} const restoreDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(restoreDeadline){res.status(409).json({error:restoreDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} const restoreVersion=await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await recordVersionAfter(restoreVersion,rows as any[]); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
 });
 
 app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -11823,7 +11846,7 @@ app.get("/api/intelligence/safety-net", requirePermission(7), async (req: Authen
 });
 
 app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  if(!confirmTokens(req).has("decision-undo")){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const undoOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(undoOverwrite){res.status(409).json(undoOverwrite);return;} const undoDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(undoDeadline){res.status(409).json({error:undoDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
+  if(!confirmTokens(req).has("decision-undo")){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restoreLock=await scheduleLockRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId); if(restoreLock){res.status(409).json({error:restoreLock,code:"schedule-locked"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const undoOverwrite=await scopeOverwriteRefusal(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,version); if(undoOverwrite){res.status(409).json(undoOverwrite);return;} const undoDeadline=await wholesaleRefusal(version.AdCollegeId,version.AdSectionId,version.AdTermId,await replacementAction(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored)); if(undoDeadline){res.status(409).json({error:undoDeadline,code:"deadline-wholesale"});return;} const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId,{resolveHistorical:true}); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} const undoVersion=await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await recordVersionAfter(undoVersion,rows as any[]); await noteScheduleMutation(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,{kind:"add",rows:rows as any[]}); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
 });
 
 

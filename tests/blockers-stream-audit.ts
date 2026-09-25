@@ -126,7 +126,8 @@ await (async () => {
   }
   check(server.includes('...scopeBase(await Repository.getSchedulesByScope({collegeId,sectionId,termId})),') && server.includes("...scopeBase(targetUniverse.filter("),
     "B9 المسودة تحفظ أساسها لحظة إنشائها");
-  check(/response\.once\("finish"[\s\S]{0,300}setScheduleVersionBase\(version\.id, scopeBase\(after\)\)/.test(server), "B9 النسخة تحفظ الجدول كما صار بعد التغيير الذي تحميه");
+  check(server.includes("await Repository.setScheduleVersionBase(version.id, scopeBase(rows))") && server.includes("async function recordVersionAfter("),
+    "B9 النسخة تحفظ الجدول كما صار بعد التغيير الذي تحميه (من صفوف العملية نفسها — مراجعة 7)");
   const repo = read("src/db/repository.ts");
   check(/setScheduleVersionBase: async[\s\S]{0,400}firestoreDb[\s\S]{0,300}db\.scheduleVersions/.test(repo), "B9 حفظ الأساس يعمل في Firestore وفي العرض التجريبي");
   for (const file of ["src/components/IntelligenceWorkspace.tsx", "src/components/Schedules.tsx", "src/components/LivingScheduleLayer.tsx", "src/components/ScheduleTransfer.tsx"]) {
