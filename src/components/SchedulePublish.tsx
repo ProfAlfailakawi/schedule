@@ -4,6 +4,7 @@ import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, 
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { AR, countOf, oblique } from "../utils/arabicCount";
+import { deadlineEndsAt } from "../utils/approvalWorkflow";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
 
 interface ShareLink {
@@ -180,7 +181,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
   const withRequests = kind === "staff";
   const byDate = kind === "staff" || kind === "survey";
   const linkDays = kind === "survey" && closesAt
-    ? Math.max(1, Math.ceil((new Date(`${closesAt}T23:59:59`).getTime() - Date.now()) / 86400000))
+    ? Math.max(1, Math.ceil((Date.parse(deadlineEndsAt(closesAt)) - Date.now()) / 86400000))
     : days;
 
   const create = async () => {

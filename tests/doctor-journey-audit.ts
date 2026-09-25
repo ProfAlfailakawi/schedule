@@ -12,6 +12,7 @@ import {
 import { buildCalendar, calendarSpanForTerm } from "../src/utils/icalendar";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "../src/server/publicAttemptLimiter";
 import { termPhase } from "../src/utils/termSequence";
+import { deadlineEndsAt } from "../src/utils/approvalWorkflow";
 import { storableMobile, whatsappNumber } from "../src/utils/reachInstructor";
 import { instructorScheduleFingerprint } from "../src/utils/scheduleFingerprint";
 import { AR, nounFor } from "../src/utils/arabicCount";
@@ -85,7 +86,13 @@ async function main() {
     check(unknown === new Date(now + TERM_LINK_FALLBACK_DAYS * 86400000).toISOString(), "D2 فصلٌ مجهول ← ‎+150‎ يوماً");
     const past = termLinkExpiresAt({ AdTermName: "الأول 2020/2021" }, now);
     check(Date.parse(past) > now, "D2 رابطٌ لفصلٍ مضى لا يولد منتهياً");
-    check(requestsCloseAtFromDate("2026-10-08") === "2026-10-08T23:59:59.999Z" && requestsCloseAtFromDate("غدا") === "", "D2 صيغةُ آخر موعد واحدة");
+    check(requestsCloseAtFromDate("2026-10-08") === "2026-10-08T20:59:59.000Z" && requestsCloseAtFromDate("غدا") === "", "D2 صيغةُ آخر موعد واحدة");
+    /* مراجعة 10: آخرُ يومٍ واحدٌ للطلبات وللاعتماد — ‎23:59:59‎ بتوقيت الكويت. */
+    check(Date.parse(requestsCloseAtFromDate("2026-10-08")) === Date.parse(deadlineEndsAt("2026-10-08")), "R10-review موعدُ الطلبات وموعدُ الاعتماد لحظةٌ واحدة");
+    check(read("src/utils/shareLinkLifetime.ts").includes("new Date(deadlineEndsAt(value)).toISOString()") && !read("src/utils/shareLinkLifetime.ts").includes("T23:59:59.999Z`"),
+      "R10-review الدالّة تستعمل deadlineEndsAt لا صيغةً ثانية");
+    check(!/T23:59:59(\.999Z)?`\)/.test(server) && !read("src/components/SchedulePublish.tsx").includes("T23:59:59`"),
+      "R10-review لا «آخر لحظة» مكتوبةٌ باليد في الخادم ولا في شاشة النشر");
 
     const shareRoute = server.slice(server.indexOf('app.post("/api/share"'), server.indexOf('app.delete("/api/share/:id"'));
     check(shareRoute.includes("termLinkExpiresAt(terms.find(row => row.AdTermId === termId))") && shareRoute.includes('kind === "staff"'),

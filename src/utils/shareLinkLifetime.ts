@@ -11,6 +11,7 @@
  * كلُّ رابطٍ شخصيٍّ يُصدَر من الخادم يأخذ عمرَه من هذه الدالّة.
  */
 import { termWindow } from "./termSequence";
+import { deadlineEndsAt } from "./approvalWorkflow";
 
 /** حين لا يُعرف للفصل تاريخٌ ولا يُستنبط من اسمه: فصلٌ دراسيٌّ تقريباً. */
 export const TERM_LINK_FALLBACK_DAYS = 150;
@@ -24,11 +25,16 @@ export function termLinkExpiresAt(term: TermLike, now: number = Date.now()): str
   return new Date(now + TERM_LINK_FALLBACK_DAYS * 86400000).toISOString();
 }
 
-/** «آخر موعد» كما يكتبه القسم (YYYY-MM-DD) ← آخرُ لحظةٍ فيه، بالصيغة نفسها في كل موضع. */
+/**
+ * «آخر موعد» كما يكتبه القسم (YYYY-MM-DD) ← آخرُ لحظةٍ فيه **بتوقيت الكويت**،
+ * بالصيغة نفسها في كل موضع. كان ‎T23:59:59.999Z‎ — أي الثالثة فجراً في الكويت
+ * من اليوم التالي — وموعدُ الاعتماد ينتهي ‎23:59:59+03:00‎: موعدان لكلمة «آخر
+ * يوم» واحدة. فصار الاثنان من `deadlineEndsAt` (approvalWorkflow.ts) وحدها.
+ */
 export function requestsCloseAtFromDate(date: unknown): string {
   const value = String(date || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) return "";
-  return `${value}T23:59:59.999Z`;
+  return new Date(deadlineEndsAt(value)).toISOString();
 }
 
 /**

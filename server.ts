@@ -16470,7 +16470,7 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
   }
   /* نافذةٌ انتهت قبل أن تبدأ ليست نافذة: الأساتذة يفتحون رابطاً مغلقاً ولا
      يعرفون لماذا، ويتّصلون بالقسم — وهو ما بُني الرابطُ ليُغنيَ عنه. */
-  if (Date.parse(`${closesAt}T23:59:59`) < Date.now()) {
+  if (Date.parse(requestsCloseAtFromDate(closesAt)) < Date.now()) {
     res.status(400).json({ error: "تاريخ الإغلاق في الماضي." });
     return;
   }
@@ -16534,7 +16534,7 @@ app.post("/api/instructor-requests/issue", requirePermission(7), async (req: Aut
       /* والقراءةُ تبقى حتى نهاية الفصل: قرارُ القسم وبدائلُه يصلان بعد الموعد،
        * ورابطٌ يموت بعد يومٍ من الإغلاق يُخفي عن الأستاذ جوابَ ما طلبه. */
       expiresAt: new Date(Math.max(
-        Date.parse(`${closesAt}T23:59:59.999Z`) + 86400000,
+        Date.parse(requestsCloseAtFromDate(closesAt)) + 86400000,
         Date.now() + REQUEST_LINK_DAYS * 86400000,
         Date.parse(termLinkExpiresAt(issueTerm)),
       )).toISOString(),
