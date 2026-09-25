@@ -860,6 +860,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
 
   const scopeState = resolveScopeSelection(scopes, filters.collegeId, isPowerAdmin);
   const baseScope = resolveScopeSelection(scopes, 0, isPowerAdmin);
+  /* قسمٌ واحد في الكلية المختارة: لا منتقيَ للقسم، والقيمة تبقى في المرشّحات. */
+  const soleDepartment = singleDepartmentOf(scopes, filters.collegeId, isPowerAdmin);
   const collegeOptions = useMemo(() => dedupeVisibleOptions(
     sortByName(isPowerAdmin ? colleges : colleges.filter(c => baseScope.collegeIds.includes(Number(c.AdCollegeId))), (c: AdCollege) => c.AdCollegeName),
     row => optionKey(row.AdCollegeName), filters.collegeId, row => Number(row.AdCollegeId),
@@ -1869,7 +1871,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         </form>
         {askNote ? <p className="query-ask-note" id="query-ask-note" role="status">{askNote}</p> : null}
 
-        <div className="query-scope query-primary-filters" data-count={singleDepartmentOf(scopes, filters.collegeId, isPowerAdmin) === null ? 3 : 2} aria-label="المرشحات الأساسية">
+        <div className="query-scope query-primary-filters" data-count={soleDepartment === null ? 3 : 2} aria-label="المرشحات الأساسية">
           <Field label="الكلية">
             <select
               value={filters.collegeId || ""}
@@ -1882,7 +1884,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               {collegeOptions.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{cleanOptionText(row.AdCollegeName)}</option>)}
             </select>
           </Field>
-          {singleDepartmentOf(scopes, filters.collegeId, isPowerAdmin) === null ? (
+          {soleDepartment === null ? (
             <Field label="القسم">
               <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => set("sectionId", Number(event.target.value) || 0)}>
                 <option value="">كل الأقسام</option>
