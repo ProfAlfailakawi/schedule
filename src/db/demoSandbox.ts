@@ -295,38 +295,48 @@ function noteValue(row: FSchedule, field: "room" | "instructor" | "time"): strin
  * ── دورةٌ محكيّة، لا صندوقٌ فارغ ─────────────────────────────────────────────
  *
  * بيئةٌ بلا سجلّ اعتمادٍ تُفتح فيها شاشةُ التغييرات على «لا وارد» و«لم يتغيّر
- * شيء» — فيظنّ المجرِّب أن الميزة معطّلة وهي تعمل. فتُبذَر دورةٌ عاشت: قسمٌ
- * أُرسل جدولُه وعاد بملاحظاتٍ ثم أُرسل ثانيةً وهو الآن عند التسجيل، وقسمٌ
- * مُرجَعٌ ينتظر القسم، وقسمٌ اعتُمد. والمقارنةُ لها أساسٌ محفوظ، فالتقرير يُظهر
- * «ما تحرّك» فعلاً لا جدولاً كاملاً بوصفه جديداً.
+ * شيء» — فيظنّ المجرِّب أن الميزة معطّلة وهي تعمل. فتُبذَر دورةٌ عاشت، ولكل صفةٍ
+ * فيها ما تفعله من أول نظرة:
+ *
+ *   • علوم الحاسب (مسرحُ اللجنة ورئيس القسم): أرجعه التسجيل بملاحظاتٍ مفتوحة،
+ *     فاللجنةُ تعدّل وتنقل وتضيف وتعالج الملاحظات ثم توقّع، ورئيسُ القسم يعلّق
+ *     ويوقّع فيصل الجدول إلى التسجيل. ولا يُقفل: جدولٌ عند التسجيل لا يُعدَّل،
+ *     واللجنةُ لا تجرّب شيئاً على جدولٍ مقفل.
+ *   • علم البيانات (وارد التسجيل): عند التسجيل في جولته الثانية، بأساسٍ محفوظ
+ *     يُظهر «ما تحرّك»، وملاحظتين مفتوحتين، وردٍّ من القسم ينتظر القرار.
+ *   • الإدارة: معتمد.
  */
 function seedApprovalUniverse(schedules: FSchedule[]): {
   approvals: ScheduleApproval[]; versions: ScheduleVersion[]; comments: ScheduleComment[];
 } {
   const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
-  const stage = schedules.filter(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === 1);
+  const scopeRows = (sectionId: number) => schedules.filter(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === sectionId);
+  const nextId = (() => { let top = Math.max(0, ...schedules.map(r => Number(r.id))); return () => ++top; })();
 
   const versions: ScheduleVersion[] = [];
   const comments: ScheduleComment[] = [];
   const approvals: ScheduleApproval[] = [];
 
-  // ── قسم علوم الحاسب: عند التسجيل، الجولة الثانية، بأساسٍ محفوظ يُظهر ما تحرّك.
-  if (stage.length >= 4) {
+  /* نسخةُ ما رآه التسجيل: خانتان تغيّرتا بعدها (قاعةٌ ووقت)، وصفٌّ أُضيف بعدها،
+     وصفٌّ كان فيها وحُذف — فيُقرأ التقريرُ «معدّلاً ومضافاً ومحذوفاً» لا جدولاً جديداً. */
+  function seenBaseline(stage: FSchedule[], sectionId: number): FSchedule[] {
     const baseline = structuredClone(stage);
-    // خانتان تغيّرتا منذ ما رآه التسجيل: قاعةٌ ووقت — فيُقرآن «معدّلَين».
-    const movedFrom = hallsForSection(1).find(h => h.roomId !== baseline[0].roomId)!;
+    const movedFrom = hallsForSection(sectionId).find(h => h.roomId !== baseline[0].roomId)!;
     Object.assign(baseline[0], hallFields(movedFrom));
     baseline[1].fstarttime = "07:00"; baseline[1].fendtime = "08:15";
-    // صفٌّ في الجدول الحيّ ليس في نسخة التسجيل — فيُقرأ «مضافاً».
     baseline.pop();
-    // صفٌّ كان في نسخة التسجيل وحُذف بعدها — يجب أن يبقى في الأساس ويغيب عن
-    // الحيّ ليُقرأ «محذوفاً»؛ فيُوضع في الأساس وحده بمعرّفٍ لا وجود له في الحيّ.
-    const removedId = Math.max(0, ...schedules.map(r => Number(r.id))) + 1;
     baseline.push({
-      ...structuredClone(stage[0]), id: removedId,
+      ...structuredClone(stage[0]), id: nextId(),
       AdCourseName: "مادةٌ أُلغيت بعد المراجعة", SCode: "09",
-      fstarttime: "16:00", fendtime: "17:15", ...hallFields(hallsForSection(1)[0]),
+      fstarttime: "16:00", fendtime: "17:15", ...hallFields(hallsForSection(sectionId)[0]),
     });
+    return baseline;
+  }
+
+  // ── علوم الحاسب: مُرجَعٌ بملاحظاتٍ مفتوحة — عملُ اللجنة ورئيس القسم الآن.
+  const cs = scopeRows(1);
+  if (cs.length >= 4) {
+    const baseline = seenBaseline(cs, 1);
     const versionId = "demo-ver-cs-round1";
     versions.push({
       id: versionId, scopeKey: "1:1:1", createdAt: iso(9), rowCount: baseline.length,
@@ -334,70 +344,87 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
       AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
       label: "نسخة الجولة الأولى — كما رآها التسجيل", source: "manual", rows: baseline,
     });
-
-    // ملاحظتا تسجيلٍ مفتوحتان (القيمة لم تتغيّر منذ كتابتهما)، وثالثةٌ رُدَّ عليها.
     comments.push(
       {
         id: "demo-note-cs-1", createdAt: iso(3), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(stage[2].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+        scheduleId: Number(cs[2].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
         text: "سعة القاعة أقل من عدد المسجّلين المتوقّع — يرجى مراجعتها.",
-        resolved: false, field: "room", valueAtNote: noteValue(stage[2], "room"), round: 2, origin: "registrar",
+        resolved: false, field: "room", valueAtNote: noteValue(cs[2], "room"), round: 1, origin: "registrar",
       },
       {
         id: "demo-note-cs-2", createdAt: iso(3), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(stage[3].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+        scheduleId: Number(cs[3].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
         text: "تأكّدوا من إسناد الأستاذ — نصابه هذا الفصل يتجاوز المعتاد.",
-        resolved: false, field: "instructor", valueAtNote: noteValue(stage[3], "instructor"), round: 2, origin: "registrar",
+        resolved: false, field: "instructor", valueAtNote: noteValue(cs[3], "instructor"), round: 1, origin: "registrar",
       },
-      {
-        id: "demo-note-cs-3", createdAt: iso(2), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-        scheduleId: Number(stage[0].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
-        text: "يُفضّل تقديم الموعد نصف ساعة.",
-        resolved: false, field: "time", valueAtNote: noteValue(stage[0], "time"), round: 2, origin: "registrar",
-        rebuttal: { text: "الموعد مثبّت بطلب القسم لتوافقه مع مختبرٍ مشترك.", at: iso(1), SystemUserId: 16, userName: "د. رئيس لجنة جدول الحاسب" },
-      },
-      // ملاحظةٌ داخلية من القسم نفسه — لا تمنع الإرسال، تُقرأ فقط.
+      // ملاحظةٌ داخلية من رئيس القسم — لا تمنع الإرسال، تُقرأ فقط.
       {
         id: "demo-note-cs-dept", createdAt: iso(2), SystemUserId: 15, userName: "د. رئيس قسم علوم الحاسب",
-        scheduleId: Number(stage[1].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+        scheduleId: Number(cs[1].id), AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
         text: "ملاحظة داخلية: راجعوا سعة القاعة قبل الاعتماد.",
-        resolved: false, field: "room", valueAtNote: noteValue(stage[1], "room"), round: 2, origin: "department",
+        resolved: false, field: "room", valueAtNote: noteValue(cs[1], "room"), round: 1, origin: "department",
       },
     );
-
     approvals.push({
       id: "1:1:1", scopeKey: "1:1:1", AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
-      status: "submitted", currentRound: 2,
+      status: "returned", currentRound: 1,
       signatures: [
         { stage: "committee", SystemUserId: 16, userName: "د. رئيس لجنة جدول الحاسب", roleLabel: "رئيس لجنة الجدول", at: iso(9), versionId, rowCount: baseline.length, regulationNoticeCount: 1, verifyCode: "CMT-2481" },
         { stage: "head", SystemUserId: 15, userName: "د. رئيس قسم علوم الحاسب", roleLabel: "رئيس القسم العلمي", at: iso(9), versionId, rowCount: baseline.length, regulationNoticeCount: 1, verifyCode: "HEAD-7193" },
       ],
       rounds: [
-        { number: 1, submittedAt: iso(9), submittedBy: "د. رئيس لجنة جدول الحاسب", returnedAt: iso(5), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, changedRowCount: 3, reviewedVersionId: versionId },
-        { number: 2, submittedAt: iso(2), submittedBy: "د. رئيس لجنة جدول الحاسب" },
+        { number: 1, submittedAt: iso(9), submittedBy: "د. رئيس لجنة جدول الحاسب", returnedAt: iso(3), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, reviewedVersionId: versionId },
+      ],
+      pendingAdditions: [], updatedAt: iso(3),
+    });
+  }
+
+  // ── علم البيانات: عند التسجيل، الجولة الثانية، بأساسٍ محفوظ يُظهر ما تحرّك.
+  const ds = scopeRows(2);
+  if (ds.length >= 4) {
+    const baseline = seenBaseline(ds, 2);
+    const versionId = "demo-ver-ds-round1";
+    versions.push({
+      id: versionId, scopeKey: "1:2:1", createdAt: iso(10), rowCount: baseline.length,
+      SystemUserId: 16, userName: "لجنة علم البيانات",
+      AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+      label: "نسخة الجولة الأولى — كما رآها التسجيل", source: "manual", rows: baseline,
+    });
+    comments.push(
+      {
+        id: "demo-note-ds-1", createdAt: iso(1), SystemUserId: 13, userName: "أ. رئيس التسجيل",
+        scheduleId: Number(ds[2].id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+        text: "القاعة صغيرة على عدد الطلبة المتوقّع.",
+        resolved: false, field: "room", valueAtNote: noteValue(ds[2], "room"), round: 2, origin: "registrar",
+      },
+      {
+        id: "demo-note-ds-2", createdAt: iso(1), SystemUserId: 13, userName: "أ. رئيس التسجيل",
+        scheduleId: Number(ds[3].id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+        text: "تأكّدوا من إسناد الأستاذ — نصابه هذا الفصل يتجاوز المعتاد.",
+        resolved: false, field: "instructor", valueAtNote: noteValue(ds[3], "instructor"), round: 2, origin: "registrar",
+      },
+      {
+        id: "demo-note-ds-3", createdAt: iso(4), SystemUserId: 13, userName: "أ. رئيس التسجيل",
+        scheduleId: Number(ds[0].id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+        text: "يُفضّل تقديم الموعد نصف ساعة.",
+        resolved: false, field: "time", valueAtNote: noteValue(ds[0], "time"), round: 2, origin: "registrar",
+        rebuttal: { text: "الموعد مثبّت بطلب القسم لتوافقه مع مختبرٍ مشترك.", at: iso(2), SystemUserId: 16, userName: "لجنة علم البيانات" },
+      },
+    );
+    approvals.push({
+      id: "1:2:1", scopeKey: "1:2:1", AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
+      status: "submitted", currentRound: 2,
+      signatures: [
+        { stage: "committee", SystemUserId: 16, userName: "لجنة علم البيانات", roleLabel: "رئيس لجنة الجدول", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 0, verifyCode: "CMT-5510" },
+        { stage: "head", SystemUserId: 15, userName: "رئيس قسم علم البيانات", roleLabel: "رئيس القسم العلمي", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 0, verifyCode: "HEAD-6620" },
+      ],
+      rounds: [
+        { number: 1, submittedAt: iso(10), submittedBy: "لجنة علم البيانات", returnedAt: iso(6), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, changedRowCount: 3, reviewedVersionId: versionId },
+        { number: 2, submittedAt: iso(2), submittedBy: "لجنة علم البيانات" },
       ],
       pendingAdditions: [], updatedAt: iso(2),
     });
   }
-
-  // ── قسم علم البيانات: مُرجَعٌ بملاحظات، ينتظر القسم.
-  approvals.push({
-    id: "1:2:1", scopeKey: "1:2:1", AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
-    status: "returned", currentRound: 1,
-    signatures: [
-      { stage: "committee", SystemUserId: 16, userName: "لجنة علم البيانات", roleLabel: "رئيس لجنة الجدول", at: iso(6), rowCount: 6, verifyCode: "CMT-5510" },
-      { stage: "head", SystemUserId: 15, userName: "رئيس قسم علم البيانات", roleLabel: "رئيس القسم العلمي", at: iso(6), rowCount: 6, verifyCode: "HEAD-6620" },
-    ],
-    rounds: [{ number: 1, submittedAt: iso(6), submittedBy: "لجنة علم البيانات", returnedAt: iso(4), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 1 }],
-    pendingAdditions: [], updatedAt: iso(4),
-  });
-  const dataRow = schedules.find(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === 2);
-  if (dataRow) comments.push({
-    id: "demo-note-ds-1", createdAt: iso(4), SystemUserId: 13, userName: "أ. رئيس التسجيل",
-    scheduleId: Number(dataRow.id), AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
-    text: "القاعة صغيرة على عدد الطلبة المتوقّع.",
-    resolved: false, field: "room", valueAtNote: noteValue(dataRow, "room"), round: 1, origin: "registrar",
-  });
 
   // ── قسم الإدارة: اعتُمد.
   approvals.push({
