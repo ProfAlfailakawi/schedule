@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { GhostButton, PrimaryButton, SecondaryButton, PrintPortal } from "./ui";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
+import { AR, countOf, oblique } from "../utils/arabicCount";
 
 type Opportunity = {
   id: string;
@@ -449,7 +450,7 @@ export default function HallBarterBoard({
               </div>
             ) : null}
             {board.truncated ? (
-              <p className="hall-barter-truncated">عُرضت {visibleOpportunities.length} من {board.total} نافذة — من كل قسم نصيبٌ منها. اختر قسماً أو يوماً أو مبنى لترى نوافذه كاملة.</p>
+              <p className="hall-barter-truncated">عُرضت {visibleOpportunities.length} من {countOf(board.total, oblique(AR.window))} — من كل قسم نصيبٌ منها. اختر قسماً أو يوماً أو مبنى لترى نوافذه كاملة.</p>
             ) : null}
             {visibleOpportunities.length ? (
               <div className="hall-barter-opportunity-grid">

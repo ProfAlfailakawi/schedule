@@ -423,7 +423,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend }: {
               {/* طلبُ القسم يُقرأ في مكانه، و«تمديد» يُفتح مملوءاً بما طلب. */}
               {row.extensionRequest ? (
                 <small className="changes-extension-request">
-                  طلب تمديد {countOf(row.extensionRequest.days, AR.day)} — «{row.extensionRequest.reason}» · {row.extensionRequest.by}
+                  طلب تمديد {countOf(row.extensionRequest.days, oblique(AR.day))} — «{row.extensionRequest.reason}» · {row.extensionRequest.by}
                 </small>
               ) : null}
               {canExtend ? (

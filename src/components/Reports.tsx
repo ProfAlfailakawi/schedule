@@ -1241,7 +1241,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
      يغيّر شيئاً يوهم القارئ أن هناك ما يُخفى عنه. */
   const historyYearChoices = useMemo(() => {
     const total = historyModel.totals.years;
-    const options = [4, 6, 10].filter(value => value < total).map(value => ({ value, label: `آخر ${value.toLocaleString("ar-KW-u-nu-latn")} سنوات` }));
+    const options = [4, 6, 10].filter(value => value < total).map(value => ({ value, label: `آخر ${countOf(value, oblique(AR.year))}` }));
     return [...options, { value: 0, label: total ? `كل السنوات (${total.toLocaleString("ar-KW-u-nu-latn")})` : "كل السنوات" }];
   }, [historyModel.totals.years]);
   const visitingHistorySectionTotal = visitingHistoryRows.reduce((sum, person) => sum + Number(person.sections || 0), 0);
@@ -1812,7 +1812,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     shownLenses.length === 9 ? "تسع عدسات" :
     shownLenses.length === 8 ? "ثماني عدسات" :
     shownLenses.length === 7 ? "سبع عدسات" :
-    `${shownLenses.length} عدسات`;
+    countOf(shownLenses.length, AR.lens);
 
   return (
     <div className="content-stack query-page visual-minimal">
@@ -2662,7 +2662,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       {historyModel.years.map(year => (
                         <td key={`total-${year.key}`} className="is-year">
                           <b>{num(year.sections)}</b>
-                          <small>{num(year.people)} منتدب</small>
+                          <small>{countOf(year.people, AR.visitor)}</small>
                         </td>
                       ))}
                     </tr>
@@ -3231,7 +3231,7 @@ function PrintChangesAppendix({ appendix, collegeName, sectionName, termName, ap
 
       <p className="print-changes-summary">
         {appendix.firstReview
-          ? `جدولٌ جديد بـ${countOf(appendix.counts.added, AR.appointment)} — لا مراجعةَ سابقة يُقارن بها.`
+          ? `جدولٌ جديد بـ${countOf(appendix.counts.added, oblique(AR.appointment))} — لا مراجعةَ سابقة يُقارن بها.`
           : `${appendix.summary}. ولم يتغيّر ${countOf(appendix.counts.unchanged, AR.appointment)}.`}
       </p>
 
@@ -3947,7 +3947,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <div className="print-query-summaryline print-history-summaryline">
               <span><b>{sortedPeople.length}</b> منتدب فعلي</span>
-              <span><b>{model.totals.years}</b> سنوات أكاديمية</span>
+              <span><b>{model.totals.years}</b> {nounFor(model.totals.years, AR.academicYear)}</span>
               {yearPages.length > 1 ? <span><b>{page.yearPageIndex + 1}</b> من <b>{yearPages.length}</b> نطاق سنوات</span> : null}
               <span className="print-history-legend">داخل كل سنة: <b>الأول</b> ثم <b>الثاني</b> · الرقم = عدد الشعب</span>
             </div>
@@ -4011,7 +4011,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                   <td className="print-history-total-cell is-sections"><strong>{model.totals.sections}</strong><small>{nounFor(model.totals.sections, AR.section)}</small></td>
                   {page.pageYears.map(year => (
                     <td key={`total-${year.key}`} className="print-history-year-cell is-total">
-                      <strong>{year.sections}</strong><small>{year.people} منتدب</small>
+                      <strong>{year.sections}</strong><small>{countOf(year.people, AR.visitor)}</small>
                     </td>
                   ))}
                 </tr>

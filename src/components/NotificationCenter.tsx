@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { AlertTriangle, Bell, CheckCheck, CheckCircle2, ChevronLeft, Clock3, X, Zap } from "lucide-react";
 import type { CenterNotification, NotificationTone } from "../utils/notificationCenter";
 import { NOTIFY_FOCUS_KEY, writeNotifyFocus } from "../utils/notifyFocus";
+import { AR, countOf, oblique } from "../utils/arabicCount";
 
 /**
  * ── مركز الإشعارات ──────────────────────────────────────────────────────────
@@ -35,9 +36,9 @@ const when = (iso?: string) => {
   if (Number.isNaN(date.getTime())) return "";
   const minutes = Math.round((Date.now() - date.getTime()) / 60000);
   if (minutes < 1) return "الآن";
-  if (minutes < 60) return minutes === 1 ? "قبل دقيقة" : minutes === 2 ? "قبل دقيقتين" : `قبل ${minutes} دقيقة`;
+  if (minutes < 60) return minutes === 1 ? "قبل دقيقة" : minutes === 2 ? "قبل دقيقتين" : `قبل ${countOf(minutes, oblique(AR.minute))}`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return hours === 1 ? "قبل ساعة" : hours === 2 ? "قبل ساعتين" : `قبل ${hours} ساعات`;
+  if (hours < 24) return hours === 1 ? "قبل ساعة" : hours === 2 ? "قبل ساعتين" : `قبل ${countOf(hours, oblique(AR.hour))}`;
   return date.toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" });
 };
 

@@ -2,7 +2,7 @@ import { formatScheduleTimeRange, scheduleClockForDisplay } from "./scheduleTime
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleVersion } from "../types";
 import { SCHEDULE_DAYS, timeToMinutes, minutesToTime, type DayKey } from "./scheduleIntelligence";
 import { roomIdentityKey } from "./locationRegistry";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 
 export type HistoricalDayModel = {
   minute: number;
@@ -384,7 +384,7 @@ export function investigateCrowding(rows: FSchedule[], day: DayKey, history: FSc
     { label: "النمط الأكثر حضوراً", value: patterns?.share || 0, max: 100, caption: `${patterns?.share || 0}٪` },
   ];
   const verdict = delta >= 8
-    ? `الازدحام أعلى من تاريخ القسم بنحو ${countOf(delta, AR.point)}؛ ليس مجرد عادة قديمة.`
+    ? `الازدحام أعلى من تاريخ القسم بنحو ${countOf(delta, oblique(AR.point))}؛ ليس مجرد عادة قديمة.`
     : inherited >= 20
       ? "الازدحام متكرر تاريخياً؛ جزء كبير منه نمط متوارث في القسم."
       : "الازدحام يبدو خاصاً بهذا الفصل أكثر من كونه عادة تاريخية.";
@@ -410,7 +410,7 @@ export function discoverUnwrittenRules(history: FSchedule[], terms: AdTerm[], co
   if (ends.length >= 60) {
     const p90 = percentile(ends,.9);
     const within = ends.filter(v=>v<=p90).length/ends.length;
-    if (within >= .88) rules.push({ id:"latest-end", kind:"latest-end", confidence:Math.round(within*100), title:`90٪ من اليوم ينتهي قبل ${minutesToTime(p90)}`, detail:`مقروءة من ${countOf(ends.length, AR.appointment)}`, });
+    if (within >= .88) rules.push({ id:"latest-end", kind:"latest-end", confidence:Math.round(within*100), title:`90٪ من اليوم ينتهي قبل ${minutesToTime(p90)}`, detail:`مقروءة من ${countOf(ends.length, oblique(AR.appointment))}`, });
   }
   const byCourse = new Map<number,FSchedule[]>(); rows.forEach(row=>byCourse.set(row.AdCourseId,[...(byCourse.get(row.AdCourseId)||[]),row]));
   for (const [courseId,list] of byCourse) {
@@ -506,9 +506,9 @@ export function simulatePolicy(rows: FSchedule[], history: FSchedule[], input: {
   if(type==="growth"){
     const growth=Math.max(1,Math.min(100,Number(input.growth||10)));
     const projected=Math.ceil(rows.length*growth/100);
-    return {type,affected:projected,currentTotal:rows.length,share:Math.round(projected/Math.max(1,rows.length)*100),historicalAffected:0,historicalTotal:history.length,historicalShare:0,terms:termIds.size,summary:`نمو ${growth}٪ يعني زيادةً بنحو ${countOf(projected, AR.appointment)} فوق الحمل الحالي قبل حساب السعات الفعلية.`};
+    return {type,affected:projected,currentTotal:rows.length,share:Math.round(projected/Math.max(1,rows.length)*100),historicalAffected:0,historicalTotal:history.length,historicalShare:0,terms:termIds.size,summary:`نمو ${growth}٪ يعني زيادةً بنحو ${countOf(projected, oblique(AR.appointment))} فوق الحمل الحالي قبل حساب السعات الفعلية.`};
   }
   const share=Math.round(currentAffected.length/Math.max(1,rows.length)*100);
   const historicalShare=Math.round(historicAffected.length/Math.max(1,history.length)*100);
-  return {type,affected:currentAffected.length,currentTotal:rows.length,share,historicalAffected:historicAffected.length,historicalTotal:history.length,historicalShare,terms:termIds.size,summary:`السياسة تمس ${currentAffected.length} من ${countOf(rows.length, AR.appointment)} حالياً (${share}٪)، وكانت ستمس ${historicalShare}٪ من التاريخ المتاح.`};
+  return {type,affected:currentAffected.length,currentTotal:rows.length,share,historicalAffected:historicAffected.length,historicalTotal:history.length,historicalShare,terms:termIds.size,summary:`السياسة تمس ${currentAffected.length} من ${countOf(rows.length, oblique(AR.appointment))} حالياً (${share}٪)، وكانت ستمس ${historicalShare}٪ من التاريخ المتاح.`};
 }

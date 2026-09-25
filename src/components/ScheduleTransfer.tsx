@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2
 import { PrimaryButton, SecondaryButton, useDialogDismiss, visualConfirm } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
@@ -1231,9 +1231,9 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               {xlsxPreview ? (
                 <div className={`transfer-preview${smartBusy ? " is-smart-locked" : ""}`} aria-busy={smartBusy}>
                   <div className="transfer-counts import-summary-cards">
-                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفاً</small></span>
-                    {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>:null}
-                    {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفحات</small></span>:null}
+                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(Number(xlsxPreview.count || 0), AR.row)}</small></span>
+                    {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(xlsxPreview.issues?.length || 0, AR.note)}</small></span>:null}
+                    {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(Number(xlsxPreview.pages||0), AR.page)}</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز للنشر</small></span>:null}
                     {/* One card, two units: the rows still waiting and the exact
                         number of blanks inside them — so filling two cells of a
@@ -1475,7 +1475,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   ) : null}
                   {preview.preview && preview.ready ? (
                     <PrimaryButton type="button" onClick={() => payload && run(payload, true)} disabled={busy}>
-                      {busy ? "يستورد…" : `أضف ${Number(preview.ready).toLocaleString("ar-KW-u-nu-latn")} موعداً`}
+                      {busy ? "يستورد…" : `أضف ${countOf(Number(preview.ready), oblique(AR.appointment))}`}
                     </PrimaryButton>
                   ) : null}
                 </div>

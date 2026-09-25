@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, oblique } from "../utils/arabicCount";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
 
 interface ShareLink {
@@ -500,7 +500,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               </div>
               {kind === "department" ? <dl className="share-choice-summary" aria-label="ملخص إعداد الرابط">
                 <div><dt>النوع</dt><dd>{kind === "department" ? "جدول القسم" : "بطاقة الأستاذ"}</dd></div>
-                <div><dt>الصلاحية</dt><dd>{`${days.toLocaleString("ar-KW-u-nu-latn")} يوم`}</dd></div>
+                <div><dt>الصلاحية</dt><dd>{countOf(days, AR.day)}</dd></div>
                 {kind === "department"
                   ? <div><dt>الأساتذة</dt><dd>{showInstructors ? "تظهر أسماؤهم" : "مخفية أسماؤهم"}</dd></div>
                   : <div><dt>طلبات التعديل</dt><dd>{openRequests ? (closesAt ? `حتى ${new Date(`${closesAt}T12:00:00`).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" })}` : "اكتب آخر موعد") : "مغلقة"}</dd></div>}
@@ -547,7 +547,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                 <p className="share-created" role="status">
                   <Check aria-hidden="true" />
                   {issued.created
-                    ? `فُتحت طلبات التعديل لـ${countOf(issued.created, AR.instructor)}`
+                    ? `فُتحت طلبات التعديل لـ${countOf(issued.created, oblique(AR.instructor))}`
                     : "طلبات التعديل مفتوحة من قبل"}
                   {issued.reissued
                     ? ` · ${countOf(issued.reissued, AR.instructor)} يحملون طلباتهم من قبل`

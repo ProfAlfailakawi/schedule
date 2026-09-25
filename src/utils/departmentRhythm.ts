@@ -1,6 +1,6 @@
 import { formatScheduleTimeRange, scheduleClockForDisplay } from "./scheduleTime";
 import type { FSchedule } from "../types";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, oblique } from "../utils/arabicCount";
 import { SCHEDULE_DAYS, timeToMinutes, type DayKey } from "./scheduleIntelligence";
 import { patternForDay } from "./weekVisual";
 
@@ -244,6 +244,6 @@ export function describeRhythm(reading: RhythmReading): string {
   /* Arabic counts three ways and getting it wrong reads as machine output.
      Two is a dual, three to ten take a plural, eleven and up take a singular
      accusative — «١٠ فصول» and «١١ فصلاً», never «١٠ فصلاً». */
-  return `${said.join(" · ")} — مقروءة من ${countOf(reading.learnedFrom.rows, AR.appointment)} ` +
-    `في ${countOf(reading.learnedFrom.terms, AR.term)}.`;
+  return `${said.join(" · ")} — مقروءة من ${countOf(reading.learnedFrom.rows, oblique(AR.appointment))} ` +
+    `في ${countOf(reading.learnedFrom.terms, oblique(AR.term))}.`;
 }

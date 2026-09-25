@@ -2,7 +2,7 @@ import type { AdCourse, AdInstructor } from "../types";
 import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches, authoritySectionCodeLooksPlausible, normalizeAuthoritySectionCode } from "./authorityAcademicCodes";
 import { OFFICIAL_COLLEGE_SITE_PREFIXES } from "./locationCollegePrefixes";
 import { instructorCleanName, instructorIdentityTokens } from "./instructorIdentity";
-import { AR, countOf, nounFor } from "./arabicCount";
+import { AR, countOf, nounFor, oblique } from "./arabicCount";
 /* قانون هوية الاسم يعيش في وحدته المشتركة كي تقرأه المعاينة أيضاً؛ يُعاد
    تصديره هنا لأن الخادم والاختبارات تعرفه من هذا الملف. */
 export { instructorRegistryOutcome, uniqueExactIdentityMatch, instructorIdentityKey } from "./instructorIdentity";
@@ -53,7 +53,7 @@ const MAX_PAGES=12;
    الجدول الناقص أخطر من الرفض، فيُرفض الملف كله برسالة صريحة. */
 class PdfPageLimitError extends Error{}
 function assertPageLimit(pages:number){
-  if(pages>MAX_PAGES)throw new PdfPageLimitError(`الملف يحتوي ${countOf(pages, AR.page)}، والحد الأقصى ${countOf(MAX_PAGES, AR.page)}. قسّم الملف ثم ارفع كل جزء في قسمه — لم يُستورد أي صف.`);
+  if(pages>MAX_PAGES)throw new PdfPageLimitError(`الملف يحتوي ${countOf(pages, oblique(AR.page))}، والحد الأقصى ${countOf(MAX_PAGES, AR.page)}. قسّم الملف ثم ارفع كل جزء في قسمه — لم يُستورد أي صف.`);
 }
 /** A4 at ~300dpi. The old 157dpi render was the single largest cause of
  *  unreadable rows: Arabic table text at that size loses its dots. */
@@ -3671,7 +3671,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
      on a small render in well under a second. A page with no grid signal at
      all (a photographed transcript) falls back to one small OCR probe. */
   if(cachedPreflight?.header.source==="scan")
-    onProgress?.({phase:"read",page:0,pages:images.length,message:`تم التحقق من اتجاه ${countOf(images.length, AR.page)} · بدء القراءة`});
+    onProgress?.({phase:"read",page:0,pages:images.length,message:`تم التحقق من اتجاه ${countOf(images.length, oblique(AR.page))} · بدء القراءة`});
   else
     onProgress?.({phase:"orient",page:1,pages:images.length,message:"تحديد اتجاه الصفحة"});
   let orientation:-1|0|1=cachedPreflight?.header.source==="scan"?cachedPreflight.orientation:0;
@@ -3872,7 +3872,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
      and a weak page cannot make the rest of the document pay a retry. */
   const suspiciousIndexes=pages.map((page,index)=>page?.diagnostic?.suspicious||page?.diagnostic?.warning?index:-1).filter(index=>index>=0);
   if(suspiciousIndexes.length){
-    onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${countOf(suspiciousIndexes.length, AR.page)} بحاجة إلى مراجعة دقيقة`});
+    onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${countOf(suspiciousIndexes.length, oblique(AR.page))} بحاجة إلى مراجعة دقيقة`});
     let rescuedCount=0;
     for(const index of suspiciousIndexes){
       const rescuePool=pool;

@@ -48,6 +48,7 @@ import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES }
 import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { sortByName } from "../utils/sorting";
 import { roomIdentityKey } from "../utils/locationRegistry";
+import { AR, countOf, oblique } from "../utils/arabicCount";
 
 type Scene =
   | "pulse"
@@ -516,7 +517,7 @@ export default function LivingScheduleLayer({
       const currentRows = Array.isArray(genesis?.previewRows) ? genesis.previewRows : [];
       const nextRow = genesisBulkEdit ? currentRows[currentRows.findIndex((row:any) => Number(row.id) === Number(editedId)) + 1] : null;
       setGenesisEditId(null); setGenesisEdit(null);
-      setMessage(result.ready ? "تمت معالجة الموانع. المسودة جاهزة للنشر." : `تم حفظ التعديل. بقيت ${(result.issues || []).length} ملاحظة.`);
+      setMessage(result.ready ? "تمت معالجة الموانع. المسودة جاهزة للنشر." : `تم حفظ التعديل. بقيت ${countOf((result.issues || []).length, AR.note)}.`);
       if (nextRow) window.setTimeout(() => beginGenesisEdit(nextRow), 0);
       else if (genesisBulkEdit) setGenesisBulkEdit(false);
     } catch (e:any) { setError(e.message); } finally { setBusy(false); }
@@ -535,7 +536,7 @@ export default function LivingScheduleLayer({
         issues: result.issues || [], issueRowIds: result.issueRowIds || [], rowIssues: result.rowIssues || {}, reviewRequired: (result.issues || []).length,
       } : current);
       if (genesisEditId === rowId) { setGenesisEditId(null); setGenesisEdit(null); }
-      setMessage(result.ready ? "تم حذف الموعد وإعادة الفحص. المسودة جاهزة للنشر." : `تم حذف الموعد وإعادة الفحص · بقيت ${(result.issues || []).length} ملاحظة.`);
+      setMessage(result.ready ? "تم حذف الموعد وإعادة الفحص. المسودة جاهزة للنشر." : `تم حذف الموعد وإعادة الفحص · بقيت ${countOf((result.issues || []).length, AR.note)}.`);
     } catch (e:any) { setError(e.message); } finally { setBusy(false); }
   };
   const deleteAllGenesisRows = async () => {
@@ -579,7 +580,7 @@ export default function LivingScheduleLayer({
       const undoPoint = Array.isArray(points) ? points[0] : null;
       setGenesisUndoPoint(undoPoint);
       setGenesis((current: any) => current ? { ...current, published: true, publication: result?.publication } : current);
-      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${result.count} موعد` : ""}${result?.adjusted ? ` · عالج النظام ${result.adjusted} موعداً زمنياً بأمان قبل النشر` : ""}.`);
+      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${countOf(result.count, AR.appointment)}` : ""}${result?.adjusted ? ` · عالج النظام ${result.adjusted} موعداً زمنياً بأمان قبل النشر` : ""}.`);
       await loadLiving();
       onRefresh?.();
     } catch (e: any) {
@@ -1034,7 +1035,7 @@ export default function LivingScheduleLayer({
                           <div className="genesis-style-read">
                             <span className="is-good"><Fingerprint aria-hidden="true" /><b className="num">{rollover.style.inStyle}</b> على النمط</span>
                             {rollover.style.offStyle ? <span className="is-off"><AlertTriangle aria-hidden="true" /><b className="num">{rollover.style.offStyle}</b> خارجه</span> : null}
-                            <em>مقروء من {rollover.style.learnedFrom?.terms || 0} فصلاً · {rollover.style.learnedFrom?.rows || 0} موعد</em>
+                            <em>مقروء من {countOf(rollover.style.learnedFrom?.terms || 0, oblique(AR.term))} · {countOf(rollover.style.learnedFrom?.rows || 0, AR.appointment)}</em>
                           </div>
                         </div>
                       ) : null}
@@ -1126,7 +1127,7 @@ export default function LivingScheduleLayer({
                             تم نسخ {genesis.coverage?.copiedRows} موعدًا إلى المسودة الجديدة
                             · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
                             {genesis.analysis?.conflicts}
-                            {genesis.reviewRequired ? ` · ${genesis.reviewRequired} ملاحظة للمراجعة` : ""}
+                            {genesis.reviewRequired ? ` · ${countOf(genesis.reviewRequired, AR.note)} للمراجعة` : ""}
                           </p>
                           <small>{genesis.guardrail}</small>
                           {Array.isArray(genesis.issues) && genesis.issues.length ? (
@@ -1300,7 +1301,7 @@ export default function LivingScheduleLayer({
                             <strong>{item.label}</strong>
                             <small>
                               {new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}{" "}
-                              · {item.userName} · {item.rowCount} موعد
+                              · {item.userName} · {countOf(item.rowCount, AR.appointment)}
                             </small>
                           </div>
                           <GhostButton

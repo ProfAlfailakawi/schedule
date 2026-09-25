@@ -140,7 +140,7 @@ import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roo
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
-import { AR, countOf, nounFor } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { handoffNotice, takeHandoff, type RequestHandoff } from "../utils/requestHandoff";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
 import { claimWarmStart } from "../utils/warmStart";
@@ -308,7 +308,7 @@ const scheduleStartConventionNote = (row: Partial<FSchedule>): string | null => 
     const duration = endMinutes - startMinutes;
     const expected = hasLongLectureDays ? LONG_LECTURE_MINUTES : SHORT_LECTURE_MINUTES;
     if (duration > 0 && duration !== expected) {
-      return `ملاحظة التوقيت: المدة المعتادة لهذا النمط ${expected} دقيقة، بينما المدة المدخلة ${duration} دقيقة. تنبيه فقط — راجع سجل المقرر إن كان له نمط تاريخي مختلف.`;
+      return `ملاحظة التوقيت: المدة المعتادة لهذا النمط ${countOf(expected, AR.minute)}، بينما المدة المدخلة ${countOf(duration, AR.minute)}. تنبيه فقط — راجع سجل المقرر إن كان له نمط تاريخي مختلف.`;
     }
   }
   return null;
@@ -1657,7 +1657,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         } catch (stepError: any) {
           await loadRows();
           throw new Error(restored
-            ? `تراجعٌ ناقص: أُعيد ${countOf(restored, AR.change)} من ${countOf(entry.steps.length, AR.change)} — ${friendlyError(stepError)}`
+            ? `تراجعٌ ناقص: أُعيد ${countOf(restored, AR.change)} من ${countOf(entry.steps.length, oblique(AR.change))} — ${friendlyError(stepError)}`
             : friendlyError(stepError));
         }
       }
@@ -2712,7 +2712,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           const normalDurations = (learned.durations || [])
             .filter(item => isSupported(item.samples, item.share))
             .slice(0, 4)
-            .map(item => `${item.minutes.toLocaleString("ar-KW-u-nu-latn")} دقيقة`);
+            .map(item => countOf(item.minutes, AR.minute));
           if (normalDurations.length) {
             return `مدة ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
           }
@@ -4815,7 +4815,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       if (data === null) return;
       setCopyUndoPoint(null);
       setCopyPreview(null);
-      setMessage(`تم التراجع عن آخر عملية نسخ واسترجاع ${data.count ?? 0} سجل.`);
+      setMessage(`تم التراجع عن آخر عملية نسخ واسترجاع ${countOf(data.count ?? 0, AR.record)}.`);
     } catch (e: any) {
       setError(friendlyError(e));
     } finally {
@@ -7329,7 +7329,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       const nearest = Math.min(...sameDay.map(other =>
         other.to <= from ? from - other.to : other.from >= to ? other.from - to : 0));
       score -= Math.min(40, Math.round(nearest / 15) * 4);
-      reasons.push(nearest === 0 ? "ملاصق لمحاضرة أخرى للأستاذ" : `فراغ ${nearest} دقيقة عن أقرب محاضرة للأستاذ`);
+      reasons.push(nearest === 0 ? "ملاصق لمحاضرة أخرى للأستاذ" : `فراغ ${countOf(nearest, AR.minute)} عن أقرب محاضرة للأستاذ`);
     } else {
       score -= 12;
       reasons.push("يوم جديد للأستاذ — يكلّف انتقالاً");
@@ -7702,7 +7702,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           AdRoomCode: move.roomCode, AdRoomHall: move.roomHall } as FSchedule,
       })));
       offerUndo(
-        `إصلاح بسلسلة ${countOf(repair.moves.length, AR.move)}`,
+        `إصلاح بسلسلة ${countOf(repair.moves.length, oblique(AR.move))}`,
         repair.moves.map(move => restoreStep(move.before)),
       );
       setRepair(null);
@@ -8142,7 +8142,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           <p>
             {sections.find((s) => s.AdSectionId === filterSection)
               ?.AdSectionName || "عرض الاجتماع"}{" "}
-            · {filteredRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد
+            · {countOf(filteredRows.length, AR.appointment)}
           </p>
         </div>
         <div className="cinema-tools">
@@ -8174,7 +8174,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <header>
                 <span>{day.short}</span>
                 <strong>{day.label}</strong>
-                <small>{items.length} موعد</small>
+                <small>{countOf(items.length, AR.appointment)}</small>
               </header>
               <div className="cinema-day-track">
                 {items.length ? (
@@ -8583,8 +8583,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       <span className="surface-kicker">كما يُدرَّس هذا المقرر عادةً</span>
                       <strong>{courseNature.summary}</strong>
                       <small>
-                        من {courseNature.terms.toLocaleString("ar-KW-u-nu-latn")} فصلاً
-                        · {courseNature.observations.toLocaleString("ar-KW-u-nu-latn")} شعبة
+                        من {countOf(courseNature.terms, oblique(AR.term))}
+                        · {countOf(courseNature.observations, AR.section)}
                         {courseNature.sectionsPerTerm > 1 ? ` · عادةً ${countOf(courseNature.sectionsPerTerm, AR.section)} في الفصل` : ""}
                       </small>
                     </div>
@@ -10092,7 +10092,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <span className="surface-kicker">عرض ذكي</span>
               <h2>مواعيد القسم</h2>
             </div>
-            <span>{agendaRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
+            <span>{countOf(agendaRows.length, AR.appointment)}</span>
           </div>
           {hueLegend.length > 1 || scheduledVisitingIds.size ? (
             <div className="week-legend agenda-legend" role="group" aria-label="مفتاح الألوان">
@@ -10533,7 +10533,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
                       <div><Building2 /><strong>فلتر المباني</strong></div>
-                      <small>{phoneReadOnly ? "المباني معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixBuildings.size ? `اخترت ${matrixBuildings.size.toLocaleString("ar-KW-u-nu-latn")} من ${allBuildings.length.toLocaleString("ar-KW-u-nu-latn")} مبنى — اضغط لإضافة مبنى أو إزالته.` : "كل المباني ظاهرة — اختر مبنى واحدًا أو عدة مبانٍ قبل تصفية القاعات."}</small>
+                      <small>{phoneReadOnly ? "المباني معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixBuildings.size ? `اخترت ${matrixBuildings.size.toLocaleString("ar-KW-u-nu-latn")} من ${countOf(allBuildings.length, oblique(AR.building))} — اضغط لإضافة مبنى أو إزالته.` : "كل المباني ظاهرة — اختر مبنى واحدًا أو عدة مبانٍ قبل تصفية القاعات."}</small>
                     </div>
                     <div className="rooms-picker" role="group" aria-label="اختيار مبنى واحد أو عدة مبانٍ">
                       <button
@@ -10578,9 +10578,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       <small>{phoneReadOnly
                         ? "القاعات معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر."
                         : roomFilterKey
-                          ? `نتيجة الفلتر: ${countOf(roomFilterMatches.length, AR.room)} من ${countOf(buildingScopedRooms.length, AR.room)}.`
+                          ? `نتيجة الفلتر: ${countOf(roomFilterMatches.length, AR.room)} من ${countOf(buildingScopedRooms.length, oblique(AR.room))}.`
                           : matrixRooms.size
-                            ? `اخترت ${matrixRooms.size} من ${countOf(buildingScopedRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.`
+                            ? `اخترت ${matrixRooms.size} من ${countOf(buildingScopedRooms.length, oblique(AR.room))} — اضغط لإضافة قاعة أو إزالتها.`
                             : matrixBuildings.size
                               ? "كل قاعات المباني المختارة ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."
                               : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
@@ -10970,7 +10970,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   : undefined}
               >
                 {physicsActive && dragComparison
-                  ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
+                  ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${countOf(dragComparison.partyCount, oblique(AR.appointment))}` : ""}`
                   : phoneReadOnly
                     ? "على الهاتف يمكنك التعديل والإضافة من «قائمة»، أما عرض الأسبوع فيبقى للقراءة فقط حتى لا يتحول اللمس إلى نقلٍ غير مقصود."
                   : picking
@@ -11581,7 +11581,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     <span>{d.label}</span>
                     <b title="عدد المواعيد في هذا اليوم">{dayCounts[d.key] || 0}</b>
                     {(weekLayout[d.key]?.busiest || 1) >= 4 && expandedDay !== d.key ? (
-                      <i className="week-dense" title={`${weekLayout[d.key].busiest} محاضرات في نفس الساعة — اضغط لتوسيع اليوم`}>
+                      <i className="week-dense" title={`${countOf(weekLayout[d.key].busiest, AR.lecture)} في نفس الساعة — اضغط لتوسيع اليوم`}>
                         <Expand aria-hidden="true" />
                       </i>
                     ) : null}
@@ -11956,10 +11956,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <button type="button" onClick={() => setRepair(null)} aria-label="إغلاق"><X aria-hidden="true" /></button>
             </header>
             <div className="repair-cost">
-              <span><b>{repair.moves.length.toLocaleString("ar-KW-u-nu-latn")}</b> حركات</span>
+              <span><b>{repair.moves.length.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.moves.length, AR.move)}</span>
               <span><b className="visual-metric-flow"><span>{repair.before.toLocaleString("ar-KW-u-nu-latn")}</span><ChevronLeft aria-hidden="true" /><span>{repair.after.toLocaleString("ar-KW-u-nu-latn")}</span></b> تداخل</span>
               <span><b>{repair.instructorsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> أساتذة متأثرون</span>
-              <span><b>{repair.roomsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> قاعات</span>
+              <span><b>{repair.roomsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(repair.roomsAffected, AR.room)}</span>
             </div>
             <ol className="repair-steps">
               {repair.moves.map((move, index) => (
@@ -12289,7 +12289,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName,
             ].filter(Boolean).join(" · ")}
           />
-          <div className="print-change-log-summary"><strong>{undoLog.length.toLocaleString("ar-KW-u-nu-latn")} تعديل</strong><span>سجل تغييرات اليوم · الأحدث أولاً</span></div>
+          <div className="print-change-log-summary"><strong>{countOf(undoLog.length, AR.edit)}</strong><span>سجل تغييرات اليوم · الأحدث أولاً</span></div>
           <table>
             <thead><tr><th>الوقت</th><th>التعديل</th><th>الأستاذ</th><th>الحالة</th></tr></thead>
             <tbody>{undoLog.map(entry=>{const meta=undoEntryMeta(entry);return <tr key={`print-change-${entry.id}`}><td className="print-ltr">{undoClock(entry.at)}</td><td className="print-wrap">{entry.label}</td><td className="print-wrap">{meta.whoName || "—"}{meta.visiting ? " · منتدب" : ""}</td><td>{entry.usedAt ? `تم التراجع ${undoClock(entry.usedAt)}` : "قائم"}</td></tr>;})}</tbody>
@@ -12449,13 +12449,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 <span><HelpCircle aria-hidden="true" /></span>
                 <div><small>{/مختلف|غير معتاد|تاريخ/i.test(context.whyHere || "") ? "خارج المعتاد" : "ضمن النمط"}</small><strong>{/مانع|تعارض/i.test(context.whyHere || "") ? "يحتاج تحقق" : "بدون مانع"}</strong></div>
               </article>
-              <article title={context.courseLife ? `من ${context.courseLife.firstTerm} إلى ${context.courseLife.latestTerm} · ${context.courseLife.observations} حالة` : undefined}>
+              <article title={context.courseLife ? `من ${context.courseLife.firstTerm} إلى ${context.courseLife.latestTerm} · ${countOf(context.courseLife.observations, AR.occurrence)}` : undefined}>
                 <span><History aria-hidden="true" /></span>
                 <div><small>حياة المقرر</small><strong>{context.courseLife ? `${formatTermLabel(context.courseLife.terms)} · ${context.courseLife.stability}% ثبات` : "تاريخ قليل"}</strong></div>
               </article>
               <article title={context.offeringLife ? `من ${context.offeringLife.firstTerm} إلى ${context.offeringLife.latestTerm}` : undefined}>
                 <span><CalendarDays aria-hidden="true" /></span>
-                <div><small>حياة الشعبة</small><strong>{context.offeringLife ? (context.offeringLife.currentJourney ? `${context.offeringLife.currentJourney.snapshots || 0} نسخة · ${formatChangeLabel(context.offeringLife.currentJourney.changes || 0)}` : formatLifeSummary(context.offeringLife.terms, context.offeringLife.changes)) : "أول ظهور"}</strong></div>
+                <div><small>حياة الشعبة</small><strong>{context.offeringLife ? (context.offeringLife.currentJourney ? `${countOf(context.offeringLife.currentJourney.snapshots || 0, AR.version)} · ${formatChangeLabel(context.offeringLife.currentJourney.changes || 0)}` : formatLifeSummary(context.offeringLife.terms, context.offeringLife.changes)) : "أول ظهور"}</strong></div>
               </article>
               <article className={`decision-cost-${context.decisionCost?.level || "low"}`} title={(context.decisionCost?.factors || []).join(" · ") || undefined}>
                 <span><BrainCircuit aria-hidden="true" /></span>
@@ -12476,7 +12476,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 <span className="context-move-copy">
                   <small>
                     {moveNote.moves > 1
-                      ? `انتقل ${moveNote.moves.toLocaleString("ar-KW-u-nu-latn")} مرات · آخر مرة`
+                      ? `انتقل ${countOf(moveNote.moves, AR.visit)} · آخر مرة`
                       : "انتقل مرة واحدة · السبب"}
                   </small>
                   <strong>{moveNote.text}</strong>

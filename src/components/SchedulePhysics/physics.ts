@@ -14,6 +14,7 @@ import { SCHEDULE_DAY_END } from "../../utils/scheduleTime";
 import { expectedMinutesForDay } from "../../utils/scheduleRegulations";
 import { roomIdentityKey } from "../../utils/locationRegistry";
 import { isBlockingConflict } from "../../utils/scheduleIntelligence";
+import { AR, countOf } from "../../utils/arabicCount";
 
 export const PHYSICS_DAYS: Array<{ key: ScheduleDayKey; label: string }> = [
   { key: "fsunday", label: "الأحد" },
@@ -146,7 +147,7 @@ function buildCounterfactual(ripple: any, why: any, whyNot: any, quality: Schedu
   const qualityDelta = toNumber(delta.quality ?? delta.score ?? 0);
   const pressureDelta = toNumber(delta.dayPressure || 0);
   if (conflictDelta < 0) bullets.push(`يخفض موانع الحفظ بمقدار ${Math.abs(conflictDelta)} مقارنة بالوضع الحالي.`);
-  if (gapDelta < 0) bullets.push(`يقلص فراغ الأستاذ ${Math.abs(gapDelta)} دقيقة.`);
+  if (gapDelta < 0) bullets.push(`يقلص فراغ الأستاذ ${countOf(Math.abs(gapDelta), AR.minute)}.`);
   if (qualityDelta > 0) bullets.push(`يرفع جودة القرار ${qualityDelta > 0 ? "بنقطة" : ""}${Math.abs(qualityDelta)}.`);
   if (pressureDelta > 0) bullets.push(`مقابل ذلك يرفع ضغط اليوم ${Math.abs(pressureDelta)}٪.`);
   if (!bullets.length && Array.isArray(whyNot?.tradeoffs) && whyNot.tradeoffs.length) bullets.push(String(whyNot.tradeoffs[0]));

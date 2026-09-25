@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarCheck2, Check, Search, Users, X } from "lucide-react";
 import { PrimaryButton } from "./ui";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
+import { AR, countOf } from "../utils/arabicCount";
 
 /**
  * ── متى نلتقي؟ ──────────────────────────────────────────────────────────────
@@ -189,7 +190,7 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
         </ul>
 
         <div className="meeting-slots-ask">
-          <span className="meeting-slots-count">{picked.size ? `${picked.size} مشاركاً` : "لم تختر أحداً بعد"}</span>
+          <span className="meeting-slots-count">{picked.size ? countOf(picked.size, AR.participant) : "لم تختر أحداً بعد"}</span>
           <PrimaryButton type="button" data-guide-ignore="قراءة فقط: يحسب النوافذ المشتركة ولا يغيّر الجدول" disabled={picked.size < 2 || loading} onClick={() => void ask()}>
             <CalendarCheck2 aria-hidden="true" /> {loading ? "يحسب…" : "اعرض النوافذ المتاحة"}
           </PrimaryButton>

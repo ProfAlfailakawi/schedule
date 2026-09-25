@@ -34,7 +34,7 @@ const ROOT = process.cwd();
  * never preceded by a numeral, so it is left out. */
 const forms = new Set<string>();
 for (const [key, noun] of Object.entries(AR)) {
-  if (/(Verb|Adj)$/.test(key)) continue;
+  if (/(Verb|Adj|Pron)$/.test(key)) continue;
   for (const form of [noun.one, noun.few, noun.many]) forms.add(form);
 }
 // Nouns counted in this product that are not (yet) needed in AR as whole

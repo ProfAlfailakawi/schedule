@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { instructorIdentityKey, uniqueExactIdentityMatch } from "../utils/instructorIdentity";
 import { AlertTriangle, CheckCircle2, FileText } from "lucide-react";
 import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
+import { AR, countOf } from "../utils/arabicCount";
 
 type TableProps = React.ComponentProps<typeof ImportPreviewTable>;
 type PageDiagnostic = { page?: number; extractedRows?: number; visualRows?: number; suspicious?: boolean; reason?: string; warning?: string };
@@ -248,7 +249,7 @@ export default function PagedImportPreview({
           <strong>معاينة صفحة بصفحة</strong>
           <small>كل صفحة تُراجع مستقلة كما قرأها المحرك، ثم تُدمج النتائج عند النشر.</small>
         </div>
-        <span>{totalPages.toLocaleString("ar-KW-u-nu-latn")} صفحات</span>
+        <span>{countOf(totalPages, AR.page)}</span>
       </div>
 
       <div className="import-page-tabs" role="tablist" aria-label="صفحات ملف PDF">
@@ -273,7 +274,7 @@ export default function PagedImportPreview({
               onClick={() => setActivePage(page)}
             >
               <FileText aria-hidden="true" />
-              <span><b>صفحة {page.toLocaleString("ar-KW-u-nu-latn")}</b><small>{pageRows.length.toLocaleString("ar-KW-u-nu-latn")} صف</small></span>
+              <span><b>صفحة {page.toLocaleString("ar-KW-u-nu-latn")}</b><small>{countOf(pageRows.length, AR.row)}</small></span>
               {suspicious ? <AlertTriangle aria-label="تحتاج مراجعة" /> : empty ? null : <CheckCircle2 aria-label="تمت القراءة" />}
             </button>
           );
@@ -290,8 +291,8 @@ export default function PagedImportPreview({
           if (!currentRows.length) return <><AlertTriangle /><span>لم تُستخرج صفوف من هذه الصفحة. راجع جودة الصفحة قبل النشر.</span></>;
           /* تنبيهُ القراءة (سطرٌ مطبوع لم يُقرأ) يُقال على صفحته ولو اكتملت صفوفها المقروءة. */
           if (diagnostic?.warning) return <><AlertTriangle /><span>{String(diagnostic.warning)}{review ? ` · ${review.toLocaleString("ar-KW-u-nu-latn")} صف يحتاج مراجعة` : ""}.</span></>;
-          if (suspicious) return <><AlertTriangle /><span>هذه الصفحة تحتاج مراجعة: {review ? `${review.toLocaleString("ar-KW-u-nu-latn")} صف` : String(diagnostic?.reason || "بعض الخلايا لم تُحسم بعد")}.</span></>;
-          return <><CheckCircle2 /><span>تمت قراءة الصفحة {activePage.toLocaleString("ar-KW-u-nu-latn")} بنجاح · {currentRows.length.toLocaleString("ar-KW-u-nu-latn")} صف.</span></>;
+          if (suspicious) return <><AlertTriangle /><span>هذه الصفحة تحتاج مراجعة: {review ? countOf(review, AR.row) : String(diagnostic?.reason || "بعض الخلايا لم تُحسم بعد")}.</span></>;
+          return <><CheckCircle2 /><span>تمت قراءة الصفحة {activePage.toLocaleString("ar-KW-u-nu-latn")} بنجاح · {countOf(currentRows.length, AR.row)}.</span></>;
         })()}
       </div>
 

@@ -15,7 +15,7 @@ import {
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import { livingScopeKey, sharedLiving } from "../utils/livingCache";
 import { MicroLoader, Notice, useDialogDismiss } from "./ui";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
 import { sortTermsNewest } from "../utils/termSequence";
 import { scheduleClockForDisplay } from "../utils/scheduleTime";
@@ -671,7 +671,7 @@ export default function ScheduleExperienceLayer({
                         <div className="decision-option-facts">
                           <span>
                             <CheckCircle2 />
-                            <b>{option.conflicts}</b> مانع
+                            <b>{option.conflicts}</b> {nounFor(option.conflicts, AR.blocker)}
                           </span>
                           <span>
                             <Clock />
@@ -744,7 +744,7 @@ export default function ScheduleExperienceLayer({
                 <h2>ملخّص بصري واضح لنمط القسم عبر الفصول.</h2>
                 <p>
                   {genome?.available
-                    ? `الفصل الحالي قريب من بصمة القسم بنسبة ${genome.compatibility}/100، محسوبة من ${countOf(genome.history?.length || 0, AR.term)} سابق.`
+                    ? `الفصل الحالي قريب من بصمة القسم بنسبة ${genome.compatibility}/100، محسوبة من ${countOf(genome.history?.length || 0, oblique(AR.term))} سابق.`
                     : "سيبدأ النظام ببناء بصمة القسم من هذا الفصل، ثم تصبح القراءة أدق مع تراكم الفصول السابقة."}
                 </p>
               </div>
@@ -858,7 +858,7 @@ export default function ScheduleExperienceLayer({
                     <span key={item.termId}>
                       <b>{item.termName}</b>
                       <small>
-                        {item.count} موعد · {item.avgGap}د فراغ
+                        {countOf(item.count, AR.appointment)} · {item.avgGap}د فراغ
                       </small>
                     </span>
                   ))}

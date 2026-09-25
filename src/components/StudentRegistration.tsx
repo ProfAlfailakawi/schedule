@@ -22,7 +22,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Check, CheckCheck, ClipboardList, Clock3, Download, Search, X } from "lucide-react";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, oblique } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, StudentCommitteeRejectReason, StudentCourseRejectReason, StudentCourseStateValue } from "../types";
 import type { StudentCaseStatus } from "../utils/studentCaseDecision";
@@ -582,7 +582,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                             <strong>{GRADUATE_REASON_LABEL[g?.reason || ""] || "طلب خريج / متوقع تخرجه"}</strong>
                             {g ? (
                               <small>
-                                صحيفة التخرج متحقَّق منها: {countOf(g.passedUnits, AR.unit)} مجتازة من {countOf(g.requiredUnits, AR.unit)} مطلوبة
+                                صحيفة التخرج متحقَّق منها: {countOf(g.passedUnits, AR.unit)} مجتازة من {countOf(g.requiredUnits, oblique(AR.unit))} مطلوبة
                                 {g.degreeUnits ? ` (مجموع الدرجة ${g.degreeUnits})` : ""}
                                 {g.eligibility === "eligible" ? " · مستوفٍ" : g.eligibility === "ineligible" ? " · غير مستوفٍ" : ""}
                                 {g.nameMatched ? "" : " · الاسم لم يُطابق حرفياً"}

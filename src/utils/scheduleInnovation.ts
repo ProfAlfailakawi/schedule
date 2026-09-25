@@ -2,7 +2,7 @@ import { roomIdentityKey } from "./locationRegistry";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleConstraint } from "../types";
 import { activeDays, analyzeSchedule, autoScheduleProposal, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 
 const cloneRows=(rows:FSchedule[])=>rows.map(row=>({...row}));
 const roomKey=(row:Partial<FSchedule>)=>roomIdentityKey(row);
@@ -101,7 +101,7 @@ export function forecastScheduleMove(existing:FSchedule,candidate:FSchedule,scop
   const pressureDelta=beforeDay?Math.round((afterDay-beforeDay)/beforeDay*100):afterDay>beforeDay?100:0;
   const qualityDelta=after.score-before.score,conflictDelta=afterConflicts-beforeConflicts,gapDelta=(afterProf?.gapMinutes||0)-(beforeProf?.gapMinutes||0);
   const effects:Array<{tone:"good"|"warn"|"neutral";text:string}>=[];
-  effects.push({tone:conflictDelta<0?"good":conflictDelta>0?"warn":"neutral",text:conflictDelta<0?`يزيل ${countOf(Math.abs(conflictDelta), AR.saveBlocker)} عن هذا الموعد`:conflictDelta>0?`قد يضيف ${countOf(conflictDelta, AR.saveBlocker)}`:"لا يغيّر موانع حفظ هذا الموعد"});
+  effects.push({tone:conflictDelta<0?"good":conflictDelta>0?"warn":"neutral",text:conflictDelta<0?`يزيل ${countOf(Math.abs(conflictDelta), oblique(AR.saveBlocker))} عن هذا الموعد`:conflictDelta>0?`قد يضيف ${countOf(conflictDelta, oblique(AR.saveBlocker))}`:"لا يغيّر موانع حفظ هذا الموعد"});
   effects.push({tone:gapDelta<0?"good":gapDelta>0?"warn":"neutral",text:gapDelta<0?`يقلل فراغات الأستاذ ${countOf(Math.abs(gapDelta), AR.minute)}`:gapDelta>0?`يزيد فراغات الأستاذ ${countOf(gapDelta, AR.minute)}`:"فراغات الأستاذ تبقى تقريباً كما هي"});
   effects.push({tone:pressureDelta<=0?"good":pressureDelta>=15?"warn":"neutral",text:`ضغط ${dayLabel} ${pressureDelta>0?"يزداد":pressureDelta<0?"ينخفض":"لا يتغير"} ${Math.abs(pressureDelta)}%`});
   effects.push({tone:qualityDelta>0?"good":qualityDelta<0?"warn":"neutral",text:`مؤشر الجودة ${qualityDelta>0?"+":""}${qualityDelta}`});

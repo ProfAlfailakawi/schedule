@@ -1,5 +1,5 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 import {
   SCHEDULE_DAYS,
   findConflicts,
@@ -349,7 +349,7 @@ export function describeProposal(proposal: SectionProposal): string {
   const need = `المطلوب: ${countOf(proposal.needed, AR.section)}`;
   if (!found) return `${head} ${need} — ولم أجد وقتاً يخلو من كل التعارضات.`;
   if (found < proposal.needed)
-    return `${head} ${need} — ووجدتُ مكاناً نظيفاً لـ${countOf(found, AR.section)} فقط.`;
+    return `${head} ${need} — ووجدتُ مكاناً نظيفاً لـ${countOf(found, oblique(AR.section))} فقط.`;
   return proposal.needed === 1
     ? `${head} ${need} — ولها مكان نظيف.`
     : `${head} ${need} — ولكلٍّ منها مكان نظيف.`;
@@ -363,7 +363,7 @@ export function describeOpenings(proposals: SectionProposal[], noCeiling: number
       : "";
   const placed = proposals.reduce((sum, item) => sum + item.placements.length, 0);
   const needed = proposals.reduce((sum, item) => sum + item.needed, 0);
-  const head = `${countOf(needed, AR.section)} يقترحها الطلب على ${countOf(proposals.length, AR.course)}` +
+  const head = `${countOf(needed, AR.section)} يقترحها الطلب على ${countOf(proposals.length, oblique(AR.course))}` +
     (placed === needed
       ? (needed === 1 ? " — ولها وقتٌ وقاعة بلا تعارض." : " — ولكلٍّ منها وقتٌ وقاعة بلا تعارض.")
       : ` — وُجد مكان نظيف لـ${placed} منها.`);

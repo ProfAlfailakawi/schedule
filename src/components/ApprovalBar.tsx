@@ -20,7 +20,7 @@ import { Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, blockingConflictPhrase, deadlinePassed, pendingAdditionTotal,
 } from "../utils/approvalWorkflow";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, oblique } from "../utils/arabicCount";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
 interface DeadlineShape {
@@ -128,7 +128,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       });
       /* اعتمادُ رئيس القسم يُرسل معه؛ فإن منعه مانعٌ قيل السببُ هنا. */
       if (result?.submitBlocked) setError(`حُفظ اعتمادك، ولم يُرسل بعد: ${result.submitBlocked}`);
-      if (Number(result?.remaining || 0) > 0) setError(`أُقرّ ما عُرض عليك. ووصل بعده ${countOf(Number(result.remaining), AR.section)} تنتظر نظرك.`);
+      if (Number(result?.remaining || 0) > 0) setError(`أُقرّ ما عُرض عليك. ووصل بعده ${countOf(Number(result.remaining), oblique(AR.section))} تنتظر نظرك.`);
       setSheet(null); setReason("");
       await load();
       onChanged?.();
@@ -270,7 +270,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {countdown ? (
           <small className="approval-countdown" data-past={deadlineGone || undefined}>
             <Clock3 aria-hidden="true" /> {countdown}
-            {extensionRequest ? ` · طُلب تمديد ${countOf(extensionRequest.days, AR.day)} (${arabicDate(extensionRequest.at)}) — بانتظار رئيس التسجيل` : ""}
+            {extensionRequest ? ` · طُلب تمديد ${countOf(extensionRequest.days, oblique(AR.day))} (${arabicDate(extensionRequest.at)}) — بانتظار رئيس التسجيل` : ""}
           </small>
         ) : null}
         {/* الخلافُ الذي تكرّر ثلاثاً يُعرض لرئيس القسم هنا — وهذا ما تَعِد به شاشةُ الملاحظات. */}

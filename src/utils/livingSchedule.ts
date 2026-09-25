@@ -5,7 +5,7 @@ import { placeholderInstructorIds } from "./instructorIdentity";
 import { activeDays, analyzeSchedule, findConflicts, isBlockingConflict, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { evaluateScheduleConstraints } from "./scheduleInnovation";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START } from "./scheduleTime";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 
 const DAY_LABEL = new Map(SCHEDULE_DAYS.map(day => [day.key, day.label]));
 const clamp = (value:number,min:number,max:number)=>Math.max(min,Math.min(max,value));
@@ -110,7 +110,7 @@ function computeFairnessEngine(rows:FSchedule[], instructors:AdInstructor[]){
   });
   const burdens=profiles.map(p=>p.burden);const avg=burdens.length?burdens.reduce((a,b)=>a+b,0)/burdens.length:0;const variance=burdens.length?burdens.reduce((s,v)=>s+(v-avg)**2,0)/burdens.length:0;const stdev=Math.sqrt(variance);const cv=avg?stdev/avg:0;const score=Math.round(clamp(100-cv*72,0,100));
   const ranked=[...profiles].sort((a,b)=>b.burden-a.burden).map(p=>({...p,deltaFromAverage:Number((p.burden-avg).toFixed(1))}));
-  const warnings=ranked.filter(p=>p.deltaFromAverage>Math.max(8,avg*.28)).slice(0,5).map(p=>`${p.name}: حمله أعلى من متوسط القسم بنحو ${countOf(Math.round(p.deltaFromAverage), AR.point)}.`);
+  const warnings=ranked.filter(p=>p.deltaFromAverage>Math.max(8,avg*.28)).slice(0,5).map(p=>`${p.name}: حمله أعلى من متوسط القسم بنحو ${countOf(Math.round(p.deltaFromAverage), oblique(AR.point))}.`);
   return {score,label:score>=90?"عادل جدًا":score>=78?"متوازن":score>=62?"يحتاج موازنة":"غير عادل",averageBurden:Number(avg.toFixed(1)),spread:Number(stdev.toFixed(1)),profiles:ranked,warnings};
 }
 
@@ -147,7 +147,7 @@ function computeScheduleHealth2(rows:FSchedule[], universe:FSchedule[], courses:
 function computeSchedulePulse(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
   const analysis=analyze(rows,universe,courses,instructors);const health=buildScheduleHealth2(rows,universe,courses,instructors);const issues:Array<any>=[];
   analysis.alerts.filter((alert:any)=>alert.title!=="الوضع مستقر").forEach((alert:any)=>issues.push({type:"quality",severity:alert.severity,title:alert.title,detail:alert.detail,score:alert.severity==="critical"?100:alert.severity==="warning"?70:30}));
-  const room=health.fragility.roomIntelligence.topRisk;if(room?.singlePoint)issues.push({type:"room",severity:"warning",title:`نقطة اعتماد حساسة: ${room.code}/${room.hall}`,detail:`ترتبط بـ${countOf(room.sessions, AR.appointment)}، ويمكن استيعاب ${room.recoverabilityPct}% منها فقط في قاعات بديلة بنفس الوقت.`,score:82});
+  const room=health.fragility.roomIntelligence.topRisk;if(room?.singlePoint)issues.push({type:"room",severity:"warning",title:`نقطة اعتماد حساسة: ${room.code}/${room.hall}`,detail:`ترتبط بـ${countOf(room.sessions, oblique(AR.appointment))}، ويمكن استيعاب ${room.recoverabilityPct}% منها فقط في قاعات بديلة بنفس الوقت.`,score:82});
   if(health.fairness<75)issues.push({type:"fairness",severity:"warning",title:"عدالة التوزيع تحتاج مراجعة",detail:`مؤشر العدالة ${health.fairness}/100؛ يوجد تفاوت ملحوظ في الأيام والفراغات والأوقات الثقيلة.`,score:74});
   if(health.resilience<70)issues.push({type:"fragility",severity:"warning",title:"الجدول جيد لكنه يحتاج مرونة أكبر",detail:`مؤشر المرونة ${health.resilience}/100. اختبر القاعات والأساتذة والأيام الأعلى تأثيرًا قبل الاعتماد.`,score:78});
   const unique=issues.filter((item,index,array)=>array.findIndex(other=>other.title===item.title)===index).sort((a,b)=>b.score-a.score).slice(0,3);
@@ -165,7 +165,7 @@ export function explainScheduleDecision(baseRows:FSchedule[], universe:FSchedule
   if(activeDays(candidate).join("|")===activeDays(current).join("|"))positives.push("يحافظ على أيام المقرر.");else tradeoffs.push(`يغيّر نمط الأيام من ${activeDays(current).map(d=>DAY_LABEL.get(d)).join("، ")} إلى ${activeDays(candidate).map(d=>DAY_LABEL.get(d)).join("، ")}.`);
   const qualityDelta=after.score-before.score;if(qualityDelta>0)positives.push(`يرفع جودة الجدول ${countOf(qualityDelta, AR.point)}.`);else if(qualityDelta<0)tradeoffs.push(`يخفض جودة الجدول ${countOf(Math.abs(qualityDelta), AR.point)}.`);
   const imbalanceDelta=after.metrics.imbalance-before.metrics.imbalance;if(imbalanceDelta>0)tradeoffs.push(`يزيد عدم توازن الأيام ${imbalanceDelta}% تقريبًا.`);else if(imbalanceDelta<0)positives.push(`يحسن توازن الأيام ${Math.abs(imbalanceDelta)}%.`);
-  const ruleDelta=afterRules.total-beforeRules.total;if(ruleDelta>0)warnings.push(`يضيف ${countOf(ruleDelta, AR.breach)} لقواعد Constraint Canvas.`);else if(ruleDelta<0)positives.push(`يزيل ${countOf(Math.abs(ruleDelta), AR.breach)} من قواعد Constraint Canvas.`);
+  const ruleDelta=afterRules.total-beforeRules.total;if(ruleDelta>0)warnings.push(`يضيف ${countOf(ruleDelta, oblique(AR.breach))} لقواعد Constraint Canvas.`);else if(ruleDelta<0)positives.push(`يزيل ${countOf(Math.abs(ruleDelta), oblique(AR.breach))} من قواعد Constraint Canvas.`);
   const verdict=warnings.length?"ممكن، لكن يحتاج مراجعة":qualityDelta>0||conflictDelta<0||gapDelta<0?"أفضل من الوضع الحالي":"مقبول، بلا مكسب واضح";
   return {verdict,headline:`${current.AdCourseName} · شعبة ${current.SCode}`,before:{score:before.score,conflicts:before.metrics.criticalConflicts,gap:beforeGap.total,imbalance:before.metrics.imbalance,rules:beforeRules.total},after:{score:after.score,conflicts:after.metrics.criticalConflicts,gap:afterGap.total,imbalance:after.metrics.imbalance,rules:afterRules.total},delta:{score:qualityDelta,conflicts:conflictDelta,gap:gapDelta,imbalance:imbalanceDelta,rules:ruleDelta},positives,tradeoffs,warnings,candidate:{id:candidate.id,start:candidate.fstarttime,end:candidate.fendtime,room:`${candidate.AdRoomCode}/${candidate.AdRoomHall}`,days:activeDays(candidate).map(d=>DAY_LABEL.get(d)||d)}};
 }

@@ -58,7 +58,7 @@ import {
   signatureStage, watchesInbox,
   type AcademicRole,
 } from "./src/utils/academicRoles";
-import { AR, ARABIC_COUNT_SCRIPT, countOf, nounFor } from "./src/utils/arabicCount";
+import { AR, ARABIC_COUNT_SCRIPT, countOf, nounFor, oblique } from "./src/utils/arabicCount";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
@@ -2561,7 +2561,7 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   const courseResults = (canSchedule || canAdvanced) ? sortCoursesByName(courses.filter(item => visibleCourseIds.has(item.AdCourseId) && (matches(item.CourseName) || matches(item.CourseCode)))).slice(0, 8).map(item => ({ id: item.AdCourseId, kind: "course", title: item.CourseName, subtitle: item.CourseCode, meta: sectionById.get(item.AdSectionId)?.AdSectionName || "" })) : [];
   const roomMap = new Map<string, {building:string;hall:string;count:number;roomId:string;buildingId?:string}>();
   schedules.forEach(row => { const key=verifiedRoomKey(row); if(!key)return; const prev=roomMap.get(key); roomMap.set(key,{building:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),roomId:String(row.roomId||""),buildingId:row.buildingId,count:(prev?.count||0)+1}); });
-  const roomResults = (canRoom || canSchedule || canAdvanced) ? Array.from(roomMap.values()).filter(item => matches(item.building) || matches(item.hall)).slice(0, 8).map((item,index) => ({ id: item.roomId, kind: "room", title: `مبنى ${item.building} — قاعة ${item.hall}`, subtitle: `${item.count} موعد في الجداول`, meta: "قاعة رسمية", building:item.building, hall:item.hall, buildingId:item.buildingId, roomId:item.roomId })) : [];
+  const roomResults = (canRoom || canSchedule || canAdvanced) ? Array.from(roomMap.values()).filter(item => matches(item.building) || matches(item.hall)).slice(0, 8).map((item,index) => ({ id: item.roomId, kind: "room", title: `مبنى ${item.building} — قاعة ${item.hall}`, subtitle: `${countOf(item.count, AR.appointment)} في الجداول`, meta: "قاعة رسمية", building:item.building, hall:item.hall, buildingId:item.buildingId, roomId:item.roomId })) : [];
   res.json({ schedules: scheduleResults, instructors: instructorResults, courses: courseResults, rooms: roomResults });
 });
 
@@ -2643,7 +2643,7 @@ app.post("/api/colleges", requirePermission(2), async (req: Request, res: Respon
   const code = cleanText(req.body?.AdCollegeCode, TEXT_LIMIT.code);
   const name = cleanText(req.body?.AdCollegeName, TEXT_LIMIT.name);
   if (!code || !name) {
-    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const newC = await Repository.createCollege(code, name);
@@ -2659,7 +2659,7 @@ app.put("/api/colleges/:id", requirePermission(2), async (req: AuthenticatedRequ
   const AdCollegeCode = cleanText(req.body?.AdCollegeCode, TEXT_LIMIT.code);
   const AdCollegeName = cleanText(req.body?.AdCollegeName, TEXT_LIMIT.name);
   if (!AdCollegeCode || !AdCollegeName) {
-    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   try {
@@ -2725,7 +2725,7 @@ app.post("/api/sections", requirePermission(4), async (req: AuthenticatedRequest
   const AdSectionName = cleanText(req.body?.AdSectionName, TEXT_LIMIT.name);
   const collegeId = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
   if (!collegeId || !AdSectionCode || !AdSectionName) {
-    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const college = await Repository.getCollegeById(collegeId);
@@ -2744,7 +2744,7 @@ app.put("/api/sections/:id", requirePermission(4), async (req: AuthenticatedRequ
   const AdSectionName = cleanText(req.body?.AdSectionName, TEXT_LIMIT.name);
   const targetCollegeId = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
   if (!targetCollegeId || !AdSectionCode || !AdSectionName) {
-    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${countOf(TEXT_LIMIT.code, oblique(AR.character))} والاسم حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const current = await Repository.getSectionById(id);
@@ -2791,7 +2791,7 @@ app.post("/api/terms", requirePermission(5), async (req: Request, res: Response)
      termCalendarFields in the repository; the name is what had no bound. */
   const AdTermName = cleanText(req.body?.AdTermName, TEXT_LIMIT.name);
   if (!AdTermName) {
-    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   const newTerm = await Repository.createTerm(AdTermName,
@@ -2804,7 +2804,7 @@ app.put("/api/terms/:id", requirePermission(5), async (req: Request, res: Respon
   const id = parseInt(req.params.id);
   const AdTermName = cleanText(req.body?.AdTermName, TEXT_LIMIT.name);
   if (!AdTermName) {
-    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${TEXT_LIMIT.name} حرفاً)` });
+    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${countOf(TEXT_LIMIT.name, oblique(AR.character))})` });
     return;
   }
   try {
@@ -3825,7 +3825,7 @@ function spatialBurnoutAnalysis(scopeRows:any[],termRows:any[],profile:any,instr
         const needed=travelMinutesFor(profile,from,to),margin=gap-needed;
         const level=margin<0?"high":margin<=10?"guarded":"low";
         if(level==="low")continue;
-        risks.push({instructorId,instructorName:instructorName.get(instructorId)||`أستاذ ${instructorId}`,day:day.key,dayLabel:day.label,fromRowId:prev.id,toRowId:next.id,fromBuilding:from,toBuilding:to,gapMinutes:gap,requiredMinutes:needed,marginMinutes:margin,level,title:level==="high"?"خطر الإرهاق الجسدي":"انتقال جغرافي ضيق",detail:level==="high"?`الفاصل ${gap} دقيقة بينما الانتقال التقريبي يحتاج ${needed} دقيقة.`:`المتاح ${gap} دقيقة والانتقال يحتاج قرابة ${needed} دقيقة؛ هامش الحركة ${margin} دقائق فقط.`});
+        risks.push({instructorId,instructorName:instructorName.get(instructorId)||`أستاذ ${instructorId}`,day:day.key,dayLabel:day.label,fromRowId:prev.id,toRowId:next.id,fromBuilding:from,toBuilding:to,gapMinutes:gap,requiredMinutes:needed,marginMinutes:margin,level,title:level==="high"?"خطر الإرهاق الجسدي":"انتقال جغرافي ضيق",detail:level==="high"?`الفاصل ${countOf(gap, AR.minute)} بينما الانتقال التقريبي يحتاج ${countOf(needed, oblique(AR.minute))}.`:`المتاح ${countOf(gap, AR.minute)} والانتقال يحتاج قرابة ${countOf(needed, oblique(AR.minute))}؛ هامش الحركة ${countOf(margin, AR.minute)} فقط.`});
       }
     }
   }
@@ -3913,7 +3913,7 @@ async function interCampusWarnings(candidate: any, all: any[]) {
       warnings.push({
         type: "travel", severity: "warning", soft: true, rowId: 0,
         message: `انتقال ضيّق بين ${CAMPUS_LABEL[candCampus]} و${CAMPUS_LABEL[otherCampus]}`,
-        detail: `${label}: التنقّل يحتاج قرابة ${need} دقيقة، والمتاح ${gap} دقيقة فقط بين موعدَي الأستاذ. يمكنك الحفظ مع الانتباه لهذا الفارق.`,
+        detail: `${label}: التنقّل يحتاج قرابة ${countOf(need, oblique(AR.minute))}، والمتاح ${countOf(gap, AR.minute)} فقط بين موعدَي الأستاذ. يمكنك الحفظ مع الانتباه لهذا الفارق.`,
       });
     }
   }
@@ -6504,7 +6504,7 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
       if (idle === 0) reasons.push("لا يترك فراغاً للأستاذ");
       else reasons.push(`فراغ ${countOf(Math.round(idle / perDay), AR.minute)}`);
       if (walk === 0) reasons.push("بلا انتقال بين المباني");
-      else reasons.push(`انتقال ${Math.round(walk / perDay)} دقيقة`);
+      else reasons.push(`انتقال ${countOf(Math.round(walk / perDay), AR.minute)}`);
       if (spread === 0) reasons.push("داخل يوم القسم الحالي");
 
       candidates.push({
@@ -6696,7 +6696,7 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
         return sum + perMeeting * SCHEDULE_DAY_KEYS.filter(key => Boolean((item as any)[key])).length;
       }, 0);
       const reasons: string[] = [];
-      if (taughtTerms) reasons.push(`درّس هذا المقرر في ${countOf(taughtTerms, AR.term)}`);
+      if (taughtTerms) reasons.push(`درّس هذا المقرر في ${countOf(taughtTerms, oblique(AR.term))}`);
       if (inSection) reasons.push("من أساتذة القسم هذا الفصل");
       if (sameBuilding) reasons.push("موجود في نفس المبنى ذلك اليوم");
       else if (sameDayRows.length) reasons.push("لديه محاضرات في نفس اليوم");
@@ -7097,7 +7097,7 @@ app.get("/api/schedules/copy-preview", requireAuth, requirePowerAdmin, async (re
     Repository.getSchedulesByScope({collegeId,sectionId,termId:fromTermId}),Repository.getSchedulesByScope({collegeId,sectionId,termId:toTermId}),Repository.getCourses(),Repository.getInstructors()
   ]);
   const {archived:archivedInSource}=await splitArchivedCourseRows(source,sectionId);
-  const sourceIssues=[...new Set([...source.flatMap((row:any)=>schedulePayloadIssues(row)),...(archivedInSource.length?[`يتضمن الفصل ${archivedInSource.length} موعداً لمقررات أصبحت مؤرشفة أكاديمياً ولن تُنسخ إلى فصل جديد.`]:[])])];
+  const sourceIssues=[...new Set([...source.flatMap((row:any)=>schedulePayloadIssues(row)),...(archivedInSource.length?[`يتضمن الفصل ${countOf(archivedInSource.length, AR.appointment)} لمقررات أصبحت مؤرشفة أكاديمياً ولن تُنسخ إلى فصل جديد.`]:[])])];
   const courseById=new Map(courses.map(item=>[item.AdCourseId,item])); const instructorById=new Map(instructors.map(item=>[item.AdInstructorId,item]));
   res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:row.CourseCodeSnapshot||courseById.get(row.AdCourseId)?.CourseCode||"",courseName:row.CourseNameSnapshot||row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:formatScheduleTimeRange(row.fstarttime, row.fendtime),room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
 });
@@ -7129,7 +7129,7 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
 
   const sourceRows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId });
   const {archived:archivedRows}=await splitArchivedCourseRows(sourceRows,sectionId);
-  if(archivedRows.length){res.status(409).json({error:`لا يمكن نسخ الفصل كما هو: ${archivedRows.length} موعداً مرتبط بمقررات مؤرشفة أكاديمياً. أضف بدائلها الحالية يدوياً حتى يبقى الجدول الجديد صحيحاً.`,code:"archived-curriculum-courses"});return;}
+  if(archivedRows.length){res.status(409).json({error:`لا يمكن نسخ الفصل كما هو: ${countOf(archivedRows.length, AR.appointment)} ${nounFor(archivedRows.length, AR.linkedAdj)} بمقررات مؤرشفة أكاديمياً. أضف بدائلها الحالية يدوياً حتى يبقى الجدول الجديد صحيحاً.`,code:"archived-curriculum-courses"});return;}
   const copiedRows = safeDraftRows(sourceRows, collegeId, sectionId, targetTermId);
   const copyIssues = await validateSmartRows(copiedRows, collegeId, sectionId, { resolveHistorical: true });
   if (copyIssues.length) {
@@ -7357,7 +7357,7 @@ async function requestGeminiScheduleLayer(parts: GeminiPart[], options: { json?:
   } catch (error: any) {
     const aborted = error?.name === "AbortError";
     console.error(`Gemini ${model} فشل: ${aborted ? `تجاوز المهلة ${budgetMs}ms` : String(error?.message || error).slice(0, 200)}`);
-    return { failed: true, status: 0, reason: aborted ? `تجاوز المهلة (${Math.round(budgetMs / 1000)} ثانية) أثناء قراءة الملف` : String(error?.message || "تعذر الاتصال بـGemini").slice(0, 200) };
+    return { failed: true, status: 0, reason: aborted ? `تجاوز المهلة (${countOf(Math.round(budgetMs / 1000), AR.second)}) أثناء قراءة الملف` : String(error?.message || "تعذر الاتصال بـGemini").slice(0, 200) };
   } finally {
     clearTimeout(timer);
   }
@@ -7596,7 +7596,7 @@ app.post("/api/intelligence/ripple/:id", requirePermission(7), async (req: Authe
   const beforeSpatial=spatialBurnoutAnalysis(scopeRows,termRows,mobilityProfile,instructors),afterSpatial=spatialBurnoutAnalysis(nextScope,nextUniverse,mobilityProfile,instructors);
   const relevant=afterSpatial.risks.filter((risk:any)=>risk.fromRowId===row.id||risk.toRowId===row.id).slice(0,3);
   forecast.spatialBurnout={beforeScore:beforeSpatial.score,afterScore:afterSpatial.score,delta:afterSpatial.score-beforeSpatial.score,risks:relevant};
-  if(relevant.length){const worst=relevant[0];forecast.effects=[...(forecast.effects||[]),{tone:worst.level==="high"?"warn":"neutral",text:worst.level==="high"?`خطر الإرهاق الجسدي: انتقال ${worst.fromBuilding} → ${worst.toBuilding} يحتاج ${worst.requiredMinutes} دقيقة والمتاح ${worst.gapMinutes} فقط`:`هامش انتقال جغرافي ضيق: ${worst.marginMinutes} دقائق`}];forecast.delta={...(forecast.delta||{}),spatialBurnout:afterSpatial.score-beforeSpatial.score};}
+  if(relevant.length){const worst=relevant[0];forecast.effects=[...(forecast.effects||[]),{tone:worst.level==="high"?"warn":"neutral",text:worst.level==="high"?`خطر الإرهاق الجسدي: انتقال ${worst.fromBuilding} → ${worst.toBuilding} يحتاج ${countOf(worst.requiredMinutes, oblique(AR.minute))} والمتاح ${worst.gapMinutes} فقط`:`هامش انتقال جغرافي ضيق: ${countOf(worst.marginMinutes, AR.minute)}`}];forecast.delta={...(forecast.delta||{}),spatialBurnout:afterSpatial.score-beforeSpatial.score};}
   res.json(forecast);
 });
 
@@ -7645,7 +7645,7 @@ app.post("/api/intelligence/constraints", requirePermission(7), requirePowerAdmi
     if(!check.ok||!check.canonical?.roomId){res.status(400).json({error:check.issues.find(i=>i.severity==="high")?.message||"القاعة غير معتمدة في السجل الرسمي",issues:check.issues});return;}
     roomCode=String(check.canonical.AdRoomCode||"");roomHall=String(check.canonical.AdRoomHall||"");
   }
-  const dayLabel=SCHEDULE_DAYS.find(d=>d.key===day)?.label||"";const label=type==="instructor_latest_end"?`${instructor?.AdInstructorName}: لا محاضرات بعد ${time}`:type==="instructor_day_off"?`${instructor?.AdInstructorName}: ${dayLabel} يوم محجوز`:type==="department_day_off"?`${dayLabel}: يوم محجوز للقسم`:type==="course_room"?`${course?.CourseCode||course?.CourseName}: القاعة ${roomCode}/${roomHall}`:instructor?`${instructor.AdInstructorName}: الفراغ لا يتجاوز ${maxMinutes} دقيقة`:`أي أستاذ: الفراغ لا يتجاوز ${maxMinutes} دقيقة`;
+  const dayLabel=SCHEDULE_DAYS.find(d=>d.key===day)?.label||"";const label=type==="instructor_latest_end"?`${instructor?.AdInstructorName}: لا محاضرات بعد ${time}`:type==="instructor_day_off"?`${instructor?.AdInstructorName}: ${dayLabel} يوم محجوز`:type==="department_day_off"?`${dayLabel}: يوم محجوز للقسم`:type==="course_room"?`${course?.CourseCode||course?.CourseName}: القاعة ${roomCode}/${roomHall}`:instructor?`${instructor.AdInstructorName}: الفراغ لا يتجاوز ${countOf(maxMinutes, oblique(AR.minute))}`:`أي أستاذ: الفراغ لا يتجاوز ${countOf(maxMinutes, oblique(AR.minute))}`;
   const created=await Repository.createScheduleConstraint({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,type:type as any,label,enabled:true,AdInstructorId:(type==="instructor_latest_end"||type==="instructor_day_off"||type==="max_instructor_gap")?(instructorId||undefined):undefined,AdCourseId:type==="course_room"?(courseId||undefined):undefined,day:(type==="instructor_day_off"||type==="department_day_off")&&SCHEDULE_DAYS.some(d=>d.key===day)?day as any:undefined,time:type==="instructor_latest_end"?(time||undefined):undefined,buildingId:type==="course_room"?buildingId:undefined,roomId:type==="course_room"?roomId:undefined,roomCode:type==="course_room"?(roomCode||undefined):undefined,roomHall:type==="course_room"?(roomHall||undefined):undefined,maxMinutes:type==="max_instructor_gap"?maxMinutes:undefined});res.status(201).json(created);
 });
 app.put("/api/intelligence/constraints/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -7708,7 +7708,7 @@ app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: Au
   const proposedAnalysis=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors);
   const safeImprovement=proposedAnalysis.metrics.criticalConflicts<before.metrics.criticalConflicts||(proposedAnalysis.metrics.criticalConflicts===before.metrics.criticalConflicts&&proposedAnalysis.score>=before.score);
   const chosenRows=safeImprovement?proposal.rows:target,changed=safeImprovement?proposal.changed:0,after=safeImprovement?proposedAnalysis:before;
-  const summary=changed?`اقتراح آمن غيّر وقت ${changed} موعداً فقط، مع إبقاء المقرر والأستاذ والأيام والقاعة كما هي. موانع الحفظ ${before.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts}، والجودة ${before.score} ← ${after.score}.`:`حللت البدائل ولم أجد تغييراً آمناً أفضل من الجدول الحالي ضمن القيود نفسها؛ لذلك لم أقترح أي تعديل تلقائي.`;
+  const summary=changed?`اقتراح آمن غيّر وقت ${countOf(changed, oblique(AR.appointment))} فقط، مع إبقاء المقرر والأستاذ والأيام والقاعة كما هي. موانع الحفظ ${before.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts}، والجودة ${before.score} ← ${after.score}.`:`حللت البدائل ولم أجد تغييراً آمناً أفضل من الجدول الحالي ضمن القيود نفسها؛ لذلك لم أقترح أي تعديل تلقائي.`;
   res.json({rows:chosenRows,changed,before,after,summary});
 });
 
@@ -7739,7 +7739,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const figures: Figure[] = [];
   const bars: Bar[] = [];
   let shift: { label: string; before: number|string; after: number|string; better?: boolean } | null = null;
-  let shape: "reading"|"alert"|"gaps"|"crowd"|"investigation"|"move"|"plan"|"rooms" = "reading"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${analysis.metrics.criticalConflicts} موضعاً يحتاج تحقق و${analysis.metrics.avgInstructorGap} دقيقة كمتوسط فراغ للأساتذة.`;
+  let shape: "reading"|"alert"|"gaps"|"crowd"|"investigation"|"move"|"plan"|"rooms" = "reading"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${countOf(analysis.metrics.criticalConflicts, oblique(AR.position), "لا مواضع")} بحاجة إلى تحقق و${countOf(analysis.metrics.avgInstructorGap, AR.minute)} كمتوسط فراغ للأساتذة.`;
   const normalized=prompt.replace(/[؟?]/g,"").toLowerCase();
   const dayMatch=SCHEDULE_DAYS.find(day=>normalized.includes(day.label));
   const hourMatch=normalized.match(/(?:إلى|الى|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?/);
@@ -7786,7 +7786,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
           const gap=timeToMinutes(items[i].fstarttime)-timeToMinutes(items[i-1].fendtime);
           if(gap>0)gaps.push({from:items[i-1].fendtime,to:items[i].fstarttime,mins:gap});
         }
-        summary=items.length?gaps.length?`في ${dayMatch.label} يظهر لهذا الأستاذ ${gaps.length} فراغات بإجمالي ${gaps.reduce((n,g)=>n+g.mins,0)} دقيقة.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;
+        summary=items.length?gaps.length?`في ${dayMatch.label} يظهر لهذا الأستاذ ${countOf(gaps.length, AR.gap)} بإجمالي ${countOf(gaps.reduce((n,g)=>n+g.mins,0), AR.minute)}.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;
         shape="gaps";
         figures.push(
           {label:"فترات الفراغ",value:`${gaps.length}`,tone:gaps.length?"warn":"good"},
@@ -7797,7 +7797,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
         gaps.slice(0,6).forEach((g:any)=>bars.push({label:formatScheduleTimeRange(g.from,g.to),value:g.mins,max:worst,caption:`${Math.floor(g.mins/60)}س ${g.mins%60}د`}));
       }else{
         const load=analysis.professorLoads.find((x:any)=>x.id===requestedInstructor.AdInstructorId);
-        summary=load?`أكبر فراغ لهذا الأستاذ ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، وحمله الأسبوعي ${load.weeklyHours} ساعة.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;
+        summary=load?`أكبر فراغ لهذا الأستاذ ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، وحمله الأسبوعي ${countOf(load.weeklyHours, AR.hour)}.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;
         shape="gaps";
         figures.push(
           {label:"أكبر فراغ",value:`${Math.floor((load?.maxGap||0)/60)}س ${(load?.maxGap||0)%60}د`,tone:(load?.maxGap||0)>=180?"warn":"plain"},
@@ -7819,7 +7819,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
       const threshold=(Number(normalized.match(/(?<!\d)(\d+)\s{0,4}ساع/)?.[1]||3))*60;
       const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);
       const longest=Math.max(0,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
-      summary=long.length?`يوجد ${long.length} أستاذاً بفراغ يومي يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
+      summary=long.length?`يوجد ${countOf(long.length, AR.instructor)} بفراغ يومي يساوي أو يتجاوز ${countOf(Math.round(threshold/60), oblique(AR.hour))}.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
       shape="gaps";
       figures.push(
         {label:"أساتذة بفراغ طويل",value:`${long.length}`,tone:long.length?"warn":"good"},
@@ -7835,8 +7835,8 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     const history=(await Repository.getSchedulesByScope({collegeId,sectionId})).filter(row=>Number(row.AdTermId)!==termId);
     const investigation=investigateCrowding(target,dayMatch.key as any,history);
     summary=`في ${dayMatch.label} يوجد ${countOf(day?.count||0, AR.appointment)}؛ ${investigation.verdict}`;
-    peaks.slice(0,2).forEach((x:any)=>bullets.push(`${x.time}: ${x.count} محاضرات متزامنة.`));
-    bullets.push(`الحركة موزعة على ${investigation.professors} أستاذ و${investigation.rooms} قاعة.`);
+    peaks.slice(0,2).forEach((x:any)=>bullets.push(`${x.time}: ${countOf(x.count, AR.lecture)} في الوقت نفسه.`));
+    bullets.push(`الحركة موزعة على ${countOf(investigation.professors, oblique(AR.instructor))} و${countOf(investigation.rooms, oblique(AR.room))}.`);
     shape="investigation";
     figures.push({label:dayMatch.label,value:`${day?.count||0}`,hint:"موعداً",tone:"plain"},
       {label:"مقابل التاريخ",value:`${investigation.delta>0?"+":""}${investigation.delta}`,tone:investigation.delta>=8?"warn":"good",hint:"نقطة"},
@@ -7851,7 +7851,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     else summary="حدد رمز المقرر والساعة في السؤال، مثال: إذا نقلت 101 إلى الساعة 11، فما الذي سيتأثر؟";
   } else if(normalized.includes("أفضل توزيع")||normalized.includes("افضل توزيع")||normalized.includes("قلل الفراغ")||normalized.includes("تقليل الفراغ")){
     title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
-    summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${proposal.changed} موعداً: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
+    summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${countOf(proposal.changed, oblique(AR.appointment))}: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
     if(dayMatch)bullets.push(`ذكرت ${dayMatch.label}. سأتعامل معه كأولوية تحليل، لكن لن أغيّر نمط أيام المقرر تلقائياً لأن ذلك قد يكون قيداً أكاديمياً.`);
     bullets.push("افتح «المحاكاة» لمراجعة كل تغيير قبل اعتماده.");
     shape="plan";
@@ -7950,7 +7950,7 @@ app.get("/api/intelligence/replay/:id", requirePermission(7), async (req: Authen
       nameOf,
       Number(style?.doorway||0),
     ):null;
-    if(changes.length)events.push({timestamp:b.timestamp,type:"move",title:"تغيّر قرار الموعد",detail:changes.join(" · "),actor:b.userName,tone:b.conflicts<a.conflicts?"good":b.conflicts>a.conflicts?"warn":"neutral",why:why?.text,whyAgainst:why?.against,whySource:why?"مُستنتَج من نسخة ذلك اليوم":undefined});if(a.conflicts===0&&b.conflicts>0)events.push({timestamp:b.timestamp,type:"conflict",title:"ظهر تعارض في هذه المرحلة",detail:`النسخة تحمل ${b.conflicts} علاقة تعارض لهذا الموعد.`,actor:b.userName,tone:"warn"});if(a.conflicts>0&&b.conflicts===0)events.push({timestamp:b.timestamp,type:"resolved",title:"اختفى التعارض الظاهر",detail:"النسخة التالية لم تعد تحمل التعارض السابق لهذا الموعد.",actor:b.userName,tone:"good"})}
+    if(changes.length)events.push({timestamp:b.timestamp,type:"move",title:"تغيّر قرار الموعد",detail:changes.join(" · "),actor:b.userName,tone:b.conflicts<a.conflicts?"good":b.conflicts>a.conflicts?"warn":"neutral",why:why?.text,whyAgainst:why?.against,whySource:why?"مُستنتَج من نسخة ذلك اليوم":undefined});if(a.conflicts===0&&b.conflicts>0)events.push({timestamp:b.timestamp,type:"conflict",title:"ظهر تعارض في هذه المرحلة",detail:`النسخة تحمل ${countOf(b.conflicts, oblique(AR.conflict))} لهذا الموعد.`,actor:b.userName,tone:"warn"});if(a.conflicts>0&&b.conflicts===0)events.push({timestamp:b.timestamp,type:"resolved",title:"اختفى التعارض الظاهر",detail:"النسخة التالية لم تعد تحمل التعارض السابق لهذا الموعد.",actor:b.userName,tone:"good"})}
   drafts.filter(d=>d.rows.some(same)).slice(0,20).forEach(d=>{const r=d.rows.find(same)!;events.push({timestamp:d.updatedAt,type:"draft",title:d.status==="published"?"مرّ عبر مسودة منشورة":"جُرّب بديل داخل المحاكاة",detail:`${d.name} · ${formatScheduleTimeRange(r.fstarttime, r.fendtime)} · ${r.AdRoomCode}/${r.AdRoomHall}`,actor:d.userName,tone:d.status==="published"?"good":"info"})});
   comments.forEach(c=>events.push({timestamp:c.createdAt,type:"comment",title:c.resolved?"ملاحظة أُغلقت":"ملاحظة قرار",detail:c.text,actor:c.userName,tone:c.resolved?"good":"info"}));if(publication)events.push({timestamp:publication.publishedAt,type:"publish",title:"تم اعتماد جدول هذا النطاق",detail:publication.draftId?`الاعتماد مرتبط بالمسودة ${publication.draftId}`:"اعتماد مباشر",actor:publication.userName,tone:"good"});
   audits.filter(a=>a.path===`/schedules/${id}`||a.path===`/api/schedules/${id}`||a.path.endsWith(`/schedules/${id}`)).slice(0,30).forEach(a=>events.push({timestamp:a.timestamp,type:"audit",title:`${a.action} مباشر على الموعد`,detail:`${a.method} ${a.path}`,actor:a.userName,tone:"neutral"}));events.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
@@ -8177,7 +8177,7 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     pagesRequested:[...requestedPages],
     pageCount:pageImages.length,
     guardrail:"Gemini يقرأ ويفسر فقط؛ كل صف يمر عبر validators الحالية قبل حفظ أي مسودة أو نشرها.",
-    message:rows.length?`قرأ Gemini ${rows.length} صفاً للمراجعة.`:"لم أتمكن من استخراج صفوف من الملف.",
+    message:rows.length?`قرأ Gemini ${countOf(rows.length, AR.row)} للمراجعة.`:"لم أتمكن من استخراج صفوف من الملف.",
   });
 });
 
@@ -8680,7 +8680,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
   const geometryRows=recognized.pageDiagnostics.reduce((sum:any,page:any)=>sum+Number(page.extractedRows||0),0);
   if(geometryRows>=3&&parsed.rows.length<Math.ceil(geometryRows*.7)){
-    const message=`أوقفت الاستيراد: حدود الجدول أثبتت ${geometryRows} صفاً تقريباً، لكن المطابقة أعادت ${parsed.rows.length} فقط. هذا فرق غير آمن وقد يعني انزياح أعمدة أو دمج صفوف. لم يتم استيراد أي صف.`;
+    const message=`أوقفت الاستيراد: حدود الجدول أثبتت ${countOf(geometryRows, oblique(AR.row))} تقريباً، لكن المطابقة أعادت ${parsed.rows.length} فقط. هذا فرق غير آمن وقد يعني انزياح أعمدة أو دمج صفوف. لم يتم استيراد أي صف.`;
     if(streaming){emit({type:"error",error:message,code:"COUNT_RECONCILIATION_FAILED",pageDiagnostics:recognized.pageDiagnostics});res.end();return;}
     res.status(422).json({error:message,code:"COUNT_RECONCILIATION_FAILED",pageDiagnostics:recognized.pageDiagnostics});return;
   }
@@ -8976,7 +8976,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     headerBranch:headerPreflight.branch||recognized.headerBranch||undefined,
     headerDepartment:headerPreflight.department||recognized.headerDepartment||undefined,
     headerTerm:headerPreflight.term||recognized.headerTerm||undefined,
-    message:rows.length?`تمت قراءة ${rows.length} شعبة من ${recognized.pageCount} صفحة`:`لم أتمكن من استخراج شعب من الملف`,
+    message:rows.length?`تمت قراءة ${countOf(rows.length, oblique(AR.section))} من ${countOf(recognized.pageCount, oblique(AR.page))}`:`لم أتمكن من استخراج شعب من الملف`,
   };
   if(streaming){emit({type:"done",result});res.end();return;}
   res.json(result);
@@ -9684,7 +9684,7 @@ app.post("/api/approvals/acknowledge-additions", requireAuth, async (req: Authen
     const outcome = acknowledgeAdditions(approval, seenIds ? { ids: seenIds, overflow: Number(req.body?.expectedOverflow || 0) } : undefined);
     const next = withEvent(req, outcome.next, "acknowledge-additions", countOf(outcome.acknowledged, AR.section));
     const saved = await Repository.saveScheduleApproval(next);
-    res.locals.auditChanges = `إقرار رئيس القسم على ${countOf(outcome.acknowledged, AR.section)} أُضيفت بعد اعتماده — ${await approvalScopeLabel(collegeId, sectionId, termId)}`;
+    res.locals.auditChanges = `إقرار رئيس القسم على ${countOf(outcome.acknowledged, oblique(AR.section))} أُضيفت بعد اعتماده — ${await approvalScopeLabel(collegeId, sectionId, termId)}`;
     res.json({ approval: saved, acknowledged: outcome.acknowledged, remaining: outcome.remaining });
   });
 });
@@ -9792,7 +9792,7 @@ app.post("/api/approvals/return", requireAuth, async (req: AuthenticatedRequest,
       : round);
     const next = withEvent(req, { ...base, status: "returned", rounds }, "return", countOf(openNow, AR.note), base.currentRound);
     const saved = await Repository.saveScheduleApproval(next);
-    res.locals.auditChanges = `إرجاع جدول ${await approvalScopeLabel(collegeId, sectionId, termId)} للقسم مع ${countOf(openNow, AR.note)} — الجولة ${base.currentRound}`;
+    res.locals.auditChanges = `إرجاع جدول ${await approvalScopeLabel(collegeId, sectionId, termId)} للقسم مع ${countOf(openNow, oblique(AR.note))} — الجولة ${base.currentRound}`;
     res.json({ approval: saved, returnedNoteCount: openNow });
   });
 });
@@ -10990,7 +10990,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   if(draft.importLayout==="authority-pdf"&&draft.status!=="published"){
     const occupiedNow=await Repository.getSchedulesByScope({collegeId:draft.AdCollegeId,sectionId:draft.AdSectionId,termId:draft.AdTermId});
     if(occupiedNow.length){
-      res.status(409).json({error:`أُضيف إلى هذا الفصل ${occupiedNow.length} موعداً بعد حفظ نسخة PDF. نسخ جدول PDF متاح للفصل الفارغ فقط؛ لم يُنشر شيء ولم يُحذف شيء.`,code:"PDF_TARGET_TERM_OCCUPIED"});
+      res.status(409).json({error:`أُضيف إلى هذا الفصل ${countOf(occupiedNow.length, AR.appointment)} بعد حفظ نسخة PDF. نسخ جدول PDF متاح للفصل الفارغ فقط؛ لم يُنشر شيء ولم يُحذف شيء.`,code:"PDF_TARGET_TERM_OCCUPIED"});
       return;
     }
   }
@@ -11393,16 +11393,16 @@ app.post("/api/intelligence/context-copilot", requirePermission(7), async (req: 
   const {collegeId,sectionId,termId}=smartContextFrom(req); const contextType=String(req.body?.contextType||"schedule"),action=String(req.body?.action||"improve"); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول في هذا النطاق"});return;}
   if(contextType==="schedule"){
-    const row=rows.find(r=>r.id===Number(req.body?.rowId||req.body?.contextId||0)); if(!row){res.status(404).json({error:"الموعد غير موجود في هذا القسم"});return;} const solutions=conflictSolutions(row,universe,5); const options=solutions.slice(0,3).map(sol=>{const candidate={...row,fstarttime:sol.start,fendtime:sol.end,buildingId:sol.buildingId,roomId:sol.roomId,AdRoomCode:sol.roomCode,AdRoomHall:sol.roomHall,locationStatus:"VERIFIED" as const};const why=explainScheduleDecision(rows,universe,candidate,courses,instructors,constraints);return{rank:sol.rank,title:sol.conflicts?`بديل غير قابل للحفظ (${sol.conflicts} مانع)`:"بديل صالح",candidate,verdict:why.verdict,delta:why.delta,positives:why.positives.slice(0,3),tradeoffs:why.tradeoffs.slice(0,2)}}); const best=options[0]; res.json({title:`مساعد القرار · ${row.AdCourseName} / شعبة ${row.SCode}`,summary:best?`أقوى تحسين حالي: ${best.verdict}. الجودة ${best.delta.score>=0?"+":""}${best.delta.score}، وموانع الحفظ ${best.delta.conflicts>=0?"+":""}${best.delta.conflicts}.`:"لا يظهر بديل آمن أفضل من الموعد الحالي.",context:{type:"schedule",rowId:row.id},options,guardrail:"الاقتراحات لا تحفظ شيئاً؛ افتح البديل في نموذج التعديل إذا قررت استخدامه."}); return;
+    const row=rows.find(r=>r.id===Number(req.body?.rowId||req.body?.contextId||0)); if(!row){res.status(404).json({error:"الموعد غير موجود في هذا القسم"});return;} const solutions=conflictSolutions(row,universe,5); const options=solutions.slice(0,3).map(sol=>{const candidate={...row,fstarttime:sol.start,fendtime:sol.end,buildingId:sol.buildingId,roomId:sol.roomId,AdRoomCode:sol.roomCode,AdRoomHall:sol.roomHall,locationStatus:"VERIFIED" as const};const why=explainScheduleDecision(rows,universe,candidate,courses,instructors,constraints);return{rank:sol.rank,title:sol.conflicts?`بديل غير قابل للحفظ (${countOf(sol.conflicts, AR.blocker)})`:"بديل صالح",candidate,verdict:why.verdict,delta:why.delta,positives:why.positives.slice(0,3),tradeoffs:why.tradeoffs.slice(0,2)}}); const best=options[0]; res.json({title:`مساعد القرار · ${row.AdCourseName} / شعبة ${row.SCode}`,summary:best?`أقوى تحسين حالي: ${best.verdict}. الجودة ${best.delta.score>=0?"+":""}${best.delta.score}، وموانع الحفظ ${best.delta.conflicts>=0?"+":""}${best.delta.conflicts}.`:"لا يظهر بديل آمن أفضل من الموعد الحالي.",context:{type:"schedule",rowId:row.id},options,guardrail:"الاقتراحات لا تحفظ شيئاً؛ افتح البديل في نموذج التعديل إذا قررت استخدامه."}); return;
   }
   if(contextType==="room"){
-    const key=String(req.body?.value||req.body?.contextId||""); const intel=buildRoomResilience(rows,universe); const room=intel.rooms.find(r=>r.key===key)||intel.rooms[0]; if(!room){res.status(404).json({error:"لا توجد بيانات قاعات"});return;} res.json({title:`مساعد القرار · القاعة ${room.code}/${room.hall}`,summary:room.singlePoint?`هذه القاعة نقطة اعتماد حساسة: ${room.sessions} مواعيد و${room.recoverabilityPct}% فقط قابلة للنقل إلى قاعات بديلة بنفس الوقت.`:`اعتماد القسم على هذه القاعة تحت السيطرة؛ نسبة الاسترداد التقديرية ${room.recoverabilityPct}%.`,context:{type:"room",key:room.key},options:intel.rooms.filter(r=>r.key!==room.key&&r.risk<room.risk).slice(0,3).map(r=>({title:`${r.code}/${r.hall}`,detail:`مخاطرة ${r.risk}/100 · استخدام ${r.sessions} مواعيد`})),guardrail:"هذه قراءة تشغيلية؛ التوفر النهائي يُفحص عند نقل كل موعد."});return;
+    const key=String(req.body?.value||req.body?.contextId||""); const intel=buildRoomResilience(rows,universe); const room=intel.rooms.find(r=>r.key===key)||intel.rooms[0]; if(!room){res.status(404).json({error:"لا توجد بيانات قاعات"});return;} res.json({title:`مساعد القرار · القاعة ${room.code}/${room.hall}`,summary:room.singlePoint?`هذه القاعة نقطة اعتماد حساسة: ${countOf(room.sessions, AR.appointment)} و${room.recoverabilityPct}% فقط قابلة للنقل إلى قاعات بديلة بنفس الوقت.`:`اعتماد القسم على هذه القاعة تحت السيطرة؛ نسبة الاسترداد التقديرية ${room.recoverabilityPct}%.`,context:{type:"room",key:room.key},options:intel.rooms.filter(r=>r.key!==room.key&&r.risk<room.risk).slice(0,3).map(r=>({title:`${r.code}/${r.hall}`,detail:`مخاطرة ${r.risk}/100 · استخدام ${countOf(r.sessions, oblique(AR.appointment))}`})),guardrail:"هذه قراءة تشغيلية؛ التوفر النهائي يُفحص عند نقل كل موعد."});return;
   }
   if(contextType==="instructor"){
-    const id=Number(req.body?.value||req.body?.contextId||0); const fairness=buildFairnessEngine(rows,instructors); const prof=fairness.profiles.find(p=>p.id===id)||fairness.profiles[0]; if(!prof){res.status(404).json({error:"لا توجد بيانات أستاذ"});return;} const own=rows.filter(r=>r.AdInstructorId===prof.id); const suggestions=own.map(row=>{const best=conflictSolutions(row,universe,2)[0];return best?{rowId:row.id,course:row.AdCourseName,current:formatScheduleTimeRange(row.fstarttime, row.fendtime),candidate:formatScheduleTimeRange(best.start, best.end),room:`${best.roomCode}/${best.roomHall}`,conflicts:best.conflicts}:null}).filter(Boolean).slice(0,4); res.json({title:`مساعد القرار · ${prof.name}`,summary:`حمله ${prof.weeklyHours} ساعة على ${prof.days} أيام، وإجمالي الفراغ ${prof.gapMinutes} دقيقة. ${prof.deltaFromAverage>0?`أعلى من متوسط القسم بـ${Math.round(prof.deltaFromAverage)} نقطة.`:"ضمن متوسط القسم تقريباً."}`,context:{type:"instructor",id:prof.id},options:suggestions,guardrail:"ضغط أيام الأستاذ يحتاج مراجعة أكاديمية؛ الاقتراحات لا تطبق تلقائياً."});return;
+    const id=Number(req.body?.value||req.body?.contextId||0); const fairness=buildFairnessEngine(rows,instructors); const prof=fairness.profiles.find(p=>p.id===id)||fairness.profiles[0]; if(!prof){res.status(404).json({error:"لا توجد بيانات أستاذ"});return;} const own=rows.filter(r=>r.AdInstructorId===prof.id); const suggestions=own.map(row=>{const best=conflictSolutions(row,universe,2)[0];return best?{rowId:row.id,course:row.AdCourseName,current:formatScheduleTimeRange(row.fstarttime, row.fendtime),candidate:formatScheduleTimeRange(best.start, best.end),room:`${best.roomCode}/${best.roomHall}`,conflicts:best.conflicts}:null}).filter(Boolean).slice(0,4); res.json({title:`مساعد القرار · ${prof.name}`,summary:`حمله ${countOf(prof.weeklyHours, AR.hour)} على ${countOf(prof.days, oblique(AR.day))}، وإجمالي الفراغ ${countOf(prof.gapMinutes, AR.minute)}. ${prof.deltaFromAverage>0?`أعلى من متوسط القسم بـ${countOf(Math.round(prof.deltaFromAverage), oblique(AR.point))}.`:"ضمن متوسط القسم تقريباً."}`,context:{type:"instructor",id:prof.id},options:suggestions,guardrail:"ضغط أيام الأستاذ يحتاج مراجعة أكاديمية؛ الاقتراحات لا تطبق تلقائياً."});return;
   }
   if(contextType==="day"){
-    const day=String(req.body?.value||req.body?.contextId||""); if(!SCHEDULE_DAYS.some(d=>d.key===day)){res.status(400).json({error:"اليوم غير صالح"});return;} const plans=createEmergencyPlans("day",day,rows,universe,courses,instructors,constraints).plans; const best=[...plans].sort((a,b)=>b.score-a.score||a.changed-b.changed)[0]; const count=rows.filter(r=>Boolean((r as any)[day])).length; res.json({title:`مساعد القرار · ${SCHEDULE_DAYS.find(d=>d.key===day)?.label}`,summary:`اليوم يحمل ${count} موعداً. أفضل سيناريو تخفيف يغيّر ${best?.changed||0} مواعيد مع جودة ${best?.score||0}/100.`,context:{type:"day",day},options:best?best.rows.filter(r=>{const base=rows.find(x=>x.id===r.id);return base&&rowSignatureServer(base)!==rowSignatureServer(r)}).slice(0,5).map(r=>({rowId:r.id,course:r.AdCourseName,time:formatScheduleTimeRange(r.fstarttime, r.fendtime),days:activeDays(r).map(k=>SCHEDULE_DAYS.find(d=>d.key===k)?.label).join("، ")})):[],guardrail:"تخفيف اليوم معروض كسيناريو فقط ولا يغيّر الجدول الحقيقي."});return;
+    const day=String(req.body?.value||req.body?.contextId||""); if(!SCHEDULE_DAYS.some(d=>d.key===day)){res.status(400).json({error:"اليوم غير صالح"});return;} const plans=createEmergencyPlans("day",day,rows,universe,courses,instructors,constraints).plans; const best=[...plans].sort((a,b)=>b.score-a.score||a.changed-b.changed)[0]; const count=rows.filter(r=>Boolean((r as any)[day])).length; res.json({title:`مساعد القرار · ${SCHEDULE_DAYS.find(d=>d.key===day)?.label}`,summary:`اليوم يحمل ${countOf(count, oblique(AR.appointment))}. أفضل سيناريو تخفيف يغيّر ${countOf(best?.changed||0, oblique(AR.appointment))} مع جودة ${best?.score||0}/100.`,context:{type:"day",day},options:best?best.rows.filter(r=>{const base=rows.find(x=>x.id===r.id);return base&&rowSignatureServer(base)!==rowSignatureServer(r)}).slice(0,5).map(r=>({rowId:r.id,course:r.AdCourseName,time:formatScheduleTimeRange(r.fstarttime, r.fendtime),days:activeDays(r).map(k=>SCHEDULE_DAYS.find(d=>d.key===k)?.label).join("، ")})):[],guardrail:"تخفيف اليوم معروض كسيناريو فقط ولا يغيّر الجدول الحقيقي."});return;
   }
   res.status(400).json({error:"سياق مساعد القرار غير معروف"});
 });
@@ -11702,7 +11702,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
     fsunday:Boolean(row.fsunday),fmonday:Boolean(row.fmonday),ftuesday:Boolean(row.ftuesday),fwednesday:Boolean(row.fwednesday),fthursday:Boolean(row.fthursday),
     building:row.AdRoomCode||"",hall:row.AdRoomHall||"",
   }));
-  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,archivedSkipped:archivedSource.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),issueRowIds,rowIssues,previewRows,guardrail:(archivedSource.length?`لم تُنسخ ${countOf(archivedSource.length, AR.appointment)} لمقررات مؤرشفة أكاديمياً. `:"")+(issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد.")});
+  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,archivedSkipped:archivedSource.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),issueRowIds,rowIssues,previewRows,guardrail:(archivedSource.length?`لم تُنسخ ${countOf(archivedSource.length, AR.appointment)} لمقررات مؤرشفة أكاديمياً. `:"")+(issues.length?`أُنشئت المسودة بنجاح وبها ${countOf(issues.length, oblique(AR.note))} للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد.")});
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -11710,7 +11710,7 @@ app.get("/api/intelligence/brief", requirePermission(7), async (req: Authenticat
 });
 
 app.post("/api/intelligence/meeting-minutes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,constraints,memories]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId),Repository.getScheduleDecisionMemories(collegeId,sectionId,120)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول لبناء محضر قرار"});return;} const war=buildWarRoom(rows,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined); const chosen=war.options?.find((x:any)=>x.id===String(req.body?.optionId||""))||war.options?.[0]; const issueRowId=war.issue?.rowId; const comments=issueRowId?await Repository.getScheduleComments(issueRowId):[]; const recentMemory=memories.filter(m=>!war.issue?.rowId||m.scheduleId===war.issue.rowId||m.AdCourseId===rows.find(r=>r.id===war.issue.rowId)?.AdCourseId).slice(0,5); const minutes={title:"محضر قرار الجدول",problem:war.issue?`${war.issue.courseName} · شعبة ${war.issue.sectionCode} — ${war.issue.conflictCount} موضع يحتاج تحقق قبل الاعتماد.`:"مراجعة عامة للجدول",alternatives:(war.options||[]).map((o:any)=>({id:o.id,title:o.title,reason:o.reason,score:o.score,conflicts:o.conflicts,changed:o.changed})),selected:chosen?{id:chosen.id,title:chosen.title,reason:chosen.reason,score:chosen.score,conflicts:chosen.conflicts,changed:chosen.changed}:null,expectedImpact:chosen?`الجودة ${war.baseline.score} ← ${chosen.score}، وموانع الحفظ ${war.baseline.conflicts} ← ${chosen.conflicts}، وعدد المواعيد المتغيرة ${chosen.changed}.`:"لم يُحدد بديل.",discussion:comments.slice(0,8).map(c=>({text:c.text,user:c.userName,createdAt:c.createdAt,resolved:c.resolved})),memory:recentMemory.map(m=>({reason:m.reason,kind:m.kind,createdAt:m.createdAt,user:m.userName})),approvedBy:String(req.body?.approvedBy||req.user.Name).slice(0,120),generatedAt:new Date().toISOString()}; res.json(minutes);
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,constraints,memories]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId),Repository.getScheduleDecisionMemories(collegeId,sectionId,120)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول لبناء محضر قرار"});return;} const war=buildWarRoom(rows,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined); const chosen=war.options?.find((x:any)=>x.id===String(req.body?.optionId||""))||war.options?.[0]; const issueRowId=war.issue?.rowId; const comments=issueRowId?await Repository.getScheduleComments(issueRowId):[]; const recentMemory=memories.filter(m=>!war.issue?.rowId||m.scheduleId===war.issue.rowId||m.AdCourseId===rows.find(r=>r.id===war.issue.rowId)?.AdCourseId).slice(0,5); const minutes={title:"محضر قرار الجدول",problem:war.issue?`${war.issue.courseName} · شعبة ${war.issue.sectionCode} — ${countOf(war.issue.conflictCount, AR.position)} بحاجة إلى تحقق قبل الاعتماد.`:"مراجعة عامة للجدول",alternatives:(war.options||[]).map((o:any)=>({id:o.id,title:o.title,reason:o.reason,score:o.score,conflicts:o.conflicts,changed:o.changed})),selected:chosen?{id:chosen.id,title:chosen.title,reason:chosen.reason,score:chosen.score,conflicts:chosen.conflicts,changed:chosen.changed}:null,expectedImpact:chosen?`الجودة ${war.baseline.score} ← ${chosen.score}، وموانع الحفظ ${war.baseline.conflicts} ← ${chosen.conflicts}، وعدد المواعيد المتغيرة ${chosen.changed}.`:"لم يُحدد بديل.",discussion:comments.slice(0,8).map(c=>({text:c.text,user:c.userName,createdAt:c.createdAt,resolved:c.resolved})),memory:recentMemory.map(m=>({reason:m.reason,kind:m.kind,createdAt:m.createdAt,user:m.userName})),approvedBy:String(req.body?.approvedBy||req.user.Name).slice(0,120),generatedAt:new Date().toISOString()}; res.json(minutes);
 });
 
 app.get("/api/intelligence/safety-net", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -12089,7 +12089,7 @@ app.post("/api/users/grant-decision-centre", requirePermission(11), requirePower
     granted += 1;
     if (names.length < 40) names.push(user.Name || user.SystemUserLogin || `#${user.SystemUserId}`);
   }
-  res.locals.auditChanges = `منح مركز الذكاء: ${granted} حساب جديد، ${alreadyHad} كان لديه الصلاحية`;
+  res.locals.auditChanges = `منح مركز الذكاء: حسابات جديدة ${granted}، وحسابات كانت لديها الصلاحية ${alreadyHad}`;
   res.json({ granted, alreadyHad, total: users.length, names });
 });
 
@@ -14014,10 +14014,10 @@ app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Req
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const required=graduateThreshold(rule,termName),summer=isSummerTerm(termName);
   const eligible=passedUnits>=required;
-  if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر ${passedUnits} وحدة مجتازة، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}.`});return;}
+  if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر اجتياز ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}.`});return;}
   const proofToken=await issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),nameMatched,specializationMatched,documentKind:"graduation-sheet"});
   res.json({eligible:true,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),termName,summer,
-    message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${passedUnits} وحدة، والمطلوب ${required} حسب بيانات قسمك. يمكنك متابعة الطلب.`,
+    message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} حسب بيانات قسمك. يمكنك متابعة الطلب.`,
     proofToken,confidence:ocr.confidence});
 });
 
@@ -17255,7 +17255,7 @@ function submit(){
   dirty=false;clearDraft();
   var code=x.d.request&&x.d.request.signature&&x.d.request.signature.verifyCode||"";
   host.innerHTML='<div class="done"><div class="tick">✓</div><h1>وصل طلبك إلى القسم</h1>'+
-   '<p class="sub">'+(x.d.changed?(x.d.changed===1?"تعديل واحد":x.d.changed===2?"تعديلان":x.d.changed<=10?esc(String(x.d.changed))+" تعديلات":esc(String(x.d.changed))+" تعديلاً"):"بلا تعديلات")+
+   '<p class="sub">'+esc(countOf(x.d.changed,AR.edit,"بلا تعديلات"))+
    ' · يمكنك فتح الرابط نفسه لمتابعة ما ثُبّت وما رُفض.</p>'+
    /* رمزُ التوقيع يُعطى لصاحبه: هو ما يُطابَق به طلبُه بعد شهرين. */
    (code?'<p class="sub">رمز توقيعك: <b dir="ltr">'+esc(code)+'</b></p>':'')+
@@ -17913,7 +17913,7 @@ async function migrateLegacyAccountsToCommitteeRole(): Promise<void> {
     for (const user of pending) {
       await Repository.updateUser(Number(user.SystemUserId), { Role: DEFAULT_MIGRATION_ROLE });
     }
-    console.log(`[roles] رُحّل ${pending.length} حساباً قائماً إلى صفة «${roleLabel(DEFAULT_MIGRATION_ROLE)}».`);
+    console.log(`[roles] رُحّل ${countOf(pending.length, AR.account)} إلى صفة «${roleLabel(DEFAULT_MIGRATION_ROLE)}».`);
   } catch (error) {
     /* الترحيل راحةٌ لا شرط: غيابُ الدور يُقرأ «رئيس لجنة» في كل موضع على أي
        حال، فلا يجوز أن يمنع فشلُه إقلاعَ الخادم. */
@@ -17944,7 +17944,7 @@ async function reconcileDepartmentHeadPermissions(): Promise<void> {
       await Repository.saveSecurityByUser(Number(user.SystemUserId), perms.filter(id => id !== SCHEDULE_WORKSPACE_FORM_ID));
       changed++;
     }
-    if (changed) console.log(`[roles] أُزيلت شاشةُ الورشة عن ${changed} حساب «رئيس قسم» — يقرأ ولا يعدّل.`);
+    if (changed) console.log(`[roles] أُزيلت شاشةُ الورشة عن ${countOf(changed, oblique(AR.account))} «رئيس قسم» — يقرأ ولا يعدّل.`);
   } catch (error) {
     console.error("[roles] تعذّرت مصالحةُ صلاحيات رؤساء الأقسام:", error instanceof Error ? error.message : error);
   }

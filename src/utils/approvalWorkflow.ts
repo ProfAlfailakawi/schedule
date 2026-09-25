@@ -21,7 +21,7 @@ import type {
   ScheduleAdditionPending, ScheduleApproval, ScheduleApprovalEvent, ScheduleApprovalRound,
   ScheduleApprovalSignature, ScheduleApprovalStatus,
 } from "../types";
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 
 /**
  * ── «خمسة تعارضات مادّي» ────────────────────────────────────────────────────
@@ -240,7 +240,7 @@ export function canSubmit(
        «شعبة» و«شعبتان» و«خمس شعب» — لا «1 شعبة» و«2 شعبة». */
     return {
       ok: false, code: "pending-additions",
-      message: `بانتظار موافقة رئيس القسم على ${countOf(pendingAdditionTotal(approval), AR.section)} أُضيفت بعد اعتماده.`,
+      message: `بانتظار موافقة رئيس القسم على ${countOf(pendingAdditionTotal(approval), oblique(AR.section))} أُضيفت بعد اعتماده.`,
     };
   }
   /* ── التعارضُ المادّي يمنع الإرسال كما يمنع التوقيع والقبول ─────────────
@@ -378,7 +378,7 @@ export function describeWholesaleRefusal(action: WholesaleAction, deadline: Dead
   const what =
     action.kind === "import" ? "استيراد جدولٍ من ملف"
     : action.kind === "copy-term" ? "نسخ الجدول من فصلٍ آخر"
-    : `حذف ${action.deleting} من ${countOf(action.total, AR.appointment)} دفعةً واحدة`;
+    : `حذف ${action.deleting} من ${countOf(action.total, oblique(AR.appointment))} دفعةً واحدة`;
   return `انقضى آخر موعدٍ لتسليم الجداول${when}. ${what} تسليمٌ شامل، ولا يمرّ بعد الموعد. `
     + "التعديلات الجزئية — إضافة شعبة، أو تغيير قاعةٍ أو أستاذٍ أو وقت — تبقى مفتوحة. "
     + "وللتسليم الشامل يلزم تمديدٌ من رئيس التسجيل.";

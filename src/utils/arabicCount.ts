@@ -212,6 +212,7 @@ export const AR = {
   blockFemVerb:  { one: "تمنع", two: "تمنعان", few: "تمنع", many: "تمنع" },
   differentAdj:  { one: "مختلف", two: "مختلفان", few: "مختلفة", many: "مختلفاً" },
   similarAdj:    { one: "متشابه", two: "متشابهان", few: "متشابهة", many: "متشابهاً" },
+  linkedAdj:     { one: "مرتبط", two: "مرتبطان", few: "مرتبطة", many: "مرتبطاً" },
   otherFemAdj:   { one: "أخرى", two: "أخريان", few: "أخرى", many: "أخرى" },
 } as const satisfies Record<string, ArabicNoun>;
 

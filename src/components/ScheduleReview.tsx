@@ -419,7 +419,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                       <div className="review-finding-meta">
                         <span>{finding.article}</span>
                         <span>{findingStatus(finding)}</span>
-                        {finding.groupedCount > 1 ? <span>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} حالات</span> : null}
+                        {finding.groupedCount > 1 ? <span>{countOf(finding.groupedCount, AR.occurrence)}</span> : null}
                       </div>
                     </div>
                   ) : null}
