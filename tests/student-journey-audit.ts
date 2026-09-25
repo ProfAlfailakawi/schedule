@@ -311,6 +311,18 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(proof.includes('code:"programme-unreadable"'), "S12 سطر برنامج غير مقروء يُرفض بسببه");
 }
 
+/* ── S13 القسم يرى رقم الحالة الذي يحمله الطالب ─────────────────────────── */
+{
+  const demand = between(server, 'app.get("/api/schedules/demand"', "كشفُ التسجيل — الطرفان على ورقةٍ واحدة");
+  check(demand.includes("caseRef:caseRefFor(need)"), "S13 قراءة القسم تحمل رقم الحالة");
+  const workspace = read("src/components/IntelligenceWorkspace.tsx");
+  check(!/slice\(0,\s*8\)\.toUpperCase\(\)/.test(workspace) && (workspace.match(/item\.caseRef\s*\|\|\s*"—"/g) || []).length === 2,
+    "S13 الجدول والطباعة يعرضان رقم الحالة، لا بادئة المعرّف");
+  const derivations = ["server.ts", "src/db/repository.ts", "src/utils/studentNeedMerge.ts", "src/components/IntelligenceWorkspace.tsx", "src/components/StudentRegistration.tsx"]
+    .filter(file => /slice\(0,\s*8\)\.toUpperCase\(\)/.test(read(file)));
+  check(derivations.length === 1 && derivations[0] === "src/utils/studentNeedMerge.ts", `S13 اشتقاق رقم الحالة في مكانٍ واحد (${derivations.join(", ")})`);
+}
+
 export function finish() {
   fs.rmSync(privateDir, { recursive: true, force: true });
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -14,7 +14,7 @@
 | S10 | FIXED — STUDENT_PROOF_TTL_MS constant; POST returns code proof-expired (genuine but expired token, studentProofExpired) vs proof-required; page records proof time, reopens the upload before submit when the 20 minutes are nearly up, and on either server code; notes/reason untouched | tests/student-journey-audit.ts §S10 |
 | S11 | FIXED — readStudentProofBody: content-length pre-check + raw-parser entity.too.large → 413 {code:file-too-large} with Arabic guidance; STUDENT_PROOF_MAX_BYTES shared value; page checks the (compressed) size before upload | tests/student-journey-audit.ts §S11 |
 | S12 | FIXED — graduationProgrammeText (documentOcr.ts): text of the single «البرنامج» line up to the next field label; graduationSheetFacts exposes programmeText; proof matches the department against it only; no programme line → 422 programme-unreadable (fail closed) | tests/student-journey-audit.ts §S12 (synthetic sheets); location-registry-audit 122 updated |
-| S13 | TODO | |
+| S13 | FIXED — /api/schedules/demand cases carry caseRef (caseRefFor); IntelligenceWorkspace table + printable list show item.caseRef; the id→caseRef derivation exists only in src/utils/studentNeedMerge.ts (repository caseRefOf aliases it) | tests/student-journey-audit.ts §S13 |
 | S14 | TODO | |
 | S15 | TODO | |
 | S16 | TODO | |
