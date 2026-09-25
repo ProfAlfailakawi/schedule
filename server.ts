@@ -9945,7 +9945,9 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     const collegeId = Number(row.AdCollegeId), sectionId = Number(row.AdSectionId);
     const approval = stored.get(`${collegeId}:${sectionId}`) || emptyApproval(collegeId, sectionId, termId);
     const rowCount = rowsPer.get(`${collegeId}:${sectionId}`) || 0;
-    const openRegistrarNotes = department && approval.status === "returned"
+    /* ملاحظاتُ التسجيل المفتوحة في أي حال (N19): تُكتب والجدول قيد الإعداد أو
+       بعد اعتماده أيضاً، وكان القسم لا يُنبَّه بها إلا بعد «أُرجع». */
+    const openRegistrarNotes = department && (stored.has(`${collegeId}:${sectionId}`))
       ? (await notesWithState(collegeId, sectionId, termId)).filter(note => note.origin === "registrar" && note.state === "open").length
       : 0;
     const pendingRequests = pendingByScope.get(`${collegeId}:${sectionId}`) || [];
@@ -9985,13 +9987,20 @@ app.get("/api/approvals/badge", requireAuth, async (req: AuthenticatedRequest, r
     res.json({ count: approvals.filter(row => row.status === "submitted").length, kind: "waiting" });
     return;
   }
-  if (signatureStage(req.user?.Role)) {
+  const stage = signatureStage(req.user?.Role);
+  if (stage) {
+    /* ما ينتظر هذا الشخص بعينه (N17/N19):
+       - رئيس القسم: كلُّ جدولٍ وقّعته اللجنة وينتظر توقيعه («committee») —
+         كان العدّاد يتجاهله، وهو أوّلُ ما يُطلب منه.
+       - الإضافاتُ التي تنتظر إقراره.
+       - ملاحظاتُ التسجيل المفتوحة في أي حال — لا في «أُرجع» وحده: ملاحظةٌ
+         كُتبت والجدول قيد الإعداد أو بعد اعتماده ملاحظةٌ تنتظر ردّاً أيضاً. */
     let open = 0;
     for (const approval of approvals) {
-      if (approval.status !== "returned" && !approval.pendingAdditions.length) continue;
+      if (stage === "head" && approval.status === "committee") open += 1;
+      open += approval.pendingAdditions.length;
       const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
       open += notes.filter(note => note.origin === "registrar" && note.state === "open").length;
-      open += approval.pendingAdditions.length;
     }
     res.json({ count: open, kind: "notes" });
     return;

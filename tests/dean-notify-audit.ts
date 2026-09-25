@@ -318,5 +318,19 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(center.includes("writeNotifyFocus(item)") && !center.includes("sessionStorage.setItem"), "N16: كاتبُ التركيز وقارئه في ملفٍّ واحد");
 }
 
+/* ══ N17 / N19 — عدّاد رئيس القسم، وملاحظات التسجيل في كل حال ═════════════ */
+{
+  const badge = routeBody('app.get("/api/approvals/badge"');
+  check(badge.includes('if (stage === "head" && approval.status === "committee") open += 1;'), "N17: جدولٌ ينتظر توقيع رئيس القسم يُعدّ في عدّاده");
+  check(!badge.includes('if (approval.status !== "returned" && !approval.pendingAdditions.length) continue;'), "N19: ملاحظات التسجيل تُعدّ في كل حال، لا في «أُرجع» وحده");
+  const bell = routeBody('app.get("/api/notifications"');
+  check(!bell.includes('department && approval.status === "returned"'), "N19: الجرس يقرأ ملاحظات التسجيل المفتوحة في أي حال");
+  const mk = (status: string, notes: number): CenterScope => ({ approval: { ...emptyApproval(1, 11, 9), status } as any, collegeName: "ك", sectionName: "ق", rowCount: 3, openRegistrarNotes: notes, openRequests: 0 });
+  const drafting = buildNotifications({ role: "committeeChair", scopes: [mk("drafting", 2)] });
+  check(drafting.some(item => item.title.includes("ملاحظات التسجيل") && item.tone === "action" && item.view === "scheduleChanges"), "N19: ملاحظاتٌ والجدول قيد الإعداد تُنبّه اللجنة");
+  const acceptedNotes = buildNotifications({ role: "departmentHead", scopes: [mk("accepted", 1)] });
+  check(acceptedNotes.some(item => item.title.includes("ملاحظات التسجيل")), "N19: …وبعد الاعتماد تُنبّه القسم");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

@@ -74,7 +74,7 @@ const WATCHERS = new Set(["registrarDean"]);
 const DEANS = new Set(["dean", "viceDean"]);
 
 /** ما يدور حوله الإشعار — لا الشاشة؛ الشاشةُ يقرّرها `routeFor` بحسب الصفة. */
-export type NotificationKind = "approval" | "returned" | "request" | "students" | "final";
+export type NotificationKind = "approval" | "returned" | "notes" | "request" | "students" | "final";
 
 const SCHEDULE_WORKSPACE_FORM = 7;
 
@@ -96,7 +96,7 @@ export function routeFor(role: string, kind: NotificationKind): NotificationView
   const hasWorkspace = role === "admin" || roleDefinition(role).formIds.includes(SCHEDULE_WORKSPACE_FORM);
   if (kind === "request") return hasWorkspace ? "instructorRequests" : undefined;
   if (role === "departmentHead" || REGISTRAR.has(role) || WATCHERS.has(role)) return "scheduleChanges";
-  if (kind === "returned") return "scheduleChanges";
+  if (kind === "returned" || kind === "notes") return "scheduleChanges";
   return hasWorkspace ? "schedules" : "scheduleChanges";
 }
 
@@ -191,6 +191,15 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           title: `أرسل جدول ${placeOf(scope)} إلى التسجيل`,
           detail: "اكتمل الاعتماد ولم يُرسل بعد.",
           view: routeFor(role, "approval"), ...target(scope),
+        });
+      }
+      /* ملاحظاتُ التسجيل خارج «أُرجع» (N19): تنتظر ردّاً ولو لم يُرجَع الجدول. */
+      if (approval.status !== "returned" && scope.openRegistrarNotes > 0) {
+        items.push({
+          id: key(scope, "registrar-notes"), tone: "action",
+          title: `ملاحظات التسجيل على جدول ${placeOf(scope)}`,
+          detail: `${countOf(scope.openRegistrarNotes, AR.note)} — تنتظر المعالجة أو الردّ.`,
+          view: routeFor(role, "notes"), ...target(scope),
         });
       }
       if (isHead && approval.pendingAdditions.length && !accepted) {
