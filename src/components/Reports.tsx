@@ -2072,8 +2072,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       >
         <header className="query-canvas-head no-print">
           <div className="query-count" aria-live="polite" aria-atomic="true">
-            <b>{num(lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length)}</b>
-            <span>{lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
+            {/* الميزان يعدّ الأقسام لا المواعيد المعتمدة: «0 موعد» فوق جدولٍ فيه أقسامٌ
+                ومواعيد كان يقول للعميد شيئاً غير ما يراه تحته. */}
+            <b>{num(lens === "balance" ? Number(balance?.departments?.length || 0) : lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length)}</b>
+            <span>{lens === "balance" ? nounFor(Number(balance?.departments?.length || 0), AR.department) : lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           {!pending && (results.length || (lens === "balance" && balance) || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
@@ -3007,9 +3009,9 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
         </div>
         {/* النطاقُ كما يقوله الخادم، وإلا «في نطاقك»: العميد لا يرى الجامعة (N5). */}
         {balance.totals.conflicts ? (
-          <span className="balance-flag">موانع الاعتماد {balance.totals.scopeLabel || "في نطاقك"}: <bdi>{countOf(Number(balance.totals.conflicts), AR.blocker)}</bdi></span>
+          <span className="balance-flag">موانع الاعتماد {balance.totals.scopeLabel ? `في ${balance.totals.scopeLabel}` : "في نطاقك"}: <bdi>{countOf(Number(balance.totals.conflicts), AR.blocker)}</bdi></span>
         ) : (
-          <span className="balance-clear">لا موانع اعتماد {balance.totals.scopeLabel || "في نطاقك"}</span>
+          <span className="balance-clear">لا موانع اعتماد {balance.totals.scopeLabel ? `في ${balance.totals.scopeLabel}` : "في نطاقك"}</span>
         )}
       </header>
       <p className="balance-note">يشمل الجداول قيد الإعداد — الأعداد هنا لما كُتب حتى الآن، معتمداً أو لم يُعتمد.</p>

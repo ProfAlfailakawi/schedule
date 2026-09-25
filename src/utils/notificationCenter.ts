@@ -232,8 +232,10 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
           view: routeFor(role, "approval"), ...target(scope),
         });
       }
-      /* ملاحظاتُ التسجيل خارج «أُرجع» (N19): تنتظر ردّاً ولو لم يُرجَع الجدول. */
-      if (approval.status !== "returned" && scope.openRegistrarNotes > 0) {
+      /* ملاحظاتُ التسجيل خارج «أُرجع» (N19): تنتظر ردّاً ولو لم يُرجَع الجدول.
+         إلا والجدولُ عند التسجيل: هي مراجعتُه الجارية، والتعديلُ مقفلٌ حتى يقرّر —
+         فلا يُطلب من القسم فعلٌ لا يملكه. */
+      if (approval.status !== "returned" && approval.status !== "submitted" && scope.openRegistrarNotes > 0) {
         items.push({
           id: key(scope, "registrar-notes"), tone: "action",
           title: `ملاحظات التسجيل على جدول ${placeOf(scope)}`,

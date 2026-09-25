@@ -227,7 +227,7 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(fetchAt > 0 && !before.includes('query.set("collegeId"'), "N4: حالات الاعتماد تُقرأ لكل كليات النطاق");
   check(reports.includes("countOf(state.daysLeft, AR.day"), "N4: الموعد والأيام الباقية لكل قسم (countOf)");
   check(reports.includes('isDeanReader && !filters.collegeId ? "اختر الكلية"'), "N4: عميدٌ بكليتين لم يختر يُقال له ذلك، لا «لم يُعتمد شيء»");
-  check(!reports.includes("على مستوى الجامعة</span>") && reports.includes('balance.totals.scopeLabel || "في نطاقك"'), "N5: لا «على مستوى الجامعة» للعميد");
+  check(!reports.includes("على مستوى الجامعة</span>") && reports.includes('balance.totals.scopeLabel ? `في ${balance.totals.scopeLabel}` : "في نطاقك"'), "N5: لا «على مستوى الجامعة» للعميد");
   check(reports.includes("(موثّقة {num(item.verifiedRooms)})"), "N5: القاعات الموثّقة تُذكر حين يرسلها الخادم");
   check(reports.includes("يشمل الجداول قيد الإعداد"), "N5: الميزان يقول إنه يشمل ما لم يُعتمد");
   const merged = mergeBalanceDepartments([{ sectionId: 11, sectionName: "أ", rows: 4 }],
@@ -335,6 +335,9 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(drafting.some(item => item.title.includes("ملاحظات التسجيل") && item.tone === "action" && item.view === "scheduleChanges"), "N19: ملاحظاتٌ والجدول قيد الإعداد تُنبّه اللجنة");
   const acceptedNotes = buildNotifications({ role: "departmentHead", scopes: [mk("accepted", 1)] });
   check(acceptedNotes.some(item => item.title.includes("ملاحظات التسجيل")), "N19: …وبعد الاعتماد تُنبّه القسم");
+  check(fs.readFileSync(path.join(process.cwd(), "src/utils/notificationCenter.ts"), "utf8").includes('approval.status !== "submitted" && scope.openRegistrarNotes > 0')
+    && fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8").includes('if (approval.status === "submitted") continue;'),
+    "N19: والجدولُ عند التسجيل لا يُطلب من القسم فعلٌ على مراجعةٍ جارية");
 }
 
 /* ══ N18 — الجرس للجاري ولفصل التخطيط ═══════════════════════════════════ */

@@ -10454,6 +10454,8 @@ async function approvalBadgeForTerm(req: AuthenticatedRequest, termId: number): 
     for (const approval of approvals) {
       if (stage === "head" && approval.status === "committee") open += 1;
       open += pendingAdditionTotal(approval);
+      /* والجدولُ عند التسجيل ملاحظاتُه مراجعةٌ جارية لا يملك القسم فيها فعلاً. */
+      if (approval.status === "submitted") continue;
       const notes = await notesWithState(approval.AdCollegeId, approval.AdSectionId, termId);
       open += countOpenRegistrarNotes(notes);
     }
