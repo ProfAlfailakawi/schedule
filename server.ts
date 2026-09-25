@@ -29,6 +29,7 @@ import { termPhase } from "./src/utils/termSequence";
 import { createAttemptLimiter, limiterOptionsFromEnv } from "./src/server/publicAttemptLimiter";
 import { runApprovalAttempts, type ApprovalOnce } from "./src/server/approvalAttempts";
 import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueueEntry } from "./src/server/notificationCache";
+import { createDataContextKey } from "./src/server/dataContextCache";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
@@ -196,16 +197,35 @@ const termChronologyServer = (term: any) => {
 const sortTermsNewestServer = <T extends { AdTermId?: unknown; AdTermName?: unknown }>(rows: readonly T[]): T[] =>
   [...rows].sort((a, b) => termChronologyServer(b) - termChronologyServer(a) || Number(b.AdTermId || 0) - Number(a.AdTermId || 0));
 
-let locationRegistryCache:{at:number;buildings:MasterBuilding[];rooms:MasterRoom[]}|null=null;
+/* ── ذاكرةُ العملية لها عالَمان: الحقيقي، وصندوقُ كل زائرٍ تجريبي ───────────
+ *
+ * البيئةُ التجريبية تعمل داخل الخدمة الحقيقية نفسها: طلبُ الزائر يُربط بصندوقه
+ * (AsyncLocalStorage) فيقرأ Repository بياناتِه هو. أما ذاكرةٌ على مستوى
+ * العملية فلا تعرف ذلك الربط — فكان سجلُّ المباني المحفوظ دقيقةً يمتلئ من أوّل
+ * طلبٍ يسأله: إن كان زائراً تجريبياً حُفظ سجلُّ صندوقه (فارغاً) فرُفض حفظُ
+ * المستخدمين الحقيقيين «اختر مبنى رسميًا من سجل المباني» دقيقةً كاملة، وإن
+ * كان حقيقياً قرأ الزائرُ سجلَّ الجامعة.
+ *
+ * فكلُّ مفتاحٍ لذاكرةٍ تحفظ ما قرأه Repository يمرّ بـdataContextCacheKey
+ * (القاعدة في src/server/dataContextCache.ts). */
+const dataContextCacheKey = createDataContextKey(() => Repository.currentDemoSessionId());
+
+const locationRegistryCache=new Map<string,{at:number;buildings:MasterBuilding[];rooms:MasterRoom[]}>();
 async function readLocationRegistry(force=false){
-  if(!force&&locationRegistryCache&&Date.now()-locationRegistryCache.at<60_000)return locationRegistryCache;
+  const cacheKey=dataContextCacheKey("registry");
+  const held=locationRegistryCache.get(cacheKey);
+  if(!force&&held&&Date.now()-held.at<60_000)return held;
   const [buildings,rooms]=await Promise.all([Repository.getLocationBuildings(),Repository.getLocationRooms()]);
-  const merged=mergeRegistryWithSeed({buildings,rooms});
+  /* بذرةُ السجل مأخوذةٌ من تاريخ الجامعة الحقيقي؛ الصندوقُ التجريبي له سجلُّه
+     الوهميّ وحده (demoSandbox.ts) ولا يُخلط بمباني الجامعة. */
+  const merged=Repository.isDemoRequest()?{buildings:[...buildings],rooms:[...rooms]}:mergeRegistryWithSeed({buildings,rooms});
   merged.buildings.sort((a,b)=>compareLocationCodes(a.officialCode,b.officialCode));
   merged.rooms.sort((a,b)=>compareLocationCodes(a.buildingCode,b.buildingCode)||compareLocationCodes(a.canonicalCode,b.canonicalCode));
-  locationRegistryCache={at:Date.now(),...merged};return locationRegistryCache;
+  const entry={at:Date.now(),...merged};
+  if(locationRegistryCache.size>100)locationRegistryCache.clear();
+  locationRegistryCache.set(cacheKey,entry);return entry;
 }
-function invalidateLocationRegistry(){locationRegistryCache=null;}
+function invalidateLocationRegistry(){locationRegistryCache.delete(dataContextCacheKey("registry"));}
 
 /* ── مواقع الفرع تدخل السجل من الوثيقة المعتمدة ───────────────────────────
  *
@@ -2709,15 +2729,19 @@ app.delete("/api/colleges/:id", requirePermission(2), async (req: AuthenticatedR
   res.json({ success: true });
 });
 
-const collegeMobilityHistoryCache=new Map<number,{expiresAt:number;history:any[]}>();
+const collegeMobilityHistoryCache=new Map<string,{expiresAt:number;history:any[]}>();
 app.get("/api/colleges/:id/mobility", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.params.id||0);if(!collegeId){res.status(400).json({error:"الكلية غير صالحة"});return;}
   if(!req.user.IsAdminUser&&!isScopeAllowed(req,collegeId,0)){res.status(403).json({error:"خارج صلاحيات الكلية"});return;}
   const [college,profile]=await Promise.all([Repository.getCollegeById(collegeId),Repository.getCampusMobilityProfile(collegeId)]);
   if(!college){res.status(404).json({error:"الكلية غير موجودة"});return;}
-  const cachedHistory=collegeMobilityHistoryCache.get(collegeId);
+  const historyKey=dataContextCacheKey(collegeId);
+  const cachedHistory=collegeMobilityHistoryCache.get(historyKey);
   const history=cachedHistory&&cachedHistory.expiresAt>Date.now()?cachedHistory.history:await Repository.getSchedulesByScope({collegeId});
-  if(!cachedHistory||cachedHistory.expiresAt<=Date.now())collegeMobilityHistoryCache.set(collegeId,{history,expiresAt:Date.now()+10*60*1000});
+  if(!cachedHistory||cachedHistory.expiresAt<=Date.now()){
+    if(collegeMobilityHistoryCache.size>100)collegeMobilityHistoryCache.clear();
+    collegeMobilityHistoryCache.set(historyKey,{history,expiresAt:Date.now()+10*60*1000});
+  }
   const usage=new Map<string,number>();history.forEach((row:any)=>{const b=normalizedBuilding(row.AdRoomCode);if(b)usage.set(b,(usage.get(b)||0)+1);});
   /* This list is walked to fill in a travel-time matrix, so it is ordered the
      way a person looks a building up — by its number — not by how busy it is. */
@@ -3587,7 +3611,7 @@ function hallBarterRequestShape(request:HallBarterRequest,sections:any[],college
 }
 
 async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,sectionId:number,termId:number){
-  const cacheKey=`${collegeId}:${sectionId}:${termId}:${String((req.query as any)?.ownerSectionId||"")}:${String((req.query as any)?.day||"")}:${String((req.query as any)?.buildingCode||"")}`;
+  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId}:${String((req.query as any)?.ownerSectionId||"")}:${String((req.query as any)?.day||"")}:${String((req.query as any)?.buildingCode||"")}`);
   const cached=hallBarterBoardCache.get(cacheKey);
   if(cached&&cached.scheduleSerial===driftSerial&&cached.barterSerial===hallBarterSerial&&cached.expiresAt>Date.now())return cached.body;
   /* لا قراءة لكل جداول النظام بعد اليوم: السؤال صار عن هذا الفصل وحده،
@@ -3997,7 +4021,7 @@ const rhythmCache=new Map<string,{serial:number}&DepartmentStyle>();
 async function departmentStyle(row:any):Promise<DepartmentStyle>{
   const collegeId=Number(row?.AdCollegeId||0),sectionId=Number(row?.AdSectionId||0),termId=Number(row?.AdTermId||0);
   if(!collegeId)return{reading:null,doorway:0,memory:null,...NO_COHORT};
-  const key=`${collegeId}:${sectionId}`;
+  const key=dataContextCacheKey(`${collegeId}:${sectionId}`);
   const cached=rhythmCache.get(key);
   if(cached&&cached.serial===driftSerial)
     return{reading:cached.reading,doorway:cached.doorway,memory:cached.memory,
@@ -4309,16 +4333,20 @@ function broadcastScheduleChange(demoSessionId = "") {
  * لا تحمل شيئاً: تقول لكل شاشةٍ مفتوحة «اسأل عن إشعاراتك الآن»، فيسأل كلٌّ
  * بنطاقه هو. فيصل طلبُ الأستاذ أو قرارُ التسجيل في لحظته، لا بعد دقائق.
  */
-function broadcastNotify() {
+/* نبضةٌ من صندوقٍ تجريبي لا توقظ إلا شاشاتِ ذلك الصندوق: قرارٌ وهميّ لا يجعل
+   كلَّ شاشةٍ حقيقية تعيد سؤال جرسها. */
+function broadcastNotify(demoSessionId = "") {
   scheduleEventSerial += 1;
   const payload = `id: ${scheduleEventSerial}\nevent: notify\ndata: {"at":${Date.now()}}\n\n`;
-  for (const [response] of scheduleEventClients) {
+  for (const [response, client] of scheduleEventClients) {
+    if (demoSessionId && client.demoSessionId !== demoSessionId) continue;
     try { response.write(payload); } catch { scheduleEventClients.delete(response); }
   }
 }
 for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests"]) {
   app.use(prefix, (req: Request, res: Response, next: NextFunction) => {
-    if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(); });
+    const demoSessionId = (req as AuthenticatedRequest).demoSessionId || "";
+    if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(demoSessionId); });
     next();
   });
 }
@@ -10395,7 +10423,7 @@ const REGISTRAR_NOTIFY_ROLES = new Set(["registrarHead", "registrarStaff"]);
    العرض التجريبي: لكلِّ جلسةٍ بياناتُها. */
 const studentQueueMemo = createTtlMemo<Map<string, StudentQueueEntry>>({ ttlMs: 60_000 });
 function studentQueueForTerm(termId: number): Promise<Map<string, StudentQueueEntry>> {
-  const key = `${Repository.currentDemoSessionId() || ""}:${termId}`;
+  const key = dataContextCacheKey(termId);
   return studentQueueMemo.get(key, async () => {
     const [termNeeds, allCourses] = await Promise.all([Repository.getStudentNeedsForTerm(termId), Repository.getCourses()]);
     return studentQueueAggregate(termNeeds as any[], allCourses as any[]);
@@ -10410,7 +10438,7 @@ function studentQueueForTerm(termId: number): Promise<Map<string, StudentQueueEn
 const bellBlockingMemo = createTtlMemo<number>({ ttlMs: 60_000 });
 onSchedulesInvalidated(() => bellBlockingMemo.invalidate());
 function bellBlockingCount(collegeId: number, sectionId: number, termId: number, termRows: any[]): Promise<number> {
-  const key = `${Repository.currentDemoSessionId() || ""}:${termId}:${collegeId}:${sectionId}`;
+  const key = dataContextCacheKey(`${termId}:${collegeId}:${sectionId}`);
   return bellBlockingMemo.get(key, async () => {
     const scopeRows = termRows.filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId);
     return countBlockingConflicts(scopeRows, termRows, await approvalBlockerOptions());
@@ -11450,7 +11478,7 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
   const { collegeId, sectionId, termId, section } = await resolveSmartContext(req);
   if (!collegeId || !sectionId || !termId || !section) { res.status(400).json({ error: "لا يوجد قسم أو فصل دراسي متاح للتحليل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const livingKey = `${collegeId}:${sectionId}:${termId}`;
+  const livingKey = dataContextCacheKey(`${collegeId}:${sectionId}:${termId}`);
   const isDemoLiving = Boolean(Repository.currentDemoSessionId());
   if (!isDemoLiving) {
     const held = livingResponseCache.get(livingKey);
@@ -11590,7 +11618,7 @@ app.get("/api/intelligence/department-start-rhythm", requirePermission(7), async
   if(!collegeId||!isScopeAllowed(req,collegeId,sectionId)){
     res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"}); return;
   }
-  const cacheKey=`${collegeId}:${sectionId}:${termId||"latest"}`;
+  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId||"latest"}`);
   const cached=historicalTimeCache.get(cacheKey);
   if(cached&&cached.serial===driftSerial&&cached.expiresAt>Date.now()){res.json(cached.body);return;}
   const [terms,history]=await Promise.all([
@@ -11615,7 +11643,7 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const key = `${collegeId}:${sectionId}:${viewingTermId || "any"}`;
+  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${viewingTermId || "any"}`);
   const cached = driftCache.get(key);
   if (cached && cached.serial === driftSerial) { res.json(cached.body); return; }
 
@@ -13946,7 +13974,7 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
-  const cacheKey = `${Repository.isDemoRequest() ? getCookies(req as any)["session_id"] || "demo" : "live"}:${resolved.link.id}`;
+  const cacheKey = dataContextCacheKey(resolved.link.id);
   /* Asked on every open, outside the payload cache: the term can end while a
      cached payload is still fresh. */
   const linkTerm = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId));
@@ -17029,7 +17057,7 @@ sectionId: allowedOption.sectionId,
   });
 
   res.setHeader("Cache-Control", "no-store");
-  broadcastNotify();
+  broadcastNotify(Repository.currentDemoSessionId());
   res.json({ request: stripForInstructor(saved), changed });
 });
 
