@@ -39,7 +39,7 @@ check(route.length > 200 && page.length > 200, "وكلاهما مقروءٌ لل
 /* ── لا يُفتح بالمحاولة ────────────────────────────────────────────────── */
 
 check(route.includes("staffLookupAllowed(`mycase:${token}`"), "حدُّ المحاولات مفروضٌ كما على بطاقة الأستاذ");
-check(route.includes("validateCivilId(civil)"), "والرقمُ المدنيُّ يُتحقَّق من صحّته، فلا يصل المخزنَ رقمٌ مخترع");
+check(route.includes("validateCivilId(civil).isValid"), "والرقمُ المدنيُّ يُتحقَّق من صحّته، فلا يصل المخزنَ رقمٌ مخترع");
 check(route.includes("civil.length !== 12"), "وطولُه شرط");
 
 /* ── لا يكشف أحداً ─────────────────────────────────────────────────────── */

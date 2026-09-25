@@ -575,11 +575,37 @@ export interface StudentCourseState {
   /** الصفةُ لا الاسم: «موظف التسجيل»، «رئيس لجنة الجدول». */
   byRole?: string;
   at: string;
+  /** حذف الطالبُ هذا المقرّر من طلبه بعد أن قيل فيه شيء — يبقى القرارُ مقروءاً. */
+  droppedByStudent?: boolean;
+  droppedAt?: string;
+}
+
+/**
+ * قرارُ جهةٍ واحدةٍ في طلبٍ لا مقرّرات فيه (حالة الخريج).
+ *
+ * طلبُ الخريج لا يسمّي مقرّراً: يطلب ترتيباً للميداني بسببٍ من قائمةٍ مغلقة
+ * وملاحظاتٍ إلزامية. فالقرارُ فيه قرارٌ في الحالة كلها، لا في مقرّر — وكان
+ * الكشفُ يُسقطه لأنه لا يجد مقرّراً يعلّق عليه قراراً، فلا يُجاب أبداً.
+ * الترتيبُ نفسُه: اللجنةُ أولاً، ثم التسجيل.
+ */
+export interface StudentCaseDecision {
+  /** اللجنة: وافقت/لم توافق. التسجيل: نفّذه/ردّه. */
+  state: "approved" | "rejected";
+  reasonCode?: StudentCourseRejectReason | StudentCommitteeRejectReason;
+  /** «سطرٌ للطالب» — يصله في صفحة حالته. */
+  note?: string;
+  byRole?: string;
+  at: string;
+}
+
+export interface StudentCaseState {
+  committee?: StudentCaseDecision;
+  registrar?: StudentCaseDecision;
 }
 
 export interface StudentNeed {
   id: string;
-  /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
+  /** Keyed HMAC of the civil ID: the duplicate key. On its own it identifies nobody (the identity is in the ciphers below). */
   fingerprint: string;
   AdCollegeId: number;
   /** The student's own scientific section, validated in the link's college. */
@@ -599,6 +625,9 @@ export interface StudentNeed {
   /** Every course this student says they need. */
   courseIds: number[];
   requestType?: "new-course" | "course-conflict" | "graduate";
+  /** The student's name and civil ID, each sealed with field-level AES-256-GCM
+   * (server.ts sealStudentIdentity). Decrypted only for the authorised
+   * department/registration screens — the record is NOT anonymous. */
   nameCipher?: string;
   civilCipher?: string;
   details?: string;
@@ -617,6 +646,12 @@ export interface StudentNeed {
    * صفٌّ ليقول «لا جديد».
    */
   courseStates?: StudentCourseState[];
+  /** قرارُ الحالة كلها حين لا يسمّي الطلبُ مقرّراً (الخريج). */
+  caseState?: StudentCaseState;
+  /** غيّر الطالبُ طلبَ الخريج إلى نوعٍ آخر بعد قرارٍ فيه: متى. */
+  caseDroppedAt?: string;
+  /** آخر إعادة إرسال — السجلُّ يُحدَّث في مكانه ولا يُستبدل. */
+  updatedAt?: string;
   /**
    * رقمُ الحالة كما أُعطي للطالب، ثابتٌ عبر إعادة الإرسال.
    *

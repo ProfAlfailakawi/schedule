@@ -13,7 +13,11 @@ const CACHEABLE_API_PREFIXES=[
   "/api/intelligence/overview","/api/intelligence/drafts","/api/intelligence/versions","/api/intelligence/room","/api/intelligence/professor",
   "/api/audit-logs","/api/form-names","/api/admin-user-options"
 ];
-const isCacheableApi=pathname=>CACHEABLE_API_PREFIXES.some(prefix=>pathname===prefix||pathname.startsWith(prefix+"/")||pathname.startsWith(prefix+"?"));
+/* Student cases carry names and civil IDs. They are never written to the
+   device cache, even though they sit under a cacheable prefix. */
+const PERSONAL_API_PREFIXES=["/api/schedules/demand","/api/student-registration"];
+const isPersonalApi=pathname=>PERSONAL_API_PREFIXES.some(prefix=>pathname===prefix||pathname.startsWith(prefix+"/")||pathname.startsWith(prefix+"?"));
+const isCacheableApi=pathname=>!isPersonalApi(pathname)&&CACHEABLE_API_PREFIXES.some(prefix=>pathname===prefix||pathname.startsWith(prefix+"/")||pathname.startsWith(prefix+"?"));
 /*
  * A build asset carries its own content hash in its filename, so the bytes at
  * that URL can never change. Those are the only requests here that may be

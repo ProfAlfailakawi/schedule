@@ -1184,7 +1184,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const stopSurvey = async (id: string) => {
     const ok = await visualConfirm({
       title: "إيقاف رابط الاستبيان",
-      message: "سيتوقف الرابط فوراً ولن يفتح لأي طالب بعد الآن. الحالات المرسلة تبقى محفوظة. يمكنك إصدار رابط جديد متى شئت.",
+      message: "يتوقف استقبال الطلبات من هذا الرابط فوراً. الحالات المرسلة تبقى محفوظة، ويبقى أصحابها قادرين على متابعة «حالة طلبي» بالرابط نفسه حتى 30 يوماً بعد نهاية الفصل. يمكنك إصدار رابط جديد متى شئت.",
       confirmLabel: "أوقف الرابط",
       tone: "danger",
     });
@@ -1192,7 +1192,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setBusy(true); setError(null);
     try {
       await fetchJson(`/api/share/${encodeURIComponent(id)}`, { method: "DELETE" });
-      setMessage("أُوقف رابط الاستبيان. لم يعد يفتح لأي طالب.");
+      setMessage("أُوقف استقبال الطلبات من هذا الرابط. متابعة «حالة طلبي» تبقى متاحة لمن أرسل حتى 30 يوماً بعد نهاية الفصل.");
       await reload();
     } catch (e: any) {
       setError(smartMessage(e));
@@ -3260,7 +3260,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     const detail=item.requestType==="graduate"?(graduateDetails?`${reason} — ${graduateDetails}`:reason):item.requestType==="course-conflict"?
                       <div className="student-conflict-courses">{courses.map((course:any,index:number)=><span key={`${course.id||course.code}-${index}`} className={Number(course.sectionId)===Number(sectionId)?"own":"other"}><b>{course.name}{course.code?` (${course.code})`:""}</b>{Number(course.sectionId)!==Number(sectionId)&&course.sectionName?<small>{course.sectionName}</small>:null}</span>)}</div>:
                       courses.map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||"—";
-                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{String(item.id||"").slice(0,8).toUpperCase()||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{detail}</td>{showStudentCaseVerification ? <td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:null}</td> : null}<td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
+                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{item.caseRef||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{detail}</td>{showStudentCaseVerification ? <td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:null}</td> : null}<td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
                   })}</tbody></table></div>:<div className="empty-state-compact">لا توجد حالات من هذا النوع في الفصل الحالي.</div>}
                 </> : <div className="empty-state-compact">ستظهر هنا هوية الطالب، قسمه، نوع الطلب، المقررات، التحقق ورقم الحالة.</div>}
               </section>
@@ -5325,7 +5325,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   const units = item.requestType === "graduate" ? `${item.passedUnits ?? "—"} / ${item.requiredUnits ?? "—"}` : "—";
                   return <tr key={item.id}>
                     <td className="num">{(pageIndex * CASES_PER_PAGE + index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
-                    <td dir="ltr">{String(item.id || "").slice(0, 8).toUpperCase() || "—"}</td>
+                    {/* رقمُ الحالة كما يحمله الطالب — من الخادم، لا اشتقاقٌ ثانٍ من معرّف السجلّ. */}
+                    <td dir="ltr">{item.caseRef || "—"}</td>
                     <td>{item.name || "—"}</td>
                     <td dir="ltr">{item.civil || "—"}</td>
                     <td>{item.studentSectionName || "—"}</td>

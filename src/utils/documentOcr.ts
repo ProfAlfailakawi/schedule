@@ -4981,6 +4981,29 @@ export function transcriptFacts(text:string){
  * closed so another academic document can never be accepted merely because it
  * happens to contain a civil ID and a number of credits.
  */
+/**
+ * The student's programme as the sheet prints it: the text on the ONE visual
+ * line that carries the «البرنامج» label, after the label and before any
+ * other field label on that line.
+ *
+ * The specialization check used to search the whole OCR text, so a sheet whose
+ * course list or header merely mentioned another department's words could
+ * «match» it. Only the programme row decides; no programme row → "" and the
+ * caller fails closed.
+ */
+export function graduationProgrammeText(text:string):string{
+  for(const line of String(text||"").split(/\r?\n/)){
+    const folded=fold(line);
+    const label=folded.match(/(?:^|\s)(?:ال)?برنامج(?:\s*:)?(?=\s|$)/);
+    if(!label||label.index===undefined)continue;
+    const after=folded.slice(label.index+label[0].length)
+      .split(/\s(?:ال)?(?:وحدات|رقم|اسم|معدل|خطه|تاريخ|مستوي)(?:\s|$)/)[0]
+      .replace(/[:\d]+/g," ").replace(/\s+/g," ").trim();
+    return after;
+  }
+  return"";
+}
+
 export function graduationSheetFacts(text:string){
   const plain=toAscii(text),folded=fold(text);
   /* Civil IDs are sometimes OCR'd with spaces between digit groups. Recover
@@ -4991,7 +5014,7 @@ export function graduationSheetFacts(text:string){
   const lines=plain.split(/\r?\n/);
   const lineCivil=lines.map(line=>line.replace(/\D/g,""))
     .filter(value=>value.length===12);
-  /* Tesseract often inserts spaces between digit groups (3041 0230 1536).
+  /* Tesseract often inserts spaces between digit groups (3000 1010 0122).
      Recover a 12-digit run from one visual line even when unrelated text or a
      date also exists elsewhere on that line. The server checksum-filters these
      candidates and still requires the exact civil entered by the student. */
@@ -5039,8 +5062,9 @@ export function graduationSheetFacts(text:string){
      stricter than accepting an arbitrary transcript, while keeping the same
      substantive gates: official study-plan title + passed-units field. */
   const isGraduationSheet=titleOk&&passedLabelOk&&(programmeOk||requiredLabelOk||authorityOk);
+  const programmeText=graduationProgrammeText(text);
   return{
-    civil,civilCandidates,requiredUnits,passedUnits,isGraduationSheet,
+    civil,civilCandidates,requiredUnits,passedUnits,isGraduationSheet,programmeText,
     unitCandidates:allUnitCandidates,passedUnitCandidates,requiredUnitCandidates,
     signals:{title:titleOk,programme:programmeOk,requiredUnits:requiredLabelOk,passedUnits:passedLabelOk,authority:authorityOk},
     text:plain.slice(0,20000),normalizedText:folded.slice(0,20000),

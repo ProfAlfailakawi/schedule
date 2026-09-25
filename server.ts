@@ -59,6 +59,10 @@ import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
+import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
+import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
+import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
+import { termHasEnded, termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -4251,7 +4255,9 @@ function broadcastNotify() {
     try { response.write(payload); } catch { scheduleEventClients.delete(response); }
   }
 }
-for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests"]) {
+/* «/api/student-registration»: قرارُ اللجنة يصل التسجيلَ، وقرارُ التسجيل يصل
+   القسمَ، في لحظته — كما يصل طلبُ الأستاذ. */
+for (const prefix of ["/api/approvals", "/api/schedule-notes", "/api/instructor-requests", "/api/student-registration"]) {
   app.use(prefix, (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") res.on("finish", () => { if (res.statusCode < 300) broadcastNotify(); });
     next();
@@ -12868,6 +12874,13 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
   const termName = terms.find(row => row.AdTermId === termId)?.AdTermName || "";
+  /* A survey collects requests for a term that is still ahead or running. A
+     link issued for an ended or closed term would only gather answers nobody
+     can act on. (Survey links only; other link kinds are unchanged.) */
+  if (kind === "survey" && surveyTermEnded(terms.find(row => Number(row.AdTermId) === termId))) {
+    res.status(409).json({ error: "انتهى هذا الفصل، فلا يُصدَر له رابط استبيان. اختر الفصل القادم.", code: "term-ended" });
+    return;
+  }
   const label = kind === "staff"
     ? `بطاقات الأساتذة · ${termName}`.trim()
     : kind === "survey"
@@ -13005,6 +13018,9 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   // A staff link is a door to one card, never to the department's whole feed.
   if (resolved.link.kind === "staff") { res.status(404).json({ error: "هذا الرابط بطاقة أستاذ" }); return; }
+  /* A student survey link opens the survey and the student's status — never
+     the department's timetable. */
+  if (resolved.link.kind === "survey") { res.status(404).json({ error: "هذا الرابط استبيان للطلبة" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.json(await buildSharePayload(resolved.link));
@@ -13069,7 +13085,7 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
-  if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+  if (resolved.link.kind === "staff" || resolved.link.kind === "survey") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   /* A lecture cancelled on one specific date disappears from that one date in
@@ -13287,9 +13303,12 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
  * girls' survey are two links, issued the same way as any other.
  *
  * The civil ID is checked against the Kuwaiti checksum — an invented number
- * never reaches the store — then hashed and discarded. The name and civil ID are stored with field-level encryption because the
- * authorised department explicitly needs them to act on a case. The key is
- * shared across server instances; the fingerprint remains the duplicate key.
+ * never reaches the store. It is then kept in two forms: a keyed HMAC
+ * fingerprint (the duplicate key, which identifies nobody on its own) AND,
+ * together with the name, a field-level AES-256-GCM ciphertext, because the
+ * authorised department and registration need to know who a case belongs to.
+ * Neither plaintext is logged or sent to anyone outside those screens; an
+ * existing case is opened on the public pages only with civil ID + case number.
  */
 let studentCaseSecretPromise: Promise<string> | null = null;
 const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getStudentCaseSecret();
@@ -13317,18 +13336,9 @@ const openStudentIdentity=async(value?:string)=>{
   }
 };
 
-type DegreeRule={degreeUnits:number;fieldTrainingRequired:number;graduateRegularPassed:number;graduateSummerPassed:number};
-/** Internal regulation table. It is never sent with the public survey; only
- * the eligibility verdict and the applied threshold are returned after proof. */
-const degreeRuleFromName=(sectionName:string):DegreeRule=>{
-  const name=String(sectionName||"");
-  const degreeUnits=/فرنسي/.test(name)?132:/انجليزي|إنجليزي|تربية خاصة|تفوق|إعاقة|صعوبات/.test(name)?134:130;
-  return degreeUnits===130
-    ?{degreeUnits,fieldTrainingRequired:102,graduateRegularPassed:107,graduateSummerPassed:109}
-    :degreeUnits===132
-      ?{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:109,graduateSummerPassed:111}
-      :{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:111,graduateSummerPassed:113};
-};
+/** The name-derived SUGGESTION lives once, in src/utils/degreeRules.ts. It is
+ * never a rule a student is measured against until the department saves it. */
+const degreeRuleFromName=suggestedDegreeRule;
 
 /**
  * The rule a department is actually judged by.
@@ -13344,7 +13354,7 @@ const degreeRuleFromName=(sectionName:string):DegreeRule=>{
  */
 const degreeRuleForSection=async(sectionId:number,sectionName:string):Promise<DegreeRule&{reviewed:boolean}>=>{
   const stored=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===Number(sectionId));
-  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:true};
+  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:false};
   return{
     degreeUnits:Number(stored.degreeUnits),
     fieldTrainingRequired:Number(stored.fieldTrainingRequired),
@@ -13378,13 +13388,44 @@ const storedDegreeRuleForSection=async(sectionId:number):Promise<DegreeRule|null
 const isSummerTerm=(termName:string)=>/صيفي|صيفى|summer/i.test(String(termName||""));
 const graduateThreshold=(rule:DegreeRule,termName:string)=>
   isSummerTerm(termName)?Number(rule.graduateSummerPassed):Number(rule.graduateRegularPassed);
+/** How long a verified graduation sheet stays usable in one page session. */
+const STUDENT_PROOF_TTL_MS=20*60_000;
 const issueStudentProof=async(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;degreeUnits:number;nameMatched:boolean;specializationMatched:boolean;documentKind:"graduation-sheet"})=>{
-  const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+20*60_000})).toString("base64url");
+  const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+STUDENT_PROOF_TTL_MS})).toString("base64url");
   const signature=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");return`${body}.${signature}`;
+};
+/** A genuine proof whose time ran out — told apart from a missing or forged one
+ * so the page can reopen the upload instead of a dead end. */
+const studentProofExpired=async(token:string)=>{
+  try{const[body,signature]=String(token||"").split("."),expected=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");if(!body||signature!==expected)return false;const payload=JSON.parse(Buffer.from(body,"base64url").toString("utf8"));return Number(payload.exp)<=Date.now();}catch{return false;}
 };
 const verifyStudentProof=async(token:string)=>{
   try{const[body,signature]=String(token||"").split("."),expected=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");if(!body||signature!==expected)return null;const payload=JSON.parse(Buffer.from(body,"base64url").toString("utf8"));return Number(payload.exp)>Date.now()?payload:null;}catch{return null;}
 };
+
+/**
+ * ── رقمُ الحالة هو المفتاح الثاني ───────────────────────────────────────────
+ *
+ * الرقمُ المدنيُّ ليس سرّاً: يعرفه الزميلُ والقريب، ويُكتب على كل استمارة.
+ * فكان من يعرف رقمَ زميلٍ يفتح الاستبيان فيرى اسمه وقسمه، ثم يُرسل باسمه
+ * طلباً يمحو طلبه. صار الطلبُ القائمُ لا يُقرأ ولا يُعدَّل ولا تُعاد إليه
+ * صحيفةُ التخرج المتحقَّق منها إلا بالرقم المدني **ورقم الحالة** الذي
+ * أُعطي لصاحبه عند الإرسال.
+ */
+const normalizeCaseRef=(value:unknown)=>toEnglishDigits(value).toUpperCase().replace(/[^0-9A-Z]/g,"").slice(0,16);
+/** The one stored request of this hand (fingerprint + term + survey department). */
+const priorNeedForHand=async(link:any,civil:string)=>{
+  const fingerprint=await surveyFingerprint(civil);
+  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  return (needs as any[])
+    .filter((need:any)=>String(need?.fingerprint||"")===fingerprint
+      &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId))
+    .sort((a:any,b:any)=>String(b.createdAt).localeCompare(String(a.createdAt)))[0]||null;
+};
+const caseRefMatches=(need:any,supplied:unknown)=>Boolean(need)&&normalizeCaseRef(supplied)===normalizeCaseRef(caseRefFor(need));
+/** Only a first letter leaves the server before the case number is proven. */
+const maskedInitial=(name:string)=>{const first=Array.from(String(name||"").trim())[0]||"";return first?`${first}…`:"";};
+const CASE_REF_REQUIRED="لهذا الرقم المدني طلبٌ سابق في هذا الاستبيان. أدخل رقم الحالة الذي ظهر لك عند الإرسال لتعديله. فقدت الرقم؟ راجع القسم.";
 
 /** A successful graduation-sheet verification belongs to the student + own
  * section + survey department + term, not to one particular request type. A
@@ -13392,7 +13433,9 @@ const verifyStudentProof=async(token:string)=>{
  * of asking the student to upload the same official sheet again. The current
  * academic rule is re-applied every time; stale eligibility never survives a
  * rule change. */
-const reusableGraduateVerification=async(link:any,civil:string,sectionId:number)=>{
+const reusableGraduateVerification=async(link:any,civil:string,sectionId:number,caseRef:unknown)=>{
+  /* A verified sheet is reused only for the holder of the case number too. */
+  if(!caseRefMatches(await priorNeedForHand(link,civil),caseRef))return null;
   const fingerprint=await surveyFingerprint(civil);
   const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
   const prior=(needs as any[]).find((need:any)=>
@@ -13442,9 +13485,8 @@ const reusableStudentIdentity=async(link:any,civil:string)=>{
   return{fingerprint,name:name.trim(),civil:storedCivil,sectionId,needId:String(prior.id||"")};
 };
 
-const asciiDigits = (value: unknown) => String(value ?? "")
-  .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
-  .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
+/* One numeric alphabet: the shared converter, not a second copy of it. */
+const asciiDigits = toEnglishDigits;
 
 const surveyCohort = (sectionName: string) => {
   const text = String(sectionName || "");
@@ -13452,6 +13494,16 @@ const surveyCohort = (sectionName: string) => {
   if (/بنين|طلاب|ذكور/.test(text)) return { cohort: "boys", cohortLabel: "طلاب" };
   return { cohort: "mixed", cohortLabel: "طلبة القسم" };
 };
+
+/**
+ * The courses a survey treats as ACTIVE for one department — one rule for the
+ * page that lists them (GET), the answer that is checked (POST) and the
+ * department's reading of the answers (demand). GET used curriculumOverview,
+ * which drops catalogue courses that have no plan membership, while POST and
+ * demand used getOperationalCourseIds, which keeps them: a course could be
+ * accepted and counted but never offered, or the reverse.
+ */
+const surveyActiveCourseIds = (sectionId: number): Promise<Set<number>> => Repository.getOperationalCourseIds(sectionId);
 
 function surveyCourseIdsForSection(courses: any[], history: any[], sectionId: number) {
   const taught = new Map<number, number>();
@@ -13469,11 +13521,12 @@ app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res
   const byId=new Map(stored.map(row=>[Number(row.AdSectionId),row]));
   res.json(sections.map((section:any)=>{
     const saved=byId.get(Number(section.AdSectionId));
-    // Defaults are stable system values. A department may edit them explicitly,
-    // but no confirmation banner or approval gate is required merely to use them.
+    /* An unsaved row is a SUGGESTION from the department name, and says so.
+       Marking it reviewed made the screen present it as the current rule while
+       graduate proof (which requires a saved rule) refused every student. */
     const fixed=degreeRuleFromName(String(section.AdSectionName||""));
     const rule=saved||{...fixed,AdSectionId:section.AdSectionId,updatedAt:"",updatedBy:""};
-    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:true,suggested:false};
+    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:Boolean(saved),suggested:!saved};
   }));
 });
 
@@ -13500,8 +13553,18 @@ app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: Authen
     AdSectionId:sectionId,degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed,
     updatedAt:new Date().toISOString(),updatedBy:String(req.user?.Name||""),
   });
+  /* The public survey tells each department whether graduate proof is open;
+     a just-saved rule must not wait out the payload cache. */
+  surveyPayloadCache.clear();
   res.json(saved);
 });
+
+/**
+ * انتهى الفصلُ الذي يجمع له الاستبيان: مرّ تاريخُ نهايته، أو أعلن صاحبُ
+ * الصلاحية انتهاءه. قاعدةٌ واحدة يسألها إصدارُ الرابط، وقراءتُه، والإرسال.
+ */
+const surveyTermEnded = (term: any): boolean => Boolean(term) && (term.AdTermClosed === true || termHasEnded(term));
+const SURVEY_TERM_ENDED = "انتهى هذا الفصل، ولم يعد الاستبيان يستقبل طلبات. تابع طلبك السابق من «حالة طلبي» أو راجع القسم.";
 
 /* ── قائمةُ مقرّرات الاستبيان تُبنى مرّةً لكل رابط ────────────────────────
  * بناؤها يقرأ أرشيفَ الجداول كلّه (عشر سنوات) وخطةَ كل قسم. وكان يُعاد لكل
@@ -13515,6 +13578,14 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
   const cacheKey = `${Repository.isDemoRequest() ? getCookies(req as any)["session_id"] || "demo" : "live"}:${resolved.link.id}`;
+  /* Asked on every open, outside the payload cache: the term can end while a
+     cached payload is still fresh. */
+  const linkTerm = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId));
+  if (surveyTermEnded(linkTerm)) {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ termEnded: true, message: SURVEY_TERM_ENDED, term: String((linkTerm as any)?.AdTermName || ""), statusUrl: `/m/${encodeURIComponent(resolved.link.id)}` });
+    return;
+  }
   const cached = surveyPayloadCache.get(cacheKey);
   if (cached && Date.now() - cached.at < SURVEY_PAYLOAD_TTL_MS) {
     res.setHeader("Cache-Control", "no-store");
@@ -13529,14 +13600,18 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
      from its own history, newest first. A catalogue entry nobody has taught in
      a decade is not something to ask a student about. */
   const scientificSections=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  const linkTermName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const sectionOptions=(await Promise.all(scientificSections.map(async(section:any)=>{
     const sid=Number(section.AdSectionId),{taught}=surveyCourseIdsForSection(courses,history,sid);
-    const overview=await curriculumOverview(sid);
-    const operational=new Set((overview?.operationalCourseIds||[]).map(Number));
+    /* Graduate proof needs the department's SAVED rule. The page learns it
+       here, before the student uploads anything, instead of after OCR. */
+    const savedRule=await storedDegreeRuleForSection(sid);
+    const graduateRule=savedRule?{saved:true,threshold:graduateThreshold(savedRule,linkTermName)}:{saved:false};
+    const operational=await surveyActiveCourseIds(sid);
     const offered=courses.filter((course:any)=>Number(course.AdSectionId)===sid&&operational.has(Number(course.AdCourseId)))
       .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
       .sort((a:any,b:any)=>b.lastTaught-a.lastTaught||String(a.code).localeCompare(String(b.code),"ar"));
-    return{id:section.AdSectionId,name:section.AdSectionName,courses:offered};
+    return{id:section.AdSectionId,name:section.AdSectionName,courses:offered,graduateRule};
   }))).sort((a:any,b:any)=>String(a.name).localeCompare(String(b.name),"ar"));
   const offered=sectionOptions.find((section:any)=>Number(section.id)===Number(resolved.link.AdSectionId))?.courses||[];
 
@@ -13567,16 +13642,40 @@ app.post("/api/public/survey/:token/identity-status", async (req:Request,res:Res
   if(!staffLookupAllowed(`identity:${token}`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة."});return;}
   const civil=asciiDigits(req.body?.civil).replace(/\D/g,"");
   if(!validateCivilId(civil).isValid){res.status(400).json({error:"الرقم المدني غير صحيح"});return;}
-  const prior=await reusableStudentIdentity(resolved.link,civil);
-  if(!prior){res.setHeader("Cache-Control","no-store");res.json({verified:false});return;}
-  const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===Number(prior.sectionId)&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
-  if(!section){res.setHeader("Cache-Control","no-store");res.json({verified:false});return;}
   res.setHeader("Cache-Control","no-store");
+  const priorNeed=await priorNeedForHand(resolved.link,civil);
+  if(!priorNeed){res.json({exists:false,verified:false});return;}
+  const prior=await reusableStudentIdentity(resolved.link,civil);
+  const initial=maskedInitial(String(prior?.name||""));
+  const suppliedRef=normalizeCaseRef(req.body?.caseRef);
+  /* Without the case number: that a request exists, and one masked letter —
+     never the decrypted name or department. */
+  if(!suppliedRef){res.json({exists:true,verified:false,initial});return;}
+  if(!caseRefMatches(priorNeed,suppliedRef)){
+    res.status(403).json({exists:true,verified:false,initial,code:"case-ref-mismatch",error:"رقم الحالة لا يطابق الطلب المحفوظ لهذا الرقم المدني. فقدت الرقم؟ راجع القسم."});return;
+  }
+  const sections=await Repository.getSections();
+  const sectionId=Number(prior?.sectionId||priorNeed.studentSectionId||priorNeed.AdSectionId||0);
+  const section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  const courses=await Repository.getCourses();
+  const courseById=new Map((courses as any[]).map((row:any)=>[Number(row.AdCourseId),row]));
+  const stateOf=(id:number)=>(priorNeed.courseStates||[]).find((state:any)=>Number(state.courseId)===Number(id));
   res.json({
-    verified:true,identityMatched:true,
-    name:String(prior.name||""),
-    sectionId:Number(prior.sectionId),
-    sectionName:String((section as any).AdSectionName||"")
+    exists:true,verified:true,identityMatched:Boolean(prior),
+    name:String(prior?.name||""),
+    sectionId:section?Number(sectionId):0,
+    sectionName:String((section as any)?.AdSectionName||""),
+    /* What the new answer will update, shown before the student replaces it. */
+    summary:{
+      caseRef:caseRefFor(priorNeed),
+      requestType:String(priorNeed.requestType||"new-course"),
+      submittedAt:String(priorNeed.createdAt||""),
+      updatedAt:String(priorNeed.updatedAt||""),
+      graduateReason:String(priorNeed.graduateReason||""),
+      caseStatus:isCaseLevelNeed(priorNeed)?studentCaseStatus(priorNeed.caseState):"",
+      courses:(priorNeed.courseIds||[]).map((id:any)=>{const course:any=courseById.get(Number(id));const state:any=stateOf(Number(id));
+        return{id:Number(id),code:String(course?.CourseCode||""),name:String(course?.CourseName||`مقرر ${id}`),state:String(state?.state||"")};}),
+    },
   });
 });
 
@@ -13590,7 +13689,7 @@ app.post("/api/public/survey/:token/proof-status", async (req:Request,res:Respon
   const sections=await Repository.getSections();
   const section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
   if(!section){res.status(400).json({error:"القسم العلمي غير صالح"});return;}
-  const verified=await reusableGraduateVerification(resolved.link,civil,sectionId);
+  const verified=await reusableGraduateVerification(resolved.link,civil,sectionId,(req.body||{}).caseRef);
   res.setHeader("Cache-Control","no-store");
   if(!verified){res.json({verified:false});return;}
   res.json({
@@ -13599,15 +13698,34 @@ app.post("/api/public/survey/:token/proof-status", async (req:Request,res:Respon
   });
 });
 
-app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet-stream",limit:"14mb"}), async (req:Request,res:Response)=>{
+/* A sheet over the limit used to fall through to the generic error handler: the
+   student saw a raw failure with no hint that the FILE was the problem. The
+   limit is one number, told to the page and enforced here with a clear 413. */
+const STUDENT_PROOF_MAX_BYTES=14*1024*1024;
+const STUDENT_PROOF_TOO_LARGE="حجم الملف أكبر من 14 ميغابايت. صوّر الصفحة الرسمية وحدها أو احفظها PDF بحجمٍ أصغر ثم ارفعها.";
+const studentProofBody=express.raw({type:"application/octet-stream",limit:STUDENT_PROOF_MAX_BYTES});
+const readStudentProofBody=(req:Request,res:Response,next:NextFunction)=>{
+  if(Number(req.get("content-length")||0)>STUDENT_PROOF_MAX_BYTES){res.status(413).json({code:"file-too-large",error:STUDENT_PROOF_TOO_LARGE});return;}
+  studentProofBody(req,res,(error?:any)=>{
+    if(error&&(error.type==="entity.too.large"||Number(error.status)===413)){res.status(413).json({code:"file-too-large",error:STUDENT_PROOF_TOO_LARGE});return;}
+    next(error);
+  });
+};
+app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Request,res:Response)=>{
   const token=String(req.params.token||""),resolved=await resolveShareToken(token);
   if("error"in resolved){res.status(resolved.status).json({error:resolved.error});return;}
   if(resolved.link.kind!=="survey"){res.status(404).json({error:"هذا الرابط ليس استبياناً"});return;}
   if(!staffLookupAllowed(`${token}:proof`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة."});return;}
+  if(surveyTermEnded((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId)))){res.status(409).json({error:SURVEY_TERM_ENDED,code:"term-ended"});return;}
   const civil=asciiDigits(decodeURIComponent(String(req.get("x-student-civil")||""))).replace(/\D/g,""),name=decodeURIComponent(String(req.get("x-student-name")||"")).trim(),sectionId=Number(req.get("x-student-section")||0);
   if(!validateCivilId(civil).isValid||name.length<3){res.status(400).json({error:"أكمل الاسم والرقم المدني الصحيح أولاً"});return;}
   const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
   if(!section){res.status(400).json({error:"القسم العلمي غير صالح"});return;}
+  /* The saved academic rule is a precondition, checked BEFORE the expensive
+     OCR: without it no sheet can be judged, so reading one only burned the
+     student's upload and the server's memory to say «no rule» afterwards. */
+  const rule=await storedDegreeRuleForSection(sectionId);
+  if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم.",code:"no-degree-rule"});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!bytes.length){res.status(400).json({error:"ارفع صحيفة التخرج PDF أو صورة واضحة"});return;}
   const mime=String(req.get("x-file-type")||"application/pdf").slice(0,80);
   let ocr;
@@ -13621,7 +13739,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
      noise by checksum, then accept the entered civil when it appears either as
      one token or as digit groups on ONE visual line. No digit is repaired or
      guessed. This restores the official Authority screenshot where Tesseract
-     may emit «3041 0230 1536» instead of «304102301536». */
+     may emit «3000 1010 0122» instead of «300010100122». */
   const proofAscii=asciiDigits(String(ocr.text||""));
   const escapedCivil=civil.split("").map(d=>d.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("[ \t\u00a0\u200e\u200f.-]{0,3}");
   const civilVisible=civilCandidates.includes(civil)||new RegExp(`(?:^|[^0-9])${escapedCivil}(?:[^0-9]|$)`).test(proofAscii);
@@ -13639,12 +13757,16 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
      prints the full civil name. Civil ID remains the 100% identity gate. */
   const foldName=(value:string)=>String(value||"").replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
   const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.some(word=>documentName.includes(word));
-  const specializationMatched=academicSectionNameMatches(facts.normalizedText,String(section.AdSectionName||""));
+  /* Only the programme row decides the specialization — never words anywhere
+     else on the sheet. No readable programme row fails closed. */
+  const programmeText=String(facts.programmeText||"");
+  if(!programmeText){
+    res.status(422).json({code:"programme-unreadable",error:"لم أتعرف على سطر «البرنامج» في صحيفة التخرج. ارفع الصفحة الرسمية كاملة وبوضوح يظهر فيها البرنامج."});return;
+  }
+  const specializationMatched=academicSectionNameMatches(programmeText,String(section.AdSectionName||""));
   if(!specializationMatched){
     res.status(422).json({error:`التخصص الظاهر في صحيفة التخرج لا يطابق القسم المحدد «${String(section.AdSectionName||"")}». اختر قسمك الصحيح وارفع صحيفتك أنت.`});return;
   }
-  const rule=await storedDegreeRuleForSection(sectionId);
-  if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم."});return;}
   /* Required graduation units come from the selected department's reviewed
      academic rule. OCR only has to prove the student's PASSED units. The
      Authority screenshot lays its values in a visual row, so sparse OCR can
@@ -13687,11 +13809,21 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
+  if (surveyTermEnded((await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(resolved.link.AdTermId)))) {
+    res.status(409).json({ error: SURVEY_TERM_ENDED, code: "term-ended" });
+    return;
+  }
 
   const body = (req.body || {}) as Record<string, unknown>;
   const civil = asciiDigits(body.civil).replace(/\D/g, "");
   // The checksum is the whole gate: one person, one answer, and no account.
   if (!validateCivilId(civil).isValid) { res.status(400).json({ error: "الرقم المدني غير صحيح" }); return; }
+  /* Replacing an existing request needs its case number, not only a civil ID
+     anyone might know. */
+  const priorNeed=await priorNeedForHand(resolved.link,civil);
+  if(priorNeed&&!caseRefMatches(priorNeed,body.caseRef)){
+    res.status(409).json({error:CASE_REF_REQUIRED,code:"case-ref-required"});return;
+  }
   const submittedName = String(body.name || "").trim().slice(0, 60);
   const submittedSectionId=Number(body.sectionId||resolved.link.AdSectionId);
   const priorIdentity=await reusableStudentIdentity(resolved.link,civil);
@@ -13723,13 +13855,13 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
      the course being clashed with can belong to any department in the college. */
   const linkSectionId=Number(resolved.link.AdSectionId);
   const { allowed } = surveyCourseIdsForSection(courses, history, linkSectionId);
-  const operationalLinkIds=await Repository.getOperationalCourseIds(linkSectionId);
+  const operationalLinkIds=await surveyActiveCourseIds(linkSectionId);
   for(const id of [...allowed])if(!operationalLinkIds.has(Number(id)))allowed.delete(Number(id));
   courses.filter((course:any)=>Number(course.AdSectionId)===linkSectionId&&operationalLinkIds.has(Number(course.AdCourseId)))
     .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   if(requestType==="course-conflict"){
     const collegeSectionIds=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId)).map((row:any)=>Number(row.AdSectionId));
-    const operationalBySection=new Map<number,Set<number>>(await Promise.all(collegeSectionIds.map(async sid=>[sid,await Repository.getOperationalCourseIds(sid)] as [number,Set<number>])));
+    const operationalBySection=new Map<number,Set<number>>(await Promise.all(collegeSectionIds.map(async sid=>[sid,await surveyActiveCourseIds(sid)] as [number,Set<number>])));
     courses.filter((course:any)=>operationalBySection.get(Number(course.AdSectionId))?.has(Number(course.AdCourseId)))
       .forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   }
@@ -13746,10 +13878,11 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     :"";
   let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,graduateNameMatched:boolean|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
   /* Keep a previously verified graduation sheet alive even when the student
-     changes this survey answer to another request type. saveStudentNeed replaces
-     the prior answer by design, so without this carry-forward the verified fact
-     would disappear and the next graduate request would wrongly demand upload. */
-  const reusableVerification=await reusableGraduateVerification(resolved.link,civil,sectionId);
+     changes this survey answer to another request type. saveStudentNeed updates
+     the record in place with the NEW answer's fields, so without this
+     carry-forward the verified fact would disappear and the next graduate
+     request would wrongly demand upload. */
+  const reusableVerification=await reusableGraduateVerification(resolved.link,civil,sectionId,body.caseRef);
   if(requestType!=="graduate"&&reusableVerification){
     passedUnits=reusableVerification.passedUnits;requiredUnits=reusableVerification.requiredUnits;degreeUnits=reusableVerification.degreeUnits;
     graduateNameMatched=reusableVerification.proofNameMatched;eligibility="eligible";
@@ -13761,10 +13894,17 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     }
     const currentRule=await storedDegreeRuleForSection(sectionId);
     if(!currentRule){res.status(400).json({error:"قواعد التخرج الأكاديمية لهذا القسم غير معتمدة في النظام"});return;}
-    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
-      res.status(400).json({error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
+    if(!proof&&await studentProofExpired(String(body.proofToken||""))){
+      res.status(400).json({code:"proof-expired",error:"انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان في الصفحة."});return;
     }
-    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
+    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
+      res.status(400).json({code:"proof-required",error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
+    }
+    /* The threshold is the CURRENT saved rule for THIS link's term — never the
+       figure carried inside the proof token, which was computed for whatever
+       term and rule applied when the sheet was read. */
+    const linkTermName=String((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
+    passedUnits=Number(proof.passedUnits||0);requiredUnits=graduateThreshold(currentRule,linkTermName);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=requiredUnits>0&&passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
     /* Graduate notes are mandatory, not an optional comment. The approved
@@ -13805,7 +13945,9 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   res.status(201).json({ name, count: courseIds.length, requestType, caseRef: caseRefFor(savedNeed) });
 });
 
-/** What the students said, for the department. Never names, only numbers. */
+/** What the students said, for the department: the counts that plan sections,
+ * and the named case list (name + civil ID decrypted) for the authorised,
+ * scope-checked department only. Never cached by the service worker. */
 app.get("/api/schedules/demand", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -13837,7 +13979,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     Repository.getTerms().catch(() => []),
     Repository.getSections().catch(() => []),
   ]);
-  const operationalDemandIds=await Repository.getOperationalCourseIds(sectionId);
+  const operationalDemandIds=await surveyActiveCourseIds(sectionId);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId && operationalDemandIds.has(Number(course.AdCourseId)));
   const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
   const belongsToSurvey = (need:any) => {
@@ -13916,7 +14058,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode,sectionId:Number(course.AdSectionId||0)}]));
   const sectionNameById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
   const cases=(await Promise.all(needs.map(async(need:any)=>({
-    id:need.id,createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
+    id:need.id,caseRef:caseRefFor(need),createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
     studentSectionId:Number(need.studentSectionId||need.AdSectionId||0),studentSectionName:sectionNameById.get(Number(need.studentSectionId||need.AdSectionId||0))||"",
     surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
@@ -14006,9 +14148,13 @@ const grantedPermissions = async (req: AuthenticatedRequest): Promise<number[]> 
 const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
                          courses: Array<{ AdCourseId: number; AdSectionId: number }>,
                          sectionId: number): boolean => {
-  /* الطلبُ الحديث يحمل قسمَ استبياره صراحةً، فهو وحده الحَكَم. */
+  /* الطلبُ الحديث يحمل قسمَ استبيانه صراحةً، فهو صاحبُه. **ومعه** كلُّ قسمٍ
+     يملك مقرّراً فيه: طلبُ «تعارض مقررين» قد يسمّي مقرّراً من قسمٍ آخر، وكان
+     لا يراه إلا قسمُ الاستبيان — ولجنتُه لا تقرّر إلا في مقرّراتها — فيبقى
+     ذلك المقرّرُ بلا من يقرّر فيه أبداً. */
   const declared = Number(need.surveySectionId || 0);
-  if (declared) return declared === sectionId;
+  if (declared) return declared === sectionId || courses.some(row => Number(row.AdSectionId) === sectionId
+    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
 
   /* والقديمُ — وهو ما كُتب قبل وجود ذلك الحقل — يُنسب إلى **كلِّ** قسمٍ يملك
      مقرّراً من مقرّراته المطلوبة. وهذا مقصودٌ ولا يُختصر إلى واحد: طالبٌ طلب
@@ -14024,6 +14170,14 @@ const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number;
   const anyKnownOwner = courses.some(row => (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
   return !anyKnownOwner && Number(need.AdSectionId || 0) === sectionId;
 };
+
+/** أقسامُ نطاق الحساب التي تملك هذا الطلب — ما يُكتب به في المقرّر وفي الحالة كلها. */
+const owningSectionsInScopeFor = async (req: AuthenticatedRequest, need: any, allCourses: any[]): Promise<number[]> =>
+  (await Repository.getSections() as any[])
+    .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
+    .map(row => Number(row.AdSectionId))
+    .filter(candidate => sectionOwnsNeed(need, allCourses, candidate)
+      && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
 
 const STUDENT_COURSE_STATES = new Set(["awaiting-registration", "committee-rejected", "registered", "rejected"]);
 const STUDENT_REJECT_REASONS = new Set(["no-seat", "prerequisite", "level", "conflict", "closed", "other"]);
@@ -14097,16 +14251,54 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
 
   const viewer = registrationViewer(req);
   const rows = (await Promise.all(needs.map(async need => {
+    /* ── طلبُ الخريج: قرارٌ في الحالة كلها ────────────────────────────────
+       لا مقرّرَ فيه يُعلَّق عليه قرار، فكان يسقط من الكشف عند السطر التالي
+       ولا يُجاب أبداً. يُعرض بحقائق التحقق من صحيفة التخرج وقرارٍ واحدٍ
+       للّجنة ثم للتسجيل. والتسجيلُ لا يراه قبل موافقة اللجنة. */
+    if (isCaseLevelNeed(need)) {
+      const caseStatus = studentCaseStatus(need.caseState);
+      if (viewer === "registration" && (caseStatus === "pending" || caseStatus === "committee-rejected")) return null;
+      return {
+        id: String(need.id),
+        caseRef: caseRefFor(need),
+        name: await openStudentIdentity(need.nameCipher),
+        civil: await openStudentIdentity(need.civilCipher),
+        createdAt: String(need.createdAt || ""),
+        requestType: String(need.requestType || "graduate"),
+        studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+        details: String(need.details || ""),
+        caseLevel: true,
+        caseStatus,
+        caseState: need.caseState || {},
+        graduate: {
+          reason: need.graduateReason || "",
+          passedUnits: Number(need.passedUnits || 0),
+          requiredUnits: Number(need.requiredUnits || 0),
+          degreeUnits: Number(need.degreeUnits || 0),
+          eligibility: String(need.eligibility || "not-checked"),
+          nameMatched: Boolean(need.proofNameMatched),
+        },
+        courses: [] as any[],
+      };
+    }
     const states = new Map((need.courseStates || []).map((state: any) => [Number(state.courseId), state]));
     /* التسجيلُ لا يرى ما لم تسلّمه اللجنة: لا المنتظرَ عندها ولا ما لم توافق عليه. */
     /* واللجنةُ ترى مقرّرات قسمها وحدها (أو ما لا يُعرف مالكه): الطلبُ القديم
        لقسمين يُعرض على القسمين، وكلٌّ يقرّر في مقرّره هو. */
-    const visibleCourseIds = (need.courseIds || []).filter((id: any) => {
+    /* مقرّرٌ حذفه الطالبُ بعد أن قيل فيه شيء يبقى في الكشف معلَّماً، فلا يبقى
+       مقعدٌ محجوزاً باسم من لم يعد يريده دون أن يعرف أحد. */
+    const droppedIds = (need.courseStates || [])
+      .filter((state: any) => state?.droppedByStudent && !(need.courseIds || []).map(Number).includes(Number(state.courseId)))
+      .map((state: any) => Number(state.courseId));
+    /* كلُّ مقرّرٍ يُقرَّر في كشف القسم الذي يملكه. ومقرّرُ قسمٍ آخر في طلبٍ
+       قُدّم عبر استبيان هذا القسم يُعرض هنا للقراءة وحدها («يقرّره قسم …»)،
+       ويُقرَّر في كشف قسمه. */
+    const filedHere = Number(need.surveySectionId || need.AdSectionId || 0) === sectionId;
+    const ownerOf = (id: any) => Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
+    const decidedHere = (id: any) => { const owner = ownerOf(id); return !owner || owner === sectionId; };
+    const visibleCourseIds = [...(need.courseIds || []), ...droppedIds].filter((id: any) => {
+      if (!decidedHere(id) && !filedHere) return false;
       if (viewer === "registration") return reachedRegistration(states.get(Number(id)));
-      if (viewer === "committee") {
-        const owner = Number((courseById.get(Number(id)) as any)?.AdSectionId || 0);
-        return !owner || owner === sectionId;
-      }
       return true;
     });
     if (!visibleCourseIds.length) return null;
@@ -14120,6 +14312,17 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       createdAt: String(need.createdAt || ""),
       requestType: String(need.requestType || "new-course"),
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+      /* طلبُ خريجٍ قيل فيه شيءٌ ثم غيّره الطالب إلى طلب مقرّرات. */
+      caseDroppedAt: need.caseDroppedAt && need.caseState ? String(need.caseDroppedAt) : "",
+      details: String(need.details || ""),
+      /* «تعارض مقررين» يُفهم بطرفيه: المقرّرُ الآخر يُذكر ولو لم يكن في هذا الكشف. */
+      partnerCourses: String(need.requestType || "") === "course-conflict"
+        ? (need.courseIds || []).filter((id: any) => !visibleCourseIds.map(Number).includes(Number(id))).map((id: any) => {
+            const course: any = courseById.get(Number(id));
+            return { code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${id}`),
+              sectionName: sectionNameById.get(Number(course?.AdSectionId || 0)) || "" };
+          })
+        : [],
       courses: visibleCourseIds.map((id: any) => {
         const course: any = courseById.get(Number(id));
         const state: any = states.get(Number(id));
@@ -14136,12 +14339,20 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
           /* «لم يقل أحدٌ شيئاً» يختلف عن «سلّمه القسم وينتظر»: الأولى غيابُ
              سجلّ، والثانيةُ قولٌ مكتوب. والفرقُ يهمّ من يقرأ. */
           settled: Boolean(state),
+          readOnly: !decidedHere(id),
+          decidedBySectionName: decidedHere(id) ? undefined : (sectionNameById.get(ownerOf(id)) || "قسم آخر"),
+          droppedByStudent: Boolean(state?.droppedByStudent),
+          droppedLabel: state?.droppedByStudent ? droppedCourseLabel(state) : undefined,
         };
       }),
     };
   }))).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
-  const every = rows.flatMap(row => row.courses);
+  /* كلُّ بندٍ ينتظر قراراً — مقرّرٌ أو حالةُ خريجٍ كاملة — يُعدّ مرّةً بالتصنيف نفسه. */
+  const every: string[] = rows.flatMap((row: any) => row.caseLevel
+    ? [String(row.caseStatus)]
+    : row.courses.filter((course: any) => !course.readOnly).map((course: any) => !course.settled ? "pending"
+      : course.state === "awaiting-registration" ? "approved" : String(course.state)));
   res.setHeader("Cache-Control", "no-store");
   res.json({
     rows: rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))),
@@ -14149,12 +14360,12 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
     viewer,
     totals: {
       students: rows.length,
-      courses: every.length,
-      pendingCommittee: every.filter(course => !course.settled).length,
-      committeeRejected: every.filter(course => course.state === "committee-rejected").length,
-      registered: every.filter(course => course.state === "registered").length,
-      rejected: every.filter(course => course.state === "rejected").length,
-      waiting: every.filter(course => course.settled && course.state === "awaiting-registration").length,
+      courses: rows.reduce((sum: number, row: any) => sum + row.courses.length, 0),
+      pendingCommittee: every.filter(status => status === "pending").length,
+      committeeRejected: every.filter(status => status === "committee-rejected").length,
+      registered: every.filter(status => status === "registered").length,
+      rejected: every.filter(status => status === "rejected").length,
+      waiting: every.filter(status => status === "approved").length,
     },
   });
 });
@@ -14174,11 +14385,7 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
      يملك هذا الطلبَ يستطيع أن يكتب فيه — فلا يُعرض ما لا يُكتب فيه، ولا
      يُكتب فيما لا يُعرض. */
   const allCourses = await Repository.getCourses() as any[];
-  const owningSectionsInScope = (await Repository.getSections() as any[])
-    .filter(row => Number(row.AdCollegeId) === Number(need.AdCollegeId))
-    .map(row => Number(row.AdSectionId))
-    .filter(candidate => sectionOwnsNeed(need, allCourses, candidate)
-      && isScopeAllowed(req, Number(need.AdCollegeId), candidate));
+  const owningSectionsInScope = await owningSectionsInScopeFor(req, need, allCourses);
   if (!owningSectionsInScope.length) {
     res.status(403).json({ error: "هذا الطلب خارج نطاقك." });
     return;
@@ -14282,6 +14489,69 @@ app.post("/api/student-registration/:id/course-state", requireAuth, async (req: 
 
   res.setHeader("Cache-Control", "no-store");
   res.json({ ok: true, courseStates: saved.courseStates || [] });
+});
+
+/**
+ * قرارٌ في الحالة كلها — طلبُ الخريج الذي لا يسمّي مقرّراً.
+ *
+ * الحراسُ أنفسُهم التي يمرّ بها قرارُ المقرّر: صلاحيةُ الكتابة، ونطاقُ القسم
+ * المالك بالاشتقاق نفسِه (`sectionOwnsNeed`)، وتوقيعا الجدول قبل أن يكتب
+ * التسجيل، والترتيبُ (`studentCaseRefusal`) يُسأل داخل المعاملة.
+ * والأسبابُ من القائمتين المغلقتين نفسيهما، والسطرُ الحرّ «سطرٌ للطالب».
+ */
+app.post("/api/student-registration/:id/case-state", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canWriteRegistration(req.user?.Role, Boolean(req.user?.IsAdminUser), await grantedPermissions(req))) {
+    res.status(403).json({ error: "هذا الكشف للقراءة بصفتك." });
+    return;
+  }
+  const need = await Repository.getStudentNeedById(String(req.params.id || ""));
+  if (!need) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  if (!isCaseLevelNeed(need)) { res.status(400).json({ error: "هذا الطلب يُقرَّر مقرّراً مقرّراً." }); return; }
+  const owningSectionsInScope = await owningSectionsInScopeFor(req, need, await Repository.getCourses() as any[]);
+  if (!owningSectionsInScope.length) { res.status(403).json({ error: "هذا الطلب خارج نطاقك." }); return; }
+
+  const viewer = registrationViewer(req);
+  const requestedSide = String(req.body?.side || "");
+  const side: "committee" | "registrar" | null = requestedSide === "committee" || requestedSide === "registrar"
+    ? requestedSide : viewer === "registration" ? "registrar" : viewer === "committee" ? "committee" : null;
+  if (!side) { res.status(400).json({ error: "حدّد الجهة: اللجنة أو التسجيل." }); return; }
+  if (viewer === "committee" && side !== "committee") {
+    res.status(403).json({ error: "قرارُ التنفيذ أو الردّ للتسجيل. اللجنةُ توافق أو لا توافق." }); return;
+  }
+  if (viewer === "registration" && side !== "registrar") {
+    res.status(403).json({ error: "الموافقةُ وعدمُها قرارُ لجنة القسم، لا التسجيل." }); return;
+  }
+  if (side === "registrar") {
+    for (const section of owningSectionsInScope) {
+      const writeBlocked = await registrarBlockReason(req, Number(need.AdCollegeId), section, Number(need.AdTermId || 0));
+      if (writeBlocked) { res.status(409).json({ error: writeBlocked, code: "not-signed" }); return; }
+    }
+  }
+  const decision = String(req.body?.decision || "");
+  if (!["approved", "rejected", "pending"].includes(decision)) { res.status(400).json({ error: "قرارٌ غير معروف." }); return; }
+  const reasonCode = String(req.body?.reasonCode || "");
+  if (decision === "rejected") {
+    const allowed = side === "committee" ? STUDENT_COMMITTEE_REASONS : STUDENT_REJECT_REASONS;
+    if (!allowed.has(reasonCode)) {
+      res.status(400).json({ error: side === "committee" ? "اختر سبب عدم الموافقة." : "اختر سبب الردّ." }); return;
+    }
+  }
+  const next = decision === "pending" ? null : {
+    state: decision as "approved" | "rejected",
+    ...(decision === "rejected" ? { reasonCode: reasonCode as any } : {}),
+    note: String(req.body?.note || "").trim().slice(0, 300) || undefined,
+    byRole: roleLabel(req.user?.Role) || undefined,
+    at: new Date().toISOString(),
+  };
+  let saved: any;
+  try { saved = await Repository.setStudentCaseDecision(need.id, side, next); }
+  catch (error: any) {
+    if (error instanceof StudentCourseStateConflict) { res.status(409).json({ error: error.message }); return; }
+    throw error;
+  }
+  if (!saved) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, caseState: saved.caseState || {}, caseStatus: studentCaseStatus(saved.caseState) });
 });
 
 /** The department's tray. Empty is the normal state and costs one scoped read. */
@@ -15232,51 +15502,63 @@ function arCourses(n){
 
 function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
-</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
-(function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,identityMemoryKey="schedule-student-identity-"+TOKEN;var host=document.getElementById("host");
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:var(--muted);font-size:12px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
+.prior-case{margin:14px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card2);display:grid;gap:5px}.prior-case strong{font-size:14px}.prior-case small,.prior-case p{font-size:12.5px;color:var(--muted);margin:0}.prior-case ul{margin:4px 0;padding:0 18px;font-size:13px}.replace-note{margin:14px 0 0;padding:11px 13px;border-radius:12px;border:1px solid #806a3a;background:#231d10;color:#f1dfb5;font-size:13px}</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
+(function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,caseRef="",priorSummary=null,priorInitial="",needsCaseRef=false,proofAt=0,PROOF_TTL=20*60*1000,MAX_PROOF_BYTES=14*1024*1024;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
    any twelve digits, so a wrong number travelled through both remaining steps
    and was only refused by the server at the very end — the student learning at
    submit time that the first field was wrong. */
 function civilValid(v){v=String(v||"");if(!/^\\d{12}$/.test(v))return false;var w=[2,1,6,3,7,9,10,5,8,4,2],sum=0;for(var i=0;i<11;i++)sum+=Number(v[i])*w[i];return 11-(sum%11)===Number(v[11])}
-function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
-function rememberIdentity(){try{localStorage.setItem(identityMemoryKey,JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,verifiedAt:Date.now()}))}catch(e){}}
-function clearIdentityMemory(){try{localStorage.removeItem(identityMemoryKey)}catch(e){}identityLocked=false;identityChecked=false;student={name:"",civil:"",sectionId:0};identity()}
-function checkCivilIdentity(){var civilBox=document.getElementById("civil"),button=document.getElementById("checkCivil"),civil=digits(civilBox&&civilBox.value||"");if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!civilValid(civil))return fail("هذا الرقم المدني غير صحيح. راجع الأرقام كما هي في بطاقتك المدنية.");student={name:"",civil:civil,sectionId:0};button.disabled=true;button.textContent="جارٍ التحقق…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/identity-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:civil})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){button.disabled=false;button.textContent="التحقق والمتابعة";return fail(x.d.error||"تعذر التحقق من الرقم المدني")}identityChecked=true;if(x.d.verified){student={name:String(x.d.name||""),civil:civil,sectionId:Number(x.d.sectionId)||0};identityLocked=true;rememberIdentity()}else{identityLocked=false}identity()}).catch(function(){button.disabled=false;button.textContent="التحقق والمتابعة";fail("تعذر التحقق من الرقم المدني. تحقق من الاتصال ثم أعد المحاولة.")})}
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
+/* Nothing about the student is kept in the browser: the civil ID and name used
+   to be written to the browser's persistent storage on every shared or lab computer. */
+function resetIdentity(){identityLocked=false;identityChecked=false;needsCaseRef=false;caseRef="";priorSummary=null;priorInitial="";student={name:"",civil:"",sectionId:0};identity()}
+var TYPE_LABEL={"new-course":"طلب فتح مقرر","course-conflict":"تعارض مقررين","graduate":"خريج / متوقع تخرجه"};
+var STATE_LABEL={"awaiting-registration":"وافقت اللجنة · بانتظار التسجيل","committee-rejected":"لم توافق اللجنة","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+function sendLabel(){return priorSummary?"تحديث طلبي السابق":"إرسال الطلب إلى القسم"}
+function replaceNote(){return priorSummary?'<p class="replace-note" role="note">سيحلّ هذا الإرسال محل طلبك السابق (رقم الحالة '+esc(priorSummary.caseRef)+'). قرارات القسم على المقررات التي تُبقيها تبقى كما هي، وما تحذفه بعد قرارٍ يظهر للقسم أنك ألغيته.</p>':''}
+function priorSummaryHtml(){if(!priorSummary)return"";var p=priorSummary;return'<div class="prior-case" role="region" aria-label="طلبك الحالي"><strong>طلبك الحالي · رقم الحالة '+esc(p.caseRef)+'</strong><small>'+esc(TYPE_LABEL[p.requestType]||p.requestType)+(p.submittedAt?' · أُرسل '+esc(new Date(p.submittedAt).toLocaleDateString("ar-KW-u-nu-latn",{month:"long",day:"numeric"})):"")+'</small>'+((p.courses||[]).length?'<ul>'+p.courses.map(function(c){return'<li>'+esc(c.name)+(c.state?' — '+esc(STATE_LABEL[c.state]||c.state):'')+'</li>'}).join("")+'</ul>':'')+'<p>إذا أرسلت من جديد فسيُحدَّث هذا الطلب نفسه ولن يُنشأ طلبٌ ثانٍ.</p></div>'}
+function checkCivilIdentity(){var civilBox=document.getElementById("civil"),button=document.getElementById("checkCivil"),civil=digits(civilBox&&civilBox.value||"");if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!civilValid(civil))return fail("هذا الرقم المدني غير صحيح. راجع الأرقام كما هي في بطاقتك المدنية.");student={name:"",civil:civil,sectionId:0};button.disabled=true;button.textContent="جارٍ التحقق…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/identity-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:civil})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){button.disabled=false;button.textContent="التحقق والمتابعة";return fail(x.d.error||"تعذر التحقق من الرقم المدني")}identityChecked=true;identityLocked=false;priorSummary=null;if(x.d.exists){needsCaseRef=true;priorInitial=String(x.d.initial||"");caseRefStep();return}needsCaseRef=false;identity()}).catch(function(){button.disabled=false;button.textContent="التحقق والمتابعة";fail("تعذر التحقق من الرقم المدني. تحقق من الاتصال ثم أعد المحاولة.")})}
+
+/* A request already exists for this civil ID: it is opened only with its case
+   number. The page never learns the stored name or department before that. */
+function caseRefStep(){step=1;paintProgress();host.innerHTML='<div class="step-head"><b>1</b><div><strong>لديك طلبٌ سابق</strong><span>يوجد طلبٌ مرسلٌ بهذا الرقم المدني في هذا الاستبيان'+(priorInitial?' (الاسم يبدأ بـ «'+esc(priorInitial)+'»)':'')+'</span></div></div><div class="identity-start"><div class="field full"><label for="caseRef">رقم الحالة</label><input id="caseRef" dir="ltr" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" enterkeyhint="go" placeholder="مثل 1B86022D" aria-describedby="caseRefHelp" style="direction:rtl"><small id="caseRefHelp" class="hint">الرقم الذي ظهر لك عند الإرسال. فقدت الرقم؟ راجع القسم — لا يُعدَّل الطلب القائم بالرقم المدني وحده.</small></div></div><button class="action" id="checkRef" type="button">فتح طلبي لتعديله</button><button type="button" class="identity-reset" id="identityReset">رقم مدني آخر</button><div id="err" role="alert" aria-live="assertive"></div>';var box=document.getElementById("caseRef"),go=document.getElementById("checkRef");document.getElementById("identityReset").onclick=resetIdentity;function verifyRef(){var ref=String(box.value||"").trim().toUpperCase();if(ref.length<6)return fail("أدخل رقم الحالة كما ظهر لك");go.disabled=true;go.textContent="جارٍ التحقق…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/identity-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,caseRef:ref})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){go.disabled=false;go.textContent="فتح طلبي لتعديله";if(!x.ok||!x.d.verified)return fail(x.d.error||"رقم الحالة لا يطابق. فقدت الرقم؟ راجع القسم.");caseRef=ref;priorSummary=x.d.summary||null;student={name:String(x.d.name||""),civil:student.civil,sectionId:Number(x.d.sectionId)||0};identityLocked=Boolean(x.d.name&&x.d.sectionId);needsCaseRef=false;identity()}).catch(function(){go.disabled=false;go.textContent="فتح طلبي لتعديله";fail("تعذر التحقق. تحقق من الاتصال ثم أعد المحاولة.")})}go.onclick=verifyRef;box.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();verifyRef()}};box.focus()}
 
 function identity(){step=1;paintProgress();
+  if(needsCaseRef){caseRefStep();return}
   if(!identityChecked){
-    host.innerHTML='<div class="step-head"><b>1</b><div><strong>ابدأ بالرقم المدني</strong><span>نتحقق أولاً، ثم نعرض المسار المناسب لك</span></div></div><div class="identity-start"><div class="field full"><label>الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="12 رقمًا" style="direction:rtl" value="'+esc(student.civil)+'"><small id="civilHint" class="hint"></small></div><p class="identity-start-note">لن تظهر بقية البيانات قبل التحقق من الرقم المدني. إذا سبق أن أرسلت طلبًا، سنعيد اسمك وقسمك المعتمد تلقائيًا.</p></div><button class="action" id="checkCivil" disabled>التحقق والمتابعة</button><p class="privacy">يُستخدم الرقم المدني للتعرّف على طلبك السابق ومنع تكرار الهوية، ويظهر للمسؤول المخوّل فقط.</p><div id="err"></div>';
+    host.innerHTML='<div class="step-head"><b>1</b><div><strong>ابدأ بالرقم المدني</strong><span>نتحقق أولاً، ثم نعرض المسار المناسب لك</span></div></div><div class="identity-start"><div class="field full"><label for="civil">الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" aria-describedby="civilHint" maxlength="12" autocomplete="off" enterkeyhint="go" placeholder="12 رقمًا" style="direction:rtl" value="'+esc(student.civil)+'"><small id="civilHint" class="hint"></small></div><p class="identity-start-note">لن تظهر بقية البيانات قبل التحقق من الرقم المدني. إذا سبق أن أرسلت طلبًا، سنعيد اسمك وقسمك المعتمد تلقائيًا.</p></div><button class="action" id="checkCivil" disabled>التحقق والمتابعة</button><p class="privacy">يُستخدم الرقم المدني للتعرّف على طلبك السابق ومنع تكرار الهوية، ويظهر للمسؤول المخوّل فقط.</p><div id="err" role="alert" aria-live="assertive"></div>';
     var civilBox=document.getElementById("civil"),hint=document.getElementById("civilHint"),button=document.getElementById("checkCivil");function paintCivil(){civilBox.value=digits(civilBox.value).slice(0,12);var value=civilBox.value;if(!value.length){hint.textContent="";hint.className="hint";button.disabled=true;return}if(value.length<12){hint.textContent="باقي "+(12-value.length)+" رقم";hint.className="hint";button.disabled=true;return}if(civilValid(value)){hint.textContent="رقم مدني صحيح · اضغط للمتابعة";hint.className="hint ok";button.disabled=false}else{hint.textContent="هذا الرقم المدني غير صحيح — راجع أرقام بطاقتك";hint.className="hint bad";button.disabled=true}}civilBox.oninput=paintCivil;civilBox.onkeydown=function(e){if(e.key==="Enter"&&!button.disabled){e.preventDefault();checkCivilIdentity()}};button.onclick=checkCivilIdentity;paintCivil();return;
   }
-  var locked=identityLocked;host.innerHTML='<div class="step-head"><b>1</b><div><strong>'+(locked?'بياناتك المتحققة':'أكمل بياناتك')+'</strong><span>'+(locked?'تم العثور على طلب سابق لهذا الرقم المدني':'هذا أول طلب محفوظ لهذا الرقم المدني')+'</span></div></div><div class="fields"><div class="field"><label>الرقم المدني</label><input id="civil" dir="ltr" value="'+esc(student.civil)+'" readonly aria-readonly="true"><small class="hint ok">تم التحقق من الرقم المدني</small></div><div class="field"><label>الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"'+(locked?' readonly aria-readonly="true"':'')+'></div><div class="field full"><label>القسم العلمي</label><select id="section"'+(locked?' disabled aria-disabled="true"':'')+'><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div>'+(locked?'<div class="identity-verified"><span><b>تم التحقق من بياناتك سابقًا.</b> الاسم والرقم المدني والقسم العلمي مثبتة ولا تحتاج إدخالها من جديد.</span><button type="button" class="identity-reset" id="identityReset">رقم مدني آخر</button></div>':'<div class="identity-verified"><span><b>طالب جديد.</b> أكمل الاسم والقسم مرة واحدة، وسيستعيدهما النظام تلقائيًا في طلبك القادم.</span><button type="button" class="identity-reset" id="identityReset">تغيير الرقم المدني</button></div>')+'</div><button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err"></div>';
-  var reset=document.getElementById("identityReset");if(reset)reset.onclick=clearIdentityMemory;document.getElementById("next").onclick=function(){if(!locked){student.name=String(document.getElementById("name").value||"").trim();student.sectionId=Number(document.getElementById("section").value)||0}if(student.name.length<3)return fail("اكتب اسمك كاملاً");if(!student.sectionId)return fail("اختر قسمك العلمي");kind="";picked=[];otherCourse=0;proofToken="";proofEligible=false;chooseType()}
+  var locked=identityLocked;host.innerHTML='<div class="step-head"><b>1</b><div><strong>'+(locked?'بياناتك المتحققة':'أكمل بياناتك')+'</strong><span>'+(locked?'تم العثور على طلب سابق لهذا الرقم المدني':'هذا أول طلب محفوظ لهذا الرقم المدني')+'</span></div></div><div class="fields"><div class="field"><label for="civil">الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" value="'+esc(student.civil)+'" readonly aria-readonly="true"><small class="hint ok">تم التحقق من الرقم المدني</small></div><div class="field"><label for="name">الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"'+(locked?' readonly aria-readonly="true"':'')+'></div><div class="field full"><label for="section">القسم العلمي</label><select id="section"'+(locked?' disabled aria-disabled="true"':'')+'><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div>'+(locked?'<div class="identity-verified"><span><b>تم التحقق من بياناتك سابقًا.</b> الاسم والرقم المدني والقسم العلمي مثبتة ولا تحتاج إدخالها من جديد.</span><button type="button" class="identity-reset" id="identityReset">رقم مدني آخر</button></div>':'<div class="identity-verified"><span><b>'+(priorSummary?'أكمل بياناتك.':'طالب جديد.')+'</b> أكمل الاسم والقسم. وإذا عدّلت طلبك لاحقاً فستحتاج رقم الحالة الذي سيظهر لك عند الإرسال.</span><button type="button" class="identity-reset" id="identityReset">تغيير الرقم المدني</button></div>')+'</div>'+priorSummaryHtml()+'<button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err" role="alert" aria-live="assertive"></div>';
+  var reset=document.getElementById("identityReset");if(reset)reset.onclick=resetIdentity;document.getElementById("next").onclick=function(){if(!locked){student.name=String(document.getElementById("name").value||"").trim();student.sectionId=Number(document.getElementById("section").value)||0}if(student.name.length<3)return fail("اكتب اسمك كاملاً");if(!student.sectionId)return fail("اختر قسمك العلمي");kind="";picked=[];otherCourse=0;proofToken="";proofEligible=false;chooseType()}
 }
 
-function chooseType(){step=2;paintProgress();host.innerHTML='<button class="back" id="back">← تعديل البيانات</button><div class="step-head"><b>2</b><div><strong>ما نوع طلبك؟</strong><span>اختر حالة واحدة</span></div></div><div class="types"><button class="type" data-kind="new-course"><i>＋</i><span><strong>فتح مقرر جديد</strong><small>مقرر تحتاج طرحه في الفصل</small></span><em>‹</em></button><button class="type" data-kind="course-conflict"><i>⇄</i><span><strong>مقرر يتعارض مع مقرر آخر</strong><small>اختر المقررين المتقاطعين</small></span><em>‹</em></button><button class="type" data-kind="graduate"><i>✓</i><span><strong>خريج أو متوقع تخرجه</strong><small>يتطلب كشف درجات للتحقق من الوحدات</small></span><em>‹</em></button></div>';document.getElementById("back").onclick=identity;host.querySelectorAll(".type").forEach(function(button){button.onclick=function(){kind=button.dataset.kind;picked=[];proofToken="";proofEligible=false;details()}})}
+function chooseType(){step=2;paintProgress();host.innerHTML='<button class="back" id="back">← تعديل البيانات</button><div class="step-head"><b>2</b><div><strong>ما نوع طلبك؟</strong><span>اختر حالة واحدة</span></div></div><div class="types"><button type="button" class="type" data-kind="new-course"><i>＋</i><span><strong>فتح مقرر جديد</strong><small>مقرر تحتاج طرحه في الفصل</small></span><em>‹</em></button><button type="button" class="type" data-kind="course-conflict"><i>⇄</i><span><strong>مقرر يتعارض مع مقرر آخر</strong><small>اختر المقررين المتقاطعين</small></span><em>‹</em></button><button type="button" class="type" data-kind="graduate"><i>✓</i><span><strong>خريج أو متوقع تخرجه</strong><small>يتطلب كشف درجات للتحقق من الوحدات</small></span><em>‹</em></button></div>';document.getElementById("back").onclick=identity;host.querySelectorAll(".type").forEach(function(button){button.onclick=function(){kind=button.dataset.kind;picked=[];proofToken="";proofEligible=false;details()}})}
 function linkCourses(){return data.courses||[]}
 function sectionById(id){return(data.sections||[]).find(function(s){return Number(s.id)===Number(id)})||{courses:[]}}
-function courseButton(c){return'<button type="button" class="course" data-id="'+c.id+'" data-find="'+esc((c.name+' '+c.code).toLowerCase())+'"><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>'}
+function press(el,on){el.classList.toggle("on",on);el.setAttribute("aria-pressed",on?"true":"false")}
+function courseButton(c){return'<button type="button" class="course" aria-pressed="'+(picked.indexOf(Number(c.id))>=0||Number(otherCourse)===Number(c.id)?"true":"false")+'" data-id="'+c.id+'" data-find="'+esc((c.name+' '+c.code).toLowerCase())+'"><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>'}
 /* The link decides which catalogue is on offer. A student who opened the
    Islamic Education form wants an Islamic Education course; showing them the
    department they happen to be enrolled in was answering a question nobody
    asked. */
-function ownCourseCards(){return'<details class="acc" open><summary><span>مقررات '+esc(data.section||"القسم")+'</span><em>'+linkCourses().length+'</em></summary><div class="acc-body"><input id="courseSearch" type="search" placeholder="ابحث باسم المقرر أو رمزه"><div class="courses" id="courses">'+linkCourses().map(courseButton).join("")+'</div></div></details>'}
+function ownCourseCards(){return'<details class="acc" open><summary><span>مقررات '+esc(data.section||"القسم")+'</span><em>'+linkCourses().length+'</em></summary><div class="acc-body"><input id="courseSearch" type="search" aria-label="ابحث في المقررات باسم المقرر أو رمزه" placeholder="ابحث باسم المقرر أو رمزه"><div class="courses" id="courses">'+linkCourses().map(courseButton).join("")+'</div></div></details>'}
 /* The second course can come from anywhere in the college, and listing every
    catalogue at once is a wall of names. Nothing is revealed until the student
    types, so the list is always an answer to something they asked for. */
-function otherCourseCards(){return'<div class="field" style="margin-top:12px"><label>القسم الآخر</label><select id="otherSection"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join("")+'</select></div><div class="course-tools"><input id="otherSearch" type="search" placeholder="اكتب جزءاً من اسم المقرر — مثلاً: تاريخ" disabled></div><div class="courses" id="otherCourses"></div><p class="privacy" id="otherHint">اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج.</p>'}
+function otherCourseCards(){return'<div class="field" style="margin-top:12px"><label for="otherSection">القسم الآخر</label><select id="otherSection"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join("")+'</select></div><div class="course-tools"><input id="otherSearch" type="search" aria-label="ابحث عن المقرر الآخر" placeholder="اكتب جزءاً من اسم المقرر — مثلاً: تاريخ" disabled></div><div class="courses" id="otherCourses"></div><p class="privacy" id="otherHint">اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج.</p>'}
 
-function wireOwnCourses(){var box=document.getElementById("courses"),search=document.getElementById("courseSearch");box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);if(kind==="course-conflict"){picked=picked[0]===id?[]:[id];box.querySelectorAll(".course").forEach(function(other){other.classList.toggle("on",Number(other.dataset.id)===picked[0])});return}var at=picked.indexOf(id);if(at>=0)picked.splice(at,1);else picked.push(id);button.classList.toggle("on",picked.indexOf(id)>=0)};search.oninput=function(){var q=this.value.trim().toLowerCase();box.querySelectorAll(".course").forEach(function(button){button.hidden=q&&button.dataset.find.indexOf(q)<0})}}
-function wireOtherCourse(){var pickSection=document.getElementById("otherSection"),search=document.getElementById("otherSearch"),box=document.getElementById("otherCourses"),hint=document.getElementById("otherHint");pickSection.onchange=function(){otherCourse=0;search.disabled=!this.value;search.value="";box.innerHTML="";hint.textContent=this.value?"اكتب جزءاً من اسم المقرر لتظهر النتائج.":"اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج."};search.oninput=function(){var q=this.value.trim().toLowerCase();if(q.length<2){box.innerHTML="";hint.textContent="اكتب حرفين على الأقل.";return}var list=(sectionById(pickSection.value).courses||[]).filter(function(c){return(c.name+" "+c.code).toLowerCase().indexOf(q)>=0}).slice(0,40);box.innerHTML=list.map(courseButton).join("");hint.textContent=list.length?"":"لا مقرر بهذا الاسم في القسم المختار."};box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);otherCourse=otherCourse===id?0:id;box.querySelectorAll(".course").forEach(function(other){other.classList.toggle("on",Number(other.dataset.id)===otherCourse)})}}
+function wireOwnCourses(){var box=document.getElementById("courses"),search=document.getElementById("courseSearch");box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);if(kind==="course-conflict"){picked=picked[0]===id?[]:[id];box.querySelectorAll(".course").forEach(function(other){press(other,Number(other.dataset.id)===picked[0])});return}var at=picked.indexOf(id);if(at>=0)picked.splice(at,1);else picked.push(id);press(button,picked.indexOf(id)>=0)};search.oninput=function(){var q=this.value.trim().toLowerCase();box.querySelectorAll(".course").forEach(function(button){button.hidden=q&&button.dataset.find.indexOf(q)<0})}}
+function wireOtherCourse(){var pickSection=document.getElementById("otherSection"),search=document.getElementById("otherSearch"),box=document.getElementById("otherCourses"),hint=document.getElementById("otherHint");pickSection.onchange=function(){otherCourse=0;search.disabled=!this.value;search.value="";box.innerHTML="";hint.textContent=this.value?"اكتب جزءاً من اسم المقرر لتظهر النتائج.":"اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج."};search.oninput=function(){var q=this.value.trim().toLowerCase();if(q.length<2){box.innerHTML="";hint.textContent="اكتب حرفين على الأقل.";return}var list=(sectionById(pickSection.value).courses||[]).filter(function(c){return(c.name+" "+c.code).toLowerCase().indexOf(q)>=0}).slice(0,40);box.innerHTML=list.map(courseButton).join("");hint.textContent=list.length?"":"لا مقرر بهذا الاسم في القسم المختار."};box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);otherCourse=otherCourse===id?0:id;box.querySelectorAll(".course").forEach(function(other){press(other,Number(other.dataset.id)===otherCourse)})}}
 
 function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح مقرر جديد":kind==="course-conflict"?"تعارض مقررين":"حالة خريج أو متوقع تخرجه";
 /* The free-text box is kept only where somebody reads it. On the two course
    requests the selected courses already say everything the department acts on,
    and an optional box invited an explanation nobody was going to open. */
-var content=kind==="graduate"?'<div class="proof"><strong id="proofTitle">صحيفة التخرج</strong><small class="lead" id="proofLead">نتحقق أولاً إن كانت صحيفتك موثقة من طلب سابق.</small><a class="proof-example" id="proofExample" href="/graduation-sheet-example.jpg" target="_blank" rel="noopener" hidden><img src="/graduation-sheet-example.jpg" alt="نموذج صحيفة التخرج أو الخطة الدراسية المقبولة" loading="lazy"><span><strong>هذا نموذج الصحيفة المطلوبة</strong><small>الصفحة الرسمية التي يظهر فيها الرقم المدني والبرنامج والوحدات المجتازة.</small><em>اضغط على النموذج لعرضه بالحجم الكامل</em></span></a><div class="proof-upload" id="proofUpload" hidden><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة صحيفة التخرج والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div></div><div id="proofStatus" class="proof-status">جارٍ التحقق من حالة الصحيفة السابقة…</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label></div><div class="graduate-detail" id="graduateDetail" hidden><label for="graduateDetails">ملاحظات الطلب وسبب الاحتياج · إلزامي</label><textarea id="graduateDetails" maxlength="600" minlength="3" required placeholder="اكتب ما تحتاجه بالتحديد وسبب الطلب، مثل المقرر أو الوقت أو الترتيب المطلوب."></textarea><small><span>لن يتم إرسال طلب الخريج قبل كتابة الملاحظات، وستظهر للقسم تحت نوع الطلب الذي اخترته.</span><b id="graduateDetailsCount">0 / 600</b></small></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
-host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate"){document.getElementById("send").disabled=true;wireProof()}else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
+var content=kind==="graduate"?'<div class="proof"><strong id="proofTitle">صحيفة التخرج</strong><small class="lead" id="proofLead">نتحقق أولاً إن كانت صحيفتك موثقة من طلب سابق.</small><a class="proof-example" id="proofExample" href="/graduation-sheet-example.jpg" target="_blank" rel="noopener" hidden><img src="/graduation-sheet-example.jpg" alt="نموذج صحيفة التخرج أو الخطة الدراسية المقبولة" loading="lazy"><span><strong>هذا نموذج الصحيفة المطلوبة</strong><small>الصفحة الرسمية التي يظهر فيها الرقم المدني والبرنامج والوحدات المجتازة.</small><em>اضغط على النموذج لعرضه بالحجم الكامل</em></span></a><div class="proof-upload" id="proofUpload" hidden><input id="proof" type="file" aria-label="ملف صحيفة التخرج" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة صحيفة التخرج والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div></div><div id="proofStatus" class="proof-status" role="status" aria-live="polite">جارٍ التحقق من حالة الصحيفة السابقة…</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label></div><div class="graduate-detail" id="graduateDetail" hidden><label for="graduateDetails">ملاحظات الطلب وسبب الاحتياج · إلزامي</label><textarea id="graduateDetails" maxlength="600" minlength="3" required placeholder="اكتب ما تحتاجه بالتحديد وسبب الطلب، مثل المقرر أو الوقت أو الترتيب المطلوب."></textarea><small><span>لن يتم إرسال طلب الخريج قبل كتابة الملاحظات، وستظهر للقسم تحت نوع الطلب الذي اخترته.</span><b id="graduateDetailsCount">0 / 600</b></small></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
+host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+replaceNote()+'<button class="action" id="send" type="button">'+sendLabel()+'</button><div id="err" role="alert" aria-live="assertive"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate"){document.getElementById("send").disabled=true;wireProof()}else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
 
 function refreshGraduateSubmit(){if(kind!=="graduate")return;var send=document.getElementById("send"),reason=host.querySelector('input[name=reason]:checked'),box=document.getElementById("graduateDetails");if(send)send.disabled=!(proofEligible&&reason&&box&&String(box.value||"").trim().length>=3)}
 function wireGraduateDetails(){var options=document.getElementById("graduateOptions"),detail=document.getElementById("graduateDetail"),box=document.getElementById("graduateDetails"),count=document.getElementById("graduateDetailsCount");if(!options||!detail||!box)return;options.querySelectorAll('input[name=reason]').forEach(function(input){input.onchange=function(){detail.hidden=false;refreshGraduateSubmit();window.setTimeout(function(){box.focus({preventScroll:true})},30)}});box.oninput=function(){if(count)count.textContent=String(box.value.length)+" / 600";refreshGraduateSubmit()};refreshGraduateSubmit()}
@@ -15284,11 +15566,11 @@ function wireGraduateDetails(){var options=document.getElementById("graduateOpti
 function compactProof(file){return new Promise(function(resolve){var type=String(file.type||"").toLowerCase(),name=String(file.name||"").toLowerCase();if(type.indexOf("image/")!==0||/heic|heif/.test(type)||/\.(heic|heif)$/.test(name)){resolve(file);return}var url=URL.createObjectURL(file),img=new Image();img.onload=function(){try{var max=2200,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1));if(scale>=.98&&file.size<1800000){URL.revokeObjectURL(url);resolve(file);return}var canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));var ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw 0;ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);canvas.toBlob(function(blob){URL.revokeObjectURL(url);resolve(blob&&blob.size<file.size?blob:file)},"image/jpeg",.86)}catch(e){URL.revokeObjectURL(url);resolve(file)}};img.onerror=function(){URL.revokeObjectURL(url);resolve(file)};img.src=url})}
 function formatBytes(n){if(!n)return"0 KB";if(n<1048576)return Math.max(1,Math.round(n/1024))+" KB";return(n/1048576).toFixed(1)+" MB"}
 function showProofUpload(message){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus");if(upload)upload.hidden=false;if(example)example.hidden=false;if(title)title.textContent="ارفع صحيفة التخرج";if(lead)lead.textContent="PDF أو صورة واضحة للصفحة الرسمية «الخطة الدراسية / صحيفة التخرج». يجب أن يظهر الرقم المدني والبرنامج والوحدات المجتازة بوضوح. الاسم يساعد في العرض ولا يشترط تطابقه حرفياً. أي مستند آخر لن يُقبل.";if(status){status.className="proof-status";status.textContent=message||"لم يتم التحقق بعد."}proofEligible=false;proofToken="";refreshGraduateSubmit()}
-function acceptVerifiedProof(d,reused){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus"),options=document.getElementById("graduateOptions");proofEligible=!!d.eligible;proofToken=d.proofToken||"";if(upload)upload.hidden=true;if(example)example.hidden=true;if(title)title.textContent=reused?"تم التحقق مسبقًا":"تم التحقق من صحيفة التخرج";if(lead)lead.textContent=reused?"لا حاجة لرفع الصحيفة مرة أخرى لهذا الفصل والقسم.":"تم اعتماد بيانات الصحيفة لهذه الجلسة.";if(status){status.className="proof-status "+(reused?"reused":"ok");status.textContent=d.message||"تم التحقق، ويمكنك متابعة الطلب."}if(options){options.hidden=false;wireGraduateDetails()}refreshGraduateSubmit()}
-function checkPriorGraduateProof(){if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
-function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
-function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}rememberIdentity();identityLocked=true;host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
-fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
+function acceptVerifiedProof(d,reused){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus"),options=document.getElementById("graduateOptions");proofEligible=!!d.eligible;proofToken=d.proofToken||"";proofAt=proofToken?Date.now():0;if(upload)upload.hidden=true;if(example)example.hidden=true;if(title)title.textContent=reused?"تم التحقق مسبقًا":"تم التحقق من صحيفة التخرج";if(lead)lead.textContent=reused?"لا حاجة لرفع الصحيفة مرة أخرى لهذا الفصل والقسم.":"تم اعتماد بيانات الصحيفة لهذه الجلسة.";if(status){status.className="proof-status "+(reused?"reused":"ok");status.textContent=d.message||"تم التحقق، ويمكنك متابعة الطلب."}if(options){options.hidden=false;wireGraduateDetails()}refreshGraduateSubmit()}
+function checkPriorGraduateProof(){var rule=section().graduateRule;if(rule&&rule.saved===false){var up=document.getElementById("proofUpload"),ex=document.getElementById("proofExample"),st=document.getElementById("proofStatus");if(up)up.hidden=true;if(ex)ex.hidden=true;if(st){st.className="proof-status bad";st.textContent="لم يعتمد قسمك العلمي قواعد التخرج في النظام بعد، فلا يمكن التحقق من صحيفة التخرج الآن. راجع القسم، ويمكنك اختيار نوع طلب آخر."}proofEligible=false;proofToken="";refreshGraduateSubmit();return}if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
+function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent>MAX_PROOF_BYTES){button.disabled=false;button.textContent="إعادة التحقق";meter.hidden=true;status.className="proof-status bad";status.textContent="حجم الملف "+formatBytes(sent)+" أكبر من الحد (14 MB). صوّر الصفحة الرسمية وحدها أو احفظها PDF بحجمٍ أصغر.";refreshGraduateSubmit();return}if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
+function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&proofEligible&&proofAt&&Date.now()-proofAt>PROOF_TTL-60000){showProofUpload("انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان.");var up=document.getElementById("proofUpload");if(up&&up.scrollIntoView)up.scrollIntoView({block:"center"});return fail("أعد التحقق من صحيفة التخرج ثم أرسل.")}if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent=sendLabel();if(kind==="graduate"&&(x.d.code==="proof-expired"||x.d.code==="proof-required")){showProofUpload(x.d.error);var up=document.getElementById("proofUpload");if(up&&up.scrollIntoView)up.scrollIntoView({block:"center"})}return fail(x.d.error||"تعذر الإرسال")}identityLocked=true;caseRef=String(x.d.caseRef||caseRef);host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'#'+encodeURIComponent(caseRef)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent=sendLabel();fail("تعذر الإرسال — تحقق من الاتصال.")})}
+fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}if(x.d.termEnded){host.innerHTML='<div class="done" role="status"><h2>انتهى هذا الفصل</h2><p>'+esc(x.d.message||"")+'</p><a href="'+esc(x.d.statusUrl||"#")+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">حالة طلبي</a></div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
 }
 
@@ -16927,26 +17209,52 @@ ${resolved.error}</body></html>`);
      وصل الطلب، ومتى، وبأيّ مقرّرات. وادّعاءُ ما بعدها يصنع زحمةً أسوأ حين
      يكتشف الطالبُ أنه غير مسجَّل.
 
-   - **لا تكشف أحداً.** تُقرأ ببصمة الرقم المدني كما يُكتب بها، فالصفحةُ لا
-     تعرف اسماً ولا تعرضه. ومن لا طلبَ له يُقال له ذلك، لا «الرقم خطأ»:
-     الفرقُ بينهما يكشف من عبّأ ومن لم يعبّئ لمن يجرّب أرقاماً.
+   - **لا تكشف أحداً.** تُقرأ ببصمة الرقم المدني **ورقم الحالة** معاً، فالرقمُ
+     المدنيُّ وحده لا يفتح طلبَ أحد، والصفحةُ لا تعرض اسماً. ومن لا طلبَ له —
+     أو أخطأ في أحد الرقمين — يُقال له الجوابُ نفسُه، لا «الرقم خطأ»: الفرقُ
+     بينهما يكشف من عبّأ ومن لم يعبّئ لمن يجرّب أرقاماً.
 
    - **ولا تُفتح بالمحاولة.** حدُّ المحاولات نفسُه المفروضُ على بطاقة الأستاذ:
      عشرُ محاولاتٍ في النافذة، ثم انتظار.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * ── الحالةُ تعيش بعد باب الإرسال ───────────────────────────────────────────
+ *
+ * «حالة طلبي» كانت تُقرأ بالرابط نفسه الذي يُرسَل به، فإذا أوقفه القسم أو
+ * انتهت صلاحيته — وهو ما يحدث عادةً مع أسبوع السحب والإضافة، قبل أن يقرّر
+ * التسجيل — ماتت الحالة معه، ورجع الطالب إلى المكتب ليسأل. فالقراءةُ هنا
+ * تبقى مفتوحةً لرابط الاستبيان حتى ثلاثين يوماً بعد نهاية فصله، والإرسالُ
+ * يبقى مغلقاً كما هو (يمرّ بـ`resolveShareToken`).
+ */
+const SURVEY_STATUS_GRACE_MS = 30 * 86400000;
+async function resolveSurveyStatusToken(token: string): Promise<{ link: ScheduleShareLink } | { error: string; status: 404 | 410 }> {
+  const link = await Repository.getShareLink(String(token || ""));
+  if (!link || link.kind !== "survey") return { error: "الرابط غير موجود أو ليس استبياناً", status: 404 };
+  const open = !link.revoked && new Date(link.expiresAt).getTime() >= Date.now();
+  if (open) return { link };
+  const term = (await Repository.getTerms()).find((row: any) => Number(row.AdTermId) === Number(link.AdTermId));
+  const window = termWindow(term as any);
+  const readableUntil = Math.max(new Date(link.expiresAt).getTime() || 0, window?.to || 0) + SURVEY_STATUS_GRACE_MS;
+  if (Date.now() < readableUntil) return { link };
+  return { error: "انتهت مدة متابعة الطلبات لهذا الفصل. راجع القسم.", status: 410 };
+}
+
 app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response) => {
   const token = String(req.params.token || "");
-  const resolved = await resolveShareToken(token);
+  /* القراءةُ تتبع مهلةَ الحالة لا بابَ الإرسال. */
+  const resolved = await resolveSurveyStatusToken(token);
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
-  if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
   if (!staffLookupAllowed(`mycase:${token}`, req.ip || "unknown")) {
     res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
     return;
   }
 
-  const civil = String(req.body?.civil || "").replace(/\D/g, "");
-  if (civil.length !== 12 || !validateCivilId(civil)) {
+  /* «٢٩٠…» و«۲۹۰…» رقمٌ صحيح كُتب بلوحةٍ عربية، لا خطأ. والتحقق يُقرأ من
+     `.isValid`: الدالة تُرجع كائناً، و`!كائن` لا يكون صحيحاً أبداً — فكان
+     أيُّ اثني عشر رقماً مخترعاً يمرّ إلى المخزن. */
+  const civil = toEnglishDigits(req.body?.civil).replace(/\D/g, "");
+  if (civil.length !== 12 || !validateCivilId(civil).isValid) {
     res.status(400).json({ error: "أدخل الرقم المدني من 12 رقماً كما في بطاقتك." });
     return;
   }
@@ -16957,9 +17265,12 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     Repository.getCourses(),
     Repository.getTerms(),
   ]);
+  /* بالرقم المدني **ورقم الحالة** معاً: الرقمُ المدنيُّ وحده يعرفه غيرُ
+     صاحبه. وخطأُ أيٍّ منهما جوابُه واحد: «لا طلب» — فلا يكشف لمن يجرّب. */
   const mine = (needs as any[]).find(need =>
     String(need?.fingerprint || "") === fingerprint
-    && Number(need?.surveySectionId || need?.AdSectionId || 0) === Number(resolved.link.AdSectionId));
+    && Number(need?.surveySectionId || need?.AdSectionId || 0) === Number(resolved.link.AdSectionId)
+    && caseRefMatches(need, req.body?.caseRef));
 
   res.setHeader("Cache-Control", "no-store");
   if (!mine) {
@@ -16971,6 +17282,38 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
 
   const nameOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
   const codeOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), String(row.CourseCode || "")]));
+  /* «سلّمته للتسجيل» لا يُقال والتسجيلُ لا يرى الكشف أصلاً: التسجيلُ لا يقرأ
+     طلباتِ قسمٍ لم يوقّع جدولَه (registrarBlockReason). فما وافقت عليه اللجنة
+     وجدولُ قسمه غير موقّع يُقال فيه ما هو: بانتظار اكتمال اعتماد جدول القسم. */
+  const signedCache = new Map<number, boolean>();
+  const sectionSigned = async (sectionId: number) => {
+    if (!signedCache.has(sectionId)) signedCache.set(sectionId,
+      isFullySigned(await readApproval(Number(mine.AdCollegeId), sectionId, Number(mine.AdTermId))));
+    return Boolean(signedCache.get(sectionId));
+  };
+  const ownerOf = new Map((courses as any[]).map(row => [Number(row.AdCourseId), Number(row.AdSectionId || 0)]));
+  const surveySection = Number(mine.surveySectionId || mine.AdSectionId || 0);
+  const handedButUnsigned = async (courseId: number | null) =>
+    !(await sectionSigned(courseId === null ? surveySection : (ownerOf.get(courseId) || surveySection)));
+  const courseIdsForStudent = [
+    ...(Array.isArray(mine.courseIds) ? mine.courseIds : []),
+    ...(mine.courseStates || []).filter((entry: any) => entry?.droppedByStudent).map((entry: any) => entry.courseId),
+  ].filter((id: any, index: number, all: any[]) => all.map(Number).indexOf(Number(id)) === index);
+  const courseRows = await Promise.all(courseIdsForStudent.map(async (id: any) => {
+    const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
+    return {
+      code: codeOf.get(Number(id)) || "",
+      name: nameOf.get(Number(id)) || `مقرر ${id}`,
+      /* ما لم يُقل فيه شيءٌ بعد يبقى بلا حالة، ولا يُسمّى «بانتظار التسجيل»:
+         الانتظارُ قولٌ يقوله القسمُ حين يسلّم، لا حالةٌ تُفترض. */
+      state: state?.state === "awaiting-registration" && !state?.droppedByStudent && await handedButUnsigned(Number(id))
+        ? "awaiting-signatures" : (state?.state || ""),
+      reason: state?.reasonCode || "",
+      note: state?.note || "",
+      dropped: state?.droppedByStudent ? droppedCourseLabel(state) : "",
+    };
+  }));
+  const caseStatus = isCaseLevelNeed(mine) ? studentCaseStatus(mine.caseState) : "";
   res.json({
     found: true,
     /* الرقمُ نفسه الذي أُعطي له لحظةَ الإرسال، مشتقٌّ من معرّف السجلّ لا
@@ -16979,18 +17322,15 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
     submittedAt: String(mine.createdAt || ""),
     requestType: String(mine.requestType || "new-course"),
     term: String((terms as any[]).find(row => Number(row.AdTermId) === Number(mine.AdTermId))?.AdTermName || ""),
-    courses: (Array.isArray(mine.courseIds) ? mine.courseIds : []).map((id: any) => {
-      const state: any = (mine.courseStates || []).find((entry: any) => Number(entry.courseId) === Number(id));
-      return {
-        code: codeOf.get(Number(id)) || "",
-        name: nameOf.get(Number(id)) || `مقرر ${id}`,
-        /* ما لم يُقل فيه شيءٌ بعد يبقى بلا حالة، ولا يُسمّى «بانتظار التسجيل»:
-           الانتظارُ قولٌ يقوله القسمُ حين يسلّم، لا حالةٌ تُفترض. */
-        state: state?.state || "",
-        reason: state?.reasonCode || "",
-        note: state?.note || "",
-      };
-    }),
+    /* طلبُ الخريج لا مقرّرات فيه: قرارُه قرارٌ في الحالة كلها، ويصل الطالبَ
+       بسببه وسطره كما تصل قراراتُ المقرّرات. */
+    caseLevel: isCaseLevelNeed(mine),
+    caseStatus: caseStatus === "approved" && await handedButUnsigned(null) ? "awaiting-signatures" : caseStatus,
+    caseDecision: isCaseLevelNeed(mine) ? {
+      committee: mine.caseState?.committee ? { state: mine.caseState.committee.state, reason: mine.caseState.committee.reasonCode || "", note: mine.caseState.committee.note || "" } : null,
+      registrar: mine.caseState?.registrar ? { state: mine.caseState.registrar.state, reason: mine.caseState.registrar.reasonCode || "", note: mine.caseState.registrar.note || "" } : null,
+    } : null,
+    courses: courseRows,
   });
 });
 
@@ -17033,19 +17373,33 @@ li span{display:flex;flex-direction:column;gap:3px}
 .st[data-s=rejected]{color:var(--bad);font-weight:700}
 .st[data-s=committee-rejected]{color:var(--bad);font-weight:700}
 .note{margin-top:15px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.sub,.reflabel,.st{font-size:13px}
 .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
+label.gap{margin-top:13px}
+.help{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
+.case{margin:0 0 12px;padding:11px 13px;border-radius:11px;background:#eef4f0;font-size:14px;font-weight:600}
+.case[data-s=registered]{color:var(--ok)}
+.case[data-s=rejected],.case[data-s=committee-rejected]{color:var(--bad);background:#fdeceb}
+.case small{font-weight:400;color:var(--ink)}
 </style></head><body><div class="wrap">
 <h1>حالة طلبي</h1>
-<p class="sub">أدخل رقمك المدني لترى ما أرسلتَه إلى القسم.</p>
+<p class="sub">أدخل رقمك المدني ورقم الحالة لترى ما أرسلتَه إلى القسم.</p>
 <label for="civil">الرقم المدني</label>
 <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا">
+<label for="ref" class="gap">رقم الحالة</label>
+<input id="ref" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" placeholder="الرقم الذي ظهر لك عند الإرسال" aria-describedby="refHelp">
+<small id="refHelp" class="help">فقدت رقم الحالة؟ راجع القسم. لا تُعرض الحالة بالرقم المدني وحده.</small>
 <button id="go" type="button">اعرض حالتي</button>
-<div id="out"></div>
+<div id="out" aria-live="polite"></div>
 </div>
 <script nonce="${nonce}">(function(){
-var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),
+var TOKEN=${JSON.stringify(token)},box=document.getElementById("civil"),refBox=document.getElementById("ref"),
 go=document.getElementById("go"),out=document.getElementById("out");
-var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+/* رقمُ الحالة يصل من صفحة الإرسال في جزء الرابط بعد # — لا يُرسَل إلى الخادم ولا يُحفظ. */
+try{var fromHash=decodeURIComponent(String(location.hash||"").slice(1));if(fromHash)refBox.value=fromHash.toUpperCase().slice(0,16)}catch(e){}
+var STATE={"awaiting-registration":"وافقت عليه لجنة القسم وسلّمته للتسجيل","awaiting-signatures":"وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم","committee-rejected":"لم توافق عليه لجنة القسم","registered":"سجّله التسجيل","rejected":"ردّه التسجيل"};
+var TYPE={"new-course":"طلب فتح مقرر","course-conflict":"تعارض مقررين","graduate":"خريج / متوقع تخرجه"};
+var CASE={"pending":"وصل إلى القسم وينتظر نظر لجنة القسم","approved":"وافقت عليه لجنة القسم وسلّمته للتسجيل","awaiting-signatures":"وافقت عليه لجنة القسم · بانتظار اكتمال اعتماد جدول القسم","committee-rejected":"لم توافق عليه لجنة القسم","registered":"نفّذه التسجيل","rejected":"ردّه التسجيل"};
 var REASON={"no-seat":"لا مقاعد","prerequisite":"متطلّب سابق","level":"المستوى",
 "conflict":"تعارض في جدولك","closed":"الشعبة مغلقة","other":"سبب آخر",
 "not-eligible":"لا تنطبق عليك الشروط","not-in-plan":"ليس من خطتك الدراسية","duplicate":"طلب مكرر أو سبق تسجيله"};
@@ -17058,42 +17412,51 @@ return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\\D/g,"")}
 box.addEventListener("input",function(){var v=digits(box.value).slice(0,12);if(v!==box.value)box.value=v});
 function dt(iso){if(!iso)return "";var d=new Date(iso);return isNaN(d)?"":
 d.toLocaleDateString("ar-KW-u-nu-latn",{year:"numeric",month:"long",day:"numeric"})}
-function fail(m){out.innerHTML='<div class="err">'+esc(m)+'</div>'}
+function fail(m){out.innerHTML='<div class="err" role="alert">'+esc(m)+'</div>'}
+function caseLine(d){
+ var dec=d.caseDecision||{},last=dec.registrar||dec.committee,st=d.caseStatus||"pending";
+ return '<p class="case" data-s="'+esc(st)+'">'+esc(CASE[st]||CASE.pending)+
+  (last&&last.reason?' — '+esc(REASON[last.reason]||last.reason):'')+
+  (last&&last.note?'<br><small>'+esc(last.note)+'</small>':'')+'</p>'}
 function show(d){
  if(!d.found){out.innerHTML='<div class="card"><div class="empty">'+
-  'لا يوجد طلبٌ مسجّلٌ بهذا الرقم في '+esc(d.term||"هذا الفصل")+'.<br>'+
+  'لا يوجد طلبٌ بهذا الرقم المدني ورقم الحالة في '+esc(d.term||"هذا الفصل")+'.<br>'+
   'إن كنت قد عبّأت الاستبيان من رابطٍ آخر، افتح ذلك الرابط.</div></div>';return}
  out.innerHTML='<div class="card"><p class="ref">'+esc(d.caseRef)+'</p>'+
-  '<p class="reflabel">رقم حالتك · '+esc(d.term)+'</p>'+
+  '<p class="reflabel">رقم حالتك · '+esc(d.term)+(TYPE[d.requestType]?' · '+esc(TYPE[d.requestType]):'')+'</p>'+
+  (d.caseLevel?caseLine(d):'')+
   '<ul>'+(d.courses||[]).map(function(c){
    return '<li><span>'+esc(c.name)+(c.state?'<i class="st" data-s="'+esc(c.state)+'">'+
     esc(STATE[c.state]||c.state)+(c.reason?' — '+esc(REASON[c.reason]||c.reason):'')+
-    (c.note?' · '+esc(c.note):'')+'</i>':'')+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
+    (c.note?' · '+esc(c.note):'')+'</i>':'')+(c.dropped?'<i class="st" data-s="dropped">'+esc(c.dropped)+'</i>':'')+'</span><small>'+esc(c.code)+'</small></li>'}).join("")+'</ul>'+
   '<p class="note">وصل طلبك إلى القسم يوم '+esc(dt(d.submittedAt))+'.<br>'+
   'هذه حالةُ طلبك عند القسم، وليست تسجيلاً في النظام الأكاديمي. '+
   'وإذا غيّرت اختيارك، افتح رابط الاستبيان وأرسل من جديد فيُحدَّث طلبك.</p></div>'}
 function run(){
  var civil=digits(box.value);
  if(civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");
+ var ref=String(refBox.value||"").trim().toUpperCase();
+ if(ref.length<6)return fail("أدخل رقم الحالة كما ظهر لك عند الإرسال");
  go.disabled=true;go.textContent="يقرأ…";out.innerHTML="";
  fetch("/api/public/survey/"+encodeURIComponent(TOKEN)+"/my-case",{method:"POST",
-  headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:civil})})
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:civil,caseRef:ref})})
  .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
  .then(function(x){go.disabled=false;go.textContent="اعرض حالتي";
   if(!x.ok)return fail(x.d.error||"تعذّر القراءة");show(x.d)})
  .catch(function(){go.disabled=false;go.textContent="اعرض حالتي";fail("تعذّر الاتصال.")})}
 go.onclick=run;
 box.addEventListener("keydown",function(e){if(e.key==="Enter")run()});
+refBox.addEventListener("keydown",function(e){if(e.key==="Enter")run()});
 })();</script></body></html>`;
 }
 
 /** بابُ «حالة طلبي». الرابطُ نفسه الذي عبّأ منه الطالب، بمسارٍ آخر. */
 app.get("/m/:token", async (req: Request, res: Response) => {
-  const resolved = await resolveShareToken(String(req.params.token || ""));
+  const resolved = await resolveSurveyStatusToken(String(req.params.token || ""));
   res.setHeader("Cache-Control", "no-store");
-  if ("error" in resolved || resolved.link.kind !== "survey") {
-    const message = "error" in resolved ? resolved.error : "هذا الرابط ليس استبياناً";
-    const status = "error" in resolved ? resolved.status : 404;
+  if ("error" in resolved) {
+    const message = resolved.error;
+    const status = resolved.status;
     res.status(status).type("text/html; charset=utf-8").send(
       `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
@@ -17143,6 +17506,11 @@ app.get("/s/:token", async (req: Request, res: Response) => {
    * والتحويلُ لا المنعُ: الرمزُ رمزُ صاحبه، وإنما أُخطئ في بابه. */
   if (resolved.link.kind === "request") {
     res.redirect(302, `/r/${encodeURIComponent(resolved.link.id)}`);
+    return;
+  }
+  /* والاستبيانُ كذلك: رابطُ الطلبة يفتح الاستبيان وحالةَ الطلب، لا جدولَ القسم. */
+  if (resolved.link.kind === "survey") {
+    res.redirect(302, `/q/${encodeURIComponent(resolved.link.id)}`);
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
