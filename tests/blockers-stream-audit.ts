@@ -32,5 +32,13 @@ const route = (signature: string) => {
     "B2 القاعات كلها (بعد طيّ الأسماء القديمة وبلا الفراغ و«---») وبجانبها الموثّقة");
 }
 
+/* B3 — JSON import reads the whole term, and its new rows can clash with each other. */
+{
+  const imp = route('app.post("/api/schedules/import",');
+  check(imp.includes("Repository.getSchedulesByScope({termId})") && imp.includes("blockingConflicts(staged,termRowsForImport,")
+    && !imp.includes("[...existing,...ready]"), "B3 استيراد JSON يُفحص ضد الفصل كله");
+  check(imp.includes("ready.map((row:any,index:number)=>({...row,id:-(index+1)}))"), "B3 والصفوف الجديدة بمعرّفات مؤقتة فيتعارض بعضها مع بعض");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

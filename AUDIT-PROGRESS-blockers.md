@@ -4,7 +4,7 @@
 |----|--------|------|
 | B1 | FIXED | tests/blocker-oracle-audit.ts (test:blocker-oracle) |
 | B2 | FIXED | tests/blockers-stream-audit.ts (B2 checks) — Reports.tsx rendering of scopeLabel belongs to the dean stream |
-| B3 | TODO | |
+| B3 | FIXED | tests/blockers-stream-audit.ts (B3) + oracle behaviour in blocker-oracle-audit |
 | B4 | TODO | |
 | B5 | TODO | |
 | B6 | TODO | |

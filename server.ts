@@ -5410,7 +5410,15 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
     else if(locationResult.check.canonical)Object.assign(row,locationResult.check.canonical);
   }
   if(!importPreflightIssues.length){
-    const conflicts=blockingConflicts(ready,[...existing,...ready],await approvalBlockerOptions());
+    /* ── ضد الفصل كله، لا ضد القسم وحده ────────────────────────────────────
+       الاستيراد يضيف ولا يستبدل، فكلُّ موعدٍ قائمٍ في الفصل — في أي قسم —
+       يبقى كما هو ويجب ألا يُحجز فوقه. كان الفحص يقرأ صفوف القسم وحدها،
+       فيمرّ صفٌّ يأخذ قاعةَ قسمٍ آخر أو أستاذَه ثم ترفضه بوابةُ الحفظ صفّاً
+       صفّاً بعد أن كُتب. والصفوف الجديدة بلا معرّفات بعد، فتُمنح معرّفاتٍ
+       سالبة للفحص وحده — وإلا عدّ المحرّكُ كلَّ صفّين منها «الصفَّ نفسه». */
+    const termRowsForImport=await Repository.getSchedulesByScope({termId});
+    const staged=ready.map((row:any,index:number)=>({...row,id:-(index+1)}));
+    const conflicts=blockingConflicts(staged,termRowsForImport,await approvalBlockerOptions());
     conflicts.slice(0,20).forEach((item:any)=>importPreflightIssues.push(item.message||item.detail||"يوجد تعارض يمنع الاستيراد"));
   }
   if(importPreflightIssues.length){
