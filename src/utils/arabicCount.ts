@@ -175,6 +175,8 @@ export const AR = {
   lateAdj:       { one: "متأخر", two: "متأخران", few: "متأخرة", many: "متأخراً" },
   possibleAdj:   { one: "محتمل", two: "محتملان", few: "محتملة", many: "محتملاً" },
   blockFemVerb:  { one: "تمنع", two: "تمنعان", few: "تمنع", many: "تمنع" },
+  differentAdj:  { one: "مختلف", two: "مختلفان", few: "مختلفة", many: "مختلفاً" },
+  similarAdj:    { one: "متشابه", two: "متشابهان", few: "متشابهة", many: "متشابهاً" },
   otherFemAdj:   { one: "أخرى", two: "أخريان", few: "أخرى", many: "أخرى" },
 } as const satisfies Record<string, ArabicNoun>;
 
