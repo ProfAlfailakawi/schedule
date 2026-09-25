@@ -369,7 +369,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
   const ring = (size: "sm" | "lg") => countdown ? (
     <InfoTip {...tipProps(`ring-${size}`)} label={countdown} tip={ringTip} className="apb-ring" data-tone={ringTone} data-size={size}
-      guide="حلقة موعد التسليم — تلميحٌ يعرض التاريخ وحال التمديد، لا فعل">
+      data-guide-ignore="حلقة موعد التسليم — تلميحٌ يعرض التاريخ وحال التمديد، لا فعل">
       <svg viewBox="0 0 36 36" aria-hidden="true">
         <circle className="apb-ring-track" cx="18" cy="18" r="15" />
         <circle className="apb-ring-value" cx="18" cy="18" r="15" pathLength={100} strokeDasharray={`${ringFill * 100} 100`} />
@@ -386,7 +386,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
     <div className="approval-bar" data-tone={tone} data-expanded={expanded || undefined} ref={barRef}
       onKeyDown={(event) => { if (event.key === "Escape" && openTip) { event.stopPropagation(); setOpenTip(null); } }}>
       <InfoTip {...tipProps("status")} label={headline} tip={detail ? [detail] : [headline]} className="apb-status" align="start"
-        guide="أيقونة حال الدورة — تلميحٌ يعرض تفصيل الحال، لا فعل">
+        data-guide-ignore="أيقونة حال الدورة — تلميحٌ يعرض تفصيل الحال، لا فعل">
         <Icon aria-hidden="true" />
       </InfoTip>
       <strong className="apb-headline">{headline}</strong>
@@ -405,7 +405,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       <div className="apb-visuals">
         {!expanded ? (
           <InfoTip {...tipProps("steps")} label={`مراحل الاعتماد — ${headline}`} tip={stepsTip} className="apb-steps-tip"
-            guide="مِرقاة مراحل الاعتماد المصغّرة — تلميحٌ يعرض من وقّع وأين الجدول، لا فعل">
+            data-guide-ignore="مِرقاة مراحل الاعتماد المصغّرة — تلميحٌ يعرض من وقّع وأين الجدول، لا فعل">
             <Stepper steps={steps} size="sm" returnFrom={returnFrom} />
           </InfoTip>
         ) : null}
@@ -413,21 +413,21 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
         {pendingAdditions > 0 && !headMustAcknowledge ? (
           <InfoTip {...tipProps("additions")} label={`${countOf(pendingAdditions + overflow, AR.section)} تنتظر إقرار رئيس القسم`} tip={[additionsLine]}
-            className="apb-badge" data-tone="info" guide="شارة الشعب المضافة بعد الاعتماد — تلميحٌ لا فعل">
+            className="apb-badge" data-tone="info" data-guide-ignore="شارة الشعب المضافة بعد الاعتماد — تلميحٌ لا فعل">
             <ListPlus aria-hidden="true" /><b>{(pendingAdditions + overflow).toLocaleString("ar-KW-u-nu-latn")}</b>
           </InfoTip>
         ) : null}
 
         {headReturned && headReturn ? (
           <InfoTip {...tipProps("head-return")} label="سبب إرجاع رئيس القسم" tip={[detail]} className="apb-badge" data-tone="warning"
-            guide="شارة سبب إرجاع رئيس القسم — تلميحٌ لا فعل">
+            data-guide-ignore="شارة سبب إرجاع رئيس القسم — تلميحٌ لا فعل">
             <Quote aria-hidden="true" />
           </InfoTip>
         ) : null}
 
         {!onOpenNotes && openNotes > 0 ? (
           <InfoTip {...tipProps("notes")} label={countOf(openNotes, AR.note)} tip={[notesLine]} className="apb-badge" data-tone="warning"
-            guide="شارة ملاحظات التسجيل المفتوحة — الملاحظات معروضةٌ أسفل الشاشة، والشارة تلميحٌ لا فعل">
+            data-guide-ignore="شارة ملاحظات التسجيل المفتوحة — الملاحظات معروضةٌ أسفل الشاشة، والشارة تلميحٌ لا فعل">
             <MessageSquareText aria-hidden="true" /><b>{openNotes.toLocaleString("ar-KW-u-nu-latn")}</b>
           </InfoTip>
         ) : null}
@@ -436,7 +436,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {escalated > 0 && signatureStage === "head" ? (
           <InfoTip {...tipProps("escalated")} label={`${countOf(escalated, AR.note)} مرفوعة إليك`} className="apb-badge" data-tone="warning"
             tip={<>{countOf(escalated, AR.note)} أصرّ عليها التسجيل ثلاثاً بعد ردّ اللجنة — تحتاج نظرك.</>}
-            guide="شارة الخلاف المرفوع لرئيس القسم — تلميحٌ لا فعل">
+            data-guide-ignore="شارة الخلاف المرفوع لرئيس القسم — تلميحٌ لا فعل">
             <Flag aria-hidden="true" /><b>{escalated.toLocaleString("ar-KW-u-nu-latn")}</b>
           </InfoTip>
         ) : null}
@@ -445,7 +445,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {canSignNow && blockingConflicts > 0 ? (
           <InfoTip {...tipProps("sign-blocked")} label="يمنع التوقيع" className="apb-badge apb-blocked" data-tone="danger"
             tip={<>يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</>}
-            guide="شارة مانع التوقيع — تلميحٌ بالسبب، لا فعل">
+            data-guide-ignore="شارة مانع التوقيع — تلميحٌ بالسبب، لا فعل">
             <AlertTriangle aria-hidden="true" /><b>{blockingConflicts.toLocaleString("ar-KW-u-nu-latn")}</b>
           </InfoTip>
         ) : null}
@@ -454,19 +454,19 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           : blockingConflicts > 0 ? (
             <InfoTip {...tipProps("submit-blocked")} label="يمنع الإرسال" className="apb-badge apb-blocked" data-tone="danger"
               tip={<>يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</>}
-              guide="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
+              data-guide-ignore="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
               <AlertTriangle aria-hidden="true" /><b>{blockingConflicts.toLocaleString("ar-KW-u-nu-latn")}</b>
             </InfoTip>
           ) : openNotes > 0 ? (
             <InfoTip {...tipProps("submit-blocked")} label="يمنع الإرسال" className="apb-badge apb-blocked" data-tone="danger"
               tip={<>يمنع الإرسال: {countOf(openNotes, AR.note)} من التسجيل تنتظر معالجةً أو ردّاً</>}
-              guide="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
+              data-guide-ignore="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
               <AlertTriangle aria-hidden="true" /><b>{openNotes.toLocaleString("ar-KW-u-nu-latn")}</b>
             </InfoTip>
           ) : pastDeadline ? (
             <InfoTip {...tipProps("submit-blocked")} label="يمنع الإرسال" className="apb-badge apb-blocked" data-tone="danger"
               tip={<>انقضى موعد التسليم — يلزم تمديدٌ من رئيس التسجيل</>}
-              guide="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
+              data-guide-ignore="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
               <CalendarX aria-hidden="true" />
             </InfoTip>
           ) : null
@@ -478,21 +478,21 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {/* الملاحظاتُ تُقرأ حيث هي: زرٌّ يفتح شاشة التغييرات بدل وعدٍ بتلوينٍ لا يقع. */}
         {notesShown && primaryTaken ? (
           <IconButton label={`افتح الملاحظات${openNotes ? ` — ${countOf(openNotes, AR.note)}` : ""}`} count={openNotes}
-            guide="انتقالٌ إلى شاشة تغييرات الجدول لقراءة الملاحظات — تنقّلٌ لا فعل" onClick={onOpenNotes!}>
+            data-guide-ignore="انتقالٌ إلى شاشة تغييرات الجدول لقراءة الملاحظات — تنقّلٌ لا فعل" onClick={onOpenNotes!}>
             <MessageSquareText aria-hidden="true" />
           </IconButton>
         ) : null}
 
         {canHeadReturnNow ? (
           <IconButton label="إرجاع للجنة — بسببٍ تقرؤه اللجنة" disabled={busy} data-active={sheet === "head-return" || undefined}
-            guide="يفتح ورقة سبب إرجاع الجدول للجنة — الإرسال داخلها وهو مسجّل" onClick={() => { setSheet("head-return"); setReason(""); }}>
+            data-guide-ignore="يفتح ورقة سبب إرجاع الجدول للجنة — الإرسال داخلها وهو مسجّل" onClick={() => { setSheet("head-return"); setReason(""); }}>
             <CornerUpLeft aria-hidden="true" />
           </IconButton>
         ) : null}
 
         {state.canRequestExtension && signatureStage ? (
           <IconButton label="طلب تمديد لموعد التسليم" disabled={busy} data-active={sheet === "extension" || undefined}
-            guide="يفتح ورقة طلب تمديد التسليم — الإرسال داخلها وهو مسجّل" onClick={() => { setSheet("extension"); setReason(""); setDays(7); }}>
+            data-guide-ignore="يفتح ورقة طلب تمديد التسليم — الإرسال داخلها وهو مسجّل" onClick={() => { setSheet("extension"); setReason(""); setDays(7); }}>
             <CalendarClock aria-hidden="true" />
           </IconButton>
         ) : null}
@@ -504,14 +504,14 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {/* ولا بعد القبول: سحبُ توقيعٍ على جدولٍ معتمد كان يُسقطه صامتاً إلى الإعداد. */}
         {mine && !locked && !accepted ? (
           <IconButton label="سحب توقيعي" disabled={busy}
-            guide="سحب توقيعٍ أثبته صاحبه قبل الإرسال — تراجعٌ عن فعلٍ مسجّل" onClick={() => void act("/api/approvals/withdraw")}>
+            data-guide-ignore="سحب توقيعٍ أثبته صاحبه قبل الإرسال — تراجعٌ عن فعلٍ مسجّل" onClick={() => void act("/api/approvals/withdraw")}>
             <Undo2 aria-hidden="true" />
           </IconButton>
         ) : null}
 
         {events.length ? (
           <IconButton label={historyOpen ? "إخفاء السجلّ" : "السجلّ"} aria-expanded={historyOpen}
-            guide="طيّ سجلّ الدورة وفتحه — عرضٌ لا فعل" onClick={() => setHistoryOpen(open => !open)}>
+            data-guide-ignore="طيّ سجلّ الدورة وفتحه — عرضٌ لا فعل" onClick={() => setHistoryOpen(open => !open)}>
             <History aria-hidden="true" />
           </IconButton>
         ) : null}
@@ -561,7 +561,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
 
         <IconButton label={expanded ? "إخفاء التفاصيل" : "التفاصيل"} aria-expanded={expanded} className="apb-expand"
-          guide="طيّ تفاصيل شريط الاعتماد وفتحها — عرضٌ لا فعل" onClick={toggleExpanded}>
+          data-guide-ignore="طيّ تفاصيل شريط الاعتماد وفتحها — عرضٌ لا فعل" onClick={toggleExpanded}>
           <ChevronDown aria-hidden="true" />
         </IconButton>
       </div>
@@ -572,7 +572,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
             <Stepper steps={steps} size="lg" returnFrom={returnFrom}
               stamp={(step) => step.sig?.length ? (
                 <InfoTip {...tipProps(`stamp-${step.key}`)} label={`${step.label}: ${step.sig.join(" · ")}`} tip={step.sig} className="apb-stamp"
-                  guide="ختم توقيع — تلميحٌ بالاسم والتاريخ ورمز التحقق، لا فعل">
+                  data-guide-ignore="ختم توقيع — تلميحٌ بالاسم والتاريخ ورمز التحقق، لا فعل">
                   <span className="apb-stamp-initials" aria-hidden="true">{step.initials}</span>
                   <span className="apb-stamp-check" aria-hidden="true"><Check /></span>
                 </InfoTip>
@@ -711,16 +711,16 @@ function Stepper({ steps, size, returnFrom, stamp }: {
  * عنصرٌ يُرى ويُسأل: أيقونةٌ أو شارةٌ أو حلقة، وتلميحُها يظهر بالمرور وبالتركيز،
  * ويُثبَّت بالنقر (للهاتف حيث لا مرور). ونصُّه مربوطٌ بـ aria-describedby.
  */
-function InfoTip({ label, tip, open, onToggle, className = "", align, guide, children, ...rest }: {
+function InfoTip({ label, tip, open, onToggle, className = "", align, children, ...rest }: {
   label: string; tip: React.ReactNode | string[]; open: boolean; onToggle: () => void; className?: string;
-  align?: "start" | "end"; guide: string; children: React.ReactNode; [data: `data-${string}`]: unknown;
+  align?: "start" | "end"; children: React.ReactNode; "data-guide-ignore": string; [data: `data-${string}`]: unknown;
 }) {
   const id = React.useId();
   const lines = Array.isArray(tip) ? tip.filter(Boolean) : null;
   return (
     <span className="apb-tip" data-open={open || undefined} data-align={align}>
       <button type="button" className={`apb-tip-target ${className}`.trim()} aria-label={label} aria-describedby={id} aria-expanded={open}
-        data-guide-ignore={guide} onClick={(event) => { event.stopPropagation(); onToggle(); }} {...rest}>
+        data-guide-ignore="تلميحُ عنصرٍ مرئيّ في شريط الاعتماد — يُفتح ويُطوى، لا فعل" {...rest} onClick={(event) => { event.stopPropagation(); onToggle(); }}>
         {children}
       </button>
       <span className="apb-pop" role="tooltip" id={id}>
@@ -731,12 +731,12 @@ function InfoTip({ label, tip, open, onToggle, className = "", align, guide, chi
 }
 
 /** زرُّ فعلٍ بأيقونةٍ وحدها: اسمُه في aria-label، وفي تلميحٍ يظهر بالمرور والتركيز. */
-function IconButton({ label, count, guide, className = "", children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  label: string; count?: number; guide: string; [data: `data-${string}`]: unknown;
+function IconButton({ label, count, className = "", children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string; count?: number; "data-guide-ignore": string; [data: `data-${string}`]: unknown;
 }) {
   return (
     <span className="apb-tip" data-align="end">
-      <button type="button" {...props} className={`apb-icon-btn ${className}`.trim()} aria-label={label} data-guide-ignore={guide}>
+      <button type="button" data-guide-ignore="زرّ أيقونةٍ في شريط الاعتماد — سببُه الخاصّ يمرّره كلُّ موضعٍ يستعمله" {...props} className={`apb-icon-btn ${className}`.trim()} aria-label={label}>
         {children}
         {count ? <span className="apb-count" aria-hidden="true">{count.toLocaleString("ar-KW-u-nu-latn")}</span> : null}
       </button>
