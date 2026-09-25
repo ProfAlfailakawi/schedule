@@ -208,6 +208,22 @@ async function main() {
     check(submit.includes("requestWindowOpen(resolved.request)"), "D3 الكتابة تبقى محكومةً بنافذة الطلبات");
   }
 
+
+  /* ── D8: الحذف من قسمٍ كامل يظهر في الحركة، والبطاقة تُفتح ────────────────── */
+  {
+    const movement = server.slice(server.indexOf("function movementHistoryScopes("), server.indexOf("async function buildStaffCard"));
+    check(movement.includes("for (const scope of options.historyScopes || []) movementScopeMap.set("), "D8 أقسام التاريخ تدخل قائمة أقسام الحركة");
+    check(movement.includes("request.AdCollegeId") && movement.includes("...extra"), "D8 أقسام الطلبات والقسمُ المصدِر تُضاف");
+    const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
+    check(card.includes('if (!trace.some(entry => entry.tone === "gone")) return null;'), "D8 من فقد كل صفوفه تُفتح بطاقته، ومن لم يدرّس قطّ يبقى 404");
+    check(!/if \(!linkRows\.length\) return null;/.test(card), "D8 لا بوابة «لا صفوف ← 404» بلا نظرٍ في التاريخ");
+    check(card.includes("historyScopes: displayTermId === link.AdTermId ? linkHistoryScopes"), "D8 حركة البطاقة تقرأ أقسام التاريخ");
+    check(server.includes("historyScopes: movementHistoryScopes([request])"), "D8 حركة صفحة الطلب تقرأ قسم الطلب");
+    const page = server.slice(server.indexOf("function staffCardPage"), server.indexOf("function surveyPage"));
+    check(page.includes('selectTab(!d.lectureCount && (d.movementHistory||[]).length ? "movement" : "week")') && page.includes("لا محاضرات لك في هذا الفصل"),
+      "D8 البطاقة الفارغة تقول «لا محاضرات لك» وتفتح على الحركة");
+  }
+
   console.log(`\nDoctor journey audit: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }

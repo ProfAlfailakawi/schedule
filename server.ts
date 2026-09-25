@@ -12097,10 +12097,24 @@ function requestMovementEntries(requests: InstructorRequest[]): MovementEntry[] 
   return entries;
 }
 
-async function scheduleMovementEntries(instructorId: number, termId: number, rows: any[], courseById: Map<number, any>, options: { withRooms?: boolean } = {}): Promise<MovementEntry[]> {
+/**
+ * الأقسامُ التي تُقرأ حركتُه فيها: أقسامُ صفوفه الحالية وحدها كانت تُسقط القسمَ
+ * الذي حُذف منه كلُّ ما يدرّسه — فلا يرى «حُذفت من جدولك» أبداً. فتُضاف أقسامُ
+ * طلباته في الفصل، والقسمُ الذي أصدر الرابط.
+ */
+function movementHistoryScopes(requests: ReadonlyArray<{ AdCollegeId?: number; AdSectionId?: number }>, ...extra: Array<{ collegeId: number; sectionId: number }>) {
+  const scopes = new Map<string, { collegeId: number; sectionId: number }>();
+  for (const scope of [...extra, ...requests.map(request => ({ collegeId: Number(request.AdCollegeId || 0), sectionId: Number(request.AdSectionId || 0) }))]) {
+    if (scope.collegeId && scope.sectionId) scopes.set(`${scope.collegeId}:${scope.sectionId}`, scope);
+  }
+  return [...scopes.values()];
+}
+
+async function scheduleMovementEntries(instructorId: number, termId: number, rows: any[], courseById: Map<number, any>, options: { withRooms?: boolean; historyScopes?: Array<{ collegeId: number; sectionId: number }> } = {}): Promise<MovementEntry[]> {
   /* صفحةُ الطلب لا تحمل اسمَ قاعةٍ أبداً: تقول إن المكان تغيّر، ولا تقول أين. */
   const withRooms = options.withRooms !== false;
   const movementScopeMap = new Map<string, { collegeId: number; sectionId: number }>();
+  for (const scope of options.historyScopes || []) movementScopeMap.set(`${scope.collegeId}:${scope.sectionId}`, scope);
   for (const row of rows) {
     const collegeId = Number(row.AdCollegeId || 0), sectionId = Number(row.AdSectionId || 0);
     if (collegeId && sectionId) movementScopeMap.set(`${collegeId}:${sectionId}`, { collegeId, sectionId });
@@ -12149,7 +12163,16 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   // door. Only after passing may they pin another term (Idea 2).
   const linkRows = (await Repository.getSchedulesByScope({ termId: link.AdTermId }))
     .filter(row => row.AdInstructorId === person.AdInstructorId);
-  if (!linkRows.length) return null;
+  const linkTermRequests = (await Repository.getInstructorRequests(0, 0, Number(link.AdTermId)))
+    .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
+  const linkHistoryScopes = movementHistoryScopes(linkTermRequests, { collegeId: Number(link.AdCollegeId), sectionId: Number(link.AdSectionId) });
+  /* ومن حُذف كلُّ ما يدرّسه في هذا الفصل بعد أن كان له فيه جدول، تُفتح بطاقتُه
+     فارغةً مع حركته — ليرى ما حدث لا «لا توجد بطاقة». ومن لم يدرّس هنا قطّ
+     يبقى جوابُه الـ404 الواحد نفسه. */
+  if (!linkRows.length) {
+    const trace = await scheduleMovementEntries(Number(person.AdInstructorId), Number(link.AdTermId), [], new Map(), { historyScopes: linkHistoryScopes });
+    if (!trace.some(entry => entry.tone === "gone")) return null;
+  }
 
   // The card covers the college that issued the link, so an instructor teaching
   // several of its sections sees one complete week rather than a fragment.
@@ -12163,7 +12186,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
 // A link issued by one campus must never hide requests from another campus.
   /* طلباتُه في الفصل كلِّه: الطلبُ يحمل جدولَه بكل كلياته، فلا يُبحث عنه
      بكليةٍ بعينها. */
-  const requestRows = (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
+  const requestRows = displayTermId === link.AdTermId ? linkTermRequests : (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
     .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
   const requestLinks = (await Promise.all(requestRows.map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
@@ -12185,7 +12208,9 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
      غير ما تقوله الأخرى. */
   const movementHistory = [
     ...requestMovementEntries(requestRows),
-    ...await scheduleMovementEntries(Number(person.AdInstructorId), Number(displayTermId), rows, courseById),
+    ...await scheduleMovementEntries(Number(person.AdInstructorId), Number(displayTermId), rows, courseById, {
+      historyScopes: displayTermId === link.AdTermId ? linkHistoryScopes : movementHistoryScopes(requestRows),
+    }),
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   const shaped = rows
@@ -14080,7 +14105,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
     document.getElementById("days").innerHTML=weekTable;
-    if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
+    if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل'+((d.movementHistory||[]).length?' — ما تغيّر في جدولك تجده في «حركة الجدول».':' — جرّب فصلاً آخر من الأعلى.')+'</div>';
     else if(phase === "past") document.getElementById("days").insertAdjacentHTML("afterbegin",
       '<div class="pastnote">فصل سابق — للاطلاع فقط. الإبلاغ وإضافة التقويم متاحان في الفصل الحالي.</div>');
     else if(phase === "upcoming") document.getElementById("days").insertAdjacentHTML("afterbegin",
@@ -14088,7 +14113,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 
     renderMovement(d);
     renderRequests(d);
-    selectTab("week");
+    selectTab(!d.lectureCount && (d.movementHistory||[]).length ? "movement" : "week");
 
     document.getElementById("ics").style.display = calendarOpen ? "" : "none";
     if(!calendarOpen) document.getElementById("sub").setAttribute("hidden","");
@@ -16135,7 +16160,10 @@ app.get("/api/public/request/:token/movement", async (req: Request, res: Respons
   ]);
   const own = (termRows as any[]).filter(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
   const courseById = new Map((courses as any[]).map(row => [Number(row.AdCourseId), row]));
-  const entries = (await scheduleMovementEntries(Number(request.AdInstructorId), Number(request.AdTermId), own, courseById, { withRooms: false }))
+  const entries = (await scheduleMovementEntries(Number(request.AdInstructorId), Number(request.AdTermId), own, courseById, {
+    withRooms: false,
+    historyScopes: movementHistoryScopes([request]),
+  }))
     .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
     .slice(0, 100);
   res.setHeader("Cache-Control", "no-store");
