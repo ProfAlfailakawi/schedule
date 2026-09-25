@@ -66,6 +66,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
+import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { termWindow } from "./src/utils/termSequence";
@@ -13728,6 +13729,20 @@ const openStudentIdentity=async(value?:string)=>{
   }
 };
 
+/**
+ * ── من يرى اسمَ الطالب ورقمه المدني ─────────────────────────────────────────
+ * One rule for the two screens that show them (the intelligence centre's case
+ * register and the registration sheet): the department and registration staff
+ * who act on a case see who it belongs to; the view-only roles (dean, vice
+ * dean, registrar dean) read the same register without the identity.
+ */
+const canSeeStudentIdentity = (req: AuthenticatedRequest): boolean => !isViewerOnlyRole(req.user?.Role);
+const studentIdentityFor = async (req: AuthenticatedRequest, need: any): Promise<{ name: string; civil: string }> => {
+  if (!canSeeStudentIdentity(req)) return { name: "", civil: "" };
+  const [name, civil] = await Promise.all([openStudentIdentity(need?.nameCipher), openStudentIdentity(need?.civilCipher)]);
+  return { name, civil };
+};
+
 /** The name-derived SUGGESTION lives once, in src/utils/degreeRules.ts. It is
  * never a rule a student is measured against until the department saves it. */
 const degreeRuleFromName=suggestedDegreeRule;
@@ -14375,15 +14390,9 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const operationalDemandIds=await surveyActiveCourseIds(sectionId);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId && operationalDemandIds.has(Number(course.AdCourseId)));
   const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
-  const belongsToSurvey = (need:any) => {
-    const explicit = Number(need?.surveySectionId || 0);
-    if (explicit) return explicit === sectionId;
-    if (Number(need?.AdSectionId || 0) === sectionId) return true;
-    // Legacy new-course/conflict records did not carry survey provenance. The
-    // requested course is still authoritative enough to return them to the
-    // department that owns that course.
-    return Array.isArray(need?.courseIds) && need.courseIds.some((id:any) => targetCourseIds.has(Number(id)));
-  };
+  /* The register's rule; the registration sheet reads a superset of it
+     (src/utils/studentCaseScope.ts), so a case shown here is never missing there. */
+  const belongsToSurvey = (need:any) => surveyOwnsNeed(need, sectionId, targetCourseIds);
   const needs = (allTermNeeds as any[]).filter(belongsToSurvey);
   const history = (allHistory as any[]).filter(belongsToSurvey);
   const analyticalNeeds=needs.filter((need:any)=>Array.isArray(need.courseIds)&&need.courseIds.length>0);
@@ -14451,7 +14460,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode,sectionId:Number(course.AdSectionId||0)}]));
   const sectionNameById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
   const cases=(await Promise.all(needs.map(async(need:any)=>({
-    id:need.id,caseRef:caseRefFor(need),createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
+    id:need.id,caseRef:caseRefFor(need),createdAt:need.createdAt,...await studentIdentityFor(req,need),
     studentSectionId:Number(need.studentSectionId||need.AdSectionId||0),studentSectionName:sectionNameById.get(Number(need.studentSectionId||need.AdSectionId||0))||"",
     surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
@@ -14530,40 +14539,10 @@ const grantedPermissions = async (req: AuthenticatedRequest): Promise<number[]> 
     : []);
 
 /**
- * قسمُ الاستبيان الذي يملك هذا الطلب.
- *
- * اشتقاقٌ واحدٌ للقراءة والكتابة معاً. وكانا يفترقان: القراءةُ تنسب السجلّ
- * القديم — وهو ما كُتب قبل وجود `surveySectionId` — إلى القسم الذي يملك
- * مقرّراته المطلوبة، والكتابةُ تسأل عن قسم الطالب نفسه. فطالبٌ من قسمٍ آخرَ
- * طلب مقرّراً من هذا القسم يظهر في كشفه ولا تستطيع لجنتُه أن تكتب فيه — كشفٌ
- * يُعرض ولا يُعمل به.
+ * قسمُ الاستبيان الذي يملك هذا الطلب — `sectionOwnsNeed` في
+ * src/utils/studentCaseScope.ts: اشتقاقٌ واحدٌ للقراءة والكتابة معاً، وهو ما
+ * يعرضه سجلُّ مركز الذكاء (`surveyOwnsNeed`) وزيادةُ كلِّ قسمٍ يملك مقرّراً فيه.
  */
-const sectionOwnsNeed = (need: { surveySectionId?: number; AdSectionId?: number; courseIds?: number[] },
-                         courses: Array<{ AdCourseId: number; AdSectionId: number }>,
-                         sectionId: number): boolean => {
-  /* الطلبُ الحديث يحمل قسمَ استبيانه صراحةً، فهو صاحبُه. **ومعه** كلُّ قسمٍ
-     يملك مقرّراً فيه: طلبُ «تعارض مقررين» قد يسمّي مقرّراً من قسمٍ آخر، وكان
-     لا يراه إلا قسمُ الاستبيان — ولجنتُه لا تقرّر إلا في مقرّراتها — فيبقى
-     ذلك المقرّرُ بلا من يقرّر فيه أبداً. */
-  const declared = Number(need.surveySectionId || 0);
-  if (declared) return declared === sectionId || courses.some(row => Number(row.AdSectionId) === sectionId
-    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
-
-  /* والقديمُ — وهو ما كُتب قبل وجود ذلك الحقل — يُنسب إلى **كلِّ** قسمٍ يملك
-     مقرّراً من مقرّراته المطلوبة. وهذا مقصودٌ ولا يُختصر إلى واحد: طالبٌ طلب
-     مقرّراً من الإسلامية وآخرَ من اللغة العربية يخصّ القسمين معاً، وكلٌّ
-     منهما يحتاج أن يراه ليقرّر في مقرّره هو.
-     واختصارُه إلى «أولِ مالك» يُخفي الطلبَ عن القسم الثاني بصمت. */
-  const owned = courses.some(row => Number(row.AdSectionId) === sectionId
-    && (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
-  if (owned) return true;
-
-  /* ولو لم يُعرف مالكُ أيٍّ من مقرّراته — مقرّرٌ حُذف من الكتالوج مثلاً — فلا
-     يضيع الطلبُ بلا قسم: يبقى عند قسم صاحبه. */
-  const anyKnownOwner = courses.some(row => (need.courseIds || []).some(id => Number(id) === Number(row.AdCourseId)));
-  return !anyKnownOwner && Number(need.AdSectionId || 0) === sectionId;
-};
-
 /** أقسامُ نطاق الحساب التي تملك هذا الطلب — ما يُكتب به في المقرّر وفي الحالة كلها. */
 const owningSectionsInScopeFor = async (req: AuthenticatedRequest, need: any, allCourses: any[]): Promise<number[]> =>
   (await Repository.getSections() as any[])
@@ -14654,8 +14633,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       return {
         id: String(need.id),
         caseRef: caseRefFor(need),
-        name: await openStudentIdentity(need.nameCipher),
-        civil: await openStudentIdentity(need.civilCipher),
+        ...await studentIdentityFor(req, need),
         createdAt: String(need.createdAt || ""),
         requestType: String(need.requestType || "graduate"),
         studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
@@ -14700,8 +14678,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       /* رقمُ الحالة هو نفسه الذي يحمله الطالب، مشتقٌّ من معرّف السجلّ — فيبحث
          به موظّفُ التسجيل عمّن يقف أمامه بلا أن يسأله عن رقمه المدني. */
       caseRef: caseRefFor(need),
-      name: await openStudentIdentity(need.nameCipher),
-      civil: await openStudentIdentity(need.civilCipher),
+      /* الاسمُ والرقمُ المدنيّ كما يعرضهما سجلُّ مركز الذكاء، للقاعدة نفسها. */
+      ...await studentIdentityFor(req, need),
       createdAt: String(need.createdAt || ""),
       requestType: String(need.requestType || "new-course"),
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
@@ -14712,7 +14690,8 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       partnerCourses: String(need.requestType || "") === "course-conflict"
         ? (need.courseIds || []).filter((id: any) => !visibleCourseIds.map(Number).includes(Number(id))).map((id: any) => {
             const course: any = courseById.get(Number(id));
-            return { code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${id}`),
+            return { id: Number(id), code: String(course?.CourseCode || ""), name: String(course?.CourseName || `مقرر ${id}`),
+              sectionId: Number(course?.AdSectionId || 0),
               sectionName: sectionNameById.get(Number(course?.AdSectionId || 0)) || "" };
           })
         : [],
@@ -14723,6 +14702,9 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
           id: Number(id),
           code: String(course?.CourseCode || ""),
           name: String(course?.CourseName || `مقرر ${id}`),
+          /* مالكُ المقرّر، ليقرأه السجلُّ المشترك «لهذا القسم» أو «لقسمٍ آخر». */
+          sectionId: ownerOf(id),
+          sectionName: sectionNameById.get(ownerOf(id)) || "",
           state: String(state?.state || "awaiting-registration"),
           reasonCode: state?.reasonCode,
           note: state?.note,

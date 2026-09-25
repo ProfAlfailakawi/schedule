@@ -15,6 +15,7 @@ import { graduationProgrammeText, graduationSheetFacts } from "../src/utils/docu
 import { createCoalescer, createTtlMemo, studentQueueAggregate } from "../src/server/notificationCache";
 import { chooseStudentCaseSecret } from "../src/server/studentCaseSecret";
 import { applyStudentCaseDecision, isCaseLevelNeed, studentCaseRefusal, studentCaseStatus } from "../src/utils/studentCaseDecision";
+import { sectionOwnsNeed as sheetOwnsNeed } from "../src/utils/studentCaseScope";
 
 /* مخزنٌ محليٌّ معزول لكل تشغيل: لا يلمس بيانات أحد. */
 const privateDir = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-student-journey-"));
@@ -318,8 +319,10 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const demand = between(server, 'app.get("/api/schedules/demand"', "كشفُ التسجيل — الطرفان على ورقةٍ واحدة");
   check(demand.includes("caseRef:caseRefFor(need)"), "S13 قراءة القسم تحمل رقم الحالة");
   const workspace = read("src/components/IntelligenceWorkspace.tsx");
-  check(!/slice\(0,\s*8\)\.toUpperCase\(\)/.test(workspace) && (workspace.match(/item\.caseRef\s*\|\|\s*"—"/g) || []).length === 2,
-    "S13 الجدول والطباعة يعرضان رقم الحالة، لا بادئة المعرّف");
+  const register = read("src/components/StudentCasesTable.tsx");
+  check(!/slice\(0,\s*8\)\.toUpperCase\(\)/.test(workspace + register) && workspace.includes("<StudentCasesTable")
+    && (register.match(/item\.caseRef\s*\|\|\s*"—"/g) || []).length === 2,
+    "S13 الجدول والطباعة (السجلّ المشترك) يعرضان رقم الحالة، لا بادئة المعرّف");
   const derivations = ["server.ts", "src/db/repository.ts", "src/utils/studentNeedMerge.ts", "src/components/IntelligenceWorkspace.tsx", "src/components/StudentRegistration.tsx"]
     .filter(file => /slice\(0,\s*8\)\.toUpperCase\(\)/.test(read(file)));
   check(derivations.length === 1 && derivations[0] === "src/utils/studentNeedMerge.ts", `S13 اشتقاق رقم الحالة في مكانٍ واحد (${derivations.join(", ")})`);
@@ -327,8 +330,9 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
 
 /* ── S14 مقرّر القسم الآخر في «تعارض مقررين» يُقرَّر في كشف قسمه ─────────── */
 {
-  const owns = between(server, "const sectionOwnsNeed = ", "const STUDENT_COURSE_STATES");
-  check(/if \(declared\) return declared === sectionId \|\| courses\.some\(row => Number\(row\.AdSectionId\) === sectionId/.test(owns),
+  const catalogue = [{ AdCourseId: 11, AdSectionId: 3 }, { AdCourseId: 22, AdSectionId: 4 }];
+  const conflict = { surveySectionId: 3, AdSectionId: 3, courseIds: [11, 22] };
+  check(sheetOwnsNeed(conflict, catalogue, 3) && sheetOwnsNeed(conflict, catalogue, 4) && !sheetOwnsNeed(conflict, catalogue, 5),
     "S14 القسم المالك لمقرّرٍ في الطلب يراه (لا قسم الاستبيان وحده)");
   const list = between(server, 'app.get("/api/student-registration"', 'app.post("/api/student-registration/:id/course-state"');
   check(list.includes("readOnly: !decidedHere(id)") && list.includes("decidedBySectionName"), "S14 مقرّر القسم الآخر يظهر في كشف الاستبيان للقراءة");
@@ -337,7 +341,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const write = between(server, 'app.post("/api/student-registration/:id/course-state"', 'app.post("/api/student-registration/:id/case-state"');
   check(write.includes("هذا المقرّر لقسمٍ آخر؛ تقرّر فيه لجنةُ ذلك القسم."), "S14 ولجنة قسم الاستبيان لا تقرّر في مقرّر غيرها");
   const sheet = read("src/components/StudentRegistration.tsx");
-  check(sheet.includes("يقرّره قسم {course.decidedBySectionName") && sheet.includes("committeeActs && !course.readOnly"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
+  check(sheet.includes("`يقرّره قسم ${course.decidedBySectionName") && sheet.includes("committeeActs && !course.readOnly"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
 }
 
 /* ── S15 «سلّمته للتسجيل» لا يُقال قبل التوقيعين ─────────────────────────── */
