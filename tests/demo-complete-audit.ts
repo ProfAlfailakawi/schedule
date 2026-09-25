@@ -210,6 +210,16 @@ function p5Findings() {
   const decide = server.slice(server.indexOf('app.post("/api/instructor-requests/:id/decide"'), server.indexOf('app.get("/api/public/request/:token"'));
   check(decide.includes("const decided = requestFullySettled(items);"), "مسارُ القرار يسأل القاعدة الواحدة");
   check(!/decision\?\.state === "rejected"\)/.test(decide), "ولا نسخةَ ثانيةً من الشرط فيه");
+  /* رئيسُ القسم يوقّع على نسخةٍ فيها الشُّعبُ المضافة؛ فلا يُطلب منه إقرارٌ ثانٍ
+     ويُمنع الإرسالُ الذي يلي توقيعَه. */
+  const sign = server.slice(server.indexOf('app.post("/api/approvals/sign"'), server.indexOf('app.post("/api/approvals/withdraw"'));
+  const staleAt = sign.indexOf("refuseIfStale("), ackAt = sign.indexOf('if (stage === "head" && pendingAdditionTotal(next)) next = acknowledgeAdditions(next).next;');
+  const submitAt = sign.indexOf("submitToRegistrar(");
+  check(ackAt > 0 && staleAt > 0 && staleAt < ackAt && ackAt < submitAt,
+    "توقيعُ رئيس القسم يشمل الشُّعب المضافة قبل الإرسال — بعد حارس «الشاشة قديمة»");
+  const seed = server.slice(server.indexOf("async function seedDemoStories("), server.indexOf("\n}\n", server.indexOf("async function seedDemoStories(")));
+  check(seed.includes('attempt.items[target].verdict === "clear"') && seed.includes("acceptable.slice(1, 3)"),
+    "الطلبُ المبذور وبدائلُه كلُّها مما يقبله حكمُ النظام — لا بديلَ يُرفض حين يختاره الأستاذ");
 }
 
 async function main() {

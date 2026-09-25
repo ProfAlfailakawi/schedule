@@ -2146,7 +2146,8 @@ async function seedDemoStories(): Promise<void> {
   const candidateSlots: Array<{ days: RequestDayKey[]; start: string }> = [
     { days: ["fsunday", "ftuesday"], start: "12:30" }, { days: ["fmonday", "fwednesday"], start: "14:00" },
     { days: ["fsunday", "ftuesday"], start: "15:30" }, { days: ["fmonday", "fwednesday"], start: "08:00" },
-    { days: ["fthursday"], start: "09:30" },
+    { days: ["fmonday", "fwednesday"], start: "09:30" }, { days: ["fsunday", "ftuesday"], start: "11:00" },
+    { days: ["fmonday", "fwednesday"], start: "15:30" }, { days: ["fsunday", "ftuesday"], start: "08:00" },
   ];
   for (const [index, instructorId] of teachers.entries()) {
     const person = instructors.find(row => Number(row.AdInstructorId) === instructorId);
@@ -2168,19 +2169,21 @@ async function seedDemoStories(): Promise<void> {
     /* بندٌ واحدٌ يُطلب نقله إلى أوّل موعدٍ يقبله حكمُ النظام نفسُه (judgeRequestItems). */
     const target = request.items.findIndex(item => Number(item.before?.sectionId || sectionId) === sectionId);
     if (target < 0) continue;
-    let judged: InstructorRequest | null = null;
+    const movedTo = (slot: { days: RequestDayKey[]; start: string }) => request.items.map((item, at) => at !== target ? item : {
+      ...item, action: "change" as const,
+      after: { ...item.before!, room: undefined, days: slot.days.map(day => DAY_LETTERS[day]).join(" · "), time: `${slot.start} – ${endForRequest(slot.days, slot.start)}` },
+      slots: slot.days.map(day => ({ day, start: slot.start, end: endForRequest([day], slot.start) })),
+      excuse: "يتوافق مع ساعاتي المكتبية وتدريب الطلبة الميداني.",
+    });
+    /* كلُّ موعدٍ يُطلب أو يُعرض بديلاً يمرّ بحكم النظام نفسه أولاً: لا يُبذر
+       طلبٌ لا يُرسل، ولا بديلٌ يرفضه النظام حين يختاره الأستاذ. */
+    const acceptable: Array<{ slot: { days: RequestDayKey[]; start: string }; judged: InstructorRequest }> = [];
     for (const slot of candidateSlots) {
-      const end = endForRequest(slot.days, slot.start);
-      const items = request.items.map((item, at) => at !== target ? item : {
-        ...item, action: "change" as const,
-        after: { ...item.before!, room: undefined, days: slot.days.map(day => DAY_LETTERS[day]).join(" · "), time: `${slot.start} – ${end}` },
-        slots: slot.days.map(day => ({ day, start: slot.start, end: endForRequest([day], slot.start) })),
-        excuse: "يتوافق مع ساعاتي المكتبية وتدريب الطلبة الميداني.",
-      });
-      const attempt = await judgeRequestItems({ ...request, items });
-      if (attempt.items[target].verdict !== "conflict") { judged = attempt; break; }
+      const attempt = await judgeRequestItems({ ...request, items: movedTo(slot) });
+      if (attempt.items[target].verdict === "clear") acceptable.push({ slot, judged: attempt });
     }
-    if (!judged) continue;
+    if (!acceptable.length) continue;
+    const judged = acceptable[0].judged;
     const submittedAt = iso(-4 + index);
     const signed = {
       ...judged, status: "submitted" as const, submittedAt,
@@ -2189,8 +2192,9 @@ async function seedDemoStories(): Promise<void> {
     };
     if (index === 0) { await Repository.saveInstructorRequest(signed); continue; }
     const decidedAt = iso(-1);
-    const offered = candidateSlots.filter(slot => slot.days.length > 1).slice(2, 4)
-      .map(slot => ({ day: slot.days[0], days: slot.days, start: slot.start, end: endForRequest(slot.days, slot.start) }));
+    const offered = acceptable.slice(1, 3)
+      .map(({ slot }) => ({ day: slot.days[0], days: slot.days, start: slot.start, end: endForRequest(slot.days, slot.start) }));
+    if (!offered.length) { await Repository.saveInstructorRequest(signed); continue; }
     const decidedItems = signed.items.map((item, at) => at !== target ? item : {
       ...item, decision: { state: "rejected" as const, reasonCode: "room" as const, note: "لا قاعة مناسبة في هذا الموعد؛ اختر أحد البديلين.", alternatives: offered, decidedBy: committee.role, decidedAt },
     });
@@ -9911,6 +9915,11 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     let next: ScheduleApproval = { ...approval, signatures: [...approval.signatures.filter(item => item.stage !== stage), signature] };
     /* توقيعُ اللجنة من جديد يطوي إرجاع رئيس القسم: أُجيب عنه (R11). */
     if (stage === "committee" && next.headReturn) { const { headReturn: _answered, ...rest } = next; next = rest as ScheduleApproval; }
+    /* وتوقيعُ رئيس القسم على النسخة الحاضرة يشمل كلَّ شعبةٍ فيها: ما أُضيف بعد
+       توقيعه القديم قرأه الآن ووقّع عليه (والعددُ محروسٌ بـrefuseIfStale أعلاه).
+       كان يبقى «بانتظار موافقة رئيس القسم» فيُمنع الإرسالُ الذي يليه التوقيع،
+       ويُطلب منه إقرارٌ ثانٍ على ما وقّع عليه للتوّ. */
+    if (stage === "head" && pendingAdditionTotal(next)) next = acknowledgeAdditions(next).next;
     next.status = statusAfterSignatureChange(next);
     next = withEvent(req, next, "sign", `${signature.roleLabel} — ${countOf(rows.length, AR.appointment)} — ${signature.verifyCode}`);
     /* اعتمادُ رئيس القسم هو الإرسال: يوقّع فيصل الجدولُ إلى التسجيل مباشرة.
