@@ -26,6 +26,7 @@ import {
   APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, additionsAwaitingHead, awaitsHeadSignature, blockingSummaryPhrase, deadlinePassed,
 } from "../utils/approvalWorkflow";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { approvalBarPresence } from "../utils/approvalBarPresence";
 import { deadlineDateLong, departmentDeadlineLine, lastExtensionRejection } from "../utils/submissionDeadlines";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
@@ -382,8 +383,26 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
     </InfoTip>
   ) : null;
 
+  /* ── ما لا يحمل شيئاً لا يُرسم (approvalBarPresence) ──────────────────── */
+  const presence = approvalBarPresence({
+    status,
+    hasCommitteeSignature: Boolean(committee),
+    hasHeadSignature: Boolean(head),
+    round: Number(approval.currentRound || 0),
+    headReturned,
+    pendingAdditions,
+    hasDeadline: Boolean(countdown),
+    openNotes,
+    escalatedNotes: signatureStage === "head" ? escalated : 0,
+    historyEvents: events.length,
+    hasAction: primaryTaken || notesShown || canHeadReturnNow || Boolean(state.canRequestExtension && signatureStage) || Boolean(mine && !locked && !accepted),
+    pinned: Boolean(error || sheet),
+  });
+  if (!presence.bar) return null;
+  const showDetails = expanded && presence.details;
+
   return (
-    <div className="approval-bar" data-tone={tone} data-expanded={expanded || undefined} ref={barRef}
+    <div className="approval-bar" data-tone={tone} data-expanded={showDetails || undefined} ref={barRef}
       onKeyDown={(event) => { if (event.key === "Escape" && openTip) { event.stopPropagation(); setOpenTip(null); } }}>
       <InfoTip {...tipProps("status")} label={headline} tip={detail ? [detail] : [headline]} className="apb-status" align="start"
         data-guide-ignore="أيقونة حال الدورة — تلميحٌ يعرض تفصيل الحال، لا فعل">
@@ -403,13 +422,13 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       ) : null}
 
       <div className="apb-visuals">
-        {!expanded ? (
+        {!showDetails && presence.relay ? (
           <InfoTip {...tipProps("steps")} label={`مراحل الاعتماد — ${headline}`} tip={stepsTip} className="apb-steps-tip"
             data-guide-ignore="مِرقاة مراحل الاعتماد المصغّرة — تلميحٌ يعرض من وقّع وأين الجدول، لا فعل">
             <Stepper steps={steps} size="sm" returnFrom={returnFrom} />
           </InfoTip>
         ) : null}
-        {!expanded ? ring("sm") : null}
+        {!showDetails ? ring("sm") : null}
 
         {pendingAdditions > 0 && !headMustAcknowledge ? (
           <InfoTip {...tipProps("additions")} label={`${countOf(pendingAdditions, AR.section)} تنتظر إقرار رئيس القسم`} tip={[additionsLine]}
@@ -560,13 +579,13 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           </PrimaryButton>
         ) : null}
 
-        <IconButton label={expanded ? "إخفاء التفاصيل" : "التفاصيل"} aria-expanded={expanded} className="apb-expand"
+        {presence.details ? <IconButton label={expanded ? "إخفاء التفاصيل" : "التفاصيل"} aria-expanded={expanded} className="apb-expand"
           data-guide-ignore="طيّ تفاصيل شريط الاعتماد وفتحها — عرضٌ لا فعل" onClick={toggleExpanded}>
           <ChevronDown aria-hidden="true" />
-        </IconButton>
+        </IconButton> : null}
       </div>
 
-      {expanded ? (
+      {showDetails ? (
         <div className="apb-expanded">
           <div className="apb-expanded-row">
             <Stepper steps={steps} size="lg" returnFrom={returnFrom}

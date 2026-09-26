@@ -521,6 +521,7 @@
 
 /* ── الحلية المرئية: مرقاة، حلقة، شارات ────────────────────────────────── */
 .apb-visuals{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.apb-visuals:empty{display:none}
 
 .apb-steps{
   --node:22px;
