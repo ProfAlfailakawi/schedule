@@ -321,10 +321,13 @@ const parsed=parseScheduleTable(pages,courses,instructors,new Set([21,22]),{auth
 assert.equal(parsed.rows.length,3);
 assert.equal(parsed.rows[0].AdCourseId,11);
 assert.equal(parsed.rows[0].AdCourseName,"الثقافة الإسلامية");
-assert.equal(parsed.rows[0].SCode,"01");
-assert.equal(parsed.rows[1].SCode,"02");
+/* القاعدة المعتمدة (أُعيدت 2026-09-26): الشعبة تُولَّد من هوية المقرر وترتيب
+   الصفوف — 501 ثم 502 — لا من خلية OCR («01»، «1504»)؛ المطبوع يبقى شاهداً. */
+assert.equal(parsed.rows[0].SCode,"501");
+assert.equal(parsed.rows[1].SCode,"502");
 assert.equal(parsed.rows[2].AdCourseId,12);
-assert.equal(parsed.rows[2].SCode,"01");
+assert.equal(parsed.rows[2].SCode,"501");
+assert.equal(parsed.rows[0].sourceSectionText,"01","ما طُبع في خلية الشعبة يبقى شاهداً للمراجع");
 assert.equal(parsed.rows[0].AdInstructorId,21);
 assert.equal(parsed.rows[1].AdInstructorId,21);
 
@@ -530,28 +533,23 @@ assert.equal(native[0].scode,"01");
 assert.doesNotMatch(native[0].building,/345045|520020/);
 assert.match(native[0].instructorText,/عبدالرحمن/);
 
-/* Section identity is preserved from the printed cell. Legitimate gaps such as
-   510 stay gaps; missing values stay missing. Older generated-501 drafts are
-   repaired from immutable sourceSectionText, while source-less legacy values
-   remain untouched instead of being guessed from row order. */
+/* الشعبة مولَّدة من هوية المقرر وترتيب الصفوف (القاعدة المعتمدة، أُعيدت
+   2026-09-26): 501 ثم 502 لكل مقرر بترتيب sourceOrder؛ الخلية المطبوعة
+   («01»، «510»، «1504») شاهدٌ في sourceSectionText لا هوية؛ ومقررٌ لم تثبت
+   هويته لا يُعطى شعبة. */
 const preservedSections=assignAuthoritySections([
   {AdCourseId:11,SCode:"501",sourceSectionText:"01",sourceOrder:20},
   {AdCourseId:11,SCode:"509",sourceSectionText:"510",sourceOrder:30},
   {AdCourseId:0,SCode:"",sourceSectionText:"02",sourceOrder:40},
-  {AdCourseId:11,SCode:"",sourceSectionText:"",sourceOrder:50},
-  // A draft saved by the old 501 generator must be repaired from the immutable
-  // source cell on reopen. This is the exact boys-report regression.
-  {AdCourseId:11,SCode:"501",sourceSectionText:"01",sourceOrder:60,importEvidence:{section:{method:"COURSE_LOCAL_501_SEQUENCE"}}},
-  // Girls reports already print 5xx values; source priority therefore leaves
-  // the known-good flow byte-for-byte identical at the section level.
+  {AdCourseId:11,SCode:"",sourceSectionText:"1504",sourceOrder:50},
   {AdCourseId:12,SCode:"501",sourceSectionText:"501",sourceOrder:70},
 ]);
-assert.equal(preservedSections[0].SCode,"01");
-assert.equal(preservedSections[1].SCode,"510");
-assert.equal(preservedSections[2].SCode,"02");
-assert.equal(preservedSections[3].SCode,"");
-assert.equal(preservedSections[4].SCode,"01");
-assert.equal(preservedSections[5].SCode,"501");
+assert.equal(preservedSections[0].SCode,"501");
+assert.equal(preservedSections[1].SCode,"502");
+assert.equal(preservedSections[2].SCode,"","مقرر بلا هوية لا يُعطى شعبة");
+assert.equal(preservedSections[3].SCode,"503","قراءة «1504» الملحومة لا تدخل الجدول");
+assert.equal(preservedSections[3].sourceSectionText,"1504","المطبوع يبقى شاهداً");
+assert.equal(preservedSections[4].SCode,"501");
 
 
 /* In a flattened/fallback row, the seven-digit course key must not be consumed

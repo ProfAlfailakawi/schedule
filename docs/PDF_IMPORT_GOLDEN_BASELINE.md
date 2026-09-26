@@ -6,7 +6,7 @@ This file freezes the import behavior that is already working well. It is a guar
 
 1. Native PDFs use the embedded text layer and physical cell coordinates. Scans/photos use OCR.
 2. Course identity is the course **number**. The displayed course name is always the canonical system name.
-3. Section identity is read from the Authority PDF section cell and preserved exactly (for example `01`, `02`, or legacy `501`, `510`). Leading zeroes and legitimate gaps are data; never regenerate sections from row order. If the section cell cannot be proven, leave it unresolved for review instead of fabricating a value.
+3. Section numbers are generated from course identity and row order — every course starts at `501` and advances `502`, `503`… in the order its rows appear (owner-approved rule, restored 2026-09-26). The printed section cell is the most weld-prone cell of the scan (`1504`, `50`, `3150`), so it is kept only as evidence in `sourceSectionText`; a row whose course identity is unproven gets no section.
 4. The Authority location grammar is owned by one resolver. Example: `012B09` = site `012B` + building `09`.
 5. A room is valid only inside its already-confirmed building. The same room code in another building is a different identity.
 6. Seat/capacity welds such as `345045`, `520020`, and `320020` are never interpreted as building codes. A damaged building may be inferred from a room only when the room fingerprint points to one official building in the permitted branch.
@@ -42,5 +42,5 @@ The machine-readable fixture is `tests/fixtures/authority-import-golden.json` an
 14. A well-formed but unregistered building code (e.g. `011B23`) is never rebound to another building through a room fingerprint; that rescue is for damaged cells only.
 15. Scanned (OCR) days must agree with the time slot and the catalogue hours, otherwise they are cleared or left for review; a scanned reference number whose length differs from the page is cleared. History-recovered values are shown for review, not as confirmed.
 16. Publishing an Authority draft re-checks that the term is still empty. The change report treats two different registered instructor IDs as a change, and never fills the live row from the baseline.
-17. Rows imported from the Authority keep their printed section (`01`, `1`) and Authority room through term copy, evaluation and edits.
+17. Rows imported from the Authority keep their generated section (`501`, `502`…) and Authority room through term copy, evaluation and edits.
 18. The PDF change report's units, hours and maximum columns are taken **from the system catalogue** by design; they are not read from the PDF.
