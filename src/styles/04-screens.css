@@ -2253,3 +2253,8 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
   .publish-hero{grid-template-columns:auto minmax(0,1fr);padding:var(--s4)}
   .publish-hero .publish-open{grid-column:1 / -1;inline-size:100%;justify-content:center}
 }
+
+/* ── قسمٌ واحد في مواقع عدّة (inboxAudience) ─────────────────────────────
+   يُقال اسمُ القسم مرّةً فوق القائمة، وتُسمّى السطورُ بكلياتها. */
+.changes-inbox-multisite{margin:0 0 2px;color:var(--muted);font-size:13px}
+.changes-inbox-multisite strong{color:var(--ink);font-weight:700}

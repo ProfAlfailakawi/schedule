@@ -31,6 +31,7 @@ import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
 import VisitingBadge from "./VisitingBadge";
 import SubmissionDeadlines, { type DeadlineRow } from "./SubmissionDeadlines";
+import { inboxAudience } from "../utils/inboxAudience";
 import { usePageAwake } from "../utils/pageAwake";
 import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
 
@@ -2782,7 +2783,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           </div>
         ) : lens === "balance" ? (
           <>
-          {deadlineView && deadlineView.termId === Number(filters.termId) ? (
+          {/* شريطُ الموعد لمن يراقب التسجيل أو الكلية وحده (inboxAudience) — لا للقسم. */}
+          {deadlineView && deadlineView.termId === Number(filters.termId) && inboxAudience(roleId, { powerAdmin: isPowerAdmin }).deadlinesPanel ? (
             <SubmissionDeadlines
               terms={terms.filter(row => Number(row.AdTermId) === Number(filters.termId)).map(row => ({ ...row, AdTermSubmissionDeadline: deadlineView.termDeadline }))}
               termId={Number(filters.termId)}

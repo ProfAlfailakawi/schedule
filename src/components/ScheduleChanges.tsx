@@ -33,6 +33,7 @@ import { DECISION_1912_LABEL, regulationScore, type RegulationFinding } from "..
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
 import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
+import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
 
 type NoteField = DiffFieldKey | "row";
 type NoteState = "open" | "changed" | "answered" | "resolved" | "removed";
@@ -191,15 +192,16 @@ export function ApprovalChip({ status, late }: { status: ScheduleApprovalStatus;
 
 /* ── صندوق الوارد ───────────────────────────────────────────────────────── */
 
-function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onExtend, scopes = [], powerAdmin = false }: {
+function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExtend, scopes = [], powerAdmin = false }: {
   termId: number;
+  /** ما يراه هذا القارئ من عُدّة الوارد — من القرار الواحد (inboxAudience). */
+  audience: InboxAudience;
   /** نطاق القارئ: منه وحده يُقرّر أيُرسم منتقي القسم (singleDepartmentOf). */
   scopes?: ScopeAssignmentLike[];
   powerAdmin?: boolean;
   terms: AdTerm[];
   onTermChange: (termId: number) => void;
   onOpen: (row: InboxRow) => void;
-  canExtend: boolean;
   /** الوارد نفسه يُسلَّم للوحة «مواعيد التسليم» — قراءةٌ واحدة للشاشة. */
   onLoaded?: (rows: InboxRow[] | null) => void;
   /** «تمديد» في السطر يفتح ورقة الاستثناء في اللوحة، لا ورقةً ثانية. */
@@ -283,11 +285,11 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
 
   const selects: ScopeAskSelect[] = [
     {
-      key: "college", label: "الكلية", value: collegeId, placeholder: "كل الكليات",
+      key: "college", label: audience.multiSite ? "الموقع" : "الكلية", value: collegeId, placeholder: audience.multiSite ? "كل المواقع" : "كل الكليات",
       options: collegeOptions,
     },
     /* قسمٌ واحد في نطاق القارئ: لا منتقيَ له، كلوحة الجدول. */
-    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null ? [{
+    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null && !audience.multiSite ? [{
       key: "section", label: "القسم", value: sectionId, placeholder: "كل الأقسام",
       options: sectionOptions, disabled: sectionOptions.length === 0,
     }] : []),
@@ -311,7 +313,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
         ask={ask}
         onAskChange={value => { setAsk(value); if (!value.trim()) setParsed(EMPTY_INBOX_ASK); }}
         onAskSubmit={value => setParsed(parseInboxAsk(value))}
-        askPlaceholder="اسأل: الأقسام المتأخرة اللي عندها موانع"
+        askPlaceholder={audience.department ? "اسأل: المتأخر أو اللي فيه ملاحظات" : "اسأل: الأقسام المتأخرة اللي عندها موانع"}
         askNote={askNote}
         onClear={clearAll}
         selects={selects}
@@ -360,7 +362,10 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
                   ["openNotes", "ملاحظات مفتوحة", 0],
                   ["answered", "ردود تنتظر قرارك", 0],
                   ["pendingAdditions", "شُعب تنتظر رئيس القسم", 0],
-                ] as Array<[string, string, number]>).map(([value, label, count]) => {
+                ] as Array<[string, string, number]>)
+                  /* «ردودٌ تنتظر قرارك» سؤالُ التسجيل وحده: القسمُ لا يقرّر في ردّه. */
+                  .filter(([value]) => audience.registrarSignals || value !== "answered")
+                  .map(([value, label, count]) => {
                   const on = value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal);
                   return (
                     <button
@@ -387,8 +392,8 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
         <EmptyState
           title={(rows || []).length ? "لا نتائج" : "لا وارد"}
           detail={(rows || []).length
-            ? "لا قسمَ يطابق السؤال أو المرشّحات الحالية."
-            : "لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل."}
+            ? (audience.department ? "لا موقعَ يطابق السؤال أو المرشّحات الحالية." : "لا قسمَ يطابق السؤال أو المرشّحات الحالية.")
+            : (audience.department ? "لا جدولَ لقسمك في هذا الفصل بعد." : "لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل.")}
           action={(rows || []).length ? (
             <SecondaryButton type="button" data-guide-ignore="مسح المرشّحات — عرضٌ لا فعل" onClick={() => { setAsk(""); clearAll(); }}>
               امسح المرشّحات
@@ -396,19 +401,30 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
           ) : undefined}
         />
       ) : (
-        <div className="changes-inbox">
+        <div className="changes-inbox" data-row-label={audience.rowLabel}>
+          {/* قسمٌ واحد في مواقع عدّة: يُقال مرّةً في رأس القائمة، وتُسمّى السطورُ
+              بمواقعها — لا اسمُ القسم نفسه مكرّراً بعدد الكليات. */}
+          {audience.multiSite ? (
+            <p className="changes-inbox-multisite"><strong>{audience.multiSite.name}</strong> — {multiSiteHeadline(audience.multiSite)}</p>
+          ) : null}
           {visible.map(row => (
             <div key={`${row.collegeId}:${row.sectionId}`} className="changes-inbox-row" data-status={row.status} data-late={row.late || undefined}>
               <button type="button" className="changes-inbox-open" data-guide-ignore="فتح قسمٍ من الوارد — تنقّل لا فعل، والفعل داخله مسجّل" onClick={() => onOpen(row)}>
                 <div className="changes-inbox-title">
-                  <strong>{row.sectionName || `قسم ${row.sectionId}`}</strong>
-                  <small>{row.collegeName}</small>
+                  {audience.rowLabel === "college" ? (
+                    <strong>{row.collegeName || `كلية ${row.collegeId}`}</strong>
+                  ) : (
+                    <>
+                      <strong>{row.sectionName || `قسم ${row.sectionId}`}</strong>
+                      <small>{row.collegeName}</small>
+                    </>
+                  )}
                 </div>
                 {/* ثلاث دوائر بأرقامها: الموظّف يعرف أين المشكلة قبل أن يفتح. */}
                 <div className="changes-signals" aria-label="الموانع والملاحظات">
                   {row.blockingConflicts ? <span data-kind="block" title="تعارض مادّي يمنع الاعتماد">{row.blockingConflicts}</span> : null}
                   {row.openNotes ? <span data-kind="note" title="ملاحظات بانتظار المعالجة">{row.openNotes}</span> : null}
-                  {row.answeredNotes ? <span data-kind="answered" title="ردودٌ من القسم تنتظر قرارك">{row.answeredNotes}</span> : null}
+                  {audience.registrarSignals && row.answeredNotes ? <span data-kind="answered" title="ردودٌ من القسم تنتظر قرارك">{row.answeredNotes}</span> : null}
                   {row.pendingAdditions ? <span data-kind="pending" title="شُعبٌ تنتظر إقرار رئيس القسم">{row.pendingAdditions}</span> : null}
                 </div>
                 <div className="changes-inbox-state">
@@ -418,14 +434,14 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
                 <ChevronLeft aria-hidden="true" />
               </button>
               {/* طلبُ القسم يُقرأ في مكانه، و«تمديد» يُفتح مملوءاً بما طلب. */}
-              {row.extensionRequest ? (
+              {audience.extendActions && row.extensionRequest ? (
                 <small className="changes-extension-request">
                   <b>طلب تمديد {countOf(row.extensionRequest.days, oblique(AR.day))}</b>
                   <span>«{row.extensionRequest.reason}»</span>
                   <i>· {row.extensionRequest.by}</i>
                 </small>
               ) : null}
-              {canExtend && onExtend ? (
+              {audience.extendActions && onExtend ? (
                 <button type="button" className="changes-extend" data-pending={row.extensionRequest ? "" : undefined} data-guide-ignore="يفتح ورقة الاستثناء في «مواعيد التسليم» على هذا القسم — التطبيق هناك هو الفعل" onClick={() => onExtend(row)}>
                   {row.extensionRequest ? "نظر الطلب" : row.deadline.extensionUntil ? "استثناء" : "تمديد"}
                 </button>
@@ -1308,11 +1324,12 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
     if (focus.termId && focus.termId !== termId && terms.some(row => Number(row.AdTermId) === focus.termId)) { setTermId(focus.termId); return; }
     focusRef.current = null;
     /* إشعارُ الموعد وطلبُ التمديد يفتحان «مواعيد التسليم»، لا تقرير القسم. */
-    if (focus.panel === "deadlines") { setPanelFocus({ collegeId: focus.collegeId, sectionId: focus.sectionId, nonce: Date.now() }); return; }
+    if (focus.panel === "deadlines" && audience.deadlinesPanel) { setPanelFocus({ collegeId: focus.collegeId, sectionId: focus.sectionId, nonce: Date.now() }); return; }
     if (focus.sectionId) setOpened({ collegeId: focus.collegeId, sectionId: focus.sectionId });
   }, [termId, terms]);
 
   const term = useMemo(() => (terms || []).find(row => Number(row.AdTermId) === termId), [terms, termId]);
+  const audience = useMemo(() => inboxAudience(role.id, { powerAdmin, scopes }), [role.id, powerAdmin, scopes]);
 
   if (!terms) return <MicroLoader label="يقرأ الفصول…" />;
 
@@ -1352,13 +1369,15 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       {error ? <Notice type="error">{error}</Notice> : null}
 
       {/* ── مواعيد التسليم: الموضعُ الوحيد الذي يُكتب منه الموعدُ واستثناءاتُه ── */}
-      {termId && !active && term ? (
+      {/* لمن يملك الموعد أو يراقبه وحده (inboxAudience): القسمُ يرى سطرَ موعده
+          في شريط الاعتماد («موعدكم»)، لا لوحةَ التسجيل وميزانَ «سلّم x من y». */}
+      {termId && !active && term && audience.deadlinesPanel ? (
         <SubmissionDeadlines
           terms={terms}
           termId={termId}
           onTermChange={(id) => setTermId(id)}
           rows={inboxRows}
-          canEdit={role.canManageDeadline}
+          canEdit={audience.deadlinesPanel === "edit"}
           onChanged={() => { setReloadKey(key => key + 1); void loadTerms(); }}
           extendFor={extendFor}
           focus={panelFocus}
@@ -1376,7 +1395,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
             termId={termId}
             terms={terms}
             onTermChange={(id) => setTermId(id)}
-            canExtend={role.canManageDeadline}
+            audience={audience}
             onLoaded={setInboxRows}
             onExtend={(row) => setExtendFor({ row, nonce: Date.now() })}
             scopes={scopes}
