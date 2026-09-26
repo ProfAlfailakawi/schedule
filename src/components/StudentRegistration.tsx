@@ -706,9 +706,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         <>
           <Surface className="request-totals">
             <div><b>{totals?.students ?? 0}</b><span>{nounFor(totals?.students ?? 0, AR.student)} {nounFor(totals?.students ?? 0, viewer === "registration" ? AR.handedOverVerb : AR.answeredVerb)}</span></div>
-            {viewer !== "registration" ? <div><b>{totals?.pendingCommittee ?? 0}</b><span>ينتظر اللجنة</span></div> : null}
-            <div><b>{totals?.waiting ?? 0}</b><span>ينتظر التسجيل</span></div>
-            <div><b>{totals?.registered ?? 0}</b><span>{nounFor(totals?.registered ?? 0, AR.course)} {nounFor(totals?.registered ?? 0, AR.registeredVerb)}</span></div>
+            {/* الصفرُ لا يُعرض لوحةً (قاعدة إخفاء الفارغ): العددُ الأول يكفي جواباً. */}
+            {viewer !== "registration" && totals?.pendingCommittee ? <div><b>{totals.pendingCommittee}</b><span>ينتظر اللجنة</span></div> : null}
+            {totals?.waiting ? <div><b>{totals.waiting}</b><span>ينتظر التسجيل</span></div> : null}
+            {totals?.registered ? <div><b>{totals.registered}</b><span>{nounFor(totals.registered, AR.course)} {nounFor(totals.registered, AR.registeredVerb)}</span></div> : null}
           </Surface>
 
           {!canWrite ? (
@@ -734,7 +735,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                   ["approved", "بانتظار التسجيل"],
                   ["registered", "سُجّل"],
                   ["rejected", "ردّه التسجيل"],
-                ] as Array<[StatusFilter, string]>).map(([value, label]) => (
+                ] as Array<[StatusFilter, string]>)
+                  /* حالةٌ لا طالبَ فيها لا تُعرض مرشّحاً — إلا المختارةُ الآن. */
+                  .filter(([value]) => value === "all" || statusCounts[value] || statusFilter === value)
+                  .map(([value, label]) => (
                   <button
                     key={value} type="button" className="changes-chip"
                     data-active={statusFilter === value || undefined}

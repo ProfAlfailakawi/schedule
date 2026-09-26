@@ -8,7 +8,7 @@ import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
 import { activeDataMode, ApprovalRevisionConflict, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
-import { DEMO_ROLE_ACCOUNTS } from "./src/db/demoSandbox";
+import { DEMO_SWITCH_ACCOUNTS, demoActiveRoleKey } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
@@ -2072,11 +2072,12 @@ async function clientScopeDetails(scopes: any[]) {
  */
 function demoSessionPayload(user: any, permissions: number[], scopes: any[]) {
   const isAdmin = Number(user.SystemUserId) === ROOT_ADMIN_USER_ID;
-  const activeRole = isAdmin ? "admin" : String(user.Role || "");
+  const activeRole = isAdmin ? "admin" : demoActiveRoleKey(Number(user.SystemUserId), user.Role);
   return {
     user: { ...safeSystemUser(user), IsRootAdmin: isAdmin, IsDemo: true },
     role: roleDescriptor(user), permissions, scopes, data: "demo",
-    demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_ROLE_ACCOUNTS, activeRole },
+    /* الصفاتُ كلّها ثم الحسابُ المتعدّد المواقع (DEMO_SWITCH_ACCOUNTS). */
+    demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_SWITCH_ACCOUNTS, activeRole },
   };
 }
 
@@ -2284,7 +2285,7 @@ app.post("/api/demo/role", rateLimitDemoRole, requireAuth, async (req: Authentic
   const requested = String(req.body?.role || "");
   const targetId = requested === "admin"
     ? ROOT_ADMIN_USER_ID
-    : DEMO_ROLE_ACCOUNTS.find(account => account.role === requested)?.SystemUserId;
+    : DEMO_SWITCH_ACCOUNTS.find(account => account.role === requested)?.SystemUserId;
   if (!targetId) { res.status(400).json({ error: "صفة غير معروفة" }); return; }
   try {
     const payload = await Repository.withDemoSandbox(sessionId, async () => {
@@ -2416,8 +2417,8 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(req.scopes || []);
   // The interface says out loud when it is not on the university's database.
-  const demoActiveRole = Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID ? "admin" : String((req.user as any).Role || "");
-  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, role: roleDescriptor(req.user), permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_ROLE_ACCOUNTS, activeRole: demoActiveRole } : undefined });
+  const demoActiveRole = Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID ? "admin" : demoActiveRoleKey(Number(req.user.SystemUserId), (req.user as any).Role);
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, role: roleDescriptor(req.user), permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_SWITCH_ACCOUNTS, activeRole: demoActiveRole } : undefined });
 });
 
 // Activity heartbeat: the server session still expires after 15 minutes of real
@@ -3120,6 +3121,59 @@ function instructorsForReader<T extends { AdInstructorCivil?: string; AdInstruct
   return list.map(person => ({ ...person, AdInstructorCivil: "", AdInstructorMobile: "" }));
 }
 
+/**
+ * ── الرقم المدني والهاتف لأهل القسم وحدهم ──────────────────────────────────
+ *
+ * دليلُ الأساتذة جامعيٌّ عمداً: القسمُ يُسند مقرّراً لأستاذٍ من كليةٍ أخرى،
+ * فيبحث عنه بالاسم. لكنّ القائمة كانت تصل حسابَ القسم بالرقم المدني والهاتف
+ * لكل موظّفٍ في الجامعة — بياناتٌ شخصية لأناسٍ لا صلة لقسمه بهم.
+ *
+ * فالحلقة: من درّس في نطاق القارئ (في أي فصل)، أو ضمّه دليلُ قسمٍ في نطاقه،
+ * أو قائمةُ منتدبيه. هؤلاء يصلون كما هم — التقريرُ المطبوع يحمل رقمَهم
+ * المدني. ومن سواهم يصل باسمه، وبآخر أربعة أرقامٍ من رقمه المدني فقط (يُفرَّق
+ * بها بين اسمين متطابقين)، وبلا هاتف. الإدارةُ، وصاحبُ شاشة الأساتذة (٣)،
+ * يرونه كاملاً؛ وصفاتُ الاطّلاع لا ترى الرقم أصلاً (instructorsForReader).
+ */
+const instructorCircleCache = new Map<string, { at: number; ids: Set<number> }>();
+async function instructorCircleFor(req: AuthenticatedRequest): Promise<Set<number> | null> {
+  if (!req.user || req.user.IsAdminUser || isReadOnlyRole(req.user.Role)) return null;
+  const granted = req.permissions ?? (await Repository.getSecurityByUser(req.user.SystemUserId)).map(item => Number(item.FormNameId));
+  if (granted.map(Number).includes(3)) return null;
+  const sections = await Repository.getSections();
+  const own = expandScopeSections(sections, (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId));
+  const key = dataContextCacheKey(`${req.user.SystemUserId}:${[...own].sort((a, b) => a - b).join(",")}`);
+  const hit = instructorCircleCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.ids;
+  const scopeRows = sections.filter(row => own.has(Number(row.AdSectionId)));
+  const groups = await Promise.all(scopeRows.map(async row => {
+    const [taught, directory] = await Promise.all([
+      Repository.getInstructorsByScope(Number(row.AdSectionId), 0),
+      Repository.getDepartmentDelegates(Number(row.AdCollegeId), Number(row.AdSectionId)),
+    ]);
+    return [...taught.map(person => Number(person.AdInstructorId)), ...directory.map(Number)];
+  }));
+  const ids = new Set<number>(groups.flat().filter(Boolean));
+  if (instructorCircleCache.size > 500) instructorCircleCache.clear();
+  instructorCircleCache.set(key, { at: Date.now(), ids });
+  return ids;
+}
+
+/** آخر أربعة أرقام، والباقي نقاط: «••••••••1234». */
+function maskCivilTail(civil: unknown): string {
+  const digits = String(civil ?? "").trim();
+  if (!digits) return "";
+  return `${"•".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+}
+
+async function instructorsForScope<T extends { AdInstructorId: number; AdInstructorCivil?: string; AdInstructorMobile?: string }>(req: AuthenticatedRequest, list: T[], exactCivil = ""): Promise<T[]> {
+  const readable = instructorsForReader(req, list);
+  const circle = await instructorCircleFor(req);
+  if (!circle) return readable;
+  return readable.map(person => circle.has(Number(person.AdInstructorId)) || (exactCivil && String(person.AdInstructorCivil || "").trim() === exactCivil)
+    ? person
+    : { ...person, AdInstructorCivil: maskCivilTail(person.AdInstructorCivil), AdInstructorMobile: "" });
+}
+
 app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = Number(req.query.sectionId || 0);
   const collegeId = Number(req.query.collegeId || 0);
@@ -3127,7 +3181,9 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const query = String(req.query.q || "").trim();
   const limit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
   /* القارئ (صفات الاطّلاع) يرى الاسم ولا يرى الرقم المدني ولا الهاتف (N13). */
-  const send = <T extends { AdInstructorCivil?: string; AdInstructorMobile?: string }>(list: T[]) => res.json(instructorsForReader(req, list));
+  const civilQuery = String(req.query.q || "").replace(/\D/g, "");
+  const send = async <T extends { AdInstructorId: number; AdInstructorCivil?: string; AdInstructorMobile?: string }>(list: T[]) =>
+    res.json(await instructorsForScope(req, list, civilQuery));
 
   // If query is provided, search across the university instructors catalog
   if (query) {
@@ -3160,7 +3216,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       const civil = String(person.AdInstructorCivil || "").trim();
       return Boolean(digits) && digits.length === civil.length && digits === civil;
     });
-    send(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
+    await send(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
     return;
   }
 
@@ -3182,7 +3238,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       ? (await Repository.getInstructors()).filter(person => manualIds.includes(Number(person.AdInstructorId)))
       : [];
     const merged = [...new Map([...allDeptHistorical, ...termScoped, ...manualPeople].map(person => [Number(person.AdInstructorId), person])).values()];
-    send(sortArabicNamed(merged, row => row.AdInstructorName));
+    await send(sortArabicNamed(merged, row => row.AdInstructorName));
     return;
   }
 
@@ -3194,7 +3250,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const instructors = collegeId
     ? await Repository.getInstructorsByScheduleScope({ collegeId, termId })
     : await Repository.getInstructors();
-  send(sortArabicNamed(instructors, row => row.AdInstructorName));
+  await send(sortArabicNamed(instructors, row => row.AdInstructorName));
 });
 
 /* ── الإضافة السريعة أثناء بناء الجدول ────────────────────────────────────────
@@ -5414,7 +5470,9 @@ app.get("/api/schedules/outside-clashes", requirePermission(7), async (req: Auth
   ]);
   /* The same canonicalisation the editor's check performs, so a hall recorded
      under an old alias cannot hide a collision from the board either. */
-  const scopeRows=scopeRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
+  /* «الكلية» بلا قسم تعني أقسامَ القارئ فيها، لا الكليةَ كلها (isScopeAllowed بقسمٍ
+     صفر يقول «له شيءٌ هنا» فقط). */
+  const scopeRows=filterByScope(req,scopeRaw).map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
   const termRows=termRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
   /* The rule itself lives beside the conflict sweep in scheduleIntelligence,
      so this route holds no copy of it and `tests/run-tests.ts` can hold it. */
@@ -5810,9 +5868,11 @@ app.get("/api/schedules/export", requirePermission(7), async (req: Authenticated
    * another. The rows are unchanged, so files written by the old version still
    * import.
    */
-  const scopedCourses = courses.filter(course =>
+  /* مقرّراتُ النطاق وحده: تصديرٌ «بالكلية» (بلا قسم) من حساب قسمٍ كان يحمل
+     دليلَ مقرّرات أقسام الكلية كلها. */
+  const scopedCourses = filterByScope(req, courses.filter(course =>
     (!sectionId || Number(course.AdSectionId) === sectionId) &&
-    (!collegeId || Number(course.AdCollegeId) === collegeId));
+    (!collegeId || Number(course.AdCollegeId) === collegeId)));
   const teachingIds = new Set(rows.map(row => Number(row.AdInstructorId)).filter(Boolean));
   const scopedInstructors = instructors.filter(person => teachingIds.has(Number(person.AdInstructorId)));
   const halls = [...new Map(rows
@@ -6093,18 +6153,21 @@ app.get("/api/instructors/:id/affiliation", requireAnyPermission([3, 7]), async 
       section: sectionName.get(row.sectionId) || "", college: collegeName.get(row.collegeId) || "",
     });
   }
+  /* أين يدرّس الأستاذ، لكن داخل نطاق القارئ وحده: كليةُ غيره وقسمُه ليسا من
+     شأن حساب القسم (الإدارة ترى كل شيء). */
+  const inScope = (collegeId: number, sectionId: number) => Boolean(req.user?.IsAdminUser) || isScopeAllowed(req, Number(collegeId), Number(sectionId));
   res.json({
     instructorId,
-    teaching: scopes.map(scope => ({
+    teaching: scopes.filter(scope => inScope(scope.collegeId, scope.sectionId)).map(scope => ({
       collegeId: scope.collegeId, sectionId: scope.sectionId,
       section: sectionName.get(scope.sectionId) || "", college: collegeName.get(scope.collegeId) || "",
       rows: scope.rows, terms: scope.termIds.map(id => termName.get(id) || String(id)).filter(Boolean),
     })),
-    delegate: [...delegate.values()],
+    delegate: [...delegate.values()].filter(entry => inScope(entry.collegeId, entry.sectionId)),
   });
 });
 
-app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
+app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (req: AuthenticatedRequest, res: Response) => {
   const terms = await Repository.getTerms();
   const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const [affiliations, sections, colleges, latestRows] = await Promise.all([
@@ -6121,6 +6184,8 @@ app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (_re
   };
   const place = (id: number, collegeId: number, sectionId: number, kind: "delegate" | "teaching") => {
     if (!id || !sectionId) return;
+    /* خريطةُ الجامعة كلها للإدارة؛ ولغيرها ما يقع في نطاقه وحده. */
+    if (!req.user?.IsAdminUser && !isScopeAllowed(req, collegeId, sectionId)) return;
     const key = `${collegeId}:${sectionId}`;
     slot(id)[kind].set(key, {
       collegeId, sectionId,
@@ -6138,8 +6203,16 @@ app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (_re
   });
 });
 
-app.get("/api/delegates", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
-  res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() });
+app.get("/api/delegates", requireAnyPermission([3, 7]), async (req: AuthenticatedRequest, res: Response) => {
+  /* الإدارة ترى منتدبي الجامعة؛ وغيرُها منتدبي أدلّة أقسامه وحدها. */
+  if (req.user?.IsAdminUser) { res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() }); return; }
+  const directories = await Repository.getDelegateAffiliations();
+  const ids = new Set<number>();
+  for (const row of directories) {
+    if (!isScopeAllowed(req, Number(row.collegeId), Number(row.sectionId))) continue;
+    for (const id of row.instructorIds) ids.add(Number(id));
+  }
+  res.json({ instructorIds: [...ids] });
 });
 
 app.put("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -6730,7 +6803,9 @@ app.get("/api/courses/nature", requirePermission(7), async (req: AuthenticatedRe
      caller's own scopes — otherwise any holder of the schedule permission could
      read another department's ten-year teaching patterns by changing a number
      in the address bar. The same check the instructor roster already makes. */
-  if (!req.user?.IsAdminUser && !req.scopes?.some(scope => Number(scope.AdSectionId) === sectionId)) {
+  /* الحَكَم الواحد (isScopeAllowed) — لا مطابقةَ حرفيةٌ ثانية على صفوف النطاق. */
+  const natureSection = (await Repository.getSections()).find(row => Number(row.AdSectionId) === sectionId);
+  if (!natureSection || !isScopeAllowed(req, Number(natureSection.AdCollegeId), sectionId)) {
     res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" });
     return;
   }
@@ -6746,6 +6821,9 @@ app.get("/api/courses/nature", requirePermission(7), async (req: AuthenticatedRe
 
 /** Answers "whose hall is this?" from the room alone — no day, no time. */
 app.get("/api/rooms/owner", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  /* السؤالُ عن قاعةٍ يُسأل من قسمٍ في نطاق السائل. */
+  const askCollege = Number(req.query.collegeId || 0), askSection = Number(req.query.sectionId || 0);
+  if (askCollege && askSection && !isScopeAllowed(req, askCollege, askSection)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const owner = await roomOwnership(
     req.query.room, req.query.hall,
     Number(req.query.collegeId || 0), Number(req.query.sectionId || 0)
@@ -7968,7 +8046,8 @@ app.get("/api/intelligence/lookups", requirePermission(7), async (req: Authentic
     const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);
     res.json({courses,instructors});return;
   }
-  const sectionIds=[...new Set((req.scopes||[]).map(scope=>Number(scope.AdSectionId)).filter(Boolean))];
+  /* أقسامُ القارئ من الحَكَم الواحد (صفُّ «الكلية كلها» يُقرأ لأقسامها). */
+  const sectionIds=[...await scopeSectionIdsFor(req)];
   const [courseGroups,instructorGroups]=await Promise.all([
     Promise.all(sectionIds.map(id=>Repository.getCoursesBySection(id))),
     Promise.all(sectionIds.map(id=>Repository.getInstructorsByScope(id,0))),
@@ -11221,6 +11300,12 @@ app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, asyn
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
 
   const approval = await readApproval(collegeId, sectionId, termId);
+  /* العميدان يريان النهائيَّ وحده (readsFinalSchedulesOnly): تقريرُ تغييراتِ جدولٍ
+     لم يُعتمد يعرض مسوّدةً لا تعرضها لهما شاشةٌ أخرى. */
+  if (readsFinalSchedulesOnly(req) && approval.status !== "accepted") {
+    res.status(403).json({ error: "لم يُعتمد هذا الجدول بعد — يُعرض لكم بعد اعتماده." });
+    return;
+  }
   /* الجولة المطلوبة تُقرأ من الطلب ليُفتح الشريط الزمني، وتُقصر على ما وقع
      فعلاً: رقمٌ خارج المدى يعيد الجولة الجارية بدل أن يردّ خطأً عن شيءٍ لا
      يملك الناظر أن يصلحه. */
@@ -12062,13 +12147,16 @@ app.get("/api/intelligence/department-start-rhythm", requirePermission(7), async
   if(!collegeId||!isScopeAllowed(req,collegeId,sectionId)){
     res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"}); return;
   }
-  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId||"latest"}`);
+  /* بلا قسم: أقسامُ القارئ في الكلية لا الكليةُ كلها — فالمفتاحُ يحمل القارئَ حينها. */
+  const rhythmReader=sectionId||req.user?.IsAdminUser?"":`:u${req.user?.SystemUserId}`;
+  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId||"latest"}${rhythmReader}`);
   const cached=historicalTimeCache.get(cacheKey);
   if(cached&&cached.serial===driftSerial&&cached.expiresAt>Date.now()){res.json(cached.body);return;}
-  const [terms,history]=await Promise.all([
+  const [terms,historyRaw]=await Promise.all([
     Repository.getTerms(),
     Repository.getSchedulesByScope({collegeId,sectionId}),
   ]);
+  const history=filterByScope(req,historyRaw);
   // One model answers every card in this department. It knows the department,
   // the active day-pattern and each course separately, with recent terms given
   // more weight than old history. The client picks the narrowest reliable layer.
@@ -12087,7 +12175,8 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${viewingTermId || "any"}`);
+  const driftReader = sectionId || req.user?.IsAdminUser ? "" : `:u${req.user?.SystemUserId}`;
+  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${viewingTermId || "any"}${driftReader}`);
   const cached = driftCache.get(key);
   if (cached && cached.serial === driftSerial) { res.json(cached.body); return; }
 
@@ -12099,6 +12188,8 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
      show it rather than ask for it. It is a statement, not an offer — there is
      nothing here to accept. */
   const readHabit = async () => {
+    /* عادةُ «الكلية كلها» ليست عادةَ قسمٍ في نطاق القارئ. */
+    if (!sectionId && !req.user?.IsAdminUser) return null;
     const style = await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId,
       AdTermId: newest?.AdTermId || 0 });
     if (!style.reading) return null;
@@ -12155,7 +12246,7 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
      already memoises, and one scoped read for the department's own rows. */
   const [universe, mine, rules] = await Promise.all([
     Repository.getSchedulesByScope({ termId: term.AdTermId }),
-    Repository.getSchedulesByScope({ collegeId, sectionId, termId: term.AdTermId }),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId: term.AdTermId }).then(rows => filterByScope(req, rows)),
     Repository.getScheduleConstraints(collegeId, sectionId, term.AdTermId).catch(() => []),
   ]);
   const doorway = Number(rules.find(item => item.type === "room_doorway" && item.enabled !== false)?.maxMinutes || 0);
@@ -13182,6 +13273,14 @@ app.get("/api/reports/department-balance", requirePermission(14), async (req: Au
     if (!isScopeAllowed(req, Number(row.AdCollegeId), Number(row.AdSectionId))) continue;
     const list = bySection.get(Number(row.AdSectionId));
     if (list) list.push(row); else bySection.set(Number(row.AdSectionId), [row]);
+  }
+  /* العميدان يريان النهائيَّ وحده (readsFinalSchedulesOnly) — في الميزان كما في كل
+     قراءة: قسمٌ لم يُعتمد لا تُحسب مواعيدُ مسوّدته ولا «أثقلُ أستاذٍ» فيها. */
+  if (readsFinalSchedulesOnly(req)) {
+    for (const [sectionId, rows] of [...bySection]) {
+      const final = await finalRowsOnly(rows, termId);
+      if (final.length) bySection.set(sectionId, final); else bySection.delete(sectionId);
+    }
   }
   const MORNING_END = 14 * 60;
   /* The dean's «مانع اعتماد» is the registrar's: one rule, one set of options. */
@@ -14436,8 +14535,10 @@ const readDegreeRuleInput=(body:any,fieldTrainingFallback:number):{rule:DegreeRu
   return{rule:{degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed}};
 };
 
-app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
-  const [sections,stored]=await Promise.all([Repository.getSections(),Repository.getDegreeRules()]);
+app.get("/api/degree-rules", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  /* قواعدُ أقسام النطاق وحدها — كقائمة الأقسام نفسها (/api/sections). */
+  const [allSections,stored]=await Promise.all([Repository.getSections(),Repository.getDegreeRules()]);
+  const sections=filterByScope(req,allSections as any[]);
   const byId=new Map(stored.map(row=>[Number(row.AdSectionId),row]));
   res.json(await Promise.all(sections.map((section:any)=>{
     const saved=byId.get(Number(section.AdSectionId));
@@ -14459,7 +14560,10 @@ app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res
 app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId=Number(req.params.sectionId||0);
   const sections=await Repository.getSections();
-  if(!sections.some((row:any)=>Number(row.AdSectionId)===sectionId)){res.status(404).json({error:"القسم غير موجود"});return;}
+  const target=sections.find((row:any)=>Number(row.AdSectionId)===sectionId);
+  if(!target){res.status(404).json({error:"القسم غير موجود"});return;}
+  /* كتعديل القسم نفسه (PUT /api/sections/:id): في النطاق وحده. */
+  if(!isScopeAllowed(req,Number((target as any).AdCollegeId),sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   /* A department in its transition years is measured per plan; a department
      figure saved now would be read by nobody, while the screen said it applied. */
   if((await Repository.getCurriculumPlans(sectionId)).some(plan=>plan.status!=="archived"&&!plan.virtual)){
@@ -15486,11 +15590,13 @@ app.get("/api/schedules/staff-inbox", requirePermission(7), async (req: Authenti
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const [notes, courses, schedules] = await Promise.all([
+  const [notesRaw, courses, schedules] = await Promise.all([
     Repository.getStaffInbox(collegeId, sectionId, termId),
     Repository.getCourses(),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
   ]);
+  /* رسائلُ أقسام القارئ وحدها: بلا قسمٍ كانت تُقرأ رسائلُ الكلية كلها. */
+  const notes = filterByScope(req, notesRaw as any[]);
   const rowById = new Map(schedules.map(row => [row.id, row]));
   res.setHeader("Cache-Control", "no-store");
   res.json(notes.map(note => {

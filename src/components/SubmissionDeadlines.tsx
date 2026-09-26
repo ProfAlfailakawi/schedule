@@ -554,8 +554,9 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
           </div>
           {bar}
           <ul className="sd-legend">
-            {SEGMENTS.map(segment => (
-              <li key={segment} data-segment={segment} data-zero={!progress[segment] || undefined}>
+            {/* ما لا قسمَ فيه لا يُذكر: «معتمد 0» زحمةٌ لا جواب (قاعدة إخفاء الفارغ). */}
+            {SEGMENTS.filter(segment => progress[segment]).map(segment => (
+              <li key={segment} data-segment={segment}>
                 <i aria-hidden="true" />{PROGRESS_LABEL[segment]} <b>{progress[segment]}</b>
               </li>
             ))}

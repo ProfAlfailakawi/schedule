@@ -136,7 +136,6 @@
 .sd-bar span{background:var(--seg)}
 .sd-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0;padding:0;list-style:none;font-size:.8rem;color:var(--muted)}
 .sd-legend li{display:inline-flex;align-items:center;gap:6px}
-.sd-legend li[data-zero]{opacity:.55}
 .sd-legend i{inline-size:9px;block-size:9px;border-radius:3px;background:var(--seg)}
 .sd-legend b{color:var(--ink);font-variant-numeric:tabular-nums}
 

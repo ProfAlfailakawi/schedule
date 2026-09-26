@@ -9831,7 +9831,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       {!rowsForeign && (rows.length > 0 || genesisFromEmpty) ? (
       <div className="schedule-overview-stack no-print">
         {/* An empty term shows no zero counters — only the genesis scene it asked for. */}
-        {!rowsForeign && rows.length > 0 ? (
+        {/* The cards count what is SHOWN: a filter that matches nothing shows none. */}
+        {!rowsForeign && filteredRows.length > 0 ? (
         <section className="schedule-mini-stats">
           <StatCard
             icon={<CalendarDays />}
@@ -12490,11 +12491,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 <span><CalendarDays aria-hidden="true" /></span>
                 <div><small>حياة الشعبة</small><strong>{context.offeringLife ? (context.offeringLife.currentJourney ? `${countOf(context.offeringLife.currentJourney.snapshots || 0, AR.version)} · ${formatChangeLabel(context.offeringLife.currentJourney.changes || 0)}` : formatLifeSummary(context.offeringLife.terms, context.offeringLife.changes)) : "أول ظهور"}</strong></div>
               </article>
-              <article className={`decision-cost-${context.decisionCost?.level || "low"}`} title={(context.decisionCost?.factors || []).join(" · ") || undefined}>
+              {/* No cost reading, no «0/100» tile (hide-empty rule). */}
+              {context.decisionCost ? <article className={`decision-cost-${context.decisionCost.level || "low"}`} title={(context.decisionCost.factors || []).join(" · ") || undefined}>
                 <span><BrainCircuit aria-hidden="true" /></span>
-                <div><small>تكلفة التغيير</small><strong>{context.decisionCost?.score ?? 0}/100</strong></div>
-                <i style={{ ["--cost" as any]: `${context.decisionCost?.score || 0}%` }} />
-              </article>
+                <div><small>تكلفة التغيير</small><strong>{context.decisionCost.score ?? 0}/100</strong></div>
+                <i style={{ ["--cost" as any]: `${context.decisionCost.score || 0}%` }} />
+              </article> : null}
             </div>
             {/* One line, and only when the archive earned it. Pressing it opens
                 the full anatomy — already in hand, so it opens at once. */}
@@ -12538,7 +12540,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 </div>
               </details>
             ) : null}
-            <button
+            {/* Offered only when there is a history to anatomise (hide-empty rule). */}
+            {moveNote || context.courseLife || context.offeringLife || replay ? <button
               type="button"
               className="decision-replay-trigger context-tab-analysis"
               data-guide-ignore="تفصيل ثانوي داخل تبويب تحليل الموعد"
@@ -12549,7 +12552,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               {replayLoading
                 ? "أعيد بناء تشريح القرار…"
                 : "كيف وصل القرار إلى هذا الشكل؟"}
-            </button>
+            </button> : null}
             {replay ? (
               <div className="decision-replay context-tab-analysis">
                 <div className="replay-head">
@@ -12622,7 +12625,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               </div>
             ) : null}
             <div className="context-relations context-tab-overview">
-              <article>
+              {/* A relation with nothing in it is not drawn (hide-empty rule). */}
+              {context.related.professor.length ? <article>
                 <span>
                   <UsersRound />
                 </span>
@@ -12631,8 +12635,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <b>{context.related.professor.length}</b>
                   <small>موعد ظاهر في الفصل</small>
                 </div>
-              </article>
-              <article>
+              </article> : null}
+              {context.related.course.length ? <article>
                 <span>
                   <CalendarDays />
                 </span>
@@ -12641,8 +12645,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <b>{context.related.course.length}</b>
                   <small>شعبة/موعد مرتبط</small>
                 </div>
-              </article>
-              <article>
+              </article> : null}
+              {context.related.room.length ? <article>
                 <span>
                   <Table2 />
                 </span>
@@ -12651,7 +12655,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <b>{context.related.room.length}</b>
                   <small>حجز ظاهر ضمن صلاحياتك</small>
                 </div>
-              </article>
+              </article> : null}
               <article
                 className={
                   context.conflicts?.length ? "impact-warn" : "impact-good"
@@ -12671,7 +12675,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 </div>
               </article>
             </div>
-            <div className="context-schedules context-tab-context">
+            {context.related.professor.length ? <div className="context-schedules context-tab-context">
               <h3>السياق المرتبط</h3>
               {context.related.professor.slice(0, 6).map((r: any) => (
                 <article key={r.id}>
@@ -12684,7 +12688,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   </small>
                 </article>
               ))}
-            </div>
+            </div> : null}
             {contextSolutions.length ? (
               <div className="context-alternatives context-tab-context">
                 <h3>أفضل البدائل الآن</h3>

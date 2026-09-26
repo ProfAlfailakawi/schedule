@@ -237,7 +237,7 @@ check(changes.includes("ظهرت لرئيس القسم في شريط الاعت�
  * الشريط نفسه الذي فوق مركز الاستعلام — الضمانُ هو هو، وموضعُه تغيّر:
  * المطابقةُ بالاسم انتقلت إلى `matchesInboxAsk` لتُختبر وحدها في
  * `inbox-ask-audit`، والشرائحُ نزلت إلى «المزيد» ولم تُلغَ. */
-check(changes.includes("<ScopeAskBar") && changes.includes('askPlaceholder="اسأل'),
+check(changes.includes("<ScopeAskBar") && /askPlaceholder=\{?[^\n]*"اسأل/.test(changes),
   "الوارد يبدأ بسؤالٍ بالعربية، بالشريط نفسه الذي فوق مركز الاستعلام");
 check(changes.includes('className="changes-filter-chips"') && changes.includes('setStatusFilter('),
   "وفلترٌ بالحالة بشرائح تحمل أعدادها");

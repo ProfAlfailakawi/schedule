@@ -400,6 +400,12 @@ const validateImportRowsLocally = (rows: ImportRow[]) => {
   return [...new Set(issues)];
 };
 
+/** رقمُ بطاقة القراءة، أو لا شيء حين يكون صفراً أو فارغاً (قاعدة إخفاء الفارغ). */
+function metricBadge(metric: unknown) {
+  const text = String(metric ?? "").trim();
+  return text && !/^[0٠]$/.test(text) ? <b>{text}</b> : null;
+}
+
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
   const [colleges, setColleges] = useState<AdCollege[]>([]),
@@ -2508,6 +2514,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <strong>اختر قراءة</strong>
               <small>كل قراءة تفتح صفحتها — رقم واحد أولاً، ثم التفاصيل.</small>
             </div>
+            {/* الصفرُ لا يُكتب رقماً على بطاقة القراءة (قاعدة إخفاء الفارغ). */}
             <div className="insight-preview-list" role="list">
               {insightScenes.map((item, index) => {
                 const selected = activeInsightKey === item.value;
@@ -2529,7 +2536,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <strong>{item.label}</strong>
                       <small>{item.detail}</small>
                     </span>
-                    <b>{item.metric}</b>
+                    {metricBadge(item.metric)}
                   </button>
                 );
               })}
@@ -2647,7 +2654,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <ShieldCheck />
             </div>
             <div className="approval-metrics">
-              <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className={`approval-metric-card ${overview.metrics.criticalConflicts ? "danger" : "ok"}`} onClick={() => setInsightReason({
+              {/* بطاقاتُ الصفر لا تُعرض: «جاهز للاعتماد» تقولها بطاقةُ الحالة تحتها. */}
+              {overview.metrics.criticalConflicts ? <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className={`approval-metric-card ${overview.metrics.criticalConflicts ? "danger" : "ok"}`} onClick={() => setInsightReason({
                 kicker:"قبل الاعتماد", title:"موانع الاعتماد", metric:String(overview.metrics.criticalConflicts), tone:overview.metrics.criticalConflicts?"bad":"good", icon:<ShieldAlert />,
                 summary:overview.metrics.criticalConflicts?"هذه هي الموانع الموجودة الآن:":"لا تظهر موانع حفظ في النطاق الحالي.",
                 facts:[{label:"الموانع",value:String(overview.metrics.criticalConflicts)},{label:"حالة الاعتماد",value:overview.metrics.criticalConflicts?"متوقف":"جاهز"},{label:"اللائحة",value:"تحذيرية"}],
@@ -2657,8 +2665,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <strong>{overview.metrics.criticalConflicts}</strong>
                 <span>موضع يحتاج تحقق</span>
                 <ChevronLeft aria-hidden="true" />
-              </button>
-              <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
+              </button> : null}
+              {overview.metrics.invalidRows ? <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
                 kicker:"سلامة البيانات", title:"سجلات تحتاج مراجعة", metric:String(overview.metrics.invalidRows), tone:overview.metrics.invalidRows?"warn":"good", icon:<FileClock />,
                 summary:overview.metrics.invalidRows?"هذه السجلات وما ينقص كل واحد منها:":"لا توجد سجلات ناقصة ظاهرة في النطاق الحالي.",
                 items:invalidReasonItems,
@@ -2666,15 +2674,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               })}>
                 <strong>{overview.metrics.invalidRows}</strong>
                 <span>سجل يحتاج مراجعة</span><ChevronLeft aria-hidden="true" />
-              </button>
-              <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
+              </button> : null}
+              {overview.draftCount ? <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
                 kicker:"مساحة العمل", title:"المسودات الداخلية", metric:String(overview.draftCount), tone:"plain", icon:<Save />,
                 summary:"هذه نسخ تجريبية أو محفوظة للمراجعة ولم تُنشر على الجدول المعتمد.",
                 facts:[{label:"المسودات",value:String(overview.draftCount)},{label:"النشر",value:"لا"},{label:"الجدول الحقيقي",value:"لم يتغير"}]
               })}>
                 <strong>{overview.draftCount}</strong>
                 <span>مسودة داخلية</span><ChevronLeft aria-hidden="true" />
-              </button>
+              </button> : null}
               <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
                 kicker:"راحة الجدول", title:"متوسط فراغ الأساتذة", metric:formatCompactDurationArabic(overview.metrics.avgInstructorGap), tone:Number(overview.metrics.avgInstructorGap)>=180?"warn":"plain", icon:<CalendarClock />,
                 summary:longGapReasonItems.length?"أصحاب الفراغات الأطول الآن:":"لا يوجد أستاذ بفراغ يومي يتجاوز 3 ساعات.",
@@ -2852,9 +2860,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <small>{overview.spatialBurnout.highRisk ? "الحركة مرهقة" : overview.spatialBurnout.guardedRisk ? "تحتاج مراجعة" : "حركة مريحة"}</small>
                 </div>
                 <div className="spatial-metrics">
-                  <article><span className="spatial-metric-icon"><AlertTriangle /></span><b><Num value={overview.spatialBurnout.highRisk} /></b><span>انتقال مرهق</span></article>
-                  <article><span className="spatial-metric-icon"><CalendarClock /></span><b><Num value={overview.spatialBurnout.guardedRisk} /></b><span>انتقال ضيق</span></article>
-                  <article><span className="spatial-metric-icon"><Building2 /></span><b><Num value={overview.roomCastling?.length || 0} /></b><span>تبديل آمن</span></article>
+                  {overview.spatialBurnout.highRisk ? <article><span className="spatial-metric-icon"><AlertTriangle /></span><b><Num value={overview.spatialBurnout.highRisk} /></b><span>انتقال مرهق</span></article> : null}
+                  {overview.spatialBurnout.guardedRisk ? <article><span className="spatial-metric-icon"><CalendarClock /></span><b><Num value={overview.spatialBurnout.guardedRisk} /></b><span>انتقال ضيق</span></article> : null}
+                  {overview.roomCastling?.length ? <article><span className="spatial-metric-icon"><Building2 /></span><b><Num value={overview.roomCastling.length} /></b><span>تبديل آمن</span></article> : null}
                 </div>
               </div>
               {overview.spatialBurnout.risks?.length ? (

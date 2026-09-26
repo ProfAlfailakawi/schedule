@@ -533,16 +533,33 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
   );
 }
 
+type FilterOption = { value: string; label: string; count?: number; tone?: "ok" | "warn" | "bad" };
+const ALL_VALUES = new Set(["all", "0"]);
+
+/**
+ * ما يُعرض من مجموعة مرشّحات (قاعدة إخفاء الفارغ): مرشّحٌ بلا عنصرٍ تحته لا يُعرض —
+ * إلا المختارُ الآن — ومجموعةٌ لم يبقَ فيها ما يُختار بينه (خيارٌ واحدٌ غير «الكل»)
+ * لا تُعرض أصلاً.
+ */
+export function visibleFilterOptions(options: FilterOption[], value: string): FilterOption[] {
+  const shown = options.filter(option => option.count !== 0 || value === option.value);
+  const choices = shown.filter(option => !ALL_VALUES.has(option.value));
+  if (choices.length <= 1 && (ALL_VALUES.has(value) || choices[0]?.value === value || !choices.length)) return [];
+  return shown;
+}
+
 function FilterGroup({ label, value, options, onChange }: {
   label: string; value: string;
-  options: Array<{ value: string; label: string; count?: number; tone?: "ok" | "warn" | "bad" }>;
+  options: FilterOption[];
   onChange: (value: string) => void;
 }) {
+  const shown = visibleFilterOptions(options, value);
+  if (!shown.length) return null;
   return (
     <div className="request-filter" role="group" aria-label={label}>
       <span className="request-filter-label">{label}</span>
       <div className="request-filter-chips">
-        {options.map(option => (
+        {shown.map(option => (
           <button
             key={option.value}
             type="button"
@@ -550,7 +567,6 @@ function FilterGroup({ label, value, options, onChange }: {
             aria-pressed={value === option.value}
             data-tone={option.tone}
             data-guide-ignore="تصفية الوارد — عرضٌ لا فعل"
-            disabled={option.count === 0 && value !== option.value}
             onClick={() => onChange(option.value)}
           >
             {option.label}
@@ -1049,8 +1065,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           {/* ثلاثةُ أرقامٍ لا أكثر. من أراد التفصيل فتح ما تحته. */}
           <Surface className="request-totals">
             <div><b>{totals?.answered ?? 0}</b><span>أجاب من {totals?.sent ?? 0}</span></div>
-            <div><b>{totals?.unchanged ?? 0}</b><span>بلا تغيير</span></div>
-            <div><b>{totals?.changed ?? 0}</b><span>طلبوا تغييراً</span></div>
+            {totals?.unchanged ? <div><b>{totals.unchanged}</b><span>بلا تغيير</span></div> : null}
+            {totals?.changed ? <div><b>{totals.changed}</b><span>طلبوا تغييراً</span></div> : null}
           </Surface>
 
           {silent.length ? (
@@ -1093,55 +1109,52 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
             </button>
           ) : null}
 
+          {(() => {
+            /* المجموعاتُ مبنيّةٌ مرّةً: منها يُعرف أيبقى في الشريط ما يُختار، فلا
+               يبقى رمزُ المرشّحات وحده فوق لا شيء (قاعدة إخفاء الفارغ). */
+            const stateOptions: FilterOption[] = [
+              { value: "pending", label: "بانتظار قرارك", count: counts.pending, tone: "warn" },
+              { value: "fixed", label: "ثُبّت", count: counts.fixed, tone: "ok" },
+              { value: "rejected", label: "رُفض", count: counts.rejected, tone: "bad" },
+              { value: "all", label: "الكل", count: counts.all },
+            ];
+            const actionOptions: FilterOption[] = [
+              { value: "all", label: "الكل" },
+              { value: "change", label: "تعديل", count: counts.change },
+              { value: "add", label: "إضافة", count: counts.add },
+              { value: "delete", label: "حذف", count: counts.delete },
+            ];
+            const verdictOptions: FilterOption[] = [
+              { value: "all", label: "الكل" },
+              { value: "clear", label: "متاح", count: counts.clear, tone: "ok" },
+              { value: "exception", label: "استثناء", count: counts.exception, tone: "warn" },
+              { value: "conflict", label: "ممنوع", count: counts.conflict, tone: "bad" },
+            ];
+            const deptOptions: FilterOption[] = departments.length > 1 && !sectionId
+              ? [{ value: "0", label: "كل الأقسام" }, ...departments.map(dept => ({ value: String(dept.id), label: dept.name.replace(/^قسم\s+/, ""), count: dept.count }))]
+              : [];
+            const filtered = stateFilter !== "pending" || actionFilter !== "all" || verdictFilter !== "all" || Boolean(deptFilter);
+            const any = filtered
+              || visibleFilterOptions(stateOptions, stateFilter).length || visibleFilterOptions(actionOptions, actionFilter).length
+              || visibleFilterOptions(verdictOptions, verdictFilter).length || visibleFilterOptions(deptOptions, String(deptFilter)).length;
+            if (!any) return null;
+            return (
           <div className="request-filters" role="toolbar" aria-label="تصفية الوارد">
             <span className="request-filters-mark" aria-hidden="true"><SlidersHorizontal /></span>
-            <FilterGroup
-              label="الحالة"
-              value={stateFilter}
-              onChange={value => setStateFilter(value as any)}
-              options={[
-                { value: "pending", label: "بانتظار قرارك", count: counts.pending, tone: "warn" },
-                { value: "fixed", label: "ثُبّت", count: counts.fixed, tone: "ok" },
-                { value: "rejected", label: "رُفض", count: counts.rejected, tone: "bad" },
-                { value: "all", label: "الكل", count: counts.all },
-              ]}
-            />
-            <FilterGroup
-              label="النوع"
-              value={actionFilter}
-              onChange={value => setActionFilter(value as any)}
-              options={[
-                { value: "all", label: "الكل" },
-                { value: "change", label: "تعديل", count: counts.change },
-                { value: "add", label: "إضافة", count: counts.add },
-                { value: "delete", label: "حذف", count: counts.delete },
-              ]}
-            />
-            <FilterGroup
-              label="الفحص"
-              value={verdictFilter}
-              onChange={value => setVerdictFilter(value as any)}
-              options={[
-                { value: "all", label: "الكل" },
-                { value: "clear", label: "متاح", count: counts.clear, tone: "ok" },
-                { value: "exception", label: "استثناء", count: counts.exception, tone: "warn" },
-                { value: "conflict", label: "ممنوع", count: counts.conflict, tone: "bad" },
-              ]}
-            />
-            {departments.length > 1 && !sectionId ? (
-              <FilterGroup
-                label="القسم"
-                value={String(deptFilter)}
-                onChange={value => setDeptFilter(Number(value) || 0)}
-                options={[{ value: "0", label: "كل الأقسام" }, ...departments.map(dept => ({ value: String(dept.id), label: dept.name.replace(/^قسم\s+/, ""), count: dept.count }))]}
-              />
+            <FilterGroup label="الحالة" value={stateFilter} onChange={value => setStateFilter(value as any)} options={stateOptions} />
+            <FilterGroup label="النوع" value={actionFilter} onChange={value => setActionFilter(value as any)} options={actionOptions} />
+            <FilterGroup label="الفحص" value={verdictFilter} onChange={value => setVerdictFilter(value as any)} options={verdictOptions} />
+            {deptOptions.length ? (
+              <FilterGroup label="القسم" value={String(deptFilter)} onChange={value => setDeptFilter(Number(value) || 0)} options={deptOptions} />
             ) : null}
-            {(stateFilter !== "pending" || actionFilter !== "all" || verdictFilter !== "all" || deptFilter) ? (
+            {filtered ? (
               <button type="button" className="request-filters-reset" data-guide-ignore="إعادة المرشّحات — عرضٌ لا فعل" onClick={() => { setStateFilter("pending"); setActionFilter("all"); setVerdictFilter("all"); setDeptFilter(0); }}>
                 <X aria-hidden="true" /> إعادة
               </button>
             ) : null}
           </div>
+            );
+          })()}
 
           {changed.length ? (
             <div className="request-deck">

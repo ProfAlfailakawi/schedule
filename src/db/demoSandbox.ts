@@ -18,12 +18,28 @@ const colleges: AdCollege[] = [
   { AdCollegeId: 3, AdCollegeCode: "EDU", AdCollegeName: "كلية التربية المستقبلية" },
 ];
 
+/* ── قسمٌ في عدّة مواقع ────────────────────────────────────────────────────
+ *
+ * يُلحق بعد الأقسام الخمسة، وبأرقامٍ بعدها، فلا يمسّ مسرحَ دورة الاعتماد ولا
+ * توزيعَ المواعيد المبنيّ عليها: مقرّرٌ واحد لكل موقع، وموعدان يومَ الخميس
+ * (يومٌ لا يدرّس فيه أحدٌ في الصندوق، فلا تعارضَ يُصنع)، وقاعةٌ في مبنى
+ * الكلية. */
+const MULTI_SITE_NAME = "الدراسات الإسلامية";
+const MULTI_SITE_SECTIONS: AdSection[] = [
+  { AdSectionId: 6, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: MULTI_SITE_NAME },
+  { AdSectionId: 7, AdCollegeId: 2, AdSectionCode: "ISL", AdSectionName: MULTI_SITE_NAME },
+  { AdSectionId: 8, AdCollegeId: 3, AdSectionCode: "ISL", AdSectionName: MULTI_SITE_NAME },
+];
+
 const sections: AdSection[] = [
   { AdSectionId: 1, AdCollegeId: 1, AdSectionCode: "CS", AdSectionName: "علوم الحاسب" },
   { AdSectionId: 2, AdCollegeId: 1, AdSectionCode: "DS", AdSectionName: "علم البيانات" },
   { AdSectionId: 3, AdCollegeId: 2, AdSectionCode: "MGT", AdSectionName: "الإدارة" },
   { AdSectionId: 4, AdCollegeId: 2, AdSectionCode: "ENT", AdSectionName: "ريادة الأعمال" },
   { AdSectionId: 5, AdCollegeId: 3, AdSectionCode: "EDT", AdSectionName: "تقنيات التعليم" },
+  /* قسمٌ واحد يُدرَّس في الكليات الثلاث — كقسم «الدراسات الإسلامية» الحقيقي في
+     ثلاث عشرة كليةً وفرعاً. حسابُه (DEMO_MULTI_SITE) يرى «قسمك في 3 مواقع». */
+  ...MULTI_SITE_SECTIONS,
 ];
 
 const courseNames = [
@@ -61,14 +77,17 @@ function syntheticInstructors(): AdInstructor[] {
 }
 
 function syntheticCourses(): AdCourse[] {
-  return courseNames.map(([code, name], index) => {
+  return [...courseNames.map(([code, name], index) => {
     const sectionId = index < 3 ? 1 : index < 6 ? 2 : index < 9 ? 3 : index < 12 ? 4 : index < 16 ? 5 : index === 16 ? 1 : 2;
     const section = sections.find(row => row.AdSectionId === sectionId)!;
     return {
       AdCourseId: index + 1, AdCollegeId: section.AdCollegeId, AdSectionId: sectionId,
       CourseCode: code, CourseName: name, CourseCredit: 3, CourseHours: 3, MaxStudent: 30 + ((index % 4) * 5),
     };
-  });
+  }), ...MULTI_SITE_SECTIONS.map((section, index) => ({
+    AdCourseId: courseNames.length + index + 1, AdCollegeId: section.AdCollegeId, AdSectionId: section.AdSectionId,
+    CourseCode: "ISL101", CourseName: "مدخل إلى الدراسات الإسلامية", CourseCredit: 2, CourseHours: 2, MaxStudent: 40,
+  }))];
 }
 
 /* ── سجلُّ مبانٍ وقاعاتٍ للبيئة التجريبية ─────────────────────────────────
@@ -103,6 +122,11 @@ const DEMO_BUILDINGS: readonly DemoBuildingSeed[] = [
   { prefix: "903", siteLetter: "D", number: "01", collegeId: 3, name: "مبنى التربية المستقبلية", rooms: [
     ["120", [5], "مختبر تعلم رقمي"], ["220", [5], "قاعة نقاش"], ["221", [5], "قاعة مرنة"],
   ] },
+  /* قاعةٌ لقسم الدراسات الإسلامية في كل كلية — مبنىً مستقلٌّ بعد المباني،
+     فلا تنزاح أرقامُ القاعات التي قبله. */
+  { prefix: "901", siteLetter: "A", number: "03", collegeId: 1, name: "مبنى الدراسات الإسلامية — العلوم", rooms: [["130", [6], "قاعة محاضرات"]] },
+  { prefix: "902", siteLetter: "B", number: "02", collegeId: 2, name: "مبنى الدراسات الإسلامية — الأعمال", rooms: [["130", [7], "قاعة محاضرات"]] },
+  { prefix: "903", siteLetter: "D", number: "02", collegeId: 3, name: "مبنى الدراسات الإسلامية — التربية", rooms: [["130", [8], "قاعة محاضرات"]] },
 ];
 const demoBuildingCode = (b: DemoBuildingSeed) => `${b.prefix}${b.siteLetter}${b.number}`;
 const demoBuildingId = (b: DemoBuildingSeed) => `building_${demoBuildingCode(b)}`;
@@ -178,8 +202,9 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   const positionInSection = new Map<number, number>();
   /* قاعةٌ مشغولة في نمطٍ وساعة — فلا يُسند صفّان القاعةَ نفسها في الموعد نفسه. */
   const taken = new Set<string>();
+  const core = courses.filter(course => !MULTI_SITE_SECTIONS.some(section => section.AdSectionId === course.AdSectionId));
   const rows: FSchedule[] = Array.from({ length: 30 }, (_, index) => {
-    const course = courses[index % courses.length];
+    const course = core[index % core.length];
     const instructorBand = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
     const k = positionInCollege.get(course.AdCollegeId) ?? 0;
     positionInCollege.set(course.AdCollegeId, k + 1);
@@ -200,7 +225,7 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
     return {
       id: index + 1, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
       AdCourseId: course.AdCourseId, AdCourseName: course.CourseName,
-      SCode: `0${Math.floor(index / courses.length) + 1}`,
+      SCode: `0${Math.floor(index / core.length) + 1}`,
       AdInstructorId: instructorBand[(lap + Math.floor(k / 2)) % instructorBand.length],
       fsunday: pattern === 0, fmonday: pattern === 1,
       ftuesday: pattern === 0, fwednesday: pattern === 1,
@@ -227,6 +252,22 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       fstarttime: anchor.fstarttime, fendtime: anchor.fendtime, AdInstructorId: anchor.AdInstructorId,
       ...(freeHall ? hallFields(freeHall) : {}),
       fdetail: "حالة تجريبية مقصودة: الأستاذ نفسه في قاعتين في الساعة نفسها — لاستعراض «معالجة التعارضات».",
+    });
+  }
+  /* قسمُ المواقع الثلاثة: موعدان لكل موقع يومَ الخميس — لا أحدَ في الصندوق
+     يدرّس فيه، فلا تعارضَ يُصنع. أستاذا كلِّ موقعٍ من أساتذة كليته. */
+  let nextId = rows.length;
+  for (const course of courses.filter(row => MULTI_SITE_SECTIONS.some(section => section.AdSectionId === row.AdSectionId))) {
+    const hall = hallsForSection(course.AdSectionId)[0];
+    const band = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
+    [["08:00", "09:40"], ["10:00", "11:40"]].forEach(([start, end], k) => {
+      rows.push({
+        id: ++nextId, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
+        AdCourseId: course.AdCourseId, AdCourseName: course.CourseName, SCode: `0${k + 1}`,
+        AdInstructorId: band[k % band.length],
+        fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: true,
+        fstarttime: start, fendtime: end, ...hallFields(hall), fdetail: "", rev: 0,
+      } as FSchedule);
     });
   }
   return rows;
@@ -290,9 +331,32 @@ const DEMO_ROLE_SEEDS: DemoRoleSeed[] = [
   { role: "standard",       id: 17, name: "أ. مستخدم عادي",            login: "demo.standard" },
 ];
 
+/**
+ * ── حسابُ القسم المتعدّد المواقع ────────────────────────────────────────────
+ *
+ * ليس صفةً جديدة: رئيسُ لجنةٍ نطاقُه قسمٌ واحد («الدراسات الإسلامية») في
+ * الكليات الثلاث — الشكلُ الذي اشتكى منه المالك في حسابٍ حقيقي. يُعرض في شريط
+ * الديمو بمفتاحٍ خاصّ بعد الصفات، فيُجرَّب «قسمك في 3 مواقع» كما يراه صاحبه.
+ */
+export const DEMO_MULTI_SITE = {
+  key: "committeeChairMultiSite", role: "committeeChair" as AcademicRole, id: 18,
+  name: "د. رئيس لجنة الدراسات الإسلامية", login: "demo.multisite",
+  label: "رئيس لجنة — قسمٌ في ثلاث كليات",
+} as const;
+
+/** كل ما يبدّل إليه شريطُ الديمو: الصفاتُ، ثم الحسابُ المتعدّد المواقع. */
+export const DEMO_SWITCH_ACCOUNTS: Array<{ role: string; label: string; SystemUserId: number }> = [];
+
+/** مفتاحُ الشريط للحساب المعروض الآن — الحسابُ المتعدّد المواقع مفتاحُه لا صفتُه. */
+export function demoActiveRoleKey(userId: number, role: unknown): string {
+  if (Number(userId) === DEMO_MULTI_SITE.id) return DEMO_MULTI_SITE.key;
+  return String(role || "");
+}
+
 /** الحسابات الوهمية التي يبدّل بينها شريط الديمو، بالترتيب الذي تُعرض به. */
 export const DEMO_ROLE_ACCOUNTS: Array<{ role: AcademicRole; label: string; SystemUserId: number }> =
   DEMO_ROLE_SEEDS.map(seed => ({ role: seed.role, label: roleDefinition(seed.role).label, SystemUserId: seed.id }));
+DEMO_SWITCH_ACCOUNTS.push(...DEMO_ROLE_ACCOUNTS, { role: DEMO_MULTI_SITE.key, label: DEMO_MULTI_SITE.label, SystemUserId: DEMO_MULTI_SITE.id });
 
 function demoAssignsFor(role: AcademicRole): Array<{ AdCollegeId: number; AdSectionId: number }> {
   const mode = roleDefinition(role).scopeMode;
@@ -512,6 +576,10 @@ export function createDemoSandboxState(): DemoSandboxState {
       SystemUserId: seed.id, Name: seed.name, SystemUserLogin: seed.login, SystemUserPass: "",
       IsAdminUser: false, IsActive: true, IsLocked: false, IsDeleted: false, Role: seed.role,
     } as SystemUser)),
+    {
+      SystemUserId: DEMO_MULTI_SITE.id, Name: DEMO_MULTI_SITE.name, SystemUserLogin: DEMO_MULTI_SITE.login, SystemUserPass: "",
+      IsAdminUser: false, IsActive: true, IsLocked: false, IsDeleted: false, Role: DEMO_MULTI_SITE.role,
+    } as SystemUser,
   ];
 
   // المدير يملك كل الشاشات؛ وكلُّ صفةٍ تحمل قالبها من `formIds` نفسه الذي يحكم الحقيقي.
@@ -519,6 +587,7 @@ export function createDemoSandboxState(): DemoSandboxState {
   const formSecurity: FormSecurity[] = [
     ...formNames.map(form => ({ legacyId: ++legacy, SystemUserId: 1, FormNameId: form.FormNameId })),
     ...DEMO_ROLE_SEEDS.flatMap(seed => roleDefinition(seed.role).formIds.map(formId => ({ legacyId: ++legacy, SystemUserId: seed.id, FormNameId: formId }))),
+    ...roleDefinition(DEMO_MULTI_SITE.role).formIds.map(formId => ({ legacyId: ++legacy, SystemUserId: DEMO_MULTI_SITE.id, FormNameId: formId })),
   ];
 
   // المدير على كل الأقسام؛ وكلُّ صفةٍ على نطاقها المشتقّ من `scopeMode`.
@@ -526,6 +595,7 @@ export function createDemoSandboxState(): DemoSandboxState {
   const collegeUserAssign: AdCollegeUserAssign[] = [
     ...sections.map(section => ({ legacyId: ++assignId, SystemUserId: 1, AdCollegeId: section.AdCollegeId, AdSectionId: section.AdSectionId })),
     ...DEMO_ROLE_SEEDS.flatMap(seed => demoAssignsFor(seed.role).map(a => ({ legacyId: ++assignId, SystemUserId: seed.id, AdCollegeId: a.AdCollegeId, AdSectionId: a.AdSectionId }))),
+    ...MULTI_SITE_SECTIONS.map(section => ({ legacyId: ++assignId, SystemUserId: DEMO_MULTI_SITE.id, AdCollegeId: section.AdCollegeId, AdSectionId: section.AdSectionId })),
   ];
 
   const rooms: AdRoom[] = DEMO_HALLS.map((hall, index) => ({ AdRoomId: index + 1, AdRoomCode: hall.code, AdRoomHall: hall.hall, AdRoomDescrip: hall.description }));

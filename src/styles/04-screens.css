@@ -2321,6 +2321,11 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
   .publish-hero{grid-template-columns:auto minmax(0,1fr);padding:var(--s4)}
   .publish-hero .publish-open{grid-column:1 / -1;inline-size:100%;justify-content:center}
 }
+
+/* ── قسمٌ واحد في مواقع عدّة (inboxAudience) ─────────────────────────────
+   يُقال اسمُ القسم مرّةً فوق القائمة، وتُسمّى السطورُ بكلياتها. */
+.changes-inbox-multisite{margin:0 0 2px;color:var(--muted);font-size:13px}
+.changes-inbox-multisite strong{color:var(--ink);font-weight:700}
 .course-bootstrap-ok{display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:600;cursor:pointer}.course-bootstrap-ok input{width:16px;height:16px;accent-color:var(--accent)}
 .course-plan-line{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:var(--muted)}.course-plan-line svg{width:15px;height:15px}
 .degree-rule-plan{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}.degree-rule-plan>strong{display:flex;align-items:center;gap:8px;font-size:13px}

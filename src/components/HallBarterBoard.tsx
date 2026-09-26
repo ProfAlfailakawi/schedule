@@ -324,7 +324,7 @@ export default function HallBarterBoard({
           <em>كل قاعة فارغة في الكلية بحسب جدول هذا الفصل، بنافذتها وساعتها.</em>
         </span>
         <span className="hall-barter-summary-stats">
-          <b><i>{board.opportunities.length}</i> {nounFor(board.opportunities.length, AR.window)}</b>
+          {board.opportunities.length ? <b><i>{board.opportunities.length}</i> {nounFor(board.opportunities.length, AR.window)}</b> : null}
           {incomingPending.length ? <b className="needs-action"><i>{incomingPending.length}</i> بانتظارك</b> : null}
           {approved.length ? <b className="approved"><i>{approved.length}</i> معتمدة</b> : null}
         </span>
@@ -410,7 +410,7 @@ export default function HallBarterBoard({
           ) : null}
 
           <div className="hall-barter-section opportunities">
-            <header><div><small>فارغة في جدول هذا الفصل</small><strong>نوافذ يمكن طلبها بنقرة واحدة</strong></div><b>{visibleOpportunities.length}</b></header>
+            <header><div><small>فارغة في جدول هذا الفصل</small><strong>نوافذ يمكن طلبها بنقرة واحدة</strong></div>{visibleOpportunities.length ? <b>{visibleOpportunities.length}</b> : null}</header>
             {board.opportunities.length ? (
               <div className="hall-barter-filters">
                 <label className="hall-barter-search">

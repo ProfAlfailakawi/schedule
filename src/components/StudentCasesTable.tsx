@@ -204,7 +204,10 @@ export default function StudentCasesTable({
               ["new-course", "فتح مقرر"],
               ["course-conflict", "تعارض مقررين"],
               ["graduate", "خريج / متوقع"],
-            ] as const).map(([value, label]) => (
+            ] as const)
+              /* نوعٌ لا حالةَ فيه لا يُعرض مرشّحاً — إلا المختارُ الآن (قاعدة إخفاء الفارغ). */
+              .filter(([value]) => value === "all" || counts[value] || typeFilter === value)
+              .map(([value, label]) => (
               <button
                 key={value} type="button" className={typeFilter === value ? "active" : ""} aria-pressed={typeFilter === value}
                 data-guide-ignore="فلتر محلي لسجل حالات الطلبة لا يغير البيانات"
@@ -214,9 +217,10 @@ export default function StudentCasesTable({
           </div>
           <div className="student-case-print-actions" aria-label="خيارات طباعة حالات الطلبة">
             <SecondaryButton data-guide-ignore="طباعة شاملة لسجل حالات الطلبة فقط" onClick={() => printCases("all")} disabled={!counts.all}><Printer />الشاملة</SecondaryButton>
-            <SecondaryButton data-guide-ignore="طباعة حالات فتح المقرر فقط" onClick={() => printCases("new-course")} disabled={!counts["new-course"]}><Printer />فتح مقرر</SecondaryButton>
-            <SecondaryButton data-guide-ignore="طباعة حالات التعارض فقط" onClick={() => printCases("course-conflict")} disabled={!counts["course-conflict"]}><Printer />التعارض</SecondaryButton>
-            <SecondaryButton data-guide-ignore="طباعة حالات الخريج والمتوقع فقط" onClick={() => printCases("graduate")} disabled={!counts.graduate}><Printer />الخريج</SecondaryButton>
+            {/* طباعةُ نوعٍ لا حالةَ فيه لا تُعرض زرّاً معطّلاً. */}
+            {counts["new-course"] ? <SecondaryButton data-guide-ignore="طباعة حالات فتح المقرر فقط" onClick={() => printCases("new-course")}><Printer />فتح مقرر</SecondaryButton> : null}
+            {counts["course-conflict"] ? <SecondaryButton data-guide-ignore="طباعة حالات التعارض فقط" onClick={() => printCases("course-conflict")}><Printer />التعارض</SecondaryButton> : null}
+            {counts.graduate ? <SecondaryButton data-guide-ignore="طباعة حالات الخريج والمتوقع فقط" onClick={() => printCases("graduate")}><Printer />الخريج</SecondaryButton> : null}
           </div>
         </div>
         {toolbarExtra ? <div className="student-case-toolbar student-case-toolbar--extra">{toolbarExtra}</div> : null}

@@ -592,11 +592,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                                 {" · "}{Date.parse(link.requestsCloseAt) < Date.now() ? "أُغلقت الطلبات" : "الطلبات حتى"} {new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(link.requestsCloseAt))}
                               </time>
                             ) : null}
-                            {" · "}
-                            {Number(link.views || 0).toLocaleString("ar-KW-u-nu-latn")} فتحة
+                            {/* رابطٌ لم يُفتح بعد لا يُكتب له «0 فتحة». */}
+                            {link.views ? <>{" · "}{Number(link.views).toLocaleString("ar-KW-u-nu-latn")} فتحة</> : null}
                           </span>
                         </div>
-                        <div className="share-row-actions" aria-label={`إجراءات الرابط ${link.label || link.id.slice(0, 6)}`}>
+                        {/* رابطٌ ملغيٌّ أو منتهٍ لا تُعرض له أزرارٌ معطّلة (قاعدة إخفاء الفارغ). */}
+                        {!dead ? <div className="share-row-actions" aria-label={`إجراءات الرابط ${link.label || link.id.slice(0, 6)}`}>
                           <button
                             type="button"
                             className={qr?.id === link.id ? "active" : ""}
@@ -642,7 +643,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                           <button type="button" title="إيقاف الرابط" aria-label="إيقاف الرابط" onClick={() => revoke(link.id)} disabled={dead || busy}>
                             <Trash2 />
                           </button>
-                        </div>
+                        </div> : null}
                         {qr?.id === link.id ? (
                           <div className="share-qr">
                             <div className="share-qr-code" role="img" aria-label={`رمز QR للرابط ${link.label || link.id.slice(0, 6)}`} dangerouslySetInnerHTML={{ __html: qr.svg }} />
@@ -737,7 +738,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               {personalLinks.length ? (
                 <section className="share-personal" aria-label="الروابط الشخصية للأساتذة">
                   <header>
-                    <strong>الروابط الشخصية ({countOf(livePersonal.length, AR.instructor)})</strong>
+                    <strong>الروابط الشخصية{livePersonal.length ? ` (${countOf(livePersonal.length, AR.instructor)})` : ""}</strong>
                     <small>لكل أستاذٍ رابطٌ لا يُفتح إلا له. أوقف رابطَ أستاذٍ بعينه دون أن يمسّ غيره.</small>
                   </header>
                   <ul>

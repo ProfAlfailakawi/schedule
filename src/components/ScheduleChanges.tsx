@@ -33,6 +33,7 @@ import { DECISION_1912_LABEL, regulationScore, type RegulationFinding } from "..
 import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
 import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
+import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 
 type NoteField = DiffFieldKey | "row";
@@ -192,15 +193,16 @@ export function ApprovalChip({ status, late }: { status: ScheduleApprovalStatus;
 
 /* ── صندوق الوارد ───────────────────────────────────────────────────────── */
 
-function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onExtend, scopes = [], powerAdmin = false }: {
+function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExtend, scopes = [], powerAdmin = false }: {
   termId: number;
+  /** ما يراه هذا القارئ من عُدّة الوارد — من القرار الواحد (inboxAudience). */
+  audience: InboxAudience;
   /** نطاق القارئ: منه وحده يُقرّر أيُرسم منتقي القسم (singleDepartmentOf). */
   scopes?: ScopeAssignmentLike[];
   powerAdmin?: boolean;
   terms: AdTerm[];
   onTermChange: (termId: number) => void;
   onOpen: (row: InboxRow) => void;
-  canExtend: boolean;
   /** الوارد نفسه يُسلَّم للوحة «مواعيد التسليم» — قراءةٌ واحدة للشاشة. */
   onLoaded?: (rows: InboxRow[] | null) => void;
   /** «تمديد» في السطر يفتح ورقة الاستثناء في اللوحة، لا ورقةً ثانية. */
@@ -276,6 +278,18 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
     return matchesInboxAsk(row, effective);
   }), [rows, shownCollege, shownSection, effective]);
 
+  /* كم سطراً يحمل كلَّ إشارة — منه يُعرف أيُّ مرشّحٍ يستحق أن يُعرض. */
+  const signalCounts = useMemo(() => {
+    const list = rows || [];
+    return {
+      late: totals?.late || list.filter(row => row.late).length,
+      blocking: list.filter(row => row.blockingConflicts > 0).length,
+      openNotes: list.filter(row => row.openNotes > 0).length,
+      answered: list.filter(row => row.answeredNotes > 0).length,
+      pendingAdditions: list.filter(row => row.pendingAdditions > 0).length,
+    };
+  }, [rows, totals]);
+
   /* عددُ ما هو نشطٌ داخل «المزيد» وحدَه — الكلية والقسم والفصل ظاهرةٌ بأعينها
      فوقه، وعدُّها مرّتين يقول للقارئ إن شيئاً مخفيّاً وليس كذلك. */
   const activeMoreCount = (statusFilter !== "all" ? 1 : 0) + (lateOnly ? 1 : 0) + signalFilters.length;
@@ -296,11 +310,11 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
 
   const selects: ScopeAskSelect[] = [
     {
-      key: "college", label: "الكلية", value: shownCollege, placeholder: "كل الكليات",
+      key: "college", label: audience.multiSite ? "الموقع" : "الكلية", value: shownCollege, placeholder: audience.multiSite ? "كل المواقع" : "كل الكليات",
       options: collegeOptions,
     },
     /* قسمٌ واحد في نطاق القارئ: لا منتقيَ له، كلوحة الجدول. */
-    ...(singleDepartmentOf(scopes, shownCollege, powerAdmin) === null ? [{
+    ...(singleDepartmentOf(scopes, shownCollege, powerAdmin) === null && !audience.multiSite ? [{
       key: "section", label: "القسم", value: shownSection, placeholder: "كل الأقسام",
       options: sectionOptions, disabled: sectionOptions.length === 0,
     }] : []),
@@ -309,6 +323,29 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
       options: terms.map(row => ({ value: row.AdTermId, label: row.AdTermName })),
     },
   ];
+
+  /* شرائحُ «المزيد» تُبنى مرّةً: منها يُعرف أيبقى فيه ما يُختار (قاعدة إخفاء الفارغ). */
+  const statusChips = ([
+    // «الكل» يعدّ كل بطاقةٍ معروضة — فيها «قيد الإعداد» للأقسام التي لم
+    // تبدأ بعد — لا الحالاتِ الثلاث وحدها، فلا يقول ٣ ويعرض ٥.
+    ["all", "الكل", (rows || []).length],
+    ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
+    ["returned", "عند القسم", totals?.returned || 0],
+    ["accepted", "معتمد", totals?.accepted || 0],
+  ] as Array<[typeof statusFilter, string, number]>)
+    /* مرشّحٌ لا سطرَ تحته لا يُعرض (قاعدة إخفاء الفارغ) — إلا المختارُ الآن. */
+    .filter(([value, , count]) => value === "all" || count > 0 || statusFilter === value);
+  const signalChips = ([
+    ["late", "متأخّر عن الموعد", signalCounts.late],
+    ["blocking", "فيه موانع", signalCounts.blocking],
+    ["openNotes", "ملاحظات مفتوحة", signalCounts.openNotes],
+    ["answered", "ردود تنتظر قرارك", signalCounts.answered],
+    ["pendingAdditions", "شُعب تنتظر رئيس القسم", signalCounts.pendingAdditions],
+  ] as Array<[string, string, number]>)
+    /* «ردودٌ تنتظر قرارك» سؤالُ التسجيل وحده: القسمُ لا يقرّر في ردّه. */
+    .filter(([value]) => audience.registrarSignals || value !== "answered")
+    /* إشارةٌ لا يحملها سطرٌ واحد لا تُعرض مرشّحاً — إلا المفعّلةُ الآن. */
+    .filter(([value, , count]) => count > 0 || (value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal)));
 
   if (!rows) return <MicroLoader label="يقرأ الوارد…" />;
 
@@ -324,7 +361,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
         ask={ask}
         onAskChange={value => { setAsk(value); if (!value.trim()) setParsed(EMPTY_INBOX_ASK); }}
         onAskSubmit={value => setParsed(parseInboxAsk(value))}
-        askPlaceholder="اسأل: الأقسام المتأخرة اللي عندها موانع"
+        askPlaceholder={audience.department ? "اسأل: المتأخر أو اللي فيه ملاحظات" : "اسأل: الأقسام المتأخرة اللي عندها موانع"}
         askNote={askNote}
         onClear={clearAll}
         selects={selects}
@@ -337,19 +374,14 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
         moreOpen={moreOpen}
         onToggleMore={() => setMoreOpen(open => !open)}
         activeMoreCount={activeMoreCount}
-        more={
+        /* لا شرائحَ غير «الكل»: لا «المزيد» ولا مجموعاتٌ بعناوين فوق لا شيء. */
+        more={statusChips.length > 1 || signalChips.length ? (
           <>
-            <div className="field wide">
+            {statusChips.length > 1 ? <div className="field wide">
               <label>الحالة</label>
               <div className="changes-filter-chips" role="group" aria-label="فلترة بالحالة">
-                {([
-                  // «الكل» يعدّ كل بطاقةٍ معروضة — فيها «قيد الإعداد» للأقسام التي لم
-                  // تبدأ بعد — لا الحالاتِ الثلاث وحدها، فلا يقول ٣ ويعرض ٥.
-                  ["all", "الكل", (rows || []).length],
-                  ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
-                  ["returned", "عند القسم", totals?.returned || 0],
-                  ["accepted", "معتمد", totals?.accepted || 0],
-                ] as Array<[typeof statusFilter, string, number]>).map(([value, label, count]) => (
+                {statusChips
+                  .map(([value, label, count]) => (
                   <button
                     key={value}
                     type="button"
@@ -363,17 +395,12 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="field wide">
+            </div> : null}
+            {signalChips.length ? <div className="field wide">
               <label>ما الذي يستحق الانتباه</label>
               <div className="changes-filter-chips" role="group" aria-label="فلترة بما يستحق الانتباه">
-                {([
-                  ["late", "متأخّر عن الموعد", totals?.late || 0],
-                  ["blocking", "فيه موانع", 0],
-                  ["openNotes", "ملاحظات مفتوحة", 0],
-                  ["answered", "ردود تنتظر قرارك", 0],
-                  ["pendingAdditions", "شُعب تنتظر رئيس القسم", 0],
-                ] as Array<[string, string, number]>).map(([value, label, count]) => {
+                {signalChips
+                  .map(([value, label, count]) => {
                   const on = value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal);
                   return (
                     <button
@@ -390,9 +417,9 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
                   );
                 })}
               </div>
-            </div>
+            </div> : null}
           </>
-        }
+        ) : undefined}
       />
 
 
@@ -400,8 +427,8 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
         <EmptyState
           title={(rows || []).length ? "لا نتائج" : "لا وارد"}
           detail={(rows || []).length
-            ? "لا قسمَ يطابق السؤال أو المرشّحات الحالية."
-            : "لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل."}
+            ? (audience.department ? "لا موقعَ يطابق السؤال أو المرشّحات الحالية." : "لا قسمَ يطابق السؤال أو المرشّحات الحالية.")
+            : (audience.department ? "لا جدولَ لقسمك في هذا الفصل بعد." : "لم يصل جدولٌ يحتاج مراجعتك في هذا الفصل.")}
           action={(rows || []).length ? (
             <SecondaryButton type="button" data-guide-ignore="مسح المرشّحات — عرضٌ لا فعل" onClick={() => { setAsk(""); clearAll(); }}>
               امسح المرشّحات
@@ -409,19 +436,30 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
           ) : undefined}
         />
       ) : (
-        <div className="changes-inbox">
+        <div className="changes-inbox" data-row-label={audience.rowLabel}>
+          {/* قسمٌ واحد في مواقع عدّة: يُقال مرّةً في رأس القائمة، وتُسمّى السطورُ
+              بمواقعها — لا اسمُ القسم نفسه مكرّراً بعدد الكليات. */}
+          {audience.multiSite ? (
+            <p className="changes-inbox-multisite"><strong>{audience.multiSite.name}</strong> — {multiSiteHeadline(audience.multiSite)}</p>
+          ) : null}
           {visible.map(row => (
             <div key={`${row.collegeId}:${row.sectionId}`} className="changes-inbox-row" data-status={row.status} data-late={row.late || undefined}>
               <button type="button" className="changes-inbox-open" data-guide-ignore="فتح قسمٍ من الوارد — تنقّل لا فعل، والفعل داخله مسجّل" onClick={() => onOpen(row)}>
                 <div className="changes-inbox-title">
-                  <strong>{row.sectionName || `قسم ${row.sectionId}`}</strong>
-                  <small>{row.collegeName}</small>
+                  {audience.rowLabel === "college" ? (
+                    <strong>{row.collegeName || `كلية ${row.collegeId}`}</strong>
+                  ) : (
+                    <>
+                      <strong>{row.sectionName || `قسم ${row.sectionId}`}</strong>
+                      <small>{row.collegeName}</small>
+                    </>
+                  )}
                 </div>
                 {/* ثلاث دوائر بأرقامها: الموظّف يعرف أين المشكلة قبل أن يفتح. */}
                 <div className="changes-signals" aria-label="الموانع والملاحظات">
                   {row.blockingConflicts ? <span data-kind="block" title="تعارض مادّي يمنع الاعتماد">{row.blockingConflicts}</span> : null}
                   {row.openNotes ? <span data-kind="note" title="ملاحظات بانتظار المعالجة">{row.openNotes}</span> : null}
-                  {row.answeredNotes ? <span data-kind="answered" title="ردودٌ من القسم تنتظر قرارك">{row.answeredNotes}</span> : null}
+                  {audience.registrarSignals && row.answeredNotes ? <span data-kind="answered" title="ردودٌ من القسم تنتظر قرارك">{row.answeredNotes}</span> : null}
                   {row.pendingAdditions ? <span data-kind="pending" title="شُعبٌ تنتظر إقرار رئيس القسم">{row.pendingAdditions}</span> : null}
                 </div>
                 <div className="changes-inbox-state">
@@ -431,14 +469,14 @@ function Inbox_({ termId, terms, onTermChange, onOpen, canExtend, onLoaded, onEx
                 <ChevronLeft aria-hidden="true" />
               </button>
               {/* طلبُ القسم يُقرأ في مكانه، و«تمديد» يُفتح مملوءاً بما طلب. */}
-              {row.extensionRequest ? (
+              {audience.extendActions && row.extensionRequest ? (
                 <small className="changes-extension-request">
                   <b>طلب تمديد {countOf(row.extensionRequest.days, oblique(AR.day))}</b>
                   <span>«{row.extensionRequest.reason}»</span>
                   <i>· {row.extensionRequest.by}</i>
                 </small>
               ) : null}
-              {canExtend && onExtend ? (
+              {audience.extendActions && onExtend ? (
                 <button type="button" className="changes-extend" data-pending={row.extensionRequest ? "" : undefined} data-guide-ignore="يفتح ورقة الاستثناء في «مواعيد التسليم» على هذا القسم — التطبيق هناك هو الفعل" onClick={() => onExtend(row)}>
                   {row.extensionRequest ? "نظر الطلب" : row.deadline.extensionUntil ? "استثناء" : "تمديد"}
                 </button>
@@ -674,10 +712,11 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
           {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
         </div>
         <div className="spread-keys">
-          <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
-          <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
-          <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(spread.low, AR.note)}</small></span>
-          <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
+          {/* مفتاحٌ لكل شريحةٍ لها مواعيد — «0 يمنع» لا يُكتب (قاعدة إخفاء الفارغ). */}
+          {spread.high ? <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span> : null}
+          {spread.medium ? <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span> : null}
+          {spread.low ? <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(spread.low, AR.note)}</small></span> : null}
+          {spread.clean ? <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span> : null}
         </div>
       </div>
 
@@ -965,6 +1004,8 @@ function Report({ termId, termName, scope, role, onBack }: {
   /* ملاحظاتٌ وتعارضٌ وزرُّ تعليق — مشتركةٌ بين «ما تحرّك» و«الجدول كامل». */
   const rowExtras = (scheduleId: number, annotatable: boolean, defaultField: NoteField) => {
     const notes = notesByRow.get(scheduleId) || [];
+    /* لا زرَّ ولا ملاحظة: لا كتلةَ فارغةً تحت الموعد (قاعدة إخفاء الفارغ). */
+    if (!(canAnnotate && annotatable) && !notes.length) return null;
     return (
       <>
         {canAnnotate && annotatable ? (
@@ -1007,7 +1048,7 @@ function Report({ termId, termName, scope, role, onBack }: {
                     <cite>{note.rebuttal.userName}</cite>
                   </blockquote>
                 ) : null}
-                <div className="changes-note-actions">
+                {(canRebut && note.origin === "registrar" && note.state === "open") || (isRegistrar && note.state === "answered") ? <div className="changes-note-actions">
                   {canRebut && note.origin === "registrar" && note.state === "open" ? (
                     <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
                   ) : null}
@@ -1021,7 +1062,7 @@ function Report({ termId, termName, scope, role, onBack }: {
                       </button>
                     </>
                   ) : null}
-                </div>
+                </div> : null}
               </li>
             ))}
           </ul>
@@ -1064,7 +1105,9 @@ function Report({ termId, termName, scope, role, onBack }: {
         />
       ) : null}
 
-      <DeadlineStrip deadline={report.deadline} />
+      {/* القسمُ يقرأ موعده مرّةً في شريط الاعتماد («موعدكم»)؛ والشريطُ هنا لمن لا
+          يُعرض له ذاك الشريط (التسجيل ومن يطّلع) — لا سطرَ موعدٍ مكرّر. */}
+      {role.signatureStage && !isRegistrar ? null : <DeadlineStrip deadline={report.deadline} />}
       {error ? <Notice type="error">{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
 
@@ -1332,11 +1375,12 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
     if (focus.termId && focus.termId !== termId && terms.some(row => Number(row.AdTermId) === focus.termId)) { setTermId(focus.termId); return; }
     focusRef.current = null;
     /* إشعارُ الموعد وطلبُ التمديد يفتحان «مواعيد التسليم»، لا تقرير القسم. */
-    if (focus.panel === "deadlines") { setPanelFocus({ collegeId: focus.collegeId, sectionId: focus.sectionId, nonce: Date.now() }); return; }
+    if (focus.panel === "deadlines" && audience.deadlinesPanel) { setPanelFocus({ collegeId: focus.collegeId, sectionId: focus.sectionId, nonce: Date.now() }); return; }
     if (focus.sectionId) setOpened({ collegeId: focus.collegeId, sectionId: focus.sectionId });
   }, [termId, terms]);
 
   const term = useMemo(() => (terms || []).find(row => Number(row.AdTermId) === termId), [terms, termId]);
+  const audience = useMemo(() => inboxAudience(role.id, { powerAdmin, scopes }), [role.id, powerAdmin, scopes]);
 
   if (!terms) return <MicroLoader label="يقرأ الفصول…" />;
 
@@ -1376,13 +1420,15 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       {error ? <Notice type="error">{error}</Notice> : null}
 
       {/* ── مواعيد التسليم: الموضعُ الوحيد الذي يُكتب منه الموعدُ واستثناءاتُه ── */}
-      {termId && !active && term ? (
+      {/* لمن يملك الموعد أو يراقبه وحده (inboxAudience): القسمُ يرى سطرَ موعده
+          في شريط الاعتماد («موعدكم»)، لا لوحةَ التسجيل وميزانَ «سلّم x من y». */}
+      {termId && !active && term && audience.deadlinesPanel ? (
         <SubmissionDeadlines
           terms={terms}
           termId={termId}
           onTermChange={pickTerm}
           rows={inboxRows}
-          canEdit={role.canManageDeadline}
+          canEdit={audience.deadlinesPanel === "edit"}
           onChanged={() => { setReloadKey(key => key + 1); void loadTerms(); }}
           extendFor={extendFor}
           focus={panelFocus}
@@ -1400,7 +1446,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
             termId={termId}
             terms={terms}
             onTermChange={pickTerm}
-            canExtend={role.canManageDeadline}
+            audience={audience}
             onLoaded={setInboxRows}
             onExtend={(row) => setExtendFor({ row, nonce: Date.now() })}
             scopes={scopes}
