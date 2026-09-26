@@ -26,6 +26,8 @@ import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryBut
 import { AR, nounFor } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import { singleDepartmentOf } from "../utils/scopeContext";
+import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
+import { takeNotifyFocus } from "../utils/notifyFocus";
 import type { AdTerm, StudentCommitteeRejectReason, StudentCourseRejectReason, StudentCourseStateValue } from "../types";
 import type { StudentCaseStatus } from "../utils/studentCaseDecision";
 
@@ -211,8 +213,10 @@ function RejectSheet({ course, busy, onClose, onSubmit, committee = false }: {
 export default function StudentRegistration({ scopes, powerAdmin = false }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
-  const [collegeId, setCollegeId] = useState(0);
-  const [sectionId, setSectionId] = useState(0);
+  /* الكلية والقسم من النطاق المشترك (src/utils/sharedScope.ts)، معروضين على
+     نطاق القارئ؛ وافتراض الشاشة أدناه («أوّل كلية») لا يُكتب فيه. */
+  const [collegeId, setCollegeId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).collegeId);
+  const [sectionId, setSectionId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).sectionId);
   const [rows, setRows] = useState<CaseRow[] | null>(null);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [canWrite, setCanWrite] = useState(false);
@@ -248,23 +252,29 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         const data = await request("/api/terms");
         const list: AdTerm[] = Array.isArray(data) ? data : (data.terms || []);
         setTerms(list);
-        setTermId(current => current || currentTermId(list) || Number(list[list.length - 1]?.AdTermId || 0));
+        setTermId(current => current || resolveSharedScope(readSharedScope(), {
+          scopes, isAdmin: powerAdmin, terms: list,
+          fallbackTermId: currentTermId(list) || Number(list[list.length - 1]?.AdTermId || 0),
+        }).termId);
       } catch (e: any) { setError(e.message); setTerms([]); }
     })();
   }, []);
 
   /* جاء من إشعار: يفتح على قسم الإشعار نفسه، لا على نطاقٍ فارغ. */
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("schedule:notify-focus");
-      if (!raw) return;
-      const focus = JSON.parse(raw);
-      if (focus?.view !== "studentRegistration") return;
-      sessionStorage.removeItem("schedule:notify-focus");
-      if (Date.now() - Number(focus.at || 0) > 60000) return;
-      if (Number(focus.collegeId)) { setCollegeId(Number(focus.collegeId)); setSectionId(Number(focus.sectionId) || 0); }
-    } catch { /* لا شيء */ }
+    /* القارئ الوحيد للتركيز (notifyFocus.ts): يأخذه لهذه الشاشة وحدها، ويكتبه في
+       النطاق المشترك — هدفٌ صريحٌ يغلب. */
+    const focus = takeNotifyFocus("studentRegistration");
+    if (focus?.collegeId) { setCollegeId(focus.collegeId); setSectionId(focus.sectionId || 0); }
   }, []);
+
+  /* تغيّرٌ من شاشةٍ أخرى أو لسانٍ آخر يُعرض على النطاق ثم يُتبع. */
+  const sharedScope = useSharedScope((incoming) => {
+    const next = resolveSharedScope(incoming, { scopes, isAdmin: powerAdmin, terms: terms || undefined, fallbackTermId: termId });
+    setCollegeId(next.collegeId);
+    setSectionId(next.sectionId);
+    if (next.termId) setTermId(next.termId);
+  });
 
   useEffect(() => {
     /* ومن له الكلُّ لا يُختار له شيء. */
@@ -670,9 +680,13 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         selects={selects}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
-          if (key === "college") { setCollegeId(id); setSectionId(singleDepartmentOf(scopes, id, powerAdmin) ?? 0); }
-          else if (key === "section") setSectionId(id);
-          else setTermId(id);
+          if (key === "college") {
+            const only = singleDepartmentOf(scopes, id, powerAdmin) ?? 0;
+            sharedScope.pick({ collegeId: id, sectionId: only });
+            setCollegeId(id); setSectionId(only);
+          }
+          else if (key === "section") { sharedScope.pick({ sectionId: id }); setSectionId(id); }
+          else { sharedScope.pick({ termId: id }); setTermId(id); }
         }}
       />
 
