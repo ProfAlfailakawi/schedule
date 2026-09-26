@@ -49,3 +49,35 @@ export function pageReviewIssues(pages: ReviewablePage[] | undefined, reviewed: 
   const byPage = new Map((Array.isArray(pages) ? pages : []).map(page => [Number(page?.page), Number(page?.missedLines) || 0] as const));
   return pagesAwaitingReview(pages, reviewed).map(page => pageReviewIssue(page, byPage.get(page) || 0));
 }
+
+/* ── متى تستحق الصفحة قراءةً أدق (Smart Import، مدفوعة) ─────────────────────
+ *
+ * القراءة الأدق تُرسل الصفحة إلى Gemini وتكلّف مالاً، فلا تُعرض إلا لصفحةٍ
+ * لم يقرأ المسحُ خانةً منها. كانت تُعرض لكل ملف — حتى الممتاز من أول قراءة —
+ * لأن شاهد المبنى يُعلَّم UNRESOLVED دائماً (بانتظار سجل المباني لا القارئ)،
+ * وشاهد الأستاذ يُعلَّم UNRESOLVED حين يكون الاسم مقروءاً لكنه ليس في السجل.
+ * كلاهما قرارُ نظامٍ لا فشلُ قراءة، والقراءة الأدق لا تغيّر فيه شيئاً.
+ *
+ * خانةٌ لم يقرأها المسح = شاهدٌ غير محسوم (UNRESOLVED) في المقرر أو الشعبة أو
+ * الأيام أو الوقت، أو شاهدُ أستاذٍ أو مبنى أو قاعة **بلا نصٍّ خام أصلاً**.
+ * أما REVIEW_REQUIRED فخانةٌ حُسمت من تطابق تاريخي أو مطابقة اسم قصير: مقروءة.
+ * قاعدة واحدة لشاشتَي الاستيراد. */
+const READ_CELLS = new Set(["course", "section", "days", "time"]);
+export function scanLeftCellUnread(row: { importEvidence?: Record<string, any> } | null | undefined): boolean {
+  return Object.entries(row?.importEvidence || {}).some(([key, proof]: [string, any]) => {
+    if (proof?.confidence !== "UNRESOLVED") return false;
+    return READ_CELLS.has(key) || !String(proof?.raw || "").trim();
+  });
+}
+
+/** Pages (by sourcePage) that carry a cell the scan could not read, in order. */
+export function pagesWithUnreadCells(rows: Array<{ importEvidence?: Record<string, any>; sourcePage?: number }> | undefined): number[] {
+  return [...new Set((Array.isArray(rows) ? rows : []).filter(scanLeftCellUnread).map(row => Number(row.sourcePage || 1)))]
+    .filter(page => page > 0)
+    .sort((a, b) => a - b);
+}
+
+/** «ص 2 + 5» — the pages a sharper reading would be sent, as the button says them. */
+export function pagesLabel(pages: readonly number[]): string {
+  return pages.length ? `ص ${pages.join(" + ")}` : "";
+}

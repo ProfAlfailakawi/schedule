@@ -16,7 +16,7 @@ import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 import { campusOf } from "../utils/campusTravel";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
-import { pageReviewIssues, pagesAwaitingReview } from "../utils/importPageReview";
+import { pageReviewIssues, pagesAwaitingReview, pagesWithUnreadCells, pagesLabel } from "../utils/importPageReview";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -522,10 +522,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
        importEvidence is what separates the two: it records what the reader
        could not resolve, independent of what the department chose to leave
        blank. */
-    const scanFailed = (row: ImportRow) => Object.values((row as any).importEvidence || {})
-      .some((proof: any) => proof?.confidence === "UNRESOLVED" || proof?.confidence === "REVIEW_REQUIRED");
-    const troubledPages = [...new Set(rows.filter(scanFailed).map(row => Number((row as any).sourcePage || 1)))]
-      .filter(page => page > 0).sort((a, b) => a - b);
+    const troubledPages = pagesWithUnreadCells(rows as any);
     /* «للمراجعة» counts ROWS, but a row waits on a specific number of CELLS —
        and one row may be missing three. Showing only the row count made an
        apply look like it changed nothing. Counting both lets the card say what
@@ -1285,7 +1282,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         title={`قراءة أدق للصفحات ${smartPendingPages.join("، ")} فقط — الصفحات التي قُرئت بلا أخطاء تبقى كما هي ولا تُرسل. لا تُرسل الأرقام المدنية.`}
                       >
                         <Sparkles aria-hidden="true" />
-                        <span>قراءة أدق · {countOf(smartPendingPages.length, AR.page)}</span>
+                        <span>قراءة أدق · {pagesLabel(smartPendingPages)}</span>
                       </button>
                     </div>
                   ) : null}
