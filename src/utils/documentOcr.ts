@@ -2071,9 +2071,13 @@ async function rereadIdentityBand(source:Buffer,imageWidth:number,prepared:Word[
     const tokens=slot.words.sort((a,b)=>a.x0-b.x0).map(word=>toAscii(word.text).trim());
     const code=tokens.find(token=>/^0\d{6}$/.test(token))||"";
     if(!code)continue;
-    const reference=tokens.find(token=>/^\d{4,8}$/.test(token)&&token!==code)||"";
-    if(!reference)continue;
-    const scode=tokens.find(token=>/^\d{1,3}$/.test(token)&&token!==reference)||"";
+    const referenceAt=tokens.findIndex(token=>/^\d{4,8}$/.test(token)&&token!==code);
+    if(referenceAt<0)continue;
+    const reference=tokens[referenceAt];
+    /* الشعبة هي الرمز الملاصق للمرجعي من يساره وحده — رقمٌ آخر في السطر
+       (مقاعد، تسلسل) ليس شعبة؛ والشعبة هوية مصدرية لا تُخمَّن ولا تُولَّد. */
+    const left=referenceAt>0?tokens[referenceAt-1]:"";
+    const scode=/^\d{1,3}$/.test(left)?left:"";
     identityLines.push({y:slot.y,code,reference,scode});
   }
   return{prepared:[...kept,...band],identityLines};
@@ -2137,6 +2141,26 @@ async function rereadScheduleBand(source:Buffer,imageWidth:number,rows:GridRow[]
   }
 }
 
+/* ── الشعبة على الصفحة تتبع نمطاً واحداً ────────────────────────────────────
+   الجهة ترقّم شعب الصفحة بنمط واحد (501، 502… أو 01، 02…). قراءةٌ تخرج عن نمط
+   الصفحة («021»، «1501»، «91») هي لحامُ رقمٍ مجاور بالشعبة لا شعبة، والشعبة
+   هوية مصدرية: تُفرَّغ للمراجعة ولا تدخل الجدول قيمةً خاطئة (بلاغ 2026-09-26:
+   «الشعب من 501 وبالترتيب» خرجت مبتورة). النمط = طول الرمز وخانة مئاته حين
+   يشترك فيه معظم الصفوف المقروءة؛ صفحة بلا نمط غالب تبقى كما قُرئت. */
+export function harmonizePageSections(rows:GridRow[]){
+  const codes=rows.map(row=>normalizeAuthoritySectionCode(row.scode)).filter(Boolean);
+  if(codes.length<4)return;
+  const shape=(code:string)=>code.length===3?`3:${code[0]}`:code.length===2?"2":`${code.length}`;
+  const tally=new Map<string,number>();
+  for(const code of codes)tally.set(shape(code),(tally.get(shape(code))||0)+1);
+  const [dominant,count]=[...tally.entries()].sort((a,b)=>b[1]-a[1])[0];
+  if(count<codes.length*.6)return;
+  for(const row of rows){
+    const code=normalizeAuthoritySectionCode(row.scode);
+    if(code&&shape(code)!==dominant)row.scode="";
+  }
+}
+
 async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number;tableNumbers:number;printedRows:number}>{
   const worker=await getWordLaneWorker();
   /* الأرقام الصغيرة في مسح منخفض الدقة تلتصق وتتشوّه؛ تُكبَّر الصفحة إلى
@@ -2162,10 +2186,26 @@ async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence
       const near=rows.some(row=>Number.isFinite(row.y)&&Math.abs(row.y!-line.y)<=rowTolerance);
       const seen=rows.some(row=>row.reference===line.reference||(row.code===line.code&&row.scode&&row.scode===normalizeAuthoritySectionCode(line.scode)));
       if(near||seen)continue;
-      rows.push({code:line.code,reference:line.reference,scode:normalizeAuthoritySectionCode(line.scode)||"",courseText:"",instructorText:"",days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",sourceMode:"ocr-grid",y:line.y});
+      /* الصف يُجمَّع كاملاً من كلمات سطره وحده (الأيام، النشاط، الوقت، المبنى،
+         القاعة، الأستاذ) بالمجمّع المعتمد نفسه: حين يُعطى كلمات السطر معزولةً
+         عن جاره الملاصق يُخرج صفّه الذي أضاعه تجميعُ الصفحة. صفٌّ بهوية ووقت
+         بلا أيام ولا أستاذ كان يصل المراجع فارغَ نصفه (بلاغ 2026-09-26). */
+      const lineWords=prepared.filter(word=>Math.abs((word.y0+word.y1)/2-line.y)<=rowTolerance&&!/^0\d{6}$/.test(toAscii(word.text)));
+      /* رقم المقرر يُثبَّت في عمود الكود القياسي (يمين الصفحة) ليعرفه المجمّع:
+         في هذا المسح يقع الكود دون حدّ عموده فيتجاهل المجمّعُ السطرَ كله. */
+      const heightAt=lineWords.length?Math.max(6,...lineWords.map(word=>word.y1-word.y0)):8;
+      const anchored=[...lineWords,{text:line.code,x0:842*.93,x1:842*.99,y0:line.y-heightAt/2,y1:line.y+heightAt/2}];
+      const assembled=authorityPdfTextGridRows(anchored,842,"semantic")[0];
+      if(assembled){
+        rows.push({...assembled,code:assembled.code||line.code,reference:assembled.reference||line.reference,
+          scode:assembled.scode||normalizeAuthoritySectionCode(line.scode)||"",sourceMode:"ocr-grid",y:line.y});
+      }else{
+        rows.push({code:line.code,reference:line.reference,scode:normalizeAuthoritySectionCode(line.scode)||"",courseText:"",instructorText:"",days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",sourceMode:"ocr-grid",y:line.y});
+      }
     }
     rows.sort((a,b)=>(a.y??0)-(b.y??0));
   }
+  harmonizePageSections(rows);
   const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
   /* أرقام الجدول (ساعات، مراجع، أكواد) — صفحة دليل الأيام لا تحمل منها شيئاً. */
   const tableNumbers=prepared.filter(word=>/\d{4,}/.test(toAscii(word.text))).length;
