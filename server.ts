@@ -3140,7 +3140,7 @@ async function instructorCircleFor(req: AuthenticatedRequest): Promise<Set<numbe
   if (granted.map(Number).includes(3)) return null;
   const sections = await Repository.getSections();
   const own = expandScopeSections(sections, (collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId));
-  const key = `${Repository.isDemoRequest() ? "demo:" : ""}${req.user.SystemUserId}:${[...own].sort((a, b) => a - b).join(",")}`;
+  const key = dataContextCacheKey(`${req.user.SystemUserId}:${[...own].sort((a, b) => a - b).join(",")}`);
   const hit = instructorCircleCache.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit.ids;
   const scopeRows = sections.filter(row => own.has(Number(row.AdSectionId)));

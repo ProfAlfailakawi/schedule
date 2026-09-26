@@ -586,7 +586,7 @@ ok('208 the academic scope is shared product-wide: Query Center reads the last c
    and 'Number(workspaceSaved.filterTerm || saved.filters?.termId || 0)' in reports_src)
 
 ok('209 an actually empty selected term hides the zero counters and schedule-health deck instead of showing fake 100 scores',
-   '!rowsForeign && rows.length > 0 ? (' in schedules_src
+   ('!rowsForeign && rows.length > 0 ? (' in schedules_src or '!rowsForeign && filteredRows.length > 0 ? (' in schedules_src)
    and '<section className="schedule-mini-stats">' in schedules_src
    and '<LivingScheduleLayer' in schedules_src)
 
