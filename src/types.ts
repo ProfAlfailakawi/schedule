@@ -146,6 +146,22 @@ export interface CurriculumPlan {
   activatedAt?: string;
   archivedAt?: string;
   archivedBy?: string;
+  /**
+   * شروط التخرج لطلبة هذه الصحيفة. في المرحلة الانتقالية لكل جيلٍ مجموعُه
+   * وشروطه، فالقاعدة تُحفظ على الصحيفة لا على القسم. قاعدةُ القسم
+   * (`AdDegreeRule`) تبقى لقسمٍ لم يُنشئ صحائف، وتُنسخ إلى «الصحيفة السابقة»
+   * عند إنشاء أول صحيفة جديدة.
+   */
+  degreeRule?: CurriculumDegreeRule;
+}
+
+export interface CurriculumDegreeRule {
+  degreeUnits: number;
+  fieldTrainingRequired: number;
+  graduateRegularPassed: number;
+  graduateSummerPassed: number;
+  updatedAt: string;
+  updatedBy?: string;
 }
 
 export interface CurriculumPlanCourse {
@@ -620,7 +636,8 @@ export interface StudentNeed {
    * student's selected/home section for degree-rule checks. */
   studentSectionId?: number;
   AdTermId: number;
-  /** Curriculum version selected/derived for this survey answer when available. */
+  /** Curriculum version selected/derived for this survey answer when available.
+   * For a graduate case it is the plan the graduation sheet proved. */
   curriculumPlanId?: string;
   /** Every course this student says they need. */
   courseIds: number[];

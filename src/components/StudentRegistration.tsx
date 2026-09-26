@@ -76,6 +76,7 @@ interface CaseDecisionView {
 interface CaseRow {
   id: string; caseRef: string; name: string; civil: string;
   createdAt: string; requestType: string; studentSectionName: string;
+  curriculum?: { name: string; status: string } | null;
   details?: string;
   caseDroppedAt?: string;
   /** الطرفُ الآخر في «تعارض مقررين» حين لا يكون في هذا الكشف. */
@@ -468,7 +469,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   const rowById = useMemo(() => new Map((rows || []).map(row => [row.id, row] as const)), [rows]);
   const visibleCases = useMemo<StudentCaseView[]>(() => visible.map(row => ({
     id: row.id, caseRef: row.caseRef, name: row.name, civil: row.civil,
-    studentSectionName: row.studentSectionName, requestType: row.requestType, createdAt: row.createdAt,
+    studentSectionName: row.studentSectionName, curriculum: row.curriculum, requestType: row.requestType, createdAt: row.createdAt,
     details: row.details,
     graduateReason: row.graduate?.reason,
     passedUnits: row.graduate ? row.graduate.passedUnits : undefined,
