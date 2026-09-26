@@ -209,6 +209,25 @@ export function currentTermId(
   return Number(next?.AdTermId || 0);
 }
 
+/**
+ * ── فصلٌ صار أرشيفاً ────────────────────────────────────────────────────────
+ *
+ * قاعدةُ صاحب النظام: «إذا فصلٌ منتهٍ لا تضع له توقيع… لا استبيان ولا شي، إلا
+ * تعديل الجدول — هذا شأن لجنة الجدول». فالفصلُ الذي أُغلق صراحةً أو انقضت
+ * نافذتُه، وليس هو الجاري تشغيلياً، لا يعرض دورةَ الاعتماد ولا مواعيدَ التسليم
+ * ولا الاستبيانَ ولا روابطَ النشر. الجاري لا يصير أرشيفاً بتقويمٍ افتراضي تجاوز
+ * يوماً تقريبياً (`currentTermId` يحترم العلامة الصريحة).
+ */
+export function termIsArchive(
+  term: { AdTermId?: number; AdTermName?: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean } | null | undefined,
+  terms: ReadonlyArray<{ AdTermId?: number; AdTermName?: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean }>,
+  now: number = Date.now(),
+): boolean {
+  if (!term || !Number(term.AdTermId || 0)) return false;
+  if (Number(term.AdTermId) === currentTermId(terms, now)) return false;
+  return term.AdTermClosed === true || termHasEnded(term, now);
+}
+
 export function isTermClosed(
   term: { AdTermId?: number; AdTermClosed?: boolean; AdTermName?: string;
           AdTermStart?: string; AdTermWeeks?: number } | null | undefined,

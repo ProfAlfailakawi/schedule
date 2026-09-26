@@ -76,7 +76,7 @@ import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { sortByName, byRoom } from "../utils/sorting";
-import { sortTermsNewest } from "../utils/termSequence";
+import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import StudentCasesTable from "./StudentCasesTable";
@@ -3106,7 +3106,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
               {/* ── باب الطلاب ───────────────────────────────────────────
                   الرابط ورمزه في نفس الصفحة التي تقرأ إجاباتهم. */}
-              <div className="demand-door">
+              {termIsArchive(terms.find(row => Number(row.AdTermId) === Number(termId)), terms) ? null : <div className="demand-door">
                 {(demand.survey || []).length ? (
                   (demand.survey || []).map((link: any) => (
                     <article key={link.id} className="demand-door-card">
@@ -3182,7 +3182,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     </div>
                   </article>
                 )}
-              </div>
+              </div>}
 
               {/* ── التوقّع ──────────────────────────────────────────────────
                   فصلٌ بلا إجابات بعد يرث توقُّعاً من الفصل الذي قبله. مكتوبٌ

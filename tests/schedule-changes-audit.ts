@@ -313,7 +313,7 @@ check(changes.includes('<span>الخانة</span>') && changes.includes("Object.
  * رئيس القسم يقرأ ولا يعدّل: لا ورشةَ له، وشريطُ الاعتماد يُعرض في شاشة
  * التغييرات لجهة القسم (من يوقّع)، لا للتسجيل (من يقرّر بالقبول والإرجاع). */
 check(changes.includes('import ApprovalBar from "./ApprovalBar"'), "شاشة التغييرات تحمل شريط الاعتماد");
-check(changes.includes("role.signatureStage && !isRegistrar ? ("),
+check(changes.includes("role.signatureStage && !isRegistrar && !archive ? ("),
   "ويُعرض لجهة القسم (من يوقّع) لا للتسجيل (من يقرّر)");
 // كتلةُ تعريف رئيس القسم وحدها: من معرّفه إلى أول `order:` بعده.
 const deptBlock = (() => {
