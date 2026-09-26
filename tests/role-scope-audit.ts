@@ -146,6 +146,20 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   const lookups = route('app.get("/api/intelligence/lookups"');
   check(lookups.includes("scopeSectionIdsFor(req)") && !lookups.includes("(req.scopes||[]).map"), "C قوائم مركز الذكاء من أقسام الحَكَم الواحد");
 
+  /* «الكلية» بلا قسم: isScopeAllowed بقسمٍ صفر يقول «له شيءٌ في هذه الكلية» فقط،
+     فكلُّ مسارٍ يقبل الكلية وحدها يُصفّي ما يقرؤه بـfilterByScope. */
+  const exportRoute = route('app.get("/api/schedules/export"');
+  check(/const scopedCourses = filterByScope\(req, courses\.filter/.test(exportRoute), "C-college التصدير بالكلية لا يحمل دليلَ مقرّرات أقسامٍ أخرى");
+  const outside = route('app.get("/api/schedules/outside-clashes"');
+  check(outside.includes("filterByScope(req,scopeRaw)"), "C-college تداخلاتُ الخارج لأقسام القارئ وحدها");
+  const staffInbox = route('app.get("/api/schedules/staff-inbox"');
+  check(staffInbox.includes("const notes = filterByScope(req, notesRaw as any[]);"), "C-college رسائلُ الأساتذة لأقسام القارئ وحدها");
+  const rhythm = route('app.get("/api/intelligence/department-start-rhythm"');
+  check(rhythm.includes("const history=filterByScope(req,historyRaw);") && rhythm.includes("rhythmReader"), "C-college إيقاعُ البدء من أقسام القارئ، ومفتاحُ الذاكرة يحمل القارئ");
+  const drift = route('app.get("/api/intelligence/settled-drift"');
+  check(drift.includes("then(rows => filterByScope(req, rows))") && drift.includes("if (!sectionId && !req.user?.IsAdminUser) return null;") && drift.includes("driftReader"),
+    "C-college انحرافُ المعتمد وعادةُ القسم من أقسام القارئ وحدها");
+
   /* ── C-inventory: كل مسارٍ تحت /api إمّا يسأل حارسَ النطاق، أو مراجَعٌ باسمه ──
      مسارٌ جديد بلا حارسٍ ولا سطرٍ هنا يُسقط هذا الفحص: يُراجَع قبل أن يُدمج. */
   const GUARDS = ["isScopeAllowed", "filterByScope", "readScopedTermRows", "readSchedulesForRequest", "readLiveSchedulesForRequest",

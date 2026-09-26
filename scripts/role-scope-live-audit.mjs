@@ -234,6 +234,15 @@ async function main() {
       ["mobility", `/api/colleges/${ownCollege}/mobility?termId=1`],
       ["mobility:alien", foreignCollege && `/api/colleges/${foreignCollege}/mobility?termId=1`],
     ].filter(([, url]) => url);
+    /* «الكلية وحدها»: لكل مسارٍ يأخذ القسم، نسخةٌ بلا قسم. isScopeAllowed بقسمٍ
+       صفر يعني «له شيءٌ في هذه الكلية» — فمسارٌ يقرأ بها الكليةَ كلها يسرّب
+       أقسامها لحساب قسمٍ واحد. */
+    if (!scope.admin && scope.own.size) {
+      for (const [name, url] of [...probes]) {
+        if (!url.includes(`sectionId=${ownSection}`) || name.includes(":alien")) continue;
+        probes.push([`${name}:collegeOnly`, url.replace(`&sectionId=${ownSection}`, "").replace(`sectionId=${ownSection}&`, "")]);
+      }
+    }
 
     for (const [name, url] of probes) {
       const result = await call("GET", url);
@@ -249,6 +258,18 @@ async function main() {
           if (object.readOnly === true && "decidedBySectionName" in object) shared.add(trail);
           if (object.requestType === "course-conflict" && Array.isArray(object.courses)) object.courses.forEach((_, i) => shared.add(`${trail}.courses[${i}]`));
         });
+        /* أرقامُ مواعيد بلا قسمٍ بجانبها (scheduleId، rowIds، ids): تُردّ إلى قسمها. */
+        const rowSection = new Map([...adminRows, ...adminRowsPrev].map(row => [Number(row.id), Number(row.AdSectionId)]));
+        const alienRows = [];
+        walk(result.json, (object, trail) => {
+          for (const key of ["scheduleId", "rowId", "ownId"]) {
+            const id = Number(object[key]);
+            if (id && rowSection.has(id) && !scope.allowedSection(rowSection.get(id))) alienRows.push(`${trail}.${key}=${id}`);
+          }
+          for (const key of ["ids", "rowIds"]) {
+            if (Array.isArray(object[key])) object[key].forEach(value => { const id = Number(value); if (id && rowSection.has(id) && !scope.allowedSection(rowSection.get(id))) alienRows.push(`${trail}.${key}∋${id}`); });
+          }
+        });
         const bad = pairsIn(result.json)
           .filter(pair => !shared.has(pair.trail))
           .filter(pair => pair.section ? !scope.allowedSection(pair.section) : !scope.allowedCollege(pair.college));
@@ -257,9 +278,9 @@ async function main() {
         if (deanReader) walk(result.json, (object, trail) => {
           if ("fstarttime" in object && "AdSectionId" in object && !accepted.has(Number(object.AdSectionId))) unfinal.push(trail);
         });
-        if (bad.length || unfinal.length) {
+        if (bad.length || unfinal.length || alienRows.length) {
           verdict = "LEAK"; leaks++;
-          const sample = bad.slice(0, 3).map(p => `${p.college}:${p.section}@${p.trail}`);
+          const sample = [...bad.slice(0, 3).map(p => `${p.college}:${p.section}@${p.trail}`), ...alienRows.slice(0, 2)];
           detail = [...sample, ...(unfinal.length ? [`unfinal×${unfinal.length}@${unfinal[0]}`] : [])].join(" ");
         }
         // الرقمُ المدني كاملاً لأستاذٍ لم يدرّس في نطاق القارئ قطّ = تسريبُ بياناتٍ شخصية.

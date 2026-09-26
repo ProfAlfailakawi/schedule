@@ -5406,7 +5406,9 @@ app.get("/api/schedules/outside-clashes", requirePermission(7), async (req: Auth
   ]);
   /* The same canonicalisation the editor's check performs, so a hall recorded
      under an old alias cannot hide a collision from the board either. */
-  const scopeRows=scopeRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
+  /* «الكلية» بلا قسم تعني أقسامَ القارئ فيها، لا الكليةَ كلها (isScopeAllowed بقسمٍ
+     صفر يقول «له شيءٌ هنا» فقط). */
+  const scopeRows=filterByScope(req,scopeRaw).map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
   const termRows=termRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
   /* The rule itself lives beside the conflict sweep in scheduleIntelligence,
      so this route holds no copy of it and `tests/run-tests.ts` can hold it. */
@@ -5802,9 +5804,11 @@ app.get("/api/schedules/export", requirePermission(7), async (req: Authenticated
    * another. The rows are unchanged, so files written by the old version still
    * import.
    */
-  const scopedCourses = courses.filter(course =>
+  /* مقرّراتُ النطاق وحده: تصديرٌ «بالكلية» (بلا قسم) من حساب قسمٍ كان يحمل
+     دليلَ مقرّرات أقسام الكلية كلها. */
+  const scopedCourses = filterByScope(req, courses.filter(course =>
     (!sectionId || Number(course.AdSectionId) === sectionId) &&
-    (!collegeId || Number(course.AdCollegeId) === collegeId));
+    (!collegeId || Number(course.AdCollegeId) === collegeId)));
   const teachingIds = new Set(rows.map(row => Number(row.AdInstructorId)).filter(Boolean));
   const scopedInstructors = instructors.filter(person => teachingIds.has(Number(person.AdInstructorId)));
   const halls = [...new Map(rows
@@ -12079,13 +12083,16 @@ app.get("/api/intelligence/department-start-rhythm", requirePermission(7), async
   if(!collegeId||!isScopeAllowed(req,collegeId,sectionId)){
     res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"}); return;
   }
-  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId||"latest"}`);
+  /* بلا قسم: أقسامُ القارئ في الكلية لا الكليةُ كلها — فالمفتاحُ يحمل القارئَ حينها. */
+  const rhythmReader=sectionId||req.user?.IsAdminUser?"":`:u${req.user?.SystemUserId}`;
+  const cacheKey=dataContextCacheKey(`${collegeId}:${sectionId}:${termId||"latest"}${rhythmReader}`);
   const cached=historicalTimeCache.get(cacheKey);
   if(cached&&cached.serial===driftSerial&&cached.expiresAt>Date.now()){res.json(cached.body);return;}
-  const [terms,history]=await Promise.all([
+  const [terms,historyRaw]=await Promise.all([
     Repository.getTerms(),
     Repository.getSchedulesByScope({collegeId,sectionId}),
   ]);
+  const history=filterByScope(req,historyRaw);
   // One model answers every card in this department. It knows the department,
   // the active day-pattern and each course separately, with recent terms given
   // more weight than old history. The client picks the narrowest reliable layer.
@@ -12104,7 +12111,8 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${viewingTermId || "any"}`);
+  const driftReader = sectionId || req.user?.IsAdminUser ? "" : `:u${req.user?.SystemUserId}`;
+  const key = dataContextCacheKey(`${collegeId}:${sectionId}:${viewingTermId || "any"}${driftReader}`);
   const cached = driftCache.get(key);
   if (cached && cached.serial === driftSerial) { res.json(cached.body); return; }
 
@@ -12116,6 +12124,8 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
      show it rather than ask for it. It is a statement, not an offer — there is
      nothing here to accept. */
   const readHabit = async () => {
+    /* عادةُ «الكلية كلها» ليست عادةَ قسمٍ في نطاق القارئ. */
+    if (!sectionId && !req.user?.IsAdminUser) return null;
     const style = await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId,
       AdTermId: newest?.AdTermId || 0 });
     if (!style.reading) return null;
@@ -12172,7 +12182,7 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
      already memoises, and one scoped read for the department's own rows. */
   const [universe, mine, rules] = await Promise.all([
     Repository.getSchedulesByScope({ termId: term.AdTermId }),
-    Repository.getSchedulesByScope({ collegeId, sectionId, termId: term.AdTermId }),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId: term.AdTermId }).then(rows => filterByScope(req, rows)),
     Repository.getScheduleConstraints(collegeId, sectionId, term.AdTermId).catch(() => []),
   ]);
   const doorway = Number(rules.find(item => item.type === "room_doorway" && item.enabled !== false)?.maxMinutes || 0);
@@ -15428,11 +15438,13 @@ app.get("/api/schedules/staff-inbox", requirePermission(7), async (req: Authenti
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const [notes, courses, schedules] = await Promise.all([
+  const [notesRaw, courses, schedules] = await Promise.all([
     Repository.getStaffInbox(collegeId, sectionId, termId),
     Repository.getCourses(),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
   ]);
+  /* رسائلُ أقسام القارئ وحدها: بلا قسمٍ كانت تُقرأ رسائلُ الكلية كلها. */
+  const notes = filterByScope(req, notesRaw as any[]);
   const rowById = new Map(schedules.map(row => [row.id, row]));
   res.setHeader("Cache-Control", "no-store");
   res.json(notes.map(note => {
