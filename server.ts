@@ -9122,7 +9122,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       return{method:"AMBIGUOUS",reason:`الأقرب: ${partial.map(describeCandidate).join("، ")}.`};
     }
     /* «غير مسجّل» حكمٌ على شخص؛ لا يُقال عن اسمٍ لم يُقرأ بوضوح. */
-    if(readable.garbled)return{method:"UNREADABLE_NAME",reason:"قُرئ الاسم من المسح ناقصاً أو مشوّهاً ولم يطابق أحداً من أساتذة القسم؛ اختر الأستاذ من القائمة."};
+    if(readable.garbled)return{method:"UNREADABLE_NAME",reason:"اختر الأستاذ من القائمة."};
     return{method:"UNREGISTERED",reason:"غير موجود بين أساتذة القسم."};
   };
   const unresolvedInstructorOutcome=(row:any)=>unresolvedInstructorDiagnosis(row).method;
@@ -9266,6 +9266,13 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       building:{raw:sourceBuildingRaw,normalized:token,confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomCode"),method:fieldDerived("AdRoomCode")?"HISTORICAL_UNIQUE_FINGERPRINT":"REGISTRY_PENDING",derived:fieldDerived("AdRoomCode"),reason:fieldDerived("AdRoomCode")?"خلية المبنى كانت فارغة؛ استعيد رمزها من بصمة صف تاريخية غير ملتبسة":"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
       room:{raw:sourceRoomRaw,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomHall"),method:fieldDerived("AdRoomHall")?"HISTORICAL_UNIQUE_FINGERPRINT":"BUILDING_BOUND_ROOM_PENDING",derived:fieldDerived("AdRoomHall"),reason:fieldDerived("AdRoomHall")?"خلية القاعة كانت فارغة؛ استعيدت من بصمة صف تاريخية غير ملتبسة":(rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر"),evidence:["خلية القاعة الأصلية"]},
     };
+    /* مقرر حُسم من خانات رقمه المقروءة واسمه المطبوع (courseMatchMethod) يُعرض
+       للمراجعة بسببه، لا «مطابق صراحةً». */
+    if(row.courseMatchMethod&&Number(row.AdCourseId))Object.assign(row.importEvidence.course,{confidence:"REVIEW_REQUIRED",score:80,method:String(row.courseMatchMethod),
+      reason:row.courseMatchMethod==="PRINTED_NAME_OVER_LAST_DIGIT"
+        ?`رقم المقرر المقروء «${String(row.sourceCourseCode||"")}» يخالف الاسم المطبوع «${String(row.sourceCourseText||"").trim()}»؛ اختير مقرر العائلة نفسها الذي يطابق الاسم — راجعه.`
+        :`رقم المقرر لم يُقرأ كاملاً («${String(row.sourceCourseCode||"")}»)؛ حُدّد من خاناته المقروءة واسمه المطبوع «${String(row.sourceCourseText||"").trim()}» — راجعه.`,
+      evidence:["خانات رقم المقرر المقروءة","الاسم المطبوع في المستند","كتالوج القسم الحالي"]});
     /* One resolver owns the complete Authority location grammar. This prevents
        parser branches from disagreeing about whether a token is a building and
        guarantees Building -> Room registry validation for every row. */

@@ -1751,6 +1751,82 @@ export const recoverAuthorityCourseCell=(raw:string,departmentCode="",canonicalK
   return candidates.length===1?candidates[0]:"";
 };
 
+/* ── رقم مقرر ممسوح مكسور، واسمه المطبوع واضح ──────────────────────────────
+   انزياح قصّ خلية الرقم في المسح يضيف خانة من خط الجدول في أوله ويُسقط خانته
+   الأخيرة: «3010115» و«9010115» هي 010115x. الخانات الست الباقية تُثبت عائلة
+   المقرر (0101150…0101159) ولا تُثبت واحداً منها، فخرجت هذه الصفوف «—» في
+   ملف 3.pdf مع أن اسمها المطبوع مقروء بوضوح («تجويد القران الكريم وحفظه (1)»).
+   القاعدة: الرقم وحده يحدد العائلة، والاسم المطبوع يختار داخلها فقط — لا
+   يُنشئ الاسم هويةً خارج ما سمح به الرقم، ولا يُقبل إلا باسمٍ واحدٍ واضح الفرق
+   عن جيرانه، ويُعرض الناتج للمراجعة لا مؤكداً. */
+const COURSE_PLACE_WORDS=["فحيحيل","الفحيحيل","جهراء","الجهراء","الذكور","ذكور","البنين","بنين","البنات","بنات","الاناث","اناث"];
+/* رقم الجزء ما طُبع بين قوسين «(1)» (أو مقلوبهما «)1(» في المسح) أو لصق اسم
+   الموقع «2 جهراء»/«1جهراء» — لا أي خانة شاردة من خط الجدول. */
+const courseNameMarkers=(value:string)=>{
+  const text=toAscii(String(value||""));
+  const found=[...text.matchAll(/[()]\s*(\d)\s*[()]/g),...text.matchAll(new RegExp(`(\\d)\\s*(?:${COURSE_PLACE_WORDS.join("|")})`,"g"))].map(hit=>hit[1]);
+  return [...new Set(found)].sort().join("");
+};
+const courseNameTokens=(value:string)=>fold(String(value||"")).replace(/\d/g," ").split(" ")
+  .filter(token=>token.length>=2&&/^[ء-ي]+$/.test(token)&&!COURSE_PLACE_WORDS.some(place=>place===token||(token.length>=3&&place.startsWith(token))));
+const courseTokenAlike=(a:string,b:string)=>{
+  if(a===b)return true;
+  const shorter=Math.min(a.length,b.length),longer=Math.max(a.length,b.length),distance=editDistance(a,b);
+  if(shorter<3)return false;
+  return distance<=1||(longer>=5&&distance<=2&&1-distance/longer>=.6);
+};
+/** مدى تطابق اسم مطبوع (ممسوح) مع اسم مقرر في الكتالوج، من 0 إلى 1. رقم الجزء
+    «(1)»/«(2)» جزء من الاسم: اختلافه يُنصّف الدرجة. */
+export const authorityCourseNameScore=(printed:string,catalogueName:string,ignorePart=false):number=>{
+  const seen=courseNameTokens(printed),known=courseNameTokens(catalogueName);
+  if(!seen.length||!known.length)return 0;
+  const knownCovered=known.filter(k=>seen.some(s=>courseTokenAlike(s,k))).length/known.length;
+  const seenCovered=seen.filter(s=>known.some(k=>courseTokenAlike(s,k))).length/seen.length;
+  const joinedSeen=seen.join(""),joinedKnown=known.join("");
+  const chars=1-editDistance(joinedSeen,joinedKnown)/Math.max(joinedSeen.length,joinedKnown.length);
+  const score=Math.max((knownCovered+seenCovered)/2,chars);
+  if(ignorePart)return score;
+  const knownPart=[...new Set(toAscii(String(catalogueName||"")).match(/\d/g)||[])].sort().join("");
+  return courseNameMarkers(printed)===knownPart?score:score/2;
+};
+export const AUTHORITY_NAME_PICK_MIN=.7,AUTHORITY_NAME_PICK_MARGIN=.2;
+/** يختار مفتاحاً واحداً من العائلة التي تثبتها خانات الرقم المقروءة، باسمه
+    المطبوع. يعيد "" عند غياب العائلة أو التباس الاسم. */
+export const authorityCourseFromFamilyAndName=(rawCode:string,printedName:string,departmentCode:string,catalogue:{key:string;name:string}[]):string=>{
+  const token=academicDigits(rawCode),department=academicDigits(departmentCode);
+  /* خلية رقم المقرر وحدها بطولها المطبوع (7 خانات: خانة واحدة معيبة)، والعائلة
+     في طرفها لا في وسط لحامٍ مع المرجعي أو الشعبة، وداخل القسم المثبت. الخلية
+     الأطول بالمفتاح كاملاً يصلحها recoverAuthorityCourseCell؛ ما دون ذلك عيبان. */
+  if(!/^\d{4}$/.test(department)||!/^\d{7}$/.test(token)||!courseNameTokens(printedName).length)return"";
+  const edge=(piece:string)=>token.startsWith(piece)||token.endsWith(piece);
+  const family=catalogue.filter(item=>/^\d{7}$/.test(item.key)&&item.key.startsWith(department)
+    &&(edge(item.key.slice(0,6))||edge(item.key.slice(1))));
+  if(!family.length)return"";
+  const scored=family.map(item=>({key:item.key,score:authorityCourseNameScore(printedName,item.name)})).sort((a,b)=>b.score-a.score);
+  const [best,second]=scored;
+  if(best.score<AUTHORITY_NAME_PICK_MIN)return"";
+  if(second&&best.score-second.score<AUTHORITY_NAME_PICK_MARGIN)return"";
+  return best.key;
+};
+/** رقمٌ قرئ كاملاً قد يكون خانته الأخيرة هي ما أبدله الانزياح («0101155» لصفٍّ
+    مطبوع «تجويد القران الكريم وحفظه»). يُستبدل بأخيه في العائلة نفسها فقط حين
+    يطابق الاسمُ المطبوع الأخَ بوضوح ولا يشبه المقرر المقروء. */
+export const authorityCourseSiblingByName=(readKey:string,printedName:string,catalogue:{key:string;name:string}[]):string=>{
+  const own=catalogue.find(item=>item.key===readKey);
+  if(!own||!courseNameTokens(printedName).length)return"";
+  /* الرقم المقروء كاملاً لا يُنقض إلا بكلمات الاسم، لا برقم الجزء وحده: «(1)»
+     الغائبة من اسمٍ مقصوص («القران الكريم وحفظه» لصفٍّ رقمه 0101151 في 1.pdf)
+     أو خانةٌ شاردة لا تناقضه. */
+  const ownScore=authorityCourseNameScore(printedName,own.name,true);
+  if(ownScore>=.65)return"";
+  const siblings=catalogue.filter(item=>item.key!==readKey&&item.key.slice(0,6)===readKey.slice(0,6))
+    .map(item=>({key:item.key,score:authorityCourseNameScore(printedName,item.name)})).sort((a,b)=>b.score-a.score);
+  const [best,second]=siblings;
+  if(!best||best.score<AUTHORITY_NAME_PICK_MIN||best.score-ownScore<.35)return"";
+  if(second&&best.score-second.score<AUTHORITY_NAME_PICK_MARGIN)return"";
+  return best.key;
+};
+
 /** Combined CRN/reference + full course key in one OCR span. The only part
  * that carries academic identity is the seven-digit TAIL, which must satisfy
  * the same department proof as a standalone course cell. */
@@ -4618,7 +4694,7 @@ export type ParsedScheduleRow={
   fstarttime:string;fendtime:string;AdRoomCode:string;AdRoomHall:string;ocrLine:string;sourceInstructorText?:string;
   sourceCourseCode?:string;sourceCourseText?:string;sourceSectionText?:string;sourceBuildingText?:string;sourceRoomText?:string;
   sourceDaysText?:string;sourceTimeText?:string;sourceReadMode?:"pdf-text"|"ocr-grid"|"ocr-fallback";
-  instructorMatchMethod?:string;instructorMatchScore?:number;instructorMatchedTokens?:number;
+  instructorMatchMethod?:string;courseMatchMethod?:string;instructorMatchScore?:number;instructorMatchedTokens?:number;
   /** Physical PDF/image page that produced this row. Kept through preview so
    * multi-page review can be page-scoped without changing academic identity. */
   sourcePage?:number;
@@ -5028,6 +5104,15 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     if(authorityDepartment&&d.length<=3)return`${authorityDepartment}${d.padStart(3,"0").slice(-3)}`;
     return d;
   }).filter(k=>k.length===7);
+  const keyedCatalogue=catalogue.map(item=>{
+    const d=item.digits;
+    const key=d.length>=7?d:(authorityDepartment&&d.length<=3?`${authorityDepartment}${d.padStart(3,"0").slice(-3)}`:d);
+    return{course:item.course,key,name:String(item.course.CourseName||"")};
+  }).filter(item=>item.key.length===7);
+  const courseByKey=(key:string)=>{
+    const hits=keyedCatalogue.filter(item=>item.key===key);
+    return hits.length===1?hits[0].course:null;
+  };
   /* صف يحمل رقم مقرر سليماً من سبع خانات صفُّ بيانات، ولو كان اسم مقرره
      «التقرير الفني» أو «الفصل الميداني» أو «مناهج التربية الأساسية»: فحص
      الترويسة بالكلمات كان يُسقطه بصمت. */
@@ -5070,11 +5155,26 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     const hasData = Boolean(grid.code || grid.reference || grid.start || grid.days || authoritySectionCodeLooksPlausible(grid.scode) || grid.courseText.length > 2);
     return hasData;
   });
-  const firstPass=validGrids.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText,grid.sourceMode)}));
+  /* المسح وحده (لا طبقة النص): رقمٌ لم يحسم مقرراً يُحسم من عائلته واسمه
+     المطبوع، ورقمٌ حسم مقرراً يناقضه اسمه المطبوع بوضوح يُستبدل بأخيه في
+     العائلة. كلاهما يُعرض للمراجعة (courseMatchMethod). */
+  const firstPass=validGrids.map(grid=>{
+    const course=matchCourse(grid.code,grid.courseText,grid.sourceMode);
+    if(grid.sourceMode==="pdf-text"||!keyedCatalogue.length||headerLike(grid))return{grid,course,courseMethod:""};
+    if(!course){
+      const key=authorityCourseFromFamilyAndName(grid.code,grid.courseText,authorityDepartment,keyedCatalogue);
+      const picked=key?courseByKey(key):null;
+      return picked?{grid,course:picked,courseMethod:"COURSE_FAMILY_AND_PRINTED_NAME"}:{grid,course,courseMethod:""};
+    }
+    const readKey=keyedCatalogue.find(item=>item.course===course)?.key||"";
+    const sibling=readKey?authorityCourseSiblingByName(readKey,grid.courseText,keyedCatalogue):"";
+    const swapped=sibling?courseByKey(sibling):null;
+    return swapped?{grid,course:swapped,courseMethod:"PRINTED_NAME_OVER_LAST_DIGIT"}:{grid,course,courseMethod:""};
+  });
   /* A missing course key stays unresolved. Neighbouring rows and edit-distance
      similarity are not identity evidence and must never create canonical data. */
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
-  for(const {grid,course} of firstPass){
+  for(const {grid,course,courseMethod} of firstPass){
     if(headerLike(grid))continue;
     const flags = parseDays(grid.days) || EMPTY_DAYS;
     const coursePreferred=course?courseInstructorIds?.get(Number(course.AdCourseId)):undefined;
@@ -5128,6 +5228,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       sourceOrder:order++,
       referenceNumber:grid.reference,
       AdCourseId:course.AdCourseId,AdCourseName:course.CourseName,SCode:grid.scode,
+      ...(courseMethod?{courseMatchMethod:courseMethod}:{}),
       AdInstructorId:instructorHit?.AdInstructorId||0,
       TotalHours:course.CourseHours,TotalUnits:course.CourseCredit,
       CourseHours:course.CourseHours,CourseCredit:course.CourseCredit,
