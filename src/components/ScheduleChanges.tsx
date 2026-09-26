@@ -311,6 +311,29 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
     },
   ];
 
+  /* شرائحُ «المزيد» تُبنى مرّةً: منها يُعرف أيبقى فيه ما يُختار (قاعدة إخفاء الفارغ). */
+  const statusChips = ([
+    // «الكل» يعدّ كل بطاقةٍ معروضة — فيها «قيد الإعداد» للأقسام التي لم
+    // تبدأ بعد — لا الحالاتِ الثلاث وحدها، فلا يقول ٣ ويعرض ٥.
+    ["all", "الكل", (rows || []).length],
+    ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
+    ["returned", "عند القسم", totals?.returned || 0],
+    ["accepted", "معتمد", totals?.accepted || 0],
+  ] as Array<[typeof statusFilter, string, number]>)
+    /* مرشّحٌ لا سطرَ تحته لا يُعرض (قاعدة إخفاء الفارغ) — إلا المختارُ الآن. */
+    .filter(([value, , count]) => value === "all" || count > 0 || statusFilter === value);
+  const signalChips = ([
+    ["late", "متأخّر عن الموعد", signalCounts.late],
+    ["blocking", "فيه موانع", signalCounts.blocking],
+    ["openNotes", "ملاحظات مفتوحة", signalCounts.openNotes],
+    ["answered", "ردود تنتظر قرارك", signalCounts.answered],
+    ["pendingAdditions", "شُعب تنتظر رئيس القسم", signalCounts.pendingAdditions],
+  ] as Array<[string, string, number]>)
+    /* «ردودٌ تنتظر قرارك» سؤالُ التسجيل وحده: القسمُ لا يقرّر في ردّه. */
+    .filter(([value]) => audience.registrarSignals || value !== "answered")
+    /* إشارةٌ لا يحملها سطرٌ واحد لا تُعرض مرشّحاً — إلا المفعّلةُ الآن. */
+    .filter(([value, , count]) => count > 0 || (value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal)));
+
   if (!rows) return <MicroLoader label="يقرأ الوارد…" />;
 
   return (
@@ -338,21 +361,13 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
         moreOpen={moreOpen}
         onToggleMore={() => setMoreOpen(open => !open)}
         activeMoreCount={activeMoreCount}
-        more={
+        /* لا شرائحَ غير «الكل»: لا «المزيد» ولا مجموعاتٌ بعناوين فوق لا شيء. */
+        more={statusChips.length > 1 || signalChips.length ? (
           <>
-            <div className="field wide">
+            {statusChips.length > 1 ? <div className="field wide">
               <label>الحالة</label>
               <div className="changes-filter-chips" role="group" aria-label="فلترة بالحالة">
-                {([
-                  // «الكل» يعدّ كل بطاقةٍ معروضة — فيها «قيد الإعداد» للأقسام التي لم
-                  // تبدأ بعد — لا الحالاتِ الثلاث وحدها، فلا يقول ٣ ويعرض ٥.
-                  ["all", "الكل", (rows || []).length],
-                  ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
-                  ["returned", "عند القسم", totals?.returned || 0],
-                  ["accepted", "معتمد", totals?.accepted || 0],
-                ] as Array<[typeof statusFilter, string, number]>)
-                  /* مرشّحٌ لا سطرَ تحته لا يُعرض (قاعدة إخفاء الفارغ) — إلا المختارُ الآن. */
-                  .filter(([value, , count]) => value === "all" || count > 0 || statusFilter === value)
+                {statusChips
                   .map(([value, label, count]) => (
                   <button
                     key={value}
@@ -367,21 +382,11 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="field wide">
+            </div> : null}
+            {signalChips.length ? <div className="field wide">
               <label>ما الذي يستحق الانتباه</label>
               <div className="changes-filter-chips" role="group" aria-label="فلترة بما يستحق الانتباه">
-                {([
-                  ["late", "متأخّر عن الموعد", signalCounts.late],
-                  ["blocking", "فيه موانع", signalCounts.blocking],
-                  ["openNotes", "ملاحظات مفتوحة", signalCounts.openNotes],
-                  ["answered", "ردود تنتظر قرارك", signalCounts.answered],
-                  ["pendingAdditions", "شُعب تنتظر رئيس القسم", signalCounts.pendingAdditions],
-                ] as Array<[string, string, number]>)
-                  /* «ردودٌ تنتظر قرارك» سؤالُ التسجيل وحده: القسمُ لا يقرّر في ردّه. */
-                  .filter(([value]) => audience.registrarSignals || value !== "answered")
-                  /* إشارةٌ لا يحملها سطرٌ واحد لا تُعرض مرشّحاً — إلا المفعّلةُ الآن. */
-                  .filter(([value, , count]) => count > 0 || (value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal)))
+                {signalChips
                   .map(([value, label, count]) => {
                   const on = value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal);
                   return (
@@ -399,9 +404,9 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
                   );
                 })}
               </div>
-            </div>
+            </div> : null}
           </>
-        }
+        ) : undefined}
       />
 
 
@@ -1087,7 +1092,9 @@ function Report({ termId, termName, scope, role, onBack }: {
         />
       ) : null}
 
-      <DeadlineStrip deadline={report.deadline} />
+      {/* القسمُ يقرأ موعده مرّةً في شريط الاعتماد («موعدكم»)؛ والشريطُ هنا لمن لا
+          يُعرض له ذاك الشريط (التسجيل ومن يطّلع) — لا سطرَ موعدٍ مكرّر. */}
+      {role.signatureStage && !isRegistrar ? null : <DeadlineStrip deadline={report.deadline} />}
       {error ? <Notice type="error">{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
 

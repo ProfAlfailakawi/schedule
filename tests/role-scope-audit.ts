@@ -49,6 +49,8 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   check(!/canEdit=\{role\.canManageDeadline\}/.test(changes) && !/canExtend=\{role\.canManageDeadline\}/.test(changes),
     "A لا شرطَ ثانٍ للتحرير يُقرأ من الصفة مباشرةً في «تغييرات الجدول»");
   check(/audience\.extendActions && onExtend/.test(changes), "A أزرار «تمديد/استثناء/نظر الطلب» من القرار الواحد");
+  check(/\{role\.signatureStage && !isRegistrar \? null : <DeadlineStrip deadline=\{report\.deadline\} \/>\}/.test(changes),
+    "A القسم يرى سطر موعده مرّةً («موعدكم» في شريط الاعتماد) لا شريطاً ثانياً فوق تقريره");
 
   const reports = read("src/components/Reports.tsx");
   const at = reports.indexOf("<SubmissionDeadlines");
@@ -228,6 +230,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   const changes = read("src/components/ScheduleChanges.tsx");
   check(/\.filter\(\(\[value, , count\]\) => value === "all" \|\| count > 0 \|\| statusFilter === value\)/.test(changes), "D الوارد: شرائح الحالة الصفرية لا تُعرض");
   check(!/\["blocking", "فيه موانع", 0\]/.test(changes) && /\["blocking", "فيه موانع", signalCounts\.blocking\]/.test(changes), "D الوارد: إشارات الانتباه تُعدّ من السطور لا صفراً مكتوباً");
+  check(/more=\{statusChips\.length > 1 \|\| signalChips\.length \? \(/.test(changes), "D الوارد: لا «المزيد» حين لا شريحةَ فيه غير «الكل»");
   check(/if \(!\(canAnnotate && annotatable\) && !notes\.length\) return null;/.test(changes), "D تقرير التغييرات: لا كتلةَ فارغةً تحت موعدٍ بلا زرٍّ ولا ملاحظة");
   check(/\{spread\.high \? <span className="seg-high">/.test(changes) && /\{spread\.clean \? <span className="seg-clean">/.test(changes), "D مراجعة الاعتماد: مفتاحُ الشريحة الصفرية لا يُكتب");
   const review = read("src/components/ScheduleReview.tsx");
