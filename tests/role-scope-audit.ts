@@ -96,6 +96,93 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   check(/!audience\.multiSite \? \[\{/.test(changes), "B لا منتقيَ قسمٍ يكرّر الاسم نفسه ثلاث عشرة مرّة");
 }
 
+/* ── C: الخادم — ما يصل كلَّ صفةٍ من كل مسار ──────────────────────────────────
+ *
+ * التدقيقُ الحيّ (scripts/role-scope-live-audit.mjs) يطرق كل مسار قراءةٍ بكل
+ * صفة على خادمٍ تجريبيٍّ معزول. وهذه الفحوصُ البنيوية تُمسك ما أصلحه فلا يعود:
+ */
+{
+  const server = read("server.ts");
+  const route = (head: string) => {
+    const at = server.indexOf(head);
+    if (at < 0) return "";
+    const next = server.indexOf("\napp.", at + head.length);
+    return server.slice(at, next < 0 ? undefined : next);
+  };
+
+  const rules = route('app.get("/api/degree-rules"');
+  check(/const sections=filterByScope\(req,allSections as any\[\]\);/.test(rules), "C قواعد التخرّج: أقسام النطاق وحدها (كان يُعاد كلُّ قسمٍ في الجامعة)");
+  const rulesPut = route('app.put("/api/degree-rules/:sectionId"');
+  check(/isScopeAllowed\(req,Number\(\(target as any\)\.AdCollegeId\),sectionId\)/.test(rulesPut), "C تعديل قاعدة قسمٍ خارج النطاق مرفوض");
+
+  const affiliation = route('app.get("/api/instructors/:id/affiliation"');
+  check(affiliation.includes("scopes.filter(scope => inScope(scope.collegeId, scope.sectionId))")
+    && affiliation.includes(".filter(entry => inScope(entry.collegeId, entry.sectionId))"), "C أين يدرّس الأستاذ: داخل نطاق القارئ وحده");
+  const affiliations = route('app.get("/api/instructor-affiliations"');
+  check(/if \(!req\.user\?\.IsAdminUser && !isScopeAllowed\(req, collegeId, sectionId\)\) return;/.test(affiliations), "C خريطة انتساب الأساتذة: الجامعة للإدارة، والنطاق لغيرها");
+  const delegates = route('app.get("/api/delegates"');
+  check(delegates.includes("isScopeAllowed(req, Number(row.collegeId), Number(row.sectionId))"), "C منتدبو أدلّة أقسام النطاق وحدها");
+
+  const changes = route('app.get("/api/reports/schedule-changes"');
+  check(/readsFinalSchedulesOnly\(req\) && approval\.status !== "accepted"/.test(changes), "C العميدان لا يقرآن تقرير تغييرات جدولٍ لم يُعتمد");
+  const balance = route('app.get("/api/reports/department-balance"');
+  check(/if \(readsFinalSchedulesOnly\(req\)\) \{[\s\S]*?finalRowsOnly\(rows, termId\)/.test(balance), "C ميزان الأقسام للعميدين من النهائي وحده");
+
+  const instructors = route('app.get("/api/instructors"');
+  check(instructors.includes("instructorsForScope(req, list, civilQuery)") && !/\bsend\(sortArabicNamed/.test(instructors.replace(/await send\(/g, "")),
+    "C دليل الأساتذة يمرّ كلُّه بقاعدة الرقم المدني الواحدة");
+  const circle = server.slice(server.indexOf("async function instructorCircleFor"), server.indexOf("function maskCivilTail"));
+  check(circle.includes("getInstructorsByScope(Number(row.AdSectionId), 0)") && circle.includes("getDepartmentDelegates("),
+    "C حلقةُ القسم: من درّس فيه (كل الفصول) ومن ضمّه دليله");
+  check(/if \(granted\.map\(Number\)\.includes\(3\)\) return null;/.test(circle) && circle.includes("isReadOnlyRole(req.user.Role)"),
+    "C الإدارة وصاحب شاشة الأساتذة يرونه كاملاً، وصفات الاطّلاع لا ترى الرقم أصلاً");
+  check(server.includes('return `${"•".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;'), "C من سوى الحلقة: آخر أربعة أرقام وحدها، وبلا هاتف");
+
+  const owner = route('app.get("/api/rooms/owner"');
+  check(owner.includes("isScopeAllowed(req, askCollege, askSection)"), "C «لمن هذه القاعة؟» يُسأل من قسمٍ في النطاق");
+  const nature = route('app.get("/api/courses/nature"');
+  check(nature.includes("isScopeAllowed(req, Number(natureSection.AdCollegeId), sectionId)") && !nature.includes("req.scopes?.some"),
+    "C طبيعة المقررات بالحَكَم الواحد لا بمطابقةٍ ثانية");
+  const lookups = route('app.get("/api/intelligence/lookups"');
+  check(lookups.includes("scopeSectionIdsFor(req)") && !lookups.includes("(req.scopes||[]).map"), "C قوائم مركز الذكاء من أقسام الحَكَم الواحد");
+
+  /* ── C-inventory: كل مسارٍ تحت /api إمّا يسأل حارسَ النطاق، أو مراجَعٌ باسمه ──
+     مسارٌ جديد بلا حارسٍ ولا سطرٍ هنا يُسقط هذا الفحص: يُراجَع قبل أن يُدمج. */
+  const GUARDS = ["isScopeAllowed", "filterByScope", "readScopedTermRows", "readSchedulesForRequest", "readLiveSchedulesForRequest",
+    "scopeSectionIdsFor", "expandScopeSections", "approvalScopeFromBody", "scheduleConflicts", "readScheduleForException",
+    "notificationItemsForTerm", "approvalBadgeForTerm", "owningSectionsInScopeFor", "requirePowerAdmin", "requireRootAdmin",
+    "requirePermission(11)", "requirePermission(12)", "requirePermission(15)", "requireAnyPermission([11, 15])", "isPowerUser"];
+  const REVIEWED: Record<string, string> = {
+    "GET /api/version": "رقم الإصدار — لا بيانات",
+    "GET /api/journey": "أعدادٌ مجمّعة عامّة عمداً (تُعرض قبل الدخول)، بلا أسماء",
+    "GET /api/colleges": "أسماء كليات النطاق (تصفية بصفوف النطاق)",
+    "POST /api/colleges": "دليلٌ جامعي، شاشة الكليات (٢)",
+    "GET /api/terms": "الفصول جامعية",
+    "POST /api/terms": "دليلٌ جامعي، شاشة الفصول (٥)",
+    "PUT /api/terms/:id": "دليلٌ جامعي، شاشة الفصول (٥)",
+    "PUT /api/instructors/:id": "دليل الأساتذة جامعي، شاشة الأساتذة (٣)",
+    "DELETE /api/instructors/:id": "دليل الأساتذة جامعي، شاشة الأساتذة (٣)",
+    "POST /api/department-rooms": "مرفوضٌ دائماً (٤٠٣)",
+    "POST /api/schedules/meeting-slots": "نوافذ فراغٍ لأساتذةٍ يختارهم القارئ — بلا مقرّرٍ ولا قاعة",
+    "POST /api/guide/intent": "دليل الاستخدام — لا بيانات",
+    "GET /api/roles": "تعريفات الصفات — لا بيانات",
+  };
+  const routeHead = /\napp\.(get|post|put|delete|patch)\("([^"]+)"/g;
+  const heads = [...server.matchAll(routeHead)];
+  const unguarded: string[] = [];
+  heads.forEach((match, i) => {
+    const path_ = match[2];
+    if (!path_.startsWith("/api/") || path_.startsWith("/api/public/") || path_.startsWith("/api/auth/") || path_.startsWith("/api/demo/")) return;
+    const body = server.slice(match.index!, heads[i + 1]?.index ?? server.length);
+    const key = `${match[1].toUpperCase()} ${path_}`;
+    if (GUARDS.some(guard => body.includes(guard)) || REVIEWED[key]) return;
+    unguarded.push(key);
+  });
+  check(unguarded.length === 0, `C-inventory كل مسارٍ يسأل حارس النطاق أو مراجَعٌ باسمه${unguarded.length ? ` — بلا حارس: ${unguarded.join("، ")}` : ""}`);
+  const stale = Object.keys(REVIEWED).filter(key => !heads.some(match => `${match[1].toUpperCase()} ${match[2]}` === key));
+  check(stale.length === 0, `C-inventory لا سطرَ مراجعةٍ لمسارٍ لم يعد موجوداً${stale.length ? ` (${stale.join("، ")})` : ""}`);
+}
+
 /* ── B-demo: الحسابُ المتعدّد المواقع في البيئة التجريبية ────────────────────── */
 {
   const state = createDemoSandboxState();
