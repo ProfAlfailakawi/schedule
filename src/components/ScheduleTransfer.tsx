@@ -16,7 +16,7 @@ import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 import { campusOf } from "../utils/campusTravel";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
-import { pageReviewIssues, pagesAwaitingReview, pagesWithUnreadCells } from "../utils/importPageReview";
+import { pageReviewIssues, pagesAwaitingReview, pagesWithUnreadCells, pagesLabel } from "../utils/importPageReview";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -1282,7 +1282,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                         title={`قراءة أدق للصفحات ${smartPendingPages.join("، ")} فقط — الصفحات التي قُرئت بلا أخطاء تبقى كما هي ولا تُرسل. لا تُرسل الأرقام المدنية.`}
                       >
                         <Sparkles aria-hidden="true" />
-                        <span>قراءة أدق · {countOf(smartPendingPages.length, AR.page)}</span>
+                        <span>قراءة أدق · {pagesLabel(smartPendingPages)}</span>
                       </button>
                     </div>
                   ) : null}

@@ -72,6 +72,7 @@ import type {
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer";
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { sortByName, byRoom } from "../utils/sorting";
@@ -95,7 +96,7 @@ import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetric
 
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
-import { pageReviewIssues, pagesAwaitingReview, scanLeftCellUnread } from "../utils/importPageReview";
+import { pageReviewIssues, pagesAwaitingReview, scanLeftCellUnread, pagesWithUnreadCells, pagesLabel } from "../utils/importPageReview";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -1580,6 +1581,43 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       const localIssues=validateImportRowsLocally(normalizedRows);
       const issues=[...(Array.isArray(data.issues)?data.issues:[]),...localIssues];
       setImportPreview({ ...data, rows:normalizedRows, preview:normalizedRows, count:normalizedRows.length, issues, valid:normalizedRows.length>0&&issues.length===0, importLayout:"worksheet", smartFallbackReason:fallbackReason });
+    } catch (e: any) {
+      setError(smartMessage(e));
+    } finally {
+      setBusy(false);
+      setImportProgress(null);
+    }
+  };
+
+  /* القراءة الأدق بعد قراءةٍ معتمدة ناجحة: تُرسل الصفحات التي بقيت فيها خانة
+     غير مقروءة وحدها (pages=)، ولا تُكتب إلا الخانة الفارغة (proposeSmartFills)
+     — لا صفَّ يُستبدل ولا صفحةٌ قُرئت نظيفةً تغادر إلى Google. القاعدة نفسها
+     التي تعمل بها شاشة نقل الجدول. */
+  const smartUnreadPages = useMemo(() => pagesWithUnreadCells((importPreview?.rows || []) as any), [importPreview?.rows]);
+  const fillUnreadCellsSmart = async (file: File, pages: number[]) => {
+    if (!pages.length) return;
+    const keptRows = (Array.isArray(importPreview?.rows) ? importPreview!.rows : []) as ImportRow[];
+    setBusy(true);
+    setError(null);
+    setImportProgress({ phase: "read", page: 0, pages: pages.length, message: `قراءة أدق · ${pagesLabel(pages)}` });
+    try {
+      const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId), mime: file.type || "application/octet-stream", pages: pages.join(",") });
+      const data = await fetchJson(`/api/intelligence/smart-import?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream", "x-file-name": encodeURIComponent(file.name) },
+        body: await file.arrayBuffer(),
+      });
+      const fresh = (Array.isArray(data.rows) ? data.rows : []) as ImportRow[];
+      const readPages = (Array.isArray(data.pagesRead) ? data.pagesRead : []).map((page: any) => Number(page)).filter(Boolean);
+      const proposal = proposeSmartFills(keptRows, fresh, readPages.length ? readPages : pages);
+      if (!proposal.fills.length) {
+        setMessage("القراءة الأدق لم تضف جديداً — ما تبقّى من خانات يحتاج تعبئة يدوية. جدولك لم يتغيّر.");
+        return;
+      }
+      const rows = normalizeImportSectionSeries(applySmartFills(keptRows, proposal.fills) as ImportRow[]);
+      const localIssues = validateImportRowsLocally(rows);
+      setImportPreview((prev: any) => prev ? { ...prev, rows, preview: rows, count: rows.length, issues: [...(prev.issues || []).filter((issue: string) => !/^السطر/.test(String(issue))), ...localIssues], smartRead: true } : prev);
+      setMessage(`القراءة الأدق ملأت ${countOf(proposal.fills.length, AR.cell)} في ${pagesLabel(pages)}؛ راجعها في الجدول قبل الاعتماد.`);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -5100,18 +5138,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               {/* The deterministic reader ran first and its result stands above.
                   A second, sharper reading is available on request — never
                   automatic, so no file reaches Gemini without this click. */}
-              {smartRetry && importPreview.importLayout === "authority-pdf" ? (
+              {smartRetry && importPreview.importLayout === "authority-pdf" && smartUnreadPages.length ? (
                 <Notice>
-                  هذه قراءة المحرك المعتمد. إن كانت الصفوف ناقصة أو غير دقيقة، اطلب قراءة أدق تعيد فهم الملف عبر Smart Import.
+                  هذه قراءة المحرك المعتمد. بقيت خانات لم يقرأها المسح في {pagesLabel(smartUnreadPages)} — القراءة الأدق تُرسل هذه الصفحات وحدها وتملأ الخانات الفارغة فقط؛ ما قُرئ يبقى كما هو.
                   <div style={{ marginTop: 8 }}>
                     <button
                       type="button"
                       className="nl-move-apply"
                       data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة القراءة عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
                       disabled={busy}
-                      onClick={() => { const f = smartRetry.file; setSmartRetry(null); void importSmartFile(f, "قراءة أدق بطلب من المراجع"); }}
+                      onClick={() => { const f = smartRetry.file; setSmartRetry(null); void fillUnreadCellsSmart(f, smartUnreadPages); }}
                     >
-                      قراءة أدق عبر Smart Import (بدون الأرقام المدنية)
+                      قراءة أدق · {pagesLabel(smartUnreadPages)} (بدون الأرقام المدنية)
                     </button>
                   </div>
                 </Notice>

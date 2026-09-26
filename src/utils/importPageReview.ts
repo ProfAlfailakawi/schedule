@@ -76,3 +76,8 @@ export function pagesWithUnreadCells(rows: Array<{ importEvidence?: Record<strin
     .filter(page => page > 0)
     .sort((a, b) => a - b);
 }
+
+/** «ص 2 + 5» — the pages a sharper reading would be sent, as the button says them. */
+export function pagesLabel(pages: readonly number[]): string {
+  return pages.length ? `ص ${pages.join(" + ")}` : "";
+}
