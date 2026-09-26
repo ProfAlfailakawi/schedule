@@ -133,17 +133,14 @@ export function authoritySectionCodeLooksPlausible(value: unknown): boolean {
 }
 
 /**
- * Source-preserving Authority section assignment.
+ * ترقيم شعب جدول الجهة — القاعدة المعتمدة عند المالك (أُعيدت 2026-09-26):
+ * كل مقرر يبدأ من 501 ويتقدّم 502، 503… بترتيب ظهور صفوفه في المستند.
  *
- * The PDF section cell wins whenever it is readable. This intentionally keeps
- * leading zeroes and real gaps (01, 02, 04 / 501, 502, 510). Missing section
- * evidence is never invented from row order.
- *
- * Migration rule: sourceSectionText outranks any value that an older build may
- * have generated. This repairs already-saved previews such as printed `01`
- * becoming `501`, while leaving the proven girls flow untouched because its
- * printed 5xx source value is already the same value users see. If an old row
- * has no source cell at all, its stored SCode is preserved rather than guessed.
+ * خلية الشعبة في المسح هي الأكثر التصاقاً بجيرانها (المرجعي ورقم المقاعد)،
+ * فقراءتها الخام («1504»، «50»، «3150») كانت تدخل الجدول هويةً حين حُفظت كما
+ * قُرئت (13 سبتمبر). ما طُبع يبقى شاهداً في sourceSectionText يراه المراجع؛
+ * أما الرقم الذي يُنشر فمولَّد من هوية المقرر وترتيب الصفوف — لا من OCR.
+ * مقررٌ لم تثبت هويته لا يُعطى شعبة.
  */
 export function assignAuthoritySections<T extends {
   AdCourseId?: unknown;
@@ -152,11 +149,18 @@ export function assignAuthoritySections<T extends {
   sourceSectionText?: unknown;
   importEvidence?: { section?: { method?: unknown } } | unknown;
 }>(input: readonly T[]): T[] {
-  return input.map(original => {
-    const row = { ...original } as T;
-    const source = normalizeAuthoritySectionCode((row as any).sourceSectionText);
-    const current = normalizeAuthoritySectionCode((row as any).SCode);
-    (row as any).SCode = source || current || "";
-    return row;
-  });
+  const rows = input.map(row => ({ ...row })) as T[];
+  const ordered = rows.map((row, index) => {
+    const numericOrder = Number((row as any).sourceOrder);
+    return { row, index, order: Number.isFinite(numericOrder) ? numericOrder : index };
+  }).sort((a, b) => a.order - b.order || a.index - b.index);
+  const nextByCourse = new Map<number, number>();
+  for (const item of ordered) {
+    const courseId = Number((item.row as any).AdCourseId || 0);
+    if (!Number.isFinite(courseId) || courseId <= 0) { (item.row as any).SCode = ""; continue; }
+    const next = (nextByCourse.get(courseId) || 500) + 1;
+    nextByCourse.set(courseId, next);
+    (item.row as any).SCode = String(next);
+  }
+  return rows;
 }
