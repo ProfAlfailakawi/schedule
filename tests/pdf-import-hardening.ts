@@ -494,4 +494,20 @@ passed.push("a scan refused as busy says so in words");
   passed.push("دمج الجدولة: هوية الكلمات + أوقات الشبكة، الفارغ وحده يُملأ، والمطابقة بالمرجعي أو بالمقرر والشعبة");
 }
 
+/* لحامات صفحة 1 من مسح 2026: أثر خط الجدول داخل الرمز («[1350-1230042B09[F11]»)،
+   الوقتان والمبنى والقاعة في كلمة واحدة، وذيل الشعبة والمرجعي والمقرر خلف صدرٍ
+   من الخردة — تُفكّ كلها إلى قطعها، ولا تُمسّ كلمة سليمة. */
+{
+  const weld=(text:string)=>authorityOcrWordsToWords([{text,x0:100,y0:10,x1:400,y1:24}],842).map(word=>word.text).join("⁞");
+  assert.equal(weld("[1350-1230042B09[F11]"),"1350⁞-⁞1230⁞042B09⁞F11");
+  assert.equal(weld("0920-0800012807/F31]"),"0920⁞-⁞0800⁞012807⁞F31");
+  assert.equal(weld("1100012807]"),"1100⁞012807");
+  assert.equal(weld("[189510101102"),"18951⁞0101102");
+  assert.equal(weld("%ouyiam|503/189470101102"),"%ouyiam⁞503⁞18947⁞0101102");
+  assert.equal(weld("5505189490101102"),"5⁞505⁞18949⁞0101102");
+  assert.equal(weld("0101102"),"0101102");
+  assert.equal(weld("012J14"),"012J14");
+  passed.push("لحامات المسح تُفكّ: وقتان ومبنى وقاعة، وذيل شعبة ومرجعي ومقرر، وخردة الأطراف تُنزع");
+}
+
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));
