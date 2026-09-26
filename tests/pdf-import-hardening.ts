@@ -15,7 +15,7 @@ import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMa
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
 import { scanLeftCellUnread, pagesWithUnreadCells } from "../src/utils/importPageReview.ts";
-import { fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
+import { authorityCourseFromFamilyAndName, authorityCourseSiblingByName, fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine, unconfirmedReviewPages } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
@@ -310,10 +310,55 @@ check("a page accepted with printed lines that have no row waits for «راجع�
   assert.match(tail.warning||"",/أضف الناقص في الجدول بعد الاستيراد/);
   assert.doesNotMatch(tail.warning||"",/يدوياً/);
 });
+check("a scanned course number that lost its last digit is settled by its family and printed name, never by the name alone",()=>{
+  /* 3.pdf page 1 (owner's screen 2026-09-26): the crop drift reads 3010115 / 9010115 — a rule digit in front,
+     the final digit lost. The six digits prove the 010115x family; the printed name picks one inside it. */
+  const cat=[
+    {key:"0101150",name:"تجويد القران الكريم وحفظه"},{key:"0101151",name:"تجويد القران الكريم وحفظه )1("},
+    {key:"0101153",name:"علوم القران الكريم"},{key:"0101155",name:"سيره الرسول عليه السلام"},
+    {key:"0101156",name:"مدخل الى الفقه الا سلا مى"},{key:"0101201",name:"تجويد القران الكريم )2("},
+    {key:"0101206",name:"العبادات فى الاسلام"},{key:"0101357",name:"العقيده فى الاسلام"},
+  ];
+  assert.equal(authorityCourseFromFamilyAndName("3010115","جويد القران الكريم وحفظه (1)","0101",cat),"0101151");
+  assert.equal(authorityCourseFromFamilyAndName("9010115","ويد القران الكريم وحفظه (1)(الذ","0101",cat),"0101151");
+  assert.equal(authorityCourseFromFamilyAndName("3010115","جويد القران الكريم وحفظه","0101",cat),"0101150","no part number: the unnumbered course");
+  assert.equal(authorityCourseFromFamilyAndName("1010120","تجويد القران الكريم (2)","0101",cat),"0101201");
+  assert.equal(authorityCourseFromFamilyAndName("5010120","لعبادات فى الاسلام","0101",cat),"0101206");
+  /* The name never reaches outside the family the digits allow. */
+  assert.equal(authorityCourseFromFamilyAndName("3010115","العبادات فى الاسلام","0101",cat),"","العبادات is 0101206, outside 010115x");
+  assert.equal(authorityCourseFromFamilyAndName("5010118","تجويد القران الكريم وحفظه (1)","0101",cat),"","no catalogue family 010118x");
+  assert.equal(authorityCourseFromFamilyAndName("","تجويد القران الكريم وحفظه (1)","0101",cat),"","no digits, no identity");
+  /* A name that fits two members about equally stays unresolved. */
+  assert.equal(authorityCourseFromFamilyAndName("3010115","بويد القران الكريم فحيحيل","0101",cat),"");
+  assert.equal(authorityCourseFromFamilyAndName("3010115","","0101",cat),"");
+  /* A complete number whose printed name is plainly its family sibling takes the sibling; a number whose name agrees stays. */
+  assert.equal(authorityCourseSiblingByName("0101155","جويد القران الكريم وحفظه",cat),"0101150");
+  assert.equal(authorityCourseSiblingByName("0101201","لعبادات فى الاسلام",cat),"0101206");
+  assert.equal(authorityCourseSiblingByName("0101155","سيره الرسول عليه السلام (الفحيحيل",cat),"");
+  assert.equal(authorityCourseSiblingByName("0101153","علوم القران الكريم",cat),"");
+  assert.equal(authorityCourseSiblingByName("0101357","العقيده فى الاسلام",cat),"");
+  /* A part number clipped off the printed name does not contradict a complete number (1.pdf rows read 0101151). */
+  assert.equal(authorityCourseSiblingByName("0101151","القران الكريم وحفظه",cat),"");
+  /* Wired end to end: the scan row gets the course and says how; a text-layer row never does. */
+  const courses=cat.map((c,i)=>({AdCourseId:i+1,CourseCode:c.key.slice(-3),CourseName:c.name,CourseHours:3,CourseCredit:3})) as any;
+  const row=(code:string,courseText:string,sourceMode:any)=>({code,reference:"18955",scode:"50",courseText,instructorText:"",building:"012B07",hall:"F31",start:"08:00",end:"08:50",days:"531",sourceMode});
+  const scan=parseScheduleTable([{rows:[],gridRows:[row("3010115","جويد القران الكريم وحفظه (1)","ocr-grid")]} as any],courses,[],undefined,{authorityDepartmentCode:"0101"});
+  assert.equal(scan.rows[0].AdCourseId,2);assert.equal((scan.rows[0] as any).courseMatchMethod,"COURSE_FAMILY_AND_PRINTED_NAME");assert.equal(scan.rows[0].SCode,"501");
+  const text=parseScheduleTable([{rows:[],gridRows:[row("3010115","تجويد القران الكريم وحفظه (1)","pdf-text")]} as any],courses,[],undefined,{authorityDepartmentCode:"0101"});
+  assert.equal(text.rows[0].AdCourseId,0,"the text layer prints what it prints; its numbers are never repaired");
+  const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
+  assert.match(server,/if\(row\.courseMatchMethod&&Number\(row\.AdCourseId\)\)Object\.assign\(row\.importEvidence\.course,\{confidence:"REVIEW_REQUIRED"/);
+  const table=readFileSync(new URL("../src/components/ImportPreviewTable.tsx",import.meta.url),"utf8");
+  assert.match(table,/<small>رقم المقرر غير واضح<\/small>/);
+});
 check("a scanned instructor name garbled by noise is shown as its clean words and called unclear, never «غير مسجّل»",()=>{
   /* The owner's screen on 2026-09-25: noise from the cell border and a neighbouring column read into the name. */
   assert.deepEqual(readableInstructorName("«وفى»ف0[ف[]»أ88 در محمد عبدالكريم راشد الد"),{text:"محمد عبدالكريم راشد الد",garbled:true});
   assert.deepEqual(readableInstructorName("حمد ail سعود المحيلبي ١"),{text:"حمد سعود المحيلبي",garbled:true});
+  /* A cell that is mostly noise shows no words at all — its fragments are not a name (owner's screen, 2026-09-26). */
+  assert.deepEqual(readableInstructorName("ا © - .دجا اما © مسي تسافا سي ‎es‏ ‎I\" 1"),{text:"",garbled:true});
+  assert.equal(readableInstructorName("‎Saran‏ ل فق ا ا سس ددحي الس اا ‎e_ Ba t").text,"");
+  assert.equal(readableInstructorName("ا 000 سآ الل ‎hema‏ ‏لس ‎TE *<‏ -_ .ل !1").text,"");
   /* A word with noise inside is dropped whole: its leftover letters are not a word. */
   assert.equal(readableInstructorName("0[]«»").text,"");
   /* A clean name is not garbled, whatever titles it carries, and is displayed exactly as printed. */
@@ -325,7 +370,8 @@ check("a scanned instructor name garbled by noise is shown as its clean words an
   /* Wired: the server calls such a name unclear and searches candidates with its clean words; every screen shows the same text. */
   const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
   assert.match(server,/registryCandidatesFor\(readable\.garbled&&readable\.text\?readable\.text:written,/);
-  assert.match(server,/if\(readable\.garbled\)return\{method:"UNREADABLE_NAME",reason:"قُرئ الاسم من المسح ناقصاً أو مشوّهاً/);
+  /* الوسم «اسم غير واضح» يقول الحال؛ السبب تحته سطر واحد بالخطوة لا فقرة تتكرر في كل صف. */
+  assert.match(server,/if\(readable\.garbled\)return\{method:"UNREADABLE_NAME",reason:"اختر الأستاذ من القائمة\."\}/);
   assert.match(server,/instructorAmbiguousShortName=`«\$\{displayInstructorText\(row\.sourceInstructorText\)\}»/);
   const table=readFileSync(new URL("../src/components/ImportPreviewTable.tsx",import.meta.url),"utf8");
   assert.match(table,/method === "UNREADABLE_NAME"\) return "اسم غير واضح"/);

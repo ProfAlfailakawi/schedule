@@ -191,6 +191,16 @@ export default function ImportPreviewTable({
      التشخيص كان تلميحاً يحتاج تمرير مؤشر: من يراجع جدولاً على شاشة لمس، أو
      يصوّره ليسأل عنه، لا يراه أبداً. الخانة غير المربوطة تكتب سببها تحت
      الاسم — مَن المرشحون، وما الخطوة — فتشخّص نفسها لمن ينظر إليها فقط. */
+  /* ── مقرر لم يُحسم رقمه يقول ما طُبع، لا «—» ──────────────────────────────
+     حين تعجز خانات الرقم الممسوحة عن حسم المقرر يبقى اسمه المطبوع مقروءاً في
+     الغالب («تجويد القران الكريم وحفظه (1)»). شرطةٌ عارية كانت تُخفي ذلك عن
+     المراجع، فيُعرض الاسم المطبوع موسوماً «رقم المقرر غير واضح» — نصّ مصدر
+     للعرض فقط، لا يُحفظ ولا يصير هوية. */
+  const printedCourseText = (row: ImportRow) => String(row.sourceCourseText || "")
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(/\)(\d)\(/g, "($1)")
+    .split(/\s+/).filter(word => /[\u0621-\u064A0-9]/.test(word) && !/[A-Za-z]/.test(word)).join(" ")
+    .trim().slice(0, 60);
   const unlinkedReason = (row: ImportRow) => String(row.importEvidence?.instructor?.reason || "").trim();
 
   /** ثلاثة وسوم لثلاثة علاجات: «غير مسجّل» علاجه تسجيل الشخص، و«مسجّل أكثر
@@ -364,7 +374,7 @@ export default function ImportPreviewTable({
                   <td className={`num${unplacedNotes.length ? " import-cell-missing" : ""}`} title={unplacedNotes.join(" · ") || undefined}>{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
                   <td className={`import-cell-course ${cellClass("course",missing.course(row))}`} title={cellTitle("course")}>
                     <div className="import-locked-course" aria-label="المقرر مثبت من النظام ولا يتغير من معاينة الاستيراد">
-                      <span className="import-course-title-line"><strong>{course?.CourseName || "—"}</strong>{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
+                      <span className="import-course-title-line">{course?.CourseName ? <strong>{course.CourseName}</strong> : (printedCourseText(row) ? <span className="import-unlinked-head"><span>{printedCourseText(row)}</span><small>رقم المقرر غير واضح</small></span> : <strong>—</strong>)}{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
                       {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                     </div>
                   </td>

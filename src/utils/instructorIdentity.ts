@@ -58,12 +58,18 @@ const nameLetters = (word: string) => word.replace(/[.\u0640\u064B-\u0652]/g, ""
 export function readableInstructorName(raw: unknown): { text: string; garbled: boolean } {
   const source = stripPresentation(String(raw || "")).replace(/\./g, ". ").replace(/\s+/g, " ").trim();
   if (!source) return { text: "", garbled: false };
-  let garbled = false;
+  let garbled = false, noise = 0;
   const words = source.split(" ").filter(word => {
     if (ARABIC_NAME_WORD.test(word)) return true;
     garbled = true;
+    if (/[^\s.\-|:،,_]/.test(word)) noise++;
     return false;
   });
+  /* خانةٌ أغلبها ضجيج («ا © - .دجا اما © مسي تسافا سي es») لا تُعرض كلماتها
+     الباقية اسماً: هي شظايا حروف لا اسم شخص. يبقى الوسم «اسم غير واضح» وحده.
+     الحكم: ما لم تغلب الكلماتُ الطويلة (3 أحرف فأكثر) الضجيجَ والشظايا معاً. */
+  const long = words.filter(word => nameLetters(word).length >= 3).length;
+  if (garbled && noise + (words.length - long) > long) return { text: "", garbled };
   while (words.length && (NAME_TITLE.test(words[0]) || nameLetters(words[0]).length <= 2)) words.shift();
   while (words.length && nameLetters(words[words.length - 1]).length <= 1) { words.pop(); garbled = true; }
   return { text: words.map(word => word.replace(/\.$/, "")).join(" "), garbled };
