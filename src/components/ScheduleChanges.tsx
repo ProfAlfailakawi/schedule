@@ -265,6 +265,18 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
     return matchesInboxAsk(row, effective);
   }), [rows, collegeId, sectionId, effective]);
 
+  /* كم سطراً يحمل كلَّ إشارة — منه يُعرف أيُّ مرشّحٍ يستحق أن يُعرض. */
+  const signalCounts = useMemo(() => {
+    const list = rows || [];
+    return {
+      late: totals?.late || list.filter(row => row.late).length,
+      blocking: list.filter(row => row.blockingConflicts > 0).length,
+      openNotes: list.filter(row => row.openNotes > 0).length,
+      answered: list.filter(row => row.answeredNotes > 0).length,
+      pendingAdditions: list.filter(row => row.pendingAdditions > 0).length,
+    };
+  }, [rows, totals]);
+
   /* عددُ ما هو نشطٌ داخل «المزيد» وحدَه — الكلية والقسم والفصل ظاهرةٌ بأعينها
      فوقه، وعدُّها مرّتين يقول للقارئ إن شيئاً مخفيّاً وليس كذلك. */
   const activeMoreCount = (statusFilter !== "all" ? 1 : 0) + (lateOnly ? 1 : 0) + signalFilters.length;
@@ -338,7 +350,10 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
                   ["submitted", "بانتظار المراجعة", totals?.waiting || 0],
                   ["returned", "عند القسم", totals?.returned || 0],
                   ["accepted", "معتمد", totals?.accepted || 0],
-                ] as Array<[typeof statusFilter, string, number]>).map(([value, label, count]) => (
+                ] as Array<[typeof statusFilter, string, number]>)
+                  /* مرشّحٌ لا سطرَ تحته لا يُعرض (قاعدة إخفاء الفارغ) — إلا المختارُ الآن. */
+                  .filter(([value, , count]) => value === "all" || count > 0 || statusFilter === value)
+                  .map(([value, label, count]) => (
                   <button
                     key={value}
                     type="button"
@@ -357,14 +372,16 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
               <label>ما الذي يستحق الانتباه</label>
               <div className="changes-filter-chips" role="group" aria-label="فلترة بما يستحق الانتباه">
                 {([
-                  ["late", "متأخّر عن الموعد", totals?.late || 0],
-                  ["blocking", "فيه موانع", 0],
-                  ["openNotes", "ملاحظات مفتوحة", 0],
-                  ["answered", "ردود تنتظر قرارك", 0],
-                  ["pendingAdditions", "شُعب تنتظر رئيس القسم", 0],
+                  ["late", "متأخّر عن الموعد", signalCounts.late],
+                  ["blocking", "فيه موانع", signalCounts.blocking],
+                  ["openNotes", "ملاحظات مفتوحة", signalCounts.openNotes],
+                  ["answered", "ردود تنتظر قرارك", signalCounts.answered],
+                  ["pendingAdditions", "شُعب تنتظر رئيس القسم", signalCounts.pendingAdditions],
                 ] as Array<[string, string, number]>)
                   /* «ردودٌ تنتظر قرارك» سؤالُ التسجيل وحده: القسمُ لا يقرّر في ردّه. */
                   .filter(([value]) => audience.registrarSignals || value !== "answered")
+                  /* إشارةٌ لا يحملها سطرٌ واحد لا تُعرض مرشّحاً — إلا المفعّلةُ الآن. */
+                  .filter(([value, , count]) => count > 0 || (value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal)))
                   .map(([value, label, count]) => {
                   const on = value === "late" ? lateOnly : signalFilters.includes(value as InboxAskSignal);
                   return (
@@ -677,10 +694,11 @@ function ChangesReviewOverview({ report, scopeLine, onJump }: { report: ChangeRe
           {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
         </div>
         <div className="spread-keys">
-          <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
-          <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
-          <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(spread.low, AR.note)}</small></span>
-          <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
+          {/* مفتاحٌ لكل شريحةٍ لها مواعيد — «0 يمنع» لا يُكتب (قاعدة إخفاء الفارغ). */}
+          {spread.high ? <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span> : null}
+          {spread.medium ? <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span> : null}
+          {spread.low ? <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>{nounFor(spread.low, AR.note)}</small></span> : null}
+          {spread.clean ? <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span> : null}
         </div>
       </div>
 
@@ -968,6 +986,8 @@ function Report({ termId, termName, scope, role, onBack }: {
   /* ملاحظاتٌ وتعارضٌ وزرُّ تعليق — مشتركةٌ بين «ما تحرّك» و«الجدول كامل». */
   const rowExtras = (scheduleId: number, annotatable: boolean, defaultField: NoteField) => {
     const notes = notesByRow.get(scheduleId) || [];
+    /* لا زرَّ ولا ملاحظة: لا كتلةَ فارغةً تحت الموعد (قاعدة إخفاء الفارغ). */
+    if (!(canAnnotate && annotatable) && !notes.length) return null;
     return (
       <>
         {canAnnotate && annotatable ? (
@@ -1010,7 +1030,7 @@ function Report({ termId, termName, scope, role, onBack }: {
                     <cite>{note.rebuttal.userName}</cite>
                   </blockquote>
                 ) : null}
-                <div className="changes-note-actions">
+                {(canRebut && note.origin === "registrar" && note.state === "open") || (isRegistrar && note.state === "answered") ? <div className="changes-note-actions">
                   {canRebut && note.origin === "registrar" && note.state === "open" ? (
                     <button type="button" data-guide-ignore="ردّ القسم على ملاحظة — يُفتح به حقلُ السبب، والإرسال داخله" onClick={() => { setRebutting(note); setRebutText(""); }}>أبقِها كما هي</button>
                   ) : null}
@@ -1024,7 +1044,7 @@ function Report({ termId, termName, scope, role, onBack }: {
                       </button>
                     </>
                   ) : null}
-                </div>
+                </div> : null}
               </li>
             ))}
           </ul>

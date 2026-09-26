@@ -39,7 +39,8 @@ const dayMark=(label:string)=>DAY_MARK[String(label||"").trim()]||String(label||
 function Delta({current,previous,invert=false}:{current:number;previous?:number|null;invert?:boolean}){
  if(previous==null||!Number.isFinite(previous))return null;
  const change=Number(current||0)-Number(previous||0);
- if(!change)return <span className="delta delta-flat" title="بلا تغيير عن الفصل الماضي">=</span>;
+ /* لا تغيير: لا علامة — «=» بجانب كل رقمٍ زحمةٌ لا تقول شيئاً (قاعدة إخفاء الفارغ). */
+ if(!change)return null;
  // For most counts more is growth; for gaps and waste, less is the good news.
  const good=invert?change<0:change>0;
  return <span className={`delta ${good?"delta-up":"delta-down"}`} title={`عن الفصل الماضي: ${num(previous)}`}>
@@ -190,8 +191,9 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
   */
  const signals:Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean}>=[
   {key:"today",label:"محاضرات اليوم",value:num(today.length)},
-  criticalCount!=null?{key:"conflicts",label:"تعارضات حرجة",value:num(criticalCount),tone:criticalCount>0?"danger":undefined}:null,
-  ws?{key:"rooms",label:"قاعات مشغولة",value:num(ws.peakOccupiedRooms)}:null,
+  /* الصفر لا يُعرض لوحةً: «الجدول سليم» تقوله بطاقةُ القرار فوقها. */
+  criticalCount?{key:"conflicts",label:"تعارضات حرجة",value:num(criticalCount),tone:"danger"}:null,
+  ws?.peakOccupiedRooms?{key:"rooms",label:"قاعات مشغولة",value:num(ws.peakOccupiedRooms)}:null,
   overview?.metrics?.avgInstructorGap!=null
    ?{key:"gap",label:"متوسط الفراغ",value:formatCompactDurationArabic(overview.metrics.avgInstructorGap)}
    :insightsPending?{key:"gap",label:"متوسط الفراغ",value:"—",awaiting:true}:null,
@@ -327,27 +329,28 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     </div>
    </section>:null}
 
-   <section className="deck-metrics" aria-label="أرقام النطاق">
-    <article><BookOpen aria-hidden="true"/><b>{num(data.metrics.courses)}</b><span>{nounFor(data.metrics.courses, AR.course)}</span></article>
-    <article>
+   {/* أرقامُ النطاق: ما كان صفراً لا يُعرض، ولا الصفُّ كلُّه إن خلا. */}
+   {data.metrics.courses||data.metrics.schedules||data.metrics.instructors||ws?.uniqueRooms?<section className="deck-metrics" aria-label="أرقام النطاق">
+    {data.metrics.courses?<article><BookOpen aria-hidden="true"/><b>{num(data.metrics.courses)}</b><span>{nounFor(data.metrics.courses, AR.course)}</span></article>:null}
+    {data.metrics.schedules?<article>
      <CalendarDays aria-hidden="true"/>
      <b>{num(data.metrics.schedules)}<Delta current={data.metrics.schedules} previous={data.previous?.schedules}/></b>
      <span>موعد</span>
      <Spark series={(data.history||[]).map(x=>x.schedules)} label="مواعيد آخر أربعة فصول"/>
-    </article>
-    <article>
+    </article>:null}
+    {data.metrics.instructors?<article>
      <UsersRound aria-hidden="true"/>
      <b>{num(data.metrics.instructors)}<Delta current={data.metrics.instructors} previous={data.previous?.instructors}/></b>
      <span>أستاذ</span>
      <Spark series={(data.history||[]).map(x=>x.instructors)} label="أساتذة آخر أربعة فصول"/>
-    </article>
-    {ws?<article>
+    </article>:null}
+    {ws?.uniqueRooms?<article>
      <DoorOpen aria-hidden="true"/>
      <b>{num(ws.uniqueRooms)}<Delta current={ws.uniqueRooms} previous={data.previous?.rooms}/></b>
      <span>قاعة</span>
      <Spark series={(data.history||[]).map(x=>x.rooms)} label="قاعات آخر أربعة فصول"/>
     </article>:null}
-   </section>
+   </section>:null}
    {/*
      The sparklines' own caption.
      Naming all four terms in one sentence produced a line longer than the row
@@ -368,7 +371,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
      <div className="bar-columns" role="list" aria-label="عدد المواعيد في كل يوم">
       {ws.weekdayLoad.map(day=><div key={day.key} role="listitem" aria-label={`${day.label}: ${countOf(day.count, AR.appointment)}`} title={`${day.label}: ${num(day.count)}`}>
        <i style={{height:day.count?`${Math.max(6,Math.round(day.count/maxDay*100))}%`:"0%"}} aria-hidden="true"/>
-       <b aria-hidden="true">{num(day.count)}</b>
+       <b aria-hidden="true">{day.count?num(day.count):""}</b>
        <span aria-hidden="true">{dayMark(day.label)}</span>
       </div>)}
      </div>

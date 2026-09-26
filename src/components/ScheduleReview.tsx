@@ -549,10 +549,11 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
           {/* Appointments, said with their noun: «5 مواعيد تمنع» can never be
               read as «5 موانع» beside the bar's conflict count. */}
           <div className="spread-keys">
-            <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{countOf(spread.high, AR.appointment)}</b><small>{nounFor(spread.high, AR.blockVerb)}</small></span>
-            <span className="seg-medium"><Info aria-hidden="true" /><b>{countOf(spread.medium, AR.appointment)}</b><small>للمراجعة</small></span>
-            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{countOf(spread.low, AR.note)}</b></span>
-            <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{countOf(spread.clean, AR.appointment)}</b><small>{nounFor(spread.clean, AR.soundAdj)}</small></span>
+            {/* مفتاحٌ لكل شريحةٍ لها مواعيد — «لا مواعيد تمنع» لا يُكتب مفتاحاً (قاعدة إخفاء الفارغ). */}
+            {spread.high ? <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{countOf(spread.high, AR.appointment)}</b><small>{nounFor(spread.high, AR.blockVerb)}</small></span> : null}
+            {spread.medium ? <span className="seg-medium"><Info aria-hidden="true" /><b>{countOf(spread.medium, AR.appointment)}</b><small>للمراجعة</small></span> : null}
+            {spread.low ? <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{countOf(spread.low, AR.note)}</b></span> : null}
+            {spread.clean ? <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{countOf(spread.clean, AR.appointment)}</b><small>{nounFor(spread.clean, AR.soundAdj)}</small></span> : null}
           </div>
         </div>
 
@@ -628,7 +629,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                   {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} /> : null}
                 </div>
                 {blockerSummary.conflicts > 0 ? <p className="print-blocker-headline">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows)}</p> : null}
-                <div className="print-spread-keys"><span className="seg-high">{spreadLabel.high}</span><span className="seg-medium">{spreadLabel.medium}</span><span className="seg-low">{spreadLabel.low}</span><span className="seg-clean">{spreadLabel.clean}</span></div>
+                <div className="print-spread-keys">{spread.high ? <span className="seg-high">{spreadLabel.high}</span> : null}{spread.medium ? <span className="seg-medium">{spreadLabel.medium}</span> : null}{spread.low ? <span className="seg-low">{spreadLabel.low}</span> : null}{spread.clean ? <span className="seg-clean">{spreadLabel.clean}</span> : null}</div>
               </div>
               <section className="print-review-findings">
                 {findings.length ? firstPrintPage.map(renderPrintFinding) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>لا توجد موانع حفظ محلية، ولا تنبيهات لائحية ظاهرة ضمن النطاق الذي يفحصه النظام.</span></div>}

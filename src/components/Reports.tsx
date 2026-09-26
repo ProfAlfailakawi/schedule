@@ -2081,8 +2081,11 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           <div className="query-count" aria-live="polite" aria-atomic="true">
             {/* الميزان يعدّ الأقسام لا المواعيد المعتمدة: «0 موعد» فوق جدولٍ فيه أقسامٌ
                 ومواعيد كان يقول للعميد شيئاً غير ما يراه تحته. */}
+            {/* «0 موعد» فوق «لا نتائج» تكرارٌ للجواب نفسه (قاعدة إخفاء الفارغ). */}
+            {(lens === "balance" ? Number(balance?.departments?.length || 0) : lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length) ? <>
             <b>{num(lens === "balance" ? Number(balance?.departments?.length || 0) : lens === "visitingHistory" ? visitingHistoryRows.length : lens === "visiting" ? visitingTermGroups.length : results.length)}</b>
             <span>{lens === "balance" ? nounFor(Number(balance?.departments?.length || 0), AR.department) : lens === "visitingHistory" ? "منتدب تاريخي" : lens === "visiting" ? "منتدب" : "موعد"}</span>
+            </> : null}
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           {!pending && (results.length || (lens === "balance" && balance) || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
@@ -3040,7 +3043,7 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
       <header className="balance-head">
         <div>
           <span className="surface-kicker">ميزان الأقسام · {balance.termName}</span>
-          <h3><bdi>{countOf(Number(balance.totals.departments || 0), AR.department)}</bdi> · <bdi>{countOf(Number(balance.totals.rows || 0), AR.appointment)}</bdi></h3>
+          <h3><bdi>{countOf(Number(balance.totals.departments || 0), AR.department)}</bdi>{Number(balance.totals.rows || 0) ? <> · <bdi>{countOf(Number(balance.totals.rows), AR.appointment)}</bdi></> : null}</h3>
         </div>
         {/* النطاقُ كما يقوله الخادم، وإلا «في نطاقك»: العميد لا يرى الجامعة (N5). */}
         {balance.totals.conflicts ? (
@@ -3106,9 +3109,10 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
                     })()}
                   </td>
                 ) : null}
-                <td>{num(item.rows)}</td>
+                <td>{item.empty ? "—" : num(item.rows)}</td>
                 <td>{item.empty ? "—" : num(item.instructors)}</td>
-                <td>{item.empty ? "—" : typeof item.verifiedRooms === "number"
+                {/* «(موثّقة 0)» لا يُكتب (قاعدة إخفاء الفارغ). */}
+                <td>{item.empty ? "—" : item.verifiedRooms
                   ? <>{num(item.rooms)} <small>(موثّقة {num(item.verifiedRooms)})</small></>
                   : num(item.rooms)}</td>
                 {item.empty ? (

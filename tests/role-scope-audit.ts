@@ -15,6 +15,7 @@ import path from "path";
 import { departmentNameKey, inboxAudience, multiSiteDepartment, multiSiteHeadline } from "../src/utils/inboxAudience";
 import { ACADEMIC_ROLES } from "../src/utils/academicRoles";
 import { createDemoSandboxState, DEMO_MULTI_SITE, DEMO_SWITCH_ACCOUNTS, demoActiveRoleKey } from "../src/db/demoSandbox";
+import { visibleFilterOptions } from "../src/components/InstructorInbox";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -211,6 +212,46 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   const rows = state.schedules.filter(row => assigns.some(a => a.AdSectionId === Number(row.AdSectionId)) && Number(row.AdTermId) === 1);
   check(rows.length === 6 && rows.every(row => row.fthursday && !row.fsunday && !row.fmonday), "B-demo موعدان لكل موقع يومَ الخميس");
   check(state.locationRooms.some(room => room.sectionIds.includes(6)) && state.locationRooms.some(room => room.sectionIds.includes(8)), "B-demo لكل موقعٍ قاعته");
+}
+
+/* ── D: «إخفاء الفارغ» — أيقونةٌ أو عدّادٌ أو مرشّحٌ لا يحمل شيئاً لا يُعرض ──────
+ * قال المالك: «إذا ما في شي أو بيانات لمثل هذه الأيقونات… ماله داعي تظهر».
+ * هذه أبرزُ المواضع التي كانت ترسم الصفر أو الفراغ، ممسوكةً فلا تعود. */
+{
+  // المرشّحات: خيارٌ بلا عنصرٍ لا يُعرض؛ ومجموعةٌ بلا اختيارٍ حقيقي لا تُعرض.
+  const opts = [{ value: "all", label: "الكل" }, { value: "a", label: "أ", count: 3 }, { value: "b", label: "ب", count: 0 }, { value: "c", label: "ج", count: 2 }];
+  check(JSON.stringify(visibleFilterOptions(opts, "all").map(o => o.value)) === JSON.stringify(["all", "a", "c"]), "D المرشّح الصفريّ لا يُعرض");
+  check(visibleFilterOptions(opts, "b").some(o => o.value === "b"), "D إلا المختارَ الآن — لا يختفي ما تحت يد القارئ");
+  check(visibleFilterOptions([{ value: "all", label: "الكل" }, { value: "a", label: "أ", count: 4 }, { value: "b", label: "ب", count: 0 }], "all").length === 0,
+    "D مجموعةٌ بخيارٍ واحدٍ لا اختيارَ فيها لا تُعرض");
+
+  const changes = read("src/components/ScheduleChanges.tsx");
+  check(/\.filter\(\(\[value, , count\]\) => value === "all" \|\| count > 0 \|\| statusFilter === value\)/.test(changes), "D الوارد: شرائح الحالة الصفرية لا تُعرض");
+  check(!/\["blocking", "فيه موانع", 0\]/.test(changes) && /\["blocking", "فيه موانع", signalCounts\.blocking\]/.test(changes), "D الوارد: إشارات الانتباه تُعدّ من السطور لا صفراً مكتوباً");
+  check(/if \(!\(canAnnotate && annotatable\) && !notes\.length\) return null;/.test(changes), "D تقرير التغييرات: لا كتلةَ فارغةً تحت موعدٍ بلا زرٍّ ولا ملاحظة");
+  check(/\{spread\.high \? <span className="seg-high">/.test(changes) && /\{spread\.clean \? <span className="seg-clean">/.test(changes), "D مراجعة الاعتماد: مفتاحُ الشريحة الصفرية لا يُكتب");
+  const review = read("src/components/ScheduleReview.tsx");
+  check(/\{spread\.high \? <span className="seg-high">/.test(review) && /print-spread-keys">\{spread\.high \?/.test(review), "D نافذة المراجعة ونسختها المطبوعة كذلك");
+
+  const dashboard = read("src/components/Dashboard.tsx");
+  check(!dashboard.includes("delta-flat") && /if\(!change\)return null;/.test(dashboard), "D لوحة البداية: لا «=» بجانب رقمٍ لم يتغيّر");
+  check(/criticalCount\?\{key:"conflicts"/.test(dashboard) && /ws\?\.peakOccupiedRooms\?\{key:"rooms"/.test(dashboard), "D لوحة البداية: لا لوحةَ «تعارضات حرجة 0»");
+  check(/\{data\.metrics\.courses\?<article>/.test(dashboard) && /\{day\.count\?num\(day\.count\):""\}/.test(dashboard), "D لوحة البداية: أرقام النطاق والأسبوع بلا أصفار");
+
+  const deadlines = read("src/components/SubmissionDeadlines.tsx");
+  check(/SEGMENTS\.filter\(segment => progress\[segment\]\)\.map/.test(deadlines) && !deadlines.includes("data-zero"), "D مواعيد التسليم: لا بند «0» في مفتاح الميزان");
+  const cases = read("src/components/StudentCasesTable.tsx");
+  check(/\{counts\.graduate \? <SecondaryButton/.test(cases) && !/disabled=\{!counts\.graduate\}/.test(cases), "D سجلّ الحالات: لا زرَّ طباعةٍ معطّلٌ لنوعٍ بلا حالات");
+  const registration = read("src/components/StudentRegistration.tsx");
+  check(/\{totals\?\.waiting \? <div>/.test(registration), "D كشف التسجيل: لوحات الأعداد بلا أصفار");
+  const publish = read("src/components/SchedulePublish.tsx");
+  check(/\{!dead \? <div className="share-row-actions"/.test(publish) && /\{link\.views \? /.test(publish), "D الروابط: لا أزرارَ معطّلة لرابطٍ منتهٍ، ولا «0 فتحة»");
+  const inbox = read("src/components/InstructorInbox.tsx");
+  check(/\{totals\?\.changed \? <div>/.test(inbox) && !/disabled=\{option\.count === 0/.test(inbox), "D وارد الأساتذة: لا لوحة صفرية ولا شريحة معطّلة بصفر");
+  const intel = read("src/components/IntelligenceWorkspace.tsx");
+  check(/\{overview\.metrics\.criticalConflicts \? <button/.test(intel) && /\{metricBadge\(item\.metric\)\}/.test(intel), "D مركز الذكاء: بطاقات الصفر لا تُعرض");
+  const barter = read("src/components/HallBarterBoard.tsx");
+  check(/\{board\.opportunities\.length \? <b><i>/.test(barter), "D استعارة القاعات: لا «0 نوافذ» في الملخّص");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
