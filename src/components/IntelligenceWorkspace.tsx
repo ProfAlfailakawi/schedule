@@ -95,7 +95,7 @@ import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetric
 
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
-import { pageReviewIssues, pagesAwaitingReview } from "../utils/importPageReview";
+import { pageReviewIssues, pagesAwaitingReview, scanLeftCellUnread } from "../utils/importPageReview";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -1641,10 +1641,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         const globalIssues=(Array.isArray(data.issues)?data.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
         const issues=[...globalIssues,...localIssues];
         setImportPreview({ ...data, rows:normalizedRows, count: normalizedRows.length, preview: normalizedRows, valid: normalizedRows.length>0&&issues.length===0, issues, importLayout: "authority-pdf" });
-        /* A successful read is not always the best read. Keep the file so the
-           reviewer can ask for a second, sharper reading — the deterministic
-           parser stays the default, and nothing reaches Gemini without a click. */
-        setSmartRetry({ file, reason: "" });
+        /* A successful read is not always the best read — but a sharper reading
+           costs money, so it is offered only when this one left a cell unread
+           (scanLeftCellUnread). A file read clean on the first pass shows no
+           offer; nothing reaches Gemini without a click either way. */
+        setSmartRetry(normalizedRows.some(scanLeftCellUnread) ? { file, reason: "" } : null);
       }
     } catch (e: any) {
       // The Authority PDF stays local. We surface the failure and offer Smart

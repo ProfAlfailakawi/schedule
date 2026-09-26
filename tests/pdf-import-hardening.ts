@@ -14,6 +14,7 @@ import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch, readableInstructorName, displayInstructorText } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
+import { scanLeftCellUnread, pagesWithUnreadCells } from "../src/utils/importPageReview.ts";
 import { fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine, unconfirmedReviewPages } from "../src/utils/importPageReview.ts";
 
@@ -508,6 +509,19 @@ passed.push("a scan refused as busy says so in words");
   assert.equal(weld("0101102"),"0101102");
   assert.equal(weld("012J14"),"012J14");
   passed.push("لحامات المسح تُفكّ: وقتان ومبنى وقاعة، وذيل شعبة ومرجعي ومقرر، وخردة الأطراف تُنزع");
+}
+
+/* القراءة الأدق مدفوعة: لا تُعرض لصفٍّ قُرئ كاملاً وإن بقي مبناه بانتظار
+   السجل أو أستاذه خارج السجل؛ تُعرض لخانةٍ لم يقرأها المسح فقط. */
+{
+  const clean={importEvidence:{course:{confidence:"CONFIRMED",raw:"0101102"},days:{confidence:"REVIEW_REQUIRED",raw:""},building:{confidence:"UNRESOLVED",raw:"012B09"},instructor:{confidence:"UNRESOLVED",raw:"د. فلان"}},sourcePage:1};
+  const unreadTime={importEvidence:{course:{confidence:"CONFIRMED",raw:"0101102"},time:{confidence:"UNRESOLVED",raw:""}},sourcePage:2};
+  const unreadBuilding={importEvidence:{building:{confidence:"UNRESOLVED",raw:""}},sourcePage:3};
+  assert.equal(scanLeftCellUnread(clean),false,"مبنى بانتظار السجل وأستاذ خارج السجل ليسا فشل قراءة");
+  assert.equal(scanLeftCellUnread(unreadTime),true);
+  assert.equal(scanLeftCellUnread(unreadBuilding),true,"مبنى بلا نص خام لم يُقرأ");
+  assert.deepEqual(pagesWithUnreadCells([clean,unreadTime,unreadBuilding,clean]),[2,3]);
+  passed.push("عرض القراءة الأدق المدفوعة يُحصر في الصفحات التي لم يقرأ المسح خانةً منها");
 }
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));
