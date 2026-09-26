@@ -8,7 +8,7 @@ import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
 import { activeDataMode, ApprovalRevisionConflict, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
-import { DEMO_ROLE_ACCOUNTS } from "./src/db/demoSandbox";
+import { DEMO_SWITCH_ACCOUNTS, demoActiveRoleKey } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
@@ -2071,11 +2071,12 @@ async function clientScopeDetails(scopes: any[]) {
  */
 function demoSessionPayload(user: any, permissions: number[], scopes: any[]) {
   const isAdmin = Number(user.SystemUserId) === ROOT_ADMIN_USER_ID;
-  const activeRole = isAdmin ? "admin" : String(user.Role || "");
+  const activeRole = isAdmin ? "admin" : demoActiveRoleKey(Number(user.SystemUserId), user.Role);
   return {
     user: { ...safeSystemUser(user), IsRootAdmin: isAdmin, IsDemo: true },
     role: roleDescriptor(user), permissions, scopes, data: "demo",
-    demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_ROLE_ACCOUNTS, activeRole },
+    /* الصفاتُ كلّها ثم الحسابُ المتعدّد المواقع (DEMO_SWITCH_ACCOUNTS). */
+    demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_SWITCH_ACCOUNTS, activeRole },
   };
 }
 
@@ -2283,7 +2284,7 @@ app.post("/api/demo/role", rateLimitDemoRole, requireAuth, async (req: Authentic
   const requested = String(req.body?.role || "");
   const targetId = requested === "admin"
     ? ROOT_ADMIN_USER_ID
-    : DEMO_ROLE_ACCOUNTS.find(account => account.role === requested)?.SystemUserId;
+    : DEMO_SWITCH_ACCOUNTS.find(account => account.role === requested)?.SystemUserId;
   if (!targetId) { res.status(400).json({ error: "صفة غير معروفة" }); return; }
   try {
     const payload = await Repository.withDemoSandbox(sessionId, async () => {
@@ -2415,8 +2416,8 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(req.scopes || []);
   // The interface says out loud when it is not on the university's database.
-  const demoActiveRole = Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID ? "admin" : String((req.user as any).Role || "");
-  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, role: roleDescriptor(req.user), permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_ROLE_ACCOUNTS, activeRole: demoActiveRole } : undefined });
+  const demoActiveRole = Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID ? "admin" : demoActiveRoleKey(Number(req.user.SystemUserId), (req.user as any).Role);
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, role: roleDescriptor(req.user), permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true, roles: DEMO_SWITCH_ACCOUNTS, activeRole: demoActiveRole } : undefined });
 });
 
 // Activity heartbeat: the server session still expires after 15 minutes of real

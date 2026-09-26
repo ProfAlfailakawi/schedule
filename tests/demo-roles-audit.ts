@@ -15,7 +15,7 @@
 
 import fs from "fs";
 import path from "path";
-import { createDemoSandboxState, DEMO_ROLE_ACCOUNTS } from "../src/db/demoSandbox";
+import { createDemoSandboxState, DEMO_ROLE_ACCOUNTS, DEMO_SWITCH_ACCOUNTS } from "../src/db/demoSandbox";
 import { ACADEMIC_ROLES, roleDefinition, isViewerOnlyRole } from "../src/utils/academicRoles";
 import { isApprovalWritePath, roleWriteDecision } from "../src/server/roleGuard";
 
@@ -133,7 +133,7 @@ check(server.includes("Repository.createSession(sessionId, targetId, DEMO_SESSIO
   "التبديل يعيد ربط الجلسة بحساب الصفة المطلوبة");
 check(server.includes("if (!Repository.isDemoRequest())") && server.slice(server.indexOf('app.post("/api/demo/role"')).includes("isDemoRequest"),
   "وهو مقصورٌ على البيئة التجريبية: لا رفعَ صلاحيةٍ في جلسةٍ حقيقية");
-check(server.includes("DEMO_ROLE_ACCOUNTS") && server.includes("roles: DEMO_ROLE_ACCOUNTS"),
+check(server.includes("roles: DEMO_SWITCH_ACCOUNTS") && DEMO_ROLE_ACCOUNTS.every(account => DEMO_SWITCH_ACCOUNTS.includes(account)),
   "قائمةُ الصفات تصل الواجهةَ مع حمولة الجلسة");
 check(server.includes("fullSchedule"), "تقرير التغييرات يحمل الجدول كاملاً، لا التغييرات وحدها");
 
