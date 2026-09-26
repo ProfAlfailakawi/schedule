@@ -115,7 +115,7 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -8765,6 +8765,12 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       code:"PDF_SCAN_REQUIRES_LANDSCAPE",
       pages:Array.isArray(headerPreflight.requiresLandscapePages)?headerPreflight.requiresLandscapePages:undefined,
     });
+    return;
+  }
+  /* صورة رمادية لا مسح: تُردّ في ثوانٍ قبل أي قراءة، لا بعد دقائق تنتهي بنفاد
+     ذاكرة الخادم و«انقطع الاتصال» (greyPhotoVerdict). */
+  if(Array.isArray(headerPreflight.greyPhotoPages)&&headerPreflight.greyPhotoPages.length){
+    res.status(422).json({error:GREY_PHOTO_REFUSAL,code:"PDF_SCAN_GREY_PHOTO",pages:headerPreflight.greyPhotoPages});
     return;
   }
   /* Another scan holds the OCR workers: refuse now, in words, rather than let
