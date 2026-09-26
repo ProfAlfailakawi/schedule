@@ -4758,6 +4758,22 @@ export function matchInstructorIdentity(raw:string,instructors:AdInstructor[],pr
     return true;
   };
   const stemEqual=(a:string,b:string)=>a===b||(Math.min(a.length,b.length)>=3&&(a.startsWith(b)||b.startsWith(a)))||oneEditApart(a,b);
+  /* ── اسمٌ مطبوع آخرُ كلمةٍ فيه مقصوصة عند حافة الخانة، في القسم نفسه ─────────
+     «د.عبدالرحمن صالح سالم الم» لسجل القسم «د. عبدالرحمن صالح سالم الجميلي»:
+     كل الكلمات المطبوعة مطابقة حرفياً لصدر اسم السجل بترتيبها، إلا آخرها
+     فهي صدرُ كلمةِ السجل (حرفان فأكثر) قُصّ باقيها عند حافة الخانة. كان يُربط
+     قبل 24 سبتمبر ثم صار «اسم غير واضح» (بلاغ المالك 2026-09-26). أما حرفٌ
+     مختلف داخل اسمٍ («فهيد» عن «فهد»، «حسن» عن «حسين») فشخصٌ آخر لا ضجيج،
+     فلا يُقبل هنا؛ تبقى الخانة للمراجع مع الأقرب اقتراحاً. القسم وحده، وثلاث
+     كلمات مطبوعة فأكثر، وشخصٌ واحد لا غير. */
+  if(rawTokens.length>=3){
+    const last=rawTokens.length-1;
+    const truncatedPrefix=catalogue.filter(item=>item.preferred&&item.tokens.length>=rawTokens.length
+      &&rawTokens.slice(0,last).every((token,i)=>item.tokens[i]===token)
+      &&rawTokens[last].length>=2&&item.tokens[last].length>rawTokens[last].length&&item.tokens[last].startsWith(rawTokens[last]));
+    if(equalIds(truncatedPrefix).size===1)return{person:truncatedPrefix[0].person,method:"DEPARTMENT_TWO_NAME",score:97,matchedTokens:rawTokens.length};
+  }
+
   /* ── الاسم يُقرأ في موضعه ─────────────────────────────────────────────────
      الاسم الأول يقابل الأول، والأب يقابل الأب، والجد الجد. اسمٌ مطبوع يخالف
      نظيره في السجل ليس ضجيجاً بل دليلُ شخصٍ آخر: «احمد يوسف النصف» ليس
@@ -5031,12 +5047,15 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       const unique=catalogue.find(item=>item.digits.slice(-3)===source);
       if(unique)return unique.course;
     }
-    /* ── رقم مقرر مقروء نظيف لا يُصلَح ───────────────────────────────────────
-       الإصلاح بفرق خانة واحدة وُجد لخطأ OCR في مسح ضوئي. أما رقم طبقة النص، أو
-       رقمٌ سليم الشكل لمفتاح القسم، فهو ما طُبع فعلاً: إن غاب عن الكتالوج فهو
-       مقرر غير مسجّل، لا أقرب جار له — 0101357 ليس 0101157. */
-    const cleanDepartmentKey=/^\d{7}$/.test(source)&&Boolean(authorityDepartment)&&source.startsWith(authorityDepartment);
-    if(canonicalKeys.length&&sourceMode!=="pdf-text"&&!cleanDepartmentKey){
+    /* ── رقم مقرر ممسوح يُصلَح من الكتالوج؛ رقم طبقة النص لا يُصلَح ────────────
+       الإصلاح بفرق خانة واحدة وُجد لخطأ OCR في المسح: «0101104» في مسح
+       file1 هي «0101102» المطبوعة بخانةٍ أخطأها القارئ، وكانت تُربط باسمها
+       قبل 24 سبتمبر ثم صارت «—». وقد قُيّد الإصلاح يومها بالرقم «غير السليم
+       الشكل» فحسب، فحُرم منه كل رقمٍ أخطأ القارئ خانةً واحدة من ذيله (بلاغ
+       المالك 2026-09-26). القيد يبقى لطبقة النص وحدها: أرقامها ما طُبع فعلاً،
+       فإن غابت عن الكتالوج فهي مقرر غير مسجّل لا أقرب جار — 0101357 ليس
+       0101157. ويبقى شرط الإصلاح مفتاحاً واحداً لا غير في كتالوج القسم. */
+    if(canonicalKeys.length&&sourceMode!=="pdf-text"){
       const recovered=recoverAuthorityCourseCell(source,authorityDepartment,canonicalKeys);
       if(recovered){
         const recoveredMatches=catalogue.filter(item=>authorityCourseCodeMatches(recovered,item.digits,authorityDepartment));
