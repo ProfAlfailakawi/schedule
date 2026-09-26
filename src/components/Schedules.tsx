@@ -113,6 +113,7 @@ import {
   type DayKey,
 } from "./scheduleWorkspace";
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { readSharedScope, resolveSharedScope, useSharedScope, type SharedScope } from "../utils/sharedScope";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
 import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, currentTermId } from "../utils/termSequence";
@@ -819,6 +820,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   /** A busy hall stays inspectable: availability is guidance, not a dead disabled button. */
   const [hallBusyPreview, setHallBusyPreview] = useState<string | null>(null);
   const lastSavedHydrated = useRef(false);
+  /** آخر نطاقٍ اتّفقت عليه اللوحة والنطاق المشترك — ما يخالفه اختيارٌ يُكتب. */
+  const syncedScope = useRef<SharedScope | null>(null);
+  const workspaceReadyRef = useRef(false);
+  const filterTermRef = useRef(0);
   let savedPrefs: any = {};
   try {
     savedPrefs = JSON.parse(localStorage.getItem(prefsKey) || "{}");
@@ -2241,9 +2246,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           lastSavedHydrated.current = true;
           if (pref.lastSaved) lastSavedRef.current = pref.lastSaved;
         }
-        const savedCollege = Number(pref.filterCollege) || 0;
-        const savedSection = Number(pref.filterSection) || 0;
-        const savedTerm = Number(pref.filterTerm) || 0;
+        /* النطاق الواحد لكل الشاشات (src/utils/sharedScope.ts) — لا نسخةَ منه
+           في تفضيلات اللوحة. */
+        const stored = readSharedScope(Number(user?.SystemUserId || 0));
+        const savedCollege = stored.collegeId;
+        const savedSection = stored.sectionId;
+        const savedTerm = stored.termId;
         if (mode === "schedule") {
           setViewMode(pref.viewMode === "week" ? "week" : pref.viewMode === "rooms" ? "rooms" : "list");
           const lookup = await loadLookups();
@@ -2253,17 +2261,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           // place on the next sign-in. The preference key is user-scoped, so a
           // shared machine never lets one account activate another account's
           // college or academic term.
-          let nextCollege = savedCollege;
-          let nextSection = savedSection;
-          if (isPowerAdmin) {
-            if (!lookup.colleges.some(college => Number(college.AdCollegeId) === nextCollege)) nextCollege = 0;
-            const section = lookup.sections.find(item => Number(item.AdSectionId) === nextSection);
-            if (!section || (nextCollege && Number(section.AdCollegeId) !== nextCollege)) nextSection = 0;
-          } else {
-            const scoped = coerceScopeValues(scopes, nextCollege, nextSection, false);
-            nextCollege = scoped.collegeId;
-            nextSection = scoped.sectionId;
-          }
+          const scoped = resolveSharedScope(stored, { scopes, isAdmin: isPowerAdmin, colleges: lookup.colleges, sections: lookup.sections });
+          let nextCollege = scoped.collegeId;
+          let nextSection = scoped.sectionId;
 
           let nextTerm = savedTerm && lookup.terms.some(term => Number(term.AdTermId) === savedTerm) ? savedTerm : 0;
           // A previously saved term that was later removed should not strand the
@@ -2297,6 +2297,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             nextTerm = currentTermId(lookup.terms as any[]) || Number(byNewest[0]?.AdTermId || 0);
           }
 
+          /* ما رجعت إليه اللوحة بنفسها (قسمٌ خارج النطاق، فصلٌ جارٍ مفترض) ليس
+             اختياراً للقارئ: يُعلَّم مُزامَناً فلا يُكتب فوق النطاق المشترك. */
+          syncedScope.current = { collegeId: nextCollege, sectionId: nextSection, termId: nextTerm };
           setFilterCollege(nextCollege);
           setFilterSection(nextSection);
           setFilterTerm(nextTerm);
@@ -2337,9 +2340,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     localStorage.setItem(
       prefsKey,
       JSON.stringify({
-        filterCollege,
-        filterSection,
-        filterTerm,
         viewMode,
         lastRoomCode: form.AdRoomCode || savedPrefs.lastRoomCode || "",
         lastRoomHall: form.AdRoomHall || savedPrefs.lastRoomHall || "",
@@ -2517,9 +2517,41 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   useEffect(() => {
     if (isPowerAdmin || !sections.length || !filterCollege) return;
     const next = coerceScopeValues(scopes, filterCollege, filterSection, false);
+    /* تصحيحٌ إلى النطاق، لا اختيار: لا يُكتب في النطاق المشترك. */
+    if (next.collegeId !== filterCollege || next.sectionId !== filterSection) {
+      syncedScope.current = { ...(syncedScope.current || { termId: filterTerm }), collegeId: next.collegeId, sectionId: next.sectionId };
+    }
     if (next.collegeId !== filterCollege) setFilterCollege(next.collegeId);
     if (next.sectionId !== filterSection) setFilterSection(next.sectionId);
   }, [isPowerAdmin, sections.length, scopes, filterCollege, filterSection]);
+
+  /* ── النطاق المشترك (src/utils/sharedScope.ts) ──────────────────────────
+   * كل تغيّرٍ في منتقيات اللوحة بعد تهيئتها — منتقٍ، حفظٌ في نطاقٍ آخر تتبعه
+   * اللوحة، عرضٌ محفوظ، قسمٌ مقترح — هو اختيارٌ للقارئ فيُكتب؛ ويُكتب منه ما
+   * تغيّر وحده، فافتراضُ اللوحة في حقلٍ لا يمحو اختياره في غيره. وتغيّرٌ من
+   * شاشةٍ أخرى أو لسانٍ آخر يُعرض على النطاق ثم يُتبع. */
+  const sharedScope = useSharedScope((incoming) => {
+    if (mode !== "schedule" || !workspaceReadyRef.current) return;
+    const next = resolveSharedScope(incoming, { scopes, isAdmin: isPowerAdmin, colleges, sections, terms, fallbackTermId: filterTermRef.current });
+    syncedScope.current = next;
+    setFilterCollege(next.collegeId);
+    setFilterSection(next.sectionId);
+    setFilterTerm(next.termId);
+  }, Number(user?.SystemUserId || 0));
+  useEffect(() => {
+    filterTermRef.current = filterTerm;
+    workspaceReadyRef.current = workspaceReady;
+    if (mode !== "schedule" || !workspaceReady) return;
+    const synced = syncedScope.current;
+    const current = { collegeId: filterCollege, sectionId: filterSection, termId: filterTerm };
+    syncedScope.current = current;
+    if (!synced) return;
+    const patch: Partial<SharedScope> = {};
+    if (current.collegeId !== synced.collegeId) { patch.collegeId = current.collegeId; patch.sectionId = current.sectionId; }
+    else if (current.sectionId !== synced.sectionId) patch.sectionId = current.sectionId;
+    if (current.termId !== synced.termId) patch.termId = current.termId;
+    if (Object.keys(patch).length) sharedScope.pick(patch);
+  }, [mode, workspaceReady, filterCollege, filterSection, filterTerm]);
 
   /*
    * The clock the department has actually used over the last ten academic
@@ -3001,10 +3033,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    */
   const quickScope = () => {
     const last = lastSavedRef.current || savedPrefs.lastSaved || null;
+    const stored = readSharedScope(Number(user?.SystemUserId || 0));
     const preferredCollege =
-      filterCollege || Number(last?.AdCollegeId) || Number(savedPrefs.filterCollege) || filterScope.defaultCollegeId || 0;
+      filterCollege || Number(last?.AdCollegeId) || stored.collegeId || filterScope.defaultCollegeId || 0;
     const preferredSection =
-      filterSection || Number(last?.AdSectionId) || Number(savedPrefs.filterSection) || 0;
+      filterSection || Number(last?.AdSectionId) || stored.sectionId || 0;
     const scoped = coerceScopeValues(scopes, preferredCollege, preferredSection, isPowerAdmin);
     const sectionId =
       scoped.sectionId || resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0;

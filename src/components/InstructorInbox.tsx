@@ -41,6 +41,8 @@ import { reachAboutCard } from "../utils/reachInstructor";
 import { putHandoff } from "../utils/requestHandoff";
 import { currentTermId } from "../utils/termSequence";
 import { singleDepartmentOf } from "../utils/scopeContext";
+import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
+import { takeNotifyFocus } from "../utils/notifyFocus";
 import type {
   AdTerm, FSchedule, InstructorRequest, InstructorRequestItem, InstructorRequestRejectReason,
 } from "../types";
@@ -579,8 +581,10 @@ const INBOX_DAY_NAMES: Record<string, string> = {
 export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
-  const [collegeId, setCollegeId] = useState(0);
-  const [sectionId, setSectionId] = useState(0);
+  /* الكلية والقسم من النطاق المشترك (src/utils/sharedScope.ts)، معروضين على
+     نطاق القارئ؛ وافتراض الشاشة أدناه («أوّل كلية») لا يُكتب فيه. */
+  const [collegeId, setCollegeId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).collegeId);
+  const [sectionId, setSectionId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).sectionId);
   const [rows, setRows] = useState<InboxRequest[] | null>(null);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [currentRows, setCurrentRows] = useState<Map<number, FSchedule>>(new Map());
@@ -621,7 +625,10 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         const data = await request("/api/terms");
         const list: AdTerm[] = Array.isArray(data) ? data : (data.terms || []);
         setTerms(list);
-        setTermId(current => current || currentTermId(list) || Number(list[list.length - 1]?.AdTermId || 0));
+        setTermId(current => current || resolveSharedScope(readSharedScope(), {
+          scopes, isAdmin: powerAdmin, terms: list,
+          fallbackTermId: currentTermId(list) || Number(list[list.length - 1]?.AdTermId || 0),
+        }).termId);
       } catch (e: any) { setError(e.message); setTerms([]); }
     })();
   }, []);
@@ -645,15 +652,19 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
      يُسأل عن قسمه في كل فتحة. */
   /* جاء من إشعار: يفتح على قسم الطلب نفسه، لا على نطاقٍ فارغ. */
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("schedule:notify-focus");
-      if (!raw) return;
-      const focus = JSON.parse(raw);
-      sessionStorage.removeItem("schedule:notify-focus");
-      if (focus?.view !== "instructorRequests" || Date.now() - Number(focus.at || 0) > 60000) return;
-      if (Number(focus.collegeId)) { setCollegeId(Number(focus.collegeId)); setSectionId(Number(focus.sectionId) || 0); }
-    } catch { /* لا شيء */ }
+    /* القارئ الوحيد للتركيز (notifyFocus.ts): يأخذه لهذه الشاشة وحدها، ويكتبه في
+       النطاق المشترك — هدفٌ صريحٌ يغلب. */
+    const focus = takeNotifyFocus("instructorRequests");
+    if (focus?.collegeId) { setCollegeId(focus.collegeId); setSectionId(focus.sectionId || 0); }
   }, []);
+
+  /* تغيّرٌ من شاشةٍ أخرى أو لسانٍ آخر يُعرض على النطاق ثم يُتبع. */
+  const sharedScope = useSharedScope((incoming) => {
+    const next = resolveSharedScope(incoming, { scopes, isAdmin: powerAdmin, terms: terms || undefined, fallbackTermId: termId });
+    setCollegeId(next.collegeId);
+    setSectionId(next.sectionId);
+    if (next.termId) setTermId(next.termId);
+  });
 
   useEffect(() => {
     /* ومن له الكلُّ لا يُختار له شيء: اختيارُ أوّلِ كليةٍ في الكتالوج يُخفي
@@ -1012,9 +1023,13 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           const id = Number(value) || 0;
           if (key === "instructor") { setInstructorFilter(id); return; }
           setInstructorFilter(0);
-          if (key === "college") { setCollegeId(id); setSectionId(singleDepartmentOf(scopes, id, powerAdmin) ?? 0); }
-          else if (key === "section") setSectionId(id);
-          else setTermId(id);
+          if (key === "college") {
+            const only = singleDepartmentOf(scopes, id, powerAdmin) ?? 0;
+            sharedScope.pick({ collegeId: id, sectionId: only });
+            setCollegeId(id); setSectionId(only);
+          }
+          else if (key === "section") { sharedScope.pick({ sectionId: id }); setSectionId(id); }
+          else { sharedScope.pick({ termId: id }); setTermId(id); }
         }}
       />
 
