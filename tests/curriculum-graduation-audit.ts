@@ -122,6 +122,14 @@ const pick = (candidates: PlanRuleCandidate[], facts: any) => {
     "شروط الصحيفة تُحفظ بالتحقق نفسه الذي لقواعد القسم");
   check((server.match(/const readDegreeRuleInput=/g) || []).length === 1 && !server.includes('const read=(key:string)=>Math.round(Number(asciiDigits((req.body||{})[key])));'),
     "حدود قواعد التخرج مكتوبة في مكان واحد");
+  const planPut = between('app.put("/api/curriculum/plans/:planId"', 'app.post("/api/curriculum/plans/:planId/courses"');
+  check(!planPut.includes("patch.code="), "رمز «LEGACY» لا يُعدَّل من الواجهة، فلا تنتقل القاعدة الموروثة إلى صحيفة أخرى");
+  const sectionPut = between('app.put("/api/degree-rules/:sectionId"', "const surveyPayloadCache");
+  check(sectionPut.includes('code:"rules-per-plan"') && sectionPut.indexOf('code:"rules-per-plan"') < sectionPut.indexOf("Repository.saveDegreeRule("),
+    "قسم في مرحلة انتقالية لا يحفظ رقماً واحداً للقسم لا يقرؤه أحد");
+  const screen = fs.readFileSync(path.join(process.cwd(), "src/components/CurriculumPlans.tsx"), "utf8");
+  check(screen.includes("Number(sid) === Number(currentSection.current)") && !/setData\(body\.overview\)/.test(screen),
+    "ردّ قسمٍ سابق لا يُعرض تحت القسم المختار الآن");
   check(server.includes("curriculum:curriculumOf(need)") && server.includes("curriculum: curriculumOf(need)"),
     "سجل الحالات وكشف التسجيل يعرضان صحيفة الطالب");
 }

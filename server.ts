@@ -3405,14 +3405,15 @@ app.put("/api/curriculum/plans/:planId", requirePermission(6), async (req:Authen
   if(!req.user.IsAdminUser&&!isScopeAllowed(req,section.AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const planId=String(req.params.planId||""),plans=await Repository.getCurriculumPlans(sectionId),plan=plans.find(row=>row.id===planId);
   if(!plan){res.status(404).json({error:"الصحيفة غير موجودة"});return;}
-  const patch:{name?:string;code?:string;degreeRule?:CurriculumDegreeRule}={};
+  const patch:{name?:string;degreeRule?:CurriculumDegreeRule}={};
   if(req.body?.name!==undefined){
     const name=cleanText(req.body.name,TEXT_LIMIT.name);
     if(!name){res.status(400).json({error:"اكتب اسم الصحيفة"});return;}
     if(plans.some(row=>row.id!==planId&&row.status!=="archived"&&row.name.trim()===name)){res.status(400).json({error:"يوجد في القسم صحيفة فعالة بهذا الاسم. اختر اسماً يميّزها، مثل سنة اعتمادها."});return;}
     patch.name=name;
   }
-  if(req.body?.code!==undefined)patch.code=cleanText(req.body.code,TEXT_LIMIT.code);
+  /* `code` is not editable: «LEGACY» marks the plan that inherits the
+     department's rule, and moving that mark would move whose rule it is. */
   if(req.body?.degreeRule){
     const sectionRule=await storedDegreeRuleForSection(sectionId);
     const current=planDegreeRule(plan,sectionRule);
@@ -14459,6 +14460,11 @@ app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: Authen
   const sectionId=Number(req.params.sectionId||0);
   const sections=await Repository.getSections();
   if(!sections.some((row:any)=>Number(row.AdSectionId)===sectionId)){res.status(404).json({error:"القسم غير موجود"});return;}
+  /* A department in its transition years is measured per plan; a department
+     figure saved now would be read by nobody, while the screen said it applied. */
+  if((await Repository.getCurriculumPlans(sectionId)).some(plan=>plan.status!=="archived"&&!plan.virtual)){
+    res.status(409).json({error:"هذا القسم في مرحلة انتقالية: شروط التخرج تُحفظ لكل صحيفة من «المقررات ← الصحائف الأكاديمية».",code:"rules-per-plan"});return;
+  }
   const existingRule=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===sectionId);
   const sectionName=String(sections.find((row:any)=>Number(row.AdSectionId)===sectionId)?.AdSectionName||"");
   const input=readDegreeRuleInput(req.body,Number(existingRule?.fieldTrainingRequired||degreeRuleFromName(sectionName).fieldTrainingRequired));

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ArrowLeftRight,
@@ -102,6 +102,14 @@ export default function CurriculumPlans({
   const [fromCourseId, setFromCourseId] = useState(0);
   const [toCourseId, setToCourseId] = useState(0);
 
+  /* The department on screen now. A reply for a department the admin has
+     already switched away from is dropped, so plans never render under the
+     wrong selector. */
+  const currentSection = useRef(sectionId);
+  currentSection.current = sectionId;
+  const accept = (sid: number, overview: Overview | undefined) => {
+    if (overview && Number(sid) === Number(currentSection.current)) setData(overview);
+  };
   const load = async (sid = sectionId) => {
     if (!sid) return;
     setLoading(true); setError(null);
@@ -109,10 +117,10 @@ export default function CurriculumPlans({
       const response = await fetch(`/api/curriculum/sections/${sid}`);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "تعذر تحميل الصحائف الأكاديمية");
-      setData(body);
+      accept(sid, body);
     } catch (e: any) {
-      setError(String(e?.message || "تعذر تحميل الصحائف الأكاديمية"));
-    } finally { setLoading(false); }
+      if (Number(sid) === Number(currentSection.current)) setError(String(e?.message || "تعذر تحميل الصحائف الأكاديمية"));
+    } finally { if (Number(sid) === Number(currentSection.current)) setLoading(false); }
   };
   useEffect(() => {
     setRuleDraft(null); setNameDraft(null); setPicking(false); setPicked(new Set()); setQuery(""); setReceipt(null); setTab("new");
@@ -149,12 +157,13 @@ export default function CurriculumPlans({
 
   const mutate = async (url: string, options: RequestInit, done?: string) => {
     if (busy) return null;
+    const sid = sectionId;
     setBusy(true); setError(null); setReceipt(null);
     try {
       const response = await fetch(url, options);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "تعذر إتمام العملية");
-      if (body.overview) setData(body.overview); else await load();
+      if (body.overview) accept(sid, body.overview); else await load(sid);
       if (done) setReceipt(done);
       onChanged?.();
       return body;
@@ -240,7 +249,7 @@ export default function CurriculumPlans({
       const archived = await fetch(`/api/curriculum/plans/${encodeURIComponent(plan.id)}/archive`, json("POST", { AdSectionId: sectionId }));
       const archivedBody = await archived.json();
       if (!archived.ok) throw new Error(archivedBody.error || "تعذر أرشفة الصحيفة");
-      if (archivedBody.overview) setData(archivedBody.overview); else await load();
+      if (archivedBody.overview) accept(sectionId, archivedBody.overview); else await load();
       setReceipt(`أُرشفت «${plan.name}». تبقى في التقارير والتاريخ.`);
       onChanged?.();
     } catch (e: any) {

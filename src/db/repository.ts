@@ -3340,13 +3340,12 @@ export const Repository = {
   },
 
   /** Rename a plan or set its graduation rule. Status never changes here. */
-  updateCurriculumPlan: async (planId:string, sectionId:number, patch:{ name?:string; code?:string; degreeRule?:CurriculumDegreeRule }): Promise<CurriculumPlan> => {
+  updateCurriculumPlan: async (planId:string, sectionId:number, patch:{ name?:string; degreeRule?:CurriculumDegreeRule }): Promise<CurriculumPlan> => {
     const plans=await Repository.getCurriculumPlans(sectionId),plan=plans.find(row=>row.id===planId);
     if(!plan)throw new Error("الصحيفة غير موجودة");
     if(plan.status==="archived")throw new Error("الصحيفة المؤرشفة محفوظة للتاريخ ولا تُعدّل");
     const updated:CurriculumPlan={...plan};
     if(patch.name!==undefined)updated.name=patch.name;
-    if(patch.code!==undefined)updated.code=patch.code||undefined;
     if(patch.degreeRule)updated.degreeRule=patch.degreeRule;
     if(!updated.code)delete updated.code;
     if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);return updated;}
