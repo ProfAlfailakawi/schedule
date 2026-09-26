@@ -72,7 +72,8 @@ import type {
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
-import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
@@ -421,8 +422,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         ? v
         : "command";
     });
-  const scopeHydrated = useRef(false);
-  const workspacePrefKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
+  const scopeOwner = Number(user?.SystemUserId || 0);
   const [overview, setOverview] = useState<any>(null),
     [rows, setRows] = useState<FSchedule[]>([]),
     [drafts, setDrafts] = useState<any[]>([]),
@@ -639,25 +639,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         let guideRequest:any = null;
         try { guideRequest = JSON.parse(sessionStorage.getItem("schedule-guide-simulation") || "null"); } catch {}
         const guideFresh = guideRequest && Date.now() - Number(guideRequest.createdAt || 0) < 10 * 60 * 1000;
-        let shared:any = {};
-        try { shared = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch {}
-        let nextCollege = guideFresh ? Number(guideRequest.collegeId || 0) : Number(shared.filterCollege || 0);
-        let nextSection = guideFresh ? Number(guideRequest.sectionId || 0) : Number(shared.filterSection || 0);
-        let nextTerm = guideFresh ? Number(guideRequest.termId || 0) : Number(shared.filterTerm || 0);
-        if (isPowerAdmin) {
-          if (nextCollege && !c.some((row:any) => Number(row.AdCollegeId) === nextCollege)) nextCollege = 0;
-          const section = s.find((row:any) => Number(row.AdSectionId) === nextSection);
-          if (!section || (nextCollege && Number(section.AdCollegeId) !== nextCollege)) nextSection = 0;
-        } else {
-          const scoped = coerceScopeValues(scopes, nextCollege, nextSection, false);
-          nextCollege = scoped.collegeId;
-          nextSection = scoped.sectionId;
-        }
-        if (nextTerm && !sortedTerms.some((row:any) => Number(row.AdTermId) === nextTerm)) nextTerm = Number(sortedTerms[0]?.AdTermId || 0);
-        scopeHydrated.current = true;
-        setCollegeId(nextCollege);
-        setSectionId(nextSection);
-        setTermId(nextTerm);
+        /* النطاق المشترك (src/utils/sharedScope.ts)، وطلب المرشد الحديث يتقدّمه
+           مؤقّتاً دون أن يُكتب فوقه. */
+        const stored = guideFresh
+          ? { collegeId: Number(guideRequest.collegeId || 0), sectionId: Number(guideRequest.sectionId || 0), termId: Number(guideRequest.termId || 0) }
+          : readSharedScope(scopeOwner);
+        const scoped = resolveSharedScope(stored, {
+          scopes, isAdmin: isPowerAdmin, colleges: c, sections: s, terms: sortedTerms,
+          fallbackTermId: stored.termId ? Number(sortedTerms[0]?.AdTermId || 0) : 0,
+        });
+        setCollegeId(scoped.collegeId);
+        setSectionId(scoped.sectionId);
+        setTermId(scoped.termId);
         setCompareTo(sortedTerms[0]?.AdTermId || 0);
         setCompareFrom(sortedTerms[1]?.AdTermId || sortedTerms[0]?.AdTermId || 0);
       } catch (e: any) {
@@ -667,17 +660,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       }
     })();
   }, []);
-  useEffect(() => {
-    if (!scopeHydrated.current) return;
-    let shared:any = {};
-    try { shared = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch {}
-    localStorage.setItem(workspacePrefKey, JSON.stringify({
-      ...shared,
-      filterCollege: Number(collegeId || 0) || 0,
-      filterSection: Number(sectionId || 0) || 0,
-      filterTerm: Number(termId || 0) || 0,
-    }));
-  }, [workspacePrefKey, collegeId, sectionId, termId]);
+  /* يُكتب في النطاق المشترك ما يختاره القارئ في شريط السياق وحده؛ وتغيّرٌ من
+     شاشةٍ أخرى أو لسانٍ آخر يُعرض على النطاق ثم يُتبع. */
+  const sharedScope = useSharedScope((incoming) => {
+    if (!terms.length) return;
+    const next = resolveSharedScope(incoming, { scopes, isAdmin: isPowerAdmin, colleges, sections, terms, fallbackTermId: termId });
+    setCollegeId(next.collegeId);
+    setSectionId(next.sectionId);
+    setTermId(next.termId);
+  }, scopeOwner);
   const availableSections = useMemo(
     () => sections.filter((s) => !collegeId || s.AdCollegeId === collegeId),
     [sections, collegeId],
@@ -1964,11 +1955,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       lockSection={singleDepartmentOf(scopes, collegeId, isPowerAdmin) !== null}
       hideSection={!isPowerAdmin}
       onCollegeChange={(nextCollegeId, firstSectionId) => {
+        const nextSectionId = nextCollegeId ? (isPowerAdmin ? firstSectionId : (resolveScopeSelection(scopes, nextCollegeId, false).defaultSectionId || firstSectionId)) : 0;
+        sharedScope.pick({ collegeId: nextCollegeId, sectionId: nextSectionId });
         setCollegeId(nextCollegeId);
-        setSectionId(nextCollegeId ? (isPowerAdmin ? firstSectionId : (resolveScopeSelection(scopes, nextCollegeId, false).defaultSectionId || firstSectionId)) : 0);
+        setSectionId(nextSectionId);
       }}
-      onSectionChange={setSectionId}
-      onTermChange={setTermId}
+      onSectionChange={(nextSectionId) => { sharedScope.pick({ sectionId: nextSectionId }); setSectionId(nextSectionId); }}
+      onTermChange={(nextTermId) => { sharedScope.pick({ termId: nextTermId }); setTermId(nextTermId); }}
     />
   );
   const scene: "understand" | "try" | "approve" =
