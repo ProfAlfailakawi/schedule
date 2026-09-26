@@ -3033,10 +3033,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
    */
   const quickScope = () => {
     const last = lastSavedRef.current || savedPrefs.lastSaved || null;
+    const stored = readSharedScope(Number(user?.SystemUserId || 0));
     const preferredCollege =
-      filterCollege || Number(last?.AdCollegeId) || Number(savedPrefs.filterCollege) || filterScope.defaultCollegeId || 0;
+      filterCollege || Number(last?.AdCollegeId) || stored.collegeId || filterScope.defaultCollegeId || 0;
     const preferredSection =
-      filterSection || Number(last?.AdSectionId) || Number(savedPrefs.filterSection) || 0;
+      filterSection || Number(last?.AdSectionId) || stored.sectionId || 0;
     const scoped = coerceScopeValues(scopes, preferredCollege, preferredSection, isPowerAdmin);
     const sectionId =
       scoped.sectionId || resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0;
