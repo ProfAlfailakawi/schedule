@@ -1760,7 +1760,13 @@ export const recoverAuthorityCourseCell=(raw:string,departmentCode="",canonicalK
    يُنشئ الاسم هويةً خارج ما سمح به الرقم، ولا يُقبل إلا باسمٍ واحدٍ واضح الفرق
    عن جيرانه، ويُعرض الناتج للمراجعة لا مؤكداً. */
 const COURSE_PLACE_WORDS=["فحيحيل","الفحيحيل","جهراء","الجهراء","الذكور","ذكور","البنين","بنين","البنات","بنات","الاناث","اناث"];
-const courseNameMarkers=(value:string)=>[...new Set(toAscii(String(value||"")).match(/\d/g)||[])].sort().join("");
+/* رقم الجزء ما طُبع بين قوسين «(1)» (أو مقلوبهما «)1(» في المسح) أو لصق اسم
+   الموقع «2 جهراء»/«1جهراء» — لا أي خانة شاردة من خط الجدول. */
+const courseNameMarkers=(value:string)=>{
+  const text=toAscii(String(value||""));
+  const found=[...text.matchAll(/[()]\s*(\d)\s*[()]/g),...text.matchAll(new RegExp(`(\\d)\\s*(?:${COURSE_PLACE_WORDS.join("|")})`,"g"))].map(hit=>hit[1]);
+  return [...new Set(found)].sort().join("");
+};
 const courseNameTokens=(value:string)=>fold(String(value||"")).replace(/\d/g," ").split(" ")
   .filter(token=>token.length>=2&&/^[ء-ي]+$/.test(token)&&!COURSE_PLACE_WORDS.some(place=>place===token||(token.length>=3&&place.startsWith(token))));
 const courseTokenAlike=(a:string,b:string)=>{
@@ -1771,7 +1777,7 @@ const courseTokenAlike=(a:string,b:string)=>{
 };
 /** مدى تطابق اسم مطبوع (ممسوح) مع اسم مقرر في الكتالوج، من 0 إلى 1. رقم الجزء
     «(1)»/«(2)» جزء من الاسم: اختلافه يُنصّف الدرجة. */
-export const authorityCourseNameScore=(printed:string,catalogueName:string,missingPartNeutral=false):number=>{
+export const authorityCourseNameScore=(printed:string,catalogueName:string,ignorePart=false):number=>{
   const seen=courseNameTokens(printed),known=courseNameTokens(catalogueName);
   if(!seen.length||!known.length)return 0;
   const knownCovered=known.filter(k=>seen.some(s=>courseTokenAlike(s,k))).length/known.length;
@@ -1779,18 +1785,22 @@ export const authorityCourseNameScore=(printed:string,catalogueName:string,missi
   const joinedSeen=seen.join(""),joinedKnown=known.join("");
   const chars=1-editDistance(joinedSeen,joinedKnown)/Math.max(joinedSeen.length,joinedKnown.length);
   const score=Math.max((knownCovered+seenCovered)/2,chars);
-  const seenPart=courseNameMarkers(printed);
-  if(missingPartNeutral&&!seenPart)return score;
-  return seenPart===courseNameMarkers(catalogueName)?score:score/2;
+  if(ignorePart)return score;
+  const knownPart=[...new Set(toAscii(String(catalogueName||"")).match(/\d/g)||[])].sort().join("");
+  return courseNameMarkers(printed)===knownPart?score:score/2;
 };
 export const AUTHORITY_NAME_PICK_MIN=.7,AUTHORITY_NAME_PICK_MARGIN=.2;
 /** يختار مفتاحاً واحداً من العائلة التي تثبتها خانات الرقم المقروءة، باسمه
     المطبوع. يعيد "" عند غياب العائلة أو التباس الاسم. */
 export const authorityCourseFromFamilyAndName=(rawCode:string,printedName:string,departmentCode:string,catalogue:{key:string;name:string}[]):string=>{
   const token=academicDigits(rawCode),department=academicDigits(departmentCode);
-  if(token.length<6||!courseNameTokens(printedName).length)return"";
-  const family=catalogue.filter(item=>/^\d{7}$/.test(item.key)&&(!department||item.key.startsWith(department))
-    &&(token.includes(item.key.slice(0,6))||token.includes(item.key.slice(1))));
+  /* خلية رقم المقرر وحدها بطولها المطبوع (7 خانات: خانة واحدة معيبة)، والعائلة
+     في طرفها لا في وسط لحامٍ مع المرجعي أو الشعبة، وداخل القسم المثبت. الخلية
+     الأطول بالمفتاح كاملاً يصلحها recoverAuthorityCourseCell؛ ما دون ذلك عيبان. */
+  if(!/^\d{4}$/.test(department)||!/^\d{7}$/.test(token)||!courseNameTokens(printedName).length)return"";
+  const edge=(piece:string)=>token.startsWith(piece)||token.endsWith(piece);
+  const family=catalogue.filter(item=>/^\d{7}$/.test(item.key)&&item.key.startsWith(department)
+    &&(edge(item.key.slice(0,6))||edge(item.key.slice(1))));
   if(!family.length)return"";
   const scored=family.map(item=>({key:item.key,score:authorityCourseNameScore(printedName,item.name)})).sort((a,b)=>b.score-a.score);
   const [best,second]=scored;
@@ -1804,14 +1814,15 @@ export const authorityCourseFromFamilyAndName=(rawCode:string,printedName:string
 export const authorityCourseSiblingByName=(readKey:string,printedName:string,catalogue:{key:string;name:string}[]):string=>{
   const own=catalogue.find(item=>item.key===readKey);
   if(!own||!courseNameTokens(printedName).length)return"";
-  /* «(1)» الغائبة من اسمٍ مقصوص لا تناقض رقماً قُرئ كاملاً: «القران الكريم وحفظه»
-     لصفٍّ رقمه 0101151 لم تسقط منه إلا حافته (1.pdf). الجزء المطبوع يحكم إذا ظهر. */
+  /* الرقم المقروء كاملاً لا يُنقض إلا بكلمات الاسم، لا برقم الجزء وحده: «(1)»
+     الغائبة من اسمٍ مقصوص («القران الكريم وحفظه» لصفٍّ رقمه 0101151 في 1.pdf)
+     أو خانةٌ شاردة لا تناقضه. */
   const ownScore=authorityCourseNameScore(printedName,own.name,true);
-  if(ownScore>.45)return"";
+  if(ownScore>=.65)return"";
   const siblings=catalogue.filter(item=>item.key!==readKey&&item.key.slice(0,6)===readKey.slice(0,6))
     .map(item=>({key:item.key,score:authorityCourseNameScore(printedName,item.name)})).sort((a,b)=>b.score-a.score);
   const [best,second]=siblings;
-  if(!best||best.score<AUTHORITY_NAME_PICK_MIN||best.score-ownScore<.4)return"";
+  if(!best||best.score<AUTHORITY_NAME_PICK_MIN||best.score-ownScore<.35)return"";
   if(second&&best.score-second.score<AUTHORITY_NAME_PICK_MARGIN)return"";
   return best.key;
 };

@@ -54,6 +54,8 @@ export const instructorCleanName = (value: string) => foldInstructorText(value)
  * (garbled) — فلا يُوصف شخصٌ بأنه «غير مسجّل» لأن اسمه قُرئ مشوّهاً. */
 const ARABIC_NAME_WORD = /^[\u0621-\u063A\u0641-\u064A\u0670-\u06D3\u0640\u064B-\u0652]+\.?$/;
 const NAME_TITLE = /^(?:ا\.?د|أ\.?د|د|أ|ا|م|دكتور|الدكتور|دكتورة|الدكتورة|أستاذ|الأستاذ|استاذ|الاستاذ)\.?$/;
+/* «بن» و«ال» و«عبد» و«أبو» جزء من الاسم وإن قصرت، لا شظية ضجيج. */
+const NAME_PARTICLE = new Set(["بن", "ال", "عبد", "ابو", "أبو", "بو", "ابن"]);
 const nameLetters = (word: string) => word.replace(/[.\u0640\u064B-\u0652]/g, "");
 export function readableInstructorName(raw: unknown): { text: string; garbled: boolean } {
   const source = stripPresentation(String(raw || "")).replace(/\./g, ". ").replace(/\s+/g, " ").trim();
@@ -69,7 +71,8 @@ export function readableInstructorName(raw: unknown): { text: string; garbled: b
      الباقية اسماً: هي شظايا حروف لا اسم شخص. يبقى الوسم «اسم غير واضح» وحده.
      الحكم: ما لم تغلب الكلماتُ الطويلة (3 أحرف فأكثر) الضجيجَ والشظايا معاً. */
   const long = words.filter(word => nameLetters(word).length >= 3).length;
-  if (garbled && noise + (words.length - long) > long) return { text: "", garbled };
+  const fragments = words.filter(word => nameLetters(word).length < 3 && !NAME_TITLE.test(word) && !NAME_PARTICLE.has(nameLetters(word))).length;
+  if (garbled && noise + fragments > long) return { text: "", garbled };
   while (words.length && (NAME_TITLE.test(words[0]) || nameLetters(words[0]).length <= 2)) words.shift();
   while (words.length && nameLetters(words[words.length - 1]).length <= 1) { words.pop(); garbled = true; }
   return { text: words.map(word => word.replace(/\.$/, "")).join(" "), garbled };

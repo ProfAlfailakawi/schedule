@@ -334,9 +334,20 @@ check("a scanned course number that lost its last digit is settled by its family
   /* A complete number whose printed name is plainly its family sibling takes the sibling; a number whose name agrees stays. */
   assert.equal(authorityCourseSiblingByName("0101155","جويد القران الكريم وحفظه",cat),"0101150");
   assert.equal(authorityCourseSiblingByName("0101201","لعبادات فى الاسلام",cat),"0101206");
+  /* Two shared words («القران الكريم») do not make «علوم» the printed «تجويد … (1)» (3.pdf row read 0101153). */
+  assert.equal(authorityCourseSiblingByName("0101153","بويد القران الكريم وحفظه (1)",cat),"0101151");
   assert.equal(authorityCourseSiblingByName("0101155","سيره الرسول عليه السلام (الفحيحيل",cat),"");
   assert.equal(authorityCourseSiblingByName("0101153","علوم القران الكريم",cat),"");
   assert.equal(authorityCourseSiblingByName("0101357","العقيده فى الاسلام",cat),"");
+  /* A stray digit is not a part number; only «(n)» or «n جهراء» is (review of this change). */
+  assert.equal(authorityCourseSiblingByName("0101150","جويد القران الكريم وحفظه سس 1",cat),"");
+  assert.equal(authorityCourseFromFamilyAndName("3010115","جويد القران الكريم وحفظه سس 1","0101",cat),"0101150");
+  assert.equal(authorityCourseFromFamilyAndName("3010115","ويد القران الكريم 1 فحيحيل","0101",cat),"0101151");
+  /* Family digits must sit at an edge of a 7-digit course cell inside a proven department — never inside a weld. */
+  assert.equal(authorityCourseFromFamilyAndName("18101206","العبادات فى الاسلام","0101",cat),"");
+  assert.equal(authorityCourseFromFamilyAndName("5031101206501","العبادات فى الاسلام","0101",cat),"");
+  assert.equal(authorityCourseFromFamilyAndName("503110115318955","علوم القران الكريم","0101",cat),"");
+  assert.equal(authorityCourseFromFamilyAndName("3010120","العبادات فى الاسلام","",cat),"","no proven department, no family");
   /* A part number clipped off the printed name does not contradict a complete number (1.pdf rows read 0101151). */
   assert.equal(authorityCourseSiblingByName("0101151","القران الكريم وحفظه",cat),"");
   /* Wired end to end: the scan row gets the course and says how; a text-layer row never does. */
@@ -359,6 +370,10 @@ check("a scanned instructor name garbled by noise is shown as its clean words an
   assert.deepEqual(readableInstructorName("ا © - .دجا اما © مسي تسافا سي ‎es‏ ‎I\" 1"),{text:"",garbled:true});
   assert.equal(readableInstructorName("‎Saran‏ ل فق ا ا سس ددحي الس اا ‎e_ Ba t").text,"");
   assert.equal(readableInstructorName("ا 000 سآ الل ‎hema‏ ‏لس ‎TE *<‏ -_ .ل !1").text,"");
+  /* Titles and particles are part of a real name; one noise glyph never blanks it. */
+  assert.equal(readableInstructorName("د. علي بن محمد 1").text,"علي بن محمد");
+  assert.equal(readableInstructorName("أ.د. علي بن سعد x").text,"علي بن سعد");
+  assert.equal(readableInstructorName("ا.د. خالد ال علي e").text,"خالد ال علي");
   /* A word with noise inside is dropped whole: its leftover letters are not a word. */
   assert.equal(readableInstructorName("0[]«»").text,"");
   /* A clean name is not garbled, whatever titles it carries, and is displayed exactly as printed. */
