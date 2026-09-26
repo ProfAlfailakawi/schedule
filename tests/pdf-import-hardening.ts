@@ -14,7 +14,7 @@ import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch, readableInstructorName, displayInstructorText } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
-import { scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
+import { fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine, unconfirmedReviewPages } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
@@ -470,6 +470,44 @@ passed.push("a scan refused as busy says so in words");
   await busy.release(false);
   assert.deepEqual(await readScanInTurn("other-file",slowRead),{rows:[1,2,3]},"a refused file leaves no stale entry behind: it reads normally afterwards");
   passed.push("the same file sent twice is one reading, shared even while it waits for its turn; a different file waits a bounded time");
+}
+
+/* فوز طريق الكلمات بالهوية لا يُفقد جدولة الشبكة: الصفحة 1 من جدول 2026 كانت
+   28 هوية بلا وقت ولا مبنى بعد الاستبدال الكامل، فأوقفها scanPageVerdict مع
+   أن الشبكة قرأت الأوقات. الدمج يملأ الخانة الفارغة وحدها ولا يمسّ قيمة قرأها
+   الأساس. */
+{
+  const word=(reference:string,code:string,scode:string):any=>({code,reference,scode,courseText:"",instructorText:"",days:"",start:"",end:"",building:"",hall:""});
+  const base=[word("12345","1622101","01"),word("12346","1622102","01"),{...word("","1622103","02"),start:"09:00"}];
+  const donor:any=[
+    {code:"1622101",reference:"12345",scode:"01",courseText:"",instructorText:"د. فلان",days:"5 3 1",start:"08:00",end:"08:50",building:"012",hall:"101",timeRaw:"0800-0850",daysRaw:"5 3 1"},
+    {code:"1622103",reference:"",scode:"02",courseText:"",instructorText:"",days:"4 2",start:"11:00",end:"11:50",building:"013",hall:"",daysRaw:"4 2"},
+  ];
+  fillScheduleCellsFrom(base as any,donor);
+  assert.equal(base[0].start,"08:00","المرجعي المتطابق يملأ الوقت الفارغ");
+  assert.equal(base[0].building,"012");
+  assert.equal(base[0].days,"5 3 1");
+  assert.equal(base[0].instructorText,"د. فلان");
+  assert.equal(base[1].start,"","صف بلا نظير في الشبكة يبقى فارغاً للمراجعة");
+  assert.equal(base[2].start,"09:00","قيمة قرأها الأساس لا تُستبدل");
+  assert.equal(base[2].building,"013","المطابقة بالمقرر والشعبة تعمل حين لا مرجعي");
+  passed.push("دمج الجدولة: هوية الكلمات + أوقات الشبكة، الفارغ وحده يُملأ، والمطابقة بالمرجعي أو بالمقرر والشعبة");
+}
+
+/* لحامات صفحة 1 من مسح 2026: أثر خط الجدول داخل الرمز («[1350-1230042B09[F11]»)،
+   الوقتان والمبنى والقاعة في كلمة واحدة، وذيل الشعبة والمرجعي والمقرر خلف صدرٍ
+   من الخردة — تُفكّ كلها إلى قطعها، ولا تُمسّ كلمة سليمة. */
+{
+  const weld=(text:string)=>authorityOcrWordsToWords([{text,x0:100,y0:10,x1:400,y1:24}],842).map(word=>word.text).join("⁞");
+  assert.equal(weld("[1350-1230042B09[F11]"),"1350⁞-⁞1230⁞042B09⁞F11");
+  assert.equal(weld("0920-0800012807/F31]"),"0920⁞-⁞0800⁞012807⁞F31");
+  assert.equal(weld("1100012807]"),"1100⁞012807");
+  assert.equal(weld("[189510101102"),"18951⁞0101102");
+  assert.equal(weld("%ouyiam|503/189470101102"),"%ouyiam⁞503⁞18947⁞0101102");
+  assert.equal(weld("5505189490101102"),"5⁞505⁞18949⁞0101102");
+  assert.equal(weld("0101102"),"0101102");
+  assert.equal(weld("012J14"),"012J14");
+  passed.push("لحامات المسح تُفكّ: وقتان ومبنى وقاعة، وذيل شعبة ومرجعي ومقرر، وخردة الأطراف تُنزع");
 }
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));

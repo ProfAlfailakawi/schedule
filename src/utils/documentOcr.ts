@@ -273,8 +273,8 @@ export async function readScanInTurn<T>(fingerprint:string,read:()=>Promise<T>,e
 /** Terminate every table-reading worker so its WASM memory returns to the
  *  system; the getters create fresh ones on the next reading. */
 async function releaseTableWorkers():Promise<void>{
-  const held:Array<Promise<unknown>|null>=[headerWorkerPromise,poolPromise,wordLaneWorkerPromise,dayCellWorkerPromise,roomCellWorkerPromise,timeCellWorkerPromise];
-  headerWorkerPromise=null;poolPromise=null;wordLaneWorkerPromise=null;dayCellWorkerPromise=null;roomCellWorkerPromise=null;timeCellWorkerPromise=null;
+  const held:Array<Promise<unknown>|null>=[headerWorkerPromise,poolPromise,wordLaneWorkerPromise,identityBandWorkerPromise,scheduleBandWorkerPromise,dayCellWorkerPromise,roomCellWorkerPromise,timeCellWorkerPromise];
+  headerWorkerPromise=null;poolPromise=null;wordLaneWorkerPromise=null;identityBandWorkerPromise=null;scheduleBandWorkerPromise=null;dayCellWorkerPromise=null;roomCellWorkerPromise=null;timeCellWorkerPromise=null;
   const workers=new Set<PooledWorker>();
   for(const promise of held){
     const value:any=await promise?.catch(()=>null);
@@ -568,7 +568,7 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
       rows.push({
         code,reference,scode,courseText,instructorText,days,daysRaw:days,timeRaw,
         start:pair?.start||"",end:pair?.end||"",
-        building,hall,buildingRaw,hallRaw,sourceMode:"pdf-text",
+        building,hall,buildingRaw,hallRaw,sourceMode:"pdf-text",y:group.y,
       });
       continue;
     }
@@ -695,7 +695,7 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number,layout:Au
     rows.push({
       code,reference,scode,courseText,instructorText,days,daysRaw:days,timeRaw,
       start:pair?.start||"",end:pair?.end||"",
-      building,hall,buildingRaw,hallRaw,sourceMode:"pdf-text",
+      building,hall,buildingRaw,hallRaw,sourceMode:"pdf-text",y:group.y,
     });
   }
   return rows;
@@ -1327,6 +1327,12 @@ export type GridRow={
    * evidence so the registry can reconstruct only an already-known official
    * code (e.g. a dropped leading 0 in 012B09), never invent a location. */
   buildingRaw?:string;hallRaw?:string;
+  /** صفٌّ أضافه الدمج بهويته وحدها وأُفرغت جدولته عمداً للمراجعة: لا يُحسب
+   * على الصفحة في حكم «بلا وقت ولا مبنى» — فراغه قرارٌ لا فشلُ قراءة. */
+  identityOnly?:boolean;
+  /** وسط سطر الصف رأسياً بمقياس 842، من تجميع الكلمات: به تُسند قراءةُ
+   * حزامٍ عمودي (الوقت والمبنى) إلى صفها دون مرسى نصيٍّ لكل صف. */
+  y?:number;
 };
 type GridPage={gridRows:GridRow[]};
 
@@ -1806,8 +1812,21 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
     /* ملتصقات الوقت والمبنى تحمل أثر خط الجدول («-1230011B16/»، «1400011B18)»):
        تُنزع علامات الأطراف وحدها، وتبقى الشرطة الأولى قطعةً مستقلة. */
     const leadDash=/^[-–—]\d{4}\d{3}[A-Za-z0-9]\d{2}/.test(toAscii(text));
-    const stripped=toAscii(text).replace(/^[-–—,()/\\|]+|[,()/\\|.]+$/g,"");
-    if(/^\d{4}(?:[-–—]\d{4})?\d{3}[A-Za-z0-9]\d{2}$/.test(stripped))text=stripped;
+    const stripped=toAscii(text).replace(/^[-–—,()/\\|[\]]+|[,()/\\|.[\]]+$/g,"");
+    if(/^\d{4}(?:[-–—]\d{4})?\d{3}[A-Za-z0-9]\d{2}(?:[FGTS]\d{2})?$/.test(stripped))text=stripped;
+    /* أثر الخط الرأسي يُقرأ قوساً أو خطاً داخل الرمز نفسه، لا على طرفيه فقط
+       («[1350-1230042B09[F11]»، «0920-0800012807/F31]» في صفحة 1 من مسح 2026):
+       تُمحى رموز الخردة أينما وقعت، ويُقبل الناتج إن صار شكلَ لحامٍ معروفاً —
+       وقت أو وقتين ومبنى وقاعة. غير ذلك تبقى الكلمة كما وصلت. */
+    else{
+      const scrubbed=toAscii(text).replace(/[[\]|/\\(){}«»]/g,"").replace(/^[-–—,.]+|[,.]+$/g,"");
+      if(scrubbed!==toAscii(text)&&/^\d{4}(?:[-–—]\d{4})?\d{3}[A-Za-z0-9]\d{2}(?:[FGTS]\d{2})?$/.test(scrubbed))text=scrubbed;
+      /* «[189510101102»: خردة الطرف على لحام المرجعي ورقم المقرر (أو الشعبة
+         معهما) — الأرقام الخالصة بعد المحو تُقبل بأشكال اللحام الكاملة وحدها. */
+      else if(scrubbed!==toAscii(text)&&/^(?:\d{3})?\d{4,6}0\d{6}$/.test(scrubbed))text=scrubbed;
+    }
+    /* «[1150-»: ساعة بشرطتها التصق بها أثر الخط. تبقى الساعة وتبقى الشرطة. */
+    if((/^[[(|]?([0-2]\d[0-5]\d)[-–—][\])|]?$/).test(toAscii(text)))text=toAscii(text).replace(/[^\d-]/g,"");
     /* «FO7»: حرف الطابق ثم O في موضع الصفر هو «F07» — في المسح وحده. */
     if(/^[FGTS]O\d{1,2}$/i.test(toAscii(text)))text=toAscii(text).toUpperCase().replace(/^([FGTS])O/,"$10");
     let ascii=toAscii(text);
@@ -1828,12 +1847,28 @@ export function authorityOcrWordsToWords(raw:Array<{text:string;x0:number;y0:num
       for(const piece of pieces){const x1=x+unit*piece.length;out.push({text:piece,x0:x*scale,x1:x1*scale,y0:word.y0*scale,y1:word.y1*scale});x=x1;}
       continue;
     }
-    if((m=ascii.match(/^(\d{4})[-–—](\d{4})(\d{3}[A-Za-z0-9]\d{2})$/)))pieces.push(m[1],"-",m[2],m[3]);   // clock - clock + building
+    /* لحام الشعبة والمرجعي ورقم المقرر في ذيل كلمةٍ صدرُها خردةُ خطٍّ وحبر
+       («%…|503/189470101102»): يُقبل الذيل وحده بأشكاله الكاملة، ويبقى الصدر
+       كلمةً مستقلة في موضعه لا يُخترع منه شيء. */
+    if((m=toAscii(text).replace(/[[\]|/\\(){}.]/g,"").match(/^(.*?)(\d{3})(\d{5})(0\d{6})$/))&&m[1]&&!/\d$/.test(m[1])){
+      const tail=m[2]+m[3]+m[4];
+      const unit=(word.x1-word.x0)/Math.max(1,(m[1].length+15));
+      let x=word.x0+unit*m[1].length;
+      out.push({text:m[1],x0:word.x0*scale,x1:x*scale,y0:word.y0*scale,y1:word.y1*scale});
+      for(const piece of [m[2],m[3],m[4]]){const x1=x+unit*piece.length;out.push({text:piece,x0:x*scale,x1:x1*scale,y0:word.y0*scale,y1:word.y1*scale});x=x1;}
+      void tail;continue;
+    }
+    if((m=ascii.match(/^(\d{4})[-–—](\d{4})(\d{3}[A-Za-z0-9]\d{2})([FGTS]\d{2})$/)))pieces.push(m[1],"-",m[2],m[3],m[4]); // clock - clock + building + hall
+    else if((m=ascii.match(/^(\d{4})[-–—](\d{4})(\d{3}[A-Za-z0-9]\d{2})$/)))pieces.push(m[1],"-",m[2],m[3]);   // clock - clock + building
     else if((m=ascii.match(/^(\d{4,6})(0\d{6})$/)))pieces.push(m[1],m[2]);                 // CRN + course key
     else if((m=ascii.match(/^([0-2]\d[0-5]\d)(\d{3}[A-Za-z]\d{2})$/)))pieces.push(m[1],m[2]); // clock + building
     else if((m=ascii.match(/^(\d{3}[A-Za-z]\d{2})([0-2]\d[0-5]\d)$/)))pieces.push(m[1],m[2]);
     else if((m=ascii.match(/^([0-2]\d[0-5]\d)(0\d{5})$/)))pieces.push(m[1],m[2]);      // clock + building (letter read as digit)
     else if((m=ascii.match(/^(0\d{5})([0-2]\d[0-5]\d)$/)))pieces.push(m[1],m[2]);      // building (letter read as digit) + clock
+    /* قراءة الحزام أرقاماً فقط تلحم عموداً أو عمودين قبل الهوية («5505189490101102»):
+       الذيل الثابت — شعبة 3 ثم مرجعي 5 ثم مقرر يبدأ بصفر — يُفكّ، ويبقى الصدر
+       كلمته في موضعه. أقصر من 16 رقماً يلتبس بالمقاعد فلا يُمسّ. */
+    else if(ascii.length>=16&&ascii.length<=22&&(m=ascii.match(/^(\d+?)(\d{3})(\d{5})(0\d{6})$/)))pieces.push(m[1],m[2],m[3],m[4]);
     else pieces.push(text);
     const unit=(word.x1-word.x0)/Math.max(1,pieces.join("").length);let x=word.x0;
     for(const piece of pieces){const x1=x+unit*piece.length;out.push({text:piece,x0:x*scale,x1:x1*scale,y0:word.y0*scale,y1:word.y1*scale});x=x1;}
@@ -1898,7 +1933,7 @@ export function rejudgeEmptyPage(diagnostic:OcrPageDiagnostic,printedRows:number
   return{...rest,visualRows:printedRows,...scanPageVerdict({rows:0,filled:0,printed:printedRows,broken:0,unscheduled:0})};
 }
 /** Rows the reader gave neither a time nor a building: their schedule side was not read. */
-export const unscheduledRowCount=(rows:GridRow[])=>rows.filter(row=>!row.start&&!(row.building||row.buildingRaw)).length;
+export const unscheduledRowCount=(rows:GridRow[])=>rows.filter(row=>!row.identityOnly&&!row.start&&!(row.building||row.buildingRaw)).length;
 /** The one sentence that stops a scanned file: it names each page that could
  *  not be read and why, says nothing was imported, and says what reads fully.
  *  Pages that were never given their deep pass (an earlier page had already
@@ -1983,6 +2018,125 @@ async function enhanceScanForOcr(source:Buffer):Promise<Buffer>{
   context.putImageData(data,0,0);
   return surface.toBuffer("image/png");
 }
+/* ── إعادة قراءة حزام الهوية (الشعبة، المرجعي، رقم المقرر) ─────────────────
+   قارئ الصفحة الكاملة (ara+eng، PSM 11) يهشّم أعمدة الأرقام اليمنى المتلاصقة:
+   من «0101102» لا يبقى إلا «2»، فيخرج طريقُ الكلمات بخمس هويات من 28 ويخسر
+   المفاضلة. الحزام نفسه يُقصّ ويُقرأ أرقاماً فقط (eng، PSM 6) — القراءة التي
+   أثبتت في القياس كلَّ أكواد الصفحة — ثم تحلّ كلماتُه محلّ كلمات الحزام
+   الرقمية وحدها؛ الكلمات العربية وكل ما هو خارج الحزام يبقيان كما قُرئا. */
+let identityBandWorkerPromise:Promise<PooledWorker>|null=null;
+async function getIdentityBandWorker(){
+  if(!identityBandWorkerPromise)identityBandWorkerPromise=retryOnFailure((async()=>{
+    const worker=await newOcrWorker("eng");
+    await worker.setParameters({tessedit_pageseg_mode:"6" as any,preserve_interword_spaces:"1",tessedit_char_whitelist:"0123456789 "});
+    return worker;
+  })(),()=>{identityBandWorkerPromise=null;});
+  return identityBandWorkerPromise;
+}
+const IDENTITY_BAND_FROM=0.775;
+async function rereadIdentityBand(source:Buffer,imageWidth:number,prepared:Word[]):Promise<{prepared:Word[];identityLines:Array<{y:number;code:string;reference:string;scode:string}>}>{
+  const lib=await canvas(),image=await lib.loadImage(source);
+  const bx0=Math.round(image.width*IDENTITY_BAND_FROM);
+  const bw=image.width-bx0;if(bw<40)return{prepared,identityLines:[]};
+  const upscale=image.width<2600?2:1;
+  const crop=lib.createCanvas(bw*upscale,image.height*upscale),ctx=crop.getContext("2d");
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
+  ctx.imageSmoothingEnabled=true;if("imageSmoothingQuality" in ctx)(ctx as any).imageSmoothingQuality="high";
+  ctx.drawImage(image,bx0,0,bw,image.height,0,0,crop.width,crop.height);
+  const worker=await getIdentityBandWorker();
+  const result:any=await worker.recognize(crop.toBuffer("image/png"),{},{blocks:true});
+  const read:Array<{text:string;x0:number;y0:number;x1:number;y1:number}>=[];
+  for(const block of result?.data?.blocks||[])for(const paragraph of block.paragraphs||[])for(const line of paragraph.lines||[])for(const word of line.words||[])
+    read.push({text:word.text,x0:bx0+word.bbox.x0/upscale,y0:word.bbox.y0/upscale,x1:bx0+word.bbox.x1/upscale,y1:word.bbox.y1/upscale});
+  const band=authorityOcrWordsToWords(read.filter(word=>/\d{2,}/.test(toAscii(String(word.text||"")))),imageWidth);
+  if(!band.length)return{prepared,identityLines:[]};
+  /* الحدّ بمقياس 842 الذي تُقارن به الكلمات المجهزة. */
+  const from=842*IDENTITY_BAND_FROM;
+  const kept=prepared.filter(word=>{
+    const center=(word.x0+word.x1)/2;
+    return center<from||!/\d/.test(toAscii(String(word.text||"")));
+  });
+  /* سطر هوية: كود مقرر (يبدأ بصفر) ومرجعي، وشعبة إن قُرئت — بيسار الكود.
+     به يُبنى صفٌّ لصفٍّ لم يخرج من تجميع الصفحة (بندان التصقا فضاعا معاً). */
+  const heights=band.map(word=>Math.abs(word.y1-word.y0)).sort((a,b)=>a-b);
+  const lineTolerance=Math.max(2,(heights[Math.floor(heights.length/2)]||8)*.6);
+  const grouped:Array<{y:number;words:Word[]}>=[];
+  for(const word of [...band].sort((a,b)=>(a.y0+a.y1)-(b.y0+b.y1))){
+    const y=(word.y0+word.y1)/2;
+    const slot=grouped.find(candidate=>Math.abs(candidate.y-y)<=lineTolerance);
+    if(slot){slot.words.push(word);slot.y=(slot.y+y)/2;}else grouped.push({y,words:[word]});
+  }
+  const identityLines:Array<{y:number;code:string;reference:string;scode:string}>=[];
+  for(const slot of grouped){
+    const tokens=slot.words.sort((a,b)=>a.x0-b.x0).map(word=>toAscii(word.text).trim());
+    const code=tokens.find(token=>/^0\d{6}$/.test(token))||"";
+    if(!code)continue;
+    const reference=tokens.find(token=>/^\d{4,8}$/.test(token)&&token!==code)||"";
+    if(!reference)continue;
+    const scode=tokens.find(token=>/^\d{1,3}$/.test(token)&&token!==reference)||"";
+    identityLines.push({y:slot.y,code,reference,scode});
+  }
+  return{prepared:[...kept,...band],identityLines};
+}
+
+/* ── قراءة حزام الجدولة (الوقت، المبنى، القاعة) عموداً واحداً ────────────────
+   القصُّ الفردي لكل صفٍّ يحتاج مرسى مرجعيٍّ فريداً وكلمةَ نشاطٍ سليمة، وكلاهما
+   يغيب في المسح الرديء فتخرج صفحةٌ أوقاتها مطبوعة واضحة بلا وقتٍ واحد (صفحتا
+   1 و2 من مسح 2026). الممرّ نفسه عمودٌ ثابت: يُقصّ مرةً واحدة بكامل ارتفاع
+   الصفحة، يُقرأ بمحرّك أسطر، وتُسند أزواج الساعات إلى الصفوف بوسطها الرأسي.
+   لا يُمسّ صفٌّ قرأ وقته من الصفحة، ويبقى القصّ الفردي مكمّلاً لمن بقي. */
+let scheduleBandWorkerPromise:Promise<PooledWorker>|null=null;
+async function getScheduleBandWorker(){
+  if(!scheduleBandWorkerPromise)scheduleBandWorkerPromise=retryOnFailure((async()=>{
+    const worker=await newOcrWorker("eng");
+    await worker.setParameters({tessedit_pageseg_mode:"6" as any,preserve_interword_spaces:"1",tessedit_char_whitelist:"0123456789- ABCDEFGHJKLMNPQRSTUVWXYZ"});
+    return worker;
+  })(),()=>{scheduleBandWorkerPromise=null;});
+  return scheduleBandWorkerPromise;
+}
+const SCHEDULE_BAND_FROM=0.19,SCHEDULE_BAND_TO=0.46;
+async function rereadScheduleBand(source:Buffer,imageWidth:number,rows:GridRow[]){
+  const pending=rows.filter(row=>!row.start&&Number.isFinite(row.y));
+  if(!pending.length)return;
+  const lib=await canvas(),image=await lib.loadImage(source);
+  const bx0=Math.round(image.width*SCHEDULE_BAND_FROM),bx1=Math.round(image.width*SCHEDULE_BAND_TO);
+  const bw=bx1-bx0;if(bw<40)return;
+  const upscale=image.width<2600?2:1;
+  const crop=lib.createCanvas(bw*upscale,image.height*upscale),ctx=crop.getContext("2d");
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
+  ctx.imageSmoothingEnabled=true;if("imageSmoothingQuality" in ctx)(ctx as any).imageSmoothingQuality="high";
+  ctx.drawImage(image,bx0,0,bw,image.height,0,0,crop.width,crop.height);
+  const worker=await getScheduleBandWorker();
+  const result:any=await worker.recognize(crop.toBuffer("image/png"),{},{blocks:true});
+  const scale=842/Math.max(1,imageWidth);
+  type BandLine={y:number;text:string};
+  const lines:BandLine[]=[];
+  for(const block of result?.data?.blocks||[])for(const paragraph of block.paragraphs||[])for(const line of paragraph.lines||[]){
+    const wordsOfLine=(line.words||[]).map((word:any)=>({text:String(word.text||""),x0:word.bbox.x0}));
+    if(!wordsOfLine.length)continue;
+    const y=((line.bbox.y0+line.bbox.y1)/2)/upscale*scale;
+    wordsOfLine.sort((a:any,b:any)=>a.x0-b.x0);
+    lines.push({y,text:toAscii(wordsOfLine.map((word:any)=>word.text).join(" "))});
+  }
+  if(!lines.length)return;
+  const heights=pending.map(row=>row.y!).sort((a,b)=>a-b);
+  const gaps=heights.slice(1).map((y,i)=>y-heights[i]).filter(gap=>gap>2).sort((a,b)=>a-b);
+  const tolerance=Math.max(4,(gaps[Math.floor(gaps.length/2)]||14)*.45);
+  for(const row of pending){
+    const near=lines.filter(line=>Math.abs(line.y-row.y!)<=tolerance).sort((a,b)=>Math.abs(a.y-row.y!)-Math.abs(b.y-row.y!));
+    for(const line of near){
+      const m=line.text.match(/([0-2]\d[0-5]\d)\s*-\s*([0-2]\d[0-5]\d)\s*(\d{3}[A-Z0-9]\d{2})?\s*([FGTS]\d{2})?/);
+      if(!m)continue;
+      const read=authorityTimeStripRead(`${m[1]} - ${m[2]}${m[3]||""} ${m[4]||""}`);
+      if(!read)continue;
+      row.start=read.start;row.end=read.end;row.timeRaw=row.timeRaw||read.timeRaw;
+      if(m[3]&&!row.building&&!row.buildingRaw)row.buildingRaw=m[3];
+      if(m[4]&&!row.hall&&!row.hallRaw)row.hallRaw=m[4];
+      break;
+    }
+  }
+}
+
 async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence:number;tableNumbers:number;printedRows:number}>{
   const worker=await getWordLaneWorker();
   /* الأرقام الصغيرة في مسح منخفض الدقة تلتصق وتتشوّه؛ تُكبَّر الصفحة إلى
@@ -1993,13 +2147,31 @@ async function readWordLane(upright:Buffer):Promise<{rows:GridRow[];bodyEvidence
   for(const block of result?.data?.blocks||[])for(const paragraph of block.paragraphs||[])for(const line of paragraph.lines||[])for(const word of line.words||[])
     words.push({text:word.text,x0:word.bbox.x0,y0:word.bbox.y0,x1:word.bbox.x1,y1:word.bbox.y1});
   const width=source.length>24&&source.subarray(1,4).toString("latin1")==="PNG"?source.readUInt32BE(16):Math.max(1,...words.map(word=>word.x1));
-  const prepared=authorityOcrWordsToWords(words,width);
+  let prepared=authorityOcrWordsToWords(words,width);
+  let identityLines:Array<{y:number;code:string;reference:string;scode:string}>=[];
+  try{const band=await rereadIdentityBand(source,width,prepared);prepared=band.prepared;identityLines=band.identityLines;}catch{/* the page-pass identity words stand */}
   const rows=authorityPdfTextGridRows(prepared,842,"semantic").map(row=>({...row,sourceMode:"ocr-grid" as const}));
+  /* سطر هوية من الحزام لا صفَّ له من تجميع الصفحة يُنشئ صفَّه بهويته وموضعه
+     الرأسي؛ حزام الجدولة أدناه يملأ وقته ومبناه بالموضع نفسه، وتبقى خاناته
+     الأخرى فارغة للمراجعة. لا سطرَ مطبوعاً يضيع لأن بندَي تجميعٍ التصقا. */
+  {
+    const taken=rows.filter(row=>Number.isFinite(row.y)).map(row=>row.y!);
+    const gaps=[...taken].sort((a,b)=>a-b).slice(1).map((y,i,arr)=>y-[...taken].sort((a,b)=>a-b)[i]).filter(gap=>gap>2).sort((a,b)=>a-b);
+    const rowTolerance=Math.max(4,(gaps[Math.floor(gaps.length/2)]||14)*.45);
+    for(const line of identityLines){
+      const near=rows.some(row=>Number.isFinite(row.y)&&Math.abs(row.y!-line.y)<=rowTolerance);
+      const seen=rows.some(row=>row.reference===line.reference||(row.code===line.code&&row.scode&&row.scode===normalizeAuthoritySectionCode(line.scode)));
+      if(near||seen)continue;
+      rows.push({code:line.code,reference:line.reference,scode:normalizeAuthoritySectionCode(line.scode)||"",courseText:"",instructorText:"",days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",sourceMode:"ocr-grid",y:line.y});
+    }
+    rows.sort((a,b)=>(a.y??0)-(b.y??0));
+  }
   const bodyEvidence=prepared.filter(word=>/^0\d{6}$/.test(toAscii(word.text))).length;
   /* أرقام الجدول (ساعات، مراجع، أكواد) — صفحة دليل الأيام لا تحمل منها شيئاً. */
   const tableNumbers=prepared.filter(word=>/\d{4,}/.test(toAscii(word.text))).length;
   const printedRows=authorityPrintedRowBands(prepared);
   try{await rereadDayCells(source,width,prepared,rows);}catch{/* the lane's own day reading stands */}
+  try{await rereadScheduleBand(source,width,rows);}catch{/* the per-row time crops below still run */}
   try{await rereadTimeCells(source,width,prepared,rows);}catch{/* the lane's own time reading stands */}
   try{await rereadRoomCells(source,width,prepared,rows);}catch{/* the lane's own room reading stands */}
   return{rows,bodyEvidence,tableNumbers,printedRows};
@@ -2133,13 +2305,19 @@ async function rereadTimeCells(source:Buffer,imageWidth:number,words:Word[],rows
   const image=await lib.loadImage(source);
   const worker=await getTimeCellWorker();
   const scale=842/Math.max(1,imageWidth);
-  const activity=/^(محاضر|مختبر|تمارين|كلينيكي|عملي|نظري|ورش|تدريب)/;
+  const activity=/^(م[حخج]اضر|مختبر|تمارين|كلينيكي|عملي|نظري|ورش|تدريب)/;
+  /* صفٌّ ضاعت كلمة نشاطه في المسح يستعير عمودَ النشاط من وسط كلمات النشاط
+     المقروءة في الصفحة نفسها: العمود رأسي ثابت وإن غابت كلمته في سطر. */
+  const pageActivityWords=words.filter(word=>activity.test(String(word.text||"").normalize("NFKC")));
+  const median=(list:number[])=>list.length?list.sort((a,b)=>a-b)[Math.floor(list.length/2)]:undefined;
+  const medianActX0=median(pageActivityWords.map(word=>word.x0)),medianActX1=median(pageActivityWords.map(word=>word.x1));
   for(const row of pending){
     const anchors=words.filter(word=>toAscii(word.text)===row.reference);
     if(anchors.length!==1)continue;
     const anchor=anchors[0];
     const yc=(anchor.y0+anchor.y1)/2,h=Math.max(1,anchor.y1-anchor.y0);
-    const act=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&activity.test(String(word.text||"").normalize("NFKC"))).sort((a,b)=>a.x0-b.x0)[0];
+    const act=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&activity.test(String(word.text||"").normalize("NFKC"))).sort((a,b)=>a.x0-b.x0)[0]
+      ||(medianActX1!==undefined?{x0:medianActX0!,x1:medianActX1} as Word:undefined);
     if(!act)continue;
     const x0=(act.x1+1)/scale,x1=(act.x1+842*.135)/scale;
     const y0=Math.max(0,(yc-h*.55)/scale),y1=(yc+h*.55)/scale;
@@ -2172,13 +2350,19 @@ async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:
   const image=await lib.loadImage(source);
   const worker=await getDayCellWorker();
   const scale=842/Math.max(1,imageWidth);
-  const activity=/^(محاضر|مختبر|تمارين|كلينيكي|عملي|نظري|ورش|تدريب)/;
+  const activity=/^(م[حخج]اضر|مختبر|تمارين|كلينيكي|عملي|نظري|ورش|تدريب)/;
+  /* صفٌّ ضاعت كلمة نشاطه في المسح يستعير عمودَ النشاط من وسط كلمات النشاط
+     المقروءة في الصفحة نفسها: العمود رأسي ثابت وإن غابت كلمته في سطر. */
+  const pageActivityWords=words.filter(word=>activity.test(String(word.text||"").normalize("NFKC")));
+  const median=(list:number[])=>list.length?list.sort((a,b)=>a-b)[Math.floor(list.length/2)]:undefined;
+  const medianActX0=median(pageActivityWords.map(word=>word.x0)),medianActX1=median(pageActivityWords.map(word=>word.x1));
   for(const row of rows){
     const anchors=words.filter(word=>toAscii(word.text)===row.reference);
     if(!row.reference||anchors.length!==1)continue;
     const anchor=anchors[0];
     const yc=(anchor.y0+anchor.y1)/2,h=Math.max(1,anchor.y1-anchor.y0);
-    const act=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&activity.test(String(word.text||"").normalize("NFKC"))).sort((a,b)=>a.x0-b.x0)[0];
+    const act=words.filter(word=>Math.abs((word.y0+word.y1)/2-yc)<h*.8&&activity.test(String(word.text||"").normalize("NFKC"))).sort((a,b)=>a.x0-b.x0)[0]
+      ||(medianActX0!==undefined?{x0:medianActX0,x1:medianActX1!} as Word:undefined);
     if(!act)continue;
     const x0=Math.max(0,(act.x0-842*.075)/scale),x1=(act.x0-1)/scale;
     const y0=Math.max(0,(yc-h*.55)/scale),y1=(yc+h*.55)/scale;
@@ -2199,9 +2383,37 @@ async function rereadDayCells(source:Buffer,imageWidth:number,words:Word[],rows:
     row.days=value;row.daysRaw=value;
   }
 }
-/** Rows whose identity is proven: a full course code and a reference number. */
-const identityRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(String(row.code||""))&&/^\d{4,8}$/.test(String(row.reference||""))).length;
+/** Rows whose identity is proven: a full course code and a reference number.
+ *  ومع قسمٍ معروفٍ من ترويسة الصفحة، «مرجعيٌّ» يبدأ برمز القسم نفسه
+ *  («0101»، «010115») ليس مرجعياً بل صدرُ رقم مقررٍ التقطه انزياحُ أعمدةٍ في
+ *  قارئ الشبكة — فلا يُحسب هويةً يغلب بعددها قراءةً صادقة. رقمُ المقرر نفسه
+ *  لا يُشترط ببادئة القسم: مقررات الخدمة تأتي من كليات أخرى («2462504»). */
+const identityRows=(rows:GridRow[]|null|undefined,departmentPrefix="")=>(rows||[]).filter(row=>/^\d{7}$/.test(String(row.code||""))&&/^\d{4,8}$/.test(String(row.reference||""))&&(!departmentPrefix||!String(row.reference).startsWith(departmentPrefix))).length;
 const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d{7}$/.test(row.code)&&/^\d{4,8}$/.test(row.reference)&&Boolean(row.start)&&Boolean(row.building||row.buildingRaw)).length;
+/** القراءة الفائزة بالهوية لا تُفقد ما قرأته الأخرى من الجدولة: الخانة
+ *  الفارغة وحدها تُملأ من صف القراءة الأخرى نفسه (بالمرجعي، أو بالمقرر
+ *  والشعبة)، ولا تُمسّ قيمة قرأها الأساس. الصفحة 1 من جدول 2026: طريق
+ *  الكلمات أثبت 28 هوية بلا وقت ولا مبنى، والشبكة قرأت الأوقات — فكان
+ *  الاستبدال الكامل يوقف الملف «بلا وقت ولا مبنى» بعدما كان يُقرأ. */
+export function fillScheduleCellsFrom(base:GridRow[],donor:GridRow[]|null|undefined){
+  if(!donor?.length)return;
+  const byReference=new Map<string,GridRow>(),byCourseSection=new Map<string,GridRow>();
+  for(const row of donor){
+    const reference=String(row.reference||"").trim();
+    if(reference&&!byReference.has(reference))byReference.set(reference,row);
+    const course=`${row.code}|${row.scode}`;
+    if(row.code&&row.scode&&!byCourseSection.has(course))byCourseSection.set(course,row);
+  }
+  for(const row of base){
+    const match=byReference.get(String(row.reference||"").trim())||((row.code&&row.scode)?byCourseSection.get(`${row.code}|${row.scode}`):undefined);
+    if(!match)continue;
+    if(!row.start&&match.start){row.start=match.start;row.end=row.end||match.end;row.timeRaw=row.timeRaw||match.timeRaw;}
+    if(!row.building&&!row.buildingRaw&&(match.building||match.buildingRaw)){row.building=match.building;row.buildingRaw=match.buildingRaw;}
+    if(!row.hall&&!row.hallRaw&&(match.hall||match.hallRaw)){row.hall=match.hall;row.hallRaw=match.hallRaw;}
+    if(!String(row.days||"").trim()&&!row.daysRaw&&(match.days||match.daysRaw)){row.days=match.days;row.daysRaw=match.daysRaw;}
+    if(!row.instructorText&&match.instructorText)row.instructorText=match.instructorText;
+  }
+}
 
 async function readGrid(
   upright:Buffer,
@@ -3901,7 +4113,8 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
        خلاياه الأخرى فارغة للمراجعة: لا صف يضيع، ولا قيمة مشكوك فيها تدخل. */
     /* أو حين يثبت هويةَ صفوفٍ أكثر (رقم مقرر كامل ومرجعي): شبكة أزاحت أعمدتها
        (المقرر فارغ، والكود في خانة المرجعي) لا تغلب قراءةً صحيحة الهوية. */
-    if(wordLane&&wordLane.rows.length&&(soundScanRows(wordLane.rows)>soundScanRows(gridRows)||identityRows(wordLane.rows)>identityRows(gridRows))){
+    if(wordLane&&wordLane.rows.length&&(soundScanRows(wordLane.rows)>soundScanRows(gridRows)||identityRows(wordLane.rows,authorityGridDepartment)>identityRows(gridRows,authorityGridDepartment))){
+      fillScheduleCellsFrom(wordLane.rows,gridRows);
       const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
@@ -3917,7 +4130,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
         ||!provenCourse(row.code)
         ||Boolean(row.scode&&wordLane!.rows.some(word=>word.scode===row.scode&&sameCourse(word.code,row.code)));
       const missing=(gridRows||[]).filter(row=>!duplicate(row))
-        .map(row=>({...row,days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",instructorText:""}));
+        .map(row=>({...row,days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",instructorText:"",identityOnly:true}));
       gridRows=[...wordLane.rows,...missing];
     }
     /* صفحة بلا رقم مقرر ولا صف (صفحة دليل الأيام الأخيرة) صفحةٌ فارغة، لا
@@ -4029,7 +4242,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
           /* قراءة الإنقاذ لا تُعتمد إن أنقصت الصفوف ثابتة الهوية (شبكة أزاحت أعمدتها). */
           /* قراءة الشبكة تملأ خانة الأيام بما تجده ولو كان خطأً، فلا يُكافأ «امتلاء»
              أيامها هنا؛ استعادة الأيام والوقت تُقبل من القراءة المحسّنة وحدها. */
-          if(rows&&filled>bestFilled&&identityRows(rows)>=identityRows(bestRows)){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
+          if(rows&&filled>bestFilled&&identityRows(rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&soundScanRows(rows)>=soundScanRows(bestRows)){fillScheduleCellsFrom(rows,bestRows);bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
       }
       /* ── تحسين الصورة قبل الاستسلام ─────────────────────────────────────
@@ -4049,9 +4262,9 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
             const lane=await readWordLane(enhanced);
             pagePrintedRows[index]=Math.max(pagePrintedRows[index]||0,lane.printedRows);
             const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
-            if((lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows)>=identityRows(bestRows))||identityRows(lane.rows)>identityRows(bestRows)
-              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))
-              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows)>=identityRows(bestRows)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){bestRows=lane.rows;bestFilled=filled;}
+            if(soundScanRows(lane.rows)>soundScanRows(bestRows)||(lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment))||identityRows(lane.rows,authorityGridDepartment)>identityRows(bestRows,authorityGridDepartment)
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){fillScheduleCellsFrom(lane.rows,bestRows);bestRows=lane.rows;bestFilled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;}
           }
         }catch{/* the earlier reading and its warning stand */}
       }
