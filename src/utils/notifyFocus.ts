@@ -5,6 +5,8 @@
  * يُفتح عليها تأخذه مرّةً واحدة وتفتح عليه. كان الإشعار يكتبه ولا تقرؤه شاشةٌ
  * أبداً — فيُفتح «تغييرات الجدول» على الوارد كلّه والتقرير على نطاقه المعتاد.
  */
+import { writeSharedScope } from "./sharedScope";
+
 export const NOTIFY_FOCUS_KEY = "schedule:notify-focus";
 /** تركيزٌ أقدم من هذا لا يُطاع: ضغطةٌ قديمة لا تفتح شاشةً اليوم. */
 export const NOTIFY_FOCUS_TTL_MS = 5 * 60_000;
@@ -37,9 +39,13 @@ export function takeNotifyFocus(view: string, now: number = Date.now()): NotifyF
     if (focus?.view !== view) return null;
     sessionStorage.removeItem(NOTIFY_FOCUS_KEY);
     if ((!focus.collegeId && focus.panel !== "deadlines") || !(now - Number(focus.at || 0) < NOTIFY_FOCUS_TTL_MS)) return null;
-    return {
+    const taken: NotifyFocus = {
       ...focus, collegeId: Number(focus.collegeId || 0), sectionId: Number(focus.sectionId || 0), termId: Number(focus.termId || 0) || undefined,
       panel: focus.panel === "deadlines" ? "deadlines" : undefined,
     };
+    /* هدفٌ صريح يغلب: الإشعار يصير نطاق القارئ في كل شاشة (src/utils/sharedScope.ts)،
+       فينتقل منه إلى الجدول أو الاستعلامات فيجد القسم نفسه. */
+    if (taken.collegeId) writeSharedScope({ collegeId: taken.collegeId, sectionId: taken.sectionId, ...(taken.termId ? { termId: taken.termId } : {}) });
+    return taken;
   } catch { return null; }
 }
