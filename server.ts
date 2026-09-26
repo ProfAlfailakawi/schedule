@@ -19,7 +19,7 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { currentTermId, planningTermCandidates, termHasEnded } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed } from "./src/types";
+import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
@@ -78,6 +78,7 @@ import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecis
 import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
+import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow } from "./src/utils/termSequence";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
@@ -3339,6 +3340,25 @@ app.get("/api/courses", requireAnyPermission([6, 7, 8, 9, 10, 14, 16, 17]), asyn
     const bySection=new Map(sets);
     courses=courses.filter(course=>bySection.get(Number(course.AdSectionId))?.has(Number(course.AdCourseId)));
   }
+  if(String(req.query.plans||"")==="1"){
+    /* Which live curriculum each course belongs to, so the catalogue can say
+       «الصحيفة الجديدة» or «السابقة» beside it and filter by it. A department
+       without plans gets no tag: everything there is simply current. */
+    const sectionIds=[...new Set(courses.map(course=>Number(course.AdSectionId)).filter(Boolean))];
+    const tags=new Map<number,{id:string;name:string;status:string}[]>();
+    await Promise.all(sectionIds.map(async sid=>{
+      const [plans,memberships]=await Promise.all([Repository.getCurriculumPlans(sid),Repository.getCurriculumPlanCourses(sid)]);
+      const live=new Map(plans.filter(plan=>plan.status!=="archived").map(plan=>[plan.id,plan]));
+      if(!live.size)return;
+      for(const row of memberships){
+        const plan=live.get(row.planId);if(!plan)continue;
+        const list=tags.get(Number(row.AdCourseId))||[];
+        if(!list.some(tag=>tag.id===plan.id))list.push({id:plan.id,name:plan.name,status:plan.status});
+        tags.set(Number(row.AdCourseId),list);
+      }
+    }));
+    courses=courses.map(course=>tags.has(Number(course.AdCourseId))?{...course,curriculum:tags.get(Number(course.AdCourseId))}:course) as any;
+  }
   res.json(sortCoursesByName(courses));
 });
 
@@ -3350,11 +3370,16 @@ async function curriculumOverview(sectionId:number){
   if(!plans.length){
     const virtualId=`virtual:${sectionId}`;
     const virtual={id:virtualId,AdCollegeId:section.AdCollegeId,AdSectionId:sectionId,name:"الصحيفة الحالية",code:"CURRENT",status:"transition",virtual:true,createdAt:""};
-    return{section,plans:[virtual],memberships:courses.map(course=>({id:`${virtualId}_${course.AdCourseId}`,planId:virtualId,AdCollegeId:section.AdCollegeId,AdSectionId:sectionId,AdCourseId:course.AdCourseId,createdAt:""})),transitions,courses,operationalCourseIds:courses.map(course=>course.AdCourseId),bootstrap:true};
+    const sectionRule=await storedDegreeRuleForSection(sectionId);
+    return{section,plans:[virtual],memberships:courses.map(course=>({id:`${virtualId}_${course.AdCourseId}`,planId:virtualId,AdCollegeId:section.AdCollegeId,AdSectionId:sectionId,AdCourseId:course.AdCourseId,createdAt:""})),transitions,courses,operationalCourseIds:courses.map(course=>course.AdCourseId),bootstrap:true,planRules:{[virtualId]:{rule:sectionRule,inherited:Boolean(sectionRule)}}};
   }
   const livePlanIds=new Set(plans.filter(plan=>plan.status!=="archived").map(plan=>plan.id));
   const operationalCourseIds=[...new Set(memberships.filter(row=>livePlanIds.has(row.planId)).map(row=>Number(row.AdCourseId)))];
-  return{section,plans,memberships,transitions,courses,operationalCourseIds,bootstrap:false};
+  /* The rule each plan's graduates are measured by, resolved by the same
+     function the survey uses — the screen never shows a different answer. */
+  const sectionRule=await storedDegreeRuleForSection(sectionId);
+  const planRules=Object.fromEntries(plans.map(plan=>[plan.id,{rule:planDegreeRule(plan,sectionRule),inherited:!plan.degreeRule&&Boolean(planDegreeRule(plan,sectionRule))}]));
+  return{section,plans,memberships,transitions,courses,operationalCourseIds,bootstrap:false,planRules};
 }
 
 app.get("/api/curriculum/sections/:sectionId", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
@@ -3373,11 +3398,50 @@ app.post("/api/curriculum/plans", requirePermission(6), async (req:Authenticated
   res.status(201).json({plan,overview:await curriculumOverview(sectionId)});
 });
 
+/** Rename a plan, or set the graduation rule its students are measured by. */
+app.put("/api/curriculum/plans/:planId", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
+  const sectionId=Number(req.body?.AdSectionId||0),section=await Repository.getSectionById(sectionId);
+  if(!section){res.status(404).json({error:"القسم غير موجود"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,section.AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const planId=String(req.params.planId||""),plans=await Repository.getCurriculumPlans(sectionId),plan=plans.find(row=>row.id===planId);
+  if(!plan){res.status(404).json({error:"الصحيفة غير موجودة"});return;}
+  const patch:{name?:string;degreeRule?:CurriculumDegreeRule}={};
+  if(req.body?.name!==undefined){
+    const name=cleanText(req.body.name,TEXT_LIMIT.name);
+    if(!name){res.status(400).json({error:"اكتب اسم الصحيفة"});return;}
+    if(plans.some(row=>row.id!==planId&&row.status!=="archived"&&row.name.trim()===name)){res.status(400).json({error:"يوجد في القسم صحيفة فعالة بهذا الاسم. اختر اسماً يميّزها، مثل سنة اعتمادها."});return;}
+    patch.name=name;
+  }
+  /* `code` is not editable: «LEGACY» marks the plan that inherits the
+     department's rule, and moving that mark would move whose rule it is. */
+  if(req.body?.degreeRule){
+    const sectionRule=await storedDegreeRuleForSection(sectionId);
+    const current=planDegreeRule(plan,sectionRule);
+    const input=readDegreeRuleInput(req.body.degreeRule,Number(current?.fieldTrainingRequired||degreeRuleFromName(String(section.AdSectionName||"")).fieldTrainingRequired));
+    if("error" in input){res.status(400).json({error:input.error});return;}
+    patch.degreeRule={...input.rule,updatedAt:new Date().toISOString(),updatedBy:String(req.user.Name||"")||undefined};
+  }
+  try{
+    await Repository.updateCurriculumPlan(planId,sectionId,patch);
+    /* The survey tells each department whether graduate proof is open. */
+    if(patch.degreeRule)surveyPayloadCache.clear();
+    res.json({overview:await curriculumOverview(sectionId)});
+  }catch(error:any){res.status(400).json({error:String(error?.message||"تعذر تحديث الصحيفة")});}
+});
+
 app.post("/api/curriculum/plans/:planId/courses", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
-  const courseId=Number(req.body?.AdCourseId||0),course=await Repository.getCourseById(courseId);
-  if(!course){res.status(404).json({error:"المقرر غير موجود"});return;}
-  if(!req.user.IsAdminUser&&!isScopeAllowed(req,course.AdCollegeId,course.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  try{const membership=await Repository.addCourseToCurriculumPlan(String(req.params.planId||""),course,String(req.user.Name||""));res.status(201).json({membership,overview:await curriculumOverview(course.AdSectionId)});}catch(error:any){res.status(400).json({error:String(error?.message||"تعذر إضافة المقرر إلى الصحيفة")});}
+  /* One course, or the handful that stayed unchanged in the new plan, in one
+     request — ticking ten boxes should not mean ten round trips. */
+  const ids=[...new Set((Array.isArray(req.body?.AdCourseIds)?req.body.AdCourseIds:[req.body?.AdCourseId]).map((id:any)=>Number(id)).filter((id:number)=>id>0))].slice(0,300) as number[];
+  const courses=(await Promise.all(ids.map(id=>Repository.getCourseById(id)))).filter(Boolean) as any[];
+  if(!courses.length||courses.length!==ids.length){res.status(404).json({error:"المقرر غير موجود"});return;}
+  const sectionId=Number(courses[0].AdSectionId);
+  if(courses.some(course=>Number(course.AdSectionId)!==sectionId)){res.status(400).json({error:"كل المقررات يجب أن تتبع قسم الصحيفة نفسه"});return;}
+  if(!req.user.IsAdminUser&&!isScopeAllowed(req,courses[0].AdCollegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  try{
+    for(const course of courses)await Repository.addCourseToCurriculumPlan(String(req.params.planId||""),course,String(req.user.Name||""));
+    res.status(201).json({added:courses.length,overview:await curriculumOverview(sectionId)});
+  }catch(error:any){res.status(400).json({error:String(error?.message||"تعذر إضافة المقرر إلى الصحيفة")});}
 });
 
 app.delete("/api/curriculum/plans/:planId/courses/:courseId", requirePermission(6), async (req:AuthenticatedRequest,res:Response)=>{
@@ -14181,6 +14245,42 @@ const storedDegreeRuleForSection=async(sectionId:number):Promise<DegreeRule|null
   return Object.values(rule).every(value=>Number.isFinite(value)&&value>0)?rule:null;
 };
 
+/** A plan's own graduation rule. «الصحيفة السابقة» created before rules moved
+ * onto plans carries none; its students are the ones the department's saved
+ * rule was written for, so that rule answers for it. */
+const planDegreeRule=(plan:CurriculumPlan,sectionRule:DegreeRule|null):DegreeRule|null=>{
+  const own=plan.degreeRule;
+  if(own){
+    const rule={degreeUnits:Number(own.degreeUnits),fieldTrainingRequired:Number(own.fieldTrainingRequired),graduateRegularPassed:Number(own.graduateRegularPassed),graduateSummerPassed:Number(own.graduateSummerPassed)};
+    return Object.values(rule).every(value=>Number.isFinite(value)&&value>0)?rule:null;
+  }
+  return plan.code==="LEGACY"?sectionRule:null;
+};
+
+/**
+ * ── قواعد التخرج في المرحلة الانتقالية ─────────────────────────────────────
+ * The rules a graduate of this department may be measured against: one per
+ * live curriculum plan, or the department's own rule when it has no plans.
+ * Every graduate path (survey payload, proof, reuse, submit) asks this one
+ * function; `choosePlanForSheet` then picks the student's plan from the sheet.
+ */
+const graduationCandidatesForSection=async(sectionId:number):Promise<PlanRuleCandidate[]>=>{
+  const [plans,sectionRule]=await Promise.all([Repository.getCurriculumPlans(sectionId),storedDegreeRuleForSection(sectionId)]);
+  /* The current plan first, everywhere these are listed. */
+  const live=plans.filter(plan=>plan.status!=="archived"&&!plan.virtual).sort((a,b)=>Number(b.status==="active")-Number(a.status==="active"));
+  if(!live.length)return[{planName:"قواعد القسم",status:"section",rule:sectionRule}];
+  return live.map(plan=>({planId:plan.id,planName:plan.name,status:plan.status==="active"?"active":"transition",rule:planDegreeRule(plan,sectionRule)}));
+};
+/** The rule a verified sheet was measured against, re-read NOW: a rule edited
+ * after the upload applies, a plan archived since then does not. A proof with
+ * no plan (issued before plans carried rules) is valid only while one rule stands. */
+const graduationRuleFor=(candidates:PlanRuleCandidate[],planId:unknown):PlanRuleCandidate&{rule:DegreeRule}|null=>{
+  const ruled=candidates.filter((row):row is PlanRuleCandidate&{rule:DegreeRule}=>Boolean(row.rule));
+  const id=String(planId||"");
+  if(id)return ruled.find(row=>row.planId===id)||null;
+  return candidates.length===1&&ruled.length===1?ruled[0]:null;
+};
+
 /**
  * Which number a graduate case is measured against.
  *
@@ -14193,7 +14293,7 @@ const graduateThreshold=(rule:DegreeRule,termName:string)=>
   isSummerTerm(termName)?Number(rule.graduateSummerPassed):Number(rule.graduateRegularPassed);
 /** How long a verified graduation sheet stays usable in one page session. */
 const STUDENT_PROOF_TTL_MS=20*60_000;
-const issueStudentProof=async(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;degreeUnits:number;nameMatched:boolean;specializationMatched:boolean;documentKind:"graduation-sheet"})=>{
+const issueStudentProof=async(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;degreeUnits:number;curriculumPlanId?:string;nameMatched:boolean;specializationMatched:boolean;documentKind:"graduation-sheet"})=>{
   const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+STUDENT_PROOF_TTL_MS})).toString("base64url");
   const signature=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");return`${body}.${signature}`;
 };
@@ -14249,18 +14349,20 @@ const reusableGraduateVerification=async(link:any,civil:string,sectionId:number,
     &&Number(need?.passedUnits||0)>0
   );
   if(!prior)return null;
-  const rule=await storedDegreeRuleForSection(sectionId);
+  /* The prior sheet proved a plan; its rule is re-read now, never carried. */
+  const chosen=graduationRuleFor(await graduationCandidatesForSection(sectionId),prior.curriculumPlanId);
+  const rule=chosen?.rule;
   if(!rule||Number(prior.degreeUnits||0)!==Number(rule.degreeUnits))return null;
   const terms=await Repository.getTerms();
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(link.AdTermId))?.AdTermName||"");
   const requiredUnits=graduateThreshold(rule,termName),passedUnits=Number(prior.passedUnits||0);
   if(!requiredUnits||passedUnits<requiredUnits)return null;
   const proofToken=await issueStudentProof({
-    fingerprint,sectionId,passedUnits,requiredUnits,degreeUnits:Number(rule.degreeUnits),
+    fingerprint,sectionId,passedUnits,requiredUnits,degreeUnits:Number(rule.degreeUnits),curriculumPlanId:chosen?.planId,
     nameMatched:Boolean(prior.proofNameMatched),specializationMatched:true,documentKind:"graduation-sheet",
   });
   return{
-    fingerprint,passedUnits,requiredUnits,degreeUnits:Number(rule.degreeUnits),
+    fingerprint,passedUnits,requiredUnits,degreeUnits:Number(rule.degreeUnits),curriculumPlanId:chosen?.planId,
     proofNameMatched:Boolean(prior.proofNameMatched),proofToken,termName,
   };
 };
@@ -14319,10 +14421,25 @@ function surveyCourseIdsForSection(courses: any[], history: any[], sectionId: nu
   return { taught, allowed };
 }
 
+/** One validation for every place a graduation rule is typed: a department's
+ * own rule and a curriculum plan's rule obey the same bounds. */
+const readDegreeRuleInput=(body:any,fieldTrainingFallback:number):{rule:DegreeRule}|{error:string}=>{
+  const read=(key:string)=>Math.round(Number(asciiDigits((body||{})[key])));
+  const degreeUnits=read("degreeUnits");
+  const fieldTrainingRaw=(body||{}).fieldTrainingRequired;
+  const fieldTrainingRequired=fieldTrainingRaw==null||String(fieldTrainingRaw).trim()===""?Number(fieldTrainingFallback):read("fieldTrainingRequired");
+  const graduateRegularPassed=read("graduateRegularPassed"),graduateSummerPassed=read("graduateSummerPassed");
+  const values=[degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed];
+  if(values.some(value=>!Number.isFinite(value)||value<30||value>300))return{error:"كل قيمة يجب أن تكون عدد وحدات بين 30 و 300"};
+  // A student cannot be asked to pass more than the degree holds.
+  if(fieldTrainingRequired>degreeUnits||graduateRegularPassed>degreeUnits||graduateSummerPassed>degreeUnits)return{error:"لا يمكن أن يتجاوز أي شرط مجموع وحدات الدرجة"};
+  return{rule:{degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed}};
+};
+
 app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
   const [sections,stored]=await Promise.all([Repository.getSections(),Repository.getDegreeRules()]);
   const byId=new Map(stored.map(row=>[Number(row.AdSectionId),row]));
-  res.json(sections.map((section:any)=>{
+  res.json(await Promise.all(sections.map((section:any)=>{
     const saved=byId.get(Number(section.AdSectionId));
     /* An unsaved row is a SUGGESTION from the department name, and says so.
        Marking it reviewed made the screen present it as the current rule while
@@ -14330,28 +14447,29 @@ app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res
     const fixed=degreeRuleFromName(String(section.AdSectionName||""));
     const rule=saved||{...fixed,AdSectionId:section.AdSectionId,updatedAt:"",updatedBy:""};
     return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:Boolean(saved),suggested:!saved};
-  }));
+  }).map(async(row:any)=>{
+    /* A department in its transition years is judged per curriculum plan; the
+       screen shows those rules instead of one department figure. */
+    const plans=await Repository.getCurriculumPlans(Number(row.AdSectionId));
+    if(!plans.some(plan=>plan.status!=="archived"&&!plan.virtual))return row;
+    return{...row,plans:await graduationCandidatesForSection(Number(row.AdSectionId))};
+  })));
 });
 
 app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId=Number(req.params.sectionId||0);
   const sections=await Repository.getSections();
   if(!sections.some((row:any)=>Number(row.AdSectionId)===sectionId)){res.status(404).json({error:"القسم غير موجود"});return;}
-  const read=(key:string)=>Math.round(Number(asciiDigits((req.body||{})[key])));
-  const degreeUnits=read("degreeUnits");
+  /* A department in its transition years is measured per plan; a department
+     figure saved now would be read by nobody, while the screen said it applied. */
+  if((await Repository.getCurriculumPlans(sectionId)).some(plan=>plan.status!=="archived"&&!plan.virtual)){
+    res.status(409).json({error:"هذا القسم في مرحلة انتقالية: شروط التخرج تُحفظ لكل صحيفة من «المقررات ← الصحائف الأكاديمية».",code:"rules-per-plan"});return;
+  }
   const existingRule=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===sectionId);
   const sectionName=String(sections.find((row:any)=>Number(row.AdSectionId)===sectionId)?.AdSectionName||"");
-  const fieldTrainingRaw=(req.body||{}).fieldTrainingRequired;
-  const fieldTrainingRequired=fieldTrainingRaw==null||String(fieldTrainingRaw).trim()===""
-    ? Number(existingRule?.fieldTrainingRequired||degreeRuleFromName(sectionName).fieldTrainingRequired)
-    : read("fieldTrainingRequired");
-  const graduateRegularPassed=read("graduateRegularPassed"),graduateSummerPassed=read("graduateSummerPassed");
-  const values=[degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed];
-  if(values.some(value=>!Number.isFinite(value)||value<30||value>300)){res.status(400).json({error:"كل قيمة يجب أن تكون عدد وحدات بين 30 و 300"});return;}
-  // A student cannot be asked to pass more than the degree holds.
-  if(fieldTrainingRequired>degreeUnits||graduateRegularPassed>degreeUnits||graduateSummerPassed>degreeUnits){
-    res.status(400).json({error:"لا يمكن أن يتجاوز أي شرط مجموع وحدات الدرجة"});return;
-  }
+  const input=readDegreeRuleInput(req.body,Number(existingRule?.fieldTrainingRequired||degreeRuleFromName(sectionName).fieldTrainingRequired));
+  if("error" in input){res.status(400).json({error:input.error});return;}
+  const{degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed}=input.rule;
   const saved=await Repository.saveDegreeRule({
     AdSectionId:sectionId,degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed,
     updatedAt:new Date().toISOString(),updatedBy:String(req.user?.Name||""),
@@ -14408,8 +14526,10 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
     const sid=Number(section.AdSectionId),{taught}=surveyCourseIdsForSection(courses,history,sid);
     /* Graduate proof needs the department's SAVED rule. The page learns it
        here, before the student uploads anything, instead of after OCR. */
-    const savedRule=await storedDegreeRuleForSection(sid);
-    const graduateRule=savedRule?{saved:true,threshold:graduateThreshold(savedRule,linkTermName)}:{saved:false};
+    const ruled=(await graduationCandidatesForSection(sid)).flatMap(row=>row.rule?[row.rule]:[]);
+    const thresholds=[...new Set(ruled.map(rule=>graduateThreshold(rule,linkTermName)))];
+    /* Two plans may ask for two thresholds; the page is only told a number when there is one. */
+    const graduateRule=ruled.length?{saved:true,threshold:thresholds.length===1?thresholds[0]:undefined,plans:ruled.length}:{saved:false};
     const operational=await surveyActiveCourseIds(sid);
     const offered=courses.filter((course:any)=>Number(course.AdSectionId)===sid&&operational.has(Number(course.AdCourseId)))
       .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
@@ -14527,8 +14647,8 @@ app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Req
   /* The saved academic rule is a precondition, checked BEFORE the expensive
      OCR: without it no sheet can be judged, so reading one only burned the
      student's upload and the server's memory to say «no rule» afterwards. */
-  const rule=await storedDegreeRuleForSection(sectionId);
-  if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم.",code:"no-degree-rule"});return;}
+  const ruleCandidates=await graduationCandidatesForSection(sectionId);
+  if(!ruleCandidates.some(row=>row.rule)){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم.",code:"no-degree-rule"});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!bytes.length){res.status(400).json({error:"ارفع صحيفة التخرج PDF أو صورة واضحة"});return;}
   const mime=String(req.get("x-file-type")||"application/pdf").slice(0,80);
   let ocr;
@@ -14576,6 +14696,11 @@ app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Req
      read the label and the number with programme text between them. When the
      immediate label-value pair is missing, resolve only the bounded candidates
      next to «الوحدات المجتازة», anchored by the department's degree total. */
+  /* Old or new curriculum: the sheet's own «الوحدات المطلوبة» decides, in
+     src/utils/graduationPlan.ts. Never measured against another plan's rule. */
+  const planChoice=choosePlanForSheet(ruleCandidates,{requiredUnits:Number(facts.requiredUnits||0),requiredUnitCandidates:facts.requiredUnitCandidates,passedUnits:Number(facts.passedUnits||0)});
+  if("error" in planChoice){res.status(422).json({code:planChoice.code,error:planChoice.error});return;}
+  const rule=planChoice.candidate.rule,curriculumPlanId=planChoice.candidate.planId;
   const degreeUnits=Number(rule.degreeUnits);
   const resolvePassedUnits=()=>{
     const direct=Number(facts.passedUnits||0);if(direct>0)return direct;
@@ -14596,10 +14721,11 @@ app.post("/api/public/survey/:token/proof", readStudentProofBody, async (req:Req
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const required=graduateThreshold(rule,termName),summer=isSummerTerm(termName);
   const eligible=passedUnits>=required;
-  if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر اجتياز ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}.`});return;}
-  const proofToken=await issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),nameMatched,specializationMatched,documentKind:"graduation-sheet"});
-  res.json({eligible:true,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),termName,summer,
-    message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} حسب بيانات قسمك. يمكنك متابعة الطلب.`,
+  if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر اجتياز ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}${ruleCandidates.length>1?` حسب «${planChoice.candidate.planName}»`:""}.`});return;}
+  const proofToken=await issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),curriculumPlanId,nameMatched,specializationMatched,documentKind:"graduation-sheet"});
+  const planNote=ruleCandidates.length>1?` حسب «${planChoice.candidate.planName}»`:" حسب بيانات قسمك";
+  res.json({eligible:true,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),termName,summer,planName:ruleCandidates.length>1?planChoice.candidate.planName:undefined,
+    message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${countOf(passedUnits, oblique(AR.unit))}، والمطلوب ${required}${planNote}. يمكنك متابعة الطلب.`,
     proofToken,confidence:ocr.confidence});
 });
 
@@ -14680,6 +14806,9 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     ?String(body.details||"").normalize("NFKC").replace(/\r\n?/g,"\n").replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim().slice(0,600)
     :"";
   let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,graduateNameMatched:boolean|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
+  /* The plan a verified graduation sheet proved — the student's own
+     curriculum, stronger evidence than which courses they happened to pick. */
+  let provenPlanId:string|undefined;
   /* Keep a previously verified graduation sheet alive even when the student
      changes this survey answer to another request type. saveStudentNeed updates
      the record in place with the NEW answer's fields, so without this
@@ -14687,7 +14816,7 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
      request would wrongly demand upload. */
   const reusableVerification=await reusableGraduateVerification(resolved.link,civil,sectionId,body.caseRef);
   if(requestType!=="graduate"&&reusableVerification){
-    passedUnits=reusableVerification.passedUnits;requiredUnits=reusableVerification.requiredUnits;degreeUnits=reusableVerification.degreeUnits;
+    passedUnits=reusableVerification.passedUnits;requiredUnits=reusableVerification.requiredUnits;degreeUnits=reusableVerification.degreeUnits;provenPlanId=reusableVerification.curriculumPlanId;
     graduateNameMatched=reusableVerification.proofNameMatched;eligibility="eligible";
   }
   if(requestType==="graduate"){
@@ -14695,19 +14824,21 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     if(!proof&&reusableVerification){
       proof=await verifyStudentProof(reusableVerification.proofToken);
     }
-    const currentRule=await storedDegreeRuleForSection(sectionId);
-    if(!currentRule){res.status(400).json({error:"قواعد التخرج الأكاديمية لهذا القسم غير معتمدة في النظام"});return;}
+    const ruleCandidates=await graduationCandidatesForSection(sectionId);
+    if(!ruleCandidates.some(row=>row.rule)){res.status(400).json({error:"قواعد التخرج الأكاديمية لهذا القسم غير معتمدة في النظام"});return;}
+    const provenPlan=proof?graduationRuleFor(ruleCandidates,proof.curriculumPlanId):null;
+    const currentRule=provenPlan?.rule;
     if(!proof&&await studentProofExpired(String(body.proofToken||""))){
       res.status(400).json({code:"proof-expired",error:"انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان في الصفحة."});return;
     }
-    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
+    if(!proof||!currentRule||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
       res.status(400).json({code:"proof-required",error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
     }
     /* The threshold is the CURRENT saved rule for THIS link's term — never the
        figure carried inside the proof token, which was computed for whatever
        term and rule applied when the sheet was read. */
     const linkTermName=String((await Repository.getTerms()).find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
-    passedUnits=Number(proof.passedUnits||0);requiredUnits=graduateThreshold(currentRule,linkTermName);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=requiredUnits>0&&passedUnits>=requiredUnits?"eligible":"ineligible";
+    passedUnits=Number(proof.passedUnits||0);requiredUnits=graduateThreshold(currentRule,linkTermName);degreeUnits=Number(currentRule.degreeUnits);provenPlanId=provenPlan?.planId;graduateNameMatched=Boolean(proof.nameMatched);eligibility=requiredUnits>0&&passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
     /* Graduate notes are mandatory, not an optional comment. The approved
@@ -14716,8 +14847,8 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     if(details.length<3){res.status(400).json({error:"اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال"});return;}
   }
 
-  let curriculumPlanId:string|undefined;
-  if(courseIds.length){
+  let curriculumPlanId:string|undefined=provenPlanId;
+  if(!curriculumPlanId&&courseIds.length){
     const [plans,memberships]=await Promise.all([Repository.getCurriculumPlans(linkSectionId),Repository.getCurriculumPlanCourses(linkSectionId)]);
     const linkCourseIds=courseIds.filter(id=>courses.some((course:any)=>Number(course.AdCourseId)===Number(id)&&Number(course.AdSectionId)===linkSectionId));
     const requestedPlanId=String(body.curriculumPlanId||"");
@@ -14748,6 +14879,22 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
   res.status(201).json({ name, count: courseIds.length, requestType, caseRef: caseRefFor(savedNeed) });
 });
+
+/**
+ * «صحيفة سابقة / جديدة» beside a student: the plan their graduation sheet
+ * proved, or the only plan their chosen courses fit. Read from the student's
+ * own department, and shown only there are two live plans to tell apart.
+ */
+const curriculumLabelsFor=async(needs:any[])=>{
+  const sectionIds=[...new Set(needs.filter(need=>need?.curriculumPlanId).map(need=>Number(need.studentSectionId||need.AdSectionId||0)).filter(Boolean))];
+  const labels=new Map<string,{name:string;status:string}>();
+  await Promise.all(sectionIds.map(async sid=>{
+    const plans=await Repository.getCurriculumPlans(sid);
+    if(plans.filter(plan=>plan.status!=="archived").length<2)return;
+    for(const plan of plans)labels.set(plan.id,{name:plan.name,status:plan.status});
+  }));
+  return(need:any)=>labels.get(String(need?.curriculumPlanId||""))||null;
+};
 
 /** What the students said, for the department: the counts that plan sections,
  * and the named case list (name + civil ID decrypted) for the authorised,
@@ -14855,9 +15002,11 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const cohort = surveyCohort(sectionName);
   const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode,sectionId:Number(course.AdSectionId||0)}]));
   const sectionNameById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
+  const curriculumOf=await curriculumLabelsFor(needs);
   const cases=(await Promise.all(needs.map(async(need:any)=>({
     id:need.id,caseRef:caseRefFor(need),createdAt:need.createdAt,...await studentIdentityFor(req,need),
     studentSectionId:Number(need.studentSectionId||need.AdSectionId||0),studentSectionName:sectionNameById.get(Number(need.studentSectionId||need.AdSectionId||0))||"",
+    curriculum:curriculumOf(need),
     surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
     passedUnits:need.passedUnits,requiredUnits:need.requiredUnits,degreeUnits:need.degreeUnits,eligibility:need.eligibility||"not-checked",
@@ -15018,6 +15167,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
   const sectionNameById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
 
   const viewer = registrationViewer(req);
+  const curriculumOf = await curriculumLabelsFor(needs);
   const rows = (await Promise.all(needs.map(async need => {
     /* ── طلبُ الخريج: قرارٌ في الحالة كلها ────────────────────────────────
        لا مقرّرَ فيه يُعلَّق عليه قرار، فكان يسقط من الكشف عند السطر التالي
@@ -15033,6 +15183,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
         createdAt: String(need.createdAt || ""),
         requestType: String(need.requestType || "graduate"),
         studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+        curriculum: curriculumOf(need),
         details: String(need.details || ""),
         caseLevel: true,
         caseStatus,
@@ -15079,6 +15230,7 @@ app.get("/api/student-registration", requireAnyPermission([7, 14]), async (req: 
       createdAt: String(need.createdAt || ""),
       requestType: String(need.requestType || "new-course"),
       studentSectionName: sectionNameById.get(Number(need.studentSectionId || need.AdSectionId || 0)) || "",
+      curriculum: curriculumOf(need),
       /* طلبُ خريجٍ قيل فيه شيءٌ ثم غيّره الطالب إلى طلب مقرّرات. */
       caseDroppedAt: need.caseDroppedAt && need.caseState ? String(need.caseDroppedAt) : "",
       details: String(need.details || ""),
