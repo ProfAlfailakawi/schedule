@@ -30,7 +30,7 @@ import { isViewerOnlyRole } from "../utils/academicRoles";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
 import { DECISION_1912_LABEL, regulationScore, type RegulationFinding } from "../utils/scheduleRegulations";
-import { currentTermId } from "../utils/termSequence";
+import { currentTermId, termIsArchive } from "../utils/termSequence";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
 import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
 import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
@@ -843,8 +843,10 @@ const CROSS_KIND_LABEL: Record<string, string> = {
   doorway: "زمنُ الانتقال", cohort: "دفعةُ الطلبة",
 };
 
-function Report({ termId, termName, scope, role, onBack }: {
+function Report({ termId, termName, scope, role, onBack, archive = false }: {
   key?: React.Key;
+  /** فصلٌ صار أرشيفاً (termIsArchive): لا شريطَ اعتمادٍ ولا توقيع. */
+  archive?: boolean;
   termId: number;
   termName?: string;
   scope: { collegeId: number; sectionId: number; collegeName?: string; sectionName?: string };
@@ -1094,7 +1096,7 @@ function Report({ termId, termName, scope, role, onBack }: {
           رئيسُ القسم واللجنة يوقّعان ويُرسلان من هنا — لا من ورشة تعديلٍ لا
           يفتحها رئيسُ القسم أصلاً. أمّا التسجيل (يراجع) فقرارُه شريطُ القبول
           والإرجاع أسفل الشاشة، لا هذا. */}
-      {role.signatureStage && !isRegistrar ? (
+      {role.signatureStage && !isRegistrar && !archive ? (
         <ApprovalBar
           collegeId={scope.collegeId}
           sectionId={scope.sectionId}
@@ -1422,7 +1424,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       {/* ── مواعيد التسليم: الموضعُ الوحيد الذي يُكتب منه الموعدُ واستثناءاتُه ── */}
       {/* لمن يملك الموعد أو يراقبه وحده (inboxAudience): القسمُ يرى سطرَ موعده
           في شريط الاعتماد («موعدكم»)، لا لوحةَ التسجيل وميزانَ «سلّم x من y». */}
-      {termId && !active && term && audience.deadlinesPanel ? (
+      {termId && !active && term && !termIsArchive(term, terms || []) && audience.deadlinesPanel ? (
         <SubmissionDeadlines
           terms={terms}
           termId={termId}
@@ -1438,7 +1440,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       {!termId ? (
         <EmptyState title="اختر الفصل" detail="تُعرض تغييرات الجداول لفصلٍ واحد في كل مرّة." />
       ) : active ? (
-        <Report key={reloadKey} termId={termId} termName={term?.AdTermName || ""} scope={active} role={role} onBack={opened ? () => setOpened(null) : undefined} />
+        <Report key={reloadKey} termId={termId} termName={term?.AdTermName || ""} scope={active} role={role} archive={termIsArchive(term, terms || [])} onBack={opened ? () => setOpened(null) : undefined} />
       ) : (
         <Surface>
           <Inbox_

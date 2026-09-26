@@ -10,7 +10,7 @@ import SchedulePublish from "./SchedulePublish";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
-import { sortTermsNewest } from "../utils/termSequence";
+import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
@@ -1508,7 +1508,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <strong>نشر الجدول</strong>
                   <p>جدول القسم لمن يحمل الرابط، أو بطاقة لكل أستاذ يطلب منها تعديل جدوله.</p>
                 </div>
-                <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} appearance="primary" />
+                {termIsArchive(terms.find(row => Number(row.AdTermId) === Number(termId)), terms) ? null : <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} appearance="primary" />}
               </div>
             </>
           ) : null}

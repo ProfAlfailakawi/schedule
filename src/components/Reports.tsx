@@ -17,7 +17,7 @@ import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sh
 import { safeStorage } from "../utils/safeStorage";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
-import { currentTermId, sortTermsNewest, termChronology } from "../utils/termSequence";
+import { currentTermId, sortTermsNewest, termChronology, termIsArchive } from "../utils/termSequence";
 import {
   buildVisitingHistoryModel, sortVisitingTerms, visitingHeatLevel,
   type VisitingHistoryPerson, type VisitingHistoryYear,
@@ -2784,7 +2784,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         ) : lens === "balance" ? (
           <>
           {/* شريطُ الموعد لمن يراقب التسجيل أو الكلية وحده (inboxAudience) — لا للقسم. */}
-          {deadlineView && deadlineView.termId === Number(filters.termId) && inboxAudience(roleId, { powerAdmin: isPowerAdmin }).deadlinesPanel ? (
+          {deadlineView && deadlineView.termId === Number(filters.termId)
+            && !termIsArchive(terms.find(row => Number(row.AdTermId) === Number(filters.termId)), terms)
+            && inboxAudience(roleId, { powerAdmin: isPowerAdmin }).deadlinesPanel ? (
             <SubmissionDeadlines
               terms={terms.filter(row => Number(row.AdTermId) === Number(filters.termId)).map(row => ({ ...row, AdTermSubmissionDeadline: deadlineView.termDeadline }))}
               termId={Number(filters.termId)}

@@ -17,7 +17,7 @@ import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
-import { currentTermId, planningTermCandidates, termHasEnded } from "./src/utils/termSequence";
+import { currentTermId, planningTermCandidates, termHasEnded, termIsArchive } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
@@ -9986,7 +9986,10 @@ function approvalScopeFromBody(req: AuthenticatedRequest, res: Response): { coll
  * كلُّ فعلٍ يكتب في وثيقة الاعتماد يُسأل هذا أولاً، برسالةٍ واحدةٍ واضحة.
  */
 async function refuseIfTermClosed(res: Response, termId: number): Promise<boolean> {
-  if (!(await termIsClosed(termId))) return false;
+  /* فصلٌ صار أرشيفاً (أُغلق أو انقضى وليس الجاري) لا توقيعَ فيه ولا مواعيد. */
+  const terms = await Repository.getTerms();
+  const term = terms.find(row => Number(row.AdTermId) === Number(termId));
+  if (!(await termIsClosed(termId)) && !termIsArchive(term as any, terms as any)) return false;
   res.status(409).json({ error: TERM_CLOSED_APPROVAL_MESSAGE, code: "term-closed" });
   return true;
 }

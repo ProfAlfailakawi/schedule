@@ -116,7 +116,7 @@ import { coerceScopeValues, describeScopeSelection, resolveScopeSelection, singl
 import { readSharedScope, resolveSharedScope, useSharedScope, type SharedScope } from "../utils/sharedScope";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
-import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, currentTermId } from "../utils/termSequence";
+import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, currentTermId, termIsArchive } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
@@ -10086,7 +10086,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           يقف تحت أدوات الجدول وفوقه: أوّل ما تقع عليه العين بعد اختيار
           القسم، وآخرُ ما يُقرأ قبل النظر في المواعيد. ولا يرسم شيئاً حين
           لا ينتظر صاحبه شيء — فالهدوء هو الحال الطبيعية لا الاستثناء. */}
-      {mode === "schedule" && filterCollege && filterSection && filterTerm ? (
+      {mode === "schedule" && filterCollege && filterSection && filterTerm
+        && !termIsArchive(terms.find(row => Number(row.AdTermId) === Number(filterTerm)), terms) ? (
         <ApprovalBar
           collegeId={filterCollege}
           sectionId={filterSection}
