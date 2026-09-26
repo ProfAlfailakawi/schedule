@@ -26,6 +26,16 @@ import {
 } from "./ui";
 
 type Mode = "index" | "create" | "edit";
+type PlanFilter = "all" | "new" | "old";
+/** Which generation a course belongs to, from the live plans the server tagged it with. */
+const planTagOf = (course: any): { key: "new" | "old" | "shared"; label: string } | null => {
+  const plans: Array<{ status: string; name: string }> = Array.isArray(course?.curriculum) ? course.curriculum : [];
+  if (!plans.length) return null;
+  const isNew = plans.some(plan => plan.status === "active"), isOld = plans.some(plan => plan.status === "transition");
+  if (isNew && isOld) return { key: "shared", label: "مشترك بين الصحيفتين" };
+  if (isNew) return { key: "new", label: plans.find(plan => plan.status === "active")?.name || "الصحيفة الجديدة" };
+  return { key: "old", label: plans.find(plan => plan.status === "transition")?.name || "الصحيفة السابقة" };
+};
 type CurriculumTarget = {
   loading: boolean;
   bootstrap: boolean;
@@ -40,6 +50,10 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     [sections, setSections] = useState<any[]>([]),
     [listCollege, setListCollege] = useState(0),
     [listSection, setListSection] = useState(0),
+    [listPlan, setListPlan] = useState<PlanFilter>("all"),
+    [bootstrapOk, setBootstrapOk] = useState(false),
+    /* A course started from the plans drawer returns there once saved. */
+    [returnToPlans, setReturnToPlans] = useState(false),
     [mode, setMode] = useState<Mode>("index"),
     [editId, setEditId] = useState<number | null>(null),
     [selectedId, setSelectedId] = useState<number | null>(null),
@@ -65,7 +79,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     setLoading(true);
     try {
       const [a, b, c] = await Promise.all([
-        fetch("/api/courses?operational=1"),
+        fetch("/api/courses?operational=1&plans=1"),
         fetch("/api/colleges"),
         fetch("/api/sections"),
       ]);
@@ -157,15 +171,26 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       setCapacity("");
       setError(null);
       setCurriculumTarget(null);
+      setBootstrapOk(false);
     },
     back = () => {
       setMode("index");
       setError(null);
     },
+    cancelEditor = () => {
+      back();
+      if (returnToPlans) { setReturnToPlans(false); setCurriculumOpen(true); }
+    },
     create = () => {
       reset();
       setReceipt(null);
       setMode("create");
+    },
+    /* Started from the plans drawer: the department is already chosen. */
+    createIn = (preset: { collegeId: number; sectionId: number }) => {
+      create();
+      setCollegeId(String(preset.collegeId));
+      setSectionId(String(preset.sectionId));
     },
     edit = (x: any) => {
       setEditId(x.AdCourseId);
@@ -217,8 +242,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
         setError("انتظر لحظة حتى يكتمل التحقق من الصحيفة الأكاديمية الحالية");
         return;
       }
-      if (!curriculumTarget?.plan) {
-        setError("أنشئ الصحيفة الجديدة لهذا القسم أولاً؛ لن نضيف مقرراً جديداً إلى كتالوج انتقالي غير محدد.");
+      if (!curriculumTarget?.plan && !(curriculumTarget?.bootstrap && bootstrapOk)) {
+        setError("اختر أولاً: ابدأ الصحيفة الجديدة لهذا القسم، أو أكّد إضافة المقرر إلى صحيفته الحالية الوحيدة.");
         return;
       }
     }
@@ -250,11 +275,13 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
         return;
       }
       if (d && Number(d.AdCourseId)) {
+        /* The saved record carries no plan tag; the plan it just joined is known. */
+        const saved = targetPlan ? { ...d, curriculum: [{ id: targetPlan.id, name: targetPlan.name, status: "active" }] } : d;
         setItems(current => {
-          const exists = current.some(item => Number(item.AdCourseId) === Number(d.AdCourseId));
+          const exists = current.some(item => Number(item.AdCourseId) === Number(saved.AdCourseId));
           return exists
-            ? current.map(item => (Number(item.AdCourseId) === Number(d.AdCourseId) ? { ...item, ...d } : item))
-            : sortByName([...current, d], (row: any) => row.CourseName);
+            ? current.map(item => (Number(item.AdCourseId) === Number(saved.AdCourseId) ? { ...item, ...saved } : item))
+            : sortByName([...current, saved], (row: any) => row.CourseName);
         });
         setSelectedId(Number(d.AdCourseId));
       } else {
@@ -264,6 +291,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
         setReceipt(`تمت إضافة ${savedCode} — ${savedName} إلى ${targetPlan.name} بنجاح.`);
       }
       back();
+      if (returnToPlans) { setReturnToPlans(false); setCurriculumOpen(true); }
     } catch {
       setError("تعذّر الاتصال بالخادم، تحقّق من الشبكة وحاول مرة أخرى");
     } finally {
@@ -301,6 +329,10 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       let list = items;
       if (listCollege) list = list.filter((x) => x.AdCollegeId === listCollege);
       if (listSection) list = list.filter((x) => x.AdSectionId === listSection);
+      if (listPlan !== "all") list = list.filter((x) => {
+        const tag = planTagOf(x);
+        return tag && (tag.key === "shared" || tag.key === listPlan);
+      });
       const base = q
         ? list.filter((x) =>
             [x.CourseCode, x.CourseName, coll(x.AdCollegeId), sec(x.AdSectionId)].some((v) =>
@@ -309,7 +341,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
           )
         : list;
       return sortByName(base, (x: any) => x.CourseName);
-    }, [items, colleges, sections, query, listCollege, listSection]),
+    }, [items, colleges, sections, query, listCollege, listSection, listPlan]),
     selected = filtered.find((x) => x.AdCourseId === selectedId) || filtered[0] || null,
     activeId = selected?.AdCourseId ?? null;
 
@@ -321,11 +353,12 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     setCurriculumOpen(true);
   };
   const createBlocked = mode === "create" && Boolean(sectionId) && Boolean(
-    curriculumTarget?.loading || curriculumTarget?.error || !curriculumTarget?.plan,
+    curriculumTarget?.loading || curriculumTarget?.error || (!curriculumTarget?.plan && !(curriculumTarget?.bootstrap && bootstrapOk)),
   );
+  const hasPlans = useMemo(() => items.some(item => planTagOf(item)), [items]);
 
   const editorDrawer = mode !== "index" ? (
-    <CatalogFormDrawer onClose={back} label={mode === "create" ? "إنشاء مقرر جديد" : "تعديل بيانات المقرر"}>
+    <CatalogFormDrawer onClose={cancelEditor} label={mode === "create" ? "إنشاء مقرر جديد" : "تعديل بيانات المقرر"}>
       <PageTitle
         eyebrow="البيانات الأكاديمية"
         subtitle={mode === "create" ? "المقرر الجديد يرتبط بالصحيفة الحالية تلقائياً" : "مرتبط بالكلية والقسم"}
@@ -401,9 +434,9 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   >
                     تعذر التحقق من الصحيفة الحالية. أوقفنا الحفظ حتى نتأكد من وجهة المقرر بدلاً من تسجيله في صحيفة غير صحيحة.
                   </Notice>
-                ) : (
+                ) : curriculumTarget?.bootstrap ? (
                   <Notice
-                    type="warning"
+                    type={bootstrapOk ? "info" : "warning"}
                     inline
                     action={
                       <SecondaryButton
@@ -411,14 +444,20 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                         data-guide-ignore="إدارة أكاديمية متخصصة للصحائف؛ لا تغيّر الجدول مباشرة"
                         onClick={() => openCurriculum(Number(sectionId))}
                       >
-                        <GraduationCap /> تهيئة الصحيفة الجديدة
+                        <GraduationCap /> بدء الصحيفة الجديدة
                       </SecondaryButton>
                     }
                   >
-                    <strong>لا توجد صحيفة جديدة فعّالة لهذا القسم بعد.</strong>
+                    <strong>لهذا القسم صحيفة واحدة حتى الآن.</strong>
                     <br />
-                    لحماية التاريخ، لن نضيف مقرراً جديداً الآن. أنشئ الصحيفة الجديدة أولاً؛ سيُثبّت النظام المقررات الموجودة حالياً في الصحيفة السابقة، ثم تبدأ الجديدة فارغة.
+                    إن كان المقرر من الصحيفة الجديدة فابدأها أولاً، حتى لا يختلط بمقررات الطلبة الحاليين.
+                    <label className="course-bootstrap-ok">
+                      <input type="checkbox" checked={bootstrapOk} onChange={e => setBootstrapOk(e.target.checked)} />
+                      <span>المقرر من صحيفة القسم الحالية — أضفه إليها</span>
+                    </label>
                   </Notice>
+                ) : (
+                  <Notice type="warning" inline>لا توجد صحيفة حالية فعّالة لهذا القسم. افتح «الصحائف الأكاديمية» لمراجعتها.</Notice>
                 )}
               </div>
             ) : null}
@@ -458,7 +497,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             </Field>
           </div>
           <FormActions
-            onBack={back}
+            onBack={cancelEditor}
             loading={loading || submitting || Boolean(curriculumTarget?.loading && mode === "create")}
             submitDisabled={createBlocked}
             submitLabel={mode === "create" ? (curriculumTarget?.plan ? `إنشاء في ${curriculumTarget.plan.name}` : "إنشاء المقرر") : "حفظ التعديلات"}
@@ -509,6 +548,18 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
               <option value={0}>كل الأقسام</option>
               {sections.filter((s) => !listCollege || s.AdCollegeId === listCollege).map((s) => <option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}
             </select>
+            {hasPlans ? (
+              <select
+                className="list-filter"
+                value={listPlan}
+                onChange={(e) => setListPlan(e.target.value as PlanFilter)}
+                aria-label="تصفية بالصحيفة"
+              >
+                <option value="all">كل الصحائف</option>
+                <option value="new">الصحيفة الجديدة</option>
+                <option value="old">الصحيفة السابقة</option>
+              </select>
+            ) : null}
           </ListToolbar>
           {loading ? (
             <SkeletonDeck count={6} />
@@ -522,7 +573,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   icon={<BookOpen />}
                   title={x.CourseName}
                   subtitle={<span className="record-path"><Building2 />{sec(x.AdSectionId)} <i className="record-path-dot" aria-hidden="true" /> {coll(x.AdCollegeId)}</span>}
-                  meta={<><MetaPill label="الرقم الأكاديمي" value={x.CourseCode} /><MetaPill label="الوحدات" value={x.CourseCredit} /><MetaPill label="الساعات" value={x.CourseHours} /></>}
+                  meta={<><MetaPill label="الرقم الأكاديمي" value={x.CourseCode} /><MetaPill label="الوحدات" value={x.CourseCredit} /><MetaPill label="الساعات" value={x.CourseHours} />{(() => { const tag = planTagOf(x); return tag ? <span className={`course-plan-tag is-${tag.key}`}>{tag.key === "shared" ? "مشترك" : tag.label}</span> : null; })()}</>}
                 />
               ))}
             </RecordDeck>
@@ -550,6 +601,12 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                 <article><span>السعة</span><b>{selected.MaxStudent || 0}</b></article>
                 <article><span>رمز المقرر</span><b>{selected.CourseCode || "—"}</b></article>
               </div>
+              {planTagOf(selected) ? (
+                <p className="course-plan-line">
+                  <GraduationCap aria-hidden="true" />
+                  <span className={`course-plan-tag is-${planTagOf(selected)!.key}`}>{planTagOf(selected)!.label}</span>
+                </p>
+              ) : null}
               <div className="inspector-actions">
                 <PrimaryButton onClick={() => edit(selected)}>تعديل</PrimaryButton>
                 <SecondaryButton
@@ -573,6 +630,13 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
           initialSectionId={curriculumSectionId || listSection || Number(selected?.AdSectionId || 0)}
           onClose={() => { setCurriculumOpen(false); setCurriculumProbe(value => value + 1); }}
           onChanged={() => { void load(); setCurriculumProbe(value => value + 1); }}
+          onCreateCourse={(sid) => {
+            const section = sections.find((row: any) => Number(row.AdSectionId) === Number(sid));
+            setCurriculumOpen(false);
+            createIn({ collegeId: Number(section?.AdCollegeId || 0), sectionId: Number(sid) });
+            setCurriculumSectionId(Number(sid));
+            setReturnToPlans(true);
+          }}
         />
       ) : null}
     </div>

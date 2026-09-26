@@ -37,6 +37,8 @@ export interface StudentCaseView {
   name?: string;
   civil?: string;
   studentSectionName?: string;
+  /** The student's curriculum plan, when the department runs two side by side. */
+  curriculum?: { name: string; status: string } | null;
   requestType: string;
   createdAt: string;
   details?: string;
@@ -72,6 +74,10 @@ const printableCaseDate = (value: string) => {
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(date);
 };
+/** «صحيفة سابقة / جديدة» — which generation of the curriculum the student follows. */
+const curriculumTag = (item: StudentCaseView) => item.curriculum
+  ? <span className={`student-case-plan ${item.curriculum.status === "active" ? "is-new" : "is-old"}`} title={item.curriculum.status === "active" ? "الصحيفة الحالية (الجديدة)" : "الصحيفة السابقة"}>{item.curriculum.name}</span>
+  : null;
 const graduateReasonText = (item: StudentCaseView) => {
   const reason = GRADUATE_REASON_LABEL[String(item.graduateReason || "")] || "";
   return [reason, String(item.details||"").trim()].filter(Boolean).join(" — ") || "—";
@@ -233,7 +239,7 @@ export default function StudentCasesTable({
                     <td data-label="رقم الحالة" dir="ltr"><code>{item.caseRef || "—"}</code></td>
                     <td data-label="الطالب"><strong>{item.name || "—"}</strong></td>
                     <td data-label="الرقم المدني" dir="ltr">{item.civil || "—"}</td>
-                    <td data-label="قسم الطالب">{item.studentSectionName || "—"}</td>
+                    <td data-label="قسم الطالب">{item.studentSectionName || "—"}{curriculumTag(item)}</td>
                     <td data-label="نوع الطلب"><Badge tone={typeTone(type)}>{STUDENT_CASE_TYPE_LABEL[type]}</Badge></td>
                     <td data-label="المقررات / السبب" className="student-case-detail-cell">{detailCell(item)}</td>
                     {showVerification ? (
@@ -282,7 +288,7 @@ export default function StudentCasesTable({
                       <td dir="ltr">{item.caseRef || "—"}</td>
                       <td>{item.name || "—"}</td>
                       <td dir="ltr">{item.civil || "—"}</td>
-                      <td>{item.studentSectionName || "—"}</td>
+                      <td>{item.studentSectionName || "—"}{item.curriculum ? <small className="student-case-plan-print"> · {item.curriculum.name}</small> : null}</td>
                       <td>{STUDENT_CASE_TYPE_LABEL[type]}</td>
                       <td className="print-break-any">{detail}</td>
                       {printGraduate ? <td className="num">{type === "graduate" ? `${item.passedUnits ?? "—"} / ${item.requiredUnits ?? "—"}` : "—"}</td> : null}

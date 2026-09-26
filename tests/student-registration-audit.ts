@@ -152,8 +152,8 @@ check(screen.includes("filterChosen.current") && screen.includes('nextViewer ===
 check(screen.includes("const exportVisible = async () =>")
   && screen.includes('.filter(course => statusFilter === "all" || statusOf(course) === statusFilter)'),
   "والتصديرُ يُخرج ما يُعرض بالتصفية نفسها، فلا يخرج في ملف التسجيل ما لم توافق عليه اللجنة");
-check(screen.includes('focus?.view !== "studentRegistration"'),
-  "والإشعارُ يفتح الكشفَ على قسمه");
+check(screen.includes('takeNotifyFocus("studentRegistration")') && !screen.includes("schedule:notify-focus"),
+  "والإشعارُ يفتح الكشفَ على قسمه — بالقارئ الواحد (takeNotifyFocus)");
 check(screen.includes("const approveAll = async (row: CaseRow)") && !screen.includes("approveEverything"),
   "والموافقةُ الجماعية لطالبٍ واحد لا للكشف كله: النظرُ في كل طالب عملُ اللجنة");
 

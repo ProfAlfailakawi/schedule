@@ -452,22 +452,21 @@
    سطرٌ واحد فوق الجدول، وزرٌّ واحد. ولا يظهر أيٌّ منهما إلا حين يكون
    مطلوباً فعلاً — فرئيس القسم الذي لا ينتظره شيء لا يرى شيئاً.          */
 .approval-bar{
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-  padding:12px 16px;border-radius:var(--r-md);
-  border:1px solid var(--line);background:var(--surface);
+  --apb-tone:var(--accent);
+  position:relative;
+  display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;
+  padding:10px 14px;border-radius:var(--r-lg);
+  border:1px solid var(--line);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--apb-tone) 6%,var(--surface)),var(--surface) 62%);
+  box-shadow:0 14px 36px -32px color-mix(in srgb,var(--apb-tone) 70%,transparent);
 }
-.approval-bar[data-tone="pending"]{
-  border-color:color-mix(in srgb,var(--info) 30%,transparent);background:var(--info-soft);
-}
-.approval-bar[data-tone="returned"]{
-  border-color:color-mix(in srgb,var(--warning) 32%,transparent);background:var(--warning-soft);
-}
-.approval-bar[data-tone="locked"]{
-  border-color:color-mix(in srgb,var(--accent) 28%,transparent);background:var(--accent-softer);
-}
-.approval-bar>svg{inline-size:17px;block-size:17px;flex:none;opacity:.8}
-.approval-bar-text{flex:1;min-inline-size:170px;display:grid;gap:4px}
-.approval-bar-head{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+.approval-bar[data-tone="pending"]{--apb-tone:var(--info);border-color:color-mix(in srgb,var(--info) 26%,var(--line))}
+.approval-bar[data-tone="returned"]{--apb-tone:var(--warning);border-color:color-mix(in srgb,var(--warning) 30%,var(--line))}
+.approval-bar[data-tone="locked"]{--apb-tone:var(--accent);border-color:color-mix(in srgb,var(--accent) 26%,var(--line))}
+.approval-bar .btn{flex:none}
+
+/* الشارة القديمة في الشريط (العدّ التنازلي) صارت حلقة؛ القاعدة تبقى لشارات
+   الحال في ميزان الأقسام وشاشة التغييرات. */
 .approval-chip{
   display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:var(--r-full);
   font-size:.78rem;font-weight:600;color:var(--muted);
@@ -475,41 +474,231 @@
 }
 .approval-chip svg{inline-size:13px;block-size:13px;flex:none}
 .approval-chip[data-past]{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
-.approval-expand{
-  display:inline-flex;align-items:center;gap:4px;margin-inline-start:auto;
-  padding:3px 8px;border:0;border-radius:var(--r-full);background:transparent;
-  color:var(--muted);font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;
-}
-.approval-expand:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
-.approval-expand svg{inline-size:14px;block-size:14px;transition:transform .18s ease}
-.approval-expand[aria-expanded="true"] svg{transform:rotate(180deg)}
-.approval-bar-text strong{font-size:.92rem;font-weight:700}
-.approval-bar-text small{color:var(--muted);font-size:.82rem}
-.approval-bar[data-tone="returned"] .approval-bar-text small{color:var(--warning)}
-.approval-bar .btn{flex:none}
 
-/* التوقيع: زرٌّ واحد واضح. وتفاصيل اللائحة في شاشة تغييرات الجدول. */
-.approval-sign{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.approval-signed{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.84rem;color:var(--muted)}
-.approval-signed b{color:var(--ink);font-weight:700}
-.approval-signed code{
-  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-  font-size:.8rem;letter-spacing:.06em;
-  padding:1px 7px;border-radius:var(--r-xs);
-  background:var(--surface-3);color:var(--ink-2);
+/* ── التلميح: بالمرور، وبالتركيز، وبالنقر (الهاتف) ─────────────────────── */
+.apb-tip{position:relative;display:inline-flex;flex:none}
+.apb-tip-target{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:help;border-radius:var(--r-full);
+}
+.apb-tip-target:focus-visible,.apb-icon-btn:focus-visible,.approval-bar .apb-primary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:var(--ring)}
+.apb-pop{
+  position:absolute;z-index:60;inset-block-start:calc(100% + 9px);left:50%;
+  transform:translate(-50%,-3px);
+  display:grid;gap:3px;inline-size:max-content;max-inline-size:min(320px,78vw);
+  padding:9px 12px;border-radius:var(--r-sm);
+  background:var(--ink);color:var(--surface);
+  font-size:.8rem;font-weight:500;line-height:1.65;text-align:start;white-space:normal;
+  box-shadow:0 16px 38px -18px rgba(0,0,0,.45);
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .14s ease,transform .14s ease,visibility 0s linear .14s;
+}
+.apb-pop::before{
+  content:"";position:absolute;inset-block-start:-5px;left:calc(50% - 5px);
+  inline-size:10px;block-size:10px;background:inherit;transform:rotate(45deg);border-radius:2px;
+}
+.apb-tip[data-align="start"] .apb-pop{left:auto;inset-inline-start:0;transform:translateY(-3px)}
+.apb-tip[data-align="start"] .apb-pop::before{left:auto;inset-inline-start:13px}
+.apb-tip[data-align="end"] .apb-pop{left:auto;inset-inline-end:0;transform:translateY(-3px)}
+.apb-tip[data-align="end"] .apb-pop::before{left:auto;inset-inline-end:13px}
+.apb-tip:hover .apb-pop,.apb-tip:focus-within .apb-pop,.apb-tip[data-open] .apb-pop{
+  opacity:1;visibility:visible;transform:translate(-50%,0);transition-delay:0s;
+}
+.apb-tip[data-align]:hover .apb-pop,.apb-tip[data-align]:focus-within .apb-pop,.apb-tip[data-align][data-open] .apb-pop{transform:none}
+/* تلميحُ زرّ الفعل لا يتعلّق بالتركيز وحده بعد النقر: يكفي المرور. */
+.apb-tip:has(.apb-icon-btn:not(:focus-visible)):not(:hover) .apb-pop{opacity:0;visibility:hidden}
+.apb-tip[data-open] .apb-pop{pointer-events:auto}
+
+/* ── أيقونة الحال والعنوان ────────────────────────────────────────────── */
+.apb-status{
+  inline-size:36px;block-size:36px;border-radius:12px;
+  background:color-mix(in srgb,var(--apb-tone) 13%,var(--surface));
+  color:var(--apb-tone);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--apb-tone) 22%,transparent);
+}
+.apb-status svg{inline-size:19px;block-size:19px}
+.apb-headline{font-size:.94rem;font-weight:750;color:var(--ink);line-height:1.4;min-inline-size:0}
+
+/* ── الحلية المرئية: مرقاة، حلقة، شارات ────────────────────────────────── */
+.apb-visuals{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.apb-visuals:empty{display:none}
+
+.apb-steps{
+  --node:22px;
+  position:relative;margin:0;padding:0;list-style:none;
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+}
+.apb-steps[data-size="sm"]{inline-size:118px;padding-block-start:7px}
+.apb-steps[data-size="lg"]{--node:44px;inline-size:min(100%,460px);padding-block-start:22px}
+.apb-steps li{position:relative;display:grid;justify-items:center;gap:6px;min-inline-size:0}
+/* الخيط بين كل عقدةٍ والتي قبلها: من مركزها إلى مركز سابقتها — في الاتجاهين. */
+.apb-steps li+li::before{
+  content:"";position:absolute;z-index:0;
+  inset-block-start:calc(var(--node) / 2 - 1px);inset-inline-start:-50%;
+  inline-size:100%;block-size:2px;border-radius:2px;
+  background:var(--line-strong);
+}
+.apb-steps li[data-reached]+li[data-reached]::before,
+.apb-steps li[data-state="done"]+li::before{background:var(--accent)}
+.apb-steps li[data-state="returned"]::before{background:repeating-linear-gradient(90deg,var(--warning) 0 4px,transparent 4px 7px)}
+.apb-node{
+  position:relative;z-index:1;
+  inline-size:var(--node);block-size:var(--node);border-radius:50%;
+  display:grid;place-items:center;
+  background:var(--surface);color:var(--muted-2);
+  border:1.5px solid var(--line-strong);
+}
+.apb-steps[data-size="sm"] .apb-node svg{inline-size:11px;block-size:11px;stroke-width:2.2}
+.apb-steps[data-size="lg"] .apb-node svg{inline-size:20px;block-size:20px}
+.apb-steps li[data-state="done"] .apb-node{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
+.apb-steps li[data-state="current"] .apb-node,
+.apb-steps li[data-turn] .apb-node{border-color:var(--apb-tone);color:var(--apb-tone);background:color-mix(in srgb,var(--apb-tone) 10%,var(--surface))}
+.apb-steps li[data-state="returned"] .apb-node{border-color:var(--warning);color:var(--warning);background:var(--warning-soft)}
+.apb-steps li[data-state="pending"] .apb-node{border-color:var(--info);color:var(--info);background:var(--info-soft)}
+.apb-steps li[data-turn] .apb-node,.apb-steps li[data-turn] .apb-stamp{animation:apb-pulse 2.6s var(--ease-out) infinite}
+@keyframes apb-pulse{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--apb-tone) 42%,transparent)}
+  70%{box-shadow:0 0 0 7px color-mix(in srgb,var(--apb-tone) 0%,transparent)}
+  100%{box-shadow:0 0 0 0 transparent}
+}
+.apb-step-label{font-size:.76rem;font-weight:650;color:var(--muted);text-align:center;line-height:1.3}
+.apb-steps li[data-state="done"] .apb-step-label,.apb-steps li[data-turn] .apb-step-label{color:var(--ink)}
+.apb-node-badge{
+  position:absolute;z-index:2;inset-block-start:-7px;inset-inline-end:calc(50% - var(--node) / 2 - 10px);
+  min-inline-size:18px;padding:0 5px;border-radius:var(--r-full);
+  font-size:.64rem;font-weight:800;line-height:15px;text-align:center;font-variant-numeric:tabular-nums;
+  background:var(--surface);color:var(--ink-2);border:1px solid var(--line-strong);
+}
+.apb-steps[data-size="sm"] .apb-node-badge{display:none}
+.apb-node-badge[data-tone="info"]{background:var(--info);border-color:var(--info);color:#fff}
+
+/* قوسُ الإرجاع: من العقدة التي أرجعت إلى اللجنة، فوق الخيط. */
+.apb-return{
+  position:absolute;z-index:0;inset-block-start:0;inset-inline-start:12.5%;
+  block-size:calc(var(--node) / 2 + 6px);
+  border:1.5px dashed var(--warning);border-block-end:0;border-radius:14px 14px 0 0;
+}
+.apb-steps[data-size="sm"] .apb-return{block-size:calc(var(--node) / 2 + 5px);border-radius:8px 8px 0 0}
+.apb-return[data-from="1"]{inline-size:25%}
+.apb-return[data-from="2"]{inline-size:50%}
+.apb-return::after{
+  content:"";position:absolute;inset-inline-start:-4.5px;inset-block-end:-1px;
+  border:4px solid transparent;border-block-start:6px solid var(--warning);border-block-end:0;
+}
+.apb-steps[data-size="lg"] .apb-return{inset-block-start:4px;block-size:calc(var(--node) / 2 + 14px)}
+.apb-return svg{
+  position:absolute;inset-block-start:-9px;left:50%;transform:translateX(-50%);
+  inline-size:16px;block-size:16px;padding:1px;border-radius:50%;
+  background:var(--surface);color:var(--warning);
 }
 
-/* العدّ التنازليّ والخلافُ المرفوع: سطران هادئان تحت الخبر، لا تنبيهان. */
-.approval-countdown,.approval-escalated{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
-.approval-countdown svg,.approval-escalated svg{inline-size:14px;block-size:14px;flex:none}
-.approval-countdown[data-past]{color:var(--danger)}
-.approval-escalated{color:var(--warning)}
-.approval-history-toggle{
-  display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font:inherit;font-size:.84rem;
-  border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink-2);cursor:pointer;
+.apb-steps-tip{padding:2px 4px;border-radius:var(--r-sm)}
+
+/* الختمُ: دائرةٌ مزدوجة الحافّة بحرفَي الاسم، وعلامةُ صحّةٍ صغيرة. */
+.apb-stamp{
+  position:relative;z-index:1;
+  inline-size:var(--node);block-size:var(--node);border-radius:50%;
+  background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--accent) 14%,var(--surface)),var(--surface) 72%);
+  color:var(--accent-ink);
+  border:2px solid var(--accent);
+  box-shadow:inset 0 0 0 3px var(--surface),inset 0 0 0 4px color-mix(in srgb,var(--accent) 45%,transparent);
+  transform:rotate(-8deg);
 }
-.approval-history-toggle svg{inline-size:15px;block-size:15px}
-.approval-history-toggle:focus-visible{outline:none;box-shadow:var(--ring)}
+.apb-stamp-initials{font-size:.92rem;font-weight:800;letter-spacing:.02em;transform:rotate(8deg)}
+.apb-stamp-check{
+  position:absolute;inset-block-end:-3px;inset-inline-end:-3px;
+  inline-size:17px;block-size:17px;border-radius:50%;display:grid;place-items:center;
+  background:var(--accent);color:var(--accent-contrast);border:2px solid var(--surface);transform:rotate(8deg);
+}
+.apb-stamp-check svg{inline-size:10px;block-size:10px;stroke-width:3}
+
+/* حلقةُ الموعد: الأيامُ الباقية رقماً في وسطها، ولونُها قربُها. */
+.apb-ring{--ring-tone:var(--success);position:relative;inline-size:36px;block-size:36px;flex:none}
+.apb-ring[data-size="lg"]{inline-size:58px;block-size:58px}
+.apb-ring[data-tone="near"]{--ring-tone:var(--warning)}
+.apb-ring[data-tone="past"]{--ring-tone:var(--danger)}
+.apb-ring>svg{position:absolute;inset:0;inline-size:100%;block-size:100%;transform:rotate(-90deg)}
+.apb-ring>svg circle{fill:none;stroke-width:3.4;stroke-linecap:round}
+.apb-ring-track{stroke:color-mix(in srgb,var(--ring-tone) 16%,var(--line))}
+.apb-ring-value{stroke:var(--ring-tone);transition:stroke-dasharray .8s var(--ease-out)}
+.apb-ring-core{position:relative;display:grid;place-items:center;line-height:1;color:var(--ring-tone)}
+.apb-ring-core b{font-size:.86rem;font-weight:800;font-variant-numeric:tabular-nums}
+.apb-ring[data-size="lg"] .apb-ring-core b{font-size:1.18rem}
+.apb-ring-core small{font-size:.6rem;font-weight:650;color:var(--muted);margin-block-start:2px}
+.apb-ring-core svg{inline-size:15px;block-size:15px}
+.apb-ring-badge{
+  position:absolute;inset-block-start:-3px;inset-inline-end:-4px;
+  inline-size:16px;block-size:16px;border-radius:50%;display:grid;place-items:center;
+  border:2px solid var(--surface);color:#fff;background:var(--info);
+}
+.apb-ring-badge[data-tone="warning"]{background:var(--warning)}
+.apb-ring-badge[data-tone="danger"]{background:var(--danger)}
+.apb-ring-badge svg{inline-size:9px;block-size:9px;stroke-width:3}
+
+/* الشارات: أيقونةٌ وعدد. */
+.apb-badge{
+  --badge-tone:var(--muted);
+  min-block-size:28px;padding:0 9px;border-radius:var(--r-full);
+  font-size:.8rem;font-weight:750;font-variant-numeric:tabular-nums;
+  color:var(--badge-tone);
+  background:color-mix(in srgb,var(--badge-tone) 11%,var(--surface));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--badge-tone) 26%,transparent);
+}
+.apb-badge[data-tone="info"]{--badge-tone:var(--info)}
+.apb-badge[data-tone="warning"]{--badge-tone:var(--warning)}
+.apb-badge[data-tone="danger"]{--badge-tone:var(--danger)}
+.apb-badge svg{inline-size:15px;block-size:15px}
+
+/* ── الأفعال ─────────────────────────────────────────────────────────── */
+.approval-sign{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-inline-start:auto}
+.apb-icon-btn{
+  position:relative;inline-size:36px;block-size:36px;border-radius:12px;
+  display:grid;place-items:center;padding:0;cursor:pointer;
+  border:1px solid var(--line);background:var(--surface);color:var(--ink-2);
+  transition:background-color .15s ease,border-color .15s ease,color .15s ease;
+}
+.apb-icon-btn svg{inline-size:17px;block-size:17px}
+.apb-icon-btn:hover:not(:disabled){background:color-mix(in srgb,var(--apb-tone) 8%,var(--surface));border-color:color-mix(in srgb,var(--apb-tone) 30%,var(--line));color:var(--ink)}
+.apb-icon-btn:disabled{opacity:.5;cursor:not-allowed}
+.apb-icon-btn[aria-expanded="true"],.apb-icon-btn[data-active]{background:color-mix(in srgb,var(--apb-tone) 12%,var(--surface));border-color:color-mix(in srgb,var(--apb-tone) 36%,var(--line));color:var(--apb-tone)}
+.apb-expand{border-color:transparent;background:transparent}
+.apb-expand svg{transition:transform .18s ease}
+.apb-expand[aria-expanded="true"]{background:transparent;border-color:transparent}
+.apb-expand[aria-expanded="true"] svg{transform:rotate(180deg)}
+.apb-count{
+  position:absolute;inset-block-start:-6px;inset-inline-end:-6px;
+  min-inline-size:18px;block-size:18px;padding:0 4px;border-radius:var(--r-full);
+  display:grid;place-items:center;font-size:.66rem;font-weight:800;font-variant-numeric:tabular-nums;
+  background:var(--warning);color:#fff;border:2px solid var(--surface);
+}
+.approval-bar .apb-primary{min-block-size:36px;padding-inline:14px;gap:7px;border-radius:12px}
+.apb-count-inline{
+  min-inline-size:20px;padding:0 6px;border-radius:var(--r-full);
+  font-size:.72rem;font-weight:800;line-height:18px;text-align:center;font-variant-numeric:tabular-nums;
+  background:color-mix(in srgb,var(--accent-contrast) 24%,transparent);
+}
+
+/* ── التفاصيل: المرقاة بأختامها، وما كتبه إنسانٌ بنصّه ─────────────────── */
+.apb-expanded{
+  flex:1 1 100%;display:grid;gap:12px;
+  padding-block-start:12px;border-block-start:1px dashed color-mix(in srgb,var(--apb-tone) 26%,var(--line));
+}
+.apb-expanded-row{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.apb-quote{
+  display:flex;align-items:flex-start;gap:8px;margin:0;
+  padding:8px 12px;border-radius:var(--r-sm);
+  background:var(--warning-soft);color:var(--ink);font-size:.86rem;line-height:1.7;
+  border-inline-start:3px solid var(--warning);
+}
+.apb-quote svg{inline-size:15px;block-size:15px;color:var(--warning);margin-block-start:4px;flex:none}
+.apb-quote small{color:var(--muted);font-size:.78rem}
+.apb-additions{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.apb-additions li{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:var(--r-full);
+  font-size:.78rem;font-weight:600;color:var(--info);background:var(--info-soft);
+}
+.apb-additions svg{inline-size:13px;block-size:13px}
+
 .approval-sheet{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
 .approval-sheet label{display:grid;gap:4px;flex:1 1 220px;font-size:.84rem;color:var(--muted)}
 .approval-sheet input{
@@ -518,17 +707,63 @@
 }
 .approval-sheet input:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
 .approval-sheet-actions{display:flex;gap:8px}
-.approval-history{
-  flex:1 1 100%;margin:0;padding:8px 0 0;list-style:none;display:grid;gap:6px;
-  border-block-start:1px solid var(--line);max-block-size:260px;overflow:auto;
-}
-.approval-history li{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.82rem;color:var(--muted)}
-.approval-history time{min-inline-size:110px}
-.approval-history strong{color:var(--ink);font-weight:600}
 
+/* السجلّ: خطٌّ زمنيّ بنقاطٍ ملوّنة بنوع الفعل. */
+.approval-history{
+  flex:1 1 100%;margin:0;padding:10px 0 0;list-style:none;display:grid;gap:0;
+  border-block-start:1px solid var(--line);max-block-size:280px;overflow:auto;
+}
+.approval-history li{
+  --event-tone:var(--muted);
+  position:relative;display:grid;grid-template-columns:26px max-content 1fr;align-items:center;column-gap:10px;
+  padding-block:5px;font-size:.82rem;color:var(--muted);
+}
+.approval-history li+li::before{
+  content:"";position:absolute;inset-inline-start:12px;inset-block-start:-9px;
+  inline-size:2px;block-size:18px;background:var(--line);
+}
+.approval-history li[data-kind="accent"]{--event-tone:var(--accent)}
+.approval-history li[data-kind="success"]{--event-tone:var(--success)}
+.approval-history li[data-kind="info"]{--event-tone:var(--info)}
+.approval-history li[data-kind="warning"]{--event-tone:var(--warning)}
+.approval-history li[data-kind="danger"]{--event-tone:var(--danger)}
+.apb-event-dot{
+  position:relative;z-index:1;grid-row:span 2;
+  inline-size:26px;block-size:26px;border-radius:50%;display:grid;place-items:center;
+  color:var(--event-tone);background:color-mix(in srgb,var(--event-tone) 12%,var(--surface));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--event-tone) 28%,transparent);
+}
+.apb-event-dot svg{inline-size:13px;block-size:13px}
+.approval-history strong{color:var(--ink);font-weight:650}
+.approval-history time{font-size:.76rem;font-variant-numeric:tabular-nums}
+.apb-event-who{grid-column:2 / -1;font-size:.76rem;color:var(--muted-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+@media (prefers-reduced-motion:reduce){
+  .apb-steps li[data-turn] .apb-node,.apb-steps li[data-turn] .apb-stamp{animation:none}
+  .apb-pop,.apb-ring-value,.apb-expand svg{transition:none}
+}
+
+/* الهاتف: المرقاة أيقوناتٌ بلا تسميات، والتلميحُ ورقةٌ في أسفل الشاشة. */
 @media (max-width:640px){
-  .approval-bar{align-items:stretch}
-  .approval-bar .btn{inline-size:100%;justify-content:center}
+  .approval-bar{gap:8px 10px;padding:10px 12px}
+  .apb-headline{flex:1 1 0}
+  .apb-visuals{order:3;flex:1 1 100%}
+  .approval-sign{order:4;flex:1 1 100%;margin-inline-start:0}
+  .approval-sign .apb-primary{flex:1 1 auto;justify-content:center}
+  .approval-sign .apb-tip:has(.apb-expand){order:-1;position:absolute;inset-block-start:10px;inset-inline-end:10px}
+  .approval-bar{padding-inline-end:52px}
+  .apb-step-label{display:none}
+  .apb-steps[data-size="lg"]{--node:38px;inline-size:100%}
+  .apb-pop,.apb-tip[data-align] .apb-pop{
+    position:fixed;left:16px;right:16px;inset-block-start:auto;bottom:calc(128px + env(safe-area-inset-bottom,0px));inset-inline:16px;
+    inline-size:auto;max-inline-size:none;transform:translateY(6px);
+    padding:12px 14px;font-size:.86rem;border-radius:var(--r-md);
+  }
+  .apb-pop::before{display:none}
+  .apb-tip:hover .apb-pop,.apb-tip:focus-within .apb-pop,.apb-tip[data-open] .apb-pop,
+  .apb-tip[data-align]:hover .apb-pop,.apb-tip[data-align][data-open] .apb-pop{transform:none}
+  /* على اللمس لا يُعتمد على «المرور»: التلميح يُفتح بالنقر وحده. */
+  .apb-tip:not([data-open]) .apb-pop{opacity:0;visibility:hidden}
 }
 
 @media print{

@@ -13,6 +13,8 @@ import type { ScheduleApprovalStatus } from "../types";
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
+import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
+import { safeStorage } from "../utils/safeStorage";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { currentTermId, sortTermsNewest, termChronology } from "../utils/termSequence";
@@ -415,11 +417,9 @@ function QuerySkeleton() {
 
 export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const prefKey = `schedule-unified-prefs-${user?.SystemUserId || 0}`;
-  const workspacePrefKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
+  const scopeOwner = Number(user?.SystemUserId || 0);
   let saved: any = {};
-  let workspaceSaved: any = {};
   try { saved = JSON.parse(localStorage.getItem(prefKey) || "{}"); } catch { /* first run */ }
-  try { workspaceSaved = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch { /* first run */ }
 
   const isDeanReader = roleId === "dean" || roleId === "viceDean";
   const [lens, setLens] = useState<Lens>(() => initialLensFor(roleId, mode, saved.lens));
@@ -465,12 +465,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [filters, setFilters] = useState<Filters>(() => ({
     ...fresh(),
     ...(saved.filters || {}),
-    // النطاق الأكاديمي (الكلية/القسم/الفصل) مشترك للمنتج كله: يُقرأ آخر اختيار
-    // من أي شاشة أولاً — لا ذاكرة الاستعلامات وحدها — فلا يرى المستخدم فصلاً
-    // قديماً (٢٠١٧) اختاره النظام لأن الجدول غيّر النطاق ولم تُحدَّث الاستعلامات.
-    collegeId: Number(workspaceSaved.filterCollege || saved.filters?.collegeId || 0) || 0,
-    sectionId: Number(workspaceSaved.filterSection || saved.filters?.sectionId || 0) || 0,
-    termId: Number(workspaceSaved.filterTerm || saved.filters?.termId || 0) || 0,
+    // النطاق الأكاديمي (الكلية/القسم/الفصل) واحدٌ للمنتج كله ومحفوظٌ في موضعٍ
+    // واحد (src/utils/sharedScope.ts) — لا نسخةَ منه في تفضيلات الاستعلامات.
+    ...(({ collegeId, sectionId, termId }) => ({ collegeId, sectionId, termId }))(readSharedScope(scopeOwner)),
     instructorId: 0,
     instructorQuery: "",
     civil: "",
@@ -528,6 +525,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [mobileWideNotice, setMobileWideNotice] = useState<Lens | null>(null);
 
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
+  const termsRef = useRef<AdTerm[]>([]);
+  termsRef.current = terms;
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
   /* تبدّل الشاشة (mode) يفتح عدستها — بالدالّة نفسها التي تعرف الصفة (N2/N11).
      أوّلُ تشغيلٍ يأخذ ما قرّرته `initialLensFor` (محفوظةً أو ميزاناً للعميدين)
@@ -543,18 +544,21 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     // Persist the whole filter set, not just scope — every active chip
     // (instructor, course, civil id, time window, days) survives a reload and a
     // closed detail, matching the restore which already spreads all of them.
-    localStorage.setItem(prefKey, JSON.stringify({ lens, filters }));
-    // One shared academic context for the whole product. Merge rather than
-    // replace so opening Reports never erases the schedule's view/colour prefs.
-    let shared: any = {};
-    try { shared = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch {}
-    localStorage.setItem(workspacePrefKey, JSON.stringify({
-      ...shared,
-      filterCollege: Number(filters.collegeId || 0) || 0,
-      filterSection: Number(filters.sectionId || 0) || 0,
-      filterTerm: Number(filters.termId || 0) || 0,
-    }));
-  }, [prefKey, workspacePrefKey, lens, filters]);
+    // The academic scope is not part of it: that lives in the shared scope
+    // (src/utils/sharedScope.ts), written only when the reader picks.
+    const { collegeId: _college, sectionId: _section, termId: _term, ...rest } = filters;
+    safeStorage.set(prefKey, JSON.stringify({ lens, filters: rest }));
+  }, [prefKey, lens, filters]);
+  /* يكتب ما اختاره القارئ بيده في النطاق المشترك، ويضعه في المرشّحات. */
+  const sharedScope = useSharedScope((incoming) => {
+    if (!termsRef.current.length) return;
+    const next = resolveSharedScope(incoming, { scopes, isAdmin: isPowerAdmin, colleges, sections, terms: termsRef.current, fallbackTermId: filtersRef.current.termId });
+    setFilters(prev => ({ ...prev, ...next }));
+  }, scopeOwner);
+  const pickScope = (patch: { collegeId?: number; sectionId?: number; termId?: number }) => {
+    sharedScope.pick(patch);
+    setFilters(prev => ({ ...prev, ...patch }));
+  };
 
   useEffect(() => {
     /* نداءٌ واحد لحالات الفصل كله، لا نداءٌ لكل قسم: كليةٌ فيها عشرون قسماً
@@ -674,22 +678,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           if (isDeanReader || roleId === "registrarDean") setLens("balance");
         }
         setFilters(prev => {
-          let collegeId = Number(focus?.collegeId || prev.collegeId || 0) || 0;
-          let sectionId = focus ? Number(focus.sectionId || 0) : Number(prev.sectionId || 0) || 0;
-          let termId = Number(focus?.termId || prev.termId || 0) || 0;
-          if (isPowerAdmin) {
-            if (collegeId && !data[0].some((row: AdCollege) => Number(row.AdCollegeId) === collegeId)) collegeId = 0;
-            const section = data[1].find((row: AdSection) => Number(row.AdSectionId) === sectionId);
-            if (!section || (collegeId && Number(section.AdCollegeId) !== collegeId)) sectionId = 0;
-          } else {
-            const scoped = coerceScopeValues(scopes, collegeId, sectionId, false);
-            collegeId = scoped.collegeId;
-            sectionId = scoped.sectionId;
-          }
-          if (termId && !sortedTerms.some(row => Number(row.AdTermId) === termId)) termId = Number(sortedTerms[0]?.AdTermId || 0);
-          /* العميدان يفتحان على الفصل الجاري مباشرة: لا يُسألان عن فصلٍ قبل أن يريا شيئاً. */
-          if (!termId && (roleId === "dean" || roleId === "viceDean")) termId = currentTermId(sortedTerms as any);
-          return { ...prev, collegeId, sectionId, termId };
+          /* الإشعار كتب هدفه في النطاق المشترك (takeNotifyFocus)، فيُقرأ منه. */
+          const stored = focus ? readSharedScope(scopeOwner) : { collegeId: prev.collegeId, sectionId: prev.sectionId, termId: prev.termId };
+          /* فصلٌ محفوظٌ زال → الأحدث؛ ولا فصلَ محفوظاً → العميدان يفتحان على
+             الفصل الجاري مباشرة: لا يُسألان عن فصلٍ قبل أن يريا شيئاً. */
+          const fallbackTermId = stored.termId
+            ? Number(sortedTerms[0]?.AdTermId || 0)
+            : (roleId === "dean" || roleId === "viceDean") ? currentTermId(sortedTerms as any) : 0;
+          const scoped = resolveSharedScope(stored, { scopes, isAdmin: isPowerAdmin, colleges: data[0], sections: data[1], terms: sortedTerms, fallbackTermId });
+          return { ...prev, ...scoped };
         });
       } catch (e: any) { setError(e.message); } finally { setLoading(false); }
     })();
@@ -1878,7 +1875,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               value={filters.collegeId || ""}
               onChange={event => {
                 const id = Number(event.target.value) || 0;
-                setFilters(prev => ({ ...prev, collegeId: id, sectionId: id && !isPowerAdmin ? (resolveScopeSelection(scopes, id, false).defaultSectionId || 0) : 0 }));
+                pickScope({ collegeId: id, sectionId: id && !isPowerAdmin ? (resolveScopeSelection(scopes, id, false).defaultSectionId || 0) : 0 });
               }}
             >
               <option value="">اختر الكلية</option>
@@ -1887,14 +1884,14 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           </Field>
           {soleDepartment === null ? (
             <Field label="القسم">
-              <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => set("sectionId", Number(event.target.value) || 0)}>
+              <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => pickScope({ sectionId: Number(event.target.value) || 0 })}>
                 <option value="">كل الأقسام</option>
                 {sectionOptions.map(row => <option key={row.AdSectionId} value={row.AdSectionId}>{cleanOptionText(row.AdSectionName)}</option>)}
               </select>
             </Field>
           ) : null}
           <Field label="الفصل">
-            <select value={filters.termId || ""} onChange={event => set("termId", Number(event.target.value) || 0)}>
+            <select value={filters.termId || ""} onChange={event => pickScope({ termId: Number(event.target.value) || 0 })}>
               <option value="">اختر الفصل</option>
               {termOptions.map(row => <option key={row.AdTermId} value={row.AdTermId}>{cleanOptionText(row.AdTermName)}</option>)}
             </select>

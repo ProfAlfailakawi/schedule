@@ -42,6 +42,7 @@ import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 import { singleDepartmentOf } from "./utils/scopeContext";
+import { readSharedScope, setSharedScopeUser } from "./utils/sharedScope";
 import { warmStart } from "./utils/warmStart";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
 import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb, telemetryGuide } from "./utils/clientTelemetry";
@@ -71,18 +72,16 @@ const loadAdminUsers = () => import("./components/AdminUsers");
 const loadAbout = () => import("./components/About");
 const loadIntelligence = () => import("./components/IntelligenceWorkspace");
 /**
- * The board's own preference key, which carries the reader's id. Duplicated
- * here on purpose: the warm start must run before any component exists, so it
- * cannot ask the board what it calls its own shelf.
+ * The board's first question, asked before the board exists. The scope is the
+ * shared one (src/utils/sharedScope.ts) — the same value the board hydrates
+ * from — so the warm answer is the one the board would have asked for.
  */
 function scheduleScopeQuery(userId: number): string {
   const query = new URLSearchParams();
-  try {
-    const pref = JSON.parse(localStorage.getItem(`schedule-workspace-prefs-${userId}`) || "{}");
-    if (Number(pref.filterCollege)) query.set("collegeId", String(Number(pref.filterCollege)));
-    if (Number(pref.filterSection)) query.set("sectionId", String(Number(pref.filterSection)));
-    if (Number(pref.filterTerm)) query.set("termId", String(Number(pref.filterTerm)));
-  } catch { /* an unreadable shelf just means an unscoped warm start */ }
+  const scope = readSharedScope(userId);
+  if (scope.collegeId) query.set("collegeId", String(scope.collegeId));
+  if (scope.sectionId) query.set("sectionId", String(scope.sectionId));
+  if (scope.termId) query.set("termId", String(scope.termId));
   query.set("resolve", "1");
   return query.toString();
 }
@@ -552,6 +551,9 @@ export default function App() {
     [sessionRole, setSessionRole] = useState<SessionRole>(DEFAULT_SESSION_ROLE),
     [scopes, setScopes] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
+  /* النطاق الواحد (src/utils/sharedScope.ts) مفتاحه صاحب الجلسة: يُضبط هنا، في
+     الرسم نفسه، لأن الشاشات تقرؤه في أوّل رسمٍ لها — قبل أن يجري أيّ effect هنا. */
+  setSharedScopeUser(Number(user?.SystemUserId || 0));
   /* ── صفات البيئة التجريبية ─────────────────────────────────────────────────
    * قائمةُ الصفات التي يبدّل بينها شريط الديمو، والصفةُ الحاضرة الآن. تصل من
    * الخادم مع حمولة الجلسة، وتغيب تماماً خارج البيئة التجريبية. */

@@ -582,8 +582,9 @@ ok('207 the inline borrow panel carries the board’s three filters — day, bui
    and '.schedule-borrow-time{' in schedule_css)
 
 ok('208 the academic scope is shared product-wide: Query Center reads the last chosen college/section/term first, not its own stale memory',
-   'Number(workspaceSaved.filterCollege || saved.filters?.collegeId || 0)' in reports_src
-   and 'Number(workspaceSaved.filterTerm || saved.filters?.termId || 0)' in reports_src)
+   'readSharedScope(scopeOwner)' in reports_src
+   and 'resolveSharedScope(stored' in reports_src
+   and 'workspaceSaved' not in reports_src)
 
 ok('209 an actually empty selected term hides the zero counters and schedule-health deck instead of showing fake 100 scores',
    ('!rowsForeign && rows.length > 0 ? (' in schedules_src or '!rowsForeign && filteredRows.length > 0 ? (' in schedules_src)

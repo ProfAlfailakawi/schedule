@@ -22,6 +22,7 @@ import {
   AdCourse,
   CurriculumPlan,
   CurriculumPlanCourse,
+  CurriculumDegreeRule,
   CourseTransition,
   FSchedule,
   AdRoom,
@@ -3292,6 +3293,15 @@ export const Repository = {
     const now=new Date().toISOString();
     const existing=await Repository.getCurriculumPlans(sectionId);
     const courses=await Repository.getCoursesBySection(sectionId);
+    /* The department's saved graduation rule is, by definition, the rule its
+       current students were admitted under. It travels with them into «الصحيفة
+       السابقة»; the new plan starts without one and asks for its own. */
+    const sectionRule=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===sectionId);
+    const legacyRule:CurriculumDegreeRule|undefined=sectionRule?{
+      degreeUnits:Number(sectionRule.degreeUnits),fieldTrainingRequired:Number(sectionRule.fieldTrainingRequired),
+      graduateRegularPassed:Number(sectionRule.graduateRegularPassed),graduateSummerPassed:Number(sectionRule.graduateSummerPassed),
+      updatedAt:String(sectionRule.updatedAt||now),updatedBy:String(sectionRule.updatedBy||"")||undefined,
+    }:undefined;
     const newPlan:CurriculumPlan={
       id: randomUUID(), AdCollegeId:collegeId, AdSectionId:sectionId,
       name:String(input.name||"").trim(), code:String(input.code||"").trim()||undefined,
@@ -3303,6 +3313,7 @@ export const Repository = {
         const legacy:CurriculumPlan={
           id:randomUUID(),AdCollegeId:collegeId,AdSectionId:sectionId,
           name:"الصحيفة السابقة",code:"LEGACY",status:"transition",createdAt:now,createdBy:String(input.by||"")||undefined,
+          ...(legacyRule?{degreeRule:legacyRule}:{}),
         };
         batch.set(firestoreDb.collection("curriculumPlans").doc(legacy.id),legacy);
         for(const course of courses){
@@ -3319,13 +3330,28 @@ export const Repository = {
     if (!Array.isArray(db.curriculumPlans)) db.curriculumPlans=[];
     if (!Array.isArray(db.curriculumPlanCourses)) db.curriculumPlanCourses=[];
     if (!existing.length) {
-      const legacy:CurriculumPlan={id:randomUUID(),AdCollegeId:collegeId,AdSectionId:sectionId,name:"الصحيفة السابقة",code:"LEGACY",status:"transition",createdAt:now,createdBy:String(input.by||"")||undefined};
+      const legacy:CurriculumPlan={id:randomUUID(),AdCollegeId:collegeId,AdSectionId:sectionId,name:"الصحيفة السابقة",code:"LEGACY",status:"transition",createdAt:now,createdBy:String(input.by||"")||undefined,...(legacyRule?{degreeRule:legacyRule}:{})};
       db.curriculumPlans.push(legacy);
       db.curriculumPlanCourses.push(...courses.map(course=>({id:`${legacy.id}_${course.AdCourseId}`,planId:legacy.id,AdCollegeId:collegeId,AdSectionId:sectionId,AdCourseId:course.AdCourseId,createdAt:now,createdBy:String(input.by||"")||undefined})));
     } else {
       db.curriculumPlans=db.curriculumPlans.map(plan=>Number(plan.AdSectionId)===sectionId&&plan.status==="active"?{...plan,status:"transition"}:plan);
     }
     db.curriculumPlans.push(newPlan); saveDatabase(); return newPlan;
+  },
+
+  /** Rename a plan or set its graduation rule. Status never changes here. */
+  updateCurriculumPlan: async (planId:string, sectionId:number, patch:{ name?:string; degreeRule?:CurriculumDegreeRule }): Promise<CurriculumPlan> => {
+    const plans=await Repository.getCurriculumPlans(sectionId),plan=plans.find(row=>row.id===planId);
+    if(!plan)throw new Error("الصحيفة غير موجودة");
+    if(plan.status==="archived")throw new Error("الصحيفة المؤرشفة محفوظة للتاريخ ولا تُعدّل");
+    const updated:CurriculumPlan={...plan};
+    if(patch.name!==undefined)updated.name=patch.name;
+    if(patch.degreeRule)updated.degreeRule=patch.degreeRule;
+    if(!updated.code)delete updated.code;
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);return updated;}
+    if(!Array.isArray(db.curriculumPlans))db.curriculumPlans=[];
+    const at=db.curriculumPlans.findIndex(row=>row.id===planId);if(at<0)throw new Error("الصحيفة غير موجودة");
+    db.curriculumPlans[at]=updated;saveDatabase();return updated;
   },
 
   addCourseToCurriculumPlan: async (planId:string, course:AdCourse, by=""): Promise<CurriculumPlanCourse> => {

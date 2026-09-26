@@ -2199,43 +2199,111 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .curriculum-section-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:color-mix(in srgb,var(--brand,#375b52) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--brand,#375b52) 20%,var(--line))}
 .curriculum-section-icon svg{width:21px;height:21px;color:var(--brand,#375b52)}
 .curriculum-section-bar>div:nth-child(2){display:grid;gap:2px}.curriculum-section-bar strong{font-size:13px}.curriculum-section-bar span{font-size:11px;color:var(--muted)}
-.curriculum-section-bar select,.curriculum-new-plan input,.curriculum-add-row select,.curriculum-map-form select,.curriculum-map-form input{width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:10px 11px;font:inherit;font-size:12px;outline:none}
-.curriculum-section-bar select:focus,.curriculum-new-plan input:focus,.curriculum-add-row select:focus,.curriculum-map-form select:focus,.curriculum-map-form input:focus{border-color:color-mix(in srgb,var(--brand,#375b52) 55%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#375b52) 10%,transparent)}
+.curriculum-section-bar select{width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:10px 11px;font:inherit;font-size:12px;outline:none}
+.curriculum-section-bar select:focus{border-color:color-mix(in srgb,var(--brand,#375b52) 55%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#375b52) 10%,transparent)}
 .curriculum-loading{padding:32px;text-align:center;color:var(--muted)}
-.curriculum-bootstrap{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:18px;border-color:color-mix(in srgb,var(--brand,#375b52) 28%,var(--line));background:linear-gradient(135deg,color-mix(in srgb,var(--brand,#375b52) 7%,var(--surface)),var(--surface))}
-.curriculum-bootstrap-mark{display:grid;place-items:center;width:46px;height:46px;border-radius:16px;background:var(--surface);border:1px solid color-mix(in srgb,var(--brand,#375b52) 22%,var(--line));box-shadow:var(--shadow-xs,0 2px 8px rgba(0,0,0,.05))}
-.curriculum-bootstrap-mark svg{width:22px;height:22px;color:var(--brand,#375b52)}
-.curriculum-bootstrap h2{margin:2px 0 4px;font-size:17px}.curriculum-bootstrap p{margin:0;max-width:72ch;color:var(--muted);font-size:12px;line-height:1.75}
-.curriculum-bootstrap>b{display:grid;justify-items:center;min-width:76px;font-size:24px;line-height:1}.curriculum-bootstrap>b small{margin-top:5px;font-size:10px;color:var(--muted);font-weight:600}
-.curriculum-plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}
-.curriculum-plan-card,.curriculum-new-plan{position:relative;display:grid;align-content:start;gap:10px;min-height:192px;padding:16px;overflow:hidden}
-.curriculum-plan-card:after{content:"";position:absolute;inset-inline-start:0;inset-block:0;width:3px;background:var(--line)}
-.curriculum-plan-card.active:after{background:var(--brand,#375b52)}.curriculum-plan-card.transition:after{background:var(--brass,#a9803f)}
-.curriculum-plan-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.curriculum-plan-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--surface-muted,var(--surface));border:1px solid var(--line)}
-.curriculum-plan-icon svg{width:17px;height:17px}
-.curriculum-status{display:inline-flex;padding:4px 8px;border-radius:999px;border:1px solid var(--line);font-size:10px;font-weight:700;color:var(--muted)}
-.curriculum-status.active{color:var(--brand,#375b52);border-color:color-mix(in srgb,var(--brand,#375b52) 30%,var(--line));background:color-mix(in srgb,var(--brand,#375b52) 6%,var(--surface))}
-.curriculum-status.transition{color:var(--brass,#a9803f);border-color:color-mix(in srgb,var(--brass,#a9803f) 35%,var(--line));background:color-mix(in srgb,var(--brass,#a9803f) 7%,var(--surface))}
-.curriculum-plan-card h3{margin:3px 0 0;font-size:16px}.curriculum-plan-card p{margin:0;color:var(--muted);font-size:11.5px;line-height:1.65}
-.curriculum-plan-meta{display:flex;align-items:baseline;gap:5px;margin-top:auto;padding-top:3px}.curriculum-plan-meta b{font-size:22px}.curriculum-plan-meta span{font-size:10px;color:var(--muted)}.curriculum-plan-meta em{margin-inline-start:auto;font-style:normal;font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:7px;padding:2px 6px}
-.curriculum-archive-btn{justify-self:start;min-height:32px!important;padding:6px 9px!important;font-size:10.5px!important}.curriculum-archive-btn svg{width:14px;height:14px}
-.curriculum-new-plan{border-style:dashed;background:color-mix(in srgb,var(--surface-muted,var(--surface)) 60%,var(--surface))}
-.curriculum-new-plan-title{display:flex;align-items:center;gap:9px}.curriculum-new-plan-title>svg{width:20px;height:20px;color:var(--brand,#375b52)}.curriculum-new-plan-title>div{display:grid;gap:2px}.curriculum-new-plan-title strong{font-size:13px}.curriculum-new-plan-title span{font-size:10.5px;color:var(--muted)}
-.curriculum-work-grid{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:12px;align-items:start}
-.curriculum-course-panel,.curriculum-map-panel{display:grid;gap:12px;padding:16px;min-width:0}.curriculum-course-panel>header,.curriculum-map-panel>header{display:flex;align-items:center;justify-content:space-between;gap:10px}.curriculum-course-panel h3,.curriculum-map-panel h3{margin:2px 0 0;font-size:15px}.curriculum-map-panel>header>svg{width:20px;height:20px;color:var(--muted)}
-.curriculum-count{display:grid;place-items:center;min-width:34px;height:28px;border-radius:9px;background:var(--surface-muted,var(--surface));border:1px solid var(--line);font-size:11px!important;font-weight:700;color:var(--ink)!important}
-.curriculum-add-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.curriculum-help{margin:-3px 0 0;color:var(--muted);font-size:10.5px;line-height:1.65}
-.curriculum-mini-list,.curriculum-transition-list{display:grid;gap:7px;max-height:430px;overflow:auto;padding-inline-end:2px}
-.curriculum-mini-list article,.curriculum-transition-list article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
-.curriculum-mini-list article>div,.curriculum-transition-list article>div:nth-child(2){display:grid;gap:2px;min-width:0}.curriculum-mini-list strong,.curriculum-transition-list strong{font-size:11.5px;white-space:normal;overflow-wrap:anywhere}.curriculum-mini-list small,.curriculum-transition-list small{font-size:9.8px;color:var(--muted);line-height:1.5;white-space:normal;overflow-wrap:anywhere}
-.curriculum-mini-list button,.curriculum-transition-list button{display:grid;place-items:center;width:29px;height:29px;border:0;border-radius:9px;background:transparent;color:var(--muted);cursor:pointer}.curriculum-mini-list button:hover,.curriculum-transition-list button:hover{background:color-mix(in srgb,var(--danger,#b34b4b) 8%,var(--surface));color:var(--danger,#b34b4b)}.curriculum-mini-list button svg,.curriculum-transition-list button svg{width:14px;height:14px}
-.curriculum-map-form{display:grid;grid-template-columns:1.15fr .9fr 1.15fr;gap:8px}.curriculum-map-form input{grid-column:1 / 3}.curriculum-map-form button{grid-column:3}
-.curriculum-transition-route{display:flex!important;align-items:center;gap:5px!important}.curriculum-transition-route span{display:inline-flex;align-items:center;justify-content:center;min-width:42px;padding:3px 6px;border-radius:7px;background:var(--surface-muted,var(--surface));border:1px solid var(--line);font-size:10px!important;font-weight:700;color:var(--ink)!important}.curriculum-transition-route svg{width:12px;height:12px;color:var(--muted)}
-.curriculum-map-empty{display:flex;align-items:center;justify-content:center;gap:7px;min-height:76px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:11px}.curriculum-map-empty svg{width:16px;height:16px}
+/* ── الصحائف الأكاديمية: صحيفتان تعملان معاً ─────────────────────────────
+   Jade marks the new plan, brass the previous one — the same two colours on
+   the plan cards, the step list and the student-case tag. */
+.curriculum-admin .course-code{display:inline-flex;align-items:center;justify-content:center;min-width:64px;padding:3px 7px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--ink-2);direction:ltr;letter-spacing:.02em}
+.plan-chip{display:inline-flex;align-items:center;width:max-content;padding:3px 9px;border-radius:var(--r-full);font-size:10.5px;font-weight:700;border:1px solid var(--line)}
+.plan-chip.is-new{color:var(--accent-ink);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 28%,var(--line))}
+.plan-chip.is-old{color:var(--brass);background:var(--brass-soft);border-color:color-mix(in srgb,var(--brass) 28%,var(--line))}
+.plan-chip.is-shared{color:var(--muted);background:var(--surface-2)}
+.plan-muted{margin:0;color:var(--muted);font-size:12px;line-height:1.75}
+.plan-link-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 8px;border:0;border-radius:var(--r-xs);background:transparent;color:var(--accent);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.plan-link-btn:hover{background:var(--accent-softer)}.plan-link-btn:disabled{opacity:.5;cursor:default}.plan-link-btn svg{width:14px;height:14px}
+.plan-icon-btn{display:inline-grid;place-items:center;width:28px;height:28px;border:0;border-radius:var(--r-xs);background:transparent;color:var(--muted);cursor:pointer;vertical-align:middle}
+.plan-icon-btn:hover{background:var(--surface-2);color:var(--ink)}.plan-icon-btn svg{width:14px;height:14px}
+.curriculum-admin input[type=number],.plan-rename input,.plan-start-form input,.plan-search input,.plan-map-form select,.plan-next-form input{min-width:0;border:1px solid var(--line-strong);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);padding:10px 12px;font:inherit;font-size:13px;outline:none}
+.curriculum-admin input:focus,.plan-map-form select:focus{border-color:var(--accent);box-shadow:var(--ring)}
+
+/* بدء الصحيفة الجديدة */
+.plan-start{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(240px,.8fr);gap:var(--s6);padding:var(--s6);border-color:color-mix(in srgb,var(--accent) 24%,var(--line));background:linear-gradient(135deg,var(--accent-softer),var(--surface) 62%)}
+.plan-start-copy{display:grid;gap:10px;align-content:start}
+.plan-start-copy h2{margin:0;font-size:var(--t-h2)}
+.plan-start-copy p{margin:0;color:var(--ink-2);font-size:13px;line-height:1.8}
+.plan-start-copy ol{margin:0;padding:0;list-style:none;display:grid;gap:8px;counter-reset:step}
+.plan-start-copy li{position:relative;padding-inline-start:34px;font-size:12.5px;line-height:1.75;color:var(--ink-2);counter-increment:step}
+.plan-start-copy li:before{content:counter(step);position:absolute;inset-inline-start:0;top:1px;display:grid;place-items:center;width:23px;height:23px;border-radius:50%;background:var(--surface);border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));color:var(--accent);font-size:11px;font-weight:700}
+.plan-start-copy li strong{color:var(--ink)}
+.plan-start-form{display:grid;gap:10px;align-content:center;padding:var(--s5);border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-sm)}
+.plan-start-form label{font-size:12px;font-weight:700}.plan-start-form small{color:var(--muted);font-size:11px}
+
+/* خطوات الانتقال */
+.plan-steps{display:grid;gap:12px;padding:14px 16px}
+.plan-steps-head{display:flex;align-items:baseline;justify-content:space-between}.plan-steps-head strong{font-size:13px}.plan-steps-head span{font-size:11.5px;color:var(--muted)}
+.plan-steps ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.plan-steps li{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line)}
+.plan-steps li>div{display:grid;gap:2px;min-width:0}.plan-steps li strong{font-size:12px}.plan-steps li small{font-size:11px;color:var(--muted);line-height:1.55;overflow-wrap:anywhere}
+.plan-step-mark{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--surface);border:1px solid var(--line-strong);font-size:11px;font-weight:700;color:var(--muted)}
+.plan-steps li.is-done{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 22%,var(--line))}
+.plan-steps li.is-done .plan-step-mark{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}.plan-step-mark svg{width:13px;height:13px}
+
+/* بطاقتا الصحيفتين */
+.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:var(--s4)}
+.plan-card{position:relative;display:grid;align-content:start;gap:14px;padding:18px;overflow:hidden}
+.plan-card:before{content:"";position:absolute;inset-inline-start:0;inset-block:0;width:4px;background:var(--brass)}
+.plan-card.is-new:before{background:var(--accent)}
+.plan-card-head{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start}
+.plan-card-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:var(--r-md);background:var(--brass-soft);color:var(--brass)}
+.plan-card.is-new .plan-card-icon{background:var(--accent-soft);color:var(--accent)}.plan-card-icon svg{width:19px;height:19px}
+.plan-card-title{display:grid;gap:5px;min-width:0}
+.plan-card-title h3{display:flex;align-items:center;gap:4px;margin:0;font-size:var(--t-h3);overflow-wrap:anywhere}
+.plan-card-title p{margin:0;color:var(--muted);font-size:11.5px;line-height:1.65}
+.plan-rename{display:flex;gap:6px}.plan-rename input{flex:1;padding:7px 10px}
+.plan-card-count{display:grid;justify-items:center;font-size:26px;line-height:1;font-variant-numeric:tabular-nums}.plan-card-count small{margin-top:4px;font-size:10.5px;font-weight:600;color:var(--muted)}
+.plan-card-foot{display:flex;justify-content:flex-start;margin-top:-4px}.plan-card-foot .plan-link-btn{color:var(--muted)}.plan-card-foot .plan-link-btn:hover{color:var(--danger);background:var(--danger-soft)}
+
+/* شروط التخرج داخل البطاقة */
+.plan-rule{display:grid;gap:10px;padding:12px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line)}
+.plan-rule-grid{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.plan-rule-grid>div,.plan-rule-grid>label{display:grid;gap:3px;padding:9px 10px;border-radius:var(--r-sm);background:var(--surface);border:1px solid var(--line)}
+.plan-rule-grid dt,.plan-rule-grid label>span{font-size:11px;color:var(--muted);font-weight:600}
+.plan-rule-grid dd{margin:0;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.plan-rule-grid label>small{font-size:10px;color:var(--muted-2);line-height:1.5}
+.plan-rule-grid input{width:100%;padding:7px 9px!important;font-size:16px!important;font-weight:700}
+.plan-rule-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}.plan-rule-foot small{font-size:11px;color:var(--muted)}
+.plan-rule-actions{display:flex;flex-wrap:wrap;gap:8px}
+.plan-rule.is-missing{background:var(--warning-soft);border-color:color-mix(in srgb,var(--warning) 26%,var(--line))}
+.plan-rule.is-missing p{margin:0;font-size:12px;line-height:1.75;color:var(--ink-2)}.plan-rule.is-missing strong{color:var(--warning)}
+.plan-rule.is-missing button{justify-self:start}
+.plan-rule.is-editing{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 24%,var(--line))}
+
+/* المقررات */
+.plan-courses{display:grid;gap:0;padding:0;overflow:hidden}
+.plan-tabs{display:flex;gap:4px;padding:8px 8px 0;border-bottom:1px solid var(--line);overflow-x:auto}
+.plan-tabs button{display:inline-flex;align-items:center;gap:7px;padding:10px 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
+.plan-tabs button b{padding:1px 7px;border-radius:var(--r-full);background:var(--surface-2);font-size:11px;color:var(--ink-2)}
+.plan-tabs button small{font-size:10.5px;color:var(--muted-2);font-weight:500}
+.plan-tabs button.is-on{color:var(--ink);border-bottom-color:var(--accent)}.plan-tabs button.is-on b{background:var(--accent-soft);color:var(--accent-ink)}
+.plan-tab-body{display:grid;gap:12px;padding:16px}
+.plan-list-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.plan-search{flex:1 1 220px;position:relative;display:flex}.plan-search svg{position:absolute;inset-inline-start:11px;top:50%;width:15px;height:15px;transform:translateY(-50%);color:var(--muted-2)}
+.plan-search input{flex:1;padding-inline-start:34px!important}
+.plan-course-list{display:grid;gap:6px;max-height:460px;overflow:auto;padding-inline-end:2px}
+.plan-course-list article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.plan-course-list article>div{display:grid;gap:2px;min-width:0}.plan-course-list strong{font-size:13px;overflow-wrap:anywhere}.plan-course-list small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.plan-course-list article>button{display:grid;place-items:center;width:30px;height:30px;border:0;border-radius:var(--r-xs);background:transparent;color:var(--muted-2);cursor:pointer}
+.plan-course-list article>button:hover{background:var(--danger-soft);color:var(--danger)}.plan-course-list article>button svg{width:15px;height:15px}
+.plan-picker{display:grid;gap:10px;padding:12px;border-radius:var(--r-md);border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));background:var(--accent-softer)}
+.plan-picker header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.plan-picker header>div{display:grid;gap:2px}.plan-picker header strong{font-size:13px}.plan-picker header span{font-size:11.5px;color:var(--muted);line-height:1.6}
+.plan-picker-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:6px;max-height:300px;overflow:auto}
+.plan-picker-list label{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-sm);background:var(--surface);border:1px solid var(--line);font-size:12px;cursor:pointer}
+.plan-picker-list label.is-on{border-color:var(--accent);box-shadow:var(--ring)}.plan-picker-list input{accent-color:var(--accent);width:16px;height:16px}
+.plan-map-form{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;align-items:center;gap:8px}.plan-map-form>svg{width:16px;height:16px;color:var(--muted)}
+.plan-next{display:flex;justify-content:flex-start}.plan-next>.plan-link-btn{color:var(--muted)}
+.plan-next-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;width:100%}.plan-next-form p{flex:1 1 100%;margin:0;font-size:12px;color:var(--muted)}.plan-next-form input{flex:1 1 200px}
+
+/* وسم الصحيفة في سجل الحالات */
+.student-case-plan{display:inline-flex;margin-inline-start:6px;padding:1px 7px;border-radius:var(--r-full);font-size:10.5px;font-weight:700;vertical-align:1px;border:1px solid var(--line)}
+.student-case-plan.is-new{color:var(--accent-ink);background:var(--accent-soft)}.student-case-plan.is-old{color:var(--brass);background:var(--brass-soft)}
+/* وسم الصحيفة في قائمة المقررات */
+.course-plan-tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:var(--r-full);font-size:10.5px;font-weight:700;border:1px solid var(--line)}
+.course-plan-tag.is-new{color:var(--accent-ink);background:var(--accent-soft)}.course-plan-tag.is-old{color:var(--brass);background:var(--brass-soft)}.course-plan-tag.is-shared{color:var(--ink-2);background:var(--surface-2)}
 .curriculum-archive-strip{display:flex;align-items:center;gap:11px;padding:13px 15px;background:var(--surface-muted,var(--surface))}.curriculum-archive-strip>svg{width:19px;height:19px;color:var(--muted)}.curriculum-archive-strip>div{display:grid;gap:2px}.curriculum-archive-strip strong{font-size:11.5px}.curriculum-archive-strip span{font-size:10.5px;color:var(--muted);line-height:1.6}
-@media(max-width:900px){.curriculum-work-grid{grid-template-columns:1fr}.curriculum-map-form{grid-template-columns:1fr}.curriculum-map-form input,.curriculum-map-form button{grid-column:auto}}
-@media(max-width:640px){.curriculum-section-bar{grid-template-columns:auto 1fr}.curriculum-section-bar select{grid-column:1/-1}.curriculum-bootstrap{grid-template-columns:auto 1fr}.curriculum-bootstrap>b{grid-column:1/-1;justify-self:start;display:flex;align-items:baseline;gap:5px}.curriculum-plan-grid{grid-template-columns:1fr}.curriculum-add-row{grid-template-columns:1fr}.curriculum-mini-list article,.curriculum-transition-list article{grid-template-columns:auto minmax(0,1fr) auto}}
+@media(max-width:900px){.plan-start{grid-template-columns:1fr}.plan-steps ol{grid-template-columns:1fr}.plan-map-form{grid-template-columns:1fr}.plan-map-form>svg{justify-self:center;transform:rotate(90deg)}}
+@media(max-width:640px){.curriculum-section-bar{grid-template-columns:auto 1fr}.curriculum-section-bar select{grid-column:1/-1}.plan-start{padding:var(--s4)}.plan-card-head{grid-template-columns:auto minmax(0,1fr)}.plan-card-count{grid-column:1/-1;justify-self:start;display:flex;align-items:baseline;gap:6px}.plan-rule-grid{grid-template-columns:1fr 1fr}.plan-tab-body{padding:12px}}
 
 /* ── نشر الجدول من أدوات البيانات ──────────────────────────────────────────
    بطاقةٌ واحدة: علامة، وسطران، وزرٌّ بارز. على الهاتف ينزل الزرُّ تحت النص
@@ -2258,3 +2326,6 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
    يُقال اسمُ القسم مرّةً فوق القائمة، وتُسمّى السطورُ بكلياتها. */
 .changes-inbox-multisite{margin:0 0 2px;color:var(--muted);font-size:13px}
 .changes-inbox-multisite strong{color:var(--ink);font-weight:700}
+.course-bootstrap-ok{display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:600;cursor:pointer}.course-bootstrap-ok input{width:16px;height:16px;accent-color:var(--accent)}
+.course-plan-line{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:var(--muted)}.course-plan-line svg{width:15px;height:15px}
+.degree-rule-plan{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}.degree-rule-plan>strong{display:flex;align-items:center;gap:8px;font-size:13px}

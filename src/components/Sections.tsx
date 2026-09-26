@@ -343,6 +343,36 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                   ["graduateRegularPassed", "خريج / متوقع · فصل عادي"],
                   ["graduateSummerPassed", "خريج / متوقع · فصل صيفي"],
                 ];
+                /* In its transition years a department is judged per curriculum
+                   plan. Those rules are typed on the plans screen; here they are
+                   shown, so one department figure never pretends to cover both. */
+                if (Array.isArray(rule.plans) && rule.plans.length) {
+                  return (
+                    <section className="degree-rule-card">
+                      <header>
+                        <div>
+                          <span className="surface-kicker"><GraduationCap aria-hidden="true" /> شروط التخرج لكل صحيفة</span>
+                          <small>القسم في مرحلة انتقالية: كل طالب يُقاس على شروط صحيفته</small>
+                        </div>
+                      </header>
+                      {rule.plans.map((plan: any) => (
+                        <div key={plan.planId || plan.planName} className="degree-rule-plan">
+                          <strong>{plan.planName} <span className={`plan-chip ${plan.status === "active" ? "is-new" : "is-old"}`}>{plan.status === "active" ? "الجديدة" : "السابقة"}</span></strong>
+                          {plan.rule ? (
+                            <dl className="degree-rule-grid">
+                              {fields.map(([key, label]) => (
+                                <div key={key}><dt>{label}</dt><dd>{Number(plan.rule[key]).toLocaleString("ar-KW-u-nu-latn")}</dd></div>
+                              ))}
+                            </dl>
+                          ) : (
+                            <Notice type="warning">شروط تخرج هذه الصحيفة لم تُعتمد بعد — أدخلها من «المقررات ← الصحائف الأكاديمية».</Notice>
+                          )}
+                        </div>
+                      ))}
+                      <p>تُعدَّل من شاشة «المقررات ← الصحائف الأكاديمية». يعرف الاستبيان صحيفة الطالب من «الوحدات المطلوبة» في صحيفة تخرجه.</p>
+                    </section>
+                  );
+                }
                 return (
                   <section className="degree-rule-card">
                     <header>

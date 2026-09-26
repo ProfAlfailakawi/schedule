@@ -34,6 +34,7 @@ import { currentTermId } from "../utils/termSequence";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
 import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
 import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
+import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 
 type NoteField = DiffFieldKey | "row";
 type NoteState = "open" | "changed" | "answered" | "resolved" | "removed";
@@ -216,8 +217,16 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
   /* الجملة تُقرأ عند الإرسال لا عند كل حرف: قارئٌ يكتب «متأخر» حرفاً حرفاً
      يمرّ على «م» و«مت» و«متأ»، ولو فُلتِر عند كلٍّ منها لرقصت الشاشة تحت يده. */
   const [parsed, setParsed] = useState<InboxAsk>(EMPTY_INBOX_ASK);
-  const [collegeId, setCollegeId] = useState(0);
-  const [sectionId, setSectionId] = useState(0);
+  /* الكلية والقسم من النطاق المشترك (src/utils/sharedScope.ts): معروضان على
+     نطاق القارئ، ويُكتبان حين يختارهما بيده. */
+  const reader = { scopes, isAdmin: powerAdmin };
+  const [collegeId, setCollegeId] = useState(() => resolveSharedScope(readSharedScope(), reader).collegeId);
+  const [sectionId, setSectionId] = useState(() => resolveSharedScope(readSharedScope(), reader).sectionId);
+  const sharedScope = useSharedScope((incoming) => {
+    const next = resolveSharedScope(incoming, reader);
+    setCollegeId(next.collegeId);
+    setSectionId(next.sectionId);
+  });
   const [moreOpen, setMoreOpen] = useState(false);
   const [lateOnly, setLateOnly] = useState(false);
   const [signalFilters, setSignalFilters] = useState<InboxAskSignal[]>([]);
@@ -241,14 +250,18 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
     return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, "ar"));
   }, [rows]);
 
+  /* نطاقٌ مشترك لا يظهر في هذا الوارد (كليةٌ لا قسمَ فيها ينتظر) يُعرض «الكل»
+     هنا، ولا يُمحى من النطاق المشترك. */
+  const shownCollege = collegeOptions.some(option => option.value === collegeId) ? collegeId : 0;
   const sectionOptions = useMemo(() => {
     const seen = new Map<number, string>();
     for (const row of rows || []) {
-      if (collegeId && row.collegeId !== collegeId) continue;
+      if (shownCollege && row.collegeId !== shownCollege) continue;
       if (!seen.has(row.sectionId)) seen.set(row.sectionId, row.sectionName || `قسم ${row.sectionId}`);
     }
     return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, "ar"));
-  }, [rows, collegeId]);
+  }, [rows, shownCollege]);
+  const shownSection = shownCollege && sectionOptions.some(option => option.value === sectionId) ? sectionId : 0;
 
   /* الجملة والمرشّحات مصدرٌ واحد: ما تفهمه الجملة يُضاف إلى ما اختاره القارئ
      بيده، ولا يمحوه. من كتب «متأخر» ثم ضغط «فيه موانع» يريد الاثنين. */
@@ -260,10 +273,10 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
   }), [parsed, statusFilter, lateOnly, signalFilters]);
 
   const visible = useMemo(() => (rows || []).filter(row => {
-    if (collegeId && row.collegeId !== collegeId) return false;
-    if (sectionId && row.sectionId !== sectionId) return false;
+    if (shownCollege && row.collegeId !== shownCollege) return false;
+    if (shownSection && row.sectionId !== shownSection) return false;
     return matchesInboxAsk(row, effective);
-  }), [rows, collegeId, sectionId, effective]);
+  }), [rows, shownCollege, shownSection, effective]);
 
   /* كم سطراً يحمل كلَّ إشارة — منه يُعرف أيُّ مرشّحٍ يستحق أن يُعرض. */
   const signalCounts = useMemo(() => {
@@ -297,12 +310,12 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
 
   const selects: ScopeAskSelect[] = [
     {
-      key: "college", label: audience.multiSite ? "الموقع" : "الكلية", value: collegeId, placeholder: audience.multiSite ? "كل المواقع" : "كل الكليات",
+      key: "college", label: audience.multiSite ? "الموقع" : "الكلية", value: shownCollege, placeholder: audience.multiSite ? "كل المواقع" : "كل الكليات",
       options: collegeOptions,
     },
     /* قسمٌ واحد في نطاق القارئ: لا منتقيَ له، كلوحة الجدول. */
-    ...(singleDepartmentOf(scopes, collegeId, powerAdmin) === null && !audience.multiSite ? [{
-      key: "section", label: "القسم", value: sectionId, placeholder: "كل الأقسام",
+    ...(singleDepartmentOf(scopes, shownCollege, powerAdmin) === null && !audience.multiSite ? [{
+      key: "section", label: "القسم", value: shownSection, placeholder: "كل الأقسام",
       options: sectionOptions, disabled: sectionOptions.length === 0,
     }] : []),
     {
@@ -354,8 +367,8 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
         selects={selects}
         onSelect={(key, value) => {
           const id = Number(value) || 0;
-          if (key === "college") { setCollegeId(id); setSectionId(0); }
-          else if (key === "section") setSectionId(id);
+          if (key === "college") { sharedScope.pick({ collegeId: id, sectionId: 0 }); setCollegeId(id); setSectionId(0); }
+          else if (key === "section") { sharedScope.pick({ sectionId: id }); setSectionId(id); }
           else onTermChange(id);
         }}
         moreOpen={moreOpen}
@@ -1332,12 +1345,23 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       const data = await request("/api/terms");
       const list: AdTerm[] = Array.isArray(data) ? data : (data.terms || []);
       setTerms(list);
-      /* الفصل الجاري هو الجواب في تسع حالاتٍ من عشر، فلا يُسأل عنه أحد. */
-      setTermId(current => current || currentTermId(list) || Number(list[list.length - 1]?.AdTermId || 0));
+      /* الفصل المشترك إن بقي موجوداً (src/utils/sharedScope.ts)، وإلا فالفصل
+         الجاري — هو الجواب في تسع حالاتٍ من عشر، فلا يُسأل عنه أحد. */
+      setTermId(current => current || resolveSharedScope(readSharedScope(), {
+        scopes, isAdmin: powerAdmin, terms: list,
+        fallbackTermId: currentTermId(list) || Number(list[list.length - 1]?.AdTermId || 0),
+      }).termId);
     } catch (e: any) { setError(e.message); setTerms([]); }
   }, []);
 
   useEffect(() => { void loadTerms(); }, [loadTerms]);
+  /* الفصل يتبع النطاق المشترك، ويُكتب فيه حين يختاره القارئ من أيّ منتقٍ هنا. */
+  const sharedScope = useSharedScope((incoming) => {
+    if (!terms?.length) return;
+    const next = resolveSharedScope(incoming, { scopes, isAdmin: powerAdmin, terms, fallbackTermId: termId });
+    if (next.termId) setTermId(next.termId);
+  });
+  const pickTerm = (id: number) => { sharedScope.pick({ termId: id }); setTermId(id); };
   useEffect(() => { setOpened(null); setInboxRows(null); }, [termId]);
   /* ── الإشعار يفتح على قسمه (N16) ─────────────────────────────────────
      يُؤخذ التركيز مرّةً بعد أن يُعرف الفصل: فصلُ الإشعار إن اختلف، ثم القسم.
@@ -1381,7 +1405,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
           terms.length > 1 && (active || !termId) ? (
             <label className="changes-term-picker">
               <span>الفصل</span>
-              <select value={termId || ""} onChange={(e) => setTermId(Number(e.target.value) || 0)}>
+              <select value={termId || ""} onChange={(e) => pickTerm(Number(e.target.value) || 0)}>
                 {terms.map(row => (
                   <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>
                 ))}
@@ -1402,7 +1426,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
         <SubmissionDeadlines
           terms={terms}
           termId={termId}
-          onTermChange={(id) => setTermId(id)}
+          onTermChange={pickTerm}
           rows={inboxRows}
           canEdit={audience.deadlinesPanel === "edit"}
           onChanged={() => { setReloadKey(key => key + 1); void loadTerms(); }}
@@ -1421,7 +1445,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
             key={reloadKey}
             termId={termId}
             terms={terms}
-            onTermChange={(id) => setTermId(id)}
+            onTermChange={pickTerm}
             audience={audience}
             onLoaded={setInboxRows}
             onExtend={(row) => setExtendFor({ row, nonce: Date.now() })}

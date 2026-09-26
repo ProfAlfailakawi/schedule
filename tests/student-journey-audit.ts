@@ -163,11 +163,13 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(suggestedDegreeRule("اللغة الفرنسية").degreeUnits === 132 && suggestedDegreeRule("تربية خاصة").degreeUnits === 134
     && suggestedDegreeRule("قسم آخر").degreeUnits === 130, "S7 الاقتراح نفسه قيمةً");
   const proof = between(server, 'app.post("/api/public/survey/:token/proof"', 'app.post("/api/public/survey/:token", async');
-  const ruleAt = proof.indexOf("storedDegreeRuleForSection(sectionId)"), ocrAt = proof.indexOf("ocrGraduationSheetDocument(");
+  /* Since the curriculum transition the saved rules are asked per live plan
+     (graduationCandidatesForSection), still once and still before OCR. */
+  const ruleAt = proof.indexOf("graduationCandidatesForSection(sectionId)"), ocrAt = proof.indexOf("ocrGraduationSheetDocument(");
   check(ruleAt > 0 && ocrAt > ruleAt, "S7 التحقق يسأل عن القاعدة المحفوظة قبل قراءة الصحيفة");
-  check((proof.match(/storedDegreeRuleForSection\(/g) || []).length === 1, "S7 والسؤال مرّة واحدة في مسار التحقق");
+  check((proof.match(/graduationCandidatesForSection\(|storedDegreeRuleForSection\(/g) || []).length === 1, "S7 والسؤال مرّة واحدة في مسار التحقق");
   const surveyGet = between(server, 'app.get("/api/public/survey/:token"', 'app.post("/api/public/survey/:token/identity-status"');
-  check(surveyGet.includes("graduateRule") && surveyGet.includes("storedDegreeRuleForSection(sid)") && surveyGet.includes("threshold:graduateThreshold("),
+  check(surveyGet.includes("graduateRule") && surveyGet.includes("graduationCandidatesForSection(sid)") && surveyGet.includes("graduateThreshold(rule,linkTermName)"),
     "S7 الاستبيان يخبر الصفحة لكل قسم إن كانت له قاعدةٌ محفوظة وحدّها");
   check(surveyPageSource.includes("rule.saved===false"), "S7 الصفحة لا تطلب الرفع لقسمٍ بلا قاعدة محفوظة");
   check(between(server, 'app.put("/api/degree-rules/:sectionId"', "const surveyPayloadCache").includes("surveyPayloadCache.clear()"),
