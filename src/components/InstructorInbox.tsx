@@ -335,7 +335,15 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
       {/* مسارُ الطلب بنظرة، وسجلُّ أحداثه مطويٌّ خلف أيقونة. */}
       <div className="request-card-relay">
         <RequestStatusStepper row={row} />
-        <RequestTimelineToggle timeline={row.timeline} />
+        <RequestTimelineToggle
+          timeline={row.timeline}
+          itemLabel={index => row.items?.[index]?.after?.courseName || row.items?.[index]?.before?.courseName || undefined}
+          detailText={event => !event.detail ? undefined
+            : event.kind === "submitted" ? countOf(Number(event.detail) || 0, AR.change)
+            : event.kind === "item-rejected" ? (REJECT_REASONS.find(([code]) => code === event.detail)?.[1] || event.detail)
+            : event.kind === "alternative-chosen" ? `البديل ${event.detail}`
+            : event.detail}
+        />
       </div>
 
       {/* ── جدولٌ لا كومةُ بطاقات ─────────────────────────────────────────

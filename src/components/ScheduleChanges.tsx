@@ -467,7 +467,8 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
                 </div>
                 <div className="changes-inbox-state">
                   <ApprovalDnaStepper status={row.status} round={row.round} pendingAdditions={row.pendingAdditions} />
-                  <DeadlineDnaRing deadline={row.deadline} label={deadlineSentence(row.deadline)} />
+                  {/* كما في شريط الاعتماد: الموعدُ يُعدّ لمن لم يسلّم بعد. */}
+                  {row.status !== "accepted" && row.status !== "submitted" ? <DeadlineDnaRing deadline={row.deadline} label={deadlineSentence(row.deadline)} /> : null}
                   <ApprovalChip status={row.status} late={row.late} />
                   {row.round > 1 ? <small>الجولة {row.round}</small> : null}
                 </div>

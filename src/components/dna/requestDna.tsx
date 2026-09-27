@@ -7,7 +7,7 @@ import React, { useState, type ReactElement } from "react";
 import {
   BadgeCheck, CheckCheck, CircleX, Eye, History, Inbox, Link2, Replace, Send, ShieldCheck, Wrench,
 } from "lucide-react";
-import type { InstructorRequest, InstructorRequestEventKind } from "../../types";
+import type { InstructorRequest, InstructorRequestEvent, InstructorRequestEventKind } from "../../types";
 import { DnaStepper, DnaTimeline, type DnaStep, type DnaTone } from "./index";
 
 const n = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
@@ -62,8 +62,8 @@ const EVENT: Record<InstructorRequestEventKind, { title: string; icon: ReactElem
   "link-opened": { title: "فُتح الرابط", icon: <Eye />, tone: "sky" },
   "submitted": { title: "أرسل الأستاذ طلبه", icon: <Send />, tone: "accent" },
   "received": { title: "استلمه القسم", icon: <Inbox />, tone: "indigo" },
-  "item-fixed": { title: "ثُبّت بند", icon: <Wrench />, tone: "mint" },
-  "item-rejected": { title: "رُفض بند", icon: <CircleX />, tone: "coral" },
+  "item-fixed": { title: "ثُبّت", icon: <Wrench />, tone: "mint" },
+  "item-rejected": { title: "رُفض", icon: <CircleX />, tone: "coral" },
   "alternative-offered": { title: "عُرض بديل", icon: <Replace />, tone: "amber" },
   "alternative-chosen": { title: "اختار بديلاً", icon: <BadgeCheck />, tone: "lilac" },
   "settled": { title: "انتهى الطلب", icon: <CheckCheck />, tone: "accent" },
@@ -76,7 +76,13 @@ const eventDate = (iso: string) => {
 };
 
 /** The request's trail, folded behind one quiet icon button. */
-export function RequestTimelineToggle({ timeline }: { timeline?: InstructorRequest["timeline"] }) {
+export function RequestTimelineToggle({ timeline, itemLabel, detailText }: {
+  timeline?: InstructorRequest["timeline"];
+  /** What an event's item is called on this screen (its course), by index. */
+  itemLabel?: (index: number) => string | undefined;
+  /** The host's own words for an event's detail (reason label, counts). */
+  detailText?: (event: InstructorRequestEvent) => string | undefined;
+}) {
   const [open, setOpen] = useState(false);
   const events = timeline || [];
   if (!events.length) return null;
@@ -103,11 +109,13 @@ export function RequestTimelineToggle({ timeline }: { timeline?: InstructorReque
             const spec = EVENT[event.kind] || { title: event.kind, icon: <History />, tone: "neutral" as DnaTone };
             return {
               key: `${event.kind}:${event.at}:${i}`,
-              title: spec.title + (typeof event.itemIndex === "number" ? ` ${n(event.itemIndex + 1)}` : ""),
+              title: spec.title + (typeof event.itemIndex === "number"
+                ? (itemLabel?.(event.itemIndex) ? ` — ${itemLabel(event.itemIndex)}` : ` بند ${n(event.itemIndex + 1)}`)
+                : ""),
               icon: spec.icon,
               tone: spec.tone,
               date: eventDate(event.at),
-              meta: [event.by, event.detail].filter(Boolean).join(" — ") || undefined,
+              meta: [event.by, detailText ? detailText(event) : event.detail].filter(Boolean).join(" — ") || undefined,
             };
           })}
         />

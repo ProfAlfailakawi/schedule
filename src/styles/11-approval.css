@@ -146,10 +146,10 @@
 /* Pills with an icon and a number: the icon names the kind, so colour is a
    hint, not the only carrier. The tone stays on the icon only. */
 .changes-signals .changes-signal{font-size:.76rem}
-.changes-signal--block svg{color:var(--danger)}
-.changes-signal--note svg{color:var(--warning)}
-.changes-signal--answered svg{color:var(--muted)}
-.changes-signal--pending svg{color:var(--info)}
+.changes-signals .changes-signal--block svg{color:var(--danger)}
+.changes-signals .changes-signal--note svg{color:var(--warning)}
+.changes-signals .changes-signal--answered svg{color:var(--muted)}
+.changes-signals .changes-signal--pending svg{color:var(--info)}
 .changes-inbox-state .dna-steps{flex:none}
 
 .changes-extend{
