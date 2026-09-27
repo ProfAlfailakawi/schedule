@@ -1,0 +1,54 @@
+/* DNA kit → SCHEDULE palette. Every --dna-* token aliases a site token, so the
+   existing dark mirror (:root[data-theme="dark"]) re-themes the kit for free. */
+:root:root {
+  --dna-canvas: var(--canvas);
+  --dna-surface: var(--surface);
+  --dna-surface-2: var(--surface-2);
+  --dna-ink: var(--ink);
+  --dna-muted: var(--muted);
+  --dna-line: var(--line);
+  --dna-line-2: var(--line-strong);
+  --dna-accent: var(--accent);
+  --dna-accent-soft: var(--accent-soft);
+  --dna-on-accent: var(--accent-contrast);
+  --dna-core: var(--nav);
+  --dna-on-core: var(--nav-ink);
+  --dna-warn: var(--warning);
+  --dna-warn-soft: var(--warning-soft);
+  --dna-danger: var(--danger);
+  --dna-danger-soft: var(--danger-soft);
+  --dna-info: var(--info);
+  --dna-info-soft: var(--info-soft);
+  --dna-shadow: var(--shadow-sm);
+}
+
+/* Site dark selector joins the kit's dark tone rule. */
+:root[data-theme="dark"] [data-dna-tone] {
+  --t-bg: color-mix(in srgb, var(--t-fg) 20%, transparent);
+  --t-fgc: color-mix(in srgb, var(--t-fg) 55%, #ffffff);
+}
+
+/* Legacy global `svg{width:1.15em;height:1.15em}` would squash the kit's
+   drawn (attribute-sized) SVGs; give them back their intrinsic size. */
+.dna-ring > svg,
+.dna-hub > svg.dna-hubs {
+  width: auto;
+  height: auto;
+}
+
+/* Compact inline rows used by the schedule screens. */
+.dna-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dna-row .dna-steps[data-size="xs"] {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+}
+
+/* Deadline ring (inbox rows, dean's balance): small, number or icon inside. */
+.dna-deadline{display:inline-flex;flex:none}
+.dna-deadline .dna-ringc{font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums}
+.dna-deadline .dna-ringc svg{width:14px;height:14px}
