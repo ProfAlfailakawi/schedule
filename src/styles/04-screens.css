@@ -429,7 +429,8 @@
   font-size:var(--t-xs);font-weight:600;line-height:1.4;
   font-variant-numeric:tabular-nums;letter-spacing:0;
 }
-.delta i{font-style:normal;font-size:9px;line-height:1}
+.delta i{font-style:normal;display:inline-flex;line-height:1}
+.delta i svg{width:12px;height:12px}
 /* ── لماذا فقدت هذه الشارات لونها ────────────────────────────────────────────
    `.deck-metrics span{color:var(--muted)}` is one class and one type — (0,1,1)
    — and these modifiers were one class each, so inside the metrics deck every
