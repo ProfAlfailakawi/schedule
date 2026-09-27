@@ -215,6 +215,7 @@ export function TimeCounterPopover({
       className="time-counter-pop visual-minimal"
       ref={ref}
       role="dialog"
+      aria-modal="false"
       aria-label="عدّاد الوقت"
       style={box ? { left: box.left, top: box.top } : { left: -9999, top: -9999 }}
       onPointerDown={(e) => e.stopPropagation()}

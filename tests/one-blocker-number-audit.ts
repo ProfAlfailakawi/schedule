@@ -122,9 +122,10 @@ check(/const blockerOptions = await approvalBlockerOptions\(\);/.test(livingRout
 const bareAnalyses = server.split("\n").filter(line => /analyzeSchedule\(/.test(line) && !/import/.test(line) && !/BlockerOptions/.test(line));
 check(bareAnalyses.length === 0, `كل analyzeSchedule( في الخادم يمرّر خيارات البوابة (${bareAnalyses.length} بلا خيارات)`);
 check(/buildOneMinuteBrief\(rows,universe,courses,instructors,changedSince,await approvalBlockerOptions\(\)\)/.test(server), "وملخص الدقيقة المنفرد كذلك");
-check((bar.match(/blockingSummaryPhrase\(blockingConflicts, state\.blockingRows\)/g) || []).length === 2 && !/blockingConflictPhrase\(/.test(bar),
+/* ومعها كم من العدد موعدٌ مكرّر لا تعارضٌ مادّي، فتقول العبارة ما تعدّه (قاعدة المالك 2026-09-27). */
+check((bar.match(/blockingSummaryPhrase\(blockingConflicts, state\.blockingRows, state\.blockingDuplicates\)/g) || []).length === 2 && !/blockingConflictPhrase\(/.test(bar),
   "الشريط يقول «تعارضات · تمسّ مواعيد» في التوقيع والإرسال");
-check(review.includes("blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows)") && review.includes("blockingRowIds(localConflicts, rows)"),
+check(review.includes("blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows, blockerSummary.duplicates)") && review.includes("blockingRowIds(localConflicts, rows)"),
   "نافذة المراجعة تتصدّرها عبارة الشريط نفسها، ومحلياً من الدوال نفسها");
 check(review.includes("countOf(spread.high, AR.appointment)") && review.includes("nounFor(spread.high, AR.blockVerb)")
   && !/<small>يمنع<\/small>|<small>سليم<\/small>|<small>يراجَع<\/small>/.test(review) && !/\{spread\.high\} يمنع/.test(review),

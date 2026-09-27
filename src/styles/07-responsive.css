@@ -1496,3 +1496,62 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     letter-spacing:0 !important;
   }
 }
+
+/* ── الهاتف: قراءةٌ لا تُصغَّر ولا تُقصّ ──────────────────────────────────────
+   جولةٌ على كل شاشةٍ بعرض 360–430 وجدت: قائمةَ المستخدمين تعصر الاسمَ في
+   عمودٍ بعرض حرفٍ واحد (شارةُ الصفة الطويلة تأخذ سطرها كاملاً فيُقرأ «د. العميد
+   …» حرفاً تحت حرف)، وتسمياتٍ بين 9 و11.5 بكسل، ومرشّحَ السجل يخرج عن بطاقته.
+   كلُّه هنا، داخل حدّ الهاتف وحده — سطحُ المكتب لا يُمسّ. */
+@media screen and (max-width:760px){
+  :root{--t-xs:12px;--t-eyebrow:12px}
+
+  /* صفُّ القائمة: الصورةُ ثم الاسمُ بعرضه كاملاً، والشاراتُ سطرٌ ثانٍ تحته. */
+  .master-list>button,.master-list>article{
+    display:flex;flex-wrap:wrap;align-items:center;
+    column-gap:var(--s3);row-gap:6px;
+  }
+  .master-list>button>:is(.master-avatar,.master-symbol),.master-list>article>:is(.master-avatar,.master-symbol){flex:0 0 38px}
+  .master-list>button>div,.master-list>article>div{flex:1 1 calc(100% - 38px - 15px - 2 * var(--s3) - 1px);min-width:0}
+  .master-list>button>svg:last-child,.master-list>article>svg:last-child{flex:0 0 15px;order:1}
+  .master-list>button>:not(.master-avatar,.master-symbol,div,svg),
+  .master-list>article>:not(.master-avatar,.master-symbol,div,svg){order:2;max-width:100%}
+  .master-list>button>div+:not(svg),.master-list>article>div+:not(svg){margin-inline-start:calc(38px + var(--s3))}
+  .master-list>button>div~:not(svg):not(:last-child),.master-list>article>div~:not(svg):not(:last-child){white-space:normal}
+
+  /* رأسُ القائمة: البحثُ سطرٌ، والمرشّحُ والعدّادُ سطرٌ داخل البطاقة. */
+  .master-pane>header:not(.master-filter-stack){
+    display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);
+    padding:0 var(--s4) var(--s3);
+  }
+  .master-pane>header:not(.master-filter-stack)>.master-search{flex:1 1 100%;margin:var(--s4) 0 0}
+  .master-pane>header:not(.master-filter-stack)>select{flex:1 1 0;min-width:0;max-width:none;min-height:44px}
+  .master-pane>header:not(.master-filter-stack)>span{
+    margin-inline-start:auto;min-width:32px;padding:2px 10px;border-radius:999px;
+    background:var(--surface-2);color:var(--muted);font-size:12px;font-weight:700;text-align:center;
+  }
+
+  /* تسمياتٌ صغيرة تُقرأ على الهاتف: 12 بكسل حدّاً أدنى. */
+  .mobile-dock-label,.demo-role-switch-label,.demo-rail-chip>span,.nav-section-title>span,
+  .user-card-section,.side-nav-badge>b,.meta-pill>b,.staff-badge,.degree-rule-grid dt,
+  .dashboard-attention-summary,.sidebar-brand small{font-size:12px}
+  /* بطاقةُ السجل: الاسمُ والسطرُ الوصفي يلتفّان بدل أن يُقصّا عند حافة الهاتف. */
+  .record-card-copy>strong,.record-card-copy>span{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
+  .visual-minimal.catalog-inspector-page .record-card-copy>span{flex-wrap:wrap;font-size:12px}
+  .audit-change{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+  /* الدرجُ المفتوح يغطّي الشريطَ العلوي؛ الجرسُ الثابت كان يطفو فوق رأسه. */
+  html[data-rail="open"] .notify-bell{visibility:hidden}
+}
+
+/* ── الهاتف: أهدافُ لمسٍ بلا تغيير في الرسم ─────────────────────────────────
+   أزرارٌ أيقونية بين 30 و40 بكسل لم تنلها التوسعةُ أعلاه. المساحةُ الملموسة
+   تكبر بطبقةٍ شفافة، والشكلُ المرسوم كما هو. */
+@media (pointer:coarse) and (max-width:760px){
+  .sidebar-close,.dock-act,.dock-add,.sd-icon,.week-legend-eye,.apb-icon-btn,.query-print-icon{position:relative}
+  .sidebar-close::after,.notify-bell::after,.dock-act::after,.dock-add::after,
+  .sd-icon::after,.week-legend-eye::after,.apb-icon-btn::after,.query-print-icon::after{
+    content:"";position:absolute;inset:-4px;
+  }
+  .dock-act::after,.dock-add::after{inset:-6px -3px}
+  /* العينُ ملاصقةٌ لشريحة الفلتر: نكبّرها عمودياً فقط حتى لا تغطّي حافةَ الشريحة. */
+  .week-legend-eye::after{inset:-4px 0}
+}

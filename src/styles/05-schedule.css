@@ -75,6 +75,15 @@ button.schedule-radar:hover{filter:brightness(.96)}
 }
 .week-event.live-clash{box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 20%,transparent)}
 .agenda-card.live-clash{background:color-mix(in srgb,var(--danger-soft) 40%,var(--surface))}
+/* ── ما يُقال ولا يمنع: الشعبة نفسها مرتين في مكانين ───────────────────────
+ * قاعدة المالك 2026-09-27: الأحمر لما يمنع التوقيع وحده. الشعبة المسجّلة
+ * مرتين في قاعتين أو بأستاذين تنبيهٌ كهرماني بسطرٍ يقول ما يختلف. */
+.agenda-card.live-warn{outline:2px dashed color-mix(in srgb,var(--warning) 70%,transparent);outline-offset:1px}
+/* سبب الحلقة سطرٌ ظاهر على الصف نفسه، بلون ما يقوله. */
+.agenda-clash-reason{display:flex;align-items:flex-start;gap:6px;margin:6px 0 0;padding:5px 9px;border-radius:9px;font-size:12px;font-weight:600;line-height:1.55;overflow-wrap:anywhere}
+.agenda-clash-reason svg{flex:none;width:14px;height:14px;margin-top:2px}
+.agenda-clash-reason.is-block{background:color-mix(in srgb,var(--danger-soft) 70%,var(--surface));color:var(--danger)}
+.agenda-clash-reason.is-warn{background:color-mix(in srgb,var(--warning-soft) 80%,var(--surface));color:var(--warning)}
 /* ── حلقة لموعد ليس على هذه الشاشة ─────────────────────────────────────────
  * The same ring, because it is the same severity — this row will be refused
  * exactly like any other collision. What differs is where the answer lives:

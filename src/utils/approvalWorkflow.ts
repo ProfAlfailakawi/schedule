@@ -37,18 +37,37 @@ const BLOCKING_CONFLICT = {
   few: "تعارضات مادّية", many: "تعارضاً مادّياً",
 } as const;
 
+/**
+ * ── «مادّي» لما هو مادّيٌّ وحده ─────────────────────────────────────────────
+ *
+ * قاعدة المالك 2026-09-27: «التوقيع لا يمنعه إلا تعارض ماديّ». فالقائمة التي
+ * تُعدّ هنا صارت تعارضاتٍ مادّية (أستاذٌ حقيقي أو قاعةٌ في موعدين متداخلين)،
+ * ومعها مانعٌ واحدٌ آخر ليس مادّياً: الإدخال المكرّر الذي لا يميّزه شيء، وكان
+ * يُقال عنه «تعارض مادّي» أيضاً. فالجملة تقول ما تعدّه: `duplicates` هو كم من
+ * العدد موعدٌ مكرّر (`approvalBlockerSummary`)، وما سواه تعارضٌ مادّي.
+ */
+const DOUBLE_ENTRY = {
+  one: "موعد مكرّر", two: "موعدان مكرّران",
+  few: "مواعيد مكرّرة", many: "موعداً مكرّراً",
+} as const;
+
 /** «تعارضٌ مادّي» أو «خمسة تعارضات مادّية» — من موضعٍ واحد لكل من يقولها. */
-export function blockingConflictPhrase(count: number): string {
-  return countOf(count, BLOCKING_CONFLICT);
+export function blockingConflictPhrase(count: number, duplicates = 0): string {
+  const total = Math.max(0, Math.round(Number(count) || 0));
+  const doubled = Math.min(total, Math.max(0, Math.round(Number(duplicates) || 0)));
+  if (!doubled) return countOf(count, BLOCKING_CONFLICT);
+  if (doubled === total) return countOf(doubled, DOUBLE_ENTRY);
+  return `${countOf(total - doubled, BLOCKING_CONFLICT)} و${countOf(doubled, DOUBLE_ENTRY)}`;
 }
 
 /**
  * The bar's whole sentence: the conflicts, then the appointments they touch —
  * each with its own noun, so «4» and «5» on one screen never read as two
- * answers to one question. `rows` comes from `approvalBlockerSummary`.
+ * answers to one question. `rows` and `duplicates` come from
+ * `approvalBlockerSummary`.
  */
-export function blockingSummaryPhrase(conflicts: number, rows?: number): string {
-  const head = blockingConflictPhrase(conflicts);
+export function blockingSummaryPhrase(conflicts: number, rows?: number, duplicates = 0): string {
+  const head = blockingConflictPhrase(conflicts, duplicates);
   const touched = Math.max(0, Math.round(Number(rows) || 0));
   return touched > 0 ? `${head} · تمسّ ${countOf(touched, AR.appointment)}` : head;
 }
@@ -129,7 +148,7 @@ export type SignVerdict = { ok: true } | SignRefusal;
 export function canSign(
   approval: ScheduleApproval,
   stage: "committee" | "head",
-  context: { blockingConflicts: number; rowCount: number },
+  context: { blockingConflicts: number; rowCount: number; blockingDuplicates?: number },
 ): SignVerdict {
   if (approval.status === "submitted") {
     return { ok: false, code: "locked", message: "الجدول عند التسجيل الآن. لا توقيع حتى يُقبل أو يُرجَع." };
@@ -140,7 +159,7 @@ export function canSign(
   if (context.blockingConflicts > 0) {
     return {
       ok: false, code: "blocking-conflicts",
-      message: `يوجد ${blockingConflictPhrase(context.blockingConflicts)} يمنع الاعتماد. `
+      message: `يوجد ${blockingConflictPhrase(context.blockingConflicts, context.blockingDuplicates)} يمنع الاعتماد. `
         + "الملاحظات اللائحية لا تمنع، أمّا التعارض فلا يُوقَّع عليه.",
     };
   }
@@ -270,7 +289,7 @@ export type SubmitVerdict =
 
 export function canSubmit(
   approval: ScheduleApproval,
-  context: { openNoteCount: number; deadlineState: DeadlineState; blockingConflicts?: number },
+  context: { openNoteCount: number; deadlineState: DeadlineState; blockingConflicts?: number; blockingDuplicates?: number },
 ): SubmitVerdict {
   if (approval.status === "submitted") {
     return { ok: false, code: "already-submitted", message: "الجدول مُرسَلٌ بالفعل وينتظر التسجيل." };
@@ -299,7 +318,7 @@ export function canSubmit(
   if (Number(context.blockingConflicts || 0) > 0) {
     return {
       ok: false, code: "blocking-conflicts",
-      message: `يوجد ${blockingConflictPhrase(Number(context.blockingConflicts))} يمنع الإرسال. عالِجه أولاً — التسجيل لا يقبل جدولاً فيه تعارض.`,
+      message: `يوجد ${blockingConflictPhrase(Number(context.blockingConflicts), context.blockingDuplicates)} يمنع الإرسال. عالِجه أولاً — التسجيل لا يقبل جدولاً فيه تعارض.`,
     };
   }
   if (context.openNoteCount > 0) {

@@ -41,6 +41,8 @@ interface Payload {
   blockingConflicts: number;
   /** المواعيدُ التي تقف في تلك التعارضات (approvalBlockerSummary على الخادم). */
   blockingRows?: number;
+  /** كم منها موعدٌ مكرّر لا تعارضٌ مادّي — فتقول العبارةُ ما تعدّه. */
+  blockingDuplicates?: number;
   /** ملاحظاتُ التسجيل التي لم تُعالَج ولم يُردّ عليها: تمنع إعادة الإرسال. */
   openRegistrarNotes: number;
   /** عددُ مواعيد الجدول: لا يُوقَّع على جدولٍ فارغ. */
@@ -463,7 +465,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         {/* المانعُ شارةٌ بعدده في مكان الزرّ، وسببُه كاملاً في تلميحها. */}
         {canSignNow && blockingConflicts > 0 ? (
           <InfoTip {...tipProps("sign-blocked")} label="يمنع التوقيع" className="apb-badge apb-blocked" data-tone="danger"
-            tip={<>يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</>}
+            tip={<>يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows, state.blockingDuplicates)}</>}
             data-guide-ignore="شارة مانع التوقيع — تلميحٌ بالسبب، لا فعل">
             <AlertTriangle aria-hidden="true" /><b>{blockingConflicts.toLocaleString("ar-KW-u-nu-latn")}</b>
           </InfoTip>
@@ -472,7 +474,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           accepted ? null
           : blockingConflicts > 0 ? (
             <InfoTip {...tipProps("submit-blocked")} label="يمنع الإرسال" className="apb-badge apb-blocked" data-tone="danger"
-              tip={<>يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}</>}
+              tip={<>يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows, state.blockingDuplicates)}</>}
               data-guide-ignore="شارة مانع الإرسال — تلميحٌ بالسبب، لا فعل">
               <AlertTriangle aria-hidden="true" /><b>{blockingConflicts.toLocaleString("ar-KW-u-nu-latn")}</b>
             </InfoTip>

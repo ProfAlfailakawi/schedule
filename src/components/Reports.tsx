@@ -1732,6 +1732,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         className="occupancy-pick query-detail-panel no-print"
         id="query-result-detail-panel"
         role="dialog"
+        aria-modal="true"
         aria-label={`تفاصيل ${pickedCourse?.CourseName || selectedResult.AdCourseName || "الموعد"}`}
       >
         <header>
@@ -2405,7 +2406,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               return (
                 <>
                 <div className="query-detail-backdrop no-print" onMouseDown={() => setRoomPick(null)} aria-hidden="true" />
-                <div className="occupancy-pick query-detail-panel no-print" id="query-room-detail" role="dialog" aria-label={`تفاصيل إشغال ${roomPick.room}`}>
+                <div className="occupancy-pick query-detail-panel no-print" id="query-room-detail" role="dialog" aria-modal="true" aria-label={`تفاصيل إشغال ${roomPick.room}`}>
                   <header>
                     <div>
                       <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${scheduleClockForDisplay(clock(roomPick.point))}`}</small>

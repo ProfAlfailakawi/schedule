@@ -1872,10 +1872,18 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
 @keyframes railScrimIn{from{opacity:0}to{opacity:1}}
 
 /* ── مركز الإشعارات ─────────────────────────────────────────────────────────
-   جرسٌ ثابتٌ في الزاوية، والرقمُ عليه ما بقي على صاحبه وحده. */
+   جرسٌ ثابتٌ في الزاوية، والرقمُ عليه ما بقي على صاحبه وحده.
+   وموضعُه على سطح المكتب مكتوبٌ مرّةً واحدة: يقرؤه الجرس، ويقرؤه الممرُّ الذي تحجزه
+   له الصفحة (آخر هذا القسم) — فلا يكبر أحدهما ويبقى الآخر على قياسٍ قديم. */
+:root{
+  --notify-top:14px;
+  --notify-edge:16px;   /* من حافّة الشاشة جهةَ نهاية السطر: اليسار في العربية */
+  --notify-size:44px;
+  --notify-lane:calc(var(--notify-edge) + var(--notify-size) + var(--s3));
+}
 .notify-bell{
-  position:fixed;top:14px;inset-inline-end:16px;z-index:2750;
-  width:44px;height:44px;display:grid;place-items:center;
+  position:fixed;top:var(--notify-top);inset-inline-end:var(--notify-edge);z-index:2750;
+  width:var(--notify-size);height:var(--notify-size);display:grid;place-items:center;
   border:1px solid var(--line);border-radius:50%;
   background:var(--surface);color:var(--ink-2);
   box-shadow:var(--shadow-sm);cursor:pointer;
@@ -1968,3 +1976,46 @@ html[data-schedule-workspace="presentation"] .notify-bell{display:none}
 @keyframes notify-drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 @media screen and (max-width:1119px){.notify-toast{top:calc(var(--topbar-h,64px) + 8px)}}
 @media (prefers-reduced-motion:reduce){.notify-toast{animation:none}}
+
+/* ── الجرسُ يتنحّى، ولا يغطّي ─────────────────────────────────────────────────
+   الجرسُ من أثاث الصفحة، لكنه يطفو فوق طبقاتها كلّها (2750) ليبقى في متناول اليد.
+   ونهايةُ السطر في العربية يسار، وهناك يضع كلُّ حوارٍ وورقةٍ ودرجٍ زرَّ إغلاقه — في
+   الزاوية التي يسكنها الجرس نفسها. فكان يجلس على ✕ «نقل الجدول»، وعلى زرّ إغلاق
+   «استعارة القاعات»، وعلى ✕ درج الإضافة والتعديل في كل قائمة، وعلى ✕ القائمة في
+   الهاتف. وترتيبُ الطبقات لا يُصلح هذا: الحواراتُ بين 60 و4400 في ملفاتٍ شتّى، وما
+   رُفع الجرسُ إلى 2750 ليعلو «طبقات الصفحة» حتى علا معها أكثرَ الحوارات.
+
+   فالقاعدةُ واحدة: ما دامت نافذةٌ مفتوحةً فوق الصفحة، يتنحّى الجرسُ ولوحتُه وإشعارُه
+   العائم، ويعودون بإغلاقها. والنافذةُ تُعرف بعلامةٍ واحدة: كلُّ حوارٍ (role="dialog"
+   أو "alertdialog") يُعلن aria-modal — "true" إن ملك الشاشة، و"false" إن كان نافذةً
+   صغيرةً بجوار ما فتحها — فهو في الحالين نافذةٌ فوق الصفحة. والمُحدِّد مكتوبٌ في
+   src/utils/dialogLayer.ts، وهذا السطرُ يطابقه حرفاً بحرف، واختبارُ
+   tests/notify-bell-yield-audit.ts يمسكهما معاً ويمسك كلَّ حوارٍ أو طبقةٍ لم تُعلن.
+   والعلامةُ سمةٌ لا يحملها إلا الحوار — لا role التي تحملها مئاتُ العناصر في اللوحة —
+   فلا يوقظ القاعدةَ إلا حوارٌ يظهر أو يغيب.
+
+   visibility لا display: الإخفاءُ يُسقط الجرسَ من ترتيب Tab ومن قارئ الشاشة، ولا يعيد
+   رنّتَه حين يعود — display:none كان سيعيد حركةَ notify-ring مع كل إغلاق. */
+body:has([aria-modal]:not([hidden])) :is(.notify-bell,.notify-panel,.notify-toast){visibility:hidden}
+/* المحرّكُ الذي لا يعرف :has() يُسقط القاعدةَ السابقة كلَّها — وأهدافُ Vite الافتراضية
+   (Safari 14 وChrome 87 وFirefox 78) لا تعرفه. هناك وحده يكتب البديلُ في
+   dialogLayer.ts العلامةَ على <html>، بالمُحدِّد نفسه. */
+html[data-dialog-open] .notify-bell,
+html[data-dialog-open] .notify-panel,
+html[data-dialog-open] .notify-toast{visibility:hidden}
+/* قائمةُ الهاتف ليست حواراً، لكنها درجٌ فوق الصفحة عرضُه 86vw من اليمين، فيقع ✕
+   إغلاقها تحت الجرس تماماً على كل هاتف. والعلامةُ عليها موجودةٌ أصلاً على <html>. */
+@media screen and (max-width:1119px){
+  html[data-rail="open"] .notify-bell,
+  html[data-rail="open"] .notify-panel,
+  html[data-rail="open"] .notify-toast{visibility:hidden}
+}
+/* وعلى سطح المكتب لا شريطَ علويَّ يسكنه الجرس كما في الهاتف: كان يطفو على الصفحة
+   نفسها، فيغطّي طرفَ أوّل صفٍّ فيها (شريط التحية في لوحة العمل وزرّ التثبيت عليه)،
+   ويمرّ تحته ما يلتصق بأعلى الشاشة عند التمرير (مسطرة الساعات، رؤوس الجداول، لوحة
+   التعارضات في المحرّر). فتحجز له الصفحةُ ممرّاً بقياسه هو: حافّتُها جهةَ نهاية السطر
+   لا تبلغه في أي موضعٍ من التمرير. ووضعا التركيز والعرض يكتبان حشوتَهما بـ!important
+   — والجرسُ فيهما مخفيّ أصلاً. */
+@media screen and (min-width:1120px){
+  .app-main{padding-inline-end:max(var(--gutter),var(--notify-lane))}
+}
