@@ -52,3 +52,28 @@
 .dna-deadline{display:inline-flex;flex:none}
 .dna-deadline .dna-ringc{font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums}
 .dna-deadline .dna-ringc svg{width:14px;height:14px}
+
+/* Steppers whose labels are the screen's own buttons (intelligence scenes,
+   publish steps): the button is the label, quiet until it is the current one. */
+.intelligence-steps .dna-lbl > button,
+.publish-steps .dna-lbl > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 44px;
+  min-inline-size: 44px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.intelligence-steps .dna-lbl > button:hover,
+.publish-steps .dna-lbl > button:hover { background: var(--surface-2); }
+.intelligence-steps .dna-lbl > button:focus-visible,
+.publish-steps .dna-lbl > button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.publish-steps .dna-lbl > button > strong { font-weight: inherit; }
+.intelligence-scenes .intelligence-steps { flex: 1 1 320px; min-inline-size: 0; max-inline-size: 520px; }
+.share-progress .publish-steps { margin-inline: auto; }

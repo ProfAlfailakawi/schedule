@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { DnaStepper } from "./dna";
+import { runVisualTransition } from "../utils/visualTransition";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -2449,35 +2451,34 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         </Surface>
       ) : null}
       <nav className="intelligence-scenes no-print" aria-label="مراحل مركز الذكاء">
-        <Segmented
-          value={scene}
-          onChange={changeScene}
-          options={[
-            {
-              value: "understand",
+        {/* افهم ← جرّب ← اعتمد: مِرقاةٌ تُرى، وكلُّ مرحلةٍ زرُّها باسمها. */}
+        <DnaStepper
+          size="sm"
+          className="intelligence-steps"
+          ariaLabel="مراحل مركز الذكاء"
+          steps={([
+            { value: "understand", label: <span data-guide-target="intelligence.scene.understand">افهم</span>, icon: <BrainCircuit /> },
+            { value: "try", label: <span data-guide-target="intelligence.scene.try">جرّب</span>, icon: <Network /> },
+            { value: "approve", label: <span data-guide-target="intelligence.scene.approve">اعتمد</span>, icon: <ShieldCheck /> },
+          ] as const).map((option, index, all) => {
+            const at = all.findIndex(item => item.value === scene);
+            return {
+              key: option.value,
+              icon: option.icon,
+              state: option.value === scene ? "current" as const : index < at ? "done" as const : "pending" as const,
               label: (
-                <span data-guide-target="intelligence.scene.understand">
-                  <BrainCircuit /> افهم
-                </span>
+                <button
+                  type="button"
+                  className={scene === option.value ? "active" : ""}
+                  aria-pressed={scene === option.value}
+                  data-guide-ignore="تنقّل بين مراحل مركز الذكاء — عرضٌ لا فعل؛ الهدف على اسم المرحلة"
+                  onClick={() => runVisualTransition(() => changeScene(option.value))}
+                >
+                  {option.label}
+                </button>
               ),
-            },
-            {
-              value: "try",
-              label: (
-                <span data-guide-target="intelligence.scene.try">
-                  <Network /> جرّب
-                </span>
-              ),
-            },
-            {
-              value: "approve",
-              label: (
-                <span data-guide-target="intelligence.scene.approve">
-                  <ShieldCheck /> اعتمد
-                </span>
-              ),
-            },
-          ]}
+            };
+          })}
         />
         <span className="scene-caption">
           {scene === "understand"

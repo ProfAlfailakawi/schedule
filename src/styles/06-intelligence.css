@@ -3672,8 +3672,12 @@ button.twin-delta{width:100%}
 .visual-minimal.intelligence-page .scene-subnav button{
   min-width:54px;min-height:54px;padding:0 14px;border-radius:18px;justify-content:center;
 }
+/* Labels are shown under the icons (they were hidden with font-size:0). */
 .visual-minimal.intelligence-page .intelligence-scenes .segmented button,
-.visual-minimal.intelligence-page .scene-subnav button{font-size:0}
+.visual-minimal.intelligence-page .scene-subnav button{
+  flex-direction:column;gap:4px;min-height:62px;padding:6px 12px;
+  font-size:11px;line-height:1.25;font-weight:600;white-space:nowrap;
+}
 .visual-minimal.intelligence-page .intelligence-scenes .segmented button svg,
 .visual-minimal.intelligence-page .scene-subnav button svg{width:20px;height:20px}
 .visual-minimal.intelligence-page .guide-simulation-brief footer button{min-width:52px;min-height:46px;padding:0 14px;border-radius:16px}
