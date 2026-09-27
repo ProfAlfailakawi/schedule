@@ -331,7 +331,9 @@ function layerReport(rules: Rule[], list: El[], texts: Map<string, string>, exem
       const carriers = list.filter(el => classes.every(name => el.classes.has(name)));
       const where = `${rule.file.replace("src/styles/", "")}:${rule.line} .${key}`;
       if (!carriers.length) {
-        const pattern = new RegExp(`(^|[^\\w-])${classes[0].replace(/[-]/g, "\\-")}([^\\w-]|$)`);
+        /* اسمُ الصنف حرفيّاً داخل التعبير: كلُّ محرفٍ خاصّ يُهرَّب، لا الشَّرطة وحدها (CodeQL). */
+        const literal = classes[0].replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+        const pattern = new RegExp(`(^|[^\\w-])${literal}([^\\w-]|$)`);
         const named = [...texts].some(([, text]) => pattern.test(text));
         if (!named) { report.dead.push(key); continue; }
         if (exempt[key]) { report.exempt.push(key); continue; }
