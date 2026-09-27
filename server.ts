@@ -8,7 +8,7 @@ import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { createGunzip } from "zlib";
 import { activeDataMode, ApprovalRevisionConflict, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, StudentCourseStateConflict, withSerialLock , caseRefFor } from "./src/db/repository";
-import { DEMO_SWITCH_ACCOUNTS, demoActiveRoleKey } from "./src/db/demoSandbox";
+import { DEMO_SWITCH_ACCOUNTS, DEMO_MULTI_SITE, demoActiveRoleKey } from "./src/db/demoSandbox";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
@@ -2173,6 +2173,26 @@ async function seedDemoStories(): Promise<void> {
     remember("فتح مقرّر — لم توافق اللجنة", civil, need);
   }
   Repository.setDemoGuide({ freshStudentCivil: generateSyntheticCivilId(), cases });
+
+  /* حالةُ طالبٍ لقسم المواقع الثلاثة (DEMO_MULTI_SITE): رابطُ استبيانٍ لموقع كلية
+     العلوم، وطالبةٌ تطلب شعبةً مسائية من «مدخل إلى الدراسات الإسلامية» — فيفتح
+     حسابُه «كشف التسجيل» على طلبٍ ينتظر لجنته، لا على «لا طلبات بعد». */
+  const islSection = sections.find(row => Number(row.AdCollegeId) === collegeId && String(row.AdSectionCode) === "ISL");
+  const isl101 = islSection && courses.find(row => Number(row.AdSectionId) === Number(islSection.AdSectionId) && String(row.CourseCode) === "ISL101");
+  if (islSection && isl101) {
+    const islSectionId = Number(islSection.AdSectionId);
+    const islSurvey = await Repository.createShareLink({
+      AdCollegeId: collegeId, AdSectionId: islSectionId, AdTermId: termId, SystemUserId: DEMO_MULTI_SITE.id, userName: DEMO_MULTI_SITE.name,
+      kind: "survey", label: shareLinkLabel("survey", String(islSection.AdSectionName || ""), termName), expiresAt: iso(30), showInstructors: true,
+    } as any);
+    const civil = generateSyntheticCivilId();
+    await Repository.saveStudentNeed({
+      fingerprint: await surveyFingerprint(civil), AdCollegeId: collegeId, AdSectionId: islSectionId, studentSectionId: sectionId,
+      surveySectionId: islSectionId, surveyLinkId: islSurvey.id, AdTermId: termId, courseIds: [Number(isl101.AdCourseId)], requestType: "new-course",
+      nameCipher: await sealStudentIdentity("شهد (طالبة تجريبية)"), civilCipher: await sealStudentIdentity(civil),
+      details: "أعمل صباحاً — أحتاج شعبةً مسائية من المقرّر.", eligibility: "not-checked",
+    } as any);
+  }
 
   // ── طلبا أستاذين (c): واحدٌ ينتظر القسم، وآخرُ قُرّر برفضٍ وبدائل.
   const courseName = new Map(courses.map(row => [Number(row.AdCourseId), String(row.CourseName || "")]));
