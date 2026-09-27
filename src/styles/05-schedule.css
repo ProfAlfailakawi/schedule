@@ -8405,7 +8405,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 /* ── حالُ الجدول: رأسٌ هادئ وحبوبٌ بأعدادها داخل بطاقة المرشّحات ──────────
    One calm status area instead of stacked strips. The strips keep their own
    classes (focus/presentation rules still find them); only the look is new. */
-.schedule-status{display:grid;gap:10px;padding-block-end:12px;margin-block-end:12px;border-block-end:1px dashed var(--line)}
+.schedule-status{display:grid;gap:12px;padding-block-end:var(--s4);border-block-end:1px dashed var(--line)}
 .schedule-status .schedule-status-head{padding:0;background:transparent;border:0;box-shadow:none}
 .schedule-status .schedule-practice-strip{display:block;width:auto;padding:0;border:0;background:transparent}
 .schedule-status .schedule-practice-strip .dna-headact>button{
@@ -8421,3 +8421,11 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-status .schedule-ops-strip{display:contents}
 .schedule-status .schedule-ops-pill{min-height:30px;padding:5px 11px;font-size:11px}
 .schedule-status .parked-review{margin:0}
+/* Presentation hides the filter card. The status it now carries stayed on the
+   board before the move, so it stays on the board now; the counters stay
+   hidden there, as they always were (.schedule-mini-stats rule in 03-shell). */
+html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:has(>.schedule-status){
+  display:flex!important;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;
+}
+html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:has(>.schedule-status)>:not(.schedule-status){display:none!important}
+html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0}

@@ -77,3 +77,7 @@
 .publish-steps .dna-lbl > button > strong { font-weight: inherit; }
 .intelligence-scenes .intelligence-steps { flex: 1 1 320px; min-inline-size: 0; max-inline-size: 520px; }
 .share-progress .publish-steps { margin-inline: auto; }
+
+/* Every stepper on this site draws a state, not a live signal: the current
+   node keeps its ring but does not breathe (the approval bar keeps its own). */
+.dna-steps .dna-stepi[data-state="current"] .dna-node { animation: none; }

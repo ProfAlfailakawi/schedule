@@ -18,7 +18,7 @@ import { takeNotifyFocus, type NotifyFocus } from "../utils/notifyFocus";
 import {
   AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardCheck, ClipboardList, Clock3,
   CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
-  UsersRound, X, OctagonAlert, MessageSquareWarning, MessageSquareReply, ListPlus,
+  UsersRound, X, FilePenLine, OctagonAlert, MessageSquareWarning, MessageSquareReply, ListPlus,
 } from "lucide-react";
 import { DnaCount, DnaTimeline } from "./dna";
 import { ApprovalDnaStepper, DeadlineDnaRing } from "./dna/scheduleDna";
@@ -27,7 +27,7 @@ import SubmissionDeadlines from "./SubmissionDeadlines";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import { EMPTY_INBOX_ASK, matchesInboxAsk, parseInboxAsk, type InboxAsk, type InboxAskSignal } from "../utils/inboxAsk";
 import { Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { APPROVAL_STATUS_LABEL, CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, ESCALATE_AFTER_INSISTS } from "../utils/approvalWorkflow";
+import { APPROVAL_EVENT_LABEL, APPROVAL_STATUS_LABEL, CLOSED_BY_ACCEPTANCE_LABEL, countAnsweredRegistrarNotes, countOpenRegistrarNotes, ESCALATE_AFTER_INSISTS } from "../utils/approvalWorkflow";
 import { isViewerOnlyRole } from "../utils/academicRoles";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { DIFF_FIELD_LABEL, type DiffFieldKey } from "../utils/scheduleDiff";
@@ -108,7 +108,7 @@ interface ChangeReport {
   authorityAvailable?: boolean;
   /** جولةٌ مضت تُقرأ بين أساسها ونهايتها. */
   viewingPastRound?: boolean;
-  rounds: Array<{ number: number; submittedAt?: string; submittedBy?: string; returnedAt?: string; returnedBy?: string; returnedNoteCount?: number; changedRowCount?: number; acceptedAt?: string; acceptedBy?: string }>;
+  rounds: Array<{ number: number; submittedAt?: string; submittedBy?: string; returnedAt?: string; returnedBy?: string; returnedNoteCount?: number; changedRowCount?: number; acceptedAt?: string; acceptedBy?: string; amendment?: boolean }>;
   deadline: InboxRow["deadline"];
   diff: { entries: DiffEntry[]; counts: { added: number; removed: number; changed: number; unchanged: number }; firstReview: boolean };
   /** من أين تبدأ المقارنة: النسخة المعتمدة، أو نسخة جولة، أو لقطة محفوظة، أو لا شيء. */
@@ -1199,7 +1199,11 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
                     ariaLabel={`أحداث الجولة ${round.number}`}
                     wrapMeta
                     items={[
-                      ...(round.submittedAt ? [{ key: "sent", icon: <Send aria-hidden="true" />, tone: "accent" as const, title: "أُرسلت", date: arabicDate(round.submittedAt), meta: round.submittedBy || undefined }] : []),
+                      /* جولةُ التعديل لا يرسلها أحد: يفتحها أولُ تعديلٍ على جدولٍ مقبول،
+                         فتُسمّى باسم حدثها في السجلّ، وبأيقونة القلم. */
+                      ...(round.submittedAt ? [round.amendment
+                        ? { key: "sent", icon: <FilePenLine aria-hidden="true" />, tone: "info" as const, title: APPROVAL_EVENT_LABEL["amendment-open"], date: arabicDate(round.submittedAt), meta: round.submittedBy || undefined }
+                        : { key: "sent", icon: <Send aria-hidden="true" />, tone: "accent" as const, title: "أُرسلت", date: arabicDate(round.submittedAt), meta: round.submittedBy || undefined }] : []),
                       ...(round.returnedAt ? [{
                         key: "returned", icon: <CornerUpLeft aria-hidden="true" />, tone: "warn" as const,
                         title: `أُرجعت ${round.returnedNoteCount ? `بـ${countOf(round.returnedNoteCount, oblique(AR.note))}` : "بلا ملاحظات"}`,
