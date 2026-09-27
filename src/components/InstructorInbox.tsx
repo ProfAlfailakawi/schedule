@@ -31,6 +31,7 @@ import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
   MessageSquare, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
+import { RequestStatusStepper, RequestTimelineToggle, RequestTotalsFunnel } from "./dna/requestDna";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import {
@@ -329,6 +330,12 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
         })()}
         </div>
       </header>
+
+      {/* مسارُ الطلب بنظرة، وسجلُّ أحداثه مطويٌّ خلف أيقونة. */}
+      <div className="request-card-relay">
+        <RequestStatusStepper row={row} />
+        <RequestTimelineToggle timeline={row.timeline} />
+      </div>
 
       {/* ── جدولٌ لا كومةُ بطاقات ─────────────────────────────────────────
           كلُّ بندٍ صفٌّ واحد بأعمدةٍ ثابتة: ما هو، وأيُّ مقرّر، وكان، والمطلوب،
@@ -1064,9 +1071,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         <>
           {/* ثلاثةُ أرقامٍ لا أكثر. من أراد التفصيل فتح ما تحته. */}
           <Surface className="request-totals">
-            <div><b>{totals?.answered ?? 0}</b><span>أجاب من {totals?.sent ?? 0}</span></div>
-            {totals?.unchanged ? <div><b>{totals.unchanged}</b><span>بلا تغيير</span></div> : null}
-            {totals?.changed ? <div><b>{totals.changed}</b><span>طلبوا تغييراً</span></div> : null}
+            <RequestTotalsFunnel totals={totals} />
           </Surface>
 
           {silent.length ? (
