@@ -1368,6 +1368,37 @@ function otsuBinarize(lib:any,src:any){
   return out;
 }
 
+/** Ink by LOCAL mean, not one page-wide threshold: a shadowed side of a
+ *  CamScanner page keeps its rules. One rule for the geometry probe and for the
+ *  full-resolution rule tracing in straightenTable. */
+function localMeanDark(data:Uint8ClampedArray,W:number,H:number,radius:number,offset:number):Uint8Array{
+  const grey=new Uint8Array(W*H);
+  const stride=W+1;
+  /* 32-bit is safe: 255 × pixels stays below 2^32 up to ~16.8M pixels (the
+     probe is 1,400px and the reading surface 2,800px on its long edge). */
+  const integral=new Uint32Array((W+1)*(H+1));
+  for(let y=0;y<H;y++){
+    let rowSum=0;
+    for(let x=0;x<W;x++){
+      const at=(y*W+x)*4;
+      const g=Math.round((data[at]*299+data[at+1]*587+data[at+2]*114)/1000);
+      grey[y*W+x]=g;rowSum+=g;
+      integral[(y+1)*stride+x+1]=integral[y*stride+x+1]+rowSum;
+    }
+  }
+  const dark=new Uint8Array(W*H);
+  for(let y=0;y<H;y++){
+    const y0=Math.max(0,y-radius),y1=Math.min(H-1,y+radius);
+    for(let x=0;x<W;x++){
+      const x0=Math.max(0,x-radius),x1=Math.min(W-1,x+radius);
+      const sum=integral[(y1+1)*stride+x1+1]-integral[y0*stride+x1+1]-integral[(y1+1)*stride+x0]+integral[y0*stride+x0];
+      const area=(x1-x0+1)*(y1-y0+1),mean=sum/area;
+      if(grey[y*W+x]<mean-offset)dark[y*W+x]=1;
+    }
+  }
+  return dark;
+}
+
 /**
  * Detect the ruled Authority table on a SMALL adaptive-threshold probe.
  *
@@ -1393,31 +1424,7 @@ function adaptiveGridGeometry(lib:any,src:any):{cols:number[];bands:{top:number;
   const W=probe.width,H=probe.height;
   if(W<200||H<200)return null;
 
-  const grey=new Uint8Array(W*H);
-  const stride=W+1;
-  /* 32-bit is safe here: the probe is capped at 1,400px long edge, so even the
-     sum of the entire image is well below 2^32. */
-  const integral=new Uint32Array((W+1)*(H+1));
-  for(let y=0;y<H;y++){
-    let rowSum=0;
-    for(let x=0;x<W;x++){
-      const at=(y*W+x)*4;
-      const g=Math.round((data[at]*299+data[at+1]*587+data[at+2]*114)/1000);
-      grey[y*W+x]=g;rowSum+=g;
-      integral[(y+1)*stride+x+1]=integral[y*stride+x+1]+rowSum;
-    }
-  }
-  const radius=25,offset=5;
-  const dark=new Uint8Array(W*H);
-  for(let y=0;y<H;y++){
-    const y0=Math.max(0,y-radius),y1=Math.min(H-1,y+radius);
-    for(let x=0;x<W;x++){
-      const x0=Math.max(0,x-radius),x1=Math.min(W-1,x+radius);
-      const sum=integral[(y1+1)*stride+x1+1]-integral[y0*stride+x1+1]-integral[(y1+1)*stride+x0]+integral[y0*stride+x0];
-      const area=(x1-x0+1)*(y1-y0+1),mean=sum/area;
-      if(grey[y*W+x]<mean-offset)dark[y*W+x]=1;
-    }
-  }
+  const dark=localMeanDark(data,W,H,25,5);
 
   const cluster=(points:number[],maxGap:number,score?:Int32Array)=>{
     const groups:number[][]=[];
@@ -1552,6 +1559,252 @@ function adaptiveGridGeometry(lib:any,src:any):{cols:number[];bands:{top:number;
   const bands:{top:number;bottom:number}[]=[];
   for(let index=0;index<bounds.length-1;index++)if(bounds[index+1]-bounds[index]>=8)bands.push({top:bounds[index],bottom:bounds[index+1]});
   return cols.length>=7&&bands.length?{cols,bands}:null;
+}
+
+/* ── الجدول المائل يُستقام قبل أن يُقطع ──────────────────────────────────────
+   الأعمدة تُقاس في شريط الترويسة وحده والصفوف بإسقاطٍ على عرض الصفحة كله، ثم
+   تُقطع كل خلية بهما من أعلى الجدول إلى أسفله. صورةٌ فيها ميلٌ أو منظور (الورقة
+   أعرض من أسفلها) تنزاح خطوطها كلما نزلنا: في 3.pdf ص1 خط العمود عند أول صف
+   +1…+3 بكسل وعند آخر صف +10…+18 — عرضُ خانة كاملة في عمود رقم المقرر، فخرج
+   «0101150» «3010115» (خانةٌ من الحدّ في أوله وضاعت الأخيرة) والأيام «5 4 3 2 1»
+   «5432» والمبنى فارغاً؛ ومال خط الصف 11 بكسلاً عند عمود الأستاذ فأُخذ اسمٌ من
+   الصف الذي فوقه. العلاج في مكان واحد: يُتتبَّع كل خط في كل صف ويُطابَق بمنحنى
+   (مع رفض الشواذ)، وتُصحَّح الصورة حتى يعود كل خط عمود إلى موضعه في الترويسة
+   وكل خط صف مستقيماً؛ ثم يجري كل ما بعدها — الأشرطة وخلايا الإنقاذ والصورة
+   الثنائية — على الصورة المستقيمة. صفحةٌ لا انزياح فيها (أقل من 2.5 بكسل) لا
+   تُمسّ، وتتبّعٌ لا يثبت أو يشطّ يُترك معه الأصل كما هو. */
+type RuleCurve={at:(t:number)=>number;from:number;to:number};
+/** Robust quadratic v(t) through the points; points further than 3 px (or 3 MADs)
+ *  from the first fit are dropped once. Null when the evidence is thin. */
+function robustRuleCurve(points:{t:number;v:number}[],minimum:number):RuleCurve|null{
+  const solve=(list:{t:number;v:number}[])=>{
+    if(list.length<3)return null;
+    const tMin=Math.min(...list.map(p=>p.t)),tMax=Math.max(...list.map(p=>p.t)),span=Math.max(1,tMax-tMin),mid=(tMin+tMax)/2;
+    let s0=0,s1=0,s2=0,s3=0,s4=0,r0=0,r1=0,r2=0;
+    for(const point of list){const u=(point.t-mid)/span,u2=u*u;s0++;s1+=u;s2+=u2;s3+=u2*u;s4+=u2*u2;r0+=point.v;r1+=point.v*u;r2+=point.v*u2;}
+    /* A short run of samples is fitted as a line; a quadratic needs spread. */
+    const quadratic=list.length>=6;
+    const det3=(a:number[][])=>a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])-a[0][1]*(a[1][0]*a[2][2]-a[1][2]*a[2][0])+a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]);
+    let c0=0,c1=0,c2=0;
+    if(quadratic){
+      const m=[[s0,s1,s2],[s1,s2,s3],[s2,s3,s4]],d=det3(m);
+      if(Math.abs(d)<1e-9)return null;
+      c0=det3([[r0,s1,s2],[r1,s2,s3],[r2,s3,s4]])/d;
+      c1=det3([[s0,r0,s2],[s1,r1,s3],[s2,r2,s4]])/d;
+      c2=det3([[s0,s1,r0],[s1,s2,r1],[s2,s3,r2]])/d;
+    }else{
+      const d=s0*s2-s1*s1;if(Math.abs(d)<1e-9)return null;
+      c0=(r0*s2-r1*s1)/d;c1=(s0*r1-s1*r0)/d;
+    }
+    const f=(t:number)=>{const u=(t-mid)/span;return c0+c1*u+c2*u*u;};
+    return{f,tMin,tMax};
+  };
+  if(points.length<minimum)return null;
+  const first=solve(points);if(!first)return null;
+  const residuals=points.map(point=>Math.abs(point.v-first.f(point.t)));
+  const sorted=[...residuals].sort((a,b)=>a-b),mad=sorted[Math.floor(sorted.length/2)];
+  const keep=points.filter((_,index)=>residuals[index]<=Math.max(3,mad*3));
+  if(keep.length<minimum)return null;
+  const fit=solve(keep);if(!fit)return null;
+  /* Never extrapolate a curve: beyond its evidence it holds its last value. */
+  return{at:(t:number)=>fit.f(Math.max(fit.tMin,Math.min(fit.tMax,t))),from:fit.tMin,to:fit.tMax};
+}
+export const STRAIGHTEN_MIN_SHIFT=2.5;
+type TableTrace={shift:number;typical:number;pitch:number;vTargets:number[];hTargets:number[];dxRule:Float32Array[];dyRule:Float32Array[]};
+/** Trace every rule of the table band by band and fit it (robustRuleCurve).
+ *  `shift` is the largest displacement of any rule from its target. */
+function traceTable(data:Uint8ClampedArray,W:number,H:number,cols:number[],bands:{top:number;bottom:number}[]):TableTrace|null{
+  if(cols.length<4||bands.length<4)return null;
+  const dark=localMeanDark(data,W,H,50,5);
+  const heights=bands.map(band=>band.bottom-band.top).sort((a,b)=>a-b);
+  const pitch=heights[Math.floor(heights.length/2)];
+  if(pitch<10)return null;
+  const reachX=Math.max(4,Math.round(pitch*0.3)),reachY=Math.max(4,Math.round(pitch*0.4));
+  const headerBottom=bands[0].top,headerTop=Math.max(0,headerBottom-Math.round(pitch*1.8));
+  const tableLeft=cols[0],tableRight=cols[cols.length-1];
+
+  /* A column rule inside one row band: the x whose ink covers ≥70% of the band
+     height, nearest the prediction; refined to the stroke's centroid. */
+  const columnInk=(x:number,yA:number,yB:number)=>{let ink=0;for(let y=yA;y<yB;y++)if(dark[y*W+x])ink++;return ink/Math.max(1,yB-yA);};
+  const verticalAt=(center:number,yA:number,yB:number)=>{
+    let bestX=-1,best=0;
+    for(let x=Math.max(1,center-reachX);x<=Math.min(W-2,center+reachX);x++){
+      const f=columnInk(x,yA,yB);
+      if(f>best+1e-9||(Math.abs(f-best)<1e-9&&Math.abs(x-center)<Math.abs(bestX-center))){best=f;bestX=x;}
+    }
+    if(best<0.7)return -1;
+    let sum=0,weight=0;
+    for(let x=Math.max(0,bestX-2);x<=Math.min(W-1,bestX+2);x++){const f=columnInk(x,yA,yB);if(f>=best*0.8){sum+=x*f;weight+=f;}}
+    return weight?sum/weight:bestX;
+  };
+  const rowInk=(y:number,xA:number,xB:number)=>{let ink=0;for(let x=xA;x<xB;x++)if(dark[y*W+x])ink++;return ink/Math.max(1,xB-xA);};
+  const horizontalAt=(center:number,xA:number,xB:number)=>{
+    let bestY=-1,best=0;
+    for(let y=Math.max(1,center-reachY);y<=Math.min(H-2,center+reachY);y++){
+      const f=rowInk(y,xA,xB);
+      if(f>best+1e-9||(Math.abs(f-best)<1e-9&&Math.abs(y-center)<Math.abs(bestY-center))){best=f;bestY=y;}
+    }
+    if(best<0.7)return -1;
+    let sum=0,weight=0;
+    for(let y=Math.max(0,bestY-2);y<=Math.min(H-1,bestY+2);y++){const f=rowInk(y,xA,xB);if(f>=best*0.8){sum+=y*f;weight+=f;}}
+    return weight?sum/weight:bestY;
+  };
+
+  /* Vertical rules: header first, then band by band, each prediction the last
+     measured x — drift grows a pixel or two per row, never a jump. */
+  const verticalCurves:(RuleCurve|null)[]=cols.map(x0=>{
+    const points:{t:number;v:number}[]=[];
+    let prediction=x0;
+    if(headerBottom-headerTop>=12){
+      const x=verticalAt(x0,headerTop+3,headerBottom-3);
+      if(x>=0){points.push({t:(headerTop+headerBottom)/2,v:x});prediction=Math.round(x);}
+    }
+    for(const band of bands){
+      const yA=band.top+3,yB=band.bottom-3;if(yB-yA<6)continue;
+      const x=verticalAt(prediction,yA,yB);
+      if(x>=0){points.push({t:(yA+yB)/2,v:x});prediction=Math.round(x);}
+    }
+    return robustRuleCurve(points,Math.max(5,Math.round(bands.length*0.35)));
+  });
+  /* Horizontal rules: measured inside every column span, each span predicted
+     from where the rule ABOVE sat in that same span — rows are near parallel,
+     so the search starts on the rule even where the page tilts by a quarter
+     row (3.pdf p1 bottom-left: 12 px), instead of on a neighbouring text line. */
+  const ruleYs=[bands[0].top,...bands.map(band=>band.bottom)];
+  const spans=cols.slice(1).map((right,index)=>({left:cols[index],right})).filter(span=>span.right-span.left>=16);
+  const spanOffset=spans.map(()=>0);
+  const horizontalCurves:(RuleCurve|null)[]=ruleYs.map(y0=>{
+    const points:{t:number;v:number}[]=[];
+    spans.forEach((span,at)=>{
+      const y=horizontalAt(Math.round(y0+spanOffset[at]),span.left+4,span.right-4);
+      if(y>=0){points.push({t:(span.left+span.right)/2,v:y});spanOffset[at]=y-y0;}
+    });
+    return robustRuleCurve(points,Math.max(4,Math.round(spans.length*0.35)));
+  });
+  if(verticalCurves.filter(Boolean).length<3||horizontalCurves.filter(Boolean).length<3)return null;
+
+  /* Targets: a column rule returns to where the header shows it; a row rule to
+     its own height at the table's middle. A rule that could not be traced takes
+     its neighbours' displacement. */
+  const headerMid=(headerTop+headerBottom)/2,tableMid=(tableLeft+tableRight)/2;
+  const vTargets=cols.map((x,index)=>verticalCurves[index]?verticalCurves[index]!.at(headerMid):x);
+  /* Two detected rules a few pixels apart (a double border) can both follow the
+     same stroke (3.pdf p2: 213 and 213). The second is not traced: it keeps its
+     own spacing from its neighbour and takes its neighbours' displacement, so
+     the page keeps every column it had instead of being refused whole. */
+  for(let index=1;index<cols.length;index++){
+    if(!verticalCurves[index]||vTargets[index]-vTargets[index-1]>=Math.max(2,(cols[index]-cols[index-1])*0.5))continue;
+    verticalCurves[index]=null;
+    vTargets[index]=cols[index]+(vTargets[index-1]-cols[index-1]);
+  }
+  const hTargets=ruleYs.map((y,index)=>horizontalCurves[index]?horizontalCurves[index]!.at(tableMid):y);
+  const dxRule:Float32Array[]=cols.map(()=>new Float32Array(H));
+  const dyRule:Float32Array[]=ruleYs.map(()=>new Float32Array(W));
+  let shift=0;
+  for(let index=0;index<cols.length;index++){
+    const curve=verticalCurves[index];if(!curve)continue;
+    for(let y=0;y<H;y++)dxRule[index][y]=curve.at(y)-vTargets[index];
+    for(const band of bands){const d=Math.abs(curve.at((band.top+band.bottom)/2)-vTargets[index]);if(d>shift)shift=d;}
+  }
+  for(let index=0;index<ruleYs.length;index++){
+    const curve=horizontalCurves[index];if(!curve)continue;
+    for(let x=0;x<W;x++)dyRule[index][x]=curve.at(x)-hTargets[index];
+    for(const span of spans){const d=Math.abs(curve.at((span.left+span.right)/2)-hTargets[index]);if(d>shift)shift=d;}
+  }
+  const fillFromNeighbours=(curves:(RuleCurve|null)[],rows:Float32Array[],length:number)=>{
+    for(let index=0;index<curves.length;index++){
+      if(curves[index])continue;
+      let below=index-1;while(below>=0&&!curves[below])below--;
+      let above=index+1;while(above<curves.length&&!curves[above])above++;
+      for(let at=0;at<length;at++)rows[index][at]=below>=0&&above<curves.length?(rows[below][at]+rows[above][at])/2:below>=0?rows[below][at]:rows[above][at];
+    }
+  };
+  fillFromNeighbours(verticalCurves,dxRule,H);
+  fillFromNeighbours(horizontalCurves,dyRule,W);
+  /* The typical rule's displacement (median over every traced rule): one rule
+     whose trace flips between the two strokes of a thick border cannot speak
+     for the whole table. */
+  const perRule:number[]=[];
+  verticalCurves.forEach((curve,index)=>{if(!curve)return;let most=0;for(const band of bands){const d=Math.abs(curve.at((band.top+band.bottom)/2)-vTargets[index]);if(d>most)most=d;}perRule.push(most);});
+  horizontalCurves.forEach((curve,index)=>{if(!curve)return;let most=0;for(const span of spans){const d=Math.abs(curve.at((span.left+span.right)/2)-hTargets[index]);if(d>most)most=d;}perRule.push(most);});
+  perRule.sort((a,b)=>a-b);
+  const typical=perRule.length?perRule[Math.floor(perRule.length/2)]:0;
+  return{shift,typical,pitch,vTargets,hTargets,dxRule,dyRule};
+}
+/**
+ * Straighten a slanted or perspective table page (see the note above). Returns
+ * the straightened surface together with the geometry it now HAS by
+ * construction — every column rule at its header x, every row rule level —
+ * so the reader keeps exactly the columns it measured and only loses the
+ * drift. Re-detecting columns on the straightened page is deliberately NOT
+ * done: rules that were slanted inside the header become visible there and
+ * change the column count (1.pdf p3: 27 → 30), and the reader's edge windows
+ * are counted in columns.
+ */
+export function straightenTable(lib:any,surface:any,geometry:{cols:number[];bands:{top:number;bottom:number}[]}):{surface:any;shift:number;geometry:{cols:number[];bands:{top:number;bottom:number}[]}}|null{
+  const W=surface.width,H=surface.height;
+  const {cols,bands}=geometry;
+  const source=surface.getContext("2d").getImageData(0,0,W,H);
+  const src=source.data;
+  const trace=traceTable(src,W,H,cols,bands);
+  if(!trace)return null;
+  const {shift,pitch,vTargets,hTargets,dxRule,dyRule}=trace;
+  if(shift<STRAIGHTEN_MIN_SHIFT)return null;
+  /* A trace that wanders by most of a row pitch is not a slanted page but a
+     wrong line followed: keep the original. */
+  if(shift>pitch*0.8)return null;
+
+  /* Interpolation weights per pixel column / row between the traced rules. */
+  const vOrder=vTargets.map((x,index)=>({x,index})).sort((a,b)=>a.x-b.x);
+  const hOrder=hTargets.map((y,index)=>({y,index})).sort((a,b)=>a.y-b.y);
+  const colLo=new Int32Array(W),colHi=new Int32Array(W),colFrac=new Float32Array(W);
+  for(let x=0,k=0;x<W;x++){
+    while(k<vOrder.length-2&&x>vOrder[k+1].x)k++;
+    const a=vOrder[k],b=vOrder[Math.min(k+1,vOrder.length-1)];
+    const f=b.x>a.x?Math.max(0,Math.min(1,(x-a.x)/(b.x-a.x))):0;
+    colLo[x]=a.index;colHi[x]=b.index;colFrac[x]=f;
+  }
+  const rowLo=new Int32Array(H),rowHi=new Int32Array(H),rowFrac=new Float32Array(H);
+  for(let y=0,k=0;y<H;y++){
+    while(k<hOrder.length-2&&y>hOrder[k+1].y)k++;
+    const a=hOrder[k],b=hOrder[Math.min(k+1,hOrder.length-1)];
+    const f=b.y>a.y?Math.max(0,Math.min(1,(y-a.y)/(b.y-a.y))):0;
+    rowLo[y]=a.index;rowHi[y]=b.index;rowFrac[y]=f;
+  }
+  const out=lib.createCanvas(W,H),octx=out.getContext("2d");
+  const target=octx.createImageData(W,H),dst=target.data;
+  for(let y=0;y<H;y++){
+    const rl=dyRule[rowLo[y]],rh=dyRule[rowHi[y]],fy=rowFrac[y];
+    for(let x=0;x<W;x++){
+      const fx=colFrac[x];
+      const dx=dxRule[colLo[x]][y]*(1-fx)+dxRule[colHi[x]][y]*fx;
+      const dy=rl[x]*(1-fy)+rh[x]*fy;
+      let sx=x+dx,sy=y+dy;
+      if(sx<0)sx=0;else if(sx>W-1.001)sx=W-1.001;
+      if(sy<0)sy=0;else if(sy>H-1.001)sy=H-1.001;
+      const x0=sx|0,y0=sy|0,ax=sx-x0,ay=sy-y0;
+      const i00=(y0*W+x0)*4,i01=i00+4,i10=i00+W*4,i11=i10+4,o=(y*W+x)*4;
+      for(let c=0;c<3;c++){
+        const top=src[i00+c]+(src[i01+c]-src[i00+c])*ax,bottom=src[i10+c]+(src[i11+c]-src[i10+c])*ax;
+        dst[o+c]=top+(bottom-top)*ay;
+      }
+      dst[o+3]=255;
+    }
+  }
+  /* The geometry the straightened page has by construction. */
+  const straightCols=vTargets.map(x=>Math.round(x));
+  const straightRules=hTargets.map(y=>Math.round(y));
+  const straightBands=bands.map((_,index)=>({top:straightRules[index],bottom:straightRules[index+1]}));
+  if(straightCols.some((x,index)=>index>0&&x<=straightCols[index-1])||straightBands.some(band=>band.bottom-band.top<8))return null;
+  /* Straightening must measurably straighten: traced again, the typical rule
+     must keep under half its drift (3.pdf p1: 8.5 → 0.3 px), or the original
+     stays. The typical rule, not the worst: a thick bottom border whose trace
+     flips between its two strokes stays «off» by 9–14 px on a table whose
+     every column rule is back within 1.5 px. */
+  const again=traceTable(dst,W,H,straightCols,straightBands);
+  if(again&&again.typical>Math.max(1.5,trace.typical*0.5))return null;
+  octx.putImageData(target,0,0);
+  return{surface:out,shift:Math.round(shift*10)/10,geometry:{cols:straightCols,bands:straightBands}};
 }
 
 /** Long dark runs, per axis, on the binarized image. */
@@ -1792,7 +2045,7 @@ export const authorityCourseNameScore=(printed:string,catalogueName:string,ignor
   const knownPart=[...new Set(toAscii(String(catalogueName||"")).match(/\d/g)||[])].sort().join("");
   return courseNameMarkers(printed)===knownPart?score:score/2;
 };
-export const AUTHORITY_NAME_PICK_MIN=.7,AUTHORITY_NAME_PICK_MARGIN=.2;
+export const AUTHORITY_NAME_PICK_MIN=.7,AUTHORITY_NAME_PICK_MARGIN=.2,AUTHORITY_NAME_DISAGREES=.3;
 /** يختار مفتاحاً واحداً من العائلة التي تثبتها خانات الرقم المقروءة، باسمه
     المطبوع. يعيد "" عند غياب العائلة أو التباس الاسم. */
 export const authorityCourseFromFamilyAndName=(rawCode:string,printedName:string,departmentCode:string,catalogue:{key:string;name:string}[]):string=>{
@@ -2514,6 +2767,61 @@ const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d
  *  والشعبة)، ولا تُمسّ قيمة قرأها الأساس. الصفحة 1 من جدول 2026: طريق
  *  الكلمات أثبت 28 هوية بلا وقت ولا مبنى، والشبكة قرأت الأوقات — فكان
  *  الاستبدال الكامل يوقف الملف «بلا وقت ولا مبنى» بعدما كان يُقرأ. */
+/* ── السطر المطبوع الواحد صفٌّ واحد ───────────────────────────────────────────
+   طريقا القراءة يقرآن الصفحة نفسها، وكان الصف من أحدهما يُطابَق بصفّه في
+   الآخر بالهوية وحدها (المرجعي، أو المقرر والشعبة). فإذا أخطأ أحدهما المرجعي
+   أو غابت عنه الشعبة صار السطر المطبوع الواحد صفّين: واحداً بجدولته من طريق
+   الكلمات، وآخرَ بهويته من طريق الخطوط وجدولتُه فارغة (1.pdf ص1، 2026-09-27:
+   «0101102 — 89541» و«0101102 510 1895» على ارتفاع واحد). وكلا الطريقين يحمل
+   الآن موضع صفّه على الورقة بمقياس 842، فالسطر الواحد يُعرف بموضعه: يُقرن كل
+   صفٍّ بأقرب صفٍّ في الطريق الآخر على السطر نفسه (أقل من ثلث المسافة بين
+   سطرين)، مرةً واحدة لكلٍّ منهما. */
+export function pairRowsByLine(base:GridRow[],donor:GridRow[]):Map<number,GridRow>{
+  const pairs=new Map<number,GridRow>();
+  const ys=base.map(row=>row.y).filter((y):y is number=>Number.isFinite(y)).sort((a,b)=>a-b);
+  const gaps=ys.slice(1).map((y,i)=>y-ys[i]).filter(gap=>gap>2).sort((a,b)=>a-b);
+  const pitch=gaps[Math.floor(gaps.length/2)]||12;
+  const tolerance=Math.max(2,pitch*0.3);
+  const candidates:{at:number;donor:number;distance:number}[]=[];
+  base.forEach((row,at)=>{
+    if(!Number.isFinite(row.y))return;
+    donor.forEach((other,donorAt)=>{
+      if(!Number.isFinite(other.y))return;
+      const distance=Math.abs(row.y!-other.y!);
+      if(distance<=tolerance)candidates.push({at,donor:donorAt,distance});
+    });
+  });
+  const usedDonor=new Set<number>();
+  for(const item of candidates.sort((a,b)=>a.distance-b.distance)){
+    if(pairs.has(item.at)||usedDonor.has(item.donor))continue;
+    pairs.set(item.at,donor[item.donor]);usedDonor.add(item.donor);
+  }
+  return pairs;
+}
+/** Empty cells of one reading of a printed line take the other reading's value;
+ *  a cell already read is never overwritten — except a course key or section the
+ *  row's own reading could not prove, when the other reading proves it. */
+export function fillLineCells(target:GridRow,donor:GridRow,departmentCode=""){
+  if(!authorityCourseCellLooksPlausible(target.code,departmentCode)&&authorityCourseCellLooksPlausible(donor.code,departmentCode))target.code=donor.code;
+  /* رقمٌ هو صدرُ رقم الطريق الآخر الأطول («50» من «503»، «1895» من «18956»)
+     هو الرقم نفسه مبتوراً عند حافة خليته: يُكمَل. */
+  const truncationOf=(short:string,full:string)=>Boolean(short&&full)&&full.length>short.length&&full.startsWith(short);
+  if((!authoritySectionCodeLooksPlausible(target.scode)||truncationOf(target.scode,donor.scode))&&authoritySectionCodeLooksPlausible(donor.scode))target.scode=donor.scode;
+  if((!String(target.reference||"").trim()||truncationOf(String(target.reference),String(donor.reference||"")))&&donor.reference)target.reference=donor.reference;
+  if(String(target.courseText||"").trim().length<3&&donor.courseText)target.courseText=donor.courseText;
+  /* الخانة الفارغة هنا هي القيمة المُتحقَّق منها (building/hall/days/start)؛
+     النصّ الخام الذي لم يجتز التحقق شاهدٌ لا قيمة، فلا يمنع قيمةً صحيحة قرأها
+     الطريق الآخر للسطر نفسه (1.pdf ص3: 27 مبنى صاروا 15 حين غلب طريق الخطوط). */
+  if(!target.start&&donor.start){target.start=donor.start;target.end=target.end||donor.end;target.timeRaw=donor.timeRaw||target.timeRaw;}
+  if(!target.building&&donor.building){target.building=donor.building;target.buildingRaw=donor.buildingRaw||donor.building;}
+  else if(!target.building&&!target.buildingRaw&&donor.buildingRaw)target.buildingRaw=donor.buildingRaw;
+  if(!target.hall&&donor.hall){target.hall=donor.hall;target.hallRaw=donor.hallRaw||donor.hall;}
+  else if(!target.hall&&!target.hallRaw&&donor.hallRaw)target.hallRaw=donor.hallRaw;
+  if(!String(target.days||"").trim()&&String(donor.days||"").trim()){target.days=donor.days;target.daysRaw=donor.daysRaw||donor.days;}
+  else if(!String(target.days||"").trim()&&!target.daysRaw&&donor.daysRaw)target.daysRaw=donor.daysRaw;
+  if(!String(target.instructorText||"").trim()&&donor.instructorText)target.instructorText=donor.instructorText;
+}
+
 export function fillScheduleCellsFrom(base:GridRow[],donor:GridRow[]|null|undefined){
   if(!donor?.length)return;
   const byReference=new Map<string,GridRow>(),byCourseSection=new Map<string,GridRow>();
@@ -2546,13 +2854,19 @@ async function readGrid(
   const mark=(label:string)=>{if(profile){const now=Date.now();console.error(`[prof] ${label} ${(now-profT)}ms`);profT=now;}};
   const lib=await canvas();
   const image=await lib.loadImage(upright);
-  const surface=lib.createCanvas(image.width,image.height);
+  let surface=lib.createCanvas(image.width,image.height);
   surface.getContext("2d").drawImage(image,0,0);
-  const bin=otsuBinarize(lib,surface);
-  mark('load+binarize');
-  const geometry=adaptiveGridGeometry(lib,surface);
+  let geometry=adaptiveGridGeometry(lib,surface);
   if(!geometry)return null;
   mark('geometry');
+  /* A slanted or perspective page is straightened once, here, so every strip,
+     cell rescue and binarized read below cuts the cell that is really there
+     (straightenTable). The straightened geometry must still prove the table. */
+  const straightened=straightenTable(lib,surface,geometry);
+  if(straightened){surface=straightened.surface;geometry=straightened.geometry;}
+  mark('straighten');
+  const bin=otsuBinarize(lib,surface);
+  mark('binarize');
   const {cols,bands}=geometry;
 
   /* The adaptive detector includes the OUTER table borders, therefore every
@@ -3638,6 +3952,9 @@ mark('escalation');
       buildingRaw:bRaw,
       hallRaw:hRaw,
       sourceMode:"ocr-grid",
+      /* موضع الصف على الورقة بمقياس 842 كطريق الكلمات: به يُرتَّب الدمج
+         كترتيب الصفحة المطبوعة (processPage). */
+      y:((bands[row].top+bands[row].bottom)/2)*842/Math.max(1,image.width),
     });
   }
   if(recognitionFailures>0)console.warn(`[ocr] ${recognitionFailures} rescue recognitions failed on this page — likely memory/CPU pressure; affected cells stayed empty for manual review`);
@@ -4301,24 +4618,40 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
     /* أو حين يثبت هويةَ صفوفٍ أكثر (رقم مقرر كامل ومرجعي): شبكة أزاحت أعمدتها
        (المقرر فارغ، والكود في خانة المرجعي) لا تغلب قراءةً صحيحة الهوية. */
     if(wordLane&&wordLane.rows.length&&(soundScanRows(wordLane.rows)>soundScanRows(gridRows)||identityRows(wordLane.rows,authorityGridDepartment)>identityRows(gridRows,authorityGridDepartment))){
+      /* هويات طريق الكلمات كما قرأها — قبل أي إكمال: مرجعيٌّ مبتور («1894»
+         من 18945…18948) يُكمَل به صفٌّ فيصير «مرئياً» ويُسقط صفوفاً مطبوعة
+         حقيقية تحمل البتر نفسه (1.pdf ص1). */
+      const asRead=wordLane.rows.map(row=>({code:row.code,scode:row.scode,reference:row.reference}));
+      /* السطر نفسه في الطريقين صفٌّ واحد (pairRowsByLine): يُكمَل ولا يُكرَّر. */
+      const sameLine=pairRowsByLine(wordLane.rows,gridRows||[]);
+      for(const [at,gridRow] of sameLine)fillLineCells(wordLane.rows[at],gridRow,authorityGridDepartment);
+      const pairedGrid=new Set(sameLine.values());
       fillScheduleCellsFrom(wordLane.rows,gridRows);
-      const seen=new Set(wordLane.rows.map(row=>`${row.reference}|${row.scode}`));
+      const seen=new Set(asRead.map(row=>`${row.reference}|${row.scode}`));
       /* الصف نفسه = المرجعي والشعبة، أو المقرر والشعبة. رقم مقرر مبتور من
          طريق الخطوط («02011») صدرُ مقررٍ قرأه طريق الكلمات كاملاً، فالشعبة
          نفسها تحت ذلك المقرر صفٌّ واحد لا صفّان. شعبة 01 لمقرر آخر تبقى. */
       const sameCourse=(full:string,partial:string)=>Boolean(full&&partial)&&(full===partial||(partial.length>=5&&partial.length<7&&full.startsWith(partial)));
       /* ولا يُضاف صفّ إلا لمقرر أثبتته الصفحة: رقم مقرر لا يطابق (ولا يبدأ)
          مقرراً قرأه طريق الكلمات هو رقم تسلسل ملتصق بمرجعي مبتور، لا صف. */
-      const seenReferences=new Set(wordLane.rows.map(row=>row.reference).filter(Boolean));
+      const seenReferences=new Set(asRead.map(row=>row.reference).filter(Boolean));
       const catalogueKeys=new Set((courseKeysForPage(index)||[]).map(key=>String(key)));
-      const provenCourse=(code:string)=>catalogueKeys.has(code)||wordLane!.rows.some(word=>sameCourse(word.code,code));
+      const provenCourse=(code:string)=>catalogueKeys.has(code)||asRead.some(word=>sameCourse(word.code,code));
       const duplicate=(row:GridRow)=>seen.has(`${row.reference}|${row.scode}`)
         ||Boolean(row.reference&&seenReferences.has(row.reference))
         ||!provenCourse(row.code)
-        ||Boolean(row.scode&&wordLane!.rows.some(word=>word.scode===row.scode&&sameCourse(word.code,row.code)));
-      const missing=(gridRows||[]).filter(row=>!duplicate(row))
+        ||Boolean(row.scode&&asRead.some(word=>word.scode===row.scode&&sameCourse(word.code,row.code)));
+      const missing=(gridRows||[]).filter(row=>!pairedGrid.has(row)&&!duplicate(row))
         .map(row=>({...row,days:"",daysRaw:"",timeRaw:"",start:"",end:"",building:"",buildingRaw:"",hall:"",hallRaw:"",instructorText:"",identityOnly:true}));
-      gridRows=[...wordLane.rows,...missing];
+      /* الصف الذي أضافه طريق الخطوط يأخذ مكانه على الورقة، لا آخرَ الصفحة:
+         المراجع يقارن المعاينة بالورقة سطراً بسطر (طلب المالك 2026-09-27). */
+      gridRows=[...wordLane.rows,...missing].map((row,index)=>({row,index}))
+        .sort((a,b)=>(Number.isFinite(a.row.y)&&Number.isFinite(b.row.y)?a.row.y!-b.row.y!:0)||a.index-b.index)
+        .map(item=>item.row);
+    }else if(gridRows&&wordLane?.rows.length){
+      /* وحين يغلب طريقُ الخطوط تُكمَل خاناته الفارغة من طريق الكلمات بالسطر
+         نفسه — الدمج في الاتجاهين، كما في الفحص الأعمق (65509b4). */
+      for(const [at,wordRow] of pairRowsByLine(gridRows,wordLane.rows))fillLineCells(gridRows[at],wordRow,authorityGridDepartment);
     }
     /* صفحة بلا رقم مقرر ولا صف (صفحة دليل الأيام الأخيرة) صفحةٌ فارغة، لا
        استخراج مشبوه: كانت تُسقط كل مسح متعدد الصفحات برسالة «صورة غير واضحة». */
@@ -5240,7 +5573,15 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     const readKey=keyedCatalogue.find(item=>item.course===course)?.key||"";
     const sibling=readKey?authorityCourseSiblingByName(readKey,grid.courseText,keyedCatalogue):"";
     const swapped=sibling?courseByKey(sibling):null;
-    return swapped?{grid,course:swapped,courseMethod:"PRINTED_NAME_OVER_LAST_DIGIT"}:{grid,course,courseMethod:""};
+    if(swapped)return{grid,course:swapped,courseMethod:"PRINTED_NAME_OVER_LAST_DIGIT"};
+    /* رقمٌ حسم مقرراً واسمُه المطبوع لا يشترك مع اسم ذلك المقرر في شيء
+       («اعجاز علمى فى القران والسنه» على 0101121 «المدخل إلى علوم القرآن»):
+       الأرجح أن الرقم ليس ما طُبع — مقرر خارج الكتالوج أصلحه الإنقاذ إلى جاره.
+       لا يُستبدل شيء؛ يُعرض للمراجعة بسببه. */
+    const printed=courseNameTokens(grid.courseText);
+    if(printed.length>=2&&authorityCourseNameScore(grid.courseText,String(course.CourseName||""),true)<AUTHORITY_NAME_DISAGREES)
+      return{grid,course,courseMethod:"PRINTED_NAME_DISAGREES"};
+    return{grid,course,courseMethod:""};
   });
   /* A missing course key stays unresolved. Neighbouring rows and edit-distance
      similarity are not identity evidence and must never create canonical data. */

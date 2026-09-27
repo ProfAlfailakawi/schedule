@@ -15,7 +15,7 @@ import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMa
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
 import { scanLeftCellUnread, pagesWithUnreadCells } from "../src/utils/importPageReview.ts";
-import { scanPageTone, greyPhotoVerdict, GREY_PHOTO_REFUSAL, authorityCourseFromFamilyAndName, authorityCourseSiblingByName, fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
+import { pairRowsByLine, fillLineCells, scanPageTone, greyPhotoVerdict, GREY_PHOTO_REFUSAL, authorityCourseFromFamilyAndName, authorityCourseSiblingByName, fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine, unconfirmedReviewPages } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
@@ -310,6 +310,42 @@ check("a page accepted with printed lines that have no row waits for «راجع�
   assert.match(tail.warning||"",/أضف الناقص في الجدول بعد الاستيراد/);
   assert.doesNotMatch(tail.warning||"",/يدوياً/);
 });
+check("one printed line read by both lanes is one row: paired by its height on the page, empty cells filled, read cells kept",()=>{
+  /* 1.pdf page 1 (2026-09-27): «0101102 — 89541» from the word lane and «0101102 510 1895» from the grid sat on
+     the same printed line (y 292.0 vs 292.6) and reached the preview as two rows. */
+  const blank={code:"",reference:"",scode:"",courseText:"",instructorText:"",days:"",start:"",end:"",building:"",hall:""};
+  const word=[
+    {...blank,code:"0101102",reference:"18949",scode:"505",days:"531",start:"08:00",end:"08:50",building:"012F15",y:245.4},
+    {...blank,code:"0101102",reference:"89541",scode:"",days:"1",start:"10:00",end:"10:50",hall:"F11",instructorText:"عبد الله خالد محمد",y:292.0},
+    {...blank,code:"0101150",reference:"18956",scode:"502",hall:"F12",y:355.2},
+  ] as any[];
+  const grid=[
+    {...blank,code:"0101102",reference:"1895",scode:"510",building:"012B09",y:292.6},
+    {...blank,code:"0101153",reference:"1895",scode:"502",days:"54321",start:"11:00",end:"11:50",building:"012B07",y:353.6},
+    {...blank,code:"0101102",reference:"1894",scode:"501",y:194.6},
+  ] as any[];
+  const pairs=pairRowsByLine(word,grid);
+  assert.equal(pairs.get(1),grid[0],"the same line pairs");
+  assert.equal(pairs.get(2),grid[1],"1.6 of a 12-point pitch is the same line");
+  assert.equal(pairs.has(0),false,"a line the other lane did not read stays alone");
+  assert.equal([...pairs.values()].includes(grid[2]),false,"a row 50 points away is another line");
+  for(const [at,other] of pairs)fillLineCells(word[at],other,"0101");
+  assert.equal(word[1].scode,"510","the missing section comes from the other reading");
+  assert.equal(word[1].building,"012B09","and the missing building");
+  assert.equal(word[1].reference,"89541","a cell already read is never overwritten");
+  assert.equal(word[2].code,"0101150","a proven course key is kept even when the other lane read another key");
+  assert.equal(word[2].start,"11:00");assert.equal(word[2].days,"54321");assert.equal(word[2].hall,"F12");
+  /* An unproven key or section gives way to a proven one. */
+  const weak={...blank,code:"010115",scode:"50",y:100} as any;
+  fillLineCells(weak,{...blank,code:"0101151",scode:"503",y:100.5} as any,"0101");
+  assert.equal(weak.code,"0101151");assert.equal(weak.scode,"503","«50» is «503» cut at its cell edge");
+  const cut={...blank,code:"0101151",reference:"1895",scode:"502",y:100} as any;
+  fillLineCells(cut,{...blank,code:"0101151",reference:"18959",scode:"50",y:100.4} as any,"0101");
+  assert.equal(cut.reference,"18959","a reference cut at its edge is completed");assert.equal(cut.scode,"502","a full section is never replaced by its own truncation");
+  /* One-to-one: two rows cannot claim the same line of the other lane. */
+  const twin=pairRowsByLine([{...blank,y:300},{...blank,y:301.5}] as any[],[{...blank,y:300.8}] as any[]);
+  assert.equal(twin.size,1);
+});
 check("a grey phone photo is refused in seconds at preflight, a white scan never is",()=>{
   /* Measured 2026-09-26 at 60 dpi: 6.pdf pages bg≈160, mid-grey 79–86% (refused after 4 minutes, or the server died of memory first);
      the worst file that reads (1.pdf, a phone photo) bg≈200, 13–23%; the clean file and 20 degraded variants ≤ 11%. */
@@ -384,12 +420,25 @@ check("a scanned course number that lost its last digit is settled by its family
   const row=(code:string,courseText:string,sourceMode:any)=>({code,reference:"18955",scode:"50",courseText,instructorText:"",building:"012B07",hall:"F31",start:"08:00",end:"08:50",days:"531",sourceMode});
   const scan=parseScheduleTable([{rows:[],gridRows:[row("3010115","جويد القران الكريم وحفظه (1)","ocr-grid")]} as any],courses,[],undefined,{authorityDepartmentCode:"0101"});
   assert.equal(scan.rows[0].AdCourseId,2);assert.equal((scan.rows[0] as any).courseMatchMethod,"COURSE_FAMILY_AND_PRINTED_NAME");assert.equal(scan.rows[0].SCode,"501");
+  /* A settled number whose printed name shares nothing with its system name is shown for review, never swapped:
+     «الاسلام و قضايا العصر» (0101257, not in the catalogue) reached the preview as 0101251 «كتب السنه ورجالها». */
+  const catalogueWithHadith=[...courses,{AdCourseId:40,CourseCode:"251",CourseName:"كتب السنه ورجالها",CourseHours:3,CourseCredit:3}] as any;
+  const disagrees=parseScheduleTable([{rows:[],gridRows:[row("0101251","الاسلام و قضايا العصر","ocr-grid")]} as any],catalogueWithHadith,[],undefined,{authorityDepartmentCode:"0101"});
+  assert.equal(disagrees.rows[0].AdCourseId,40,"the number still settles the course");
+  assert.equal((disagrees.rows[0] as any).courseMatchMethod,"PRINTED_NAME_DISAGREES","and the contradiction is for review");
+  const agrees=parseScheduleTable([{rows:[],gridRows:[row("0101251","كتب السته ورجالها","ocr-grid")]} as any],catalogueWithHadith,[],undefined,{authorityDepartmentCode:"0101"});
+  assert.equal((agrees.rows[0] as any).courseMatchMethod,undefined,"a name that matches (one glyph off) raises nothing");
   const text=parseScheduleTable([{rows:[],gridRows:[row("3010115","تجويد القران الكريم وحفظه (1)","pdf-text")]} as any],courses,[],undefined,{authorityDepartmentCode:"0101"});
   assert.equal(text.rows[0].AdCourseId,0,"the text layer prints what it prints; its numbers are never repaired");
   const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
   assert.match(server,/if\(row\.courseMatchMethod&&Number\(row\.AdCourseId\)\)Object\.assign\(row\.importEvidence\.course,\{confidence:"REVIEW_REQUIRED"/);
   const table=readFileSync(new URL("../src/components/ImportPreviewTable.tsx",import.meta.url),"utf8");
   assert.match(table,/<small>رقم المقرر غير واضح<\/small>/);
+  /* The course cell never shows what the scan printed («بويد القران الكريم وحفظه (1)»); a course the number did not
+     settle is chosen from the department's courses by their system names (owner, 2026-09-27). */
+  assert.doesNotMatch(table,/row\.sourceCourseText/);
+  assert.match(table,/departmentCourseOptions\.map\(item => <option key=\{item\.AdCourseId\} value=\{item\.AdCourseId\}>\{item\.CourseCode\} — \{item\.CourseName\}<\/option>\)/);
+  assert.match(table,/patchManual\(index, "course", \{ AdCourseId: Number\(picked\.AdCourseId\), AdCourseName: String\(picked\.CourseName \|\| ""\) \}\)/);
 });
 check("a scanned instructor name garbled by noise is shown as its clean words and called unclear, never «غير مسجّل»",()=>{
   /* The owner's screen on 2026-09-25: noise from the cell border and a neighbouring column read into the name. */

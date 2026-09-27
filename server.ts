@@ -9297,8 +9297,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
        للمراجعة بسببه، لا «مطابق صراحةً». */
     if(row.courseMatchMethod&&Number(row.AdCourseId))Object.assign(row.importEvidence.course,{confidence:"REVIEW_REQUIRED",score:80,method:String(row.courseMatchMethod),
       reason:row.courseMatchMethod==="PRINTED_NAME_OVER_LAST_DIGIT"
-        ?`رقم المقرر المقروء «${String(row.sourceCourseCode||"")}» يخالف الاسم المطبوع «${String(row.sourceCourseText||"").trim()}»؛ اختير مقرر العائلة نفسها الذي يطابق الاسم — راجعه.`
-        :`رقم المقرر لم يُقرأ كاملاً («${String(row.sourceCourseCode||"")}»)؛ حُدّد من خاناته المقروءة واسمه المطبوع «${String(row.sourceCourseText||"").trim()}» — راجعه.`,
+        ?`رقم المقرر المقروء «${String(row.sourceCourseCode||"")}» يخالف الاسم المطبوع؛ اختير مقرر العائلة نفسها الذي يطابق الاسم — راجعه.`
+        :row.courseMatchMethod==="PRINTED_NAME_DISAGREES"
+          ?`اسم المقرر المطبوع لا يشبه «${String(row.AdCourseName||"").trim()}»؛ تحقّق من رقم المقرر واختر الصحيح إن لزم.`
+          :`رقم المقرر لم يُقرأ كاملاً («${String(row.sourceCourseCode||"")}»)؛ حُدّد من خاناته المقروءة واسمه المطبوع — راجعه.`,
       evidence:["خانات رقم المقرر المقروءة","الاسم المطبوع في المستند","كتالوج القسم الحالي"]});
     /* One resolver owns the complete Authority location grammar. This prevents
        parser branches from disagreeing about whether a token is a building and
