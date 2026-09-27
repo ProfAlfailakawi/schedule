@@ -365,10 +365,35 @@ check("one printed line read by both lanes is one row: paired by its height on t
      sections are two lines — no row borrows the next line's cells. */
   const lines=[0,1,2,3,4].map(i=>({...blank,code:"0101151",reference:String(18958+i),scode:String(501+i),y:100+i*12.3,start:"10:00"})) as any[];
   const nextLine=lines.map((row,i)=>({...row,reference:String(18959+i),scode:String(502+i),y:row.y+0.8,start:""}));
-  assert.equal(pairRowsByLine(nextLine,lines,{referenceLength:5,sectionLength:3}).size,0,"no pair across two different complete references");
+  assert.equal(pairRowsByLine(nextLine,lines,{referenceLength:5,sectionLength:3}).size,0,"no pair across two different complete sections");
+  /* A reference garbled at full length («89541» for 18954) is not another line (1.pdf p1). */
+  const garbled=pairRowsByLine([{...blank,code:"0101102",reference:"89541",scode:"",y:292.0}] as any[],[{...blank,code:"0101102",reference:"18954",scode:"510",y:292.6}] as any[],{referenceLength:5,sectionLength:3});
+  assert.equal(garbled.size,1);
+  /* Course keys of different families are two lines. */
+  assert.equal(pairRowsByLine([{...blank,code:"0101102",y:100}] as any[],[{...blank,code:"0101150",y:100.5}] as any[]).size,0);
   /* One-to-one: two rows cannot claim the same line of the other lane. */
   const twin=pairRowsByLine([{...blank,y:300},{...blank,y:301.5}] as any[],[{...blank,y:300.8}] as any[]);
   assert.equal(twin.size,1);
+});
+check("a deeper reading that takes a page over blanks the days it disagrees on, and keeps the rest",()=>{
+  /* 1.pdf p1 (2026-09-27): the straightened grid won the page by its course keys and read «1» where the first
+     reading had the printed «2 4». Neither is trusted: the day goes to review (the day-cell rule, a1f2693). */
+  const blank={code:"",reference:"",scode:"",courseText:"",instructorText:"",days:"",start:"",end:"",building:"",hall:""};
+  const winner=[{...blank,code:"0101151",reference:"18962",scode:"505",days:"1",daysRaw:"1"},
+    {...blank,code:"0101151",reference:"18963",scode:"506",days:"5 3 1",daysRaw:"5 3 1"},
+    {...blank,code:"0101151",reference:"18964",scode:"507",days:"",start:""}] as any[];
+  const earlier=[{...blank,code:"0101151",reference:"18962",scode:"505",days:"2 4"},
+    {...blank,code:"0101151",reference:"18963",scode:"506",days:"1 3 5"},
+    {...blank,code:"0101151",reference:"18964",scode:"507",days:"5 3 1",start:"09:00",end:"09:50"}] as any[];
+  fillScheduleCellsFrom(winner,earlier,{blankDisagreeingDays:true});
+  assert.equal(winner[0].days,"","«1» against «2 4»: to review");
+  assert.equal(winner[0].daysRaw,"1","the raw reading stays for the tooltip");
+  assert.equal(winner[1].days,"5 3 1","the same days in another order agree");
+  assert.equal(winner[2].days,"5 3 1");assert.equal(winner[2].start,"09:00","empty cells are still filled");
+  /* Without the option (the first pass) nothing is blanked — behaviour there is unchanged. */
+  const first=[{...blank,reference:"1",days:"1"}] as any[];
+  fillScheduleCellsFrom(first,[{...blank,reference:"1",days:"2 4"}] as any[]);
+  assert.equal(first[0].days,"1");
 });
 check("a grey phone photo is refused in seconds at preflight, a white scan never is",()=>{
   /* Measured 2026-09-26 at 60 dpi: 6.pdf pages bg≈160, mid-grey 79–86% (refused after 4 minutes, or the server died of memory first);

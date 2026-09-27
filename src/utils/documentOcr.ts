@@ -1769,16 +1769,19 @@ export function straightenTable(lib:any,surface:any,geometry:{cols:number[];band
   for(let x=0,k=0;x<W;x++){
     while(k<vOrder.length-2&&x>vOrder[k+1].x)k++;
     const a=vOrder[k],b=vOrder[Math.min(k+1,vOrder.length-1)];
-    const f=b.x>a.x?Math.max(0,Math.min(1,(x-a.x)/(b.x-a.x))):0;
-    colLo[x]=a.index;colHi[x]=b.index;colFrac[x]=f;
+    colLo[x]=a.index;colHi[x]=b.index;colFrac[x]=b.x>a.x?Math.max(0,Math.min(1,(x-a.x)/(b.x-a.x))):0;
   }
   const rowLo=new Int32Array(H),rowHi=new Int32Array(H),rowFrac=new Float32Array(H);
   for(let y=0,k=0;y<H;y++){
     while(k<hOrder.length-2&&y>hOrder[k+1].y)k++;
     const a=hOrder[k],b=hOrder[Math.min(k+1,hOrder.length-1)];
-    const f=b.y>a.y?Math.max(0,Math.min(1,(y-a.y)/(b.y-a.y))):0;
-    rowLo[y]=a.index;rowHi[y]=b.index;rowFrac[y]=f;
+    rowLo[y]=a.index;rowHi[y]=b.index;rowFrac[y]=b.y>a.y?Math.max(0,Math.min(1,(y-a.y)/(b.y-a.y))):0;
   }
+  /* The nearest source pixel, copied — never a blend of four. Blending
+     softened one-pixel strokes, and a «1» is a single stroke: «F12» read «F2»
+     twice on the straightened 3.pdf. Moving each cell whole instead (to keep
+     glyphs free of half-pixel seams) measured the same on 3.pdf pp1–3 — one
+     misread either way — so the simpler rule stays. */
   const out=lib.createCanvas(W,H),octx=out.getContext("2d");
   const target=octx.createImageData(W,H),dst=target.data;
   for(let y=0;y<H;y++){
@@ -1787,16 +1790,11 @@ export function straightenTable(lib:any,surface:any,geometry:{cols:number[];band
       const fx=colFrac[x];
       const dx=dxRule[colLo[x]][y]*(1-fx)+dxRule[colHi[x]][y]*fx;
       const dy=rl[x]*(1-fy)+rh[x]*fy;
-      let sx=x+dx,sy=y+dy;
-      if(sx<0)sx=0;else if(sx>W-1.001)sx=W-1.001;
-      if(sy<0)sy=0;else if(sy>H-1.001)sy=H-1.001;
-      const x0=sx|0,y0=sy|0,ax=sx-x0,ay=sy-y0;
-      const i00=(y0*W+x0)*4,i01=i00+4,i10=i00+W*4,i11=i10+4,o=(y*W+x)*4;
-      for(let c=0;c<3;c++){
-        const top=src[i00+c]+(src[i01+c]-src[i00+c])*ax,bottom=src[i10+c]+(src[i11+c]-src[i10+c])*ax;
-        dst[o+c]=top+(bottom-top)*ay;
-      }
-      dst[o+3]=255;
+      let sx=Math.round(x+dx),sy=Math.round(y+dy);
+      if(sx<0)sx=0;else if(sx>W-1)sx=W-1;
+      if(sy<0)sy=0;else if(sy>H-1)sy=H-1;
+      const i=(sy*W+sx)*4,o=(y*W+x)*4;
+      dst[o]=src[i];dst[o+1]=src[i+1];dst[o+2]=src[i+2];dst[o+3]=255;
     }
   }
   /* The geometry the straightened page has by construction. */
@@ -2807,15 +2805,18 @@ export function pairRowsByLine(base:GridRow[],donor:GridRow[],shape:{referenceLe
   /* A shift near half a line is ambiguous — each row would sit between its own
      line and the next: pair nothing rather than pair every row one line off. */
   if(Math.abs(offset)>pitch*0.3)return new Map();
-  /* Two readings that each read a complete, different section or reference of
-     the page's own length are two lines, however close (18958 / 18959). A
-     garbled or cut value («89541», «1895») contradicts nothing. */
+  /* Two readings are two lines, however close, when each read a complete,
+     different section of the page's own length (501 / 502), or course keys of
+     different families (0101102 / 0101150). References prove nothing here: the
+     word lane reads them garbled at full length («89541» for 18954). Neighbours
+     in one family (0101151 / 0101153) are a known misread of one line. */
   const complete=(value:string,length?:number)=>Boolean(length)&&value.length===length;
+  const family=(code:string)=>/^\d{7}$/.test(code)?code.slice(0,6):"";
   const clash=(a:GridRow,b:GridRow)=>{
     const sa=String(a.scode||"").replace(/\D/g,""),sb=String(b.scode||"").replace(/\D/g,"");
-    const ra=String(a.reference||"").replace(/\D/g,""),rb=String(b.reference||"").replace(/\D/g,"");
+    const fa=family(String(a.code||"")),fb=family(String(b.code||""));
     return(complete(sa,shape.sectionLength)&&complete(sb,shape.sectionLength)&&sa!==sb)
-      ||(complete(ra,shape.referenceLength)&&complete(rb,shape.referenceLength)&&ra!==rb);
+      ||(Boolean(fa)&&Boolean(fb)&&fa!==fb);
   };
   const candidates:{at:number;donor:number;distance:number}[]=[];
   base.forEach((row,at)=>{
@@ -2870,8 +2871,9 @@ export function fillLineCells(target:GridRow,donor:GridRow,departmentCode="",pag
   if(!String(target.instructorText||"").trim()&&donor.instructorText)target.instructorText=donor.instructorText;
 }
 
-export function fillScheduleCellsFrom(base:GridRow[],donor:GridRow[]|null|undefined){
+export function fillScheduleCellsFrom(base:GridRow[],donor:GridRow[]|null|undefined,options:{blankDisagreeingDays?:boolean}={}){
   if(!donor?.length)return;
+  const dayKey=(value:unknown)=>String(value||"").replace(/[^1-5]/g,"").split("").sort().join("");
   const byReference=new Map<string,GridRow>(),byCourseSection=new Map<string,GridRow>();
   for(const row of donor){
     const reference=String(row.reference||"").trim();
@@ -2886,6 +2888,11 @@ export function fillScheduleCellsFrom(base:GridRow[],donor:GridRow[]|null|undefi
     if(!row.building&&!row.buildingRaw&&(match.building||match.buildingRaw)){row.building=match.building;row.buildingRaw=match.buildingRaw;}
     if(!row.hall&&!row.hallRaw&&(match.hall||match.hallRaw)){row.hall=match.hall;row.hallRaw=match.hallRaw;}
     if(!String(row.days||"").trim()&&!row.daysRaw&&(match.days||match.daysRaw)){row.days=match.days;row.daysRaw=match.daysRaw;}
+    /* قراءةٌ أعمق تحلّ محلّ الأولى وتخالفها في أيام السطر نفسه: لا تُصدَّق
+       إحداهما — تُفرَّغ الأيام للمراجعة (القاعدة نفسها لخلية الأيام، a1f2693).
+       1.pdf ص1: الشبكة المستقيمة ربحت الصفحة بأرقامها فقرأت «1» حيث قرأت
+       القراءة الأولى «2 4» الصحيحة. */
+    else if(options.blankDisagreeingDays&&dayKey(row.days)&&dayKey(match.days)&&dayKey(row.days)!==dayKey(match.days))row.days="";
     if(!row.instructorText&&match.instructorText)row.instructorText=match.instructorText;
   }
 }
@@ -4812,7 +4819,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
           /* قراءة الإنقاذ لا تُعتمد إن أنقصت الصفوف ثابتة الهوية (شبكة أزاحت أعمدتها). */
           /* قراءة الشبكة تملأ خانة الأيام بما تجده ولو كان خطأً، فلا يُكافأ «امتلاء»
              أيامها هنا؛ استعادة الأيام والوقت تُقبل من القراءة المحسّنة وحدها. */
-          if(rows&&filled>bestFilled&&identityRows(rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&soundScanRows(rows)>=soundScanRows(bestRows)){fillScheduleCellsFrom(rows,bestRows);bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
+          if(rows&&filled>bestFilled&&identityRows(rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&soundScanRows(rows)>=soundScanRows(bestRows)){fillScheduleCellsFrom(rows,bestRows,{blankDisagreeingDays:true});bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
       }
       /* ── تحسين الصورة قبل الاستسلام ─────────────────────────────────────
@@ -4834,7 +4841,7 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
             const filled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;
             if(soundScanRows(lane.rows)>soundScanRows(bestRows)||(lane.rows.length>bestRows.length&&filled>=bestFilled&&identityRows(lane.rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment))||identityRows(lane.rows,authorityGridDepartment)>identityRows(bestRows,authorityGridDepartment)
               ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&unclearRowCount(lane.rows)<unclearRowCount(bestRows))
-              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){fillScheduleCellsFrom(lane.rows,bestRows);bestRows=lane.rows;bestFilled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;}
+              ||(lane.rows.length>=bestRows.length&&identityRows(lane.rows,authorityGridDepartment)>=identityRows(bestRows,authorityGridDepartment)&&unscheduledRowCount(lane.rows)<unscheduledRowCount(bestRows))){fillScheduleCellsFrom(lane.rows,bestRows,{blankDisagreeingDays:true});bestRows=lane.rows;bestFilled=lane.rows.filter(row=>row.code||row.start||row.courseText.length>3).length;}
           }
         }catch{/* the earlier reading and its warning stand */}
       }
