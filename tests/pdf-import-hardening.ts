@@ -334,6 +334,7 @@ check("a grey phone photo is refused in seconds at preflight, a white scan never
   /* Wired: the import route refuses before any reading; the probe reuses page 1's render and a failed probe never refuses. */
   const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
   assert.match(server,/if\(Array\.isArray\(headerPreflight\.greyPhotoPages\)&&headerPreflight\.greyPhotoPages\.length\)\{\s*res\.status\(422\)\.json\(\{error:GREY_PHOTO_REFUSAL,code:"PDF_SCAN_GREY_PHOTO"/);
+  assert.match(server,/if\(Array\.isArray\(header\.greyPhotoPages\)&&header\.greyPhotoPages\.length\)\{res\.status\(422\)\.json\(\{error:GREY_PHOTO_REFUSAL/,"the department-bootstrap route refuses the same way, not «header unresolved»");
   const ocr=readFileSync(new URL("../src/utils/documentOcr.ts",import.meta.url),"utf8");
   assert.match(ocr,/const first=canvasTone\(ground,surface\.width,surface\.height\);\s*if\(first\.greyPhoto\)/);
   assert.match(ocr,/catch\{\/\* a tone probe that fails never refuses: the reading decides \*\/\}/);

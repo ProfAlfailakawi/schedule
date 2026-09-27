@@ -8641,6 +8641,7 @@ app.post("/api/intelligence/pdf-import/bootstrap-section", requirePermission(7),
   const authorityCollegeCode=academicDigits(sitePrefix).slice(0,2);
   const header=await readAuthorityPdfHeader(bytes);
   if(header.requiresLandscapeUpload){res.status(422).json({error:"دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع.",code:"PDF_SCAN_REQUIRES_LANDSCAPE"});return;}
+  if(Array.isArray(header.greyPhotoPages)&&header.greyPhotoPages.length){res.status(422).json({error:GREY_PHOTO_REFUSAL,code:"PDF_SCAN_GREY_PHOTO",pages:header.greyPhotoPages});return;}
   if(header.busy){res.status(503).json({error:SCAN_READING_BUSY_MESSAGE,code:"SCAN_READING_BUSY"});return;}
   if(!header.branch||!header.department){res.status(422).json({error:"لم أتمكن من إثبات الكلية/الفرع والقسم من ترويسة الصفحة الأولى؛ لم تتم إضافة أي قسم.",code:"PDF_BOOTSTRAP_HEADER_UNRESOLVED"});return;}
   const sourceSite=officialCollegeSitePrefix(header.branch.name);
