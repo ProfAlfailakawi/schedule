@@ -9793,14 +9793,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           || !networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders || pendingOwnRows.length || (parkedOpen && parked.length) ? (
         <div className="schedule-status no-print">
           {termFrozen ? (
-            <DnaStatusHeader
-              as="div"
-              className="schedule-status-head"
-              icon={<Lock />}
-              tone="neutral"
-              title="انتهى هذا الفصل"
-              subtitle={<>جدولُه محفوظٌ للاطّلاع والتقارير، و<b>لجنةُ الجدول</b> وحدَها تعمل فيه.</>}
-            />
+            <div className="schedule-frozen-status" data-tone="frozen">
+              <DnaStatusHeader
+                as="div"
+                className="schedule-status-head"
+                icon={<Lock />}
+                tone="neutral"
+                title="انتهى هذا الفصل."
+                subtitle={<>جدولُه محفوظٌ للاطّلاع والتقارير، و<b>لجنةُ الجدول</b> وحدَها تعمل فيه.</>}
+              />
+            </div>
           ) : null}
           {practiceMode ? (
             <div className="schedule-practice-strip" data-guide-target="schedule.practice" role="status">
