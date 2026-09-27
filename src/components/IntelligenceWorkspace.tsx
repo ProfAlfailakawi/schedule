@@ -10,6 +10,7 @@ import {
   Building2,
   CalendarClock,
   Ban,
+  Check,
   CheckCircle2,
   ChevronLeft,
   CircleHelp,
@@ -3561,7 +3562,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <header className="intel-reason-head">
               <span className="intel-reason-icon" aria-hidden="true">{insightReason.icon || <CircleHelp />}</span>
               <div><small>{insightReason.kicker}</small><strong>{insightReason.title}</strong></div>
-              {insightReason.metric ? <b className="intel-reason-metric"><Num value={insightReason.metric} /></b> : null}
+              {insightReason.metric ? <b className="intel-reason-metric">{insightReason.metric === "✓"
+                ? <><Check className="intel-reason-check" aria-hidden="true" /><span className="sr-only">✓</span></>
+                : <Num value={insightReason.metric} />}</b> : null}
               <button type="button" data-guide-ignore="إغلاق نافذة شرح المؤشر فقط" onClick={() => setInsightReason(null)} aria-label="إغلاق التفاصيل" title="إغلاق"><X /></button>
             </header>
             {insightReason.summary ? <p className="intel-reason-summary">{insightReason.summary}</p> : null}

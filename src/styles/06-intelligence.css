@@ -3925,6 +3925,7 @@ button.twin-delta{width:100%}
 .intel-reason-head small{display:block;color:var(--muted);font-size:11px;font-weight:700}
 .intel-reason-head strong{display:block;margin-top:2px;font-size:20px;line-height:1.35}
 .intel-reason-metric{font-size:30px;line-height:1;font-weight:700;letter-spacing:-.03em;direction:ltr;unicode-bidi:isolate;color:var(--ink)}
+.intel-reason-metric .intel-reason-check{width:1em;height:1em;stroke-width:1.8;color:var(--success);vertical-align:-0.1em}
 .intel-reason-summary{margin:18px 0 0;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2);font-size:13px;line-height:1.8;color:var(--ink-2)}
 .intel-reason-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
 .intel-reason-facts article{min-height:92px;display:grid;place-content:center;text-align:center;padding:12px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2)}
