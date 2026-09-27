@@ -18,8 +18,10 @@ import { takeNotifyFocus, type NotifyFocus } from "../utils/notifyFocus";
 import {
   AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardCheck, ClipboardList, Clock3,
   CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
-  UsersRound, X,
+  UsersRound, X, OctagonAlert, MessageSquareWarning, MessageSquareReply, ListPlus,
 } from "lucide-react";
+import { DnaCount, DnaTimeline } from "./dna";
+import { ApprovalDnaStepper, DeadlineDnaRing } from "./dna/scheduleDna";
 import ApprovalBar from "./ApprovalBar";
 import SubmissionDeadlines from "./SubmissionDeadlines";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
@@ -455,14 +457,17 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
                     </>
                   )}
                 </div>
-                {/* ثلاث دوائر بأرقامها: الموظّف يعرف أين المشكلة قبل أن يفتح. */}
+                {/* ثلاث دوائر بأرقامها: الموظّف يعرف أين المشكلة قبل أن يفتح —
+                    صارت حبوباً بأيقونةٍ وعدد، فلا يحمل اللونُ وحده المعنى. */}
                 <div className="changes-signals" aria-label="الموانع والملاحظات">
-                  {row.blockingConflicts ? <span data-kind="block" title="تعارض مادّي يمنع الاعتماد">{row.blockingConflicts}</span> : null}
-                  {row.openNotes ? <span data-kind="note" title="ملاحظات بانتظار المعالجة">{row.openNotes}</span> : null}
-                  {audience.registrarSignals && row.answeredNotes ? <span data-kind="answered" title="ردودٌ من القسم تنتظر قرارك">{row.answeredNotes}</span> : null}
-                  {row.pendingAdditions ? <span data-kind="pending" title="شُعبٌ تنتظر إقرار رئيس القسم">{row.pendingAdditions}</span> : null}
+                  {row.blockingConflicts ? <DnaCount className="changes-signal changes-signal--block" icon={<OctagonAlert aria-hidden="true" />} value={row.blockingConflicts} label="تعارض مادّي يمنع الاعتماد" /> : null}
+                  {row.openNotes ? <DnaCount className="changes-signal changes-signal--note" icon={<MessageSquareWarning aria-hidden="true" />} value={row.openNotes} label="ملاحظات بانتظار المعالجة" /> : null}
+                  {audience.registrarSignals && row.answeredNotes ? <DnaCount className="changes-signal changes-signal--answered" icon={<MessageSquareReply aria-hidden="true" />} value={row.answeredNotes} label="ردودٌ من القسم تنتظر قرارك" /> : null}
+                  {row.pendingAdditions ? <DnaCount className="changes-signal changes-signal--pending" icon={<ListPlus aria-hidden="true" />} value={row.pendingAdditions} label="شُعبٌ تنتظر إقرار رئيس القسم" /> : null}
                 </div>
                 <div className="changes-inbox-state">
+                  <ApprovalDnaStepper status={row.status} round={row.round} pendingAdditions={row.pendingAdditions} />
+                  <DeadlineDnaRing deadline={row.deadline} label={deadlineSentence(row.deadline)} />
                   <ApprovalChip status={row.status} late={row.late} />
                   {row.round > 1 ? <small>الجولة {row.round}</small> : null}
                 </div>
@@ -1189,15 +1194,22 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
               {report.rounds.map(round => (
                 <li key={round.number} data-current={round.number === report.round || undefined}>
                   <strong>الجولة {round.number}</strong>
-                  {round.submittedAt ? <span>أُرسلت {arabicDate(round.submittedAt)}{round.submittedBy ? ` — ${round.submittedBy}` : ""}</span> : null}
-                  {round.returnedAt ? (
-                    <span>
-                      أُرجعت {arabicDate(round.returnedAt)} {round.returnedNoteCount ? `بـ${countOf(round.returnedNoteCount, oblique(AR.note))}` : "بلا ملاحظات"}
-                      {/* عددُ الملاحظات يقول ما طُلب، وعددُ الصفوف يقول ما فُعل. */}
-                      {round.changedRowCount !== undefined ? (round.changedRowCount ? ` — فتحرّك ${countOf(round.changedRowCount, AR.row)}` : " — ولم يتحرّك صف") : ""}
-                    </span>
-                  ) : null}
-                  {round.acceptedAt ? <span>قُبلت {arabicDate(round.acceptedAt)}{round.acceptedBy ? ` — ${round.acceptedBy}` : ""}</span> : null}
+                  <DnaTimeline
+                    className="changes-round-line"
+                    ariaLabel={`أحداث الجولة ${round.number}`}
+                    wrapMeta
+                    items={[
+                      ...(round.submittedAt ? [{ key: "sent", icon: <Send aria-hidden="true" />, tone: "accent" as const, title: "أُرسلت", date: arabicDate(round.submittedAt), meta: round.submittedBy || undefined }] : []),
+                      ...(round.returnedAt ? [{
+                        key: "returned", icon: <CornerUpLeft aria-hidden="true" />, tone: "warn" as const,
+                        title: `أُرجعت ${round.returnedNoteCount ? `بـ${countOf(round.returnedNoteCount, oblique(AR.note))}` : "بلا ملاحظات"}`,
+                        date: arabicDate(round.returnedAt),
+                        /* عددُ الملاحظات يقول ما طُلب، وعددُ الصفوف يقول ما فُعل. */
+                        meta: [round.returnedBy, round.changedRowCount !== undefined ? (round.changedRowCount ? `فتحرّك ${countOf(round.changedRowCount, AR.row)}` : "ولم يتحرّك صف") : ""].filter(Boolean).join(" — ") || undefined,
+                      }] : []),
+                      ...(round.acceptedAt ? [{ key: "accepted", icon: <ShieldCheck aria-hidden="true" />, tone: "mint" as const, title: "قُبلت", date: arabicDate(round.acceptedAt), meta: round.acceptedBy || undefined }] : []),
+                    ]}
+                  />
                   <button type="button" data-guide-ignore="عرض تغييرات جولةٍ سابقة — قراءةٌ لا فعل" onClick={() => { setShowRounds(false); setViewRound(round.number); setBaseline("round"); void load(round.number, "round"); }}>اعرض تغييراتها</button>
                 </li>
               ))}

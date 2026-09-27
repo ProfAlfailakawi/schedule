@@ -143,16 +143,14 @@
    العدد داخل الدائرة، لا بجانبها: الموظّف يعرف أين المشكلة وكم هي قبل أن
    يفتح القسم أصلاً — وهذا ما يوفّر عليه فتح ما لا يحتاج فتحه.            */
 .changes-signals{display:flex;align-items:center;gap:5px;flex:none}
-.changes-signals span{
-  inline-size:23px;block-size:23px;border-radius:var(--r-full);
-  display:grid;place-items:center;
-  font-size:.74rem;font-weight:700;font-variant-numeric:tabular-nums;
-  border:1px solid transparent;
-}
-.changes-signals [data-kind="block"]{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
-.changes-signals [data-kind="note"]{background:var(--warning-soft);color:var(--warning);border-color:color-mix(in srgb,var(--warning) 32%,transparent)}
-.changes-signals [data-kind="answered"]{background:var(--surface-3);color:var(--muted);border-color:var(--line-strong)}
-.changes-signals [data-kind="pending"]{background:var(--info-soft);color:var(--info);border-color:color-mix(in srgb,var(--info) 28%,transparent)}
+/* Pills with an icon and a number: the icon names the kind, so colour is a
+   hint, not the only carrier. The tone stays on the icon only. */
+.changes-signals .changes-signal{font-size:.76rem}
+.changes-signal--block svg{color:var(--danger)}
+.changes-signal--note svg{color:var(--warning)}
+.changes-signal--answered svg{color:var(--muted)}
+.changes-signal--pending svg{color:var(--info)}
+.changes-inbox-state .dna-steps{flex:none}
 
 .changes-extend{
   grid-column:3;grid-row:1 / -1;padding-inline:14px;border:0;border-inline-start:1px solid var(--line);
@@ -234,15 +232,18 @@
 }
 .changes-rounds>button:hover{border-color:var(--line-strong);color:var(--ink)}
 .changes-rounds>button svg{inline-size:15px;block-size:15px}
-.changes-rounds ol{
-  list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;
-  border-inline-start:2px solid var(--line);padding-inline-start:16px;
+.changes-rounds>ol{
+  list-style:none;margin:10px 0 0;padding:0;display:grid;gap:10px;
 }
-.changes-rounds li{display:grid;gap:3px;font-size:.85rem;color:var(--muted)}
-.changes-rounds li strong{color:var(--ink);font-size:.9rem}
-.changes-rounds li[data-current] strong{color:var(--accent-ink)}
-.changes-rounds li button{
-  justify-self:start;margin-block-start:3px;padding:0;border:0;background:transparent;
+.changes-rounds>ol>li{
+  display:grid;gap:8px;padding:14px 16px;font-size:.85rem;color:var(--muted);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+}
+.changes-rounds>ol>li>strong{color:var(--ink);font-size:.9rem}
+.changes-rounds>ol>li[data-current]{border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+.changes-rounds>ol>li[data-current]>strong{color:var(--accent-ink)}
+.changes-rounds>ol>li>button{
+  justify-self:start;padding:0;border:0;background:transparent;
   color:var(--accent);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;text-decoration:underline;
   text-underline-offset:3px;
 }
@@ -434,7 +435,7 @@
   .changes-back,.changes-note-targets,.changes-note-actions,
   .changes-decision,.changes-extend,.changes-filter,.changes-extend-sheet{display:none !important}
   .changes-entry{break-inside:avoid;border-color:#999;box-shadow:none}
-  .changes-rounds ol{display:grid !important}
+  .changes-rounds>ol{display:grid !important}
 }
 
 /* ── اختيار الفصل وموعده ────────────────────────────────────────────────
