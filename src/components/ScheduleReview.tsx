@@ -10,7 +10,7 @@ import {
 } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
-import { blockingConflicts, blockingRowIds, placeholderInstructorIds } from "../utils/scheduleBlockers";
+import { blockingRowIds, describeWarnings, doubleEntryCount, placeholderInstructorIds, readScopeConflicts, type ReviewBlocker } from "../utils/scheduleBlockers";
 import { blockingSummaryPhrase } from "../utils/approvalWorkflow";
 import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
@@ -152,8 +152,11 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
   const decisionFindings = useMemo(() => baseFindings.filter(isDecision1912Finding), [baseFindings]);
   const score = useMemo(() => regulationScore(decisionFindings, rows.length), [decisionFindings, rows.length]);
   const [serverBlockers, setServerBlockers] = useState<Array<{id:string;type:string;title:string;detail:string;rowIds:number[];subjectKey?:string;subjectLabel?:string}>>([]);
+  /* What the same reading says without counting it: the same section in two
+     halls or with two teachers (قاعدة المالك 2026-09-27). */
+  const [serverWarnings, setServerWarnings] = useState<ReviewBlocker[]>([]);
   /* The bar's two numbers, as the server read them for the same scope. */
-  const [serverSummary, setServerSummary] = useState<{ conflicts: number; rows: number } | null>(null);
+  const [serverSummary, setServerSummary] = useState<{ conflicts: number; rows: number; duplicates: number } | null>(null);
   const [readinessChecked, setReadinessChecked] = useState(false);
   const [readinessError, setReadinessError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -161,7 +164,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
   useDialogDismiss(true, onClose);
 
   useEffect(() => {
-    if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setReadinessChecked(true); setReadinessError(true); return; }
+    if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setServerWarnings([]); setReadinessChecked(true); setReadinessError(true); return; }
     const controller = new AbortController();
     setReadinessChecked(false);
     setReadinessError(false);
@@ -169,16 +172,22 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
       .then(async response => response.ok ? response.json() : Promise.reject(new Error("readiness")))
       .then(data => {
         setServerBlockers(Array.isArray(data?.blockers) ? data.blockers : []);
-        setServerSummary({ conflicts: Number(data?.blockingConflicts || 0), rows: Number(data?.blockingRows || 0) });
+        setServerWarnings(Array.isArray(data?.warnings) ? data.warnings : []);
+        setServerSummary({ conflicts: Number(data?.blockingConflicts || 0), rows: Number(data?.blockingRows || 0), duplicates: Number(data?.blockingDuplicates || 0) });
       })
-      .catch(error => { if (error?.name !== "AbortError") { setServerBlockers([]); setReadinessError(true); } })
+      .catch(error => { if (error?.name !== "AbortError") { setServerBlockers([]); setServerWarnings([]); setReadinessError(true); } })
       .finally(() => { if (!controller.signal.aborted) setReadinessChecked(true); });
     return () => controller.abort();
   }, [collegeId, sectionId, termId, rows]);
 
   /* The offline fallback reads the same rule the server does — «هيئة تدريسية»
-     included — so losing the network never changes what counts as a blocker. */
-  const localConflicts = useMemo(() => blockingConflicts(rows, rows, { placeholderInstructorIds: placeholderInstructorIds(instructors.values()) }), [rows, instructors]);
+     included — so losing the network never changes what counts as a blocker.
+     One sweep, both halves: what blocks, and what is only said. */
+  const localReading = useMemo(() => readScopeConflicts(rows, rows, { placeholderInstructorIds: placeholderInstructorIds(instructors.values()) }), [rows, instructors]);
+  const localConflicts = localReading.blocking;
+  const localWarnings = useMemo(() => describeWarnings(localReading.warnings, rows, rows, {
+    courseName: new Map([...courses.values()].map(course => [Number(course.AdCourseId), String(course.CourseCode || course.CourseName || "")] as [number, string])),
+  }), [localReading, rows, courses]);
   const localBlockers = useMemo(() => localConflicts
     .map(item => ({
       id: `local-conflict:${[item.rowId, item.otherId].sort((a, b) => a - b).join(":")}`,
@@ -189,11 +198,12 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     })), [localConflicts]);
   const serverRead = readinessChecked && !readinessError;
   const activeBlockers = serverRead ? serverBlockers : localBlockers;
+  const activeWarnings = serverRead ? serverWarnings : localWarnings;
   /* The headline is the ApprovalBar's: blocking conflicts (pairs), then the
      appointments they touch — the same `approvalBlockerSummary` reading. */
   const blockerSummary = serverRead && serverSummary
     ? serverSummary
-    : { conflicts: localConflicts.length, rows: blockingRowIds(localConflicts, rows).length };
+    : { conflicts: localConflicts.length, rows: blockingRowIds(localConflicts, rows).length, duplicates: doubleEntryCount(localConflicts) };
 
   const blockerFindings = useMemo<RegulationFinding[]>(() => activeBlockers.map((item, index) => ({
     rule: item.id || `approval-blocker-${index}`,
@@ -207,14 +217,29 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     subjectLabel: item.subjectLabel,
     rowIds: Array.isArray(item.rowIds) ? item.rowIds.map(Number).filter(Boolean) : [],
   })), [activeBlockers]);
+  /* ── يُقال ولا يمنع ────────────────────────────────────────────────────
+     الشعبة نفسها مسجّلة مرتين في قاعتين أو بأستاذين: ليست تعارضاً مادّياً
+     فلا تدخل «يمنع الاعتماد»، ولا تُسكَت — بندٌ «للمراجعة» بجانب الموانع. */
+  const warningFindings = useMemo<RegulationFinding[]>(() => activeWarnings.map((item, index) => ({
+    rule: item.id || `section-twice-${index}`,
+    article: "لا يمنع الاعتماد",
+    severity: "medium",
+    source: "readiness",
+    approvalEffect: "review",
+    title: item.title || "الشعبة نفسها مسجّلة مرتين في الوقت نفسه",
+    detail: item.detail || "",
+    subjectKey: item.subjectKey,
+    subjectLabel: item.subjectLabel,
+    rowIds: Array.isArray(item.rowIds) ? item.rowIds.map(Number).filter(Boolean) : [],
+  })), [activeWarnings]);
   const readinessFindings = useMemo(() => baseFindings.filter(finding => finding.source === "readiness"), [baseFindings]);
   const supplementalFindings = useMemo(() => baseFindings.filter(finding => finding.source !== "readiness" && !isDecision1912Finding(finding)), [baseFindings]);
   // Approval reads in a predictable order: hard save blockers, decision 1912,
   // then historical/department context. This keeps different authorities from
   // being visually mixed under one regulation heading.
   const findings = useMemo(
-    () => [...blockerFindings, ...readinessFindings, ...decisionFindings, ...supplementalFindings],
-    [blockerFindings, readinessFindings, decisionFindings, supplementalFindings]
+    () => [...blockerFindings, ...warningFindings, ...readinessFindings, ...decisionFindings, ...supplementalFindings],
+    [blockerFindings, warningFindings, readinessFindings, decisionFindings, supplementalFindings]
   );
   const groupedFindings = useMemo<ReviewFindingGroup[]>(() => {
     const buckets = new Map<string, { base: RegulationFinding; items: RegulationFinding[]; rowIds: Set<number> }>();
@@ -532,7 +557,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
             <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
             <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
             <p>{scopeLine}</p>
-            {readinessChecked && blockerSummary.conflicts > 0 ? <strong className="review-blocker-headline" data-review-headline="blocking">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows)}</strong> : null}
+            {readinessChecked && blockerSummary.conflicts > 0 ? <strong className="review-blocker-headline" data-review-headline="blocking">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows, blockerSummary.duplicates)}</strong> : null}
             {readinessError ? <small>تمت مراجعة قرار 1913/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
@@ -628,7 +653,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                   {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} /> : null}
                   {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} /> : null}
                 </div>
-                {blockerSummary.conflicts > 0 ? <p className="print-blocker-headline">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows)}</p> : null}
+                {blockerSummary.conflicts > 0 ? <p className="print-blocker-headline">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows, blockerSummary.duplicates)}</p> : null}
                 <div className="print-spread-keys">{spread.high ? <span className="seg-high">{spreadLabel.high}</span> : null}{spread.medium ? <span className="seg-medium">{spreadLabel.medium}</span> : null}{spread.low ? <span className="seg-low">{spreadLabel.low}</span> : null}{spread.clean ? <span className="seg-clean">{spreadLabel.clean}</span> : null}</div>
               </div>
               <section className="print-review-findings">

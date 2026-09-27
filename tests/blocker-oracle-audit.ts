@@ -1,8 +1,10 @@
 /**
  * ── «مانع الاعتماد» — قاعدةٌ واحدة، وكلُّ مدخلٍ يقول الرقمَ نفسه ──────────
  *
- * Behaviour: «هيئة تدريسية» never blocks as a person anywhere; an exact
- * duplicate blocks everywhere; a clash with another department counts in
+ * Behaviour: «هيئة تدريسية» never blocks as a person anywhere; an
+ * indistinguishable double entry blocks everywhere, while the same section in
+ * two halls or with two teachers is a warning everywhere (قاعدة المالك
+ * 2026-09-27: «التوقيع لا يمنعه إلا تعارض ماديّ»); a clash with another department counts in
  * both; a legacy hall alias is the same hall once normalised; and every entry
  * point — the count, the detailed list, the analysis alert, the live board
  * scan — returns the same number.
@@ -15,8 +17,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  approvalBlockerCount, approvalBlockers, blockingConflictDetails, blockingConflicts,
-  isBlockingConflict, placeholderInstructorIds,
+  approvalBlockerCount, approvalBlockers, approvalWarnings, blockingConflictDetails, blockingConflicts,
+  isBlockingConflict, placeholderInstructorIds, rowClashReasons,
 } from "../src/utils/scheduleBlockers";
 import { analyzeSchedule, fastConflictScan, outsideScopeClashes } from "../src/utils/scheduleIntelligence";
 
@@ -77,11 +79,36 @@ const allEqual = (c: ReturnType<typeof everyCount>, n: number) =>
   check(allEqual(everyCount(shared, shared), 1), "والقاعة المشتركة تبقى مانعاً ولو كان الاسم «هيئة تدريسية»");
 }
 
-/* 2. An exact duplicate: same course, same section, same placement, different doctors and halls. */
+/* 2. قاعدة المالك 2026-09-27: «التوقيع لا يمنعه إلا تعارض ماديّ».
+      The owner's department (أصول التربية 114101, شعبة 20, Mon+Wed 14:00–15:20) had the same section in G28 with one
+      doctor and in G31 with another: no person and no hall booked twice. Every entry point says 0 blockers — and the
+      pair is still SAID, as a warning, in the review and on both rows. */
 {
-  const scope = [row(1, 3, 100, 7, "101", { SCode: "01" }), row(2, 3, 100, 8, "102", { SCode: "01" })];
+  const scope = [row(1, 3, 100, 7, "G28", { SCode: "20" }), row(2, 3, 100, 8, "G31", { SCode: "20" })];
   const c = everyCount(scope, scope);
-  check(allEqual(c, 1), `الموعد المكرّر مانعٌ في كل مدخل — والتحليل لم يعد يتجاهله (${JSON.stringify(c)})`);
+  check(allEqual(c, 0), `الشعبة نفسها في قاعتين بأستاذين ليست تعارضاً ماديّاً — لا تمنع في أي مدخل (${JSON.stringify(c)})`);
+  const warnings = approvalWarnings(scope, scope, { placeholderInstructorIds: placeholders });
+  check(warnings.length === 1 && /G28/.test(warnings[0].detail) && /G31/.test(warnings[0].detail) && warnings[0].rowIds.join() === "1,2",
+    "…لكنها لا تُسكَت: بندٌ للمراجعة باسم القاعتين");
+  const scan = fastConflictScan(scope, { placeholderInstructorIds: placeholders });
+  check(scan.ids.size === 0 && scan.warningIds.has(1) && scan.warningIds.has(2) && scan.sectionTwicePairs === 1, "واللوحة تُعلّمها تنبيهاً لا حلقةَ منع");
+  const lookup = { row: (id: number) => scope.find(item => item.id === id), course: (item: any) => String(item?.AdCourseName || "") };
+  const said = rowClashReasons(scope[0], scan.notes.get(1), lookup);
+  check(said.length === 1 && said[0].tone === "warn" && /لا يمنع/.test(said[0].text) && /G28 و G31/.test(said[0].text), `والصفّ يقول سببه ظاهراً (${JSON.stringify(said)})`);
+  /* Two real teachers in one hall: the hall is booked twice — physical, blocking. */
+  const oneHall = [row(1, 3, 100, 7, "G28", { SCode: "20" }), row(2, 3, 100, 8, "G28", { SCode: "20" })];
+  check(allEqual(everyCount(oneHall, oneHall), 1), "والقاعة الواحدة لأستاذين تعارضٌ ماديّ يمنع");
+}
+/* 2b. The indistinguishable double entry — nothing tells the two rows apart — would publish one lecture twice. */
+{
+  const scope = [row(1, 3, 100, PLACEHOLDER, "", { SCode: "20", roomId: undefined, AdRoomCode: "", buildingId: undefined }),
+    row(2, 3, 100, PLACEHOLDER, "", { SCode: "20", roomId: undefined, AdRoomCode: "", buildingId: undefined })];
+  const c = everyCount(scope, scope);
+  check(allEqual(c, 1), `الإدخال المكرّر الذي لا يميّزه شيء مانعٌ في كل مدخل (${JSON.stringify(c)})`);
+  const scan = fastConflictScan(scope, { placeholderInstructorIds: placeholders });
+  const lookup = { row: (id: number) => scope.find(item => item.id === id), course: (item: any) => String(item?.AdCourseName || "") };
+  const said = rowClashReasons(scope[0], scan.notes.get(1), lookup);
+  check(said.length === 1 && said[0].tone === "block" && /يمنع التوقيع: موعد مكرّر/.test(said[0].text), "والصفّ يقول: موعد مكرّر يمنع التوقيع");
 }
 
 /* 3. An instructor clash with another department counts in both departments. */
@@ -111,6 +138,13 @@ const allEqual = (c: ReturnType<typeof everyCount>, n: number) =>
   check(!isBlockingConflict({ severity: "high", soft: true }) && !isBlockingConflict({ type: "doorway", severity: "low" })
     && isBlockingConflict({ type: "duplicate", severity: "medium" }) && isBlockingConflict({ type: "room", severity: "high" }),
     "المحمول «soft» والفاصل القصير لا يمنعان؛ المكرّر والقاعة يمنعان");
+}
+
+/* The list row states its own reason from the board's reading — the reading that draws its ring. */
+{
+  const board = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src/components/Schedules.tsx"), "utf8");
+  check(/rowClashReasons\(s, liveClash\.notes\?\.get\(s\.id\)/.test(board) && /agenda-clash-reason is-\$\{reason\.tone\}/.test(board),
+    "صفّ القائمة يكتب سبب حلقته من قراءة اللوحة نفسها");
 }
 
 /* ── STRUCTURAL ─────────────────────────────────────────────────────────── */

@@ -58,7 +58,7 @@ import {
 } from "./src/utils/approvalWorkflow";
 import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./src/utils/scheduleDiff";
 import { describeScopeChanges, fingerprintOfSignatures, replacementLoss, scopeBase, scopeSignatures, type ScopeBase } from "./src/utils/scopeFingerprint";
-import { approvalBlockerCount, approvalBlockerSummary, blockingConflictDetails, blockingConflicts, blockingRowIds, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
+import { approvalBlockerCount, approvalBlockerSummary, approvalWarnings, blockingConflictDetails, blockingConflicts, blockingRowIds, doubleEntryCount, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
 import { buildNotifications } from "./src/utils/notificationCenter";
 import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
@@ -4532,9 +4532,17 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
     if(conflict.type==="instructor"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`الأستاذ ${instructor?.AdInstructorName||""} لديه محاضرة متداخلة`,detail:detailFor(other,visible)};
     if(conflict.type==="room"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`القاعة ${other.AdRoomCode}/${other.AdRoomHall} مشغولة في نفس الوقت`,detail:detailFor(other,visible)};
+    /* ── الشعبة نفسها في مكانين: تُقال ولا تمنع ─────────────────────────────
+       قاعدة المالك 2026-09-27: «التوقيع لا يمنعه إلا تعارض ماديّ». قاعتان
+       مختلفتان أو أستاذان حقيقيان مختلفان ليسا تعارضاً ماديّاً (twinKind)، فلا
+       يمنعان الحفظ ولا النقل — لكن البطاقة تقولهما، بما يختلف فيهما. */
+    if(conflict.type==="sectionTwice")return{...conflict,soft:true,severity:"medium",rowId:visible&&other?other.id:0,
+      detail:visible||!other?conflict.detail:`الشعبة نفسها مسجّلة بالأيام والوقت نفسيهما · ${elsewhereLine(other)}`};
     // A repeated course and section is only a duplicate when it is the very same
     // placement; a lecture on Sunday and its laboratory on Tuesday share a
-    // section number by design and must not be refused.
+    // section number by design and must not be refused. Since 2026-09-27 it is
+    // also only a duplicate when nothing tells the two rows apart — no second
+    // hall, no second real teacher — because only then would it publish twice.
     /* Same department: the twin row is on the reader's own board, so its own
        phrasing stays. Another department: name it, with the day and the hour. */
     return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",
@@ -5375,8 +5383,10 @@ app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: Aut
  * see collisions against the whole term, including appointments outside the
  * reader's department that share an instructor or room. This endpoint performs
  * that term-wide read on the server, then redacts the other appointment when it
- * sits outside the caller's permissions. It returns only hard blockers — the
- * regulation remains an advisory/review layer in the client.
+ * sits outside the caller's permissions. It returns the hard blockers, and
+ * beside them — never counted with them — the same section recorded twice in
+ * two halls or with two teachers (`warnings`); the regulation remains an
+ * advisory/review layer in the client.
  */
 app.get("/api/schedules/review-readiness", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
@@ -5452,7 +5462,12 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
       add({id:`barter-window:${row.id}`,type:"hallBarterWindow",title:"الموعد يتجاوز نافذة الاستعارة المعتمدة",detail:"استخدم القاعة داخل اليوم والوقت المعتمدين، أو اطلب نافذة إضافية قبل الاعتماد.",rowIds:[Number(row.id)]});
     }
   }
-  res.json({blockers,blockingConflicts:conflictList.length,blockingRows:touchedRowIds.length,checkedRows:scopeRows.length,termRows:termRows.length});
+  /* ── وما يُقال ولا يمنع ────────────────────────────────────────────────
+     الشعبة نفسها مسجّلة مرتين في قاعتين أو بأستاذين: ليست تعارضاً مادّياً فلا
+     تدخل العدد، لكنها تصل المراجعةَ بنداً «للمراجعة» (قاعدة المالك 2026-09-27). */
+  const warnings=approvalWarnings(scopeRows,termRows,{...await approvalBlockerOptions(),
+    courseName:new Map(courses.map(row=>[Number(row.AdCourseId),String(row.CourseCode||row.CourseName||"")] as [number,string]))});
+  res.json({blockers,warnings,blockingConflicts:conflictList.length,blockingRows:touchedRowIds.length,blockingDuplicates:doubleEntryCount(conflictList),checkedRows:scopeRows.length,termRows:termRows.length});
 });
 
 /**
@@ -10064,6 +10079,8 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
     blockingConflicts: blocking.conflicts,
     /* المواعيدُ التي تقف في تلك التعارضات — من القائمة نفسها (approvalBlockerSummary). */
     blockingRows: blocking.rows,
+    /* وكم منها موعدٌ مكرّر لا تعارضٌ مادّي — فيقول الشريطُ ما يعدّه. */
+    blockingDuplicates: blocking.duplicates,
     regulationNotices: notices,
     /* ── ما يمنع الإرسال يُقال قبل الضغط ────────────────────────────────────
      * من العدّاد الواحد نفسه الذي يقرؤه الإرسالُ والإرجاعُ والوارد (R4). */
@@ -10162,8 +10179,8 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     const approval = await readApproval(collegeId, sectionId, termId);
     const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
     if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
-    const blocking = await blockingConflictCount(collegeId, sectionId, termId);
-    const verdict = canSign(approval, stage, { blockingConflicts: blocking, rowCount: rows.length });
+    const blocking = await blockingSummaryFor(collegeId, sectionId, termId);
+    const verdict = canSign(approval, stage, { blockingConflicts: blocking.conflicts, blockingDuplicates: blocking.duplicates, rowCount: rows.length });
     if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }
 
     const notices = await regulationNoticeCount(collegeId, sectionId, termId);
@@ -10307,8 +10324,8 @@ async function submitToRegistrar(req: AuthenticatedRequest, collegeId: number, s
    * الواحد الذي يقرؤه الإرجاعُ والوارد والشاشة (R4). */
   const openNotes = countOpenRegistrarNotes(await notesWithState(collegeId, sectionId, termId));
   /* والتعارضُ المادّي يمنع الإرسال كما يمنع التوقيع والقبول (R3). */
-  const blocking = await blockingConflictCount(collegeId, sectionId, termId);
-  const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline, blockingConflicts: blocking });
+  const blocking = await blockingSummaryFor(collegeId, sectionId, termId);
+  const verdict = canSubmit(approval, { openNoteCount: openNotes, deadlineState: deadline, blockingConflicts: blocking.conflicts, blockingDuplicates: blocking.duplicates });
   if (verdict.ok !== true) return { ok: false as const, error: verdict.message, code: verdict.code };
 
   const actor = approvalActor(req);
@@ -10414,9 +10431,9 @@ app.post("/api/approvals/accept", requireAuth, async (req: AuthenticatedRequest,
     if (approval.status !== "submitted") { res.status(409).json({ error: "هذا الجدول ليس عند التسجيل الآن." }); return; }
     const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
     if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
-    const blocking = await blockingConflictCount(collegeId, sectionId, termId);
-    if (blocking > 0) {
-      res.status(409).json({ error: `لا يُقبل جدولٌ فيه ${blockingConflictPhrase(blocking)}. أرجِعه للقسم لمعالجته.`, code: "blocking-conflicts" });
+    const blocking = await blockingSummaryFor(collegeId, sectionId, termId);
+    if (blocking.conflicts > 0) {
+      res.status(409).json({ error: `لا يُقبل جدولٌ فيه ${blockingConflictPhrase(blocking.conflicts, blocking.duplicates)}. أرجِعه للقسم لمعالجته.`, code: "blocking-conflicts" });
       return;
     }
     const actor = approvalActor(req);

@@ -75,10 +75,11 @@ const noDeadline = readDeadline({}, "2026-10-01");
   check(conflicted.ok === false && conflicted.code === "blocking-conflicts", "R3 التعارضُ المادّي يمنع الإرسال");
   check(canSubmit(signedBoth(), { openNoteCount: 0, deadlineState: noDeadline, blockingConflicts: 0 }).ok === true, "R3 والجدولُ السليم يُرسل");
   const submitFn = between(server, "async function submitToRegistrar(", "\napp.");
-  check(submitFn.includes("blockingConflicts: blocking") && submitFn.includes("await blockingConflictCount("),
+  /* والعددُ نفسه ومعه كم منه موعدٌ مكرّر، من القراءة الواحدة (قاعدة المالك 2026-09-27). */
+  check(submitFn.includes("blockingConflicts: blocking.conflicts") && submitFn.includes("blockingDuplicates: blocking.duplicates") && submitFn.includes("await blockingSummaryFor("),
     "R3 الإرسالُ يعدّ التعارضات ويمرّرها إلى canSubmit");
   check(bar.includes("!locked && !accepted && blockingConflicts === 0"), "R2/R3 شرطُ زرّ الإرسال في الشاشة هو شرط الخادم");
-  check(bar.includes("يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}"), "R3 ويُقال السببُ مكان الزرّ — بالتعارضات وما تمسّه من مواعيد");
+  check(bar.includes("يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows, state.blockingDuplicates)}"), "R3 ويُقال السببُ مكان الزرّ — بالتعارضات وما تمسّه من مواعيد");
 }
 
 /* ── R4: عدّادٌ واحد لملاحظات التسجيل المفتوحة ─────────────────────────────── */

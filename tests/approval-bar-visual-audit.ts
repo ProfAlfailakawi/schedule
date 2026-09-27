@@ -66,8 +66,8 @@ check(bar.includes("{events.length ? (") && bar.includes("{!onOpenNotes && openN
 
 /* ── ٣) النصُّ انتقل إلى التلميح ولم يضع ─────────────────────────────────── */
 for (const phrase of [
-  "يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}",
-  "يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows)}",
+  "يمنع التوقيع: {blockingSummaryPhrase(blockingConflicts, state.blockingRows, state.blockingDuplicates)}",
+  "يمنع الإرسال: {blockingSummaryPhrase(blockingConflicts, state.blockingRows, state.blockingDuplicates)}",
   "انقضى موعد التسليم — يلزم تمديدٌ من رئيس التسجيل",
   "أصرّ عليها التسجيل ثلاثاً بعد ردّ اللجنة",
   "رمز التحقق",

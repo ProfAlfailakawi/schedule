@@ -135,6 +135,7 @@ import VisitingBadge from "./VisitingBadge";
 import { usePageAwake } from "../utils/pageAwake";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts, isBlockingConflict } from "../utils/scheduleIntelligence";
+import { rowClashReasons } from "../utils/scheduleBlockers";
 import { placeholderInstructorIds } from "../utils/instructorIdentity";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
@@ -3316,6 +3317,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     const typeLabel = isRoom ? (isScope ? "نطاق القاعة" : "تعارض قاعة")
       : isInstructor ? "تعارض أستاذ"
         : conflict.type === "duplicate" ? "تكرار"
+          : conflict.type === "sectionTwice" ? "الشعبة مرتين"
           : conflict.type === "travel" ? "انتقال بين المواقع"
             : conflict.type === "doorway" ? "الفاصل بين المحاضرتين"
               : conflict.type === "cohort" ? "تعارض على الطلاب"
@@ -3373,6 +3375,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       title = "يوجد موعد مطابق تماماً";
       titleSecondary = "لنفس المقرر والشعبة";
       summary = detail || "نفس الأيام ونفس الوقت.";
+    } else if (conflict.type === "sectionTwice") {
+      /* قاعدة المالك 2026-09-27: قاعتان أو أستاذان يميّزان الصفّين، فليس هذا
+         تعارضاً ماديّاً — يُقال بما يختلف فيه، ويُحفظ الموعد معه. */
+      title = conflict.message || "الشعبة نفسها في مكانين في الوقت نفسه";
+      titleSecondary = "تنبيه لا يمنع الحفظ";
+      summary = detail || "الشعبة نفسها مسجّلة مرتين بالأيام والوقت نفسيهما.";
     } else if (conflict.type === "hallBarter") {
       title = `القاعة ${roomLabel || "—"} محجوزة رقمياً`;
       titleSecondary = "عبر استعارة القاعات";
@@ -3402,7 +3410,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       /* The blocking red is reserved for what actually blocks. A hall-scope
          note keeps its brass; every other advisory takes the warning tone. */
       toneClass: isScope ? "decision-card--scope"
-        : blocks && conflict.type !== "duplicate" ? "decision-card--danger"
+        : blocks ? "decision-card--danger"
           : "decision-card--warning",
       /* Carried out of here so the group above the card can be coloured and
          opened by what it actually holds, instead of guessing from its title. */
@@ -7606,6 +7614,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
   /* One reading for every view: the week, the halls board, the list, the
      radar count and the command palette all read `liveClash`, so the two
      halves are joined here once instead of at each of them. */
+  /* سببُ الحلقة يُكتب على الصفّ (rowClashReasons): يحتاج الصفَّ المقابل باسمه. */
+  const clashRowById = useMemo(() => new Map(filteredRows.map(row => [Number(row.id), row] as const)), [filteredRows]);
   const liveClash = useMemo(() => {
     if (!outsideClash.ids.length) return localClash;
     const ids = new Set(localClash.ids);
@@ -10224,7 +10234,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 return (
                   <article
                     data-row-id={s.id}
-                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : ""} ${outsideClash.notes[s.id] ? "live-clash-outside" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""} ${hueFocusClass(s)}`}
+                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : liveClash.warningIds?.has(s.id) ? "live-warn" : ""} ${outsideClash.notes[s.id] ? "live-clash-outside" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""} ${hueFocusClass(s)}`}
                     key={s.id}
                     /* A ring the reader cannot explain by looking at the board
                        is worse than none: this row collides with something that
@@ -10269,6 +10279,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                           {arabicDays(s) || "بدون أيام"}
                         </span>
                       </div>
+                      {/* «ليش المنع؟ شنو السبب؟» — الحلقة تقول سببها سطراً ظاهراً
+                          على الصف نفسه، لا تلميحاً لا يراه الهاتف (rowClashReasons). */}
+                      {rowClashReasons(s, liveClash.notes?.get(s.id), {
+                        row: id => clashRowById.get(Number(id)),
+                        course: other => String(courseById.get(other?.AdCourseId)?.CourseName || other?.AdCourseName || ""),
+                      }, outsideClash.notes[s.id] || undefined).map((reason, at) => (
+                        <p key={at} className={`agenda-clash-reason is-${reason.tone}`}><AlertTriangle aria-hidden="true" />{reason.text}</p>
+                      ))}
                     </div>
                     <div className="agenda-time" title="الوقت">
                       <Clock3 aria-hidden="true" />

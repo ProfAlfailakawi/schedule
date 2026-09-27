@@ -1,5 +1,7 @@
-import { findConflicts, isBlockingConflict, type ConflictInsight } from "./scheduleIntelligence";
+import { findConflicts, isBlockingConflict, type ConflictInsight, type LiveClashNote } from "./scheduleIntelligence";
 import { placeholderInstructorIds } from "./instructorIdentity";
+import { roomIdentityKey } from "./locationRegistry";
+import { AR, countOf, nounFor, oblique } from "./arabicCount";
 import type { FSchedule } from "../types";
 
 export { isBlockingConflict, placeholderInstructorIds };
@@ -19,8 +21,11 @@ export { isBlockingConflict, placeholderInstructorIds };
  * Every screen now asks THIS module:
  *
  *   • A blocker is a pair, counted once, that `isBlockingConflict` accepts
- *     (instructor / room double booking, or an exact duplicate; never soft
- *     advice).
+ *     (instructor / room double booking, or an indistinguishable double
+ *     entry; never soft advice). The same section recorded in two halls or
+ *     with two teachers is not physical: it is read by the same sweep as a
+ *     WARNING (`readScopeConflicts`), shown and never counted
+ *     (قاعدة المالك 2026-09-27: «التوقيع لا يمنعه إلا تعارض ماديّ»).
  *   • «هيئة تدريسية» is never a person: its pairs are never instructor
  *     clashes (a shared hall or an exact duplicate still is).
  *   • A hall is identified the way the save gate identifies it — the caller
@@ -43,11 +48,13 @@ export interface ApprovalBlockerOptions {
 }
 
 /**
- * The blocking pairs with at least one foot in `scopeRows`, once each, read
- * against the whole term. `termRows` may or may not contain the scope rows:
- * the scope's own version of a row always wins (unsaved candidates, drafts).
+ * One reading of the scope against the term, and its two halves: the pairs
+ * that block, and the pairs that are only said — the same section recorded in
+ * two halls or with two teachers (`sectionTwice`, قاعدة المالك 2026-09-27).
+ * Both come from the same sweep with the same options, so a pair can never be
+ * a blocker on one screen and a warning on another.
  */
-export function blockingConflicts(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ConflictInsight[] {
+export function readScopeConflicts(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): { blocking: ConflictInsight[]; warnings: ConflictInsight[] } {
   const normalize = options.normalizeRow || ((row: any) => row);
   const scope = (scopeRows || []).map(normalize);
   const scopeIds = new Set(scope.map((row: any) => Number(row.id)));
@@ -56,16 +63,32 @@ export function blockingConflicts(scopeRows: any[], termRows: any[], options: Ap
     ...scope,
   ];
   const seen = new Set<string>();
-  const out: ConflictInsight[] = [];
+  const warned = new Set<string>();
+  const blocking: ConflictInsight[] = [];
+  const warnings: ConflictInsight[] = [];
   for (const item of findConflicts(scope as FSchedule[], universe as FSchedule[], { placeholderInstructorIds: options.placeholderInstructorIds })) {
-    if (!isBlockingConflict(item)) continue;
     const a = Number(item.rowId), b = Number(item.otherId);
     const key = `${Math.min(a, b)}:${Math.max(a, b)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
+    if (isBlockingConflict(item)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      blocking.push(item);
+    } else if (item.type === "sectionTwice") {
+      if (warned.has(key)) continue;
+      warned.add(key);
+      warnings.push(item);
+    }
   }
-  return out;
+  return { blocking, warnings };
+}
+
+/**
+ * The blocking pairs with at least one foot in `scopeRows`, once each, read
+ * against the whole term. `termRows` may or may not contain the scope rows:
+ * the scope's own version of a row always wins (unsaved candidates, drafts).
+ */
+export function blockingConflicts(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ConflictInsight[] {
+  return readScopeConflicts(scopeRows, termRows, options).blocking;
 }
 
 /** The number every screen prints next to «مانع اعتماد». */
@@ -97,13 +120,21 @@ export interface ApprovalBlockerSummary {
   /** Distinct own appointments standing in those pairs. */
   rows: number;
   rowIds: number[];
+  /** How many of `conflicts` are an indistinguishable double ENTRY rather than
+      a physical clash — so the sentence says «موعد مكرّر», not «تعارض مادّي». */
+  duplicates: number;
 }
 
 /** Both numbers from ONE list, so they can never be read from two rules. */
 export function approvalBlockerSummary(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ApprovalBlockerSummary {
   const list = blockingConflicts(scopeRows, termRows, options);
   const rowIds = blockingRowIds(list, scopeRows);
-  return { conflicts: list.length, rows: rowIds.length, rowIds };
+  return { conflicts: list.length, rows: rowIds.length, rowIds, duplicates: doubleEntryCount(list) };
+}
+
+/** The blocking pairs that are a double entry, not a physical clash. */
+export function doubleEntryCount(conflicts: Array<{ type?: unknown }>): number {
+  return (conflicts || []).filter(item => item?.type === "duplicate").length;
 }
 
 /**
@@ -120,6 +151,7 @@ export interface ReviewBlocker {
   title: string;
   detail: string;
   rowIds: number[];
+  subjectKey?: string;
   subjectLabel?: string;
 }
 
@@ -167,4 +199,97 @@ export function blockingConflictDetails(
   options: ApprovalBlockerOptions = {},
 ): ReviewBlocker[] {
   return approvalBlockers(scopeRows, termRows, { ...options, courseName, instructorName });
+}
+
+/**
+ * ── ما يُقال ولا يمنع — للمراجعة ──────────────────────────────────────────
+ *
+ * الشعبة نفسها مسجّلة مرتين بالأيام والوقت نفسيهما، في قاعتين أو بأستاذين
+ * (twinKind). ليست تعارضاً ماديّاً فلا تمنع — قاعدة المالك 2026-09-27: «التوقيع
+ * لا يمنعه إلا تعارض ماديّ» — لكنها لا تُسكَت: تصل المراجعةَ بنداً «للمراجعة»
+ * بجانب الموانع، من القراءة نفسها التي تعدّ الموانع. وما كان طرفُه الآخر في
+ * قسمٍ آخر يُقال عامّاً، كما يُقال المانع.
+ */
+export function approvalWarnings(scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ReviewBlocker[] {
+  return describeWarnings(readScopeConflicts(scopeRows, termRows, options).warnings, scopeRows, termRows, options);
+}
+
+/** The warnings of a reading already made, described for the review. */
+export function describeWarnings(warnings: ConflictInsight[], scopeRows: any[], termRows: any[], options: ApprovalBlockerOptions = {}): ReviewBlocker[] {
+  const courseName = options.courseName || new Map<number, string>();
+  const ownIds = new Set((scopeRows || []).map((row: any) => Number(row.id)));
+  const byId = new Map<number, any>((termRows || []).map((row: any) => [Number(row.id), row] as const));
+  for (const row of scopeRows || []) byId.set(Number(row.id), row);
+  return (warnings || []).map(item => {
+    const a = Number(item.rowId), b = Number(item.otherId);
+    const own = [a, b].filter(id => ownIds.has(id));
+    const row = byId.get(own[0]) || byId.get(a);
+    const course = courseName.get(Number(row?.AdCourseId)) || row?.AdCourseName || "مقرر";
+    return {
+      id: `twice:${Math.min(a, b)}:${Math.max(a, b)}`,
+      type: String(item.type),
+      title: item.message,
+      detail: own.length === 2
+        ? item.detail
+        : "الشعبة نفسها مسجّلة أيضاً في جدول قسمٍ آخر بالأيام والوقت نفسيهما؛ تنبيهٌ لا يمنع الاعتماد.",
+      rowIds: own,
+      subjectKey: `course:${Number(row?.AdCourseId || 0)}:${String(row?.SCode ?? "")}`,
+      subjectLabel: [course, `شعبة ${row?.SCode || "—"}`].join(" · "),
+    };
+  });
+}
+
+/**
+ * ── سببُ الحلقة، مكتوباً على الصفّ نفسه ─────────────────────────────────────
+ *
+ * سأل المالك عن صفّين أحمرين في قائمة الجدول: «ليش المنع؟ شنو السبب؟». كانت
+ * الحلقة لوناً بلا كلمة، والسبب في تلميحٍ لا يظهر إلا بالمرور — وعلى الهاتف لا
+ * مرور. فكلُّ صفٍّ في تعارضٍ يقول سببه سطراً ظاهراً: الأحمر لما يمنع وحده،
+ * والكهرماني لما يُقال ولا يمنع. والسطر يُكتب من قراءة اللوحة نفسها
+ * (`fastConflictScan(...).notes`) — القراءة التي ترسم الحلقة — فلا يقول الصفّ
+ * سبباً غير الذي لوّنه.
+ *
+ *   «يمنع التوقيع: حجز مزدوج للقاعة G28 مع أصول التربية شعبة 21»
+ *   «تنبيه لا يمنع: الشعبة 20 مسجّلة مرتين في الوقت نفسه (G28 و G31)»
+ *
+ * سطرٌ لكل لون على الأكثر: أشدُّ ما في الصفّ أولاً، والباقي يُعدّ ولا يُسرد.
+ * و`outsideNote` جملةُ الخادم عن تعارضٍ مع قسمٍ آخر لا تحمله اللوحة.
+ */
+export interface RowClashReason { tone: "block" | "warn"; text: string }
+
+export function rowClashReasons(
+  row: any,
+  notes: readonly LiveClashNote[] | undefined,
+  lookup: { row: (id: number) => any; course: (row: any) => string },
+  outsideNote?: string,
+): RowClashReason[] {
+  const out: RowClashReason[] = [];
+  const list = notes || [];
+  const rank: Record<LiveClashNote["kind"], number> = { instructor: 0, room: 1, duplicate: 2, sectionTwice: 3 };
+  const blocking = list.filter(item => item.blocking).sort((a, b) => rank[a.kind] - rank[b.kind]);
+  const warnings = list.filter(item => !item.blocking);
+  const hall = (item: any) => String(item?.AdRoomHall || "").trim();
+  const named = (other: any) => other ? [lookup.course(other) || "موعد آخر", `شعبة ${other.SCode || "—"}`].join(" ") : "موعد آخر";
+  /* «ومع موعدٍ آخر» / «ومع موعدين آخرين» / «ومع 3 مواعيد أخرى». */
+  const more = (extra: number) => extra <= 0 ? ""
+    : extra === 1 ? " · ومع موعدٍ آخر"
+      : ` · ومع ${countOf(extra, oblique(AR.appointment))} ${nounFor(extra, oblique(AR.otherAdj))}`;
+
+  const head = blocking[0];
+  if (head || outsideNote) {
+    const other = head ? lookup.row(head.otherId) : null;
+    const text = !head ? String(outsideNote)
+      : head.kind === "instructor" ? `حجز مزدوج لأستاذ المقرر مع ${named(other)}`
+        : head.kind === "room" ? `حجز مزدوج للقاعة ${hall(row) || "نفسها"} مع ${named(other)}`
+          : `موعد مكرّر: الشعبة ${row?.SCode || "—"} مسجّلة مرتين ولا شيء يميّز إحداهما`;
+    out.push({ tone: "block", text: `يمنع التوقيع: ${text}${more(blocking.length - (head ? 1 : 0) + (head && outsideNote ? 1 : 0))}` });
+  }
+  if (warnings.length) {
+    const other = lookup.row(warnings[0].otherId);
+    const apart = other && roomIdentityKey(row) !== roomIdentityKey(other)
+      ? ` (${hall(row) || "بلا قاعة"} و ${hall(other) || "بلا قاعة"})`
+      : " بأستاذين";
+    out.push({ tone: "warn", text: `تنبيه لا يمنع: الشعبة ${row?.SCode || "—"} مسجّلة مرتين في الوقت نفسه${apart}${more(warnings.length - 1)}` });
+  }
+  return out;
 }
