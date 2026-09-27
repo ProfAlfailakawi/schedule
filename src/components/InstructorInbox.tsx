@@ -29,8 +29,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
-  MessageSquare, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
+  MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
+import { DnaCount } from "./dna";
 import { RequestStatusStepper, RequestTimelineToggle, RequestTotalsFunnel } from "./dna/requestDna";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
@@ -1071,7 +1072,12 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         <>
           {/* ثلاثةُ أرقامٍ لا أكثر. من أراد التفصيل فتح ما تحته. */}
           <Surface className="request-totals">
-            <RequestTotalsFunnel totals={totals} />
+            <RequestTotalsFunnel totals={totals}>
+              <div className="dna-row request-funnel-pills">
+                {totals?.unchanged ? <div><DnaCount icon={<Check aria-hidden="true" />} value={<>{totals.unchanged} <span>بلا تغيير</span></>} label="بلا تغيير" /></div> : null}
+                {totals?.changed ? <div><DnaCount icon={<Replace aria-hidden="true" />} value={<>{totals.changed} <span>طلبوا تغييراً</span></>} label="طلبوا تغييراً" /></div> : null}
+              </div>
+            </RequestTotalsFunnel>
           </Surface>
 
           {silent.length ? (

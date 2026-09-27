@@ -3,12 +3,12 @@
  * its event trail (request.timeline — recorded by the server, now shown).
  * Display only; nothing here reads or writes beyond the props it is given.
  */
-import { useState, type ReactElement } from "react";
+import React, { useState, type ReactElement } from "react";
 import {
-  BadgeCheck, Check, CheckCheck, CircleX, Eye, History, Inbox, Link2, Replace, Send, ShieldCheck, Wrench,
+  BadgeCheck, CheckCheck, CircleX, Eye, History, Inbox, Link2, Replace, Send, ShieldCheck, Wrench,
 } from "lucide-react";
 import type { InstructorRequest, InstructorRequestEventKind } from "../../types";
-import { DnaCount, DnaStepper, DnaTimeline, type DnaStep, type DnaTone } from "./index";
+import { DnaStepper, DnaTimeline, type DnaStep, type DnaTone } from "./index";
 
 const n = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
 
@@ -18,7 +18,7 @@ export interface RequestTotals {
 }
 
 /** أُرسل ← فُتح ← أجاب ← انتهى, each with its count; the old three figures stay as pills. */
-export function RequestTotalsFunnel({ totals }: { totals: RequestTotals | null }) {
+export function RequestTotalsFunnel({ totals, children }: { totals: RequestTotals | null; children?: React.ReactNode }) {
   const sent = Number(totals?.sent || 0);
   const opened = Math.max(0, sent - Number(totals?.unopened || 0));
   const answered = Number(totals?.answered || 0);
@@ -36,12 +36,7 @@ export function RequestTotalsFunnel({ totals }: { totals: RequestTotals | null }
   return (
     <div className="request-funnel">
       <DnaStepper size="sm" steps={steps} ariaLabel={`أجاب ${n(answered)} من ${n(sent)}`} />
-      {totals?.unchanged || totals?.changed ? (
-        <div className="dna-row request-funnel-pills">
-          {totals?.unchanged ? <DnaCount icon={<Check aria-hidden="true" />} value={<>{n(totals.unchanged)} <span>بلا تغيير</span></>} label="بلا تغيير" /> : null}
-          {totals?.changed ? <DnaCount icon={<Replace aria-hidden="true" />} value={<>{n(totals.changed)} <span>طلبوا تغييراً</span></>} label="طلبوا تغييراً" /> : null}
-        </div>
-      ) : null}
+      {children}
     </div>
   );
 }
