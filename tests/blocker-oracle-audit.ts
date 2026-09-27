@@ -111,6 +111,22 @@ const allEqual = (c: ReturnType<typeof everyCount>, n: number) =>
   check(said.length === 1 && said[0].tone === "block" && /يمنع التوقيع: موعد مكرّر/.test(said[0].text), "والصفّ يقول: موعد مكرّر يمنع التوقيع");
 }
 
+/* 2c. Independent review, 2026-09-27: a hall tells two twins apart only when BOTH carry one and their hall numbers differ.
+       The same hall written two ways (registry «G28», old text «G/G28») and a copy whose hall was cleared are double
+       entries — the board and the gate must agree that they block. */
+{
+  const alias = [row(1, 3, 100, PLACEHOLDER, "G28", { SCode: "20" }),
+    row(2, 3, 100, PLACEHOLDER, "G/G28", { SCode: "20", roomId: undefined, locationStatus: "HISTORICAL_TEXT" })];
+  const scanAlias = fastConflictScan(alias, { placeholderInstructorIds: placeholders });
+  check(scanAlias.ids.has(1) && scanAlias.ids.has(2) && scanAlias.warningIds.size === 0, "القاعة نفسها مكتوبةً بطريقتين ليست «مكانين»: اللوحة تمنع كما تمنع البوابة");
+  check(approvalBlockerCount(alias, alias, { placeholderInstructorIds: placeholders }) === 1, "والعدّ يعدّها مانعاً واحداً");
+  const cleared = [row(1, 3, 100, PLACEHOLDER, "G28", { SCode: "20" }),
+    row(2, 3, 100, PLACEHOLDER, "", { SCode: "20", roomId: undefined, AdRoomCode: "", locationStatus: "PENDING_ROOM" })];
+  check(allEqual(everyCount(cleared, cleared), 1), "ونسخةٌ مُسحت قاعتها إدخالٌ مكرّر يمنع في كل مدخل");
+  const scanCleared = fastConflictScan(cleared, { placeholderInstructorIds: placeholders });
+  check(scanCleared.warningIds.size === 0 && scanCleared.duplicatePairs === 1, "لا تنبيهَ «مكانين» لصفٍّ بلا قاعة");
+}
+
 /* 3. An instructor clash with another department counts in both departments. */
 {
   const mine = [row(1, 3, 100, 7, "101")];

@@ -4229,7 +4229,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     // debounce. The server's verdict — which also sees other departments, the
     // hall's ownership and campus travel — replaces it the moment it lands.
     const candidate: any = { ...form, id: editId || -900001 };
-    setConflicts(findConflicts([candidate], editId ? rows.filter(row => row.id !== editId) : rows));
+    /* «هيئة تدريسية» ليست شخصاً هنا أيضاً: الحكم نفسه الذي يقوله الخادم بعد لحظة. */
+    setConflicts(findConflicts([candidate], editId ? rows.filter(row => row.id !== editId) : rows, { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) }));
     const controller = new AbortController(),
       timer = window.setTimeout(async () => {
         setChecking(true);
@@ -4255,6 +4256,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     editor,
     editId,
     rows,
+    instructorById,
     form.AdTermId,
     form.AdInstructorId,
     form.AdCourseId,
@@ -5258,7 +5260,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
          */
         window.setTimeout(() => {
           try {
-            const chain = findRepairChain(row, rows);
+            const chain = findRepairChain(row, rows, { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
             if (chain) { setRepairReason("تعذّر هذا الموضع — إليك أقرب بديل"); setRepair(chain); }
           } catch { /* a suggestion is a courtesy; never a second failure */ }
         }, 0);
@@ -5436,7 +5438,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
          */
         window.setTimeout(() => {
           try {
-            const chain = findRepairChain(row, rows);
+            const chain = findRepairChain(row, rows, { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
             if (chain) { setRepairReason("تعذّر هذا الموضع — إليك أقرب بديل"); setRepair(chain); }
           } catch { /* a suggestion is a courtesy; never a second failure */ }
         }, 0);
@@ -7701,7 +7703,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     // press feels answered rather than frozen.
     window.setTimeout(() => {
       try {
-        const chain = findRepairChain(first, rows);
+        const chain = findRepairChain(first, rows, { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
         if (!chain) setMessage("لم أجد سلسلة إصلاح لا تُنشئ تعارضاً جديداً. جرّب تحرير قاعة أو ساعة أولاً.");
         else { setRepairReason("سلسلة إصلاح مقترحة"); setRepair(chain); }
       } finally {
@@ -9469,7 +9471,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         const row = rows.find(item => Number(item.id) === id);
         if (!row) return;
         try {
-          const chain = findRepairChain(row, rows);
+          const chain = findRepairChain(row, rows, { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
           if (chain) { setRepairReason("بدائل مناسبة لهذا المقرر"); setRepair(chain); }
           else setMessage("لم أجد بديلًا مباشرًا دون إنشاء تعارض جديد. افتح المباني والقاعات لمقارنة الخيارات يدويًا.");
         } catch { setMessage("تعذر تجهيز البدائل تلقائيًا؛ لم يتغير شيء في الجدول."); }
@@ -9487,7 +9489,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         }
         setReviewFocus(new Set([id]));
         try {
-          const chain = findRepairChain(row, rows);
+          const chain = findRepairChain(row, rows, { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
           if (chain) { setRepairReason("بدائل مناسبة لهذا المقرر"); setRepair(chain); }
           else setMessage("لم أجد بديلًا مباشرًا دون إنشاء تعارض جديد. يمكنك مقارنة القاعات الظاهرة يدويًا دون تغيير الجدول.");
           emitGuideResult({ featureId:"schedule.action.find-room", ok:true, signal:"schedule.alternatives.ready", transactionId:detail.transactionId, stepCount:2 });
@@ -9510,7 +9512,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
         }
         setReviewFocus(new Set([id]));
         try {
-          const chain = findRepairChain(row, rows);
+          const chain = findRepairChain(row, rows, { placeholderInstructorIds: placeholderInstructorIds(instructorById.values()) });
           if (chain) { setRepairReason("اقتراحات آمنة قبل النقل"); setRepair(chain); }
         } catch {}
         setMessage("تم تجهيز عرض المباني والقاعات وإبراز المقرر. اختر الوجهة المناسبة؛ لن يُعتمد أي تغيير قبل حركتك الفعلية.");

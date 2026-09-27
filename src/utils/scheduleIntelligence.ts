@@ -214,9 +214,20 @@ const samePlacement=(a:FSchedule,b:FSchedule)=>
  * نفسها تعارضٌ بسببه هو (instructor/room)، أيّاً كان رقم الشعبة.
  */
 type TwinKind="duplicate"|"sectionTwice";
+/* القاعة تميّز الصفّين فقط حين يحمل كلٌّ منهما قاعةً، ويختلف رقماهما بعد
+   التطبيع (المراجعة المستقلة 2026-09-27):
+   • «G28» من السجل و«G/G28» أو «G-28» نصّاً قديماً قاعةٌ واحدة كُتبت بطرق
+     شتّى — البوابة تطبّعها فتعدّها تعارض قاعة يمنع، فلا تقول اللوحة «لا يمنع».
+   • وصفٌّ بلا قاعة (أو بانتظار تثبيتها) لا «يختلف» عن غيره: نسخةٌ مُسحت
+     قاعتها تُنشر مرتين كما لو بقيت.
+   والمبنى يميّز كذلك حين يحمله الصفّان ويختلفان (012B08/G28 غير 012B09/G28). */
+const twinHall=(row:FSchedule)=>row.locationStatus==="PENDING_ROOM"?""
+  :String(row.AdRoomHall||"").split("/").pop()!.toUpperCase().replace(/[^A-Z0-9]/g,"");
+const twinBuilding=(row:FSchedule)=>String(row.AdRoomCode||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 function twinKind(a:FSchedule,b:FSchedule,person:(row:FSchedule)=>number):TwinKind|null{
   if(Number(a.AdCourseId)!==Number(b.AdCourseId)||String(a.SCode)!==String(b.SCode)||!samePlacement(a,b)) return null;
-  const hallTellsApart=roomKey(a)!==roomKey(b);
+  const ha=twinHall(a),hb=twinHall(b),ba=twinBuilding(a),bb=twinBuilding(b);
+  const hallTellsApart=Boolean(ha)&&Boolean(hb)&&(ha!==hb||(Boolean(ba)&&Boolean(bb)&&ba!==bb));
   const pa=person(a),pb=person(b);
   const teacherTellsApart=Boolean(pa)&&Boolean(pb)&&pa!==pb;
   return hallTellsApart||teacherTellsApart?"sectionTwice":"duplicate";
@@ -229,9 +240,8 @@ function sectionTwiceWords(a:FSchedule,b:FSchedule,person:(row:FSchedule)=>numbe
   /* القاعة وحدها تكفي القارئ، إلا حين يتشابه الاسمان في مبنيين. */
   const [ha,hb]=hall(a)&&hall(a)===hall(b)?[place(a),place(b)]:[hall(a),hall(b)];
   const pa=person(a),pb=person(b);
-  const halls=roomKey(a)!==roomKey(b)
-    ? (ha&&hb?` في قاعتين (${ha} و ${hb})`:` في مكانين (${ha||"بلا قاعة"} و ${hb||"بلا قاعة"})`)
-    : "";
+  const apart=Boolean(twinHall(a))&&Boolean(twinHall(b))&&(twinHall(a)!==twinHall(b)||(Boolean(twinBuilding(a))&&Boolean(twinBuilding(b))&&twinBuilding(a)!==twinBuilding(b)));
+  const halls=apart?` في قاعتين (${ha} و ${hb})`:"";
   const teachers=pa&&pb&&pa!==pb?(halls?" وبأستاذين":" بأستاذين"):"";
   return {
     message:halls?"الشعبة نفسها في مكانين في الوقت نفسه":"الشعبة نفسها بأستاذين في الوقت نفسه",

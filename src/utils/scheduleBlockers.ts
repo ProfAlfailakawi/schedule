@@ -1,6 +1,5 @@
 import { findConflicts, isBlockingConflict, type ConflictInsight, type LiveClashNote } from "./scheduleIntelligence";
 import { placeholderInstructorIds } from "./instructorIdentity";
-import { roomIdentityKey } from "./locationRegistry";
 import { AR, countOf, nounFor, oblique } from "./arabicCount";
 import type { FSchedule } from "../types";
 
@@ -286,8 +285,10 @@ export function rowClashReasons(
   }
   if (warnings.length) {
     const other = lookup.row(warnings[0].otherId);
-    const apart = other && roomIdentityKey(row) !== roomIdentityKey(other)
-      ? ` (${hall(row) || "بلا قاعة"} و ${hall(other) || "بلا قاعة"})`
+    /* ما يُذكر هو ما ميّز الصفّين فعلاً (twinKind): قاعتان مختلفتان، وإلا فأستاذان. */
+    const hallCode = (item: any) => String(item?.AdRoomHall || "").split("/").pop()!.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const apart = other && hallCode(row) && hallCode(other) && hallCode(row) !== hallCode(other)
+      ? ` (${hall(row)} و ${hall(other)})`
       : " بأستاذين";
     out.push({ tone: "warn", text: `تنبيه لا يمنع: الشعبة ${row?.SCode || "—"} مسجّلة مرتين في الوقت نفسه${apart}${more(warnings.length - 1)}` });
   }
