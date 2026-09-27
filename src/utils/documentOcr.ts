@@ -49,6 +49,9 @@ export type AuthorityPdfHeader={
   /** Another scan held the OCR workers past the preflight's wait: the upload
    *  is refused as busy at once instead of timing out in the queue. */
   busy?:boolean;
+  /** Pages that are grey photographs, not scans (scanPageTone): the file is
+   *  refused in seconds instead of after minutes of reading. */
+  greyPhotoPages?:number[];
 };
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type GraduationSheetOcrResult={text:string;pageCount:number;confidence:number;legibility:Legibility};
@@ -3804,6 +3807,55 @@ export function authorityScanRequiresLandscape(
 }
 
 
+/* ── صورة رمادية لا مسح: يُعرف ذلك في ثوانٍ لا بعد خمس دقائق ─────────────
+   6.pdf (CamScanner) صفحاته صور هاتف رمادية: خلفيتها نحو 160 لا بيضاء، و79–86%
+   من نقاطها رمادي متوسط. كانت تُقرأ أربع دقائق ثم تُرفض («18 صفاً بلا وقت ولا
+   مبنى»)، وعلى الخادم كانت تُسقطه بنفاد الذاكرة قبل الرفض فيرى المستخدم «انقطع
+   الاتصال». المسح المقروء أبيض الخلفية: أسوأ ما قُرئ فعلاً (1.pdf صورة هاتف)
+   خلفيته ≈200 ورماديه 13–23%، والملف النظيف 2–8%، ومتغيرات الاختبار العشرون
+   (ضباب، JPEG 40، تباين 55%، هاتف مائل) لا تتجاوز 11%. الحدّ بينهما واسع. */
+export const GREY_PHOTO_BACKGROUND_MAX=185,GREY_PHOTO_MID_SHARE_MIN=.55;
+/** نغمة صفحة من نقاطها الرمادية (0–255): الخلفية = الوسيط، والرمادي المتوسط =
+    نسبة النقاط بين 110 و180. */
+export function scanPageTone(gray:ArrayLike<number>):{background:number;midShare:number;greyPhoto:boolean}{
+  const histogram=new Array(256).fill(0);let total=0,mid=0;
+  for(let i=0;i<gray.length;i++){const v=Math.max(0,Math.min(255,Math.round(gray[i])));histogram[v]++;total++;if(v>=110&&v<180)mid++;}
+  if(!total)return{background:255,midShare:0,greyPhoto:false};
+  let seen=0,background=255;
+  for(let v=0;v<256;v++){seen+=histogram[v];if(seen>=total/2){background=v;break;}}
+  const midShare=mid/total;
+  return{background,midShare,greyPhoto:background<GREY_PHOTO_BACKGROUND_MAX&&midShare>=GREY_PHOTO_MID_SHARE_MIN};
+}
+/** الملف يُردّ مبكراً حين تكون نصف صفحاته على الأقل صوراً رمادية. */
+export const greyPhotoVerdict=(tones:{greyPhoto:boolean}[]):number[]=>{
+  const pages=tones.map((tone,index)=>tone.greyPhoto?index+1:0).filter(Boolean);
+  return tones.length&&pages.length*2>=tones.length?pages:[];
+};
+export const GREY_PHOTO_REFUSAL="المستند صورة رمادية باهتة لا مسح واضح، فلن تكتمل قراءته. لم يُستورد أي صف. صوّره ماسحاً ضوئياً بالأبيض والأسود (300 نقطة)، أو اختر «أبيض وأسود» في تطبيق المسح، أو اطلب ملف Excel أو PDF مُصدَّراً من النظام فيُقرأ كاملاً في ثوانٍ.";
+const TONE_LONG_EDGE=480;
+const canvasTone=(ground:any,width:number,height:number)=>{
+  const rgba=ground.getImageData(0,0,width,height).data;
+  const gray=new Uint8Array(rgba.length/4);
+  for(let i=0,j=0;i<rgba.length;i+=4,j++)gray[j]=(rgba[i]*299+rgba[i+1]*587+rgba[i+2]*114)/1000;
+  return scanPageTone(gray);
+};
+/* رسم الصفحة يفكّ صورتها كاملة (≈3 ث للصفحة)، فلا تُقاس الصفحات الأخرى إلا
+   حين تكون الأولى — المرسومة أصلاً للترويسة — رمادية: الملف الواضح لا يدفع شيئاً. */
+async function pdfPageTones(pdf:any,first:{background:number;midShare:number;greyPhoto:boolean},pageCount:number):Promise<{background:number;midShare:number;greyPhoto:boolean}[]>{
+  const lib=await canvas();const tones=[first];
+  /* نصف الصفحات يحسم الحكم: يتوقف القياس عنده، فلا تُفكّ صورٌ لا حاجة إليها. */
+  for(let index=2;index<=pageCount&&tones.filter(tone=>tone.greyPhoto).length*2<pageCount;index++){
+    const page=await pdf.getPage(index),base=page.getViewport({scale:1});
+    const viewport=page.getViewport({scale:TONE_LONG_EDGE/Math.max(base.width,base.height)});
+    const surface=lib.createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height)),ground=surface.getContext("2d");
+    ground.fillStyle="#ffffff";ground.fillRect(0,0,surface.width,surface.height);
+    await page.render({canvasContext:ground,viewport}).promise;
+    tones.push(canvasTone(ground,surface.width,surface.height));
+    page.cleanup?.();
+  }
+  return tones;
+}
+
 /**
  * Cheap first-page preflight for Authority PDFs.
  *
@@ -3889,6 +3941,25 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     const probe=await renderPdfFirstPage(input,PROBE_LONG_EDGE);
     if(!probe){if(embedded.term||embedded.branch||embedded.department)return embedded;return{};}
     const probeImage=await (await canvas()).loadImage(probe);
+    /* صفحات صور هاتف رمادية لا مسح (greyPhotoVerdict): تُعرف هنا في ثوانٍ. */
+    if(imageOnly){
+      try{
+        const lib=await canvas(),surface=lib.createCanvas(probeImage.width,probeImage.height),ground=surface.getContext("2d");
+        ground.drawImage(probeImage,0,0);
+        const first=canvasTone(ground,surface.width,surface.height);
+        if(first.greyPhoto){
+          const pageCount=Math.min(Number(pdf.numPages||0),MAX_PAGES);
+          const tones=await pdfPageTones(pdf,first,pageCount);
+          /* الصفحات التي لم تُقَس بعد بلوغ النصف لا تُحسب في المقام. */
+          const greyPages=tones.filter(tone=>tone.greyPhoto).length*2>=pageCount?greyPhotoVerdict(tones):[];
+          if(greyPages.length){
+            const grey:AuthorityPdfHeader={...embedded,source:"scan",greyPhotoPages:greyPages};
+            headerPreflightCache.set(input,{header:grey,orientation:0});
+            return grey;
+          }
+        }
+      }catch{/* a tone probe that fails never refuses: the reading decides */}
+    }
     /* Authority timetables are landscape reports. Prefer the turn that makes a
        portrait camera/PDF page landscape; pixel grid scores cannot distinguish
        a dense ruled table from its sideways twin reliably. */

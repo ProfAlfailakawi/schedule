@@ -15,7 +15,7 @@ import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMa
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
 import { scanLeftCellUnread, pagesWithUnreadCells } from "../src/utils/importPageReview.ts";
-import { authorityCourseFromFamilyAndName, authorityCourseSiblingByName, fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
+import { scanPageTone, greyPhotoVerdict, GREY_PHOTO_REFUSAL, authorityCourseFromFamilyAndName, authorityCourseSiblingByName, fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine, unconfirmedReviewPages } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
@@ -310,6 +310,35 @@ check("a page accepted with printed lines that have no row waits for «راجع�
   assert.match(tail.warning||"",/أضف الناقص في الجدول بعد الاستيراد/);
   assert.doesNotMatch(tail.warning||"",/يدوياً/);
 });
+check("a grey phone photo is refused in seconds at preflight, a white scan never is",()=>{
+  /* Measured 2026-09-26 at 60 dpi: 6.pdf pages bg≈160, mid-grey 79–86% (refused after 4 minutes, or the server died of memory first);
+     the worst file that reads (1.pdf, a phone photo) bg≈200, 13–23%; the clean file and 20 degraded variants ≤ 11%. */
+  const page=(background:number,midShare:number,n=10000)=>{
+    const out=new Uint8Array(n),mid=Math.round(n*midShare);
+    for(let i=0;i<n;i++)out[i]=i<mid?145:(i<mid+Math.round(n*.03)?40:background);
+    return out;
+  };
+  const camscanner=scanPageTone(page(160,.82));
+  assert.equal(camscanner.greyPhoto,true);
+  assert.equal(scanPageTone(page(200,.23)).greyPhoto,false,"1.pdf reads: never refused");
+  assert.equal(scanPageTone(page(255,.08)).greyPhoto,false);
+  assert.equal(scanPageTone(page(237,.11)).greyPhoto,false,"the phone variant");
+  assert.equal(scanPageTone(page(200,.45)).greyPhoto,false,"a light background with under 55% grey is not a grey photo");
+  assert.equal(scanPageTone(new Uint8Array(0)).greyPhoto,false);
+  /* Half the pages or more decide the file; one grey page among white ones does not. */
+  assert.deepEqual(greyPhotoVerdict([camscanner,camscanner,camscanner,camscanner]),[1,2,3,4]);
+  assert.deepEqual(greyPhotoVerdict([camscanner,camscanner]),[1,2]);
+  assert.deepEqual(greyPhotoVerdict([camscanner,scanPageTone(page(255,.05)),scanPageTone(page(255,.05))]),[]);
+  assert.deepEqual(greyPhotoVerdict([]),[]);
+  assert.match(GREY_PHOTO_REFUSAL,/لم يُستورد أي صف/);
+  /* Wired: the import route refuses before any reading; the probe reuses page 1's render and a failed probe never refuses. */
+  const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
+  assert.match(server,/if\(Array\.isArray\(headerPreflight\.greyPhotoPages\)&&headerPreflight\.greyPhotoPages\.length\)\{\s*res\.status\(422\)\.json\(\{error:GREY_PHOTO_REFUSAL,code:"PDF_SCAN_GREY_PHOTO"/);
+  assert.match(server,/if\(Array\.isArray\(header\.greyPhotoPages\)&&header\.greyPhotoPages\.length\)\{res\.status\(422\)\.json\(\{error:GREY_PHOTO_REFUSAL/,"the department-bootstrap route refuses the same way, not «header unresolved»");
+  const ocr=readFileSync(new URL("../src/utils/documentOcr.ts",import.meta.url),"utf8");
+  assert.match(ocr,/const first=canvasTone\(ground,surface\.width,surface\.height\);\s*if\(first\.greyPhoto\)/);
+  assert.match(ocr,/catch\{\/\* a tone probe that fails never refuses: the reading decides \*\/\}/);
+});
 check("a scanned course number that lost its last digit is settled by its family and printed name, never by the name alone",()=>{
   /* 3.pdf page 1 (owner's screen 2026-09-26): the crop drift reads 3010115 / 9010115 — a rule digit in front,
      the final digit lost. The six digits prove the 010115x family; the printed name picks one inside it. */
@@ -461,7 +490,7 @@ check("the refusal names each confirmed page, says nothing was imported, and nam
 
 
 check("a broken import stream says what broke instead of the one generic sentence",()=>{
-  assert.match(interruptedImportMessage(200),/انقطع الاتصال بالخادم قبل أن تكتمل قراءة الملف/,"a stream cut mid-read (the instance killed for memory)");
+  assert.match(interruptedImportMessage(200),/توقّف الخادم في منتصف قراءة الملف — غالباً لنفاد ذاكرته، لا لعيب في ملفك/,"a stream cut mid-read (the instance killed for memory) is not blamed on the file");
   assert.match(interruptedImportMessage(429),/مشغول أو يُعاد تشغيله/,"the platform's «Rate exceeded» while the instance restarts");
   assert.match(interruptedImportMessage(503),/مشغول أو يُعاد تشغيله/);
   assert.match(interruptedImportMessage(413),/24 ميغابايت/);

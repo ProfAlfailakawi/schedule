@@ -115,7 +115,7 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -8661,6 +8661,7 @@ app.post("/api/intelligence/pdf-import/bootstrap-section", requirePermission(7),
   const authorityCollegeCode=academicDigits(sitePrefix).slice(0,2);
   const header=await readAuthorityPdfHeader(bytes);
   if(header.requiresLandscapeUpload){res.status(422).json({error:"دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع.",code:"PDF_SCAN_REQUIRES_LANDSCAPE"});return;}
+  if(Array.isArray(header.greyPhotoPages)&&header.greyPhotoPages.length){res.status(422).json({error:GREY_PHOTO_REFUSAL,code:"PDF_SCAN_GREY_PHOTO",pages:header.greyPhotoPages});return;}
   if(header.busy){res.status(503).json({error:SCAN_READING_BUSY_MESSAGE,code:"SCAN_READING_BUSY"});return;}
   if(!header.branch||!header.department){res.status(422).json({error:"لم أتمكن من إثبات الكلية/الفرع والقسم من ترويسة الصفحة الأولى؛ لم تتم إضافة أي قسم.",code:"PDF_BOOTSTRAP_HEADER_UNRESOLVED"});return;}
   const sourceSite=officialCollegeSitePrefix(header.branch.name);
@@ -8785,6 +8786,12 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       code:"PDF_SCAN_REQUIRES_LANDSCAPE",
       pages:Array.isArray(headerPreflight.requiresLandscapePages)?headerPreflight.requiresLandscapePages:undefined,
     });
+    return;
+  }
+  /* صورة رمادية لا مسح: تُردّ في ثوانٍ قبل أي قراءة، لا بعد دقائق تنتهي بنفاد
+     ذاكرة الخادم و«انقطع الاتصال» (greyPhotoVerdict). */
+  if(Array.isArray(headerPreflight.greyPhotoPages)&&headerPreflight.greyPhotoPages.length){
+    res.status(422).json({error:GREY_PHOTO_REFUSAL,code:"PDF_SCAN_GREY_PHOTO",pages:headerPreflight.greyPhotoPages});
     return;
   }
   /* Another scan holds the OCR workers: refuse now, in words, rather than let
