@@ -313,8 +313,10 @@ export default function HallBarterBoard({
   const hasAnything = board.opportunities.length > 0 || incomingPending.length > 0 || outgoingPending.length > 0 || approved.length > 0;
   if (!hasAnything && !loading && !error) return null;
 
+  /* مفتوحةً تملك الشاشةَ كلَّها، فهي حوارٌ يُعلن ذلك: قارئُ الشاشة يعرف أن ما خلفها
+     معطَّل، والجرسُ يتنحّى عن زاويتها — وكان يجلس على زرّ إغلاقها تماماً. */
   return (
-    <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="استعارة القاعات بين الأقسام">
+    <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} role={open ? "dialog" : undefined} aria-modal={open ? "true" : undefined} aria-label="استعارة القاعات بين الأقسام">
       {open ? <button type="button" className="hall-barter-screen-close" onClick={() => setOpen(false)} aria-label="إغلاق استعارة القاعات" title="إغلاق استعارة القاعات" data-guide-ignore="زر إغلاق شاشة استعارة القاعات فقط؛ لا ينفذ ميزة تشغيلية ولا يحتاج خطوة إرشادية مستقلة"><X aria-hidden="true" /></button> : null}
       <button type="button" className="hall-barter-summary" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className="hall-barter-mark"><Building2 aria-hidden="true" /><ArrowLeftRight aria-hidden="true" /></span>

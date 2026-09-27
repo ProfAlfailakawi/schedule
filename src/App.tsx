@@ -2624,7 +2624,7 @@ export default function App() {
           the same activity that keeps the session alive — so the button is a
           courtesy for a reader who has stopped touching anything, not a toll. */}
       {idleWarning ? (
-        <div className="idle-warning no-print" role="alertdialog" aria-live="assertive" aria-label="الجلسة على وشك الانتهاء">
+        <div className="idle-warning no-print" role="alertdialog" aria-modal="false" aria-live="assertive" aria-label="الجلسة على وشك الانتهاء">
           <span className="idle-warning-ring" aria-hidden="true" />
           {/* One line, not two: the title says the whole thing, and any key,
               tap or scroll dismisses it anyway. The policy sentence made the

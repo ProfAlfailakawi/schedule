@@ -828,7 +828,8 @@ export default function LivingScheduleLayer({
             if (e.target === e.currentTarget) setScene(null);
           }}
         >
-          <aside className={`living-panel scene-${scene}`}>
+          {/* مركزُ القرار يملك الشاشة: حوارٌ يُعلن ذلك، فيتنحّى الجرسُ عن رأس اللوحة. */}
+          <aside className={`living-panel scene-${scene}`} role="dialog" aria-modal="true" aria-label="لوحة الذكاء">
             <header className="living-panel-head">
               <span className="living-panel-scene-icon">
                 {sceneItems.find((x) => x.id === scene)?.icon}

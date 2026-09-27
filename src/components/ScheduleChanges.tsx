@@ -1265,7 +1265,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
       ) : null}
 
       {noteDraft ? (
-        <div className="changes-extend-sheet" role="dialog" aria-label="ملاحظة على خانة">
+        <div className="changes-extend-sheet" role="dialog" aria-modal="true" aria-label="ملاحظة على خانة">
           <div className="changes-extend-card">
             <header>
               <strong>ملاحظة على خانة</strong>
@@ -1303,7 +1303,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
       ) : null}
 
       {rebutting ? (
-        <div className="changes-extend-sheet" role="dialog" aria-label="ردّ على ملاحظة">
+        <div className="changes-extend-sheet" role="dialog" aria-modal="true" aria-label="ردّ على ملاحظة">
           <div className="changes-extend-card">
             <header>
               <strong>إبقاء {rebutting.fieldLabel} كما هي</strong>

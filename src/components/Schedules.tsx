@@ -9645,7 +9645,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       {/* Lifted clear of the board's horizontal scroller so nothing can clip it,
           and given one line per wall instead of a sentence stitched with dashes. */}
       {refusal ? (
-        <div className="move-refusal no-print" role="alertdialog" aria-live="assertive" aria-label="تعذر نقل الموعد">
+        <div className="move-refusal no-print" role="alertdialog" aria-modal="false" aria-live="assertive" aria-label="تعذر نقل الموعد">
           <span className="move-refusal-mark" aria-hidden="true"><ShieldAlert /></span>
           <div className="move-refusal-body">
             <strong>تعذّر النقل</strong>
@@ -12406,7 +12406,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             if (e.target === e.currentTarget) setContext(null);
           }}
         >
-          <aside className="schedule-context" data-context-tab={contextTab}>
+          {/* درجٌ فوق خلفيةٍ تحجب اللوحة: حوارٌ يُعلن ذلك، فيتنحّى الجرسُ عن ✕ في زاويته. */}
+          <aside className="schedule-context" data-context-tab={contextTab} role="dialog" aria-modal="true" aria-label="سياق الموعد">
             <div className="context-actions">
               <div className="context-nav" role="group" aria-label="التنقل بين مواعيد اليوم">
                 <button

@@ -99,7 +99,7 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
       ref={popRef}
       className={`install-pop ${variant === "login" ? "install-pop-login-modal" : ""}`}
       role="dialog"
-      aria-modal={variant === "login" ? "true" : undefined}
+      aria-modal={variant === "login" ? "true" : "false"}
       aria-label="تثبيت التطبيق"
       dir="rtl"
     >

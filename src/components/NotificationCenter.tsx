@@ -6,6 +6,7 @@ import type { CenterNotification, NotificationTone } from "../utils/notification
 import { NOTIFY_FOCUS_KEY, writeNotifyFocus } from "../utils/notifyFocus";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { SEEN_LIMIT, seenKey } from "../utils/notificationSeen";
+import { followOpenDialogs } from "../utils/dialogLayer";
 
 /**
  * ── مركز الإشعارات ──────────────────────────────────────────────────────────
@@ -151,6 +152,10 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  /* الجرسُ يتنحّى لكل نافذةٍ مفتوحة فوق الصفحة (03-shell.css). حيث يعرف المحرّكُ
+     :has() لا يعمل هذا شيئاً؛ وحيث لا يعرفه يكتب العلامةَ على <html> بنفسه. */
+  useEffect(() => followOpenDialogs(), []);
+
   /* عنوانُ النافذة يحمل العدد: من فتح النظامَ في لسانٍ جانبيٍّ يراه دون أن يعود إليه. */
   const mineCount = items.filter(item => item.tone === "alert" || item.tone === "action").length;
   useEffect(() => {
@@ -221,6 +226,8 @@ export default function NotificationCenter({ userKey, onNavigate }: Props) {
         <Bell aria-hidden="true" />
         {unreadMine ? <b className="notify-count">{unreadMine > 99 ? "99+" : unreadMine}</b> : fresh ? <i className="notify-dot" aria-hidden="true" /> : null}
       </button>
+      {/* لوحةُ الجرس وحدها من الحوارات لا تُعلن aria-modal: لو أعلنت لتنحّى الجرسُ
+          الذي يفتحها ويغلقها (src/utils/dialogLayer.ts). */}
       {open ? (
         <div ref={panelRef} className="notify-panel no-print" role="dialog" aria-label="مركز الإشعارات">
           <header>

@@ -5300,7 +5300,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             if (e.target === e.currentTarget) setDetail(null);
           }}
         >
-          <aside className="intel-drawer">
+          {/* درجٌ فوق خلفيةٍ تحجب الصفحة: حوارٌ يُعلن ذلك، فيتنحّى الجرسُ عن ✕ في زاويته. */}
+          <aside className="intel-drawer" role="dialog" aria-modal="true" aria-label={detail.type === "room" ? "ذكاء القاعات" : "حمل الأستاذ"}>
             <button
               className="drawer-close"
               type="button"
