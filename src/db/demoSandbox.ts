@@ -1,15 +1,18 @@
 import type {
   AdCollege, AdCollegeUserAssign, AdCourse, AdInstructor, AdRoom, AdSection,
   AdTerm, FSchedule, FormName, FormSecurity, ScheduleApproval, ScheduleComment,
-  ScheduleVersion, SystemUser, MasterBuilding, MasterRoom
+  ScheduleVersion, SystemUser, MasterBuilding, MasterRoom, AuditLogEntry
 } from "../types";
 import { generateSyntheticCivilId } from "../utils/civilId";
+import { AR, countOf } from "../utils/arabicCount";
 import { ACADEMIC_ROLES, roleDefinition, type AcademicRole } from "../utils/academicRoles";
 
 const instructorNames = [
   "د. سالم فهد", "د. نورة خالد", "د. محمد عبدالله", "د. سارة محمود",
   "د. يوسف إبراهيم", "د. ريم حسن", "د. خالد ناصر", "د. مريم علي",
   "د. عبدالله راشد", "د. هدى فهد", "د. فيصل عمر", "د. دانة بدر",
+  /* قسم الرياضيات (DEMO_MATH): ثلاثةُ أساتذته، ثم منتدبةٌ من خارج الكلية. */
+  "د. عبدالعزيز الرشيدي", "د. لطيفة العنزي", "د. بدر المطيري", "أ. هيا الشمري",
 ];
 
 const colleges: AdCollege[] = [
@@ -31,6 +34,22 @@ const MULTI_SITE_SECTIONS: AdSection[] = [
   { AdSectionId: 8, AdCollegeId: 3, AdSectionCode: "ISL", AdSectionName: MULTI_SITE_NAME },
 ];
 
+/* ── قسمٌ معتمدٌ في كلية العميد ─────────────────────────────────────────────
+ *
+ * العميدان يقرآن النهائيَّ وحده (readsFinalSchedulesOnly). وأقسامُ كلية العلوم
+ * كلُّها في دورة الاعتماد (الحاسب مُرجَع، والبيانات عند التسجيل)، فكان العميدُ
+ * يفتح لوحته على «0 محاضرات» وميزانَ أقسامٍ بلا رقمٍ واحد، وعدسةَ المنتدبين
+ * فارغة — الشكوى نفسها: «المحكّم بلا بيانات». فيُلحق قسمٌ معتمد في الكلية
+ * نفسها، بعد الأقسام وبأرقامٍ بعدها (لا يمسّ مسرحَ الاعتماد ولا توزيعَ
+ * مواعيده): أساتذتُه وقاعاتُه له وحده فلا يصنع تعارضاً، ومنتدبةٌ واحدة في
+ * سجلّ منتدبيه لفصلين — فتُقرأ عدسةُ المنتدبين وتاريخُها. */
+export const DEMO_MATH = {
+  section: { AdSectionId: 9, AdCollegeId: 1, AdSectionCode: "MATH", AdSectionName: "الرياضيات" } as AdSection,
+  /* 13–15 أساتذة القسم، و16 المنتدبة. */
+  instructorIds: [13, 14, 15] as const, visitingInstructorId: 16,
+  courses: [["MATH101", "التفاضل والتكامل (1)"], ["MATH211", "الجبر الخطي"], ["MATH240", "الإحصاء والاحتمالات"]] as const,
+} as const;
+
 const sections: AdSection[] = [
   { AdSectionId: 1, AdCollegeId: 1, AdSectionCode: "CS", AdSectionName: "علوم الحاسب" },
   { AdSectionId: 2, AdCollegeId: 1, AdSectionCode: "DS", AdSectionName: "علم البيانات" },
@@ -40,6 +59,7 @@ const sections: AdSection[] = [
   /* قسمٌ واحد يُدرَّس في الكليات الثلاث — كقسم «الدراسات الإسلامية» الحقيقي في
      ثلاث عشرة كليةً وفرعاً. حسابُه (DEMO_MULTI_SITE) يرى «قسمك في 3 مواقع». */
   ...MULTI_SITE_SECTIONS,
+  DEMO_MATH.section,
 ];
 
 const courseNames = [
@@ -87,6 +107,9 @@ function syntheticCourses(): AdCourse[] {
   }), ...MULTI_SITE_SECTIONS.map((section, index) => ({
     AdCourseId: courseNames.length + index + 1, AdCollegeId: section.AdCollegeId, AdSectionId: section.AdSectionId,
     CourseCode: "ISL101", CourseName: "مدخل إلى الدراسات الإسلامية", CourseCredit: 2, CourseHours: 2, MaxStudent: 40,
+  })), ...DEMO_MATH.courses.map(([code, name], index) => ({
+    AdCourseId: courseNames.length + MULTI_SITE_SECTIONS.length + index + 1, AdCollegeId: DEMO_MATH.section.AdCollegeId, AdSectionId: DEMO_MATH.section.AdSectionId,
+    CourseCode: code, CourseName: name, CourseCredit: 3, CourseHours: 3, MaxStudent: 40,
   }))];
 }
 
@@ -127,6 +150,10 @@ const DEMO_BUILDINGS: readonly DemoBuildingSeed[] = [
   { prefix: "901", siteLetter: "A", number: "03", collegeId: 1, name: "مبنى الدراسات الإسلامية — العلوم", rooms: [["130", [6], "قاعة محاضرات"]] },
   { prefix: "902", siteLetter: "B", number: "02", collegeId: 2, name: "مبنى الدراسات الإسلامية — الأعمال", rooms: [["130", [7], "قاعة محاضرات"]] },
   { prefix: "903", siteLetter: "D", number: "02", collegeId: 3, name: "مبنى الدراسات الإسلامية — التربية", rooms: [["130", [8], "قاعة محاضرات"]] },
+  /* قاعاتُ قسم الرياضيات — مبنىً بعد المباني كلها. */
+  { prefix: "901", siteLetter: "A", number: "04", collegeId: 1, name: "مبنى الرياضيات", rooms: [
+    ["140", [9], "قاعة محاضرات 45 مقعدًا"], ["141", [9], "قاعة محاضرات 40 مقعدًا"], ["142", [9], "مختبر إحصاء"],
+  ] },
 ];
 const demoBuildingCode = (b: DemoBuildingSeed) => `${b.prefix}${b.siteLetter}${b.number}`;
 const demoBuildingId = (b: DemoBuildingSeed) => `building_${demoBuildingCode(b)}`;
@@ -202,7 +229,8 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   const positionInSection = new Map<number, number>();
   /* قاعةٌ مشغولة في نمطٍ وساعة — فلا يُسند صفّان القاعةَ نفسها في الموعد نفسه. */
   const taken = new Set<string>();
-  const core = courses.filter(course => !MULTI_SITE_SECTIONS.some(section => section.AdSectionId === course.AdSectionId));
+  const core = courses.filter(course => !MULTI_SITE_SECTIONS.some(section => section.AdSectionId === course.AdSectionId)
+    && course.AdSectionId !== DEMO_MATH.section.AdSectionId);
   const rows: FSchedule[] = Array.from({ length: 30 }, (_, index) => {
     const course = core[index % core.length];
     const instructorBand = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
@@ -269,6 +297,31 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
         fstarttime: start, fendtime: end, ...hallFields(hall), fdetail: "", rev: 0,
       } as FSchedule);
     });
+  }
+  /* قسم الرياضيات (DEMO_MATH): ثمانية مواعيد من الأحد إلى الأربعاء. كلُّ أستاذٍ
+     في ساعاتٍ متباعدة، وكلُّ قاعةٍ لا تحمل أكثر من ثلاثة — فلا تعارضَ ولا مانع. */
+  const mathCourse = (code: string) => courses.find(row => row.CourseCode === code && row.AdSectionId === DEMO_MATH.section.AdSectionId)!;
+  const mathHalls = hallsForSection(DEMO_MATH.section.AdSectionId);
+  const [d1, d2, d3] = DEMO_MATH.instructorIds, visiting = DEMO_MATH.visitingInstructorId;
+  const SUN_TUE = { fsunday: true, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false };
+  const MON_WED = { fsunday: false, fmonday: true, ftuesday: false, fwednesday: true, fthursday: false };
+  const mathPlan: Array<[code: string, sCode: string, instructorId: number, days: typeof SUN_TUE, start: string, end: string, hall: number]> = [
+    ["MATH101", "01", d1, SUN_TUE, "08:00", "09:15", 0],
+    ["MATH101", "02", d2, SUN_TUE, "09:30", "10:45", 0],
+    ["MATH101", "03", d3, MON_WED, "08:00", "09:15", 0],
+    ["MATH211", "01", d1, MON_WED, "09:30", "10:45", 1],
+    ["MATH211", "02", d3, SUN_TUE, "11:00", "12:15", 1],
+    ["MATH240", "01", d2, MON_WED, "11:00", "12:15", 2],
+    ["MATH240", "02", visiting, SUN_TUE, "12:30", "13:45", 2],
+    ["MATH101", "04", d2, MON_WED, "14:00", "15:15", 1],
+  ];
+  for (const [code, sCode, instructorId, days, start, end, hall] of mathPlan) {
+    const course = mathCourse(code);
+    rows.push({
+      id: ++nextId, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
+      AdCourseId: course.AdCourseId, AdCourseName: course.CourseName, SCode: sCode, AdInstructorId: instructorId,
+      ...days, fstarttime: start, fendtime: end, ...hallFields(mathHalls[hall]), fdetail: "", rev: 0,
+    } as FSchedule);
   }
   return rows;
 }
@@ -402,7 +455,7 @@ function noteValue(row: FSchedule, field: "room" | "instructor" | "time"): strin
  *   • الإدارة: معتمد.
  */
 function seedApprovalUniverse(schedules: FSchedule[]): {
-  approvals: ScheduleApproval[]; versions: ScheduleVersion[]; comments: ScheduleComment[];
+  approvals: ScheduleApproval[]; versions: ScheduleVersion[]; comments: ScheduleComment[]; audit: AuditLogEntry[];
 } {
   const iso = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString();
   const scopeRows = (sectionId: number) => schedules.filter(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === sectionId);
@@ -411,6 +464,20 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
   const versions: ScheduleVersion[] = [];
   const comments: ScheduleComment[] = [];
   const approvals: ScheduleApproval[] = [];
+  /* سجلُّ العمليات: ما جرى فعلاً في هذه الدورة، بالشكل الذي يكتبه الخادم لكل
+     طلبٍ مغيِّر (المسار، العملية، ومن وإلى) — فتُفتح شاشةُ «السجل» على تاريخٍ
+     يطابق ما تراه كلُّ صفة، لا على دخول المجرِّب وحده. */
+  const audit: AuditLogEntry[] = [];
+  const logged = (hoursAgo: number, who: [number, string], method: string, path: string, action: string, changes: string, status = 200) => {
+    const pieces = path.replace(/^\/api\//, "").split("/").filter(Boolean);
+    audit.push({
+      id: `demo-audit-${audit.length + 1}`, timestamp: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+      SystemUserId: who[0], userName: who[1], method, path, action, entity: pieces[0] || "system",
+      entityId: pieces.length > 1 ? pieces[pieces.length - 1] : undefined, changes, status,
+    });
+  };
+  const COMMITTEE: [number, string] = [16, "د. رئيس لجنة جدول الحاسب"], HEAD: [number, string] = [15, "د. رئيس قسم علوم الحاسب"];
+  const REG_HEAD: [number, string] = [13, "أ. رئيس التسجيل"], REG_STAFF: [number, string] = [14, "أ. موظف التسجيل"];
 
   /* نسخةُ ما رآه التسجيل: خانتان تغيّرتا بعدها (قاعةٌ ووقت)، وصفٌّ أُضيف بعدها،
      وصفٌّ كان فيها وحُذف — فيُقرأ التقريرُ «معدّلاً ومضافاً ومحذوفاً» لا جدولاً جديداً. */
@@ -474,6 +541,15 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
     });
   }
 
+  if (cs.length >= 4 && versions.length) {
+    const seen = (versions.find(v => v.id === "demo-ver-cs-round1")?.rows || []) as FSchedule[];
+    logged(24 * 9 + 2, COMMITTEE, "POST", "/api/approvals/sign", "إضافة", `توقيع اللجنة — علوم الحاسب · الجولة 1 · ${countOf(seen.length, AR.appointment)}`);
+    logged(24 * 9, HEAD, "POST", "/api/approvals/sign", "إضافة", "توقيع رئيس القسم — علوم الحاسب · أُرسل إلى التسجيل");
+    logged(24 * 3, REG_HEAD, "POST", "/api/approvals/return", "إضافة", "إرجاع علوم الحاسب بملاحظتين: سعة القاعة، ونصاب الأستاذ");
+    logged(30, COMMITTEE, "PUT", `/api/schedules/${cs[0].id}`, "تعديل", `القاعة ${seen[0].AdRoomCode}/${seen[0].AdRoomHall} ← ${cs[0].AdRoomCode}/${cs[0].AdRoomHall}`);
+    logged(29, COMMITTEE, "PUT", `/api/schedules/${cs[1].id}`, "تعديل", `الوقت ${seen[1].fstarttime} ← ${cs[1].fstarttime}`);
+  }
+
   // ── علم البيانات: عند التسجيل، الجولة الثانية، بأساسٍ محفوظ يُظهر ما تحرّك.
   const ds = scopeRows(2);
   if (ds.length >= 4) {
@@ -521,6 +597,12 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
     });
   }
 
+  if (ds.length >= 4) {
+    logged(24 * 6, REG_HEAD, "POST", "/api/approvals/return", "إضافة", "إرجاع علم البيانات بملاحظتين — الجولة 1");
+    logged(24 * 5, REG_HEAD, "POST", "/api/approvals/extension", "إضافة", "استثناء علم البيانات: 3 أيام بعد موعد الفصل");
+    logged(24 * 2, [16, "لجنة علم البيانات"], "POST", "/api/approvals/submit", "إضافة", "إرسال علم البيانات — الجولة 2 بعد معالجة الملاحظات");
+  }
+
   // ── قسم الإدارة: اعتُمد.
   approvals.push({
     id: "2:3:1", scopeKey: "2:3:1", AdCollegeId: 2, AdSectionId: 3, AdTermId: 1,
@@ -532,6 +614,24 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
     rounds: [{ number: 1, submittedAt: iso(8), submittedBy: "لجنة الإدارة", acceptedAt: iso(3), acceptedBy: "أ. رئيس التسجيل" }],
     pendingAdditions: [], updatedAt: iso(3),
   });
+
+  logged(24 * 3 - 1, REG_HEAD, "POST", "/api/approvals/accept", "إضافة", "اعتماد جدول الإدارة — الجولة 1");
+
+  // ── الرياضيات: معتمد — ما يقرؤه العميدان في كلية العلوم (DEMO_MATH).
+  const math = schedules.filter(r => Number(r.AdCollegeId) === 1 && Number(r.AdSectionId) === DEMO_MATH.section.AdSectionId && Number(r.AdTermId) === 1);
+  if (math.length) {
+    approvals.push({
+      id: "1:9:1", scopeKey: "1:9:1", AdCollegeId: 1, AdSectionId: DEMO_MATH.section.AdSectionId, AdTermId: 1,
+      status: "accepted", currentRound: 1,
+      signatures: [
+        { stage: "committee", SystemUserId: 16, userName: "لجنة جدول الرياضيات", roleLabel: "رئيس لجنة الجدول", at: iso(12), rowCount: math.length, verifyCode: "CMT-6120" },
+        { stage: "head", SystemUserId: 15, userName: "رئيس قسم الرياضيات", roleLabel: "رئيس القسم العلمي", at: iso(12), rowCount: math.length, verifyCode: "HEAD-6135" },
+      ],
+      rounds: [{ number: 1, submittedAt: iso(12), submittedBy: "لجنة جدول الرياضيات", acceptedAt: iso(5), acceptedBy: "أ. رئيس التسجيل" }],
+      pendingAdditions: [], updatedAt: iso(5),
+    });
+    logged(24 * 5 + 1, REG_HEAD, "POST", "/api/approvals/accept", "إضافة", `اعتماد جدول الرياضيات — ${countOf(math.length, AR.appointment)}`);
+  }
 
   /* ── مواعيد التسليم: موعدُ الفصل بعد أسبوع (demoTerms)، واستثناءٌ واحد، وطلبٌ
      واحد ينتظر — فيفتح رئيسُ التسجيل لوحته على ما يفعله: يمنح أو يرفض، ويرى
@@ -556,7 +656,20 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
     updatedAt: iso(1),
   });
 
-  return { approvals, versions, comments };
+  logged(26, REG_STAFF, "POST", "/api/auth/login", "تسجيل دخول", "", 200);
+  logged(5, [17, "أ. مستخدم عادي"], "PUT", `/api/schedules/${schedules.find(r => Number(r.AdSectionId) === DEMO_CONFLICT_SECTION_ID)?.id ?? 1}`, "تعديل — مرفوض (خارج الصلاحية)", "", 403);
+  logged(3, REG_STAFF, "POST", "/api/auth/login", "تسجيل دخول", "", 200);
+  audit.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return { approvals, versions, comments, audit };
+}
+
+/** أستاذٌ من علم البيانات (نطاق 1–4 لكلية العلوم) يدرّس شعبةً واحدة في علوم الحاسب. */
+export const DEMO_CS_VISITING_INSTRUCTOR_ID = 4;
+function demoVisiting(): Array<{ sectionId: number; instructorIds: readonly number[] }> {
+  return [
+    { sectionId: DEMO_MASTER_STAGE.sectionId, instructorIds: [DEMO_CS_VISITING_INSTRUCTOR_ID] },
+    { sectionId: DEMO_MATH.section.AdSectionId, instructorIds: [DEMO_MATH.visitingInstructorId] },
+  ];
 }
 
 export function createDemoSandboxState(): DemoSandboxState {
@@ -608,8 +721,19 @@ export function createDemoSandboxState(): DemoSandboxState {
     terms: demoTerms(new Date()),
     colleges: structuredClone(colleges), sections: structuredClone(sections), instructors, courses,
     schedules: [...schedules, ...history], rooms,
-    auditLogs: [], scheduleVersions: seeded.versions, scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: seeded.comments,
-    studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [],
+    auditLogs: seeded.audit, scheduleVersions: seeded.versions, scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: seeded.comments,
+    studentNeeds: [], schedulePublications: [], scheduleConstraints: [],
+    /* المنتدبون: منتدبةُ الرياضيات (DEMO_MATH)، وأستاذُ علم البيانات الذي يدرّس
+       شعبةً في علوم الحاسب (DEMO_CS_VISITING) — في دليل كل قسم، وفي سجلّ منتدبيه
+       للفصلين، فتُقرأ عدسةُ «المنتدبون» وتاريخُها لكل صفة. */
+    visitingRosters: demoVisiting().flatMap(({ sectionId, instructorIds }) => [1, DEMO_PREVIOUS_TERM_ID].map(termId => ({
+      id: `1:${sectionId}:${termId}`, scopeKey: `1:${sectionId}:${termId}`, collegeId: 1, sectionId, termId, instructorIds: [...instructorIds],
+      updatedAt: new Date().toISOString(),
+    }))),
+    departmentDelegates: demoVisiting().map(({ sectionId, instructorIds }) => ({
+      id: `1:${sectionId}`, scopeKey: `1:${sectionId}`, collegeId: 1, sectionId, instructorIds: [...instructorIds], updatedAt: new Date().toISOString(),
+    })),
+    departmentRooms: [], scheduleDecisionMemories: [],
     campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleApprovals: seeded.approvals,
     locationBuildings: registry.buildings, locationRooms: registry.rooms,
   };
