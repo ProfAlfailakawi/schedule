@@ -1427,6 +1427,7 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
    ========================================================================== */
 
 .topology-scene{display:grid;gap:var(--s5)}
+.topology-hub{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xl)}
 .topology-lead{
   display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;
   padding:var(--s5);
