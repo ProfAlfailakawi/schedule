@@ -298,13 +298,15 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       } as FSchedule);
     });
   }
-  /* قسم الرياضيات (DEMO_MATH): ثمانية مواعيد من الأحد إلى الأربعاء. كلُّ أستاذٍ
+  /* قسم الرياضيات (DEMO_MATH): تسعة مواعيد من الأحد إلى الخميس. كلُّ أستاذٍ
      في ساعاتٍ متباعدة، وكلُّ قاعةٍ لا تحمل أكثر من ثلاثة — فلا تعارضَ ولا مانع. */
   const mathCourse = (code: string) => courses.find(row => row.CourseCode === code && row.AdSectionId === DEMO_MATH.section.AdSectionId)!;
   const mathHalls = hallsForSection(DEMO_MATH.section.AdSectionId);
   const [d1, d2, d3] = DEMO_MATH.instructorIds, visiting = DEMO_MATH.visitingInstructorId;
   const SUN_TUE = { fsunday: true, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false };
   const MON_WED = { fsunday: false, fmonday: true, ftuesday: false, fwednesday: true, fthursday: false };
+  /* الخميس يومٌ دراسي: بلا موعدٍ فيه تفتح لوحةُ العميد على «0 محاضرات اليوم». */
+  const THU = { fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: true };
   const mathPlan: Array<[code: string, sCode: string, instructorId: number, days: typeof SUN_TUE, start: string, end: string, hall: number]> = [
     ["MATH101", "01", d1, SUN_TUE, "08:00", "09:15", 0],
     ["MATH101", "02", d2, SUN_TUE, "09:30", "10:45", 0],
@@ -314,6 +316,7 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
     ["MATH240", "01", d2, MON_WED, "11:00", "12:15", 2],
     ["MATH240", "02", visiting, SUN_TUE, "12:30", "13:45", 2],
     ["MATH101", "04", d2, MON_WED, "14:00", "15:15", 1],
+    ["MATH211", "03", d2, THU, "09:30", "10:45", 0],
   ];
   for (const [code, sCode, instructorId, days, start, end, hall] of mathPlan) {
     const course = mathCourse(code);

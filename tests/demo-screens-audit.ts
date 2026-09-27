@@ -47,8 +47,8 @@ for (const role of ["dean", "viceDean"] as const) {
   const scoped = current.filter(inScope(account.SystemUserId));
   const finalRows = scoped.filter(row => finalSourceFor(approvalOf(Number(row.AdCollegeId), Number(row.AdSectionId)) as any, false).kind === "live");
   check(finalRows.length >= 6, `«${account.label}»: جدولٌ معتمد في كليته يملأ اللوحة والميزان والعدسات (${countOf(finalRows.length, AR.appointment)})`);
-  const days = new Set(finalRows.flatMap(row => ["fsunday", "fmonday", "ftuesday", "fwednesday"].filter(day => (row as any)[day])));
-  check(days.size === 4, `«${account.label}»: والمعتمدُ يغطّي أيام الأسبوع الأربعة — فلا «0 محاضرات اليوم» في يومٍ دراسي`);
+  const days = new Set(finalRows.flatMap(row => ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].filter(day => (row as any)[day])));
+  check(days.size === 5, `«${account.label}»: والمعتمدُ يغطّي أيام الدراسة الخمسة (الأحد–الخميس) — فلا «0 محاضرات اليوم» في يومٍ دراسي`);
 }
 const math = approvalOf(1, DEMO_MATH.section.AdSectionId) as any;
 check(math?.status === "accepted" && math.signatures.length === 2 && math.rounds[0]?.acceptedAt, "قسم الرياضيات معتمدٌ بتوقيعين وجولةٍ قُبلت");
