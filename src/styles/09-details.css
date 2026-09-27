@@ -354,41 +354,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
    wrong; it simply had no clothes.
    -------------------------------------------------------------------------- */
 .share-progress{margin-top:var(--s5)}
-.share-steps{
-  margin:0;padding:0;list-style:none;
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);
-}
-.share-steps>li{min-width:0}
-.share-steps button{
-  width:100%;min-width:0;
-  display:grid;grid-template-columns:22px minmax(0,1fr);
-  grid-template-areas:"num title" "num hint";
-  align-items:center;column-gap:var(--s2);row-gap:2px;
-  padding:var(--s2) var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-md);
-  background:var(--surface-2);text-align:start;
-  transition:border-color .16s var(--ease),background .16s var(--ease);
-}
-.share-steps button:hover{border-color:var(--line-strong)}
-.share-steps button>span{
-  grid-area:num;
-  width:22px;height:22px;display:grid;place-items:center;
-  border-radius:var(--r-full);background:var(--surface-3);color:var(--muted);
-  font-size:var(--t-eyebrow);font-weight:700;font-variant-numeric:tabular-nums;
-}
-.share-steps button>span svg{width:13px;height:13px}
-.share-steps button>strong{
-  grid-area:title;color:var(--ink);font-size:var(--t-sm);font-weight:600;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.share-steps button>small{
-  grid-area:hint;color:var(--muted);font-size:var(--t-xs);line-height:1.4;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.share-steps li.active button{border-color:var(--accent);background:var(--accent-softer)}
-.share-steps li.active button>span{background:var(--accent);color:var(--accent-contrast)}
-.share-steps li.active button>strong{color:var(--accent-ink)}
-.share-steps li.complete button>span{background:var(--success-soft);color:var(--success)}
 
 .share-step{display:grid;gap:var(--s4);margin-top:var(--s5)}
 /* [hidden] must keep winning over the display:grid above. */
@@ -430,7 +395,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   background:var(--surface-2);border:1px solid var(--line);font-size:var(--t-sm);
 }
 @media (max-width:600px){
-  .share-steps{grid-template-columns:minmax(0,1fr)}
   .share-step-actions{justify-content:stretch}
   .share-step-actions .btn{flex:1}
 }
@@ -1435,8 +1399,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .share-glyph{width:42px;height:42px;border-radius:12px}
   .share-sheet header h2{font-size:22px;line-height:1.3}
   .share-progress{margin-top:14px}
-  .share-steps{gap:7px}
-  .share-steps button{padding:9px 10px}
   .share-survey-shortcut{margin-top:12px !important;padding:9px 10px !important}
 }
 

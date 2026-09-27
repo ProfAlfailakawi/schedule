@@ -5189,11 +5189,9 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .visual-minimal .page-eyebrow{display:inline-flex;align-items:center;gap:6px;padding:0 10px;min-height:28px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2)}
 .visual-minimal .transfer-tabs,
 .visual-minimal .share-kind,
-.visual-minimal .share-steps,
 .visual-minimal .share-row-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .visual-minimal .transfer-tabs button,
 .visual-minimal .share-kind button,
-.visual-minimal .share-steps li button,
 .visual-minimal .share-row-actions button,
 .visual-minimal .share-row-actions a,
 .visual-minimal .review-print-icon-button,
@@ -5201,17 +5199,13 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   display:inline-flex;align-items:center;justify-content:center;gap:0;
   min-width:52px;min-height:52px;padding:0 14px;border-radius:18px;
 }
-.visual-minimal .transfer-tabs button{font-size:0}
+.visual-minimal .transfer-tabs button{flex-direction:column;gap:4px;min-height:62px;font-size:11px;line-height:1.25;font-weight:600;white-space:nowrap}
 .visual-minimal .transfer-tabs button svg,
 .visual-minimal .share-kind button svg,
 .visual-minimal .share-row-actions button svg,
 .visual-minimal .share-row-actions a svg{width:20px;height:20px}
-.visual-minimal .share-steps{list-style:none;padding:0;margin:0}
-.visual-minimal .share-steps li button strong,
-.visual-minimal .share-steps li button small,
 .visual-minimal .share-kind button span,
 .visual-minimal .share-kind button small{display:none}
-.visual-minimal .share-steps li button{font-size:0;padding:0;min-width:44px;min-height:44px;border-radius:15px}
 .visual-minimal .share-kind button{min-height:84px;min-width:84px}
 .visual-minimal .share-kind button svg{width:28px;height:28px}
 .visual-minimal .share-choice-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px}
@@ -5313,11 +5307,6 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .share-sheet.visual-minimal>header{padding-inline-end:56px}
 .share-sheet.visual-minimal .share-glyph{inline-size:54px;block-size:54px;border-radius:18px}
 .share-sheet.visual-minimal .share-progress{display:grid;place-items:center}
-.share-sheet.visual-minimal .share-steps{position:relative;justify-content:center;gap:18px}
-.share-sheet.visual-minimal .share-steps::before{content:"";position:absolute;inset-inline:22px;inset-block-start:22px;block-size:1px;background:var(--line);z-index:0}
-.share-sheet.visual-minimal .share-steps li{position:relative;z-index:1}
-.share-sheet.visual-minimal .share-steps li button{background:var(--surface);box-shadow:0 0 0 6px var(--surface)}
-.share-sheet.visual-minimal .share-steps li.active button{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent)}
 .share-sheet.visual-minimal .share-kind{justify-content:center}
 .share-sheet.visual-minimal .share-kind button{border-radius:22px;background:var(--surface-2)}
 .share-sheet.visual-minimal .share-kind button.active{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 34%,var(--line));box-shadow:var(--ring)}
@@ -8412,3 +8401,31 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .share-sheet.visual-minimal .share-row-lead .share-status{display:inline-flex;align-items:center;gap:0;padding:1px 9px;border-radius:999px;font-size:.72rem;font-weight:700;line-height:1.7;border:0;background:color-mix(in srgb,var(--success,#1f7a55) 12%,transparent);color:var(--success,#1f7a55)}
 .share-sheet.visual-minimal .share-list article.dead .share-row-lead .share-status{background:var(--surface-2);color:var(--muted)}
 .share-sheet.visual-minimal .share-row-lead > span > i{display:none}
+
+/* ── حالُ الجدول: رأسٌ هادئ وحبوبٌ بأعدادها داخل بطاقة المرشّحات ──────────
+   One calm status area instead of stacked strips. The strips keep their own
+   classes (focus/presentation rules still find them); only the look is new. */
+.schedule-status{display:grid;gap:12px;padding-block-end:var(--s4);border-block-end:1px dashed var(--line)}
+.schedule-status .schedule-status-head{padding:0;background:transparent;border:0;box-shadow:none}
+.schedule-status .schedule-practice-strip{display:block;width:auto;padding:0;border:0;background:transparent}
+.schedule-status .schedule-practice-strip .dna-headact>button{
+  display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid var(--line);
+  border-radius:999px;background:var(--surface);color:var(--ink);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;
+}
+.schedule-status .schedule-practice-strip .dna-headact>button:hover{border-color:var(--accent);color:var(--accent-ink)}
+.schedule-status .pending-room-status .dna-headact{display:flex;align-items:center;gap:6px}
+.schedule-status .pending-room-status .dna-htitle b{font-variant-numeric:tabular-nums}
+.schedule-status-pills{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.schedule-status-pills:empty{display:none}
+.schedule-status .schedule-mini-stats{display:contents}
+.schedule-status .schedule-ops-strip{display:contents}
+.schedule-status .schedule-ops-pill{min-height:30px;padding:5px 11px;font-size:11px}
+.schedule-status .parked-review{margin:0}
+/* Presentation hides the filter card. The status it now carries stayed on the
+   board before the move, so it stays on the board now; the counters stay
+   hidden there, as they always were (.schedule-mini-stats rule in 03-shell). */
+html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:has(>.schedule-status){
+  display:flex!important;padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important;
+}
+html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:has(>.schedule-status)>:not(.schedule-status){display:none!important}
+html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0}

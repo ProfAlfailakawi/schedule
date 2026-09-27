@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useState}from"react";
-import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,UsersRound}from"lucide-react";
+import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,TrendingDown,TrendingUp,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
@@ -44,7 +44,7 @@ function Delta({current,previous,invert=false}:{current:number;previous?:number|
  // For most counts more is growth; for gaps and waste, less is the good news.
  const good=invert?change<0:change>0;
  return <span className={`delta ${good?"delta-up":"delta-down"}`} title={`عن الفصل الماضي: ${num(previous)}`}>
-  <i aria-hidden="true">{change>0?"▲":"▼"}</i>
+  <i aria-hidden="true">{change>0?<TrendingUp/>:<TrendingDown/>}</i>
   {num(Math.abs(change))}
  </span>;
 }

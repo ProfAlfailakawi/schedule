@@ -29,8 +29,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
-  MessageSquare, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
+  MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
+import { DnaCount } from "./dna";
+import { RequestStatusStepper, RequestTimelineToggle, RequestTotalsFunnel } from "./dna/requestDna";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import {
@@ -329,6 +331,20 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
         })()}
         </div>
       </header>
+
+      {/* مسارُ الطلب بنظرة، وسجلُّ أحداثه مطويٌّ خلف أيقونة. */}
+      <div className="request-card-relay">
+        <RequestStatusStepper row={row} />
+        <RequestTimelineToggle
+          timeline={row.timeline}
+          itemLabel={index => row.items?.[index]?.after?.courseName || row.items?.[index]?.before?.courseName || undefined}
+          detailText={event => !event.detail ? undefined
+            : event.kind === "submitted" ? countOf(Number(event.detail) || 0, AR.change)
+            : event.kind === "item-rejected" ? (REJECT_REASONS.find(([code]) => code === event.detail)?.[1] || event.detail)
+            : event.kind === "alternative-chosen" ? `البديل ${event.detail}`
+            : event.detail}
+        />
+      </div>
 
       {/* ── جدولٌ لا كومةُ بطاقات ─────────────────────────────────────────
           كلُّ بندٍ صفٌّ واحد بأعمدةٍ ثابتة: ما هو، وأيُّ مقرّر، وكان، والمطلوب،
@@ -1064,9 +1080,12 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         <>
           {/* ثلاثةُ أرقامٍ لا أكثر. من أراد التفصيل فتح ما تحته. */}
           <Surface className="request-totals">
-            <div><b>{totals?.answered ?? 0}</b><span>أجاب من {totals?.sent ?? 0}</span></div>
-            {totals?.unchanged ? <div><b>{totals.unchanged}</b><span>بلا تغيير</span></div> : null}
-            {totals?.changed ? <div><b>{totals.changed}</b><span>طلبوا تغييراً</span></div> : null}
+            <RequestTotalsFunnel totals={totals}>
+              <div className="dna-row request-funnel-pills">
+                {totals?.unchanged ? <div><DnaCount icon={<Check aria-hidden="true" />} value={<>{totals.unchanged} <span>بلا تغيير</span></>} label="بلا تغيير" /></div> : null}
+                {totals?.changed ? <div><DnaCount icon={<Replace aria-hidden="true" />} value={<>{totals.changed} <span>طلبوا تغييراً</span></>} label="طلبوا تغييراً" /></div> : null}
+              </div>
+            </RequestTotalsFunnel>
           </Surface>
 
           {silent.length ? (

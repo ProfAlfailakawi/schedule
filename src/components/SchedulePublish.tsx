@@ -1,3 +1,4 @@
+import { DnaStepper } from "./dna";
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
@@ -383,12 +384,15 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
             {error ? <p className="share-error" role="alert">{error}</p> : null}
 
             <nav className="share-progress" aria-label="خطوات نشر الجدول">
-              <ol className="share-steps">
-                {PUBLISH_STEPS.map((item, index) => (
-                  <li
-                    key={item.id}
-                    className={`${step === item.id ? "active" : ""} ${index < currentStep ? "complete" : ""}`.trim()}
-                  >
+              <DnaStepper
+                size="sm"
+                className="publish-steps"
+                ariaLabel="خطوات نشر الجدول"
+                steps={PUBLISH_STEPS.map((item, index) => ({
+                  key: item.id,
+                  state: step === item.id ? "current" as const : index < currentStep ? "done" as const : "pending" as const,
+                  title: `${item.label} — ${item.hint}`,
+                  label: (
                     <button
                       type="button"
                       onClick={() => setStep(item.id)}
@@ -396,13 +400,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                       aria-current={step === item.id ? "step" : undefined}
                       aria-controls={`publish-step-${item.id}`} title={item.label}
                     >
-                      <span aria-hidden="true">{index < currentStep ? <Check /> : index + 1}</span>
                       <strong>{item.label}</strong>
-                      <small>{item.hint}</small>
+                      <small className="dna-sr">{item.hint}</small>
                     </button>
-                  </li>
-                ))}
-              </ol>
+                  ),
+                }))}
+              />
             </nav>
 
             {/* Two kinds of link, one sheet: the whole department's timetable,

@@ -1,0 +1,83 @@
+/* ==========================================================================
+   LOGIN — LIGHT
+   The door wears the same paper as the rooms behind it: cream canvas, one
+   white card, hairline lines, jade accent. Colours only — layout, logic and
+   the phone geometry in 07-responsive stay untouched. The dark login is still
+   there for anyone who chose the dark theme (:root[data-theme="dark"]).
+   ========================================================================== */
+:root:not([data-theme="dark"]) .apex-login{
+  background:var(--canvas);
+  color:var(--ink);
+}
+:root:not([data-theme="dark"]) .apex-login::before{
+  background:radial-gradient(ellipse 55% 45% at 20% 16%, color-mix(in srgb,var(--accent) 7%,transparent), transparent 70%);
+  filter:blur(24px);
+}
+:root:not([data-theme="dark"]) .apex-login::after{
+  background-image:
+    linear-gradient(to left, color-mix(in srgb,var(--ink) 3.5%,transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb,var(--ink) 3.5%,transparent) 1px, transparent 1px);
+}
+:root:not([data-theme="dark"]) .apex-login-mark{filter:drop-shadow(0 10px 20px rgb(17 25 22 / .16))}
+:root:not([data-theme="dark"]) .apex-login-kicker{color:var(--accent)}
+:root:not([data-theme="dark"]) .apex-login-kicker i{background:var(--accent)}
+:root:not([data-theme="dark"]) .apex-login-story h1{color:var(--ink)}
+:root:not([data-theme="dark"]) .apex-login-story h1 em{color:var(--accent)}
+:root:not([data-theme="dark"]) .apex-login-story>p{color:var(--muted)}
+:root:not([data-theme="dark"]) .apex-login-principles>span{border-top:1px dashed var(--line-strong)}
+/* Phones turn the principles into chips (07-responsive, ≤768px): a hairline
+   pill on white instead of the dark outline drawn for the night login. */
+@media screen and (max-width:768px){
+  :root:not([data-theme="dark"]) .apex-login-principles>span{
+    border:1px solid var(--line);background:var(--surface);
+  }
+}
+:root:not([data-theme="dark"]) .apex-login-principles svg{color:var(--accent);stroke-width:1.6}
+:root:not([data-theme="dark"]) .apex-login-principles b{color:var(--ink)}
+:root:not([data-theme="dark"]) .apex-login-principles small{color:var(--muted)}
+
+:root:not([data-theme="dark"]) .apex-login-access{
+  border:1px solid var(--line);
+  background:var(--surface);
+  box-shadow:var(--shadow-md);
+}
+:root:not([data-theme="dark"]) .apex-access-head>span{color:var(--accent)}
+:root:not([data-theme="dark"]) .apex-access-head strong{color:var(--ink)}
+:root:not([data-theme="dark"]) .apex-access-head p{color:var(--muted)}
+:root:not([data-theme="dark"]) .apex-login-form .field>label{color:var(--muted)}
+:root:not([data-theme="dark"]) .apex-login-form .field input{
+  background:var(--surface-2);border-color:var(--line);color:var(--ink);
+}
+:root:not([data-theme="dark"]) .apex-login-form .field input:hover{border-color:var(--line-strong)}
+:root:not([data-theme="dark"]) .apex-login-form .field input:focus{
+  background:var(--surface);border-color:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);
+}
+:root:not([data-theme="dark"]) .apex-login-form .btn-primary{color:var(--accent-contrast)}
+:root:not([data-theme="dark"]) .apex-login-access footer{border-top:1px dashed var(--line-strong);color:var(--muted)}
+:root:not([data-theme="dark"]) .apex-login-signature small{color:var(--muted-2)}
+
+/* The three quiet doors: الرحلة · تجربة النظام · install. */
+:root:not([data-theme="dark"]) .apex-login-identity-trigger,
+:root:not([data-theme="dark"]) .demo-entry-link{
+  border-color:var(--line);background:var(--surface-2);color:var(--ink-2);
+}
+:root:not([data-theme="dark"]) .apex-login-identity-trigger:hover,
+:root:not([data-theme="dark"]) .demo-entry-link:hover:not(:disabled){
+  border-color:color-mix(in srgb,var(--accent) 35%,var(--line));background:var(--accent-softer);color:var(--accent-ink);
+}
+:root:not([data-theme="dark"]) .apex-login-identity-trigger svg{color:var(--accent)}
+:root:not([data-theme="dark"]) .install-login .install-trigger{background:transparent;border-color:transparent;color:var(--muted)}
+:root:not([data-theme="dark"]) .install-login .install-trigger:hover,
+:root:not([data-theme="dark"]) .install-login .install-trigger:focus-visible,
+:root:not([data-theme="dark"]) .install-login .install-trigger.active{background:var(--accent-softer);color:var(--accent-ink)}
+:root:not([data-theme="dark"]) .install-login .install-trigger.discoverable::after{
+  box-shadow:0 0 0 2px var(--surface),0 0 0 3px color-mix(in srgb,var(--brass) 15%,transparent);
+}
+:root:not([data-theme="dark"]) .install-login .install-pop{background:var(--surface);border-color:var(--line);color:var(--ink)}
+:root:not([data-theme="dark"]) .install-login .install-pop header strong{color:var(--ink)}
+:root:not([data-theme="dark"]) .install-login .install-pop p,
+:root:not([data-theme="dark"]) .install-login .install-steps li{color:var(--muted)}
+:root:not([data-theme="dark"]) .install-login .install-pop header button{color:var(--muted)}
+:root:not([data-theme="dark"]) .install-login .install-step-icon{background:var(--accent-soft);color:var(--accent)}
+:root:not([data-theme="dark"]) .install-login .install-steps-grid li{background:var(--surface-2);border-color:var(--line)}

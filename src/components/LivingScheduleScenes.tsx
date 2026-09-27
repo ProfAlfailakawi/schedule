@@ -3,16 +3,21 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  BookOpen,
   Building2,
   CheckCircle2,
   ChevronLeft,
+  Clock3,
+  DoorOpen,
   GitBranch,
   History,
+  Network,
   UsersRound,
   Zap,
 } from "lucide-react";
 
 import { scheduleClockForDisplay } from "../utils/scheduleTime";import { Badge } from "./ui";
+import { DnaHubMap, type DnaTone } from "./dna";
 import type { AdCourse, FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
 
@@ -178,7 +183,7 @@ export function PulseScene({
  * thing it is, what it is called, how many collisions run through it, and a bar
  * that makes the worst one obvious without reading a single figure.
  */
-export function TopologyScene({ topology }: { topology: any }) {
+export function TopologyScene({ topology, context }: { topology: any; context?: { sectionName?: string; termName?: string } }) {
   if (!topology) {
     return (
       <div className="topology-empty">
@@ -191,11 +196,14 @@ export function TopologyScene({ topology }: { topology: any }) {
 
   const KIND: Record<string, { label: string; icon: React.ReactNode }> = {
     instructor: { label: "أستاذ", icon: <UsersRound /> },
-    course: { label: "مقرر", icon: <History /> },
+    course: { label: "مقرر", icon: <BookOpen /> },
     section: { label: "شعبة", icon: <GitBranch /> },
-    room: { label: "قاعة", icon: <Building2 /> },
-    time: { label: "وقت", icon: <Activity /> },
+    room: { label: "قاعة", icon: <DoorOpen /> },
+    time: { label: "وقت", icon: <Clock3 /> },
   };
+
+  /* Tile tones follow the entity tints of 09-details (kind colour coding). */
+  const HUB_TONE: Record<string, DnaTone> = { instructor: "sand", course: "info", section: "amber", room: "mint", time: "slate" };
 
   const hotspots = (topology.hotspots || []).filter((h: any) => Number(h.issues) > 0);
   const worst = Math.max(1, ...hotspots.map((h: any) => Number(h.issues) || 0));
@@ -217,6 +225,29 @@ export function TopologyScene({ topology }: { topology: any }) {
           {conflicts ? `${countOf(conflicts, AR.position)} للتحقق` : "بلا موانع"}
         </Badge>
       </header>
+
+      {(topology.hotspots || []).length ? (
+        <DnaHubMap
+          className="topology-hub"
+          animate={false}
+          ariaLabel={`خريطة الضغط${context?.sectionName ? ` — ${context.sectionName}` : ""}${context?.termName ? ` · ${context.termName}` : ""}`}
+          center={{ icon: <Network aria-hidden="true" />, label: context?.sectionName || context?.termName || undefined }}
+          count={conflicts ? { value: conflicts.toLocaleString("ar-KW-u-nu-latn"), icon: <AlertTriangle aria-hidden="true" />, label: "مواضع للتحقق" } : null}
+          nodes={(topology.hotspots || []).slice(0, 8).map((spot: any) => {
+            const kind = KIND[spot.type] || { label: spot.type, icon: <Activity /> };
+            const issues = Number(spot.issues) || 0;
+            return {
+              key: String(spot.id),
+              icon: kind.icon,
+              tone: HUB_TONE[spot.type] || "slate",
+              label: spot.label,
+              value: issues ? issues.toLocaleString("ar-KW-u-nu-latn") : undefined,
+              state: issues > 0 ? "attention" as const : "ok" as const,
+              title: `${kind.label} · ${spot.label}${issues ? ` · ${countOf(issues, AR.signal)}` : ""}`,
+            };
+          })}
+        />
+      ) : null}
 
       {hotspots.length ? (
         <ol className="topology-ranking">

@@ -143,16 +143,14 @@
    العدد داخل الدائرة، لا بجانبها: الموظّف يعرف أين المشكلة وكم هي قبل أن
    يفتح القسم أصلاً — وهذا ما يوفّر عليه فتح ما لا يحتاج فتحه.            */
 .changes-signals{display:flex;align-items:center;gap:5px;flex:none}
-.changes-signals span{
-  inline-size:23px;block-size:23px;border-radius:var(--r-full);
-  display:grid;place-items:center;
-  font-size:.74rem;font-weight:700;font-variant-numeric:tabular-nums;
-  border:1px solid transparent;
-}
-.changes-signals [data-kind="block"]{background:var(--danger-soft);color:var(--danger);border-color:color-mix(in srgb,var(--danger) 30%,transparent)}
-.changes-signals [data-kind="note"]{background:var(--warning-soft);color:var(--warning);border-color:color-mix(in srgb,var(--warning) 32%,transparent)}
-.changes-signals [data-kind="answered"]{background:var(--surface-3);color:var(--muted);border-color:var(--line-strong)}
-.changes-signals [data-kind="pending"]{background:var(--info-soft);color:var(--info);border-color:color-mix(in srgb,var(--info) 28%,transparent)}
+/* Pills with an icon and a number: the icon names the kind, so colour is a
+   hint, not the only carrier. The tone stays on the icon only. */
+.changes-signals .changes-signal{font-size:.76rem}
+.changes-signals .changes-signal--block svg{color:var(--danger)}
+.changes-signals .changes-signal--note svg{color:var(--warning)}
+.changes-signals .changes-signal--answered svg{color:var(--muted)}
+.changes-signals .changes-signal--pending svg{color:var(--info)}
+.changes-inbox-state .dna-steps{flex:none}
 
 .changes-extend{
   grid-column:3;grid-row:1 / -1;padding-inline:14px;border:0;border-inline-start:1px solid var(--line);
@@ -234,15 +232,18 @@
 }
 .changes-rounds>button:hover{border-color:var(--line-strong);color:var(--ink)}
 .changes-rounds>button svg{inline-size:15px;block-size:15px}
-.changes-rounds ol{
-  list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;
-  border-inline-start:2px solid var(--line);padding-inline-start:16px;
+.changes-rounds>ol{
+  list-style:none;margin:10px 0 0;padding:0;display:grid;gap:10px;
 }
-.changes-rounds li{display:grid;gap:3px;font-size:.85rem;color:var(--muted)}
-.changes-rounds li strong{color:var(--ink);font-size:.9rem}
-.changes-rounds li[data-current] strong{color:var(--accent-ink)}
-.changes-rounds li button{
-  justify-self:start;margin-block-start:3px;padding:0;border:0;background:transparent;
+.changes-rounds>ol>li{
+  display:grid;gap:8px;padding:14px 16px;font-size:.85rem;color:var(--muted);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+}
+.changes-rounds>ol>li>strong{color:var(--ink);font-size:.9rem}
+.changes-rounds>ol>li[data-current]{border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+.changes-rounds>ol>li[data-current]>strong{color:var(--accent-ink)}
+.changes-rounds>ol>li>button{
+  justify-self:start;padding:0;border:0;background:transparent;
   color:var(--accent);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;text-decoration:underline;
   text-underline-offset:3px;
 }
@@ -434,7 +435,7 @@
   .changes-back,.changes-note-targets,.changes-note-actions,
   .changes-decision,.changes-extend,.changes-filter,.changes-extend-sheet{display:none !important}
   .changes-entry{break-inside:avoid;border-color:#999;box-shadow:none}
-  .changes-rounds ol{display:grid !important}
+  .changes-rounds>ol{display:grid !important}
 }
 
 /* ── اختيار الفصل وموعده ────────────────────────────────────────────────
@@ -774,6 +775,7 @@
    إضافة العميد كلها: عمودٌ واحد في جدولٍ يقرؤه أصلاً. لا لوحةَ قيادةٍ
    ثانية تقول الشيء نفسه وتفترق عنه عند أول تعديل.                       */
 .balance-approval{white-space:nowrap}
+.balance-relay{display:flex;align-items:center;gap:8px;margin-block-end:6px}
 .balance-approval small{
   display:block;margin-block-start:3px;
   color:var(--muted);font-size:.74rem;
@@ -879,13 +881,18 @@
    على فعلٍ مختلف — أخضرُ يُثبَّت بضغطة، وأصفرُ يُقرأ، وأحمرُ يُقرَّر فيه.
    ========================================================================== */
 
-.request-totals{
-  display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s3);
-  padding:var(--s4) var(--s5);text-align:center;
+.request-totals{padding:var(--s4) var(--s5)}
+.request-funnel{display:grid;gap:var(--s3)}
+.request-funnel-pills{justify-content:center}
+.request-funnel-pills span{color:var(--muted);font-weight:500}
+
+/* مسارُ الطلب وسجلُّه: سطرٌ رفيع تحت رأس البطاقة. */
+.request-card-relay{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--s2) var(--s3);
+  padding:var(--s2) var(--s4);border-bottom:1px dashed var(--line);
 }
-.request-totals>div{display:flex;flex-direction:column;gap:2px}
-.request-totals b{font-size:var(--t-h2);font-weight:700;color:var(--ink);line-height:1.1}
-.request-totals span{font-size:var(--t-xs);color:var(--muted)}
+.request-trail{display:contents}
+.request-trail-line{flex-basis:100%;padding-block:var(--s2)}
 
 /* من لم يفتح رابطه: سطرٌ واحد، وكلُّ اسمٍ فيه زرُّ تذكيرٍ يفتح واتساب.
    الإنسانُ يضغط إرسال — لا شيء هنا يراسل أحداً من تلقائه. */
@@ -986,7 +993,6 @@
 @media (max-width:640px){
   .request-card-head{align-items:flex-start;flex-direction:column}
   .request-diff>div{display:grid;grid-template-columns:minmax(54px,auto) minmax(0,1fr)}
-  .request-totals{grid-template-columns:1fr;text-align:start}
   .request-actions{flex-direction:column}
   .request-actions .btn{width:100%}
 }
