@@ -5,7 +5,7 @@
  * driven by props the host already has; none of them fetches or mutates data.
  */
 import * as React from 'react';
-import './dna.css';
+// dna.css is imported from src/index.css: the repo's node-run audits import components with tsx, which cannot load .css.
 
 export type DnaTone =
   | 'accent'
