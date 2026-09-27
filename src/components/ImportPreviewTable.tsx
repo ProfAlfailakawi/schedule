@@ -202,8 +202,11 @@ export default function ImportPreviewTable({
     const proof = row.importEvidence?.course;
     return proof?.confidence === "REVIEW_REQUIRED" || proof?.source === "MANUAL";
   };
-  const departmentCourseOptions = useMemo(() => [...courses]
-    .sort((a, b) => String(a.CourseCode || "").localeCompare(String(b.CourseCode || ""), "en", { numeric: true })), [courses]);
+  /* مقررات القسم وحدها — شاشة المدير تمرّر قائمة النظام كلها، والرقم «251» يتكرر
+     بين الأقسام؛ الحفظ يرفض مقرراً من قسمٍ آخر، فالقائمة لا تعرضه أصلاً. */
+  const departmentCourseOptions = useMemo(() => courses
+    .filter(course => !sectionId || Number(course.AdSectionId) === Number(sectionId))
+    .sort((a, b) => String(a.CourseCode || "").localeCompare(String(b.CourseCode || ""), "en", { numeric: true })), [courses, sectionId]);
   const unlinkedReason = (row: ImportRow) => String(row.importEvidence?.instructor?.reason || "").trim();
 
   /** ثلاثة وسوم لثلاثة علاجات: «غير مسجّل» علاجه تسجيل الشخص، و«مسجّل أكثر

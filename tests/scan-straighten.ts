@@ -90,6 +90,29 @@ await check("a straight table is never touched", () => {
   assert.equal(straightenTable(lib, table(1.5), { cols: COLS, bands: BANDS }), null, `under ${STRAIGHTEN_MIN_SHIFT} px is not a slant`);
 });
 
+await check("one disturbed rule on a straight table does not make the page slanted", () => {
+  /* sampleB_200lowcon (2026-09-27): the worst rule 5.1 px, the typical rule 0.2 px — warping the page around that one
+     trace broke its reference column. A stroke drawn beside one rule in the lower rows reproduces it. */
+  const canvas = table(0), g = canvas.getContext("2d");
+  /* The rule itself is erased from the middle down and redrawn peeling away from where it was — 0 px at band 8,
+     7 px at the last band — so one trace drifts while every other rule stays put. */
+  const x = COLS[6], from = BANDS[8].top, to = BANDS[23].bottom;
+  g.fillStyle = "#fff"; g.fillRect(x - 3, from + 2, 7, to - from);
+  g.strokeStyle = "#111"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x, from); g.lineTo(x + 7, to); g.stroke();
+  assert.equal(straightenTable(lib, canvas, { cols: COLS, bands: BANDS }), null);
+});
+
+await check("a double border that collapses onto one stroke keeps the real rule where it is", () => {
+  /* Independent review: the header saw a second rule 10 px left of the table's first rule; both trace onto the real
+     stroke. The rule that JUMPED is the stray one — the real rule must not be pushed 10 px into its cell. */
+  const cols = [COLS[0] - 10, ...COLS];
+  const out = straightenTable(lib, table(18), { cols, bands: BANDS });
+  assert.ok(out, "the slanted table is still straightened");
+  assert.ok(Math.abs(out!.geometry.cols[1] - COLS[0]) <= 2, `the real first rule stays at ${COLS[0]} (got ${out!.geometry.cols[1]})`);
+  assert.ok(out!.geometry.cols[0] < out!.geometry.cols[1], "and the stray rule stays before it");
+});
+
 await check("a page without traceable rules keeps its original image", () => {
   const blank = lib.createCanvas(W, H), g = blank.getContext("2d");
   g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);

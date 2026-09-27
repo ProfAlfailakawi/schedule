@@ -15,7 +15,7 @@ import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMa
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
 import { scanLeftCellUnread, pagesWithUnreadCells } from "../src/utils/importPageReview.ts";
-import { pairRowsByLine, fillLineCells, scanPageTone, greyPhotoVerdict, GREY_PHOTO_REFUSAL, authorityCourseFromFamilyAndName, authorityCourseSiblingByName, fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
+import { pairRowsByLine, fillLineCells, pageNumberShape, scanPageTone, greyPhotoVerdict, GREY_PHOTO_REFUSAL, authorityCourseFromFamilyAndName, authorityCourseSiblingByName, fillScheduleCellsFrom, scanPageVerdict, scanRefusalMessage, clearImplausibleScanDays, unresolvedDaysReason, restoredDaysReason, rejudgeEmptyPage, type OcrPageDiagnostic } from "../src/utils/documentOcr.ts";
 import { pagesAwaitingReview, pageReviewIssues, pageReviewWaitLine, unconfirmedReviewPages } from "../src/utils/importPageReview.ts";
 
 const passed:string[]=[];
@@ -324,24 +324,48 @@ check("one printed line read by both lanes is one row: paired by its height on t
     {...blank,code:"0101153",reference:"1895",scode:"502",days:"54321",start:"11:00",end:"11:50",building:"012B07",y:353.6},
     {...blank,code:"0101102",reference:"1894",scode:"501",y:194.6},
   ] as any[];
-  const pairs=pairRowsByLine(word,grid);
+  const pairs=pairRowsByLine(word,grid,{referenceLength:5,sectionLength:3});
   assert.equal(pairs.get(1),grid[0],"the same line pairs");
   assert.equal(pairs.get(2),grid[1],"1.6 of a 12-point pitch is the same line");
   assert.equal(pairs.has(0),false,"a line the other lane did not read stays alone");
   assert.equal([...pairs.values()].includes(grid[2]),false,"a row 50 points away is another line");
-  for(const [at,other] of pairs)fillLineCells(word[at],other,"0101");
+  const shape={referenceLength:5,sectionLength:3};
+  for(const [at,other] of pairs)fillLineCells(word[at],other,"0101",shape);
   assert.equal(word[1].scode,"510","the missing section comes from the other reading");
   assert.equal(word[1].building,"012B09","and the missing building");
   assert.equal(word[1].reference,"89541","a cell already read is never overwritten");
   assert.equal(word[2].code,"0101150","a proven course key is kept even when the other lane read another key");
-  assert.equal(word[2].start,"11:00");assert.equal(word[2].days,"54321");assert.equal(word[2].hall,"F12");
+  assert.equal(word[2].start,"11:00");assert.equal(word[2].hall,"F12");
+  /* Days never travel between the two readings by line: a wrong day is worse than a blank one. */
+  assert.equal(word[2].days,"","days stay with their own reading");
   /* An unproven key or section gives way to a proven one. */
   const weak={...blank,code:"010115",scode:"50",y:100} as any;
-  fillLineCells(weak,{...blank,code:"0101151",scode:"503",y:100.5} as any,"0101");
+  fillLineCells(weak,{...blank,code:"0101151",scode:"503",y:100.5} as any,"0101",shape);
   assert.equal(weak.code,"0101151");assert.equal(weak.scode,"503","«50» is «503» cut at its cell edge");
   const cut={...blank,code:"0101151",reference:"1895",scode:"502",y:100} as any;
-  fillLineCells(cut,{...blank,code:"0101151",reference:"18959",scode:"50",y:100.4} as any,"0101");
+  fillLineCells(cut,{...blank,code:"0101151",reference:"18959",scode:"50",y:100.4} as any,"0101",shape);
   assert.equal(cut.reference,"18959","a reference cut at its edge is completed");assert.equal(cut.scode,"502","a full section is never replaced by its own truncation");
+  /* Independent review: a longer misread (a cell border read as a trailing «1») is not a completion. */
+  const sound={...blank,code:"0101150",reference:"18956",scode:"501",y:100} as any;
+  fillLineCells(sound,{...blank,code:"0101150",reference:"189561",scode:"5011",y:100.3} as any,"0101",shape);
+  assert.equal(sound.reference,"18956");assert.equal(sound.scode,"501");
+  /* Without the page's own lengths, nothing is «completed». */
+  const unknown={...blank,code:"0101151",reference:"1895",scode:"50",y:100} as any;
+  fillLineCells(unknown,{...blank,code:"0101151",reference:"18959",scode:"503",y:100.2} as any,"0101");
+  assert.equal(unknown.reference,"1895");assert.equal(unknown.scode,"50");
+  assert.deepEqual(pageNumberShape([{reference:"18945",scode:"501"},{reference:"18946",scode:"502"},{reference:"1894",scode:"50"},{reference:"18948",scode:"504"}]),{referenceLength:5,sectionLength:3});
+  /* A page whose two readings sit 3 points apart still pairs line by line (the offset is measured first)… */
+  const shifted=pairRowsByLine(word,grid.map(row=>({...row,y:row.y+3})) as any[],{referenceLength:5,sectionLength:3});
+  assert.equal(shifted.get(1)?.scode,"510");assert.equal(shifted.get(2)?.code,"0101153");
+  /* …and readings that do not line up for most rows pair nothing — the identity rules decide as before. */
+  const scattered=pairRowsByLine([{...blank,y:100},{...blank,y:140},{...blank,y:180},{...blank,y:220}] as any[],
+    [{...blank,y:118},{...blank,y:163},{...blank,y:201},{...blank,y:236}] as any[]);
+  assert.equal(scattered.size,0);
+  /* A whole line off (a slanted page whose two readings drift a row apart): complete, different references and
+     sections are two lines — no row borrows the next line's cells. */
+  const lines=[0,1,2,3,4].map(i=>({...blank,code:"0101151",reference:String(18958+i),scode:String(501+i),y:100+i*12.3,start:"10:00"})) as any[];
+  const nextLine=lines.map((row,i)=>({...row,reference:String(18959+i),scode:String(502+i),y:row.y+0.8,start:""}));
+  assert.equal(pairRowsByLine(nextLine,lines,{referenceLength:5,sectionLength:3}).size,0,"no pair across two different complete references");
   /* One-to-one: two rows cannot claim the same line of the other lane. */
   const twin=pairRowsByLine([{...blank,y:300},{...blank,y:301.5}] as any[],[{...blank,y:300.8}] as any[]);
   assert.equal(twin.size,1);

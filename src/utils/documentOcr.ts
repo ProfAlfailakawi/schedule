@@ -1609,8 +1609,8 @@ function robustRuleCurve(points:{t:number;v:number}[],minimum:number):RuleCurve|
   /* Never extrapolate a curve: beyond its evidence it holds its last value. */
   return{at:(t:number)=>fit.f(Math.max(fit.tMin,Math.min(fit.tMax,t))),from:fit.tMin,to:fit.tMax};
 }
-export const STRAIGHTEN_MIN_SHIFT=2.5;
-type TableTrace={shift:number;typical:number;pitch:number;vTargets:number[];hTargets:number[];dxRule:Float32Array[];dyRule:Float32Array[]};
+export const STRAIGHTEN_MIN_SHIFT=2.5,STRAIGHTEN_MIN_TYPICAL=2;
+type TableTrace={shift:number;typicalV:number;typicalH:number;pitch:number;vTargets:number[];hTargets:number[];dxRule:Float32Array[];dyRule:Float32Array[]};
 /** Trace every rule of the table band by band and fit it (robustRuleCurve).
  *  `shift` is the largest displacement of any rule from its target. */
 function traceTable(data:Uint8ClampedArray,W:number,H:number,cols:number[],bands:{top:number;bottom:number}[]):TableTrace|null{
@@ -1693,9 +1693,14 @@ function traceTable(data:Uint8ClampedArray,W:number,H:number,cols:number[],bands
      own spacing from its neighbour and takes its neighbours' displacement, so
      the page keeps every column it had instead of being refused whole. */
   for(let index=1;index<cols.length;index++){
-    if(!verticalCurves[index]||vTargets[index]-vTargets[index-1]>=Math.max(2,(cols[index]-cols[index-1])*0.5))continue;
-    verticalCurves[index]=null;
-    vTargets[index]=cols[index]+(vTargets[index-1]-cols[index-1]);
+    if(!verticalCurves[index]||!verticalCurves[index-1]||vTargets[index]-vTargets[index-1]>=Math.max(2,(cols[index]-cols[index-1])*0.5))continue;
+    /* The impostor is the rule that moved further from where the header put it:
+       with a broken left stroke at 100 and the real rule at 110, both trace to
+       110 — 100 is the one that jumped, and it keeps the real rule's (zero) drift. */
+    const impostor=Math.abs(vTargets[index-1]-cols[index-1])>Math.abs(vTargets[index]-cols[index])?index-1:index;
+    const real=impostor===index?index-1:index;
+    verticalCurves[impostor]=null;
+    vTargets[impostor]=cols[impostor]+(vTargets[real]-cols[real]);
   }
   const hTargets=ruleYs.map((y,index)=>horizontalCurves[index]?horizontalCurves[index]!.at(tableMid):y);
   const dxRule:Float32Array[]=cols.map(()=>new Float32Array(H));
@@ -1721,15 +1726,15 @@ function traceTable(data:Uint8ClampedArray,W:number,H:number,cols:number[],bands
   };
   fillFromNeighbours(verticalCurves,dxRule,H);
   fillFromNeighbours(horizontalCurves,dyRule,W);
-  /* The typical rule's displacement (median over every traced rule): one rule
-     whose trace flips between the two strokes of a thick border cannot speak
-     for the whole table. */
-  const perRule:number[]=[];
-  verticalCurves.forEach((curve,index)=>{if(!curve)return;let most=0;for(const band of bands){const d=Math.abs(curve.at((band.top+band.bottom)/2)-vTargets[index]);if(d>most)most=d;}perRule.push(most);});
-  horizontalCurves.forEach((curve,index)=>{if(!curve)return;let most=0;for(const span of spans){const d=Math.abs(curve.at((span.left+span.right)/2)-hTargets[index]);if(d>most)most=d;}perRule.push(most);});
-  perRule.sort((a,b)=>a-b);
-  const typical=perRule.length?perRule[Math.floor(perRule.length/2)]:0;
-  return{shift,typical,pitch,vTargets,hTargets,dxRule,dyRule};
+  /* The typical rule's displacement, per direction (median over the traced
+     rules of that direction): one rule whose trace flips between the two
+     strokes of a thick border cannot speak for the table, and a page whose
+     columns drift while its rows stay level (or the reverse) is still slanted —
+     the more numerous row rules must not outvote the columns. */
+  const median=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return sorted.length?sorted[Math.floor(sorted.length/2)]:0;};
+  const typicalV=median(verticalCurves.flatMap((curve,index)=>{if(!curve)return[];let most=0;for(const band of bands){const d=Math.abs(curve.at((band.top+band.bottom)/2)-vTargets[index]);if(d>most)most=d;}return[most];}));
+  const typicalH=median(horizontalCurves.flatMap((curve,index)=>{if(!curve)return[];let most=0;for(const span of spans){const d=Math.abs(curve.at((span.left+span.right)/2)-hTargets[index]);if(d>most)most=d;}return[most];}));
+  return{shift,typicalV,typicalH,pitch,vTargets,hTargets,dxRule,dyRule};
 }
 /**
  * Straighten a slanted or perspective table page (see the note above). Returns
@@ -1749,7 +1754,10 @@ export function straightenTable(lib:any,surface:any,geometry:{cols:number[];band
   const trace=traceTable(src,W,H,cols,bands);
   if(!trace)return null;
   const {shift,pitch,vTargets,hTargets,dxRule,dyRule}=trace;
-  if(shift<STRAIGHTEN_MIN_SHIFT)return null;
+  /* A slanted page moves its TYPICAL rule; one noisy trace on a straight page
+     does not make it slanted (sampleB_200lowcon: worst rule 5.1 px, typical
+     0.2 px — warping it around that one rule broke its reference column). */
+  if(shift<STRAIGHTEN_MIN_SHIFT||Math.max(trace.typicalV,trace.typicalH)<STRAIGHTEN_MIN_TYPICAL)return null;
   /* A trace that wanders by most of a row pitch is not a slanted page but a
      wrong line followed: keep the original. */
   if(shift>pitch*0.8)return null;
@@ -1797,12 +1805,12 @@ export function straightenTable(lib:any,surface:any,geometry:{cols:number[];band
   const straightBands=bands.map((_,index)=>({top:straightRules[index],bottom:straightRules[index+1]}));
   if(straightCols.some((x,index)=>index>0&&x<=straightCols[index-1])||straightBands.some(band=>band.bottom-band.top<8))return null;
   /* Straightening must measurably straighten: traced again, the typical rule
-     must keep under half its drift (3.pdf p1: 8.5 → 0.3 px), or the original
-     stays. The typical rule, not the worst: a thick bottom border whose trace
+     of each direction must keep under half its drift (3.pdf p1: 8.5 → 0.3 px),
+     or the original stays. The typical rule, not the worst: a thick bottom border whose trace
      flips between its two strokes stays «off» by 9–14 px on a table whose
      every column rule is back within 1.5 px. */
   const again=traceTable(dst,W,H,straightCols,straightBands);
-  if(again&&again.typical>Math.max(1.5,trace.typical*0.5))return null;
+  if(!again||again.typicalV>Math.max(1.5,trace.typicalV*0.5)||again.typicalH>Math.max(1.5,trace.typicalH*0.5))return null;
   octx.putImageData(target,0,0);
   return{surface:out,shift:Math.round(shift*10)/10,geometry:{cols:straightCols,bands:straightBands}};
 }
@@ -2776,19 +2784,46 @@ const soundScanRows=(rows:GridRow[]|null|undefined)=>(rows||[]).filter(row=>/^\d
    الآن موضع صفّه على الورقة بمقياس 842، فالسطر الواحد يُعرف بموضعه: يُقرن كل
    صفٍّ بأقرب صفٍّ في الطريق الآخر على السطر نفسه (أقل من ثلث المسافة بين
    سطرين)، مرةً واحدة لكلٍّ منهما. */
-export function pairRowsByLine(base:GridRow[],donor:GridRow[]):Map<number,GridRow>{
+export function pairRowsByLine(base:GridRow[],donor:GridRow[],shape:{referenceLength?:number;sectionLength?:number}={}):Map<number,GridRow>{
   const pairs=new Map<number,GridRow>();
   const ys=base.map(row=>row.y).filter((y):y is number=>Number.isFinite(y)).sort((a,b)=>a-b);
   const gaps=ys.slice(1).map((y,i)=>y-ys[i]).filter(gap=>gap>2).sort((a,b)=>a-b);
   const pitch=gaps[Math.floor(gaps.length/2)]||12;
   const tolerance=Math.max(2,pitch*0.3);
+  /* The two readings measure height on two images (the word lane reads the page
+     as rendered, the grid the straightened one), so a slanted page can shift one
+     against the other. The shift is measured first — the median gap from each
+     base row to its nearest donor row within half a pitch — and lines are paired
+     around it. */
+  const nearestGaps:number[]=[];
+  for(const row of base){
+    if(!Number.isFinite(row.y))continue;
+    let best=Infinity,gap=0;
+    for(const other of donor){if(!Number.isFinite(other.y))continue;const d=other.y!-row.y!;if(Math.abs(d)<Math.abs(best)){best=d;gap=d;}}
+    if(Math.abs(best)<=pitch*0.5)nearestGaps.push(gap);
+  }
+  nearestGaps.sort((a,b)=>a-b);
+  const offset=nearestGaps.length?nearestGaps[Math.floor(nearestGaps.length/2)]:0;
+  /* A shift near half a line is ambiguous — each row would sit between its own
+     line and the next: pair nothing rather than pair every row one line off. */
+  if(Math.abs(offset)>pitch*0.3)return new Map();
+  /* Two readings that each read a complete, different section or reference of
+     the page's own length are two lines, however close (18958 / 18959). A
+     garbled or cut value («89541», «1895») contradicts nothing. */
+  const complete=(value:string,length?:number)=>Boolean(length)&&value.length===length;
+  const clash=(a:GridRow,b:GridRow)=>{
+    const sa=String(a.scode||"").replace(/\D/g,""),sb=String(b.scode||"").replace(/\D/g,"");
+    const ra=String(a.reference||"").replace(/\D/g,""),rb=String(b.reference||"").replace(/\D/g,"");
+    return(complete(sa,shape.sectionLength)&&complete(sb,shape.sectionLength)&&sa!==sb)
+      ||(complete(ra,shape.referenceLength)&&complete(rb,shape.referenceLength)&&ra!==rb);
+  };
   const candidates:{at:number;donor:number;distance:number}[]=[];
   base.forEach((row,at)=>{
     if(!Number.isFinite(row.y))return;
     donor.forEach((other,donorAt)=>{
       if(!Number.isFinite(other.y))return;
-      const distance=Math.abs(row.y!-other.y!);
-      if(distance<=tolerance)candidates.push({at,donor:donorAt,distance});
+      const distance=Math.abs(row.y!+offset-other.y!);
+      if(distance<=tolerance&&!clash(row,other))candidates.push({at,donor:donorAt,distance});
     });
   });
   const usedDonor=new Set<number>();
@@ -2796,18 +2831,30 @@ export function pairRowsByLine(base:GridRow[],donor:GridRow[]):Map<number,GridRo
     if(pairs.has(item.at)||usedDonor.has(item.donor))continue;
     pairs.set(item.at,donor[item.donor]);usedDonor.add(item.donor);
   }
+  /* Lines that do not line up for most rows are not two readings of one page
+     order — pair nothing, and the identity rules decide as before. */
+  const pairable=Math.min(base.filter(row=>Number.isFinite(row.y)).length,donor.filter(row=>Number.isFinite(row.y)).length);
+  if(pairable&&pairs.size<pairable/3)return new Map();
   return pairs;
+}
+/** The page's own number lengths — the most common reference and section
+ *  length among the rows both lanes read. */
+export function pageNumberShape(rows:Array<{reference?:string;scode?:string}>):{referenceLength?:number;sectionLength?:number}{
+  const mode=(values:string[])=>{const counts=new Map<number,number>();for(const value of values)if(value)counts.set(value.length,(counts.get(value.length)||0)+1);let best=0,length=0;for(const [key,count] of counts)if(count>best){best=count;length=key;}return best>=3?length:undefined;};
+  return{referenceLength:mode(rows.map(row=>String(row.reference||"").replace(/\D/g,""))),sectionLength:mode(rows.map(row=>String(row.scode||"").replace(/\D/g,"")))};
 }
 /** Empty cells of one reading of a printed line take the other reading's value;
  *  a cell already read is never overwritten — except a course key or section the
  *  row's own reading could not prove, when the other reading proves it. */
-export function fillLineCells(target:GridRow,donor:GridRow,departmentCode=""){
+export function fillLineCells(target:GridRow,donor:GridRow,departmentCode="",pageShape:{referenceLength?:number;sectionLength?:number}={}){
   if(!authorityCourseCellLooksPlausible(target.code,departmentCode)&&authorityCourseCellLooksPlausible(donor.code,departmentCode))target.code=donor.code;
   /* رقمٌ هو صدرُ رقم الطريق الآخر الأطول («50» من «503»، «1895» من «18956»)
      هو الرقم نفسه مبتوراً عند حافة خليته: يُكمَل. */
-  const truncationOf=(short:string,full:string)=>Boolean(short&&full)&&full.length>short.length&&full.startsWith(short);
-  if((!authoritySectionCodeLooksPlausible(target.scode)||truncationOf(target.scode,donor.scode))&&authoritySectionCodeLooksPlausible(donor.scode))target.scode=donor.scode;
-  if((!String(target.reference||"").trim()||truncationOf(String(target.reference),String(donor.reference||"")))&&donor.reference)target.reference=donor.reference;
+  /* …بشرط أن يكون الأطول بطول أرقام الصفحة نفسها: «189561» ليس «18956»
+     مكتملاً بل مقروءاً بخانةٍ من حدّ الخلية، و«5011» ليس «501» (المراجعة المستقلة). */
+  const truncationOf=(short:string,full:string,length?:number)=>Boolean(short&&full&&length)&&full.length===length&&short.length<length&&full.startsWith(short);
+  if((!authoritySectionCodeLooksPlausible(target.scode)||truncationOf(target.scode,donor.scode,pageShape.sectionLength))&&authoritySectionCodeLooksPlausible(donor.scode)&&(!pageShape.sectionLength||donor.scode.length===pageShape.sectionLength))target.scode=donor.scode;
+  if((!String(target.reference||"").trim()||truncationOf(String(target.reference),String(donor.reference||""),pageShape.referenceLength))&&donor.reference&&(!pageShape.referenceLength||String(donor.reference).length===pageShape.referenceLength))target.reference=donor.reference;
   if(String(target.courseText||"").trim().length<3&&donor.courseText)target.courseText=donor.courseText;
   /* الخانة الفارغة هنا هي القيمة المُتحقَّق منها (building/hall/days/start)؛
      النصّ الخام الذي لم يجتز التحقق شاهدٌ لا قيمة، فلا يمنع قيمةً صحيحة قرأها
@@ -2817,8 +2864,9 @@ export function fillLineCells(target:GridRow,donor:GridRow,departmentCode=""){
   else if(!target.building&&!target.buildingRaw&&donor.buildingRaw)target.buildingRaw=donor.buildingRaw;
   if(!target.hall&&donor.hall){target.hall=donor.hall;target.hallRaw=donor.hallRaw||donor.hall;}
   else if(!target.hall&&!target.hallRaw&&donor.hallRaw)target.hallRaw=donor.hallRaw;
-  if(!String(target.days||"").trim()&&String(donor.days||"").trim()){target.days=donor.days;target.daysRaw=donor.daysRaw||donor.days;}
-  else if(!String(target.days||"").trim()&&!target.daysRaw&&donor.daysRaw)target.daysRaw=donor.daysRaw;
+  /* الأيام لا تُنقل بين القراءتين بالسطر: يومٌ خاطئ أسوأ من خانةٍ فارغة (الفارغة
+     تذهب للمراجعة، والخاطئة تمرّ صامتة)، وعلى المسح الباهت كان نصفُ ما يُنقل
+     خطأ (متغيرات الحقيقة 2026-09-27). تبقى الأيام لقراءتها ولقاعدتها القديمة. */
   if(!String(target.instructorText||"").trim()&&donor.instructorText)target.instructorText=donor.instructorText;
 }
 
@@ -4622,9 +4670,10 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
          من 18945…18948) يُكمَل به صفٌّ فيصير «مرئياً» ويُسقط صفوفاً مطبوعة
          حقيقية تحمل البتر نفسه (1.pdf ص1). */
       const asRead=wordLane.rows.map(row=>({code:row.code,scode:row.scode,reference:row.reference}));
+      const shape=pageNumberShape([...asRead,...(gridRows||[])]);
       /* السطر نفسه في الطريقين صفٌّ واحد (pairRowsByLine): يُكمَل ولا يُكرَّر. */
-      const sameLine=pairRowsByLine(wordLane.rows,gridRows||[]);
-      for(const [at,gridRow] of sameLine)fillLineCells(wordLane.rows[at],gridRow,authorityGridDepartment);
+      const sameLine=pairRowsByLine(wordLane.rows,gridRows||[],shape);
+      for(const [at,gridRow] of sameLine)fillLineCells(wordLane.rows[at],gridRow,authorityGridDepartment,shape);
       const pairedGrid=new Set(sameLine.values());
       fillScheduleCellsFrom(wordLane.rows,gridRows);
       const seen=new Set(asRead.map(row=>`${row.reference}|${row.scode}`));
@@ -4651,7 +4700,8 @@ async function readScannedDocument(input:Buffer,mime:string,fingerprint:string,o
     }else if(gridRows&&wordLane?.rows.length){
       /* وحين يغلب طريقُ الخطوط تُكمَل خاناته الفارغة من طريق الكلمات بالسطر
          نفسه — الدمج في الاتجاهين، كما في الفحص الأعمق (65509b4). */
-      for(const [at,wordRow] of pairRowsByLine(gridRows,wordLane.rows))fillLineCells(gridRows[at],wordRow,authorityGridDepartment);
+      const shape=pageNumberShape([...gridRows,...wordLane.rows]);
+      for(const [at,wordRow] of pairRowsByLine(gridRows,wordLane.rows,shape))fillLineCells(gridRows[at],wordRow,authorityGridDepartment,shape);
     }
     /* صفحة بلا رقم مقرر ولا صف (صفحة دليل الأيام الأخيرة) صفحةٌ فارغة، لا
        استخراج مشبوه: كانت تُسقط كل مسح متعدد الصفحات برسالة «صورة غير واضحة». */
