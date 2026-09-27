@@ -97,7 +97,10 @@ function estateOf(rows: FSchedule[]): RoomPlacement[] {
   return [...seen.values()];
 }
 
-const conflictCount = (rows: FSchedule[]) => fastConflictScan(rows).pairs;
+/* «هيئة تدريسية» ليست شخصاً في الإصلاح أيضاً: العدّ نفسه الذي يعدّه الخادم
+   واللوحة، وإلا حُكم على توأمٍ بأستاذٍ حقيقي و«هيئة تدريسية» تنبيهاً هنا ومانعاً هناك. */
+const conflictCount = (rows: FSchedule[], placeholderInstructorIds?: Iterable<number>) =>
+  fastConflictScan(rows, { placeholderInstructorIds }).pairs;
 
 /** Which rows a candidate placement would collide with, by id. */
 function collidesWith(candidate: FSchedule, rows: FSchedule[]): FSchedule[] {
@@ -186,14 +189,17 @@ export function findRepairChain(
     forbidRoom?: (code: string, hall: string) => boolean;
     /** What counts as solved. Defaults to "one fewer conflict than we found". */
     solved?: (board: FSchedule[], baseline: number) => boolean;
+    /** «هيئة تدريسية» records — never a person (placeholderInstructorIds). */
+    placeholderInstructorIds?: Iterable<number>;
   },
 ): RepairChain | null {
+  const placeholders = options?.placeholderInstructorIds ? [...options.placeholderInstructorIds] : undefined;
   const ceiling = Math.min(MAX_DEPTH, Math.max(1, options?.maxDepth ?? MAX_DEPTH));
   const maxBranch = Math.max(2, options?.maxBranch ?? 6);
   const scope = allRows.filter(row => Number(row.AdTermId) === Number(target.AdTermId));
-  const baseline = conflictCount(scope);
+  const baseline = conflictCount(scope, placeholders);
   const estate = estateOf(scope).filter(room => !options?.forbidRoom?.(room.code, room.hall));
-  const solved = options?.solved || ((board: FSchedule[], base: number) => conflictCount(board) <= base - 1);
+  const solved = options?.solved || ((board: FSchedule[], base: number) => conflictCount(board, placeholders) <= base - 1);
 
   const search = (
     board: FSchedule[],
@@ -263,7 +269,7 @@ export function findRepairChain(
     row.id === move.id
       ? withRoom(placed(row, move.day, move.start), {key:`id:${move.roomId}`,buildingId:move.buildingId,roomId:move.roomId,code:move.roomCode,hall:move.roomHall})
       : row
-  )), scope));
+  )), scope), placeholders);
 
   return {
     moves,

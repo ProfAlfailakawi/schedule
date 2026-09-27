@@ -67,21 +67,29 @@ const roomKey=(row:Partial<FSchedule>)=>roomIdentityKey(row);
 const duration=(row:Partial<FSchedule>)=>Math.max(0,timeToMinutes(String(row.fendtime||""))-timeToMinutes(String(row.fstarttime||"")));
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 
+/** Why a pair collides. `sectionTwice` is the same section at the same placement
+    in two distinguishable places — a remark, never a wall (see `twinKind`). */
+export type ConflictReason="room"|"instructor"|"duplicate"|"sectionTwice"|"doorway"|"cohort";
+
 export interface ConflictInsight {
-  type:"room"|"instructor"|"duplicate"|"doorway"|"cohort";
+  type:ConflictReason;
   severity:"high"|"medium"|"low";
   rowId:number;otherId:number;message:string;detail:string;
   /** Every reason this one pair collides, so a clash is never counted twice. */
-  reasons?:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">;
+  reasons?:ConflictReason[];
 }
 
 /**
  * ── ما يمنع — سطرٌ واحد في المنتج كله ───────────────────────────────────────
  *
- * The owner's law: a real double booking of a TIME, a ROOM or an INSTRUCTOR
- * arrives as severity "high"; a duplicate row is data integrity. Everything
- * else the system knows — cohort overlap, the gap between two lectures, hall
- * history, day rhythm, memory — is a remark beside a move, never a wall.
+ * قاعدة المالك 2026-09-27: «التوقيع لا يمنعه إلا تعارض ماديّ». A real double
+ * booking — the same real INSTRUCTOR or the same HALL at overlapping times —
+ * arrives as severity "high". The one other wall is the double ENTRY: the same
+ * course, section and placement with nothing to tell the two rows apart
+ * (`type:"duplicate"`), which would publish one lecture twice. Everything else
+ * the system knows — the same section recorded in two halls or with two
+ * teachers, cohort overlap, the gap between two lectures, hall history, day
+ * rhythm, memory — is a remark beside a move, never a wall.
  *
  * `soft` is how the save gate marks advice riding in the same array as real
  * collisions, so the same predicate reads a raw sweep and a server answer.
@@ -180,8 +188,66 @@ const samePlacement=(a:FSchedule,b:FSchedule)=>
  * is a room clash, and the shared hour is what makes both true.
  *
  * `samePlacement` above is kept — the exact twin (same course AND same section
- * at the same placement) still has its own, distinct finding.
+ * at the same placement) still has its own, distinct finding: `twinKind` below.
  */
+
+/**
+ * ── الشعبة نفسها مرتين: مكرّرٌ يمنع، أم شعبةٌ في مكانين تُقال ولا تمنع ──────
+ *
+ * قاعدة المالك 2026-09-27: «التوقيع لا يمنعه إلا تعارض ماديّ». كان كلُّ صفّين
+ * بالمقرر نفسه والشعبة نفسها والأيام والوقت نفسها «موعدين متطابقين» يمنعان
+ * الحفظ والتوقيع والاعتماد — ولو كان أحدهما في G28 مع أستاذ والآخر في G31 مع
+ * أستاذٍ آخر. هذان ليسا تعارضاً ماديّاً: لا أستاذ في مكانين، ولا قاعة محجوزة
+ * مرتين. فكان القسم يُمنع من التوقيع بلا سبب يراه، والصفّان أحمران بلا كلمة.
+ *
+ * فالتوأمان صنفان، والحكم بينهما هنا وحده، تقرؤه المحرّكات الثلاثة:
+ *
+ *   • «duplicate» — لا شيء يميّز الصفّين: القاعة نفسها (أو لا قاعة لكليهما)،
+ *     والأستاذ نفسه (أو أحدهما «هيئة تدريسية» أو بلا أستاذ). إدخالٌ مكرّر
+ *     سيُنشر مرتين؛ يبقى مانعاً كما كان. وأغلبه يُمسَك أصلاً تعارضَ قاعة أو
+ *     أستاذ، ويبقى هذا السبب لما لا قاعة له ولا شخص.
+ *   • «sectionTwice» — قاعتان مختلفتان، أو أستاذان حقيقيان مختلفان. ليس
+ *     ماديّاً ولا يمنع شيئاً، لكنه لا يُسكَت: يُقال تنبيهاً باسم ما يختلف،
+ *     لأنه إمّا شعبةٌ مقسومة عن قصد وإمّا شعبتان نُسي تغيير رقم إحداهما.
+ *
+ * وقاعدة 2026-08-28 قائمة كما هي: الأستاذ نفسه أو القاعة نفسها في الساعة
+ * نفسها تعارضٌ بسببه هو (instructor/room)، أيّاً كان رقم الشعبة.
+ */
+type TwinKind="duplicate"|"sectionTwice";
+/* القاعة تميّز الصفّين فقط حين يحمل كلٌّ منهما قاعةً، ويختلف رقماهما بعد
+   التطبيع (المراجعة المستقلة 2026-09-27):
+   • «G28» من السجل و«G/G28» أو «G-28» نصّاً قديماً قاعةٌ واحدة كُتبت بطرق
+     شتّى — البوابة تطبّعها فتعدّها تعارض قاعة يمنع، فلا تقول اللوحة «لا يمنع».
+   • وصفٌّ بلا قاعة (أو بانتظار تثبيتها) لا «يختلف» عن غيره: نسخةٌ مُسحت
+     قاعتها تُنشر مرتين كما لو بقيت.
+   والمبنى يميّز كذلك حين يحمله الصفّان ويختلفان (012B08/G28 غير 012B09/G28). */
+const twinHall=(row:FSchedule)=>row.locationStatus==="PENDING_ROOM"?""
+  :String(row.AdRoomHall||"").split("/").pop()!.toUpperCase().replace(/[^A-Z0-9]/g,"");
+const twinBuilding=(row:FSchedule)=>String(row.AdRoomCode||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+function twinKind(a:FSchedule,b:FSchedule,person:(row:FSchedule)=>number):TwinKind|null{
+  if(Number(a.AdCourseId)!==Number(b.AdCourseId)||String(a.SCode)!==String(b.SCode)||!samePlacement(a,b)) return null;
+  const ha=twinHall(a),hb=twinHall(b),ba=twinBuilding(a),bb=twinBuilding(b);
+  const hallTellsApart=Boolean(ha)&&Boolean(hb)&&(ha!==hb||(Boolean(ba)&&Boolean(bb)&&ba!==bb));
+  const pa=person(a),pb=person(b);
+  const teacherTellsApart=Boolean(pa)&&Boolean(pb)&&pa!==pb;
+  return hallTellsApart||teacherTellsApart?"sectionTwice":"duplicate";
+}
+
+/** ما يُقال عن شعبةٍ مسجّلة مرتين — جملةٌ واحدة للمسارين (برهان التكافؤ يقارن النص). */
+function sectionTwiceWords(a:FSchedule,b:FSchedule,person:(row:FSchedule)=>number):{message:string;detail:string}{
+  const hall=(row:FSchedule)=>row.locationStatus==="PENDING_ROOM"?"":String(row.AdRoomHall||"").trim();
+  const place=(row:FSchedule)=>[String(row.AdRoomCode||"").trim(),hall(row)].filter(Boolean).join("/");
+  /* القاعة وحدها تكفي القارئ، إلا حين يتشابه الاسمان في مبنيين. */
+  const [ha,hb]=hall(a)&&hall(a)===hall(b)?[place(a),place(b)]:[hall(a),hall(b)];
+  const pa=person(a),pb=person(b);
+  const apart=Boolean(twinHall(a))&&Boolean(twinHall(b))&&(twinHall(a)!==twinHall(b)||(Boolean(twinBuilding(a))&&Boolean(twinBuilding(b))&&twinBuilding(a)!==twinBuilding(b)));
+  const halls=apart?` في قاعتين (${ha} و ${hb})`:"";
+  const teachers=pa&&pb&&pa!==pb?(halls?" وبأستاذين":" بأستاذين"):"";
+  return {
+    message:halls?"الشعبة نفسها في مكانين في الوقت نفسه":"الشعبة نفسها بأستاذين في الوقت نفسه",
+    detail:`شعبة ${String(a.SCode)} مسجّلة مرتين بالأيام والوقت نفسيهما${halls}${teachers}؛ إن كانتا شعبتين فغيّر رقم إحداهما.`,
+  };
+}
 
 /**
  * ── لماذا لا يُقارَن كل موعد بكل موعد ───────────────────────────────────────
@@ -290,7 +356,8 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
          longer flattened into one number that is wrong on one of them. */
       const needGap=sameRoom?requiredGap(row,other,doorway):0;
       const tight=needGap>0 && sameRoom && !clashing && roomsTouch(row,other,needGap);
-      const twin=Number(row.AdCourseId)===Number(other.AdCourseId) && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
+      /* «duplicate» يمنع، و«sectionTwice» يُقال ولا يمنع — الحكم في twinKind وحده. */
+      const twin=twinKind(row,other,personalInstructor);
       /* Two overlapping lectures whose COURSES share students. Only meaningful
          when they actually overlap — a survey says nothing about a gap. */
       const cohort=clashing && Number(row.AdCourseId)!==Number(other.AdCourseId) && Boolean(options?.cohortPairs?.size) &&
@@ -300,10 +367,10 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
       const pair=[row.id,other.id].sort((a,b)=>a-b).join(":");
       if(byPair.has(pair)) continue;
 
-      const reasons:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">=[];
+      const reasons:ConflictReason[]=[];
       if(clashing && personalInstructor(row) && Number(row.AdInstructorId)===Number(other.AdInstructorId)) reasons.push("instructor");
       if(clashing && sameRoom) reasons.push("room");
-      if(twin) reasons.push("duplicate");
+      if(twin) reasons.push(twin);
       if(cohort) reasons.push("cohort");
       if(tight) reasons.push("doorway");
       if(!reasons.length) continue;
@@ -314,7 +381,8 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
          true the timetable's own error is named first, because fixing it may
          resolve the other. */
       const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room"
-        :reasons.includes("duplicate")?"duplicate":reasons.includes("cohort")?"cohort":"doorway";
+        :reasons.includes("duplicate")?"duplicate":reasons.includes("sectionTwice")?"sectionTwice"
+        :reasons.includes("cohort")?"cohort":"doorway";
       /* ── الفارق يُقاس بين الطرفين المتجاورين فعلاً ────────────────────────
        * This read `other.start - row.end` whichever way round the two sat, so
        * whenever the other lecture came FIRST it measured from its start to
@@ -334,9 +402,11 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
         return Math.max(0,rowStart>=otherEnd?rowStart-otherEnd:otherStart-rowEnd);
       })();
       const shared=cohort?(options?.cohortSize?.(row.AdCourseId,other.AdCourseId)||0):0;
+      const twice=type==="sectionTwice"?sectionTwiceWords(row,other,personalInstructor):null;
       const message=type==="instructor"?"حجز مزدوج لأستاذ المقرر"
         :type==="room"?"حجز مزدوج للقاعة"
         :type==="duplicate"?"موعدان متطابقان لنفس الشعبة"
+        :twice?twice.message
         :type==="cohort"?"تعارض على الطلاب"
         :"الفاصل بين المحاضرتين غير كافٍ";
       const detail=type==="instructor"
@@ -344,10 +414,12 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
         : type==="room"
           ? `القاعة ${row.AdRoomCode}/${row.AdRoomHall} مستخدمة في موعد متداخل.`
           : type==="duplicate"
-            ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت."
-            : type==="cohort"
-              ? `${shared} من الطلاب الذين أجابوا يحتاجون المقررين معاً، والموعدان متقاطعان.`
-              : `الفاصل بين المحاضرتين ${countOf(gap, AR.minute)} في القاعة ${row.AdRoomCode}/${row.AdRoomHall}، والمطلوب ${countOf(needGap, AR.minute)}.`;
+            ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت، ولا قاعة ولا أستاذ يميّز أحدهما من الآخر."
+            : twice
+              ? twice.detail
+              : type==="cohort"
+                ? `${shared} من الطلاب الذين أجابوا يحتاجون المقررين معاً، والموعدان متقاطعان.`
+                : `الفاصل بين المحاضرتين ${countOf(gap, AR.minute)} في القاعة ${row.AdRoomCode}/${row.AdRoomHall}، والمطلوب ${countOf(needGap, AR.minute)}.`;
       byPair.set(pair,{
         type,
         /* Never a save-blocker. A tight turnaround can be deliberate, and
@@ -356,7 +428,9 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
         /* A cohort clash is real but it speaks for whoever answered a survey,
            not for the registrar — so it is a strong warning and never a refusal
            to save. The department decides what a partial answer is worth. */
-        severity:type==="doorway"?"low":type==="duplicate"||type==="cohort"?"medium":"high",
+        /* والشعبة المسجّلة مرتين في مكانين ليست تعارضاً ماديّاً (قاعدة المالك
+           2026-09-27): تنبيهٌ قويّ يُرى، ولا يمنع حفظاً ولا توقيعاً ولا اعتماداً. */
+        severity:type==="doorway"?"low":type==="duplicate"||type==="cohort"||type==="sectionTwice"?"medium":"high",
         rowId:row.id,otherId:other.id,message,detail,reasons,
       });
     }
@@ -438,7 +512,8 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
          longer flattened into one number that is wrong on one of them. */
       const needGap=sameRoom?requiredGap(row,other,doorway):0;
       const tight=needGap>0 && sameRoom && !clashing && roomsTouch(row,other,needGap);
-      const twin=Number(row.AdCourseId)===Number(other.AdCourseId) && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
+      /* «duplicate» يمنع، و«sectionTwice» يُقال ولا يمنع — الحكم في twinKind وحده. */
+      const twin=twinKind(row,other,personalInstructor);
       /* Two overlapping lectures whose COURSES share students. Only meaningful
          when they actually overlap — a survey says nothing about a gap. */
       const cohort=clashing && Number(row.AdCourseId)!==Number(other.AdCourseId) && Boolean(options?.cohortPairs?.size) &&
@@ -448,10 +523,10 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
       const pair=[row.id,other.id].sort((a,b)=>a-b).join(":");
       if(byPair.has(pair)) continue;
 
-      const reasons:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">=[];
+      const reasons:ConflictReason[]=[];
       if(clashing && personalInstructor(row) && Number(row.AdInstructorId)===Number(other.AdInstructorId)) reasons.push("instructor");
       if(clashing && sameRoom) reasons.push("room");
-      if(twin) reasons.push("duplicate");
+      if(twin) reasons.push(twin);
       if(cohort) reasons.push("cohort");
       if(tight) reasons.push("doorway");
       if(!reasons.length) continue;
@@ -462,7 +537,8 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
          true the timetable's own error is named first, because fixing it may
          resolve the other. */
       const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room"
-        :reasons.includes("duplicate")?"duplicate":reasons.includes("cohort")?"cohort":"doorway";
+        :reasons.includes("duplicate")?"duplicate":reasons.includes("sectionTwice")?"sectionTwice"
+        :reasons.includes("cohort")?"cohort":"doorway";
       /* ── الفارق يُقاس بين الطرفين المتجاورين فعلاً ────────────────────────
        * This read `other.start - row.end` whichever way round the two sat, so
        * whenever the other lecture came FIRST it measured from its start to
@@ -482,9 +558,11 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
         return Math.max(0,rowStart>=otherEnd?rowStart-otherEnd:otherStart-rowEnd);
       })();
       const shared=cohort?(options?.cohortSize?.(row.AdCourseId,other.AdCourseId)||0):0;
+      const twice=type==="sectionTwice"?sectionTwiceWords(row,other,personalInstructor):null;
       const message=type==="instructor"?"حجز مزدوج لأستاذ المقرر"
         :type==="room"?"حجز مزدوج للقاعة"
         :type==="duplicate"?"موعدان متطابقان لنفس الشعبة"
+        :twice?twice.message
         :type==="cohort"?"تعارض على الطلاب"
         :"الفاصل بين المحاضرتين غير كافٍ";
       const detail=type==="instructor"
@@ -492,10 +570,12 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
         : type==="room"
           ? `القاعة ${row.AdRoomCode}/${row.AdRoomHall} مستخدمة في موعد متداخل.`
           : type==="duplicate"
-            ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت."
-            : type==="cohort"
-              ? `${shared} من الطلاب الذين أجابوا يحتاجون المقررين معاً، والموعدان متقاطعان.`
-              : `الفاصل بين المحاضرتين ${countOf(gap, AR.minute)} في القاعة ${row.AdRoomCode}/${row.AdRoomHall}، والمطلوب ${countOf(needGap, AR.minute)}.`;
+            ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت، ولا قاعة ولا أستاذ يميّز أحدهما من الآخر."
+            : twice
+              ? twice.detail
+              : type==="cohort"
+                ? `${shared} من الطلاب الذين أجابوا يحتاجون المقررين معاً، والموعدان متقاطعان.`
+                : `الفاصل بين المحاضرتين ${countOf(gap, AR.minute)} في القاعة ${row.AdRoomCode}/${row.AdRoomHall}، والمطلوب ${countOf(needGap, AR.minute)}.`;
       byPair.set(pair,{
         type,
         /* Never a save-blocker. A tight turnaround can be deliberate, and
@@ -504,7 +584,9 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
         /* A cohort clash is real but it speaks for whoever answered a survey,
            not for the registrar — so it is a strong warning and never a refusal
            to save. The department decides what a partial answer is worth. */
-        severity:type==="doorway"?"low":type==="duplicate"||type==="cohort"?"medium":"high",
+        /* والشعبة المسجّلة مرتين في مكانين ليست تعارضاً ماديّاً (قاعدة المالك
+           2026-09-27): تنبيهٌ قويّ يُرى، ولا يمنع حفظاً ولا توقيعاً ولا اعتماداً. */
+        severity:type==="doorway"?"low":type==="duplicate"||type==="cohort"||type==="sectionTwice"?"medium":"high",
         rowId:row.id,otherId:other.id,message,detail,reasons,
       });
     }
@@ -512,14 +594,30 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
   return [...byPair.values()];
 }
 
+/** One pair as a row sees it: with whom, why, and whether it blocks. */
+export interface LiveClashNote {
+  otherId: number;
+  /** The reason the pair is named by — the same precedence findConflicts uses. */
+  kind: "instructor" | "room" | "duplicate" | "sectionTwice";
+  /** Refuses a save, a signature and an approval (isBlockingConflict). */
+  blocking: boolean;
+}
+
 export interface LiveClashScan {
-  /** Every appointment that participates in at least one collision. */
+  /** Every appointment that participates in at least one BLOCKING collision. */
   ids: Set<number>;
-  /** Distinct colliding pairs, each counted once whatever its reasons. */
+  /** Distinct blocking pairs, each counted once whatever its reasons. */
   pairs: number;
   instructorPairs: number;
   roomPairs: number;
   duplicatePairs: number;
+  /** The same section at the same placement in two halls or with two teachers:
+      said on the board, never counted as a blocker (قاعدة المالك 2026-09-27). */
+  sectionTwicePairs: number;
+  /** Every appointment standing in such a pair. */
+  warningIds: Set<number>;
+  /** Per appointment, each pair it stands in — what its row says in words. */
+  notes: Map<number, LiveClashNote[]>;
 }
 
 /**
@@ -531,14 +629,34 @@ export interface LiveClashScan {
  * only compares appointments that actually overlap in time — the same
  * instructor/room/duplicate reading, with no pair exempted, at a cost that
  * stays flat while the term grows.
+ *
+ * The same section recorded twice is judged by `twinKind`, the one rule the
+ * other two engines read: the indistinguishable double entry rings red with the
+ * blockers; the section in two halls or with two teachers is kept apart, in
+ * `warningIds`, so the board can say it in the warning colour without ever
+ * adding it to the number that stops a signature.
  */
 export function fastConflictScan(rows:FSchedule[], options?:{placeholderInstructorIds?:Iterable<number>}):LiveClashScan {
   /* «هيئة تدريسية» is not a person on the board either: the ring and the
      toolbar count must match the approval count (scheduleBlockers). */
   const placeholders=new Set<number>(Array.from<number>(options?.placeholderInstructorIds??[]).map(Number).filter(Boolean));
+  const person=(row:FSchedule)=>{
+    const id=Number(row.AdInstructorId||0);
+    return id>0&&!placeholders.has(id)?id:0;
+  };
   const ids=new Set<number>();
   const seen=new Set<string>();
-  let instructorPairs=0,roomPairs=0,duplicatePairs=0;
+  const warningIds=new Set<number>();
+  const warned=new Set<string>();
+  const notes=new Map<number,LiveClashNote[]>();
+  const note=(a:FSchedule,b:FSchedule,kind:LiveClashNote["kind"],blocking:boolean)=>{
+    for(const [own,other] of [[a,b],[b,a]] as const){
+      const list=notes.get(own.id);
+      const entry={otherId:other.id,kind,blocking};
+      if(list) list.push(entry); else notes.set(own.id,[entry]);
+    }
+  };
+  let instructorPairs=0,roomPairs=0,duplicatePairs=0,sectionTwicePairs=0;
   type Meta={row:FSchedule;start:number;end:number;room:string};
   const metas:Meta[]=rows.map(row=>({
     row,
@@ -556,7 +674,7 @@ export function fastConflictScan(rows:FSchedule[], options?:{placeholderInstruct
       for(const other of active){
         const a=meta.row,b=other.row;
         if(a.id===b.id||a.AdTermId!==b.AdTermId) continue;
-        const sameInstructor=Boolean(Number(a.AdInstructorId))&&!placeholders.has(Number(a.AdInstructorId))&&Number(a.AdInstructorId)===Number(b.AdInstructorId);
+        const sameInstructor=Boolean(person(a))&&person(a)===person(b);
         const sameRoom=Boolean(meta.room)&&meta.room===other.room;
         if(!sameInstructor&&!sameRoom) continue;
         const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
@@ -564,31 +682,45 @@ export function fastConflictScan(rows:FSchedule[], options?:{placeholderInstruct
         seen.add(key);
         if(sameInstructor) instructorPairs++; else roomPairs++;
         ids.add(a.id); ids.add(b.id);
+        note(a,b,sameInstructor?"instructor":"room",true);
       }
       active.push(meta);
     }
   }
-  // The exact twin — same course, same section, same placement — clashes even
-  // when it names no instructor and no room, so it is found by identity.
+  /* The twin — same course, same section, same placement — is found by
+     identity, since the indistinguishable one may name no instructor and no
+     room. Every pair of a group is judged, as findConflicts judges it, and a
+     pair already standing as a physical clash keeps that stronger name. */
   const twins=new Map<string,FSchedule[]>();
   for(const meta of metas){
     const row=meta.row;
-    if(!row.AdCourseId||!String(row.SCode||"").trim()) continue;
-    const key=`${row.AdTermId}:${row.AdCourseId}:${String(row.SCode).trim()}:${SCHEDULE_DAYS.map(day=>row[day.key]?1:0).join("")}:${row.fstarttime}:${row.fendtime}`;
+    const key=`${row.AdTermId}|${Number(row.AdCourseId)}|${String(row.SCode)}|${SCHEDULE_DAYS.map(day=>row[day.key]?1:0).join("")}|${row.fstarttime}|${row.fendtime}`;
     const list=twins.get(key);
     if(list) list.push(row); else twins.set(key,[row]);
   }
   for(const list of twins.values()){
     if(list.length<2) continue;
-    for(let i=1;i<list.length;i++){
-      const key=list[0].id<list[i].id?`${list[0].id}:${list[i].id}`:`${list[i].id}:${list[0].id}`;
+    for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++){
+      const a=list[i],b=list[j];
+      if(a.id===b.id||a.AdTermId!==b.AdTermId) continue;
+      const kind=twinKind(a,b,person);
+      if(!kind) continue;
+      const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
       if(seen.has(key)) continue;
-      seen.add(key);
-      duplicatePairs++;
+      if(kind==="duplicate"){
+        seen.add(key);
+        duplicatePairs++;
+        ids.add(a.id); ids.add(b.id);
+        note(a,b,"duplicate",true);
+      }else if(!warned.has(key)){
+        warned.add(key);
+        sectionTwicePairs++;
+        warningIds.add(a.id); warningIds.add(b.id);
+        note(a,b,"sectionTwice",false);
+      }
     }
-    list.forEach(row=>ids.add(row.id));
   }
-  return {ids,pairs:seen.size,instructorPairs,roomPairs,duplicatePairs};
+  return {ids,pairs:seen.size,instructorPairs,roomPairs,duplicatePairs,sectionTwicePairs,warningIds,notes};
 }
 
 function instructorGapStats(rows:FSchedule[]){
@@ -670,6 +802,11 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   const alerts:Array<{severity:"critical"|"warning"|"info";title:string;detail:string}>=[];
   const critical=conflicts.filter(isBlockingConflict).length;
   if(critical)alerts.push({severity:"critical",title:`${countOf(critical, AR.approvalBlocker)}`,detail:"حجز مزدوج يجب معالجته قبل الاعتماد."});
+  /* الشعبة المسجّلة مرتين في مكانين: تنبيهٌ لا مانع (twinKind) — يُعدّ بالشعب لا بالأزواج. */
+  const rowById=new Map([...allRows,...targetRows].map(row=>[Number(row.id),row] as const));
+  const sectionsTwice=new Set(conflicts.filter(item=>item.type==="sectionTwice")
+    .map(item=>rowById.get(Number(item.rowId))).filter(Boolean).map(row=>`${Number(row!.AdCourseId)}|${String(row!.SCode)}`)).size;
+  if(sectionsTwice)alerts.push({severity:"warning",title:`الشعبة نفسها مرتين في الوقت نفسه · ${countOf(sectionsTwice, AR.section)}`,detail:"في قاعتين أو بأستاذين. تنبيهٌ لا يمنع الاعتماد؛ إن كانتا شعبتين فغيّر رقم إحداهما."});
   const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${countOf(longGap, AR.instructor)} ${nounFor(longGap, AR.hasPron)} فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
   if(lateRows)alerts.push({severity:"info",title:`${countOf(lateRows, AR.appointment)} ${nounFor(lateRows, AR.lateAdj)}`,detail:`بعد ${scheduleClockForDisplay("16:00")}.`});
   if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`تفاوت ملحوظ بين أحمال الأيام · ${imbalance}%.`});
