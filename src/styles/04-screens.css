@@ -856,7 +856,8 @@
 }
 .balance-table th button:hover{color:var(--ink)}
 .balance-table th button.sorted{color:var(--accent)}
-.balance-table th button i{font-style:normal;font-size:10px}
+.balance-table th button i{font-style:normal;display:inline-flex}
+.balance-table th button i svg{width:13px;height:13px}
 .balance-table td{
   padding:var(--s3) var(--s4);
   border-bottom:1px solid var(--line);
@@ -873,14 +874,8 @@
 }
 .balance-split i{display:block;height:100%;background:var(--accent);border-radius:var(--r-full)}
 .balance-table td b{font-size:var(--t-xs);color:var(--muted);font-weight:600}
-.balance-score{
-  display:inline-grid;place-items:center;
-  min-width:38px;padding:2px var(--s2);border-radius:var(--r-sm);
-  font-weight:700;
-}
-.balance-score.good{background:var(--success-soft);color:var(--success)}
-.balance-score.warn{background:var(--warning-soft);color:var(--warning)}
-.balance-score.bad{background:var(--danger-soft);color:var(--danger)}
+.balance-ring{vertical-align:middle}
+.balance-ring .dna-ringc{font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums}
 .balance-bad{color:var(--danger);font-weight:700}
 .balance-ok{color:var(--muted-2)}
 

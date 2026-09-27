@@ -775,6 +775,7 @@
    إضافة العميد كلها: عمودٌ واحد في جدولٍ يقرؤه أصلاً. لا لوحةَ قيادةٍ
    ثانية تقول الشيء نفسه وتفترق عنه عند أول تعديل.                       */
 .balance-approval{white-space:nowrap}
+.balance-relay{display:flex;align-items:center;gap:8px;margin-block-end:6px}
 .balance-approval small{
   display:block;margin-block-start:3px;
   color:var(--muted);font-size:.74rem;
