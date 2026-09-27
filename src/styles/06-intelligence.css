@@ -3675,6 +3675,7 @@ button.twin-delta{width:100%}
 /* Labels are shown under the icons (they were hidden with font-size:0). */
 .visual-minimal.intelligence-page .intelligence-scenes .segmented button,
 .visual-minimal.intelligence-page .scene-subnav button{
+  display:inline-flex;align-items:center;justify-content:center;
   flex-direction:column;gap:4px;min-height:62px;padding:6px 12px;
   font-size:11px;line-height:1.25;font-weight:600;white-space:nowrap;
 }

@@ -25,6 +25,13 @@
 :root:not([data-theme="dark"]) .apex-login-story h1 em{color:var(--accent)}
 :root:not([data-theme="dark"]) .apex-login-story>p{color:var(--muted)}
 :root:not([data-theme="dark"]) .apex-login-principles>span{border-top:1px dashed var(--line-strong)}
+/* Phones turn the principles into chips (07-responsive, ≤768px): a hairline
+   pill on white instead of the dark outline drawn for the night login. */
+@media screen and (max-width:768px){
+  :root:not([data-theme="dark"]) .apex-login-principles>span{
+    border:1px solid var(--line);background:var(--surface);
+  }
+}
 :root:not([data-theme="dark"]) .apex-login-principles svg{color:var(--accent);stroke-width:1.6}
 :root:not([data-theme="dark"]) .apex-login-principles b{color:var(--ink)}
 :root:not([data-theme="dark"]) .apex-login-principles small{color:var(--muted)}

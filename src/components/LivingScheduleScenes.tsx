@@ -3,11 +3,15 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  BookOpen,
   Building2,
   CheckCircle2,
   ChevronLeft,
+  Clock3,
+  DoorOpen,
   GitBranch,
   History,
+  Network,
   UsersRound,
   Zap,
 } from "lucide-react";
@@ -192,10 +196,10 @@ export function TopologyScene({ topology, context }: { topology: any; context?: 
 
   const KIND: Record<string, { label: string; icon: React.ReactNode }> = {
     instructor: { label: "أستاذ", icon: <UsersRound /> },
-    course: { label: "مقرر", icon: <History /> },
+    course: { label: "مقرر", icon: <BookOpen /> },
     section: { label: "شعبة", icon: <GitBranch /> },
-    room: { label: "قاعة", icon: <Building2 /> },
-    time: { label: "وقت", icon: <Activity /> },
+    room: { label: "قاعة", icon: <DoorOpen /> },
+    time: { label: "وقت", icon: <Clock3 /> },
   };
 
   /* Tile tones follow the entity tints of 09-details (kind colour coding). */
@@ -227,10 +231,8 @@ export function TopologyScene({ topology, context }: { topology: any; context?: 
           className="topology-hub"
           animate={false}
           ariaLabel={`خريطة الضغط${context?.sectionName ? ` — ${context.sectionName}` : ""}${context?.termName ? ` · ${context.termName}` : ""}`}
-          center={{ icon: <GitBranch aria-hidden="true" />, label: context?.sectionName || context?.termName || undefined }}
+          center={{ icon: <Network aria-hidden="true" />, label: context?.sectionName || context?.termName || undefined }}
           count={conflicts ? { value: conflicts.toLocaleString("ar-KW-u-nu-latn"), icon: <AlertTriangle aria-hidden="true" />, label: "مواضع للتحقق" } : null}
-          overline={context?.termName}
-          title="خريطة الضغط"
           nodes={(topology.hotspots || []).slice(0, 8).map((spot: any) => {
             const kind = KIND[spot.type] || { label: spot.type, icon: <Activity /> };
             const issues = Number(spot.issues) || 0;
