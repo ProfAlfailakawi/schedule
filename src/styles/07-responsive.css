@@ -1552,4 +1552,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     content:"";position:absolute;inset:-4px;
   }
   .dock-act::after,.dock-add::after{inset:-6px -3px}
+  /* العينُ ملاصقةٌ لشريحة الفلتر: نكبّرها عمودياً فقط حتى لا تغطّي حافةَ الشريحة. */
+  .week-legend-eye::after{inset:-4px 0}
 }
