@@ -84,7 +84,7 @@ export function DnaCount({
   className?: string;
 }) {
   return (
-    <span className={cx('dna', 'dna-count', className)} title={label} aria-label={label ? `${label}: ${String(value)}` : undefined}>
+    <span className={cx('dna', 'dna-count', className)} title={label} aria-label={label && (typeof value === 'string' || typeof value === 'number') ? `${label}: ${value}` : undefined}>
       {icon}
       {value}
     </span>
