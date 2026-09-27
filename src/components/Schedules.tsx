@@ -49,10 +49,12 @@ import {
   ShieldCheck,
   Sparkles,
   Table2,
+  DoorOpen,
   UsersRound,
   WandSparkles,
   X,
 } from "lucide-react";
+import { DnaCount, DnaStatusHeader } from "./dna";
 import {
   Badge,
   EmptyState,
@@ -9700,13 +9702,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       >
         الجدول الدراسي
       </PageTitle>
-      {practiceMode ? (
-        <div className="schedule-practice-strip no-print" data-guide-target="schedule.practice" role="status">
-          <ShieldCheck aria-hidden="true" />
-          <span><strong>وضع تجربة</strong><small>كل تغيير مؤقت على هذا الجهاز فقط.</small></span>
-          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail:{ scope:"schedule", type:"practice.stop", featureId:"schedule.practice" } }))}>إنهاء</button>
-        </div>
-      ) : null}
       {guideGhostDiff ? (
         <section className="schedule-guide-ghost-diff no-print" aria-label="معاينة التغيير دون حفظ">
           <header><Eye aria-hidden="true" /><div><small>معاينة فقط</small><strong>{guideGhostDiff.before.AdCourseName || "المقرر المحدد"}</strong></div><button type="button" onClick={() => setGuideGhostDiff(null)} aria-label="إلغاء المعاينة"><X /></button></header>
@@ -9756,85 +9751,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           يُقال قبل المحاولة لا بعدها: من يكتشف المنعَ عند الحفظ يكون قد أعاد
           بناءَ موعدٍ كاملاً في نموذجٍ لن يُقبل. ولا يُخفى شيء — القراءةُ
           والطباعةُ والاستعلامُ كما هي. */}
-      {termFrozen ? (
-        <div className="pending-room-notice no-print" data-tone="frozen">
-          <div>
-            <Lock aria-hidden="true" />
-            <span>انتهى هذا الفصل. جدولُه محفوظٌ للاطّلاع والتقارير، و<b>لجنةُ الجدول</b> وحدَها تعمل فيه.</span>
-          </div>
-        </div>
-      ) : null}
-      {pendingNoticeVisible&&pendingOwnRows.length?<div className="pending-room-notice no-print"><div><CircleAlert aria-hidden="true"/><span>لم تُثبَّت بعد قاعات <b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(pendingOwnRows.length, AR.section)} لديك.</span></div><div><SecondaryButton type="button" data-guide-ignore="فلتر القاعات المعلقة" onClick={()=>{setPendingOnly(true);setPendingNoticeVisible(false)}}>استكمال القاعات</SecondaryButton><button type="button" data-guide-ignore="إخفاء تنبيه القاعات المعلقة" className="pending-room-dismiss" aria-label="إخفاء التنبيه" onClick={()=>setPendingNoticeVisible(false)}><X/></button></div></div>:null}
       {returnNote || error || message ? <div className="schedule-feedback-stack" aria-live="polite">
         {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
         {error ? <Notice>{error}</Notice> : null}
         {message ? <Notice type="success">{message}</Notice> : null}
       </div> : null}
-      {!networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders || pendingOwnRows.length ? (
-        <div className="schedule-ops-strip no-print" aria-label="حالة العمل الذكي">
-          {pendingOwnRows.length?<button type="button" data-guide-ignore="فلتر القاعات المعلقة" className={`schedule-ops-pill warn ${pendingOnly?"on":""}`} onClick={()=>setPendingOnly(value=>!value)}><CircleAlert aria-hidden="true"/><b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")} بانتظار قاعة</b></button>:null}
-          {!networkOnline ? <span className="schedule-ops-pill warn"><Radio aria-hidden="true"/><b>دون اتصال · التغييرات الآمنة محلية</b></span> : null}
-          {offlinePending ? <span className="schedule-ops-pill warn"><Upload aria-hidden="true"/><b>{offlinePending.toLocaleString("ar-KW-u-nu-latn")} بانتظار المزامنة</b></span> : null}
-          {/* A refusal is not a pending sync: it needs a person, so it gets its
-              own pill that does not clear until the shelf is empty. */}
-          {parked.length ? <button type="button" data-guide-ignore="فتح قائمة التغييرات التي رفضها الخادم بعد انقطاع الاتصال" className={`schedule-ops-pill warn ${parkedOpen?"on":""}`} onClick={()=>setParkedOpen(value=>!value)}><ShieldAlert aria-hidden="true"/><b>{countOf(parked.length, AR.change)} رفضها الخادم</b></button> : null}
-          {liveCollaborators ? <span className="schedule-ops-pill"><UsersRound aria-hidden="true"/><b>{liveCollaborators.toLocaleString("ar-KW-u-nu-latn")} يعمل الآن</b></span> : null}
-          {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>تحت التحرير: {countOf(liveEditors + liveHolders, AR.card)}</b></span> : null}
-        </div>
-      ) : null}
-      {/* ── ما رفضه الخادم، معروضاً أخيراً ────────────────────────────────────
-          One line per refusal: what it was trying to do, when, and the server's
-          own sentence for why. Two ways out, and no third: send it again now,
-          or let it go. Nothing here decides on the person's behalf, because
-          the reason it is on this shelf at all is that the software could not. */}
-      {parkedOpen && parked.length ? (
-        <div className="parked-review no-print" role="region" aria-label="تغييرات رفضها الخادم">
-          <header>
-            <ShieldAlert aria-hidden="true" />
-            <div>
-              <strong>تغييرات رفضها الخادم بعد عودة الاتصال</strong>
-              <small>حُفظت كما هي ولم تُطبَّق. أعد إرسال ما تريده، وتجاهل ما لم يعد صالحاً.</small>
-            </div>
-            <button type="button" data-guide-ignore="إغلاق قائمة التغييرات المرفوضة" onClick={() => setParkedOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
-          </header>
-          <ul>
-            {[...parked].reverse().map(item => {
-              const target = rows.find(row => Number(row.id) === Number(String(item.url).match(/\/api\/schedules\/(\d+)/)?.[1] || 0));
-              const what = item.method === "DELETE" ? "حذف موعد"
-                : String(item.url).includes("move-batch") ? "نقل مجموعة مواعيد"
-                  : "تعديل موعد";
-              const name = target ? `${target.AdCourseName || courseById.get(Number(target.AdCourseId))?.CourseName || "مقرر"} · شعبة ${target.SCode || "—"}` : "";
-              return (
-                <li key={item.id}>
-                  <div className="parked-review-what">
-                    <strong>{what}{name ? ` — ${name}` : ""}</strong>
-                    <small>{item.reviewReason}</small>
-                    <time dir="ltr">{new Date(item.reviewAt).toLocaleString("ar-KW-u-nu-latn", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</time>
-                  </div>
-                  <div className="parked-review-actions">
-                    <SecondaryButton type="button" data-guide-ignore="إعادة إرسال تغيير رفضه الخادم" disabled={parkedBusy === item.id}
-                      onClick={async () => {
-                        setParkedBusy(item.id);
-                        const result = await retryParkedMutation(item.id);
-                        setParkedBusy(null);
-                        setParked(parkedMutations());
-                        if (result.ok) { setMessage("أُرسل التغيير ونُفِّذ."); void loadRows({ silent: true }); }
-                        else setError(result.error || "تعذر الإرسال");
-                      }}>{parkedBusy === item.id ? "جارٍ الإرسال…" : "أعد الإرسال"}</SecondaryButton>
-                    <SecondaryButton type="button" className="danger" data-guide-ignore="تجاهل تغيير رفضه الخادم"
-                      onClick={async () => {
-                        const sure = await visualConfirm({ title: "تجاهل هذا التغيير؟", message: "سيُحذف من القائمة ولن يُطبَّق. لا يمكن استرجاعه.", confirmLabel: "تجاهل", tone: "danger", compact: true });
-                        if (!sure) return;
-                        discardParkedMutation(item.id);
-                        setParked(parkedMutations());
-                      }}>تجاهل</SecondaryButton>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ) : null}
       {/* Silent intelligence: routine timing/physics feedback no longer owns
           vertical space above the timetable. The same state is kept for assistive
           technology and diagnostics; blocking problems still use the existing
@@ -9844,27 +9765,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       <div className="schedule-overview-stack no-print">
         {/* An empty term shows no zero counters — only the genesis scene it asked for. */}
         {/* The cards count what is SHOWN: a filter that matches nothing shows none. */}
-        {!rowsForeign && filteredRows.length > 0 ? (
-        <section className="schedule-mini-stats">
-          <StatCard
-            icon={<CalendarDays />}
-            value={filteredRows.length}
-            label="موعد ظاهر"
-          />
-          <StatCard
-            icon={<Table2 />}
-            value={
-              new Set(filteredRows.map((x) => roomIdentityKey(x)).filter(Boolean)).size
-            }
-            label="قاعة مستخدمة"
-          />
-          <StatCard
-            icon={<Sparkles />}
-            value={new Set(filteredRows.map((x) => x.AdInstructorId)).size}
-            label="أستاذ مقرر"
-          />
-        </section>
-        ) : null}
         <LivingScheduleLayer
           user={user}
           rows={filteredRows}
@@ -9884,6 +9784,123 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       </div>
       ) : null}
       <Surface className="schedule-control">
+        {/* ── حالُ الجدول في موضعٍ واحد ─────────────────────────────────────
+            كانت شرائطَ متراكبةً فوق البيانات: وضعُ التجربة، والفصلُ المنتهي،
+            والقاعاتُ المعلّقة، والعدّادات، وحالُ الاتصال. صارت رأساً هادئاً
+            واحداً وحبوباً بأعدادها داخل بطاقة المرشّحات — بالشروط والأفعال
+            نفسها، لا يسقط منها شيء. */}
+        {termFrozen || practiceMode || (pendingNoticeVisible && pendingOwnRows.length) || (!rowsForeign && filteredRows.length > 0)
+          || !networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders || pendingOwnRows.length || (parkedOpen && parked.length) ? (
+        <div className="schedule-status no-print">
+          {termFrozen ? (
+            <DnaStatusHeader
+              as="div"
+              className="schedule-status-head"
+              icon={<Lock />}
+              tone="neutral"
+              title="انتهى هذا الفصل"
+              subtitle={<>جدولُه محفوظٌ للاطّلاع والتقارير، و<b>لجنةُ الجدول</b> وحدَها تعمل فيه.</>}
+            />
+          ) : null}
+          {practiceMode ? (
+            <div className="schedule-practice-strip" data-guide-target="schedule.practice" role="status">
+              <DnaStatusHeader
+                as="div"
+                className="schedule-status-head"
+                icon={<ShieldCheck />}
+                tone="mint"
+                title="وضع تجربة"
+                subtitle="كل تغيير مؤقت على هذا الجهاز فقط."
+                actions={<button type="button" onClick={() => window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail:{ scope:"schedule", type:"practice.stop", featureId:"schedule.practice" } }))}>إنهاء</button>}
+              />
+            </div>
+          ) : null}
+          {pendingNoticeVisible && pendingOwnRows.length ? (
+            <DnaStatusHeader
+              as="div"
+              className="schedule-status-head pending-room-status"
+              icon={<CircleAlert />}
+              tone="warn"
+              title={<>لم تُثبَّت بعد قاعات <b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")}</b> {nounFor(pendingOwnRows.length, AR.section)} لديك.</>}
+              actions={<><SecondaryButton type="button" data-guide-ignore="فلتر القاعات المعلقة" onClick={()=>{setPendingOnly(true);setPendingNoticeVisible(false)}}>استكمال القاعات</SecondaryButton><button type="button" data-guide-ignore="إخفاء تنبيه القاعات المعلقة" className="pending-room-dismiss dna-ibtn" aria-label="إخفاء التنبيه" onClick={()=>setPendingNoticeVisible(false)}><X/></button></>}
+            />
+          ) : null}
+          <div className="schedule-status-pills">
+            {!rowsForeign && filteredRows.length > 0 ? (
+            <section className="schedule-mini-stats">
+              <DnaCount icon={<CalendarDays aria-hidden="true" />} value={filteredRows.length.toLocaleString("ar-KW-u-nu-latn")} label="موعد ظاهر" />
+              <DnaCount icon={<DoorOpen aria-hidden="true" />} value={new Set(filteredRows.map((x) => roomIdentityKey(x)).filter(Boolean)).size.toLocaleString("ar-KW-u-nu-latn")} label="قاعة مستخدمة" />
+              <DnaCount icon={<UsersRound aria-hidden="true" />} value={new Set(filteredRows.map((x) => x.AdInstructorId)).size.toLocaleString("ar-KW-u-nu-latn")} label="أستاذ مقرر" />
+            </section>
+            ) : null}
+          {!networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders || pendingOwnRows.length ? (
+            <div className="schedule-ops-strip" aria-label="حالة العمل الذكي">
+              {pendingOwnRows.length?<button type="button" data-guide-ignore="فلتر القاعات المعلقة" className={`schedule-ops-pill warn ${pendingOnly?"on":""}`} onClick={()=>setPendingOnly(value=>!value)}><CircleAlert aria-hidden="true"/><b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")} بانتظار قاعة</b></button>:null}
+              {!networkOnline ? <span className="schedule-ops-pill warn"><Radio aria-hidden="true"/><b>دون اتصال · التغييرات الآمنة محلية</b></span> : null}
+              {offlinePending ? <span className="schedule-ops-pill warn"><Upload aria-hidden="true"/><b>{offlinePending.toLocaleString("ar-KW-u-nu-latn")} بانتظار المزامنة</b></span> : null}
+              {/* A refusal is not a pending sync: it needs a person, so it gets its
+                  own pill that does not clear until the shelf is empty. */}
+              {parked.length ? <button type="button" data-guide-ignore="فتح قائمة التغييرات التي رفضها الخادم بعد انقطاع الاتصال" className={`schedule-ops-pill warn ${parkedOpen?"on":""}`} onClick={()=>setParkedOpen(value=>!value)}><ShieldAlert aria-hidden="true"/><b>{countOf(parked.length, AR.change)} رفضها الخادم</b></button> : null}
+              {liveCollaborators ? <span className="schedule-ops-pill"><UsersRound aria-hidden="true"/><b>{liveCollaborators.toLocaleString("ar-KW-u-nu-latn")} يعمل الآن</b></span> : null}
+              {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>تحت التحرير: {countOf(liveEditors + liveHolders, AR.card)}</b></span> : null}
+            </div>
+          ) : null}
+          </div>
+          {/* ── ما رفضه الخادم، معروضاً أخيراً ────────────────────────────────────
+              One line per refusal: what it was trying to do, when, and the server's
+              own sentence for why. Two ways out, and no third: send it again now,
+              or let it go. Nothing here decides on the person's behalf, because
+              the reason it is on this shelf at all is that the software could not. */}
+          {parkedOpen && parked.length ? (
+            <div className="parked-review no-print" role="region" aria-label="تغييرات رفضها الخادم">
+              <header>
+                <ShieldAlert aria-hidden="true" />
+                <div>
+                  <strong>تغييرات رفضها الخادم بعد عودة الاتصال</strong>
+                  <small>حُفظت كما هي ولم تُطبَّق. أعد إرسال ما تريده، وتجاهل ما لم يعد صالحاً.</small>
+                </div>
+                <button type="button" data-guide-ignore="إغلاق قائمة التغييرات المرفوضة" onClick={() => setParkedOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+              </header>
+              <ul>
+                {[...parked].reverse().map(item => {
+                  const target = rows.find(row => Number(row.id) === Number(String(item.url).match(/\/api\/schedules\/(\d+)/)?.[1] || 0));
+                  const what = item.method === "DELETE" ? "حذف موعد"
+                    : String(item.url).includes("move-batch") ? "نقل مجموعة مواعيد"
+                      : "تعديل موعد";
+                  const name = target ? `${target.AdCourseName || courseById.get(Number(target.AdCourseId))?.CourseName || "مقرر"} · شعبة ${target.SCode || "—"}` : "";
+                  return (
+                    <li key={item.id}>
+                      <div className="parked-review-what">
+                        <strong>{what}{name ? ` — ${name}` : ""}</strong>
+                        <small>{item.reviewReason}</small>
+                        <time dir="ltr">{new Date(item.reviewAt).toLocaleString("ar-KW-u-nu-latn", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</time>
+                      </div>
+                      <div className="parked-review-actions">
+                        <SecondaryButton type="button" data-guide-ignore="إعادة إرسال تغيير رفضه الخادم" disabled={parkedBusy === item.id}
+                          onClick={async () => {
+                            setParkedBusy(item.id);
+                            const result = await retryParkedMutation(item.id);
+                            setParkedBusy(null);
+                            setParked(parkedMutations());
+                            if (result.ok) { setMessage("أُرسل التغيير ونُفِّذ."); void loadRows({ silent: true }); }
+                            else setError(result.error || "تعذر الإرسال");
+                          }}>{parkedBusy === item.id ? "جارٍ الإرسال…" : "أعد الإرسال"}</SecondaryButton>
+                        <SecondaryButton type="button" className="danger" data-guide-ignore="تجاهل تغيير رفضه الخادم"
+                          onClick={async () => {
+                            const sure = await visualConfirm({ title: "تجاهل هذا التغيير؟", message: "سيُحذف من القائمة ولن يُطبَّق. لا يمكن استرجاعه.", confirmLabel: "تجاهل", tone: "danger", compact: true });
+                            if (!sure) return;
+                            discardParkedMutation(item.id);
+                            setParked(parkedMutations());
+                          }}>تجاهل</SecondaryButton>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+        ) : null}
         <div className="filter-strip">
           <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
           {singleDepartmentOf(scopes, filterCollege, isPowerAdmin) === null ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
