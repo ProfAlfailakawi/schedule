@@ -9,6 +9,7 @@
 import fs from "fs";
 import path from "path";
 import { computeMeetingSlots, meetingParticipants } from "../src/utils/meetingSlots";
+import { termVisitingIds } from "../src/utils/liveVisiting";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -28,6 +29,30 @@ const shown = meetingParticipants(people, [4]).map(p => p.AdInstructorId);
 check(!shown.includes(3) && !shown.includes(5), "«هيئة تدريسية» (بأي رسم) لا تظهر مشاركاً");
 check(!shown.includes(4), "المنتدب لا يظهر مشاركاً");
 check(shown.includes(1) && shown.includes(2), "من سواهما يبقى — اللقب «أ.» لا يُقرأ تصنيفاً");
+
+/* 1b — visiting is term-wide, independent of the scope on screen */
+const affiliations = [
+  { collegeId: 1, sectionId: 10, kind: "directory" as const, instructorIds: [4] },
+  { collegeId: 1, sectionId: 10, kind: "roster" as const, termId: 7, instructorIds: [4] },
+  { collegeId: 2, sectionId: 20, kind: "directory" as const, instructorIds: [6, 8] },
+  { collegeId: 2, sectionId: 20, kind: "roster" as const, termId: 7, instructorIds: [6] },
+  { collegeId: 2, sectionId: 20, kind: "roster" as const, termId: 6, instructorIds: [8] },
+  { collegeId: 2, sectionId: 21, kind: "roster" as const, termId: 7, instructorIds: [9] },
+];
+const known = (id: number) => id !== 404;
+const termVisitors = termVisitingIds(affiliations, 7, known).sort();
+check(termVisitors.join(",") === "4,6", "منتدبو الفصل من كل الكليات (4 من الكلية 1، و6 من الكلية 2)");
+check(!termVisitors.includes(8), "منتدب فصلٍ آخر لا يُستبعد هذا الفصل");
+check(!termVisitors.includes(9), "اسم في الروستر بلا دليل القسم ليس منتدباً (القاعدة نفسها لكل قسم)");
+const collegeOnlyRoster = [
+  ...people,
+  { AdInstructorId: 6, AdInstructorName: "د. منتدب من كلية أخرى" },
+];
+/* College-only scope (or none): the client holds no section roster, yet the
+   term-wide set from the server still removes both visitors. */
+const collegeOnly = meetingParticipants(collegeOnlyRoster, termVisitors).map(p => p.AdInstructorId);
+check(!collegeOnly.includes(4) && !collegeOnly.includes(6), "نطاق كلية فقط/بلا نطاق: المنتدبون مستبعدون");
+check(collegeOnly.includes(1) && collegeOnly.includes(2), "نطاق كلية فقط: البقية باقون");
 
 /* Fixture: 5 people, every one of them busy at some point every day. */
 const all = { fsunday: 1, fmonday: 1, ftuesday: 1, fwednesday: 1, fthursday: 1 };
@@ -64,10 +89,17 @@ check(/getSchedulesByScope\(\{\s*termId\s*\}\)/.test(route), "الخادم يق�
 check(/computeMeetingSlots\(/.test(route) && !/SCHEDULE_DAY_START/.test(route), "الحساب في utils/meetingSlots وحده — لا نسخة ثانية في الخادم");
 check(/requirePermission\(7\)/.test(route), "المسار محمي بصلاحية الجدول");
 check(!/AdCourseName|AdRoomCode|AdCollegeName/.test(route), "لا يخرج من المسار إلا متفرغ/مشغول — لا مقرر ولا قاعة ولا كلية");
+check(/meetingExcludedIds\(termId\)/.test(route) && /participantIds/.test(route), "الخادم هو الحَكَم: يُسقط «هيئة تدريسية» والمنتدبين مما أرسله العميل");
+const helper = server.slice(server.indexOf("async function meetingExcludedIds"), server.indexOf('app.post("/api/schedules/meeting-slots"'));
+check(/termVisitingIds\(/.test(helper) && /meetingParticipants\(/.test(helper) && !/collegeId|sectionId/.test(helper.replace(/getDelegateAffiliations/, "")), "المستبعدون من الفصل كله بلا كلية/قسم، وبالقاعدة المشتركة");
+check(/meeting-participants/.test(helper) && /requirePermission\(7\)/.test(helper), "قائمة المستبعدين للواجهة من الخادم وبصلاحية الجدول");
+const live = server.slice(server.indexOf("async function readLiveVisitingRoster"), server.indexOf("async function readLiveVisitingRoster") + 900);
+check(/liveVisitingIds\(/.test(live), "readLiveVisitingRoster يسأل القاعدة نفسها (liveVisitingIds) — لا نسخة ثانية");
 
 const ui = fs.readFileSync(path.join(process.cwd(), "src/components/MeetingSlots.tsx"), "utf8");
 check(!ui.includes("لا نافذة كاملة"), "الواجهة لا تنتهي بـ«لا نافذة كاملة»");
 check(ui.includes("meetingParticipants("), "الواجهة تختار المشاركين بالقاعدة المشتركة");
+check(ui.includes("/api/schedules/meeting-participants") && !/visitingIds/.test(ui), "الواجهة تأخذ المستبعدين من الخادم لا من اختيار القسم");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

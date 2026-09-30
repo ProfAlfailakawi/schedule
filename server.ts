@@ -21,7 +21,8 @@ import { currentTermId, planningTermCandidates, termHasEnded, termIsArchive } fr
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
-import { computeMeetingSlots } from "./src/utils/meetingSlots";
+import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
+import { liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
@@ -4929,13 +4930,8 @@ async function readLiveVisitingRoster(collegeId: number, sectionId: number, term
     Repository.getDepartmentDelegates(collegeId, sectionId),
     Repository.getInstructors(),
   ]);
-  const directoryIds = new Set(directory.map(Number));
   const instructorById = new Map(instructors.map(person => [Number(person.AdInstructorId), person]));
-  const instructorIds = [...new Set(
-    roster
-      .map(Number)
-      .filter(id => Number.isFinite(id) && id > 0 && directoryIds.has(id) && instructorById.has(id))
-  )];
+  const instructorIds = liveVisitingIds(roster, directory, id => instructorById.has(id));
   return {
     instructorIds,
     instructors: instructorIds.map(id => instructorById.get(id)).filter(Boolean),
@@ -7208,6 +7204,24 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
    and ranked. Nothing is revealed beyond busy/free for people the caller
    chose by name. */
 
+/** Who may sit in «متى نلتقي؟» this term — decided here, for every scope.
+ *  Visiting instructors are read term-wide across colleges (not from the
+ *  department on screen), so a college-only or empty scope excludes them too. */
+async function meetingExcludedIds(termId: number) {
+  const [affiliations, instructors] = await Promise.all([Repository.getDelegateAffiliations(), Repository.getInstructors()]);
+  const known = new Set(instructors.map(person => Number(person.AdInstructorId)));
+  const visiting = termVisitingIds(affiliations, termId, id => known.has(id));
+  const kept = new Set(meetingParticipants(instructors, visiting).map(person => Number(person.AdInstructorId)));
+  return { instructors, excluded: instructors.map(person => Number(person.AdInstructorId)).filter(id => !kept.has(id)), visiting };
+}
+
+app.get("/api/schedules/meeting-participants", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const termId = Number(req.query.termId || 0);
+  if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
+  const { excluded } = await meetingExcludedIds(termId);
+  res.json({ excludedInstructorIds: excluded });
+});
+
 app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body || {};
   const termId = Number(body.termId || 0);
@@ -7222,12 +7236,17 @@ app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: Authe
      read is term-wide on purpose (no college/section filter), and what leaves
      the server is busy/free per chosen name only: no course, no room, no
      college. */
-  const [termRows, instructors] = await Promise.all([
+  const [termRows, { instructors, excluded }] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
-    Repository.getInstructors(),
+    meetingExcludedIds(termId),
   ]);
+  /* The server is the authority on who counts: «هيئة تدريسية» and visiting
+     instructors are dropped here whatever the client sent. */
+  const drop = new Set(excluded);
+  const participantIds = ids.filter(id => !drop.has(id));
+  if (participantIds.length < 2) { res.status(400).json({ error: "اختر أستاذين على الأقل من غير المنتدبين" }); return; }
   const nameById = new Map(instructors.map(person => [Number(person.AdInstructorId), person.AdInstructorName]));
-  const answer = computeMeetingSlots({ rows: termRows, ids, nameById, duration });
+  const answer = computeMeetingSlots({ rows: termRows, ids: participantIds, nameById, duration });
   res.json({ ...answer, busyScope: "allColleges" });
 });
 

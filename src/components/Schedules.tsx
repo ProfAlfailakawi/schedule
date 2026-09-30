@@ -12323,7 +12323,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       {meetingOpen ? (
         <MeetingSlots
           instructors={instructors.map(person => ({ AdInstructorId: person.AdInstructorId, AdInstructorName: person.AdInstructorName }))}
-          visitingIds={visitingIds}
           scopeNarrowed={Boolean(filterCollege || filterSection)}
           termId={filterTerm}
           onClose={() => setMeetingOpen(false)}

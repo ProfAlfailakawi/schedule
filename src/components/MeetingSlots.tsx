@@ -37,10 +37,8 @@ const whoConflicts = (busy: string[]) =>
   busy.length <= 4 ? busy.join("، ") : `${busy.slice(0, 4).join("، ")} و${countOf(busy.length - 4, AR.participant)} غيرهم`;
 const windowLine = (slot: MeetingWindow) => `${slot.free} من ${slot.total} متفرغ`;
 
-export default function MeetingSlots({ instructors, visitingIds, scopeNarrowed = false, termId, onClose }: {
+export default function MeetingSlots({ instructors, scopeNarrowed = false, termId, onClose }: {
   instructors: PersonOption[];
-  /** المنتدبون في النطاق المعروض — لا يُعرضون مشاركين. */
-  visitingIds?: Iterable<number>;
   /** اختار المستخدم كلية أو قسماً: يُقال له إن الانشغال يُقرأ من الكليات كلها. */
   scopeNarrowed?: boolean;
   termId: number;
@@ -59,8 +57,19 @@ export default function MeetingSlots({ instructors, visitingIds, scopeNarrowed =
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  /* بلا «هيئة تدريسية» ولا منتدبين: القاعدة في utils/meetingSlots. */
-  const faculty = useMemo(() => meetingParticipants(instructors, visitingIds || []), [instructors, visitingIds]);
+  /* بلا «هيئة تدريسية» ولا منتدبين. الخادم هو الحَكَم: يقرأ منتدبي الفصل كله
+     عبر الكليات، فلا يتغيّر الجواب باختيار القسم أو عدمه. القاعدة نفسها
+     (meetingParticipants) تُطبَّق هنا على ما أعاده. */
+  const [excludedIds, setExcludedIds] = useState<number[]>([]);
+  useEffect(() => {
+    if (!termId) return;
+    let live = true;
+    readJson(`/api/schedules/meeting-participants?termId=${termId}`)
+      .then(body => { if (live) setExcludedIds((body?.excludedInstructorIds || []).map(Number)); })
+      .catch(() => { /* الخادم يُسقطهم عند الحساب على أي حال */ });
+    return () => { live = false; };
+  }, [termId]);
+  const faculty = useMemo(() => meetingParticipants(instructors, excludedIds), [instructors, excludedIds]);
   const options = useMemo(() => {
     const needle = query.trim();
     return needle ? faculty.filter(person => person.AdInstructorName.includes(needle)) : faculty;
