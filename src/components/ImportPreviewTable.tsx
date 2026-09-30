@@ -191,16 +191,22 @@ export default function ImportPreviewTable({
      التشخيص كان تلميحاً يحتاج تمرير مؤشر: من يراجع جدولاً على شاشة لمس، أو
      يصوّره ليسأل عنه، لا يراه أبداً. الخانة غير المربوطة تكتب سببها تحت
      الاسم — مَن المرشحون، وما الخطوة — فتشخّص نفسها لمن ينظر إليها فقط. */
-  /* ── مقرر لم يُحسم رقمه يقول ما طُبع، لا «—» ──────────────────────────────
-     حين تعجز خانات الرقم الممسوحة عن حسم المقرر يبقى اسمه المطبوع مقروءاً في
-     الغالب («تجويد القران الكريم وحفظه (1)»). شرطةٌ عارية كانت تُخفي ذلك عن
-     المراجع، فيُعرض الاسم المطبوع موسوماً «رقم المقرر غير واضح» — نصّ مصدر
-     للعرض فقط، لا يُحفظ ولا يصير هوية. */
-  const printedCourseText = (row: ImportRow) => String(row.sourceCourseText || "")
-    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
-    .replace(/\)(\d)\(/g, "($1)")
-    .split(/\s+/).filter(word => /[\u0621-\u064A0-9]/.test(word) && !/[A-Za-z]/.test(word)).join(" ")
-    .trim().slice(0, 60);
+  /* ── المقرر اسمه من النظام دائماً ────────────────────────────────────────
+     ما طبعته الورقة لا يُعرض اسماً للمقرر ولو كان مقروءاً، فالمسح قد يشوّهه
+     («بويد القران الكريم وحفظه (1)»). رقمٌ حُسم يُعرض باسم النظام؛ ورقمٌ لم
+     يُحسم يقول ذلك صراحةً، ويُختار مقرره من قائمة مقررات القسم بأسمائها في
+     النظام (طلب المالك 2026-09-27). الرقم المطابق صراحةً يبقى مقفلاً؛ أما ما
+     حُسم بخاناته واسمه المطبوع فللمراجعة، فيُفتح اختياره أيضاً. */
+  const coursePickable = (row: ImportRow) => {
+    if (!Number(row.AdCourseId)) return true;
+    const proof = row.importEvidence?.course;
+    return proof?.confidence === "REVIEW_REQUIRED" || proof?.source === "MANUAL";
+  };
+  /* مقررات القسم وحدها — شاشة المدير تمرّر قائمة النظام كلها، والرقم «251» يتكرر
+     بين الأقسام؛ الحفظ يرفض مقرراً من قسمٍ آخر، فالقائمة لا تعرضه أصلاً. */
+  const departmentCourseOptions = useMemo(() => courses
+    .filter(course => !sectionId || Number(course.AdSectionId) === Number(sectionId))
+    .sort((a, b) => String(a.CourseCode || "").localeCompare(String(b.CourseCode || ""), "en", { numeric: true })), [courses, sectionId]);
   const unlinkedReason = (row: ImportRow) => String(row.importEvidence?.instructor?.reason || "").trim();
 
   /** ثلاثة وسوم لثلاثة علاجات: «غير مسجّل» علاجه تسجيل الشخص، و«مسجّل أكثر
@@ -373,8 +379,15 @@ export default function ImportPreviewTable({
                 <tr className={open ? "is-editing" : ""}>
                   <td className={`num${unplacedNotes.length ? " import-cell-missing" : ""}`} title={unplacedNotes.join(" · ") || undefined}>{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
                   <td className={`import-cell-course ${cellClass("course",missing.course(row))}`} title={cellTitle("course")}>
-                    <div className="import-locked-course" aria-label="المقرر مثبت من النظام ولا يتغير من معاينة الاستيراد">
-                      <span className="import-course-title-line">{course?.CourseName ? <strong>{course.CourseName}</strong> : (printedCourseText(row) ? <span className="import-unlinked-head"><span>{printedCourseText(row)}</span><small>رقم المقرر غير واضح</small></span> : <strong>—</strong>)}{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
+                    <div className="import-locked-course" aria-label={coursePickable(row) ? "المقرر يُختار من مقررات القسم في النظام" : "المقرر مثبت من النظام ولا يتغير من معاينة الاستيراد"}>
+                      <span className="import-course-title-line">{open && coursePickable(row) ? (
+                        <select className="import-course-picker" aria-label="اختر المقرر من مقررات القسم" value={Number(row.AdCourseId) || ""}
+                          data-guide-ignore="اختيار مقرر صف داخل معاينة الاستيراد قبل أي حفظ"
+                          onChange={event => { const picked = courseById.get(Number(event.target.value)); if (picked) patchManual(index, "course", { AdCourseId: Number(picked.AdCourseId), AdCourseName: String(picked.CourseName || "") }); }}>
+                          <option value="" disabled>اختر المقرر…</option>
+                          {departmentCourseOptions.map(item => <option key={item.AdCourseId} value={item.AdCourseId}>{item.CourseCode} — {item.CourseName}</option>)}
+                        </select>
+                      ) : course?.CourseName ? <strong>{course.CourseName}</strong> : <span className="import-unlinked-head"><small>رقم المقرر غير واضح</small><em className="import-unlinked-why">اضغط التعديل واختر المقرر</em></span>}{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
                       {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                     </div>
                   </td>
