@@ -19030,8 +19030,8 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
   function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function norm(v) { return String(v || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/\\s+/g, " ").trim(); }
   function place(r) { return [r.room, r.hall].filter(Boolean).join("/"); }
-  /* ترتيب الجامعة المعتمد: النهاية - البداية داخل عزلٍ LTR (formatScheduleTimeRange). */
-  function range(r) { return esc(r.end) + " - " + esc(r.start); }
+  /* البداية – النهاية داخل عزلٍ LTR، كما يكتبها formatScheduleTimeRange. */
+  function range(r) { return esc(r.start) + " – " + esc(r.end); }
   function dayNames(r) { return r.days.map(function (d) { return DAYS[d]; }).join(" · "); }
   function match(r) {
     if (state.day >= 0 && r.days.indexOf(state.day) < 0) return false;
@@ -19192,7 +19192,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   const slotHtml = (row: typeof payload.rows[number]) => `<span class="slot">
       <b>${esc(row.name)}</b>
       ${row.code || row.section ? `<small dir="ltr">${esc(row.code || "")}${row.section ? ` · ${esc(row.section)}` : ""}</small>` : ""}
-      <time dir="ltr">${esc(row.end)} - ${esc(row.start)}</time>
+      <time dir="ltr">${esc(row.start)} – ${esc(row.end)}</time>
       ${row.room || row.hall ? `<time dir="ltr">${esc([row.room, row.hall].filter(Boolean).join("/"))}</time>` : ""}
       ${row.instructor ? `<i>${esc(firstLast(row.instructor))}</i>` : ""}
     </span>`;
