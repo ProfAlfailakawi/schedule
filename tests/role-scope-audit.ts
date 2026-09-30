@@ -183,6 +183,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
     "PUT /api/instructors/:id": "دليل الأساتذة جامعي، شاشة الأساتذة (٣)",
     "DELETE /api/instructors/:id": "دليل الأساتذة جامعي، شاشة الأساتذة (٣)",
     "POST /api/department-rooms": "مرفوضٌ دائماً (٤٠٣)",
+    "GET /api/schedules/meeting-participants": "أرقام المنتدبين والهيئة التدريسية المستبعدين من «متى نلتقي» — أرقامٌ فقط بلا مقرّرٍ ولا قاعة",
     "POST /api/schedules/meeting-slots": "نوافذ فراغٍ لأساتذةٍ يختارهم القارئ — بلا مقرّرٍ ولا قاعة",
     "POST /api/guide/intent": "دليل الاستخدام — لا بيانات",
     "GET /api/roles": "تعريفات الصفات — لا بيانات",
