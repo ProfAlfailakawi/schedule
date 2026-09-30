@@ -18,11 +18,11 @@ export const isDemoLinkToken = (token: unknown): boolean =>
   String(token ?? "").startsWith(DEMO_LINK_TOKEN_PREFIX);
 
 /** صفحاتُ الروابط العامة خارج /api، بمقطعٍ واحدٍ يليه الرمز. */
-export const PUBLIC_LINK_PAGE_PREFIXES = ["/s/", "/q/", "/r/", "/m/"] as const;
+export const PUBLIC_LINK_PAGE_PREFIXES = ["/s/", "/q/", "/r/", "/m/", "/t/"] as const;
 
 /**
  * رمزُ الرابط من مسار الطلب الكامل (originalUrl)، أو "" إن لم يكن مساراً عاماً.
- *   /s/<t>  /q/<t>  /r/<t>  /m/<t>
+ *   /s/<t>  /q/<t>  /r/<t>  /m/<t>  /t/<t> (جدول الطلبة)
  *   /api/public/<نوع>/<t>[/…]
  */
 export function publicLinkTokenFromPath(url: string): string {

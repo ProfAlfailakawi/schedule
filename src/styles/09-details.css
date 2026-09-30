@@ -1800,3 +1800,31 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .meeting-slots-ranked li{font-size:12.5px;color:var(--ink)}
 .meeting-slots-ranked li strong{font-weight:700}
 .meeting-slots-ranked li small{display:block;color:var(--muted);font-size:10.5px}
+/* رمز QR لجدول الطلبة (StudentQrButton) — ورقةٌ صغيرة، والرمزُ على بطاقةٍ بيضاء
+   ليبقى مقروءاً للكاميرا في أي سمة. */
+.student-qr-backdrop{position:fixed;inset:0;z-index:4500;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.45)}
+.student-qr-sheet{width:min(420px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-md,14px);background:var(--surface,var(--bg));color:var(--ink);display:grid;gap:var(--s3);text-align:center}
+.student-qr-sheet header{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}
+.student-qr-close{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:4px}
+.student-qr-lede{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.8}
+.student-qr-error{margin:0;color:var(--danger)}
+.student-qr-code{width:220px;height:220px;margin:0 auto;padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);background:#fff}
+.student-qr-code svg{display:block;width:100%;height:100%}
+.student-qr-url{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink);font-size:var(--t-xs)}
+.student-qr-actions{display:flex;flex-wrap:wrap;gap:var(--s2);justify-content:center}
+/* تخطيط الشعب (SectionPlanning): جدولٌ يطوي أعمدته على الهاتف. */
+.section-plan{display:grid;gap:var(--s3)}
+.section-plan-note{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.8}
+.section-plan-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3)}
+.section-plan-bar input{flex:1 1 180px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink)}
+.section-plan-table{display:grid;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.section-plan-row{display:grid;grid-template-columns:minmax(160px,2fr) 90px 60px 70px minmax(180px,3fr) auto;gap:var(--s2);align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:var(--t-sm)}
+.section-plan-row.head{border-top:0;color:var(--muted);font-size:var(--t-xs);font-weight:600}
+.section-plan-row input{width:80px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink)}
+.section-plan-count{font-weight:700;font-size:var(--t-md,16px)}
+.section-plan-reason{color:var(--muted);line-height:1.7}
+@media (max-width:760px){
+  .section-plan-row{grid-template-columns:1fr auto auto}
+  .section-plan-row.head{display:none}
+  .section-plan-row>span:first-child,.section-plan-reason{grid-column:1/-1}
+}

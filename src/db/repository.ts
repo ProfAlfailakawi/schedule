@@ -43,6 +43,7 @@ import {
   VisitingRoster,
   DepartmentDelegateDirectory,
   DepartmentRoomDirectory,
+  RegistrationStats,
   StudentNeed,
   StudentCourseState,
   StudentCaseDecision,
@@ -223,6 +224,7 @@ interface DBState {
   visitingRosters?: VisitingRoster[];
   departmentDelegates?: DepartmentDelegateDirectory[];
   departmentRooms?: DepartmentRoomDirectory[];
+  registrationStats?: RegistrationStats[];
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
   scheduleShareLinks?: ScheduleShareLink[];
@@ -2753,6 +2755,26 @@ export const Repository = {
   },
 
   /**
+   * إنشاءُ فصلٍ بالاسم إن لم يوجد — للمهمة التلقائية (src/server/autoTerms.ts).
+   * في Firestore يُحجز الاسم أولاً بوثيقة ‎create()‎ (تفشل إن سبقت نسخةٌ أخرى)،
+   * فلا يولد فصلان بالاسم نفسه من نسختين تقلعان معاً. يعيد null إن وُجد.
+   */
+  createTermIfAbsent: async (name: string, dates: { start: string; weeks: number }): Promise<AdTerm | null> => {
+    const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, "");
+    const exists = (await Repository.getTerms()).some(term => norm(term.AdTermName) === norm(name));
+    if (exists) return null;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const claimId = createHash("sha256").update(norm(name)).digest("hex").slice(0, 32);
+      try {
+        await firestoreDb.collection("autoTermClaims").doc(claimId).create({ name, at: new Date().toISOString() });
+      } catch {
+        return null;
+      }
+    }
+    return Repository.createTerm(name, dates);
+  },
+
+  /**
    * موعد تسليم الجداول للفصل.
    *
    * دالّةٌ مستقلّة لحقلٍ واحد، لأن من يضعه — رئيس التسجيل — لا يعدّل اسم
@@ -4996,6 +5018,37 @@ export const Repository = {
       if (!byKey.has(key)) byKey.set(key, item);
     }
     return [...byKey.values()];
+  },
+
+  /** إحصاءُ التسجيل لقسمٍ في فصل (أو null). */
+  getRegistrationStats: async (collegeId: number, sectionId: number, termId: number): Promise<RegistrationStats | null> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("registrationStats").doc(scopeKey.replace(/:/g, "_")).get();
+      return doc.exists ? (doc.data() as RegistrationStats) : null;
+    }
+    return (db.registrationStats || []).find(row => row.scopeKey === scopeKey) || null;
+  },
+
+  saveRegistrationStats: async (collegeId: number, sectionId: number, termId: number,
+    input: { counts: Record<string, number>; accepted?: Record<string, number> }, updatedBy = ""): Promise<RegistrationStats> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    const clean = (map: Record<string, unknown> | undefined, max: number) => Object.fromEntries(
+      Object.entries(map || {}).slice(0, 2000)
+        .map(([key, value]) => [String(Number(key)), Math.floor(Number(value))] as const)
+        .filter(([key, value]) => Number(key) > 0 && Number.isFinite(value) && value >= 0 && value <= max));
+    const row: RegistrationStats = {
+      id: scopeKey, scopeKey, collegeId, sectionId, termId,
+      counts: clean(input.counts, 100000), accepted: clean(input.accepted, 500),
+      updatedAt: new Date().toISOString(), updatedBy: String(updatedBy || "").slice(0, 120),
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("registrationStats").doc(scopeKey.replace(/:/g, "_")).set(row);
+    } else {
+      db.registrationStats = [...(db.registrationStats || []).filter(item => item.scopeKey !== scopeKey), row];
+      saveDatabase();
+    }
+    return row;
   },
 
   pinDepartmentRoom: async (collegeId: number, sectionId: number, building: string, hall: string): Promise<Array<{ building: string; hall: string }>> => {

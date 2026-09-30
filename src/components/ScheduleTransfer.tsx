@@ -7,6 +7,8 @@ import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview, { PageReviewWait } from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
+import StudentQrButton from "./StudentQrButton";
+import SectionPlanning from "./SectionPlanning";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
@@ -51,7 +53,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "export" | "import" | "publish" | "retire" | "visiting";
+type Tab = "export" | "import" | "publish" | "retire" | "visiting" | "planning";
 
 export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onSectionChange, onClose }: Props) {
   useDialogDismiss(true, onClose);
@@ -1139,7 +1141,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         <header>
           <div>
             <span className="surface-kicker">الجدول كوحدة واحدة</span>
-            <h2>تصدير · استيراد · نشر · استبدال · منتدبون</h2>
+            <h2>تصدير · استيراد · نشر · استبدال · منتدبون · تخطيط</h2>
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
@@ -1153,6 +1155,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "publish" ? "active" : ""} onClick={() => setTab("publish")} title="نشر"><Link2 />نشر</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")} title="استبدال"><UserMinus />استبدال</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "planning" ? "active" : ""} onClick={() => setTab("planning")} title="تخطيط الشعب"><UsersRound />تخطيط الشعب</button>
         </nav>
         )}
 
@@ -1537,7 +1540,22 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <p>جدول القسم لمن يحمل الرابط، أو بطاقة لكل أستاذ يطلب منها تعديل جدوله.</p>
                 </div>
                 {termIsArchive(terms.find(row => Number(row.AdTermId) === Number(termId)), terms) ? null : <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} appearance="primary" />}
+                {/* رمزُ QR للطلبة: جدولُ القسم المعتمد للفصل الجاري دائماً. */}
+                {collegeId && sectionId ? <StudentQrButton data-guide-feature-id="schedule.tool.data" collegeId={collegeId} sectionId={sectionId} termId={termId} /> : null}
               </div>
+            </>
+          ) : null}
+
+          {tab === "planning" ? (
+            <>
+              <div className="tool-lede">
+                <span className="tool-lede-mark"><UsersRound aria-hidden="true" /></span>
+                <div>
+                  <strong>كم شعبة نفتح؟</strong>
+                  <p>إحصاء التسجيل لكل مقرر، واقتراح عدد الشعب من السعة ومن الفصول المماثلة.</p>
+                </div>
+              </div>
+              {collegeId && sectionId && termId ? <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} /> : <p>اختر القسم والفصل أولاً.</p>}
             </>
           ) : null}
 

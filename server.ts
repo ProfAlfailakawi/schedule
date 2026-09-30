@@ -84,7 +84,8 @@ import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
-import { termWindow } from "./src/utils/termSequence";
+import { termWindow, previousYearSameTermName, sameTermName } from "./src/utils/termSequence";
+import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -13582,18 +13583,22 @@ async function resolveShareToken(token: string) {
   return { link };
 }
 
-async function buildSharePayload(link: ScheduleShareLink) {
-  const [rows, courses, instructors, sections, colleges, terms] = await Promise.all([
-    Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, sectionId: link.AdSectionId, termId: link.AdTermId }),
+/* `options.termId` يقرأ فصلاً غير فصل الرابط (رابط الطلبة: الجاري)، و
+   `finalOnly` يقصر القراءة على المعتمد (finalRowsOnly) — للأبواب العامة للطلبة. */
+async function buildSharePayload(link: ScheduleShareLink, options: { termId?: number; finalOnly?: boolean } = {}) {
+  const termId = Number(options.termId || link.AdTermId);
+  const [liveRows, courses, instructors, sections, colleges, terms] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, sectionId: link.AdSectionId, termId }),
     Repository.getCourses(), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.getTerms()
   ]);
+  const rows = options.finalOnly ? await finalRowsOnly(liveRows, termId) : liveRows;
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
   return {
     label: link.label,
     college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",
     section: sections.find(row => row.AdSectionId === link.AdSectionId)?.AdSectionName || "",
-    term: terms.find(row => row.AdTermId === link.AdTermId)?.AdTermName || "",
+    term: terms.find(row => row.AdTermId === termId)?.AdTermName || "",
     expiresAt: link.expiresAt,
     showInstructors: link.showInstructors !== false,
     rows: rows
@@ -13960,7 +13965,8 @@ app.get("/api/share", requirePermission(7), async (req: AuthenticatedRequest, re
 });
 
 /** عنوانُ الرابط كما يُعرض في لوحة النشر وعلى الصفحة — لكل نوعٍ صيغتُه. */
-function shareLinkLabel(kind: "staff" | "survey" | "department", sectionName: string, termName: string): string {
+function shareLinkLabel(kind: "staff" | "survey" | "department" | "students", sectionName: string, termName: string): string {
+  if (kind === "students") return `جدول الطلبة · ${sectionName}`.trim();
   return kind === "staff"
     ? `بطاقات الأساتذة · ${termName}`.trim()
     : kind === "survey"
@@ -13979,6 +13985,7 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
      sections — no gender is ever inferred from a name. */
   const kind = req.body?.kind === "staff" ? "staff"
     : req.body?.kind === "survey" ? "survey"
+    : req.body?.kind === "students" ? "students"
     : "department";
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
@@ -13990,13 +13997,19 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
     res.status(409).json({ error: "انتهى هذا الفصل، فلا يُصدَر له رابط استبيان. اختر الفصل القادم.", code: "term-ended" });
     return;
   }
+  /* رمزُ QR للطلبة واحدٌ للقسم: يُعاد الرابطُ القائم فلا يتغيّر الملصق المطبوع. */
+  if (kind === "students") {
+    const existing = (await Repository.getShareLinks(collegeId, sectionId, termId))
+      .find(link => link.kind === "students" && !link.revoked && Date.parse(String(link.expiresAt)) > Date.now());
+    if (existing) { res.status(200).json(existing); return; }
+  }
   const label = shareLinkLabel(kind, sectionName, termName);
   /* بطاقةُ الأستاذ تعيش الفصلَ كلَّه — التقويمُ في هاتفه يتبعها — وموعدُ
      الطلبات يُحفظ منفصلاً ويحكم الكتابة وحدها. العمرُ يُحسب هنا، لا في المتصفح. */
   const requestsCloseAt = kind === "staff" ? requestsCloseAtFromDate(req.body?.requestsCloseAt) : "";
   const expiresAt = kind === "staff"
     ? termLinkExpiresAt(terms.find(row => row.AdTermId === termId))
-    : new Date(Date.now() + days * 86400000).toISOString();
+    : new Date(Date.now() + (kind === "students" ? STUDENT_QR_DAYS : days) * 86400000).toISOString();
   const link = await Repository.createShareLink({
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
     label,
@@ -14116,6 +14129,66 @@ app.get("/api/share-personal", requirePermission(7), async (req: AuthenticatedRe
   }));
 });
 
+/* ── إحصاءُ التسجيل واقتراحُ عدد الشعب ───────────────────────────────────────
+ *
+ * القسم يُدخل عدد الطلبة لكل مقرر قبل الفصل؛ ويُعاد معه تاريخُ أقرب ثلاثة
+ * فصولٍ مماثلة (الموسم نفسه، سنواتٌ سابقة): الشعبُ المفتوحة فعلاً في الجدول،
+ * والعددُ المسجّل إن أُدخل. الحسابُ نفسه في المتصفح والاختبار:
+ * src/utils/sectionCountSuggestion.ts. */
+app.get("/api/registration-stats", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const [terms, courses, stats] = await Promise.all([
+    Repository.getTerms(), Repository.getCoursesBySection(sectionId), Repository.getRegistrationStats(collegeId, sectionId, termId),
+  ]);
+  const term = terms.find(row => Number(row.AdTermId) === termId);
+  const similar: Array<{ AdTermId: number; AdTermName: string }> = [];
+  let name = String(term?.AdTermName || "");
+  for (let i = 0; i < 3; i++) {
+    name = previousYearSameTermName(name);
+    if (!name) break;
+    const found = terms.find(row => sameTermName(row.AdTermName, name));
+    if (found) similar.push({ AdTermId: Number(found.AdTermId), AdTermName: String(found.AdTermName) });
+  }
+  const history: Record<string, Array<{ termName: string; sections: number; headcount?: number }>> = {};
+  for (const past of similar) {
+    const [rows, pastStats] = await Promise.all([
+      Repository.getSchedulesByScope({ collegeId, sectionId, termId: past.AdTermId }),
+      Repository.getRegistrationStats(collegeId, sectionId, past.AdTermId),
+    ]);
+    const sectionsOf = new Map<number, Set<string>>();
+    for (const row of rows) {
+      const id = Number(row.AdCourseId);
+      if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
+      sectionsOf.get(id)!.add(String(row.SCode || row.id));
+    }
+    for (const course of courses) {
+      const key = String(course.AdCourseId);
+      const headcount = Number(pastStats?.counts?.[key] || 0);
+      (history[key] ||= []).push({ termName: past.AdTermName, sections: sectionsOf.get(Number(course.AdCourseId))?.size || 0, ...(headcount ? { headcount } : {}) });
+    }
+  }
+  res.json({
+    termName: term?.AdTermName || "",
+    similarTerms: similar.map(item => item.AdTermName),
+    courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
+    counts: stats?.counts || {},
+    accepted: stats?.accepted || {},
+    updatedAt: stats?.updatedAt || "",
+    history,
+  });
+});
+
+app.put("/api/registration-stats", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const saved = await Repository.saveRegistrationStats(collegeId, sectionId, termId,
+    { counts: req.body?.counts || {}, accepted: req.body?.accepted || {} }, String(req.user?.Name || ""));
+  res.json(saved);
+});
+
 // --- Public surface (no account) --------------------------------------------
 
 app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
@@ -14126,6 +14199,8 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
   /* A student survey link opens the survey and the student's status — never
      the department's timetable. */
   if (resolved.link.kind === "survey") { res.status(404).json({ error: "هذا الرابط استبيان للطلبة" }); return; }
+  /* رابطُ جدول الطلبة يقرأ المعتمدَ وحده من بابه (/api/public/students). */
+  if (resolved.link.kind === "students") { res.status(404).json({ error: "هذا الرابط جدول الطلبة" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.json(await buildSharePayload(resolved.link));
@@ -14190,7 +14265,7 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
-  if (resolved.link.kind === "staff" || resolved.link.kind === "survey") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+  if (resolved.link.kind === "staff" || resolved.link.kind === "survey" || resolved.link.kind === "students") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   /* A lecture cancelled on one specific date disappears from that one date in
@@ -18884,6 +18959,175 @@ app.get("/q/:token", async (req: Request, res: Response) => {
   res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res), await demoPageHint(resolved.link, "survey")));
 });
 
+/* ── جدولُ الطلبة برمز QR ─────────────────────────────────────────────────────
+ *
+ * رابطٌ واحدٌ للقسم (kind: "students") يُطبع رمزُه على لوحة الإعلانات: يفتح
+ * جدولَ **الفصل الجاري** دائماً (currentTermId عند كل قراءة)، فلا يموت الملصق
+ * بانتقال الفصل. ويقرأ **المعتمد وحده** (finalRowsOnly) — لا مسودّةَ قسمٍ يعمل
+ * عليها. ولا بيانات أستاذٍ سوى اسمه المطبوع على الجداول أصلاً (ويُخفى إن شاء
+ * القسم). بحثٌ وتصفيةٌ باليوم، وعرضان: حسب المقرر، وحسب اليوم. */
+const STUDENT_QR_DAYS = 365;
+
+function studentSchedulePage(token: string, label: string, nonce: string): string {
+  return `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a100f">
+<meta name="robots" content="noindex,nofollow">
+<title>${label} · SCHEDULE</title>
+<link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/schedule-icon-192.png">
+<style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
+*,*::before,*::after{box-sizing:border-box}
+:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
+@media (prefers-color-scheme:light){:root{--bg:#f6f4ef;--card:#fff;--line:#e3ded3;--ink:#1b2320;--dim:#66736d;--jade:#1f7a63;--brass:#9a6c2e}}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased;padding:max(18px,env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))}
+.wrap{max-width:720px;margin:0 auto}
+.mark{font:600 12px/1 ui-monospace,monospace;letter-spacing:.26em;color:var(--brass)}
+h1{margin:10px 0 2px;font-size:22px;font-weight:600}
+.sub{margin:0;color:var(--dim);font-size:13px;line-height:1.8}
+.bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:12px 0 8px;display:grid;gap:10px}
+input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-size:15px}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.chips button{flex:none;padding:7px 14px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.chips button[aria-pressed=true]{background:var(--jade);border-color:var(--jade);color:var(--bg)}
+.card{margin:10px 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.card h2{margin:0 0 6px;font-size:16px;font-weight:600}
+.card h2 small{color:var(--dim);font-weight:500;font-size:12px;margin-inline-start:6px}
+.row{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 0;border-top:1px dashed var(--line);font-size:13px;line-height:1.7}
+.row:first-of-type{border-top:0}
+.row b{color:var(--brass);font-weight:600}
+.row time{direction:ltr;unicode-bidi:isolate}
+.row i{font-style:normal;color:var(--dim)}
+.empty{text-align:center;color:var(--dim);padding:40px 0;font-size:14px}
+.foot{margin-top:24px;text-align:center;color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="mark">SCHEDULE</div>
+  <h1 id="title">${label}</h1>
+  <p class="sub" id="sub">يفتح…</p>
+  <div class="bar">
+    <input type="search" id="q" placeholder="ابحث باسم المقرر أو رمزه أو الشعبة" aria-label="بحث في الجدول" autocomplete="off">
+    <div class="chips" id="views" role="group" aria-label="طريقة العرض">
+      <button type="button" data-view="course" aria-pressed="true">حسب المقرر</button>
+      <button type="button" data-view="day" aria-pressed="false">حسب اليوم</button>
+    </div>
+    <div class="chips" id="days" role="group" aria-label="تصفية باليوم"></div>
+  </div>
+  <section id="list" aria-live="polite"></section>
+  <p class="foot">الجدول المعتمد للفصل الجاري · للقراءة فقط ويتحدّث من نفسه</p>
+</main>
+<script nonce="${nonce}">
+(function () {
+  var DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+  var token = ${JSON.stringify(token)};
+  var state = { rows: [], view: "course", day: -1, q: "" };
+  var list = document.getElementById("list");
+  function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function norm(v) { return String(v || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/\\s+/g, " ").trim(); }
+  function place(r) { return [r.room, r.hall].filter(Boolean).join("/"); }
+  /* ترتيب الجامعة المعتمد: النهاية - البداية داخل عزلٍ LTR (formatScheduleTimeRange). */
+  function range(r) { return esc(r.end) + " - " + esc(r.start); }
+  function dayNames(r) { return r.days.map(function (d) { return DAYS[d]; }).join(" · "); }
+  function match(r) {
+    if (state.day >= 0 && r.days.indexOf(state.day) < 0) return false;
+    if (!state.q) return true;
+    return norm([r.name, r.code, r.section, r.instructor].join(" ")).indexOf(state.q) >= 0;
+  }
+  function line(r, withDays) {
+    return '<div class="row"><b>' + esc(r.section ? "شعبة " + r.section : "") + '</b>' +
+      (withDays ? "<span>" + esc(dayNames(r)) + "</span>" : "") +
+      '<time>' + range(r) + "</time>" +
+      (place(r) ? '<span dir="ltr">' + esc(place(r)) + "</span>" : "") +
+      (r.instructor ? "<i>" + esc(r.instructor) + "</i>" : "") + "</div>";
+  }
+  function render() {
+    var rows = state.rows.filter(match);
+    if (!rows.length) { list.innerHTML = '<p class="empty">' + (state.rows.length ? "لا نتائج مطابقة" : "لم يُعتمد جدول هذا الفصل بعد") + "</p>"; return; }
+    var html = "";
+    if (state.view === "course") {
+      var groups = {}, order = [];
+      rows.forEach(function (r) { var k = r.code + "|" + r.name; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(r); });
+      order.sort(function (a, b) { return a.localeCompare(b, "ar"); });
+      order.forEach(function (k) {
+        var g = groups[k];
+        html += '<article class="card"><h2>' + esc(g[0].name) + (g[0].code ? '<small dir="ltr">' + esc(g[0].code) + "</small>" : "") + "</h2>" +
+          g.sort(function (a, b) { return String(a.section).localeCompare(String(b.section), "ar", { numeric: true }); }).map(function (r) { return line(r, true); }).join("") + "</article>";
+      });
+    } else {
+      DAYS.forEach(function (name, d) {
+        if (state.day >= 0 && state.day !== d) return;
+        var today = rows.filter(function (r) { return r.days.indexOf(d) >= 0; }).sort(function (a, b) { return String(a.start).localeCompare(String(b.start)); });
+        if (!today.length) return;
+        html += '<article class="card"><h2>' + esc(name) + "</h2>" + today.map(function (r) {
+          return '<div class="row"><time>' + range(r) + "</time><b>" + esc(r.name) + "</b>" +
+            (r.section ? "<span>شعبة " + esc(r.section) + "</span>" : "") + (place(r) ? '<span dir="ltr">' + esc(place(r)) + "</span>" : "") +
+            (r.instructor ? "<i>" + esc(r.instructor) + "</i>" : "") + "</div>";
+        }).join("") + "</article>";
+      });
+    }
+    list.innerHTML = html;
+  }
+  function chips() {
+    var box = document.getElementById("days");
+    box.innerHTML = '<button type="button" data-day="-1" aria-pressed="' + (state.day < 0) + '">كل الأيام</button>' +
+      DAYS.map(function (n, d) { return '<button type="button" data-day="' + d + '" aria-pressed="' + (state.day === d) + '">' + n + "</button>"; }).join("");
+  }
+  document.getElementById("days").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return; state.day = Number(b.getAttribute("data-day")); chips(); render();
+  });
+  document.getElementById("views").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return; state.view = b.getAttribute("data-view");
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); }); render();
+  });
+  document.getElementById("q").addEventListener("input", function (e) { state.q = norm(e.target.value); render(); });
+  chips();
+  fetch("/api/public/students/" + encodeURIComponent(token), { cache: "no-store" })
+    .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "تعذّر فتح الجدول"); return d; }); })
+    .then(function (d) {
+      state.rows = d.rows || [];
+      document.getElementById("title").textContent = d.section || "جدول القسم";
+      document.getElementById("sub").textContent = [d.college, d.term].filter(Boolean).join(" · ");
+      render();
+    })
+    .catch(function (err) { document.getElementById("sub").textContent = err.message; list.innerHTML = ""; });
+})();
+</script>
+</body>
+</html>`;
+}
+
+/** الجدولُ المعتمد للفصل الجاري، لرابط الطلبة وحده. */
+app.get("/api/public/students/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (resolved.link.kind !== "students") { res.status(404).json({ error: "هذا الرابط ليس جدول الطلبة" }); return; }
+  const terms = await Repository.getTerms();
+  const termId = currentTermId(terms) || Number(resolved.link.AdTermId);
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  res.setHeader("Cache-Control", "no-store");
+  const payload = await buildSharePayload(resolved.link, { termId, finalOnly: true });
+  res.json({ ...payload, expiresAt: undefined, label: undefined });
+});
+
+app.get("/t/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  const esc = (value: string) => String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+  if ("error" in resolved || resolved.link.kind !== "students") {
+    res.status("error" in resolved ? resolved.status : 404).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title></head><body style="font-family:system-ui;text-align:center;padding:30vh 16px"><p>${esc("error" in resolved ? resolved.error : "هذا الرابط ليس جدول الطلبة")}</p></body></html>`);
+    return;
+  }
+  const sections = await Repository.getSections();
+  const title = sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "جدول القسم";
+  res.send(studentSchedulePage(resolved.link.id, esc(title), publicPageNonce(res)));
+});
+
 app.get("/s/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   const esc = (value: string) => String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -18915,6 +19159,11 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   /* والاستبيانُ كذلك: رابطُ الطلبة يفتح الاستبيان وحالةَ الطلب، لا جدولَ القسم. */
   if (resolved.link.kind === "survey") {
     res.redirect(302, `/q/${encodeURIComponent(resolved.link.id)}`);
+    return;
+  }
+  /* ورابطُ الطلبة يفتح جدولَ الفصل الجاري المعتمد، لا نسخةَ الفصل الذي أُصدر فيه. */
+  if (resolved.link.kind === "students") {
+    res.redirect(302, `/t/${encodeURIComponent(resolved.link.id)}`);
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
@@ -19194,6 +19443,12 @@ async function startServer() {
 
   if (!databaseFailure) await migrateLegacyAccountsToCommitteeRole();
   if (!databaseFailure) await reconcileDepartmentHeadPermissions();
+  /* الفصل التالي يُنشأ وحده (أكتوبر ← الثاني، يناير ← الصيفي، أبريل ← الأول). */
+  if (!databaseFailure) scheduleAutoTermJob({
+    isDemoMode: () => Repository.isDemoMode(),
+    createTermIfAbsent: (name, dates) => Repository.createTermIfAbsent(name, dates),
+    log: message => console.log(message),
+  });
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {
