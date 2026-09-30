@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { authorityPdfTextGridRows, authorityOcrWordsToWords, authorityPrintedDayRun, authorityPrintedRoomCell, authorityTimeStripRead, authorityPrintedRowBands, unreadableIdentityRows, unclearRowCount, matchInstructorIdentity, parseAuthorityHeaderText, parseScheduleTable, recoverAuthorityCourseCell, takeScanReadingTurn, ScanReadingBusyError, readScanInTurn, type OcrPage } from "../src/utils/documentOcr.ts";
 import { interruptedImportMessage } from "../src/utils/importStreamFailure.ts";
-import { authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
+import { authorityCourseCodeMatches, withoutImportEvidence } from "../src/utils/authorityAcademicCodes.ts";
 import { sameInstructorIdentity, instructorIdentityTokens, uniqueExactIdentityMatch, readableInstructorName, displayInstructorText } from "../src/utils/instructorIdentity.ts";
 import { resolveAuthorityLocation } from "../src/utils/locationRegistry.ts";
 import { LOCATION_REGISTRY_SEED } from "../src/generated/locationRegistrySeed.ts";
@@ -612,6 +612,41 @@ passed.push("a scan refused as busy says so in words");
   assert.equal(scanLeftCellUnread(unreadBuilding),true,"مبنى بلا نص خام لم يُقرأ");
   assert.deepEqual(pagesWithUnreadCells([clean,unreadTime,unreadBuilding,clean]),[2,3]);
   passed.push("عرض القراءة الأدق المدفوعة يُحصر في الصفحات التي لم يقرأ المسح خانةً منها");
+}
+
+/* 2026-09-30: مسحٌ من 117 صفاً رُفض نشره بـ«تعذّر إتمام العملية الآن» — الطلب
+   1,055,956 بايت، والحد 1 MiB. كل صف يُرسل مرتين (المراجَع وخط الأساس)، وبرهان
+   القراءة نحو ثلاثة أرباع وزنه، وخط الأساس لا يقرؤه. */
+{
+  const reason="رقم الشعبة مولد حسب ترتيب شعب المقرر (501 ثم 502…) ويطابق ما طُبع في المستند";
+  const proof=(raw:string)=>({raw,normalized:raw,canonical:raw,confidence:"CONFIRMED",score:100,source:"OCR_GRID_CELL",method:"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:false,reason,evidence:["خلية رقم المقرر في المستند","كتالوج القسم الحالي","خانات رقم المقرر المقروءة"]});
+  const row=(order:number)=>({id:-order,AdCourseId:9000+order%12,AdCourseName:"تكنولوجيا الأجهزة التعليمية",SCode:"501",AdInstructorId:40+order%9,
+    fsunday:true,fmonday:false,ftuesday:true,fwednesday:false,fthursday:false,fstarttime:"08:00",fendtime:"09:50",AdRoomCode:"012",AdRoomHall:"B09",
+    referenceNumber:String(55000+order),sourceInstructorText:"د. عبدالله خالد محمد المطر",sourceCourseCode:"0101114",sourceCourseText:"تكنولوجيا الأجهزة التعليمية",
+    sourceSectionText:"501",sourceOrder:order,sourcePage:1+Math.floor(order/28),
+    importEvidence:Object.fromEntries(["course","section","days","time","instructor","building","room"].map(key=>[key,proof("0101114 · تكنولوجيا الأجهزة التعليمية")]))});
+  const rows=Array.from({length:117},(_,index)=>row(index));
+  const bytes=(value:unknown)=>Buffer.byteLength(JSON.stringify(value),"utf8");
+  const before=bytes({rows,baselineRows:rows});
+  const baseline=withoutImportEvidence(rows);
+  const after=bytes({rows,baselineRows:baseline});
+  assert.ok(before>1_048_576,`the reproduced request is over the old 1 MiB limit (${before})`);
+  assert.ok(after<960_000,`without the baseline's evidence it fits one Firestore document (${after})`);
+  assert.ok(baseline.every(item=>!("importEvidence" in item)));
+  assert.ok(rows.every(item=>"importEvidence" in item),"the reviewed rows keep their evidence; the input is not mutated");
+  assert.deepEqual(Object.assign({},baseline[3],{importEvidence:rows[3].importEvidence}),rows[3],"nothing but the evidence leaves the baseline");
+
+  const server=readFileSync(new URL("../server.ts",import.meta.url),"utf8");
+  const draftRoute=server.slice(server.indexOf('app.post("/api/intelligence/drafts", '),server.indexOf('\napp.',server.indexOf('app.post("/api/intelligence/drafts", ')+10));
+  assert.match(draftRoute,/withoutImportEvidence\(assignAuthoritySections\(safeDraftRows\(req\.body\?\.baselineRows/,"a baseline from an older window is stripped on the server too");
+  assert.match(draftRoute,/suppliedBaseline:withoutImportEvidence\(rows\)/,"the fallback baseline is stripped as well");
+  assert.ok(draftRoute.indexOf("DRAFT_DOCUMENT_MAX_BYTES")<draftRoute.indexOf("createScheduleDraft"),"an oversize draft is refused by name before anything is written");
+  const draftParser=server.indexOf('app.use("/api/intelligence/drafts", express.json({ limit: "4mb" }));');
+  assert.ok(draftParser>0&&draftParser<server.indexOf('app.use(express.json({ limit: "1mb" }));'),"the draft parser runs before the global 1 MB parser");
+  assert.match(server,/error\?\.type === "entity\.too\.large"[\s\S]{0,120}status\(413\)/,"an oversize request is never told «حاول مرة أخرى»");
+  const transfer=readFileSync(new URL("../src/components/ScheduleTransfer.tsx",import.meta.url),"utf8");
+  assert.match(transfer,/baselineRows:importKind==="authority-pdf"&&Array\.isArray\(xlsxPreview\.baselineRows\)\?withoutImportEvidence\(xlsxPreview\.baselineRows\)/);
+  passed.push("نشر مسح كبير: خط الأساس يُرسل ويُحفظ بلا برهان القراءة، والطلب الأكبر من الحد يقول ذلك بدل «حاول مرة أخرى»");
 }
 
 console.log(JSON.stringify({passed:passed.length,cases:passed},null,2));

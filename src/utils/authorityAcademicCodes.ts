@@ -164,3 +164,20 @@ export function assignAuthoritySections<T extends {
   }
   return rows;
 }
+
+/**
+ * خط أساس نسخة PDF يُحفظ بلا importEvidence.
+ *
+ * المسودة تحمل كل صف مرتين: الصفوف بعد المراجعة، والقراءة الأولى خط أساسٍ
+ * للتقرير. وبرهان القراءة (importEvidence) نصوص عربية مطوّلة — نحو ثلاثة أرباع
+ * وزن الصف. فمسحٌ من 117 صفاً بلغ 1,055,956 بايت فتجاوز حد الطلب (1 MiB)
+ * ورُفض نشره برسالة عامة (2026-09-30). وخط الأساس لا يقرأ البرهان أصلاً:
+ * التقرير يقارن الحقول والترتيب والمرجع، وإثبات أن الصف من المستند يُقرأ من
+ * الجدول الحيّ لا من الأساس. فيُنزع منه هنا، في الطلب وفي الحفظ معاً.
+ */
+export function withoutImportEvidence<T extends object>(input: readonly T[]): T[] {
+  return input.map(row => {
+    const { importEvidence: _evidence, ...rest } = row as T & { importEvidence?: unknown };
+    return rest as T;
+  });
+}
