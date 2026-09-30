@@ -876,7 +876,7 @@ export default function LivingScheduleLayer({
                 <PulseScene living={living} onGo={(s) => open(s)} />
               ) : null}
               {scene === "topology" ? (
-                <TopologyScene topology={living.topology} />
+                <TopologyScene topology={living.topology} context={living.context} />
               ) : null}
               {scene === "why" ? (
                 <div className="why-scene">

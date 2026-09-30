@@ -2,7 +2,7 @@ import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } fr
 import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 import { flushSync } from "react-dom";
 import {
-  Building2, CalendarDays, ChevronDown, ClipboardList, Clock3, LayoutList,
+  Building2, CalendarDays, ChevronDown, ChevronUp, ClipboardList, Clock3, LayoutList,
   CheckCircle2, History, Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserPlus, UserRound, X,
   ShieldCheck, FileSpreadsheet,
 } from "lucide-react";
@@ -36,6 +36,8 @@ import SubmissionDeadlines, { type DeadlineRow } from "./SubmissionDeadlines";
 import { inboxAudience } from "../utils/inboxAudience";
 import { usePageAwake } from "../utils/pageAwake";
 import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
+import { DnaRing } from "./dna";
+import { ApprovalDnaStepper, DeadlineDnaRing } from "./dna/scheduleDna";
 
 /**
  * One question, seven lenses.
@@ -3061,12 +3063,13 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
                 <th key={column.key} aria-sort={sort.key === column.key ? (sort.desc ? "descending" : "ascending") : "none"}>
                   <button
                     type="button"
+                    data-guide-ignore="فرز أعمدة ميزان الأقسام — عرضٌ لا فعل"
                     className={sort.key === column.key ? "sorted" : ""}
                     onClick={() => onSort(current =>
                       current.key === column.key ? { key: column.key, desc: !current.desc } : { key: column.key, desc: true })}
                   >
                     {column.label}
-                    {sort.key === column.key ? <i aria-hidden="true">{sort.desc ? "▾" : "▴"}</i> : null}
+                    {sort.key === column.key ? <i aria-hidden="true">{sort.desc ? <ChevronDown /> : <ChevronUp />}</i> : null}
                   </button>
                 </th>
               ))}
@@ -3091,6 +3094,18 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
                       const handedOver = state.status === "submitted" || state.status === "accepted" || state.status === "returned";
                       return (
                         <>
+                          {state.status !== "notStarted" ? (
+                            <span className="balance-relay">
+                              <ApprovalDnaStepper status={state.status} round={state.round} />
+                              {state.deadline && !handedOver ? (
+                                <DeadlineDnaRing
+                                  size={28}
+                                  deadline={{ past: state.late, daysLeft: state.daysLeft, tone: state.late ? "past" : typeof state.daysLeft === "number" && state.daysLeft <= 7 ? "near" : "ok" }}
+                                  label={state.late ? `انقضى الموعد ${formatBalanceDate(state.deadline)}` : typeof state.daysLeft === "number" ? `بقي ${countOf(state.daysLeft, AR.day, "اليوم آخر موعد")} · ${formatBalanceDate(state.deadline)}` : formatBalanceDate(state.deadline)}
+                                />
+                              ) : null}
+                            </span>
+                          ) : null}
                           <span className="approval-chip" data-status={state.late ? "late" : state.status}>
                             {state.late ? "متأخّر عن الموعد" : balanceStatusLabel(state.status)}
                           </span>
@@ -3127,15 +3142,15 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
                   <b>{num(item.morningPct)}٪</b>
                 </td>
                 <td>
-                  <span className={`balance-score ${item.fairness >= 78 ? "good" : item.fairness >= 62 ? "warn" : "bad"}`}>
-                    {num(item.fairness)}
-                  </span>
+                  <DnaRing className="balance-ring" value={Number(item.fairness)} size={34} stroke={3}
+                    tone={item.fairness >= 78 ? "accent" : item.fairness >= 62 ? "warn" : "danger"}
+                    label={num(item.fairness)} ariaLabel={`العدالة ${num(item.fairness)}`} />
                   {item.heaviest ? <small title="الأثقل حملاً">{item.heaviest}</small> : null}
                 </td>
                 <td>
-                  <span className={`balance-score ${item.quality >= 85 ? "good" : item.quality >= 70 ? "warn" : "bad"}`}>
-                    {num(item.quality)}
-                  </span>
+                  <DnaRing className="balance-ring" value={Number(item.quality)} size={34} stroke={3}
+                    tone={item.quality >= 85 ? "accent" : item.quality >= 70 ? "warn" : "danger"}
+                    label={num(item.quality)} ariaLabel={`الجودة ${num(item.quality)}`} />
                 </td>
                 <td>{item.conflicts ? <b className="balance-bad">{num(item.conflicts)}</b> : <span className="balance-ok">—</span>}</td>
                 </>)}

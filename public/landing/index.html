@@ -1464,6 +1464,10 @@
       font-weight: 700;
       color: #ffffff;
     }
+  .lx{width:1em;height:1em;display:inline-block;vertical-align:-0.15em;flex:none}
+  /* The hero badges are static claims, not live readings: they stay still. */
+  .hotspot-chip{animation:none !important}
+  .hotspot-chip .chip-dot::after{animation:none !important}
   </style>
 </head>
 <body>
@@ -1546,7 +1550,7 @@
         <div class="hero-buttons">
           <a href="/" class="btn btn-brass">دخول النظام الأكاديمي</a>
           <a href="#benchmark" class="btn btn-glass">
-            <span>محاكاة المعالجة الحية (3:24) ↓</span>
+            <span>محاكاة المعالجة الحية (3:24) <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></span>
           </a>
         </div>
 
@@ -1556,13 +1560,13 @@
           <div class="hotspot-chip hotspot-1">
             <span class="chip chip-jade">
               <span class="chip-dot"></span>
-              ✓ كشف تعارض استباقي (0 تضارب معتمد)
+              <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> كشف تعارض استباقي (0 تضارب معتمد)
             </span>
           </div>
           <div class="hotspot-chip hotspot-2">
             <span class="chip chip-brass">
               <span class="chip-dot"></span>
-              ⚡ 89 صفاً استُخرجت من PDF في 3 ثوانٍ
+              <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> 89 صفاً استُخرجت من PDF في 3 ثوانٍ
             </span>
           </div>
 
@@ -1575,8 +1579,8 @@
               </div>
               <div class="frame-url" style="display:none;"></div>
               <div style="display:flex; gap:6px; align-items:center;">
-                <button type="button" id="btn-view-live" class="chip chip-jade" style="cursor:pointer; border:none; padding:3px 12px; font-size:0.75rem;" onclick="toggleHeroView('live')">⚡ لوحة تفاعلية حية (خط واضح 100%)</button>
-                <button type="button" id="btn-view-screen" class="chip chip-brass" style="cursor:pointer; border:none; opacity:0.7; padding:3px 12px; font-size:0.75rem;" onclick="toggleHeroView('screen')">📸 رسم موثق (SVG)</button>
+                <button type="button" id="btn-view-live" class="chip chip-jade" style="cursor:pointer; border:none; padding:3px 12px; font-size:0.75rem;" onclick="toggleHeroView('live')"><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> لوحة تفاعلية حية (خط واضح 100%)</button>
+                <button type="button" id="btn-view-screen" class="chip chip-brass" style="cursor:pointer; border:none; opacity:0.7; padding:3px 12px; font-size:0.75rem;" onclick="toggleHeroView('screen')"><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> رسم موثق (SVG)</button>
               </div>
             </div>
 
@@ -1585,7 +1589,7 @@
               <img src="/screenshots/real-live-dashboard.svg" onerror="this.src='/screenshots/cover-wide.png'" alt="واجهة نظام SCHEDULE الحقيقية" class="frame-img" loading="eager" />
               <div class="frame-caption-overlay">
                 <span class="frame-caption-text">
-                  <span>📸 رسم تفصيلي معتمد للوحة المتابعة والقرار الأكاديمي (اضغط للتكبير)</span>
+                  <span><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg> رسم تفصيلي معتمد للوحة المتابعة والقرار الأكاديمي (اضغط للتكبير)</span>
                 </span>
                 <span class="chip chip-brass" style="font-size: 0.76rem;">دقة عالية</span>
               </div>
@@ -1609,7 +1613,7 @@
                 <div class="kpi-box" style="background:#131d18; border:1px solid rgba(46,169,140,0.25); border-radius:10px; padding:12px 14px; cursor:pointer;" onclick="pulseKpi(this, '109 مقرراً موزعة على الشعب بكفاءة')">
                   <span style="font-size:0.74rem; color:var(--muted); display:block;">المقررات المعتمدة</span>
                   <b style="font-size:1.45rem; color:#fff; font-family:var(--font-mono);">109</b>
-                  <small style="color:var(--jade-strong); font-size:0.72rem; display:block;">✓ مطابقة 100%</small>
+                  <small style="color:var(--jade-strong); font-size:0.72rem; display:block;"><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> مطابقة 100%</small>
                 </div>
                 <div class="kpi-box" style="background:#131d18; border:1px solid rgba(46,169,140,0.25); border-radius:10px; padding:12px 14px; cursor:pointer;" onclick="pulseKpi(this, '89 موعداً أسبوعياً دون أي تضارب زمني')">
                   <span style="font-size:0.74rem; color:var(--muted); display:block;">المواعيد الأسبوعية</span>
@@ -1702,7 +1706,7 @@
                 <div class="dial__txt">
                   <span class="dial__c">الكويت · AOU</span>
                   <span class="dial__t">4–6 أسابيع</span>
-                  <span class="dial__s">iJET 2026 ↗</span>
+                  <span class="dial__s">iJET 2026 <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span>
                 </div>
               </div>
 
@@ -1717,7 +1721,7 @@
                 <div class="dial__txt">
                   <span class="dial__c">ماليزيا · MPCB</span>
                   <span class="dial__t">نحو 4 أسابيع</span>
-                  <span class="dial__s">Case Study ↗</span>
+                  <span class="dial__s">Case Study <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span>
                 </div>
               </div>
 
@@ -1732,7 +1736,7 @@
                 <div class="dial__txt">
                   <span class="dial__c">أمريكا · Cornell</span>
                   <span class="dial__t">عدة أسابيع</span>
-                  <span class="dial__s">Interfaces ↗</span>
+                  <span class="dial__s">Interfaces <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span>
                 </div>
               </div>
 
@@ -1747,7 +1751,7 @@
                 <div class="dial__txt">
                   <span class="dial__c">تشيلي · Chile</span>
                   <span class="dial__t">أسبوعان</span>
-                  <span class="dial__s">Interfaces ↗</span>
+                  <span class="dial__s">Interfaces <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span>
                 </div>
               </div>
 
@@ -1762,7 +1766,7 @@
                 <div class="dial__txt">
                   <span class="dial__c">الجزائر · Tlemcen</span>
                   <span class="dial__t">نحو 10 أيام</span>
-                  <span class="dial__s">IJKEDM ↗</span>
+                  <span class="dial__s">IJKEDM <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span>
                 </div>
               </div>
 
@@ -1777,7 +1781,7 @@
                 <div class="dial__txt">
                   <span class="dial__c">إندونيسيا · UGM</span>
                   <span class="dial__t">3 أيام عمل</span>
-                  <span class="dial__s">IEEE InAES ↗</span>
+                  <span class="dial__s">IEEE InAES <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></span>
                 </div>
               </div>
             </div>
@@ -1829,11 +1833,11 @@
                   <div id="sim-progress-bar" style="height:100%; width:100%; background:linear-gradient(90deg, var(--jade), var(--brass-bright)); transition:width 0.3s ease;"></div>
                 </div>
                 <div id="sim-log-text" style="font-size:0.82rem; color:var(--ink-dim); min-height:22px; margin-bottom:12px;">
-                  ✓ تم مسح 89 صفاً · 34 أستاذاً · 9 قاعات دراسية دون أي تعارض زمني
+                  <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> تم مسح 89 صفاً · 34 أستاذاً · 9 قاعات دراسية دون أي تعارض زمني
                 </div>
                 <div style="display:flex; gap:10px;">
                   <button type="button" id="btn-run-sim" class="btn btn-brass" style="padding:8px 18px; font-size:0.85rem;" onclick="startLiveProcessingSim()">
-                    <span>▶ تشغيل محاكاة المعالجة الحية</span>
+                    <span><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg> تشغيل محاكاة المعالجة الحية</span>
                   </button>
                   <button type="button" class="btn btn-glass" style="padding:8px 14px; font-size:0.85rem;" onclick="resetLiveProcessingSim()">إعادة تعيين</button>
                 </div>
@@ -2464,7 +2468,7 @@
                 <span style="font-size:0.9rem;">مراسلة فورية</span>
               </a>
               <button type="button" class="btn btn-glass" onclick="copyOfficialEmail(this)" style="padding:10px 14px; display:inline-flex; align-items:center; gap:6px;" title="نسخ البريد" aria-label="نسخ البريد">
-                <span id="copy-btn-text">📋</span>
+                <span id="copy-btn-text"><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></span>
               </button>
             </div>
           </div>
@@ -2531,12 +2535,23 @@
       <img id="lightbox-target-img" src="" alt="عرض مكبّر" class="lightbox-img" />
       <div class="lightbox-bar">
         <span id="lightbox-caption">لقطة من النظام</span>
-        <button type="button" class="lightbox-close" onclick="closeLightbox(event)">✕</button>
+        <button type="button" class="lightbox-close" onclick="closeLightbox(event)" aria-label="إغلاق"><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
     </div>
   </div>
 
   <script>
+    // Inline line icons (lucide paths) — replace the emoji that used to sit in these strings.
+    const LX = (() => {
+      const wrap = d => '<svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+      return {
+        check: wrap('<path d="M20 6 9 17l-5-5"/>'),
+        clipboard: wrap('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>'),
+        bulb: wrap('<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>'),
+        chart: wrap('<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>'),
+        mail: wrap('<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>')
+      };
+    })();
     // ── Hero View Switcher (Screen vs Live Interactive Mode) ─────────────
     function toggleHeroView(mode) {
       const imgWrap = document.getElementById('hero-img-mode');
@@ -2638,7 +2653,7 @@
         { progress: 20, time: "0:45", log: "1/4: قراءة مستند الـPDF واستخراج 89 صفاً وبيانات الأساتذة..." },
         { progress: 50, time: "1:30", log: "2/4: مطابقة القاعات مع سجل المباني وتشفير 012B-09..." },
         { progress: 75, time: "2:40", log: "3/4: تشغيل مانع الحجز المزدوج وفحص تعارضات 34 أستاذاً..." },
-        { progress: 100, time: "3:24", log: "✓ اكتمل الاعتماد: جدول معتمد 100% بدون أي تعارض زمني أو مكاني!" }
+        { progress: 100, time: "3:24", done: true, log: "اكتمل الاعتماد: جدول معتمد 100% بدون أي تعارض زمني أو مكاني!" }
       ];
 
       clearInterval(simInterval);
@@ -2647,7 +2662,7 @@
           const p = phases[step];
           if (bar) bar.style.width = p.progress + '%';
           if (digits) digits.textContent = p.time;
-          if (log) log.textContent = p.log;
+          if (log) { log.textContent = p.log; if (p.done) log.insertAdjacentHTML('afterbegin', LX.check + ' '); }
           step++;
         } else {
           clearInterval(simInterval);
@@ -2670,7 +2685,7 @@
 
       if (bar) bar.style.width = '100%';
       if (digits) digits.textContent = '3:24';
-      if (log) log.textContent = '✓ تم مسح 89 صفاً · 34 أستاذاً · 9 قاعات دراسية دون أي تعارض زمني';
+      if (log) { log.textContent = 'تم مسح 89 صفاً · 34 أستاذاً · 9 قاعات دراسية دون أي تعارض زمني'; log.insertAdjacentHTML('afterbegin', LX.check + ' '); }
       if (badge) {
         badge.className = 'chip chip-jade';
         badge.textContent = 'جاهز للتشغيل';
@@ -2691,7 +2706,8 @@
       el.style.borderColor = 'var(--brass-bright)';
       const tipBox = document.getElementById('shift-tip-box');
       if (tipBox) {
-        tipBox.textContent = `💡 تفصيل التحول: ${note}`;
+        tipBox.textContent = `تفصيل التحول: ${note}`;
+        tipBox.insertAdjacentHTML('afterbegin', LX.bulb + ' ');
       }
     }
 
@@ -2754,7 +2770,7 @@
       if (el) el.style.opacity = '1';
 
       const tip = document.getElementById('day-bar-tip');
-      if (tip) tip.textContent = `📊 ${day}: ${count} محاضرة مجدولة · ${note}`;
+      if (tip) { tip.textContent = `${day}: ${count} محاضرة مجدولة · ${note}`; tip.insertAdjacentHTML('afterbegin', LX.chart + ' '); }
     }
 
     function inspectMeter(name, score, detail) {
@@ -2769,10 +2785,10 @@
       const email = 'Ah.Alfailakawi@paaet.edu.kw';
       navigator.clipboard.writeText(email).then(() => {
         const span = document.getElementById('copy-btn-text');
-        if (span) span.textContent = '✓ تم نسخ الإيميل!';
+        if (span) { span.textContent = 'تم نسخ الإيميل!'; span.insertAdjacentHTML('afterbegin', LX.check + ' '); }
         btn.classList.add('btn-brass');
         setTimeout(() => {
-          if (span) span.textContent = '📋 نسخ البريد';
+          if (span) { span.textContent = 'نسخ البريد'; span.insertAdjacentHTML('afterbegin', LX.clipboard + ' '); }
           btn.classList.remove('btn-brass');
         }, 2200);
       }).catch(() => {
@@ -2854,7 +2870,8 @@
         box.classList.add('active');
       } finally {
         btn.disabled = false;
-        btn.textContent = 'إرسال طلب الاستعراض عبر البريد الأكاديمي ✉️';
+        btn.textContent = 'إرسال طلب الاستعراض عبر البريد الأكاديمي ';
+        btn.insertAdjacentHTML('beforeend', LX.mail);
       }
     }
 
