@@ -3485,7 +3485,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <div className="genome-rooms">
                   <span>القاعات المعتادة</span>
                   {(genome.dna?.rooms || []).slice(0, 5).map((r: any) => (
-                    <b key={r.key}>{String(r.key).replace(/^legacy:/i, "").replace("|", "/")}</b>
+                    <b key={r.key}>{r.label}</b>
                   ))}
                 </div>
               </div>

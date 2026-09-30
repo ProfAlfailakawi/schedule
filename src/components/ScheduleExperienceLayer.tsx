@@ -819,11 +819,11 @@ export default function ScheduleExperienceLayer({
                   <MapPin />
                 </span>
                 <small>القاعات المحورية</small>
-                <strong>{topRooms[0]?.key?.replace("|", "/") || "—"}</strong>
+                <strong>{topRooms[0]?.label || "—"}</strong>
                 <p>
                   {topRooms.length
                     ? topRooms
-                        .map((x: any) => x.key.replace("|", "/"))
+                        .map((x: any) => x.label)
                         .join(" · ")
                     : "لا توجد قاعات تاريخية كافية لبناء مركز البصمة."}
                 </p>
