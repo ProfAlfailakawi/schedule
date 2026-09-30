@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   BarChart3,
@@ -1768,7 +1769,9 @@ export default function SmartGuide({
         <div className="guide-point-banner no-print" data-guide-ignore="شريط وضع أشر لي جزء من المرشد وليس هدفًا للشرح"><Hand /><span><strong>أشر لي</strong> اضغط أي عنصر داخل SCHEDULE؛ لن أنفذ الضغط، بل سأشرح العنصر فقط.</span><button type="button" data-guide-ignore="زر إلغاء أشر لي يجب أن يبقى إجراء تحكم بالمرشد" onClick={(event) => { event.stopPropagation(); restoreGuide(); }}>إلغاء</button></div>
       ) : null}
 
-      {located ? (
+      {/* طبقةُ الإرشاد الحي إلى body: كانت تُرسم داخل هيكل التطبيق، فتقع بطاقةُ
+          الخطوة تحت بطاقة المرشّحات ولا يظهر منها إلا طرفُ أزرارها. */}
+      {located ? createPortal(
         <div className="guide-ghost-layer no-print" aria-live="polite">
           <div className="guide-ghost-ring" style={{ top: Math.max(4, located.rect.top - 7), left: Math.max(4, located.rect.left - 7), width: located.rect.width + 14, height: located.rect.height + 14 }} />
           <MousePointer2 className="guide-ghost-hand" style={{ top: Math.max(12, located.rect.top + Math.min(located.rect.height * 0.45, 36)), left: Math.max(12, located.rect.left + Math.min(located.rect.width * 0.55, 90)) }} />
@@ -1779,7 +1782,7 @@ export default function SmartGuide({
               {tourPrimaryLabel() ? <button type="button" className="primary" onClick={handleTourPrimary}>{located.index + 1 >= located.total ? <><Check />تم</> : <>{tourPrimaryLabel()}<ChevronLeft /></>}</button> : <span className="guide-ghost-wait">اضغط البطاقة للمتابعة</span>}
             </div>
           </div>
-        </div>
+        </div>, document.body
       ) : null}
 
       {preview ? (

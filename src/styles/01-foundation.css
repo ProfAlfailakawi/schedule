@@ -386,6 +386,17 @@ time,.num,.code-chip{
   --guide-fab-h:60px;                             /* .smart-guide-fab: 42px mark + 16px padding + 2px border */
   --fab-floor:calc(18px + var(--dock-h) + env(safe-area-inset-bottom));
   --fab-step:calc(var(--guide-fab-h) + var(--fab-gap));
+
+  /* ── Layers, declared once ──────────────────────────────────────────────
+   * The live guide's step card sat at 145 while the day's change log opened
+   * at 200 over the rail — so the log covered the card, and the card itself
+   * fell under the page's own raised surfaces. One ladder, lowest first:
+   * rail → floating buttons → page sheets → the live-guide spotlight → the
+   * guide panel (2200, 03-shell) → its handoff/confirm notes above it. */
+  --z-rail:60;
+  --z-fab:150;
+  --z-sheet:200;
+  --z-guide-spot:2150;
 }
 @media(max-width:900px){
   :root{ --dock-h:62px; }
