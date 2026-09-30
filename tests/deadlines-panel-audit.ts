@@ -163,7 +163,12 @@ const approval = (over: Partial<ScheduleApproval> = {}): ScheduleApproval => ({ 
   check(posting('"/api/approvals/extension"').length === 0, "D7 ولا واجهةَ تكتب التمديد من طريقٍ ثانٍ");
   const changes = read("src/components/ScheduleChanges.tsx");
   check(!changes.includes("DeadlineControl") && !changes.includes('type="date"'), "D7 الحقلُ المجرّد أُزيل من تغييرات الجدول");
-  check(changes.includes("<SubmissionDeadlines") && changes.includes("onExtend={(row) => setExtendFor("), "D7 واللوحةُ في رأس الوارد، و«تمديد» السطر يفتح ورقتها");
+  check(changes.includes("<SubmissionDeadlines") && changes.includes("onExtend={deadlinesShown ? (row) => setExtendFor("), "D7 واللوحةُ في رأس الوارد، و«تمديد» السطر يفتح ورقتها");
+  /* «تمديد» كان يُضغط فلا يحدث شيء: ورقةٌ مشروطةٌ بموعدٍ غائب، ومرسومةٌ داخل
+     لوحةٍ بعيدة. الآن تُرسم في body، وغيابُ الموعد يُقال ولا يُبلع. */
+  const panelSrc = read("src/components/SubmissionDeadlines.tsx");
+  check(/createPortal\(\s*<ExceptionSheet/.test(panelSrc), "D7 ورقةُ الاستثناء تُرسم في body فلا يحبسها شيء");
+  check(panelSrc.includes("ضع موعد تسليم الفصل أولاً"), "D7 و«تمديد» بلا موعد فصلٍ يقول السبب بدل الصمت");
   check(changes.includes('focus.panel === "deadlines"') && read("src/utils/notificationCenter.ts").split('panel: "deadlines"').length === 3,
     "D7 إشعارُ «حدّد الموعد» وطلبُ التمديد يفتحان اللوحة");
   const css = read("src/styles/11-approval.css");

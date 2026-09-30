@@ -152,13 +152,22 @@
 .changes-signals .changes-signal--pending svg{color:var(--info)}
 .changes-inbox-state .dna-steps{flex:none}
 
+/* زرٌّ حقيقيّ لا خليةٌ رمادية: حدٌّ وأيقونة وهدفُ لمسٍ ≥44px، ومحفوظٌ
+   فوق ما حوله (position/z-index) فلا يبتلع نقرتَه شيءٌ من السطر. */
 .changes-extend{
-  grid-column:3;grid-row:1 / -1;padding-inline:14px;border:0;border-inline-start:1px solid var(--line);
-  background:transparent;color:var(--muted);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;
+  grid-column:3;grid-row:1 / -1;align-self:center;position:relative;z-index:1;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-block-size:44px;min-inline-size:88px;margin-inline:10px;padding:0 14px;
+  border:1px solid var(--line-strong);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:.84rem;font-weight:600;cursor:pointer;
+  transition:background .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease);
 }
-.changes-extend:hover{background:var(--surface-3);color:var(--ink)}
+.changes-extend svg{inline-size:16px;block-size:16px;flex:none;color:var(--brass)}
+.changes-extend:hover{background:var(--surface-3);border-color:var(--accent);color:var(--ink)}
+.changes-extend:focus-visible{outline:none;box-shadow:var(--ring);border-color:var(--accent)}
 /* طلبٌ ينتظر: الزرّ هو الفعل التالي، فيُرى. */
-.changes-extend[data-pending]{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.changes-extend[data-pending]{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+.changes-extend[data-pending] svg{color:var(--accent)}
 .changes-extend[data-pending]:hover{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent)}
 /* طلبُ القسم: سطرٌ هادئ تحت اسمه، بعلامةٍ لا بلونٍ صارخ. */
 .changes-extension-request{

@@ -17,6 +17,7 @@
  * الخادم تقرآن الدوالَّ نفسها، فلا تَعِد الشاشةُ بتاريخٍ يكتب الخادمُ غيرَه.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   CalendarClock, CalendarPlus, Check, ChevronDown, ChevronUp, Hourglass, Inbox, Pencil, Search, Trash2, X,
 } from "lucide-react";
@@ -353,6 +354,16 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
     if (!extendFor) return;
     const { row } = extendFor;
     const ask = row.extensionRequest;
+    /* «تمديد» لفصلٍ بلا موعد كان لا يفعل شيئاً: الورقةُ تُرسم بشرط الموعد،
+       فيُضغط الزرّ ولا يظهر شيء. الاستثناءُ يُقاس على موعد الفصل، فالخطوةُ
+       الأولى وضعُه — تُفتح اللوحةُ على حقله ويُقال السببُ صراحةً. */
+    if (!termDeadline) {
+      setCollapsed(false);
+      if (canEdit) setEditing(true);
+      setError("ضع موعد تسليم الفصل أولاً — الاستثناءُ يُحسب منه.");
+      requestAnimationFrame(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+      return;
+    }
     setSheet({
       title: `استثناءُ «${row.sectionName || `قسم ${row.sectionId}`}»`,
       scope: "departments", picked: [keyOf(row)],
@@ -668,13 +679,14 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
         </div>
       ) : null}
 
-      {sheet && rows && termDeadline ? (
+      {/* الورقةُ إلى body: لا يحبسها overflow اللوحة ولا سياقُ تراصٍّ فوقها،
+          فتُرى أينما كان الزرّ الذي فتحها — سطرُ الوارد أسفلَ الصفحة. */}
+      {sheet && rows && termDeadline ? createPortal(
         <ExceptionSheet
           seed={sheet} rows={rows} termId={termId} termDeadline={termDeadline}
           onClose={() => setSheet(null)}
           onApplied={(done) => { if (done) setMessage(done); onChanged(); }}
-        />
-      ) : null}
+        />, document.body) : null}
     </section>
   );
 }
