@@ -1,3 +1,4 @@
+import { normalizeArabicText } from "../utils/arabicText";
 import fs from "fs";
 import { chooseStudentCaseSecret, STUDENT_CASE_SECRET_CONFLICT_MESSAGE, type StudentCaseSecretChoice } from "../server/studentCaseSecret";
 import { AsyncLocalStorage } from "async_hooks";
@@ -3117,6 +3118,8 @@ export const Repository = {
     hours: number,
     maxStudent: number
   ): Promise<AdCourse> => {
+    /* اسمٌ منسوخٌ من PDF يُحفظ حروفاً عادية لا «أشكال عرض» — لكل طريق كتابة. */
+    name = normalizeArabicText(name);
     invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("courses");
@@ -3189,6 +3192,8 @@ export const Repository = {
     hours: number,
     maxStudent: number
   ): Promise<AdCourse> => {
+    /* اسمٌ منسوخٌ من PDF يُحفظ حروفاً عادية لا «أشكال عرض» — لكل طريق كتابة. */
+    name = normalizeArabicText(name);
     invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("courses").doc(`course_${id}`);

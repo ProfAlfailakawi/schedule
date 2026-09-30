@@ -3704,7 +3704,8 @@ app.put("/api/courses/:id", requirePermission(6), async (req: AuthenticatedReque
 
   const currentCourse = await Repository.getCourseById(id);
   if (!currentCourse) { res.status(404).json({ error: "المقرر الدراسي غير موجود" }); return; }
-  const identityChanged=currentCourse.CourseCode!==CourseCode||currentCourse.CourseName!==CourseName;
+  /* الاسم يُقارن كما سيُحفظ: «أشكال العرض» وحروفها العادية اسمٌ واحد. */
+  const identityChanged=currentCourse.CourseCode!==CourseCode||normalizeArabicText(currentCourse.CourseName)!==normalizeArabicText(CourseName);
   const academicShapeChanged=Number(currentCourse.CourseCredit)!==Number(CourseCredit)||Number(currentCourse.CourseHours)!==Number(CourseHours);
   const [curriculumPlans,curriculumMemberships]=await Promise.all([
     Repository.getCurriculumPlans(Number(currentCourse.AdSectionId)),
