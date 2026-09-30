@@ -2325,3 +2325,11 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .course-bootstrap-ok{display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:600;cursor:pointer}.course-bootstrap-ok input{width:16px;height:16px;accent-color:var(--accent)}
 .course-plan-line{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:var(--muted)}.course-plan-line svg{width:15px;height:15px}
 .degree-rule-plan{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}.degree-rule-plan>strong{display:flex;align-items:center;gap:8px;font-size:13px}
+
+/* معاينة «إنشاء حسابات رؤساء الأقسام» — لوحٌ هادئ فوق قائمة المستخدمين. */
+.admin-head-plan { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line, #e2e5ea); border-radius: 14px; background: var(--surface, #fff); overflow-x: auto; }
+.admin-head-plan > header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.admin-head-plan table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.admin-head-plan th, .admin-head-plan td { padding: 6px 8px; border-block-end: 1px solid var(--line, #e2e5ea); text-align: start; }
+.admin-head-plan small { color: var(--muted, #6b7280); }
+.admin-head-plan > footer { display: flex; gap: 8px; flex-wrap: wrap; }

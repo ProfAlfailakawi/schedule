@@ -28,6 +28,7 @@ import {
 import { ACADEMIC_ROLES, roleDefinition, roleMismatchHint, type AcademicRole } from "../utils/academicRoles";
 import { collegeShortName } from "../utils/sectionLabel";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import type { HeadPlanRow } from "../utils/departmentHeadAccounts";
 
 /* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
    rail beside the users, the scopes and the log. It keeps its own screen and
@@ -198,7 +199,11 @@ export default function AdminUsers({
     [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null),
     /* الصفة، والكليات التي تُشتقّ منها حين تكون الصفة على مستوى الكلية. */
     [role, setRole] = useState<AcademicRole>("committeeChair"),
-    [roleColleges, setRoleColleges] = useState<number[]>([]);
+    [roleColleges, setRoleColleges] = useState<number[]>([]),
+    /* «إنشاء حسابات رؤساء الأقسام»: المعاينة تُعرض أولاً، والإنشاء بعد تأكيد. */
+    [headPlan, setHeadPlan] = useState<HeadPlanRow[] | null>(null),
+    [headBusy, setHeadBusy] = useState(false),
+    [headMessage, setHeadMessage] = useState<string | null>(null);
   useDialogDismiss(Boolean(backupConfirm) && !backupBusy, () => setBackupConfirm(null));
   useEffect(() => {
     if (!demoReadOnly) return;
@@ -1474,8 +1479,76 @@ export default function AdminUsers({
           >
             مستخدم جديد
           </AddButton>
+          {!demoReadOnly ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              data-guide-ignore="معاينة حسابات رؤساء الأقسام قبل إنشائها؛ الإنشاء يحتاج تأكيداً ثانياً"
+              disabled={headBusy}
+              onClick={async () => {
+                setHeadBusy(true); setError(null); setHeadMessage(null);
+                try { setHeadPlan((await api("/api/users/department-heads/preview")).rows || []); }
+                catch (e: any) { setError(e.message); }
+                finally { setHeadBusy(false); }
+              }}
+            >
+              <UsersRound aria-hidden="true" /> إنشاء حسابات رؤساء الأقسام
+            </button>
+          ) : null}
           </>,
         )}
+        {headPlan ? (
+          <section className="admin-head-plan" aria-label="معاينة حسابات رؤساء الأقسام">
+            <header>
+              <strong>حسابات رؤساء الأقسام</strong>
+              <span>
+                جديد {headPlan.filter(row => row.status === "create").length} · موجود {headPlan.filter(row => row.status === "exists").length}
+              </span>
+            </header>
+            <p>تُنشأ الحسابات موقوفةً وبلا كلمة سر، بصفة «رئيس القسم العلمي» ونطاق قسمها. عيّن كلمة السر وفعّل الحساب من هذه الشاشة حين يُسلَّم لصاحبه.</p>
+            {headMessage ? <p role="status">{headMessage}</p> : null}
+            <table className="data-table">
+              <thead><tr><th>القسم</th><th>الكلية</th><th>حساب القسم</th><th>اسم الدخول المقترح</th><th>الحالة</th></tr></thead>
+              <tbody>
+                {headPlan.map(row => (
+                  <tr key={`${row.collegeId}:${row.sectionId}`}>
+                    <td>{row.sectionName}</td>
+                    <td>{row.collegeName}</td>
+                    <td dir="ltr">{row.deptLogin || "—"}</td>
+                    <td dir="ltr">{row.status === "exists" ? row.existingLogin : row.proposedLogin}</td>
+                    <td>
+                      <Badge tone={row.status === "create" ? "info" : row.status === "review" ? "warning" : "neutral"}>{row.status === "create" ? "سيُنشأ" : row.status === "review" ? "يحتاج مراجعة" : "موجود"}</Badge>
+                      {row.note ? <small> {row.note}</small> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <footer>
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-guide-ignore="تأكيد إنشاء الحسابات المعروضة في المعاينة وحدها"
+                disabled={headBusy || !headPlan.some(row => row.status === "create")}
+                onClick={async () => {
+                  setHeadBusy(true); setError(null);
+                  try {
+                    const result = await api("/api/users/department-heads", { method: "POST" });
+                    setHeadPlan(result.rows || []);
+                    setHeadMessage(`أُنشئ: ${countOf(result.created?.length || 0, AR.account)} — موقوفة بلا كلمة سر.`);
+                    await load();
+                  } catch (e: any) { setError(e.message); }
+                  finally { setHeadBusy(false); }
+                }}
+              >
+                إنشاء الحسابات الناقصة
+              </button>
+              <button type="button" className="btn btn-secondary" data-guide-ignore="إغلاق المعاينة دون إنشاء" onClick={() => { setHeadPlan(null); setHeadMessage(null); }}>
+                إغلاق
+              </button>
+            </footer>
+          </section>
+        ) : null}
         <div className="admin-quiet-summary">
           <span>
             <UsersRound />
