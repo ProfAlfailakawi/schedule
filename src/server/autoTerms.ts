@@ -7,6 +7,7 @@
  * نفسه موجودٌ يُتخطّى. لا تعمل في وضع العرض (DATA_MODE=demo): عالمُ العرض ثابت.
  */
 import { autoTermDue } from "../utils/termSequence";
+import { AR, countOf } from "../utils/arabicCount";
 
 export interface AutoTermDeps {
   isDemoMode: () => boolean;
@@ -18,7 +19,7 @@ export async function runAutoTermJob(deps: AutoTermDeps, now: number = Date.now(
   if (deps.isDemoMode()) return null;
   const due = autoTermDue(now);
   const created = await deps.createTermIfAbsent(due.name, { start: due.start, weeks: due.weeks });
-  if (created) deps.log?.(`[auto-term] أُنشئ «${created.AdTermName}» (${due.start}، ${due.weeks} أسبوعاً)`);
+  if (created) deps.log?.(`[auto-term] أُنشئ «${created.AdTermName}» (${due.start}، ${countOf(due.weeks, AR.week)})`);
   return created ? created.AdTermName : null;
 }
 

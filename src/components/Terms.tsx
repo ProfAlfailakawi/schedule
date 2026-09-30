@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AR, countOf } from "../utils/arabicCount";
 import { CalendarDays, Sparkles, Trash2 } from "lucide-react";
 import { defaultTermDates, isTermClosed, sortTermsNewest, suggestNextTermName, termEndDate, termStatus, TERM_STATUS_LABEL } from "../utils/termSequence";
 import {
@@ -306,7 +307,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                     ? { start: selected.AdTermStart, weeks: selected.AdTermWeeks, end: termEndDate(selected.AdTermStart, selected.AdTermWeeks), guess: false }
                     : (() => { const d = defaultTermDates(selected.AdTermName); return d ? { ...d, guess: true } : null; })();
                   return dates ? (
-                    <MetaPill label={dates.guess ? "التقويم المعتاد" : "التقويم"} value={`${dates.start} ← ${dates.end} · ${dates.weeks} أسبوعاً`} />
+                    <MetaPill label={dates.guess ? "التقويم المعتاد" : "التقويم"} value={`${dates.start} ← ${dates.end} · ${countOf(dates.weeks, AR.week)}`} />
                   ) : null;
                 })()}
               </div>
