@@ -1791,3 +1791,12 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 }
 @media screen and (max-width:520px){.share-sheet.visual-minimal .share-kind{grid-template-columns:minmax(0,1fr)}}
 @media screen{.role-mismatch-hint{margin:6px 0 0;padding:6px 10px;border-radius:10px;background:var(--warning-soft);color:var(--warning);font-size:12.5px;font-weight:700}}
+
+/* «متى نلتقي؟» — no dead end: ranked windows by how many are free. */
+.meeting-slots-scope-note{margin-top:4px!important;color:var(--muted)!important;font-size:11.5px!important}
+.meeting-slots-partial{background:var(--surface-2);border-color:var(--line)}
+.meeting-slots-partial>svg{color:var(--ink-2)}
+.meeting-slots-ranked{margin:0;padding:0 18px 0 0;display:grid;gap:6px}
+.meeting-slots-ranked li{font-size:12.5px;color:var(--ink)}
+.meeting-slots-ranked li strong{font-weight:700}
+.meeting-slots-ranked li small{display:block;color:var(--muted);font-size:10.5px}
