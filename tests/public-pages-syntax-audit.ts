@@ -15,7 +15,7 @@ const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(
 const file = path.join(process.cwd(), "server.ts");
 const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.ES2022, true);
 
-const PAGES = ["staffCardPage", "surveyPage", "studentCaseSurveyPage", "instructorRequestPage", "studentCaseStatusPage"];
+const PAGES = ["staffCardPage", "surveyPage", "studentCaseSurveyPage", "instructorRequestPage", "studentCaseStatusPage", "studentSchedulePage"];
 const found = new Map<string, ts.FunctionDeclaration>();
 source.forEachChild(node => {
   if (ts.isFunctionDeclaration(node) && node.name && PAGES.includes(node.name.text)) found.set(node.name.text, node);

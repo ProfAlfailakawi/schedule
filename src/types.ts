@@ -928,7 +928,8 @@ export interface ScheduleShareLink {
    * instructor — never per section — because what it opens is that person's
    * timetable and nobody else's, and the link IS the identity.
    */
-  kind?: "department" | "staff" | "survey" | "request";
+  /** "students": رمزُ QR للطلبة — جدولُ القسم المعتمد للفصل الجاري دائماً. */
+  kind?: "department" | "staff" | "survey" | "request" | "students";
   /** صاحبُ الرابط حين يكون `kind === "request"`. لا معنى له في غيره. */
   AdInstructorId?: number;
   /**
@@ -1154,6 +1155,22 @@ export interface DepartmentDelegateDirectory {
 }
 
 /** Rooms the department has used or deliberately pinned for future use. */
+/** إحصاءُ التسجيل قبل الفصل: عددُ الطلبة لكل مقرر، وما قبله القسم من اقتراح الشعب. */
+export interface RegistrationStats {
+  id: string;
+  /** `${collegeId}:${sectionId}:${termId}` */
+  scopeKey: string;
+  collegeId: number;
+  sectionId: number;
+  termId: number;
+  /** AdCourseId → عدد الطلبة */
+  counts: Record<string, number>;
+  /** AdCourseId → عدد الشعب الذي قبله القسم (اختياري) */
+  accepted?: Record<string, number>;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
 export interface DepartmentRoomDirectory {
   id: string;
   scopeKey: string;
