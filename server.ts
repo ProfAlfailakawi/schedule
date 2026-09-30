@@ -80,6 +80,7 @@ import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow } from "./src/utils/termSequence";
+import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -18908,6 +18909,12 @@ async function startServer() {
 
   if (!databaseFailure) await migrateLegacyAccountsToCommitteeRole();
   if (!databaseFailure) await reconcileDepartmentHeadPermissions();
+  /* الفصل التالي يُنشأ وحده (أكتوبر ← الثاني، يناير ← الصيفي، أبريل ← الأول). */
+  if (!databaseFailure) scheduleAutoTermJob({
+    isDemoMode: () => Repository.isDemoMode(),
+    createTermIfAbsent: (name, dates) => Repository.createTermIfAbsent(name, dates),
+    log: message => console.log(message),
+  });
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {

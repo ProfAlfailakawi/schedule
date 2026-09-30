@@ -2752,6 +2752,26 @@ export const Repository = {
   },
 
   /**
+   * إنشاءُ فصلٍ بالاسم إن لم يوجد — للمهمة التلقائية (src/server/autoTerms.ts).
+   * في Firestore يُحجز الاسم أولاً بوثيقة ‎create()‎ (تفشل إن سبقت نسخةٌ أخرى)،
+   * فلا يولد فصلان بالاسم نفسه من نسختين تقلعان معاً. يعيد null إن وُجد.
+   */
+  createTermIfAbsent: async (name: string, dates: { start: string; weeks: number }): Promise<AdTerm | null> => {
+    const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, "");
+    const exists = (await Repository.getTerms()).some(term => norm(term.AdTermName) === norm(name));
+    if (exists) return null;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const claimId = createHash("sha256").update(norm(name)).digest("hex").slice(0, 32);
+      try {
+        await firestoreDb.collection("autoTermClaims").doc(claimId).create({ name, at: new Date().toISOString() });
+      } catch {
+        return null;
+      }
+    }
+    return Repository.createTerm(name, dates);
+  },
+
+  /**
    * موعد تسليم الجداول للفصل.
    *
    * دالّةٌ مستقلّة لحقلٍ واحد، لأن من يضعه — رئيس التسجيل — لا يعدّل اسم
