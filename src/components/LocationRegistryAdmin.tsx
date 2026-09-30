@@ -5,6 +5,7 @@ import { Badge, Field, Notice, PrimaryButton, SecondaryButton, Surface, useDialo
 import { buildingNumberLabel, normalizeCollegeName, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "../utils/locationCollegePrefixes";
 import { compareLocationCodes } from "../utils/locationRegistry";
 import { byArabic, sortByName } from "../utils/sorting";
+import { sectionLabels } from "../utils/sectionLabel";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 type Payload={buildings:MasterBuilding[];rooms:MasterRoom[];reviewCases:LocationReviewCase[];runs:LocationMigrationRun[];health:Record<string,number>;pending:any[];colleges:AdCollege[];sections:AdSection[]};
@@ -111,6 +112,8 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   const selectedCollegeGroup=collegeGroups.find(group=>group.key===collegeFilter);
   const selectedCollegeIds:number[]=selectedCollegeGroup?.ids??[];
   const selectedCollegeIdSet=useMemo(()=>new Set<number>(selectedCollegeIds),[selectedCollegeIds]);
+  const sectionFilterOptions=useMemo(()=>data.sections.filter(section=>!selectedCollegeIds.length||selectedCollegeIds.includes(Number(section.AdCollegeId))),[data.sections,selectedCollegeIds.join(",")]);
+  const sectionFilterLabel=useMemo(()=>sectionLabels(sectionFilterOptions,data.colleges),[sectionFilterOptions,data.colleges]);
 
   const roomIdsByBuilding=useMemo(()=>{
     const map=new Map<string,MasterRoom[]>();
@@ -231,7 +234,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
       <label className="location-search"><Search/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="ابحث بكود المبنى أو القاعة أو صيغة تاريخية"/></label>
       <select aria-label="حالة المبنى" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">كل الحالات</option><option value="active">الفعالة فقط</option><option value="inactive">غير الفعالة فقط</option></select>
       <select aria-label="الكلية" value={collegeFilter} onChange={e=>{setCollegeFilter(e.target.value);setSectionFilter(0);}}><option value="all">كل الكليات</option>{collegeGroups.map(group=><option key={group.key} value={group.key}>{group.label}</option>)}</select>
-      <select aria-label="القسم" value={sectionFilter} onChange={e=>setSectionFilter(Number(e.target.value))}><option value={0}>كل الأقسام</option>{sortByName(data.sections.filter(section=>!selectedCollegeIds.length||selectedCollegeIds.includes(Number(section.AdCollegeId))),(section:AdSection)=>section.AdSectionName).map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select>
+      <select aria-label="القسم" value={sectionFilter} onChange={e=>setSectionFilter(Number(e.target.value))}><option value={0}>كل الأقسام</option>{sortByName(sectionFilterOptions,(section:AdSection)=>sectionFilterLabel.get(section.AdSectionId)||section.AdSectionName).map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{sectionFilterLabel.get(section.AdSectionId)||section.AdSectionName}</option>)}</select>
       {filterActive?<SecondaryButton type="button" data-guide-ignore="مسح فلاتر سجل المواقع" onClick={resetFilters}>مسح الفلاتر</SecondaryButton>:null}
     </Surface>:null}
 

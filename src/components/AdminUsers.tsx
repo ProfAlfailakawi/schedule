@@ -26,6 +26,7 @@ import {
   FormSecurity,
 } from "../types";
 import { ACADEMIC_ROLES, roleDefinition, roleMismatchHint, type AcademicRole } from "../utils/academicRoles";
+import { collegeShortName } from "../utils/sectionLabel";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 
 /* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
@@ -1790,7 +1791,7 @@ export default function AdminUsers({
     const filtered = assigns.filter(
       (a) =>
         (!filterUser || a.SystemUserId === filterUser) &&
-        `${userById.get(a.SystemUserId)?.Name || ""} ${collegeById.get(a.AdCollegeId)?.AdCollegeName || ""} ${sectionById.get(a.AdSectionId)?.AdSectionName || ""}`
+        `${userById.get(a.SystemUserId)?.Name || ""} ${userById.get(a.SystemUserId)?.SystemUserLogin || ""} ${collegeById.get(a.AdCollegeId)?.AdCollegeName || ""} ${sectionById.get(a.AdSectionId)?.AdSectionName || ""}`
           .toLowerCase()
           .includes(query.toLowerCase()),
     );
@@ -1845,8 +1846,21 @@ export default function AdminUsers({
                     <div>
                       <strong>
                         {sectionById.get(a.AdSectionId)?.AdSectionName || "قسم"}
+                        {collegeById.get(a.AdCollegeId)
+                          ? ` · ${collegeShortName(collegeById.get(a.AdCollegeId)?.AdCollegeName)}`
+                          : ""}
                       </strong>
-                      <small>{userById.get(a.SystemUserId)?.Name || ""}</small>
+                      <small>
+                        {[
+                          userById.get(a.SystemUserId)?.Name,
+                          userById.get(a.SystemUserId)?.SystemUserLogin,
+                          userById.get(a.SystemUserId)
+                            ? roleDefinition(userById.get(a.SystemUserId)?.Role).label
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </small>
                     </div>
                     <ChevronLeft />
                   </button>
