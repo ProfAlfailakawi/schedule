@@ -2770,12 +2770,15 @@ export const Repository = {
       || (hasYears(term.AdTermName) && hasYears(name) && termChronology(term) === rank));
     if (exists) return null;
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const claimId = createHash("sha256").update(norm(name)).digest("hex").slice(0, 32);
+      const claim = firestoreDb.collection("autoTermClaims").doc(createHash("sha256").update(norm(name)).digest("hex").slice(0, 32));
       try {
-        await firestoreDb.collection("autoTermClaims").doc(claimId).create({ name, at: new Date().toISOString() });
+        await claim.create({ name, at: new Date().toISOString() });
       } catch {
         return null;
       }
+      /* إن فشل الإنشاء بعد الحجز يُفكّ الحجز، وإلا بقي الفصل محجوزاً لا يُنشأ أبداً. */
+      try { return await Repository.createTerm(name, dates); }
+      catch (error) { await claim.delete().catch(() => undefined); throw error; }
     }
     return Repository.createTerm(name, dates);
   },
