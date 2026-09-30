@@ -395,13 +395,18 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(surveyPageSource.includes('<input id="civil" dir="ltr" inputmode="numeric"'), "S18 حقل الرقم المدني numeric");
   const privacy = (surveyPageSource.match(/\.privacy\{[^}]*\}/) || [""])[0];
   const size = Number((privacy.match(/font-size:([\d.]+)px/) || [])[1] || 0);
-  const hex = (name: string) => (surveyPageSource.match(new RegExp(`--${name}:(#[0-9a-fA-F]{6})`)) || [])[1] || "";
+  /* الألوانُ من اللوحة العامّة الواحدة (src/server/publicTheme.ts) حين تقرؤها الصفحة. */
+  const paletteSource = surveyPageSource.includes("${PUBLIC_LIGHT_VARS}")
+    ? fs.readFileSync(path.join(process.cwd(), "src/server/publicTheme.ts"), "utf8").replace(/"/g, "").replace(/,\s*/g, ";")
+    : surveyPageSource;
+  const hex = (name: string) => (paletteSource.match(new RegExp(`--${name}:(#[0-9a-fA-F]{6})`)) || [])[1] || "";
   const lum = (color: string) => {
     const [r, g, b] = [1, 3, 5].map(i => parseInt(color.slice(i, i + 2), 16) / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
   const muted = hex("muted"), bg = hex("bg");
-  const ratio = muted && bg ? (lum(muted) + 0.05) / (lum(bg) + 0.05) : 0;
+  /* التباين نسبةُ الأفتح إلى الأغمق — يصحّ نهاراً وليلاً. */
+  const ratio = muted && bg ? (Math.max(lum(muted), lum(bg)) + 0.05) / (Math.min(lum(muted), lum(bg)) + 0.05) : 0;
   check(size >= 12 && privacy.includes("color:var(--muted)") && ratio >= 4.5, `S18 نص الخصوصية ≥12px وتباينه ≥4.5:1 (${size}px, ${ratio.toFixed(2)}:1)`);
   const status = between(server, "function studentCaseStatusPage", 'app.get("/m/:token"');
   check(status.includes('<label for="civil">') && status.includes('<label for="ref"') && status.includes('inputmode="numeric"')

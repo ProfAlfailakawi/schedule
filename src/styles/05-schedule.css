@@ -2089,7 +2089,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    a list of every change still reversible, newest first.
    -------------------------------------------------------------------------- */
 .undo-log-open{
-  position:fixed;z-index:150;
+  position:fixed;z-index:var(--z-fab);
   /* The far side from the rail, where nothing else lives: it was sharing a
      corner with the navigation and the two kept meeting. */
   inset-inline-end:var(--s5);inset-inline-start:auto;
@@ -2109,7 +2109,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   background:var(--accent);color:var(--accent-contrast);
   font-size:10px;font-weight:700;line-height:18px;text-align:center;
 }
-.undo-log-sheet{position:fixed;inset:0;z-index:200;display:grid;place-items:end start}
+/* The log opens beside its own button, on the far side from the rail — it
+   used to open at the rail's edge and draw over it. Under the live-guide
+   spotlight (--z-guide-spot), never over it. */
+.undo-log-sheet{position:fixed;inset:0;z-index:var(--z-sheet);display:grid;place-items:end end}
 .undo-log-backdrop{position:absolute;inset:0;background:color-mix(in srgb,var(--ink) 28%,transparent)}
 .undo-log-panel{
   position:relative;

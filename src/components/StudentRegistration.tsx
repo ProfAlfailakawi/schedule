@@ -19,11 +19,11 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, CheckCheck, ClipboardList, Clock3, Download, X } from "lucide-react";
+import { Check, CheckCheck, ClipboardList, Clock3, Download, Hourglass, Users, X } from "lucide-react";
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import StudentCasesTable, { GRADUATE_REASON_LABEL, STUDENT_CASE_TYPE_LABEL, type StudentCaseView } from "./StudentCasesTable";
-import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface } from "./ui";
-import { AR, nounFor } from "../utils/arabicCount";
+import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, StatCard } from "./ui";
+import { AR, nounFor, studentNounsFor } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import { singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
@@ -339,6 +339,8 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
     }
     return [...seen].map(([value, label]) => ({ value, label }));
   }, [scopes, catalog]);
+  /* كلية البنات تُعدّ طالباتٍ أجبن، لا طلاباً أجابوا. */
+  const studentWords = studentNounsFor(collegeOptions.find(item => item.value === collegeId)?.label);
 
   const sectionOptions = useMemo(() => {
     if (catalog) {
@@ -704,13 +706,31 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         />
       ) : (
         <>
-          <Surface className="request-totals">
-            <div><b>{totals?.students ?? 0}</b><span>{nounFor(totals?.students ?? 0, AR.student)} {nounFor(totals?.students ?? 0, viewer === "registration" ? AR.handedOverVerb : AR.answeredVerb)}</span></div>
+<div className="stat-tiles" aria-label="ملخّص الكشف">
+            <div className="stat-tone" data-tone="accent">
+            <StatCard
+              label={`${nounFor(totals?.students ?? 0, studentWords.student)} ${nounFor(totals?.students ?? 0, viewer === "registration" ? studentWords.handedOver : studentWords.answered)}`}
+              value={totals?.students ?? 0}
+              icon={<Users aria-hidden="true" />}
+            />
+            </div>
             {/* الصفرُ لا يُعرض لوحةً (قاعدة إخفاء الفارغ): العددُ الأول يكفي جواباً. */}
-            {viewer !== "registration" && totals?.pendingCommittee ? <div><b>{totals.pendingCommittee}</b><span>ينتظر اللجنة</span></div> : null}
-            {totals?.waiting ? <div><b>{totals.waiting}</b><span>ينتظر التسجيل</span></div> : null}
-            {totals?.registered ? <div><b>{totals.registered}</b><span>{nounFor(totals.registered, AR.course)} {nounFor(totals.registered, AR.registeredVerb)}</span></div> : null}
-          </Surface>
+            {viewer !== "registration" && totals?.pendingCommittee ? (
+              <div className="stat-tone" data-tone="warning">
+                <StatCard label={`${nounFor(totals.pendingCommittee, AR.request)} ${nounFor(totals.pendingCommittee, AR.waitVerb)} اللجنة`} value={totals.pendingCommittee} icon={<Hourglass aria-hidden="true" />} />
+              </div>
+            ) : null}
+            {totals?.waiting ? (
+              <div className="stat-tone" data-tone="info">
+                <StatCard label={`${nounFor(totals.waiting, AR.request)} ${nounFor(totals.waiting, AR.waitVerb)} التسجيل`} value={totals.waiting} icon={<Clock3 aria-hidden="true" />} />
+              </div>
+            ) : null}
+            {totals?.registered ? (
+              <div className="stat-tone" data-tone="success">
+                <StatCard label={`${nounFor(totals.registered, AR.course)} ${nounFor(totals.registered, AR.registeredVerb)}`} value={totals.registered} icon={<CheckCheck aria-hidden="true" />} />
+              </div>
+            ) : null}
+          </div>
 
           {!canWrite ? (
             <p className="registration-readonly">

@@ -19,7 +19,7 @@
  */
 import fs from "fs";
 import path from "path";
-import { AR, countOf } from "../src/utils/arabicCount";
+import { AR, countOf, nounFor, studentNounsFor } from "../src/utils/arabicCount";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -135,6 +135,14 @@ check(second.length === 0, `لا نسخةَ ثانية من قاعدة العد�
 check(countOf(1, AR.day) === "يوم واحد" && countOf(2, AR.day) === "يومان" && countOf(7, AR.day) === "7 أيام"
   && countOf(14, AR.day) === "14 يوماً" && countOf(100, AR.day) === "100 يوم" && countOf(0, AR.day) === "لا أيام",
   "القاعدة: يوم واحد · يومان · 7 أيام · 14 يوماً · 100 يوم · لا أيام");
+
+/* كلية البنات: الاسمُ وفعلُه يتبعان الكلية معاً. */
+const girls = studentNounsFor("كلية التربية الأساسية - بنات");
+const boys = studentNounsFor("كلية التربية الأساسية - بنين");
+check(`${nounFor(2, girls.student)} ${nounFor(2, girls.answered)}` === "طالبتان أجابتا"
+  && `${nounFor(5, girls.student)} ${nounFor(5, girls.answered)}` === "طالبات أجبن"
+  && `${nounFor(2, boys.student)} ${nounFor(2, boys.answered)}` === "طالبان أجابا",
+  "كلية البنات: طالبتان أجابتا · طالبات أجبن — وكلية البنين: طالبان أجابا");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
