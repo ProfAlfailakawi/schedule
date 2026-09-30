@@ -1048,13 +1048,31 @@ export interface InstructorRequestItem {
   };
   /** البديلُ الذي اختاره الأستاذ بعد الرفض. */
   chosenAlternative?: InstructorRequestSlot;
+  /**
+   * حوارُ البند بعد وصوله القسم: القسمُ يردّ ويقترح أوقاتاً، والأستاذُ يوافق أو
+   * يقترح غيرها، حتى يتّفقا. الحالةُ تُقرأ من `negotiationState` وحدها.
+   */
+  thread?: InstructorRequestMessage[];
+}
+
+export interface InstructorRequestMessage {
+  from: "department" | "instructor";
+  at: string;
+  /** الصفةُ لا الاسم حين يكون من القسم. */
+  by?: string;
+  text?: string;
+  /** أوقاتٌ مقترحة في هذه الرسالة. */
+  slots?: InstructorRequestSlot[];
+  /** موافقةُ الأستاذ على مقترح القسم — والوقتُ الموافَق عليه في `slots[0]`. */
+  accepted?: boolean;
 }
 
 /** حدثٌ في حياة الطلب. الأستاذ يراها كلَّها عن طلبه هو، ولا يرى طلبَ غيره. */
 export type InstructorRequestEventKind =
   | "link-created" | "link-opened" | "submitted" | "received"
   | "item-fixed" | "item-rejected" | "alternative-offered" | "alternative-chosen"
-  | "settled" | "schedule-approved";
+  | "settled" | "schedule-approved"
+  | "department-replied" | "instructor-replied" | "proposal-accepted";
 
 export interface InstructorRequestEvent {
   kind: InstructorRequestEventKind;

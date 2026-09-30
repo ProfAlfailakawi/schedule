@@ -33,6 +33,7 @@
  */
 
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
+import { negotiationClosed, type ThreadItem } from "./instructorRequestThread";
 import { AR, countOf } from "./arabicCount";
 import {
   DAY_KEYS, DAY_NAMES, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding,
@@ -542,11 +543,8 @@ export function describeRequest(verdicts: RequestVerdict[]): string {
  * فالرفضُ مع بدائل لم يُختر منها بعدُ ينتظر الأستاذ، والطلبُ يبقى مفتوحاً له
  * حتى يختار — فإذا أرسل اختيارَه عاد إلى القسم («submitted») كأيّ إرسال.
  */
-export function requestFullySettled(items: ReadonlyArray<{
-  action: RequestAction;
-  decision?: { state?: string; alternatives?: readonly unknown[] };
-}>): boolean {
-  return items.every(item => item.action === "keep"
-    || item.decision?.state === "fixed"
-    || (item.decision?.state === "rejected" && !(item.decision.alternatives || []).length));
+export function requestFullySettled(items: ReadonlyArray<ThreadItem>): boolean {
+  /* بندٌ في حوارٍ لم يُحسم — مقترحٌ ينتظر الأستاذ، أو ردٌّ ينتظر القسم — لا
+     يُغلق الطلب، وإن سبقه قرار (instructorRequestThread). */
+  return items.every(negotiationClosed);
 }

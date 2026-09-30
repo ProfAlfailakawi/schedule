@@ -30,9 +30,12 @@ export function scheduleClockForDisplay(value: string | null | undefined): strin
 }
 
 /**
- * Render the university-facing range in its approved visual order: END - START.
- * Internal data always remains start/end in chronological order; only the
- * presentation contract is reversed. The isolate prevents RTL bidi reordering.
+ * The one formatter for a lecture's range: START – END, read in the order it
+ * happens. «09:20 – 08:00» in an Arabic cell read as a lecture that ends before
+ * it begins (seen on a professor's card, 2026-10-01). The whole range sits in
+ * a left-to-right isolate (U+2066 … U+2069), so the surrounding RTL paragraph
+ * can neither reorder the two clocks nor pull the dash to the wrong side —
+ * that is the only bidi control needed, and it lives here, not in each view.
  */
 export function formatScheduleTimeRange(
   start: string | null | undefined,
@@ -43,7 +46,7 @@ export function formatScheduleTimeRange(
   if (from === "—" && to === "—") return "—";
   if (to === "—") return from;
   if (from === "—") return to;
-  return `⁦${to} - ${from}⁩`;
+  return `\u2066${from} – ${to}\u2069`;
 }
 
 /**
