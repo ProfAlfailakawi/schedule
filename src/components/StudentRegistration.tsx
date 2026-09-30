@@ -706,8 +706,8 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         />
       ) : (
         <>
-<div className="registration-stats" aria-label="ملخّص الكشف">
-            <div className="registration-stat" data-tone="accent">
+<div className="stat-tiles" aria-label="ملخّص الكشف">
+            <div className="stat-tone" data-tone="accent">
             <StatCard
               label={`${nounFor(totals?.students ?? 0, studentWords.student)} ${nounFor(totals?.students ?? 0, viewer === "registration" ? studentWords.handedOver : studentWords.answered)}`}
               value={totals?.students ?? 0}
@@ -716,17 +716,17 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
             </div>
             {/* الصفرُ لا يُعرض لوحةً (قاعدة إخفاء الفارغ): العددُ الأول يكفي جواباً. */}
             {viewer !== "registration" && totals?.pendingCommittee ? (
-              <div className="registration-stat" data-tone="warning">
+              <div className="stat-tone" data-tone="warning">
                 <StatCard label={`${nounFor(totals.pendingCommittee, AR.request)} ${nounFor(totals.pendingCommittee, AR.waitVerb)} اللجنة`} value={totals.pendingCommittee} icon={<Hourglass aria-hidden="true" />} />
               </div>
             ) : null}
             {totals?.waiting ? (
-              <div className="registration-stat" data-tone="info">
+              <div className="stat-tone" data-tone="info">
                 <StatCard label={`${nounFor(totals.waiting, AR.request)} ${nounFor(totals.waiting, AR.waitVerb)} التسجيل`} value={totals.waiting} icon={<Clock3 aria-hidden="true" />} />
               </div>
             ) : null}
             {totals?.registered ? (
-              <div className="registration-stat" data-tone="success">
+              <div className="stat-tone" data-tone="success">
                 <StatCard label={`${nounFor(totals.registered, AR.course)} ${nounFor(totals.registered, AR.registeredVerb)}`} value={totals.registered} icon={<CheckCheck aria-hidden="true" />} />
               </div>
             ) : null}

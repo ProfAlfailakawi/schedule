@@ -892,15 +892,6 @@
 
 .request-totals{padding:var(--s4) var(--s5)}
 
-/* ملخّصُ كشف التسجيل: بطاقاتُ StatCard نفسُها، ولونُ الحالة على الأيقونة
-   وخطٍّ في بدايتها — الرقمُ يبقى بلون الحبر فيُقرأ أولاً. */
-.registration-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--s3)}
-.registration-stat{--tone:var(--accent);--tone-soft:var(--accent-soft)}
-.registration-stat[data-tone="warning"]{--tone:var(--warning);--tone-soft:var(--warning-soft)}
-.registration-stat[data-tone="info"]{--tone:var(--info);--tone-soft:var(--info-soft)}
-.registration-stat[data-tone="success"]{--tone:var(--success);--tone-soft:var(--success-soft)}
-.registration-stat>.stat-card{height:100%;border-inline-start:3px solid var(--tone)}
-.registration-stat .stat-icon{background:var(--tone-soft);color:var(--tone)}
 .request-funnel{display:grid;gap:var(--s3)}
 .request-funnel-pills{justify-content:center}
 .request-funnel-pills span{color:var(--muted);font-weight:500}

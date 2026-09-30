@@ -62,6 +62,7 @@ import {
   RecordDeck,
   SecondaryButton,
   Segmented,
+  StatCard,
   Surface,
   visualConfirm,
 } from "./ui";
@@ -74,7 +75,7 @@ import type {
   FSchedule,
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
-import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { AR, countOf, nounFor, oblique, studentNounsFor } from "../utils/arabicCount";
 import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer";
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
@@ -551,6 +552,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
      that has never opened the survey sees the door and nothing more. */
   const [demand, setDemand] = useState<any>(null);
   const studentCases = Array.isArray(demand?.cases) ? demand.cases : [];
+  /* من أجاب — عددٌ واحد تقرؤه البطاقةُ ونصُّها، لا أربعُ صيغٍ مكرّرة. */
+  const answered = Number(demand?.totalRespondents || demand?.totalCases || demand?.cases?.length || demand?.respondents || 0);
+  /* كلية البنات: «طالبتان أجابتا» — القاعدة في arabicCount وحدها. */
+  const studentWords = studentNounsFor(colleges.find((college: any) => Number(college.AdCollegeId) === Number(collegeId))?.AdCollegeName);
   const [genome, setGenome] = useState<any>(null),
     [constraints, setConstraints] = useState<any[]>([]),
     [innovationMode, setInnovationMode] = useState<
@@ -3228,29 +3233,24 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               ) : null}
 
               {/* الرقم أولاً، ثم التفصيل — كبقية القراءات. */}
-              <div className="demand-figures">
-                <article>
-                  <span>أجاب</span>
-                  <strong><Num value={demand.totalRespondents || demand.totalCases || demand.cases?.length || demand.respondents || 0} /></strong>
-                  <small>
-                    {(demand.totalRespondents || demand.totalCases || demand.cases?.length || demand.respondents) ? `${nounFor(demand.totalRespondents || demand.totalCases || demand.cases?.length || demand.respondents, AR.student)} · ${demand.cohortLabel || "طلبة القسم"}` : `لم يجب أحد بعد · ${demand.cohortLabel || "طلبة القسم"}`}
-                  </small>
-                </article>
-                <article>
-                  <span>مقررات مطلوبة</span>
-                  <strong><Num value={demand.courses?.length || 0} /></strong>
-                  <small>من إجاباتهم</small>
-                </article>
-                <article className={demand.pairs?.length ? "warn" : ""}>
-                  <span>لا يجوز أن تتقاطع</span>
-                  <strong><Num value={demand.pairs?.length || 0} /></strong>
-                  <small>{nounFor(demand.pairs?.length || 0, AR.pair)}</small>
-                </article>
-                <article className={demand.repairs?.length ? "good" : ""}>
-                  <span>نقلات جاهزة</span>
-                  <strong><Num value={demand.repairs?.length || 0} /></strong>
-                  <small>بلا أثر جانبي</small>
-                </article>
+              <div className="stat-tiles demand-figures">
+                <div className="stat-tone" data-tone={answered ? "accent" : "quiet"}>
+                  <StatCard
+                    icon={<UsersRound aria-hidden="true" />}
+                    value={<Num value={answered} />}
+                    label={answered ? `${nounFor(answered, studentWords.student)} ${nounFor(answered, studentWords.answered)}` : "لم يُجب أحدٌ بعد"}
+                    detail={demand.cohortLabel || "طلبة القسم"}
+                  />
+                </div>
+                <div className="stat-tone" data-tone="info">
+                  <StatCard icon={<BarChart3 aria-hidden="true" />} value={<Num value={demand.courses?.length || 0} />} label="مقررات مطلوبة" detail="من إجاباتهم" />
+                </div>
+                <div className="stat-tone" data-tone={demand.pairs?.length ? "warning" : "quiet"}>
+                  <StatCard icon={<ArrowLeftRight aria-hidden="true" />} value={<Num value={demand.pairs?.length || 0} />} label="لا يجوز أن تتقاطع" detail={nounFor(demand.pairs?.length || 0, AR.pair)} />
+                </div>
+                <div className="stat-tone" data-tone={demand.repairs?.length ? "success" : "quiet"}>
+                  <StatCard icon={<WandSparkles aria-hidden="true" />} value={<Num value={demand.repairs?.length || 0} />} label="نقلات جاهزة" detail="بلا أثر جانبي" />
+                </div>
               </div>
 
               {/* The case register — the same component the registration sheet
@@ -3377,18 +3377,26 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
               {/* المقررات الأكثر طلباً — شريط بسيط، بالقاعدة إلى جانب كل رقم. */}
               {demand.courses?.length ? (
-                <div className="demand-bars">
-                  {demand.courses.slice(0, 8).map((course: any) => (
-                    <article key={course.courseId}>
-                      <span className="demand-course-label">
-                        <b>{course.name}</b>
-                        <small dir="ltr">{course.code || course.courseId}</small>
-                      </span>
-                      <i><b style={{ width: `${Math.max(4, course.share)}%` }} /></i>
-                      <strong dir="ltr">{course.students}/{demand.respondents}</strong>
-                    </article>
-                  ))}
-                </div>
+                <section className="demand-chart" aria-label="المقررات الأكثر طلباً">
+                  <header>
+                    <strong><BarChart3 aria-hidden="true" /> المقررات الأكثر طلباً</strong>
+                    <small>من {countOf(demand.respondents, oblique(studentWords.student))}</small>
+                  </header>
+                  <ol className="demand-bars">
+                    {demand.courses.slice(0, 8).map((course: any, index: number) => (
+                      <li key={course.courseId}>
+                        <b className="demand-rank" aria-hidden="true">{index + 1}</b>
+                        <span className="demand-course-label">
+                          <b>{course.name}</b>
+                          <small dir="ltr">{course.code || course.courseId}</small>
+                        </span>
+                        <i role="img" aria-label={`${course.share}%`}><b style={{ width: `${Math.max(4, course.share)}%` }} /></i>
+                        <strong dir="ltr">{course.students}/{demand.respondents} <small>{course.share}%</small></strong>
+                      </li>
+                    ))}
+                  </ol>
+                  {demand.courses.length > 8 ? <p className="demand-chart-more">و{countOf(demand.courses.length - 8, AR.course)} {nounFor(demand.courses.length - 8, AR.otherAdj)} في السجلّ أدناه.</p> : null}
+                </section>
               ) : null}
 
               {demand.unsolved?.length ? (

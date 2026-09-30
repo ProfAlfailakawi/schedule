@@ -2338,23 +2338,8 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
 }
 .demand-qr svg{width:100%;height:100%;display:block}
 
-/* الأرقام: أربع خانات، كل واحدة برقمها وقاعدتها. */
-.demand-figures{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s3);
-  margin-block-start:var(--s4);
-}
-.demand-figures article{
-  padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
-}
-.demand-figures article.warn{border-color:color-mix(in srgb,var(--warn,#b8860b) 40%,var(--line))}
-.demand-figures article.good{border-color:color-mix(in srgb,var(--accent) 44%,var(--line))}
-.demand-figures span{display:block;color:var(--muted);font-size:var(--t-xs)}
-.demand-figures strong{
-  display:block;margin-block-start:var(--s1);
-  font-size:var(--t-h2);font-weight:600;letter-spacing:-.02em;line-height:1;
-  font-variant-numeric:tabular-nums lining-nums;direction:ltr;unicode-bidi:isolate;
-}
-.demand-figures small{display:block;margin-block-start:var(--s1);color:var(--muted);font-size:var(--t-xs)}
+/* الأرقام: StatCard بلون حالتها (.stat-tiles/.stat-tone في 02-primitives). */
+.demand-figures{margin-block-start:var(--s4)}
 
 .demand-headline{
   margin-block-start:var(--s4);padding:var(--s3) var(--s4);
@@ -2388,11 +2373,31 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
 .demand-why b{color:var(--ink);font-weight:600}
 
 /* المقررات الأكثر طلباً — شريط، والقاعدة إلى جانبه دائماً. */
-.demand-bars{display:grid;gap:var(--s2);margin-block-start:var(--s4)}
-.demand-bars article{
+.demand-bars{display:grid;gap:var(--s2);margin-block-start:var(--s4);padding:0;list-style:none}
+.demand-bars>article,.demand-bars>li{
   display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,2fr) auto;
   align-items:center;gap:var(--s3);
 }
+/* نتائج الاستبيان: بطاقةٌ واحدة، رأسُها يقول ما تعدّه ومن كم، وكلُّ سطرٍ
+   برتبته ونسبته — تُقرأ من بعيد كما تُقرأ بقية البطاقات. */
+.demand-chart{
+  margin-block-start:var(--s4);padding:var(--s4) var(--s5);
+  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);
+}
+.demand-chart>header{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s3);flex-wrap:wrap}
+.demand-chart>header strong{display:inline-flex;align-items:center;gap:var(--s2);font-size:var(--t-sm);font-weight:600}
+.demand-chart>header strong svg{width:16px;height:16px;color:var(--accent)}
+.demand-chart>header small{color:var(--muted);font-size:var(--t-xs)}
+.demand-chart .demand-bars{margin-block-start:var(--s3);gap:var(--s3)}
+.demand-chart .demand-bars>li{grid-template-columns:24px minmax(0,1fr) minmax(90px,2fr) auto}
+.demand-rank{
+  width:24px;height:24px;display:grid;place-items:center;border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted);font-size:11px;font-weight:600;
+  font-variant-numeric:tabular-nums lining-nums;
+}
+.demand-chart .demand-bars>li:first-child .demand-rank{background:var(--accent-soft);color:var(--accent)}
+.demand-bars strong small{margin-inline-start:4px;color:var(--muted-2);font-weight:500}
+.demand-chart-more{margin:var(--s3) 0 0;color:var(--muted);font-size:var(--t-xs)}
 .demand-bars span{
   min-width:0;font-size:var(--t-sm);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -2409,7 +2414,8 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
 @media (max-width:760px){
   .demand-door-card{grid-template-columns:minmax(0,1fr)}
   .demand-qr{width:100%;max-width:220px;height:auto;aspect-ratio:1}
-  .demand-bars article{grid-template-columns:minmax(0,1fr) auto}
+  .demand-bars>article,.demand-bars>li{grid-template-columns:minmax(0,1fr) auto}
+  .demand-chart .demand-bars>li{grid-template-columns:24px minmax(0,1fr) auto}
   .demand-bars i{grid-column:1 / -1}
 }
 
