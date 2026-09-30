@@ -44,7 +44,10 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
 
   const changes = read("src/components/ScheduleChanges.tsx");
   const mount = changes.slice(changes.indexOf("<SubmissionDeadlines") - 400, changes.indexOf("<SubmissionDeadlines"));
-  check(/audience\.deadlinesPanel\s*\?\s*\(\s*$/.test(mount.trim().split("\n").slice(-1)[0] + "") || /&& audience\.deadlinesPanel \? \(/.test(mount),
+  /* الشرطُ قد يُسمّى مرّةً (deadlinesShown) فيقرؤه زرُّ «تمديد» أيضاً. */
+  const shownRule = (changes.match(/const deadlinesShown = ([^;]+);/) || [])[1] || "";
+  check(/audience\.deadlinesPanel\s*\?\s*\(\s*$/.test(mount.trim().split("\n").slice(-1)[0] + "") || /&& audience\.deadlinesPanel \? \(/.test(mount)
+    || (/\{deadlinesShown \? \(/.test(mount) && /audience\.deadlinesPanel/.test(shownRule)),
     "A «تغييرات الجدول» تركّب اللوحة بشرط inboxAudience");
   check(!/canEdit=\{role\.canManageDeadline\}/.test(changes) && !/canExtend=\{role\.canManageDeadline\}/.test(changes),
     "A لا شرطَ ثانٍ للتحرير يُقرأ من الصفة مباشرةً في «تغييرات الجدول»");
@@ -246,7 +249,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   const cases = read("src/components/StudentCasesTable.tsx");
   check(/\{counts\.graduate \? <SecondaryButton/.test(cases) && !/disabled=\{!counts\.graduate\}/.test(cases), "D سجلّ الحالات: لا زرَّ طباعةٍ معطّلٌ لنوعٍ بلا حالات");
   const registration = read("src/components/StudentRegistration.tsx");
-  check(/\{totals\?\.waiting \? <div>/.test(registration), "D كشف التسجيل: لوحات الأعداد بلا أصفار");
+  check(/\{totals\?\.waiting \? \(?\s*<div/.test(registration), "D كشف التسجيل: لوحات الأعداد بلا أصفار");
   const publish = read("src/components/SchedulePublish.tsx");
   check(/\{!dead \? <div className="share-row-actions"/.test(publish) && /\{link\.views \? /.test(publish), "D الروابط: لا أزرارَ معطّلة لرابطٍ منتهٍ، ولا «0 فتحة»");
   const inbox = read("src/components/InstructorInbox.tsx");
