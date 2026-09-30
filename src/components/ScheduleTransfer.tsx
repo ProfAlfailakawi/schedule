@@ -126,6 +126,34 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const [copyPeople, setCopyPeople] = useState<Instructor[]>([]);
   const [copyIds, setCopyIds] = useState<number[]>([]);
   const [copySelected, setCopySelected] = useState<number[]>([]);
+  /* منتدبو القسم نفسه في كليات أخرى: الشخص لا الكلية (انظر الخادم). */
+  const [elsewhere, setElsewhere] = useState<Array<{ AdInstructorId: number; AdInstructorName: string; origins: Array<{ college: string; section: string }> }>>([]);
+  React.useEffect(() => {
+    if (tab !== "visiting" || !collegeId || !sectionId) { setElsewhere([]); return; }
+    const controller = new AbortController();
+    fetch(`/api/department-delegates/elsewhere?${new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId) })}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : { people: [] })
+      .then(data => setElsewhere(data.people || []))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [tab, collegeId, sectionId, directoryIds.length]);
+  const adoptDelegate = async (instructorId: number) => {
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch("/api/department-delegates/adopt", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId, instructorId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذّر ضمّ المنتدب.");
+      setDirectoryIds(data.instructorIds || currentUnique([...directoryIds, instructorId]));
+      setDirectoryPeople(current => sortByName(mergePeople(current, [data.person]), row => row.AdInstructorName));
+      if (data.roster) setRoster(data.roster);
+      setElsewhere(current => current.filter(person => person.AdInstructorId !== instructorId));
+      onChanged();
+    } catch (e: any) { setError(e.message || "تعذّر ضمّ المنتدب."); }
+    finally { setBusy(false); }
+  };
 
   React.useEffect(() => {
     if ((tab !== "visiting" && tab !== "import") || !collegeId || !sectionId || !termId) return;
@@ -1582,6 +1610,21 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 })}
                 {rosterLoaded && !visibleDirectory.length ? <p className="roster-empty">{rosterQuery.trim()?`لا منتدب يطابق «${rosterQuery.trim()}» في هذا القسم.`:"لا توجد قائمة منتدبين لهذا القسم بعد."}</p> : null}
               </div>
+              {elsewhere.length ? (
+                <section className="roster-elsewhere" aria-label="منتدبو هذا القسم في كليات أخرى">
+                  <div className="roster-directory-head"><div><strong>منتدبو هذا القسم في كليات أخرى</strong><small>المنتدب شخصٌ واحد في الجامعة؛ ضمّه إلى قائمة هذا القسم ليظهر هنا وفي جدوله.</small></div></div>
+                  <div className="roster-directory">
+                    {elsewhere.map(person => (
+                      <article key={person.AdInstructorId}>
+                        <button type="button" className="roster-term-toggle" data-guide-ignore="ضمّ منتدبٍ مسجّل في القسم نفسه بكلية أخرى إلى قائمة هذا القسم" disabled={busy} onClick={() => void adoptDelegate(person.AdInstructorId)}>
+                          <Plus aria-hidden="true" /><span>ضمّه لهذا القسم</span>
+                        </button>
+                        <span className="instructor-identity"><b>{person.AdInstructorName}</b><small>{person.origins.map(origin => origin.college).join(" ، ")}</small></span>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : null}
 

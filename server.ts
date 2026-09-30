@@ -14,6 +14,7 @@ import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
 import { DEPARTMENT_HEAD_ROLE, planDepartmentHeadAccounts } from "./src/utils/departmentHeadAccounts";
+import { arabicMatchKey, normalizeArabicText } from "./src/utils/arabicText";
 import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
@@ -6298,6 +6299,68 @@ app.post("/api/department-delegates/instructor", requirePermission(7), async (re
   let roster:number[]|undefined;
   if(termId){const current=await Repository.getVisitingRoster(collegeId,sectionId,termId);roster=await Repository.saveVisitingRoster(collegeId,sectionId,termId,[...current,Number(person.AdInstructorId)]);}
   res.status(201).json({person,instructorIds,roster});
+});
+
+/**
+ * ── المنتدب شخصٌ لا كلية ─────────────────────────────────────────────────────
+ *
+ * قائمة المنتدبين ملكُ قسمٍ بعينه (كلية + قسم)، فمن أضاف منتدبي «تكنولوجيا
+ * التعليم» في كلية البنات ثم فتح القسم نفسه في كلية البنين وجد قائمةً فارغة —
+ * والأشخاص أنفسهم مسجّلون، لكن في قسمٍ آخر. فتُعرض هنا منتدبو القسم الذي يحمل
+ * الاسم نفسه في الكليات الأخرى، بالاسم وحده (لا رقم مدني ولا جوّال)، ويضمّهم
+ * القسم إلى قائمته بضغطة. القراءة والضمّ يلزمان نطاقَ القسم المفتوح وحده.
+ * القاعدة هنا وحدها: sameDepartmentDelegatesElsewhere.
+ */
+async function sameDepartmentDelegatesElsewhere(collegeId: number, sectionId: number): Promise<Map<number, Array<{ college: string; section: string }>>> {
+  const [sections, colleges, affiliations, own] = await Promise.all([
+    Repository.getSections(), Repository.getColleges(), Repository.getDelegateAffiliations(), Repository.getDepartmentDelegates(collegeId, sectionId),
+  ]);
+  const target = (sections as any[]).find(row => Number(row.AdSectionId) === sectionId && Number(row.AdCollegeId) === collegeId);
+  if (!target) return new Map();
+  const key = arabicMatchKey(target.AdSectionName);
+  const sectionById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), row]));
+  const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const owned = new Set(own.map(Number));
+  const found = new Map<number, Array<{ college: string; section: string }>>();
+  for (const row of affiliations) {
+    if (Number(row.collegeId) === collegeId) continue;
+    const section = sectionById.get(Number(row.sectionId));
+    if (!section || arabicMatchKey(section.AdSectionName) !== key) continue;
+    for (const id of row.instructorIds.map(Number)) {
+      if (owned.has(id)) continue;
+      const list = found.get(id) || [];
+      const origin = { college: collegeName.get(Number(row.collegeId)) || "", section: String(section.AdSectionName || "") };
+      if (!list.some(item => item.college === origin.college)) list.push(origin);
+      found.set(id, list);
+    }
+  }
+  return found;
+}
+
+app.get("/api/department-delegates/elsewhere", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0);
+  if (!collegeId || !sectionId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const [found, people] = await Promise.all([sameDepartmentDelegatesElsewhere(collegeId, sectionId), Repository.getInstructors()]);
+  const byId = new Map(people.map(person => [Number(person.AdInstructorId), person]));
+  res.json({
+    people: [...found].map(([id, origins]) => ({ AdInstructorId: id, AdInstructorName: String(byId.get(id)?.AdInstructorName || ""), origins }))
+      .filter(person => person.AdInstructorName)
+      .sort((a, b) => a.AdInstructorName.localeCompare(b.AdInstructorName, "ar")),
+  });
+});
+
+app.post("/api/department-delegates/adopt", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  const instructorId = Number(req.body?.instructorId || 0);
+  if (!collegeId || !sectionId || !instructorId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  /* لا يُضمّ إلا من عُرض: منتدبٌ للقسم نفسه في كليةٍ أخرى — لا أيُّ أستاذٍ في الجامعة برقمه. */
+  if (!(await sameDepartmentDelegatesElsewhere(collegeId, sectionId)).has(instructorId)) { res.status(404).json({ error: "هذا الشخص ليس منتدباً لهذا القسم في كلية أخرى." }); return; }
+  const person = await Repository.getInstructorById(instructorId);
+  if (!person) { res.status(404).json({ error: "المنتدب غير موجود" }); return; }
+  await Repository.addDepartmentDelegate(collegeId, sectionId, instructorId);
+  let roster: number[] | undefined;
+  if (termId) roster = await Repository.saveVisitingRoster(collegeId, sectionId, termId, [...await Repository.getVisitingRoster(collegeId, sectionId, termId), instructorId]);
+  res.status(201).json({ person, instructorIds: await Repository.getDepartmentDelegates(collegeId, sectionId), roster });
 });
 
 app.put("/api/department-delegates/:instructorId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
