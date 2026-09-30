@@ -17,6 +17,7 @@ import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sh
 import { safeStorage } from "../utils/safeStorage";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
+import { sectionLabels } from "../utils/sectionLabel";
 import { currentTermId, sortTermsNewest, termChronology, termIsArchive } from "../utils/termSequence";
 import {
   buildVisitingHistoryModel, sortVisitingTerms, visitingHeatLevel,
@@ -870,6 +871,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     sortByName(sections.filter(s => (!filters.collegeId || s.AdCollegeId === filters.collegeId) && (isPowerAdmin || scopeState.sectionIds.includes(Number(s.AdSectionId)))), (s: AdSection) => s.AdSectionName),
     row => `${Number(row.AdCollegeId) || 0}|${optionKey(row.AdSectionName)}`, filters.sectionId, row => Number(row.AdSectionId),
   ), [sections, filters.collegeId, filters.sectionId, isPowerAdmin, scopeState.sectionIds.join("|")]);
+  const sectionOptionLabel = useMemo(() => sectionLabels(sectionOptions, colleges), [sectionOptions, colleges]);
   /**
    * A course can exist more than once in imported catalogues (different legacy
    * IDs / code variants) while carrying the exact same visible name inside the
@@ -1889,7 +1891,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             <Field label="القسم">
               <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => pickScope({ sectionId: Number(event.target.value) || 0 })}>
                 <option value="">كل الأقسام</option>
-                {sectionOptions.map(row => <option key={row.AdSectionId} value={row.AdSectionId}>{cleanOptionText(row.AdSectionName)}</option>)}
+                {sectionOptions.map(row => <option key={row.AdSectionId} value={row.AdSectionId}>{cleanOptionText(sectionOptionLabel.get(row.AdSectionId) || row.AdSectionName)}</option>)}
               </select>
             </Field>
           ) : null}
