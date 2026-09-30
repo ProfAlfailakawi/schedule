@@ -75,7 +75,8 @@ check(due("2027-04-01").name === "الفصل الأول 2027/2028" && due("2027-
   const server = fs.readFileSync("server.ts", "utf8");
   const repo = fs.readFileSync("src/db/repository.ts", "utf8");
   check(server.includes("scheduleAutoTermJob({") && server.includes("Repository.createTermIfAbsent("), "الخادم يجدول المهمة عبر المستودع");
-  check(repo.includes('collection("autoTermClaims").doc(claimId).create('), "Firestore: حجزُ الاسم ذرّي فلا يولد فصلان من نسختين");
+  check(repo.includes('collection("autoTermClaims").doc(') && repo.includes("await claim.create("), "Firestore: حجزُ الاسم ذرّي فلا يولد فصلان من نسختين");
+  check(repo.includes("await claim.delete()"), "Firestore: فشلُ الإنشاء بعد الحجز يفكّ الحجز");
   console.log(`\nTerm calendar audit: ${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
 })();
