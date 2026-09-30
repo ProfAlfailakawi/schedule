@@ -62,6 +62,7 @@ import { DEMO_LINK_TOKEN_PREFIX, isDemoLinkToken } from "../utils/demoLinkToken"
 import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
 import { caseRefFromId, mergeStudentResubmission } from "../utils/studentNeedMerge";
 import { cleanSeenIds, mergeSeenIds, seenUnchanged } from "../utils/notificationSeen";
+import { termChronology } from "../utils/termSequence";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -2761,7 +2762,12 @@ export const Repository = {
    */
   createTermIfAbsent: async (name: string, dates: { start: string; weeks: number }): Promise<AdTerm | null> => {
     const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, "");
-    const exists = (await Repository.getTerms()).some(term => norm(term.AdTermName) === norm(name));
+    /* الاسمُ وحده لا يكفي: «الفصل الدراسي الثاني 2026/2027» المُدخل يدوياً هو
+       الفصلُ نفسه. فيُطابَق الموسمُ والسنتان أيضاً (termChronology). */
+    const hasYears = (v: unknown) => /\d{4}\s*\/\s*\d{4}/.test(String(v ?? ""));
+    const rank = termChronology({ AdTermName: name });
+    const exists = (await Repository.getTerms()).some(term => norm(term.AdTermName) === norm(name)
+      || (hasYears(term.AdTermName) && hasYears(name) && termChronology(term) === rank));
     if (exists) return null;
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const claimId = createHash("sha256").update(norm(name)).digest("hex").slice(0, 32);
