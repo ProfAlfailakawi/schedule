@@ -21,6 +21,7 @@ import { currentTermId, planningTermCandidates, termHasEnded, termIsArchive } fr
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
+import { computeMeetingSlots } from "./src/utils/meetingSlots";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
@@ -7215,63 +7216,19 @@ app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: Authe
   if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
   if (ids.length < 2) { res.status(400).json({ error: "اختر أستاذين على الأقل" }); return; }
 
+  /* Busy time is the person's WHOLE term — every college, every department.
+     A professor who teaches in two colleges is not free on Monday at 10:00
+     because the coordinator happens to be looking at only one of them. The
+     read is term-wide on purpose (no college/section filter), and what leaves
+     the server is busy/free per chosen name only: no course, no room, no
+     college. */
   const [termRows, instructors] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
     Repository.getInstructors(),
   ]);
-  const nameById = new Map(instructors.map(person => [person.AdInstructorId, person.AdInstructorName]));
-  const rowsByInstructor = new Map<number, FSchedule[]>(ids.map(id => [id, []]));
-  for (const item of termRows) {
-    const key = Number(item.AdInstructorId);
-    if (rowsByInstructor.has(key)) rowsByInstructor.get(key)!.push(item);
-  }
-
-  const STEP = SCHEDULE_SLOT_MINUTES;
-  const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
-  const days = SCHEDULE_DAY_KEYS.map((dayKey, index) => {
-    const busyAt = (from: number, to: number) => ids.filter(id =>
-      (rowsByInstructor.get(id) || []).some(item =>
-        Boolean((item as any)[dayKey]) && timeToMinutes(item.fstarttime) < to && timeToMinutes(item.fendtime) > from));
-
-    const free: { start: string; end: string; minutes: number; startMinutes: number }[] = [];
-    const nearMiss: { start: string; end: string; busy: string[] }[] = [];
-    let runStart = -1;
-    for (let start = SCHEDULE_DAY_START; start + duration <= SCHEDULE_DAY_END; start += STEP) {
-      const busy = busyAt(start, start + duration);
-      if (!busy.length) {
-        if (runStart < 0) runStart = start;
-      } else {
-        if (runStart >= 0) {
-          free.push({ start: clock(runStart), end: clock(runStart === start - STEP ? runStart + duration : start - STEP + duration), minutes: (start - STEP - runStart) + duration, startMinutes: runStart });
-          runStart = -1;
-        }
-        if (busy.length === 1) {
-          const last = nearMiss[nearMiss.length - 1];
-          const name = nameById.get(busy[0]) || "زميل";
-          if (last && last.end === clock(start - STEP + duration) && last.busy[0] === name) last.end = clock(start + duration);
-          else nearMiss.push({ start: clock(start), end: clock(start + duration), busy: [name] });
-        }
-      }
-    }
-    if (runStart >= 0) {
-      const lastStart = SCHEDULE_DAY_END - duration;
-      free.push({ start: clock(runStart), end: clock(lastStart + duration), minutes: (lastStart - runStart) + duration, startMinutes: runStart });
-    }
-    return { dayKey, label: DAY_LABELS[index], free, nearMiss: nearMiss.slice(0, 3) };
-  });
-
-  /* Best pick: everyone free, longest run first, then closest to mid-morning —
-     a committee meets where the day has room, not at 19:00. */
-  const best = days
-    .flatMap(day => day.free.map(range => ({ day: day.dayKey, label: day.label, ...range })))
-    .sort((a, b) => b.minutes - a.minutes || Math.abs(a.startMinutes - 600) - Math.abs(b.startMinutes - 600))[0] || null;
-
-  res.json({
-    duration,
-    participants: ids.map(id => nameById.get(id) || `#${id}`),
-    days: days.map(({ dayKey, label, free, nearMiss }) => ({ dayKey, label, free: free.map(({ start, end, minutes }) => ({ start, end, minutes })), nearMiss })),
-    best: best ? { day: best.day, label: best.label, start: best.start, end: best.end } : null,
-  });
+  const nameById = new Map(instructors.map(person => [Number(person.AdInstructorId), person.AdInstructorName]));
+  const answer = computeMeetingSlots({ rows: termRows, ids, nameById, duration });
+  res.json({ ...answer, busyScope: "allColleges" });
 });
 
 app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

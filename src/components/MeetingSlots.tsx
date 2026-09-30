@@ -3,6 +3,7 @@ import { CalendarCheck2, Check, Search, Users, X } from "lucide-react";
 import { PrimaryButton } from "./ui";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
+import { meetingParticipants, type MeetingAnswer, type MeetingWindow } from "../utils/meetingSlots";
 
 /**
  * ── متى نلتقي؟ ──────────────────────────────────────────────────────────────
@@ -14,20 +15,6 @@ import { AR, countOf } from "../utils/arabicCount";
  */
 
 type PersonOption = { AdInstructorId: number; AdInstructorName: string };
-
-type MeetingDay = {
-  dayKey: string;
-  label: string;
-  free: { start: string; end: string; minutes: number }[];
-  nearMiss: { start: string; end: string; busy: string[] }[];
-};
-
-type MeetingAnswer = {
-  duration: number;
-  participants: string[];
-  days: MeetingDay[];
-  best: { day: string; label: string; start: string; end: string } | null;
-};
 
 async function readJson(url: string, init?: RequestInit) {
   const response = await fetch(url, {
@@ -45,8 +32,17 @@ async function readJson(url: string, init?: RequestInit) {
    place that reads the other way round. */
 const range = (start: string, end: string) => formatScheduleTimeRange(start, end);
 
-export default function MeetingSlots({ instructors, termId, onClose }: {
+/* Who conflicts, named — but a list of forty names is not a sentence. */
+const whoConflicts = (busy: string[]) =>
+  busy.length <= 4 ? busy.join("، ") : `${busy.slice(0, 4).join("، ")} و${countOf(busy.length - 4, AR.participant)} غيرهم`;
+const windowLine = (slot: MeetingWindow) => `${slot.free} من ${slot.total} متفرغ`;
+
+export default function MeetingSlots({ instructors, visitingIds, scopeNarrowed = false, termId, onClose }: {
   instructors: PersonOption[];
+  /** المنتدبون في النطاق المعروض — لا يُعرضون مشاركين. */
+  visitingIds?: Iterable<number>;
+  /** اختار المستخدم كلية أو قسماً: يُقال له إن الانشغال يُقرأ من الكليات كلها. */
+  scopeNarrowed?: boolean;
   termId: number;
   onClose: () => void;
 }) {
@@ -63,13 +59,12 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  /* بلا «هيئة تدريسية» ولا منتدبين: القاعدة في utils/meetingSlots. */
+  const faculty = useMemo(() => meetingParticipants(instructors, visitingIds || []), [instructors, visitingIds]);
   const options = useMemo(() => {
     const needle = query.trim();
-    const list = needle
-      ? instructors.filter(person => person.AdInstructorName.includes(needle))
-      : instructors;
-    return list;
-  }, [instructors, query]);
+    return needle ? faculty.filter(person => person.AdInstructorName.includes(needle)) : faculty;
+  }, [faculty, query]);
 
   const toggle = useCallback((id: number) => {
     setAnswer(null);
@@ -122,7 +117,8 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
           <div>
             <small>من جداول هذا الفصل نفسها</small>
             <h2>متى نلتقي؟</h2>
-            <p>اختر المشاركين، والجدول يجيب: أي نافذة أسبوعية يتفرغ فيها الجميع.</p>
+            <p>اختر المشاركين، والجدول يجيب: أي نافذة أسبوعية يتفرغ فيها الجميع، أو أكثرهم.</p>
+            {scopeNarrowed ? <p className="meeting-slots-scope-note">الانشغال يُقرأ من جدول كل أستاذ في الكليات والأقسام كلها هذا الفصل، لا من النطاق المعروض وحده.</p> : null}
           </div>
           <button type="button" className="drawer-close" data-guide-ignore="إغلاق نافذة منسق الاجتماعات فقط" onClick={onClose} aria-label="إغلاق منسق الاجتماعات" title="إغلاق"><X /></button>
         </header>
@@ -204,19 +200,34 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
               <article className="meeting-slots-best">
                 <Check aria-hidden="true" />
                 <div>
-                  <small>أفضل وقت مقترح</small>
+                  <small>أفضل وقت مقترح · الجميع متفرغون</small>
                   <strong>{answer.best.label} · <bdi dir="ltr">{range(answer.best.start, answer.best.end)}</bdi></strong>
                 </div>
               </article>
-            ) : (
-              <article className="meeting-slots-best meeting-slots-none">
+            ) : answer.ranked[0] ? (
+              <article className="meeting-slots-best meeting-slots-partial">
+                <Check aria-hidden="true" />
                 <div>
-                  <strong>لا توجد نافذة يتفرغ فيها الجميع بهذه المدة</strong>
-                  <small>جرّب مدة أقصر، أو انظر «الحل الوسط» أدناه.</small>
+                  <small>لا نافذة يتفرغ فيها الجميع بهذه المدة — هذا أقرب وقت</small>
+                  <strong>{answer.ranked[0].label} · <bdi dir="ltr">{range(answer.ranked[0].start, answer.ranked[0].end)}</bdi> · {windowLine(answer.ranked[0])}</strong>
+                  <small>يتعارض فيها: {whoConflicts(answer.ranked[0].busy)}</small>
                 </div>
               </article>
-            )}
-            <div className="meeting-slots-alternatives-title"><small>بدائل مرتبة</small><strong>أوقات أخرى مقترحة</strong></div>
+            ) : null}
+            {answer.ranked.length > 1 ? (
+              <>
+                <div className="meeting-slots-alternatives-title"><small>مرتبة بعدد المتفرغين</small><strong>أفضل النوافذ</strong></div>
+                <ol className="meeting-slots-ranked">
+                  {answer.ranked.slice(1).map(slot => (
+                    <li key={`${slot.day}-${slot.start}`}>
+                      <strong>{slot.label} <bdi dir="ltr">{range(slot.start, slot.end)}</bdi> · {slot.busy.length ? windowLine(slot) : "الجميع متفرغون"}</strong>
+                      {slot.busy.length ? <small>يتعارض: {whoConflicts(slot.busy)}</small> : null}
+                    </li>
+                  ))}
+                </ol>
+              </>
+            ) : null}
+            <div className="meeting-slots-alternatives-title"><small>يوماً بيوم</small><strong>أفضل وقت في كل يوم</strong></div>
             <div className="meeting-slots-days">
               {answer.days.map(day => (
                 <section key={day.dayKey}>
@@ -230,17 +241,12 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
                         </li>
                       ))}
                     </ul>
-                  ) : (
-                    <p className="meeting-slots-quiet">لا نافذة كاملة</p>
-                  )}
-                  {day.nearMiss.length ? (
+                  ) : day.bestPartial ? (
                     <ul className="meeting-slots-miss">
-                      {day.nearMiss.map(slot => (
-                        <li key={`${day.dayKey}-miss-${slot.start}`}>
-                          <bdi dir="ltr">{range(slot.start, slot.end)}</bdi>
-                          <small>حل وسط — مشغول فيها: {slot.busy.join("، ")}</small>
-                        </li>
-                      ))}
+                      <li>
+                        <bdi dir="ltr">{range(day.bestPartial.start, day.bestPartial.end)}</bdi>
+                        <small>{windowLine(day.bestPartial)} — يتعارض: {whoConflicts(day.bestPartial.busy)}</small>
+                      </li>
                     </ul>
                   ) : null}
                 </section>
