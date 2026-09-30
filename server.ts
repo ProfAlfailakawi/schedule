@@ -13,6 +13,7 @@ import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/refe
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
+import { DEPARTMENT_HEAD_ROLE, planDepartmentHeadAccounts } from "./src/utils/departmentHeadAccounts";
 import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
@@ -12851,6 +12852,49 @@ app.post("/api/users/grant-decision-centre", requirePermission(11), requirePower
   }
   res.locals.auditChanges = `منح مركز الذكاء: حسابات جديدة ${granted}، وحسابات كانت لديها الصلاحية ${alreadyHad}`;
   res.json({ granted, alreadyHad, total: users.length, names });
+});
+
+/**
+ * ── «إنشاء حسابات رؤساء الأقسام» ───────────────────────────────────────────
+ *
+ * الخطة من وحدةٍ واحدة (departmentHeadAccounts)؛ المعاينة والإنشاء يقرآنها
+ * نفسها، فلا يُنشأ إلا ما عُرض. والإنشاء بلا كلمة سرّ وموقوف: لا يُولَّد سرٌّ
+ * ولا يُطبع، والحساب لا يدخل حتى يعيّن المديرُ كلمته ويفعّله. لمدير النظام وحده.
+ */
+async function departmentHeadPlan() {
+  const [users, assigns, colleges, sections] = await Promise.all([
+    Repository.getUsers(), Repository.getCollegeUserAssigns(), Repository.getColleges(), Repository.getSections(),
+  ]);
+  return planDepartmentHeadAccounts({ users: users as any, assigns, colleges, sections });
+}
+
+app.get("/api/users/department-heads/preview", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  res.json({ rows: await departmentHeadPlan() });
+});
+
+app.post("/api/users/department-heads", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  const rows = await departmentHeadPlan();
+  const created: Array<{ login: string; sectionName: string; collegeName: string }> = [];
+  for (const row of rows) {
+    if (row.status !== "create") continue;
+    /* فحصٌ أخير قبل الكتابة: طلبان متزامنان لا يُنشئان الاسم مرتين. */
+    if (await Repository.getUserByLogin(row.proposedLogin)) continue;
+    const user = await Repository.createUser({
+      Name: row.proposedName,
+      SystemUserLogin: row.proposedLogin,
+      SystemUserPass: "",
+      IsAdminUser: false,
+      IsActive: false,
+      IsLocked: false,
+      IsDeleted: false,
+      AdInstructorId: 0,
+      Role: DEPARTMENT_HEAD_ROLE,
+    } as any);
+    await applyRoleTemplate(user.SystemUserId, DEPARTMENT_HEAD_ROLE as AcademicRole, { assigns: [{ AdCollegeId: row.collegeId, AdSectionId: row.sectionId }] });
+    created.push({ login: row.proposedLogin, sectionName: row.sectionName, collegeName: row.collegeName });
+  }
+  res.locals.auditChanges = `حسابات رؤساء الأقسام: أُنشئ ${countOf(created.length, AR.account)} (موقوفة وبلا كلمة سر)`;
+  res.json({ created, skipped: rows.length - created.length, rows: await departmentHeadPlan() });
 });
 
 app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Response) => {
