@@ -24,10 +24,13 @@ const people = [
   { AdInstructorId: 3, AdInstructorName: "هيئة تدريسية" },
   { AdInstructorId: 4, AdInstructorName: "د. زائر منتدب" },
   { AdInstructorId: 5, AdInstructorName: "هيئة  تدريسيه - قسم" },
+  { AdInstructorId: 6, AdInstructorName: "د. متقاعد", AdInstructorStatus: "retired" },
+  { AdInstructorId: 7, AdInstructorName: "د. متفرغ", AdInstructorStatus: "sabbatical" },
 ];
 const shown = meetingParticipants(people, [4]).map(p => p.AdInstructorId);
 check(!shown.includes(3) && !shown.includes(5), "«هيئة تدريسية» (بأي رسم) لا تظهر مشاركاً");
 check(!shown.includes(4), "المنتدب لا يظهر مشاركاً");
+check(!shown.includes(6) && !shown.includes(7), "المتقاعد والمتفرغ لا يظهران مشاركين");
 check(shown.includes(1) && shown.includes(2), "من سواهما يبقى — اللقب «أ.» لا يُقرأ تصنيفاً");
 
 /* 1b — visiting is term-wide, independent of the scope on screen */

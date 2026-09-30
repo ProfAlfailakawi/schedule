@@ -9,6 +9,8 @@
  *      placeholderInstructorIds (لا عمود «نوع» في سجل الأستاذ غيره).
  *    • المنتدبون — قائمة الانتداب الحيّة (visitingInstructorIds من الخادم،
  *      المصدر نفسه الذي يرسم VisitingBadge).
+ *    • المتقاعدون والمتفرغون — AdInstructorStatus («retired» / «sabbatical»)،
+ *      الحقل نفسه الذي تكتبه شاشة الأساتذة؛ لا تدريس لهم هذا الفصل.
  *    لقب الاسم («أ.»، «د.») لا يُقرأ هنا: ليس تصنيفاً في التطبيق.
  *
  * 2) لا طريق مسدود: إن لم تكن نافذةٌ يتفرغ فيها الجميع، تُرتَّب النوافذ بعدد
@@ -21,15 +23,15 @@ import { placeholderInstructorIds } from "./instructorIdentity";
 import { SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
-type Person = { AdInstructorId: number; AdInstructorName: string };
+type Person = { AdInstructorId: number; AdInstructorName: string; AdInstructorStatus?: string | null };
 
-/** من يُعرض في «متى نلتقي؟»: الجميع إلا «هيئة تدريسية» والمنتدبين. */
+/** من يُعرض في «متى نلتقي؟»: الجميع إلا «هيئة تدريسية» والمنتدبين والمتقاعدين والمتفرغين. */
 export function meetingParticipants<T extends Person>(people: T[], visitingIds: Iterable<number> = []): T[] {
   const visiting = new Set([...visitingIds].map(Number));
   const placeholders = placeholderInstructorIds(people);
   return people.filter(person => {
     const id = Number(person.AdInstructorId);
-    return Boolean(id) && !visiting.has(id) && !placeholders.has(id);
+    return Boolean(id) && !visiting.has(id) && !placeholders.has(id) && !person.AdInstructorStatus;
   });
 }
 

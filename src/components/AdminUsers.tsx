@@ -1910,6 +1910,7 @@ export default function AdminUsers({
                   <button
                     type="button"
                     key={key}
+                    data-guide-ignore="اختيار نطاقٍ من القائمة لعرض تفاصيله"
                     className={selectedScopeKey === key ? "active" : ""}
                     onClick={() => setSelectedScopeKey(key)}
                   >
