@@ -12,7 +12,7 @@ import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
-import { assignAuthoritySections, authoritySectionCodeLooksPlausible } from "../utils/authorityAcademicCodes";
+import { assignAuthoritySections, authoritySectionCodeLooksPlausible, withoutImportEvidence } from "../utils/authorityAcademicCodes";
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 import { campusOf } from "../utils/campusTravel";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
@@ -950,7 +950,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           source: "import",
           name: `${importKind==="authority-pdf"?"نسخة PDF المعتمدة":"استيراد النموذج"} — ${xlsxPreview.fileName || ""}`.trim(),
           rows: xlsxPreview.rows,
-          baselineRows:importKind==="authority-pdf"?xlsxPreview.baselineRows:undefined,
+          baselineRows:importKind==="authority-pdf"&&Array.isArray(xlsxPreview.baselineRows)?withoutImportEvidence(xlsxPreview.baselineRows):undefined,
           importLayout:importKind,
           sourceFileName:xlsxPreview.fileName,
           sourceBranchCode:importKind==="authority-pdf"?xlsxPreview.sourceBranchCode:undefined,

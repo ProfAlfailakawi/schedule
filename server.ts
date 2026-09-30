@@ -120,6 +120,7 @@ import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRe
 import {
   academicDigits,
   assignAuthoritySections,
+  withoutImportEvidence,
   authorityDepartmentCode,
   authorityDepartmentMatches,
   authoritySectionCodeLooksPlausible,
@@ -503,6 +504,10 @@ app.use(["/api/system-backup/preview", "/api/system-backup/import", "/api/system
   type: ["application/gzip", "application/octet-stream", "application/json"],
   limit: "30mb",
 }));
+/* المسودة تحمل الجدول كله (وخط أساس PDF معه)، فحدّ 1 MB العام يرفض قسماً
+   كبيراً قبل أن يصل إلى المسار. safeDraftRows يقصّ كل حقل ويحدّ الصفوف بـ450،
+   والمسار نفسه يرفض ما لا تتسعه وثيقة Firestore (DRAFT_DOCUMENT_MAX_BYTES). */
+app.use("/api/intelligence/drafts", express.json({ limit: "4mb" }));
 app.use(express.json({ limit: "1mb" }));
 
 // CSRF hardening without changing the legacy UI: reject cross-site state-changing API requests.
@@ -1437,6 +1442,10 @@ async function verifyPdfImportReceipt(token:unknown,context:{collegeId:number;se
     return payload;
   }catch{return null;}
 }
+
+/* حد وثيقة Firestore 1 MiB. الرقم يُقاس بطول JSON وهو تقريبي (Firestore يحسب
+   الأرقام 8 بايت والنصوص +1)؛ الهامش يغطي الفرق وحقول المسودة الأخرى. */
+const DRAFT_DOCUMENT_MAX_BYTES = 960_000;
 
 function safeDraftRows(input: unknown, collegeId: number, sectionId: number, termId: number): any[] {
   if (!Array.isArray(input)) return [];
@@ -9521,11 +9530,17 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
      the report later show every preview deletion in red and highlight only the
      cells that were manually changed before publication. */
   const suppliedBaseline=importLayout==="authority-pdf"
-    ?assignAuthoritySections(safeDraftRows(req.body?.baselineRows,collegeId,sectionId,termId))
+    ?withoutImportEvidence(assignAuthoritySections(safeDraftRows(req.body?.baselineRows,collegeId,sectionId,termId)))
     :[];
   const baselineRows=importLayout==="authority-pdf"
-    ?(suppliedBaseline.length?suppliedBaseline:rows.map((row:any)=>({...row})))
+    ?(suppliedBaseline.length?suppliedBaseline:withoutImportEvidence(rows))
     :undefined;
+  /* المسودة وثيقة Firestore واحدة، وحدّها 1 MiB. ما يتجاوزه كان يسقط عند
+     الكتابة فيصل رسالةً عامة لا تقول شيئاً؛ يُقال هنا بعدده قبل أي كتابة. */
+  const storedBytes=Buffer.byteLength(JSON.stringify({rows,baselineRows}),"utf8");
+  if(storedBytes>DRAFT_DOCUMENT_MAX_BYTES){
+    res.status(413).json({error:`الجدول (${countOf(rows.length, AR.appointment)}) أكبر من أن يُحفظ مسودةً واحدة. لم يُحفظ شيء؛ أبلغ إدارة النظام بهذه الرسالة.`,code:"DRAFT_TOO_LARGE"});return;
+  }
   const draft=await Repository.createScheduleDraft({
     SystemUserId:req.user.SystemUserId,userName:req.user.Name,
     AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,
@@ -18960,6 +18975,11 @@ async function startServer() {
     // swallow the error itself and the log would lose what it was written for.
     console.error("[api-error] %s %s:", req.method, req.originalUrl, error?.stack || error?.message || error);
     if (res.headersSent) { try { res.end(); } catch { /* the socket is already gone */ } return; }
+    /* «حاول مرة أخرى» كذبٌ على طلبٍ أكبر من الحد: سيُرفض في كل مرة. */
+    if (error?.type === "entity.too.large") {
+      res.status(413).json({ error: "البيانات المرسلة أكبر من الحد المسموح، ولم يُحفظ شيء. أبلغ إدارة النظام بهذه الرسالة.", code: "PAYLOAD_TOO_LARGE" });
+      return;
+    }
     res.status(500).json({ error: "تعذّر إتمام العملية الآن. حاول مرة أخرى، وإذا تكرر الأمر أبلغ إدارة النظام." });
   });
 
