@@ -164,6 +164,23 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     try {
       const results: ImportReading[] = [];
       let template: unknown = null;
+      /* صورُ صفحاتِ كشفٍ واحد (حتى أربع) تُرسل معاً في طلبٍ واحد فتُقرأ معاً. */
+      const isImage = (file: File) => /^image\//.test(file.type) || /\.(jpe?g|png|heic|heif)$/i.test(file.name);
+      if (files.length > 1 && files.length <= 4 && files.every(isImage)) {
+        setReadingNote(`يقرأ ${countOf(files.length, AR.page)}…`);
+        const response = await fetch(`/api/registration-stats/remaining-pdf?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream", "x-file-name": encodeURIComponent(files.map(file => file.name).join("، ")), "x-page-sizes": files.map(file => file.size).join(",") },
+          body: new Blob(files),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(result?.error || "تعذّرت قراءة الكشف");
+        const found = result as ImportReading;
+        setColumn(found.column ?? (found.columns.length === 1 ? found.columns[0].id : null));
+        setDoubtPicks({});
+        setPreview(found);
+        return;
+      }
       for (const [index, file] of files.entries()) {
         if (files.length > 1) setReadingNote(`يقرأ ${index + 1} من ${files.length}…`);
         const response = await fetch(`/api/registration-stats/remaining-pdf?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, {

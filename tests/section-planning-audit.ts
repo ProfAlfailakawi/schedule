@@ -220,6 +220,10 @@ check(ocr.includes("async function ruledReportCells(") && ocr.includes("await de
 check(server.includes("termSeasonOf(row.AdTermName) === season") && server.includes("if (!rows.length) continue;"), "الفصول المماثلة: الموسم نفسه، ويُتخطّى الفصل الذي لا جدول فيه للقسم");
 check(server.includes("Repository.getCourseTransitions(sectionId)") && server.includes("ancestorsOf(id)") && server.includes("remaining: known.reduce("), "المقرر المعاد ترقيمه يرث شعب سلفه ومتبقّيه");
 check(ui.includes("suggestSectionCount("), "الواجهة تستعمل الحساب نفسه");
+check(ui.includes('"x-page-sizes": files.map(file => file.size).join(",")') && ui.includes("files.length <= 4 && files.every(isImage)")
+  && server.includes('String(req.get("x-page-sizes") || "")') && server.includes("sizes.reduce((sum, size) => sum + size, 0) !== bytes.length")
+  && fs.readFileSync("src/utils/documentOcr.ts", "utf8").includes("return readReportScan(input.map(part=>({buffer:part,mime:reportImageMime(part,\"\")})),false,blanks,firstTemplate);"),
+  "صور صفحات الكشف (حتى أربع) تُقرأ في طلبٍ واحد: أعمدتها معاً، وإنقاذ العمود الفائت في كل صورة");
 const transfer = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");
 check(transfer.includes("const termEnded = termIsArchive(") && (transfer.match(/\{termEnded \? null : \(/g) || []).length === 4 && transfer.includes('if (termEnded && tab !== "export" && tab !== "publish") setTab("export")'),
   "الفصل المنتهي: لا استيراد ولا تخطيط شعب ولا استبدال ولا منتدبون — تصدير ونشر فقط");

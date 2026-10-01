@@ -1199,7 +1199,20 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
 }
 
 /** خلايا كشف «المتبقي» بمواضعها: طبقة النص، وإلا القراءة الضوئية في دورها — من PDF أو صورة (هاتف). */
-export async function readReportCells(input:Buffer,mime="application/pdf",blanks?:(pages:ReportCell[][])=>Array<{page:number;x:number;y:number}>,firstTemplate?:RuledTemplate):Promise<ReportCellsResult>{
+/* صورةٌ من بايتاتها، والمتصفح قد يرسلها بلا نوع: JPEG، PNG، HEIC. */
+const reportImageMime=(buffer:Buffer,fallback:string)=>buffer[0]===0xff&&buffer[1]===0xd8?"image/jpeg"
+  :buffer.subarray(1,4).toString("latin1")==="PNG"?"image/png":isHeic(buffer,fallback)?"image/heic":/^image\//i.test(fallback)?fallback:"";
+/**
+ * صفحاتُ كشفٍ واحد صوراً (حتى أربع) تُقرأ في طلبٍ واحد: فتُعرف أعمدتُها معاً،
+ * ويُعاد في كل صورةٍ قراءةُ خاناتِ عمودٍ فاتت القراءةَ كلُّها فيها — وهذا لا
+ * يكون إن قُرئت كلُّ صورةٍ وحدها ثم جُمعت خلاياها.
+ */
+export async function readReportCells(input:Buffer|Buffer[],mime="application/pdf",blanks?:(pages:ReportCell[][])=>Array<{page:number;x:number;y:number}>,firstTemplate?:RuledTemplate):Promise<ReportCellsResult>{
+  if(Array.isArray(input)&&input.length>1){
+    if(input.some(part=>!reportImageMime(part,"")))throw new Error("صفحات الكشف تُرفع معاً صوراً (JPG أو PNG أو HEIC)، أو ملفَّ PDF واحداً.");
+    return readReportScan(input.map(part=>({buffer:part,mime:reportImageMime(part,"")})),false,blanks,firstTemplate);
+  }
+  input=Array.isArray(input)?input[0]:input;
   const isPdf=input.subarray(0,4).toString("latin1")==="%PDF";
   /* المتصفح قد يرسل الصورة بلا نوع: تُعرف من بايتاتها (JPEG، PNG، HEIC). */
   const looksImage=/^image\//i.test(mime)||isHeic(input,mime)||(input[0]===0xff&&input[1]===0xd8)||input.subarray(1,4).toString("latin1")==="PNG";
@@ -1209,7 +1222,11 @@ export async function readReportCells(input:Buffer,mime="application/pdf",blanks
     const text=await reportTextLayer(input);
     if(text)return text;
   }
-  return readScanInTurn(`remaining:${await documentFingerprint(input)}`,async()=>{
+  return readReportScan([{buffer:input,mime}],isPdf,blanks,firstTemplate);
+}
+
+async function readReportScan(parts:Array<{buffer:Buffer;mime:string}>,isPdf:boolean,blanks?:(pages:ReportCell[][])=>Array<{page:number;x:number;y:number}>,firstTemplate?:RuledTemplate):Promise<ReportCellsResult>{
+  return readScanInTurn(`remaining:${await documentFingerprint(Buffer.concat(parts.map(part=>part.buffer)))}`,async()=>{
     /* صورةُ الهاتف المرسلة عبر المحادثات صغيرة (عرضها نحو ألف بكسل): تُكبَّر إلى
        مقاس صفحة الـPDF المقروءة، وإلا صغرت خاناتُها عن القراءة (١٥ مقرراً من
        ٣٨ في الصورتين الأصليتين، و٣٦ بعد التكبير). */
@@ -1221,7 +1238,9 @@ export async function readReportCells(input:Buffer,mime="application/pdf",blanks
       ctx.drawImage(loaded,0,0,surface.width,surface.height);
       return surface.toBuffer("image/png");
     };
-    const images=isPdf?await renderPdf(input,TARGET_LONG_EDGE):await Promise.all((await imagePages(input,mime,TARGET_LONG_EDGE)).map(enlarge));
+    const images=isPdf?await renderPdf(parts[0].buffer,TARGET_LONG_EDGE)
+      :(await Promise.all(parts.map(async part=>Promise.all((await imagePages(part.buffer,part.mime,TARGET_LONG_EDGE)).map(enlarge))))).flat();
+    assertPageLimit(images.length);
     const worker=await getHeaderWorker();
     const pages:ReportCell[][]=[];
     const ruledPages=new Set<number>();
