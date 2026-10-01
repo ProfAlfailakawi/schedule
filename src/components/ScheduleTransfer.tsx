@@ -1524,7 +1524,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 <span className="tool-lede-mark"><UsersRound aria-hidden="true" /></span>
                 <div>
                   <strong>كم شعبة نفتح؟</strong>
-                  <p>إحصاء التسجيل لكل مقرر، واقتراح عدد الشعب من السعة ومن الفصول المماثلة.</p>
+                  <p>إحصاء التسجيل لكل مقرر، ومدى شعبٍ يرسيه ما فتحه القسم فعلاً، ثم تقريرٌ يُطبع.</p>
                 </div>
               </div>
               {collegeId && sectionId && termId ? <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} /> : <p>اختر القسم والفصل أولاً.</p>}
