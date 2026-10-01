@@ -1959,3 +1959,21 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .review-sheet .spread-keys span b{font-size:13px!important;white-space:nowrap}
   .review-sheet .spread-keys span small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
+
+/* Phone bottom sheets sit on the navigation dock, never under it. The transfer
+   and review sheets are drawn as bottom sheets below 720px (top corners only),
+   but their backdrops still centred them in the full window, so a tall tab ran
+   its last row down into the band the fixed dock occupies. Anchor them to the
+   bottom and reserve the dock plus the safe area; `--dock-h` is 0 above 900px,
+   and this whole block is phone-only, so desktop is untouched. */
+@media (max-width:720px){
+  .transfer-backdrop,.review-backdrop{
+    place-items:end center;
+    padding:max(var(--s3),env(safe-area-inset-top)) 0 calc(var(--dock-h) + env(safe-area-inset-bottom));
+  }
+  .transfer-sheet,.review-sheet,
+  .review-sheet.visual-minimal{
+    width:100%;
+    max-height:calc(100dvh - max(var(--s3),env(safe-area-inset-top)) - var(--dock-h) - env(safe-area-inset-bottom));
+  }
+}
