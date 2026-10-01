@@ -85,7 +85,7 @@ import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
-import { termWindow, previousYearSameTermName, sameTermName } from "./src/utils/termSequence";
+import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
@@ -14126,28 +14126,28 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     Repository.getTerms(), Repository.getCoursesBySection(sectionId), Repository.getRegistrationStats(collegeId, sectionId, termId),
   ]);
   const term = terms.find(row => Number(row.AdTermId) === termId);
-  /* الفصول المماثلة (الموسم نفسه، ٣ سنوات سابقة) أولاً، ثم أحدثُ ٣ فصولٍ أخرى قبل
-     هذا الفصل بوزنٍ أخفّ — الحساب في src/utils/sectionCountSuggestion.ts. */
-  const similar: Array<{ AdTermId: number; AdTermName: string; similar: boolean }> = [];
-  let name = String(term?.AdTermName || "");
-  for (let i = 0; i < 3; i++) {
-    name = previousYearSameTermName(name);
-    if (!name) break;
-    const found = terms.find(row => sameTermName(row.AdTermName, name));
-    if (found) similar.push({ AdTermId: Number(found.AdTermId), AdTermName: String(found.AdTermName), similar: true });
-  }
+  /* التاريخ الحقيقي لا تقويمٌ مفترض: يُرجَع في الفصول السابقة من الأحدث حتى
+     يُوجد ٣ فصولٍ من الموسم نفسه فيها جدولٌ للقسم، و٣ فصولٍ أخرى بوزنٍ أخفّ.
+     كانت النافذة «٣ سنوات» فتقع على فصولٍ بلا بيانات (٢٠٢٢–٢٠٢٦) فتقول «لا
+     تاريخ» ولمقررٍ فُتح ١٥ فصلاً منذ ٢٠١٦. الحساب في sectionCountSuggestion.ts. */
   const targetRank = termChronologyServer(term);
-  sortTermsNewestServer(terms)
-    .filter(row => termChronologyServer(row) < targetRank && !similar.some(item => item.AdTermId === Number(row.AdTermId)))
-    .slice(0, 3)
-    .forEach(row => similar.push({ AdTermId: Number(row.AdTermId), AdTermName: String(row.AdTermName), similar: false }));
+  const season = termSeasonOf(term?.AdTermName);
+  const similar: Array<{ AdTermId: number; AdTermName: string; similar: boolean; rows: FSchedule[] }> = [];
+  let sameCount = 0, otherCount = 0;
+  for (const row of sortTermsNewestServer(terms).filter(row => termChronologyServer(row) < targetRank)) {
+    if (sameCount >= 3 && otherCount >= 3) break;
+    const same = Boolean(season) && termSeasonOf(row.AdTermName) === season;
+    if (same ? sameCount >= 3 : otherCount >= 3) continue;
+    const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId: Number(row.AdTermId) });
+    if (!rows.length) continue;
+    similar.push({ AdTermId: Number(row.AdTermId), AdTermName: String(row.AdTermName), similar: same, rows });
+    if (same) sameCount++; else otherCount++;
+  }
   const history: Record<string, Array<{ termName: string; sections: number; headcount?: number; similar: boolean }>> = {};
   const department: Array<{ termName: string; similar: boolean; sections: number; instructors: number; halls: number }> = [];
   for (const past of similar) {
-    const [rows, pastStats] = await Promise.all([
-      Repository.getSchedulesByScope({ collegeId, sectionId, termId: past.AdTermId }),
-      Repository.getRegistrationStats(collegeId, sectionId, past.AdTermId),
-    ]);
+    const rows = past.rows;
+    const pastStats = await Repository.getRegistrationStats(collegeId, sectionId, past.AdTermId);
     const sectionsOf = new Map<number, Set<string>>();
     for (const row of rows) {
       const id = Number(row.AdCourseId);
