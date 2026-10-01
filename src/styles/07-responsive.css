@@ -567,6 +567,11 @@
     color:var(--ink-2);
     align-self:center;
   }
+  .lens-visiting .visiting-summary-facts{grid-area:count;gap:var(--s2)}
+  .lens-visiting .visiting-summary-facts>span{grid-template-columns:auto;gap:0;text-align:end}
+  .lens-visiting .visiting-summary-facts bdi{font-size:var(--t-sm)}
+  .lens-visiting .visiting-summary-facts small{font-size:9px}
+  .lens-visiting .visiting-summary-facts>i{height:18px}
   .lens-groups>article>button>em{
     display:none;
   }

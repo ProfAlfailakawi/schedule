@@ -6205,10 +6205,20 @@ app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 1
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
   if (!collegeId || !termId) { res.json({ instructorIds: [] }); return; }
-  /* مستوى الكلية (N7): من يغطّي الكلية كلها (العميد) يرى منتدبي أقسامها جميعاً. */
-  const sectionIds = sectionId ? [sectionId] : await wholeCollegeSectionIds(req, collegeId);
-  if (!sectionIds.length || !sectionIds.every(id => isScopeAllowed(req, collegeId, id))) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const parts = await Promise.all(sectionIds.map(id => readLiveVisitingRoster(collegeId, id, termId)));
+  /* اختيارُ قسمٍ يحدد عائلته العلمية في كل الكليات؛ من دون قسم تبقى قراءة
+     جميع أقسام الكلية وفق صلاحية القارئ. */
+  let scopes: Array<{ collegeId: number; sectionId: number }>;
+  if (sectionId) {
+    const sections = await Repository.getSections();
+    const selected = (sections as any[]).find(row => Number(row.AdSectionId) === sectionId && Number(row.AdCollegeId) === collegeId);
+    if (!selected) { res.status(404).json({ error: "القسم غير موجود في الكلية المختارة." }); return; }
+    scopes = departmentFamily(sections as any, collegeId, sectionId);
+  } else {
+    scopes = (await wholeCollegeSectionIds(req, collegeId)).map(id => ({ collegeId, sectionId: id }));
+  }
+  const allowed = scopes.filter(scope => req.user?.IsAdminUser || isScopeAllowed(req, scope.collegeId, scope.sectionId));
+  if (!allowed.length || (sectionId && allowed.length !== scopes.length)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const parts = await Promise.all(allowed.map(scope => readLiveVisitingRoster(scope.collegeId, scope.sectionId, termId)));
   const instructorIds = [...new Set(parts.flatMap(part => part.instructorIds))];
   const instructors = [...new Map(parts.flatMap(part => part.instructors).map((person: any) => [Number(person.AdInstructorId), person])).values()];
   res.json({ instructorIds, instructors: instructorsForReader(req, instructors as any[]) });
@@ -6433,14 +6443,20 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
 app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
   if(!collegeId){res.status(400).json({error:"حدد الكلية."});return;}
-  /* مستوى الكلية (N7): أقسامُ الكلية كلها لمن يغطّيها. */
-  const sectionIds=sectionId?[sectionId]:await wholeCollegeSectionIds(req,collegeId);
-  if(!sectionIds.length||!sectionIds.every(id=>isScopeAllowed(req,collegeId,id))){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const sections = await Repository.getSections();
+  let scopes: Array<{ collegeId: number; sectionId: number }>;
+  if(sectionId){
+    const selected=(sections as any[]).find(row=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===collegeId);
+    if(!selected){res.status(404).json({error:"القسم غير موجود في الكلية المختارة."});return;}
+    scopes=departmentFamily(sections as any,collegeId,sectionId);
+  }else scopes=(await wholeCollegeSectionIds(req,collegeId)).map(id=>({collegeId,sectionId:id}));
+  const allowed=scopes.filter(scope=>req.user?.IsAdminUser||isScopeAllowed(req,scope.collegeId,scope.sectionId));
+  if(!allowed.length||(sectionId&&allowed.length!==scopes.length)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [rosterGroups,instructors,terms,directories]=await Promise.all([
-    Promise.all(sectionIds.map(id=>Repository.getVisitingRosterHistory(collegeId,id).then(list=>list.map((row:any)=>({...row,sectionId:id}))))),
+    Promise.all(allowed.map(scope=>Repository.getVisitingRosterHistory(scope.collegeId,scope.sectionId).then(list=>list.map((row:any)=>({...row,sectionId:scope.sectionId,collegeId:scope.collegeId}))))),
     Repository.getInstructors(),
     Repository.getTerms(),
-    Promise.all(sectionIds.map(id=>Repository.getDepartmentDelegates(collegeId,id))),
+    Promise.all(allowed.map(scope=>Repository.getDepartmentDelegates(scope.collegeId,scope.sectionId))),
   ]);
   const rosters=rosterGroups.flat();
   /* التاريخُ تاريخ: من كان منتدباً في فصلٍ مضى يبقى فيه ولو خرج من دليل القسم
@@ -6452,10 +6468,10 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
   const termIds=[...new Set(rosters.map(row=>Number(row.termId)).filter(Boolean))];
   const rowsByTerm=new Map<string,any[]>();
   await Promise.all(rosters.map(async (roster:any)=>{
-    const key=`${Number(roster.sectionId)}:${Number(roster.termId||0)}`;
+    const key=`${Number(roster.collegeId)}:${Number(roster.sectionId)}:${Number(roster.termId||0)}`;
     if(rowsByTerm.has(key))return;
     rowsByTerm.set(key,[]);
-    rowsByTerm.set(key,await Repository.getSchedulesByScope({collegeId,sectionId:Number(roster.sectionId),termId:Number(roster.termId||0)}));
+    rowsByTerm.set(key,await Repository.getSchedulesByScope({collegeId:Number(roster.collegeId),sectionId:Number(roster.sectionId),termId:Number(roster.termId||0)}));
   }));
   const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[];listedNow:boolean}>();
   for(const roster of rosters){
@@ -6466,7 +6482,7 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
         .map(Number)
         .filter((id:number)=>Boolean(id)&&peopleById.has(id))
     )];
-    const termRows=rowsByTerm.get(`${Number(roster.sectionId)}:${termId}`)||[];
+    const termRows=rowsByTerm.get(`${Number(roster.collegeId)}:${Number(roster.sectionId)}:${termId}`)||[];
     for(const instructorId of ids){
       const mine=termRows.filter(row=>Number(row.AdInstructorId)===instructorId);
       const distinctCourses=new Set(mine.map(row=>Number(row.AdCourseId||0)).filter(Boolean)).size;
@@ -10129,6 +10145,7 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+
   let approval = await readApproval(collegeId, sectionId, termId);
   if (approval.amendmentPending) {
     await settlePendingAmendment(collegeId, sectionId, termId);
@@ -11459,6 +11476,26 @@ app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, asyn
    * لا تُطلب جولة. */
   const baselineParam = String(req.query.baseline || "");
   const wantsAuthority = baselineParam === "authority" || (baselineParam !== "round" && !requestedRound);
+  const [allSections, allColleges] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const family = departmentFamily(allSections as any, collegeId, sectionId);
+  const siblingScopes = siblingBranchScopes({ colleges: allColleges as any, sections: allSections as any, baseCollegeId: collegeId, baseSectionId: sectionId })
+    .map(scope => ({ collegeId: Number(scope.collegeId), sectionId: Number(scope.sectionId) }));
+  const familyScopes = [...new Map([...family, ...siblingScopes].map(scope => [`${scope.collegeId}:${scope.sectionId}`, scope])).values()]
+    .filter(scope => req.user?.IsAdminUser || isScopeAllowed(req, scope.collegeId, scope.sectionId));
+  if (familyScopes.length !== new Set([...family, ...siblingScopes].map(scope => `${scope.collegeId}:${scope.sectionId}`)).size) {
+    res.status(403).json({ error: "لا تملك صلاحية عرض كل مواقع هذا القسم." }); return;
+  }
+  const [familyRows, familyRosters] = await Promise.all([
+    Promise.all(familyScopes.map(scope => Repository.getSchedulesByScope({ ...scope, termId }))).then(groups => groups.flat()),
+    Promise.all(familyScopes.map(scope => readLiveVisitingRoster(scope.collegeId, scope.sectionId, termId))),
+  ]);
+  const familyVisitingIds = new Set(familyRosters.flatMap(roster => roster.instructorIds));
+  const familyVisitingRows = (familyRows as any[]).filter(row => familyVisitingIds.has(Number(row.AdInstructorId)));
+  const rowIdentity = (row: any) => [Number(row.AdInstructorId), Number(row.AdCourseId), String(row.SCode || "").trim(), String(row.fstarttime || ""), String(row.fendtime || ""), [row.fsunday,row.fmonday,row.ftuesday,row.fwednesday,row.fthursday].map(Boolean).map(Number).join("")].join(":");
+  const localRowsForFamily = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
+  const localIdentities = new Set(localRowsForFamily.filter(row => familyVisitingIds.has(Number(row.AdInstructorId))).map(rowIdentity));
+  const extraVisitingRows = familyVisitingRows.filter(row => (Number(row.AdCollegeId) !== collegeId || Number(row.AdSectionId) !== sectionId) && !localIdentities.has(rowIdentity(row)));
+  const shouldAggregateVisiting = familyScopes.some(scope => scope.collegeId !== collegeId || scope.sectionId !== sectionId);
   /* جولةٌ مضت تُقرأ بين أساسها ونهايتها، لا بين أساسها والجدول الحيّ. */
   const roundEndId = roundEndVersionId(approval, round);
 
@@ -11476,7 +11513,7 @@ app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, asyn
    */
   const roundBaselineId = roundBaselineVersionId(approval, round);
 
-  const [roundBaseline, liveRows, roundEnd, instructors, courses, notesRaw, suggestions, authorityFound] = await Promise.all([
+  const [roundBaseline, scopedRows, roundEnd, instructors, courses, notesRaw, suggestions, authorityFound] = await Promise.all([
     roundBaselineId ? Repository.getScheduleVersionById(roundBaselineId) : Promise.resolve(undefined),
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
     roundEndId ? Repository.getScheduleVersionById(roundEndId) : Promise.resolve(undefined),
@@ -11486,9 +11523,15 @@ app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, asyn
     noteSuggestions(collegeId, sectionId, termId),
     authorityDraftForScope(collegeId, sectionId, termId),
   ]);
+  const reviewRows = shouldAggregateVisiting
+    ? [...(scopedRows as any[]).filter(row => !familyVisitingIds.has(Number(row.AdInstructorId))), ...familyVisitingRows.filter(row => Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId), ...extraVisitingRows]
+    : scopedRows;
+  /* نلحق المقارنة والملاحظات بالأستاذ المنتدب وحده؛ جميع صفوف الأساس الأخرى
+     تبقى حسب الكلية المختارة، حتى لا تتحول المراجعة إلى اعتمادٍ متعدد. */
+  const liveRowsForCompare = shouldAggregateVisiting ? reviewRows : scopedRows;
   const authorityDraft = wantsAuthority ? authorityFound : undefined;
   /* «الجدول» في جولةٍ مضت هو ما انتهت عليه تلك الجولة. */
-  const live = (roundEnd?.rows as any[]) || liveRows;
+  const live = shouldAggregateVisiting ? liveRowsForCompare : ((roundEnd?.rows as any[]) || scopedRows);
   /* ملاحظاتُ القسم لكلٍّ كاتبُها (R12): الشاشةُ تعرف ملاحظتَك من ملاحظة زميلك. */
   const viewerId = Number(req.user?.SystemUserId || 0);
   const notes = notesRaw.map(note => ({ ...note, mine: Number(note.SystemUserId) === viewerId }));
@@ -11679,7 +11722,7 @@ app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, asyn
     rounds: approval.rounds,
     deadline,
     /* ما يُرسله القرار ليُعرف أنه وقع على ما رُئي (R6). */
-    rowCount: liveRows.length,
+    rowCount: scopedRows.length,
     /* أوثيقةُ الهيئة متاحةٌ أساساً، ولو لم تُختر الآن. */
     authorityAvailable: Boolean(authorityFound),
     viewingPastRound: round < approval.currentRound,

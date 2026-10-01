@@ -629,7 +629,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
 
   useEffect(() => {
     /* مستوى الكلية مقبول (N7): الخادم يجيزه لمن يغطّي الكلية كلها. */
-    if(!filters.collegeId||!filters.termId){setVisitingIds(new Set());return;}
+    if(!filters.collegeId||!filters.sectionId||!filters.termId){setVisitingIds(new Set());return;}
     const controller=new AbortController();
     const qs=new URLSearchParams({collegeId:String(filters.collegeId),termId:String(filters.termId)});
     if(filters.sectionId)qs.set("sectionId",String(filters.sectionId));
@@ -641,7 +641,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   },[filters.collegeId,filters.sectionId,filters.termId]);
 
   useEffect(() => {
-    if(lens!=="visitingHistory"||!filters.collegeId){return;}
+    if(lens!=="visitingHistory"||!filters.collegeId||!filters.sectionId){return;}
     const controller=new AbortController();
     const qs=new URLSearchParams({collegeId:String(filters.collegeId)});
     if(filters.sectionId)qs.set("sectionId",String(filters.sectionId));
@@ -2494,7 +2494,11 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                     <span className="group-avatar"><UserPlus /></span>
                     <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
                     <span className="group-bar"><i style={{ width: share(group.sections, Math.max(1, ...visitingTermGroups.map(item => item.sections))) }} /></span>
-                    <b><bdi>{countOf(group.sections, AR.section)}</bdi> · <bdi>{countOf(Math.round(group.weeklyMinutes / 60), AR.hour)}</bdi> أسبوعياً</b>
+                    <span className="visiting-summary-facts" aria-label={`${countOf(group.sections, AR.section)}، ${countOf(Math.round(group.weeklyMinutes / 60), AR.hour)} أسبوعياً`}>
+                      <span><bdi>{countOf(group.sections, AR.section)}</bdi><small>شعبة</small></span>
+                      <i aria-hidden="true" />
+                      <span><bdi>{countOf(Math.round(group.weeklyMinutes / 60), AR.hour)}</bdi><small>ساعة أسبوعياً</small></span>
+                    </span>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {openGroup === `visiting-${group.id}` ? (

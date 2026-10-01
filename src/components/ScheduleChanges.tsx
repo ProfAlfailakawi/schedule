@@ -37,6 +37,9 @@ import type { AdTerm, ScheduleApprovalStatus } from "../types";
 import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
 import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
+import { departmentFamily } from "../utils/sectionLabel";
+import { siblingBranchScopes } from "../utils/branchScope";
+import { officialCollegeSitePrefix } from "../utils/locationCollegePrefixes";
 import PagedFindingList from "./PagedFindingList";
 
 type NoteField = DiffFieldKey | "row";
@@ -863,10 +866,12 @@ const CROSS_KIND_LABEL: Record<string, string> = {
   doorway: "زمنُ الانتقال", cohort: "دفعةُ الطلبة",
 };
 
-function Report({ termId, termName, scope, role, onBack, archive = false }: {
+function Report({ termId, termName, scope, role, onBack, archive = false, colleges, sections }: {
   key?: React.Key;
   /** فصلٌ صار أرشيفاً (termIsArchive): لا شريطَ اعتمادٍ ولا توقيع. */
   archive?: boolean;
+  colleges: any[];
+  sections: any[];
   termId: number;
   termName?: string;
   scope: { collegeId: number; sectionId: number; collegeName?: string; sectionName?: string };
@@ -874,6 +879,13 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
   onBack?: () => void;
 }) {
   const [report, setReport] = useState<ChangeReport | null>(null);
+  const aggregateScopeNames = useMemo(() => {
+    const family = departmentFamily(sections, scope.collegeId, scope.sectionId);
+    const hasSiteBranch = colleges.some(college => officialCollegeSitePrefix(college.AdCollegeName));
+    const siblings = hasSiteBranch ? siblingBranchScopes({ colleges, sections, baseCollegeId: scope.collegeId, baseSectionId: scope.sectionId }) : [];
+    const ids = new Set([...family.map(item => item.collegeId), ...siblings.map(item => item.collegeId)]);
+    return [...ids].map(id => colleges.find(item => Number(item.AdCollegeId) === Number(id))?.AdCollegeName).filter(Boolean) as string[];
+  }, [colleges, sections, scope.collegeId, scope.sectionId]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1135,7 +1147,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
 
       <ChangesReviewOverview
         report={report}
-        scopeLine={[termName, scope.collegeName, scope.sectionName].filter(Boolean).join(" · ") || `قسم ${scope.sectionId}`}
+        scopeLine={[termName, scope.sectionName, aggregateScopeNames.length > 1 ? `جميع الكليات (${aggregateScopeNames.join("، ")})` : scope.collegeName].filter(Boolean).join(" · ") || `قسم ${scope.sectionId}`}
         onJump={(rowIds) => {
           const id = Number(rowIds?.[0] || 0);
           if (!id) return;
@@ -1184,7 +1196,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
               منذ آخر مراجعة
             </button>
             <button type="button" data-active={report.baselineSource === "authority" || undefined} aria-pressed={report.baselineSource === "authority"} data-guide-ignore="المقارنة بوثيقة الهيئة المعتمدة — عرضٌ لا فعل" onClick={() => { setBaseline("authority"); void load(viewRound, "authority"); }}>
-              منذ وثيقة الهيئة
+              منذ الجدول المعتمد
             </button>
           </div>
         ) : null}
@@ -1366,6 +1378,8 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
   const [opened, setOpened] = useState<{ collegeId: number; sectionId: number; collegeName?: string; sectionName?: string } | null>(null);
+  const [colleges, setColleges] = useState<any[]>([]);
+  const [sections, setSections] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   /* الوارد يُقرأ مرّةً ويُسلَّم للوحة مواعيد التسليم فوقه. */
@@ -1387,7 +1401,13 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
     } catch (e: any) { setError(e.message); setTerms([]); }
   }, []);
 
-  useEffect(() => { void loadTerms(); }, [loadTerms]);
+  useEffect(() => {
+    void loadTerms();
+    Promise.all([request("/api/colleges"), request("/api/sections")]).then(([collegeRows, sectionRows]) => {
+      setColleges(Array.isArray(collegeRows) ? collegeRows : []);
+      setSections(Array.isArray(sectionRows) ? sectionRows : []);
+    }).catch(() => undefined);
+  }, [loadTerms]);
   /* الفصل يتبع النطاق المشترك، ويُكتب فيه حين يختاره القارئ من أيّ منتقٍ هنا. */
   const sharedScope = useSharedScope((incoming) => {
     if (!terms?.length) return;
@@ -1472,7 +1492,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       {!termId ? (
         <EmptyState title="اختر الفصل" detail="تُعرض تغييرات الجداول لفصلٍ واحد في كل مرّة." />
       ) : active ? (
-        <Report key={reloadKey} termId={termId} termName={term?.AdTermName || ""} scope={active} role={role} archive={termIsArchive(term, terms || [])} onBack={opened ? () => setOpened(null) : undefined} />
+        <Report key={reloadKey} termId={termId} termName={term?.AdTermName || ""} scope={active} role={role} archive={termIsArchive(term, terms || [])} colleges={colleges} sections={sections} onBack={opened ? () => setOpened(null) : undefined} />
       ) : (
         <Surface>
           <Inbox_

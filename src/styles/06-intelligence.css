@@ -574,7 +574,12 @@
    the historical fairness view. The history is intentionally card-based rather
    than a wide spreadsheet so the first glance answers the real question:
    who has been delegated more often across the years? */
-.lens-visiting>article>button{grid-template-columns:36px minmax(0,1fr) minmax(80px,180px) 78px 16px}
+.lens-visiting>article>button{grid-template-columns:36px minmax(0,1fr) minmax(80px,180px) minmax(150px,auto) 16px}
+.visiting-summary-facts{display:inline-flex;align-items:center;justify-content:flex-end;gap:var(--s3);font-variant-numeric:tabular-nums}
+.visiting-summary-facts>span{display:grid;grid-template-columns:auto auto;align-items:baseline;gap:5px;white-space:nowrap}
+.visiting-summary-facts bdi{color:var(--accent-ink);font-size:var(--t-h4);font-weight:700}
+.visiting-summary-facts small{color:var(--muted);font-size:var(--t-xs);font-weight:600}
+.visiting-summary-facts>i{width:1px;height:22px;background:var(--line-strong)}
 
 .visiting-scope-switch{
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2);
