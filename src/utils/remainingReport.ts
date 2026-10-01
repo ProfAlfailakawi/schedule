@@ -285,8 +285,36 @@ function tableOf(pages: readonly ReportCell[][], courses: ReadonlyArray<{ id: nu
       return slot;
     }));
   }
-  /* الأعمدة بترتيبها من اليمين في الصفحة المرجعية (الأكثر أعمدة). */
-  const order = globals.map((_, index) => index).sort((a, b) => globals[b].xs[0] - globals[a].xs[0]);
+  /* كل صفحةٍ إلى إطار الصفحة المرجعية: x_صفحة = a·x_مرجع + b، من الأعمدة
+     المشتركة وعمود الرمز. به يُعرف موضعُ عمودٍ خلا من الأرقام في صفحةٍ (فاتت
+     القراءةَ خاناتُه كلها) لتُعاد قراءةُ خاناته، وبه تُرتَّب الأعمدة. */
+  const frame = new Map<number, { a: number; b: number }>();
+  for (const page of pagesWithRows) {
+    if (page === reference) { frame.set(page, { a: 1, b: 0 }); continue; }
+    const pairs: Array<[number, number]> = [];
+    if (codeXOf.has(reference) && codeXOf.has(page)) pairs.push([codeXOf.get(reference)!, codeXOf.get(page)!]);
+    slotOf.get(page)!.forEach((slot, local) => {
+      const at = slotOf.get(reference)!.indexOf(slot);
+      if (at >= 0) pairs.push([perPage.get(reference)![at], perPage.get(page)![local]]);
+    });
+    if (pairs.length >= 2) {
+      const n = pairs.length, mx = pairs.reduce((sum, [x]) => sum + x, 0) / n, my = pairs.reduce((sum, [, y]) => sum + y, 0) / n;
+      const sxx = pairs.reduce((sum, [x]) => sum + (x - mx) ** 2, 0), sxy = pairs.reduce((sum, [x, y]) => sum + (x - mx) * (y - my), 0);
+      const a = sxx > 1e-6 ? sxy / sxx : 1;
+      frame.set(page, a > 0.5 && a < 2 ? { a, b: my - a * mx } : { a: 1, b: my - mx });
+    } else frame.set(page, { a: 1, b: pairs.length ? pairs[0][1] - pairs[0][0] : 0 });
+  }
+  const refX = globals.map((_, slot) => {
+    const at = slotOf.get(reference)?.indexOf(slot) ?? -1;
+    if (at >= 0) return perPage.get(reference)![at];
+    for (const page of pagesWithRows) {
+      const local = slotOf.get(page)!.indexOf(slot);
+      if (local >= 0) { const { a, b } = frame.get(page)!; return (perPage.get(page)![local] - b) / a; }
+    }
+    return globals[slot].xs[0];
+  });
+  /* الأعمدة بترتيبها من اليمين في إطار الصفحة المرجعية (الأكثر أعمدة). */
+  const order = globals.map((_, index) => index).sort((a, b) => refX[b] - refX[a]);
   const rankOf = new Map(order.map((slot, index) => [slot, index]));
   const columnOf = (page: number, x: number) => {
     const local = nearest(perPage.get(page) || [], x, 0.03);
@@ -299,13 +327,17 @@ function tableOf(pages: readonly ReportCell[][], courses: ReadonlyArray<{ id: nu
     return map;
   });
   const kept = order.map((slot, id) => ({
-    x: globals[slot].xs[0], labels: globals[slot].labels, identity: globals[slot].identity,
+    x: refX[slot], labels: globals[slot].labels, identity: globals[slot].identity,
     filled: assigned.filter(map => map.has(id)).length,
   }));
-  /* مركز عمودٍ في صفحةٍ بعينها، أو null إن خلا منها. */
+  /* مركز عمودٍ في صفحةٍ بعينها: موضعه المقروء، وإلا موضعه بإطار الصفحة. */
   const xOn = (page: number, id: number) => {
     const local = (slotOf.get(page) || []).indexOf(order[id]);
-    return local < 0 ? null : perPage.get(page)![local];
+    if (local >= 0) return perPage.get(page)![local];
+    const map = frame.get(page);
+    if (!map) return null;
+    const x = map.a * refX[order[id]] + map.b;
+    return x > 0 && x < 1 ? x : null;
   };
   return { matched, foreign, assigned, kept, xOn };
 }
