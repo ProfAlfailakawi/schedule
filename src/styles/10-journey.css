@@ -2,7 +2,8 @@
    رحلة SCHEDULE
    The only screen in this application that is not an instrument. It is read,
    often by someone who has never opened the system, and frequently from a
-   phone. So it is written as four acts on one fixed dark canvas.
+   phone. So it is written as four acts on one fixed light canvas — the same
+   paper as every other screen (owner decision, Oct 2026).
 
    Three constraints shape everything below.
 
@@ -18,18 +19,18 @@
    ========================================================================== */
 
 .jr-root{
-  --jr-ink:#f4f8f5;          /* headlines */
-  --jr-ink-2:#c3cfc9;        /* body copy — the floor for readable prose */
-  --jr-ink-3:#8b9a93;        /* captions */
-  /* لونا العلامة، لا نسختان قريبتان منهما. القياس على هذه الأرضية (#080d0c):
-     النحاس 7.72:1 واليشم 8.84:1 — كلاهما فوق حدّ الـ7:1 الذي تفرضه هذه
-     الصفحة على نصّها، فالتوحيد لم يكلّف قراءةً واحدة. */
-  --jr-brass:var(--brand-brass);
-  --jr-accent:var(--brand-jade);
-  --jr-canvas:#080d0c;
-  --jr-canvas-2:#0d1413;
-  --jr-line:#233029;
-  --jr-line-soft:#1a231f;
+  /* Light canvas, literal values (see constraint 1). Body copy #3b4441 on
+     #f6f7f3 is 9.6:1; captions #5b6660 are 5.9:1; the deep jade and brass
+     of the workspace are both above 4.5:1 here. */
+  --jr-ink:#131817;          /* headlines */
+  --jr-ink-2:#3b4441;        /* body copy */
+  --jr-ink-3:#5b6660;        /* captions */
+  --jr-brass:#8d6423;
+  --jr-accent:#1f6b5c;
+  --jr-canvas:#f6f7f3;
+  --jr-canvas-2:#ffffff;
+  --jr-line:#ccd2cb;
+  --jr-line-soft:#e3e6e0;
 
   position:fixed;
   inset:0;
@@ -48,10 +49,10 @@
   overscroll-behavior:contain;
   -webkit-overflow-scrolling:touch;
   scrollbar-width:thin;
-  scrollbar-color:#2c3a34 transparent;
+  scrollbar-color:#ccd2cb transparent;
 }
 .jr-sheet::-webkit-scrollbar{width:10px}
-.jr-sheet::-webkit-scrollbar-thumb{background:#2c3a34;border:3px solid transparent;background-clip:padding-box;border-radius:999px}
+.jr-sheet::-webkit-scrollbar-thumb{background:#ccd2cb;border:3px solid transparent;background-clip:padding-box;border-radius:999px}
 
 /* ── Weather: two soft light sources and a hairline grid. Purely decorative,
       pinned behind everything, and never intercepting a pointer. ────────── */
@@ -59,20 +60,20 @@
 .jr-weather>i:nth-child(1){
   position:absolute;inset-block-start:-22vh;inset-inline-end:-18vw;
   width:max(min(74vw,900px),420px);height:max(min(74vw,900px),420px);border-radius:50%;
-  background:radial-gradient(circle,rgb(47 133 116 / .34),transparent 66%);
+  background:radial-gradient(circle,rgb(31 107 92 / .12),transparent 66%);
   filter:blur(26px);
 }
 .jr-weather>i:nth-child(2){
   position:absolute;inset-block-end:-20vh;inset-inline-start:-20vw;
   width:max(min(66vw,780px),380px);height:max(min(66vw,780px),380px);border-radius:50%;
-  background:radial-gradient(circle,rgb(154 111 45 / .26),transparent 68%);
+  background:radial-gradient(circle,rgb(141 100 35 / .10),transparent 68%);
   filter:blur(30px);
 }
 .jr-weather>i:nth-child(3){
   position:absolute;inset:0;
   background-image:
-    linear-gradient(to left,rgb(255 255 255 / .028) 1px,transparent 1px),
-    linear-gradient(to bottom,rgb(255 255 255 / .028) 1px,transparent 1px);
+    linear-gradient(to left,rgb(19 24 23 / .035) 1px,transparent 1px),
+    linear-gradient(to bottom,rgb(19 24 23 / .035) 1px,transparent 1px);
   background-size:92px 92px;
   mask-image:radial-gradient(ellipse 88% 66% at 50% 34%,#000 12%,transparent 82%);
   -webkit-mask-image:radial-gradient(ellipse 88% 66% at 50% 34%,#000 12%,transparent 82%);
@@ -85,14 +86,14 @@
   inset-inline-end:max(18px,env(safe-area-inset-right));
   width:46px;height:46px;
   display:grid;place-items:center;
-  border:1px solid #2b3a33;border-radius:16px;
-  background:rgb(13 20 19 / .82);
+  border:1px solid #ccd2cb;border-radius:16px;
+  background:rgb(255 255 255 / .88);
   -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
   color:var(--jr-ink-2);
   cursor:pointer;
   transition:background .18s ease,color .18s ease,border-color .18s ease;
 }
-.jr-close:hover{background:#16211e;color:var(--jr-ink);border-color:#3a4b43}
+.jr-close:hover{background:#edefe9;color:var(--jr-ink);border-color:#aab3ab}
 .jr-close:focus-visible{outline:2px solid var(--jr-accent);outline-offset:3px}
 .jr-close svg{width:19px;height:19px}
 
@@ -187,7 +188,7 @@
   font-weight:600;
   letter-spacing:-.055em;
   color:var(--jr-ink);
-  text-shadow:0 0 62px rgb(99 195 169 / .18);
+  text-shadow:0 0 62px rgb(31 107 92 / .10);
 }
 .jr-headnum>span{
   margin-top:4px;
@@ -237,12 +238,12 @@
 .jr-state>span{color:var(--jr-ink-2);font-size:14px;line-height:1.75}
 .jr-state-pulse{
   width:9px;height:9px;border-radius:50%;background:var(--jr-accent);
-  box-shadow:0 0 0 0 rgb(99 195 169 / .5);
+  box-shadow:0 0 0 0 rgb(31 107 92 / .4);
   animation:jr-pulse 1.9s ease-out infinite;
 }
 @keyframes jr-pulse{
-  70%{box-shadow:0 0 0 13px rgb(99 195 169 / 0)}
-  100%{box-shadow:0 0 0 0 rgb(99 195 169 / 0)}
+  70%{box-shadow:0 0 0 13px rgb(31 107 92 / 0)}
+  100%{box-shadow:0 0 0 0 rgb(31 107 92 / 0)}
 }
 
 /* ── ٢ · المقياس ───────────────────────────────────────────────────────
@@ -308,7 +309,7 @@
   z-index:1;
   width:42px;height:42px;
   display:grid;place-items:center;
-  border:1px solid #34453d;border-radius:14px;
+  border:1px solid #ccd2cb;border-radius:14px;
   /* Opaque, so the rail passes behind the node rather than through it. */
   background:var(--jr-canvas-2);
   color:var(--jr-accent);
@@ -316,7 +317,7 @@
 }
 /* The first station is where the story starts; it carries the brass. */
 .jr-station:first-child .jr-station-node{
-  border-color:color-mix(in srgb,var(--jr-brass) 46%,#34453d);
+  border-color:color-mix(in srgb,var(--jr-brass) 46%,#ccd2cb);
   color:var(--jr-brass);
 }
 .jr-station-node svg{width:19px;height:19px}
