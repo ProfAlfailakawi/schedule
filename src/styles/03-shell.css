@@ -2019,3 +2019,40 @@ html[data-dialog-open] .notify-toast{visibility:hidden}
 @media screen and (min-width:1120px){
   .app-main{padding-inline-end:max(var(--gutter),var(--notify-lane))}
 }
+
+/* === Light rail (owner decision, Oct 2026) ================================
+   The workspace is paper; a near-black spine framed it like a different
+   application (screens 7/8). In the light theme the rail wears the page's own
+   surface: white, a hairline edge, ink-2 labels (9.6:1), muted icons, and an
+   unmistakable "you are here" — accent-soft fill, accent ink and icon, brass
+   rule. The --nav tokens are redefined on .sidebar ONLY: elsewhere --nav still
+   tints scrims and backdrops, which must stay dark. The dark theme keeps the
+   original rail untouched. */
+:root:not([data-theme="dark"]) .sidebar{
+  --nav:var(--surface);
+  --nav-2:var(--surface-2);
+  --nav-3:var(--surface-3);
+  --nav-ink:var(--ink);
+  --nav-muted:var(--muted);
+  --nav-line:var(--line);
+  box-shadow:1px 0 0 var(--line),0 0 24px -18px rgb(19 24 23 / .25);
+}
+:root:not([data-theme="dark"]) .sidebar .nav-section-title{color:var(--muted)}
+:root:not([data-theme="dark"]) .sidebar .side-nav-link{color:var(--ink-2)}
+:root:not([data-theme="dark"]) .sidebar .side-nav-link>svg:first-child{color:var(--muted)}
+:root:not([data-theme="dark"]) .sidebar .side-nav-link:hover{background:var(--surface-3);color:var(--ink)}
+:root:not([data-theme="dark"]) .sidebar .side-nav-link:hover>svg:first-child{color:var(--ink-2)}
+:root:not([data-theme="dark"]) .sidebar .side-nav-link.active{
+  color:var(--accent-ink);font-weight:600;
+  background:var(--accent-soft);
+}
+:root:not([data-theme="dark"]) .sidebar .side-nav-link.active>svg:first-child{color:var(--accent)}
+:root:not([data-theme="dark"]) .sidebar .side-nav-link.active .side-nav-badge{box-shadow:0 0 0 3px var(--surface)}
+:root:not([data-theme="dark"]) .sidebar .sidebar-close:hover,
+:root:not([data-theme="dark"]) .sidebar .user-card-tools button:hover{background:var(--surface-3);color:var(--ink)}
+:root:not([data-theme="dark"]) .sidebar .user-card-tools button{color:var(--muted)}
+:root:not([data-theme="dark"]) .sidebar .user-card-tools button:last-child:hover{color:var(--danger)}
+:root:not([data-theme="dark"]) .sidebar .command-search:hover{border-color:var(--line-strong)}
+:root:not([data-theme="dark"]) .sidebar .command-search kbd{color:var(--muted);border-color:var(--line);background:var(--surface)}
+:root:not([data-theme="dark"]) .sidebar .side-nav::-webkit-scrollbar-thumb{background:var(--line-strong)}
+:root:not([data-theme="dark"]) .sidebar .sidebar-brand strong{color:var(--ink)}

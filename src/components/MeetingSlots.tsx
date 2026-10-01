@@ -27,10 +27,12 @@ async function readJson(url: string, init?: RequestInit) {
   return body;
 }
 
-/* The university's approved reading order for a range is END - START, and it
-   is the same everywhere in this program. A window here must not be the one
-   place that reads the other way round. */
+/* Start – end, from the shared formatter. Drawn as its own LTR inline-block:
+   Safari flipped a bare isolate sitting inside a bold Arabic line
+   («20:00 – 18:00»), while the same text in a box of its own read right. */
 const range = (start: string, end: string) => formatScheduleTimeRange(start, end);
+const Time = ({ start, end }: { start: string; end: string }) => <span className="meeting-time" dir="ltr">{range(start, end)}</span>;
+const freeShare = (slot: MeetingWindow) => Math.round((slot.free / Math.max(1, slot.total)) * 100);
 
 /* Who conflicts, named — but a list of forty names is not a sentence. */
 const whoConflicts = (busy: string[]) =>
@@ -210,7 +212,7 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
                 <Check aria-hidden="true" />
                 <div>
                   <small>أفضل وقت مقترح · الجميع متفرغون</small>
-                  <strong>{answer.best.label} · <bdi dir="ltr">{range(answer.best.start, answer.best.end)}</bdi></strong>
+                  <strong>{answer.best.label} <Time start={answer.best.start} end={answer.best.end} /></strong>
                 </div>
               </article>
             ) : answer.ranked[0] ? (
@@ -218,8 +220,8 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
                 <Check aria-hidden="true" />
                 <div>
                   <small>لا نافذة يتفرغ فيها الجميع بهذه المدة — هذا أقرب وقت</small>
-                  <strong>{answer.ranked[0].label} · <bdi dir="ltr">{range(answer.ranked[0].start, answer.ranked[0].end)}</bdi> · {windowLine(answer.ranked[0])}</strong>
-                  <small>يتعارض فيها: {whoConflicts(answer.ranked[0].busy)}</small>
+                  <strong>{answer.ranked[0].label} <Time start={answer.ranked[0].start} end={answer.ranked[0].end} /></strong>
+                  <small>{windowLine(answer.ranked[0])} · يتعارض: {whoConflicts(answer.ranked[0].busy)}</small>
                 </div>
               </article>
             ) : null}
@@ -227,10 +229,24 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
               <>
                 <div className="meeting-slots-alternatives-title"><small>مرتبة بعدد المتفرغين</small><strong>أفضل النوافذ</strong></div>
                 <ol className="meeting-slots-ranked">
-                  {answer.ranked.slice(1).map(slot => (
+                  {answer.ranked.slice(1).map((slot, index) => (
                     <li key={`${slot.day}-${slot.start}`}>
-                      <strong>{slot.label} <bdi dir="ltr">{range(slot.start, slot.end)}</bdi> · {slot.busy.length ? windowLine(slot) : "الجميع متفرغون"}</strong>
-                      {slot.busy.length ? <small>يتعارض: {whoConflicts(slot.busy)}</small> : null}
+                      <span className="meeting-rank" aria-hidden="true">{index + 1}</span>
+                      <div className="meeting-rank-body">
+                        <div className="meeting-rank-head">
+                          <strong>{slot.label}</strong>
+                          <Time start={slot.start} end={slot.end} />
+                          <span className="meeting-free">{slot.busy.length ? windowLine(slot) : "الجميع متفرغون"}</span>
+                        </div>
+                        <span className="meeting-meter" aria-hidden="true"><i style={{ inlineSize: `${freeShare(slot)}%` }} /></span>
+                        {slot.busy.length ? (
+                          <div className="meeting-busy">
+                            <small>يتعارض</small>
+                            {slot.busy.slice(0, 4).map(name => <span key={name}>{name}</span>)}
+                            {slot.busy.length > 4 ? <span>+{slot.busy.length - 4}</span> : null}
+                          </div>
+                        ) : null}
+                      </div>
                     </li>
                   ))}
                 </ol>
@@ -245,7 +261,7 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
                     <ul>
                       {day.free.map(slot => (
                         <li key={`${day.dayKey}-${slot.start}`}>
-                          <bdi dir="ltr">{range(slot.start, slot.end)}</bdi>
+                          <Time start={slot.start} end={slot.end} />
                           <small>الجميع متفرغون</small>
                         </li>
                       ))}
@@ -253,7 +269,7 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
                   ) : day.bestPartial ? (
                     <ul className="meeting-slots-miss">
                       <li>
-                        <bdi dir="ltr">{range(day.bestPartial.start, day.bestPartial.end)}</bdi>
+                        <Time start={day.bestPartial.start} end={day.bestPartial.end} />
                         <small>{windowLine(day.bestPartial)} — يتعارض: {whoConflicts(day.bestPartial.busy)}</small>
                       </li>
                     </ul>

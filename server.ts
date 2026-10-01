@@ -14,7 +14,7 @@ import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
 import { DEPARTMENT_HEAD_ROLE, planDepartmentHeadAccounts } from "./src/utils/departmentHeadAccounts";
-import { arabicMatchKey, normalizeArabicText } from "./src/utils/arabicText";
+import { normalizeArabicText } from "./src/utils/arabicText";
 import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
@@ -24,7 +24,8 @@ import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine,
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
-import { liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
+import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
+import { departmentFamilyResolver } from "./src/utils/sectionLabel";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
@@ -6262,10 +6263,13 @@ app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (req
 app.get("/api/delegates", requireAnyPermission([3, 7]), async (req: AuthenticatedRequest, res: Response) => {
   /* الإدارة ترى منتدبي الجامعة؛ وغيرُها منتدبي أدلّة أقسامه وحدها. */
   if (req.user?.IsAdminUser) { res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() }); return; }
-  const directories = await Repository.getDelegateAffiliations();
+  /* والقسمُ عائلةٌ عبر كلياته: منتدبو أخته في كليةٍ أخرى منتدبوه. */
+  const [directories, sections] = await Promise.all([Repository.getDelegateAffiliations(), Repository.getSections()]);
+  const familyOf = departmentFamilyResolver(sections);
+  const allowedFamilies = new Set((sections as any[]).filter(sec => isScopeAllowed(req, Number(sec.AdCollegeId), Number(sec.AdSectionId))).map(sec => familyOf(Number(sec.AdCollegeId), Number(sec.AdSectionId))));
   const ids = new Set<number>();
   for (const row of directories) {
-    if (!isScopeAllowed(req, Number(row.collegeId), Number(row.sectionId))) continue;
+    if (!allowedFamilies.has(familyOf(Number(row.collegeId), Number(row.sectionId)))) continue;
     for (const id of row.instructorIds) ids.add(Number(id));
   }
   res.json({ instructorIds: [...ids] });
@@ -6318,68 +6322,6 @@ app.post("/api/department-delegates/instructor", requirePermission(7), async (re
   let roster:number[]|undefined;
   if(termId){const current=await Repository.getVisitingRoster(collegeId,sectionId,termId);roster=await Repository.saveVisitingRoster(collegeId,sectionId,termId,[...current,Number(person.AdInstructorId)]);}
   res.status(201).json({person,instructorIds,roster});
-});
-
-/**
- * ── المنتدب شخصٌ لا كلية ─────────────────────────────────────────────────────
- *
- * قائمة المنتدبين ملكُ قسمٍ بعينه (كلية + قسم)، فمن أضاف منتدبي «تكنولوجيا
- * التعليم» في كلية البنات ثم فتح القسم نفسه في كلية البنين وجد قائمةً فارغة —
- * والأشخاص أنفسهم مسجّلون، لكن في قسمٍ آخر. فتُعرض هنا منتدبو القسم الذي يحمل
- * الاسم نفسه في الكليات الأخرى، بالاسم وحده (لا رقم مدني ولا جوّال)، ويضمّهم
- * القسم إلى قائمته بضغطة. القراءة والضمّ يلزمان نطاقَ القسم المفتوح وحده.
- * القاعدة هنا وحدها: sameDepartmentDelegatesElsewhere.
- */
-async function sameDepartmentDelegatesElsewhere(collegeId: number, sectionId: number): Promise<Map<number, Array<{ college: string; section: string }>>> {
-  const [sections, colleges, affiliations, own] = await Promise.all([
-    Repository.getSections(), Repository.getColleges(), Repository.getDelegateAffiliations(), Repository.getDepartmentDelegates(collegeId, sectionId),
-  ]);
-  const target = (sections as any[]).find(row => Number(row.AdSectionId) === sectionId && Number(row.AdCollegeId) === collegeId);
-  if (!target) return new Map();
-  const key = arabicMatchKey(target.AdSectionName);
-  const sectionById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), row]));
-  const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
-  const owned = new Set(own.map(Number));
-  const found = new Map<number, Array<{ college: string; section: string }>>();
-  for (const row of affiliations) {
-    if (Number(row.collegeId) === collegeId) continue;
-    const section = sectionById.get(Number(row.sectionId));
-    if (!section || arabicMatchKey(section.AdSectionName) !== key) continue;
-    for (const id of row.instructorIds.map(Number)) {
-      if (owned.has(id)) continue;
-      const list = found.get(id) || [];
-      const origin = { college: collegeName.get(Number(row.collegeId)) || "", section: String(section.AdSectionName || "") };
-      if (!list.some(item => item.college === origin.college)) list.push(origin);
-      found.set(id, list);
-    }
-  }
-  return found;
-}
-
-app.get("/api/department-delegates/elsewhere", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0);
-  if (!collegeId || !sectionId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const [found, people] = await Promise.all([sameDepartmentDelegatesElsewhere(collegeId, sectionId), Repository.getInstructors()]);
-  const byId = new Map(people.map(person => [Number(person.AdInstructorId), person]));
-  res.json({
-    people: [...found].map(([id, origins]) => ({ AdInstructorId: id, AdInstructorName: String(byId.get(id)?.AdInstructorName || ""), origins }))
-      .filter(person => person.AdInstructorName)
-      .sort((a, b) => a.AdInstructorName.localeCompare(b.AdInstructorName, "ar")),
-  });
-});
-
-app.post("/api/department-delegates/adopt", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
-  const instructorId = Number(req.body?.instructorId || 0);
-  if (!collegeId || !sectionId || !instructorId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  /* لا يُضمّ إلا من عُرض: منتدبٌ للقسم نفسه في كليةٍ أخرى — لا أيُّ أستاذٍ في الجامعة برقمه. */
-  if (!(await sameDepartmentDelegatesElsewhere(collegeId, sectionId)).has(instructorId)) { res.status(404).json({ error: "هذا الشخص ليس منتدباً لهذا القسم في كلية أخرى." }); return; }
-  const person = await Repository.getInstructorById(instructorId);
-  if (!person) { res.status(404).json({ error: "المنتدب غير موجود" }); return; }
-  await Repository.addDepartmentDelegate(collegeId, sectionId, instructorId);
-  let roster: number[] | undefined;
-  if (termId) roster = await Repository.saveVisitingRoster(collegeId, sectionId, termId, [...await Repository.getVisitingRoster(collegeId, sectionId, termId), instructorId]);
-  res.status(201).json({ person, instructorIds: await Repository.getDepartmentDelegates(collegeId, sectionId), roster });
 });
 
 app.put("/api/department-delegates/:instructorId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -7294,9 +7236,12 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
  *  Visiting instructors are read term-wide across colleges (not from the
  *  department on screen), so a college-only or empty scope excludes them too. */
 async function meetingExcludedIds(termId: number) {
-  const [affiliations, instructors] = await Promise.all([Repository.getDelegateAffiliations(), Repository.getInstructors()]);
+  const [affiliations, instructors, sections] = await Promise.all([Repository.getDelegateAffiliations(), Repository.getInstructors(), Repository.getSections()]);
   const known = new Set(instructors.map(person => Number(person.AdInstructorId)));
-  const visiting = termVisitingIds(affiliations, termId, id => known.has(id));
+  const visiting = [...new Set([
+    ...termVisitingIds(affiliations, termId, id => known.has(id), departmentFamilyResolver(sections)),
+    ...directoryVisitingIds(affiliations, id => known.has(id)),
+  ])];
   const kept = new Set(meetingParticipants(instructors, visiting).map(person => Number(person.AdInstructorId)));
   return { instructors, excluded: instructors.map(person => Number(person.AdInstructorId)).filter(id => !kept.has(id)), visiting };
 }
@@ -13809,7 +13754,13 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
      بكليةٍ بعينها. */
   const requestRows = displayTermId === link.AdTermId ? linkTermRequests : (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
     .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
-  const requestLinks = (await Promise.all((personal ? requestRows : []).map(async request => {
+  /* ── بابُ الطلب بعد الرقم المدني، في الرابطين ─────────────────────────────
+     a966906 حجب روابطَ الطلب عن رابط القسم، فاختفى بابُ التعديل من بطاقة كل
+     أستاذٍ فتحها من رابط القسم — وهو الطريق الذي ينشره القسم. والرقمُ المدنيُّ
+     المطابَق بسجلّه (أعلاه) هو إثباتُ الهوية، كتوقيع الطلب نفسه: فلا يصل رابطُ
+     الطلب إلا صاحبَه، ولا يصل قبل التحقق. ويبقى ما حماه a966906 فعلاً: الرابطُ
+     الشخصيُّ لا يُفتح برقم زميل، وتاريخُ القرارات خارج رابط القسم العام. */
+  const requestLinks = (await Promise.all(requestRows.map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
     if (!requestLink || requestLink.revoked || !await shareLinkStillReadable(requestLink)) return null;
     const windowOpen = requestWindowOpen(request);
@@ -16303,17 +16254,15 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
      كان التبويبُ يختفي كلَّه حين لا يحمل الرابطُ نافذةَ طلبات — وهذا حالُ
      رابط القسم العام دائماً منذ صار شخصياً (a966906) — فلا يجد الأستاذُ بابَ
      التعديل ولا يعرف أين هو. فالبابُ يبقى ظاهراً، وما خلفه يقول الحقيقة:
-     النموذجُ نفسُه في الرابط الشخصي، وفي رابط القسم سطرٌ يدلّ عليه، ولا يُكشف
-     فيه رابطُ الطلب — فهو ما يُوقَّع به باسم صاحبه. */
+     يفتح النموذجَ نفسَه بعد التحقق بالرقم المدني، من الرابط الشخصي ومن رابط
+     القسم معاً (كما كان قبل a966906). */
   function renderRequests(d){
     var host=document.getElementById("requests");
     var links=d.requestLinks||[];
     requestLinksNow=links;
     if(!host)return;
     if(!links.length){
-      host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">'+(d.personal
-        ?'لم يفتح قسمك نافذة رغبات الجدول لهذا الفصل بعد. حين يفتحها يظهر هنا نموذجُ طلبك، ومعه ردودُ القسم ومقترحاته.'
-        :'رغباتك وطلب تعديل جدولك تُرسل من رابطك الشخصي الذي يرسله إليك القسم، لا من رابط القسم العام — فالطلب يُوقَّع باسمك. اطلب رابطك من منسّق القسم.')+'</p></div>';
+      host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">لم يفتح قسمك نافذة رغبات الجدول لهذا الفصل بعد. حين يفتحها يظهر هنا نموذجُ طلبك — تضيف وتحذف وتغيّر — ومعه ردودُ القسم ومقترحاته.</p></div>';
       return;
     }
     host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">استقبل قسمك نافذة طلبات للتعديل على الجدول الدراسي.</p>'+
@@ -19457,6 +19406,9 @@ async function startServer() {
   if (!databaseFailure) scheduleAutoTermJob({
     isDemoMode: () => Repository.isDemoMode(),
     createTermIfAbsent: (name, dates) => Repository.createTermIfAbsent(name, dates),
+    getTerms: () => Repository.getTerms() as any,
+    closeTerm: term => Repository.updateTerm(term.AdTermId, term.AdTermName,
+      { start: term.AdTermStart, weeks: term.AdTermWeeks, closed: true }),
     log: message => console.log(message),
   });
 

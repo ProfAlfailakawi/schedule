@@ -8432,3 +8432,22 @@ html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:ha
 }
 html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:has(>.schedule-status)>:not(.schedule-status){display:none!important}
 html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0}
+
+/* === Light floating controls (owner decision, Oct 2026) ====================
+   The schedule dock, the undo toast and the day's-log button borrowed the dark
+   rail's --nav palette. With the rail now light (03-shell), they wear the same
+   surface: white glass, hairline, ink labels; the active view is solid accent
+   with white text (5.9:1) so "where am I" never depends on a tint. Scoped to
+   these three so --nav keeps tinting scrims elsewhere. Dark theme unchanged. */
+:root:not([data-theme="dark"]) :is(.schedule-dock,.undo-bar,.undo-log-open){
+  --nav:var(--surface);
+  --nav-3:var(--surface-3);
+  --nav-ink:var(--ink);
+  --nav-muted:var(--ink-2);
+  --nav-line:var(--line);
+  border-color:var(--line);
+}
+:root:not([data-theme="dark"]) .schedule-dock{box-shadow:var(--shadow-md)}
+:root:not([data-theme="dark"]) :is(.dock-views>button.on,.dock-act.on){
+  color:var(--accent-contrast);background:var(--accent);
+}
