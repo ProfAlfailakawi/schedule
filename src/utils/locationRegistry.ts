@@ -390,6 +390,19 @@ export const roomIdentityKey = (row: Partial<FSchedule>): string => {
   return roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall);
 };
 
+/**
+ * Does this booking sit in this registry hall? A booking linked to the
+ * registry answers by id; an imported/legacy booking that only carries the
+ * building and hall as text answers by the same normalized text key. Both
+ * are the room key above — one rule, so a free-room search can never call a
+ * hall empty because its occupant was typed rather than linked.
+ */
+export const rowOccupiesRoom = (row: Partial<FSchedule>, roomId: unknown, roomCode: unknown, roomHall: unknown): boolean => {
+  const key = roomIdentityKey(row);
+  if (!key) return false;
+  return key === roomKeyOf(roomId, roomCode, roomHall) || key === roomKeyOf("", roomCode, roomHall);
+};
+
 export const buildingIdentityKey = (row: Partial<FSchedule>): string => row.buildingId ? `id:${row.buildingId}` : normalizeLocationToken(row.AdRoomCode);
 export const isPendingRoom = (row: Partial<FSchedule>): boolean => row.locationStatus === "PENDING_ROOM";
 export const roomDisplay = (row: Partial<FSchedule>): string => isPendingRoom(row) ? "بانتظار تثبيت القاعة" : [row.AdRoomCode,row.AdRoomHall].filter(Boolean).join("/");

@@ -132,7 +132,7 @@ import {
   authoritySectionCodeLooksPlausible,
   normalizeAuthoritySectionCode,
 } from "./src/utils/authorityAcademicCodes";
-import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
+import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, rowOccupiesRoom, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { fairShareByOwner } from "./src/utils/hallBarterFairness";
@@ -4124,7 +4124,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     const roomHall=String(room.canonicalCode||"").trim();
     if(!roomCode||!roomHall)continue;
     const roomKey=roomKeyOf(room.id,roomCode,roomHall);
-    const roomRows=termRows.filter(row=>roomIdentityKey(row)===roomKey);
+    const roomRows=termRows.filter(row=>rowOccupiesRoom(row,room.id,roomCode,roomHall));
     for(const day of SCHEDULE_DAY_KEYS){
       let runStart:number|null=null,runEnd=0;
       const flush=()=>{
@@ -7015,7 +7015,7 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
   for (const start of starts) {
     const end = start + duration;
     for (const hall of halls) {
-      const hallRows = live.filter(row => row.roomId && String(row.roomId)===hall.roomId);
+      const hallRows = live.filter(row => rowOccupiesRoom(row, hall.roomId, hall.room, hall.hall));
       let blocked = false;
       let idle = 0, walk = 0, spread = 0;
       const reasons: string[] = [];
