@@ -193,7 +193,7 @@ export function useProposalWorkspace(options: { requestId: string; proposalId?: 
       const next = { ...current, ...(typeof patch === "function" ? patch(current) : patch) };
       /* النهايةُ تتبع البداية والنمط ما لم يكتبها المنسّق بنفسه. */
       if (!next.endTouched && (next.start !== current.start || next.days.join() !== current.days.join())) {
-        const end = autoEnd(next.days, next.start);
+        const end = autoEnd(next.days, next.start, next.block);
         if (end) next.end = end;
       }
       /* رقمُ الشعبة المقترح لمقررٍ جديدٍ يُملأ ما لم يكتب المنسّق شيئاً. */

@@ -9,7 +9,7 @@
 import type { AdCourse, FSchedule, StudyProposal, StudyProposalOp } from "../src/types";
 import {
   applyProposalOps, commitReadiness, decisionStateOf, effectiveStatus, expiryAfterDays, materialFingerprint, nextSectionCodeFrom,
-  proposalDrift, proposalMetrics, responseGate, snapshotOf, validateOps, tempRowId, assignmentIsAdjusted, PROPOSAL_MAX_OPS,
+  courseLayouts, proposalDrift, proposalMetrics, responseGate, snapshotOf, validateOps, tempRowId, assignmentIsAdjusted, PROPOSAL_MAX_OPS,
 } from "../src/utils/studyProposal";
 
 let passed = 0, failed = 0;
@@ -251,6 +251,18 @@ import fs from "fs";
   check(/scheduleLockRefusal\(req, scope\.c, scope\.s, proposal\.AdTermId\)/.test(routes) && /proposalDrift\(proposal\.ops/.test(routes), "التثبيت يتحقق من القفل ومن تغيّر المواعيد الأصلية");
   check(/StudyProposalAlreadyCommitted/.test(routes) && /StudyProposalRevisionConflict/.test(routes), "التثبيتُ مانعٌ للتكرار ومقارِنٌ للمراجعة");
   check(/isScopeAllowed|canWriteScope/.test(routes), "الصلاحيات حسب القسم تُطبَّق في المسارات");
+}
+
+/* ── سجلّ المقرر عبر الفصول ──────────────────────────────────────────────── */
+{
+  const mk = (term: number, over: any = {}) => ({ AdCourseId: 7, AdTermId: term, fstarttime: "16:00", fendtime: "19:50", fsunday: false, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false, ...over });
+  const rows: any[] = [mk(1), mk(1), mk(2), mk(3, { fstarttime: "08:00", fendtime: "11:50", ftuesday: false, fsunday: true }), mk(9), { ...mk(2), AdCourseId: 8 }];
+  const names = new Map([[1, "ف1"], [2, "ف2"], [3, "ف3"], [9, "الحالي"]]);
+  const order = new Map([[1, 1], [2, 2], [3, 3], [9, 9]]);
+  const h = courseLayouts(rows, 7, 9, names, order);
+  check(h.terms === 3 && h.firstTerm === "ف1" && h.latestTerm === "ف3", "السجلُّ يعدّ الفصول السابقة فقط (دون الحالي ودون مقرر آخر)");
+  check(h.layouts[0].days.join() === "ftuesday" && h.layouts[0].terms === 2 && h.layouts[0].minutes === 230, "الوضعُ الأكثر تكراراً أولاً، وشعبتان في فصلٍ واحد تُعدّان مرة");
+  check(courseLayouts(rows, 99, 9, names, order).layouts.length === 0, "مقررٌ بلا سجلّ: لا أوضاع");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

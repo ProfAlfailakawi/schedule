@@ -5,7 +5,7 @@
 import type {
   AdCourse, StudyProposal, StudyProposalDayKey, StudyProposalMetrics, StudyProposalOp, StudyProposalResponseMode,
 } from "../../types";
-import type { DecisionState, GridItem, ProposalEvaluation } from "../../utils/studyProposal";
+import type { CourseHistory, DecisionState, GridItem, ProposalEvaluation } from "../../utils/studyProposal";
 
 export class ProposalApiError extends Error {
   status: number;
@@ -84,6 +84,8 @@ export interface AlternativeSuggestion {
 export const proposalApi = {
   context: (requestId: string, proposalId?: string, signal?: AbortSignal) =>
     call<ProposalContext>(`/api/study-proposals/context?requestId=${encodeURIComponent(requestId)}${proposalId ? `&proposalId=${encodeURIComponent(proposalId)}` : ""}`, { signal }),
+  courseHistory: (q: { courseId: number; collegeId: number; sectionId: number; termId: number }, signal?: AbortSignal) =>
+    call<CourseHistory>(`/api/study-proposals/course-history?courseId=${q.courseId}&collegeId=${q.collegeId}&sectionId=${q.sectionId}&termId=${q.termId}`, { signal }),
   list: (collegeId: number, sectionId: number, termId: number, signal?: AbortSignal) =>
     call<{ proposals: StaffProposalView[] }>(`/api/study-proposals?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { signal }),
   evaluate: (body: { requestId: string; proposalId?: string; ops: StudyProposalOp[] }, signal?: AbortSignal) =>

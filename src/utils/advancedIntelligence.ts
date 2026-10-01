@@ -46,7 +46,7 @@ const placementKey = (row: Partial<FSchedule>) => [
 ].join("|");
 const identityKey = (row: Partial<FSchedule>) => `${Number(row.AdCourseId || 0)}:${String(row.SCode || "")}`;
 
-const termChronology = (term: AdTerm) => {
+export const termChronology = (term: AdTerm) => {
   const name = String(term.AdTermName || "");
   const years = name.match(/(\d{4})\s*\/\s*(\d{4})/);
   const season = name.includes("الصيفي") ? 2 : name.includes("الثاني") ? 1 : name.includes("الأول") ? 0 : 0;

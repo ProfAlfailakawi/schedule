@@ -26,11 +26,12 @@ import type {
 import { toEnglishDigits } from "../utils/digits";
 import { normalizeClock, withinScheduleDay } from "../utils/scheduleTime";
 import { timeToMinutes } from "../utils/scheduleIntelligence";
+import { termChronology } from "../utils/advancedIntelligence";
 import {
   applyProposalOps, commitReadiness, decisionStateOf, defaultTitle, effectiveStatus, expiryAfterDays,
   legacyDetailOf, materialFingerprint, nextSectionCodeFrom, opSummary, PROPOSAL_DAY_KEYS, PROPOSAL_DEFAULT_MESSAGE,
   PROPOSAL_MAX_OPS, PROPOSAL_MESSAGE_LIMIT, PROPOSAL_NOTE_LIMIT, proposalDrift, proposalMetrics, responseGate,
-  snapshotOf, STATUS_LABEL, daysOf, type DecisionState, type GridItem,
+  snapshotOf, STATUS_LABEL, daysOf, courseLayouts, type DecisionState, type GridItem,
 } from "../utils/studyProposal";
 import {
   evaluateProposal, gridItem, keyOfNew, keyOfRow, loadWorld, suggestAlternatives, type EngineDeps, type LoadedWorld,
@@ -243,6 +244,20 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     const settled = await Promise.all(rows.map(settleExpiry));
     res.setHeader("Cache-Control", "no-store");
     res.json({ proposals: settled.map(p => ({ ...staffView(p), proposal: compact(p) })) });
+  });
+
+  /** كيف نزل المقرر في فصولٍ سابقة (أيامه وأوقاته)، لتُقترح الأوضاع المعتادة عند إضافته. */
+  app.get("/api/study-proposals/course-history", staff, heavyLimit, async (req: any, res: Response) => {
+    const courseId = Number(req.query.courseId || 0);
+    const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0);
+    const termId = Number(req.query.termId || 0);
+    if (!courseId || !collegeId || !sectionId) { res.status(400).json({ error: "حدّد المقرر والقسم." }); return; }
+    if (!canSeeScope(req, collegeId, sectionId)) { res.status(403).json({ error: "هذا القسم خارج نطاقك." }); return; }
+    const [terms, rows] = await Promise.all([Repository.getTerms(), Repository.getSchedulesByScope({ collegeId, sectionId })]);
+    const names = new Map<number, string>(terms.map((t: any) => [Number(t.AdTermId), String(t.AdTermName || "")]));
+    const order = new Map<number, number>(terms.map((t: any) => [Number(t.AdTermId), termChronology(t)]));
+    res.setHeader("Cache-Control", "no-store");
+    res.json(courseLayouts(rows as FSchedule[], courseId, termId, names, order));
   });
 
   /** كل ما تحتاجه مساحة العمل لتفتح: الأستاذ، جدوله، الكتالوج، الشعب المتاحة. */

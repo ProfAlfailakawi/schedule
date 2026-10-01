@@ -631,3 +631,56 @@ export function placeLabel(row: { AdRoomCode?: string; AdRoomHall?: string; loca
   }
   return { text: [building, hall].filter(Boolean).join(" · "), known: true };
 }
+
+
+/* ── سجلُّ المقرر عبر الفصول ─────────────────────────────────────────────── */
+
+export interface CourseLayout {
+  days: StudyProposalDayKey[];
+  start: string;
+  end: string;
+  minutes: number;
+  /** في كم فصلاً نزل بهذا الوضع. */
+  terms: number;
+  lastTerm: string;
+}
+
+export interface CourseHistory {
+  courseId: number;
+  /** عدد الفصول التي نزل فيها المقرر قبل الفصل الحالي. */
+  terms: number;
+  firstTerm: string;
+  latestTerm: string;
+  layouts: CourseLayout[];
+}
+
+/**
+ * الأوضاع التي نزل بها المقرر في فصولٍ سابقة، الأكثر تكراراً أولاً.
+ * الوضعُ = أيامٌ + بداية + نهاية. يُعدّ كلُّ وضعٍ مرةً في الفصل الواحد، فلا تُضخّمه
+ * كثرةُ الشعب في فصلٍ واحد.
+ */
+export function courseLayouts(
+  rows: ReadonlyArray<Pick<FSchedule, "AdCourseId" | "AdTermId" | "fstarttime" | "fendtime" | "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday">>,
+  courseId: number, currentTermId: number, termNames: ReadonlyMap<number, string>, termOrder: ReadonlyMap<number, number>,
+  max = 3,
+): CourseHistory {
+  const past = rows.filter(row => Number(row.AdCourseId) === courseId && Number(row.AdTermId) !== currentTermId
+    && row.fstarttime && row.fendtime && timeToMinutes(row.fendtime) > timeToMinutes(row.fstarttime));
+  const termsSeen = [...new Set(past.map(row => Number(row.AdTermId)))].sort((a, b) => (termOrder.get(a) ?? a) - (termOrder.get(b) ?? b));
+  const groups = new Map<string, { layout: CourseLayout; seen: Set<number> }>();
+  for (const row of past) {
+    const days = PROPOSAL_DAY_KEYS.filter(day => (row as any)[day]);
+    if (!days.length) continue;
+    const start = String(row.fstarttime).slice(0, 5), end = String(row.fendtime).slice(0, 5);
+    const key = `${days.join(",")}|${start}|${end}`;
+    const entry = groups.get(key) || { layout: { days, start, end, minutes: timeToMinutes(end) - timeToMinutes(start), terms: 0, lastTerm: "" }, seen: new Set<number>() };
+    entry.seen.add(Number(row.AdTermId));
+    groups.set(key, entry);
+  }
+  const layouts = [...groups.values()].map(({ layout, seen }) => {
+    const latest = [...seen].sort((a, b) => (termOrder.get(b) ?? b) - (termOrder.get(a) ?? a))[0];
+    return { ...layout, terms: seen.size, lastTerm: termNames.get(latest) || "" , _latest: termOrder.get(latest) ?? latest };
+  }).sort((a, b) => b.terms - a.terms || b._latest - a._latest).slice(0, max).map(({ _latest, ...rest }) => rest);
+  const name = (id: number | undefined) => (id === undefined ? "" : termNames.get(id) || "");
+  return { courseId, terms: termsSeen.length, firstTerm: name(termsSeen[0]), latestTerm: name(termsSeen[termsSeen.length - 1]), layouts };
+}
