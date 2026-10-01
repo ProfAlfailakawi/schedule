@@ -28,7 +28,9 @@ import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/ut
 import { departmentFamily, departmentFamilyResolver } from "./src/utils/sectionLabel";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
-import { registerStudyProposalRoutes } from "./src/server/studyProposalRoutes";
+import { registerStudyProposalRoutes, seedDemoStudyProposals } from "./src/server/studyProposalRoutes";
+import { studyProposalPage } from "./src/server/studyProposalPage";
+import { PROPOSAL_ALERT_CSS, PROPOSAL_ALERT_SCRIPT } from "./src/server/studyProposalAlert";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
@@ -2309,6 +2311,9 @@ async function seedDemoStories(): Promise<void> {
         ...(settled ? [{ kind: "settled" as const, at: decidedAt, by: committee.role }] : [])],
     });
   }
+
+  // ── مقترحان دراسيان (e): واحدٌ مرسَلٌ ينتظر ردّ الأستاذ، وآخرُ مسودة.
+  await seedDemoStudyProposals(DEMO_STORY_SCOPE).catch(error => console.error("[demo] seeding study proposals failed:", error));
 }
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
@@ -16214,6 +16219,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .movement-meta{display:block;color:var(--dim)}
 .movement-meta[data-decision=fixed]{color:var(--jade)}
 .movement-meta[data-decision=rejected]{color:var(--bad)}
+${PROPOSAL_ALERT_CSS}
 .requests-panel{margin-top:12px;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
 .requests-panel h3{margin:0 0 4px;font-size:14px}.requests-panel .sub{margin:0;color:var(--dim);font-size:12.5px;line-height:1.8}
 .req-proposed{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;background:color-mix(in srgb,var(--brass) 18%,transparent);color:var(--brass);font-size:11.5px;font-weight:600}
@@ -16298,6 +16304,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     <div class="approvals" id="approvals" aria-label="حالة اعتماد جدول القسم"></div>
     <div class="stats" id="stats"></div>
     <div class="soon" id="soon" hidden></div>
+    <div id="proposalAlerts" aria-live="polite"></div>
     <div class="card-tabs" role="tablist">
       <button type="button" class="card-tab" id="tab-week" role="tab" aria-selected="true">الجدول الأسبوعي</button>
       <button type="button" class="card-tab" id="tab-movement" role="tab" aria-selected="false">حركة الجدول</button>
@@ -16400,10 +16407,20 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
      التعديل ولا يعرف أين هو. فالبابُ يبقى ظاهراً، وما خلفه يقول الحقيقة:
      يفتح النموذجَ نفسَه بعد التحقق بالرقم المدني، من الرابط الشخصي ومن رابط
      القسم معاً (كما كان قبل a966906). */
+  /* تنبيه «لديك مقترح دراسي من القسم» فوق التبويبات، من الروابط الشخصية نفسها. */
+  ${PROPOSAL_ALERT_SCRIPT}
+  var pbSig="";
+  function pbRefresh(links){
+    var key=links.map(function(l){return l.linkId}).join(",");
+    if(key===pbSig)return;
+    pbSig=key;
+    pbLoad(links.map(function(l){return l.linkId}),function(items){var box=document.getElementById("proposalAlerts");if(box)box.innerHTML=pbHtml(items)});
+  }
   function renderRequests(d){
     var host=document.getElementById("requests");
     var links=d.requestLinks||[];
     requestLinksNow=links;
+    pbRefresh(links);
     if(!host)return;
     if(!links.length){
       host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">لم يفتح قسمك نافذة رغبات الجدول لهذا الفصل بعد. حين يفتحها يظهر هنا نموذجُ طلبك — تضيف وتحذف وتغيّر — ومعه ردودُ القسم ومقترحاته.</p></div>';
@@ -18285,6 +18302,7 @@ label.sign{display:grid;grid-template-columns:auto minmax(0,190px);align-items:c
 [hidden]{display:none!important}
 @media(max-width:520px){.wrap{padding:12px 12px 116px}.hero{grid-template-columns:1fr}.readiness{display:flex;align-items:center;justify-content:space-between;text-align:start;padding:8px 12px}.readiness b{font-size:16px}.card{padding:13px}.days{gap:4px}.days button{font-size:11.5px;padding-inline:1px}.course-options{grid-template-columns:1fr}.ends{margin-inline-start:0}.activity-item{grid-template-columns:12px minmax(0,1fr)}.activity-item time{grid-column:2}.tabs{top:6px}}
 @media print{body{background:#fff}.tabs,.pick,.edit,.send,.alts,.add-card{display:none!important}.wrap{max-width:none;padding:0}.card{box-shadow:none;break-inside:avoid}}
+${PROPOSAL_ALERT_CSS}
 </style></head><body>${demoHint?`<div style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div>
 <script nonce="${nonce}">(function(){
 var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[],signCivil="",activeTab="schedule",chooserOpen=false;
@@ -18343,6 +18361,10 @@ function collegeOf(it){return it.action==="add"||manyColleges()?collegeNameOf(it
 function shortCollege(v){return String(v||"").replace(/^\\s*كلية\\s+/,"")}
 /* العددُ بلغته: «موعد واحد» و«موعدان» لا «1 مواعيد» — القاعدة الواحدة من arabicCount.ts. */
 ${ARABIC_COUNT_SCRIPT}
+/* تنبيه «لديك مقترح دراسي من القسم»: يُرسم أعلى الصفحة متى كان بابُ ردٍّ مفتوحاً. */
+${PROPOSAL_ALERT_SCRIPT}
+var proposalBanner="";
+function loadProposalBanner(){pbLoad([TOKEN],function(items){var h=pbHtml(items);if(h!==proposalBanner){proposalBanner=h;if(data)paint()}})}
 function toneText(it){return it.tone==="ok"?"الوقت متاح":it.tone==="warn"?"يحتاج سبب استثناء":it.tone==="bad"?"يوجد مانع":it.tone==="checking"?"يُفحص الآن…":""}
 function wasText(it){var b=it.before||{};return it.action==="add"?"":((b.days||"")+(b.time?" · "+b.time:""))}
 var REASONS={room:"لا تتوفّر قاعة في هذا الوقت",instructor:"يتعارض مع أستاذ آخر",regulation:"مخالفة للائحة",cohort:"يتقاطع مع مقرّر يشترك طلبتُه",load:"النصاب",department:"قرار القسم",other:"سبب آخر"};
@@ -18486,7 +18508,7 @@ function paint(){
  var changed=state.filter(function(it){return it.action!=="keep"}).length;
  var blocked=state.filter(function(it){return it.tone==="bad"||it.tone==="checking"}).length;
  var ready=blocked?"راجع الموانع":changed?countOf(changed,AR.change)+" "+nounFor(changed,AR.readyAdj):"لم تغيّر شيئاً";
- var h='<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
+ var h=proposalBanner+'<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
   '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,AR.item)+" "+nounFor(blocked,AR.needsVerb):"فحص مباشر قبل الإرسال")+'</small></div></div>'+
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
  h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable();
@@ -18663,6 +18685,7 @@ fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
     adds.push({rowId:null,action:"add",courseId:d.courseId,collegeId:d.collegeId,sectionId:d.sectionId,collegeName:c.collegeName||nm.collegeName||"",before:{courseName:c.name,sectionCode:""},after:{courseId:d.courseId,courseName:c.name,collegeId:d.collegeId,collegeName:c.collegeName,sectionId:d.sectionId},decision:null,slots:[],days:d.days||[],start:d.start||"",excuse:d.excuse||"",tone:"",note:"",alts:[]})}});
   state=state.concat(adds);restoredDraft=true;dirty=true}
  paint();
+ loadProposalBanner();
  if(restoredDraft)recheckAll();
  }).catch(function(){host.innerHTML='<div class="err">تعذّر الاتصال. تحقّق من الإنترنت.</div>'});
 })();</script></body></html>`;
@@ -18811,6 +18834,21 @@ ${resolved.error}</body></html>`);
     return;
   }
   res.type("text/html; charset=utf-8").send(instructorRequestPage(resolved.link.id, publicPageNonce(res), await demoPageHint(resolved.link, "request")));
+});
+
+/** صفحةُ المقترح الدراسي للأستاذ: الرابطُ الشخصيّ نفسُه ثم معرّفُ المقترح. */
+app.get("/r/:token/proposal/:pid", async (req: Request, res: Response) => {
+  const resolved = await resolveRequestLink(String(req.params.token || ""));
+  res.setHeader("Cache-Control", "no-store");
+  if ("error" in resolved) {
+    res.status(resolved.status).type("text/html; charset=utf-8").send(
+      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
+<body style="font:400 16px/1.7 'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none;padding:40px;text-align:center;color:#16281f">
+${resolved.error}</body></html>`);
+    return;
+  }
+  res.type("text/html; charset=utf-8").send(studyProposalPage(resolved.link.id, String(req.params.pid || ""), publicPageNonce(res), await demoPageHint(resolved.link, "request")));
 });
 
 /* ══════════════════════════════════════════════════════════════════════════

@@ -109,6 +109,11 @@ export function gridItem(
     days, start: String(row.fstarttime || ""), end: String(row.fendtime || ""),
     place: place.text, placeKnown: place.known,
     collegeName: college?.AdCollegeName, sectionName: section?.AdSectionName,
+    src: {
+      courseId: Number(row.AdCourseId), collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId), rev: Number(row.rev || 0),
+      buildingId: row.buildingId, roomId: row.roomId, locationStatus: row.locationStatus,
+      roomCode: String(row.AdRoomCode || ""), roomHall: String(row.AdRoomHall || ""),
+    },
     ...patch,
   } as GridItem;
 }

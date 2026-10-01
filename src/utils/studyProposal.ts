@@ -564,7 +564,7 @@ export interface ProposalFinding {
   end?: string;
 }
 
-export type GridState = "current" | "proposed" | "modified" | "out" | "outside";
+export type GridState = "current" | "proposed" | "modified" | "out" | "outside" | "draft";
 
 export interface GridItem {
   key: string;
@@ -588,6 +588,11 @@ export interface GridItem {
   collegeName?: string;
   sectionName?: string;
   outAction?: "unassign" | "delete";
+  /** ما يحتاجه المحرّر ليبني عمليةً من هذا الموعد (للمواعيد المرئية فقط). */
+  src?: {
+    courseId: number; collegeId: number; sectionId: number; rev: number;
+    buildingId?: string; roomId?: string; locationStatus?: string; roomCode: string; roomHall: string;
+  };
 }
 
 export interface ProposalEvaluation {

@@ -308,6 +308,7 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
       },
       instructor: {
         id: Number(world.instructor.AdInstructorId), name: String(world.instructor.AdInstructorName || ""),
+        mobile: String(world.instructor.AdInstructorMobile || ""),
         loadCap: Number((world.instructor as any).AdInstructorLoad || 0) || null,
         retired: (world.instructor as any).AdInstructorStatus === "retired",
       },
@@ -858,3 +859,80 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
 }
 
 export const __testing = { sanitizeOps, nextSectionCodeFrom };
+
+/**
+ * ── بذرة البيئة التجريبية ───────────────────────────────────────────────────
+ *
+ * سجلُّ «هيئة تدريسية» وشعبتان تحملانه، ومقترحان جاهزان: واحدٌ مرسَلٌ ينتظر
+ * ردّ الأستاذ (يُجرَّب من رابطه الشخصي)، وآخر مسودةٌ يكملها القسم. كلُّ شيءٍ وهمي
+ * ويُبذر داخل صندوق الزائر وحده.
+ */
+export async function seedDemoStudyProposals(scope: { collegeId: number; sectionId: number; termId: number }): Promise<void> {
+  const { collegeId, sectionId, termId } = scope;
+  const [instructors, courses, requests, termRows] = await Promise.all([
+    Repository.getInstructors(), Repository.getCourses(), Repository.getInstructorRequests(collegeId, sectionId, termId),
+    Repository.getSchedulesByScope({ termId }),
+  ]);
+  if ((await Repository.getStudyProposalsByTerm(termId)).length) return;
+  const sectionRows = (termRows as FSchedule[]).filter(row => Number(row.AdSectionId) === sectionId && row.roomId);
+  const rooms: Array<Pick<FSchedule, "buildingId" | "roomId" | "AdRoomCode" | "AdRoomHall" | "locationStatus">> = [];
+  for (const row of sectionRows) {
+    if (!rooms.some(room => room.roomId === row.roomId)) rooms.push({ buildingId: row.buildingId, roomId: row.roomId, AdRoomCode: row.AdRoomCode, AdRoomHall: row.AdRoomHall, locationStatus: row.locationStatus });
+  }
+  if (rooms.length < 2 || requests.length < 2) return;
+  const courseOf = (code: string) => (courses as AdCourse[]).find(row => String(row.CourseCode) === code && Number(row.AdSectionId) === sectionId);
+  const ai = courseOf("CS315"), security = courseOf("CS350");
+  if (!ai || !security) return;
+
+  let placeholder = (instructors as any[]).find(row => String(row.AdInstructorName || "").startsWith("هيئة"));
+  if (!placeholder) placeholder = await Repository.createInstructor("299999999991", "هيئة تدريسية", "50000000");
+  const base = { AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdInstructorId: Number(placeholder.AdInstructorId), fdetail: "", sourceOrder: 1_000_000 + 7 };
+  const mk = async (course: AdCourse, scode: string, flags: Partial<FSchedule>, start: string, end: string, room: typeof rooms[number]) =>
+    Repository.createSchedule({
+      ...base, AdCourseId: Number(course.AdCourseId), AdCourseName: course.CourseName, CourseCodeSnapshot: course.CourseCode, CourseNameSnapshot: course.CourseName,
+      SCode: scode, fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false, ...flags,
+      fstarttime: start, fendtime: end, ...room,
+    } as any);
+  const aiRow = await mk(ai, "501", { fsunday: true, ftuesday: true }, "10:30", "11:45", rooms[0]);
+  const secRow = await mk(security, "502", { fmonday: true, fwednesday: true }, "12:30", "13:45", rooms[1]);
+
+  const catalog = {
+    courseById: new Map((courses as AdCourse[]).map(row => [Number(row.AdCourseId), row])) as any,
+    instructorNameById: new Map((instructors as any[]).concat([placeholder]).map(row => [Number(row.AdInstructorId), String(row.AdInstructorName || "")])),
+  };
+  const specOf = (course: AdCourse, scode: string, days: StudyProposalDayKey[], start: string, end: string, room: typeof rooms[number]): StudyProposalRowSpec => ({
+    AdCollegeId: collegeId, AdSectionId: sectionId, AdCourseId: Number(course.AdCourseId), courseName: course.CourseName, courseCode: course.CourseCode,
+    SCode: scode, days, fstarttime: start, fendtime: end, AdRoomCode: String(room.AdRoomCode || ""), AdRoomHall: String(room.AdRoomHall || ""),
+    buildingId: room.buildingId, roomId: room.roomId, locationStatus: room.locationStatus,
+  });
+  const sources = new Map<number, FSchedule>([[aiRow.id, aiRow], [secRow.id, secRow]]);
+  const assign = (row: FSchedule, id: string): StudyProposalOp => {
+    const snapshot = snapshotOf(row, catalog);
+    return { id, kind: "assign", source: snapshot, target: specOf(courseOf(row === aiRow ? "CS315" : "CS350")!, snapshot.SCode, snapshot.days, snapshot.fstarttime, snapshot.fendtime, rooms[row === aiRow ? 0 : 1]) };
+  };
+  void sources;
+  const dataStructures = (courses as AdCourse[]).find(row => String(row.CourseName) === "هياكل البيانات" && Number(row.AdSectionId) === sectionId);
+  const [first, second] = [...requests].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const message = PROPOSAL_DEFAULT_MESSAGE;
+  const now = new Date().toISOString();
+  const by = "د. رئيس لجنة جدول الحاسب";
+  const newOp: StudyProposalOp | null = dataStructures ? {
+    id: "op-demo-create", kind: "create", target: specOf(dataStructures, "501", ["fthursday"], "10:00", "11:30", rooms[1]),
+  } : null;
+  const sentOps = [assign(aiRow, "op-demo-assign"), ...(newOp ? [newOp] : [])];
+  const expires = expiryAfterDays(7);
+  const sent = await Repository.createStudyProposal({
+    AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdInstructorId: Number(first.AdInstructorId),
+    requestId: first.id, linkId: first.linkId, itemIndex: null, title: "مقترح دراسي — بعد مراجعة رغباتك",
+    status: "sent", version: 1, sentVersion: 1, responseMode: "independent", message, ops: sentOps, expiryDays: 7, expiresAt: expires.expiresAt,
+    versions: [{ version: 1, sentAt: now, sentBy: 16, sentByName: by, message, responseMode: "independent", expiresAt: expires.expiresAt, ops: sentOps, title: "مقترح دراسي — بعد مراجعة رغباتك" }],
+    responses: [], events: [{ kind: "created", at: now, by, version: 1 }, { kind: "sent", at: now, by, version: 1 }], createdBy: 16, createdByName: by,
+  });
+  await noteOnRequest(first.id, "study-proposal-sent", by, `${sent.id}|1`);
+  await Repository.createStudyProposal({
+    AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdInstructorId: Number(second.AdInstructorId),
+    requestId: second.id, linkId: second.linkId, itemIndex: null, title: "مقترح دراسي — مسودة",
+    status: "draft", version: 1, sentVersion: 0, responseMode: "independent", message, ops: [assign(secRow, "op-demo-draft")], expiryDays: 7,
+    versions: [], responses: [], events: [{ kind: "created", at: now, by, version: 1 }], createdBy: 16, createdByName: by,
+  });
+}
