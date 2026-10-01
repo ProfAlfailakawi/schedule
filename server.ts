@@ -19457,6 +19457,9 @@ async function startServer() {
   if (!databaseFailure) scheduleAutoTermJob({
     isDemoMode: () => Repository.isDemoMode(),
     createTermIfAbsent: (name, dates) => Repository.createTermIfAbsent(name, dates),
+    getTerms: () => Repository.getTerms() as any,
+    closeTerm: term => Repository.updateTerm(term.AdTermId, term.AdTermName,
+      { start: term.AdTermStart, weeks: term.AdTermWeeks, closed: true }),
     log: message => console.log(message),
   });
 

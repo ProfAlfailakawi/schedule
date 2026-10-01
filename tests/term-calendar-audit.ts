@@ -4,7 +4,7 @@
  */
 import fs from "fs";
 import { autoTermDue, defaultTermDates, sundayNearest, termEndDate, termHasEnded, termStatus, termWindow } from "../src/utils/termSequence";
-import { runAutoTermJob } from "../src/server/autoTerms";
+import { closeEndedTerms, runAutoTermJob } from "../src/server/autoTerms";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
@@ -77,6 +77,25 @@ check(due("2027-04-01").name === "الفصل الأول 2027/2028" && due("2027-
   check(server.includes("scheduleAutoTermJob({") && server.includes("Repository.createTermIfAbsent("), "الخادم يجدول المهمة عبر المستودع");
   check(repo.includes('collection("autoTermClaims").doc(') && repo.includes("await claim.create("), "Firestore: حجزُ الاسم ذرّي فلا يولد فصلان من نسختين");
   check(repo.includes("await claim.delete()"), "Firestore: فشلُ الإنشاء بعد الحجز يفكّ الحجز");
+  {
+    const terms: any[] = [
+      { AdTermId: 1, AdTermName: "الفصل الأول 2026/2027", AdTermStart: "2026-09-13", AdTermWeeks: 14 },
+      { AdTermId: 2, AdTermName: "الفصل الصيفي 2025/2026" },
+      { AdTermId: 3, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: false },
+    ];
+    const closed: number[] = [];
+    const d = (demo: boolean) => ({ isDemoMode: () => demo, createTermIfAbsent: async () => null,
+      getTerms: async () => terms, closeTerm: async (t: any) => { closed.push(t.AdTermId); } });
+    await closeEndedTerms(d(false), Date.parse("2026-12-16T12:00:00"));
+    check(closed.join() === "2", "المنتهي بتاريخه يُغلق وحده؛ الجاري لا يُمسّ؛ ما أعاد المنسق فتحه يبقى مفتوحاً");
+    closed.length = 0;
+    await closeEndedTerms(d(false), Date.parse("2026-12-19T12:00:00"));
+    check(closed.includes(1), "الأول 2026/2027 يُغلق بعد الخميس 17/12");
+    closed.length = 0;
+    await closeEndedTerms(d(true), Date.parse("2027-12-19T12:00:00"));
+    check(closed.length === 0, "وضع العرض: لا إغلاق");
+    check(server.includes("closeTerm: term => Repository.updateTerm("), "الخادم يغلق عبر المستودع ويحفظ التقويم");
+  }
   console.log(`\nTerm calendar audit: ${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
 })();
