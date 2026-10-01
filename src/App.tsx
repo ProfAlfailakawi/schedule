@@ -2972,6 +2972,7 @@ export default function App() {
             isPowerAdmin={isPowerAdmin}
             roleId={sessionRole.id}
             workspaceQuery={scheduleScopeQuery(Number(user.SystemUserId) || 0)}
+            canReadWorkspace={hasPerm(7)}
             onFinish={finishOnboarding}
           />
         </Suspense>

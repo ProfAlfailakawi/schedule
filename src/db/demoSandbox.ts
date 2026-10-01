@@ -365,6 +365,30 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       ...days, fstarttime: start, fendtime: end, ...hallFields(mathHalls[hall]), fdetail: "", rev: 0,
     } as FSchedule);
   }
+  /* علوم الحاسب (مسرح اللجنة ورئيس القسم): الخميس يومٌ دراسي، فبلا موعدٍ فيه
+     تفتح لوحتُهما على «0 محاضرات اليوم» كلَّ خميس. ثلاثةُ مواعيد بعد الظهر في
+     قاعاتٍ مختلفة وبأساتذةٍ يخلو يومُهم من غيرها (القسمُ الذي عند التسجيل
+     ينتهي صباحَ الخميس عند 12:50، والرياضيات في 09:30–10:45 فقط)، فلا تعارضَ
+     ولا مخالفةَ لائحية. وتأتي بعد كل صفوف القسم، فلا تتحرّك ملاحظاتُه ولا
+     أساسُ المقارنة المبنيّ على أول صفوفه. */
+  {
+    const csCourses = courses.filter(row => row.AdSectionId === DEMO_MASTER_STAGE.sectionId);
+    const csHalls = hallsForSection(DEMO_MASTER_STAGE.sectionId);
+    const THURSDAY_ONLY = { fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: true };
+    const csThursday: Array<[instructorId: number, start: string, end: string]> = [
+      [1, "13:00", "14:15"], [2, "14:30", "15:45"], [3, "13:00", "14:15"],
+    ];
+    if (csCourses.length >= 3 && csHalls.length >= 3) {
+      csThursday.forEach(([instructorId, start, end], k) => {
+        const course = csCourses[k];
+        rows.push({
+          id: ++nextId, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
+          AdCourseId: course.AdCourseId, AdCourseName: course.CourseName, SCode: `2${k + 1}`, AdInstructorId: instructorId,
+          ...THURSDAY_ONLY, fstarttime: start, fendtime: end, ...hallFields(csHalls[k]), fdetail: "", rev: 0,
+        } as FSchedule);
+      });
+    }
+  }
   /* معرّفاتُ المخالفات بعد كل ما سبق: الصفوفُ الأخرى تحتفظ بمعرّفاتها كما كانت. */
   for (const row of regulationRows) row.id = ++nextId;
   return rows;
