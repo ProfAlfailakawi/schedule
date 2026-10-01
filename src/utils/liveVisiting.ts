@@ -35,3 +35,16 @@ export function termVisitingIds(
   }
   return [...out];
 }
+
+/**
+ * من لا يجلس في «متى نلتقي؟» لأنه منتدب: كلُّ من في دليل منتدبي أي قسم،
+ * في أي كلية — لا من في روستر الفصل وحده. المنتدب ليس عضو هيئة تدريس، دُرِّس
+ * هذا الفصل أم لا (قرار المالك ٢٠٢٦/١٠/١: «أمثال العيفان» ظهرت لأنها في الدليل
+ * بلا روستر للفصل).
+ */
+export function directoryVisitingIds(affiliations: Affiliation[], known: (id: number) => boolean): number[] {
+  const out = new Set<number>();
+  for (const row of affiliations) if (row.kind === "directory")
+    for (const raw of row.instructorIds) { const id = Number(raw); if (Number.isFinite(id) && id > 0 && known(id)) out.add(id); }
+  return [...out];
+}

@@ -24,7 +24,7 @@ import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine,
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
-import { liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
+import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
 import { departmentFamilyResolver } from "./src/utils/sectionLabel";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
@@ -7238,7 +7238,10 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
 async function meetingExcludedIds(termId: number) {
   const [affiliations, instructors, sections] = await Promise.all([Repository.getDelegateAffiliations(), Repository.getInstructors(), Repository.getSections()]);
   const known = new Set(instructors.map(person => Number(person.AdInstructorId)));
-  const visiting = termVisitingIds(affiliations, termId, id => known.has(id), departmentFamilyResolver(sections));
+  const visiting = [...new Set([
+    ...termVisitingIds(affiliations, termId, id => known.has(id), departmentFamilyResolver(sections)),
+    ...directoryVisitingIds(affiliations, id => known.has(id)),
+  ])];
   const kept = new Set(meetingParticipants(instructors, visiting).map(person => Number(person.AdInstructorId)));
   return { instructors, excluded: instructors.map(person => Number(person.AdInstructorId)).filter(id => !kept.has(id)), visiting };
 }

@@ -9,7 +9,7 @@
 import fs from "fs";
 import path from "path";
 import { computeMeetingSlots, meetingParticipants } from "../src/utils/meetingSlots";
-import { termVisitingIds } from "../src/utils/liveVisiting";
+import { directoryVisitingIds, termVisitingIds } from "../src/utils/liveVisiting";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -102,6 +102,14 @@ check(/liveVisitingIds\(/.test(live), "readLiveVisitingRoster يسأل القا�
 const ui = fs.readFileSync(path.join(process.cwd(), "src/components/MeetingSlots.tsx"), "utf8");
 check(!ui.includes("لا نافذة كاملة"), "الواجهة لا تنتهي بـ«لا نافذة كاملة»");
 check(ui.includes("meetingParticipants("), "الواجهة تختار المشاركين بالقاعدة المشتركة");
+{
+  const dir = directoryVisitingIds([
+    { collegeId: 6, sectionId: 7, instructorIds: [50], kind: "directory" },
+    { collegeId: 6, sectionId: 7, instructorIds: [51], kind: "roster", termId: 42 },
+  ], () => true);
+  check(dir.includes(50) && !dir.includes(51), "منتدبٌ في الدليل بلا روستر للفصل يُستبعد (أمثال العيفان)");
+  check(/directoryVisitingIds\(/.test(helper), "الخادم يستبعد كل من في دليل المنتدبين");
+}
 check(ui.includes("/api/schedules/meeting-participants") && !/visitingIds/.test(ui), "الواجهة تأخذ المستبعدين من الخادم لا من اختيار القسم");
 
 console.log(`\n${passed} passed, ${failed} failed`);
