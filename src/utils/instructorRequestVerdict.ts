@@ -37,7 +37,7 @@ import { negotiationClosed, type ThreadItem } from "./instructorRequestThread";
 import { AR, countOf } from "./arabicCount";
 import {
   DAY_KEYS, DAY_NAMES, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding,
-  requiredGapForDays, reviewSchedule, toMinutes,
+  LONG_LECTURE_MINUTES, SHORT_LECTURE_MINUTES, patternsForHours, requiredGapForDays, reviewSchedule, toMinutes,
   type DayKey, type RegulationFinding,
 } from "./scheduleRegulations";
 import { findConflicts, minutesToTime } from "./scheduleIntelligence";
@@ -119,6 +119,11 @@ export interface RequestedRow {
   AdCourseId: number;
   days: DayKey[];
   start: string;
+  /**
+   * مدّةُ اللقاء حين يكون الصفُّ لقاءً واحداً ممتدّاً (مختبرٌ أو ورشةٌ أو تدريب).
+   * تُؤخذ من الصفّ القائم لا من اللائحة: نقلُه إلى يومٍ آخر لا يُقصّر ساعاتِ المقرّر.
+   */
+  blockMinutes?: number;
 }
 
 export interface VerdictContext {
@@ -168,15 +173,31 @@ const dayLabel = (day: DayKey) => DAY_NAMES[DAY_KEYS.indexOf(day)];
  * أيامٌ مختلطة (أحدٌ مع اثنين مثلاً) ليست لها مدّةٌ واحدة، واللائحةُ لا تعطيها
  * واحدة. تُؤخذ الأطول، ويُقال ذلك سبباً يستحقّ نظرةً — لا يُخترع رقمٌ وسط.
  */
-export function endForRequest(days: DayKey[], start: string): string {
+export function endForRequest(days: DayKey[], start: string, blockMinutes?: number): string {
   if (!days.length || !start) return "";
-  const minutes = Math.max(...days.map(expectedMinutesForDay));
-  return minutesToTime(Math.min(SCHEDULE_DAY_END, toMinutes(start) + minutes));
+  return minutesToTime(Math.min(SCHEDULE_DAY_END, toMinutes(start) + requestMinutes(days, blockMinutes)));
 }
+
+/** طولُ اللقاء بالدقائق: الممتدُّ يبقى طولَه في يومٍ واحد، وغيرُه على لائحة اليوم. */
+export function requestMinutes(days: DayKey[], blockMinutes?: number): number {
+  if (blockMinutes && days.length === 1) return blockMinutes;
+  return Math.max(...days.map(expectedMinutesForDay));
+}
+
+/** لقاءٌ ممتدّ؟ يومٌ واحد أطولُ من أطول محاضرةٍ في اللائحة. */
+export function blockMinutesOfRow(row: Pick<FSchedule, "fstarttime" | "fendtime" | "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday"> | undefined): number | undefined {
+  if (!row) return undefined;
+  const days = DAY_KEYS.filter(day => (row as any)[day]).length;
+  const span = toMinutes(row.fendtime) - toMinutes(row.fstarttime);
+  return days === 1 && span > LONG_LECTURE_MINUTES ? span : undefined;
+}
+
+/** الحدُّ الأدنى لدقائق الأسبوع التي تغطّي ساعاتِ المقرّر (٥٠ دقيقةً للساعة). */
+export const minWeeklyMinutesFor = (hours: number) => Math.round(hours) * SHORT_LECTURE_MINUTES;
 
 /** يبني صفَّ جدولٍ من طلبٍ، ليُمرَّر إلى محرّكات الفحص الموجودة. */
 export function rowFromRequest(request: RequestedRow, base: Partial<FSchedule>): FSchedule {
-  const end = endForRequest(request.days, request.start);
+  const end = endForRequest(request.days, request.start, request.blockMinutes);
   const row: any = {
     ...base,
     id: request.rowId ?? request.tempId ?? -1,
@@ -259,7 +280,7 @@ function nearestFree(request: RequestedRow, context: VerdictContext, roomKeys: s
   for (const start of ladder) {
     const minutes = toMinutes(start);
     if (minutes === current || minutes < SCHEDULE_DAY_START || minutes >= SCHEDULE_DAY_END) continue;
-    const end = endForRequest(days, start);
+    const end = endForRequest(days, start, request.blockMinutes);
     if (!end || toMinutes(end) > SCHEDULE_DAY_END) continue;
     if (!instructorFree(context.instructorId, days, start, end, week, identity)) continue;
     if (roomKeys.length && !roomKeys.some(roomKey => roomFree(roomKey, days, start, end, week, identity))) continue;
@@ -325,9 +346,12 @@ export function weeklyLoadOf(rows: FSchedule[], courses: Map<number, AdCourse>):
  * وسلّمُ البدايات من إيقاع القسم. ما يضيفه هذا الملف هو الترتيبُ والصياغة —
  * وأن يُقال كلُّ ذلك للأستاذ قبل أن يضغط إرسال، لا للقسم بعد أسبوع.
  */
-export function judgeRequest(request: RequestedRow, context: VerdictContext): RequestVerdict {
+export function judgeRequest(inbound: RequestedRow, context: VerdictContext): RequestVerdict {
   const reasons: RequestReason[] = [];
-  const computedEnd = endForRequest(request.days, request.start);
+  /* اللقاءُ الممتدّ يُعرف من صفّه القائم في الجدول، فلا يُصدَّق ما تقوله الصفحة عنه. */
+  const request: RequestedRow = inbound.rowId == null ? { ...inbound, blockMinutes: undefined }
+    : { ...inbound, blockMinutes: blockMinutesOfRow(context.allRows.find(row => Number(row.id) === Number(inbound.rowId))) };
+  const computedEnd = endForRequest(request.days, request.start, request.blockMinutes);
   /* هويّةُ الصفّ: معرّفُه إن كان قائماً، وإلا هويّتُه المؤقّتة. تُستعمل لتخطّي
      الصفِّ نفسِه في كل فحص، فلا يتعارض مع ذاته حين يُنقل. */
   const identity = request.rowId ?? request.tempId ?? -1;
@@ -401,10 +425,30 @@ export function judgeRequest(request: RequestedRow, context: VerdictContext): Re
      اليوم حتى لا تُخرج وقتاً لا وجود له، والقصُّ نفسُه يُخفي التجاوز عمّن
      يفحصه بعدها — فمحاضرةٌ تبدأ السابعةَ والنصف مساءً يومَ اثنين تنتهي على
      الورق الثامنةَ تماماً وتبدو سليمة. الطولُ غيرُ المقصوص هو الذي يُسأل. */
-  const uncut = toMinutes(request.start) + Math.max(...request.days.map(expectedMinutesForDay));
+  const uncut = toMinutes(request.start) + requestMinutes(request.days, request.blockMinutes);
   if (uncut > SCHEDULE_DAY_END) {
     reasons.push({ source: "shape", text: "تتجاوز المحاضرة نهاية اليوم الدراسي.", blocking: true });
     return verdictOf();
+  }
+
+  /* ساعاتُ المقرّر تُؤخذ من المقرّر نفسه: أيامٌ لا تكفي لإتمامها ليست طلباً صالحاً. */
+  const hoursCourse = context.courses.get(request.AdCourseId);
+  const courseHours = Number(hoursCourse?.CourseHours || hoursCourse?.CourseCredit || 0);
+  if (courseHours > 0 && request.action === "change") {
+    const weekly = request.days.length === 1 ? requestMinutes(request.days, request.blockMinutes) : request.days.reduce((sum, day) => sum + requestMinutes([day]), 0);
+    /* لا يُطلب ما يقلّ عن ساعات المقرّر، ولا عمّا كان عليه الصفّ نفسُه: صفوفٌ قائمةٌ
+       بنمطٍ غير مثالي لا تُمنع من النقل ما دام مجموعُها لم ينقص. */
+    const original = request.rowId == null ? undefined : context.allRows.find(row => Number(row.id) === Number(request.rowId));
+    const originalWeekly = original ? DAY_KEYS.filter(day => (original as any)[day]).length * (toMinutes(original.fendtime) - toMinutes(original.fstarttime)) : Infinity;
+    if (weekly < Math.min(minWeeklyMinutesFor(courseHours), originalWeekly)) {
+      const shapes = patternsForHours(courseHours).map(pattern => pattern.label).slice(0, 3).join(" أو ");
+      reasons.push({
+        source: "shape",
+        text: `هذا المقرّر ${countOf(courseHours, { one: "ساعة", two: "ساعتان", few: "ساعات", many: "ساعةً" })} أسبوعياً، والمختار لا يغطّيها${shapes ? ` — جرّب ${shapes}` : ""}.`,
+        blocking: true,
+      });
+      return verdictOf();
+    }
   }
 
   const short = request.days.filter(day => expectedMinutesForDay(day) === 50).length;

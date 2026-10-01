@@ -362,5 +362,23 @@ check(judgeRequest(ask({ action: "delete" }), context({
   courses: threeHourCourses, instructorRowsAfter: fourRows, instructorLoad: 3,
 })).sendable, "والحذفُ يُنقص النصاب فلا يُمنع به");
 
+/* ── مقرّرٌ بساعاتٍ طويلة: النقلُ لا يُقصّر الموعد ───────────────────────────
+ * لقاءٌ واحدٌ من ٤ ساعات (16:00–19:50) نُقل إلى الأحد كان يعرض ٠٨:٠٠–٠٨:٥٠،
+ * أي خمسين دقيقةً لمقرّرٍ من أربع ساعات. */
+{
+  const block = row({ id: 31, AdCourseId: 100, ftuesday: true, fsunday: false, fstarttime: "16:00", fendtime: "19:50" });
+  const four = new Map([[100, course(100, 4)]]);
+  const move = (days: any, start: string) => judgeRequest(
+    { rowId: 31, action: "change", AdCourseId: 100, days, start },
+    context({ courses: four, allRows: [block], instructorRowsAfter: [block] }));
+  check(move(["fsunday"], "08:00").computedEnd === "11:50", "لقاءٌ ممتدّ يبقى طولُه عند نقله إلى يومٍ آخر (٨:٠٠ → ١١:٥٠)");
+  check(move(["fsunday"], "17:00").computedEnd === "20:00" && !move(["fsunday"], "17:00").sendable, "وما يتجاوز نهاية اليوم يُمنع");
+  check(endForRequest(["fsunday"], "08:00") === "08:50", "اليومُ العاديّ بلا لقاءٍ ممتدّ يبقى على اللائحة");
+  const three = row({ id: 32, AdCourseId: 100, fsunday: true, ftuesday: true, fthursday: true });
+  const dropped = judgeRequest({ rowId: 32, action: "change", AdCourseId: 100, days: ["fsunday"], start: "08:00" },
+    context({ courses: new Map([[100, course(100, 3)]]), allRows: [three], instructorRowsAfter: [three] }));
+  check(!dropped.sendable && dropped.reasons.some(r => r.source === "shape" && /ساعات/.test(r.text)), "ثلاثُ ساعاتٍ في يومٍ واحدٍ بخمسين دقيقة: لا تغطّي ساعاتِ المقرّر");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
