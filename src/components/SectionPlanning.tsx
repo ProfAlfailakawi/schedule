@@ -7,7 +7,7 @@ import {
   departmentLoadWarning, departmentTypicalTotal, suggestSectionCount,
   type DepartmentTermLoad, type SimilarTermHistory,
 } from "../utils/sectionCountSuggestion";
-import { remainingValues, type RemainingReading } from "../utils/remainingReport";
+import { COLUMN_TITLES, remainingOf, remainingValues, type RemainingReading } from "../utils/remainingReport";
 
 /**
  * ── تخطيط الشعب: كشفُ المتبقي ← مدىً يرسيه التاريخ ← تقرير ─────────────────
@@ -31,7 +31,10 @@ interface Payload {
   lineage?: Record<string, string>;
   department?: DepartmentTermLoad[];
 }
-type ImportReading = RemainingReading & { source: "text" | "scan"; pageCount: number; fileName: string };
+type ImportReading = RemainingReading & {
+  source: "text" | "scan"; pageCount: number; fileName: string; warnings: string[];
+  cells?: unknown[]; headerText?: string; template?: unknown;
+};
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 /** ترتيبٌ برقم المقرر تصاعدياً (الأرقام عدداً لا حرفاً)، ثم الرمز. */
@@ -60,6 +63,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [reading, setReading] = useState(false);
   const [preview, setPreview] = useState<ImportReading | null>(null);
   const [column, setColumn] = useState<number | null>(null);
+  /* صفٌّ اختلفت قراءتاه (لم يسجلوا ≠ لم يجتازوا − المسجلين): ما اختاره القسم. */
+  const [doubtPicks, setDoubtPicks] = useState<Record<number, number>>({});
+  const [readingNote, setReadingNote] = useState("");
   const [edits, setEdits] = useState(0);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const timer = useRef<number | null>(null);
@@ -151,22 +157,49 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const imported = rows.filter(row => row.entered).length;
 
   /* ── كشف المتبقي ← معاينة ← تعبئة ─────────────────────────────────────── */
-  const readFile = async (file: File) => {
-    setReading(true); setError(null);
+  /* كشفٌ PDF، أو صور صفحاته (تصوير الهاتف): كلُّ صورةٍ تُقرأ وحدها وتحمل
+     معها عناوين الأولى، ثم تُقرأ صفحاتها معاً فتتطابق أعمدتها. */
+  const readFiles = async (files: File[]) => {
+    setReading(true); setError(null); setReadingNote("");
     try {
-      const response = await fetch(`/api/registration-stats/remaining-pdf?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, {
-        method: "POST", headers: { "Content-Type": "application/pdf", "x-file-name": encodeURIComponent(file.name) }, body: file,
-      });
-      const result = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(result?.error || "تعذّرت قراءة الكشف");
-      const found = result as ImportReading;
+      const results: ImportReading[] = [];
+      let template: unknown = null;
+      for (const [index, file] of files.entries()) {
+        if (files.length > 1) setReadingNote(`يقرأ ${index + 1} من ${files.length}…`);
+        const response = await fetch(`/api/registration-stats/remaining-pdf?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": file.type || (/\.pdf$/i.test(file.name) ? "application/pdf" : "application/octet-stream"), "x-file-name": encodeURIComponent(file.name),
+            ...(template ? { "x-report-template": encodeURIComponent(JSON.stringify(template)) } : {}),
+          },
+          body: file,
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(`${files.length > 1 ? `«${file.name}»: ` : ""}${result?.error || "تعذّرت قراءة الكشف"}`);
+        results.push(result as ImportReading);
+        template ??= result?.template || null;
+      }
+      let found = results[0];
+      if (results.length > 1) {
+        const response = await fetch("/api/registration-stats/remaining-cells", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ collegeId, sectionId, termId, pages: results.flatMap(item => item.cells || []), headerText: results[0].headerText || "" }),
+        });
+        const merged = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(merged?.error || "تعذّرت قراءة الصفحات معاً");
+        found = { ...merged, source: results.some(item => item.source === "scan") ? "scan" : "text",
+          pageCount: results.reduce((sum, item) => sum + item.pageCount, 0), fileName: files.map(file => file.name).join("، ") };
+      }
       setColumn(found.column ?? (found.columns.length === 1 ? found.columns[0].id : null));
+      setDoubtPicks({});
       setPreview(found);
-    } catch (e: any) { setError(e.message); } finally { setReading(false); if (fileInput.current) fileInput.current.value = ""; }
+    } catch (e: any) { setError(e.message); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
   };
+  const fallbackFor = (found: ImportReading, chosen: number) => chosen === found.column ? found.fallback : null;
   const applyImport = () => {
     if (!preview || column == null) return;
-    const values = remainingValues(preview, column);
+    const values: Record<string, number> = { ...remainingValues(preview, column, fallbackFor(preview, column)),
+      ...(column === preview.column ? Object.fromEntries(Object.entries(doubtPicks).map(([id, value]) => [id, Number(value)])) : {}) };
     setRemaining(current => ({ ...current, ...asText(values) }));
     setSource({ fileName: preview.fileName, importedAt: new Date().toISOString() });
     setPreview(null);
@@ -237,16 +270,16 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     <div className="section-plan">
       <p className="section-plan-note">
         يُقترح لكل مقرر في «{data.termName}» مدىً من الشعب يرسيه ما فتحه القسم فعلاً
-        {data.similarTerms.length ? <> في الفصول المماثلة ({data.similarTerms.join("، ")})</> : null}، و«المتبقي» من كشف عمادة التسجيل يميل به قليلاً — ولا يتجاوز ما يملؤه المتبقي كلّه.
+        {data.similarTerms.length ? <> في الفصول المماثلة ({data.similarTerms.join("، ")})</> : null}، و«المتبقي» من كشف عمادة التسجيل يميل به قليلاً — ولا ينزل به تحت ما يُفتح عادةً.
       </p>
       <div className="section-plan-import">
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
-          <FileUp aria-hidden="true" /> {reading ? "يقرأ الكشف…" : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي (PDF)"}
+          <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي"}
         </PrimaryButton>
-        <input ref={fileInput} type="file" accept="application/pdf,.pdf" hidden aria-label="كشف المتبقي من عمادة التسجيل"
-          onChange={e => { const file = e.target.files?.[0]; if (file) void readFile(file); }} />
+        <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي من عمادة التسجيل: PDF أو صور صفحاته"
+          onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
         <span className="section-plan-source">
-          {reading ? "الكشف المطبوع من النظام يُقرأ في ثوانٍ، والممسوح ضوئياً قد يأخذ دقيقة." : <>{sourceLine}{source ? ` · في ${countOf(imported, oblique(AR.course))}` : ""}</>}
+          {reading ? "الكشف PDF من النظام يُقرأ في ثوانٍ؛ والممسوح أو صور الهاتف قرابة نصف دقيقة للصفحة." : <>{sourceLine}{source ? ` · في ${countOf(imported, oblique(AR.course))}` : ""}</>}
         </span>
       </div>
       <div className="section-plan-bar">
@@ -302,15 +335,17 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
               <li><b>{countOf(preview.rows.length, AR.course)}</b> من مقررات القسم في الكشف</li>
               {preview.missing.length ? <li>لم يرد في الكشف: <b>{countOf(preview.missing.length, AR.course)}</b> — يبقى متبقّيها كما هو</li> : null}
               {preview.foreign.length ? <li>رموزٌ ليست من مقررات القسم: <b>{preview.foreign.length}</b> — لا تُستورد</li> : null}
-              {preview.source === "scan" ? <li className="is-warn">الكشف ممسوحٌ ضوئياً: راجع الأرقام قبل التعبئة</li> : null}
+              {preview.source === "scan" ? <li className="is-warn">الكشف ممسوحٌ أو مصوَّر: راجع الأرقام قبل التعبئة</li> : null}
+              {preview.rows.some(row => row.doubt) ? <li className="is-warn">قراءتان مختلفتان: <b>{countOf(preview.rows.filter(row => row.doubt).length, AR.course)}</b> — اختر الصحيح</li> : null}
             </ul>
+            {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
             {preview.columns.length > 1 || preview.column == null ? (
               <fieldset className="section-plan-columns">
                 <legend>{preview.column == null ? "لم أجد عموداً عنوانه «المتبقي» — اختر عموده:" : "عمود المتبقي:"}</legend>
                 {preview.columns.map(item => (
                   <label key={item.id} className={column === item.id ? "is-active" : undefined}>
                     <input type="radio" name="remaining-column" checked={column === item.id} onChange={() => setColumn(item.id)} />
-                    <span><b>{item.label || `عمود ${item.id + 1}`}</b><small>{item.samples.join("، ")}…</small></span>
+                    <span><b>{item.kind ? COLUMN_TITLES[item.kind] : item.label || `عمود ${item.id + 1}`}</b><small>{item.samples.join("، ")}…</small></span>
                   </label>
                 ))}
               </fieldset>
@@ -319,13 +354,26 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
               <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المتبقي في الكشف</th><th>الحالي</th></tr></thead>
               <tbody>
                 {[...preview.rows].sort((a, b) => courseNumber(courseName.get(a.courseId)?.code || "") - courseNumber(courseName.get(b.courseId)?.code || "")).map(row => {
-                  const value = column == null ? undefined : row.values[column];
+                  const read = column == null ? { value: undefined, fromFallback: false } : remainingOf(row, column, fallbackFor(preview, column), preview.column);
+                  const doubt = column === preview.column ? row.doubt : undefined;
+                  const value = doubt ? doubtPicks[row.courseId] ?? read.value : read.value;
                   const current = remaining[String(row.courseId)];
                   return (
-                    <tr key={row.courseId}>
+                    <tr key={row.courseId} className={doubt ? "is-outside" : undefined}>
                       <td dir="ltr">{courseName.get(row.courseId)?.code || row.printed}</td>
                       <td>{courseName.get(row.courseId)?.name || ""}{row.occurrences > 1 ? <small> (ورد {countOf(row.occurrences, oblique(AR.visit))} — جُمع)</small> : null}</td>
-                      <td><b>{value ?? "—"}</b></td>
+                      <td>
+                        {doubt ? null : <b>{value ?? "—"}</b>}
+                        {read.fromFallback ? <small className="section-plan-cell-note"> من «لم يجتازوا» — لا شعب في الكشف</small> : null}
+                        {doubt ? (
+                          <span className="section-plan-doubt" role="group" aria-label="اختر القراءة الصحيحة">
+                            {[...new Set([doubt.read, doubt.derived])].map(option => (
+                              <button key={option} data-guide-feature-id="schedule.tool.data" type="button" className={value === option ? "is-active" : undefined}
+                                onClick={() => setDoubtPicks(picks => ({ ...picks, [row.courseId]: option }))}>{option}</button>
+                            ))}
+                          </span>
+                        ) : null}
+                      </td>
                       <td>{current !== undefined && current !== "" && Number(current) !== value ? current : ""}</td>
                     </tr>
                   );

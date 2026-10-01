@@ -123,7 +123,7 @@ import {
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL, readReportCells } from "./src/utils/documentOcr";
-import { blankSpots, readRemainingReport } from "./src/utils/remainingReport";
+import { blankSpots, columnKind, readRemainingReport, readReportHeader } from "./src/utils/remainingReport";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -14253,38 +14253,91 @@ function authorityDepartmentKeyOf(college: any, section: any): string {
   return authorityDepartmentCode(collegeCode, section?.AdSectionCode);
 }
 
-/* ── كشفُ «المتبقي» PDF ← معاينة ─────────────────────────────────────────────
+/* ── كشفُ «المتبقي» (PDF أو صورة) ← معاينة ─────────────────────────────────
    لا يُحفظ شيءٌ هنا ولا يُبقى الملف: تُعاد القراءةُ (الأعمدة وأرقام كل مقرر)
-   والواجهة تعرضها، والقسم يختار العمود ويُملأ ثم يُحفظ بالباب المعتاد. */
-app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw({ type: ["application/octet-stream", "application/pdf"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
-  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
-  if (!bytes.length) { res.status(400).json({ error: "لم يصل ملف الكشف" }); return; }
-  let fileName = String(req.get("x-file-name") || "كشف المتبقي.pdf").slice(0, 600);
-  try { fileName = decodeURIComponent(fileName); } catch { /* literal filename */ }
-  const [courses, colleges, sections] = await Promise.all([Repository.getCoursesBySection(sectionId), Repository.getColleges(), Repository.getSections()]);
+   والواجهة تعرضها، والقسم يختار العمود ويُملأ ثم يُحفظ بالباب المعتاد.
+   كشفٌ مصوّرٌ صفحاتٍ يُرفع صورةً صورة: كلُّ ردٍّ يحمل خلايا صفحته، والواجهة
+   تجمعها وتطلب قراءتها معاً (remaining-cells) فتتطابق أعمدةُ الصفحات. */
+const REMAINING_SEASONS: Record<string, "first" | "second" | "summer"> = { "الأول": "first", "الثاني": "second", "الصيفي": "summer" };
+const REMAINING_SEASON_NAMES = { first: "الأول", second: "الثاني", summer: "الصيفي" } as const;
+async function remainingContext(collegeId: number, sectionId: number, termId: number) {
+  const [courses, colleges, sections, terms] = await Promise.all([Repository.getCoursesBySection(sectionId), Repository.getColleges(), Repository.getSections(), Repository.getTerms()]);
   const departmentCode = authorityDepartmentKeyOf(
     colleges.find((row: any) => Number(row.AdCollegeId) === collegeId),
     sections.find((row: any) => Number(row.AdSectionId) === sectionId),
   );
   const catalogue = courses.map(course => ({ id: Number(course.AdCourseId), code: String(course.CourseCode || "") }));
+  return { departmentCode, catalogue, termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || "") };
+}
+/* الترويسة تقول لأيّ قسمٍ وأيّ فصلٍ طُبع الكشف: يُنبَّه القسم ولا يُمنع، فالقراءة الضوئية قد تخطئ رقماً. */
+function remainingWarnings(headerText: string, departmentCode: string, termName: string): string[] {
+  const header = readReportHeader(headerText);
+  const warnings: string[] = [];
+  if (header.department && departmentCode && header.department !== departmentCode)
+    warnings.push(`الكشف لرمز القسم العلمي ${header.department}، وقسمك ${departmentCode} — تأكد أنه كشف قسمك.`);
+  const season = REMAINING_SEASONS[String(termSeasonOf(termName) || "")];
+  const years = termName.match(/(\d{4})\s*\/\s*(\d{4})/);
+  if (header.season && header.years && (header.season !== season || (years && Number(years[1]) !== header.years[0])))
+    warnings.push(`الكشف للفصل ${REMAINING_SEASON_NAMES[header.season]} ${header.years[0]}/${header.years[1]}، وأنت تخطط «${termName}».`);
+  return warnings;
+}
+function remainingRefusal(reading: ReturnType<typeof readRemainingReport>): string {
+  if (!reading.rows.length) return reading.foreign.length
+    ? `الكشف لا يحوي مقررات هذا القسم (فيه رموزٌ مثل ${reading.foreign.slice(0, 3).join("، ")}) — هل هو كشف قسمٍ آخر؟`
+    : "لم أجد في الملف أرقام مقررات هذا القسم — تأكد أنه كشف المتبقي من عمادة التسجيل.";
+  return reading.columns.length ? "" : "وجدتُ مقررات القسم في الكشف، ولم أجد بجانبها أعداداً تُقرأ.";
+}
+
+app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw({ type: ["application/octet-stream", "application/pdf", "image/*"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  if (!bytes.length) { res.status(400).json({ error: "لم يصل ملف الكشف" }); return; }
+  const mime = String(req.get("content-type") || "application/pdf").split(";")[0].trim().toLowerCase();
+  let fileName = String(req.get("x-file-name") || "كشف المتبقي").slice(0, 600);
+  try { fileName = decodeURIComponent(fileName); } catch { /* literal filename */ }
+  /* عناوين أعمدة الصورة الأولى، لصور الصفحات التالية — تُعاد قراءةُ معانيها هنا لا تُصدَّق. */
+  let template: { labels: string[]; kinds: Array<ReturnType<typeof columnKind>> } | undefined;
   try {
-    const cells = await readReportCells(bytes, pages => blankSpots(pages, catalogue, departmentCode));
-    const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
-    if (!reading.rows.length) {
-      res.status(422).json({ error: reading.foreign.length
-        ? `الكشف لا يحوي مقررات هذا القسم (فيه رموزٌ مثل ${reading.foreign.slice(0, 3).join("، ")}) — هل هو كشف قسمٍ آخر؟`
-        : "لم أجد في الملف أرقام مقررات هذا القسم — تأكد أنه كشف المتبقي من عمادة التسجيل." });
-      return;
+    const raw = JSON.parse(decodeURIComponent(String(req.get("x-report-template") || "")));
+    if (Array.isArray(raw?.labels) && raw.labels.length <= 30) {
+      const labels = raw.labels.map((label: unknown) => String(label ?? "").slice(0, 80));
+      template = { labels, kinds: labels.map((label: string) => columnKind(label)) };
     }
-    if (!reading.columns.length) { res.status(422).json({ error: "وجدتُ مقررات القسم في الكشف، ولم أجد بجانبها أعداداً تُقرأ." }); return; }
-    res.json({ ...reading, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200) });
+  } catch { /* no template: a first page */ }
+  const { departmentCode, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  try {
+    const cells = await readReportCells(bytes, mime, pages => blankSpots(pages, catalogue, departmentCode), template);
+    const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
+    const refusal = remainingRefusal(reading);
+    if (refusal) { res.status(422).json({ error: refusal }); return; }
+    res.json({ ...reading, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
+      warnings: remainingWarnings(cells.headerText, departmentCode, termName),
+      cells: cells.pages, headerText: cells.headerText.slice(0, 4000), template: cells.template || null });
   } catch (error: any) {
     const busy = error instanceof ScanReadingBusyError;
-    res.status(busy ? 503 : 422).json({ error: String(error?.message || "") && /[ء-ي]/.test(String(error?.message)) ? error.message : "تعذّرت قراءة الملف — تأكد أنه PDF سليم من عمادة التسجيل." });
+    res.status(busy ? 503 : 422).json({ error: String(error?.message || "") && /[ء-ي]/.test(String(error?.message)) ? error.message : "تعذّرت قراءة الملف — تأكد أنه PDF أو صورة واضحة لكشف العمادة." });
   }
+});
+
+/* صفحاتُ كشفٍ رُفعت صوراً متفرّقة تُقرأ معاً: الخلايا نصوصٌ ومواضع فقط، تُحدّ وتُقرأ بالقاعدة نفسها. */
+app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const unit = (value: unknown) => Math.max(0, Math.min(1, Number(value) || 0));
+  const pages = (Array.isArray(req.body?.pages) ? req.body.pages : []).slice(0, 60).map((page: unknown) =>
+    (Array.isArray(page) ? page : []).slice(0, 4000).map((cell: any) => ({
+      text: String(cell?.text ?? "").slice(0, 120), x0: unit(cell?.x0), x1: unit(cell?.x1), y: unit(cell?.y),
+      ...(Number.isFinite(Number(cell?.confidence)) ? { confidence: Math.max(0, Math.min(100, Number(cell.confidence))) } : {}),
+    })));
+  if (!pages.length) { res.status(400).json({ error: "لا صفحات تُقرأ" }); return; }
+  const { departmentCode, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  const reading = readRemainingReport(pages, catalogue, departmentCode);
+  const refusal = remainingRefusal(reading);
+  if (refusal) { res.status(422).json({ error: refusal }); return; }
+  res.json({ ...reading, warnings: remainingWarnings(String(req.body?.headerText || "").slice(0, 4000), departmentCode, termName) });
 });
 
 // --- Public surface (no account) --------------------------------------------

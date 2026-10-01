@@ -3,6 +3,7 @@ import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches, au
 import { OFFICIAL_COLLEGE_SITE_PREFIXES } from "./locationCollegePrefixes";
 import { instructorCleanName, instructorIdentityTokens } from "./instructorIdentity";
 import { AR, countOf, nounFor, oblique } from "./arabicCount";
+import { columnKind } from "./remainingReport";
 /* قانون هوية الاسم يعيش في وحدته المشتركة كي تقرأه المعاينة أيضاً؛ يُعاد
    تصديره هنا لأن الخادم والاختبارات تعرفه من هذا الملف. */
 export { instructorRegistryOutcome, uniqueExactIdentityMatch, instructorIdentityKey } from "./instructorIdentity";
@@ -1004,7 +1005,22 @@ export async function ocrGraduationSheetDocument(input:Buffer,mime:string):Promi
  * في ثوانٍ وبلا خطأ)، والمسحُ الضوئي بدوره في طابور القراءة كأي ملفٍ ممسوح.
  */
 const REPORT_TEXT_MAX_PAGES=60;
-export type ReportCellsResult={source:"text"|"scan";pages:Array<Array<{text:string;x0:number;x1:number;y:number}>>;pageCount:number};
+export type ReportCell={text:string;x0:number;x1:number;y:number;confidence?:number};
+export type ReportCellsResult={source:"text"|"scan";pages:ReportCell[][];pageCount:number;
+  /** نصُّ الترويسة (القسم والفصل) — ليُنبَّه من رفع كشف قسمٍ أو فصلٍ آخر. */
+  headerText:string;
+  /** عناوين أعمدة الصفحة الأولى الممسوحة، لتُقرأ بها صورُ الصفحات التالية. */
+  template?:RuledTemplate};
+
+/** خلايا صفحةٍ سطوراً تُقرأ من اليمين — لنصّ الترويسة. */
+const reportLinesText=(cells:ReportCell[])=>{
+  const lines:ReportCell[][]=[];
+  for(const cell of [...cells].sort((a,b)=>a.y-b.y)){
+    const last=lines[lines.length-1];
+    if(last&&Math.abs(last[0].y-cell.y)<=.006)last.push(cell);else lines.push([cell]);
+  }
+  return lines.map(line=>line.sort((a,b)=>b.x1-a.x1).map(cell=>cell.text).join(" ")).join("\n");
+};
 
 async function reportTextLayer(input:Buffer):Promise<ReportCellsResult|null>{
   const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -1016,7 +1032,7 @@ async function reportTextLayer(input:Buffer):Promise<ReportCellsResult|null>{
   const count=Number(pdf.numPages||0);
   if(count>REPORT_TEXT_MAX_PAGES)throw new PdfPageLimitError(`الكشف ${countOf(count, AR.page)}، والحد ${countOf(REPORT_TEXT_MAX_PAGES, AR.page)}. ارفع صفحات القسم وحدها.`);
   if(!count)return null;
-  const pages:ReportCellsResult["pages"]=[];let chars=0;
+  const pages:ReportCell[][]=[];let chars=0;
   for(let index=1;index<=count;index++){
     const page=await pdf.getPage(index),viewport=page.getViewport({scale:1});
     const vw=Number(viewport.width||1),vh=Number(viewport.height||1);
@@ -1032,7 +1048,7 @@ async function reportTextLayer(input:Buffer):Promise<ReportCellsResult|null>{
       }))return null;
     }catch{/* An unreadable operator list is not proof of a scan. */}
     const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
-    const cells:ReportCellsResult["pages"][number]=[];
+    const cells:ReportCell[]=[];
     for(const item of content?.items||[]){
       const text=String(item?.str||"").normalize("NFKC").replace(/\s+/g," ").trim();
       if(!text||!Array.isArray(item?.transform))continue;
@@ -1044,38 +1060,192 @@ async function reportTextLayer(input:Buffer):Promise<ReportCellsResult|null>{
     }
     pages.push(cells);
   }
-  return chars>=40?{source:"text",pages,pageCount:count}:null;
+  return chars>=40?{source:"text",pages,pageCount:count,headerText:reportLinesText(pages[0]||[])}:null;
 }
 
-/** خلايا كشف «المتبقي» بمواضعها: طبقة النص، وإلا القراءة الضوئية في دورها. */
-export async function readReportCells(input:Buffer,blanks?:(pages:ReportCellsResult["pages"])=>Array<{page:number;x:number;y:number}>):Promise<ReportCellsResult>{
-  if(input.subarray(0,4).toString("latin1")!=="%PDF")throw new Error("الملف ليس PDF — ارفع كشف المتبقي كما أرسلته عمادة التسجيل.");
-  const text=await reportTextLayer(input);
-  if(text)return text;
+/*
+ * كشفُ العمادة جدولٌ مسطّر. صورتُه (مسحاً أو تصويراً بالهاتف) تميل قليلاً
+ * ويعلوها رماديّ الورق، والقراءةُ العامة للصفحة كلها أسقطت في كشفٍ حقيقي
+ * (SWRS136، صورتا هاتف) أكثرَ من ثلاثين مقرراً من ثمانية وثلاثين. فيُقاس
+ * الجدول بخطوطه كما يُقاس جدول الهيئة في الاستيراد:
+ *
+ *   1) تُعدَّل الزاوية (deskew)، ثم تُوجد الصفوف بخطوطها (adaptiveGridGeometry)
+ *      وتُستقام الصفحة (straightenTable).
+ *   2) الأعمدة تُقاس على ارتفاع الجسم كله: خطٌّ يغطي حبرُه ثلاثة أرباعه. (في
+ *      شريط العنوان وحده تُحسب جذوعُ حروف العنوان ذي السطرين خطوطاً.)
+ *   3) كلُّ خانةٍ تُقرأ وحدها بالأرقام فقط، بعد تحويلها أبيضَ وأسود بمتوسطها
+ *      المحلي — الحشوةُ البيضاء حولها كانت تجعل رماديَّ الورق حبراً فيختفي
+ *      الرقم. تُجرَّب عتبتان ثم الأصل، ويؤخذ أوثقها.
+ *   4) العنوان يُقرأ بالعربية بالطرق نفسها، ويؤخذ منها ما عُرف معناه
+ *      (columnKind). عمودُ الاسم (أعرضها) والأعمدةُ الخالية لا تُقرأ.
+ *
+ * فيأخذ كلُّ رقمٍ صفَّه وعمودَه من الخطوط لا من تقدير، والفارغُ فارغٌ فعلاً.
+ */
+export type RuledTemplate={labels:string[];kinds:Array<ReturnType<typeof columnKind>>};
+async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:RuledTemplate):Promise<{cells:ReportCell[];headerText:string;template:RuledTemplate}|null>{
+  const lib=await canvas();
+  const loaded=await lib.loadImage(await deskew(image));
+  let surface=lib.createCanvas(loaded.width,loaded.height);
+  surface.getContext("2d").drawImage(loaded,0,0);
+  let geometry=adaptiveGridGeometry(lib,surface);
+  if(!geometry)return null;
+  const straightened=straightenTable(lib,surface,geometry);
+  if(straightened){surface=straightened.surface;geometry=straightened.geometry;}
+  const {bands}=geometry;
+  const W=surface.width,H=surface.height;
+  if(!bands.length)return null;
+  const bodyTop=bands[0].top,bodyBottom=bands[bands.length-1].bottom,bodyHeight=Math.max(1,bodyBottom-bodyTop);
+  const dark=localMeanDark(surface.getContext("2d").getImageData(0,0,W,H).data,W,H,25,5);
+  const ruleAt:number[]=[];
+  for(let x=0;x<W;x++){
+    let ink=0;
+    for(let y=bodyTop;y<bodyBottom;y++){
+      const row=y*W;
+      if(dark[row+x]||(x>1&&dark[row+x-2])||(x>0&&dark[row+x-1])||(x+1<W&&dark[row+x+1])||(x+2<W&&dark[row+x+2]))ink++;
+    }
+    if(ink>=bodyHeight*.75)ruleAt.push(x);
+  }
+  const cols:number[]=[];
+  for(let i=0;i<ruleAt.length;){
+    let j=i;while(j+1<ruleAt.length&&ruleAt[j+1]-ruleAt[j]<=6)j++;
+    cols.push(Math.round((ruleAt[i]+ruleAt[j])/2));i=j+1;
+  }
+  const inkOf=(left:number,right:number)=>{
+    let ink=0,area=0;
+    for(let y=bodyTop+4;y<bodyBottom-4;y+=2)for(let x=left+8;x<right-8;x+=2){area++;if(dark[y*W+x])ink++;}
+    return area?ink/area:0;
+  };
+  const columns=cols.slice(1).map((right,index)=>({left:cols[index],right}))
+    .filter(column=>column.right-column.left>=Math.max(24,W*.015)&&inkOf(column.left,column.right)>=.004);
+  if(columns.length<3)return null;
+  const widths=columns.map(column=>column.right-column.left).sort((a,b)=>a-b);
+  const median=widths[Math.floor(widths.length/2)];
+  const pitch=bands.reduce((sum,band)=>sum+band.bottom-band.top,0)/bands.length;
+  /* شريطُ العنوان فوق أول صفّ: ارتفاعه في هذا الكشف سطران (≈ صفّان ونصف). */
+  const header={top:Math.max(0,Math.round(bodyTop-pitch*2.4)),bottom:bodyTop};
+  const crop=(left:number,right:number,top:number,bottom:number,radius:number|null)=>{
+    /* حدودُ الخانة بعد الاستقامة قد تبقى سميكةً بكسلين أو ثلاثة، والخطُّ
+       العمودي يُقرأ «0» أو «1» في طرف الرقم (840 بدل 84، 28000 بدل 280):
+       يُقصّ عُشرُ العرض من كل جانب، وسُدسُ الارتفاع. */
+    const insetX=Math.max(3,Math.min(14,Math.round((right-left)*.1))),insetY=Math.max(2,Math.min(10,Math.round((bottom-top)*.16)));
+    const sw=Math.max(1,right-left-insetX*2),sh=Math.max(1,bottom-top-insetY*2);
+    const scale=Math.max(1,Math.min(4,64/Math.min(sh,pitch))),cw=Math.max(1,Math.round(sw*scale)),ch=Math.max(1,Math.round(sh*scale)),pad=16;
+    const cell=lib.createCanvas(cw,ch),cctx=cell.getContext("2d");
+    cctx.imageSmoothingEnabled=true;
+    cctx.drawImage(surface,left+insetX,top+insetY,sw,sh,0,0,cw,ch);
+    const out=lib.createCanvas(cw+pad*2,ch+pad*2),octx=out.getContext("2d");
+    octx.fillStyle="#ffffff";octx.fillRect(0,0,out.width,out.height);
+    if(radius==null)octx.drawImage(cell,pad,pad);
+    else{
+      const pixels=cctx.getImageData(0,0,cw,ch),ink=localMeanDark(pixels.data,cw,ch,radius,radius);
+      const target=octx.getImageData(0,0,out.width,out.height);
+      for(let y=0;y<ch;y++)for(let x=0;x<cw;x++)if(ink[y*cw+x]){const at=((y+pad)*out.width+x+pad)*4;target.data[at]=target.data[at+1]=target.data[at+2]=0;}
+      octx.putImageData(target,0,0);
+    }
+    return out.toBuffer("image/png");
+  };
+  const cells:ReportCell[]=[];
+  /* الصفحة الثانية فما بعدها بعدد أعمدة الأولى: عناوينُها عناوينُ الأولى (كشفٌ
+     واحد)، فلا تُقرأ ثانيةً، وتُتخطّى الأعمدةُ نفسها في كل صفحة — فتتطابق
+     الصفحاتُ عموداً عموداً وإن اختلف تأطيرُ الصورتين. */
+  const reuse=template&&template.labels.length===columns.length?template:null;
+  const labels:string[]=reuse?[...reuse.labels]:[];
+  const kinds:Array<ReturnType<typeof columnKind>>=reuse?[...reuse.kinds]:[];
+  if(reuse)columns.forEach((column,index)=>{if(labels[index])cells.push({text:labels[index],x0:column.left/W,x1:column.right/W,y:(header.top+header.bottom)/2/H});});
+  await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6" as any});
+  for(const column of reuse?[]:columns){
+    const readings:string[]=[];
+    for(const radius of [15,10,null]){
+      const result:any=await worker.recognize(crop(column.left,column.right,header.top,header.bottom,radius)).catch(()=>null);
+      const text=String(result?.data?.text||"").normalize("NFKC").replace(/\s+/g," ").trim();
+      if(text)readings.push(text);
+      if(columnKind(text))break;
+    }
+    const label=readings.find(text=>columnKind(text))||readings.sort((a,b)=>(b.match(/[ء-ي]/g)||[]).length-(a.match(/[ء-ي]/g)||[]).length)[0]||"";
+    kinds.push(columnKind(label));labels.push(label);
+    if(label)cells.push({text:label,x0:column.left/W,x1:column.right/W,y:(header.top+header.bottom)/2/H});
+  }
+  await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"7" as any});
+  /* ما لا يُحتاج إليه في الحساب لا يُقرأ: المقاعد والسعة وعدد الشعب. */
+  const skipped=new Set(["seats","capacity","sections"]);
+  for(const [index,column] of columns.entries()){
+    if(column.right-column.left>median*1.8||skipped.has(String(kinds[index])))continue;
+    for(const band of bands){
+      /* ثلاث قراءات (عتبتان ثم الأصل): ما اتفق عليه اثنان يُؤخذ، وإلا أوثقها. */
+      const reads:Array<{text:string;confidence:number}>=[];
+      for(const radius of [10,15,null]){
+        const result:any=await worker.recognize(crop(column.left,column.right,band.top,band.bottom,radius)).catch(()=>null);
+        const text=String(result?.data?.text||"").replace(/\s+/g,""),confidence=Number(result?.data?.confidence||0);
+        if(/^\d{1,7}$/.test(text))reads.push({text,confidence});
+        if(reads.length===1&&confidence>=90)break;
+        if(reads.length>=2&&reads[0].text===reads[1].text)break;
+      }
+      const agreed=reads.find((read,i)=>reads.some((other,j)=>j!==i&&other.text===read.text));
+      const best=agreed?{text:agreed.text,confidence:Math.max(...reads.filter(read=>read.text===agreed.text).map(read=>read.confidence))}
+        :reads.sort((a,b)=>b.confidence-a.confidence)[0];
+      if(best&&best.confidence>=50)cells.push({text:best.text,x0:column.left/W,x1:column.right/W,y:(band.top+band.bottom)/2/H,confidence:best.confidence});
+    }
+  }
+  /* الترويسة فوق الجدول: القسم والفصل — من الصفحة الأولى. */
+  let headerText="";
+  if(!reuse&&header.top>H*.04){
+    await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6" as any});
+    const top=lib.createCanvas(W,header.top);
+    top.getContext("2d").drawImage(surface,0,0,W,header.top,0,0,W,header.top);
+    const result:any=await worker.recognize(top.toBuffer("image/png")).catch(()=>null);
+    headerText=String(result?.data?.text||"").normalize("NFKC");
+  }
+  return{cells,headerText,template:{labels,kinds}};
+}
+
+/** خلايا كشف «المتبقي» بمواضعها: طبقة النص، وإلا القراءة الضوئية في دورها — من PDF أو صورة (هاتف). */
+export async function readReportCells(input:Buffer,mime="application/pdf",blanks?:(pages:ReportCell[][])=>Array<{page:number;x:number;y:number}>,firstTemplate?:RuledTemplate):Promise<ReportCellsResult>{
+  const isPdf=input.subarray(0,4).toString("latin1")==="%PDF";
+  /* المتصفح قد يرسل الصورة بلا نوع: تُعرف من بايتاتها (JPEG، PNG، HEIC). */
+  const looksImage=/^image\//i.test(mime)||isHeic(input,mime)||(input[0]===0xff&&input[1]===0xd8)||input.subarray(1,4).toString("latin1")==="PNG";
+  if(!isPdf&&!looksImage)throw new Error("ارفع كشف المتبقي PDF كما أرسلته العمادة، أو صورةً واضحة له.");
+  if(!isPdf&&!/^image\//i.test(mime))mime=input[0]===0xff?"image/jpeg":input.subarray(1,4).toString("latin1")==="PNG"?"image/png":mime;
+  if(isPdf){
+    const text=await reportTextLayer(input);
+    if(text)return text;
+  }
   return readScanInTurn(`remaining:${await documentFingerprint(input)}`,async()=>{
-    const images=await renderPdf(input,TARGET_LONG_EDGE);
+    /* صورةُ الهاتف المرسلة عبر المحادثات صغيرة (عرضها نحو ألف بكسل): تُكبَّر إلى
+       مقاس صفحة الـPDF المقروءة، وإلا صغرت خاناتُها عن القراءة (١٥ مقرراً من
+       ٣٨ في الصورتين الأصليتين، و٣٦ بعد التكبير). */
+    const enlarge=async(image:Buffer)=>{
+      const lib=await canvas(),loaded=await lib.loadImage(image),edge=Math.max(loaded.width,loaded.height);
+      if(edge>=TARGET_LONG_EDGE*.85)return image;
+      const scale=TARGET_LONG_EDGE/edge,surface=lib.createCanvas(Math.round(loaded.width*scale),Math.round(loaded.height*scale)),ctx=surface.getContext("2d");
+      ctx.imageSmoothingEnabled=true;if("imageSmoothingQuality" in ctx)(ctx as any).imageSmoothingQuality="high";
+      ctx.drawImage(loaded,0,0,surface.width,surface.height);
+      return surface.toBuffer("image/png");
+    };
+    const images=isPdf?await renderPdf(input,TARGET_LONG_EDGE):await Promise.all((await imagePages(input,mime,TARGET_LONG_EDGE)).map(enlarge));
     const worker=await getHeaderWorker();
-    const pages:ReportCellsResult["pages"]=[];
-    type Box={text:string;x0:number;x1:number;y0:number;y1:number};
-    const read=async(image:Buffer,whitelist:string)=>{
-      /* «11» (نصٌّ متفرّق) يقرأ خلايا الجدول؛ «6» و«4» أسقطا الصفوف كلها في التجربة. */
-      await worker.setParameters({tessedit_char_whitelist:whitelist,tessedit_pageseg_mode:"11" as any});
+    const pages:ReportCell[][]=[];
+    const ruledPages=new Set<number>();
+    /* صورٌ تُرفع واحدةً واحدة: عناوينُ الصورة الأولى تصل مع ما بعدها. */
+    let headerText="";let template:RuledTemplate|undefined=firstTemplate;
+    for(const [index,image] of images.entries()){
+      const grid=await ruledReportCells(image,worker,template).catch(()=>null);
+      if(grid&&grid.cells.length){pages.push(grid.cells);ruledPages.add(index);if(!headerText)headerText=grid.headerText;template??=grid.template;continue;}
+      /* «11» (نصٌّ متفرّق) يقرأ خلايا جدولٍ بلا خطوط؛ «6» و«4» أسقطا الصفوف كلها في التجربة. */
+      await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"11" as any});
       const result:any=await worker.recognize(image,{},{blocks:true});
-      const boxes:Box[]=[];
+      const width=image.readUInt32BE(16)||1,height=image.readUInt32BE(20)||1;
+      const cells:ReportCell[]=[];
       for(const block of result?.data?.blocks||[])for(const paragraph of block?.paragraphs||[])for(const line of paragraph?.lines||[])for(const word of line?.words||[]){
         const text=String(word?.text||"").normalize("NFKC").trim();
-        if(text&&word?.bbox)boxes.push({text,x0:word.bbox.x0,x1:word.bbox.x1,y0:word.bbox.y0,y1:word.bbox.y1});
+        if(text&&word?.bbox)cells.push({text,x0:word.bbox.x0/width,x1:word.bbox.x1/width,y:(word.bbox.y0+word.bbox.y1)/2/height});
       }
-      return boxes;
-    };
-    for(const image of images){
-      const width=image.readUInt32BE(16)||1,height=image.readUInt32BE(20)||1;
-      pages.push((await read(image,"")).map(box=>({text:box.text,x0:box.x0/width,x1:box.x1/width,y:(box.y0+box.y1)/2/height})));
+      pages.push(cells);
+      if(!headerText)headerText=reportLinesText(cells.filter(cell=>cell.y<.3));
     }
-    /* القراءة العامة تُسقط العددَ المنفرد («0»، «8») في خانته. فما بقي فارغاً
-       في صفوف المقررات تحت أعمدة الأرقام تُقرأ خانتُه وحدها، مكبّرةً وبالأرقام
-       فقط: سطرٌ واحد، ثم حرفٌ واحد. */
-    const spots=(blanks?.(pages)||[]).slice(0,240);
+    /* صفحةٌ بلا خطوط جدول: القراءة العامة تُسقط العددَ المنفرد («0»، «8») في
+       خانته، فما بقي فارغاً في صفوف المقررات تحت أعمدة الأرقام تُقرأ خانتُه
+       وحدها، مكبّرةً وبالأرقام فقط. الصفحات المسطّرة قُرئت خانةً خانة. */
+    const spots=(blanks?.(pages)||[]).filter(spot=>!ruledPages.has(spot.page)).slice(0,240);
     if(spots.length){
       const lib=await canvas();const loaded=new Map<number,any>();
       for(const spot of spots){
@@ -1100,7 +1270,7 @@ export async function readReportCells(input:Buffer,blanks?:(pages:ReportCellsRes
         }
       }
     }
-    return{source:"scan",pages,pageCount:images.length};
+    return{source:"scan",pages,pageCount:images.length,headerText,...(template?{template}:{})};
   });
 }
 
