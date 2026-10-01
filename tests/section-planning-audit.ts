@@ -56,7 +56,7 @@ const server = fs.readFileSync("server.ts", "utf8");
 const repo = fs.readFileSync("src/db/repository.ts", "utf8");
 check(repo.includes("getRegistrationStats: async") && repo.includes("saveRegistrationStats: async") && repo.includes('collection("registrationStats")'), "الإحصاء يُحفظ عبر المستودع (Firestore والمحلي)");
 check(server.includes('app.get("/api/registration-stats", requirePermission(7)') && server.includes('app.put("/api/registration-stats", requirePermission(7)'), "بابا الإحصاء محميّان بالصلاحية");
-check(server.includes("previousYearSameTermName(name)") && server.includes("sameTermName(row.AdTermName, name)"), "الفصول المماثلة: الموسم نفسه في سنواتٍ سابقة");
+check(server.includes("termSeasonOf(row.AdTermName) === season") && server.includes("if (!rows.length) continue;"), "الفصول المماثلة: الموسم نفسه، ويُتخطّى الفصل الذي لا جدول فيه للقسم");
 check(fs.readFileSync("src/components/SectionPlanning.tsx", "utf8").includes("suggestSectionCount("), "الواجهة تستعمل الحساب نفسه");
 
 /* ── رمز QR للطلبة ── */
