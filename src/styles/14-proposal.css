@@ -624,3 +624,72 @@ body:has(.sp-root) .smart-guide-fab{visibility:hidden}
 .sp-history p svg{inline-size:15px;block-size:15px;flex:none;margin-block-start:2px;color:var(--accent)}
 .sp-history ul{list-style:none;margin:0;padding:0;display:flex;gap:6px;flex-wrap:wrap}
 .sp-history small{color:var(--muted)}
+
+/* ── التخطيط الجديد: الجدولُ هو المساحة، والبطاقةُ تُفتح عند السحب ─────────── */
+.sp-body[data-wide][data-quick]{grid-template-columns:minmax(0,1fr) minmax(340px,32%)}
+.sp-body[data-quick] .sp-side{border-inline-end:0;border-inline-start:1px solid var(--line);background:var(--surface-2)}
+.sp-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 18px;border-block-end:1px solid var(--line);background:var(--surface)}
+.sp-toolbar .btn{display:inline-flex;gap:8px;align-items:center}
+.sp-toolbar-hint{color:var(--muted);font-size:12.5px}
+.sp-col{touch-action:pan-y;cursor:crosshair}
+.sp-paint{position:absolute;inset-inline:3px;z-index:5;border:2px dashed var(--accent);border-radius:var(--r-sm);background:color-mix(in srgb,var(--accent) 14%,transparent);pointer-events:none;display:grid;place-items:center}
+.sp-paint span{font:600 12px/1 var(--font-mono);color:var(--accent-ink);background:var(--surface);padding:2px 6px;border-radius:var(--r-sm);direction:ltr}
+.sp-day-add{margin-inline-start:auto;display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line-strong);background:var(--surface);border-radius:var(--r-md);padding:4px 10px;min-block-size:32px;color:var(--accent-ink);font:inherit;font-size:12.5px}
+.sp-day-add svg{inline-size:14px;block-size:14px}
+.sp-agenda-day h4{display:flex;align-items:center;gap:8px}
+.sp-agenda-day .sp-agenda-empty{margin:0 0 6px;color:var(--muted);font-size:12.5px}
+/* البطاقة داخل المساحة: فوق كل طبقاتها */
+.sp-root .quick-create.sp-quick{z-index:60;max-block-size:calc(100dvh - 24px);overflow:auto}
+.sp-quick-course{margin:0;font-size:14px}
+.sp-quick-course small{color:var(--muted)}
+.sp-quick-days{display:flex;gap:6px;flex-wrap:wrap}
+.sp-quick-days button{flex:1 1 auto;min-block-size:34px;padding:4px 10px;border:1px solid var(--line-strong);border-radius:var(--r-md);background:var(--surface);color:inherit;font:inherit;font-size:12.5px}
+.sp-quick-days button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink);font-weight:700}
+.sp-quick-assign{display:grid;gap:8px}
+.sp-quick-assign ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-block-size:260px;overflow:auto}
+.sp-quick-assign li button{inline-size:100%;display:grid;gap:2px;text-align:start;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:inherit;font:inherit}
+.sp-quick-assign li button[data-on]{border-color:var(--accent);background:var(--accent-soft)}
+.sp-quick-assign li button:disabled{opacity:.5}
+.sp-quick-assign li small{color:var(--muted);font-size:12px}
+.sp-quick-assign li em{font-style:normal;font-size:12px;color:var(--success)}
+.sp-quick-assign li em[data-fit="clash"]{color:var(--danger)}
+.sp-quick-assign li em[data-fit="used"]{color:var(--muted)}
+.sp-more-drawer{position:fixed;inset-block:0;inset-inline-start:0;z-index:55;inline-size:min(460px,100vw);background:var(--surface);border-inline-end:1px solid var(--line);box-shadow:var(--shadow-lg);overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.sp-more-drawer>header{display:flex;justify-content:space-between;align-items:center}
+/* الرأس: ثلاث بطاقات مقارنة تكفي؛ الباقي داخل الفحص */
+.sp-tiles>.sp-tile:nth-child(n+4){display:none}
+.sp-tiles>.sp-tile-check{display:grid!important}
+.sp-tiles{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+@media (max-width:1099px){
+  .sp-quick-assign ul{max-block-size:40dvh}
+}
+@media (max-width:639px){
+  .sp-root .quick-create.sp-quick{inset-inline:0!important;inset-block:auto 0!important;left:0!important;top:auto!important;inline-size:100%;border-end-start-radius:0;border-end-end-radius:0;max-block-size:86dvh}
+  .sp-toolbar{padding:8px 12px}
+  .sp-toolbar-hint{flex-basis:100%}
+}
+.sp-quick .sp-history{padding:6px 8px;gap:4px}
+.sp-quick .sp-history p{font-size:12px}
+.sp-quick .sp-history small{display:none}
+.sp-quick .sp-history .sp-chip-btn{padding:3px 8px;font-size:12px}
+.sp-tile-note{display:none}
+.sp-tile{padding-block:8px}
+.sp-quick .qc-foot{position:sticky;inset-block-end:-1px;background:var(--surface);padding-block:8px 2px;margin-block-end:-4px;z-index:2}
+@media (max-width:639px){
+  .sp-tiles{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .sp-tiles>.sp-tile-check{display:none!important}
+  .sp-tile{padding:8px 8px}
+  .sp-tile-label{font-size:12px}
+  .sp-toolbar-hint{display:none}
+}
+@media (max-width:639px){
+  .sp-tile{padding:6px 8px}
+  .sp-tile-label svg{display:none}
+  .sp-tile-values{min-block-size:0;gap:4px;flex-wrap:nowrap}
+  .sp-tile-values b{font-size:17px}
+  .sp-tile-values small{display:none}
+  .sp-head{padding-block:10px 8px;gap:8px}
+  .sp-banner[data-tone="info"]{padding:8px 10px;font-size:12.5px}
+}
+.sp-quick-assign .sp-search input{outline:none;box-shadow:none;border:0}
+.sp-quick-assign .sp-search:focus-within{border-color:var(--accent)}

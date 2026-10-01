@@ -100,7 +100,12 @@ export interface WeekGridProps {
   focusKeys: ReadonlySet<string>;
   selectedKey: string | null;
   onSelect: (key: string | null) => void;
-  onCell: (day: StudyProposalDayKey, minutes: number) => void;
+  /** سحبٌ (أو نقرٌ) على فراغ: اليوم وحدّا الوقت ومكانُ المؤشّر لتُفتح البطاقة عنده. */
+  onPaint: (day: StudyProposalDayKey, start: number, end: number, x: number, y: number) => void;
+  /** إضافةٌ إلى يومٍ بعينه من العرض الضيّق (القائمة) حيث لا سحب. */
+  onAddDay?: (day: StudyProposalDayKey) => void;
+  /** عرضٌ للقراءة فقط (معاينة الإرسال والتثبيت): لا سحب ولا إضافة. */
+  readOnly?: boolean;
   checking: boolean;
   /** نتائج الفحص المتعلقة بالعنصر المختار. */
   findingsFor: (key: string) => ProposalFinding[];
@@ -110,7 +115,7 @@ export interface WeekGridProps {
 }
 
 export default function ProposalWeekGrid(props: WeekGridProps) {
-  const { mode, onMode, showGhosts, onShowGhosts, currentItems, afterItems, ghosts, draft, marks, focusKeys, selectedKey, onSelect, onCell, checking } = props;
+  const { mode, onMode, showGhosts, onShowGhosts, currentItems, afterItems, ghosts, draft, marks, focusKeys, selectedKey, onSelect, onPaint, checking } = props;
   const variant = props.variant ?? "auto";
   const [layoutMode, setLayoutMode] = useState<"grid" | "agenda">("grid");
   const [narrow, setNarrow] = useState(false);
@@ -150,12 +155,33 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
   const counts = useMemo(() => Object.fromEntries(PROPOSAL_DAY_KEYS.map(day => [day, base.filter(item => item.days.includes(day)).length])) as Record<StudyProposalDayKey, number>, [base]);
   const changeCount = mode === "with" ? afterItems.filter(i => i.state === "proposed" || i.state === "modified").length + ghosts.length : 0;
 
-  const onColumnClick = (day: StudyProposalDayKey, event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget) return;
+  /* السحب على فراغٍ يرسم المدّة ثم يفتح البطاقة عند المؤشّر؛ والنقرُ وحده يعطي محاضرةً من خمسين دقيقة. */
+  const [paint, setPaint] = useState<{ day: StudyProposalDayKey; from: number; to: number } | null>(null);
+  const stroke = useRef<{ day: StudyProposalDayKey; anchor: number; rect: DOMRect; from: number; to: number } | null>(null);
+  const minutesAt = (rect: DOMRect, clientY: number) => {
+    const raw = win.start + (((clientY - rect.top) / SLOT_PX) * SLOT);
+    return Math.max(SCHEDULE_DAY_START, Math.min(SCHEDULE_DAY_END, Math.round(raw / SNAP) * SNAP));
+  };
+  const beginPaint = (day: StudyProposalDayKey, event: React.PointerEvent<HTMLDivElement>) => {
+    if (props.readOnly || event.target !== event.currentTarget || event.button !== 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    const y = event.clientY - rect.top;
-    const minutes = win.start + Math.floor(((y / SLOT_PX) * SLOT) / SNAP) * SNAP;
-    onCell(day, Math.max(SCHEDULE_DAY_START, Math.min(SCHEDULE_DAY_END - 30, minutes)));
+    const anchor = minutesAt(rect, event.clientY);
+    stroke.current = { day, anchor, rect, from: anchor, to: anchor + 50 };
+    setPaint({ day, from: anchor, to: anchor + 50 });
+    const move = (e: PointerEvent) => {
+      const s = stroke.current; if (!s) return;
+      const m = minutesAt(s.rect, e.clientY);
+      s.from = Math.min(s.anchor, m); s.to = Math.max(s.anchor, m);
+      if (s.to - s.from < 30) s.to = s.from + 50;
+      setPaint({ day: s.day, from: s.from, to: Math.min(SCHEDULE_DAY_END, s.to) });
+    };
+    const up = (e: PointerEvent) => {
+      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel);
+      const s = stroke.current; stroke.current = null; setPaint(null);
+      if (s) onPaint(s.day, s.from, Math.min(SCHEDULE_DAY_END, s.to), e.clientX, e.clientY);
+    };
+    const cancel = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); stroke.current = null; setPaint(null); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", cancel);
   };
 
   const eventButton = (entry: Laid, overlay = false) => {
@@ -269,7 +295,8 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
                 {hours.map(m => <span key={m} style={{ insetBlockStart: ((m - win.start) / SLOT) * SLOT_PX }}>{String(Math.floor(m / 60)).padStart(2, "0")}:00</span>)}
               </div>
               {PROPOSAL_DAY_KEYS.map(day => (
-                <div key={day} className="sp-col" data-day={day} onClick={event => onColumnClick(day, event)} role="presentation">
+                <div key={day} className="sp-col" data-day={day} onPointerDown={event => beginPaint(day, event)} role="presentation">
+                  {paint && paint.day === day ? <div className="sp-paint" aria-hidden="true" style={{ insetBlockStart: ((paint.from - win.start) / SLOT) * SLOT_PX, blockSize: ((paint.to - paint.from) / SLOT) * SLOT_PX }}><span>{String(Math.floor(paint.from / 60)).padStart(2, "0")}:{String(paint.from % 60).padStart(2, "0")} – {String(Math.floor(paint.to / 60)).padStart(2, "0")}:{String(paint.to % 60).padStart(2, "0")}</span></div> : null}
                   {(overlays.get(day) || []).map(entry => eventButton(entry, true))}
                   {(laid.get(day) || []).map(entry => eventButton(entry))}
                 </div>
@@ -277,7 +304,7 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
             </div>
           </div>
         ) : (
-          <AgendaView laid={mergeAgenda(laid, overlays)} marks={marks} selectedKey={detailKey} focusKeys={focusKeys} onSelect={key => pick(key as string)} />
+          <AgendaView laid={mergeAgenda(laid, overlays)} onAddDay={props.onAddDay} marks={marks} selectedKey={detailKey} focusKeys={focusKeys} onSelect={key => pick(key as string)} />
         )}
         {detail}
       </div>
@@ -291,12 +318,13 @@ function mergeAgenda(a: Map<StudyProposalDayKey, Laid[]>, b: Map<StudyProposalDa
   return out;
 }
 
-function AgendaView({ laid, marks, selectedKey, focusKeys, onSelect }: {
+function AgendaView({ laid, marks, selectedKey, focusKeys, onSelect, onAddDay }: {
   laid: Map<StudyProposalDayKey, Laid[]>;
+  onAddDay?: (day: StudyProposalDayKey) => void;
   marks: { blocker: ReadonlySet<string>; review: ReadonlySet<string> };
   selectedKey: string | null; focusKeys: ReadonlySet<string>; onSelect: (key: string | null) => void;
 }) {
-  const days = PROPOSAL_DAY_KEYS.filter(day => (laid.get(day) || []).length);
+  const days = onAddDay ? PROPOSAL_DAY_KEYS : PROPOSAL_DAY_KEYS.filter(day => (laid.get(day) || []).length);
   const [active, setActive] = useState<StudyProposalDayKey | "all">("all");
   useEffect(() => { if (active !== "all" && !days.includes(active)) setActive("all"); }, [days, active]);
   const shown = active === "all" ? days : days.filter(d => d === active);
@@ -313,7 +341,8 @@ function AgendaView({ laid, marks, selectedKey, focusKeys, onSelect }: {
       {!shown.length && <p className="sp-agenda-empty">لا مواعيد في هذا العرض.</p>}
       {shown.map(day => (
         <section key={day} className="sp-agenda-day" aria-label={PROPOSAL_DAY_NAMES[day]}>
-          <h4>{PROPOSAL_DAY_NAMES[day]}</h4>
+          <h4>{PROPOSAL_DAY_NAMES[day]}{onAddDay ? <button type="button" className="sp-day-add" onClick={() => onAddDay(day)} aria-label={`إضافة موعد يوم ${PROPOSAL_DAY_NAMES[day]}`} data-guide-ignore="يفتح بطاقة إضافة لهذا اليوم — لا يكتب في الجدول"><Plus aria-hidden="true" />إضافة</button> : null}</h4>
+          {!(laid.get(day) || []).length ? <p className="sp-agenda-empty">لا مواعيد</p> : null}
           <ol>
             {[...(laid.get(day) || [])].sort((a, b) => a.top - b.top).map(({ item }) => {
               const tag = tagFor(item, marks);
