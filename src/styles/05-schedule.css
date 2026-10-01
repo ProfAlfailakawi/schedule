@@ -2089,7 +2089,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    a list of every change still reversible, newest first.
    -------------------------------------------------------------------------- */
 .undo-log-open{
-  position:fixed;z-index:150;
+  position:fixed;z-index:var(--z-fab);
   /* The far side from the rail, where nothing else lives: it was sharing a
      corner with the navigation and the two kept meeting. */
   inset-inline-end:var(--s5);inset-inline-start:auto;
@@ -2109,7 +2109,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   background:var(--accent);color:var(--accent-contrast);
   font-size:10px;font-weight:700;line-height:18px;text-align:center;
 }
-.undo-log-sheet{position:fixed;inset:0;z-index:200;display:grid;place-items:end start}
+/* The log opens beside its own button, on the far side from the rail — it
+   used to open at the rail's edge and draw over it. Under the live-guide
+   spotlight (--z-guide-spot), never over it. */
+.undo-log-sheet{position:fixed;inset:0;z-index:var(--z-sheet);display:grid;place-items:end end}
 .undo-log-backdrop{position:absolute;inset:0;background:color-mix(in srgb,var(--ink) 28%,transparent)}
 .undo-log-panel{
   position:relative;
@@ -8429,3 +8432,43 @@ html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:ha
 }
 html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:has(>.schedule-status)>:not(.schedule-status){display:none!important}
 html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0}
+
+/* «اقترح قاعة متاحة» تحت منتقي القاعة */
+.location-hall-action{grid-column:1/-1}
+.room-suggest{display:grid;gap:var(--s2)}
+.room-suggest-ask{
+  justify-self:start;display:inline-flex;align-items:center;gap:var(--s2);
+  min-height:34px;padding:0 var(--s3);
+  border:1px solid color-mix(in srgb,var(--brass) 34%,var(--line));border-radius:999px;
+  background:transparent;color:inherit;font:inherit;font-size:var(--t-sm);font-weight:700;cursor:pointer
+}
+.room-suggest-ask svg{width:15px;height:15px}
+.room-suggest-ask:hover:not(:disabled),.room-suggest-ask.open{background:color-mix(in srgb,var(--brass) 14%,transparent)}
+.room-suggest-ask:disabled{opacity:.5;cursor:default}
+.room-suggest-list{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.room-suggest-list>button{
+  display:grid;gap:2px;text-align:start;padding:var(--s2) var(--s3);
+  border:1px solid var(--line);border-radius:12px;background:var(--surface,transparent);color:inherit;font:inherit;cursor:pointer
+}
+.room-suggest-list>button:hover{border-color:var(--accent)}
+.room-suggest-list>button bdi{font-weight:800}
+.room-suggest-list>button small{color:var(--muted);font-size:var(--t-xs)}
+.room-suggest-empty{margin:0;color:var(--muted);font-size:var(--t-sm)}
+/* === Light floating controls (owner decision, Oct 2026) ====================
+   The schedule dock, the undo toast and the day's-log button borrowed the dark
+   rail's --nav palette. With the rail now light (03-shell), they wear the same
+   surface: white glass, hairline, ink labels; the active view is solid accent
+   with white text (5.9:1) so "where am I" never depends on a tint. Scoped to
+   these three so --nav keeps tinting scrims elsewhere. Dark theme unchanged. */
+:root:not([data-theme="dark"]) :is(.schedule-dock,.undo-bar,.undo-log-open){
+  --nav:var(--surface);
+  --nav-3:var(--surface-3);
+  --nav-ink:var(--ink);
+  --nav-muted:var(--ink-2);
+  --nav-line:var(--line);
+  border-color:var(--line);
+}
+:root:not([data-theme="dark"]) .schedule-dock{box-shadow:var(--shadow-md)}
+:root:not([data-theme="dark"]) :is(.dock-views>button.on,.dock-act.on){
+  color:var(--accent-contrast);background:var(--accent);
+}

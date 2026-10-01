@@ -3213,7 +3213,35 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       setSlotBusy(false);
     }
   };
+  /* «اقترح قاعة»: اليوم والوقت محسومان، فيُسأل الخادم بالقاعدة نفسها التي
+     يجيب بها «اقترح لي وقتاً وقاعة» — لكن عند هذه الخانة وحدها — عن قاعات
+     القسم كلها (في كل مبانيه، والمستعارة المعتمدة) الخالية فيها. يظهر حتى
+     والقاعة «بانتظار التثبيت» أو مختارة، فهو بالضبط ما يحتاجه صفٌّ مستورد. */
+  const [roomIdeas, setRoomIdeas] = useState<any[] | null>(null);
+  const [roomIdeasBusy, setRoomIdeasBusy] = useState(false);
+  const roomIdeasKey = `${form.AdTermId}|${form.AdSectionId}|${form.fstarttime}|${form.fendtime}|${days.map(d => (form as any)[d.key] ? 1 : 0).join("")}|${form.AdInstructorId}`;
+  useEffect(() => { setRoomIdeas(null); }, [roomIdeasKey]);
+  const askForRooms = async () => {
+    if (roomIdeas) { setRoomIdeas(null); return; }
+    setRoomIdeasBusy(true);
+    try {
+      const response = await fetch("/api/schedules/suggest-slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, roomOnly: true, excludeId: editId || 0 })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر اقتراح القاعات");
+      setRoomIdeas(Array.isArray(data.slots) ? data.slots : []);
+    } catch (e: any) {
+      setError(friendlyError(e));
+      setRoomIdeas([]);
+    } finally {
+      setRoomIdeasBusy(false);
+    }
+  };
   const takeSlot = (slot: any) => {
+    setRoomIdeas(null);
     setScheduleTouched(true);
     setForm(prev => ({ ...prev, fstarttime: slot.start, fendtime: slot.end, ...(slot.roomId&&slot.buildingId?{buildingId:slot.buildingId,roomId:slot.roomId,AdRoomCode:slot.room,AdRoomHall:slot.hall,locationStatus:"VERIFIED" as const}:{}) }));
     setSlotIdeas(null);
@@ -8777,6 +8805,41 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   value={form}
                   onChange={(patch)=>{setScheduleTouched(true);setForm(current=>({...current,...patch}));}}
                   showRaw={editor==="edit"}
+                  hallAction={hallAvailabilityReady && Number(form.AdSectionId||0) ? (
+                    <div className="room-suggest">
+                      <button
+                        type="button"
+                        className={`room-suggest-ask${roomIdeas ? " open" : ""}`}
+                        onClick={() => void askForRooms()}
+                        disabled={roomIdeasBusy}
+                        aria-expanded={Boolean(roomIdeas)}
+                        title="ابحث في كل قاعات القسم عن قاعة خالية في هذه الأيام وهذا الوقت"
+                        data-guide-ignore="يقترح قاعة خالية من قاعات القسم في الأيام والوقت المحددين؛ لا يحفظ شيئاً حتى تختار"
+                      >
+                        <Sparkles aria-hidden="true" />
+                        <span>{roomIdeasBusy ? "أبحث…" : "اقترح قاعة متاحة"}</span>
+                      </button>
+                      {roomIdeas ? (
+                        roomIdeas.length ? (
+                          <div className="room-suggest-list">
+                            {roomIdeas.map((slot: any) => (
+                              <button
+                                type="button"
+                                key={slot.roomId || `${slot.room}-${slot.hall}`}
+                                onClick={() => takeSlot(slot)}
+                                data-guide-ignore="يثبّت القاعة المقترحة في النموذج دون حفظ"
+                              >
+                                <bdi dir="ltr">{slot.room}/{slot.hall}</bdi>
+                                <small>{(slot.reasons || []).slice(0, 2).join(" · ")}</small>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="room-suggest-empty">لا توجد قاعة خالية من قاعات القسم في هذا الوقت.</p>
+                        )
+                      ) : null}
+                    </div>
+                  ) : null}
                 />
                 {/* ── جسرٌ إلى الاستعارة، حين تكون عالقاً وحده ────────────────
                     حدّدتَ اليوم والوقت ولم تجد قاعةً تختارها؟ سطرٌ هادئ واحد
@@ -12323,7 +12386,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
       {meetingOpen ? (
         <MeetingSlots
           instructors={instructors.map(person => ({ AdInstructorId: person.AdInstructorId, AdInstructorName: person.AdInstructorName }))}
+          scopeNarrowed={Boolean(filterCollege || filterSection)}
           termId={filterTerm}
+          sectionId={filterSection}
           onClose={() => setMeetingOpen(false)}
         />
       ) : null}

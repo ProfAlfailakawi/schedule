@@ -26,8 +26,13 @@ const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
 const inbox = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
 const types = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8");
 
+/* التحقّقُ من التوقيع في مساعدٍ واحد يسبق المسار مباشرةً، ويستدعيه الإرسالُ
+   وردُّ الحوار كلاهما — فيُقرأ معه. */
+check(server.indexOf("async function verifyRequestSigner(") < server.indexOf('app.post("/api/public/request/:token"')
+  && server.includes("const civil = await verifyRequestSigner(resolved.request, req, res);"),
+  "الإرسالُ يوقَّع بالمساعد الواحد");
 const route = server.slice(
-  server.indexOf('app.post("/api/public/request/:token"'),
+  server.indexOf("async function verifyRequestSigner("),
   server.indexOf('app.post("/api/public/request/:token/check"'),
 );
 check(route.length > 400, "مسارُ الإرسال مقروءٌ للتدقيق");
@@ -53,7 +58,7 @@ check(route.indexOf("لا يطابق صاحب هذا الرابط") < route.inde
 
 /* ── ولا يُجرَّب عليه ─────────────────────────────────────────────────── */
 
-check(route.includes("const signScope = `request:${resolved.request.id}`") && route.includes("publicAttemptReserve(signScope"),
+check(route.includes("const signScope = `request:${request.id}`") && route.includes("publicAttemptReserve(signScope"),
   "وحدُّ المحاولات مفروضٌ كما على بطاقة الأستاذ وحالة الطالب");
 /* والجوابُ واحدٌ سواءٌ أخطأ الرقمَ أم لم يكن في سجلّه رقمٌ: التفريقُ بينهما
    يقول لمن يجرّب أيُّ الأساتذة مسجَّلٌ رقمُه. */

@@ -2204,6 +2204,7 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .curriculum-section-icon svg{width:21px;height:21px;color:var(--brand,#375b52)}
 .curriculum-section-bar>div:nth-child(2){display:grid;gap:2px}.curriculum-section-bar strong{font-size:13px}.curriculum-section-bar span{font-size:11px;color:var(--muted)}
 .curriculum-section-bar select{width:100%;min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:10px 11px;font:inherit;font-size:12px;outline:none}
+.curriculum-section-bar:has(select+select){grid-template-columns:auto minmax(0,1fr) minmax(160px,260px) minmax(160px,260px)}
 .curriculum-section-bar select:focus{border-color:color-mix(in srgb,var(--brand,#375b52) 55%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#375b52) 10%,transparent)}
 .curriculum-loading{padding:32px;text-align:center;color:var(--muted)}
 /* ── الصحائف الأكاديمية: صحيفتان تعملان معاً ─────────────────────────────
@@ -2333,3 +2334,11 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .course-bootstrap-ok{display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:600;cursor:pointer}.course-bootstrap-ok input{width:16px;height:16px;accent-color:var(--accent)}
 .course-plan-line{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:var(--muted)}.course-plan-line svg{width:15px;height:15px}
 .degree-rule-plan{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}.degree-rule-plan>strong{display:flex;align-items:center;gap:8px;font-size:13px}
+
+/* معاينة «إنشاء حسابات رؤساء الأقسام» — لوحٌ هادئ فوق قائمة المستخدمين. */
+.admin-head-plan { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line, #e2e5ea); border-radius: 14px; background: var(--surface, #fff); overflow-x: auto; }
+.admin-head-plan > header { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.admin-head-plan table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.admin-head-plan th, .admin-head-plan td { padding: 6px 8px; border-block-end: 1px solid var(--line, #e2e5ea); text-align: start; }
+.admin-head-plan small { color: var(--muted, #6b7280); }
+.admin-head-plan > footer { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -66,6 +66,8 @@ export interface AdTerm {
    * "open" and offering room-borrowing on a term that ended years ago.
    */
   AdTermClosed?: boolean;
+  /** متى أعاد المنسق فتح فصلٍ مغلق (مغلق ← مفتوح). يحمي فصلاً انقضى تاريخه من الإغلاق التلقائي. */
+  AdTermReopenedAt?: string;
   /**
    * ── آخر موعد لتسليم الجداول ───────────────────────────────────────────────
    *
@@ -928,7 +930,8 @@ export interface ScheduleShareLink {
    * instructor — never per section — because what it opens is that person's
    * timetable and nobody else's, and the link IS the identity.
    */
-  kind?: "department" | "staff" | "survey" | "request";
+  /** "students": رمزُ QR للطلبة — جدولُ القسم المعتمد للفصل الجاري دائماً. */
+  kind?: "department" | "staff" | "survey" | "request" | "students";
   /** صاحبُ الرابط حين يكون `kind === "request"`. لا معنى له في غيره. */
   AdInstructorId?: number;
   /**
@@ -1048,13 +1051,31 @@ export interface InstructorRequestItem {
   };
   /** البديلُ الذي اختاره الأستاذ بعد الرفض. */
   chosenAlternative?: InstructorRequestSlot;
+  /**
+   * حوارُ البند بعد وصوله القسم: القسمُ يردّ ويقترح أوقاتاً، والأستاذُ يوافق أو
+   * يقترح غيرها، حتى يتّفقا. الحالةُ تُقرأ من `negotiationState` وحدها.
+   */
+  thread?: InstructorRequestMessage[];
+}
+
+export interface InstructorRequestMessage {
+  from: "department" | "instructor";
+  at: string;
+  /** الصفةُ لا الاسم حين يكون من القسم. */
+  by?: string;
+  text?: string;
+  /** أوقاتٌ مقترحة في هذه الرسالة. */
+  slots?: InstructorRequestSlot[];
+  /** موافقةُ الأستاذ على مقترح القسم — والوقتُ الموافَق عليه في `slots[0]`. */
+  accepted?: boolean;
 }
 
 /** حدثٌ في حياة الطلب. الأستاذ يراها كلَّها عن طلبه هو، ولا يرى طلبَ غيره. */
 export type InstructorRequestEventKind =
   | "link-created" | "link-opened" | "submitted" | "received"
   | "item-fixed" | "item-rejected" | "alternative-offered" | "alternative-chosen"
-  | "settled" | "schedule-approved";
+  | "settled" | "schedule-approved"
+  | "department-replied" | "instructor-replied" | "proposal-accepted";
 
 export interface InstructorRequestEvent {
   kind: InstructorRequestEventKind;
@@ -1154,6 +1175,22 @@ export interface DepartmentDelegateDirectory {
 }
 
 /** Rooms the department has used or deliberately pinned for future use. */
+/** إحصاءُ التسجيل قبل الفصل: عددُ الطلبة لكل مقرر، وما قبله القسم من اقتراح الشعب. */
+export interface RegistrationStats {
+  id: string;
+  /** `${collegeId}:${sectionId}:${termId}` */
+  scopeKey: string;
+  collegeId: number;
+  sectionId: number;
+  termId: number;
+  /** AdCourseId → عدد الطلبة */
+  counts: Record<string, number>;
+  /** AdCourseId → عدد الشعب الذي قبله القسم (اختياري) */
+  accepted?: Record<string, number>;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
 export interface DepartmentRoomDirectory {
   id: string;
   scopeKey: string;

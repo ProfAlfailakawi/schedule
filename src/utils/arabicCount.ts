@@ -248,7 +248,29 @@ export const AR = {
   answeredVerb:  { one: "أجاب", two: "أجابا", few: "أجابوا", many: "أجابوا" },
   registeredVerb: { one: "سُجّل", two: "سُجّلا", few: "سُجّلت", many: "سُجّلت" },
   otherFemAdj:   { one: "أخرى", two: "أخريان", few: "أخرى", many: "أخرى" },
+
+  /* ── كلية البنات: المعدودُ مؤنّثٌ عاقل، فيتبعه فعلُه ────────────────────
+   * «طالبتان أجابتا»، «٣ طالبات أجبن». يُختار الزوجُ كلُّه بـ studentNounsFor
+   * فلا يختلط اسمٌ مذكّر بفعلٍ مؤنّث في سطرٍ واحد. */
+  studentFem:        { one: "طالبة", two: "طالبتان", few: "طالبات", many: "طالبة" },
+  answeredFemVerb:   { one: "أجابت", two: "أجابتا", few: "أجبن", many: "أجبن" },
+  handedOverFemVerb: { one: "سلّمتها اللجنة", two: "سلّمتهما اللجنة", few: "سلّمتهن اللجنة", many: "سلّمتهن اللجنة" },
 } as const satisfies Record<string, ArabicNoun>;
+
+/**
+ * كليةُ بنات؟ الاسمُ وحده يقول: «كلية التربية الأساسية - بنات». قاعدةٌ واحدة
+ * يقرؤها كلُّ من يعدّ طلبةً، فلا يقرّر كلُّ شاشةٍ التأنيثَ بطريقتها.
+ */
+export function isFemaleCollege(collegeName?: string | null): boolean {
+  return /بنات/.test(String(collegeName || ""));
+}
+
+/** الاسمُ وأفعالُه معاً لطلبة كليةٍ بعينها — مذكّرةً أو مؤنّثةً كلُّها. */
+export function studentNounsFor(collegeName?: string | null) {
+  return isFemaleCollege(collegeName)
+    ? { student: AR.studentFem, answered: AR.answeredFemVerb, handedOver: AR.handedOverFemVerb }
+    : { student: AR.student, answered: AR.answeredVerb, handedOver: AR.handedOverVerb };
+}
 
 /**
  * The same rule, as browser source, for the server-rendered public pages that

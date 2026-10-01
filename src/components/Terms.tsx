@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { AR, countOf } from "../utils/arabicCount";
 import { CalendarDays, Sparkles, Trash2 } from "lucide-react";
-import { currentTermId, isTermClosed, sortTermsNewest, suggestNextTermName } from "../utils/termSequence";
+import { defaultTermDates, isTermClosed, sortTermsNewest, suggestNextTermName, termEndDate, termStatus, TERM_STATUS_LABEL } from "../utils/termSequence";
 import {
   AddButton,
   EmbeddedAction,
@@ -71,7 +72,9 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
       setEditId(null);
       // Note 29: pre-fill the next term in sequence so the common case is one click.
       setName(suggestedTerm);
-      setStart(""); setWeeks("16"); setClosed(false);
+      /* التقويم المعتمد: أحدٌ قريبٌ من الموعد المعتاد، ١٤ أسبوعاً (الصيفي ٧). */
+      const dates = defaultTermDates(suggestedTerm);
+      setStart(dates?.start || ""); setWeeks(String(dates?.weeks || 14)); setClosed(false);
       setMode("create");
       setError(null);
     },
@@ -150,8 +153,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     ),
     selected =
       filtered.find((x) => x.AdTermId === selectedId) || filtered[0] || null,
-    activeId = selected?.AdTermId ?? null,
-    liveId = currentTermId(items);
+    activeId = selected?.AdTermId ?? null;
   const editorDrawer = mode !== "index" ? (
       <CatalogFormDrawer onClose={back} label={mode === "create" ? "إنشاء فصل جديد" : "تعديل بيانات الفصل"}>
         <PageTitle
@@ -217,7 +219,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
             </label>
             <p className="smart-term-hint">
               {start
-                ? "التقويم المُشترَك سيبدأ وينتهي بهذين التاريخين بالضبط."
+                ? `ينتهي التدريس يوم ${termEndDate(start, Number(weeks) || 1)} — التقويم المُشترَك يبدأ وينتهي بهذين التاريخين بالضبط.`
                 : "بدون تاريخ بداية، التقويم المُشترَك يقدّر الفصل — ويعلن ذلك للمشترك."}
             </p>
             {mode === "create" && suggestedTerm && name === suggestedTerm ? (
@@ -276,12 +278,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                       {activeId === x.AdTermId ? <span className="sr-only">، محدد</span> : null}
                     </>
                   )}
-                  subtitle={isTermClosed(x, items)
-                    ? "فصل منتهٍ · للقراءة والتقارير"
-                    : Number(x.AdTermId) === liveId
-                      ? "الفصل الجاري · مرجع الجداول"
-                      : "فصل غير منتهٍ · جاهز للتخطيط"}
-                  meta={<MetaPill label="الحالة" value={isTermClosed(x, items) ? "منتهٍ" : Number(x.AdTermId) === liveId ? "جارٍ" : "غير منتهٍ"} />}
+                  subtitle={TERM_STATUS_LABEL[termStatus(x, items)].line}
+                  meta={<MetaPill label="الحالة" value={TERM_STATUS_LABEL[termStatus(x, items)].pill} />}
                 />
               ))}
             </RecordDeck>
@@ -303,6 +301,15 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
               <h2>{selected.AdTermName}</h2>
               <p>مرجع الجداول والنسخ.</p>
               <div className="inspector-facts">
+                <MetaPill label="الحالة" value={TERM_STATUS_LABEL[termStatus(selected, items)].pill} />
+                {(() => {
+                  const dates = selected.AdTermStart && selected.AdTermWeeks
+                    ? { start: selected.AdTermStart, weeks: selected.AdTermWeeks, end: termEndDate(selected.AdTermStart, selected.AdTermWeeks), guess: false }
+                    : (() => { const d = defaultTermDates(selected.AdTermName); return d ? { ...d, guess: true } : null; })();
+                  return dates ? (
+                    <MetaPill label={dates.guess ? "التقويم المعتاد" : "التقويم"} value={`${dates.start} ← ${dates.end} · ${countOf(dates.weeks, AR.week)}`} />
+                  ) : null;
+                })()}
               </div>
               <div className="inspector-actions">
                 <PrimaryButton onClick={() => edit(selected)}>

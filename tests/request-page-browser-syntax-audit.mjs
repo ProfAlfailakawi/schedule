@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { ARABIC_COUNT_SCRIPT } from '../src/utils/arabicCount.ts';
+import { NEGOTIATION_LABEL } from '../src/utils/instructorRequestThread.ts';
+import { PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR } from '../src/server/publicTheme.ts';
 
 const server = fs.readFileSync('server.ts', 'utf8');
 const start = server.indexOf('function instructorRequestPage');
@@ -11,7 +13,7 @@ fn = fn.replace(
   'function instructorRequestPage(token: string, nonce: string, demoHint = ""): string {',
   'function instructorRequestPage(token, nonce, demoHint = "") {'
 );
-const sandbox = { html: '', ARABIC_COUNT_SCRIPT };
+const sandbox = { html: '', ARABIC_COUNT_SCRIPT, NEGOTIATION_LABEL, PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR };
 vm.runInNewContext(`${fn}\nhtml=instructorRequestPage('browser-test-token','nonce123');`, sandbox, { timeout: 1000 });
 const scripts = [...String(sandbox.html).matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 if (scripts.length !== 1) throw new Error(`توقعت سكربت متصفح واحداً في صفحة الأستاذ، ووجدت ${scripts.length}`);

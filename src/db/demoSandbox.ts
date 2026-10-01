@@ -223,6 +223,9 @@ const INSTRUCTOR_BANDS: Record<number, ReadonlyArray<number>> = {
  * holds this with the approval-blocker oracle.
  */
 export const DEMO_CONFLICT_SECTION_ID = 4;
+/** القسم الذي عند التسجيل، وفيه المخالفاتُ اللائحية المقصودة؛ وأستاذُ التتابع فيها. */
+export const DEMO_REGULATION_SECTION_ID = 2;
+export const DEMO_REGULATION_RUN_INSTRUCTOR_ID = 3;
 function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   const times = [["08:00", "09:15"], ["09:30", "10:45"], ["11:00", "12:15"], ["12:30", "13:45"], ["14:00", "15:15"], ["15:30", "16:45"]];
   const positionInCollege = new Map<number, number>();
@@ -282,9 +285,45 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       fdetail: "حالة تجريبية مقصودة: الأستاذ نفسه في قاعتين في الساعة نفسها — لاستعراض «معالجة التعارضات».",
     });
   }
+  /* ── مخالفاتٌ لائحية مقصودة في القسم الذي عند التسجيل ─────────────────────
+   *
+   * شاشةُ الاعتماد تُعرض لتُري كيف يُكتشف عدمُ الالتزام، وجدولٌ نظيفٌ تماماً لا
+   * يُري شيئاً. فيُبذر في علم البيانات (DEMO_REGULATION_SECTION_ID — عند التسجيل
+   * في جولته الثانية) مخالفتان من قرار 1913/2016، كلتاهما «مراجعة» لا «منع» —
+   * فالجدولُ المرسَل يبقى بلا مانع اعتماد، وهو ما يسمح به النظام فعلاً:
+   *   • م.6/3 — أستاذٌ بأربع محاضراتٍ متتالية من خمسين دقيقة يوم الخميس (الحدّ ثلاث).
+   *   • م.7/5 — شعبتان من المقرر نفسه في الساعة نفسها واليوم نفسه.
+   * الخميس خالٍ لأساتذة الكلية الأولى وقاعات القسم (سوى الدراسات الإسلامية في
+   * قاعتها، بالأستاذين 1 و2 حتى 11:40)، فلا تعارضَ مادياً يُصنع. وتُدرج قبل آخر
+   * صفٍّ من صفوف القسم، فلا تتغيّر قصةُ «ما تحرّك» المبنيّةُ على أول الصفوف وآخرها.
+   * وتتناوب قاعتين فلا تحمل قاعةٌ أكثر من خمس محاضرات (demo-complete-audit). */
+  let nextId = rows.length;
+  const regulationRows: FSchedule[] = [];
+  {
+    const dsRows = rows.filter(row => row.AdSectionId === DEMO_REGULATION_SECTION_ID);
+    const dsHalls = hallsForSection(DEMO_REGULATION_SECTION_ID);
+    const dsCourses = courses.filter(row => row.AdSectionId === DEMO_REGULATION_SECTION_ID);
+    const THU_ONLY = { fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: true };
+    const RUN_NOTE = "حالة تجريبية مقصودة: أربع محاضرات متتالية للأستاذ نفسه (م.6/3 — الحد ثلاث) — لاستعراض كشف المخالفات اللائحية.";
+    const SAME_HOUR_NOTE = "حالة تجريبية مقصودة: شعبتان من المقرر نفسه في الساعة نفسها (م.7/5) — لاستعراض كشف المخالفات اللائحية.";
+    const planned: Array<[course: AdCourse, sCode: string, instructorId: number, start: string, end: string, hall: DemoHall, note: string]> = [
+      ...[["08:00", "08:50"], ["09:00", "09:50"], ["10:00", "10:50"], ["11:00", "11:50"]].map(([start, end], k) =>
+        [dsCourses[k % dsCourses.length], "11", DEMO_REGULATION_RUN_INSTRUCTOR_ID, start, end, dsHalls[k % 2], RUN_NOTE] as [AdCourse, string, number, string, string, DemoHall, string]),
+      [dsCourses[0], "12", 4, "12:00", "12:50", dsHalls[1], SAME_HOUR_NOTE],
+      [dsCourses[0], "13", 1, "12:00", "12:50", dsHalls[2] ?? dsHalls[0], SAME_HOUR_NOTE],
+    ];
+    const seeded = planned.map(([course, sCode, instructorId, start, end, hall, note]) => ({
+      id: 0, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
+      AdCourseId: course.AdCourseId, AdCourseName: course.CourseName, SCode: sCode, AdInstructorId: instructorId,
+      ...THU_ONLY, fstarttime: start, fendtime: end, ...hallFields(hall), fdetail: note, rev: 0,
+    } as FSchedule));
+    if (dsRows.length >= 5 && dsCourses.length && dsHalls.length >= 2) {
+      rows.splice(rows.indexOf(dsRows[dsRows.length - 1]), 0, ...seeded);
+      regulationRows.push(...seeded);
+    }
+  }
   /* قسمُ المواقع الثلاثة: موعدان لكل موقع يومَ الخميس — لا أحدَ في الصندوق
      يدرّس فيه، فلا تعارضَ يُصنع. أستاذا كلِّ موقعٍ من أساتذة كليته. */
-  let nextId = rows.length;
   for (const course of courses.filter(row => MULTI_SITE_SECTIONS.some(section => section.AdSectionId === row.AdSectionId))) {
     const hall = hallsForSection(course.AdSectionId)[0];
     const band = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
@@ -326,6 +365,8 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       ...days, fstarttime: start, fendtime: end, ...hallFields(mathHalls[hall]), fdetail: "", rev: 0,
     } as FSchedule);
   }
+  /* معرّفاتُ المخالفات بعد كل ما سبق: الصفوفُ الأخرى تحتفظ بمعرّفاتها كما كانت. */
+  for (const row of regulationRows) row.id = ++nextId;
   return rows;
 }
 
@@ -589,8 +630,8 @@ function seedApprovalUniverse(schedules: FSchedule[]): {
       id: "1:2:1", scopeKey: "1:2:1", AdCollegeId: 1, AdSectionId: 2, AdTermId: 1,
       status: "submitted", currentRound: 2,
       signatures: [
-        { stage: "committee", SystemUserId: 16, userName: "لجنة علم البيانات", roleLabel: "رئيس لجنة الجدول", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 0, verifyCode: "CMT-5510" },
-        { stage: "head", SystemUserId: 15, userName: "رئيس قسم علم البيانات", roleLabel: "رئيس القسم العلمي", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 0, verifyCode: "HEAD-6620" },
+        { stage: "committee", SystemUserId: 16, userName: "لجنة علم البيانات", roleLabel: "رئيس لجنة الجدول", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 2, verifyCode: "CMT-5510" },
+        { stage: "head", SystemUserId: 15, userName: "رئيس قسم علم البيانات", roleLabel: "رئيس القسم العلمي", at: iso(10), versionId, rowCount: baseline.length, regulationNoticeCount: 2, verifyCode: "HEAD-6620" },
       ],
       rounds: [
         { number: 1, submittedAt: iso(10), submittedBy: "لجنة علم البيانات", returnedAt: iso(6), returnedBy: "أ. رئيس التسجيل", returnedNoteCount: 2, changedRowCount: 3, reviewedVersionId: versionId },

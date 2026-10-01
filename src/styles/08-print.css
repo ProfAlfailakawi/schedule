@@ -2651,3 +2651,27 @@
     page-break-after:always !important;
   }
 }
+
+/* ── طباعة تقرير تخطيط الشعب ─────────────────────────────────────────────
+   منفذٌ معزول كسجل الاستعارات: لا يُطبع إلا حين يُطلب بعينه. */
+@media print{
+  #app-print-root>.section-plan-print-host,
+  body.has-print-portal>#app-print-root>.section-plan-print-host,
+  .section-plan-print-host{display:none!important}
+  html[data-print-kind="section-plan"] #app-print-root>.print-only{display:none!important}
+  html[data-print-kind="section-plan"] #app-print-root>.section-plan-print-host{display:block!important;visibility:visible!important}
+  .section-plan-print{page:wide!important;direction:rtl!important;padding:6mm 4mm!important}
+  .section-plan-print-head{display:flex!important;align-items:baseline!important;justify-content:space-between!important;gap:8mm!important;margin-bottom:4mm!important;border-bottom:1.4pt solid #1f6b5c!important;padding-bottom:2.5mm!important}
+  .section-plan-print-head h1{font-size:14pt!important;margin:0!important;color:#12463c!important}
+  .section-plan-print-head p{margin:0!important;color:#5d6966!important;font-size:9pt!important;direction:ltr!important}
+  .section-plan-print .section-plan-report-stats{display:flex!important;gap:6mm!important;margin-bottom:4mm!important}
+  .section-plan-print .section-plan-report-stats>div{border:.5pt solid #d7ddd9!important;padding:2mm 3mm!important}
+  .section-plan-print .section-plan-report-stats span{display:block!important;font-size:8pt!important;color:#5d6966!important}
+  .section-plan-print .section-plan-report-stats b{font-size:14pt!important}
+  .section-plan-print .section-plan-warning{color:#8a2a22!important;font-size:9pt!important}
+  .section-plan-print table{width:100%!important;border-collapse:collapse!important}
+  .section-plan-print thead{display:table-header-group!important}
+  .section-plan-print th,.section-plan-print td{padding:2mm 2.4mm!important;border-bottom:.5pt solid #d7ddd9!important;text-align:start!important;font-size:9pt!important}
+  .section-plan-print th{background:#f4f6f5!important;color:#4e5954!important;font-weight:800!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .section-plan-print tr{break-inside:avoid!important}
+}
