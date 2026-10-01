@@ -4,6 +4,8 @@ import { AlertTriangle, Building2, CalendarDays, CheckCircle2, ChevronDown, Clip
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
 import VisitingBadge from "./VisitingBadge";
+import PagedFindingList from "./PagedFindingList";
+import { packPrintFindings, type PrintFindingPiece } from "../utils/printFindingPages";
 import {
   DAY_KEYS, DAY_NAMES, DECISION_1912_LABEL, isDecision1912Finding, regulationScore, reviewSchedule,
   type DayKey, type RegulationFinding
@@ -141,11 +143,13 @@ function HistoryInfographic({rows,courses}:{rows:FSchedule[];courses:Map<number,
   const distinctCourses=new Set(rows.map(row=>row.AdCourseId)).size;
   return <div className="history-review-infographic">
     <div className="history-review-kpis"><article><History/><strong>10+</strong><span>سنوات في السجل</span></article><article><ClipboardCheck/><strong>{rows.length.toLocaleString("ar-KW-u-nu-latn")}</strong><span>{nounFor(rows.length, AR.appointment)} {nounFor(rows.length, AR.differentAdj)}</span></article><article><CalendarDays/><strong>{distinctCourses.toLocaleString("ar-KW-u-nu-latn")}</strong><span>{nounFor(distinctCourses, AR.course)} {nounFor(distinctCourses, AR.affectedAdj)}</span></article></div>
-    <div className="history-review-cards">{rows.slice(0,8).map(row=>{
+    <PagedFindingList items={rows} pageSize={8} label="المواعيد المختلفة عن المعتاد" listClassName="history-review-cards"
+      getKey={row=>String(row.id)}
+      searchText={row=>{const course=courses.get(row.AdCourseId);return `${course?.CourseName||row.AdCourseName||""} ${course?.CourseCode||""} ${row.SCode}`;}}
+      renderItem={row=>{
       const course=courses.get(row.AdCourseId),dayText=DAY_KEYS.filter(key=>(row as any)[key]).map(key=>DAY_NAMES[DAY_KEYS.indexOf(key)]).join(" · ");
-      return <article key={row.id}><span className="history-review-icon"><Clock3/></span><div><strong>{course?.CourseName||row.AdCourseName||"مقرر"}</strong><small><b dir="ltr">{course?.CourseCode||"—"}</b> · شعبة {row.SCode}</small></div><time dir="ltr">{formatScheduleTimeRange(row.fstarttime,row.fendtime)}</time><p><CalendarDays/>{dayText||"بلا أيام"}<Building2/>{row.AdRoomCode}/{row.AdRoomHall}</p></article>;
-    })}</div>
-    {rows.length>8?<small className="history-review-more">و{countOf(rows.length-8, AR.appointment)} {nounFor(rows.length-8, AR.otherAdj)} في التقرير المطبوع</small>:null}
+      return <article><span className="history-review-icon"><Clock3/></span><div><strong>{course?.CourseName||row.AdCourseName||"مقرر"}</strong><small><b dir="ltr">{course?.CourseCode||"—"}</b> · شعبة {row.SCode}</small></div><time dir="ltr">{formatScheduleTimeRange(row.fstarttime,row.fendtime)}</time><p><CalendarDays/>{dayText||"بلا أيام"}<Building2/>{row.AdRoomCode}/{row.AdRoomHall}</p></article>;
+    }} />
   </div>;
 }
 
@@ -368,7 +372,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     return `${code} · شعبة ${row.SCode} · ${who} · ${days || "بلا أيام"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`;
   };
 
-  const renderCompactRows = (rowIds: number[], limit = 6) => {
+  const renderCompactRows = (rowIds: number[]) => {
     const uniqueRows = [...new Set(rowIds)].map(id => byId.get(id)).filter(Boolean) as FSchedule[];
     if (!uniqueRows.length) return null;
     /* When every row belongs to the same person, the heading above has already
@@ -378,7 +382,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     return (
       <>
         <div className="review-subject-rows">
-          {uniqueRows.slice(0, limit).map(row => {
+          {uniqueRows.map(row => {
             const days = DAY_KEYS.filter(key => (row as any)[key]).map(key => DAY_NAMES[DAY_KEYS.indexOf(key)]).join("، ");
             const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "—";
             const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
@@ -394,22 +398,19 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
             );
           })}
         </div>
-        {uniqueRows.length > limit ? <p className="review-more">و{countOf(uniqueRows.length - limit, AR.appointment)} {nounFor(uniqueRows.length - limit, AR.otherAdj)}…</p> : null}
       </>
     );
   };
 
-  const printRowPreviewLimit = 5;
-  const firstPrintPage = groupedFindings.slice(0, Math.min(groupedFindings.length, 3));
-  const remainingFindings = groupedFindings.slice(firstPrintPage.length);
-  const printFollowupPages: ReviewFindingGroup[][] = [];
-  for (let index = 0; index < remainingFindings.length; index += 4) {
-    printFollowupPages.push(remainingFindings.slice(index, index + 4));
-  }
-  const renderPrintFinding = (finding: ReviewFindingGroup) => (
-    <article className={`print-review-finding severity-${findingTone(finding)}`} key={finding.rule}>
-      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.groupedCount > 1 ? `${countOf(finding.groupedCount, AR.conflict)} · ${finding.detail}` : finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
-      {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, printRowPreviewLimit).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > printRowPreviewLimit ? <small>+ {countOf(finding.rowIds.length - printRowPreviewLimit, AR.appointment)} {nounFor(finding.rowIds.length - printRowPreviewLimit, AR.otherAdj)}</small> : null}</div> : null}
+  /* الورقةُ تطبع كلَّ موعد: تُرصّ الملاحظاتُ بطولها، وما زاد عن صفحةٍ يُكمَل
+     بعنوان «تتمة» في التي تليها (printFindingPages). */
+  const printPages = packPrintFindings<ReviewFindingGroup>(groupedFindings, finding => finding.rowIds);
+  const firstPrintPage = printPages[0] || [];
+  const printFollowupPages = printPages.slice(1);
+  const renderPrintFinding = ({ finding, rowIds, part, parts }: PrintFindingPiece<ReviewFindingGroup>) => (
+    <article className={`print-review-finding severity-${findingTone(finding)}`} key={`${finding.groupKey}:${part}`}>
+      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}{parts > 1 ? ` · ${part === 1 ? "يتبع" : "تتمة"} (${part.toLocaleString("ar-KW-u-nu-latn")} من ${parts.toLocaleString("ar-KW-u-nu-latn")})` : ""}</strong><span>{finding.groupedCount > 1 ? `${countOf(finding.groupedCount, AR.conflict)} · ${finding.detail}` : finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
+      {rowIds.length ? <div className="print-review-rows">{rowIds.map(id => <span key={id}>{describe(byId.get(id))}</span>)}</div> : null}
     </article>
   );
 
@@ -436,6 +437,80 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
     ? `${quietNames} · و${(quietFindings.length - 3).toLocaleString("ar-KW-u-nu-latn")} غيرها`
     : quietNames;
   const quietRows = new Set(quietFindings.flatMap(finding => finding.rowIds)).size;
+
+  /* ── قائمةُ الملاحظة كاملةً، صفحةً صفحة (PagedFindingList) ──────────────
+     كانت تعرض اثني عشر أستاذاً ثم تكتفي بعدّ الباقين؛ والآن كلُّهم هنا، ببحثٍ حين
+     تطول القائمة، و«أظهرها على الجدول» باقٍ تحتها لمن أراد الجدول. */
+  const rowSearchText = (row: FSchedule) => {
+    const course = courses.get(row.AdCourseId);
+    return `${instructors.get(row.AdInstructorId)?.AdInstructorName || ""} ${course?.CourseCode || ""} ${course?.CourseName || row.AdCourseName || ""} ${row.SCode}`;
+  };
+  const sectionsOf = (rows: FSchedule[]) => new Set(rows.map(row => `${row.AdCourseId}:${row.SCode}`)).size;
+
+  const renderFindingPeople = (finding: ReviewFindingGroup) => {
+    const groups = new Map<string, { who: string; rows: FSchedule[] }>();
+    for (const id of new Set(finding.rowIds)) {
+      const row = byId.get(id);
+      if (!row) continue;
+      const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+      const key = `${row.AdInstructorId}:${who}`;
+      const bucket = groups.get(key) || { who, rows: [] };
+      bucket.rows.push(row);
+      groups.set(key, bucket);
+    }
+    const people = [...groups.entries()];
+    const allRows = people.flatMap(([, group]) => group.rows);
+    return (
+      <PagedFindingList
+        items={people}
+        pageSize={8}
+        label={`أساتذة «${findingBaseTitle(finding.title)}»`}
+        summary={<><b>{countOf(people.length, AR.instructor)}</b><span>{countOf(sectionsOf(allRows), AR.section)}</span></>}
+        getKey={([key]) => key}
+        searchText={([, group]) => `${group.who} ${group.rows.map(rowSearchText).join(" ")}`}
+        renderItem={([, group]) => <ReviewPersonGroup group={group} courses={courses} visitingIds={visitingIdSet} />}
+      />
+    );
+  };
+
+  const renderFindingSubjects = (finding: ReviewFindingGroup) => {
+    const subjects = new Map<string, { label: string; items: RegulationFinding[] }>();
+    finding.groupedItems.forEach((item, index) => {
+      const key = item.subjectKey || `case:${index}`;
+      const bucket = subjects.get(key) || { label: item.subjectLabel || groupEntitySummary(finding), items: [] };
+      bucket.items.push(item);
+      subjects.set(key, bucket);
+    });
+    const entries = [...subjects.entries()];
+    const rowCount = new Set(finding.groupedItems.flatMap(item => item.rowIds)).size;
+    return (
+      <PagedFindingList
+        items={entries}
+        pageSize={6}
+        label={`حالات «${findingBaseTitle(finding.title)}»`}
+        listClassName="review-subject-list"
+        summary={<><b>{countOf(entries.length, AR.occurrence)}</b>{rowCount ? <span>{countOf(rowCount, AR.appointment)}</span> : null}</>}
+        getKey={([key]) => key}
+        searchText={([, subject]) => `${subject.label} ${[...new Set(subject.items.flatMap(item => item.rowIds))].map(id => byId.get(id)).filter(Boolean).map(row => rowSearchText(row as FSchedule)).join(" ")}`}
+        renderItem={([, subject]) => {
+          const uniqueDetails = [...new Set(subject.items.map(item => item.detail).filter(Boolean))];
+          const subjectRowIds = [...new Set(subject.items.flatMap(item => item.rowIds))];
+          return (
+            <section className="review-subject">
+              <header>
+                <strong>{subject.label}</strong>
+                <small>{countOf(subject.items.length, AR.conflict)}</small>
+              </header>
+              <div className="review-subject-cases">
+                {renderCompactRows(subjectRowIds)}
+                {!subjectRowIds.length && uniqueDetails.length ? <p className="review-subject-summary">{uniqueDetails[0]}</p> : null}
+              </div>
+            </section>
+          );
+        }}
+      />
+    );
+  };
 
   const renderFinding = (finding: ReviewFindingGroup) => (
             <article key={finding.groupKey} className={`review-finding severity-${findingTone(finding)} ${open === finding.groupKey ? "open" : ""}`}>
@@ -478,57 +553,10 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
                       {finding.source === "history" ? (
                         <HistoryInfographic rows={finding.rowIds.map(id=>byId.get(id)).filter(Boolean) as FSchedule[]} courses={courses} />
                       ) : finding.groupedCount > 1 ? (
-                        <div className="review-subject-list">
-                          {(() => {
-                            const subjects = new Map<string, { label: string; items: RegulationFinding[] }>();
-                            finding.groupedItems.forEach((item, index) => {
-                              const key = item.subjectKey || `case:${index}`;
-                              const bucket = subjects.get(key) || { label: item.subjectLabel || groupEntitySummary(finding), items: [] };
-                              bucket.items.push(item);
-                              subjects.set(key, bucket);
-                            });
-                            return [...subjects.entries()].map(([key, subject]) => (
-                              <section key={key} className="review-subject">
-                                <header>
-                                  <strong>{subject.label}</strong>
-                                  <small>{countOf(subject.items.length, AR.conflict)}</small>
-                                </header>
-                                <div className="review-subject-cases">
-                                  {(() => {
-                                    const uniqueDetails = [...new Set(subject.items.map(item => item.detail).filter(Boolean))];
-                                    const subjectRowIds = [...new Set(subject.items.flatMap(item => item.rowIds))];
-                                    return (
-                                      <>
-                                        {renderCompactRows(subjectRowIds, 6)}
-                                        {!subjectRowIds.length && uniqueDetails.length ? <p className="review-subject-summary">{uniqueDetails[0]}</p> : null}
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                              </section>
-                            ));
-                          })()}
-                        </div>
+                        renderFindingSubjects(finding)
                       ) : (
-                        (() => {
-                          const groups = new Map<string, { who: string; rows: FSchedule[] }>();
-                          for (const id of finding.rowIds) {
-                            const row = byId.get(id);
-                            if (!row) continue;
-                            const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
-                            const key = `${row.AdInstructorId}:${who}`;
-                            const bucket = groups.get(key) || { who, rows: [] };
-                            bucket.rows.push(row);
-                            groups.set(key, bucket);
-                          }
-                          return [...groups.values()].slice(0, 12).map((group, index) => (
-                            <React.Fragment key={`${group.who}-${index}`}>
-                              <ReviewPersonGroup group={group} courses={courses} visitingIds={visitingIdSet} />
-                            </React.Fragment>
-                          ));
-                        })()
+                        renderFindingPeople(finding)
                       )}
-                      {finding.groupedCount === 1 && finding.rowIds.length > 12 ? <p className="review-more">و{(finding.rowIds.length - 12).toLocaleString("ar-KW-u-nu-latn")} غيرها…</p> : null}
                       {onFocusRows ? (
                         <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds); onClose(); }}>
                           أظهرها على الجدول

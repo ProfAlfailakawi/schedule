@@ -37,6 +37,7 @@ import type { AdTerm, ScheduleApprovalStatus } from "../types";
 import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeContext";
 import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
+import PagedFindingList from "./PagedFindingList";
 
 type NoteField = DiffFieldKey | "row";
 type NoteState = "open" | "changed" | "answered" | "resolved" | "removed";
@@ -528,12 +529,21 @@ function FindingRows({ rowIds, rowsById, onJump }: { rowIds: number[]; rowsById:
     groups.set(who, [...(groups.get(who) || []), row]);
   }
   const people = [...groups.entries()];
+  const sections = new Set(people.flatMap(([, rows]) => rows.map(row => `${row.courseCode}:${row.sectionCode}`))).size;
+  /* كلُّهم، صفحةً صفحة — المكوّنُ نفسُه الذي في «مراجعة الاعتماد» (PagedFindingList). */
   return (
     <div className="review-rows">
-      {people.length ? people.slice(0, 12).map(([who, rows]) => (
-        <React.Fragment key={who}><FindingPerson who={who} rows={rows} onJump={onJump} /></React.Fragment>
-      )) : <p className="review-more">المواعيد المعنيّة خارج ما يعرضه هذا التقرير.</p>}
-      {people.length > 12 ? <p className="review-more">و{countOf(people.length - 12, AR.instructor)} غيرهم…</p> : null}
+      {people.length ? (
+        <PagedFindingList
+          items={people}
+          pageSize={8}
+          label="أساتذة الملاحظة"
+          summary={<><b>{countOf(people.length, AR.instructor)}</b><span>{countOf(sections, AR.section)}</span></>}
+          getKey={([who]) => who}
+          searchText={([who, rows]) => `${who} ${rows.map(row => `${row.courseCode} ${row.course} ${row.sectionCode}`).join(" ")}`}
+          renderItem={([who, rows]) => <FindingPerson who={who} rows={rows} onJump={onJump} />}
+        />
+      ) : <p className="review-more">المواعيد المعنيّة خارج ما يعرضه هذا التقرير.</p>}
     </div>
   );
 }

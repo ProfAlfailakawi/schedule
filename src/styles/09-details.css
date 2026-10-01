@@ -1858,3 +1858,67 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
    وصفّان متساويان (٣ × ٢) على الهاتف — لا تبويبٌ يتيم في سطرٍ وحده. */
 .transfer-tabs{grid-template-columns:repeat(6,minmax(0,1fr))!important}
 @media (max-width:760px){.transfer-tabs{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+
+/* ── قائمة الملاحظة كاملةً، صفحةً صفحة (PagedFindingList) ─────────────────
+   ملخّصٌ وبحثٌ فوق، والعناصر بتخطيطها الأصلي (الحاوية تأخذ صنف القائمة التي
+   حلّت محلّها)، وشريطُ صفحاتٍ هادئ تحت. ما خرج عن الصفحة مخفيّ بـ[hidden]
+   ويظهر كلُّه على الورق. */
+.pfl{display:flex;flex-direction:column;gap:var(--s2);min-width:0}
+.pfl-anchor{height:0;scroll-margin-top:72px}
+.pfl-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s2) var(--s3);flex-wrap:wrap}
+.pfl-summary{display:inline-flex;align-items:center;gap:8px;font-size:var(--t-xs);color:var(--muted)}
+.pfl-summary b{color:var(--ink);font-weight:700}
+.pfl-summary span::before{content:"·";margin-inline-end:8px;color:var(--muted-2)}
+.pfl-search{
+  display:flex;align-items:center;gap:6px;flex:1 1 200px;max-width:300px;min-height:36px;
+  padding:0 10px;border:1px solid var(--line);border-radius:var(--r-full);background:var(--surface);
+  transition:border-color .15s var(--ease),box-shadow .15s var(--ease);
+}
+.pfl-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.pfl-search>svg{flex:none;width:15px;height:15px;color:var(--muted-2)}
+.pfl-search input{flex:1;min-width:0;border:0;background:transparent;outline:0;font:inherit;font-size:var(--t-sm);color:var(--ink);padding:0}
+.pfl-search input::-webkit-search-cancel-button{display:none}
+.pfl-search button{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;color:var(--muted)}
+.pfl-search button:hover{background:var(--surface-2);color:var(--ink)}
+.pfl-search button svg{width:13px;height:13px}
+:where(.pfl-list){display:flex;flex-direction:column;gap:var(--s2)}
+.pfl-item:not([hidden]){display:contents}
+.pfl-empty{margin:0;padding:var(--s4) var(--s3);text-align:center;color:var(--muted);font-size:var(--t-sm);border:1px dashed var(--line);border-radius:var(--r-sm)}
+.pfl-pager{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--s2);
+  padding:5px;border:1px solid var(--line);border-radius:var(--r-full);background:var(--surface-2);
+}
+.pfl-step{
+  display:inline-flex;align-items:center;gap:4px;min-height:34px;padding:0 12px;
+  border:1px solid var(--line);border-radius:var(--r-full);background:var(--surface);
+  color:var(--ink-2);font-size:var(--t-xs);font-weight:700;cursor:pointer;
+  transition:border-color .15s var(--ease),color .15s var(--ease),background .15s var(--ease);
+}
+.pfl-step svg{width:15px;height:15px}
+.pfl-step:hover:not(:disabled){border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+.pfl-step:disabled{opacity:.42;cursor:default}
+.pfl-middle{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0}
+.pfl-pages{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:3px;list-style:none;margin:0;padding:0}
+.pfl-pages button{
+  min-width:28px;height:28px;padding:0 6px;border-radius:var(--r-full);
+  color:var(--muted);font-size:var(--t-xs);font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer;
+  transition:background .15s var(--ease),color .15s var(--ease);
+}
+.pfl-pages button:hover:not(.active){background:var(--surface);color:var(--ink)}
+.pfl-pages button.active{background:var(--accent);color:var(--accent-contrast,#fff);cursor:default}
+.pfl-gap{color:var(--muted-2);font-size:var(--t-xs);padding:0 2px}
+.pfl-status{font-size:var(--t-eyebrow);color:var(--muted-2);white-space:nowrap}
+.pfl-step:focus-visible,.pfl-pages button:focus-visible,.pfl-search button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:560px){
+  .pfl-search{max-width:none;flex-basis:100%}
+  .pfl-pages{display:none}
+  .pfl-status{font-size:var(--t-xs);color:var(--muted);font-weight:700}
+  .pfl-status small{display:none}
+  .pfl-step{min-height:40px;padding:0 14px}
+}
+@media (prefers-reduced-motion:reduce){.pfl-step,.pfl-pages button,.pfl-search{transition:none}}
+@media print{
+  .pfl-item[hidden]{display:contents!important}
+  .pfl-pager,.pfl-search,.pfl-empty{display:none!important}
+}
+.pfl-hits{flex:none;padding:1px 7px;border-radius:var(--r-full);background:var(--accent-soft);color:var(--accent-ink);font-size:var(--t-eyebrow);font-weight:700;font-variant-numeric:tabular-nums;direction:ltr}
