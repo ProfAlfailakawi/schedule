@@ -7,12 +7,11 @@
  */
 import type { AdCollege, AdSection } from "../types";
 
-/** «كلية التربية الأساسية - بنات» → «بنات»; a name without a suffix loses «كلية». */
+/** «كلية التربية الأساسية - بنات - الجهراء» → «التربية الأساسية - بنات - الجهراء».
+ *  الاسم كاملاً بلا «كلية»: «بنات» وحدها تتكرّر في كليات كثيرة (التمريض، العلوم
+ *  الصحية، الدراسات التجارية…) فلا تميّز شيئاً. */
 export function collegeShortName(name: unknown): string {
-  const text = String(name ?? "").trim();
-  const dash = text.split(/\s+[-–—]\s+/);
-  if (dash.length > 1) return dash[dash.length - 1].trim();
-  return text.replace(/^كلية\s+/, "").trim();
+  return String(name ?? "").trim().replace(/^كلية\s+/, "").trim();
 }
 
 type SectionLike = Pick<AdSection, "AdSectionId" | "AdSectionName" | "AdCollegeId">;

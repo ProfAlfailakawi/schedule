@@ -93,10 +93,22 @@ export default function CurriculumPlans({
   onCreateCourse?: (sectionId: number) => void;
 }) {
   const [sectionId, setSectionId] = useState(Number(initialSectionId || sections[0]?.AdSectionId || 0));
+  /* الكلية أولاً ثم القسم: اسم القسم يتكرّر في كل كلية، فيُختار من أقسام كليةٍ واحدة. */
+  const [pickedCollege, setPickedCollege] = useState(() =>
+    Number(collegeId || sections.find(row => row.AdSectionId === Number(initialSectionId || sections[0]?.AdSectionId || 0))?.AdCollegeId || 0));
   const pickerSections = useMemo(
-    () => sections.filter(row => !collegeId || row.AdCollegeId === collegeId || row.AdSectionId === sectionId),
-    [sections, collegeId, sectionId],
+    () => sections.filter(row => !pickedCollege || row.AdCollegeId === pickedCollege),
+    [sections, pickedCollege],
   );
+  const pickerColleges = useMemo(
+    () => sortByName<AdCollege>(colleges.filter(college => sections.some(row => row.AdCollegeId === college.AdCollegeId)), row => row.AdCollegeName),
+    [colleges, sections],
+  );
+  const chooseCollege = (id: number) => {
+    setPickedCollege(id);
+    const first = sortByName<AdSection>(sections.filter(row => row.AdCollegeId === id), row => row.AdSectionName)[0];
+    if (first && !sections.some(row => row.AdSectionId === sectionId && row.AdCollegeId === id)) setSectionId(first.AdSectionId);
+  };
   const labelOf = useMemo(() => sectionLabels(pickerSections, colleges), [pickerSections, colleges]);
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -469,6 +481,11 @@ export default function CurriculumPlans({
         <Surface className="curriculum-section-bar">
           <div className="curriculum-section-icon"><GraduationCap /></div>
           <div><strong>القسم العلمي</strong><span>لكل قسم صحائفه وشروطه</span></div>
+          {pickerColleges.length > 1 ? (
+            <select value={pickedCollege} onChange={e => chooseCollege(Number(e.target.value))} aria-label="الكلية">
+              {pickerColleges.map(college => <option key={college.AdCollegeId} value={college.AdCollegeId}>{college.AdCollegeName}</option>)}
+            </select>
+          ) : null}
           <select value={sectionId} onChange={e => setSectionId(Number(e.target.value))} aria-label="القسم العلمي">
             {sortByName<AdSection>(pickerSections, row => labelOf.get(row.AdSectionId) || row.AdSectionName).map(section => <option key={section.AdSectionId} value={section.AdSectionId}>{labelOf.get(section.AdSectionId) || section.AdSectionName}</option>)}
           </select>
