@@ -1019,7 +1019,7 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
 .user-card{min-height:68px;align-items:start}
 .user-card-identity{min-width:0;padding-block:2px}
 .user-card strong,.user-card small{
-  overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;
+  overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:break-word;
 }
 .user-card strong{line-height:1.45}
 .user-card-section{margin-top:2px !important;color:var(--nav-ink) !important;line-height:1.45;font-weight:600}
