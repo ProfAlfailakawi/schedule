@@ -180,7 +180,6 @@
   --muted-text:var(--muted);
   --soft-surface:var(--surface-2);
   --foreground:var(--ink);
-  --primary:var(--accent);
 }
 
 :root[data-theme="dark"]{
