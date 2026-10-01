@@ -92,15 +92,8 @@ function FacultyPicker({ ws }: { ws: Workspace }) {
             </button>
           ))}
         </div>
-        <div className="sp-filter-row">
-          <div className="sp-seg sp-seg-sm" role="group" aria-label="الفترة">
-            {PERIODS.map(p => <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={p.value} type="button" aria-pressed={period === p.value} onClick={() => setPeriod(p.value)}>{p.label}</button>)}
-          </div>
-          <label className="sp-check"><input type="checkbox" checked={clearOnly} onChange={e => setClearOnly(e.target.checked)} />بلا تعارض مع الأستاذ</label>
-        </div>
       </div>
-      <p className="sp-hint"><Info aria-hidden="true" />الملاءمة المعروضة فحصٌ سريع مع جدوله الحالي؛ الحكم النهائي بعد الفحص الكامل.</p>
-      <p className="sp-count-line" aria-live="polite">{filtered.length ? `المطابق للتصفية: ${countOf(filtered.length, AR.section)}` : "لا توجد شعبة مطابقة للتصفية"}</p>
+      {filtered.length ? null : <p className="sp-count-line" aria-live="polite">لا توجد شعبة مطابقة للتصفية</p>}
       <ul className="sp-list" role="radiogroup" aria-label="الشعب المتاحة للإسناد">
         {filtered.slice(0, limit).map(({ entry, clash }) => {
           const s = entry.snapshot;

@@ -604,3 +604,16 @@ body:has(.sp-root) .smart-guide-fab{visibility:hidden}
 .sp-pcard{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px}
 .sp-pcard-title{flex:1 1 160px;font-size:13px;font-weight:600;min-inline-size:0}
 .sp-pcard .btn{min-block-size:34px;padding-block:4px}
+
+/* ── الجوال: الأهمّ فقط. ثلاثُ بطاقات مقارنة، وشريطٌ سفليٌّ بزرّين، بلا شروحٍ مكرّرة ── */
+@media (max-width:639px){
+  .sp-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;margin-inline:0;padding-inline:0;gap:6px}
+  .sp-tiles>.sp-tile:nth-child(n+4){display:none}
+  .sp-tile{padding:8px 8px}
+  .sp-tile-note{display:none}
+  .sp-meta{display:none}
+  .sp-bar-hint,.sp-policy{display:none}
+  .sp-bar-actions .btn[data-tone="danger"]{flex:0 0 auto;padding-inline:10px}
+  .sp-bar-actions .btn[data-tone="danger"] svg{display:none}
+}
+.sp-tile{min-inline-size:0}
