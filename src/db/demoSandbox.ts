@@ -337,7 +337,7 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
       } as FSchedule);
     });
   }
-  /* قسم الرياضيات (DEMO_MATH): تسعة مواعيد من الأحد إلى الخميس. كلُّ أستاذٍ
+  /* قسم الرياضيات (DEMO_MATH): أحد عشر موعداً من الأحد إلى الخميس. كلُّ أستاذٍ
      في ساعاتٍ متباعدة، وكلُّ قاعةٍ لا تحمل أكثر من ثلاثة — فلا تعارضَ ولا مانع. */
   const mathCourse = (code: string) => courses.find(row => row.CourseCode === code && row.AdSectionId === DEMO_MATH.section.AdSectionId)!;
   const mathHalls = hallsForSection(DEMO_MATH.section.AdSectionId);
@@ -356,6 +356,8 @@ function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
     ["MATH240", "02", visiting, SUN_TUE, "12:30", "13:45", 2],
     ["MATH101", "04", d2, MON_WED, "14:00", "15:15", 1],
     ["MATH211", "03", d2, THU, "09:30", "10:45", 0],
+    ["MATH240", "03", d1, THU, "11:00", "12:15", 2],
+    ["MATH240", "04", d3, THU, "13:00", "14:15", 2],
   ];
   for (const [code, sCode, instructorId, days, start, end, hall] of mathPlan) {
     const course = mathCourse(code);
