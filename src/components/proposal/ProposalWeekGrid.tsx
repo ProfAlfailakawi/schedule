@@ -137,7 +137,11 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
     return list;
   }, [base, ghosts, draft, mode, showGhosts]);
   const win = useMemo(() => windowFor(visible), [visible]);
-  const laid = useMemo(() => layout(visible, win.start), [visible, win.start]);
+  /* الحدّ القديم (سيخرج) والمحاضرة الجاري إعدادها طبقتان فوق الجدول لا تأخذان حارةً:
+     لو أخذتا حارة لضاق بهما وبالمواعيد الحقيقية العرضُ حتى لا يُقرأ شيء. */
+  const isOverlay = (item: GridItem) => item.state === "out" || item.state === "draft";
+  const laid = useMemo(() => layout(visible.filter(item => !isOverlay(item)), win.start), [visible, win.start]);
+  const overlays = useMemo(() => layout(visible.filter(isOverlay), win.start), [visible, win.start]);
   const selected = visible.find(item => item.key === detailKey) || null;
   const rows = Math.ceil((win.end - win.start) / SLOT);
   const hours: number[] = [];
@@ -154,10 +158,10 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
     onCell(day, Math.max(SCHEDULE_DAY_START, Math.min(SCHEDULE_DAY_END - 30, minutes)));
   };
 
-  const eventButton = (entry: Laid) => {
+  const eventButton = (entry: Laid, overlay = false) => {
     const { item } = entry;
     const tag = tagFor(item, marks);
-    const width = 100 / entry.lanes;
+    const width = overlay ? 100 : 100 / entry.lanes;
     const compact = entry.height < 58;
     const tiny = entry.height < 40;
     return (
@@ -165,8 +169,9 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
         key={`${item.key}-${entry.day}`} type="button" className="sp-ev"
         data-state={item.state} data-conflict={marks.blocker.has(item.key) || undefined} data-review={marks.review.has(item.key) || undefined}
         data-selected={selectedKey === item.key || undefined} data-focus={focusKeys.has(item.key) || undefined}
-        data-compact={compact || undefined} data-tiny={tiny || undefined} data-lanes={entry.lanes > 1 ? entry.lanes : undefined} data-checking={checking && (item.state === "proposed" || item.state === "modified") || undefined}
-        style={{ insetBlockStart: entry.top, blockSize: entry.height, insetInlineStart: `${entry.lane * width}%`, inlineSize: `calc(${width}% - 3px)` }}
+        data-compact={compact || undefined} data-tiny={tiny || undefined} data-lanes={!overlay && entry.lanes > 1 ? entry.lanes : undefined} data-checking={checking && (item.state === "proposed" || item.state === "modified") || undefined}
+        style={{ insetBlockStart: entry.top, blockSize: entry.height, insetInlineStart: overlay ? 0 : `${entry.lane * width}%`, inlineSize: `calc(${width}% - 3px)` }}
+        data-overlay={overlay || undefined}
         aria-pressed={selectedKey === item.key}
         aria-label={`${item.outside ? "التزام خارج القسم" : `${item.courseName}${item.SCode ? ` شعبة ${item.SCode}` : ""}`}، ${PROPOSAL_DAY_NAMES[entry.day]}، ${item.start} إلى ${item.end}${tag ? `، ${tag.text}` : ""}`}
         onClick={event => { event.stopPropagation(); pick(item.key); }}
@@ -265,18 +270,25 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
               </div>
               {PROPOSAL_DAY_KEYS.map(day => (
                 <div key={day} className="sp-col" data-day={day} onClick={event => onColumnClick(day, event)} role="presentation">
-                  {(laid.get(day) || []).map(eventButton)}
+                  {(overlays.get(day) || []).map(entry => eventButton(entry, true))}
+                  {(laid.get(day) || []).map(entry => eventButton(entry))}
                 </div>
               ))}
             </div>
           </div>
         ) : (
-          <AgendaView laid={laid} marks={marks} selectedKey={detailKey} focusKeys={focusKeys} onSelect={key => pick(key as string)} />
+          <AgendaView laid={mergeAgenda(laid, overlays)} marks={marks} selectedKey={detailKey} focusKeys={focusKeys} onSelect={key => pick(key as string)} />
         )}
         {detail}
       </div>
     </section>
   );
+}
+
+function mergeAgenda(a: Map<StudyProposalDayKey, Laid[]>, b: Map<StudyProposalDayKey, Laid[]>) {
+  const out = new Map<StudyProposalDayKey, Laid[]>();
+  for (const day of PROPOSAL_DAY_KEYS) out.set(day, [...(a.get(day) || []), ...(b.get(day) || [])]);
+  return out;
 }
 
 function AgendaView({ laid, marks, selectedKey, focusKeys, onSelect }: {

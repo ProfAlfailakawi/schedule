@@ -77,7 +77,7 @@ function cleanDays(raw: unknown): StudyProposalDayKey[] {
 }
 
 async function sanitizeOps(
-  raw: unknown, world: LoadedWorld, stored?: StudyProposal,
+  raw: unknown, world: LoadedWorld, stored?: StudyProposal, allowRow?: (row: FSchedule) => boolean,
 ): Promise<{ ops: StudyProposalOp[]; error?: string }> {
   if (!Array.isArray(raw)) return { ops: [], error: "قائمة المواد غير صالحة." };
   if (raw.length > PROPOSAL_MAX_OPS) return { ops: [], error: `الحدّ الأقصى ${PROPOSAL_MAX_OPS} مادة في المقترح الواحد.` };
@@ -97,6 +97,8 @@ async function sanitizeOps(
       const rowId = Number(rawSnapshot?.id || 0);
       const live = liveById.get(rowId);
       if (!live) return { error: "أحد المواعيد المرجعية لم يعد موجوداً في الجدول." } as const;
+      /* لا تُحفظ لقطةٌ من موعدٍ لا يراه كاتبها: اللقطة تحمل المقرر والشعبة والقاعة. */
+      if (allowRow && !allowRow(live)) return { error: "أحد المواعيد المرجعية خارج صلاحياتك." } as const;
       if (keepSnapshots && prior && Number(prior.id) === rowId) return { snapshot: prior } as const;
       return { snapshot: snapshotOf(live, world.catalog) } as const;
     };
@@ -332,7 +334,7 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     if (!request) return;
     const world = await loadWorld(Number(request.AdTermId), Number(request.AdInstructorId));
     const stored = req.body?.proposalId ? await Repository.getStudyProposal(String(req.body.proposalId)) : undefined;
-    const clean = await sanitizeOps(req.body?.ops, world, stored);
+    const clean = await sanitizeOps(req.body?.ops, world, stored, row => canWriteScope(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
     if (clean.error) { res.status(400).json({ error: clean.error }); return; }
     const evaluation = await evaluateProposal(deps, req, {
       instructorId: Number(request.AdInstructorId), termId: Number(request.AdTermId),
@@ -349,7 +351,7 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     if (!request) return;
     const world = await loadWorld(Number(request.AdTermId), Number(request.AdInstructorId));
     const stored = req.body?.proposalId ? await Repository.getStudyProposal(String(req.body.proposalId)) : undefined;
-    const clean = await sanitizeOps(req.body?.ops, world, stored);
+    const clean = await sanitizeOps(req.body?.ops, world, stored, row => canWriteScope(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
     if (clean.error) { res.status(400).json({ error: clean.error }); return; }
     const opId = String(req.body?.opId || "");
     if (!clean.ops.some(op => op.id === opId)) { res.status(400).json({ error: "المادة غير موجودة في المقترح." }); return; }
@@ -370,8 +372,11 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     }
     const lock = await deps.scheduleLockRefusal(req, Number(request.AdCollegeId), Number(request.AdSectionId), Number(request.AdTermId), { registrarLock: false });
     if (lock) { res.status(409).json({ error: lock, code: "schedule-locked" }); return; }
+    if ((await Repository.getStudyProposalsByRequest(request.id)).length >= 60) {
+      res.status(409).json({ error: "بلغ هذا الأستاذ حدّ المقترحات المسموح. اسحب مقترحاتٍ قديمة أو أكمل ما سبق.", code: "proposal-cap" }); return;
+    }
     const world = await loadWorld(Number(request.AdTermId), Number(request.AdInstructorId));
-    const clean = await sanitizeOps(req.body?.ops || [], world);
+    const clean = await sanitizeOps(req.body?.ops || [], world, undefined, row => canWriteScope(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
     if (clean.error) { res.status(400).json({ error: clean.error }); return; }
     const itemIndex = Number.isInteger(Number(req.body?.itemIndex)) && req.body?.itemIndex !== null && req.body?.itemIndex !== "" ? Number(req.body.itemIndex) : null;
     const mode: StudyProposalResponseMode = req.body?.responseMode === "linked" ? "linked" : "independent";
@@ -403,7 +408,7 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     if (!Number.isInteger(expectedRev)) { res.status(400).json({ error: "رقم المراجعة مطلوب." }); return; }
     if (expectedRev !== proposal.rev) { res.status(409).json(conflictBody(proposal)); return; }
     const world = await loadWorld(Number(proposal.AdTermId), Number(proposal.AdInstructorId));
-    const clean = await sanitizeOps(req.body?.ops ?? proposal.ops, world, proposal);
+    const clean = await sanitizeOps(req.body?.ops ?? proposal.ops, world, proposal, row => canWriteScope(req, Number(row.AdCollegeId), Number(row.AdSectionId)));
     if (clean.error) { res.status(400).json({ error: clean.error }); return; }
     const mode: StudyProposalResponseMode = req.body?.responseMode === "linked" ? "linked" : req.body?.responseMode === "independent" ? "independent" : proposal.responseMode;
     const lastSent = proposal.versions.find(v => v.version === proposal.sentVersion);

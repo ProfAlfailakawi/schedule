@@ -168,7 +168,14 @@ export function SendDialog({ ws, onClose, onSent }: { ws: Workspace; onClose: ()
               <select value={ws.expiryDays} onChange={e => ws.setExpiryDays(Number(e.target.value))}>
                 {[3, 7, 14, 21, 30].map(d => <option key={d} value={d}>{countOf(d, AR.day)}</option>)}
               </select>
-              <small>آخر موعد للرد: {arabicDate(expiry.expiresAt)} — وبعده لا يقبل الرابط ردّاً.</small></label>
+              <small>آخر موعد للرد: {arabicDate(expiry.expiresAt)} — وبعده لا يقبل الرابط ردّاً.</small>
+              <details className="sp-policy"><summary>متى يمكن الرد والتثبيت؟</summary>
+                <ul>
+                  <li><b>الرد:</b> يُقبل حتى آخر موعدٍ أعلاه، حتى لو أُغلق استقبال رغبات جديدة؛ ويتوقف إن سُحب المقترح أو أُرسلت نسخةٌ أحدث أو انتهى الفصل.</li>
+                  <li><b>الرابط:</b> يبقى مقروءاً حتى نهاية الفصل، لكنه لا يقبل ردّاً بعد انتهاء الصلاحية.</li>
+                  <li><b>التثبيت:</b> بيدك بعد موافقة الأستاذ، ويمنعه تجميد الجدول أو اعتماده عند التسجيل أو تغيّر المواعيد الأصلية.</li>
+                </ul>
+              </details></label>
 
             <section className="sp-send-ops" aria-label="مواد المقترح">
               <h3>المواد ({num(ws.ops.length)})</h3>
@@ -304,7 +311,18 @@ export function CommitDialog({ ws, onClose, onDone }: { ws: Workspace; onClose: 
 
         {state === "done" ? (
           <div className="sp-sent"><span className="sp-sent-icon" aria-hidden="true"><Check /></span>
-            <p className="sp-sent-lead">ثُبّتت المجموعة كوحدةٍ واحدة وتحدّث الجدول وكرت الأستاذ وسجل الحوار. الضغطة المكررة لا تنشئ شيئاً مرتين.</p></div>
+            <p className="sp-sent-lead">ثُبّتت المجموعة كوحدةٍ واحدة وتحدّث الجدول وكرت الأستاذ وسجل الحوار. الضغطة المكررة لا تنشئ شيئاً مرتين.</p>
+            {proposal.commit ? (
+              <ul className="sp-done-list" aria-label="ما نُفِّذ">
+                {proposal.commit.results.map(result => {
+                  const op = proposal.ops.find(o => o.id === result.opId);
+                  if (!op) return null;
+                  const what = result.state === "skipped" ? "لم يُنفَّذ (لم يوافق عليه الأستاذ بعد)"
+                    : [result.createdRowIds?.length ? "أُنشئت شعبةٌ جديدة في الجدول" : "", result.updatedRowIds?.length ? (op.out && op.out.action === "unassign" ? "أُسندت الشعبة وفُكّ إسناد الموعد القديم" : "أُسندت الشعبة / عُدّل الموعد") : "", result.deletedRowIds?.length ? "حُذف الموعد القديم من جدول القسم" : ""].filter(Boolean).join(" · ");
+                  return <li key={result.opId} data-state={result.state}><b>{op.target.courseName} · شعبة {op.target.SCode}</b><span>{what}</span></li>;
+                })}
+              </ul>
+            ) : null}</div>
         ) : null}
 
         <footer className="sp-modal-actions">

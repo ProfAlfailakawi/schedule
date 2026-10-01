@@ -108,7 +108,7 @@ export default function ProposalChecks({ ws, compact = false }: { ws: Workspace;
   }), [ev]);
   const [open, setOpen] = useState(false);
 
-  const status = !ws.ops.length ? "empty" : ws.evalState === "failed" ? "failed" : !checked ? "checking"
+  const status = ws.terminal ? "closed" : !ws.ops.length ? "empty" : ws.evalState === "failed" ? "failed" : !checked ? "checking"
     : ev!.status === "partial" ? "partial" : groups.blocker.length ? "blocked" : "clear";
 
   /* مانعٌ جديد أو فحصٌ فاشل يفتح التفاصيل مرّةً عند ظهوره؛ ثم يتحكّم بها القارئ. */
@@ -119,6 +119,7 @@ export default function ProposalChecks({ ws, compact = false }: { ws: Workspace;
   }, [status]);
 
   const heading = {
+    closed: ws.proposal?.status === "withdrawn" ? "المقترح مسحوب — لا فحص" : "المقترح مثبّت في الجدول — لا فحص",
     empty: "لا فحصَ قبل إضافة مادة", failed: "تعذّر الفحص", checking: "جاري الفحص…", partial: "الفحص غير مكتمل",
     blocked: `يوجد ${countOf(groups.blocker.length, AR.blocker)}`, clear: "اكتمل الفحص — لا توجد موانع",
   }[status];
@@ -127,7 +128,7 @@ export default function ProposalChecks({ ws, compact = false }: { ws: Workspace;
     <section className="sp-checks" data-status={status} data-compact={compact || undefined} aria-label="ملخص الفحص">
       <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-checks-bar" aria-expanded={open} onClick={() => setOpen(v => !v)}>
         <span className="sp-checks-icon" data-status={status} aria-hidden="true">
-          {status === "checking" ? <LoaderCircle className="sp-spin" /> : status === "clear" ? <ShieldCheck /> : status === "empty" ? <Info /> : <AlertTriangle />}
+          {status === "checking" ? <LoaderCircle className="sp-spin" /> : status === "clear" || (status === "closed" && ws.proposal?.status !== "withdrawn") ? <ShieldCheck /> : status === "empty" || status === "closed" ? <Info /> : <AlertTriangle />}
         </span>
         <span className="sp-checks-text">
           <b role="status">{heading}</b>

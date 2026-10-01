@@ -358,7 +358,7 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
       for (const entry of scope.studyProposals || []) {
         items.push({
           id: `study-proposal:${entry.proposalId}:${entry.kind}:${entry.at || ""}`, tone: "action",
-          title: entry.kind === "approved" ? `${entry.instructorName} وافق على مقترحٍ دراسي — بانتظار التثبيت` : `${entry.instructorName} طلب تعديل مقترحٍ دراسي`,
+          title: entry.kind === "approved" ? `${entry.instructorName} وافق على مقترحٍ دراسي — بانتظار التثبيت` : `تعديلٌ مطلوب من ${entry.instructorName} على مقترحٍ دراسي`,
           detail: placeOf(scope), view: requestView, at: entry.at, ...target(scope),
         });
       }

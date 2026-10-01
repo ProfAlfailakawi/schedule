@@ -150,8 +150,11 @@ export function useProposalWorkspace(options: { requestId: string; proposalId?: 
 
   /* ── الفحص ─────────────────────────────────────────────────────────────── */
   const evalSeq = useRef(0);
+  /* مقترحٌ ثُبّت أو سُحب لا يُفحص: جدولُه الحيّ صار يحمل نتيجته، فمقارنتُه به تُظهر «تغيّراً» لم يحدث. */
+  const terminal = Boolean(proposal && (proposal.commit || proposal.status === "committed" || proposal.status === "withdrawn"));
   useEffect(() => {
     if (!ctx) return;
+    if (terminal) { setEvaluation(null); setEvalState("idle"); setEvalFor(""); return; }
     if (!ops.length) { setEvaluation(null); setEvalState("idle"); setEvalFor(""); return; }
     setEvalState("checking");
     const controller = new AbortController();
@@ -168,7 +171,7 @@ export function useProposalWorkspace(options: { requestId: string; proposalId?: 
         });
     }, 380);
     return () => { window.clearTimeout(handle); controller.abort(); };
-  }, [ctx, ops, opsFingerprint, requestId, proposal?.id, evalTick]);
+  }, [ctx, ops, opsFingerprint, requestId, proposal?.id, evalTick, terminal]);
 
   const evalCurrent = evaluation !== null && evalFor === opsFingerprint && evalState === "ready";
   const retryEvaluation = useCallback(() => setEvalTick(t => t + 1), []);
@@ -373,8 +376,8 @@ export function useProposalWorkspace(options: { requestId: string; proposalId?: 
   /* ── ما يُعرض ──────────────────────────────────────────────────────────── */
   const currentItems = ctx?.current.items ?? [];
   const optimistic = useMemo(() => localAfter(currentItems, ops), [currentItems, ops]);
-  const afterItems = evalCurrent ? evaluation!.after.items : optimistic.items;
-  const ghostItems = evalCurrent ? evaluation!.after.ghosts : optimistic.ghosts;
+  const afterItems = terminal ? currentItems : evalCurrent ? evaluation!.after.items : optimistic.items;
+  const ghostItems = terminal ? [] : evalCurrent ? evaluation!.after.ghosts : optimistic.ghosts;
 
   /** المحاضرةُ الجاري إعدادها: ما في النموذج الآن، قبل أن تُضاف. */
   const draftItem: GridItem | null = useMemo(() => {
@@ -425,7 +428,7 @@ export function useProposalWorkspace(options: { requestId: string; proposalId?: 
     selectedKey, setSelectedKey, focusOpId, setFocusOpId, focusFindingId, setFocusFindingId, focusKeys,
     alts, setAlts, loadAlternatives, applyAlternative, retargetOp, undo, undoRetarget, fillFromCell,
     save, replaceView, hydrate,
-    currentItems, afterItems, ghostItems, draftItem, marks, draftFit, itemIndex,
+    currentItems, afterItems, ghostItems, draftItem, marks, draftFit, itemIndex, terminal,
   };
 }
 

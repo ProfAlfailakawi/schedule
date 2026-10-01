@@ -76,6 +76,15 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
     if (startWith === "send" && ws.ops.length) setDialog("send");
   }, [ws.ctx, ws.proposal, ws.ops.length, startWith]);
 
+  /* الجسم الجاهز يستلم التركيز مرّةً: بدونه يبقى التركيز على الزرّ الذي فتحه خلف الطبقة، والتنقّل بـTab يمرّ بالصفحة الخلفية. */
+  const focused = useRef(false);
+  const hasCtx = Boolean(ws.ctx);
+  useEffect(() => {
+    if (!hasCtx || focused.current) return;
+    focused.current = true;
+    window.requestAnimationFrame(() => rootRef.current?.focus({ preventScroll: true }));
+  }, [hasCtx]);
+
   const requestClose = () => { if (dialogRef.current) return; if (wsRef.current.dirty) setDialog("close"); else onClose(); };
   const rootRef = useDrawerA11y<HTMLDivElement>(requestClose);
 
@@ -159,6 +168,13 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
         <div className="sp-banner" role="alert" data-tone="bad"><AlertTriangle aria-hidden="true" /><span>عدّل شخصٌ آخر هذا المقترح أثناء عملك.</span>
           <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.takeTheirs}>اعتماد نسخته</button><button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.keepMine}>الاحتفاظ بتعديلاتي</button></div>
       ) : null}
+      {(() => {
+        const others = ctx.proposals.filter(view => view.proposal.id !== proposal?.id && !["withdrawn", "committed", "expired"].includes(effectiveStatus(view.proposal)));
+        return others.length ? (
+          <div className="sp-banner" role="status" data-tone="info"><AlertTriangle aria-hidden="true" />
+            <span>لهذا الأستاذ مقترحاتٌ نشطةٌ أخرى ({num(others.length)}). الإرسال لا يحجز شيئاً، فراجع أن لا تتعارض المقترحات فيما بينها قبل التثبيت.</span></div>
+        ) : null;
+      })()}
       {ctx.term.closed ? <div className="sp-banner" role="status" data-tone="bad"><Ban aria-hidden="true" /><span>انتهى هذا الفصل؛ لا تُرسل فيه مقترحات جديدة.</span></div> : null}
       <div className="sp-ops-wrap">
         <div className="sp-ops-head"><h2><ClipboardList aria-hidden="true" />مواد المقترح</h2>
@@ -187,12 +203,12 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
   const checksPane = <ProposalChecks ws={ws} compact={wide} />;
 
   return (
-    <div className="sp-root" role="dialog" aria-modal="true" aria-labelledby="sp-title" ref={rootRef} data-wide={wide || undefined}>
+    <div className="sp-root" role="dialog" aria-modal="true" aria-labelledby="sp-title" ref={rootRef} tabIndex={-1} data-wide={wide || undefined}>
       <div className="sp-shell">
         <ProposalHeader ctx={ctx} proposal={proposal} status={statusKey as any}
           before={ctx.current.metrics} after={ws.evalCurrent && ws.evaluation ? ws.evaluation.after.metrics : null}
           loadCap={ctx.instructor.loadCap} blockers={blockers} reviews={reviews} evalState={ws.evalState} evalCurrent={ws.evalCurrent}
-          evalError={ws.evalError} hasOps={ws.ops.length > 0} onRetry={ws.retryEvaluation} onClose={requestClose} />
+          evalError={ws.evalError} hasOps={ws.ops.length > 0 && !ws.terminal} onRetry={ws.retryEvaluation} onClose={requestClose} />
 
         {!wide ? (
           <nav className="sp-tabs" role="tablist" aria-label="أقسام المساحة">

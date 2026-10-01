@@ -13,9 +13,9 @@ import {
 } from "../src/utils/studyProposal";
 
 let passed = 0, failed = 0;
-const check = (ok: boolean, label: string) => {
+const check = (ok: boolean, label: string, extra?: unknown) => {
   if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); }
-  else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); }
+  else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`, extra !== undefined ? JSON.stringify(extra).slice(0, 300) : ""); }
 };
 
 const PLACEHOLDER = 99, TEACHER = 7;
