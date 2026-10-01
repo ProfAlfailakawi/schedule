@@ -1891,9 +1891,8 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
    وصفّان متساويان (٣ × ٢) على الهاتف — لا تبويبٌ يتيم في سطرٍ وحده. */
 .transfer-tabs{grid-template-columns:repeat(6,minmax(0,1fr))!important}
 @media (max-width:760px){.transfer-tabs{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
-/* فصلٌ منتهٍ: أربع تبويبات (لا استيراد ولا تخطيط) — صفٌّ واحد، وصفّان متساويان على الهاتف. */
-.transfer-tabs.is-ended{grid-template-columns:repeat(4,minmax(0,1fr))!important}
-@media (max-width:760px){.transfer-tabs.is-ended{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+/* فصلٌ منتهٍ: تبويبتان فقط (تصدير ونشر) — صفٌّ واحد على كل شاشة. */
+.transfer-tabs.is-ended{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 
 /* ── قائمة الملاحظة كاملةً، صفحةً صفحة (PagedFindingList) ─────────────────
    ملخّصٌ وبحثٌ فوق، والعناصر بتخطيطها الأصلي (الحاوية تأخذ صنف القائمة التي
