@@ -693,3 +693,21 @@ body:has(.sp-root) .smart-guide-fab{visibility:hidden}
 }
 .sp-quick-assign .sp-search input{outline:none;box-shadow:none;border:0}
 .sp-quick-assign .sp-search:focus-within{border-color:var(--accent)}
+
+/* ── وارد الأساتذة: أبسط ───────────────────────────────────────────────── */
+.inbox-scope{border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);box-shadow:var(--shadow-xs)}
+.inbox-scope>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:10px 14px;min-block-size:44px;cursor:pointer;color:var(--ink-2);font-size:14px}
+.inbox-scope>summary::-webkit-details-marker{display:none}
+.inbox-scope>summary span{flex:1;min-inline-size:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inbox-scope>summary em{font-style:normal;color:var(--accent-ink);font-weight:700;font-size:13px}
+.inbox-scope>summary svg{inline-size:16px;block-size:16px;color:var(--muted);flex:none}
+.inbox-scope[open]>summary svg:last-child{transform:rotate(180deg)}
+.inbox-scope>:not(summary){margin:0 8px 8px}
+.request-summary{margin:0;display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center;font-size:13.5px;color:var(--ink-2);padding-inline:4px}
+.request-summary>*{display:inline-flex;gap:5px;align-items:center}
+.request-summary svg{inline-size:14px;block-size:14px;color:var(--muted)}
+.request-filters-more{display:contents}
+.request-filters-more>summary{list-style:none;cursor:pointer;color:var(--muted);font-size:12.5px;padding:4px 10px;border-radius:var(--r-md);border:1px dashed var(--line-strong)}
+.request-filters-more>summary::-webkit-details-marker{display:none}
+.request-filters-more[open]>summary{display:none}
+.request-filters-more:not([open])>:not(summary){display:none}

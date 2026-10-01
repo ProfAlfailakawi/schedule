@@ -32,8 +32,9 @@ import {
   ClipboardPen, MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
 import { DnaCount } from "./dna";
-import { RequestStatusStepper, RequestTimelineToggle, RequestTotalsFunnel } from "./dna/requestDna";
+import { RequestTimelineToggle } from "./dna/requestDna";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
+import { num } from "./proposal/proposalFormat";
 import { ProposalLauncherBar, ProposalStrip, type OpenWorkspace } from "./proposal/ProposalInboxParts";
 import { proposalApi, type StaffProposalView } from "./proposal/proposalApi";
 const StudyProposalWorkspace = React.lazy(() => import("./proposal/StudyProposalWorkspace"));
@@ -443,7 +444,6 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
 
       {/* مسارُ الطلب بنظرة، وسجلُّ أحداثه مطويٌّ خلف أيقونة. */}
       <div className="request-card-relay">
-        <RequestStatusStepper row={row} />
         <RequestTimelineToggle
           timeline={row.timeline}
           itemLabel={index => row.items?.[index]?.after?.courseName || row.items?.[index]?.before?.courseName || undefined}
@@ -758,6 +758,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   const [sectionId, setSectionId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).sectionId);
   const [rows, setRows] = useState<InboxRequest[] | null>(null);
   const [totals, setTotals] = useState<Totals | null>(null);
+  /* النطاق مطويٌّ على الجوال: سطرٌ يقول أين أنت، والتغيير بضغطة. */
+  const [scopeOpen, setScopeOpen] = useState(false);
   const [currentRows, setCurrentRows] = useState<Map<number, FSchedule>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -1205,7 +1207,19 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         وارد الأساتذة
       </PageTitle>
 
-      <ScopeAskBar
+      {(() => {
+        const label = (key: string) => {
+          const select = selects.find(item => item.key === key);
+          const hit = select?.options.find((option: any) => String(option.value) === String(select.value));
+          return hit ? String((hit as any).label) : "";
+        };
+        const parts = [label("college"), sectionId ? label("section") : "كل الأقسام", label("term"), instructorFilter ? label("instructor") : ""].filter(Boolean);
+        return (
+          <details className="inbox-scope" open={scopeOpen} onToggle={event => setScopeOpen((event.currentTarget as HTMLDetailsElement).open)}>
+            <summary data-guide-ignore="طيُّ نطاق الوارد وفتحه — عرضٌ لا فعل">
+              <SlidersHorizontal aria-hidden="true" /><span>{parts.join(" · ") || "اختر النطاق"}</span><em>{"تغيير"}</em><ChevronDown aria-hidden="true" />
+            </summary>
+            <ScopeAskBar
         idPrefix="requests-inbox"
         label="نطاق الوارد"
         ask={ask}
@@ -1227,6 +1241,9 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           else { sharedScope.pick({ termId: id }); setTermId(id); }
         }}
       />
+          </details>
+        );
+      })()}
 
       {error ? <Notice type="error" onDismiss={() => setError(null)}>{error}</Notice> : null}
 
@@ -1241,15 +1258,14 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         />
       ) : (
         <>
-          {/* ثلاثةُ أرقامٍ لا أكثر. من أراد التفصيل فتح ما تحته. */}
-          <Surface className="request-totals">
-            <RequestTotalsFunnel totals={totals}>
-              <div className="dna-row request-funnel-pills">
-                {totals?.unchanged ? <div><DnaCount icon={<Check aria-hidden="true" />} value={<>{totals.unchanged} <span>بلا تغيير</span></>} label="بلا تغيير" /></div> : null}
-                {totals?.changed ? <div><DnaCount icon={<Replace aria-hidden="true" />} value={<>{totals.changed} <span>طلبوا تغييراً</span></>} label="طلبوا تغييراً" /></div> : null}
-              </div>
-            </RequestTotalsFunnel>
-          </Surface>
+          {/* سطرٌ واحد بدل شريط المراحل: كم أجاب، وكم طلبوا تغييراً. */}
+          {totals ? (
+            <div className="request-summary" role="status">
+              <span>أجاب: {num(Number(totals.answered || 0))} من {num(Number(totals.sent || 0))}</span>
+              {totals?.changed ? <div><Replace aria-hidden="true" />طلبوا تغييراً: {num(Number(totals.changed))}</div> : null}
+              {totals?.unchanged ? <div><Check aria-hidden="true" />بلا تغيير: {num(Number(totals.unchanged))}</div> : null}
+            </div>
+          ) : null}
 
           <ProposalLauncherBar rows={rows} proposals={proposals} onOpen={setWorkspace} />
 
@@ -1326,11 +1342,14 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           <div className="request-filters" role="toolbar" aria-label="تصفية الوارد">
             <span className="request-filters-mark" aria-hidden="true"><SlidersHorizontal /></span>
             <FilterGroup label="الحالة" value={stateFilter} onChange={value => setStateFilter(value as any)} options={stateOptions} />
-            <FilterGroup label="النوع" value={actionFilter} onChange={value => setActionFilter(value as any)} options={actionOptions} />
-            <FilterGroup label="الفحص" value={verdictFilter} onChange={value => setVerdictFilter(value as any)} options={verdictOptions} />
-            {deptOptions.length ? (
-              <FilterGroup label="القسم" value={String(deptFilter)} onChange={value => setDeptFilter(Number(value) || 0)} options={deptOptions} />
-            ) : null}
+            <details className="request-filters-more" open={actionFilter !== "all" || verdictFilter !== "all" || Boolean(deptFilter)}>
+              <summary data-guide-ignore="مرشّحاتٌ إضافية — عرضٌ لا فعل">أكثر</summary>
+              <FilterGroup label="النوع" value={actionFilter} onChange={value => setActionFilter(value as any)} options={actionOptions} />
+              <FilterGroup label="الفحص" value={verdictFilter} onChange={value => setVerdictFilter(value as any)} options={verdictOptions} />
+              {deptOptions.length ? (
+                <FilterGroup label="القسم" value={String(deptFilter)} onChange={value => setDeptFilter(Number(value) || 0)} options={deptOptions} />
+              ) : null}
+            </details>
             {filtered ? (
               <button type="button" className="request-filters-reset" data-guide-ignore="إعادة المرشّحات — عرضٌ لا فعل" onClick={() => { setStateFilter("pending"); setActionFilter("all"); setVerdictFilter("all"); setDeptFilter(0); }}>
                 <X aria-hidden="true" /> إعادة
