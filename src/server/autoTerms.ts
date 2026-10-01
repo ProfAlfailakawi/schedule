@@ -8,23 +8,29 @@
  *
  * والفصلُ الذي انقضى تاريخُ نهايته (termHasEnded) يُعلَن «منتهياً» وحده
  * (AdTermClosed=true)، كأن المنسق ضغط «انتهى هذا الفصل» — قرار المالك
- * ٢٠٢٦/١٠/١. فصلٌ أعاد المنسق فتحه صراحةً (AdTermClosed=false) لا يُمسّ. لا تعمل في وضع العرض (DATA_MODE=demo): عالمُ العرض ثابت.
+ * ٢٠٢٦/١٠/١. «false» المخزّنة وحدها لا تحمي: نموذج التعديل يكتبها مع كل
+ * حفظ. الذي يحمي إعادةُ فتحٍ حقيقية (مغلق ← مفتوح، AdTermReopenedAt) بعد
+ * نهاية الفصل. لا تعمل في وضع العرض (DATA_MODE=demo): عالمُ العرض ثابت.
  */
-import { autoTermDue, termHasEnded } from "../utils/termSequence";
+import { autoTermDue, termHasEnded, termWindow } from "../utils/termSequence";
 import { AR, countOf } from "../utils/arabicCount";
 
 export interface AutoTermDeps {
   isDemoMode: () => boolean;
   createTermIfAbsent: (name: string, dates: { start: string; weeks: number }) => Promise<{ AdTermId: number; AdTermName: string } | null>;
   log?: (message: string) => void;
-  getTerms?: () => Promise<Array<{ AdTermId: number; AdTermName: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean }>>;
+  getTerms?: () => Promise<Array<{ AdTermId: number; AdTermName: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean; AdTermReopenedAt?: string }>>;
   closeTerm?: (term: { AdTermId: number; AdTermName: string; AdTermStart?: string; AdTermWeeks?: number }) => Promise<unknown>;
 }
 
 /** الفصول التي انتهى تاريخها ولم يُحسم أمرها بعد — تُغلق. */
 export async function closeEndedTerms(deps: AutoTermDeps, now: number = Date.now()): Promise<string[]> {
   if (deps.isDemoMode() || !deps.getTerms || !deps.closeTerm) return [];
-  const ended = (await deps.getTerms()).filter(term => term.AdTermClosed === undefined && termHasEnded(term, now));
+  const reopenedAfterEnd = (term: { AdTermReopenedAt?: string; AdTermName: string; AdTermStart?: string; AdTermWeeks?: number }) => {
+    const window = termWindow(term);
+    return Boolean(term.AdTermReopenedAt && window && Date.parse(term.AdTermReopenedAt) >= window.to);
+  };
+  const ended = (await deps.getTerms()).filter(term => term.AdTermClosed !== true && termHasEnded(term, now) && !reopenedAfterEnd(term));
   for (const term of ended) {
     await deps.closeTerm(term);
     deps.log?.(`[auto-term] انتهى «${term.AdTermName}» بتاريخه`);

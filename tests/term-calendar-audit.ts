@@ -81,13 +81,14 @@ check(due("2027-04-01").name === "الفصل الأول 2027/2028" && due("2027-
     const terms: any[] = [
       { AdTermId: 1, AdTermName: "الفصل الأول 2026/2027", AdTermStart: "2026-09-13", AdTermWeeks: 14 },
       { AdTermId: 2, AdTermName: "الفصل الصيفي 2025/2026" },
-      { AdTermId: 3, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: false },
+      { AdTermId: 3, AdTermName: "الفصل الثاني 2025/2026", AdTermClosed: false, AdTermReopenedAt: "2026-06-01T00:00:00Z" },
+      { AdTermId: 4, AdTermName: "الفصل الأول 2025/2026", AdTermClosed: false },
     ];
     const closed: number[] = [];
     const d = (demo: boolean) => ({ isDemoMode: () => demo, createTermIfAbsent: async () => null,
       getTerms: async () => terms, closeTerm: async (t: any) => { closed.push(t.AdTermId); } });
     await closeEndedTerms(d(false), Date.parse("2026-12-16T12:00:00"));
-    check(closed.join() === "2", "المنتهي بتاريخه يُغلق وحده؛ الجاري لا يُمسّ؛ ما أعاد المنسق فتحه يبقى مفتوحاً");
+    check(closed.join() === "2,4", "المنتهي بتاريخه يُغلق وحده (ولو حُفظ false من النموذج)؛ الجاري لا يُمسّ؛ ما أُعيد فتحه بعد نهايته يبقى مفتوحاً");
     closed.length = 0;
     await closeEndedTerms(d(false), Date.parse("2026-12-19T12:00:00"));
     check(closed.includes(1), "الأول 2026/2027 يُغلق بعد الخميس 17/12");

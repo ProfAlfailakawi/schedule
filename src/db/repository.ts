@@ -2830,6 +2830,7 @@ export const Repository = {
        */
       const previous = doc.data() as AdTerm;
       const updated: AdTerm = { ...previous, AdTermId: id, AdTermName: name, ...calendar };
+      if (previous.AdTermClosed === true && calendar.AdTermClosed === false) updated.AdTermReopenedAt = new Date().toISOString();
       if (!calendar.AdTermStart) delete updated.AdTermStart;
       if (!calendar.AdTermWeeks) delete updated.AdTermWeeks;
       await docRef.set(updated);
@@ -2838,6 +2839,7 @@ export const Repository = {
     const idx = db.terms.findIndex(t => t.AdTermId === id);
     if (idx === -1) throw new Error("الفصل الدراسي غير موجود");
     db.terms[idx].AdTermName = name;
+    if (db.terms[idx].AdTermClosed === true && calendar.AdTermClosed === false) db.terms[idx].AdTermReopenedAt = new Date().toISOString();
     Object.assign(db.terms[idx], calendar);
     if (!calendar.AdTermStart) delete db.terms[idx].AdTermStart;
     if (!calendar.AdTermWeeks) delete db.terms[idx].AdTermWeeks;

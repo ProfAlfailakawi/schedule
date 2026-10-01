@@ -66,6 +66,8 @@ export interface AdTerm {
    * "open" and offering room-borrowing on a term that ended years ago.
    */
   AdTermClosed?: boolean;
+  /** متى أعاد المنسق فتح فصلٍ مغلق (مغلق ← مفتوح). يحمي فصلاً انقضى تاريخه من الإغلاق التلقائي. */
+  AdTermReopenedAt?: string;
   /**
    * ── آخر موعد لتسليم الجداول ───────────────────────────────────────────────
    *
