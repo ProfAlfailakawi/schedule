@@ -1183,8 +1183,12 @@ export interface RegistrationStats {
   collegeId: number;
   sectionId: number;
   termId: number;
-  /** AdCourseId → عدد الطلبة */
+  /** AdCourseId → عدد الطلبة المسجّلين — الإدخال القديم، لم يعد يُكتب من الشاشة ويُحفظ كما هو. */
   counts: Record<string, number>;
+  /** AdCourseId → المتبقي من كشف عمادة التسجيل: طلبةٌ لم يسجّلوا المقرر بعد. */
+  remaining?: Record<string, number>;
+  /** من أين جاء المتبقي: الملف ومتى استُورد. */
+  remainingSource?: { fileName: string; importedAt: string };
   /** AdCourseId → عدد الشعب الذي قبله القسم (اختياري) */
   accepted?: Record<string, number>;
   updatedAt: string;

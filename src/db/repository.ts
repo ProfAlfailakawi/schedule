@@ -5115,15 +5115,22 @@ export const Repository = {
   },
 
   saveRegistrationStats: async (collegeId: number, sectionId: number, termId: number,
-    input: { counts: Record<string, number>; accepted?: Record<string, number> }, updatedBy = ""): Promise<RegistrationStats> => {
+    input: { counts?: Record<string, number>; remaining?: Record<string, number>; accepted?: Record<string, number>; remainingSource?: { fileName?: unknown; importedAt?: unknown } | null },
+    updatedBy = ""): Promise<RegistrationStats> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     const clean = (map: Record<string, unknown> | undefined, max: number) => Object.fromEntries(
       Object.entries(map || {}).slice(0, 2000)
         .map(([key, value]) => [String(Number(key)), Math.floor(Number(value))] as const)
         .filter(([key, value]) => Number(key) > 0 && Number.isFinite(value) && value >= 0 && value <= max));
+    /* الشاشة لم تعد تكتب «المسجّلين»: ما حُفظ منه قبلُ يبقى كما هو. */
+    const previous = input.counts === undefined ? await Repository.getRegistrationStats(collegeId, sectionId, termId) : null;
+    const source = input.remainingSource && String(input.remainingSource.fileName || "").trim()
+      ? { fileName: String(input.remainingSource.fileName).slice(0, 200), importedAt: String(input.remainingSource.importedAt || new Date().toISOString()).slice(0, 40) }
+      : undefined;
     const row: RegistrationStats = {
       id: scopeKey, scopeKey, collegeId, sectionId, termId,
-      counts: clean(input.counts, 100000), accepted: clean(input.accepted, 500),
+      counts: clean(input.counts ?? previous?.counts, 100000), remaining: clean(input.remaining, 100000), accepted: clean(input.accepted, 500),
+      ...(source ? { remainingSource: source } : {}),
       updatedAt: new Date().toISOString(), updatedBy: String(updatedBy || "").slice(0, 120),
     };
     if (firestoreDb && !demoSandboxContext.getStore()) {

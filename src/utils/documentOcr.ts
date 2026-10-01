@@ -995,6 +995,115 @@ export async function ocrGraduationSheetDocument(input:Buffer,mime:string):Promi
   return{text,pageCount,confidence,legibility:judgeLegibility(text,Math.max(1,Math.min(pageCount,3)),confidence)};
 }
 
+/*
+ * ── كشفُ «المتبقي» من عمادة التسجيل: خلايا بمواضعها ─────────────────────────
+ *
+ * لا جدولَ مواعيد هنا ولا رؤوسَ الهيئة: صفوفٌ فيها رقمُ مقرر وأعداد. فيكفي أن
+ * تُستخرج كلُّ خليةٍ بنصّها وموضعها نسبةً إلى الصفحة (٠–١)، والقراءةُ نفسها
+ * في src/utils/remainingReport.ts. طبقةُ النص أولاً (تقرير النظام الأصلي يُقرأ
+ * في ثوانٍ وبلا خطأ)، والمسحُ الضوئي بدوره في طابور القراءة كأي ملفٍ ممسوح.
+ */
+const REPORT_TEXT_MAX_PAGES=60;
+export type ReportCellsResult={source:"text"|"scan";pages:Array<Array<{text:string;x0:number;x1:number;y:number}>>;pageCount:number};
+
+async function reportTextLayer(input:Buffer):Promise<ReportCellsResult|null>{
+  const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
+  let pdf:any;
+  try{pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;}
+  catch{throw new Error("تعذّر فتح الملف — تأكد أنه PDF سليم من عمادة التسجيل.");}
+  /* حدُّ الاثنتي عشرة صفحة لكلفة القراءة الضوئية؛ وطبقةُ النص تُقرأ في ثوانٍ،
+     فيتّسع كشفُ الكلية كلها. الممسوح يبقى على حدّه في renderPdf. */
+  const count=Number(pdf.numPages||0);
+  if(count>REPORT_TEXT_MAX_PAGES)throw new PdfPageLimitError(`الكشف ${countOf(count, AR.page)}، والحد ${countOf(REPORT_TEXT_MAX_PAGES, AR.page)}. ارفع صفحات القسم وحدها.`);
+  if(!count)return null;
+  const pages:ReportCellsResult["pages"]=[];let chars=0;
+  for(let index=1;index<=count;index++){
+    const page=await pdf.getPage(index),viewport=page.getViewport({scale:1});
+    const vw=Number(viewport.width||1),vh=Number(viewport.height||1);
+    /* صورةٌ بحجم الصفحة تعني مسحاً — وطبقةُ نصه المخفية قراءةُ تطبيق المسح لا
+       ما طبعته العمادة؛ فيُقرأ بالمسار المصوّر كما في استيراد الجدول. */
+    try{
+      const ops:any=await page.getOperatorList();
+      const imageOps=new Set([pdfjs.OPS?.paintImageXObject,pdfjs.OPS?.paintJpegXObject,pdfjs.OPS?.paintInlineImageXObject].filter((op:any)=>op!==undefined));
+      if((ops?.fnArray||[]).some((fn:number,at:number)=>{
+        if(!imageOps.has(fn))return false;
+        const args=ops.argsArray?.[at]||[];
+        return Math.max(Number(args[1]||args[0]?.width||0),Number(args[2]||args[0]?.height||0))>=1000;
+      }))return null;
+    }catch{/* An unreadable operator list is not proof of a scan. */}
+    const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
+    const cells:ReportCellsResult["pages"][number]=[];
+    for(const item of content?.items||[]){
+      const text=String(item?.str||"").normalize("NFKC").replace(/\s+/g," ").trim();
+      if(!text||!Array.isArray(item?.transform))continue;
+      const transformed=pdfjs.Util?.transform?pdfjs.Util.transform(viewport.transform,item.transform):item.transform;
+      const x=Number(transformed?.[4]??item.transform[4]??0),baseline=Number(transformed?.[5]??item.transform[5]??0);
+      const width=Math.max(1,Math.abs(Number(item?.width||0))),height=Math.max(6,Math.abs(Number(item?.height||0))||10);
+      cells.push({text,x0:x/vw,x1:(x+width)/vw,y:(baseline-height*.4)/vh});
+      chars+=text.replace(/\s+/g,"").length;
+    }
+    pages.push(cells);
+  }
+  return chars>=40?{source:"text",pages,pageCount:count}:null;
+}
+
+/** خلايا كشف «المتبقي» بمواضعها: طبقة النص، وإلا القراءة الضوئية في دورها. */
+export async function readReportCells(input:Buffer,blanks?:(pages:ReportCellsResult["pages"])=>Array<{page:number;x:number;y:number}>):Promise<ReportCellsResult>{
+  if(input.subarray(0,4).toString("latin1")!=="%PDF")throw new Error("الملف ليس PDF — ارفع كشف المتبقي كما أرسلته عمادة التسجيل.");
+  const text=await reportTextLayer(input);
+  if(text)return text;
+  return readScanInTurn(`remaining:${await documentFingerprint(input)}`,async()=>{
+    const images=await renderPdf(input,TARGET_LONG_EDGE);
+    const worker=await getHeaderWorker();
+    const pages:ReportCellsResult["pages"]=[];
+    type Box={text:string;x0:number;x1:number;y0:number;y1:number};
+    const read=async(image:Buffer,whitelist:string)=>{
+      /* «11» (نصٌّ متفرّق) يقرأ خلايا الجدول؛ «6» و«4» أسقطا الصفوف كلها في التجربة. */
+      await worker.setParameters({tessedit_char_whitelist:whitelist,tessedit_pageseg_mode:"11" as any});
+      const result:any=await worker.recognize(image,{},{blocks:true});
+      const boxes:Box[]=[];
+      for(const block of result?.data?.blocks||[])for(const paragraph of block?.paragraphs||[])for(const line of paragraph?.lines||[])for(const word of line?.words||[]){
+        const text=String(word?.text||"").normalize("NFKC").trim();
+        if(text&&word?.bbox)boxes.push({text,x0:word.bbox.x0,x1:word.bbox.x1,y0:word.bbox.y0,y1:word.bbox.y1});
+      }
+      return boxes;
+    };
+    for(const image of images){
+      const width=image.readUInt32BE(16)||1,height=image.readUInt32BE(20)||1;
+      pages.push((await read(image,"")).map(box=>({text:box.text,x0:box.x0/width,x1:box.x1/width,y:(box.y0+box.y1)/2/height})));
+    }
+    /* القراءة العامة تُسقط العددَ المنفرد («0»، «8») في خانته. فما بقي فارغاً
+       في صفوف المقررات تحت أعمدة الأرقام تُقرأ خانتُه وحدها، مكبّرةً وبالأرقام
+       فقط: سطرٌ واحد، ثم حرفٌ واحد. */
+    const spots=(blanks?.(pages)||[]).slice(0,240);
+    if(spots.length){
+      const lib=await canvas();const loaded=new Map<number,any>();
+      for(const spot of spots){
+        const source=images[spot.page];if(!source)continue;
+        if(!loaded.has(spot.page))loaded.set(spot.page,await lib.loadImage(source));
+        const image=loaded.get(spot.page);
+        const sw=Math.round(image.width*.05),sh=Math.round(image.height*.016);
+        const sx=Math.max(0,Math.round(spot.x*image.width-sw/2)),sy=Math.max(0,Math.round(spot.y*image.height-sh/2));
+        const scale=3,pad=24;
+        const surface=lib.createCanvas(sw*scale+pad*2,sh*scale+pad*2),ctx=surface.getContext("2d");
+        ctx.fillStyle="#ffffff";ctx.fillRect(0,0,surface.width,surface.height);
+        ctx.drawImage(image,sx,sy,sw,sh,pad,pad,sw*scale,sh*scale);
+        const crop=surface.toBuffer("image/png");
+        for(const psm of ["7","10"]){
+          await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:psm as any});
+          const result:any=await worker.recognize(crop).catch(()=>null);
+          const text=String(result?.data?.text||"").replace(/\s+/g,"");
+          if(/^\d{1,5}$/.test(text)&&Number(result?.data?.confidence||0)>=50){
+            pages[spot.page].push({text,x0:spot.x-.005,x1:spot.x+.005,y:spot.y});
+            break;
+          }
+        }
+      }
+    }
+    return{source:"scan",pages,pageCount:images.length};
+  });
+}
+
 async function rotateImage(input:Buffer,quarterTurns:-1|0|1):Promise<Buffer>{
   if(!quarterTurns)return input;
   const lib=await canvas();

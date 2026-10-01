@@ -2,30 +2,36 @@
  * ── كم شعبةً نفتح؟ — مدىً يرسيه التاريخ ─────────────────────────────────────
  *
  * ملاحظة صاحب النظام: ١٥٠٠٠ طالب ÷ سعة ٥٠ = ٣٠٠ شعبة — «ومن أين نأتي بأساتذة
- * وقاعات لثلاثمئة شعبة؟». والأعداد الكبيرة حقيقية، فلا تُوصف بأنها غير معقولة؛
- * لكنها لا تقود الاقتراح. الذي يقوده هو ما فتحه القسم فعلاً — فلا تُفتح الشعب
- * عشوائياً:
+ * وقاعات لثلاثمئة شعبة؟». فالذي يقود الاقتراح ما فتحه القسم فعلاً — فلا تُفتح
+ * الشعب عشوائياً.
+ *
+ * والرقمُ الداخل «المتبقي» من كشف عمادة التسجيل: الطلبةُ الذين لم يسجّلوا
+ * المقرر بعد. هو وعاءُ من يحتاجه، لا عددُ من سيسجّله هذا الفصل — فلا يُقسم على
+ * السعة ليصير عدد شعب (يكون دائماً أكبر مما يُفتح، فيميل الاقتراح إلى أقصاه في
+ * كل مقرر). بل:
  *
  *   1) الأساس = متوسطٌ موزون لشعب المقرر في الفصول المماثلة (الموسم نفسه،
  *      الأقرب أثقل ٣، ٢، ١)، ومعها أحدثُ الفصول الأخرى بوزنٍ أخفّ (١). بلا
  *      مماثل يُكتفى بالأحدث.
- *   2) الناتج مدى: «يُقترح هذا الفصل 15 إلى 16 شعبة». التسجيل يميل به داخل
- *      نطاقٍ واقعي فقط: ±١ (و±٢ إن كان الأساس ٤ فأكثر). السعة (أو متوسط طلبة
- *      الشعبة تاريخياً) تقيس الميل ولا تقفز به.
- *   3) مقررٌ بلا تاريخ ← مدىً من حساب السعة مسقوفاً بـ NO_HISTORY_MAX، ويُقال
- *      «لا تاريخ لهذا المقرر».
- *   4) مجموع المختار يُقارن بما شغّله القسم في الفصول المماثلة (departmentLoad).
+ *   2) المتبقي يُقارن بنفسه في تلك الفصول: أعلى بـ٢٠٪ ← الشعب أعلى بقدره،
+ *      داخل نطاقٍ واقعي فقط: ±١ (و±٢ إن كان الأساس ٤ فأكثر). أول فصلٍ يُستورد
+ *      فيه المتبقي لا مقارنة له، فيبقى الأساس ويُقال ذلك.
+ *   3) سقفٌ لا يُتجاوز: المتبقي كلّه لا يملأ أكثر من ⌈المتبقي ÷ السعة⌉ شعبة،
+ *      فلا يُقترح أكثر منه أياً كان التاريخ.
+ *   4) مقررٌ لم يُفتح ← مدىً من شعبةٍ واحدة إلى ما يملؤه المتبقي، مسقوفاً
+ *      بـ NO_HISTORY_MAX، ويُبدأ بشعبة.
+ *   5) مجموع المختار يُقارن بما شغّله القسم في الفصول المماثلة (departmentLoad).
  *
  * لا يُكتب شيءٌ في الجدول: الاقتراح يُختار منه أو يُترك.
  */
-import { AR, countOf } from "./arabicCount";
+import { AR, countOf, oblique } from "./arabicCount";
 
 export interface SimilarTermHistory {
   termName: string;
   /** شعبٌ فُتحت فعلاً في ذلك الفصل (من الجدول). */
   sections: number;
-  /** عدد الطلبة المسجّل لذلك الفصل إن أُدخل. */
-  headcount?: number;
+  /** المتبقي في كشف العمادة لذلك الفصل، إن استُورد. */
+  remaining?: number;
   /** من الموسم نفسه؟ (غير محدّد = نعم، للتوافق) */
   similar?: boolean;
 }
@@ -35,14 +41,16 @@ export interface SectionSuggestion {
   suggested: number | null;
   min: number | null;
   max: number | null;
-  basis: "history" | "capacity" | "none" | "empty";
+  basis: "history" | "pool" | "none" | "empty";
   /** «يُقترح هذا الفصل 15 إلى 16 شعبة» */
   headline: string;
   reason: string;
   baseline?: number;
+  /** المتبقي يزيد فصلاً مماثلاً بعد فصل: الشعب المفتوحة لا تلحق به. */
+  backlog?: string;
 }
 
-/** سقفُ مقررٍ بلا تاريخ: لا يُقترح أكثر من هذا بحساب السعة وحده. */
+/** سقفُ مقررٍ لم يُفتح: لا يُقترح أكثر من هذا بحساب السعة وحده. */
 export const NO_HISTORY_MAX = 6;
 
 /** «يُقترح هذا الفصل 15 إلى 16 شعبة» أو «… 3 شعب». */
@@ -70,64 +78,97 @@ function seasonPlural(termName: string): string {
   return termName.includes("الصيفي") ? "فصول صيفية" : termName.includes("الثاني") ? "فصول ثانية" : termName.includes("الأول") ? "فصول أولى" : "فصول";
 }
 
-/** خطّ الأساس من التاريخ: الشعب المعتادة، ووصفُ مصدرها. */
-export function historicalBaseline(history: readonly SimilarTermHistory[]): { sections: number; label: string; headcount: number | null } | null {
+const known = (value: unknown): value is number => value != null && Number.isFinite(Number(value)) && Number(value) >= 0;
+
+/** خطّ الأساس من التاريخ: الشعب المعتادة، ووصفُ مصدرها، والمتبقي المعتاد إن عُرف. */
+export function historicalBaseline(history: readonly SimilarTermHistory[]): { sections: number; label: string; remaining: number | null } | null {
   const opened = history.filter(item => item.sections > 0);
   const similar = opened.filter(item => item.similar !== false).slice(0, 3);
   const others = opened.filter(item => item.similar === false).slice(0, 3);
   const used = [...similar, ...others];
   if (!used.length) return null;
   const avg = weighted(used, item => item.sections)!;
-  const head = weighted(used, item => Number(item.headcount) > 0 ? Number(item.headcount) : null);
+  const remaining = weighted(used, item => known(item.remaining) && Number(item.remaining) > 0 ? Number(item.remaining) : null);
   const label = similar.length
-    ? `آخر ${similar.length === 1 ? "فصل مماثل" : `${similar.length} ${seasonPlural(similar[0].termName)}`}${others.length ? " وأحدث الفصول" : ""}`
+    ? `آخر ${similar.length === 1 ? "فصل مماثل" : similar.length === 2 ? "فصلين مماثلين" : `${similar.length} ${seasonPlural(similar[0].termName)}`}${others.length ? " وأحدث الفصول" : ""}`
     : (others.length === 1 ? "أحدث فصل" : "أحدث الفصول");
-  return { sections: Math.max(1, Math.round(avg)), label, headcount: head };
+  return { sections: Math.max(1, Math.round(avg)), label, remaining };
+}
+
+/**
+ * المتبقي يزيد في الفصول المماثلة فصلاً بعد فصل (الأحدث أولاً في التاريخ)،
+ * وهذا الفصل أعلى منها كلها: الطلبة يتراكمون على المقرر. وإلا "".
+ */
+export function remainingBacklog(remaining: number | null | undefined, history: readonly SimilarTermHistory[]): string {
+  if (!known(remaining) || !remaining) return "";
+  const past = history.filter(item => item.similar !== false && known(item.remaining) && Number(item.remaining) > 0)
+    .slice(0, 2).map(item => Number(item.remaining));
+  if (past.length < 2 || !(remaining > past[0] && past[0] > past[1])) return "";
+  return `المتبقي يزيد للفصل الثالث على التوالي في الفصول المماثلة (${past[1]} ← ${past[0]} ← ${remaining}) — الشعب المفتوحة لا تلحق به`;
 }
 
 export function suggestSectionCount(
-  registered: number,
+  remaining: number | null | undefined,
   capacity: number | null | undefined,
   history: readonly SimilarTermHistory[],
 ): SectionSuggestion {
-  const students = Math.max(0, Math.floor(Number(registered) || 0));
+  const pool = known(remaining) ? Math.floor(Number(remaining)) : null;
   const cap = Number(capacity) > 0 ? Math.floor(Number(capacity)) : 0;
   const base = historicalBaseline(history);
+  const backlog = remainingBacklog(pool, history) || undefined;
   const result = (min: number, max: number, suggested: number, basis: SectionSuggestion["basis"], reason: string): SectionSuggestion =>
-    ({ suggested, min, max, basis, reason, headline: rangeLabel(min, max), baseline: base?.sections });
+    ({ suggested, min, max, basis, reason, headline: rangeLabel(min, max), baseline: base?.sections, ...(backlog ? { backlog } : {}) });
 
-  if (students === 0) {
+  if (pool === 0) {
     return { suggested: 0, min: 0, max: 0, basis: "empty", headline: "لا شعب", baseline: base?.sections,
-      reason: base ? `لا طلبة مسجّلين (فُتحت عادةً ${countOf(base.sections, AR.section)})` : "لا طلبة مسجّلين" };
+      reason: base ? `لا متبقي لهذا المقرر (فُتحت عادةً ${countOf(base.sections, AR.section)})` : "لا متبقي لهذا المقرر" };
   }
 
   if (base) {
     const b = base.sections;
     const head = `فُتحت عادةً ${countOf(b, AR.section)} (${base.label})`;
-    /* كم طالباً تحمل الشعبة: السعة، وإلا متوسطها التاريخي. */
-    const perSection = cap || (base.headcount ? base.headcount / b : 0);
-    if (!perSection) return result(b, b, b, "history", `${head} · لا سعة لقياس التسجيل`);
-    const need = Math.ceil(students / perSection);
+    if (pool == null) return result(b, b, b, "history", `${head} · لم يُستورد المتبقي`);
     const band = b >= 4 ? 2 : 1;
-    const lean = Math.max(-band, Math.min(band, need - b));
-    const target = Math.max(1, b + lean);
-    const trend = need > b + band ? "التسجيل أعلى بكثير من المعتاد (أقصى ميلٍ واقعي)"
-      : lean > 0 ? "التسجيل أعلى قليلاً"
-      : need < b - band ? "التسجيل أقل بكثير من المعتاد (أقصى ميلٍ واقعي)"
-      : lean < 0 ? "التسجيل أقل قليلاً"
-      : "التسجيل في حدود المعتاد";
-    return result(Math.min(b, target), Math.max(b, target), target, "history", `${head} · ${trend}`);
+    let lean = 0, trend: string;
+    if (base.remaining) {
+      /* المتبقي مقارناً بنفسه: زاد ٢٠٪ ← الشعب تزيد بقدره، داخل النطاق. */
+      const ratio = pool / base.remaining;
+      lean = Math.max(-band, Math.min(band, Math.round(b * ratio) - b));
+      const usual = Math.round(base.remaining);
+      const pct = Math.round((ratio - 1) * 100);
+      trend = Math.abs(pct) < 5 ? `المتبقي ${pool} في حدود المعتاد (${usual})`
+        : pct > 0 ? `المتبقي ${pool} أعلى من المعتاد (${usual}) بـ${pct}٪`
+        : `المتبقي ${pool} أقل من المعتاد (${usual}) بـ${-pct}٪`;
+    } else {
+      trend = `المتبقي ${pool} · لا مقارنة بفصلٍ سابق بعد`;
+    }
+    let target = Math.max(1, b + lean);
+    let lo = Math.min(b, target), hi = Math.max(b, target);
+    let ceiling = "";
+    if (cap) {
+      /* المتبقي كلّه لا يملأ أكثر من هذا — سقفٌ أياً كان التاريخ. */
+      const fill = Math.max(1, Math.ceil(pool / cap));
+      if (fill < hi) {
+        hi = fill; lo = Math.min(lo, fill); target = Math.min(target, fill);
+        ceiling = ` · المتبقي كلّه يملأ ${countOf(fill, oblique(AR.section))} على الأكثر بسعة ${cap}`;
+      }
+    }
+    return result(lo, hi, target, "history", `${head} · ${trend}${ceiling}`);
   }
 
-  if (cap) {
-    const exact = students / cap;
-    const max = Math.min(Math.max(1, Math.ceil(exact)), NO_HISTORY_MAX);
-    const min = Math.min(Math.max(1, Math.floor(exact)), max);
-    const capped = Math.ceil(exact) > NO_HISTORY_MAX ? ` · سُقف عند ${countOf(NO_HISTORY_MAX, AR.section)} حتى يتكوّن له تاريخ` : "";
-    return result(min, max, max, "capacity", `لا تاريخ لهذا المقرر · ${countOf(students, AR.student)} ÷ سعة ${cap}${capped}`);
+  /* لم يُفتح: إن كان للقسم جداول في تلك الفصول قيل «لم يُفتح في آخر …»، وإلا «لا تاريخ». */
+  const intro = history.length ? `لم يُفتح في آخر ${countOf(history.length, oblique(AR.term))}` : "لا تاريخ لهذا المقرر";
+  if (pool == null) {
+    return { suggested: null, min: null, max: null, basis: "none", headline: "لا اقتراح", reason: `${intro} · لم يُستورد المتبقي` };
   }
-
-  return { suggested: null, min: null, max: null, basis: "none", headline: "لا اقتراح", reason: "لا تاريخ لهذا المقرر ولا سعة مسجّلة — أدخل السعة في شاشة المقررات" };
+  if (!cap) {
+    return { suggested: null, min: null, max: null, basis: "none", headline: "لا اقتراح", reason: `${intro} ولا سعة مسجّلة — أدخل السعة في شاشة المقررات` };
+  }
+  const fill = Math.max(1, Math.ceil(pool / cap));
+  const max = Math.min(fill, NO_HISTORY_MAX);
+  const capped = fill > NO_HISTORY_MAX ? ` · سُقف عند ${countOf(NO_HISTORY_MAX, AR.section)} حتى يتكوّن له تاريخ` : "";
+  return result(1, max, 1, "pool",
+    `${intro} · المتبقي ${countOf(pool, AR.student)} يملأ ${countOf(fill, oblique(AR.section))} على الأكثر بسعة ${cap}${capped}${max > 1 ? " · يُبدأ بشعبة واحدة" : ""}`);
 }
 
 /** ما شغّله القسم كله في فصلٍ سابق. */
