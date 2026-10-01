@@ -290,16 +290,23 @@ export function useProposalWorkspace(options: { requestId: string; proposalId?: 
     setAlts(null);
   }, [retargetOp]);
 
-  /* ── الحفظ ─────────────────────────────────────────────────────────────── */
-  const save = useCallback(async (opts: { silent?: boolean } = {}): Promise<StudyProposal | null> => {
+  /* ── الحفظ ─────────────────────────────────────────────────────────────
+     كلُّ حفظٍ ينتظر الذي قبله ويقرأ آخر حالةٍ وقت دوره: الحفظُ التلقائي وحفظُ
+     المعاينة لا يتسابقان فيصطدم أحدُهما بمراجعة الآخر ويُظنّ أن غيرنا عدّل. */
+  const latest = useRef({ proposal, ops, message, title, responseMode, expiryDays });
+  latest.current = { proposal, ops, message, title, responseMode, expiryDays };
+  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const doSave = useCallback(async (opts: { silent?: boolean } = {}): Promise<StudyProposal | null> => {
+    const cur = latest.current;
     if (!ctx) return null;
-    if (!ops.length && !proposal) return null;
+    if (!cur.ops.length && !cur.proposal) return null;
     setSaveState("saving"); setSaveError("");
-    const body = { requestId, itemIndex, title, message, responseMode, ops, expiryDays };
+    const body = { requestId, itemIndex, title: cur.title, message: cur.message, responseMode: cur.responseMode, ops: cur.ops, expiryDays: cur.expiryDays };
     try {
-      const result = proposal
-        ? await proposalApi.save(proposal.id, { ...body, rev: proposal.rev })
+      const result = cur.proposal
+        ? await proposalApi.save(cur.proposal.id, { ...body, rev: cur.proposal.rev })
         : await proposalApi.create(body);
+      latest.current = { ...latest.current, proposal: result.proposal, ops: result.proposal.ops };
       setView(result);
       setOps(result.proposal.ops);
       savedSig.current = JSON.stringify([materialFingerprint(result.proposal.ops, result.proposal.responseMode), result.proposal.message, result.proposal.title, result.proposal.expiryDays || PROPOSAL_DEFAULT_DAYS]);
@@ -315,7 +322,12 @@ export function useProposalWorkspace(options: { requestId: string; proposalId?: 
       if (!opts.silent) console.error(error);
       return null;
     }
-  }, [ctx, ops, proposal, requestId, itemIndex, title, message, responseMode, expiryDays, options.proposalId, onChanged]);
+  }, [ctx, requestId, itemIndex, options.proposalId, onChanged]);
+  const save = useCallback((opts: { silent?: boolean } = {}): Promise<StudyProposal | null> => {
+    const run = chain.current.then(() => doSave(opts));
+    chain.current = run.catch(() => null);
+    return run;
+  }, [doSave]);
 
   /* حفظٌ تلقائي لمسودةٍ لم تُرسَل قط: لا يُنشئ نسخاً ولا يلمس ما وصل الأستاذ. */
   useEffect(() => {

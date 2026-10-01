@@ -96,7 +96,7 @@ export function ProposalStrip({ requestId, proposals, onOpen, itemIndex = null, 
       {list.length ? <ul className="sp-thread-list">{list.map(view => <ProposalCard key={view.proposal.id} view={view} onOpen={onOpen} />)}</ul> : (
         <p className="sp-hint">ترتيبٌ كامل لمادةٍ أو أكثر — إسنادٌ أو شعبةٌ جديدة أو تعديلٌ أو استبدال — يُعاين أثره على جدول الأستاذ قبل الإرسال.</p>
       )}
-      {visible.length > 2 ? <button type="button" className="sp-link" onClick={() => setShowAll(v => !v)}>{showAll ? "عرض الأحدث فقط" : `عرض الكل (${num(visible.length)})`}</button> : null}
+      {visible.length > 2 ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={() => setShowAll(v => !v)}>{showAll ? "عرض الأحدث فقط" : `عرض الكل (${num(visible.length)})`}</button> : null}
     </section>
   );
 }
@@ -133,14 +133,14 @@ export function ProposalLauncherBar({ rows, proposals, onOpen }: {
         </small>
       </div>
       <div className="sp-launch-actions">
-        {nextToCommit ? <button type="button" className="btn btn-primary" onClick={() => onOpen({ requestId: nextToCommit.proposal.requestId, proposalId: nextToCommit.proposal.id, startWith: "commit" })}><CheckCircle2 aria-hidden="true" />مراجعة وتثبيت</button> : null}
+        {nextToCommit ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-primary" onClick={() => onOpen({ requestId: nextToCommit.proposal.requestId, proposalId: nextToCommit.proposal.id, startWith: "commit" })}><CheckCircle2 aria-hidden="true" />مراجعة وتثبيت</button> : null}
         <label className="sp-launch-pick"><span className="sr-only">الأستاذ</span>
           <select value={pick} onChange={e => setPick(e.target.value)} aria-label="اختر أستاذاً لإعداد مقترح له">
             <option value="">اختر أستاذاً…</option>
             {rows.map(row => <option key={row.id} value={row.id}>{row.instructorName}</option>)}
           </select>
         </label>
-        <button type="button" className="btn btn-secondary" disabled={!pick} onClick={() => onOpen({ requestId: pick })}><Send aria-hidden="true" />إعداد مقترح</button>
+        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" disabled={!pick} onClick={() => onOpen({ requestId: pick })}><Send aria-hidden="true" />إعداد مقترح</button>
       </div>
     </section>
   );

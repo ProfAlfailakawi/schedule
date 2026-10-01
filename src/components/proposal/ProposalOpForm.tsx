@@ -17,6 +17,7 @@ import { timeToMinutes } from "../../utils/scheduleIntelligence";
 import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME } from "../../utils/scheduleTime";
 import { PROPOSAL_DAY_KEYS, PROPOSAL_DAY_NAMES, daysLabel, type GridItem } from "../../utils/studyProposal";
 import { toEnglishDigits } from "../../utils/digits";
+import { AR, countOf } from "../../utils/arabicCount";
 import type { FacultyEntry, ContextCourse } from "./proposalApi";
 import { quickOverlap, suggestSectionCode, type FormDraft, type WorkMode } from "./proposalDraft";
 import type { Workspace } from "./useProposalWorkspace";
@@ -85,7 +86,7 @@ function FacultyPicker({ ws }: { ws: Workspace }) {
         </label>
         <div className="sp-chips" role="group" aria-label="الأيام">
           {PROPOSAL_DAY_KEYS.map(day => (
-            <button key={day} type="button" className="sp-chip-toggle" aria-pressed={days.includes(day)}
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={day} type="button" className="sp-chip-toggle" aria-pressed={days.includes(day)}
               onClick={() => { setDays(cur => cur.includes(day) ? cur.filter(d => d !== day) : [...cur, day]); setLimit(24); }}>
               {PROPOSAL_DAY_NAMES[day]}
             </button>
@@ -93,13 +94,13 @@ function FacultyPicker({ ws }: { ws: Workspace }) {
         </div>
         <div className="sp-filter-row">
           <div className="sp-seg sp-seg-sm" role="group" aria-label="الفترة">
-            {PERIODS.map(p => <button key={p.value} type="button" aria-pressed={period === p.value} onClick={() => setPeriod(p.value)}>{p.label}</button>)}
+            {PERIODS.map(p => <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={p.value} type="button" aria-pressed={period === p.value} onClick={() => setPeriod(p.value)}>{p.label}</button>)}
           </div>
           <label className="sp-check"><input type="checkbox" checked={clearOnly} onChange={e => setClearOnly(e.target.checked)} />بلا تعارض مع الأستاذ</label>
         </div>
       </div>
       <p className="sp-hint"><Info aria-hidden="true" />الملاءمة المعروضة فحصٌ سريع مع جدوله الحالي؛ الحكم النهائي بعد الفحص الكامل.</p>
-      <p className="sp-count-line" aria-live="polite">{filtered.length ? `${num(filtered.length)} شعبة مطابقة` : "لا توجد شعبة مطابقة للتصفية"}</p>
+      <p className="sp-count-line" aria-live="polite">{filtered.length ? `المطابق للتصفية: ${countOf(filtered.length, AR.section)}` : "لا توجد شعبة مطابقة للتصفية"}</p>
       <ul className="sp-list" role="radiogroup" aria-label="الشعب المتاحة للإسناد">
         {filtered.slice(0, limit).map(({ entry, clash }) => {
           const s = entry.snapshot;
@@ -107,7 +108,7 @@ function FacultyPicker({ ws }: { ws: Workspace }) {
           const selected = draft.facultyId === s.id;
           return (
             <li key={s.id}>
-              <button type="button" role="radio" aria-checked={selected} className="sp-opt" data-selected={selected || undefined} disabled={used}
+              <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={selected} className="sp-opt" data-selected={selected || undefined} disabled={used}
                 onClick={() => ws.pickFaculty(s.id)}>
                 <span className="sp-opt-title"><b>{s.courseName}</b><small>{s.courseCode} · شعبة {s.SCode}</small></span>
                 <span className="sp-opt-when"><bdi>{daysLabel(s.days)}</bdi><bdi className="sp-time">{timeRange(s.fstarttime, s.fendtime)}</bdi></span>
@@ -120,7 +121,7 @@ function FacultyPicker({ ws }: { ws: Workspace }) {
           );
         })}
       </ul>
-      {filtered.length > limit ? <button type="button" className="sp-more" onClick={() => setLimit(l => l + 24)}>عرض المزيد ({num(filtered.length - limit)})</button> : null}
+      {filtered.length > limit ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-more" onClick={() => setLimit(l => l + 24)}>عرض المزيد ({num(filtered.length - limit)})</button> : null}
     </div>
   );
 }
@@ -146,7 +147,7 @@ function RowPicker({ ws, label }: { ws: Workspace; label: string }) {
           const selected = draft.rowId === item.rowId;
           return (
             <li key={item.key}>
-              <button type="button" role="radio" aria-checked={selected} className="sp-opt" data-selected={selected || undefined} disabled={taken}
+              <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={selected} className="sp-opt" data-selected={selected || undefined} disabled={taken}
                 onClick={() => ws.pickRow(item.rowId)}>
                 <span className="sp-opt-title"><b>{item.courseName}</b><small>{item.courseCode} · شعبة {item.SCode}</small></span>
                 <span className="sp-opt-when"><bdi>{daysLabel(item.days)}</bdi><bdi className="sp-time">{timeRange(item.start, item.end)}</bdi></span>
@@ -203,7 +204,7 @@ function ScheduleFields({ ws, locked }: { ws: Workspace; locked?: boolean }) {
       </Field>
       <div className="sp-patterns" role="group" aria-label="الأنماط المعتمدة">
         {PATTERNS.map(p => (
-          <button key={p.label} type="button" className="sp-chip-btn" aria-pressed={draft.days.join() === p.days.join()} onClick={() => ws.patchDraft({ days: p.days, endTouched: false })}>{p.label}<small>{p.note}</small></button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={p.label} type="button" className="sp-chip-btn" aria-pressed={draft.days.join() === p.days.join()} onClick={() => ws.patchDraft({ days: p.days, endTouched: false })}>{p.label}<small>{p.note}</small></button>
         ))}
       </div>
       <div className="sp-two">
@@ -219,7 +220,7 @@ function ScheduleFields({ ws, locked }: { ws: Workspace; locked?: boolean }) {
       {invalidTime ? <p className="sp-inline-error" role="alert"><AlertTriangle aria-hidden="true" />وقت النهاية يجب أن يكون بعد البداية.</p> : null}
       {advice && !invalidTime && (advice.changed || advice.family === "mixed") ? (
         <p className="sp-hint" role="status"><Info aria-hidden="true" />{advice.note}
-          {advice.changed && advice.suggestedEnd ? <button type="button" className="sp-link" onClick={() => ws.patchDraft({ end: advice.suggestedEnd, endTouched: true })}>اجعل النهاية {advice.suggestedEnd}</button> : null}
+          {advice.changed && advice.suggestedEnd ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={() => ws.patchDraft({ end: advice.suggestedEnd, endTouched: true })}>اجعل النهاية {advice.suggestedEnd}</button> : null}
         </p>
       ) : null}
       <div className="sp-location">
@@ -263,7 +264,7 @@ function CreateFields({ ws }: { ws: Workspace }) {
         <div className="sp-scode">
           <input inputMode="numeric" dir="ltr" value={draft.scode} maxLength={20} placeholder={suggestion || "501"}
             onChange={e => ws.patchDraft({ scode: toEnglishDigits(e.target.value).replace(/\D/g, "") })} />
-          {suggestion && draft.scode !== suggestion ? <button type="button" className="sp-chip-btn" onClick={() => ws.patchDraft({ scode: suggestion })}>استخدم {suggestion}</button> : null}
+          {suggestion && draft.scode !== suggestion ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-chip-btn" onClick={() => ws.patchDraft({ scode: suggestion })}>استخدم {suggestion}</button> : null}
         </div>
       </Field>
       <ScheduleFields ws={ws} />
@@ -297,8 +298,8 @@ export default function ProposalOpForm({ ws }: { ws: Workspace }) {
       {draft.facultyId != null ? (
         <div className="sp-adjust" role="group" aria-label="طريقة الإسناد">
           <div className="sp-seg" role="radiogroup">
-            <button type="button" role="radio" aria-checked={!draft.adjust} onClick={() => ws.pickFaculty(draft.facultyId!)}>إسناد الشعبة كما هي</button>
-            <button type="button" role="radio" aria-checked={draft.adjust} onClick={() => set({ adjust: true })}>إسنادها مع تعديل موعدها</button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={!draft.adjust} onClick={() => ws.pickFaculty(draft.facultyId!)}>إسناد الشعبة كما هي</button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={draft.adjust} onClick={() => set({ adjust: true })}>إسنادها مع تعديل موعدها</button>
           </div>
           <p className="sp-hint"><Info aria-hidden="true" />{draft.adjust
             ? "يُغيَّر موعد الشعبة نفسها (لا تُنشأ نسخةٌ جديدة منها) عند التثبيت — وقد يمسّ طلابها."
@@ -339,8 +340,8 @@ export default function ProposalOpForm({ ws }: { ws: Workspace }) {
       <section className="sp-step" aria-labelledby="sp-in">
         <h3 id="sp-in"><span>٢</span>الشعبة التي ستدخل مكانه</h3>
         <div className="sp-seg" role="radiogroup" aria-label="نوع الشعبة الداخلة">
-          <button type="button" role="radio" aria-checked={draft.incoming === "assign"} onClick={() => set({ incoming: "assign", facultyId: null, courseId: null, scode: "" })}>شعبة من «هيئة تدريسية»</button>
-          <button type="button" role="radio" aria-checked={draft.incoming === "create"} onClick={() => set({ incoming: "create", facultyId: null, courseId: null, scode: "" })}>شعبة جديدة</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={draft.incoming === "assign"} onClick={() => set({ incoming: "assign", facultyId: null, courseId: null, scode: "" })}>شعبة من «هيئة تدريسية»</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={draft.incoming === "create"} onClick={() => set({ incoming: "create", facultyId: null, courseId: null, scode: "" })}>شعبة جديدة</button>
         </div>
         {draft.incoming === "assign" ? assignBody : <CreateFields ws={ws} />}
       </section>
@@ -356,7 +357,7 @@ export default function ProposalOpForm({ ws }: { ws: Workspace }) {
       </div>
       <div className="sp-modes" role="radiogroup" aria-label="نوع الإضافة">
         {MODES.map(({ mode, title, hint, Icon }) => (
-          <button key={mode} type="button" role="radio" aria-checked={draft.mode === mode} disabled={editing && draft.mode !== mode}
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={mode} type="button" role="radio" aria-checked={draft.mode === mode} disabled={editing && draft.mode !== mode}
             className="sp-mode" onClick={() => ws.chooseMode(mode)}>
             <Icon aria-hidden="true" /><span><b>{title}</b><small>{hint}</small></span>
           </button>
@@ -384,7 +385,7 @@ export default function ProposalOpForm({ ws }: { ws: Workspace }) {
         <button type="submit" className="btn btn-primary" data-guide-target="proposal-add">
           {editing ? <><Check aria-hidden="true" />حفظ تعديل المادة</> : <><CirclePlus aria-hidden="true" />أضف إلى المقترح</>}
         </button>
-        {editing ? <button type="button" className="btn btn-secondary" onClick={ws.cancelEdit}><RotateCcw aria-hidden="true" />إلغاء التعديل</button> : null}
+        {editing ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={ws.cancelEdit}><RotateCcw aria-hidden="true" />إلغاء التعديل</button> : null}
       </div>
     </form>
   );

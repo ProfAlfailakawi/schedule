@@ -101,14 +101,14 @@ export default function ProposalHeader(props: {
           {proposal && proposal.version > 1 ? <span className="sp-chip">النسخة {num(proposal.version)}</span> : null}
           {ctx.term.closed ? <span className="sp-chip" data-tone="bad">الفصل منتهٍ</span> : null}
         </div>
-        <button type="button" className="sp-close" onClick={props.onClose} aria-label="إغلاق مساحة المقترح"><X aria-hidden="true" /></button>
+        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-close" onClick={props.onClose} aria-label="إغلاق مساحة المقترح"><X aria-hidden="true" /></button>
       </div>
 
       <div className="sp-tiles" role="group" aria-label="مقارنة الوضع الحالي بالمتوقع بعد المقترح">
         <Tile label="النصاب" Icon={Scale} unit="ساعة" checking={checking}
           before={loadBefore === null ? null : num(loadBefore)} after={loadAfter === null ? null : num(loadAfter)}
           delta={diff(loadBefore, loadAfter)} direction={0} tone={overCap ? "bad" : undefined}
-          note={loadCap ? `المسجّل ${num(loadCap)} ساعة${overCap ? " — يتجاوزه" : ""}` : "لا سقف مسجّل"} unknownText="غير متوفر" />
+          note={loadCap ? `المسجّل ${countOf(loadCap, AR.hour)}${overCap ? " — يتجاوزه" : ""}` : "لا سقف مسجّل"} unknownText="غير متوفر" />
         <Tile label="عدد الشعب" Icon={Layers} checking={checking} before={num(before.sections)} after={A ? num(A.sections) : null} delta={diff(before.sections, A?.sections)} />
         <Tile label="أيام الحضور" Icon={CalendarDays} checking={checking} before={num(before.attendanceDays)} after={A ? num(A.attendanceDays) : null}
           delta={diff(before.attendanceDays, A?.attendanceDays)} direction={-1} unit="يوم" />
@@ -122,7 +122,7 @@ export default function ProposalHeader(props: {
             {!hasOps ? <em>لا مواد بعد</em> : failed ? <em>تعذّر الفحص</em> : checking ? <em className="sp-skel">جاري الفحص</em>
               : <b className="sp-num">{blockers ? num(blockers) : "لا يوجد"}</b>}
           </span>
-          <span className="sp-tile-note">{failed ? <button type="button" className="sp-link" onClick={props.onRetry}>أعد الفحص</button>
+          <span className="sp-tile-note">{failed ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={props.onRetry}>أعد الفحص</button>
             : !hasOps || checking ? "" : blockers ? <span data-dir="up"><AlertTriangle aria-hidden="true" /> تمنع الإرسال</span> : <span data-dir="down"><Check aria-hidden="true" /> الفحص مكتمل</span>}</span>
         </div>
         <div className="sp-tile sp-tile-check" data-tone={!hasOps || checking || failed ? "neutral" : reviews ? "warn" : "good"} data-checking={checking || undefined}>

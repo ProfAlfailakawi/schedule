@@ -512,6 +512,15 @@
   .sp-send-grid-col{block-size:420px}
 }
 @media (max-width:639px){
+  .sp-meta{gap:0 8px}
+  .sp-meta span:nth-child(2){display:none}
+  .sp-id{gap:10px}
+  .sp-id h1{font-size:17px}
+  .sp-status-group{order:3}
+  .sp-tile{min-inline-size:132px;padding:6px 10px}
+  .sp-tile-values b{font-size:18px}
+  .sp-tile-note:not(:has([data-dir])){display:none}
+  .sp-tile-values{min-block-size:24px}
   .sp-modes{grid-template-columns:1fr}
   .sp-two{grid-template-columns:1fr 1fr}
   .sp-bar{padding-inline:12px}
@@ -561,3 +570,9 @@
 body:has(.sp-root) .smart-guide-fab{visibility:hidden}
 .sp-ev .sp-time{white-space:normal;word-break:normal;font-size:11px}
 .sp-ev-meta{min-inline-size:0}
+/* محاضراتٌ متجاورة (تعارض أو تقارب): مساحةٌ أقل، فيُختصر ما يُرسم دون أن يضيع الحدّ ولا الوسم. */
+.sp-ev[data-lanes] .sp-ev-place{display:none}
+.sp-ev[data-lanes] .sp-ev-meta{flex-direction:column;gap:0}
+.sp-ev[data-lanes] .sp-tag{padding:1px 5px;font-size:10px}
+.sp-ev[data-lanes="3"] .sp-tag,.sp-ev[data-lanes="4"] .sp-tag{font-size:0;gap:0;padding:2px}
+.sp-ev[data-lanes="3"] .sp-tag svg,.sp-ev[data-lanes="4"] .sp-tag svg{inline-size:11px;block-size:11px}

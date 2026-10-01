@@ -59,7 +59,7 @@ const heavyLimit = rateLimit({
   message: { error: "طلباتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
 });
 const publicLimit = rateLimit({
-  windowMs: 60_000, limit: 40, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false,
   message: { error: "محاولاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
 });
 
@@ -88,7 +88,7 @@ async function sanitizeOps(
   for (const item of raw as any[]) {
     const kind = OP_KINDS.includes(item?.kind) ? (item.kind as StudyProposalOpKind) : null;
     if (!kind) return { ops: [], error: "نوع العملية غير معروف." };
-    let id = /^[A-Za-z0-9_-]{4,40}$/.test(String(item?.id || "")) ? String(item.id) : randomUUID();
+    let id = /^[A-Za-z0-9_-]{2,40}$/.test(String(item?.id || "")) ? String(item.id) : randomUUID();
     if (used.has(id)) id = randomUUID();
     used.add(id);
     const previous = stored?.ops.find(op => op.id === id);

@@ -452,7 +452,7 @@ function metricCard(o){var b=o.b,a=o.a,known=(b!=null&&a!=null),same=known&&Math
 function impactHtml(){var S=D.schedule;if(!S)return "";var b=S.before.metrics,a=S.after.metrics,cap=S.loadCap,u=function(n){return countOf(n,CRED)};
  var warn="";if(cap&&a.loadUnits!=null&&a.loadUnits>cap)warn='<div class="warn">'+ic("alert")+'يتجاوز النصاب المسجّل ('+esc(cap)+') بمقدار '+esc(countOf(a.loadUnits-cap,CRED))+'</div>';
  var cards=[
- {icon:"book",label:"النصاب",b:b.loadUnits,a:a.loadUnits,fmt:function(v){return esc(u(v))},delta:function(v){return esc(u(v))},sub:cap?"النصاب المسجّل: "+esc(cap)+" ساعة":"",missing:"ساعات مقرراتك غير مسجّلة لدى القسم بعد.",warn:warn},
+ {icon:"book",label:"النصاب",b:b.loadUnits,a:a.loadUnits,fmt:function(v){return esc(u(v))},delta:function(v){return esc(u(v))},sub:cap?"النصاب المسجّل: "+esc(countOf(cap,AR.hour)):"",missing:"ساعات مقرراتك غير مسجّلة لدى القسم بعد.",warn:warn},
  {icon:"grid",label:"عدد الشعب",b:b.sections,a:a.sections,fmt:function(v){return esc(countOf(v,AR.section))},delta:function(v){return esc(countOf(v,AR.section))}},
  {icon:"cal",label:"أيام الحضور",b:b.attendanceDays,a:a.attendanceDays,fmt:function(v){return esc(countOf(v,AR.day,"لا أيام"))},delta:function(v){return esc(countOf(v,AR.day))},sub:esc((a.dayKeys||[]).map(dayName).join(" · "))},
  {icon:"user",label:"ساعات الحضور",b:b.presenceMinutes,a:a.presenceMinutes,fmt:function(v){return esc(hm(v))},delta:function(v){return esc(hm(v))},sub:"من أول محاضرة إلى آخر محاضرة في كل يوم"},
@@ -500,7 +500,7 @@ function ttHtml(swap){var S=D.schedule;if(!S)return "";var list=itemsNow(),done=
   '<button type="button" data-act="mode" data-v="before" data-k="m-before" aria-pressed="'+(UI.mode==="before")+'">جدولي الحالي</button>'+
   '<button type="button" data-act="mode" data-v="after" data-k="m-after" aria-pressed="'+(UI.mode==="after")+'">بعد المقترح</button></div>')+
   '<div class="seg sm" role="group" aria-label="طريقة العرض"><button type="button" data-act="view" data-v="grid" data-k="v-grid" aria-pressed="'+(UI.view==="grid")+'">'+ic("grid")+'أسبوعي</button>'+
-  '<button type="button" data-act="view" data-v="agenda" data-k="v-agenda" aria-pressed="'+(UI.view==="agenda")+'">'+ic("list")+'يوماً بيوم</button></div>'+
+  '<button type="button" data-act="view" data-v="agenda" data-k="v-agenda" aria-pressed="'+(UI.view==="agenda")+'">'+ic("list")+'عرض يومي</button></div>'+
   (hasGhost?'<label class="chk"><input type="checkbox" data-act="ghosts" data-k="g"'+(UI.ghosts?' checked':'')+'>أظهر ما سيخرج أو يتغيّر</label>':'')+'</div>';
  h+='<div class="ttcard"><div class="tt-sum" aria-live="polite">'+ttSummary(list)+'</div>';
  if(UI.view==="agenda")h+=agendaHtml(list,swap);else h+=gridHtml(list,swap);
@@ -528,7 +528,7 @@ function itemNote(it){var o=it.opId?opOf(it.opId):null;
  if(it.state==="out"){if(it.outAction==="delete")return "يُحذف هذا الموعد من الجدول إن ثبّت القسم المقترح.";if(it.outAction==="unassign")return "يخرج من جدولك فقط إن ثبّت القسم المقترح، وتبقى الشعبة في جدول القسم.";return "هذا موعدك الحالي قبل التعديل، ويحلّ محلَّه الموعدُ المعدّل."}return ""}
 function dlgHtml(it){var lbl=stLabel(it);
  return '<div class="ov" data-act="close-ov"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgT" tabindex="-1"><header><h3 id="dlgT">'+esc(it.courseName||it.courseCode)+'<small>'+esc(it.courseCode||"")+(it.SCode?' · شعبة '+esc(it.SCode):'')+'</small></h3><button type="button" class="x" data-act="close" aria-label="إغلاق التفاصيل">'+ic("x")+'</button></header>'+
- (lbl?'<span class="badge" data-tone="'+(it.state==="out"?"bad":it.state==="modified"?"wait":"ok")+'">'+ic(stIcon(it))+esc(lbl)+'</span>':'<span class="badge" data-tone="mute">'+ic("check")+'موعد قائم</span>')+
+ (lbl?'<span class="badge" data-tone="'+(it.state==="out"?"bad":it.state==="modified"?"wait":"ok")+'">'+ic(stIcon(it))+esc(lbl)+'</span>':'<span class="badge" data-tone="mute">'+ic("check")+'قائم في جدولك</span>')+
  factsHtml(it)+(it.collegeName||it.sectionName?'<p class="hint">'+esc([it.collegeName,it.sectionName].filter(Boolean).join(" · "))+'</p>':'')+
  '<div class="chg" style="margin-top:10px">'+esc(itemNote(it))+'</div></div></div>'}
 function openItem(key,from){var it=findItem(key);if(!it)return;UI.open=key;UI.lastFocus=from||null;
@@ -575,7 +575,7 @@ function historyBlock(){var rs=D.responses||[],hs=D.history||[];if(!rs.length&&h
   var extra=[];if(r.suggestedStart)extra.push("وقتٌ مقترح: "+r.suggestedStart);if(r.suggestedDays&&r.suggestedDays.length)extra.push("أيامٌ مقترحة: "+daysText(r.suggestedDays));
   ev.push({at:r.at,t:"ردّك على النسخة "+r.version+": "+what+" · "+dateShort(r.at),n:r.note||"",x:extra.join(" · "),code:r.verifyCode})});
  ev.sort(function(a,b){return String(a.at).localeCompare(String(b.at))});
- return '<details class="hist"><summary>'+ic("clock")+'سجلّ المقترح وردودك</summary><ol class="tl">'+ev.map(function(e){return '<li><b>'+esc(e.t)+'</b>'+(e.x?'<small>'+esc(e.x)+'</small>':'')+(e.n?'<q>'+esc(e.n)+'</q>':'')+(e.code?'<small>رمز التوقيع: <span class="ltr">'+esc(e.code)+'</span></small>':'')+'</li>'}).join("")+'</ol></details>'}
+ return '<details class="hist"><summary>'+ic("clock")+'تاريخ المقترح وردودك</summary><ol class="tl">'+ev.map(function(e){return '<li><b>'+esc(e.t)+'</b>'+(e.x?'<small>'+esc(e.x)+'</small>':'')+(e.n?'<q>'+esc(e.n)+'</q>':'')+(e.code?'<small>رمز التوقيع: <span class="ltr">'+esc(e.code)+'</span></small>':'')+'</li>'}).join("")+'</ol></details>'}
 function barHtml(){var g=D.gate||{};if(D.committedAt||!g.open)return "";
  var rec=hasRecorded();
  return '<div class="bar-in"><p><b>'+(rec?"سجّلنا ردّك":"المقترح بانتظار ردّك")+'</b><small>'+(rec?"بانتظار تثبيت القسم":"لن يتغيّر جدولك قبل تثبيت القسم")+'</small></p><button type="button" class="btn" data-act="goto-resp" data-k="goto">'+(rec?"عرض ردّي":"الردّ على المقترح")+'</button></div>'}

@@ -129,8 +129,8 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
         <div className="sp-shell sp-shell-loading">
           {ws.loadError ? (
             <div className="sp-state" role="alert"><CircleAlert aria-hidden="true" /><p>{ws.loadError}</p>
-              <button type="button" className="btn btn-secondary" onClick={() => window.location.reload()}><RefreshCw aria-hidden="true" />إعادة التحميل</button>
-              <button type="button" className="btn btn-ghost" onClick={onClose}>إغلاق</button></div>
+              <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={() => window.location.reload()}><RefreshCw aria-hidden="true" />إعادة التحميل</button>
+              <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-ghost" onClick={onClose}>إغلاق</button></div>
           ) : (
             <div className="sp-skeleton" role="status" aria-live="polite"><LoaderCircle className="sp-spin" aria-hidden="true" /><p>نجهّز جدول الأستاذ ومقرّرات القسم…</p></div>
           )}
@@ -153,11 +153,11 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
       <ProposalResponses ws={ws} />
       {ws.restorable ? (
         <div className="sp-banner" role="status" data-tone="info"><History aria-hidden="true" /><span>وجدنا تعديلاتٍ غير محفوظةٍ من جلسةٍ سابقة لهذا المقترح.</span>
-          <button type="button" className="sp-link" onClick={ws.restoreBackup}>استعادتها</button><button type="button" className="sp-link" onClick={ws.discardBackup}>تجاهلها</button></div>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.restoreBackup}>استعادتها</button><button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.discardBackup}>تجاهلها</button></div>
       ) : null}
       {ws.conflict ? (
         <div className="sp-banner" role="alert" data-tone="bad"><AlertTriangle aria-hidden="true" /><span>عدّل شخصٌ آخر هذا المقترح أثناء عملك.</span>
-          <button type="button" className="sp-link" onClick={ws.takeTheirs}>اعتماد نسخته</button><button type="button" className="sp-link" onClick={ws.keepMine}>الاحتفاظ بتعديلاتي</button></div>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.takeTheirs}>اعتماد نسخته</button><button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.keepMine}>الاحتفاظ بتعديلاتي</button></div>
       ) : null}
       {ctx.term.closed ? <div className="sp-banner" role="status" data-tone="bad"><Ban aria-hidden="true" /><span>انتهى هذا الفصل؛ لا تُرسل فيه مقترحات جديدة.</span></div> : null}
       <div className="sp-ops-wrap">
@@ -196,9 +196,9 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
 
         {!wide ? (
           <nav className="sp-tabs" role="tablist" aria-label="أقسام المساحة">
-            <button type="button" role="tab" aria-selected={tab === "ops"} onClick={() => setTab("ops")}><ClipboardList aria-hidden="true" />المواد{ws.ops.length ? <span className="sp-count">{ws.ops.length}</span> : null}</button>
-            <button type="button" role="tab" aria-selected={tab === "grid"} onClick={() => setTab("grid")}><Table2 aria-hidden="true" />الجدول</button>
-            <button type="button" role="tab" aria-selected={tab === "checks"} onClick={() => setTab("checks")}>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={tab === "ops"} onClick={() => setTab("ops")}><ClipboardList aria-hidden="true" />المواد{ws.ops.length ? <span className="sp-count">{ws.ops.length}</span> : null}</button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={tab === "grid"} onClick={() => setTab("grid")}><Table2 aria-hidden="true" />الجدول</button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={tab === "checks"} onClick={() => setTab("checks")}>
               {blockers ? <ShieldAlert aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}الفحص
               {checked && (blockers || reviews) ? <span className="sp-count" data-tone={blockers ? "bad" : "warn"}>{(blockers || 0) + (reviews || 0)}</span> : null}
             </button>
@@ -235,13 +235,13 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
                 <Send aria-hidden="true" />{previewLabel}
               </button>
             ) : null}
-            {sent && !terminal ? <button type="button" className="btn btn-ghost" data-tone="danger" onClick={() => setDialog("withdraw")}><Ban aria-hidden="true" />سحب المقترح</button> : null}
+            {sent && !terminal ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-ghost" data-tone="danger" onClick={() => setDialog("withdraw")}><Ban aria-hidden="true" />سحب المقترح</button> : null}
             {commit && !commit.ok && sent && !terminal && !ws.dirty && commit.code === "not-approved" ? <span className="sp-bar-hint"><Eye aria-hidden="true" />يظهر «مراجعة وتثبيت» بعد موافقة الأستاذ.</span> : null}
           </div>
           <div className="sp-bar-status" data-state={ws.saveState} role="status" aria-live="polite">
             {ws.saveState === "saving" ? <LoaderCircle className="sp-spin" aria-hidden="true" /> : ws.saveState === "error" ? <AlertTriangle aria-hidden="true" /> : ws.dirty ? <Pencil aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
             <span>{saveLabel}</span>
-            {ws.saveState === "error" ? <button type="button" className="sp-link" onClick={() => void ws.save()}>أعد المحاولة</button> : null}
+            {ws.saveState === "error" ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={() => void ws.save()}>أعد المحاولة</button> : null}
             {notice ? <em className="sp-toast">{notice}</em> : null}
           </div>
         </footer>
@@ -276,7 +276,7 @@ function ConfirmDialog({ title, text, actions, onDismiss }: {
       <div ref={ref} className="sp-modal sp-modal-sm" role="dialog" aria-modal="true" aria-label={title}>
         <h2>{title}</h2><p>{text}</p>
         <div className="sp-modal-actions">
-          {actions.map(a => <button key={a.label} type="button" className={`btn ${a.primary ? "btn-primary" : "btn-secondary"}`} data-tone={a.tone} onClick={a.run}>{a.label}</button>)}
+          {actions.map(a => <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={a.label} type="button" className={`btn ${a.primary ? "btn-primary" : "btn-secondary"}`} data-tone={a.tone} onClick={a.run}>{a.label}</button>)}
         </div>
       </div>
     </div>

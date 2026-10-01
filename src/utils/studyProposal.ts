@@ -311,7 +311,7 @@ export function proposalDrift(
           issues.push({ opId: op.id, code: "reassigned", message: `الموعد ${label(op.source)} لم يعد في جدول هذا الأستاذ.` });
         }
         if (Number(live.rev || 0) !== Number(op.source.rev || 0))
-          issues.push({ opId: op.id, code: "revised", message: `الموعد ${label(op.source)} تغيّر بعد إعداد المقترح.` });
+          issues.push({ opId: op.id, code: "revised", message: `تغيّر الموعد ${label(op.source)} بعد إعداد المقترح.` });
       }
     }
     if (op.out) {
@@ -321,7 +321,7 @@ export function proposalDrift(
         if (Number(live.AdInstructorId || 0) !== ctx.instructorId)
           issues.push({ opId: op.id, code: "out-reassigned", message: `الموعد ${label(op.out.snapshot)} لم يعد في جدول هذا الأستاذ.` });
         if (Number(live.rev || 0) !== Number(op.out.snapshot.rev || 0))
-          issues.push({ opId: op.id, code: "out-revised", message: `الموعد ${label(op.out.snapshot)} تغيّر بعد إعداد المقترح.` });
+          issues.push({ opId: op.id, code: "out-revised", message: `تغيّر الموعد ${label(op.out.snapshot)} بعد إعداد المقترح.` });
       }
     }
   }
@@ -524,7 +524,9 @@ export function commitReadiness(proposal: StudyProposal): CommitReadiness {
     return { ok: false, opIds: [], partial: false, code: "stale-version", message: "للمقترح نسخةٌ أحدث لم تُرسَل أو لم يردّ الأستاذ عليها." };
   const state = decisionStateOf(proposal);
   if (!state.approved.length) return { ok: false, opIds: [], partial: false, code: "not-approved", message: "لا توجد موافقةٌ من الأستاذ على النسخة الحالية." };
-  if (proposal.responseMode === "linked" && state.approved.length !== proposal.ops.length)
+  /* الطريقةُ المعتبرة هي طريقةُ النسخة المرسلة التي ردّ عليها الأستاذ، لا طريقةُ مسودةٍ لاحقة. */
+  const sentMode = proposal.versions.find(v => v.version === proposal.sentVersion)?.responseMode ?? proposal.responseMode;
+  if (sentMode === "linked" && state.approved.length !== proposal.ops.length)
     return { ok: false, opIds: [], partial: false, code: "linked-incomplete", message: "الترتيب المترابط لا يُثبَّت إلا بموافقة الأستاذ على المجموعة كاملة." };
   return { ok: true, opIds: state.approved, partial: state.approved.length < proposal.ops.length };
 }

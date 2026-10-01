@@ -29,6 +29,7 @@ import { departmentFamily, departmentFamilyResolver } from "./src/utils/sectionL
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { registerStudyProposalRoutes, seedDemoStudyProposals } from "./src/server/studyProposalRoutes";
+import { effectiveStatus as studyProposalStatus, decisionStateOf as studyProposalDecision } from "./src/utils/studyProposal";
 import { studyProposalPage } from "./src/server/studyProposalPage";
 import { PROPOSAL_ALERT_CSS, PROPOSAL_ALERT_SCRIPT } from "./src/server/studyProposalAlert";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
@@ -11129,6 +11130,23 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
       }]);
     }
   }
+  /* ── مقترحاتٌ دراسية ردّ عليها الأستاذ وتنتظر القسم ─────────────────────
+     وافق عليها فتنتظر التثبيت، أو طلب تعديلاً فتنتظر نسخةً جديدة. المعرّفُ يحمل
+     وقتَ الردّ، فردٌّ جديدٌ إشعارٌ جديد. */
+  const proposalsByScope = new Map<string, Array<{ proposalId: string; instructorName: string; kind: "approved" | "changes"; at?: string }>>();
+  if (handlesRequests) {
+    for (const proposal of await Repository.getStudyProposalsByTerm(termId)) {
+      const status = studyProposalStatus(proposal);
+      if (status !== "approved" && status !== "partial" && status !== "changes") continue;
+      const key = `${proposal.AdCollegeId}:${proposal.AdSectionId}`;
+      proposalsByScope.set(key, [...(proposalsByScope.get(key) || []), {
+        proposalId: proposal.id,
+        instructorName: instructorNames.get(Number(proposal.AdInstructorId)) || "أستاذ",
+        kind: status === "changes" ? "changes" : "approved",
+        at: studyProposalDecision(proposal).respondedAt,
+      }]);
+    }
+  }
   /* جدولُ الفصل يُقرأ مرّةً ويُعدّ لكل قسم — لا قراءةٌ لكل قسم: حسابٌ بأربعةٍ
      وخمسين قسماً كان ينتظر دقيقةً ليرى جرسه. والأقسامُ بلا مواعيد هذا الفصل
      وبلا دورة اعتماد ليست «جداول لم تُعتمد»: لا جدول لها أصلاً. */
@@ -11180,6 +11198,7 @@ async function notificationItemsForTerm(req: AuthenticatedRequest, termId: numbe
     } : undefined;
     return {
       approval, rowCount, openRegistrarNotes, openRequests, pendingRequests, studentQueue, escalatedNotes, blockingConflicts,
+      studyProposals: proposalsByScope.get(`${collegeId}:${sectionId}`) || [],
       collegeName: collegeName.get(collegeId) || "",
       sectionName: String(row.AdSectionName || ""),
       deadline: readDeadline({ termDeadline, extensionUntil: approval.extensionUntil, extensionReason: approval.extensionReason }, today),

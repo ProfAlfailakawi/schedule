@@ -14,6 +14,7 @@ import { PROPOSAL_DAY_KEYS, PROPOSAL_DAY_NAMES, type GridItem, type ProposalFind
 import { timeToMinutes } from "../../utils/scheduleIntelligence";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START } from "../../utils/scheduleTime";
 import { timeRange } from "./proposalFormat";
+import { AR, countOf } from "../../utils/arabicCount";
 
 export type GridMode = "current" | "with";
 
@@ -160,11 +161,11 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
     const compact = entry.height < 58;
     const tiny = entry.height < 40;
     return (
-      <button
+      <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها"
         key={`${item.key}-${entry.day}`} type="button" className="sp-ev"
         data-state={item.state} data-conflict={marks.blocker.has(item.key) || undefined} data-review={marks.review.has(item.key) || undefined}
         data-selected={selectedKey === item.key || undefined} data-focus={focusKeys.has(item.key) || undefined}
-        data-compact={compact || undefined} data-tiny={tiny || undefined} data-checking={checking && (item.state === "proposed" || item.state === "modified") || undefined}
+        data-compact={compact || undefined} data-tiny={tiny || undefined} data-lanes={entry.lanes > 1 ? entry.lanes : undefined} data-checking={checking && (item.state === "proposed" || item.state === "modified") || undefined}
         style={{ insetBlockStart: entry.top, blockSize: entry.height, insetInlineStart: `${entry.lane * width}%`, inlineSize: `calc(${width}% - 3px)` }}
         aria-pressed={selectedKey === item.key}
         aria-label={`${item.outside ? "التزام خارج القسم" : `${item.courseName}${item.SCode ? ` شعبة ${item.SCode}` : ""}`}، ${PROPOSAL_DAY_NAMES[entry.day]}، ${item.start} إلى ${item.end}${tag ? `، ${tag.text}` : ""}`}
@@ -202,7 +203,7 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
           <strong>{selected.outside ? "التزام خارج القسم" : selected.courseName}</strong>
           {!selected.outside && <small>{[selected.courseCode, selected.SCode ? `شعبة ${selected.SCode}` : ""].filter(Boolean).join(" · ")}</small>}
         </div>
-        <button type="button" className="sp-icon-btn" onClick={() => { onSelect(null); setDetailKey(null); }} aria-label="إغلاق التفاصيل"><X aria-hidden="true" /></button>
+        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-btn" onClick={() => { onSelect(null); setDetailKey(null); }} aria-label="إغلاق التفاصيل"><X aria-hidden="true" /></button>
       </header>
       {(() => { const tag = tagFor(selected, marks); return tag ? <span className="sp-tag" data-kind={tag.kind}><tag.Icon aria-hidden="true" />{tag.text}</span> : null; })()}
       <dl>
@@ -218,7 +219,7 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
       ))}
       <footer>
         {props.actionsFor(selected).map(action => (
-          <button key={action.label} type="button" className="sp-chip-btn" data-tone={action.tone} onClick={action.run}><action.Icon aria-hidden="true" />{action.label}</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={action.label} type="button" className="sp-chip-btn" data-tone={action.tone} onClick={action.run}><action.Icon aria-hidden="true" />{action.label}</button>
         ))}
       </footer>
     </aside>
@@ -228,21 +229,21 @@ export default function ProposalWeekGrid(props: WeekGridProps) {
     <section className="sp-week" ref={rootRef} aria-label="الجدول الأسبوعي للأستاذ" data-checking={checking || undefined}>
       <div className="sp-week-bar">
         <div className="sp-seg" role="group" aria-label="عرض الجدول">
-          <button type="button" aria-pressed={mode === "current"} onClick={() => onMode("current")}>الجدول الحالي</button>
-          <button type="button" aria-pressed={mode === "with"} onClick={() => onMode("with")}>
-            مع المقترح{changeCount > 0 ? <span className="sp-count" aria-label={`${changeCount} تغييرات`}>{changeCount}</span> : null}
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" aria-pressed={mode === "current"} onClick={() => onMode("current")}>الجدول الحالي</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" aria-pressed={mode === "with"} onClick={() => onMode("with")}>
+            مع المقترح{changeCount > 0 ? <span className="sp-count" aria-label={countOf(changeCount, AR.change)}>{changeCount}</span> : null}
           </button>
         </div>
         {mode === "with" && (
-          <button type="button" className="sp-toggle" aria-pressed={showGhosts} onClick={() => onShowGhosts(!showGhosts)}>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-toggle" aria-pressed={showGhosts} onClick={() => onShowGhosts(!showGhosts)}>
             {showGhosts ? <Eye aria-hidden="true" /> : <EyeOff aria-hidden="true" />}إظهار ما سيخرج أو يتغيّر
           </button>
         )}
         <span className="sp-week-spacer" />
         {!narrow && variant === "auto" && (
           <div className="sp-seg sp-seg-icons" role="group" aria-label="طريقة العرض">
-            <button type="button" aria-pressed={layoutMode === "grid"} onClick={() => setLayoutMode("grid")} title="شبكة أسبوعية"><CalendarDays aria-hidden="true" /><span>أسبوعي</span></button>
-            <button type="button" aria-pressed={layoutMode === "agenda"} onClick={() => setLayoutMode("agenda")} title="قائمة زمنية"><List aria-hidden="true" /><span>قائمة</span></button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" aria-pressed={layoutMode === "grid"} onClick={() => setLayoutMode("grid")} title="شبكة أسبوعية"><CalendarDays aria-hidden="true" /><span>أسبوعي</span></button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" aria-pressed={layoutMode === "agenda"} onClick={() => setLayoutMode("agenda")} title="قائمة زمنية"><List aria-hidden="true" /><span>قائمة</span></button>
           </div>
         )}
         {legend}
@@ -290,9 +291,9 @@ function AgendaView({ laid, marks, selectedKey, focusKeys, onSelect }: {
   return (
     <div className="sp-agenda">
       <div className="sp-agenda-tabs" role="tablist" aria-label="أيام الأسبوع">
-        <button type="button" role="tab" aria-selected={active === "all"} onClick={() => setActive("all")}>كل الأيام</button>
+        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={active === "all"} onClick={() => setActive("all")}>كل الأيام</button>
         {PROPOSAL_DAY_KEYS.map(day => (
-          <button key={day} type="button" role="tab" aria-selected={active === day} disabled={!(laid.get(day) || []).length} onClick={() => setActive(day)}>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={day} type="button" role="tab" aria-selected={active === day} disabled={!(laid.get(day) || []).length} onClick={() => setActive(day)}>
             {PROPOSAL_DAY_NAMES[day]}<small>{(laid.get(day) || []).length || ""}</small>
           </button>
         ))}
@@ -306,7 +307,7 @@ function AgendaView({ laid, marks, selectedKey, focusKeys, onSelect }: {
               const tag = tagFor(item, marks);
               return (
                 <li key={`${item.key}-${day}`}>
-                  <button type="button" className="sp-ag-item" data-state={item.state} data-conflict={marks.blocker.has(item.key) || undefined}
+                  <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-ag-item" data-state={item.state} data-conflict={marks.blocker.has(item.key) || undefined}
                     data-selected={selectedKey === item.key || undefined} data-focus={focusKeys.has(item.key) || undefined}
                     aria-pressed={selectedKey === item.key} onClick={() => onSelect(selectedKey === item.key ? null : item.key)}>
                     <span className="sp-ag-time sp-time">{timeRange(item.start, item.end)}</span>

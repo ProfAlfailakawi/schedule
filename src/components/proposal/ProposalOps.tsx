@@ -44,7 +44,7 @@ function OpCard({ ws, op }: { key?: React.Key; ws: Workspace; op: StudyProposalO
   const targetsModified = op.kind === "edit" && op.source;
   return (
     <article className="sp-op" data-kind={op.kind} data-state={state} data-focus={ws.focusOpId === op.id || undefined} data-editing={editing || undefined}>
-      <button type="button" className="sp-op-main" onClick={() => {
+      <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-op-main" onClick={() => {
         ws.setFocusOpId(ws.focusOpId === op.id ? null : op.id);
         const key = op.kind === "create" || (op.kind === "replace" && op.incoming === "create") ? `new:${op.id}` : `row:${op.source?.id}`;
         ws.setSelectedKey(key);
@@ -70,9 +70,9 @@ function OpCard({ ws, op }: { key?: React.Key; ws: Workspace; op: StudyProposalO
           </span>
         ) : null}
         <span className="sp-op-actions">
-          {state === "blocked" ? <button type="button" className="sp-icon-text" onClick={() => ws.loadAlternatives(op.id)}><Wand2 aria-hidden="true" />أوقات بديلة</button> : null}
-          <button type="button" className="sp-icon-text" onClick={() => ws.editOp(op.id)} aria-label={`تعديل مادة ${t.courseName}`}><Pencil aria-hidden="true" />تعديل</button>
-          <button type="button" className="sp-icon-text" data-tone="danger" onClick={() => ws.removeOp(op.id)} aria-label={`إزالة ${t.courseName} من المسودة`}><Trash2 aria-hidden="true" />إزالة</button>
+          {state === "blocked" ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-text" onClick={() => ws.loadAlternatives(op.id)}><Wand2 aria-hidden="true" />أوقات بديلة</button> : null}
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-text" onClick={() => ws.editOp(op.id)} aria-label={`تعديل مادة ${t.courseName}`}><Pencil aria-hidden="true" />تعديل</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-text" data-tone="danger" onClick={() => ws.removeOp(op.id)} aria-label={`إزالة ${t.courseName} من المسودة`}><Trash2 aria-hidden="true" />إزالة</button>
         </span>
       </div>
     </article>

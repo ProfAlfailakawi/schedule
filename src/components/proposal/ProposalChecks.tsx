@@ -10,6 +10,7 @@ import {
   AlertTriangle, Check, ChevronDown, Crosshair, Info, Lightbulb, LoaderCircle, RefreshCw, ShieldCheck, Sparkles, Undo2, Wand2,
 } from "lucide-react";
 import { PROPOSAL_DAY_NAMES, type ProposalFinding } from "../../utils/studyProposal";
+import { AR, countOf } from "../../utils/arabicCount";
 import type { Workspace } from "./useProposalWorkspace";
 import { daysLabel, timeRange } from "./proposalFormat";
 import { summaryLine } from "./ProposalHeader";
@@ -38,14 +39,14 @@ function FindingCard({ ws, finding }: { key?: React.Key; ws: Workspace; finding:
       {finding.fix ? <p className="sp-finding-fix"><Lightbulb aria-hidden="true" /><span><b>ما يمكن فعله:</b> {finding.fix}</span></p> : null}
       <div className="sp-finding-actions">
         {finding.gridKeys?.length ? (
-          <button type="button" className="sp-chip-btn" onClick={() => { ws.setFocusFindingId(focused ? null : finding.id); if (finding.gridKeys?.[0]) ws.setSelectedKey(finding.gridKeys[0]); }}>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-chip-btn" onClick={() => { ws.setFocusFindingId(focused ? null : finding.id); if (finding.gridKeys?.[0]) ws.setSelectedKey(finding.gridKeys[0]); }}>
             <Crosshair aria-hidden="true" />{focused ? "إلغاء الإبراز" : "أبرزها في الجدول"}
           </button>
         ) : null}
         {finding.kind === "blocker" && finding.opId && ALT_TYPES.has(finding.code) ? (
-          <button type="button" className="sp-chip-btn" data-primary onClick={() => ws.loadAlternatives(finding.opId!)}><Wand2 aria-hidden="true" />أوقات بديلة</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-chip-btn" data-primary onClick={() => ws.loadAlternatives(finding.opId!)}><Wand2 aria-hidden="true" />أوقات بديلة</button>
         ) : null}
-        {finding.opId ? <button type="button" className="sp-chip-btn" onClick={() => ws.editOp(finding.opId!)}>تعديل المادة</button> : null}
+        {finding.opId ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-chip-btn" onClick={() => ws.editOp(finding.opId!)}>تعديل المادة</button> : null}
       </div>
     </li>
   );
@@ -59,7 +60,7 @@ function Alternatives({ ws }: { ws: Workspace }) {
     <section className="sp-alts" aria-label="أوقات بديلة" aria-live="polite">
       <header>
         <h4><Wand2 aria-hidden="true" />أوقات بديلة لـ «{op?.target.courseName || "المادة"}»</h4>
-        <button type="button" className="sp-link" onClick={() => ws.setAlts(null)}>إخفاء</button>
+        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={() => ws.setAlts(null)}>إخفاء</button>
       </header>
       {alts.loading ? <p className="sp-alts-state"><LoaderCircle className="sp-spin" aria-hidden="true" />نفحص الأوقات الصالحة على المقترح كله…</p> : null}
       {alts.error ? <p className="sp-alts-state" role="alert">{alts.error}</p> : null}
@@ -73,7 +74,7 @@ function Alternatives({ ws }: { ws: Workspace }) {
               <span className="sp-alt-ok"><Check aria-hidden="true" />{alt.reviews ? `${alt.reviews} للمراجعة` : "بلا موانع"}</span>
             </div>
             <ul className="sp-alt-why">{alt.reasons.map(r => <li key={r}>{r}</li>)}</ul>
-            <button type="button" className="btn btn-secondary" onClick={() => ws.applyAlternative(alts.opId, alt)}>جرّب هذا الوقت</button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={() => ws.applyAlternative(alts.opId, alt)}>جرّب هذا الوقت</button>
           </li>
         ))}
       </ul>
@@ -88,7 +89,7 @@ function Group({ ws, kind, items, open }: { ws: Workspace; kind: keyof typeof KI
   if (!items.length) return null;
   return (
     <section className="sp-group" data-kind={kind}>
-      <button type="button" className="sp-group-head" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>
+      <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-group-head" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>
         <meta.Icon aria-hidden="true" /><b>{meta.title}</b><span className="sp-count">{items.length}</span><small>{meta.note}</small>
         <ChevronDown className="sp-chev" aria-hidden="true" />
       </button>
@@ -119,12 +120,12 @@ export default function ProposalChecks({ ws, compact = false }: { ws: Workspace;
 
   const heading = {
     empty: "لا فحصَ قبل إضافة مادة", failed: "تعذّر الفحص", checking: "جاري الفحص…", partial: "الفحص غير مكتمل",
-    blocked: groups.blocker.length === 1 ? "يوجد مانعٌ واحد" : `يوجد ${groups.blocker.length} موانع`, clear: "اكتمل الفحص — لا توجد موانع",
+    blocked: `يوجد ${countOf(groups.blocker.length, AR.blocker)}`, clear: "اكتمل الفحص — لا توجد موانع",
   }[status];
 
   return (
     <section className="sp-checks" data-status={status} data-compact={compact || undefined} aria-label="ملخص الفحص">
-      <button type="button" className="sp-checks-bar" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+      <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-checks-bar" aria-expanded={open} onClick={() => setOpen(v => !v)}>
         <span className="sp-checks-icon" data-status={status} aria-hidden="true">
           {status === "checking" ? <LoaderCircle className="sp-spin" /> : status === "clear" ? <ShieldCheck /> : status === "empty" ? <Info /> : <AlertTriangle />}
         </span>
@@ -140,7 +141,7 @@ export default function ProposalChecks({ ws, compact = false }: { ws: Workspace;
           {status === "failed" ? (
             <div className="sp-state" role="alert">
               <p>{ws.evalError || "لم يتمكّن الخادم من إكمال الفحص."} لا يُعرض حكمٌ على المقترح قبل اكتمال الفحص.</p>
-              <button type="button" className="btn btn-secondary" onClick={ws.retryEvaluation}><RefreshCw aria-hidden="true" />أعد الفحص</button>
+              <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={ws.retryEvaluation}><RefreshCw aria-hidden="true" />أعد الفحص</button>
             </div>
           ) : null}
           {status === "partial" && ev ? (
@@ -152,7 +153,7 @@ export default function ProposalChecks({ ws, compact = false }: { ws: Workspace;
           {status === "clear" ? <p className="sp-clear"><Check aria-hidden="true" />لا يوجد ما يمنع إرسال المقترح{groups.review.length ? "، لكن راجع الملاحظات أدناه." : "."}</p> : null}
           <Group ws={ws} kind="blocker" items={groups.blocker} open />
           <Alternatives ws={ws} />
-          {ws.undo ? <p className="sp-undo"><Check aria-hidden="true" />{ws.undo.label}. <button type="button" className="sp-link" onClick={ws.undoRetarget}><Undo2 aria-hidden="true" />تراجع</button></p> : null}
+          {ws.undo ? <p className="sp-undo"><Check aria-hidden="true" />{ws.undo.label}. <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.undoRetarget}><Undo2 aria-hidden="true" />تراجع</button></p> : null}
           <Group ws={ws} kind="review" items={groups.review} open={!groups.blocker.length} />
           <Group ws={ws} kind="info" items={groups.info} open={false} />
         </div>

@@ -28,7 +28,7 @@ function Modal({ label, onClose, children, wide }: { label: string; onClose: () 
     <div className="sp-modal-layer">
       <div className="sp-modal-backdrop" onMouseDown={onClose} aria-hidden="true" />
       <div ref={ref} className="sp-modal" data-wide={wide || undefined} role="dialog" aria-modal="true" aria-label={label}>
-        <button type="button" className="sp-modal-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
+        <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-modal-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
         {children}
       </div>
     </div>
@@ -51,7 +51,7 @@ const copy = async (text: string) => {
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
   return (
-    <button type="button" className="btn btn-secondary" onClick={async () => { if (await copy(text)) { setDone(true); window.setTimeout(() => setDone(false), 1800); } }}>
+    <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={async () => { if (await copy(text)) { setDone(true); window.setTimeout(() => setDone(false), 1800); } }}>
       {done ? <Check aria-hidden="true" /> : <ClipboardCopy aria-hidden="true" />}{done ? "تم النسخ" : label}
     </button>
   );
@@ -109,10 +109,10 @@ export function SendDialog({ ws, onClose, onSent }: { ws: Workspace; onClose: ()
 
   const before = evaluation?.before.metrics, after = evaluation?.after.metrics;
   const rows: Array<[string, string, string]> = before && after ? [
-    ["النصاب", before.loadUnits === null ? "غير متوفر" : `${num(before.loadUnits)} ساعة`, after.loadUnits === null ? "غير متوفر" : `${num(after.loadUnits)} ساعة`],
+    ["النصاب", before.loadUnits === null ? "غير متوفر" : countOf(before.loadUnits, AR.hour), after.loadUnits === null ? "غير متوفر" : countOf(after.loadUnits, AR.hour)],
     ["عدد الشعب", num(before.sections), num(after.sections)],
     ["أيام الحضور", countOf(before.attendanceDays, AR.day), countOf(after.attendanceDays, AR.day)],
-    ["ساعات الحضور", `${hoursShort(before.presenceMinutes)} ساعة`, `${hoursShort(after.presenceMinutes)} ساعة`],
+    ["ساعات الحضور", countOf(Number(hoursShort(before.presenceMinutes).replace(",", ".")), AR.hour), countOf(Number(hoursShort(after.presenceMinutes).replace(",", ".")), AR.hour)],
     ["الفراغات بين المحاضرات", minutesLabel(before.gapMinutes), minutesLabel(after.gapMinutes)],
   ] : [];
 
@@ -129,10 +129,10 @@ export function SendDialog({ ws, onClose, onSent }: { ws: Workspace; onClose: ()
           <label className="sp-copy-field"><span>رسالة جاهزة</span>
             <textarea readOnly rows={5} value={readyMessage} onFocus={e => e.currentTarget.select()} /></label>
           <div className="sp-modal-actions">
-            <CopyButton text={link} label="انسخ الرابط" />
-            <CopyButton text={readyMessage} label="انسخ الرسالة" />
+            <CopyButton data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" text={link} label="انسخ الرابط" />
+            <CopyButton data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" text={readyMessage} label="انسخ الرسالة" />
             {wa ? <a className="btn btn-secondary" href={`https://wa.me/${wa}?text=${encodeURIComponent(readyMessage)}`} target="_blank" rel="noopener noreferrer"><MessageCircle aria-hidden="true" />افتح واتساب</a> : null}
-            <button type="button" className="btn btn-primary" onClick={onClose}>تم</button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-primary" onClick={onClose}>تم</button>
           </div>
         </div>
       </Modal>
@@ -152,7 +152,7 @@ export function SendDialog({ ws, onClose, onSent }: { ws: Workspace; onClose: ()
           <div className="sp-send-main">
             <label className="sp-field-block"><span>عنوان المقترح</span>
               <input value={ws.title} maxLength={160} onChange={e => ws.setTitle(e.target.value)} /></label>
-            <label className="sp-field-block"><span>رسالة القسم <small>{num(ws.message.length)} / {num(PROPOSAL_MESSAGE_LIMIT)}</small></span>
+            <label className="sp-field-block"><span>رسالة القسم <small><bdi dir="ltr">{num(ws.message.length)} / {num(PROPOSAL_MESSAGE_LIMIT)}</bdi></small></span>
               <textarea rows={4} value={ws.message} maxLength={PROPOSAL_MESSAGE_LIMIT} onChange={e => ws.setMessage(e.target.value)} /></label>
 
             <fieldset className="sp-field-block sp-mode-choice">
@@ -207,7 +207,7 @@ export function SendDialog({ ws, onClose, onSent }: { ws: Workspace; onClose: ()
           <button type="button" className="btn btn-primary" disabled={!ready || busy} onClick={send} data-guide-target="proposal-send">
             {busy ? <LoaderCircle className="sp-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}{busy ? "جاري الإرسال…" : "إرسال للأستاذ"}
           </button>
-          <button type="button" className="btn btn-secondary" onClick={onClose}><RotateCcw aria-hidden="true" />رجوع للتعديل</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={onClose}><RotateCcw aria-hidden="true" />رجوع للتعديل</button>
         </footer>
       </div>
     </Modal>
@@ -313,7 +313,7 @@ export function CommitDialog({ ws, onClose, onDone }: { ws: Workspace; onClose: 
               {state === "committing" ? <LoaderCircle className="sp-spin" aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}{state === "committing" ? "جاري التثبيت…" : "تثبيت المقترح في الجدول"}
             </button>
           ) : null}
-          <button type="button" className="btn btn-secondary" onClick={onClose}>{state === "done" ? "إغلاق" : "رجوع للمراجعة"}</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="btn btn-secondary" onClick={onClose}>{state === "done" ? "إغلاق" : "رجوع للمراجعة"}</button>
         </footer>
       </div>
     </Modal>
@@ -359,7 +359,7 @@ export function ProposalResponses({ ws }: { ws: Workspace }) {
             const op = proposal.ops.find(o => o.id === d.opId);
             if (!op) return null;
             const start = r.suggestedStart!;
-            return <button key={d.opId} type="button" className="sp-chip-btn" onClick={() => {
+            return <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={d.opId} type="button" className="sp-chip-btn" onClick={() => {
               const [h, m] = start.split(":").map(Number);
               const dur = Math.max(30, (Number(op.target.fendtime.slice(0, 2)) * 60 + Number(op.target.fendtime.slice(3)) - (Number(op.target.fstarttime.slice(0, 2)) * 60 + Number(op.target.fstarttime.slice(3)))));
               const end = h * 60 + m + dur;

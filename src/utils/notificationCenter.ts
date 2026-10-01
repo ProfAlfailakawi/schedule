@@ -39,6 +39,8 @@ export interface CenterScope {
   openRequests: number;
   /** طلباتُ الأساتذة المعلّقة في هذا القسم، طلباً طلباً. */
   pendingRequests?: Array<{ requestId: string; instructorName: string; count: number; at?: string; linked?: boolean }>;
+  /** مقترحاتٌ دراسية ردّ عليها الأستاذ وتنتظر قرار القسم (تثبيتاً أو نسخةً معدّلة). */
+  studyProposals?: Array<{ proposalId: string; instructorName: string; kind: "approved" | "changes"; at?: string }>;
   /**
    * طلباتُ الطلبة في كشف التسجيل، مقرّراتُ هذا القسم وحدها:
    * ما ينتظر لجنة القسم، وما وافقت عليه اللجنة وينتظر التسجيل (ويُعدّ للتسجيل
@@ -348,6 +350,19 @@ export function buildNotifications(input: CenterInput): CenterNotification[] {
         : [...new Set(entry.places)].join(" · "),
       view: requestView, at: entry.at, ...target(entry.scope),
     });
+  }
+
+  /* ── مقترحاتٌ دراسية ردّ عليها الأستاذ ───────────────────────────────────── */
+  if (requestView) {
+    for (const scope of scopes) {
+      for (const entry of scope.studyProposals || []) {
+        items.push({
+          id: `study-proposal:${entry.proposalId}:${entry.kind}:${entry.at || ""}`, tone: "action",
+          title: entry.kind === "approved" ? `${entry.instructorName} وافق على مقترحٍ دراسي — بانتظار التثبيت` : `${entry.instructorName} طلب تعديل مقترحٍ دراسي`,
+          detail: placeOf(scope), view: requestView, at: entry.at, ...target(scope),
+        });
+      }
+    }
   }
 
   /* ── كشفُ التسجيل: اللجنةُ أولاً، ثم التسجيل ─────────────────────────────
