@@ -3,7 +3,7 @@
  */
 import fs from "fs";
 import { departmentLoadWarning, departmentTypicalTotal, historicalBaseline, NO_HISTORY_MAX, rangeLabel, remainingBacklog, suggestSectionCount } from "../src/utils/sectionCountSuggestion";
-import { blankSpots, labelLooksRemaining, readRemainingReport, remainingValues } from "../src/utils/remainingReport";
+import { blankSpots, columnKind, labelLooksRemaining, readRemainingReport, readReportHeader, remainingValues } from "../src/utils/remainingReport";
 import { readReportCells } from "../src/utils/documentOcr";
 
 let passed = 0, failed = 0;
@@ -31,8 +31,13 @@ check(s.suggested === 0 && s.reason.includes("لا متبقي"), "لا متبق�
 /* السقف: المتبقي كلّه لا يملأ أكثر من ⌈المتبقي ÷ السعة⌉. */
 const fours = [{ termName: "الفصل الأول 2025/2026", sections: 4, similar: true }, { termName: "الفصل الأول 2024/2025", sections: 4, similar: true }];
 s = suggestSectionCount(50, 40, fours);
-check(s.min === 2 && s.max === 2 && s.suggested === 2 && s.reason.includes("يملأ شعبتين على الأكثر"), `سقف المتبقي: ${s.headline} · ${s.reason}`);
-check(suggestSectionCount(400, 40, fours).max === 4, "متبقٍّ واسع لا يرفع السقف فوق التاريخ");
+check(s.min === 4 && s.max === 4 && s.reason.includes("يملأ شعبتين فقط") && s.reason.includes("قد يخدم المقرر أقساماً أخرى"),
+  `متبقٍّ يملأ أقل من التاريخ (مقرر خدمة كـ«الثقافة الإسلامية»: 54 متبقياً و19 شعبة): التاريخ يبقى ويُقال — ${s.reason}`);
+check(suggestSectionCount(54, 70, [{ termName: "الفصل الثاني 2023/2024", sections: 19, similar: true }]).min === 19, "102: لا يُقصّ من 19 شعبة إلى واحدة");
+check(suggestSectionCount(400, 40, fours).max === 4, "متبقٍّ واسع لا يرفع الاقتراح فوق التاريخ بلا مقارنة");
+const growing4 = [{ termName: "الفصل الأول 2025/2026", sections: 4, remaining: 100, similar: true }];
+s = suggestSectionCount(160, 40, growing4);
+check(s.max === 4 && s.suggested === 4, `الميل صعوداً لا يتجاوز ما يملؤه المتبقي كلّه (160 ÷ 40 = 4): ${s.headline}`);
 
 /* الميل: المتبقي مقارناً بنفسه في الفصول المماثلة. */
 const withPool = [
@@ -95,6 +100,51 @@ const gap = [...line(0.15, "0101101", "40", "120"), ...line(0.18, "0101102", "30
 const spots = blankSpots([gap], catalogue, "0101");
 check(spots.length === 1 && Math.abs(spots[0].y - 0.21) < 0.001 && Math.abs(spots[0].x - 0.2) < 0.01, "الخانة الفارغة تحت عمود الأرقام تُسمّى لتُعاد قراءتها (العدد المنفرد في المسح)");
 
+/* ── كشف العمادة الحقيقي SWRS136 (التربية الإسلامية، صورتا هاتف) ──
+   الأعمدة من اليمين: المقرر · اسم المقرر · لم يجتازوا في بداية التسجيل · سعة الشعب
+   · عدد المسجلين · المقاعد المتبقية · عدد الشعب · اعداد الذين لم يسجلوا. */
+check(columnKind("اعداد الذين لم يسجلوا") === "unregistered" && columnKind("اعدد انين أم يسجلرا") === "unregistered",
+  "«الذين لم يسجلوا» يُعرف ولو شوّهته القراءة الضوئية");
+check(columnKind("اعداد الطلبة لم يجتازوا في بداية التسجيل") === "notPassed" && columnKind("اعداد الطلبة لم يجتاروآ في بدلية التسجيل") === "notPassed",
+  "«لم يجتازوا في بداية التسجيل» يُعرف ولو شوّهته القراءة");
+check(columnKind("المقاعد المتبقية") === "seats" && !labelLooksRemaining("المقاعد المتبقية") && columnKind("عدد المسجلين") === "registered"
+  && columnKind("سعة الشعب") === "capacity" && columnKind("عدد الشعب") === "sections",
+  "«المقاعد المتبقية» ليست «المتبقي» وإن اشتركتا في الكلمة");
+const X = { code: 0.84, name: 0.7, notPassed: 0.6, capacity: 0.53, registered: 0.47, seats: 0.4, sections: 0.34, unregistered: 0.27 };
+type Cell = { text: string; x0: number; x1: number; y: number; confidence?: number };
+const at = (text: string, x: number, y: number, confidence?: number, width = 0.05): Cell => ({ text, x0: x - width / 2, x1: x + width / 2, y, ...(confidence != null ? { confidence } : {}) });
+const swrsPage = (shift: number, rows: Array<[string, Array<number | null>, number?, number?]>): Cell[] => [
+  at("احصائية بعدد الطلبة الذين لم يجتازوا المقرر ومسجلين بقوائم الانتظار في الفصل 202420", 0.5, 0.05, undefined, 0.6),
+  at("المقرر", X.code + shift, 0.2), at("اسم المقرر", X.name + shift, 0.2, undefined, 0.16),
+  at("اعداد الطلبة لم يجتازوا", X.notPassed + shift, 0.195), at("في بداية التسجيل", X.notPassed + shift, 0.212),
+  at("سعة الشعب", X.capacity + shift, 0.2), at("عدد المسجلين", X.registered + shift, 0.2), at("المقاعد المتبقية", X.seats + shift, 0.2),
+  at("عدد الشعب", X.sections + shift, 0.2), at("اعداد الذين لم يسجلوا", X.unregistered + shift, 0.2),
+  ...rows.flatMap(([code, values, low, lowAt], index) => {
+    const y = 0.25 + index * 0.03;
+    const xs = [X.notPassed, X.capacity, X.registered, X.seats, X.sections, X.unregistered];
+    return [at(code, X.code + shift, y), at("اسم", X.name + shift, y, undefined, 0.16),
+      ...values.flatMap((value, column) => value == null ? [] : [at(String(value), xs[column] + shift, y, column === lowAt ? low : 92)])];
+  }),
+];
+const islCatalogue = ["102", "120", "201", "254", "255"].map((code, index) => ({ id: index + 1, code: `0101${code}` }));
+const swrs = [
+  swrsPage(0, [["102", [54, 1336, 0, 1336, 19, 54]], ["120", [297, null, null, null, 0, null]], ["201", [570, 256, 0, 256, 9, 370], 55, 5]]),
+  swrsPage(0.035, [["254", [48, 210, 0, 210, 3, 48]], ["255", [35, null, null, null, 0, null]]]),
+];
+r = readRemainingReport(swrs, islCatalogue, "0101");
+check(r.column != null && r.columns[r.column].kind === "unregistered" && r.fallback != null && r.columns[r.fallback].kind === "notPassed",
+  "SWRS136: «المتبقي» = «الذين لم يسجلوا»، وبديله «لم يجتازوا» — لا «المقاعد المتبقية»");
+check(r.columns.length === 6 && r.rows.length === 5, "صورتا صفحتين بتأطيرٍ مختلف تتطابق أعمدتهما بترتيبها");
+values = remainingValues(r, r.column!, r.fallback);
+check(values["1"] === 54 && values["2"] === 297 && values["4"] === 48 && values["5"] === 35,
+  "مقررٌ بلا شعب في الكشف (120: 297، 255: 35) يأخذ متبقّيه من «لم يجتازوا»");
+const doubted = r.rows.find(row => row.courseId === 3)!;
+check(doubted.doubt?.read === 370 && doubted.doubt.derived === 570 && doubted.doubt.chosen === 570 && values["3"] === 570,
+  "حساب الكشف يفحص القراءة: 370 ≠ 570 − 0، فيُعتمد أوثقُهما (570) ويُعلَّم الصف");
+const header = readReportHeader("الفصل الدراسي : 202420 الفصل الدراسي الثاني 2025-2024\nالكلية : 01 كليه التربيه الاساسيه\nرمز القسم العلمي 0101 التربيه الاسلاميه");
+check(header.department === "0101" && header.season === "second" && header.years?.[0] === 2024 && header.years?.[1] === 2025, "ترويسة الكشف: القسم 0101 والفصل الثاني 2024/2025");
+check(readReportHeader("الفصل الدراسي : 202410").season === "first", "رمز الفصل وحده (202410) يكفي");
+
 /* ── كشفٌ حقيقي PDF (نصّي، RTL، كما يطبعه المتصفح حرفاً حرفاً) ── */
 const cells = await readReportCells(fs.readFileSync("tests/fixtures/remaining-report.pdf"));
 r = readRemainingReport(cells.pages, catalogue, "0101");
@@ -105,8 +155,12 @@ check(values["1"] === 120 && values["2"] === 102 && values["3"] === 50 && values
 /* ── الواجهة ── */
 const ui = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
 check(ui.includes("courseNumber(a.code) - courseNumber(b.code)"), "الجدول مرتّب برقم المقرر تصاعدياً");
-check(ui.includes("استيراد كشف المتبقي (PDF)") && ui.includes("/api/registration-stats/remaining-pdf") && ui.includes("تعبئة المتبقي") && ui.includes("remainingValues(preview, column)"),
-  "المتبقي يُستورد من PDF ويُعاين قبل التعبئة");
+check(ui.includes("استيراد كشف المتبقي") && ui.includes("/api/registration-stats/remaining-pdf") && ui.includes("تعبئة المتبقي") && ui.includes("remainingValues(preview, column, fallbackFor(preview, column))"),
+  "المتبقي يُستورد ويُعاين قبل التعبئة");
+check(ui.includes('accept="application/pdf,.pdf,image/*,.heic,.heif" multiple') && ui.includes("/api/registration-stats/remaining-cells") && ui.includes('"x-report-template"'),
+  "PDF أو صور صفحاته (الهاتف): تُقرأ صورةً صورة وتُجمع صفحاتها");
+check(ui.includes("setDoubtPicks") && ui.includes("preview.warnings") && ui.includes("COLUMN_TITLES[item.kind]") && ui.includes("من «لم يجتازوا» — لا شعب في الكشف"),
+  "المعاينة: تنبيه القسم والفصل، واختيار الصحيح من قراءتين، وما أُخذ من «لم يجتازوا»");
 check(!ui.includes("عدد الطلبة المسجّلين") && !ui.includes("counts:"), "لا خانة «المسجّلين» تُكتب يدوياً");
 check(ui.includes("keepalive: true") && ui.includes('addEventListener("pagehide"') && ui.includes("window.setTimeout(() => { void persistRef.current(); }, 900)"),
   "يُحفظ وحده، وما بقي معلّقاً يُرسل والشاشة تُغلق — لا أرقام تضيع");
@@ -125,6 +179,12 @@ check(repo.includes("input.counts ?? previous?.counts") && repo.includes("remain
 check(server.includes('app.get("/api/registration-stats", requirePermission(7)') && server.includes('app.put("/api/registration-stats", requirePermission(7)')
   && server.includes('app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw(') && server.includes("documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {\n  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);\n  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: \"حدد الكلية والقسم والفصل\" }); return; }\n  if (!isScopeAllowed(req, collegeId, sectionId))"),
   "أبواب الإحصاء والكشف محميّة بالصلاحية والنطاق، والكشف محدودُ المعدّل وفي طابور قراءة المستندات");
+check(server.includes('app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requirePermission(7)') && server.includes("if (!isScopeAllowed(req, collegeId, sectionId))")
+  && server.includes('"image/*"], limit: "24mb" })') && server.includes("remainingWarnings(cells.headerText, departmentCode, termName)"),
+  "صفحات الصور تُقرأ معاً بالباب نفسه وحدوده، والصور مقبولة، وترويسة الكشف تُفحص");
+const ocr = fs.readFileSync("src/utils/documentOcr.ts", "utf8");
+check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set(["seats","capacity","sections"])'),
+  "الصورة المسطّرة: تُعدَّل وتُستقام وتُقرأ خانةً خانة، ولا يُقرأ ما لا يُحتاج إليه");
 check(server.includes("termSeasonOf(row.AdTermName) === season") && server.includes("if (!rows.length) continue;"), "الفصول المماثلة: الموسم نفسه، ويُتخطّى الفصل الذي لا جدول فيه للقسم");
 check(server.includes("Repository.getCourseTransitions(sectionId)") && server.includes("ancestorsOf(id)") && server.includes("remaining: known.reduce("), "المقرر المعاد ترقيمه يرث شعب سلفه ومتبقّيه");
 check(ui.includes("suggestSectionCount("), "الواجهة تستعمل الحساب نفسه");
