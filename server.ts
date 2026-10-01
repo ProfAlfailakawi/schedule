@@ -2162,7 +2162,7 @@ async function seedDemoStories(): Promise<void> {
 
   // ── رابطا القسم (a)
   const linkBase = { AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, SystemUserId: committee.id, userName: committee.name };
-  await Repository.createShareLink({
+  const staffLink = await Repository.createShareLink({
     ...linkBase, kind: "staff", label: shareLinkLabel("staff", sectionName, termName),
     expiresAt: termLinkExpiresAt(term), requestsCloseAt: requestsCloseAtFromDate(iso(14).slice(0, 10)), showInstructors: true,
   } as any);
@@ -2170,6 +2170,12 @@ async function seedDemoStories(): Promise<void> {
     ...linkBase, kind: "survey", label: shareLinkLabel("survey", sectionName, termName),
     expiresAt: iso(30), showInstructors: true,
   } as any);
+
+  /* عدّاداتُ المشاهدة: رابطٌ لم يفتحه أحدٌ يُري «0» أمام الجمهور. تُرفع بالدالة
+     نفسها التي تعدّ بها الصفحاتُ العامة، داخل صندوق الزائر وحده. */
+  for (const [link, opens] of [[staffLink, 14], [survey, 9]] as const) {
+    for (let opened = 0; opened < opens; opened++) await Repository.touchShareLink(link.id);
+  }
 
   // ── حالاتُ الطلبة (b)
   const courseOf = (code: string) => courses.find(row => String(row.CourseCode) === code);

@@ -507,12 +507,14 @@ function Stage({ scene, board }: { scene: string; board: StageBoard }) {
   );
 }
 
-export default function Onboarding({ isPowerAdmin, roleId, workspaceQuery, onFinish }: {
+export default function Onboarding({ isPowerAdmin, roleId, workspaceQuery, canReadWorkspace = true, onFinish }: {
   isPowerAdmin: boolean;
   /** صفة الحساب — تختار الجولة (N26). */
   roleId?: string;
   /** The same scoped query App.tsx warm-starts, so this usually costs nothing. */
   workspaceQuery?: string;
+  /** من لا صلاحيةَ له على الجدول (الشاشة 7) يردّ الخادمُ على قراءته 403، فلا نسأل أصلاً. */
+  canReadWorkspace?: boolean;
   onFinish: () => void;
 }) {
   const { scenes: SCENES_FOR_ROLE, staged } = useMemo(() => onboardingScenesFor(roleId), [roleId]);
@@ -526,7 +528,7 @@ export default function Onboarding({ isPowerAdmin, roleId, workspaceQuery, onFin
   /* The reader's own week, if it is there. Silence on every failure: a welcome
      screen that cannot reach the board still has a welcome to give. */
   useEffect(() => {
-    if (still) return;
+    if (still || !canReadWorkspace) return;
     let alive = true;
     fetch(`/api/schedules/workspace?${workspaceQuery || "resolve=1"}`)
       .then(response => (response.ok ? response.json() : null))
@@ -536,7 +538,7 @@ export default function Onboarding({ isPowerAdmin, roleId, workspaceQuery, onFin
       })
       .catch(() => undefined);
     return () => { alive = false; };
-  }, [still, workspaceQuery]);
+  }, [still, canReadWorkspace, workspaceQuery]);
 
   /* Auto-play through the demonstration only — build, collide, repair — then
      hand over. See AUTOPLAY_THROUGH above for why it stops there. */
