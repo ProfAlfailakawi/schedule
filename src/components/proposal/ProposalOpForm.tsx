@@ -5,9 +5,9 @@
  * المألوفة من «إضافة موعد دراسي». الأستاذُ والفصلُ مقرَّران سلفاً فلا يُسألان
  * عنهما مرةً ثانية. ولا زرَّ هنا اسمُه «حفظ الموعد»: ما يحدث مسودةٌ فقط.
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowLeftRight, Building2, Check, CirclePlus, Clock3, FilePlus2, Info, Pencil, RotateCcw, Search, UserRoundPlus, Users,
+  AlertTriangle, ArrowLeftRight, Building2, Check, CirclePlus, Clock3, FilePlus2, History, Info, Pencil, RotateCcw, Search, UserRoundPlus, Users,
 } from "lucide-react";
 import LocationPicker from "../LocationPicker";
 import { Field } from "../ui";
@@ -18,7 +18,8 @@ import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME } from "../../utils/sche
 import { PROPOSAL_DAY_KEYS, PROPOSAL_DAY_NAMES, daysLabel, type GridItem } from "../../utils/studyProposal";
 import { toEnglishDigits } from "../../utils/digits";
 import { AR, countOf } from "../../utils/arabicCount";
-import type { FacultyEntry, ContextCourse } from "./proposalApi";
+import { proposalApi, type FacultyEntry, type ContextCourse } from "./proposalApi";
+import type { CourseHistory } from "../../utils/studyProposal";
 import { quickOverlap, suggestSectionCode, type FormDraft, type WorkMode } from "./proposalDraft";
 import type { Workspace } from "./useProposalWorkspace";
 import { num, timeRange } from "./proposalFormat";
@@ -168,6 +169,52 @@ function scopeOfDraft(ws: Workspace): { collegeId: number; sectionId: number } {
   return { collegeId: ctx?.scope.collegeId || 0, sectionId: ctx?.scope.sectionId || 0 };
 }
 
+/* ── سجلُّ المقرر: كيف نزل في فصولٍ سابقة ─────────────────────────────────── */
+
+const historyCache = new Map<string, CourseHistory>();
+
+function CourseHistoryNote({ ws, scope }: { ws: Workspace; scope: { collegeId: number; sectionId: number } }) {
+  const { draft, ctx } = ws;
+  const row = draft.rowId != null ? ws.currentItems.find(i => i.rowId === draft.rowId) : undefined;
+  const courseId = draft.courseId ?? (draft.mode === "edit" ? row?.src?.courseId ?? null : null);
+  const termId = ctx?.term.id || 0;
+  const key = courseId && scope.collegeId && scope.sectionId ? `${courseId}:${scope.collegeId}:${scope.sectionId}:${termId}` : "";
+  const [history, setHistory] = useState<CourseHistory | null>(key ? historyCache.get(key) || null : null);
+  useEffect(() => {
+    if (!key || !courseId) { setHistory(null); return; }
+    const cached = historyCache.get(key);
+    if (cached) { setHistory(cached); return; }
+    const controller = new AbortController();
+    proposalApi.courseHistory({ courseId, collegeId: scope.collegeId, sectionId: scope.sectionId, termId }, controller.signal)
+      .then(result => { historyCache.set(key, result); setHistory(result); })
+      .catch(() => setHistory(null));
+    return () => controller.abort();
+  }, [key]);
+  if (!history || !history.layouts.length) return null;
+  const apply = (layout: CourseHistory["layouts"][number]) => ws.patchDraft({
+    days: layout.days, start: layout.start, end: layout.end, endTouched: true,
+    block: layout.days.length === 1 && layout.minutes > 80 ? layout.minutes : 0,
+  });
+  return (
+    <section className="sp-history" aria-label="سجل المقرر في الفصول السابقة">
+      <p><History aria-hidden="true" />نزل هذا المقرر في {countOf(history.terms, { one: "فصل", two: "فصلين", few: "فصول", many: "فصلاً" })} ({history.firstTerm}{history.latestTerm && history.latestTerm !== history.firstTerm ? ` ← ${history.latestTerm}` : ""}). الأوضاع المعتادة:</p>
+      <ul>
+        {history.layouts.map(layout => {
+          const on = draft.days.join() === layout.days.join() && draft.start === layout.start && draft.end === layout.end;
+          return (
+            <li key={`${layout.days.join()}|${layout.start}`}>
+              <button type="button" className="sp-chip-btn" aria-pressed={on} onClick={() => apply(layout)} data-guide-ignore="يملأ الأيام والوقت من سجل المقرر — لا يكتب في الجدول">
+                {daysLabel(layout.days)} · <bdi className="sp-time">{timeRange(layout.start, layout.end)}</bdi>
+                <small> · {countOf(layout.terms, { one: "فصل", two: "فصلان", few: "فصول", many: "فصلاً" })}</small>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function ScheduleFields({ ws, locked }: { ws: Workspace; locked?: boolean }) {
   const { draft, ctx } = ws;
   const advice = useMemo(() => draft.days.length && draft.start && draft.end ? adviseDayPattern(draft.days as DayKey[], draft.start, draft.end) : null, [draft.days, draft.start, draft.end]);
@@ -186,6 +233,7 @@ function ScheduleFields({ ws, locked }: { ws: Workspace; locked?: boolean }) {
   }
   return (
     <div className="sp-fields">
+      <CourseHistoryNote ws={ws} scope={scope} />
       <Field label="الأيام" required>
         <div className="sp-days" role="group" aria-label="أيام المحاضرة">
           {PROPOSAL_DAY_KEYS.map(day => (

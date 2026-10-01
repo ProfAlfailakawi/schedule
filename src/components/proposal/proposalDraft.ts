@@ -39,13 +39,15 @@ export interface FormDraft {
   end: string;
   /** المنسّق عدّل النهاية بيده: لا تُحسب تلقائياً بعد الآن. */
   endTouched: boolean;
+  /** مدّةُ لقاءٍ ممتدّ (مختبر/ورشة) اعتُمد من سجلّ المقرر: تبقى للنهاية التلقائية في يومٍ واحد. */
+  block: number;
   location: LocationDraft;
   note: string;
 }
 
 export const blankDraft = (mode: WorkMode = "assign"): FormDraft => ({
   mode, editingOpId: null, facultyId: null, adjust: false, rowId: null, outAction: "unassign", incoming: "assign",
-  courseId: null, scode: "", days: [], start: "", end: "", endTouched: false,
+  courseId: null, scode: "", days: [], start: "", end: "", endTouched: false, block: 0,
   location: { AdRoomCode: "", AdRoomHall: "" }, note: "",
 });
 
@@ -57,8 +59,8 @@ export function expectedDuration(days: readonly StudyProposalDayKey[]): number {
 }
 
 /** نهايةٌ مقترحة من البداية والنمط، أو "" إن تعذّر. */
-export function autoEnd(days: readonly StudyProposalDayKey[], start: string): string {
-  const minutes = expectedDuration(days);
+export function autoEnd(days: readonly StudyProposalDayKey[], start: string, block = 0): string {
+  const minutes = block && days.length === 1 ? block : expectedDuration(days);
   if (!minutes || !/^\d{1,2}:\d{2}$/.test(start)) return "";
   const end = timeToMinutes(start) + minutes;
   return end <= SCHEDULE_DAY_END ? minutesToTime(end) : "";
