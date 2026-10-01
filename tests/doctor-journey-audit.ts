@@ -375,7 +375,10 @@ async function main() {
     const card = server.slice(server.indexOf("async function buildStaffCard"), server.indexOf('app.get("/api/share"'));
     check(card.includes("if (personal && Number(link.AdInstructorId) !== Number(person.AdInstructorId)) return null;"), "D12 الرابط الشخصي لا يُفتح برقم زميل");
     check(card.indexOf("return null;", card.indexOf("const personal")) < card.indexOf("getSchedulesByScope({ termId: link.AdTermId })"), "D12 والرفض قبل قراءة أي جدول");
-    check(card.includes("(personal ? requestRows : []).map") && card.includes("...(personal ? requestMovementEntries(requestRows) : [])"), "D12 رابط القسم لا يحمل روابط الطلب ولا تاريخها ولا ملاحظات الرفض");
+    /* بابُ الطلب يصل بعد مطابقة الرقم المدني في الرابطين (طلبُ المالك 2026-10-01)؛
+       والتاريخُ وقراراتُ القسم يبقيان خارج رابط القسم العام. */
+    check(card.includes("requestRows.map(async request =>") && card.indexOf("sameCivilId(row.AdInstructorCivil, digits)") < card.indexOf("const requestLinks")
+      && card.includes("...(personal ? requestMovementEntries(requestRows) : [])"), "D12 بابُ الطلب بعد الرقم المدني، والتاريخ خارج رابط القسم");
     const minting = server.slice(server.indexOf('app.post("/api/share/:id/personal"'), server.indexOf("// --- Public surface (no account)"));
     check(minting.includes('app.post("/api/share/:id/personal", requirePermission(7)') && minting.includes("isScopeAllowed(req, parent.AdCollegeId, parent.AdSectionId)"), "D12 سكّ الروابط الشخصية للشاشة ٧ ضمن النطاق");
     check(minting.includes("if (!eligible.has(instructorId)) continue;") && minting.includes("live.get(instructorId)"), "D12 لأساتذة القسم وحدهم، ويُعاد استعمال الرابط القائم");

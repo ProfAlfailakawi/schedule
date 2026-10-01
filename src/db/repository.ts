@@ -1,3 +1,4 @@
+import { departmentFamily } from "../utils/sectionLabel";
 import { normalizeArabicText } from "../utils/arabicText";
 import fs from "fs";
 import { chooseStudentCaseSecret, STUDENT_CASE_SECRET_CONFLICT_MESSAGE, type StudentCaseSecretChoice } from "../server/studentCaseSecret";
@@ -2830,6 +2831,7 @@ export const Repository = {
        */
       const previous = doc.data() as AdTerm;
       const updated: AdTerm = { ...previous, AdTermId: id, AdTermName: name, ...calendar };
+      if (previous.AdTermClosed === true && calendar.AdTermClosed === false) updated.AdTermReopenedAt = new Date().toISOString();
       if (!calendar.AdTermStart) delete updated.AdTermStart;
       if (!calendar.AdTermWeeks) delete updated.AdTermWeeks;
       await docRef.set(updated);
@@ -2838,6 +2840,7 @@ export const Repository = {
     const idx = db.terms.findIndex(t => t.AdTermId === id);
     if (idx === -1) throw new Error("الفصل الدراسي غير موجود");
     db.terms[idx].AdTermName = name;
+    if (db.terms[idx].AdTermClosed === true && calendar.AdTermClosed === false) db.terms[idx].AdTermReopenedAt = new Date().toISOString();
     Object.assign(db.terms[idx], calendar);
     if (!calendar.AdTermStart) delete db.terms[idx].AdTermStart;
     if (!calendar.AdTermWeeks) delete db.terms[idx].AdTermWeeks;
@@ -4881,7 +4884,7 @@ export const Repository = {
     return stop;
   },
 
-  getVisitingRoster: async (collegeId: number, sectionId: number, termId: number): Promise<number[]> => {
+  getVisitingRosterMember: async (collegeId: number, sectionId: number, termId: number): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("visitingRosters").where("scopeKey", "==", scopeKey).limit(1).get();
@@ -4890,7 +4893,7 @@ export const Repository = {
     return (db.visitingRosters || []).find(row => row.scopeKey === scopeKey)?.instructorIds || [];
   },
 
-  saveVisitingRoster: async (collegeId: number, sectionId: number, termId: number, instructorIds: number[]): Promise<number[]> => {
+  saveVisitingRosterMember: async (collegeId: number, sectionId: number, termId: number, instructorIds: number[]): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     const unique = [...new Set(instructorIds.map(Number).filter(Boolean))];
     const row: VisitingRoster = {
@@ -4906,7 +4909,7 @@ export const Repository = {
     return unique;
   },
 
-  getVisitingRosterHistory: async (collegeId: number, sectionId: number): Promise<VisitingRoster[]> => {
+  getVisitingRosterHistoryMember: async (collegeId: number, sectionId: number): Promise<VisitingRoster[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("visitingRosters")
         .where("collegeId", "==", collegeId)
@@ -4921,7 +4924,7 @@ export const Repository = {
   },
 
   /** Department-owned visiting-instructor directory; independent of terms. */
-  getDepartmentDelegates: async (collegeId: number, sectionId: number): Promise<number[]> => {
+  getDepartmentDelegatesMember: async (collegeId: number, sectionId: number): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}`;
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("departmentDelegates").doc(scopeKey.replace(/:/g, "_")).get();
@@ -4950,7 +4953,7 @@ export const Repository = {
    * مصفوفةٍ على الخادم نفسه — لا يمحو أحدٌ أحداً، وإعادة ضمّ عضوٍ موجود لا
    * تفعل شيئاً. أما الاستبدال الكامل فيبقى لشاشة إدارة الدليل وحدها، حيث
    * القائمة الكاملة هي القرار المقصود. */
-  addDepartmentDelegate: async (collegeId: number, sectionId: number, instructorId: number): Promise<void> => {
+  addDepartmentDelegateMember: async (collegeId: number, sectionId: number, instructorId: number): Promise<void> => {
     const scopeKey = `${collegeId}:${sectionId}`;
     const id = Number(instructorId);
     if (!Number.isFinite(id) || id <= 0) return;
@@ -4965,7 +4968,7 @@ export const Repository = {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("departmentDelegates").doc(scopeKey.replace(/:/g, "_"));
       const doc = await ref.get();
-      const seed = doc.exists ? [] : await Repository.getDepartmentDelegates(collegeId, sectionId);
+      const seed = doc.exists ? [] : await Repository.getDepartmentDelegatesMember(collegeId, sectionId);
       await ref.set({
         id: scopeKey, scopeKey, collegeId, sectionId,
         instructorIds: FieldValue.arrayUnion(...[...new Set([...seed.map(Number).filter(Boolean), id])]),
@@ -4974,14 +4977,14 @@ export const Repository = {
       return;
     }
     const existing = (db.departmentDelegates || []).find(item => item.scopeKey === scopeKey);
-    const seed = existing ? (existing.instructorIds || []) : await Repository.getDepartmentDelegates(collegeId, sectionId);
+    const seed = existing ? (existing.instructorIds || []) : await Repository.getDepartmentDelegatesMember(collegeId, sectionId);
     const unique = [...new Set([...seed, id].map(Number).filter(Boolean))];
     const row: DepartmentDelegateDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, instructorIds: unique, updatedAt: new Date().toISOString() };
     db.departmentDelegates = [...(db.departmentDelegates || []).filter(item => item.scopeKey !== scopeKey), row];
     saveDatabase();
   },
 
-  saveDepartmentDelegates: async (collegeId: number, sectionId: number, instructorIds: number[]): Promise<number[]> => {
+  saveDepartmentDelegatesMember: async (collegeId: number, sectionId: number, instructorIds: number[]): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}`;
     const unique = [...new Set(instructorIds.map(Number).filter(Boolean))];
     const row: DepartmentDelegateDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, instructorIds: unique, updatedAt: new Date().toISOString() };
@@ -4992,6 +4995,78 @@ export const Repository = {
     db.departmentDelegates = [...(db.departmentDelegates || []).filter(item => item.scopeKey !== scopeKey), row];
     saveDatabase();
     return unique;
+  },
+
+  /* ── منتدبو القسم للعائلة كلها (departmentFamily في sectionLabel) ─────────
+   *
+   * «القسم واحد ومنتدبوه واحد في كل كلياته». بلا ترحيل بيانات: كلُّ عضوٍ يحتفظ
+   * بوثيقته، والقراءةُ اتحادُ وثائق العائلة. والكتابةُ فرقٌ على هذا الاتحاد:
+   * المضافُ يُكتب في وثيقة القسم المفتوح وحده، والمحذوفُ يُزال من كل عضوٍ يحمله
+   * — وإلا أعاده الاتحادُ من وثيقة أخت. وعضوٌ لا يحمل المحذوف لا تُمسّ وثيقته.
+   * هذه الأسماء هي ما يستعمله الخادم كلُّه؛ و…Member للوثيقة الواحدة. */
+  familyOf: async (collegeId: number, sectionId: number) => departmentFamily(await Repository.getSections(), collegeId, sectionId),
+
+  getVisitingRoster: async (collegeId: number, sectionId: number, termId: number): Promise<number[]> => {
+    const members = await Repository.familyOf(collegeId, sectionId);
+    const lists = await Promise.all(members.map(m => Repository.getVisitingRosterMember(m.collegeId, m.sectionId, termId)));
+    return [...new Set(lists.flat().map(Number).filter(Boolean))];
+  },
+
+  saveVisitingRoster: async (collegeId: number, sectionId: number, termId: number, instructorIds: number[]): Promise<number[]> => {
+    const members = await Repository.familyOf(collegeId, sectionId);
+    const lists = await Promise.all(members.map(m => Repository.getVisitingRosterMember(m.collegeId, m.sectionId, termId)));
+    const wanted = new Set(instructorIds.map(Number).filter(Boolean));
+    const removed = new Set(lists.flat().map(Number).filter(id => !wanted.has(id)));
+    const familyNow = new Set(lists.flat().map(Number));
+    await Promise.all(members.map(async (m, index) => {
+      const own = lists[index].map(Number);
+      const next = index === 0
+        ? [...own.filter(id => !removed.has(id)), ...[...wanted].filter(id => !familyNow.has(id))]
+        : own.filter(id => !removed.has(id));
+      if (index === 0 || next.length !== own.length) await Repository.saveVisitingRosterMember(m.collegeId, m.sectionId, termId, next);
+    }));
+    return Repository.getVisitingRoster(collegeId, sectionId, termId);
+  },
+
+  /** تاريخ العائلة: لكل فصلٍ صفٌّ واحد باسم القسم المفتوح، اتحادُ أعضائه. */
+  getVisitingRosterHistory: async (collegeId: number, sectionId: number): Promise<VisitingRoster[]> => {
+    const members = await Repository.familyOf(collegeId, sectionId);
+    const rows = (await Promise.all(members.map(m => Repository.getVisitingRosterHistoryMember(m.collegeId, m.sectionId)))).flat();
+    const byTerm = new Map<number, VisitingRoster>();
+    for (const row of rows) {
+      const termId = Number(row.termId);
+      const prior = byTerm.get(termId);
+      const ids = [...new Set([...(prior?.instructorIds || []), ...(row.instructorIds || [])].map(Number).filter(Boolean))];
+      byTerm.set(termId, { ...(prior || row), id: `${collegeId}:${sectionId}:${termId}`, scopeKey: `${collegeId}:${sectionId}:${termId}`, collegeId, sectionId, termId, instructorIds: ids });
+    }
+    return [...byTerm.values()];
+  },
+
+  getDepartmentDelegates: async (collegeId: number, sectionId: number): Promise<number[]> => {
+    const members = await Repository.familyOf(collegeId, sectionId);
+    const lists = await Promise.all(members.map(m => Repository.getDepartmentDelegatesMember(m.collegeId, m.sectionId)));
+    return [...new Set(lists.flat().map(Number).filter(Boolean))];
+  },
+
+  addDepartmentDelegate: async (collegeId: number, sectionId: number, instructorId: number): Promise<void> => {
+    if ((await Repository.getDepartmentDelegates(collegeId, sectionId)).includes(Number(instructorId))) return;
+    await Repository.addDepartmentDelegateMember(collegeId, sectionId, instructorId);
+  },
+
+  saveDepartmentDelegates: async (collegeId: number, sectionId: number, instructorIds: number[]): Promise<number[]> => {
+    const members = await Repository.familyOf(collegeId, sectionId);
+    const lists = await Promise.all(members.map(m => Repository.getDepartmentDelegatesMember(m.collegeId, m.sectionId)));
+    const wanted = new Set(instructorIds.map(Number).filter(Boolean));
+    const familyNow = new Set(lists.flat().map(Number));
+    const removed = new Set([...familyNow].filter(id => !wanted.has(id)));
+    await Promise.all(members.map(async (m, index) => {
+      const own = lists[index].map(Number);
+      const next = index === 0
+        ? [...own.filter(id => !removed.has(id)), ...[...wanted].filter(id => !familyNow.has(id))]
+        : own.filter(id => !removed.has(id));
+      if (index === 0 || next.length !== own.length) await Repository.saveDepartmentDelegatesMember(m.collegeId, m.sectionId, next);
+    }));
+    return Repository.getDepartmentDelegates(collegeId, sectionId);
   },
 
   /** Rooms deliberately retained in the department directory for future scheduling. */
