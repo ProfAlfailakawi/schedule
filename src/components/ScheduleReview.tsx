@@ -88,9 +88,15 @@ const findingIcon = (finding: RegulationFinding) => {
  * how many times it recurs; pressing it reveals exactly which sections, so the
  * reader sees who first and the detail only when they ask for it.
  */
+/* أول يومٍ في الأسبوع ثم ساعة البدء — قراءةُ الأستاذ لأسبوعه، لا ترتيبُ الإدخال. */
+const firstDayIndex = (row: FSchedule) => { const i = DAY_KEYS.findIndex(key => (row as any)[key]); return i < 0 ? DAY_KEYS.length : i; };
+const byWeekTime = (a: FSchedule, b: FSchedule) =>
+  firstDayIndex(a) - firstDayIndex(b) || String(a.fstarttime || "").localeCompare(String(b.fstarttime || "")) || String(a.SCode || "").localeCompare(String(b.SCode || ""));
+
 function ReviewPersonGroup({ group, courses, visitingIds }: { group: { who: string; rows: FSchedule[] }; courses: Map<number, AdCourse>; visitingIds: Set<number> }) {
   const [open, setOpen] = React.useState(false);
-  const { who, rows } = group;
+  const who = group.who;
+  const rows = React.useMemo(() => [...group.rows].sort(byWeekTime), [group.rows]);
   const single = rows.length === 1;
   const visiting = rows.some(row => visitingIds.has(Number(row.AdInstructorId)));
   /* The chip is labelled «شعب», so it counts sections. It used to count rows,
