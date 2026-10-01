@@ -9,13 +9,15 @@ import vm from "vm";
 import path from "path";
 import ts from "typescript";
 import { ARABIC_COUNT_SCRIPT } from "../src/utils/arabicCount";
+import { NEGOTIATION_LABEL } from "../src/utils/instructorRequestThread";
+import { PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR } from "../src/server/publicTheme";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
 const file = path.join(process.cwd(), "server.ts");
 const source = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.ES2022, true);
 
-const PAGES = ["staffCardPage", "surveyPage", "studentCaseSurveyPage", "instructorRequestPage", "studentCaseStatusPage"];
+const PAGES = ["staffCardPage", "surveyPage", "studentCaseSurveyPage", "instructorRequestPage", "studentCaseStatusPage", "studentSchedulePage"];
 const found = new Map<string, ts.FunctionDeclaration>();
 source.forEachChild(node => {
   if (ts.isFunctionDeclaration(node) && node.name && PAGES.includes(node.name.text)) found.set(node.name.text, node);
@@ -26,7 +28,7 @@ for (const name of PAGES) {
   if (!node) { check(false, `${name}: موجودة`); continue; }
   const js = ts.transpileModule(node.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const args = node.parameters.map(() => JSON.stringify("x")).join(",");
-  const sandbox: any = { out: "", ARABIC_COUNT_SCRIPT };
+  const sandbox: any = { out: "", ARABIC_COUNT_SCRIPT, NEGOTIATION_LABEL, PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR };
   try {
     vm.runInNewContext(`${js}\nout = ${name}(${args});`, sandbox);
   } catch (error: any) {

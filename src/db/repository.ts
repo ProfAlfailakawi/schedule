@@ -1,3 +1,4 @@
+import { normalizeArabicText } from "../utils/arabicText";
 import fs from "fs";
 import { chooseStudentCaseSecret, STUDENT_CASE_SECRET_CONFLICT_MESSAGE, type StudentCaseSecretChoice } from "../server/studentCaseSecret";
 import { AsyncLocalStorage } from "async_hooks";
@@ -42,6 +43,7 @@ import {
   VisitingRoster,
   DepartmentDelegateDirectory,
   DepartmentRoomDirectory,
+  RegistrationStats,
   StudentNeed,
   StudentCourseState,
   StudentCaseDecision,
@@ -60,6 +62,7 @@ import { DEMO_LINK_TOKEN_PREFIX, isDemoLinkToken } from "../utils/demoLinkToken"
 import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
 import { caseRefFromId, mergeStudentResubmission } from "../utils/studentNeedMerge";
 import { cleanSeenIds, mergeSeenIds, seenUnchanged } from "../utils/notificationSeen";
+import { termChronology } from "../utils/termSequence";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -222,6 +225,7 @@ interface DBState {
   visitingRosters?: VisitingRoster[];
   departmentDelegates?: DepartmentDelegateDirectory[];
   departmentRooms?: DepartmentRoomDirectory[];
+  registrationStats?: RegistrationStats[];
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
   scheduleShareLinks?: ScheduleShareLink[];
@@ -2752,6 +2756,34 @@ export const Repository = {
   },
 
   /**
+   * إنشاءُ فصلٍ بالاسم إن لم يوجد — للمهمة التلقائية (src/server/autoTerms.ts).
+   * في Firestore يُحجز الاسم أولاً بوثيقة ‎create()‎ (تفشل إن سبقت نسخةٌ أخرى)،
+   * فلا يولد فصلان بالاسم نفسه من نسختين تقلعان معاً. يعيد null إن وُجد.
+   */
+  createTermIfAbsent: async (name: string, dates: { start: string; weeks: number }): Promise<AdTerm | null> => {
+    const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, "");
+    /* الاسمُ وحده لا يكفي: «الفصل الدراسي الثاني 2026/2027» المُدخل يدوياً هو
+       الفصلُ نفسه. فيُطابَق الموسمُ والسنتان أيضاً (termChronology). */
+    const hasYears = (v: unknown) => /\d{4}\s*\/\s*\d{4}/.test(String(v ?? ""));
+    const rank = termChronology({ AdTermName: name });
+    const exists = (await Repository.getTerms()).some(term => norm(term.AdTermName) === norm(name)
+      || (hasYears(term.AdTermName) && hasYears(name) && termChronology(term) === rank));
+    if (exists) return null;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const claim = firestoreDb.collection("autoTermClaims").doc(createHash("sha256").update(norm(name)).digest("hex").slice(0, 32));
+      try {
+        await claim.create({ name, at: new Date().toISOString() });
+      } catch {
+        return null;
+      }
+      /* إن فشل الإنشاء بعد الحجز يُفكّ الحجز، وإلا بقي الفصل محجوزاً لا يُنشأ أبداً. */
+      try { return await Repository.createTerm(name, dates); }
+      catch (error) { await claim.delete().catch(() => undefined); throw error; }
+    }
+    return Repository.createTerm(name, dates);
+  },
+
+  /**
    * موعد تسليم الجداول للفصل.
    *
    * دالّةٌ مستقلّة لحقلٍ واحد، لأن من يضعه — رئيس التسجيل — لا يعدّل اسم
@@ -3117,6 +3149,8 @@ export const Repository = {
     hours: number,
     maxStudent: number
   ): Promise<AdCourse> => {
+    /* اسمٌ منسوخٌ من PDF يُحفظ حروفاً عادية لا «أشكال عرض» — لكل طريق كتابة. */
+    name = normalizeArabicText(name);
     invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("courses");
@@ -3189,6 +3223,8 @@ export const Repository = {
     hours: number,
     maxStudent: number
   ): Promise<AdCourse> => {
+    /* اسمٌ منسوخٌ من PDF يُحفظ حروفاً عادية لا «أشكال عرض» — لكل طريق كتابة. */
+    name = normalizeArabicText(name);
     invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("courses").doc(`course_${id}`);
@@ -4991,6 +5027,37 @@ export const Repository = {
       if (!byKey.has(key)) byKey.set(key, item);
     }
     return [...byKey.values()];
+  },
+
+  /** إحصاءُ التسجيل لقسمٍ في فصل (أو null). */
+  getRegistrationStats: async (collegeId: number, sectionId: number, termId: number): Promise<RegistrationStats | null> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("registrationStats").doc(scopeKey.replace(/:/g, "_")).get();
+      return doc.exists ? (doc.data() as RegistrationStats) : null;
+    }
+    return (db.registrationStats || []).find(row => row.scopeKey === scopeKey) || null;
+  },
+
+  saveRegistrationStats: async (collegeId: number, sectionId: number, termId: number,
+    input: { counts: Record<string, number>; accepted?: Record<string, number> }, updatedBy = ""): Promise<RegistrationStats> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    const clean = (map: Record<string, unknown> | undefined, max: number) => Object.fromEntries(
+      Object.entries(map || {}).slice(0, 2000)
+        .map(([key, value]) => [String(Number(key)), Math.floor(Number(value))] as const)
+        .filter(([key, value]) => Number(key) > 0 && Number.isFinite(value) && value >= 0 && value <= max));
+    const row: RegistrationStats = {
+      id: scopeKey, scopeKey, collegeId, sectionId, termId,
+      counts: clean(input.counts, 100000), accepted: clean(input.accepted, 500),
+      updatedAt: new Date().toISOString(), updatedBy: String(updatedBy || "").slice(0, 120),
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("registrationStats").doc(scopeKey.replace(/:/g, "_")).set(row);
+    } else {
+      db.registrationStats = [...(db.registrationStats || []).filter(item => item.scopeKey !== scopeKey), row];
+      saveDatabase();
+    }
+    return row;
   },
 
   pinDepartmentRoom: async (collegeId: number, sectionId: number, building: string, hall: string): Promise<Array<{ building: string; hall: string }>> => {

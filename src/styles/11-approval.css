@@ -152,13 +152,22 @@
 .changes-signals .changes-signal--pending svg{color:var(--info)}
 .changes-inbox-state .dna-steps{flex:none}
 
+/* زرٌّ حقيقيّ لا خليةٌ رمادية: حدٌّ وأيقونة وهدفُ لمسٍ ≥44px، ومحفوظٌ
+   فوق ما حوله (position/z-index) فلا يبتلع نقرتَه شيءٌ من السطر. */
 .changes-extend{
-  grid-column:3;grid-row:1 / -1;padding-inline:14px;border:0;border-inline-start:1px solid var(--line);
-  background:transparent;color:var(--muted);font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;
+  grid-column:3;grid-row:1 / -1;align-self:center;position:relative;z-index:1;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-block-size:44px;min-inline-size:88px;margin-inline:10px;padding:0 14px;
+  border:1px solid var(--line-strong);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:.84rem;font-weight:600;cursor:pointer;
+  transition:background .15s var(--ease),border-color .15s var(--ease),color .15s var(--ease);
 }
-.changes-extend:hover{background:var(--surface-3);color:var(--ink)}
+.changes-extend svg{inline-size:16px;block-size:16px;flex:none;color:var(--brass)}
+.changes-extend:hover{background:var(--surface-3);border-color:var(--accent);color:var(--ink)}
+.changes-extend:focus-visible{outline:none;box-shadow:var(--ring);border-color:var(--accent)}
 /* طلبٌ ينتظر: الزرّ هو الفعل التالي، فيُرى. */
-.changes-extend[data-pending]{color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.changes-extend[data-pending]{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+.changes-extend[data-pending] svg{color:var(--accent)}
 .changes-extend[data-pending]:hover{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent)}
 /* طلبُ القسم: سطرٌ هادئ تحت اسمه، بعلامةٍ لا بلونٍ صارخ. */
 .changes-extension-request{
@@ -882,6 +891,7 @@
    ========================================================================== */
 
 .request-totals{padding:var(--s4) var(--s5)}
+
 .request-funnel{display:grid;gap:var(--s3)}
 .request-funnel-pills{justify-content:center}
 .request-funnel-pills span{color:var(--muted);font-weight:500}
@@ -1265,3 +1275,31 @@
 }
 .changes-inline-link:focus-visible{outline:none;box-shadow:var(--ring)}
 .conflict-clear[data-locked]{color:var(--warning)}
+
+/* ── حوارُ البند مع الأستاذ ──────────────────────────────────────────────
+   خيطٌ هادئٌ تحت صفّ البند: رسائلُ القسم إلى البداية ورسائلُ الأستاذ إلى
+   النهاية، وحالتُه بشارةٍ واحدة الألوانِ في الوارد وصفحة الأستاذ. */
+.request-thread-row td{background:var(--surface)}
+.request-thread{display:grid;gap:10px;padding:10px 4px}
+.request-thread header{display:flex;align-items:center;gap:10px}
+.request-thread header strong{display:inline-flex;align-items:center;gap:6px;font-size:var(--t-sm)}
+.request-thread header svg{width:14px;height:14px}
+.request-thread header button{margin-inline-start:auto;border:0;background:none;color:var(--muted);cursor:pointer}
+.request-negotiation{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:var(--t-xs);font-weight:700;white-space:nowrap;background:var(--surface-2,rgba(127,127,127,.12));color:var(--muted)}
+.request-negotiation[data-negotiation="proposed"]{background:color-mix(in srgb,var(--warn,#b07d00) 14%,transparent);color:var(--warn,#b07d00)}
+.request-negotiation[data-negotiation="agreed"]{background:color-mix(in srgb,var(--ok,#2e7d5b) 14%,transparent);color:var(--ok,#2e7d5b)}
+.request-negotiation[data-negotiation="rejected"]{background:color-mix(in srgb,var(--bad,#b3261e) 12%,transparent);color:var(--bad,#b3261e)}
+.request-thread-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.request-thread-list li{max-inline-size:min(560px,92%);padding:8px 11px;border-radius:12px;border:1px solid var(--line);background:var(--card,transparent);font-size:var(--t-sm);line-height:1.7}
+.request-thread-list li[data-from="instructor"]{margin-inline-start:auto;background:color-mix(in srgb,var(--ok,#2e7d5b) 8%,transparent)}
+.request-thread-list li small{display:block;color:var(--muted);font-size:var(--t-xs)}
+.request-thread-list li p{margin:2px 0 0;display:flex;gap:6px;align-items:center}
+.request-thread-list li p svg{width:13px;height:13px}
+.request-thread-reply{display:grid;gap:8px}
+.request-thread-reply label{display:grid;gap:4px;font-size:var(--t-xs);color:var(--muted)}
+.request-thread-reply textarea{inline-size:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:transparent;color:inherit;font:inherit;resize:vertical}
+.request-thread-reply > button{justify-self:start}
+.request-talk{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:4px 0;border:0;background:none;color:var(--muted);font:inherit;font-size:var(--t-xs);cursor:pointer}
+.request-talk:hover{color:var(--ok,#2e7d5b)}
+.request-talk svg{width:13px;height:13px}
+@media (max-width:760px){.request-table .request-thread-row td{display:block}}

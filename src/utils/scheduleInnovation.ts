@@ -1,4 +1,4 @@
-import { roomIdentityKey } from "./locationRegistry";
+import { roomDisplay, roomIdentityKey } from "./locationRegistry";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleConstraint } from "../types";
 import { activeDays, analyzeSchedule, autoScheduleProposal, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
@@ -51,8 +51,8 @@ function profileTerm(rows:FSchedule[],courses:AdCourse[],instructors:AdInstructo
   const dayShares=Object.fromEntries(SCHEDULE_DAYS.map(day=>[day.key,Math.round(rows.filter(r=>Boolean(r[day.key])).length/occurrences*1000)/10]));
   const buckets=[{key:"08-10",from:8*60,to:10*60},{key:"10-12",from:10*60,to:12*60},{key:"12-14",from:12*60,to:14*60},{key:"14-16",from:14*60,to:16*60},{key:"16-20",from:16*60,to:SCHEDULE_DAY_END}];
   const timeShares=Object.fromEntries(buckets.map(b=>[b.key,Math.round(rows.filter(r=>{const m=timeToMinutes(r.fstarttime);return m>=b.from&&m<b.to}).length/Math.max(1,rows.length)*1000)/10]));
-  const roomCounts=new Map<string,number>();rows.forEach(r=>{const key=roomKey(r);if(key)roomCounts.set(key,(roomCounts.get(key)||0)+1)});
-  const rooms=[...roomCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([key,count])=>({key,count,share:Math.round(count/Math.max(1,rows.length)*1000)/10}));
+  const roomCounts=new Map<string,number>(),roomLabels=new Map<string,string>();rows.forEach(r=>{const key=roomKey(r);if(key){roomCounts.set(key,(roomCounts.get(key)||0)+1);if(!roomLabels.has(key))roomLabels.set(key,roomDisplay(r)||key)}});
+  const rooms=[...roomCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([key,count])=>({key,label:roomLabels.get(key)||key,count,share:Math.round(count/Math.max(1,rows.length)*1000)/10}));
   const analysis=analyzeSchedule(rows,rows,courses,instructors);
   const peak=[...analysis.heatmap].sort((a:any,b:any)=>b.count-a.count).slice(0,5);
   return {count:rows.length,occurrences,dayShares,timeShares,rooms,avgGap:analysis.metrics.avgInstructorGap,imbalance:analysis.metrics.imbalance,lateRows:analysis.metrics.lateRows,peak};
@@ -69,8 +69,8 @@ export function buildScheduleGenome(allSectionRows:FSchedule[],terms:AdTerm[],cu
   const avg=(pick:(p:any)=>number)=>historical.reduce((s,x)=>s+pick(x.profile),0)/historical.length;
   const dnaDays:any={};for(const day of SCHEDULE_DAYS)dnaDays[day.key]=Math.round(avg(p=>Number(p.dayShares[day.key]||0))*10)/10;
   const bucketKeys=["08-10","10-12","12-14","14-16","16+"];const dnaTimes:any={};for(const key of bucketKeys)dnaTimes[key]=Math.round(avg(p=>Number(p.timeShares[key]||0))*10)/10;
-  const roomAgg=new Map<string,{count:number;terms:number}>();historical.forEach(({profile})=>profile.rooms.forEach((r:any)=>{const v=roomAgg.get(r.key)||{count:0,terms:0};v.count+=r.count;v.terms+=1;roomAgg.set(r.key,v)}));
-  const dnaRooms=[...roomAgg.entries()].sort((a,b)=>b[1].count-a[1].count).slice(0,6).map(([key,v])=>({key,avgSessions:Math.round(v.count/historical.length*10)/10,terms:v.terms}));
+  const roomAgg=new Map<string,{label:string;count:number;terms:number}>();historical.forEach(({profile})=>profile.rooms.forEach((r:any)=>{const v=roomAgg.get(r.key)||{label:r.label,count:0,terms:0};v.count+=r.count;v.terms+=1;roomAgg.set(r.key,v)}));
+  const dnaRooms=[...roomAgg.entries()].sort((a,b)=>b[1].count-a[1].count).slice(0,6).map(([key,v])=>({key,label:v.label,avgSessions:Math.round(v.count/historical.length*10)/10,terms:v.terms}));
   const bottleneckAgg=new Map<string,{day:string;label:string;time:string,total:number;terms:number}>();historical.forEach(({profile})=>profile.peak.forEach((cell:any)=>{const key=`${cell.day}:${cell.time}`,v=bottleneckAgg.get(key)||{day:cell.day,label:cell.label,time:cell.time,total:0,terms:0};v.total+=Number(cell.count||0);v.terms+=1;bottleneckAgg.set(key,v)}));
   const bottlenecks=[...bottleneckAgg.values()].map(v=>({...v,avgLoad:Math.round(v.total/Math.max(1,v.terms)*10)/10})).sort((a,b)=>b.avgLoad-a.avgLoad).slice(0,5);
   const dnaGap=Math.round(avg(p=>p.avgGap));
@@ -79,7 +79,7 @@ export function buildScheduleGenome(allSectionRows:FSchedule[],terms:AdTerm[],cu
   for(const day of SCHEDULE_DAYS){const cur=Number(current.dayShares[day.key]||0),base=Number(dnaDays[day.key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.9;if(Math.abs(delta)>=8)deviations.push({kind:"day",severity:Math.abs(delta)>=15?"warning":"info",title:`${day.label}: ${delta>0?"ضغط أعلى":"حضور أقل"} من بصمة القسم`,detail:`الحالي ${cur}% مقابل متوسط تاريخي ${base}% (${delta>0?"+":"−"}${countOf(Math.abs(delta), AR.point)}).`})}
   for(const key of bucketKeys){const cur=Number(current.timeShares[key]||0),base=Number(dnaTimes[key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.55;if(Math.abs(delta)>=10)deviations.push({kind:"time",severity:"info",title:`نافذة ${displayTimeBucket(key)} تغيّرت`,detail:`الحالي ${cur}% مقابل ${base}% تاريخياً.`})}
   const gapDelta=current.avgGap-dnaGap;distance+=Math.min(30,Math.abs(gapDelta)/6);if(Math.abs(gapDelta)>=45)deviations.push({kind:"gap",severity:gapDelta>0?"warning":"success",title:gapDelta>0?"الفراغات أطول من المعتاد":"الفراغات أفضل من المعتاد",detail:`متوسط الفراغ الحالي ${countOf(current.avgGap, AR.minute)} مقابل البصمة التاريخية ${countOf(dnaGap, AR.minute)}.`});
-  const historicalRoomSet=new Set(dnaRooms.map(r=>r.key));const newTop=current.rooms.slice(0,4).filter((r:any)=>!historicalRoomSet.has(r.key));if(newTop.length)deviations.push({kind:"room",severity:"info",title:"تغيّر في القاعات المعتادة",detail:`${newTop.map((r:any)=>r.key.replace("|","/")).join("، ")} دخلت ضمن القاعات الأكثر استخداماً هذا الفصل.`});
+  const historicalRoomSet=new Set(dnaRooms.map(r=>r.key));const newTop=current.rooms.slice(0,4).filter((r:any)=>!historicalRoomSet.has(r.key));if(newTop.length)deviations.push({kind:"room",severity:"info",title:"تغيّر في القاعات المعتادة",detail:`${newTop.map((r:any)=>r.label).join("، ")} دخلت ضمن القاعات الأكثر استخداماً هذا الفصل.`});
   const compatibility=Math.round(clamp(100-distance/2.25,0,100));
   if(!deviations.length)deviations.push({kind:"stable",severity:"success",title:"الفصل قريب جداً من بصمة القسم",detail:"توزيع الأيام والأوقات والفراغات والقاعات يقع داخل النمط التاريخي المعتاد."});
   return {available:true,current,history:historical.map(({term,profile})=>({termId:term.AdTermId,termName:term.AdTermName,count:profile.count,avgGap:profile.avgGap})),compatibility,deviations:deviations.slice(0,8),dna:{dayShares:dnaDays,timeShares:dnaTimes,rooms:dnaRooms,bottlenecks,avgGap:dnaGap}};

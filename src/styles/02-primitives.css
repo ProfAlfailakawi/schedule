@@ -643,6 +643,19 @@
 .stat-card span{display:block;margin-top:var(--s1);color:var(--muted);font-size:var(--t-xs);font-weight:500}
 .stat-card small{display:block;margin-top:2px;color:var(--muted-2);font-size:var(--t-xs)}
 
+/* A row of StatCards that each carry a status tone — كشف التسجيل ونتائج
+   استبيان الطلبة يقرآن بالشكل نفسه. The tone lives on the icon and a leading
+   edge; the number stays ink so it is read first. */
+.stat-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--s3)}
+.stat-tone{--tone:var(--accent);--tone-soft:var(--accent-soft)}
+.stat-tone[data-tone="warning"]{--tone:var(--warning);--tone-soft:var(--warning-soft)}
+.stat-tone[data-tone="info"]{--tone:var(--info);--tone-soft:var(--info-soft)}
+.stat-tone[data-tone="success"]{--tone:var(--success);--tone-soft:var(--success-soft)}
+.stat-tone[data-tone="danger"]{--tone:var(--danger);--tone-soft:var(--danger-soft)}
+.stat-tone[data-tone="quiet"]{--tone:var(--line-strong);--tone-soft:var(--surface-3)}
+.stat-tone>.stat-card{height:100%;border-inline-start:3px solid var(--tone)}
+.stat-tone .stat-icon{background:var(--tone-soft);color:var(--tone)}
+
 /* --- Meters --------------------------------------------------------------- */
 
 /* --- Empty / loading states ------------------------------------------------ */

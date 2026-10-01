@@ -12,8 +12,12 @@
 
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR } from "../src/server/publicTheme";
 import { judgeRequest, type RequestedRow, type VerdictContext } from "../src/utils/instructorRequestVerdict";
 import type { AdCourse, AdInstructor, FSchedule } from "../src/types";
+import { NEGOTIATION_LABEL, negotiationState, parseOfferedSlots } from "../src/utils/instructorRequestThread";
+import { requestFullySettled } from "../src/utils/instructorRequestVerdict";
+import { formatScheduleTimeRange } from "../src/utils/scheduleTime";
 
 let passed = 0, failed = 0;
 function check(condition: boolean, name: string) {
@@ -99,7 +103,7 @@ check(eaten === 0, "لا تعبيرَ نمطيَّ في صفحةٍ عامة يف
 
 const staffSrc = server.slice(server.indexOf("function staffCardPage"), server.indexOf("</html>`", server.indexOf("function staffCardPage")) + 9) + ";}";
 const staffHtml = (() => {
-  const sb: any = {};
+  const sb: any = { PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR };
   vm.runInNewContext(staffSrc.replace("function staffCardPage(token: string, label: string, nonce: string, demoHint = \"\"): string {", "function staffCardPage(token, label, nonce, demoHint = \"\") {")
     + "\nthis.html = staffCardPage('t','قسم','n');", sb);
   return String(sb.html);
@@ -155,6 +159,66 @@ check(page.includes("function saveDraft()") && page.includes("localStorage.setIt
 check(page.includes('window.addEventListener("beforeunload"'), "وتنبيهٌ قبل مغادرة ما لم يُرسل");
 check(page.includes("function decisionBox(") && page.includes("data-dept-alt"), "وقرارُ القسم وبدائلُه في البطاقة نفسها");
 check(page.includes("function originalOf(it)"), "و«موعدك الحالي نفسه» يُقاس على الموعد الأصلي لا على المطلوب");
+
+
+/* ── حوارُ البند: القسمُ يقترح، والأستاذُ يوافق أو يقترح غيره ─────────────── */
+
+const sunday = { day: "fsunday" as const, start: "09:00", end: "09:50" };
+const t = (minute: number) => new Date(Date.UTC(2026, 9, 1, 8, minute)).toISOString();
+check(negotiationState({ action: "change" }) === "awaiting", "طلبٌ وصل ولم يُردّ عليه: بانتظار الرد");
+check(negotiationState({ action: "change", thread: [{ from: "department", at: t(1) }] }) === "proposed",
+  "ردُّ القسم يجعل الدورَ على الأستاذ: مقترح من القسم");
+check(negotiationState({ action: "change", thread: [{ from: "department", at: t(1) }, { from: "instructor", at: t(2) }] }) === "awaiting",
+  "وردُّ الأستاذ يعيد الدورَ إلى القسم");
+check(negotiationState({ action: "change", thread: [{ from: "department", at: t(1) }, { from: "instructor", at: t(2), accepted: true }] }) === "agreed",
+  "وموافقتُه على المقترح: موافَق");
+check(negotiationState({ action: "change", decision: { state: "rejected", alternatives: [sunday], decidedAt: t(1) } }) === "proposed",
+  "والرفضُ ببدائل مقترحٌ من القسم لا بابٌ مغلق");
+check(negotiationState({ action: "change", decision: { state: "rejected", decidedAt: t(1) }, thread: [{ from: "instructor", at: t(2) }] }) === "awaiting",
+  "وردُّ الأستاذ بعد رفضٍ يعيد فتحه");
+check(NEGOTIATION_LABEL.awaiting === "بانتظار الرد" && NEGOTIATION_LABEL.proposed === "مقترح من القسم" && NEGOTIATION_LABEL.agreed === "موافَق",
+  "والحالاتُ بألفاظها الثلاثة");
+check(!requestFullySettled([{ action: "change", decision: { state: "fixed", decidedAt: t(1) }, thread: [{ from: "instructor", at: t(2) }] }]),
+  "ورسالةٌ بعد التثبيت تُبقي الطلب مفتوحاً حتى يُردّ عليها");
+check(!requestFullySettled([{ action: "change", thread: [{ from: "instructor", at: t(2), accepted: true }] }]),
+  "والموافقةُ على مقترحٍ تنتظر التثبيت، فلا تُغلق الطلب");
+check(requestFullySettled([{ action: "change", thread: [{ from: "department", at: t(1) }], decision: { state: "fixed", decidedAt: t(3) } }]),
+  "والتثبيتُ بعد الاتفاق يُغلقه");
+check(parseOfferedSlots([{ day: "fmonday", days: ["fmonday", "fwednesday", "x"], start: "10:00", end: "11:20" }, { day: "bad", start: "1", end: "2" }, 1, 2, 3]).length === 1,
+  "والأوقاتُ المقترحة تُطهَّر بقاعدةٍ واحدة لبدائل الرفض وللحوار");
+
+const deptReply = server.slice(server.indexOf('app.post("/api/instructor-requests/:id/reply"'), server.indexOf('app.get("/api/public/request/:token"'));
+check(deptReply.includes("requirePermission(7)") && deptReply.includes("isScopeAllowed(req, itemScope.collegeId, itemScope.sectionId)")
+  && deptReply.includes("scheduleLockRefusal("), "ردُّ القسم بنطاق البند وقفله كالقرار نفسه");
+check(!/Repository\.(save|update|delete)Schedule/.test(deptReply), "وردُّ القسم لا يكتب في الجدول");
+check(server.includes("const alternatives = parseOfferedSlots(req.body?.alternatives);"), "وبدائلُ الرفض تمرّ بالمطهِّر نفسه");
+const profReply = server.slice(server.indexOf('app.post("/api/public/request/:token/reply"'), server.indexOf("function instructorRequestPage"));
+check(profReply.includes("await verifyRequestSigner(resolved.request, req, res)")
+  && (server.match(/await verifyRequestSigner\(resolved\.request, req, res\)/g) || []).length === 2,
+  "ردُّ الأستاذ توقيعٌ بالرقم المدني — بالمساعد نفسه الذي يوقّع الإرسال");
+check(profReply.includes("AdTermClosed === true") && !profReply.includes("requestWindowOpen"),
+  "والحوارُ يبقى بعد إغلاق النافذة، ويُغلقه الفصلُ المجمَّد وحده");
+check(profReply.includes('kind = "proposal-accepted"') && profReply.includes("decision: undefined") && profReply.includes("endForRequest"),
+  "والموافقةُ تجعل المقترحَ هو المطلوب بنهايته من اللائحة، وتُسقط القرارَ القديم");
+check(server.includes("...(stored?.thread?.length ? { thread: stored.thread } : {})"), "وإعادةُ إرسال الطلب لا تمحو الحوار");
+check(server.includes("negotiation: negotiationState(rest)"), "وحالةُ الحوار تصل الأستاذَ محسوبةً من الخادم");
+check(page.includes("function threadBox(") && page.includes("data-accept") && page.includes("data-reply=")
+  && page.includes("var NEG=${JSON.stringify(NEGOTIATION_LABEL)}"),
+  "وصفحةُ الأستاذ تعرض الخيطَ وحالتَه بألفاظ الموضع الواحد، وزرَّ «أوافق» وسطرَ الرد");
+check(inbox.includes("function RequestThread(") && inbox.includes("/reply`") && inbox.includes("NEGOTIATION_LABEL[state]"),
+  "والواردُ يعرض الخيطَ ويردّ ويقترح أوقاتاً");
+
+/* ── بابُ التعديل في بطاقتي لا يختفي ──────────────────────────────────────── */
+check(staffHtml.includes('id="tab-requests" role="tab" aria-selected="false">طلب تعديل الجدول</button>') && !/id="tab-requests"[^>]*display:none/.test(staffHtml),
+  "تبويبُ «طلب تعديل الجدول» ظاهرٌ دائماً — لا يختفي مع رابط القسم");
+check(staffHtml.includes('<a href="#" id="edit" role="button">تعديل</a>') && staffHtml.includes("if(tabRequests)tabRequests.onclick();"),
+  "وزرُّ «تعديل» في الأدوات هو البابُ نفسُه");
+check(staffHtml.includes("من رابطك الشخصي الذي يرسله إليك القسم، لا من رابط القسم العام") && server.includes("(personal ? requestRows : []).map"),
+  "ورابطُ القسم يدلّ على الرابط الشخصي ولا يكشف رابطَ الطلب");
+
+/* ── النطاقُ الزمنيّ يُقرأ من بدايته ──────────────────────────────────────── */
+check(formatScheduleTimeRange("08:00", "09:20") === "⁦08:00 – 09:20⁩",
+  "«08:00 – 09:20»: البدايةُ أولاً، معزولاً عن اتجاه السطر العربي");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

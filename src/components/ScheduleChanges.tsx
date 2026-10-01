@@ -17,7 +17,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { takeNotifyFocus, type NotifyFocus } from "../utils/notifyFocus";
 import {
   AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardCheck, ClipboardList, Clock3,
-  CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
+  CalendarPlus, CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
   UsersRound, X, FilePenLine, OctagonAlert, MessageSquareWarning, MessageSquareReply, ListPlus,
 } from "lucide-react";
 import { DnaCount, DnaTimeline } from "./dna";
@@ -483,8 +483,12 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
                 </small>
               ) : null}
               {audience.extendActions && onExtend ? (
-                <button type="button" className="changes-extend" data-pending={row.extensionRequest ? "" : undefined} data-guide-ignore="يفتح ورقة الاستثناء في «مواعيد التسليم» على هذا القسم — التطبيق هناك هو الفعل" onClick={() => onExtend(row)}>
-                  {row.extensionRequest ? "نظر الطلب" : row.deadline.extensionUntil ? "استثناء" : "تمديد"}
+                <button type="button" className="changes-extend" data-pending={row.extensionRequest ? "" : undefined}
+                  aria-label={`${row.extensionRequest ? "نظر طلب التمديد" : row.deadline.extensionUntil ? "تعديل الاستثناء" : "تمديد موعد التسليم"} — ${row.sectionName || row.collegeName || ""}`}
+                  data-guide-ignore="يفتح ورقة الاستثناء في «مواعيد التسليم» على هذا القسم — التطبيق هناك هو الفعل"
+                  onClick={(event) => { event.stopPropagation(); onExtend(row); }}>
+                  <CalendarPlus aria-hidden="true" />
+                  <span>{row.extensionRequest ? "نظر الطلب" : row.deadline.extensionUntil ? "استثناء" : "تمديد"}</span>
                 </button>
               ) : null}
             </div>
@@ -1406,6 +1410,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
   /* القسم يفتح على تقريره مباشرةً: لا وارد عنده يختار منه. */
   const single = scope && !role.canReview ? { ...scope } : null;
   const active = opened || single;
+  const deadlinesShown = Boolean(termId && !active && term && !termIsArchive(term, terms || []) && audience.deadlinesPanel);
 
   return (
     <div className="changes-screen">
@@ -1441,7 +1446,7 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
       {/* ── مواعيد التسليم: الموضعُ الوحيد الذي يُكتب منه الموعدُ واستثناءاتُه ── */}
       {/* لمن يملك الموعد أو يراقبه وحده (inboxAudience): القسمُ يرى سطرَ موعده
           في شريط الاعتماد («موعدكم»)، لا لوحةَ التسجيل وميزانَ «سلّم x من y». */}
-      {termId && !active && term && !termIsArchive(term, terms || []) && audience.deadlinesPanel ? (
+      {deadlinesShown ? (
         <SubmissionDeadlines
           terms={terms}
           termId={termId}
@@ -1467,7 +1472,8 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
             onTermChange={pickTerm}
             audience={audience}
             onLoaded={setInboxRows}
-            onExtend={(row) => setExtendFor({ row, nonce: Date.now() })}
+            /* «تمديد» يفتح ورقةً في اللوحة؛ بلا لوحةٍ مرسومة لا زرَّ يَعِد بما لا يحدث. */
+            onExtend={deadlinesShown ? (row) => setExtendFor({ row, nonce: Date.now() }) : undefined}
             scopes={scopes}
             powerAdmin={powerAdmin}
             onOpen={(row) => setOpened({ collegeId: row.collegeId, sectionId: row.sectionId, collegeName: row.collegeName, sectionName: row.sectionName })}

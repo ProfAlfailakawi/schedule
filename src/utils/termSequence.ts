@@ -70,30 +70,77 @@ export function sortTermsNewest<T extends { AdTermId?: number; AdTermName?: stri
 }
 
 /**
- * ── التقويم الأكاديمي الافتراضي ────────────────────────────────────────────
+ * ── التقويم الأكاديمي الافتراضي (مؤكَّد من صاحب النظام) ──────────────────────
  *
- * عشر سنوات من الفصول تحمل اسماً فقط: «الفصل الأول 2026/2027». لا تاريخ بداية
- * ولا عدد أسابيع. فكان كل ما يسأل «أي فصل جارٍ الآن؟» يُجيب بترتيب الأرقام:
- * الأحدث رقماً هو الجاري — وهذا يبقى صحيحاً إلى أن ينتهي زمنه فعلاً، فيظل
- * النظام يعامله كجارٍ إلى أن يُنشئ أحدهم الفصل التالي يدوياً.
+ * الفصل يبدأ يوم **أحد** وينتهي يوم **خميس** دائماً:
+ *   نهاية = بداية + (الأسابيع − 1) × 7 + 4 أيام.
  *
- * هذه هي العادة المعتادة في هذه الجامعة. تقريبية عمداً — «يزيد شوي وينقص شوي»
- * — ولذلك هي آخر ما يُسأل: تاريخ البداية وعدد الأسابيع المُدخَلان في شاشة
- * الفصول يسبقانها دائماً. هي جواب حين لا يوجد جواب، لا بديل عن البيانات.
+ *   الأول   ١٤ أسبوعاً، أقرب أحدٍ إلى ١٣ سبتمبر (السنة الأولى من «YYYY/YYYY»)
+ *   الثاني  ١٤ أسبوعاً، أقرب أحدٍ إلى ٣١ يناير (السنة الثانية)
+ *   الصيفي  ٧ أسابيع،  أقرب أحدٍ إلى ١٣ يونيو (السنة الثانية)
  *
- * السنة في «YYYY/YYYY»: الفصل الأول يقع في السنة الأولى، والثاني والصيفي في
- * الثانية. فـ«الصيفي 2025/2026» صيف 2026، و«الأول 2026/2027» خريف 2026.
+ * أمثلة: الأول 2026/2027 = الأحد 13/9/2026 ← الخميس 17/12/2026؛ الثاني
+ * 2026/2027 = 31/1 ← 6/5/2027؛ الصيفي 2026/2027 = 13/6 ← 29/7/2027.
+ *
+ * الترتيب: ما أدخله المنسّق (AdTermStart + AdTermWeeks) أولاً، ثم هذا التقويم،
+ * ثم لا شيء. والقاعدة نفسها (termEndDate) تحسب نهاية المُدخَل والافتراضي معاً.
  */
-const DEFAULT_WINDOWS: Record<string, {
-  from: [number, number]; to: [number, number]; yearOffset: 0 | 1;
-}> = {
-  /* بعد ١٠ سبتمبر ← آخر ديسمبر */
-  "الأول": { from: [9, 10], to: [12, 31], yearOffset: 0 },
-  /* بعد آخر يناير ← منتصف مايو */
-  "الثاني": { from: [1, 31], to: [5, 15], yearOffset: 1 },
-  /* منتصف يونيو ← آخر يوليو */
-  "الصيفي": { from: [6, 15], to: [7, 31], yearOffset: 1 },
+export type TermSeason = typeof SEASONS[number];
+
+export const TERM_CALENDAR: Record<TermSeason, { anchor: [number, number]; weeks: number; yearOffset: 0 | 1 }> = {
+  "الأول": { anchor: [9, 13], weeks: 14, yearOffset: 0 },
+  "الثاني": { anchor: [1, 31], weeks: 14, yearOffset: 1 },
+  "الصيفي": { anchor: [6, 13], weeks: 7, yearOffset: 1 },
 };
+
+const DAY_MS = 86400000;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+/** تاريخ تقويمي بلا منطقة زمنية: حساب الأيام على UTC ثم عرضه YYYY-MM-DD. */
+const ymdOfUtc = (at: number) => { const d = new Date(at); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`; };
+const utcOfYmd = (ymd: string) => Date.UTC(Number(ymd.slice(0, 4)), Number(ymd.slice(5, 7)) - 1, Number(ymd.slice(8, 10)));
+
+/** أقرب أحدٍ إلى تاريخ (الأربعاء فما قبله يرجع، الخميس فما بعده يتقدّم). */
+export function sundayNearest(year: number, month: number, day: number): string {
+  const at = Date.UTC(year, month - 1, day);
+  const dow = new Date(at).getUTCDay();
+  const shift = dow <= 3 ? -dow : 7 - dow;
+  return ymdOfUtc(at + shift * DAY_MS);
+}
+
+/** آخر يوم في الفصل (خميس الأسبوع الأخير لبدايةٍ يوم أحد). */
+export function termEndDate(start: string, weeks: number): string {
+  return ymdOfUtc(utcOfYmd(start) + ((Math.max(1, weeks) - 1) * 7 + 4) * DAY_MS);
+}
+
+export function termSeasonOf(name: unknown): TermSeason | null {
+  const text = String(name ?? "");
+  return SEASONS.find(item => text.includes(item)) || null;
+}
+
+/** بداية الفصل وعدد أسابيعه ونهايته من اسمه وحده، أو null إن لم يُحلَّل. */
+export function defaultTermDates(name: unknown): { start: string; weeks: number; end: string } | null {
+  const season = termSeasonOf(name);
+  const years = String(name ?? "").match(/(\d{4})\s*\/\s*(\d{4})/);
+  if (!season || !years) return null;
+  const shape = TERM_CALENDAR[season];
+  const start = sundayNearest(Number(years[1]) + shape.yearOffset, shape.anchor[0], shape.anchor[1]);
+  return { start, weeks: shape.weeks, end: termEndDate(start, shape.weeks) };
+}
+
+/**
+ * ── الإنشاء التلقائي للفصل التالي ───────────────────────────────────────────
+ * من ١ أكتوبر: الثاني Y/Y+1 · من ١ يناير: الصيفي (Y−1)/Y · من ١ أبريل: الأول Y/Y+1.
+ * يعيد الفصل الواجب وجوده الآن مع تواريخه؛ والمنشئ يتخطّاه إن وُجد بالاسم نفسه.
+ */
+export function autoTermDue(now: number = Date.now()): { name: string; start: string; weeks: number } {
+  const d = new Date(now);
+  const year = d.getFullYear(), month = d.getMonth() + 1;
+  const name = month >= 10 ? `الفصل الثاني ${year}/${year + 1}`
+    : month <= 3 ? `الفصل الصيفي ${year - 1}/${year}`
+    : `الفصل الأول ${year}/${year + 1}`;
+  const dates = defaultTermDates(name)!;
+  return { name, start: dates.start, weeks: dates.weeks };
+}
 
 export interface TermWindow {
   from: number;
@@ -101,6 +148,14 @@ export interface TermWindow {
   to: number;
   /** هل جاء من بيانات مُدخلة أم من العادة؟ */
   source: "declared" | "default";
+}
+
+/** بداية محلية لليوم، ونهاية = بداية اليوم التالي لآخر يوم. */
+function windowOf(start: string, weeks: number, source: TermWindow["source"]): TermWindow | null {
+  const from = Date.parse(`${start}T00:00:00`);
+  const to = Date.parse(`${termEndDate(start, weeks)}T00:00:00`) + DAY_MS;
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+  return { from, to, source };
 }
 
 /**
@@ -116,26 +171,12 @@ export function termWindow(
 
   const start = String(term.AdTermStart || "");
   const weeks = Number(term.AdTermWeeks || 0);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(start) && weeks > 0) {
-    const from = Date.parse(`${start}T00:00:00`);
-    if (Number.isFinite(from)) {
-      return { from, to: from + weeks * 7 * 86400000, source: "declared" };
-    }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(start) && weeks > 0 && Number.isFinite(Date.parse(`${start}T00:00:00`))) {
+    return windowOf(start, weeks, "declared");
   }
 
-  const name = String(term.AdTermName || "");
-  const season = SEASONS.find(item => name.includes(item));
-  const years = name.match(/(\d{4})\s*\/\s*(\d{4})/);
-  if (!season || !years) return null;
-  const shape = DEFAULT_WINDOWS[season];
-  if (!shape) return null;
-
-  const year = Number(years[1]) + shape.yearOffset;
-  const from = new Date(year, shape.from[0] - 1, shape.from[1]).getTime();
-  /* اليوم التالي لآخر يوم: «ينتهي آخر ديسمبر» تعني أن ٣١ ديسمبر منه. */
-  const to = new Date(year, shape.to[0] - 1, shape.to[1] + 1).getTime();
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
-  return { from, to, source: "default" };
+  const dates = defaultTermDates(term.AdTermName);
+  return dates ? windowOf(dates.start, dates.weeks, "default") : null;
 }
 
 /** هل انقضى زمن هذا الفصل؟ */
@@ -293,3 +334,28 @@ export function planningTermId(
 ): number {
   return planningTermCandidates(terms, now).find(hasActivity) || 0;
 }
+
+/**
+ * ── حالةُ الفصل كما تُعرض في شاشة الفصول ─────────────────────────────────────
+ * مُغلقٌ صراحةً ← منتهٍ · الجاري تشغيلياً ← جارٍ · انقضت نهايته (termHasEnded)
+ * ← منتهٍ تلقائياً · وإلا غير منتهٍ. قاعدةٌ واحدة للبطاقة والمفتّش.
+ */
+export type TermStatus = "closed" | "current" | "ended" | "open";
+
+export function termStatus(
+  term: { AdTermId?: number; AdTermName?: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean },
+  terms: ReadonlyArray<{ AdTermId?: number; AdTermName?: string; AdTermStart?: string; AdTermWeeks?: number; AdTermClosed?: boolean }>,
+  now: number = Date.now(),
+): TermStatus {
+  if (isTermClosed(term, terms)) return "closed";
+  if (Number(term.AdTermId || 0) === currentTermId(terms, now)) return "current";
+  if (termHasEnded(term, now)) return "ended";
+  return "open";
+}
+
+export const TERM_STATUS_LABEL: Record<TermStatus, { pill: string; line: string }> = {
+  closed: { pill: "منتهٍ", line: "فصل منتهٍ · للقراءة والتقارير" },
+  current: { pill: "جارٍ", line: "الفصل الجاري · مرجع الجداول" },
+  ended: { pill: "منتهٍ", line: "انقضى تاريخ نهايته · منتهٍ تلقائياً" },
+  open: { pill: "غير منتهٍ", line: "فصل غير منتهٍ · جاهز للتخطيط" },
+};

@@ -45,6 +45,7 @@ import { currentTermId } from "../utils/termSequence";
 import { singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import { takeNotifyFocus } from "../utils/notifyFocus";
+import { NEGOTIATION_LABEL, THREAD_TEXT_LIMIT, negotiationState } from "../utils/instructorRequestThread";
 import type {
   AdTerm, FSchedule, InstructorRequest, InstructorRequestItem, InstructorRequestRejectReason,
 } from "../types";
@@ -264,11 +265,104 @@ const READINESS: Record<Readiness, string> = {
 
 /* ── بطاقةُ أستاذ ───────────────────────────────────────────────────────── */
 
-function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }: {
+/* ── حوارُ البند ──────────────────────────────────────────────────────────
+ * ما قاله القسمُ والأستاذ في البند بترتيبه، وحالتُه من القاعدة الواحدة
+ * (`negotiationState`)، وسطرُ ردٍّ يحمل أوقاتاً مقترحة من أقرب المتاح. ليس
+ * قراراً: لا يكتب في الجدول. التثبيتُ والرفضُ يبقيان زرّيهما. */
+function RequestThread({ item, busy, onReply, onClose }: {
+  item: InstructorRequestItem;
+  busy: boolean;
+  onReply: (text: string, slots: any[]) => void;
+  onClose?: () => void;
+}) {
+  const slotKey = (slot: { day: string; days?: string[]; start: string; end: string }) =>
+    `${(slot.days?.length ? slot.days : [slot.day]).join(",")}|${slot.start}|${slot.end}`;
+  const [text, setText] = useState("");
+  const [offered, setOffered] = useState<string[]>([]);
+  const thread = item.thread || [];
+  const state = negotiationState(item);
+  const choices = item.nearestTimes || [];
+  const slotLabel = (slot: { day: string; days?: string[]; start: string; end: string }) => (
+    <>{(slot.days?.length ? slot.days : [slot.day]).map(day => INBOX_DAY_NAMES[day] || day).join(" · ")} · <bdi dir="ltr">{slot.start} – {slot.end}</bdi></>
+  );
+  return (
+    <div className="request-thread" data-negotiation={state}>
+      <header>
+        <strong><MessageSquare aria-hidden="true" /> الحوار مع الأستاذ</strong>
+        <span className="request-negotiation" data-negotiation={state}>{NEGOTIATION_LABEL[state]}</span>
+        {onClose ? <button type="button" onClick={onClose} aria-label="إغلاق" data-guide-ignore="إغلاق الحوار — لا يغيّر شيئاً"><X /></button> : null}
+      </header>
+      {thread.length ? (
+        <ol className="request-thread-list">
+          {thread.map((message, at) => (
+            <li key={at} data-from={message.from}>
+              <small>{message.from === "department" ? (message.by || "القسم") : "الأستاذ"} · {arabicDate(message.at)}</small>
+              {message.accepted ? <p><Check aria-hidden="true" /> وافق على المقترح</p> : null}
+              {message.text ? <p>{message.text}</p> : null}
+              {(message.slots || []).length ? (
+                <div className="changes-filter-chips">
+                  {(message.slots || []).map(slot => <span key={slotKey(slot)} className="changes-chip">{slotLabel(slot)}</span>)}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {state === "agreed" && item.decision?.state === "fixed" ? null : (
+        <div className="request-thread-reply">
+          {choices.length ? (
+            <div className="request-alternatives">
+              <span>أوقاتٌ تقترحها عليه</span>
+              <div className="changes-filter-chips">
+                {choices.map(slot => {
+                  const key = slotKey(slot);
+                  const on = offered.includes(key);
+                  return (
+                    <button
+                      key={key} type="button" className="changes-chip"
+                      data-active={on || undefined} aria-pressed={on}
+                      data-guide-ignore="اختيار وقتٍ يُقترح — يُرسل مع الرد"
+                      onClick={() => setOffered(current => on ? current.filter(entry => entry !== key) : [...current, key].slice(-3))}
+                    >
+                      {slotLabel(slot)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          <label>
+            <span>ردُّك على الأستاذ</span>
+            <textarea rows={2} maxLength={THREAD_TEXT_LIMIT} value={text} onChange={event => setText(event.target.value)}
+              placeholder="هل يناسبك الاثنين والأربعاء بدل الأحد؟" />
+          </label>
+          <PrimaryButton
+            type="button"
+            disabled={busy || (!text.trim() && !offered.length)}
+            data-guide-ignore="إرسال ردٍّ للأستاذ — لا يكتب في الجدول"
+            onClick={() => {
+              onReply(text, offered.map(key => {
+                const [days, start, end] = key.split("|");
+                const list = days.split(",").filter(Boolean);
+                return { day: list[0], days: list, start, end };
+              }));
+              setText(""); setOffered([]);
+            }}
+          >
+            {busy ? "يرسل…" : "أرسل الرد"}
+          </PrimaryButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, rowErrors }: {
   key?: React.Key;
   row: InboxRequest;
   currentRows: Map<number, FSchedule>;
   onDecide: (index: number, state: "fixed" | "rejected", extra?: any) => void;
+  onReply: (index: number, text: string, slots: any[]) => void;
   busyKey: string | null;
   filter: (item: InstructorRequestItem) => boolean;
   rowErrors: Record<string, string>;
@@ -341,7 +435,7 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
           detailText={event => !event.detail ? undefined
             : event.kind === "submitted" ? countOf(Number(event.detail) || 0, AR.change)
             : event.kind === "item-rejected" ? (REJECT_REASONS.find(([code]) => code === event.detail)?.[1] || event.detail)
-            : event.kind === "alternative-chosen" ? `البديل ${event.detail}`
+            : event.kind === "alternative-chosen" || event.kind === "proposal-accepted" ? `البديل ${event.detail}`
             : event.detail}
         />
       </div>
@@ -377,6 +471,7 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
             onReject={() => setRejecting(index)}
             onCloseReject={() => setRejecting(null)}
             onDecide={onDecide}
+            onReply={onReply}
           />
         ))}
           </tbody>
@@ -389,14 +484,18 @@ function RequestCard({ row, currentRows, onDecide, busyKey, filter, rowErrors }:
 /* ── صفُّ بند ─────────────────────────────────────────────────────────────
  * الحكمُ المحفوظ مع الطلب والفحصُ الحيّ يُقرآن معاً: ما منعه أحدُهما مُنع،
  * وما نبّه إليه أحدُهما قيل. ولا يُكرَّر السببُ نفسُه مرّتين. */
-function RequestRow({ row, item, index, current, busy, rejecting, error, onReject, onCloseReject, onDecide }: {
+function RequestRow({ row, item, index, current, busy, rejecting, error, onReject, onCloseReject, onDecide, onReply }: {
   key?: React.Key;
   row: InboxRequest; item: InstructorRequestItem; index: number; current?: FSchedule;
   busy: boolean; rejecting: boolean; error?: string;
   onReject: () => void; onCloseReject: () => void;
   onDecide: (index: number, state: "fixed" | "rejected", extra?: any) => void;
+  onReply: (index: number, text: string, slots: any[]) => void;
 }) {
   const decided = item.decision?.state;
+  const negotiation = negotiationState(item);
+  const [talking, setTalking] = useState(false);
+  const hasThread = Boolean((item.thread || []).length);
   const candidate = useMemo(() => proposedRow(row, item, current), [row, item, current]);
   const live = useLiveCheck(candidate, !decided && item.action !== "delete");
   const reasons = item.reasons || [];
@@ -505,6 +604,9 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
           ) : null}
         </td>
         <td data-label="القرار">
+          {hasThread || negotiation === "proposed" ? (
+            <span className="request-negotiation" data-negotiation={negotiation}>{NEGOTIATION_LABEL[negotiation]}</span>
+          ) : null}
           {decided ? (
             <p className="request-decided" data-state={decided}>
               {decided === "fixed" ? <><Check aria-hidden="true" /> ثُبّت</> : <><X aria-hidden="true" /> رُفض — {REJECT_REASONS.find(([value]) => value === item.decision?.reasonCode)?.[1] || "بلا سبب"}</>}
@@ -529,9 +631,25 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
               </SecondaryButton>
             </div>
           )}
+          {!hasThread && !talking && !(decided === "fixed") ? (
+            <button type="button" className="request-talk" onClick={() => setTalking(true)}
+              data-guide-ignore="فتح الحوار مع الأستاذ — لا يغيّر شيئاً">
+              <MessageSquare aria-hidden="true" /> ردّ واقترح وقتاً
+            </button>
+          ) : null}
           {error ? <p className="request-row-error"><ShieldAlert aria-hidden="true" />{error}</p> : null}
         </td>
       </tr>
+      {hasThread || talking ? (
+        <tr className="request-thread-row"><td colSpan={6}>
+          <RequestThread
+            item={item}
+            busy={busy}
+            onClose={hasThread ? undefined : () => setTalking(false)}
+            onReply={(text, slots) => onReply(index, text, slots)}
+          />
+        </td></tr>
+      ) : null}
       {rejecting ? (
         <tr className="request-reject-row"><td colSpan={6}>
           <RejectSheet
@@ -944,6 +1062,23 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     finally { setBusyKey(null); }
   };
 
+  /* ── ردُّ القسم في حوار البند ─────────────────────────────────────────────
+     رسالةٌ وأوقاتٌ مقترحة تصل الأستاذَ في صفحته. لا حفظَ في الجدول هنا. */
+  const reply = async (row: InboxRequest, index: number, text: string, slots: any[]) => {
+    const key = `${row.id}:${index}`;
+    setBusyKey(key);
+    setRowErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
+    try {
+      await request(`/api/instructor-requests/${row.id}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIndex: index, text, slots }),
+      });
+      await load();
+    } catch (e: any) { setRowErrors(prev => ({ ...prev, [key]: inboxMessage(e.message) })); }
+    finally { setBusyKey(null); }
+  };
+
   /* ── حفظُ البطاقة السريعة ─────────────────────────────────────────────────
      الحفظُ عبر `/api/schedules` نفسه — فيرث كلَّ تحقّقه — ثم يُسجَّل القرار
      بمعرّف الصفّ الناتج. وإن رُفض الحفظ قيل السببُ على البطاقة نفسها. */
@@ -1186,6 +1321,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                   filter={itemFilter}
                   rowErrors={rowErrors}
                   onDecide={(index, state, extra) => void decide(row, index, state, extra)}
+                  onReply={(index, text, slots) => void reply(row, index, text, slots)}
                 />
               ))}
             </div>

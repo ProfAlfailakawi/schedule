@@ -7,6 +7,8 @@ import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview, { PageReviewWait } from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
+import StudentQrButton from "./StudentQrButton";
+import SectionPlanning from "./SectionPlanning";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
 import { applyWithOverwriteConfirm } from "../utils/scopeOverwrite";
 import { sortByName } from "../utils/sorting";
@@ -51,7 +53,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "export" | "import" | "publish" | "retire" | "visiting";
+type Tab = "export" | "import" | "publish" | "retire" | "visiting" | "planning";
 
 export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onSectionChange, onClose }: Props) {
   useDialogDismiss(true, onClose);
@@ -126,6 +128,34 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const [copyPeople, setCopyPeople] = useState<Instructor[]>([]);
   const [copyIds, setCopyIds] = useState<number[]>([]);
   const [copySelected, setCopySelected] = useState<number[]>([]);
+  /* منتدبو القسم نفسه في كليات أخرى: الشخص لا الكلية (انظر الخادم). */
+  const [elsewhere, setElsewhere] = useState<Array<{ AdInstructorId: number; AdInstructorName: string; origins: Array<{ college: string; section: string }> }>>([]);
+  React.useEffect(() => {
+    if (tab !== "visiting" || !collegeId || !sectionId) { setElsewhere([]); return; }
+    const controller = new AbortController();
+    fetch(`/api/department-delegates/elsewhere?${new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId) })}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : { people: [] })
+      .then(data => setElsewhere(data.people || []))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [tab, collegeId, sectionId, directoryIds.length]);
+  const adoptDelegate = async (instructorId: number) => {
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch("/api/department-delegates/adopt", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId, instructorId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذّر ضمّ المنتدب.");
+      setDirectoryIds(data.instructorIds || currentUnique([...directoryIds, instructorId]));
+      setDirectoryPeople(current => sortByName(mergePeople(current, [data.person]), row => row.AdInstructorName));
+      if (data.roster) setRoster(data.roster);
+      setElsewhere(current => current.filter(person => person.AdInstructorId !== instructorId));
+      onChanged();
+    } catch (e: any) { setError(e.message || "تعذّر ضمّ المنتدب."); }
+    finally { setBusy(false); }
+  };
 
   React.useEffect(() => {
     if ((tab !== "visiting" && tab !== "import") || !collegeId || !sectionId || !termId) return;
@@ -1111,7 +1141,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         <header>
           <div>
             <span className="surface-kicker">الجدول كوحدة واحدة</span>
-            <h2>تصدير · استيراد · نشر · استبدال · منتدبون</h2>
+            <h2>تصدير · استيراد · نشر · استبدال · منتدبون · تخطيط</h2>
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
@@ -1125,6 +1155,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "publish" ? "active" : ""} onClick={() => setTab("publish")} title="نشر"><Link2 />نشر</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")} title="استبدال"><UserMinus />استبدال</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "planning" ? "active" : ""} onClick={() => setTab("planning")} title="تخطيط الشعب"><UsersRound />تخطيط الشعب</button>
         </nav>
         )}
 
@@ -1509,7 +1540,22 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                   <p>جدول القسم لمن يحمل الرابط، أو بطاقة لكل أستاذ يطلب منها تعديل جدوله.</p>
                 </div>
                 {termIsArchive(terms.find(row => Number(row.AdTermId) === Number(termId)), terms) ? null : <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} appearance="primary" />}
+                {/* رمزُ QR للطلبة: جدولُ القسم المعتمد للفصل الجاري دائماً. */}
+                {collegeId && sectionId ? <StudentQrButton data-guide-feature-id="schedule.tool.data" collegeId={collegeId} sectionId={sectionId} termId={termId} /> : null}
               </div>
+            </>
+          ) : null}
+
+          {tab === "planning" ? (
+            <>
+              <div className="tool-lede">
+                <span className="tool-lede-mark"><UsersRound aria-hidden="true" /></span>
+                <div>
+                  <strong>كم شعبة نفتح؟</strong>
+                  <p>إحصاء التسجيل لكل مقرر، واقتراح عدد الشعب من السعة ومن الفصول المماثلة.</p>
+                </div>
+              </div>
+              {collegeId && sectionId && termId ? <SectionPlanning collegeId={collegeId} sectionId={sectionId} termId={termId} /> : <p>اختر القسم والفصل أولاً.</p>}
             </>
           ) : null}
 
@@ -1582,6 +1628,21 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 })}
                 {rosterLoaded && !visibleDirectory.length ? <p className="roster-empty">{rosterQuery.trim()?`لا منتدب يطابق «${rosterQuery.trim()}» في هذا القسم.`:"لا توجد قائمة منتدبين لهذا القسم بعد."}</p> : null}
               </div>
+              {elsewhere.length ? (
+                <section className="roster-elsewhere" aria-label="منتدبو هذا القسم في كليات أخرى">
+                  <div className="roster-directory-head"><div><strong>منتدبو هذا القسم في كليات أخرى</strong><small>المنتدب شخصٌ واحد في الجامعة؛ ضمّه إلى قائمة هذا القسم ليظهر هنا وفي جدوله.</small></div></div>
+                  <div className="roster-directory">
+                    {elsewhere.map(person => (
+                      <article key={person.AdInstructorId}>
+                        <button type="button" className="roster-term-toggle" data-guide-ignore="ضمّ منتدبٍ مسجّل في القسم نفسه بكلية أخرى إلى قائمة هذا القسم" disabled={busy} onClick={() => void adoptDelegate(person.AdInstructorId)}>
+                          <Plus aria-hidden="true" /><span>ضمّه لهذا القسم</span>
+                        </button>
+                        <span className="instructor-identity"><b>{person.AdInstructorName}</b><small>{person.origins.map(origin => origin.college).join(" ، ")}</small></span>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </>
           ) : null}
 

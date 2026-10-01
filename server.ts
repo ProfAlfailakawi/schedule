@@ -13,6 +13,8 @@ import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/refe
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
+import { DEPARTMENT_HEAD_ROLE, planDepartmentHeadAccounts } from "./src/utils/departmentHeadAccounts";
+import { arabicMatchKey, normalizeArabicText } from "./src/utils/arabicText";
 import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
@@ -21,6 +23,8 @@ import { currentTermId, planningTermCandidates, termHasEnded, termIsArchive } fr
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
+import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
+import { liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
@@ -33,6 +37,7 @@ import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueu
 import { createDataContextKey } from "./src/server/dataContextCache";
 import { isDemoLinkToken, publicLinkTokenFromPath, PUBLIC_LINK_PAGE_PREFIXES } from "./src/utils/demoLinkToken";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
+import { NEGOTIATION_LABEL, THREAD_LIMIT, THREAD_TEXT_LIMIT, negotiationState, parseOfferedSlots } from "./src/utils/instructorRequestThread";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
 import { instructorScheduleFingerprint } from "./src/utils/scheduleFingerprint";
@@ -79,7 +84,8 @@ import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
-import { termWindow } from "./src/utils/termSequence";
+import { termWindow, previousYearSameTermName, sameTermName } from "./src/utils/termSequence";
+import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
@@ -593,6 +599,16 @@ const rateLimitHeavyReport = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "طلباتٌ كثيرة لهذا التقرير في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
+});
+
+/* طلبُ الأستاذ وردُّه من رابطه العام: حدٌّ سخيٌّ لإنسانٍ يكتب، فوق عدّاد
+   المحاولات الموقّعة (publicAttempts) لا بدلاً منه. */
+const rateLimitPublicRequest = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "محاولاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
 });
 
 const rateLimitDemoRole = rateLimit({
@@ -3711,7 +3727,8 @@ app.put("/api/courses/:id", requirePermission(6), async (req: AuthenticatedReque
 
   const currentCourse = await Repository.getCourseById(id);
   if (!currentCourse) { res.status(404).json({ error: "المقرر الدراسي غير موجود" }); return; }
-  const identityChanged=currentCourse.CourseCode!==CourseCode||currentCourse.CourseName!==CourseName;
+  /* الاسم يُقارن كما سيُحفظ: «أشكال العرض» وحروفها العادية اسمٌ واحد. */
+  const identityChanged=currentCourse.CourseCode!==CourseCode||normalizeArabicText(currentCourse.CourseName)!==normalizeArabicText(CourseName);
   const academicShapeChanged=Number(currentCourse.CourseCredit)!==Number(CourseCredit)||Number(currentCourse.CourseHours)!==Number(CourseHours);
   const [curriculumPlans,curriculumMemberships]=await Promise.all([
     Repository.getCurriculumPlans(Number(currentCourse.AdSectionId)),
@@ -4937,13 +4954,8 @@ async function readLiveVisitingRoster(collegeId: number, sectionId: number, term
     Repository.getDepartmentDelegates(collegeId, sectionId),
     Repository.getInstructors(),
   ]);
-  const directoryIds = new Set(directory.map(Number));
   const instructorById = new Map(instructors.map(person => [Number(person.AdInstructorId), person]));
-  const instructorIds = [...new Set(
-    roster
-      .map(Number)
-      .filter(id => Number.isFinite(id) && id > 0 && directoryIds.has(id) && instructorById.has(id))
-  )];
+  const instructorIds = liveVisitingIds(roster, directory, id => instructorById.has(id));
   return {
     instructorIds,
     instructors: instructorIds.map(id => instructorById.get(id)).filter(Boolean),
@@ -6308,6 +6320,68 @@ app.post("/api/department-delegates/instructor", requirePermission(7), async (re
   res.status(201).json({person,instructorIds,roster});
 });
 
+/**
+ * ── المنتدب شخصٌ لا كلية ─────────────────────────────────────────────────────
+ *
+ * قائمة المنتدبين ملكُ قسمٍ بعينه (كلية + قسم)، فمن أضاف منتدبي «تكنولوجيا
+ * التعليم» في كلية البنات ثم فتح القسم نفسه في كلية البنين وجد قائمةً فارغة —
+ * والأشخاص أنفسهم مسجّلون، لكن في قسمٍ آخر. فتُعرض هنا منتدبو القسم الذي يحمل
+ * الاسم نفسه في الكليات الأخرى، بالاسم وحده (لا رقم مدني ولا جوّال)، ويضمّهم
+ * القسم إلى قائمته بضغطة. القراءة والضمّ يلزمان نطاقَ القسم المفتوح وحده.
+ * القاعدة هنا وحدها: sameDepartmentDelegatesElsewhere.
+ */
+async function sameDepartmentDelegatesElsewhere(collegeId: number, sectionId: number): Promise<Map<number, Array<{ college: string; section: string }>>> {
+  const [sections, colleges, affiliations, own] = await Promise.all([
+    Repository.getSections(), Repository.getColleges(), Repository.getDelegateAffiliations(), Repository.getDepartmentDelegates(collegeId, sectionId),
+  ]);
+  const target = (sections as any[]).find(row => Number(row.AdSectionId) === sectionId && Number(row.AdCollegeId) === collegeId);
+  if (!target) return new Map();
+  const key = arabicMatchKey(target.AdSectionName);
+  const sectionById = new Map((sections as any[]).map(row => [Number(row.AdSectionId), row]));
+  const collegeName = new Map((colleges as any[]).map(row => [Number(row.AdCollegeId), String(row.AdCollegeName || "")]));
+  const owned = new Set(own.map(Number));
+  const found = new Map<number, Array<{ college: string; section: string }>>();
+  for (const row of affiliations) {
+    if (Number(row.collegeId) === collegeId) continue;
+    const section = sectionById.get(Number(row.sectionId));
+    if (!section || arabicMatchKey(section.AdSectionName) !== key) continue;
+    for (const id of row.instructorIds.map(Number)) {
+      if (owned.has(id)) continue;
+      const list = found.get(id) || [];
+      const origin = { college: collegeName.get(Number(row.collegeId)) || "", section: String(section.AdSectionName || "") };
+      if (!list.some(item => item.college === origin.college)) list.push(origin);
+      found.set(id, list);
+    }
+  }
+  return found;
+}
+
+app.get("/api/department-delegates/elsewhere", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0);
+  if (!collegeId || !sectionId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const [found, people] = await Promise.all([sameDepartmentDelegatesElsewhere(collegeId, sectionId), Repository.getInstructors()]);
+  const byId = new Map(people.map(person => [Number(person.AdInstructorId), person]));
+  res.json({
+    people: [...found].map(([id, origins]) => ({ AdInstructorId: id, AdInstructorName: String(byId.get(id)?.AdInstructorName || ""), origins }))
+      .filter(person => person.AdInstructorName)
+      .sort((a, b) => a.AdInstructorName.localeCompare(b.AdInstructorName, "ar")),
+  });
+});
+
+app.post("/api/department-delegates/adopt", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  const instructorId = Number(req.body?.instructorId || 0);
+  if (!collegeId || !sectionId || !instructorId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  /* لا يُضمّ إلا من عُرض: منتدبٌ للقسم نفسه في كليةٍ أخرى — لا أيُّ أستاذٍ في الجامعة برقمه. */
+  if (!(await sameDepartmentDelegatesElsewhere(collegeId, sectionId)).has(instructorId)) { res.status(404).json({ error: "هذا الشخص ليس منتدباً لهذا القسم في كلية أخرى." }); return; }
+  const person = await Repository.getInstructorById(instructorId);
+  if (!person) { res.status(404).json({ error: "المنتدب غير موجود" }); return; }
+  await Repository.addDepartmentDelegate(collegeId, sectionId, instructorId);
+  let roster: number[] | undefined;
+  if (termId) roster = await Repository.saveVisitingRoster(collegeId, sectionId, termId, [...await Repository.getVisitingRoster(collegeId, sectionId, termId), instructorId]);
+  res.status(201).json({ person, instructorIds: await Repository.getDepartmentDelegates(collegeId, sectionId), roster });
+});
+
 app.put("/api/department-delegates/:instructorId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),instructorId=Number(req.params.instructorId||0);
   if(!collegeId||!sectionId||!instructorId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
@@ -7216,6 +7290,24 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
    and ranked. Nothing is revealed beyond busy/free for people the caller
    chose by name. */
 
+/** Who may sit in «متى نلتقي؟» this term — decided here, for every scope.
+ *  Visiting instructors are read term-wide across colleges (not from the
+ *  department on screen), so a college-only or empty scope excludes them too. */
+async function meetingExcludedIds(termId: number) {
+  const [affiliations, instructors] = await Promise.all([Repository.getDelegateAffiliations(), Repository.getInstructors()]);
+  const known = new Set(instructors.map(person => Number(person.AdInstructorId)));
+  const visiting = termVisitingIds(affiliations, termId, id => known.has(id));
+  const kept = new Set(meetingParticipants(instructors, visiting).map(person => Number(person.AdInstructorId)));
+  return { instructors, excluded: instructors.map(person => Number(person.AdInstructorId)).filter(id => !kept.has(id)), visiting };
+}
+
+app.get("/api/schedules/meeting-participants", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const termId = Number(req.query.termId || 0);
+  if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
+  const { excluded } = await meetingExcludedIds(termId);
+  res.json({ excludedInstructorIds: excluded });
+});
+
 app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body || {};
   const termId = Number(body.termId || 0);
@@ -7224,63 +7316,24 @@ app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: Authe
   if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
   if (ids.length < 2) { res.status(400).json({ error: "اختر أستاذين على الأقل" }); return; }
 
-  const [termRows, instructors] = await Promise.all([
+  /* Busy time is the person's WHOLE term — every college, every department.
+     A professor who teaches in two colleges is not free on Monday at 10:00
+     because the coordinator happens to be looking at only one of them. The
+     read is term-wide on purpose (no college/section filter), and what leaves
+     the server is busy/free per chosen name only: no course, no room, no
+     college. */
+  const [termRows, { instructors, excluded }] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
-    Repository.getInstructors(),
+    meetingExcludedIds(termId),
   ]);
-  const nameById = new Map(instructors.map(person => [person.AdInstructorId, person.AdInstructorName]));
-  const rowsByInstructor = new Map<number, FSchedule[]>(ids.map(id => [id, []]));
-  for (const item of termRows) {
-    const key = Number(item.AdInstructorId);
-    if (rowsByInstructor.has(key)) rowsByInstructor.get(key)!.push(item);
-  }
-
-  const STEP = SCHEDULE_SLOT_MINUTES;
-  const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
-  const days = SCHEDULE_DAY_KEYS.map((dayKey, index) => {
-    const busyAt = (from: number, to: number) => ids.filter(id =>
-      (rowsByInstructor.get(id) || []).some(item =>
-        Boolean((item as any)[dayKey]) && timeToMinutes(item.fstarttime) < to && timeToMinutes(item.fendtime) > from));
-
-    const free: { start: string; end: string; minutes: number; startMinutes: number }[] = [];
-    const nearMiss: { start: string; end: string; busy: string[] }[] = [];
-    let runStart = -1;
-    for (let start = SCHEDULE_DAY_START; start + duration <= SCHEDULE_DAY_END; start += STEP) {
-      const busy = busyAt(start, start + duration);
-      if (!busy.length) {
-        if (runStart < 0) runStart = start;
-      } else {
-        if (runStart >= 0) {
-          free.push({ start: clock(runStart), end: clock(runStart === start - STEP ? runStart + duration : start - STEP + duration), minutes: (start - STEP - runStart) + duration, startMinutes: runStart });
-          runStart = -1;
-        }
-        if (busy.length === 1) {
-          const last = nearMiss[nearMiss.length - 1];
-          const name = nameById.get(busy[0]) || "زميل";
-          if (last && last.end === clock(start - STEP + duration) && last.busy[0] === name) last.end = clock(start + duration);
-          else nearMiss.push({ start: clock(start), end: clock(start + duration), busy: [name] });
-        }
-      }
-    }
-    if (runStart >= 0) {
-      const lastStart = SCHEDULE_DAY_END - duration;
-      free.push({ start: clock(runStart), end: clock(lastStart + duration), minutes: (lastStart - runStart) + duration, startMinutes: runStart });
-    }
-    return { dayKey, label: DAY_LABELS[index], free, nearMiss: nearMiss.slice(0, 3) };
-  });
-
-  /* Best pick: everyone free, longest run first, then closest to mid-morning —
-     a committee meets where the day has room, not at 19:00. */
-  const best = days
-    .flatMap(day => day.free.map(range => ({ day: day.dayKey, label: day.label, ...range })))
-    .sort((a, b) => b.minutes - a.minutes || Math.abs(a.startMinutes - 600) - Math.abs(b.startMinutes - 600))[0] || null;
-
-  res.json({
-    duration,
-    participants: ids.map(id => nameById.get(id) || `#${id}`),
-    days: days.map(({ dayKey, label, free, nearMiss }) => ({ dayKey, label, free: free.map(({ start, end, minutes }) => ({ start, end, minutes })), nearMiss })),
-    best: best ? { day: best.day, label: best.label, start: best.start, end: best.end } : null,
-  });
+  /* The server is the authority on who counts: «هيئة تدريسية» and visiting
+     instructors are dropped here whatever the client sent. */
+  const drop = new Set(excluded);
+  const participantIds = ids.filter(id => !drop.has(id));
+  if (participantIds.length < 2) { res.status(400).json({ error: "اختر أستاذين على الأقل من غير المنتدبين" }); return; }
+  const nameById = new Map(instructors.map(person => [Number(person.AdInstructorId), person.AdInstructorName]));
+  const answer = computeMeetingSlots({ rows: termRows, ids: participantIds, nameById, duration });
+  res.json({ ...answer, busyScope: "allColleges" });
 });
 
 app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -12870,6 +12923,49 @@ app.post("/api/users/grant-decision-centre", requirePermission(11), requirePower
   res.json({ granted, alreadyHad, total: users.length, names });
 });
 
+/**
+ * ── «إنشاء حسابات رؤساء الأقسام» ───────────────────────────────────────────
+ *
+ * الخطة من وحدةٍ واحدة (departmentHeadAccounts)؛ المعاينة والإنشاء يقرآنها
+ * نفسها، فلا يُنشأ إلا ما عُرض. والإنشاء بلا كلمة سرّ وموقوف: لا يُولَّد سرٌّ
+ * ولا يُطبع، والحساب لا يدخل حتى يعيّن المديرُ كلمته ويفعّله. لمدير النظام وحده.
+ */
+async function departmentHeadPlan() {
+  const [users, assigns, colleges, sections] = await Promise.all([
+    Repository.getUsers(), Repository.getCollegeUserAssigns(), Repository.getColleges(), Repository.getSections(),
+  ]);
+  return planDepartmentHeadAccounts({ users: users as any, assigns, colleges, sections });
+}
+
+app.get("/api/users/department-heads/preview", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  res.json({ rows: await departmentHeadPlan() });
+});
+
+app.post("/api/users/department-heads", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  const rows = await departmentHeadPlan();
+  const created: Array<{ login: string; sectionName: string; collegeName: string }> = [];
+  for (const row of rows) {
+    if (row.status !== "create") continue;
+    /* فحصٌ أخير قبل الكتابة: طلبان متزامنان لا يُنشئان الاسم مرتين. */
+    if (await Repository.getUserByLogin(row.proposedLogin)) continue;
+    const user = await Repository.createUser({
+      Name: row.proposedName,
+      SystemUserLogin: row.proposedLogin,
+      SystemUserPass: "",
+      IsAdminUser: false,
+      IsActive: false,
+      IsLocked: false,
+      IsDeleted: false,
+      AdInstructorId: 0,
+      Role: DEPARTMENT_HEAD_ROLE,
+    } as any);
+    await applyRoleTemplate(user.SystemUserId, DEPARTMENT_HEAD_ROLE as AcademicRole, { assigns: [{ AdCollegeId: row.collegeId, AdSectionId: row.sectionId }] });
+    created.push({ login: row.proposedLogin, sectionName: row.sectionName, collegeName: row.collegeName });
+  }
+  res.locals.auditChanges = `حسابات رؤساء الأقسام: أُنشئ ${countOf(created.length, AR.account)} (موقوفة وبلا كلمة سر)`;
+  res.json({ created, skipped: rows.length - created.length, rows: await departmentHeadPlan() });
+});
+
 app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   const { Name, SystemUserLogin, password, IsAdminUser, IsActive, IsLocked, AdInstructorId, Role, collegeIds, assigns } = req.body;
@@ -13055,6 +13151,7 @@ app.delete("/api/user-scopes/:id", requirePermission(15), async (req: Request, r
 
 // --- EXCEL EXPORTS (STANDALONE REAL IMPLEMENTATION) ---
 import * as XLSX from "xlsx";
+import { PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR } from "./src/server/publicTheme";
 
 app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const reportType = req.params.type;
@@ -13496,18 +13593,22 @@ async function resolveShareToken(token: string) {
   return { link };
 }
 
-async function buildSharePayload(link: ScheduleShareLink) {
-  const [rows, courses, instructors, sections, colleges, terms] = await Promise.all([
-    Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, sectionId: link.AdSectionId, termId: link.AdTermId }),
+/* `options.termId` يقرأ فصلاً غير فصل الرابط (رابط الطلبة: الجاري)، و
+   `finalOnly` يقصر القراءة على المعتمد (finalRowsOnly) — للأبواب العامة للطلبة. */
+async function buildSharePayload(link: ScheduleShareLink, options: { termId?: number; finalOnly?: boolean } = {}) {
+  const termId = Number(options.termId || link.AdTermId);
+  const [liveRows, courses, instructors, sections, colleges, terms] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, sectionId: link.AdSectionId, termId }),
     Repository.getCourses(), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.getTerms()
   ]);
+  const rows = options.finalOnly ? await finalRowsOnly(liveRows, termId) : liveRows;
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
   return {
     label: link.label,
     college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",
     section: sections.find(row => row.AdSectionId === link.AdSectionId)?.AdSectionName || "",
-    term: terms.find(row => row.AdTermId === link.AdTermId)?.AdTermName || "",
+    term: terms.find(row => row.AdTermId === termId)?.AdTermName || "",
     expiresAt: link.expiresAt,
     showInstructors: link.showInstructors !== false,
     rows: rows
@@ -13719,6 +13820,8 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
       status: request.status,
       windowOpen,
       closesAt: request.window?.closesAt || "",
+      /* بنودٌ اقترح فيها القسمُ وينتظر ردَّه — تُقال على البطاقة ليعرف أن الدور عليه. */
+      proposed: (request.items || []).filter(item => negotiationState(item) === "proposed").length,
     };
   }))).filter(Boolean);
 
@@ -13872,7 +13975,8 @@ app.get("/api/share", requirePermission(7), async (req: AuthenticatedRequest, re
 });
 
 /** عنوانُ الرابط كما يُعرض في لوحة النشر وعلى الصفحة — لكل نوعٍ صيغتُه. */
-function shareLinkLabel(kind: "staff" | "survey" | "department", sectionName: string, termName: string): string {
+function shareLinkLabel(kind: "staff" | "survey" | "department" | "students", sectionName: string, termName: string): string {
+  if (kind === "students") return `جدول الطلبة · ${sectionName}`.trim();
   return kind === "staff"
     ? `بطاقات الأساتذة · ${termName}`.trim()
     : kind === "survey"
@@ -13891,6 +13995,7 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
      sections — no gender is ever inferred from a name. */
   const kind = req.body?.kind === "staff" ? "staff"
     : req.body?.kind === "survey" ? "survey"
+    : req.body?.kind === "students" ? "students"
     : "department";
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
@@ -13902,13 +14007,19 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
     res.status(409).json({ error: "انتهى هذا الفصل، فلا يُصدَر له رابط استبيان. اختر الفصل القادم.", code: "term-ended" });
     return;
   }
+  /* رمزُ QR للطلبة واحدٌ للقسم: يُعاد الرابطُ القائم فلا يتغيّر الملصق المطبوع. */
+  if (kind === "students") {
+    const existing = (await Repository.getShareLinks(collegeId, sectionId, termId))
+      .find(link => link.kind === "students" && !link.revoked && Date.parse(String(link.expiresAt)) > Date.now());
+    if (existing) { res.status(200).json(existing); return; }
+  }
   const label = shareLinkLabel(kind, sectionName, termName);
   /* بطاقةُ الأستاذ تعيش الفصلَ كلَّه — التقويمُ في هاتفه يتبعها — وموعدُ
      الطلبات يُحفظ منفصلاً ويحكم الكتابة وحدها. العمرُ يُحسب هنا، لا في المتصفح. */
   const requestsCloseAt = kind === "staff" ? requestsCloseAtFromDate(req.body?.requestsCloseAt) : "";
   const expiresAt = kind === "staff"
     ? termLinkExpiresAt(terms.find(row => row.AdTermId === termId))
-    : new Date(Date.now() + days * 86400000).toISOString();
+    : new Date(Date.now() + (kind === "students" ? STUDENT_QR_DAYS : days) * 86400000).toISOString();
   const link = await Repository.createShareLink({
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
     label,
@@ -14028,6 +14139,66 @@ app.get("/api/share-personal", requirePermission(7), async (req: AuthenticatedRe
   }));
 });
 
+/* ── إحصاءُ التسجيل واقتراحُ عدد الشعب ───────────────────────────────────────
+ *
+ * القسم يُدخل عدد الطلبة لكل مقرر قبل الفصل؛ ويُعاد معه تاريخُ أقرب ثلاثة
+ * فصولٍ مماثلة (الموسم نفسه، سنواتٌ سابقة): الشعبُ المفتوحة فعلاً في الجدول،
+ * والعددُ المسجّل إن أُدخل. الحسابُ نفسه في المتصفح والاختبار:
+ * src/utils/sectionCountSuggestion.ts. */
+app.get("/api/registration-stats", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const [terms, courses, stats] = await Promise.all([
+    Repository.getTerms(), Repository.getCoursesBySection(sectionId), Repository.getRegistrationStats(collegeId, sectionId, termId),
+  ]);
+  const term = terms.find(row => Number(row.AdTermId) === termId);
+  const similar: Array<{ AdTermId: number; AdTermName: string }> = [];
+  let name = String(term?.AdTermName || "");
+  for (let i = 0; i < 3; i++) {
+    name = previousYearSameTermName(name);
+    if (!name) break;
+    const found = terms.find(row => sameTermName(row.AdTermName, name));
+    if (found) similar.push({ AdTermId: Number(found.AdTermId), AdTermName: String(found.AdTermName) });
+  }
+  const history: Record<string, Array<{ termName: string; sections: number; headcount?: number }>> = {};
+  for (const past of similar) {
+    const [rows, pastStats] = await Promise.all([
+      Repository.getSchedulesByScope({ collegeId, sectionId, termId: past.AdTermId }),
+      Repository.getRegistrationStats(collegeId, sectionId, past.AdTermId),
+    ]);
+    const sectionsOf = new Map<number, Set<string>>();
+    for (const row of rows) {
+      const id = Number(row.AdCourseId);
+      if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
+      sectionsOf.get(id)!.add(String(row.SCode || row.id));
+    }
+    for (const course of courses) {
+      const key = String(course.AdCourseId);
+      const headcount = Number(pastStats?.counts?.[key] || 0);
+      (history[key] ||= []).push({ termName: past.AdTermName, sections: sectionsOf.get(Number(course.AdCourseId))?.size || 0, ...(headcount ? { headcount } : {}) });
+    }
+  }
+  res.json({
+    termName: term?.AdTermName || "",
+    similarTerms: similar.map(item => item.AdTermName),
+    courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
+    counts: stats?.counts || {},
+    accepted: stats?.accepted || {},
+    updatedAt: stats?.updatedAt || "",
+    history,
+  });
+});
+
+app.put("/api/registration-stats", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const saved = await Repository.saveRegistrationStats(collegeId, sectionId, termId,
+    { counts: req.body?.counts || {}, accepted: req.body?.accepted || {} }, String(req.user?.Name || ""));
+  res.json(saved);
+});
+
 // --- Public surface (no account) --------------------------------------------
 
 app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
@@ -14038,6 +14209,8 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
   /* A student survey link opens the survey and the student's status — never
      the department's timetable. */
   if (resolved.link.kind === "survey") { res.status(404).json({ error: "هذا الرابط استبيان للطلبة" }); return; }
+  /* رابطُ جدول الطلبة يقرأ المعتمدَ وحده من بابه (/api/public/students). */
+  if (resolved.link.kind === "students") { res.status(404).json({ error: "هذا الرابط جدول الطلبة" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.json(await buildSharePayload(resolved.link));
@@ -14102,7 +14275,7 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
-  if (resolved.link.kind === "staff" || resolved.link.kind === "survey") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+  if (resolved.link.kind === "staff" || resolved.link.kind === "survey" || resolved.link.kind === "students") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   /* A lecture cancelled on one specific date disappears from that one date in
@@ -15813,14 +15986,14 @@ function staffCardPage(token: string, label: string, nonce: string, demoHint = "
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a100f">
+<meta name="theme-color" content="${PUBLIC_THEME_COLOR}">
 <meta name="robots" content="noindex,nofollow">
 <title>بطاقتي · SCHEDULE</title>
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 *,*::before,*::after{box-sizing:border-box}
-:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
+:root{${PUBLIC_LIGHT_VARS}}
 body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
   font-family:"Plex Arabic",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
   font-synthesis:none;font-kerning:normal;-webkit-font-smoothing:antialiased;padding:max(20px,env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom))}
@@ -15831,7 +16004,7 @@ body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
 .since ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .since li{display:flex;gap:8px;align-items:baseline;font-size:13px;line-height:1.7;color:var(--ink)}
 .since li b{flex:none;min-width:52px;color:var(--dim);font-size:12px;font-weight:600}
-.since li.t-gone span{color:#e0a3a0}
+.since li.t-gone span{color:var(--bad)}
 .since li.t-add span{color:var(--jade)}
 .since li.t-more{color:var(--dim);font-size:12px}
 .since button{
@@ -15849,12 +16022,12 @@ input{flex:1;min-width:0;height:52px;padding:0 16px;border:1px solid var(--line)
   background:var(--card);color:var(--ink);font:600 17px/1 ui-monospace,monospace;letter-spacing:.06em;
   text-align:center;direction:ltr;outline:none;transition:border-color .16s,box-shadow .16s}
 input:focus{border-color:var(--jade);box-shadow:0 0 0 3px rgba(105,192,168,.16)}
-button{height:52px;padding:0 22px;border:0;border-radius:14px;background:var(--jade);color:#07100d;
+button{height:52px;padding:0 22px;border:0;border-radius:14px;background:var(--jade);color:var(--on-accent);
   font-weight:600;font-size:15px;line-height:1;font-family:inherit;cursor:pointer;transition:transform .12s,filter .16s}
 button:active{transform:scale(.98)}
 button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
-.note{margin-top:16px;min-height:20px;color:#e0a08c;font-size:13px}
-.hint{margin-top:26px;color:#5f6d67;font-size:12px;line-height:1.9}
+.note{margin-top:16px;min-height:20px;color:var(--bad);font-size:13px}
+.hint{margin-top:26px;color:var(--muted);font-size:12px;line-height:1.9}
 .card{display:none;animation:rise .45s ease both}
 .head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:22px 0 20px;
   padding-bottom:18px;border-bottom:1px solid var(--line)}
@@ -15900,19 +16073,19 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
 .sub{margin:10px 0 8px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card);
   display:grid;gap:9px;animation:sub-in .22s cubic-bezier(.2,.8,.3,1) both}
 @keyframes sub-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-.sub p{margin:0;font-size:13px;line-height:1.8;color:#8d9a94}
+.sub p{margin:0;font-size:13px;line-height:1.8;color:var(--muted)}
 .sub a,.sub button{min-height:44px;display:grid;place-items:center;border-radius:12px;font-weight:600;font-size:14px;line-height:1.4;font-family:inherit;
   text-decoration:none;cursor:pointer;padding:0 14px;text-align:center}
 /* This page's palette is jade/brass — it has no --accent, and a var() naming
    nothing resolves to nothing, which painted a near-black label on a near-black
    card. Measured invisible, then named correctly. */
-.sub a{background:var(--jade);border:1px solid var(--jade);color:#04100d}
+.sub a{background:var(--jade);border:1px solid var(--jade);color:var(--on-accent)}
 .sub button{background:transparent;border:1px solid var(--line);color:var(--ink)}
 /* When the clipboard is unavailable the address is shown instead; making it
    select as one unit means a long-press picks up the whole URL, not a word. */
 .subalarm{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer;padding-inline:2px}
 .subalarm input{accent-color:var(--jade);inline-size:16px;block-size:16px;flex:none}
-.sub small{font-size:11.5px;color:#4d5a55;text-align:center;line-height:1.8;-webkit-user-select:all;user-select:all;word-break:break-all}
+.sub small{font-size:11.5px;color:var(--muted);text-align:center;line-height:1.8;-webkit-user-select:all;user-select:all;word-break:break-all}
 @media (prefers-reduced-motion:reduce){.sub{animation:none}}
 /* ── الإبلاغ ────────────────────────────────────────────────────────────
  * The trigger is the quietest thing in the slot on purpose: a card is opened
@@ -15934,41 +16107,43 @@ button.say:hover:not(:disabled){color:var(--jade);border-color:var(--jade)}
 button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .card-tabs{display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:8px}
 .card-tab{padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--dim);font-weight:600;font-size:13px;line-height:1;font-family:inherit;cursor:pointer}
-.card-tab[aria-selected=true]{background:var(--jade);color:#04100d;border-color:var(--jade)}
+.card-tab[aria-selected=true]{background:var(--jade);color:var(--on-accent);border-color:var(--jade)}
 .movement-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .movement-item{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:13px;line-height:1.6}
-.movement-item.t-add{border-inline-start:3px solid #38bdf8}
-.movement-item.t-move{border-inline-start:3px solid #f59e0b}
-.movement-item.t-room{border-inline-start:3px solid #a855f7}
-.movement-item.t-gone{border-inline-start:3px solid #ef4444}
+.movement-item.t-add{border-inline-start:3px solid #2a5f7d}
+.movement-item.t-move{border-inline-start:3px solid #8d6413}
+.movement-item.t-room{border-inline-start:3px solid #6b4a9c}
+.movement-item.t-gone{border-inline-start:3px solid var(--bad)}
 .movement-head{margin:14px 0 8px;font-size:13.5px;font-weight:600;color:var(--brass)}
 .movement-head:first-child{margin-top:0}
 .movement-meta{display:block;color:var(--dim)}
 .movement-meta[data-decision=fixed]{color:var(--jade)}
-.movement-meta[data-decision=rejected]{color:#f87171}
+.movement-meta[data-decision=rejected]{color:var(--bad)}
 .requests-panel{margin-top:12px;padding:14px;border-radius:12px;border:1px solid var(--line);background:var(--card)}
-.requests-panel a.req-link{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;background:var(--jade);color:#04100d;font-weight:600;font-size:13.5px;text-decoration:none;margin-top:8px}
+.requests-panel h3{margin:0 0 4px;font-size:14px}.requests-panel .sub{margin:0;color:var(--dim);font-size:12.5px;line-height:1.8}
+.req-proposed{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:999px;background:color-mix(in srgb,var(--brass) 18%,transparent);color:var(--brass);font-size:11.5px;font-weight:600}
+.requests-panel a.req-link{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:10px;background:var(--jade);color:var(--on-accent);font-weight:600;font-size:13.5px;text-decoration:none;margin-top:8px}
 .approvals{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
 .approvals span{padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:11.5px;color:var(--dim)}
 .approvals span[data-status=accepted]{border-color:var(--jade);color:var(--jade)}
-.approvals span[data-status=returned]{border-color:#f87171;color:#f87171}
+.approvals span[data-status=returned]{border-color:var(--bad);color:var(--bad)}
 .soon{margin:0 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
 .soon b{display:block;font-size:13px;margin-bottom:6px}
 .soon ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .soon li{font-size:12.5px;color:var(--dim);line-height:1.7}
-.soon li[data-kind=cancelled] strong{color:#f87171}
+.soon li[data-kind=cancelled] strong{color:var(--bad)}
 .soon li[data-kind=covering] strong{color:var(--jade)}
-.movement-new{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--jade);color:#04100d;font-size:11px;font-weight:600}
+.movement-new{display:inline-block;padding:1px 8px;border-radius:999px;background:var(--jade);color:var(--on-accent);font-size:11px;font-weight:600}
 .pastnote{
   margin-block-end:14px;padding:11px 13px;border-radius:12px;
   border:1px solid var(--line);background:color-mix(in srgb,var(--brass) 9%,transparent);
   color:var(--dim);font-size:12.5px;line-height:1.8;
 }
-.foot{margin-top:26px;color:#4d5a55;font-size:11.5px;text-align:center;line-height:1.9}
+.foot{margin-top:26px;color:var(--muted);font-size:11.5px;text-align:center;line-height:1.9}
 /* The approved report table — the same five-column week the reports print,
    so the professor's shared card and the official sheet read as one family. */
 .pub-week{width:100%;margin:0 0 18px;border-collapse:collapse;table-layout:fixed;background:var(--card);border-radius:16px;overflow:hidden}
-.pub-week th{padding:9px 4px;text-align:center;font-size:12px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.pub-week th{padding:9px 4px;text-align:center;font-size:12px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(19,24,23,.03)}
 .pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
 .pub-week th.t{width:52px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);vertical-align:top;padding-top:9px}
 /* عنوانُ العمود «الوقت» كلمةٌ عربية: بخطٍّ أحاديّ العرض تتفكّك حروفُها
@@ -16031,7 +16206,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     <div class="card-tabs" role="tablist">
       <button type="button" class="card-tab" id="tab-week" role="tab" aria-selected="true">الجدول الأسبوعي</button>
       <button type="button" class="card-tab" id="tab-movement" role="tab" aria-selected="false">حركة الجدول</button>
-      <button type="button" class="card-tab" id="tab-requests" role="tab" aria-selected="false" style="display:none">طلب تعديل الجدول</button>
+      <button type="button" class="card-tab" id="tab-requests" role="tab" aria-selected="false">طلب تعديل الجدول</button>
     </div>
     <div id="panel-week">
       <div id="days"></div>
@@ -16045,6 +16220,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     <div class="tools">
       <a id="ics" href="#" role="button" aria-expanded="false" aria-controls="sub">إضافة إلى التقويم</a>
       <a href="#" id="print">طباعة</a>
+      <a href="#" id="edit" role="button">تعديل</a>
     </div>
     <div class="sub" id="sub" hidden>
       <p id="subLife">اشتراك يتابع جدولك من نفسه حتى نهاية الفصل، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
@@ -16123,21 +16299,27 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
       '<h3 class="movement-head">حركة جدولك الرسمية</h3>'+(official.length?'<ul class="movement-list">'+official.map(item).join("")+'</ul>':'<div class="pub-empty">لم يتغيّر شيء في جدولك الرسمي هذا الفصل.</div>');
   }
 
+  /* ── «تعديل» و«طلب تعديل الجدول» ──────────────────────────────────────
+     كان التبويبُ يختفي كلَّه حين لا يحمل الرابطُ نافذةَ طلبات — وهذا حالُ
+     رابط القسم العام دائماً منذ صار شخصياً (a966906) — فلا يجد الأستاذُ بابَ
+     التعديل ولا يعرف أين هو. فالبابُ يبقى ظاهراً، وما خلفه يقول الحقيقة:
+     النموذجُ نفسُه في الرابط الشخصي، وفي رابط القسم سطرٌ يدلّ عليه، ولا يُكشف
+     فيه رابطُ الطلب — فهو ما يُوقَّع به باسم صاحبه. */
   function renderRequests(d){
     var host=document.getElementById("requests");
-    var tab=document.getElementById("tab-requests");
     var links=d.requestLinks||[];
     requestLinksNow=links;
+    if(!host)return;
     if(!links.length){
-      if(tab)tab.style.display="none";
-      if(host)host.innerHTML="";
+      host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">'+(d.personal
+        ?'لم يفتح قسمك نافذة رغبات الجدول لهذا الفصل بعد. حين يفتحها يظهر هنا نموذجُ طلبك، ومعه ردودُ القسم ومقترحاته.'
+        :'رغباتك وطلب تعديل جدولك تُرسل من رابطك الشخصي الذي يرسله إليك القسم، لا من رابط القسم العام — فالطلب يُوقَّع باسمك. اطلب رابطك من منسّق القسم.')+'</p></div>';
       return;
     }
-    if(tab)tab.style.display="";
-    if(!host)return;
     host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">استقبل قسمك نافذة طلبات للتعديل على الجدول الدراسي.</p>'+
       links.map(function(l){
         return '<div class="req-item"><b>'+esc(l.sectionName)+'</b> — '+(l.windowOpen?'نافذة الطلبات مفتوحة حتى <bdi>'+esc(friendlyDate(l.closesAt,false))+'</bdi>':'انتهت فترة الطلبات')+
+          (l.proposed?'<br><span class="req-proposed">مقترح من القسم ينتظر ردّك · '+ar(l.proposed)+'</span>':'')+
           '<br><a class="req-link" href="/r/'+encodeURIComponent(l.linkId)+'" target="_blank">فتح نموذج رغبات الجدول ←</a></div>';
       }).join("")+'</div>';
   }
@@ -16168,7 +16350,11 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     var pick=open.length===1?open[0]:(requestLinksNow.length===1?requestLinksNow[0]:null);
     if(pick){window.location.href="/r/"+encodeURIComponent(pick.linkId);return;}
     selectTab("requests");
+    var panel=document.getElementById("panel-requests");if(panel)panel.scrollIntoView({block:"nearest",behavior:"smooth"});
   };
+  /* «تعديل» في شريط الأدوات هو البابُ نفسُه، لا بابٌ ثانٍ بقاعدةٍ أخرى. */
+  var editBtn=document.getElementById("edit");
+  if(editBtn)editBtn.onclick=function(e){e.preventDefault();if(tabRequests)tabRequests.onclick();};
 
   function visibleCardCollege(value){var name=String(value||"");return /التربية\\s*الأساسية.*بنات/.test(name)?"":name}
   function shortCardCollege(value){return String(value||"").replace(/^\\s*[0-9٠-٩]+\\s*[·\\-–]?\\s*/,"").replace(/^\\s*كلية\\s+/,"").trim()}
@@ -16215,7 +16401,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         return '<tr><th class="t" dir="ltr">'+esc(start)+'</th>'+d.byDay.map(function(day){
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
-              /* النطاقُ كما صاغه الخادم بعقد الجامعة الواحد (النهاية - البداية). */
+              /* النطاقُ كما صاغه الخادم بالمُصيغ الواحد (البداية – النهاية، معزولاً LTR). */
               '<time>'+esc(row.timeRange||"")+'</time>'+
               /* المختصرُ هادئ: لا رقمَ مقرّر ولا كلمةَ «كلية» ولا اسمَ قسم،
                  والقاعةُ في سطرٍ يُقصّ داخل الخلية فلا يخرج عن حدودها. */
@@ -16308,10 +16494,10 @@ function surveyPage(token: string, label: string, nonce: string): string {
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f;--cohort-rgb:105,192,168}
+:root{${PUBLIC_LIGHT_VARS};--cohort-rgb:31,107,92}
 *{box-sizing:border-box}
-body[data-cohort="boys"]{--jade:#71a9d6;--cohort-rgb:113,169,214}
-body[data-cohort="girls"]{--jade:#c18bab;--cohort-rgb:193,139,171}
+body[data-cohort="boys"]{--jade:#2f6b99;--cohort-rgb:47,107,153}
+body[data-cohort="girls"]{--jade:#8c4a72;--cohort-rgb:140,74,114}
 body{margin:0;min-height:100dvh;background:
   radial-gradient(circle at 88% 0%,rgba(var(--cohort-rgb),.10),transparent 34%),
   var(--bg);color:var(--ink);
@@ -16346,9 +16532,9 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .pick small{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
 .pick[aria-pressed="true"]{border-color:var(--jade);background:color-mix(in srgb,var(--jade) 12%,var(--card))}
 .pick i{position:absolute;inset-block-start:11px;inset-inline-end:11px;inline-size:19px;block-size:19px;
-  border-radius:6px;border:1.5px solid color-mix(in srgb,var(--line) 85%,#fff);display:grid;place-items:center;
-  background:rgba(255,255,255,.015);transition:border-color .16s,background .16s,transform .16s}
-.pick i::after{content:"";inline-size:6px;block-size:10px;border:0;border-right:2px solid #07100d;border-bottom:2px solid #07100d;
+  border-radius:6px;border:1.5px solid var(--line-strong);display:grid;place-items:center;
+  background:rgba(19,24,23,.015);transition:border-color .16s,background .16s,transform .16s}
+.pick i::after{content:"";inline-size:6px;block-size:10px;border:0;border-right:2px solid var(--on-accent);border-bottom:2px solid var(--on-accent);
   transform:translateY(-1px) rotate(45deg) scale(.4);opacity:0;transition:.16s}
 .pick[aria-pressed="true"] i{border-color:var(--jade);background:var(--jade);transform:scale(1.04)}
 .pick[aria-pressed="true"] i::after{opacity:1;transform:translateY(-1px) rotate(45deg) scale(1)}
@@ -16362,10 +16548,10 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .field input[inputmode=numeric]{direction:ltr;text-align:start;font-variant-numeric:tabular-nums}
 .send{
   inline-size:100%;min-block-size:52px;margin-block-start:8px;border-radius:14px;cursor:pointer;
-  background:var(--jade);border:1px solid var(--jade);color:#04100d;font-weight:700;font-size:15.5px;line-height:1;font-family:inherit;
+  background:var(--jade);border:1px solid var(--jade);color:var(--on-accent);font-weight:700;font-size:15.5px;line-height:1;font-family:inherit;
 }
 .send:disabled{opacity:.45;cursor:default}
-.note{margin:14px 0 0;font-size:11.5px;line-height:1.9;color:#4d5a55;text-align:center}
+.note{margin:14px 0 0;font-size:11.5px;line-height:1.9;color:var(--muted);text-align:center}
 .err{margin:12px 0 0;padding:11px 13px;border-radius:11px;font-size:13px;line-height:1.7;
   background:color-mix(in srgb,#a2402f 16%,transparent);border:1px solid color-mix(in srgb,#a2402f 40%,transparent)}
 .done{text-align:center;padding-block:52px}
@@ -16422,7 +16608,7 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 }
 .fold-name{flex:1;min-inline-size:0;direction:ltr;unicode-bidi:isolate;text-align:start}
 .fold-count{
-  padding:2px 9px;border-radius:999px;background:rgba(255,255,255,.06);
+  padding:2px 9px;border-radius:999px;background:rgba(19,24,23,.06);
   color:var(--dim);font-size:12px;font-weight:600;
 }
 .fold-caret{color:var(--dim);font-size:15px;transition:transform .18s ease}
@@ -16634,8 +16820,8 @@ ${ARABIC_COUNT_SCRIPT}
 
 function studentCaseSurveyPage(token:string,label:string,nonce:string,demoHint=""):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:var(--muted);font-size:12px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
-.prior-case{margin:14px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card2);display:grid;gap:5px}.prior-case strong{font-size:14px}.prior-case small,.prior-case p{font-size:12.5px;color:var(--muted);margin:0}.prior-case ul{margin:4px 0;padding:0 18px;font-size:13px}.replace-note{margin:14px 0 0;padding:11px 13px;border-radius:12px;border:1px solid #806a3a;background:#231d10;color:#f1dfb5;font-size:13px}</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p>${demoHint}<section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
+*{box-sizing:border-box}:root{${PUBLIC_LIGHT_VARS}}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,var(--accent-soft) 0,transparent 32%),var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font-weight:700;font-size:11.5px;line-height:1.4;letter-spacing:0;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #1318171f}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:var(--accent-soft);color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:var(--ink);background:var(--card2);border-color:var(--line-strong);cursor:default;-webkit-text-fill-color:var(--ink)}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #9fc8b5;border-radius:12px;background:var(--accent-soft);color:var(--jade);font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:700;color:var(--jade)}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid var(--line-strong);border-radius:14px;background:var(--card2);color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid var(--line-strong);background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:var(--ink)}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:var(--on-accent);font-weight:700;font-size:14px;line-height:1;font-family:inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--accent-soft);color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:var(--accent-soft)}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:var(--accent-soft)}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:700;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed var(--line-strong);border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:var(--soft);overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:var(--card2);color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #9fc8b5;color:var(--jade)}.proof-status.reused{border:1px solid #9fc8b5;color:var(--jade);background:var(--accent-soft)}.proof-status.bad{border:1px solid #e3b7b2;color:var(--bad)}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid var(--line-strong);background:var(--card2);border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:700;color:var(--ink);margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #e3b7b2;background:var(--bad-soft);color:var(--bad);font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:var(--muted);font-size:12px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
+.prior-case{margin:14px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card2);display:grid;gap:5px}.prior-case strong{font-size:14px}.prior-case small,.prior-case p{font-size:12.5px;color:var(--muted);margin:0}.prior-case ul{margin:4px 0;padding:0 18px;font-size:13px}.replace-note{margin:14px 0 0;padding:11px 13px;border-radius:12px;border:1px solid #e2cf9f;background:#f8eed6;color:#5b4520;font-size:13px}</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p>${demoHint}<section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
 (function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,caseRef="",priorSummary=null,priorInitial="",needsCaseRef=false,proofAt=0,PROOF_TTL=20*60*1000,MAX_PROOF_BYTES=14*1024*1024;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
    any twelve digits, so a wrong number travelled through both remaining steps
@@ -16821,6 +17007,8 @@ function stripForInstructor(request: InstructorRequest) {
         ...rest,
         /* «كان» تحمل قاعتَه هو — وهي قاعتُه يعرفها — و«طلب» لا تحملها أبداً. */
         after: rest.after ? { ...rest.after, room: undefined } : rest.after,
+        /* حالةُ الحوار تُحسب هنا بالقاعدة الواحدة، والصفحةُ تعرضها ولا تستنتجها. */
+        negotiation: negotiationState(rest),
         /* القرارُ يصل كما هو: سببُه وبدائلُه من حقّه. أما أسماءُ من قرّر فتبقى
            صفةً لا اسماً، وهي تُكتب كذلك أصلاً. */
       };
@@ -17480,13 +17668,7 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
     return;
   }
 
-  const alternatives = Array.isArray(req.body?.alternatives)
-    ? (req.body.alternatives as any[]).slice(0, 3).map(entry => ({
-        day: String(entry?.day || ""), start: String(entry?.start || ""), end: String(entry?.end || ""),
-        ...(Array.isArray(entry?.days) ? { days: (entry.days as any[]).map(String)
-          .filter(day => ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day)) } : {}),
-      })).filter(entry => entry.day && entry.start && entry.end)
-    : [];
+  const alternatives = parseOfferedSlots(req.body?.alternatives);
 
   /* ── «ثُبّت» لا تُقال إلا إذا وقعت ────────────────────────────────────────
    *
@@ -17577,6 +17759,49 @@ app.post("/api/instructor-requests/:id/decide", requirePermission(7), async (req
   res.json(await judgeRequestItems(saved, { forDepartment: true }));
 });
 
+/* ── حوارُ البند: ردُّ القسم واقتراحُه ─────────────────────────────────────
+ *
+ * ليس قراراً: لا يكتب في الجدول ولا يُغلق البند. هو رسالةٌ إلى الأستاذ —
+ * سطرٌ، أو أوقاتٌ مقترحة، أو كلاهما — تصله في صفحته، فيوافق أو يقترح غيرها.
+ * والنطاقُ والقفلُ نطاقُ البند وقفلُه كما في القرار نفسه.
+ */
+app.post("/api/instructor-requests/:id/reply", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const stored = await Repository.getInstructorRequest(String(req.params.id || ""));
+  if (!stored) { res.status(404).json({ error: "لا يوجد طلبٌ بهذا المعرّف" }); return; }
+  const index = Number(req.body?.itemIndex);
+  const item = (stored.items || [])[index];
+  if (!item) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في الطلب" }); return; }
+  const itemScope = requestItemScope(stored, item);
+  if (!isScopeAllowed(req, itemScope.collegeId, itemScope.sectionId)) {
+    res.status(403).json({ error: "هذا القسم خارج نطاقك." });
+    return;
+  }
+  const replyLock = await scheduleLockRefusal(
+    req, itemScope.collegeId, itemScope.sectionId, Number(stored.AdTermId), { registrarLock: false });
+  if (replyLock) { res.status(409).json({ error: replyLock, code: "schedule-locked" }); return; }
+  if (item.decision?.state === "fixed" && negotiationState(item) === "agreed") {
+    res.status(409).json({ error: "ثُبّت هذا البند في الجدول؛ لا حوارَ بعد التثبيت." });
+    return;
+  }
+  const text = String(req.body?.text || "").trim().slice(0, THREAD_TEXT_LIMIT);
+  const slots = parseOfferedSlots(req.body?.slots);
+  if (!text && !slots.length) { res.status(400).json({ error: "اكتب رداً أو اقترح وقتاً." }); return; }
+
+  const now = new Date().toISOString();
+  const by = roleLabel(req.user?.Role) || "القسم";
+  const items = [...(stored.items || [])];
+  items[index] = {
+    ...item,
+    thread: [...(item.thread || []), { from: "department" as const, at: now, by, ...(text ? { text } : {}), ...(slots.length ? { slots } : {}) }].slice(-THREAD_LIMIT),
+  };
+  const saved = await Repository.saveInstructorRequest({
+    ...stored, items, status: "in-review",
+    timeline: [...(stored.timeline || []), { kind: "department-replied" as InstructorRequestEventKind, at: now, by, itemIndex: index }],
+  });
+  broadcastNotify(Repository.currentDemoSessionId());
+  res.json(await judgeRequestItems(saved, { forDepartment: true }));
+});
+
 /* ── بابُ الأستاذ ────────────────────────────────────────────────────────── */
 
 app.get("/api/public/request/:token", async (req: Request, res: Response) => {
@@ -17613,7 +17838,41 @@ app.get("/api/public/request/:token", async (req: Request, res: Response) => {
   });
 });
 
-app.post("/api/public/request/:token", async (req: Request, res: Response) => {
+/**
+ * توقيعُ الأستاذ على ما يرسله من بابه — الطلبُ كلُّه أو ردٌّ في حوار بند.
+ * يُعيد رقمَه المطبَّع حين يطابق سجلَّه، أو "" وقد أُجيب الطلبُ بسببه.
+ */
+async function verifyRequestSigner(request: InstructorRequest, req: Request, res: Response): Promise<string> {
+  const signScope = `request:${request.id}`;
+  const signAttempt = publicAttemptReserve(signScope, req.ip || "unknown");
+  if (!signAttempt) {
+    res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
+    return "";
+  }
+  const civil = normalizeCivilId(req.body?.civil);
+  const civilCheck = validateCivilId(civil);
+  if (!civilCheck.isValid) {
+    res.status(400).json({ error: civilCheck.message || "اكتب رقمك المدني كاملاً." });
+    return "";
+  }
+  const signer = (await Repository.getInstructors() as any[])
+    .find(row => Number(row.AdInstructorId) === Number(request.AdInstructorId));
+  /* والجوابُ واحدٌ سواءٌ أخطأ الرقمَ أم لم يكن في سجلّه رقمٌ أصلاً: التفريقُ
+     بينهما يقول لمن يجرّب أيُّ الأساتذة مسجَّلٌ رقمُه. */
+  /* والرقمُ المخزونُ يُطبَّع كما يُطبَّع المُرسَل: سجلٌّ كُتب بأرقامٍ عربيةٍ أو
+     فارسية — وبابُ الأساتذة يقبلها — كان `\D` يمحوه كلَّه فيصير فارغاً، فلا
+     يطابق شيئاً أبداً. وصاحبُه يدخل رقمَه الصحيح فيُردّ، مرّةً بعد مرّة، بلا
+     سببٍ يظهر له ولا للقسم. */
+  const storedCivil = normalizeCivilId(signer?.AdInstructorCivil);
+  if (!storedCivil || storedCivil !== civil) {
+    res.status(403).json({ error: "الرقم المدني لا يطابق صاحب هذا الرابط." });
+    return "";
+  }
+  signAttempt.release();
+  return civil;
+}
+
+app.post("/api/public/request/:token", rateLimitPublicRequest, async (req: Request, res: Response) => {
   const resolved = await resolveRequestLink(String(req.params.token || ""));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (!requestWindowOpen(resolved.request)) {
@@ -17648,32 +17907,8 @@ app.post("/api/public/request/:token", async (req: Request, res: Response) => {
    * بالحدّ نفسِه المفروض على بطاقة الأستاذ وحالة الطالب، وإلا صار البابُ
    * مجرَّبا عليه بالأرقام.
    */
-  const signScope = `request:${resolved.request.id}`;
-  const signAttempt = publicAttemptReserve(signScope, req.ip || "unknown");
-  if (!signAttempt) {
-    res.status(429).json({ error: "محاولات كثيرة. انتظر قليلاً ثم أعد المحاولة." });
-    return;
-  }
-  const civil = normalizeCivilId(req.body?.civil);
-  const civilCheck = validateCivilId(civil);
-  if (!civilCheck.isValid) {
-    res.status(400).json({ error: civilCheck.message || "اكتب رقمك المدني كاملاً." });
-    return;
-  }
-  const signer = (await Repository.getInstructors() as any[])
-    .find(row => Number(row.AdInstructorId) === Number(resolved.request.AdInstructorId));
-  /* والجوابُ واحدٌ سواءٌ أخطأ الرقمَ أم لم يكن في سجلّه رقمٌ أصلاً: التفريقُ
-     بينهما يقول لمن يجرّب أيُّ الأساتذة مسجَّلٌ رقمُه. */
-  /* والرقمُ المخزونُ يُطبَّع كما يُطبَّع المُرسَل: سجلٌّ كُتب بأرقامٍ عربيةٍ أو
-     فارسية — وبابُ الأساتذة يقبلها — كان `\D` يمحوه كلَّه فيصير فارغاً، فلا
-     يطابق شيئاً أبداً. وصاحبُه يدخل رقمَه الصحيح فيُردّ، مرّةً بعد مرّة، بلا
-     سببٍ يظهر له ولا للقسم. */
-  const storedCivil = normalizeCivilId(signer?.AdInstructorCivil);
-  if (!storedCivil || storedCivil !== civil) {
-    res.status(403).json({ error: "الرقم المدني لا يطابق صاحب هذا الرابط." });
-    return;
-  }
-  signAttempt.release();
+  const civil = await verifyRequestSigner(resolved.request, req, res);
+  if (!civil) return;
 
   const sent = Array.isArray(req.body?.items) ? (req.body.items as any[]) : null;
   if (!sent) { res.status(400).json({ error: "لم يصل شيء." }); return; }
@@ -17741,6 +17976,8 @@ sectionId: allowedOption.sectionId,
       decision: action === "add"
         ? priorAddFor(resolved.request.items, usedPriorAdds, courseId, selectedCollegeId, selectedSectionId, days, start)?.decision
         : decisionStillApplies(stored, action, days, start) ? stored?.decision : undefined,
+      /* والحوارُ لا يُمحى بإعادة الإرسال: هو ما قيل، لا ما يُطلب. */
+      ...(stored?.thread?.length ? { thread: stored.thread } : {}),
     });
   }
 
@@ -17801,6 +18038,78 @@ sectionId: allowedOption.sectionId,
   res.setHeader("Cache-Control", "no-store");
   broadcastNotify(Repository.currentDemoSessionId());
   res.json({ request: stripForInstructor(saved), changed });
+});
+
+/**
+ * ── ردُّ الأستاذ في حوار البند ──────────────────────────────────────────────
+ *
+ * يوافق على وقتٍ اقترحه القسم — فيصير هو المطلوبَ في البند، ويبقى التثبيتُ
+ * للقسم بمساره المعتاد — أو يكتب ردّه ويقترح بدايةً أخرى على أيام البند.
+ * وهو توقيعٌ كالإرسال نفسه، ويبقى مفتوحاً بعد إغلاق نافذة الطلبات: الحوارُ
+ * يجري بعدها، ولا يُغلقه إلا فصلٌ جُمِّد.
+ */
+app.post("/api/public/request/:token/reply", rateLimitPublicRequest, async (req: Request, res: Response) => {
+  const resolved = await resolveRequestLink(String(req.params.token || ""));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (!resolved.request.submittedAt) { res.status(409).json({ error: "أرسل طلبك أولاً، ثم يبدأ الحوار مع القسم." }); return; }
+  const term = (await Repository.getTerms()).find(row => Number(row.AdTermId) === Number(resolved.request.AdTermId));
+  if (term?.AdTermClosed === true) {
+    res.status(409).json({ error: "انتهى هذا الفصل الدراسي، ولم يعد جدولُه يقبل التعديل. راجع قسمك إن كان لديك ما يلزم." });
+    return;
+  }
+  const index = Number(req.body?.itemIndex);
+  const item = (resolved.request.items || [])[index];
+  if (!item) { res.status(400).json({ error: "لا يوجد بندٌ بهذا الرقم في طلبك." }); return; }
+  const civil = await verifyRequestSigner(resolved.request, req, res);
+  if (!civil) return;
+
+  const now = new Date().toISOString();
+  const text = String(req.body?.text || "").trim().slice(0, THREAD_TEXT_LIMIT);
+  const last = (item.thread || [])[(item.thread || []).length - 1];
+  /* ما يُوافَق عليه هو آخرُ ما اقترحه القسم: رسالتُه الأخيرة، أو بدائلُ رفضه. */
+  const offered = negotiationState(item) !== "proposed" ? []
+    : last?.from === "department" && (last.slots || []).length ? last.slots || []
+    : item.decision?.alternatives || [];
+  const acceptAt = req.body?.accept == null ? -1 : Number(req.body.accept);
+  let next: InstructorRequestItem = item;
+  let kind: InstructorRequestEventKind = "instructor-replied";
+  if (acceptAt >= 0) {
+    const chosen = offered[acceptAt];
+    if (!chosen) { res.status(400).json({ error: "هذا المقترح لم يعد قائماً. حدّث الصفحة." }); return; }
+    const days = (chosen.days?.length ? chosen.days : [chosen.day]) as RequestDayKey[];
+    const end = endForRequest(days, chosen.start);
+    next = {
+      ...item,
+      action: item.action === "keep" ? "change" : item.action,
+      after: { ...(item.after || item.before || { courseId: 0, courseName: "", sectionCode: "", days: "", time: "" }),
+        days: days.map(day => DAY_LETTERS[day]).join(" · "), time: `${chosen.start} – ${end}` },
+      slots: days.map(day => ({ day, start: chosen.start, end: endForRequest([day], chosen.start) })),
+      chosenAlternative: chosen,
+      /* قرارٌ سابقٌ على ما كان يُطلب لا يبقى على ما اتُّفق عليه الآن. */
+      decision: undefined,
+      thread: [...(item.thread || []), { from: "instructor" as const, at: now, accepted: true, slots: [chosen], ...(text ? { text } : {}) }].slice(-THREAD_LIMIT),
+    };
+    kind = "proposal-accepted";
+  } else {
+    const start = /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "";
+    const days = (item.slots || []).map(slot => slot.day);
+    const proposal = start && days.length && item.action !== "delete"
+      ? [{ day: days[0], days, start, end: endForRequest(days as RequestDayKey[], start) }] : [];
+    if (!text && !proposal.length) { res.status(400).json({ error: "اكتب ردّك أو اقترح وقتاً." }); return; }
+    next = {
+      ...item,
+      thread: [...(item.thread || []), { from: "instructor" as const, at: now, ...(text ? { text } : {}), ...(proposal.length ? { slots: proposal } : {}) }].slice(-THREAD_LIMIT),
+    };
+  }
+  const items = [...(resolved.request.items || [])];
+  items[index] = next;
+  const saved = await Repository.saveInstructorRequest({
+    ...resolved.request, items, status: "in-review",
+    timeline: [...(resolved.request.timeline || []), { kind, at: now, itemIndex: index, ...(acceptAt >= 0 ? { detail: String(acceptAt + 1) } : {}) }],
+  });
+  res.setHeader("Cache-Control", "no-store");
+  broadcastNotify(Repository.currentDemoSessionId());
+  res.json({ request: stripForInstructor(await judgeRequestItems(saved)) });
 });
 
 /**
@@ -17877,7 +18186,7 @@ textarea[data-show="1"]{display:block}
 label.sign{display:grid;grid-template-columns:auto minmax(0,190px);align-items:center;justify-content:center;gap:10px;margin:0 0 8px;font-size:13px;color:var(--muted)}label.sign input{width:100%;padding:10px;border-radius:11px;border:1px solid var(--line);font-size:16px;letter-spacing:.08em;text-align:center;direction:ltr;background:#fff}
 .signnote{margin:0 0 11px;font-size:11.5px;color:var(--muted2);line-height:1.6;text-align:center}
 .activity-empty{text-align:center;padding:34px 18px;border:1px dashed var(--line2);border-radius:16px;color:var(--muted);font-size:13px;background:var(--card)}
-.activity-list{list-style:none;margin:0;padding:0;display:grid;gap:9px}.activity-item{position:relative;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:start;padding:13px 14px;border:1px solid var(--line);border-radius:15px;background:var(--card)}.activity-dot{width:10px;height:10px;border-radius:50%;margin-top:7px;background:var(--line2);box-shadow:0 0 0 4px var(--bg)}.activity-item[data-kind=add] .activity-dot{background:var(--ok)}.activity-item[data-kind=change] .activity-dot{background:var(--warn)}.activity-item[data-kind=delete] .activity-dot{background:var(--bad)}.activity-main b{display:block;font-size:14px}.activity-main p{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.7}.activity-item time{color:var(--muted2);font-size:11px;white-space:nowrap}.decision{margin-top:7px;padding:7px 9px;border-radius:9px;background:var(--bg);font-size:12px;color:var(--muted)}.starts{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:4px 0 10px}.starts button{padding:10px 4px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink,#1d2b24);font:600 13px/1 ui-monospace,monospace;direction:ltr;cursor:pointer}.starts button[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}.course-none{margin:8px 0;padding:10px;border-radius:10px;background:var(--bg);color:var(--muted);font-size:12.5px}.restored{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#eef6f0;border:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.7}.restored button{margin-inline-start:6px;border:0;background:none;color:var(--ok);font-weight:700;text-decoration:underline;cursor:pointer}article.card{scroll-margin-top:84px}.dept{margin:10px 0 4px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.7}.dept p{margin:4px 0 0}.dept[data-state=fixed]{background:var(--ok2);color:var(--ok);font-weight:700}.dept[data-state=rejected]{background:var(--bad2);color:var(--bad)}.dept .alts button{color:var(--ink)}.sendrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.sendrow .sign{display:grid;grid-template-columns:1fr;gap:3px;margin:0;justify-content:stretch;font-size:11.5px}.sendrow .sign input{padding:11px 10px}.sign input::placeholder{direction:rtl;letter-spacing:0}.sendrow #send{width:auto;min-width:118px;max-width:170px;padding:12px 14px;line-height:1.35}.sendbox{padding:10px 12px}.send{padding-top:12px}.send .signnote{margin:6px 0 0;font-size:11px}.tabs{position:static}.plan{margin:0 0 18px;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:0 5px 18px rgba(22,57,40,.035);overflow:hidden}.plan-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line)}.plan-head b{font-size:15px}.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}.legend span{display:inline-flex;align-items:center;gap:5px}.legend span::before{content:"";inline-size:9px;block-size:9px;border-radius:3px;background:var(--ok)}.legend span[data-act=change]::before{background:var(--warn)}.legend span[data-act=delete]::before{background:var(--bad)}.plan-scroll{overflow-x:auto}.plan-table{inline-size:100%;border-collapse:collapse;font-size:13px}.plan-table th{padding:9px 10px;text-align:start;font-size:11.5px;font-weight:600;color:var(--muted);background:var(--soft);white-space:nowrap}.plan-table td{padding:10px;border-top:1px solid var(--line);vertical-align:top;line-height:1.55}.plan-table td b{display:block;font-weight:600}.plan-table td small{display:block;font-size:11px;color:var(--muted2)}.plan-table td s{display:block;font-size:11.5px;color:var(--muted2)}.plan-table tr{cursor:pointer}.plan-table tr[data-act=add]{background:var(--ok2)}.plan-table tr[data-act=change]{background:var(--warn2)}.plan-table tr[data-act=delete]{background:var(--bad2)}.plan-table tr[data-act=delete] td:not(:last-child){text-decoration:line-through;color:var(--muted)}.plan-table td:first-child{box-shadow:inset -3px 0 0 transparent}.plan-table tr[data-act=add] td:first-child{box-shadow:inset -3px 0 0 var(--ok)}.plan-table tr[data-act=change] td:first-child{box-shadow:inset -3px 0 0 var(--warn)}.plan-table tr[data-act=delete] td:first-child{box-shadow:inset -3px 0 0 var(--bad)}.status{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--soft);color:var(--muted);white-space:nowrap}.status[data-act=add]{background:var(--ok);color:#fff}.status[data-act=change]{background:var(--warn);color:#fff}.status[data-act=delete]{background:var(--bad);color:#fff}.plan-check{margin-top:4px}.plan-check[data-tone=ok]{color:var(--ok)!important}.plan-check[data-tone=bad]{color:var(--bad)!important}.plan-check[data-tone=warn]{color:var(--warn)!important}.row-head .college{padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}.plan-table td:nth-child(3){white-space:nowrap;font-variant-numeric:tabular-nums}@media(max-width:520px){.plan-table{font-size:12px}.plan-table th,.plan-table td{padding:8px 6px}.plan-table td:nth-child(3){font-size:11.5px}}.verdict-next{display:block;margin-top:4px;font-size:12px;opacity:.85}.verdict{align-items:flex-start;gap:8px}.verdict[data-tone]:not([data-tone=""]){display:flex;flex-wrap:wrap}.verdict>span{flex:1;min-width:0}.verdict>i,.dept i{flex:none;display:inline-grid;place-items:center;inline-size:20px;block-size:20px;border-radius:50%;font-style:normal;font-size:12px;font-weight:700;background:currentColor;color:#fff}.verdict>i{background:currentColor}.verdict[data-tone=ok]>i{background:var(--ok);color:#fff}.verdict[data-tone=bad]>i{background:var(--bad);color:#fff}.verdict[data-tone=warn]>i{background:#b07d00;color:#fff}.verdict[data-tone=checking]>i{background:var(--line2);color:#fff}.verdict .alts{flex-basis:100%}.dept{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.dept>b{display:flex;align-items:center;gap:8px}.dept>p{flex-basis:100%}.dept[data-state=fixed] i{background:var(--ok);color:#fff}.dept[data-state=rejected] i{background:var(--bad);color:#fff}.row-head[data-toggle]{cursor:pointer;border-radius:10px}.row-head[data-toggle]::after{content:"";margin-inline-start:auto;inline-size:8px;block-size:8px;border-inline-end:2px solid var(--muted2);border-block-end:2px solid var(--muted2);transform:rotate(45deg);transition:transform .2s}.card[data-open="1"] .row-head[data-toggle]::after{transform:rotate(-135deg)}.row-head[data-toggle]:focus-visible{outline:2px solid var(--ok);outline-offset:3px}.activity-main .activity-meta{font-size:12px;color:var(--muted2)}.activity-meta[data-tone=ok]{color:var(--ok)}.activity-meta[data-tone=warn]{color:var(--warn)}.activity-meta[data-tone=bad]{color:var(--bad)}.decision[data-state=fixed]{color:var(--ok);font-weight:700}.decision[data-state=rejected]{color:var(--bad);font-weight:700}
+.activity-list{list-style:none;margin:0;padding:0;display:grid;gap:9px}.activity-item{position:relative;display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:start;padding:13px 14px;border:1px solid var(--line);border-radius:15px;background:var(--card)}.activity-dot{width:10px;height:10px;border-radius:50%;margin-top:7px;background:var(--line2);box-shadow:0 0 0 4px var(--bg)}.activity-item[data-kind=add] .activity-dot{background:var(--ok)}.activity-item[data-kind=change] .activity-dot{background:var(--warn)}.activity-item[data-kind=delete] .activity-dot{background:var(--bad)}.activity-main b{display:block;font-size:14px}.activity-main p{margin:3px 0 0;color:var(--muted);font-size:12.5px;line-height:1.7}.activity-item time{color:var(--muted2);font-size:11px;white-space:nowrap}.decision{margin-top:7px;padding:7px 9px;border-radius:9px;background:var(--bg);font-size:12px;color:var(--muted)}.starts{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:4px 0 10px}.starts button{padding:10px 4px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink,#1d2b24);font:600 13px/1 ui-monospace,monospace;direction:ltr;cursor:pointer}.starts button[aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}.course-none{margin:8px 0;padding:10px;border-radius:10px;background:var(--bg);color:var(--muted);font-size:12.5px}.restored{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#eef6f0;border:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.7}.restored button{margin-inline-start:6px;border:0;background:none;color:var(--ok);font-weight:700;text-decoration:underline;cursor:pointer}article.card{scroll-margin-top:84px}.dept{margin:10px 0 4px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.7}.dept p{margin:4px 0 0}.dept[data-state=fixed]{background:var(--ok2);color:var(--ok);font-weight:700}.dept[data-state=rejected]{background:var(--bad2);color:var(--bad)}.dept .alts button{color:var(--ink)}.sendrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}.sendrow .sign{display:grid;grid-template-columns:1fr;gap:3px;margin:0;justify-content:stretch;font-size:11.5px}.sendrow .sign input{padding:11px 10px}.sign input::placeholder{direction:rtl;letter-spacing:0}.sendrow #send{width:auto;min-width:118px;max-width:170px;padding:12px 14px;line-height:1.35}.sendbox{padding:10px 12px}.send{padding-top:12px}.send .signnote{margin:6px 0 0;font-size:11px}.tabs{position:static}.plan{margin:0 0 18px;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:0 5px 18px rgba(22,57,40,.035);overflow:hidden}.plan-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-bottom:1px solid var(--line)}.plan-head b{font-size:15px}.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}.legend span{display:inline-flex;align-items:center;gap:5px}.legend span::before{content:"";inline-size:9px;block-size:9px;border-radius:3px;background:var(--ok)}.legend span[data-act=change]::before{background:var(--warn)}.legend span[data-act=delete]::before{background:var(--bad)}.plan-scroll{overflow-x:auto}.plan-table{inline-size:100%;border-collapse:collapse;font-size:13px}.plan-table th{padding:9px 10px;text-align:start;font-size:11.5px;font-weight:600;color:var(--muted);background:var(--soft);white-space:nowrap}.plan-table td{padding:10px;border-top:1px solid var(--line);vertical-align:top;line-height:1.55}.plan-table td b{display:block;font-weight:600}.plan-table td small{display:block;font-size:11px;color:var(--muted2)}.plan-table td s{display:block;font-size:11.5px;color:var(--muted2)}.plan-table tr{cursor:pointer}.plan-table tr[data-act=add]{background:var(--ok2)}.plan-table tr[data-act=change]{background:var(--warn2)}.plan-table tr[data-act=delete]{background:var(--bad2)}.plan-table tr[data-act=delete] td:not(:last-child){text-decoration:line-through;color:var(--muted)}.plan-table td:first-child{box-shadow:inset -3px 0 0 transparent}.plan-table tr[data-act=add] td:first-child{box-shadow:inset -3px 0 0 var(--ok)}.plan-table tr[data-act=change] td:first-child{box-shadow:inset -3px 0 0 var(--warn)}.plan-table tr[data-act=delete] td:first-child{box-shadow:inset -3px 0 0 var(--bad)}.status{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--soft);color:var(--muted);white-space:nowrap}.status[data-act=add]{background:var(--ok);color:#fff}.status[data-act=change]{background:var(--warn);color:#fff}.status[data-act=delete]{background:var(--bad);color:#fff}.plan-check{margin-top:4px}.plan-check[data-tone=ok]{color:var(--ok)!important}.plan-check[data-tone=bad]{color:var(--bad)!important}.plan-check[data-tone=warn]{color:var(--warn)!important}.row-head .college{padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}.plan-table td:nth-child(3){white-space:nowrap;font-variant-numeric:tabular-nums}@media(max-width:520px){.plan-table{font-size:12px}.plan-table th,.plan-table td{padding:8px 6px}.plan-table td:nth-child(3){font-size:11.5px}}.verdict-next{display:block;margin-top:4px;font-size:12px;opacity:.85}.verdict{align-items:flex-start;gap:8px}.verdict[data-tone]:not([data-tone=""]){display:flex;flex-wrap:wrap}.verdict>span{flex:1;min-width:0}.verdict>i,.dept i{flex:none;display:inline-grid;place-items:center;inline-size:20px;block-size:20px;border-radius:50%;font-style:normal;font-size:12px;font-weight:700;background:currentColor;color:#fff}.verdict>i{background:currentColor}.verdict[data-tone=ok]>i{background:var(--ok);color:#fff}.verdict[data-tone=bad]>i{background:var(--bad);color:#fff}.verdict[data-tone=warn]>i{background:#b07d00;color:#fff}.verdict[data-tone=checking]>i{background:var(--line2);color:#fff}.verdict .alts{flex-basis:100%}.dept{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.dept>b{display:flex;align-items:center;gap:8px}.dept>p{flex-basis:100%}.dept[data-state=fixed] i{background:var(--ok);color:#fff}.dept[data-state=rejected] i{background:var(--bad);color:#fff}.row-head[data-toggle]{cursor:pointer;border-radius:10px}.row-head[data-toggle]::after{content:"";margin-inline-start:auto;inline-size:8px;block-size:8px;border-inline-end:2px solid var(--muted2);border-block-end:2px solid var(--muted2);transform:rotate(45deg);transition:transform .2s}.card[data-open="1"] .row-head[data-toggle]::after{transform:rotate(-135deg)}.row-head[data-toggle]:focus-visible{outline:2px solid var(--ok);outline-offset:3px}.activity-main .activity-meta{font-size:12px;color:var(--muted2)}.activity-meta[data-tone=ok]{color:var(--ok)}.activity-meta[data-tone=warn]{color:var(--warn)}.activity-meta[data-tone=bad]{color:var(--bad)}.decision[data-state=fixed]{color:var(--ok);font-weight:700}.decision[data-state=rejected]{color:var(--bad);font-weight:700}.thread{margin:10px 0 4px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);font-size:12.5px;line-height:1.7}.thread-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.thread-head b{font-size:13px}.neg{padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;background:var(--soft);color:var(--muted)}.neg[data-neg=proposed]{background:var(--warn2);color:var(--warn)}.neg[data-neg=agreed]{background:var(--ok2);color:var(--ok)}.neg[data-neg=rejected]{background:var(--bad2);color:var(--bad)}.msgs{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:6px}.msgs li{padding:7px 10px;border-radius:10px;background:var(--card);border:1px solid var(--line);max-inline-size:92%}.msgs li[data-from=instructor]{margin-inline-start:auto;background:var(--ok2)}.msgs li small{display:block;color:var(--muted2);font-size:11px}.msgs li p{margin:2px 0 0}.msgs .slots{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}.msgs .slot{padding:1px 8px;border-radius:999px;border:1px solid var(--line);font-size:11.5px}.thread-q{margin:4px 0}.thread .alts button{color:var(--ink)}.reply{display:grid;gap:6px;margin-top:6px}.reply textarea{inline-size:100%;padding:9px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;resize:vertical}.reply .sign,.reply .time{display:grid;gap:3px;margin:0;font-size:11.5px}.reply button[data-reply]{justify-self:start;padding:9px 16px;border-radius:10px;border:0;background:var(--ok);color:#fff;font:inherit;font-weight:700;cursor:pointer}
 .done{text-align:center;padding:44px 18px}
 .done .tick{width:58px;height:58px;border-radius:50%;background:var(--ok);color:#fff;font-size:30px;line-height:58px;margin:0 auto 14px}
 [hidden]{display:none!important}
@@ -17908,7 +18217,9 @@ d.toLocaleDateString("ar-KW-u-nu-latn",{month:"long",day:"numeric"})+" "+d.toLoc
 var EVENTS={"link-created":"أُنشئ الرابط","link-opened":"فُتح الرابط","submitted":"أرسلتَ طلبك",
 "received":"استلمه القسم","item-fixed":"ثُبّت بند","item-rejected":"رُفض بند",
 "alternative-offered":"عُرض عليك بديل","alternative-chosen":"اخترتَ بديلاً","settled":"أُغلق الطلب",
-"schedule-approved":"اعتُمد الجدول"};
+"schedule-approved":"اعتُمد الجدول","department-replied":"ردّ القسم واقترح","instructor-replied":"رددتَ على القسم","proposal-accepted":"وافقتَ على مقترح القسم"};
+/* ألفاظُ حالة الحوار من الموضع الواحد (instructorRequestThread)، لا نسخةٌ منها. */
+var NEG=${JSON.stringify(NEGOTIATION_LABEL)};
 function actionName(action){return action==="add"?"مضاف":action==="change"?"معدّل":action==="delete"?"محذوف":"كما هو"}
 function requestedText(it){
  if(it.action==="delete")return "حذف المقرر من الجدول";
@@ -17946,11 +18257,49 @@ var REASONS={room:"لا تتوفّر قاعة في هذا الوقت",instructor
    السببَ والبدائلَ حيث يعدّل، ويطبّق البديلَ بضغطة. */
 function decisionBox(it,i,open){var d=it.decision;if(!d||!d.state||d.state==="pending")return "";
  if(d.state==="fixed")return '<div class="dept" data-state="fixed"><i aria-hidden="true">✓</i>ثبّته القسم'+(d.note?' · '+esc(d.note):'')+'</div>';
- var alts=(d.alternatives||[]);
+ /* وحين يصير الرفضُ ببدائل حواراً، تُعرض البدائلُ في الحوار بزرّ «أوافق» (threadBox). */
+ var alts=it.negotiation==="proposed"?[]:(d.alternatives||[]);
  return '<div class="dept" data-state="rejected"><b><i aria-hidden="true">✕</i>رفضه القسم'+(d.reasonCode&&REASONS[d.reasonCode]?' · '+esc(REASONS[d.reasonCode]):'')+'</b>'+(d.note?'<p>'+esc(d.note)+'</p>':'')+
   (alts.length&&open?'<p>بدائل القسم:</p><div class="alts">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-dept-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+
   /* وبعد إغلاق الاستقبال تبقى البدائلُ مقروءة: هي جزءٌ من قرار القسم، لا زرٌّ فحسب. */
   (alts.length&&!open?'<p>بدائل القسم (للاطلاع — أُغلق استقبال الطلبات):</p><div class="alts alts-ro">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<span>'+fmtDays(ds)+" "+esc(a.start)+'</span>'}).join("")+'</div>':'')+'</div>'}
+/* ── الحوارُ مع القسم ───────────────────────────────────────────────────
+   بعد الإرسال يصير كلُّ بندٍ خيطاً: ما قاله القسم وما اقترحه، وما ردّ به
+   الأستاذ. وحالتُه من الخادم — بانتظار الرد، مقترح من القسم، موافَق — وزرُّ
+   «أوافق» على وقتٍ مقترح يجعله المطلوبَ في البند بلا إعادة إرسال الطلب كلِّه. */
+var replyDraft={};
+function slotText(a){var ds=a.days&&a.days.length?a.days:[a.day];return fmtDays(ds)+" "+a.start}
+function threadBox(it,i){var r=data.request,th=it.thread||[],neg=it.negotiation||"";
+ if(!r.submittedAt||!neg||it.action==="keep"&&!th.length)return "";
+ var last=th[th.length-1];
+ var offered=neg!=="proposed"?[]:(last&&last.from==="department"&&(last.slots||[]).length?last.slots:((it.decision&&it.decision.alternatives)||[]));
+ var h='<div class="thread" data-neg="'+esc(neg)+'"><div class="thread-head"><b>الحوار مع القسم</b><span class="neg" data-neg="'+esc(neg)+'">'+esc(NEG[neg]||"")+'</span></div>';
+ if(th.length)h+='<ol class="msgs">'+th.map(function(m){
+  var ss=(m.slots||[]).map(function(a){return '<span class="slot">'+esc(fmtDays(a.days&&a.days.length?a.days:[a.day]))+' <bdi dir="ltr">'+esc(a.start+" – "+a.end)+'</bdi></span>'}).join("");
+  return '<li data-from="'+esc(m.from)+'"><small>'+(m.from==="department"?esc(m.by||"القسم"):"أنت")+' · '+esc(dt(m.at))+'</small>'+(m.accepted?'<p>✓ وافقتَ على المقترح</p>':'')+(m.text?'<p>'+esc(m.text)+'</p>':'')+(ss?'<div class="slots">'+ss+'</div>':'')+'</li>'}).join("")+'</ol>';
+ else if(neg==="awaiting")h+='<p class="thread-q">وصل طلبك القسمَ، وردُّه يظهر هنا.</p>';
+ if(neg!=="agreed"){
+  h+=(offered.length?'<p class="thread-q">هل يناسبك أحد مقترحات القسم؟</p><div class="alts">'+offered.map(function(a,k){return '<button type="button" data-i="'+i+'" data-accept="'+k+'">أوافق: '+esc(slotText(a))+'</button>'}).join("")+'</div>':'')+
+   '<div class="reply"><textarea data-reply-text="'+i+'" rows="2" maxlength="400" placeholder="'+(offered.length?'أو اكتب ما يناسبك…':'اكتب ردّك للقسم…')+'"></textarea>'+
+   (it.action!=="delete"&&(it.slots||[]).length?'<label class="time"><span>اقترح بدايةً أخرى على الأيام نفسها (اختياري)</span><input type="time" data-reply-start="'+i+'"></label>':'')+
+   (signCivil.length===12?'':'<label class="sign"><span>رقمك المدني — توقيعك على الرد</span><input data-reply-civil="1" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا"></label>')+
+   '<button type="button" data-reply="'+i+'">أرسل الرد</button></div>';
+ }
+ return h+'</div>'}
+function sendReply(i,accept){var it=state[i],d=replyDraft[i]||{};if(!it)return;
+ if(signCivil.length!==12){focusItem(i,"اكتب رقمك المدني كاملاً — 12 رقمًا — فهو توقيعك على الرد.");return}
+ if(accept===null&&!String(d.text||"").trim()&&!d.start){focusItem(i,"اكتب ردّك أو اقترح وقتاً.");return}
+ fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/reply",{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({civil:signCivil,itemIndex:i,accept:accept,text:d.text||"",start:accept===null?(d.start||""):""})})
+ .then(function(r){return r.json().then(function(x){return{ok:r.ok,d:x}})}).then(function(x){
+  if(!x.ok){focusItem(i,x.d.error||"تعذّر إرسال الرد");return}
+  var fresh=(x.d.request.items||[])[i]||{};data.request=x.d.request;
+  it.thread=fresh.thread||[];it.negotiation=fresh.negotiation||"";it.decision=fresh.decision||null;
+  if(accept!==null){it.action=fresh.action||it.action;it.after=fresh.after||it.after;it.slots=fresh.slots||[];
+   it.days=it.slots.map(function(s){return s.day});it.start=it.slots[0]?it.slots[0].start:"";it.tone="";it.note=""}
+  delete replyDraft[i];openCards[i]=true;paint()})
+ .catch(function(){focusItem(i,"تعذّر الاتصال. تحقّق من الإنترنت.")});
+}
 /* جدولُه كما سيكون، بترتيب تقرير الاستعلامات وألوانه: الأخضرُ مضاف،
    والأصفرُ معدّل، والأحمرُ محذوف. يُقرأ بنظرة، والضغطُ على صفٍّ ينزل إلى
    بطاقته ليعدّلها. */
@@ -18025,9 +18374,9 @@ function paint(){
      وأيامٍ وأوقات يُفتح بلمسة. وما يحتاج انتباهاً — ما يُعدَّل الآن أو فيه
      مانع أو قرارٌ من القسم — يبقى مفتوحاً. */
   var decidedHere=it.decision&&it.decision.state&&it.decision.state!=="pending";
-  var expanded=openCards[i]!==undefined?!!openCards[i]:(!decidedHere&&(it.action==="change"||it.action==="add"||it.tone==="bad"));
+  var expanded=openCards[i]!==undefined?!!openCards[i]:(it.negotiation==="proposed"||!decidedHere&&(it.action==="change"||it.action==="add"||it.tone==="bad"));
   h+='<article class="card" data-act="'+it.action+'" data-open="'+(expanded?"1":"0")+'"><div class="row-head" data-toggle="'+i+'" role="button" tabindex="0" aria-expanded="'+expanded+'"><small>موعد '+(i+1)+'</small><b>'+esc(courseOf(it))+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(collegeOf(it)?'<small class="college">'+esc(shortCollege(collegeOf(it)))+'</small>':'')+tag+'</div>'+(it.action==="add"?'<p class="now">'+(it.days.length?esc(fmtDays(it.days)):'اختر الأيام')+' · '+(it.start?esc(it.start+" – "+endOf(it.days,it.start)):'اختر الوقت')+(toneText(it)?' · '+esc(toneText(it)):'')+'</p>':'<p class="now">'+esc(b.days||"")+(b.time?' · '+esc(b.time):'')+'</p>');
-  h+=decisionBox(it,i,open);
+  h+=decisionBox(it,i,open)+threadBox(it,i);
   if(open&&expanded){if(it.action!=="add")h+=it.action==="keep"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="change" aria-pressed="false">غيّر هذا الموعد</button><button type="button" data-i="'+i+'" data-a="delete" aria-pressed="false">احذف هذا الموعد</button></div>':it.action==="change"?'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">إلغاء التعديل</button><button type="button" data-i="'+i+'" data-a="delete">حذف الموعد بدلًا منه</button></div>':'<div class="pick"><button type="button" data-i="'+i+'" data-a="keep">تراجع عن الحذف</button></div>';
    else h+='<div class="pick"><button type="button" data-i="'+i+'" data-a="cancel-add">إلغاء الإضافة</button></div>';
    if(it.action==="change"||it.action==="add"){h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
@@ -18117,6 +18466,11 @@ function wire(){
  var civilBox=document.getElementById("civil");
  if(civilBox)civilBox.oninput=function(){signCivil=digitsOf(civilBox.value);civilBox.value=signCivil};
  var send=document.getElementById("send");if(send)send.onclick=submit;
+ host.querySelectorAll("[data-reply-text]").forEach(function(el){var i=+el.dataset.replyText;el.value=(replyDraft[i]||{}).text||"";el.oninput=function(){(replyDraft[i]=replyDraft[i]||{}).text=el.value}});
+ host.querySelectorAll("[data-reply-start]").forEach(function(el){var i=+el.dataset.replyStart;el.value=(replyDraft[i]||{}).start||"";el.onchange=function(){(replyDraft[i]=replyDraft[i]||{}).start=el.value}});
+ host.querySelectorAll("[data-reply-civil]").forEach(function(el){el.value=signCivil;el.oninput=function(){signCivil=digitsOf(el.value);el.value=signCivil}});
+ host.querySelectorAll("[data-reply]").forEach(function(el){el.onclick=function(){sendReply(+el.dataset.reply,null)}});
+ host.querySelectorAll("[data-accept]").forEach(function(el){el.onclick=function(){sendReply(+el.dataset.i,+el.dataset.accept)}});
 }
 /* الحكمُ يُسأل عنه الخادمُ عند كل تغيير: هو وحده يرى الجدول كاملاً، والصفحةُ
    ترى جدولَ صاحبها. وهي تعرض ما يقوله ولا تقرّر شيئاً بنفسها. */
@@ -18192,7 +18546,7 @@ fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
   sectionId:it.action==="add"?Number(a.sectionId||0):undefined,collegeName:it.action==="add"?(a.collegeName||""):"",
   before:it.before||it.after,after:it.after,slots:it.slots||[],days:(it.action==="change"||it.action==="add")?(it.slots||[]).map(function(s){return s.day}):[],
   start:(it.action==="change"||it.action==="add")&&it.slots&&it.slots[0]?it.slots[0].start:"",excuse:it.excuse||"",
-  decision:it.decision||null,tone:it.verdict==="clear"?"ok":it.verdict==="exception"?"warn":it.verdict==="conflict"?"bad":"",
+  decision:it.decision||null,thread:it.thread||[],negotiation:it.negotiation||"",tone:it.verdict==="clear"?"ok":it.verdict==="exception"?"warn":it.verdict==="conflict"?"bad":"",
   note:it.reasons&&it.reasons.length?it.reasons[0].text:(it.verdict==="clear"?"الوقت متاح":""),alts:it.nearestTimes||[]}});
  var draft=data.windowOpen?readDraft():null;
  if(draft&&Array.isArray(draft.items)){var byRow={};state.forEach(function(it){if(it.rowId!=null)byRow[it.rowId]=it});var adds=[];
@@ -18608,11 +18962,180 @@ app.get("/q/:token", async (req: Request, res: Response) => {
   const esc = (value: string) => String(value || "").replace(/[&<>"']/g,
     c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
   if ("error" in resolved) {
-    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
+    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}:root{${PUBLIC_LIGHT_VARS}}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}p{font-size:15px;color:var(--muted)}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:var(--brass)">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
     return;
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content=width=device-width,initial-scale=1><title>SCHEDULE</title><link rel=icon href=/schedule-icon.svg type=image/svg+xml><link rel=apple-touch-icon href=/schedule-icon-192.png></head><body><p dir=rtl>هذا الرابط ليس استبياناً.</p></body></html>"); return; }
   res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res), await demoPageHint(resolved.link, "survey")));
+});
+
+/* ── جدولُ الطلبة برمز QR ─────────────────────────────────────────────────────
+ *
+ * رابطٌ واحدٌ للقسم (kind: "students") يُطبع رمزُه على لوحة الإعلانات: يفتح
+ * جدولَ **الفصل الجاري** دائماً (currentTermId عند كل قراءة)، فلا يموت الملصق
+ * بانتقال الفصل. ويقرأ **المعتمد وحده** (finalRowsOnly) — لا مسودّةَ قسمٍ يعمل
+ * عليها. ولا بيانات أستاذٍ سوى اسمه المطبوع على الجداول أصلاً (ويُخفى إن شاء
+ * القسم). بحثٌ وتصفيةٌ باليوم، وعرضان: حسب المقرر، وحسب اليوم. */
+const STUDENT_QR_DAYS = 365;
+
+function studentSchedulePage(token: string, label: string, nonce: string): string {
+  return `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a100f">
+<meta name="robots" content="noindex,nofollow">
+<title>${label} · SCHEDULE</title>
+<link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/schedule-icon-192.png">
+<style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
+*,*::before,*::after{box-sizing:border-box}
+:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
+@media (prefers-color-scheme:light){:root{--bg:#f6f4ef;--card:#fff;--line:#e3ded3;--ink:#1b2320;--dim:#66736d;--jade:#1f7a63;--brass:#9a6c2e}}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased;padding:max(18px,env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))}
+.wrap{max-width:720px;margin:0 auto}
+.mark{font:600 12px/1 ui-monospace,monospace;letter-spacing:.26em;color:var(--brass)}
+h1{margin:10px 0 2px;font-size:22px;font-weight:600}
+.sub{margin:0;color:var(--dim);font-size:13px;line-height:1.8}
+.bar{position:sticky;top:0;z-index:2;background:var(--bg);padding:12px 0 8px;display:grid;gap:10px}
+input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);font:inherit;font-size:15px}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.chips button{flex:none;padding:7px 14px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--ink);font:inherit;font-size:13px;cursor:pointer}
+.chips button[aria-pressed=true]{background:var(--jade);border-color:var(--jade);color:var(--bg)}
+.card{margin:10px 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.card h2{margin:0 0 6px;font-size:16px;font-weight:600}
+.card h2 small{color:var(--dim);font-weight:500;font-size:12px;margin-inline-start:6px}
+.row{display:flex;flex-wrap:wrap;gap:4px 12px;padding:8px 0;border-top:1px dashed var(--line);font-size:13px;line-height:1.7}
+.row:first-of-type{border-top:0}
+.row b{color:var(--brass);font-weight:600}
+.row time{direction:ltr;unicode-bidi:isolate}
+.row i{font-style:normal;color:var(--dim)}
+.empty{text-align:center;color:var(--dim);padding:40px 0;font-size:14px}
+.foot{margin-top:24px;text-align:center;color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="mark">SCHEDULE</div>
+  <h1 id="title">${label}</h1>
+  <p class="sub" id="sub">يفتح…</p>
+  <div class="bar">
+    <input type="search" id="q" placeholder="ابحث باسم المقرر أو رمزه أو الشعبة" aria-label="بحث في الجدول" autocomplete="off">
+    <div class="chips" id="views" role="group" aria-label="طريقة العرض">
+      <button type="button" data-view="course" aria-pressed="true">حسب المقرر</button>
+      <button type="button" data-view="day" aria-pressed="false">حسب اليوم</button>
+    </div>
+    <div class="chips" id="days" role="group" aria-label="تصفية باليوم"></div>
+  </div>
+  <section id="list" aria-live="polite"></section>
+  <p class="foot">الجدول المعتمد للفصل الجاري · للقراءة فقط ويتحدّث من نفسه</p>
+</main>
+<script nonce="${nonce}">
+(function () {
+  var DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+  var token = ${JSON.stringify(token)};
+  var state = { rows: [], view: "course", day: -1, q: "" };
+  var list = document.getElementById("list");
+  function esc(v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function norm(v) { return String(v || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/\\s+/g, " ").trim(); }
+  function place(r) { return [r.room, r.hall].filter(Boolean).join("/"); }
+  /* البداية – النهاية داخل عزلٍ LTR، كما يكتبها formatScheduleTimeRange. */
+  function range(r) { return esc(r.start) + " – " + esc(r.end); }
+  function dayNames(r) { return r.days.map(function (d) { return DAYS[d]; }).join(" · "); }
+  function match(r) {
+    if (state.day >= 0 && r.days.indexOf(state.day) < 0) return false;
+    if (!state.q) return true;
+    return norm([r.name, r.code, r.section, r.instructor].join(" ")).indexOf(state.q) >= 0;
+  }
+  function line(r, withDays) {
+    return '<div class="row"><b>' + esc(r.section ? "شعبة " + r.section : "") + '</b>' +
+      (withDays ? "<span>" + esc(dayNames(r)) + "</span>" : "") +
+      '<time>' + range(r) + "</time>" +
+      (place(r) ? '<span dir="ltr">' + esc(place(r)) + "</span>" : "") +
+      (r.instructor ? "<i>" + esc(r.instructor) + "</i>" : "") + "</div>";
+  }
+  function render() {
+    var rows = state.rows.filter(match);
+    if (!rows.length) { list.innerHTML = '<p class="empty">' + (state.rows.length ? "لا نتائج مطابقة" : "لم يُعتمد جدول هذا الفصل بعد") + "</p>"; return; }
+    var html = "";
+    if (state.view === "course") {
+      var groups = {}, order = [];
+      rows.forEach(function (r) { var k = r.code + "|" + r.name; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(r); });
+      order.sort(function (a, b) { return a.localeCompare(b, "ar"); });
+      order.forEach(function (k) {
+        var g = groups[k];
+        html += '<article class="card"><h2>' + esc(g[0].name) + (g[0].code ? '<small dir="ltr">' + esc(g[0].code) + "</small>" : "") + "</h2>" +
+          g.sort(function (a, b) { return String(a.section).localeCompare(String(b.section), "ar", { numeric: true }); }).map(function (r) { return line(r, true); }).join("") + "</article>";
+      });
+    } else {
+      DAYS.forEach(function (name, d) {
+        if (state.day >= 0 && state.day !== d) return;
+        var today = rows.filter(function (r) { return r.days.indexOf(d) >= 0; }).sort(function (a, b) { return String(a.start).localeCompare(String(b.start)); });
+        if (!today.length) return;
+        html += '<article class="card"><h2>' + esc(name) + "</h2>" + today.map(function (r) {
+          return '<div class="row"><time>' + range(r) + "</time><b>" + esc(r.name) + "</b>" +
+            (r.section ? "<span>شعبة " + esc(r.section) + "</span>" : "") + (place(r) ? '<span dir="ltr">' + esc(place(r)) + "</span>" : "") +
+            (r.instructor ? "<i>" + esc(r.instructor) + "</i>" : "") + "</div>";
+        }).join("") + "</article>";
+      });
+    }
+    list.innerHTML = html;
+  }
+  function chips() {
+    var box = document.getElementById("days");
+    box.innerHTML = '<button type="button" data-day="-1" aria-pressed="' + (state.day < 0) + '">كل الأيام</button>' +
+      DAYS.map(function (n, d) { return '<button type="button" data-day="' + d + '" aria-pressed="' + (state.day === d) + '">' + n + "</button>"; }).join("");
+  }
+  document.getElementById("days").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return; state.day = Number(b.getAttribute("data-day")); chips(); render();
+  });
+  document.getElementById("views").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return; state.view = b.getAttribute("data-view");
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); }); render();
+  });
+  document.getElementById("q").addEventListener("input", function (e) { state.q = norm(e.target.value); render(); });
+  chips();
+  fetch("/api/public/students/" + encodeURIComponent(token), { cache: "no-store" })
+    .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "تعذّر فتح الجدول"); return d; }); })
+    .then(function (d) {
+      state.rows = d.rows || [];
+      document.getElementById("title").textContent = d.section || "جدول القسم";
+      document.getElementById("sub").textContent = [d.college, d.term].filter(Boolean).join(" · ");
+      render();
+    })
+    .catch(function (err) { document.getElementById("sub").textContent = err.message; list.innerHTML = ""; });
+})();
+</script>
+</body>
+</html>`;
+}
+
+/** الجدولُ المعتمد للفصل الجاري، لرابط الطلبة وحده. */
+app.get("/api/public/students/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (resolved.link.kind !== "students") { res.status(404).json({ error: "هذا الرابط ليس جدول الطلبة" }); return; }
+  const terms = await Repository.getTerms();
+  const termId = currentTermId(terms) || Number(resolved.link.AdTermId);
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  res.setHeader("Cache-Control", "no-store");
+  const payload = await buildSharePayload(resolved.link, { termId, finalOnly: true });
+  res.json({ ...payload, expiresAt: undefined, label: undefined });
+});
+
+app.get("/t/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  const esc = (value: string) => String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+  if ("error" in resolved || resolved.link.kind !== "students") {
+    res.status("error" in resolved ? resolved.status : 404).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title></head><body style="font-family:system-ui;text-align:center;padding:30vh 16px"><p>${esc("error" in resolved ? resolved.error : "هذا الرابط ليس جدول الطلبة")}</p></body></html>`);
+    return;
+  }
+  const sections = await Repository.getSections();
+  const title = sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "جدول القسم";
+  res.send(studentSchedulePage(resolved.link.id, esc(title), publicPageNonce(res)));
 });
 
 app.get("/s/:token", async (req: Request, res: Response) => {
@@ -18624,7 +19147,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   // the page instead of showing it. Set the header outright.
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   if ("error" in resolved) {
-    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
+    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}:root{${PUBLIC_LIGHT_VARS}}body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}p{font-size:15px;color:var(--muted)}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:var(--brass)">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
     return;
   }
   if (resolved.link.kind === "staff") {
@@ -18646,6 +19169,11 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   /* والاستبيانُ كذلك: رابطُ الطلبة يفتح الاستبيان وحالةَ الطلب، لا جدولَ القسم. */
   if (resolved.link.kind === "survey") {
     res.redirect(302, `/q/${encodeURIComponent(resolved.link.id)}`);
+    return;
+  }
+  /* ورابطُ الطلبة يفتح جدولَ الفصل الجاري المعتمد، لا نسخةَ الفصل الذي أُصدر فيه. */
+  if (resolved.link.kind === "students") {
+    res.redirect(302, `/t/${encodeURIComponent(resolved.link.id)}`);
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
@@ -18674,7 +19202,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   const slotHtml = (row: typeof payload.rows[number]) => `<span class="slot">
       <b>${esc(row.name)}</b>
       ${row.code || row.section ? `<small dir="ltr">${esc(row.code || "")}${row.section ? ` · ${esc(row.section)}` : ""}</small>` : ""}
-      <time dir="ltr">${esc(row.end)} - ${esc(row.start)}</time>
+      <time dir="ltr">${esc(row.start)} – ${esc(row.end)}</time>
       ${row.room || row.hall ? `<time dir="ltr">${esc([row.room, row.hall].filter(Boolean).join("/"))}</time>` : ""}
       ${row.instructor ? `<i>${esc(firstLast(row.instructor))}</i>` : ""}
     </span>`;
@@ -18694,13 +19222,13 @@ app.get("/s/:token", async (req: Request, res: Response) => {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a100f">
+<meta name="theme-color" content="${PUBLIC_THEME_COLOR}">
 <meta name="robots" content="noindex,nofollow">
 <title>${esc(payload.section)} · ${esc(payload.term)}</title>
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-:root{--bg:#0a100f;--card:#121a18;--line:#212b28;--ink:#eef2ee;--muted:#93a09a;--accent:#69c0a8;--brass:#d0a663}
+:root{${PUBLIC_LIGHT_VARS}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-size:15px;line-height:1.6;font-synthesis:none;font-kerning:normal;-webkit-font-smoothing:antialiased}
 .wrap{max-width:760px;margin:0 auto;padding:24px 18px 56px}
@@ -18710,7 +19238,7 @@ h1{margin:18px 0 4px;font-size:26px;font-weight:600;letter-spacing:0}
 .sub{color:var(--muted);font-size:14px}
 .tools{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 8px}
 .tools a{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 16px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);text-decoration:none;font-size:14px;font-weight:600}
-.tools a.primary{background:var(--accent);border-color:var(--accent);color:#04100d}
+.tools a.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 section{margin-top:26px}
 h2{margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:0;color:var(--brass)}
 article{display:grid;grid-template-columns:76px minmax(0,1fr);gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
@@ -18727,13 +19255,13 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
    lectures stacked inside in time order. Nothing is positioned, so nothing
    can overlap. */
 .pub-week{width:100%;margin-top:26px;border-collapse:collapse;table-layout:fixed;background:var(--card);border-radius:14px;overflow:hidden}
-.pub-week th{padding:10px 6px;text-align:center;font-size:12.5px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.pub-week th{padding:10px 6px;text-align:center;font-size:12.5px;font-weight:600;color:var(--brass);border:1px solid var(--line);background:rgba(19,24,23,.03)}
 .pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
 .pub-week th.t{width:58px;font:600 11px/1.4 ui-monospace,Menlo,monospace;color:var(--accent);vertical-align:top;padding-top:10px}
 /* عنوانُ العمود «الوقت» كلمةٌ عربية: بخطٍّ أحاديّ العرض تتفكّك حروفُها
    «الـوقـت». الأرقامُ تحته تبقى أحادية العرض لتصطفّ. */
 .pub-week thead th.t{font-family:inherit;font-size:11.5px;letter-spacing:0}
-.pub-week tbody th.t{background:rgba(255,255,255,.02)}
+.pub-week tbody th.t{background:rgba(19,24,23,.02)}
 .pub-week .slot{display:block;padding:9px 10px;border-bottom:1px dashed var(--line)}
 .pub-week .slot:last-child{border-bottom:0}
 .pub-week .slot b{display:block;font-size:12.5px;font-weight:600;line-height:1.35}
@@ -18925,6 +19453,12 @@ async function startServer() {
 
   if (!databaseFailure) await migrateLegacyAccountsToCommitteeRole();
   if (!databaseFailure) await reconcileDepartmentHeadPermissions();
+  /* الفصل التالي يُنشأ وحده (أكتوبر ← الثاني، يناير ← الصيفي، أبريل ← الأول). */
+  if (!databaseFailure) scheduleAutoTermJob({
+    isDemoMode: () => Repository.isDemoMode(),
+    createTermIfAbsent: (name, dates) => Repository.createTermIfAbsent(name, dates),
+    log: message => console.log(message),
+  });
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {

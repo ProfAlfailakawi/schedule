@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { BookOpen, Building2, GraduationCap, Trash2 } from "lucide-react";
 import { sortByName, byArabic } from "../utils/sorting";
 import CurriculumPlans from "./CurriculumPlans";
+import { sectionLabels } from "../utils/sectionLabel";
 import { decimalText, numericText } from "../utils/digits";
 import type { AdSection } from "../types";
 import type { CurriculumPlan } from "../types";
@@ -355,6 +356,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
   const createBlocked = mode === "create" && Boolean(sectionId) && Boolean(
     curriculumTarget?.loading || curriculumTarget?.error || (!curriculumTarget?.plan && !(curriculumTarget?.bootstrap && bootstrapOk)),
   );
+  const listSections = useMemo(() => sections.filter((s) => !listCollege || s.AdCollegeId === listCollege), [sections, listCollege]),
+    listSectionLabel = useMemo(() => sectionLabels(listSections, colleges), [listSections, colleges]);
   const hasPlans = useMemo(() => items.some(item => planTagOf(item)), [items]);
 
   const editorDrawer = mode !== "index" ? (
@@ -546,7 +549,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
               aria-label="تصفية بالقسم"
             >
               <option value={0}>كل الأقسام</option>
-              {sections.filter((s) => !listCollege || s.AdCollegeId === listCollege).map((s) => <option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}
+              {listSections.map((s) => <option key={s.AdSectionId} value={s.AdSectionId}>{listSectionLabel.get(s.AdSectionId) || s.AdSectionName}</option>)}
             </select>
             {hasPlans ? (
               <select
@@ -627,6 +630,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       {curriculumOpen ? (
         <CurriculumPlans
           sections={sections}
+          colleges={colleges}
+          collegeId={listCollege}
           initialSectionId={curriculumSectionId || listSection || Number(selected?.AdSectionId || 0)}
           onClose={() => { setCurriculumOpen(false); setCurriculumProbe(value => value + 1); }}
           onChanged={() => { void load(); setCurriculumProbe(value => value + 1); }}

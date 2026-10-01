@@ -13,7 +13,9 @@ import fs from "fs";
 import path from "path";
 import {
   createDemoSandboxState, DEMO_ROLE_ACCOUNTS, DEMO_MULTI_SITE, DEMO_MATH, DEMO_CS_VISITING_INSTRUCTOR_ID, DEMO_PREVIOUS_TERM_ID,
+  DEMO_REGULATION_SECTION_ID, DEMO_REGULATION_RUN_INSTRUCTOR_ID,
 } from "../src/db/demoSandbox";
+import { reviewSchedule } from "../src/utils/scheduleRegulations";
 import { roleDefinition } from "../src/utils/academicRoles";
 import { AR, countOf } from "../src/utils/arabicCount";
 import { finalSourceFor } from "../src/utils/finality";
@@ -88,6 +90,25 @@ check(seed.includes('String(row.AdSectionCode) === "ISL"') && seed.includes("sur
 
 /* ── 6: لا تسرّب: البذرُ كلُّه في الصندوق ─────────────────────────────────── */
 check(roleDefinition("dean").readOnly && seed.includes("if (!Repository.isDemoRequest()) return;"), "البذرُ لا يعمل خارج الصندوق التجريبي");
+
+/* ── 7: شاشةُ الاعتماد تُري المخالفة: قسمٌ عند التسجيل بمخالفتين لائحيتين مقصودتين ── */
+{
+  const reg = approvalOf(1, DEMO_REGULATION_SECTION_ID) as any;
+  const regRows = current.filter(row => row.AdCollegeId === 1 && row.AdSectionId === DEMO_REGULATION_SECTION_ID);
+  const findings = reviewSchedule({
+    rows: regRows as any,
+    courses: new Map(state.courses.map(row => [Number(row.AdCourseId), row])),
+    instructors: new Map(state.instructors.map(row => [Number(row.AdInstructorId), row])),
+  });
+  const rules = new Set(findings.map(item => item.rule));
+  check(reg?.status === "submitted", "القسم ذو المخالفات عند التسجيل — يظهر في وارد الاعتماد");
+  check(rules.has("consecutive-sections") && rules.has("sections-same-hour"), `مخالفتا م.6/3 و م.7/5 تظهران في مراجعة اللائحة (${[...rules].join("، ")})`);
+  check(findings.filter(item => item.approvalEffect !== "block").length === reg?.signatures?.[0]?.regulationNoticeCount, "والتوقيعُ يحمل عددَ الملاحظات اللائحية نفسه («وقّع مع علمه بـ…»)");
+  check(approvalBlockerCount(regRows as any, current as any, opts) === 0, "والمخالفاتُ مراجعةٌ لا مانع: الجدول المرسَل بلا مانع اعتماد");
+  const run = regRows.filter(row => row.AdInstructorId === DEMO_REGULATION_RUN_INSTRUCTOR_ID && row.fthursday);
+  check(run.length === 4 && run.every(row => String(row.fdetail).includes("حالة تجريبية مقصودة")), "كلُّ صفٍّ مخالفٍ مشروحٌ في ملاحظته بأنه مقصود");
+  check(!state.schedules.some(row => row.AdTermId === DEMO_PREVIOUS_TERM_ID && String(row.fdetail || "").includes("م.6/3")), "ولا تُورَّث المخالفةُ إلى الفصل السابق");
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

@@ -5,7 +5,7 @@
  */
 import React, { useState, type ReactElement } from "react";
 import {
-  BadgeCheck, CheckCheck, CircleX, Eye, History, Inbox, Link2, Replace, Send, ShieldCheck, Wrench,
+  BadgeCheck, CheckCheck, CircleX, Eye, History, Inbox, Link2, MessageSquare, Replace, Send, ShieldCheck, Wrench,
 } from "lucide-react";
 import type { InstructorRequest, InstructorRequestEvent, InstructorRequestEventKind } from "../../types";
 import { DnaStepper, DnaTimeline, type DnaStep, type DnaTone } from "./index";
@@ -68,6 +68,9 @@ const EVENT: Record<InstructorRequestEventKind, { title: string; icon: ReactElem
   "alternative-chosen": { title: "اختار بديلاً", icon: <BadgeCheck />, tone: "lilac" },
   "settled": { title: "انتهى الطلب", icon: <CheckCheck />, tone: "accent" },
   "schedule-approved": { title: "اعتُمد الجدول", icon: <ShieldCheck />, tone: "mint" },
+  "department-replied": { title: "ردّ القسم واقترح", icon: <MessageSquare />, tone: "amber" },
+  "instructor-replied": { title: "ردّ الأستاذ", icon: <MessageSquare />, tone: "sky" },
+  "proposal-accepted": { title: "وافق الأستاذ على المقترح", icon: <BadgeCheck />, tone: "mint" },
 };
 
 const eventDate = (iso: string) => {
