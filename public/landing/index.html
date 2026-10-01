@@ -420,6 +420,10 @@
       display: flex;
       gap: 6px;
     }
+    @media (max-width: 520px) {
+      .frame-topbar { height: auto; min-height: 46px; padding-block: 6px; gap: 8px; }
+      .frame-topbar > div:last-child { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+    }
     .frame-dot {
       width: 10px;
       height: 10px;
@@ -526,6 +530,7 @@
       gap: 32px;
       align-items: center;
     }
+    .benchmark-stage > * { min-width: 0; }
     @media (min-width: 880px) {
       .benchmark-stage { grid-template-columns: 1.25fr 1fr; gap: 40px; }
     }
@@ -533,7 +538,7 @@
     /* Dials Grid (Slide 3 from presentation - 6 Studies) */
     .dials {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 1px;
       background: var(--line);
       border: 1px solid var(--line);
@@ -541,9 +546,10 @@
       overflow: hidden;
     }
     @media (min-width: 600px) {
-      .dials { grid-template-columns: repeat(3, 1fr); }
+      .dials { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     .dial {
+      min-width: 0;
       background: var(--surface);
       padding: 24px 18px;
       display: flex;
@@ -596,12 +602,20 @@
       color: var(--muted);
       font-weight: 500;
     }
+    .dial__txt {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
     .dial__t {
-      font-family: var(--font-mono);
+      font-family: "IBM Plex Mono", "IBM Plex Sans Arabic", monospace;
       font-size: 1.3rem;
       font-weight: 700;
       color: #ffffff;
       direction: ltr;
+      unicode-bidi: plaintext;
     }
     .dial__s {
       font-size: 0.74rem;
@@ -1397,23 +1411,27 @@
       .form-grid { grid-template-columns: 1fr 1fr; }
     }
     .form-field {
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
     .form-field.full { grid-column: 1 / -1; }
+    .form-field .btn { white-space: normal; text-align: center; }
     .form-label {
       font-size: 0.86rem;
       font-weight: 600;
       color: var(--ink);
     }
     .form-ctrl {
+      min-width: 0;
       min-height: 46px;
       padding: 10px 14px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--line-strong);
       background: #090e0c;
       color: #ffffff;
+      font-family: inherit;
       font-size: 0.92rem;
       outline: none;
       transition: border-color 0.2s ease;
@@ -1835,7 +1853,7 @@
                 <div id="sim-log-text" style="font-size:0.82rem; color:var(--ink-dim); min-height:22px; margin-bottom:12px;">
                   <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> تم مسح 89 صفاً · 34 أستاذاً · 9 قاعات دراسية دون أي تعارض زمني
                 </div>
-                <div style="display:flex; gap:10px;">
+                <div style="display:flex; gap:10px; flex-wrap:wrap;">
                   <button type="button" id="btn-run-sim" class="btn btn-brass" style="padding:8px 18px; font-size:0.85rem;" onclick="startLiveProcessingSim()">
                     <span><svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg> تشغيل محاكاة المعالجة الحية</span>
                   </button>
