@@ -630,7 +630,18 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     const by = String(req.user?.Name || req.user?.SystemUserLogin || "");
     try {
       const result = await Repository.commitStudyProposal({
-        proposalId: proposal.id, expectedRev, creates, updates, deletes,
+        proposalId: proposal.id, expectedRev, creates, updates, deletes, termId: proposal.AdTermId,
+        /* ما قُيِّم عليه المقترح ثم تغيّر قبل الكتابة (صفٌّ جديد أو معدَّل للأستاذ أو الشعبة أو القاعة) يُلغي التثبيت كاملاً. */
+        guard: termRows => {
+          const seen = new Map<number, number>(world.termRows.map((r: FSchedule) => [Number(r.id), Number(r.rev || 0)]));
+          const rooms = new Set(creates.concat(updates.map(u => ({ ...(liveById.get(u.id) as any), ...u.fields }))).map((r: any) => `${r.buildingId}|${r.roomId}|${r.AdRoomCode}`));
+          const courses = new Set(creates.map((r: any) => `${r.AdCourseId}`));
+          const relevant = (r: any) => Number(r.AdInstructorId) === proposal.AdInstructorId || courses.has(`${r.AdCourseId}`) || rooms.has(`${r.buildingId}|${r.roomId}|${r.AdRoomCode}`);
+          for (const row of termRows) {
+            if (!relevant(row)) continue;
+            if (!seen.has(Number(row.id)) || seen.get(Number(row.id)) !== Number(row.rev || 0)) throw new ScheduleRevisionConflict(row);
+          }
+        },
         build: created => {
           createOpIds.forEach((opId, index) => entry(opId).created.push(created[index].id));
           const at = new Date().toISOString();
@@ -705,7 +716,8 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
     const placeholderId = [...world.placeholders].sort((a, b) => a - b)[0] || null;
     const applied = applyProposalOps(world.termRows, ops, {
       instructorId: proposal.AdInstructorId, termId: proposal.AdTermId, placeholderId,
-      onlyOpIds: proposal.commit ? undefined : undefined,
+      /* بعد التثبيت صارت الصفوف حيّة: لا تُعاد العمليات عليها، فيُعرض الجدول الفعلي كما هو. */
+      onlyOpIds: proposal.commit ? new Set<string>() : undefined,
     });
     const incomingRowIds = new Map<number, string>();
     for (const [opId, row] of applied.incoming) incomingRowIds.set(Number(row.id), opId);
@@ -830,7 +842,9 @@ export function registerStudyProposalRoutes(app: Express, deps: StudyProposalRou
 
       /* ضغطةٌ مكرّرة بالرد نفسه لا تُسجَّل مرتين. */
       const last = [...proposal.responses].reverse().find(r => r.by === "instructor" && r.version === proposal.sentVersion);
-      const same = last && JSON.stringify(last.decisions) === JSON.stringify(decisions) && (last.note || "") === note && (last.reason || "") === (reason || "");
+      const same = last && JSON.stringify(last.decisions) === JSON.stringify(decisions) && (last.note || "") === note && (last.reason || "") === (reason || "")
+        && (last.suggestedStart || "") === (wantsChange ? suggestedStart : "")
+        && JSON.stringify(last.suggestedDays || []) === JSON.stringify(wantsChange ? suggestedDays : []);
       if (same) { res.json({ ok: true, duplicate: true, proposal: await publicView(proposal, world, true) }); return; }
 
       const at = new Date().toISOString();

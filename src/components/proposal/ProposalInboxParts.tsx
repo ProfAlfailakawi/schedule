@@ -3,7 +3,7 @@
  *
  * قطعتان صغيرتان تُعلَّقان بالحوار الموجود دون أن تغيّراه: شريطُ المقترحات في
  * بطاقة الطلب (مع زرّ «إعداد مقترح دراسي» وسجلِّ ما جرى كأنه حوار)، وشريطٌ
- * علويٌّ يبدأ مقترحاً لأيِّ أستاذٍ ولو لم يطلب شيئاً.
+ * علويٌّ يبدأ مقترحاً لأيِّ أستاذٍ له طلبٌ في الوارد (الرابط الشخصي يقوم على الطلب).
  */
 import React, { useMemo, useState } from "react";
 import { CalendarClock, CheckCircle2, ClipboardPen, MessageSquareWarning, Send, ShieldCheck, ThumbsUp, Clock, Ban, FileClock } from "lucide-react";
@@ -101,7 +101,7 @@ export function ProposalStrip({ requestId, proposals, onOpen, itemIndex = null, 
   );
 }
 
-/** شريطٌ علويّ: يبدأ مقترحاً لأيّ أستاذٍ في الوارد، ويعدّ ما ينتظر. */
+/** شريطٌ علويّ: يبدأ مقترحاً لأيّ أستاذٍ له طلبٌ في الوارد، ويعدّ ما ينتظر. */
 export function ProposalLauncherBar({ rows, proposals, onOpen }: {
   rows: Array<{ id: string; instructorName: string }>;
   proposals: StaffProposalView[];

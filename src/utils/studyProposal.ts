@@ -365,7 +365,7 @@ export function validateOps(ops: readonly StudyProposalOp[]): OpIssue[] {
   for (const op of ops) {
     issues.push(...validateOp(op));
     if (op.source) {
-      if (sources.has(op.source.id)) issues.push({ opId: op.id, field: "source", message: "الموعد المرجعي نفسه مستعمل في مادةٍ أخرى من المقترح." });
+      if (sources.has(op.source.id) || outs.has(op.source.id)) issues.push({ opId: op.id, field: "source", message: "الموعد المرجعي نفسه مستعمل في مادةٍ أخرى من المقترح." });
       sources.set(op.source.id, op.id);
     }
     if (op.out) {

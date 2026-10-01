@@ -4423,6 +4423,9 @@ export const Repository = {
   commitStudyProposal: async (plan: {
     proposalId: string;
     expectedRev: number;
+    /** الفصل ودالّةُ حارسٍ تُشغَّل على صفوفه المقروءة داخل المعاملة نفسها (فتدخل في مجموعة القراءة). */
+    termId?: number;
+    guard?: (termRows: FSchedule[]) => void;
     creates: Array<Omit<FSchedule, "id">>;
     updates: Array<{ id: number; fields: Partial<FSchedule>; expectedRev: number }>;
     deletes: Array<{ id: number; expectedRev: number }>;
@@ -4441,6 +4444,10 @@ export const Repository = {
         const current = proposalDoc.data() as StudyProposal;
         if (current.commit || current.status === "committed") throw new StudyProposalAlreadyCommitted(current);
         if (Number(current.rev || 0) !== plan.expectedRev) throw new StudyProposalRevisionConflict(current);
+        if (plan.guard && plan.termId !== undefined) {
+          const termSnap = await transaction.get(firestoreDb!.collection("schedules").where("AdTermId", "==", plan.termId));
+          plan.guard(termSnap.docs.map(doc => doc.data() as FSchedule));
+        }
         const refs = [...updateRefs, ...deleteRefs];
         const docs = refs.length ? await transaction.getAll(...refs) : [];
         const updated: FSchedule[] = [];
@@ -4470,6 +4477,7 @@ export const Repository = {
     const current = db.studyProposals[at];
     if (current.commit || current.status === "committed") throw new StudyProposalAlreadyCommitted(current);
     if (Number(current.rev || 0) !== plan.expectedRev) throw new StudyProposalRevisionConflict(current);
+    if (plan.guard && plan.termId !== undefined) plan.guard(db.schedules.filter(r => Number(r.AdTermId) === plan.termId));
     for (const item of [...plan.updates, ...plan.deletes]) {
       const row = db.schedules.find(r => r.id === item.id);
       if (!row) throw new Error("الجدول غير موجود");

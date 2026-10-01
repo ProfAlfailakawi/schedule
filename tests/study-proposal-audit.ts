@@ -149,6 +149,7 @@ const replace: StudyProposalOp = {
 /* ── ٩) التحقق من شكل المواد ─────────────────────────────────────────── */
 {
   check(validateOps([assign, create, edit, replace]).length === 1, "المصدر المكرر وحده يُنبَّه إليه (الإسناد والاستبدال يستعملان الشعبة 10 معاً)");
+  check(validateOps([replace, { ...edit, source: replace.out!.snapshot }]).some(i => i.field === "source"), "موعدٌ خارجٌ في مادةٍ لا يصلح مصدراً لمادةٍ لاحقة");
   check(validateOps([{ ...create, target: { ...create.target, SCode: "ab" } }]).some(i => i.field === "SCode"), "رقم الشعبة أرقامٌ فقط");
   check(validateOps([{ ...create, target: { ...create.target, days: [] } }]).some(i => i.field === "days"), "يومٌ واحد على الأقل");
   check(validateOps([{ ...create, target: { ...create.target, fstarttime: "10:00", fendtime: "09:00" } }]).some(i => i.field === "time"), "النهاية بعد البداية");
