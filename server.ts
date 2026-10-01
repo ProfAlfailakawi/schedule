@@ -14126,15 +14126,23 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     Repository.getTerms(), Repository.getCoursesBySection(sectionId), Repository.getRegistrationStats(collegeId, sectionId, termId),
   ]);
   const term = terms.find(row => Number(row.AdTermId) === termId);
-  const similar: Array<{ AdTermId: number; AdTermName: string }> = [];
+  /* الفصول المماثلة (الموسم نفسه، ٣ سنوات سابقة) أولاً، ثم أحدثُ ٣ فصولٍ أخرى قبل
+     هذا الفصل بوزنٍ أخفّ — الحساب في src/utils/sectionCountSuggestion.ts. */
+  const similar: Array<{ AdTermId: number; AdTermName: string; similar: boolean }> = [];
   let name = String(term?.AdTermName || "");
   for (let i = 0; i < 3; i++) {
     name = previousYearSameTermName(name);
     if (!name) break;
     const found = terms.find(row => sameTermName(row.AdTermName, name));
-    if (found) similar.push({ AdTermId: Number(found.AdTermId), AdTermName: String(found.AdTermName) });
+    if (found) similar.push({ AdTermId: Number(found.AdTermId), AdTermName: String(found.AdTermName), similar: true });
   }
-  const history: Record<string, Array<{ termName: string; sections: number; headcount?: number }>> = {};
+  const targetRank = termChronologyServer(term);
+  sortTermsNewestServer(terms)
+    .filter(row => termChronologyServer(row) < targetRank && !similar.some(item => item.AdTermId === Number(row.AdTermId)))
+    .slice(0, 3)
+    .forEach(row => similar.push({ AdTermId: Number(row.AdTermId), AdTermName: String(row.AdTermName), similar: false }));
+  const history: Record<string, Array<{ termName: string; sections: number; headcount?: number; similar: boolean }>> = {};
+  const department: Array<{ termName: string; similar: boolean; sections: number; instructors: number; halls: number }> = [];
   for (const past of similar) {
     const [rows, pastStats] = await Promise.all([
       Repository.getSchedulesByScope({ collegeId, sectionId, termId: past.AdTermId }),
@@ -14146,15 +14154,22 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
       if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
       sectionsOf.get(id)!.add(String(row.SCode || row.id));
     }
+    department.push({
+      termName: past.AdTermName, similar: past.similar,
+      sections: [...sectionsOf.values()].reduce((sum, set) => sum + set.size, 0),
+      instructors: new Set(rows.map(row => Number(row.AdInstructorId)).filter(id => id > 0)).size,
+      halls: new Set(rows.map(row => roomIdentityKey(row as any)).filter(Boolean)).size,
+    });
     for (const course of courses) {
       const key = String(course.AdCourseId);
       const headcount = Number(pastStats?.counts?.[key] || 0);
-      (history[key] ||= []).push({ termName: past.AdTermName, sections: sectionsOf.get(Number(course.AdCourseId))?.size || 0, ...(headcount ? { headcount } : {}) });
+      (history[key] ||= []).push({ termName: past.AdTermName, similar: past.similar, sections: sectionsOf.get(Number(course.AdCourseId))?.size || 0, ...(headcount ? { headcount } : {}) });
     }
   }
   res.json({
     termName: term?.AdTermName || "",
-    similarTerms: similar.map(item => item.AdTermName),
+    similarTerms: similar.filter(item => item.similar).map(item => item.AdTermName),
+    department,
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
     counts: stats?.counts || {},
     accepted: stats?.accepted || {},

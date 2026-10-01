@@ -2,33 +2,54 @@
  * اقتراحُ عدد الشعب من إحصاء التسجيل، ورمزُ QR لجدول الطلبة (المعتمد، الفصل الجاري).
  */
 import fs from "fs";
-import { historicalPerSection, suggestSectionCount } from "../src/utils/sectionCountSuggestion";
+import { departmentLoadWarning, departmentTypicalTotal, historicalBaseline, NO_HISTORY_MAX, rangeLabel, suggestSectionCount } from "../src/utils/sectionCountSuggestion";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
 
-/* ── الحساب ── */
-const hist = [
-  { termName: "الفصل الأول 2025/2026", sections: 3, headcount: 72 },  // 24/شعبة
-  { termName: "الفصل الأول 2024/2025", sections: 2, headcount: 60 },  // 30
-  { termName: "الفصل الأول 2023/2024", sections: 2, headcount: 36 },  // 18
+/* ── مدىً يرسيه التاريخ ── */
+const firsts = [
+  { termName: "الفصل الأول 2025/2026", sections: 3, headcount: 140, similar: true },
+  { termName: "الفصل الأول 2024/2025", sections: 3, headcount: 130, similar: true },
+  { termName: "الفصل الأول 2023/2024", sections: 2, headcount: 100, similar: true },
+  { termName: "الفصل الصيفي 2025/2026", sections: 1, similar: false },
 ];
-let s = suggestSectionCount(70, 25, hist);
-check(s.suggested === 3 && s.basis === "capacity" && s.reason.includes("الفصل الأول 2025/2026"), `السعة: ⌈70÷25⌉ = 3 ويُذكر آخر فصل مماثل — ${s.reason}`);
-check(suggestSectionCount(75, 25, []).suggested === 3 && suggestSectionCount(76, 25, []).suggested === 4, "حدّ السعة: 75 ← 3، 76 ← 4");
-check(suggestSectionCount(1, 40, []).suggested === 1, "طالبٌ واحد ← شعبةٌ واحدة");
-s = suggestSectionCount(0, 25, hist);
-check(s.suggested === 0 && s.basis === "empty", "صفرُ طلبة ← صفرُ شعب");
-const per = historicalPerSection(hist)!;
-check(Math.abs(per - (3 * 24 + 2 * 30 + 1 * 18) / 6) < 1e-9, `المتوسط الموزون 3/2/1 للأقرب = ${per.toFixed(2)}`);
-s = suggestSectionCount(50, 0, hist);
-check(s.suggested === Math.ceil(50 / Math.round(per)) && s.basis === "history-capacity", `بلا سعة: السعة من التاريخ (${Math.round(per)}) ← ${s.suggested}`);
-s = suggestSectionCount(50, null, [{ termName: "الفصل الثاني 2025/2026", sections: 4 }]);
-check(s.suggested === 4 && s.basis === "history-sections", "بلا سعة ولا أعداد: عددُ شعب آخر فصلٍ مماثل");
-s = suggestSectionCount(50, undefined, []);
-check(s.suggested === null && s.basis === "none", "لا سعة ولا تاريخ ← لا اقتراح ويُقال ذلك");
-check(suggestSectionCount(50, 0, [{ termName: "x", sections: 0, headcount: 40 }, { termName: "y", sections: 2, headcount: 40 }]).suggested === 3,
-  "فصلٌ بلا شعب لا يدخل المتوسط (40÷2=20 ← ⌈50÷20⌉=3)");
+const base = historicalBaseline(firsts)!;
+check(base.sections === 3 && base.label.includes("آخر 3 فصول أولى"), `الأساس الموزون: 3 شعب (${base.label})`);
+
+/* ملاحظة صاحب النظام: 15000 طالب وسعة 50 ← لا 300 شعبة، ولا «غير معقول» */
+let s = suggestSectionCount(15000, 50, firsts);
+check(s.min === 3 && s.max === 4 && s.suggested === 4 && !("warning" in s) && s.headline === "يُقترح هذا الفصل 3 إلى 4 شعب",
+  `15000 طالباً: التاريخ يقود — ${s.headline} · ${s.reason}`);
+s = suggestSectionCount(15000, 50, []);
+check(s.max === NO_HISTORY_MAX && s.min === NO_HISTORY_MAX && s.reason.includes("لا تاريخ لهذا المقرر"), `15000 بلا تاريخ: مدى السعة مسقوفاً عند ${NO_HISTORY_MAX}`);
+
+const fifteen = [{ termName: "الفصل الأول 2025/2026", sections: 15, similar: true }, { termName: "الفصل الأول 2024/2025", sections: 15, similar: true }];
+s = suggestSectionCount(800, 50, fifteen);
+check(s.headline === "يُقترح هذا الفصل 15 إلى 16 شعبة", `مثال صاحب النظام: ${s.headline}`);
+check(suggestSectionCount(5000, 50, fifteen).max === 17, "أساس 15 وتسجيلٌ ضخم: أقصى +2 ← 15 إلى 17");
+check(suggestSectionCount(300, 50, fifteen).min === 13 && suggestSectionCount(300, 50, fifteen).max === 15, "تسجيلٌ قليل: أقصى −2 ← 13 إلى 15");
+s = suggestSectionCount(190, 50, firsts);
+check(s.min === 3 && s.max === 4 && s.reason.includes("فُتحت عادةً 3 شعب") && s.reason.includes("التسجيل أعلى قليلاً"), `أعلى قليلاً — ${s.reason}`);
+s = suggestSectionCount(140, 50, firsts);
+check(s.min === 3 && s.max === 3 && s.headline === "يُقترح هذا الفصل 3 شعب" && s.reason.includes("في حدود المعتاد"), "في حدود المعتاد ← 3");
+check(suggestSectionCount(120, 0, firsts).max === 3 && suggestSectionCount(180, 0, firsts).max === 4, "بلا سعة: متوسط طلبة الشعبة التاريخي (≈43) يقيس الميل");
+check(suggestSectionCount(0, 50, firsts).suggested === 0, "صفرُ طلبة ← صفرُ شعب");
+const othersOnly = [{ termName: "الفصل الثاني 2025/2026", sections: 2, similar: false }, { termName: "الفصل الأول 2025/2026", sections: 2, similar: false }];
+check(historicalBaseline(othersOnly)?.label.includes("أحدث") === true && suggestSectionCount(90, 50, othersOnly).max === 2, "بلا مماثل: أحدث الفصول");
+s = suggestSectionCount(76, 25, []);
+check(s.min === 3 && s.max === 4 && s.reason.includes("لا تاريخ لهذا المقرر"), "بلا تاريخ: مدى السعة 3 إلى 4");
+check(suggestSectionCount(50, 0, []).suggested === null, "لا تاريخ ولا سعة ← لا اقتراح");
+check(rangeLabel(15, 16) === "يُقترح هذا الفصل 15 إلى 16 شعبة", "صيغة المدى");
+
+/* ── القسم كله ── */
+const dept = [{ termName: "الفصل الأول 2025/2026", sections: 30, instructors: 12, halls: 8, similar: true }, { termName: "الفصل الثاني 2025/2026", sections: 26, instructors: 11, halls: 7, similar: false }];
+check(departmentTypicalTotal(dept) === 30, "المعتاد للقسم من الفصول المماثلة");
+check(departmentLoadWarning(30, dept) === "" && departmentLoadWarning(41, dept).includes("يتجاوز أعلى ما شغّله القسم"), "مجموعٌ فوق أعلى ما شغّله القسم يُنبَّه عليه");
+const ui = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
+check(ui.includes("courseNumber(a.code) - courseNumber(b.code)"), "الجدول مرتّب برقم المقرر تصاعدياً");
+check(ui.includes("حفظ وعرض التقرير") && ui.includes('dataset.printKind = "section-plan"') && ui.includes("<PrintPortal") && fs.readFileSync("src/styles/08-print.css", "utf8").includes('html[data-print-kind="section-plan"]'),
+  "«حفظ» يحفظ ويفتح تقريراً يُطبع بمنفذ الطباعة المعتاد");
 
 /* ── الربط: المستودع والخادم والواجهة ── */
 const server = fs.readFileSync("server.ts", "utf8");
