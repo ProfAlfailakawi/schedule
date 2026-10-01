@@ -129,8 +129,8 @@ check(server.includes("termSeasonOf(row.AdTermName) === season") && server.inclu
 check(server.includes("Repository.getCourseTransitions(sectionId)") && server.includes("ancestorsOf(id)") && server.includes("remaining: known.reduce("), "المقرر المعاد ترقيمه يرث شعب سلفه ومتبقّيه");
 check(ui.includes("suggestSectionCount("), "الواجهة تستعمل الحساب نفسه");
 const transfer = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");
-check(transfer.includes("const termEnded = termIsArchive(") && (transfer.match(/\{termEnded \? null : \(/g) || []).length === 2 && transfer.includes('if (termEnded && (tab === "import" || tab === "planning")) setTab("export")'),
-  "الفصل المنتهي: لا تبويب استيراد ولا تخطيط شعب");
+check(transfer.includes("const termEnded = termIsArchive(") && (transfer.match(/\{termEnded \? null : \(/g) || []).length === 4 && transfer.includes('if (termEnded && tab !== "export" && tab !== "publish") setTab("export")'),
+  "الفصل المنتهي: لا استيراد ولا تخطيط شعب ولا استبدال ولا منتدبون — تصدير ونشر فقط");
 check(fs.readFileSync("src/styles/09-details.css", "utf8").includes(".section-plan-row>[data-label]::before{content:attr(data-label)"), "الهاتف: كل مقرر بطاقة بخاناتٍ معنونة");
 
 /* ── رمز QR للطلبة ── */
