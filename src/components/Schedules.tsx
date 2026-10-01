@@ -12418,7 +12418,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           }}
         />
       ) : null}
-      <PrintPortal className="change-log-print-host">
+      {/* بلا تعديلاتٍ لا ورقةَ لها: كانت تخرج قبل جدول الأسبوع بصفحةٍ عنوانُها «لا تعديلات». */}
+      {undoLog.length ? <PrintPortal className="change-log-print-host">
         <div className="print-report print-wide print-change-log-report">
           <PrintLetterhead
             title="تقرير التعديلات"
@@ -12434,7 +12435,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
             <tbody>{undoLog.map(entry=>{const meta=undoEntryMeta(entry);return <tr key={`print-change-${entry.id}`}><td className="print-ltr">{undoClock(entry.at)}</td><td className="print-wrap">{entry.label}</td><td className="print-wrap">{meta.whoName || "—"}{meta.visiting ? " · منتدب" : ""}</td><td>{entry.usedAt ? `تم التراجع ${undoClock(entry.usedAt)}` : "قائم"}</td></tr>;})}</tbody>
           </table>
         </div>
-      </PrintPortal>
+      </PrintPortal> : null}
       {/* The week is a wide document; it is printed on a wide page, in the same
           hand as every other sheet the program produces. */}
       {!reviewOpen ? (

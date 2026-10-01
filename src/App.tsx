@@ -320,8 +320,9 @@ export function warmScheduleWorkspace(userId: number) {
   void warmStart(`/api/schedules/workspace?${scheduleScopeQuery(userId)}`).catch(() => undefined);
 }
 
+let workspaceDenied = false;
 function prefetchView(view: View) {
-  if (view === "schedules" || view === "scheduleCopy") { void loadSchedules(); warmScheduleWorkspace(lastUserId()); }
+  if (view === "schedules" || view === "scheduleCopy") { void loadSchedules(); if (!workspaceDenied) warmScheduleWorkspace(lastUserId()); }
   else if (view === "intelligence") void loadIntelligence();
   else if (academicViews.includes(view as AcademicTab)) void loadAcademicConsole();
   else if (searchViews.includes(view as ReportMode) || reportViews.includes(view as ReportMode)) void loadReports();
@@ -668,12 +669,21 @@ export default function App() {
          the warm-start shelf, and the board's loader claims it on arrival —
          so the first visit to the schedule finds both its chunk and its data
          already in hand. */
-      warmScheduleWorkspace(Number(user.SystemUserId || 0));
     }, 1500);
     onIdle(() => { void loadIntelligence().catch(() => undefined); }, 4000);
     onIdle(() => { void loadReports().catch(() => undefined); }, 7000);
     return () => handles.forEach(cancel => cancel());
   }, [user?.SystemUserId]);
+
+  /* قراءةُ مساحة الجدول تتطلّب الشاشة 7؛ ومن لا يملكها (رئيس القسم، موظف
+     التسجيل، العميد) يردّ عليه الخادمُ 403 فتظهر في كل فتحة صفحة. */
+  const canReadWorkspace = permissions.includes(7);
+  workspaceDenied = Boolean(user) && permissions.length > 0 && !canReadWorkspace;
+  useEffect(() => {
+    if (!user || !canReadWorkspace) return;
+    const id = window.setTimeout(() => warmScheduleWorkspace(Number(user.SystemUserId || 0)), 1500);
+    return () => window.clearTimeout(id);
+  }, [user?.SystemUserId, canReadWorkspace]);
 
   useEffect(() => {
     const refresh = (event: Event) => {
