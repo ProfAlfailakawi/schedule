@@ -2674,4 +2674,8 @@
   .section-plan-print th,.section-plan-print td{padding:2mm 2.4mm!important;border-bottom:.5pt solid #d7ddd9!important;text-align:start!important;font-size:9pt!important}
   .section-plan-print th{background:#f4f6f5!important;color:#4e5954!important;font-weight:800!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .section-plan-print tr{break-inside:avoid!important}
+  .section-plan-print .section-plan-source,.section-plan-print .section-plan-note{font-size:8.5pt!important;color:#5d6966!important;margin:0 0 3mm!important}
+  .section-plan-print tr.is-outside td{background:#fbf3df!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .section-plan-print .section-plan-backlog{margin-top:4mm!important;border:.5pt solid #d9c08a!important;padding:2mm 3mm!important;font-size:9pt!important}
+  .section-plan-print .section-plan-backlog ul{margin:1.5mm 0 0!important;padding-inline-start:5mm!important}
 }

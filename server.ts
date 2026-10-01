@@ -122,7 +122,8 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL, readReportCells } from "./src/utils/documentOcr";
+import { blankSpots, readRemainingReport } from "./src/utils/remainingReport";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -610,6 +611,16 @@ const rateLimitPublicRequest = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "محاولاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
+});
+
+/* كشفُ «المتبقي» يُقرأ ملفاً كاملاً، وقد يمرّ بالقراءة الضوئية: حدٌّ سخيٌّ
+   لقسمٍ يرفع كشفه ويعيده، يمنع حلقةً من شغل طابور القراءة عن الجميع. */
+const rateLimitDocumentRead = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "ملفاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد رفع الكشف." },
 });
 
 const rateLimitDemoRole = rateLimit({
@@ -14112,18 +14123,19 @@ app.get("/api/share-personal", requirePermission(7), async (req: AuthenticatedRe
   }));
 });
 
-/* ── إحصاءُ التسجيل واقتراحُ عدد الشعب ───────────────────────────────────────
+/* ── «المتبقي» واقتراحُ عدد الشعب ───────────────────────────────────────────
  *
- * القسم يُدخل عدد الطلبة لكل مقرر قبل الفصل؛ ويُعاد معه تاريخُ أقرب ثلاثة
- * فصولٍ مماثلة (الموسم نفسه، سنواتٌ سابقة): الشعبُ المفتوحة فعلاً في الجدول،
- * والعددُ المسجّل إن أُدخل. الحسابُ نفسه في المتصفح والاختبار:
- * src/utils/sectionCountSuggestion.ts. */
+ * القسم يستورد قبل بناء الجدول كشفَ «المتبقي» من عمادة التسجيل (طلبةٌ لم
+ * يسجّلوا المقرر بعد)؛ ويُعاد معه تاريخُ أقرب ثلاثة فصولٍ مماثلة (الموسم نفسه،
+ * سنواتٌ سابقة): الشعبُ المفتوحة فعلاً في الجدول، والمتبقي إن استُورد يومها.
+ * الحسابُ نفسه في المتصفح والاختبار: src/utils/sectionCountSuggestion.ts. */
 app.get("/api/registration-stats", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const [terms, courses, stats] = await Promise.all([
+  const [terms, courses, stats, transitions] = await Promise.all([
     Repository.getTerms(), Repository.getCoursesBySection(sectionId), Repository.getRegistrationStats(collegeId, sectionId, termId),
+    Repository.getCourseTransitions(sectionId).catch(() => []),
   ]);
   const term = terms.find(row => Number(row.AdTermId) === termId);
   /* التاريخ الحقيقي لا تقويمٌ مفترض: يُرجَع في الفصول السابقة من الأحدث حتى
@@ -14143,8 +14155,24 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     similar.push({ AdTermId: Number(row.AdTermId), AdTermName: String(row.AdTermName), similar: same, rows });
     if (same) sameCount++; else otherCount++;
   }
-  const history: Record<string, Array<{ termName: string; sections: number; headcount?: number; similar: boolean }>> = {};
+  /* مقررٌ أُعيد ترقيمه أو استُبدل في صحيفةٍ جديدة هو نفسُه في التاريخ: يرث
+     شعبَ سلفه ومتبقّيه — إن لم يُفتح هو بعدُ في تلك الفصول — بدل «لا تاريخ». */
+  const predecessorsOf = new Map<number, number[]>();
+  for (const transition of transitions as any[]) {
+    const to = Number(transition.toCourseId || 0), from = Number(transition.fromCourseId || 0);
+    if (!to || !from || to === from || transition.kind === "removed") continue;
+    predecessorsOf.set(to, [...(predecessorsOf.get(to) || []), from]);
+  }
+  const ancestorsOf = (courseId: number) => {
+    const seen = new Set<number>([courseId]), queue = [courseId];
+    while (queue.length) for (const from of predecessorsOf.get(queue.shift()!) || []) if (!seen.has(from)) { seen.add(from); queue.push(from); }
+    seen.delete(courseId);
+    return [...seen];
+  };
+  const history: Record<string, Array<{ termName: string; sections: number; remaining?: number; similar: boolean }>> = {};
+  const lineage: Record<string, string> = {};
   const department: Array<{ termName: string; similar: boolean; sections: number; instructors: number; halls: number }> = [];
+  const perTerm: Array<{ sectionsOf: Map<number, Set<string>>; remaining: Record<string, number> }> = [];
   for (const past of similar) {
     const rows = past.rows;
     const pastStats = await Repository.getRegistrationStats(collegeId, sectionId, past.AdTermId);
@@ -14154,27 +14182,45 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
       if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
       sectionsOf.get(id)!.add(String(row.SCode || row.id));
     }
+    perTerm.push({ sectionsOf, remaining: pastStats?.remaining || {} });
     department.push({
       termName: past.AdTermName, similar: past.similar,
       sections: [...sectionsOf.values()].reduce((sum, set) => sum + set.size, 0),
       instructors: new Set(rows.map(row => Number(row.AdInstructorId)).filter(id => id > 0)).size,
       halls: new Set(rows.map(row => roomIdentityKey(row as any)).filter(Boolean)).size,
     });
-    for (const course of courses) {
-      const key = String(course.AdCourseId);
-      const headcount = Number(pastStats?.counts?.[key] || 0);
-      (history[key] ||= []).push({ termName: past.AdTermName, similar: past.similar, sections: sectionsOf.get(Number(course.AdCourseId))?.size || 0, ...(headcount ? { headcount } : {}) });
+  }
+  const codeOf = new Map(courses.map(course => [Number(course.AdCourseId), String(course.CourseCode || "")]));
+  if (predecessorsOf.size && [...predecessorsOf.values()].flat().some(id => !codeOf.has(id))) {
+    for (const course of await Repository.getCourses()) if (!codeOf.has(Number(course.AdCourseId))) codeOf.set(Number(course.AdCourseId), String(course.CourseCode || ""));
+  }
+  for (const course of courses) {
+    const key = String(course.AdCourseId), id = Number(course.AdCourseId);
+    const ownOpened = perTerm.some(term => (term.sectionsOf.get(id)?.size || 0) > 0);
+    const family = ownOpened ? [id] : [id, ...ancestorsOf(id)];
+    if (family.length > 1 && perTerm.some(term => family.slice(1).some(from => (term.sectionsOf.get(from)?.size || 0) > 0))) {
+      lineage[key] = family.slice(1).map(from => codeOf.get(from) || "").filter(Boolean).join("، ");
     }
+    history[key] = similar.map((past, index) => {
+      const term = perTerm[index];
+      const sections = family.reduce((sum, member) => sum + (term.sectionsOf.get(member)?.size || 0), 0);
+      const known = family.filter(member => term.remaining[String(member)] != null);
+      return { termName: past.AdTermName, similar: past.similar, sections,
+        ...(known.length ? { remaining: known.reduce((sum, member) => sum + Number(term.remaining[String(member)] || 0), 0) } : {}) };
+    });
   }
   res.json({
     termName: term?.AdTermName || "",
     similarTerms: similar.filter(item => item.similar).map(item => item.AdTermName),
     department,
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
-    counts: stats?.counts || {},
+    remaining: stats?.remaining || {},
+    remainingSource: stats?.remainingSource || null,
     accepted: stats?.accepted || {},
     updatedAt: stats?.updatedAt || "",
+    updatedBy: stats?.updatedBy || "",
     history,
+    lineage,
   });
 });
 
@@ -14183,8 +14229,51 @@ app.put("/api/registration-stats", requirePermission(7), async (req: Authenticat
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const saved = await Repository.saveRegistrationStats(collegeId, sectionId, termId,
-    { counts: req.body?.counts || {}, accepted: req.body?.accepted || {} }, String(req.user?.Name || ""));
+    { remaining: req.body?.remaining || {}, accepted: req.body?.accepted || {}, remainingSource: req.body?.remainingSource || null }, String(req.user?.Name || ""));
   res.json(saved);
+});
+
+/* رمزُ القسم كما تطبعه وثائق الهيئة (الكلية + القسم: 0101)، من البادئة الرسمية
+   للموقع أولاً — بالقاعدة نفسها التي يقرأ بها استيرادُ الجدول. */
+function authorityDepartmentKeyOf(college: any, section: any): string {
+  const site = academicDigits(officialCollegeSitePrefix(String(college?.AdCollegeName || "")));
+  const catalogue = academicDigits(college?.AdCollegeCode);
+  const collegeCode = site.length >= 2 ? site.slice(0, 2) : catalogue.length >= 2 ? catalogue.slice(0, 2) : catalogue;
+  return authorityDepartmentCode(collegeCode, section?.AdSectionCode);
+}
+
+/* ── كشفُ «المتبقي» PDF ← معاينة ─────────────────────────────────────────────
+   لا يُحفظ شيءٌ هنا ولا يُبقى الملف: تُعاد القراءةُ (الأعمدة وأرقام كل مقرر)
+   والواجهة تعرضها، والقسم يختار العمود ويُملأ ثم يُحفظ بالباب المعتاد. */
+app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw({ type: ["application/octet-stream", "application/pdf"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  if (!bytes.length) { res.status(400).json({ error: "لم يصل ملف الكشف" }); return; }
+  let fileName = String(req.get("x-file-name") || "كشف المتبقي.pdf").slice(0, 600);
+  try { fileName = decodeURIComponent(fileName); } catch { /* literal filename */ }
+  const [courses, colleges, sections] = await Promise.all([Repository.getCoursesBySection(sectionId), Repository.getColleges(), Repository.getSections()]);
+  const departmentCode = authorityDepartmentKeyOf(
+    colleges.find((row: any) => Number(row.AdCollegeId) === collegeId),
+    sections.find((row: any) => Number(row.AdSectionId) === sectionId),
+  );
+  const catalogue = courses.map(course => ({ id: Number(course.AdCourseId), code: String(course.CourseCode || "") }));
+  try {
+    const cells = await readReportCells(bytes, pages => blankSpots(pages, catalogue, departmentCode));
+    const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
+    if (!reading.rows.length) {
+      res.status(422).json({ error: reading.foreign.length
+        ? `الكشف لا يحوي مقررات هذا القسم (فيه رموزٌ مثل ${reading.foreign.slice(0, 3).join("، ")}) — هل هو كشف قسمٍ آخر؟`
+        : "لم أجد في الملف أرقام مقررات هذا القسم — تأكد أنه كشف المتبقي من عمادة التسجيل." });
+      return;
+    }
+    if (!reading.columns.length) { res.status(422).json({ error: "وجدتُ مقررات القسم في الكشف، ولم أجد بجانبها أعداداً تُقرأ." }); return; }
+    res.json({ ...reading, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200) });
+  } catch (error: any) {
+    const busy = error instanceof ScanReadingBusyError;
+    res.status(busy ? 503 : 422).json({ error: String(error?.message || "") && /[ء-ي]/.test(String(error?.message)) ? error.message : "تعذّرت قراءة الملف — تأكد أنه PDF سليم من عمادة التسجيل." });
+  }
 });
 
 // --- Public surface (no account) --------------------------------------------

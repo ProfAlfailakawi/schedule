@@ -1853,6 +1853,32 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .section-plan-report-table th,.section-plan-report-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:start;vertical-align:top}
 .section-plan-report-table th{color:var(--muted);font-size:var(--t-xs);font-weight:600}
 .section-plan-report-table tfoot td{font-weight:700;border-bottom:0}
+/* كشف المتبقي: زرّ الاستيراد ومصدره، وحالة الحفظ الذاتي، ومعاينة الكشف. */
+.section-plan-import{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);padding:var(--s3);border:1px dashed color-mix(in srgb,var(--accent) 45%,var(--line));border-radius:var(--r-sm);background:color-mix(in srgb,var(--accent-soft) 45%,transparent)}
+.section-plan-source{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+.section-plan-saved{display:inline-flex;align-items:center;gap:6px;margin-inline-start:auto;color:var(--muted);font-size:var(--t-xs)}
+.section-plan-saved.is-error{color:var(--danger)}
+.section-plan-retry{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid currentColor;border-radius:var(--r-full,999px);background:transparent;color:inherit;font:inherit;cursor:pointer}
+.section-plan-retry svg{width:13px;height:13px}
+.section-plan-row input::placeholder{color:color-mix(in srgb,var(--muted-2) 75%,transparent);font-style:italic;opacity:1}
+.section-plan-pick{display:grid;gap:2px;justify-items:start}
+.section-plan-outside{color:var(--warning);font-size:var(--t-xs);font-weight:600}
+.section-plan-backlog-note{display:flex;align-items:flex-start;gap:4px;margin-top:4px;color:var(--warning);font-style:normal}
+.section-plan-backlog-note svg{flex:none;width:14px;height:14px;margin-top:4px}
+.section-plan-backlog{padding:var(--s3);border:1px solid color-mix(in srgb,var(--warning) 40%,var(--line));border-radius:var(--r-sm);background:var(--warning-soft)}
+.section-plan-backlog ul{margin:var(--s2) 0 0;padding-inline-start:1.2em;line-height:1.8;font-size:var(--t-sm)}
+.section-plan-report-table tr.is-outside td{background:color-mix(in srgb,var(--warning-soft) 60%,transparent)}
+.section-plan-import-summary{display:flex;flex-wrap:wrap;gap:var(--s2);margin:0;padding:0;list-style:none;font-size:var(--t-sm)}
+.section-plan-import-summary li{padding:4px 10px;border:1px solid var(--line);border-radius:var(--r-full,999px)}
+.section-plan-import-summary li.is-warn{border-color:color-mix(in srgb,var(--warning) 50%,var(--line));color:var(--warning)}
+.section-plan-columns{display:flex;flex-wrap:wrap;gap:var(--s2);margin:0;padding:0;border:0}
+.section-plan-columns legend{margin-bottom:var(--s2);font-size:var(--t-sm);font-weight:600}
+.section-plan-columns label{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-sm);cursor:pointer}
+.section-plan-columns label.is-active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.section-plan-columns label span{display:grid;gap:2px}
+.section-plan-columns small{color:var(--muted);font-size:var(--t-xs)}
+.section-plan-import-preview .section-plan-report-actions{justify-content:flex-start}
+@media (max-width:760px){.section-plan-saved{margin-inline-start:0}}
 
 /* أدوات الجدول ستّ تبويبات بعد «تخطيط الشعب»: صفٌّ واحد على الشاشة الواسعة،
    وصفّان متساويان (٣ × ٢) على الهاتف — لا تبويبٌ يتيم في سطرٍ وحده. */
