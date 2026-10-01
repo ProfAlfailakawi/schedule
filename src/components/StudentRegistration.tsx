@@ -27,6 +27,7 @@ import { AR, nounFor, studentNounsFor } from "../utils/arabicCount";
 import { currentTermId } from "../utils/termSequence";
 import { singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
+import { DEMO_STAGE_SECTION_ID, isDemoSession } from "../utils/demoSession";
 import { takeNotifyFocus } from "../utils/notifyFocus";
 import type { AdTerm, StudentCommitteeRejectReason, StudentCourseRejectReason, StudentCourseStateValue } from "../types";
 import type { StudentCaseStatus } from "../utils/studentCaseDecision";
@@ -217,7 +218,10 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   /* الكلية والقسم من النطاق المشترك (src/utils/sharedScope.ts)، معروضين على
      نطاق القارئ؛ وافتراض الشاشة أدناه («أوّل كلية») لا يُكتب فيه. */
   const [collegeId, setCollegeId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).collegeId);
-  const [sectionId, setSectionId] = useState(() => resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin }).sectionId);
+  const [sectionId, setSectionId] = useState(() => {
+    const scoped = resolveSharedScope(readSharedScope(), { scopes, isAdmin: powerAdmin });
+    return scoped.sectionId || (isDemoSession() && scoped.collegeId ? DEMO_STAGE_SECTION_ID : 0);
+  });
   const [rows, setRows] = useState<CaseRow[] | null>(null);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [canWrite, setCanWrite] = useState(false);

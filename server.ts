@@ -11677,6 +11677,9 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
   if(!collegeId||!sectionId||!termId){res.status(400).json({error:"اختر الفصل والكلية والقسم أولاً."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const draft=await authorityDraftForScope(collegeId,sectionId,termId);
+  /* سؤال التهيئة (meta=1) يسأل «هل توجد نسخة؟» لا «هات التقرير»: غيابها جوابٌ
+     عاديّ لا خطأ، فلا يُرسَل 404 يظهر في كل فتحةٍ لشاشة الاستعلامات. */
+  if(!draft&&String(req.query.meta||"")==="1"){res.json({draftId:null});return;}
   if(!draft){res.status(404).json({error:"لا توجد نسخة PDF معتمدة محفوظة لهذا الفصل والقسم بعد."});return;}
   const [live,instructors]=await Promise.all([
     Repository.getSchedulesByScope({collegeId,sectionId,termId}),
