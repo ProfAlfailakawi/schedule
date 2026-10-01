@@ -16,8 +16,8 @@ const check = (ok: boolean, label: string) => {
 };
 
 const html = studyProposalPage("demo.token-1", "pid-1", "NONCE123", "");
-const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
-const styles = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)];
+const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)];
+const styles = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)];
 check(scripts.length === 1, "سكربتٌ واحد فقط");
 check(styles.length === 1, "أنماطٌ واحدة فقط");
 check(/nonce="NONCE123"/.test(scripts[0]?.[1] || ""), "السكربت يحمل nonce الصفحة");
@@ -35,7 +35,7 @@ const hostile = studyProposalPage('x</script><img src=x>', 'p"</script>', "n");
 check(!hostile.includes("</script><img"), "رمز رابطٍ خبيث لا يُغلق وسم السكربت");
 check([...hostile.matchAll(/<script\b/gi)].length === 1, "الرمز الخبيث لا يزيد سكربتاً");
 let hostileCompiles = true;
-try { new vm.Script([...hostile.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)][0][1]); } catch { hostileCompiles = false; }
+try { new vm.Script([...hostile.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)][0][1]); } catch { hostileCompiles = false; }
 check(hostileCompiles, "السكربت سليم مع رمزٍ بعلاماتٍ خاصة");
 check(/\/api\/public\/request\/"\+encodeURIComponent\(TOKEN\)\+"\/proposals\/"\+encodeURIComponent\(PID\)/.test(js), "نداء القراءة على المسار العام للمقترح");
 check(js.includes('"/respond"'), "نداء الرد على /respond");
