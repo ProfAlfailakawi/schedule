@@ -127,7 +127,7 @@ const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "
   const affiliations = route('app.get("/api/instructor-affiliations"');
   check(/if \(!req\.user\?\.IsAdminUser && !isScopeAllowed\(req, collegeId, sectionId\)\) return;/.test(affiliations), "C خريطة انتساب الأساتذة: الجامعة للإدارة، والنطاق لغيرها");
   const delegates = route('app.get("/api/delegates"');
-  check(delegates.includes("isScopeAllowed(req, Number(row.collegeId), Number(row.sectionId))"), "C منتدبو أدلّة أقسام النطاق وحدها");
+  check(delegates.includes("isScopeAllowed(req, Number(sec.AdCollegeId), Number(sec.AdSectionId))") && delegates.includes("allowedFamilies.has(familyOf("), "C منتدبو أدلّة أقسام النطاق وحدها — وعائلاتها عبر الكليات (القسم واحد)");
 
   const changes = route('app.get("/api/reports/schedule-changes"');
   check(/readsFinalSchedulesOnly\(req\) && approval\.status !== "accepted"/.test(changes), "C العميدان لا يقرآن تقرير تغييرات جدولٍ لم يُعتمد");
