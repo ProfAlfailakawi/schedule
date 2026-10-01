@@ -213,8 +213,8 @@ check(staffHtml.includes('id="tab-requests" role="tab" aria-selected="false">ط�
   "تبويبُ «طلب تعديل الجدول» ظاهرٌ دائماً — لا يختفي مع رابط القسم");
 check(staffHtml.includes('<a href="#" id="edit" role="button">تعديل</a>') && staffHtml.includes("if(tabRequests)tabRequests.onclick();"),
   "وزرُّ «تعديل» في الأدوات هو البابُ نفسُه");
-check(staffHtml.includes("من رابطك الشخصي الذي يرسله إليك القسم، لا من رابط القسم العام") && server.includes("(personal ? requestRows : []).map"),
-  "ورابطُ القسم يدلّ على الرابط الشخصي ولا يكشف رابطَ الطلب");
+check(server.includes("const requestLinks = (await Promise.all(requestRows.map(") && !server.includes("(personal ? requestRows : []).map"),
+  "وبعد الرقم المدني يفتح النموذجَ من رابط القسم كما من الرابط الشخصي");
 
 /* ── النطاقُ الزمنيّ يُقرأ من بدايته ──────────────────────────────────────── */
 check(formatScheduleTimeRange("08:00", "09:20") === "⁦08:00 – 09:20⁩",

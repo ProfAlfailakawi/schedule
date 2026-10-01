@@ -13809,7 +13809,13 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
      بكليةٍ بعينها. */
   const requestRows = displayTermId === link.AdTermId ? linkTermRequests : (await Repository.getInstructorRequests(0, 0, Number(displayTermId)))
     .filter(request => Number(request.AdInstructorId) === Number(person.AdInstructorId));
-  const requestLinks = (await Promise.all((personal ? requestRows : []).map(async request => {
+  /* ── بابُ الطلب بعد الرقم المدني، في الرابطين ─────────────────────────────
+     a966906 حجب روابطَ الطلب عن رابط القسم، فاختفى بابُ التعديل من بطاقة كل
+     أستاذٍ فتحها من رابط القسم — وهو الطريق الذي ينشره القسم. والرقمُ المدنيُّ
+     المطابَق بسجلّه (أعلاه) هو إثباتُ الهوية، كتوقيع الطلب نفسه: فلا يصل رابطُ
+     الطلب إلا صاحبَه، ولا يصل قبل التحقق. ويبقى ما حماه a966906 فعلاً: الرابطُ
+     الشخصيُّ لا يُفتح برقم زميل، وتاريخُ القرارات خارج رابط القسم العام. */
+  const requestLinks = (await Promise.all(requestRows.map(async request => {
     const requestLink = await Repository.getShareLink(request.linkId);
     if (!requestLink || requestLink.revoked || !await shareLinkStillReadable(requestLink)) return null;
     const windowOpen = requestWindowOpen(request);
@@ -16303,17 +16309,15 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
      كان التبويبُ يختفي كلَّه حين لا يحمل الرابطُ نافذةَ طلبات — وهذا حالُ
      رابط القسم العام دائماً منذ صار شخصياً (a966906) — فلا يجد الأستاذُ بابَ
      التعديل ولا يعرف أين هو. فالبابُ يبقى ظاهراً، وما خلفه يقول الحقيقة:
-     النموذجُ نفسُه في الرابط الشخصي، وفي رابط القسم سطرٌ يدلّ عليه، ولا يُكشف
-     فيه رابطُ الطلب — فهو ما يُوقَّع به باسم صاحبه. */
+     يفتح النموذجَ نفسَه بعد التحقق بالرقم المدني، من الرابط الشخصي ومن رابط
+     القسم معاً (كما كان قبل a966906). */
   function renderRequests(d){
     var host=document.getElementById("requests");
     var links=d.requestLinks||[];
     requestLinksNow=links;
     if(!host)return;
     if(!links.length){
-      host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">'+(d.personal
-        ?'لم يفتح قسمك نافذة رغبات الجدول لهذا الفصل بعد. حين يفتحها يظهر هنا نموذجُ طلبك، ومعه ردودُ القسم ومقترحاته.'
-        :'رغباتك وطلب تعديل جدولك تُرسل من رابطك الشخصي الذي يرسله إليك القسم، لا من رابط القسم العام — فالطلب يُوقَّع باسمك. اطلب رابطك من منسّق القسم.')+'</p></div>';
+      host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">لم يفتح قسمك نافذة رغبات الجدول لهذا الفصل بعد. حين يفتحها يظهر هنا نموذجُ طلبك — تضيف وتحذف وتغيّر — ومعه ردودُ القسم ومقترحاته.</p></div>';
       return;
     }
     host.innerHTML='<div class="requests-panel"><h3>طلب تعديل الجدول</h3><p class="sub">استقبل قسمك نافذة طلبات للتعديل على الجدول الدراسي.</p>'+
