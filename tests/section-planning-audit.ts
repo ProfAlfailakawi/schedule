@@ -161,6 +161,15 @@ const noRegistered = [swrsPage(0, [["201", [570, 256, null, 256, 9, 370]], ["102
 r = readRemainingReport(noRegistered, islCatalogue, "0101");
 check(!r.rows.some(row => row.doubt), "لا يُفحص الحساب بلا «عدد المسجلين» مقروءاً — لا يُفترض صفراً");
 
+/* مراجعة Codex على #185 */
+const wholeColumnMissed = [
+  swrsPage(0, [["102", [54, 1336, 0, 1336, 19, 54]], ["201", [570, 256, 0, 256, 9, 570]]]),
+  swrsPage(0.035, [["254", [48, 210, 0, 210, 3, null]], ["255", [35, 70, 0, 70, 1, null]]]),
+];
+const rescue = blankSpots(wholeColumnMissed, islCatalogue, "0101").filter(spot => spot.page === 1);
+check(rescue.length === 2 && rescue.every(spot => Math.abs(spot.x - (X.unregistered + 0.035)) < 0.01),
+  "عمودٌ فاتت القراءةَ خاناتُه كلها في صفحة: موضعه يُعرف بإطار الصفحة فتُعاد قراءة خاناته");
+
 const header = readReportHeader("الفصل الدراسي : 202420 الفصل الدراسي الثاني 2025-2024\nالكلية : 01 كليه التربيه الاساسيه\nرمز القسم العلمي 0101 التربيه الاسلاميه");
 check(header.department === "0101" && header.season === "second" && header.years?.[0] === 2024 && header.years?.[1] === 2025, "ترويسة الكشف: القسم 0101 والفصل الثاني 2024/2025");
 check(readReportHeader("الفصل الدراسي : 202410").season === "first", "رمز الفصل وحده (202410) يكفي");
@@ -180,6 +189,8 @@ check(ui.includes("استيراد كشف المتبقي") && ui.includes("/api/r
 check(ui.includes('accept="application/pdf,.pdf,image/*,.heic,.heif" multiple') && ui.includes("/api/registration-stats/remaining-cells") && ui.includes('"x-report-template"'),
   "PDF أو صور صفحاته (الهاتف): تُقرأ صورةً صورة وتُجمع صفحاتها");
 check(ui.includes("لم تُقرأ خانته — أدخله بعد التعبئة"), "المعاينة: خانةٌ لم تُقرأ تُقال، لا تُملأ ببديل");
+check(ui.includes("remainingOf(row, column, fallbackFor(preview, column), preview.column).value == null") && ui.includes("read.value == null && !doubt && column != null"),
+  "تنبيه «لم تُقرأ» يتبع العمود الذي اختاره القسم لا التلقائي");
 check(ui.includes("setDoubtPicks") && ui.includes("preview.warnings") && ui.includes("COLUMN_TITLES[item.kind]") && ui.includes("من «لم يجتازوا» — لا شعب في الكشف"),
   "المعاينة: تنبيه القسم والفصل، واختيار الصحيح من قراءتين، وما أُخذ من «لم يجتازوا»");
 check(!ui.includes("عدد الطلبة المسجّلين") && !ui.includes("counts:"), "لا خانة «المسجّلين» تُكتب يدوياً");
@@ -209,6 +220,10 @@ check(ocr.includes("async function ruledReportCells(") && ocr.includes("await de
 check(server.includes("termSeasonOf(row.AdTermName) === season") && server.includes("if (!rows.length) continue;"), "الفصول المماثلة: الموسم نفسه، ويُتخطّى الفصل الذي لا جدول فيه للقسم");
 check(server.includes("Repository.getCourseTransitions(sectionId)") && server.includes("ancestorsOf(id)") && server.includes("remaining: known.reduce("), "المقرر المعاد ترقيمه يرث شعب سلفه ومتبقّيه");
 check(ui.includes("suggestSectionCount("), "الواجهة تستعمل الحساب نفسه");
+check(ui.includes('"x-page-sizes": files.map(file => file.size).join(",")') && ui.includes("files.length <= 4 && files.every(isImage)")
+  && server.includes('String(req.get("x-page-sizes") || "")') && server.includes("sizes.reduce((sum, size) => sum + size, 0) !== bodyBytes")
+  && fs.readFileSync("src/utils/documentOcr.ts", "utf8").includes("return readReportScan(input.map(part=>({buffer:part,mime:reportImageMime(part,\"\")})),false,blanks,firstTemplate);"),
+  "صور صفحات الكشف (حتى أربع) تُقرأ في طلبٍ واحد: أعمدتها معاً، وإنقاذ العمود الفائت في كل صورة");
 const transfer = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");
 check(transfer.includes("const termEnded = termIsArchive(") && (transfer.match(/\{termEnded \? null : \(/g) || []).length === 4 && transfer.includes('if (termEnded && tab !== "export" && tab !== "publish") setTab("export")'),
   "الفصل المنتهي: لا استيراد ولا تخطيط شعب ولا استبدال ولا منتدبون — تصدير ونشر فقط");

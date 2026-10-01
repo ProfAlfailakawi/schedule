@@ -14306,9 +14306,21 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
       template = { labels, kinds: labels.map((label: string) => columnKind(label)) };
     }
   } catch { /* no template: a first page */ }
+  /* صورُ صفحاتٍ (حتى أربع) في طلبٍ واحد: «x-page-sizes» يقسم البايتات صورةً صورة. */
+  let input: Buffer | Buffer[] = bytes;
+  /* الطول بالبايت من Buffer.byteLength لا من «‎.length‎» على قيمةٍ أصلها الطلب. */
+  const bodyBytes = Buffer.byteLength(bytes);
+  const sizes = String(req.get("x-page-sizes") || "").split(",").filter(Boolean).map(Number);
+  if (sizes.length) {
+    if (sizes.length > 4 || sizes.some(size => !Number.isInteger(size) || size <= 0) || sizes.reduce((sum, size) => sum + size, 0) !== bodyBytes) {
+      res.status(400).json({ error: "صفحات الكشف لم تصل كاملة — أعد اختيار الصور (حتى أربع)." }); return;
+    }
+    let offset = 0;
+    input = sizes.map(size => { const part = bytes.subarray(offset, offset + size); offset += size; return part; });
+  }
   const { departmentCode, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
   try {
-    const cells = await readReportCells(bytes, mime, pages => blankSpots(pages, catalogue, departmentCode), template);
+    const cells = await readReportCells(input, mime, pages => blankSpots(pages, catalogue, departmentCode), template);
     const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
     const refusal = remainingRefusal(reading);
     if (refusal) { res.status(422).json({ error: refusal }); return; }

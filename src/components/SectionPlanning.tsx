@@ -164,6 +164,23 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     try {
       const results: ImportReading[] = [];
       let template: unknown = null;
+      /* صورُ صفحاتِ كشفٍ واحد (حتى أربع) تُرسل معاً في طلبٍ واحد فتُقرأ معاً. */
+      const isImage = (file: File) => /^image\//.test(file.type) || /\.(jpe?g|png|heic|heif)$/i.test(file.name);
+      if (files.length > 1 && files.length <= 4 && files.every(isImage)) {
+        setReadingNote(`يقرأ ${countOf(files.length, AR.page)}…`);
+        const response = await fetch(`/api/registration-stats/remaining-pdf?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream", "x-file-name": encodeURIComponent(files.map(file => file.name).join("، ")), "x-page-sizes": files.map(file => file.size).join(",") },
+          body: new Blob(files),
+        });
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(result?.error || "تعذّرت قراءة الكشف");
+        const found = result as ImportReading;
+        setColumn(found.column ?? (found.columns.length === 1 ? found.columns[0].id : null));
+        setDoubtPicks({});
+        setPreview(found);
+        return;
+      }
       for (const [index, file] of files.entries()) {
         if (files.length > 1) setReadingNote(`يقرأ ${index + 1} من ${files.length}…`);
         const response = await fetch(`/api/registration-stats/remaining-pdf?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, {
@@ -336,7 +353,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
               {preview.missing.length ? <li>لم يرد في الكشف: <b>{countOf(preview.missing.length, AR.course)}</b> — يبقى متبقّيها كما هو</li> : null}
               {preview.foreign.length ? <li>رموزٌ ليست من مقررات القسم: <b>{preview.foreign.length}</b> — لا تُستورد</li> : null}
               {preview.source === "scan" ? <li className="is-warn">الكشف ممسوحٌ أو مصوَّر: راجع الأرقام قبل التعبئة</li> : null}
-              {preview.column != null && preview.rows.some(row => remainingOf(row, preview.column!, preview.fallback, preview.column).value == null) ? <li className="is-warn">لم تُقرأ خانته: <b>{countOf(preview.rows.filter(row => remainingOf(row, preview.column!, preview.fallback, preview.column).value == null).length, AR.course)}</b> — يُدخل بعد التعبئة</li> : null}
+              {column != null && preview.rows.some(row => remainingOf(row, column, fallbackFor(preview, column), preview.column).value == null) ? <li className="is-warn">لم تُقرأ خانته: <b>{countOf(preview.rows.filter(row => remainingOf(row, column, fallbackFor(preview, column), preview.column).value == null).length, AR.course)}</b> — يُدخل بعد التعبئة</li> : null}
               {preview.rows.some(row => row.doubt) ? <li className="is-warn">قراءتان مختلفتان: <b>{countOf(preview.rows.filter(row => row.doubt).length, AR.course)}</b> — اختر الصحيح</li> : null}
             </ul>
             {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
@@ -366,7 +383,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                       <td>
                         {doubt ? null : <b>{value ?? "—"}</b>}
                         {read.fromFallback ? <small className="section-plan-cell-note"> من «لم يجتازوا» — لا شعب في الكشف</small> : null}
-                        {read.value == null && !doubt && column === preview.column ? <small className="section-plan-cell-note is-unread"> لم تُقرأ خانته — أدخله بعد التعبئة</small> : null}
+                        {read.value == null && !doubt && column != null ? <small className="section-plan-cell-note is-unread"> لم تُقرأ خانته — أدخله بعد التعبئة</small> : null}
                         {doubt ? (
                           <span className="section-plan-doubt" role="group" aria-label="اختر القراءة الصحيحة">
                             {[...new Set([doubt.read, doubt.derived])].map(option => (
