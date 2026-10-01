@@ -8433,6 +8433,27 @@ html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:ha
 html[data-schedule-workspace="presentation"] .schedule-page>.schedule-control:has(>.schedule-status)>:not(.schedule-status){display:none!important}
 html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0}
 
+/* «اقترح قاعة متاحة» تحت منتقي القاعة */
+.location-hall-action{grid-column:1/-1}
+.room-suggest{display:grid;gap:var(--s2)}
+.room-suggest-ask{
+  justify-self:start;display:inline-flex;align-items:center;gap:var(--s2);
+  min-height:34px;padding:0 var(--s3);
+  border:1px solid color-mix(in srgb,var(--brass) 34%,var(--line));border-radius:999px;
+  background:transparent;color:inherit;font:inherit;font-size:var(--t-sm);font-weight:700;cursor:pointer
+}
+.room-suggest-ask svg{width:15px;height:15px}
+.room-suggest-ask:hover:not(:disabled),.room-suggest-ask.open{background:color-mix(in srgb,var(--brass) 14%,transparent)}
+.room-suggest-ask:disabled{opacity:.5;cursor:default}
+.room-suggest-list{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.room-suggest-list>button{
+  display:grid;gap:2px;text-align:start;padding:var(--s2) var(--s3);
+  border:1px solid var(--line);border-radius:12px;background:var(--surface,transparent);color:inherit;font:inherit;cursor:pointer
+}
+.room-suggest-list>button:hover{border-color:var(--accent)}
+.room-suggest-list>button bdi{font-weight:800}
+.room-suggest-list>button small{color:var(--muted);font-size:var(--t-xs)}
+.room-suggest-empty{margin:0;color:var(--muted);font-size:var(--t-sm)}
 /* === Light floating controls (owner decision, Oct 2026) ====================
    The schedule dock, the undo toast and the day's-log button borrowed the dark
    rail's --nav palette. With the rail now light (03-shell), they wear the same
