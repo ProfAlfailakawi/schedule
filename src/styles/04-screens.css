@@ -479,10 +479,13 @@
 .bar-columns{display:flex;align-items:flex-end;gap:var(--s2);height:132px}
 .bar-columns>div{
   flex:1;min-width:0;height:100%;
-  display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:var(--s2);
+  /* شبكةٌ لا عمودُ flex: ارتفاعُ العمود بالنسبة المئوية يُحسب من خلية الرسم
+     (الصفّ 1fr) فلا يتقلّص مع الرقم والحرف تحته؛ كان flex-shrink يساوي
+     بين الأعمدة كلّها فيبدو حملُ الأيام متطابقاً مهما اختلفت أرقامُها. */
+  display:grid;grid-template-rows:minmax(0,1fr) auto auto;justify-items:center;row-gap:var(--s2);
 }
 .bar-columns i{
-  width:100%;max-width:34px;
+  width:100%;max-width:34px;align-self:end;
   border-radius:var(--r-xs) var(--r-xs) 2px 2px;
   background:var(--accent);
   transition:height .6s var(--ease-out);

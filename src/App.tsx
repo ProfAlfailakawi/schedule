@@ -98,7 +98,10 @@ function lastUserId(): number {
    milliseconds before the board could have asked it. */
 if (typeof window !== "undefined" && /\/fschedule\/index/i.test(window.location.pathname)) {
   void loadSchedules();
-  void warmStart(`/api/schedules/workspace?${scheduleScopeQuery(lastUserId())}`).catch(() => undefined);
+  /* من عرفنا في زيارةٍ سابقة أنه بلا الشاشة 7 لا نسأل له (كان 403 في كل فتحة). */
+  let workspaceKnownDenied = false;
+  try { workspaceKnownDenied = localStorage.getItem("schedule-workspace-denied") === "1"; } catch { /* التخزين غائب */ }
+  if (!workspaceKnownDenied) void warmStart(`/api/schedules/workspace?${scheduleScopeQuery(lastUserId())}`).catch(() => undefined);
 }
 
 const AcademicConsole = safeLazy(loadAcademicConsole);
@@ -679,6 +682,10 @@ export default function App() {
      التسجيل، العميد) يردّ عليه الخادمُ 403 فتظهر في كل فتحة صفحة. */
   const canReadWorkspace = permissions.includes(7);
   workspaceDenied = Boolean(user) && permissions.length > 0 && !canReadWorkspace;
+  useEffect(() => {
+    if (!user || !permissions.length) return;
+    try { localStorage.setItem("schedule-workspace-denied", canReadWorkspace ? "0" : "1"); } catch { /* التخزين غائب */ }
+  }, [user, permissions, canReadWorkspace]);
   useEffect(() => {
     if (!user || !canReadWorkspace) return;
     const id = window.setTimeout(() => warmScheduleWorkspace(Number(user.SystemUserId || 0)), 1500);

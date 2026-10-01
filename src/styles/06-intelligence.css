@@ -4228,7 +4228,7 @@ button.twin-delta{width:100%}
 .student-case-filters button.active{border-color:color-mix(in srgb,var(--accent) 48%,var(--line));background:var(--accent-softer);color:var(--accent-ink)}
 .student-case-filters button.active b{background:var(--surface);color:var(--accent-ink)}
 .student-case-print-actions .btn{min-height:36px;padding-inline:11px}
-.student-cases-table{min-width:1180px}
+.student-cases-table{min-width:1000px}
 .student-cases-table td code{font:700 10px/1.4 var(--font-mono);letter-spacing:.03em;color:var(--muted);white-space:nowrap}
 @media(max-width:760px){.student-case-toolbar{align-items:stretch}.student-case-filters,.student-case-print-actions{width:100%}.student-case-filters button{flex:1;justify-content:center}.student-case-print-actions .btn{flex:1}}
 
