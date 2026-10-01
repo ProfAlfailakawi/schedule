@@ -39,11 +39,13 @@ const whoConflicts = (busy: string[]) =>
   busy.length <= 4 ? busy.join("، ") : `${busy.slice(0, 4).join("، ")} و${countOf(busy.length - 4, AR.participant)} غيرهم`;
 const windowLine = (slot: MeetingWindow) => `${slot.free} من ${slot.total} متفرغ`;
 
-export default function MeetingSlots({ instructors, scopeNarrowed = false, termId, onClose }: {
+export default function MeetingSlots({ instructors, scopeNarrowed = false, termId, sectionId = 0, onClose }: {
   instructors: PersonOption[];
   /** اختار المستخدم كلية أو قسماً: يُقال له إن الانشغال يُقرأ من الكليات كلها. */
   scopeNarrowed?: boolean;
   termId: number;
+  /** القسم المعروض: يُجمع معه أساتذته من كليات القسم الأخرى. */
+  sectionId?: number;
   onClose: () => void;
 }) {
   const [picked, setPicked] = useState<Set<number>>(() => new Set());
@@ -63,15 +65,24 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
      عبر الكليات، فلا يتغيّر الجواب باختيار القسم أو عدمه. القاعدة نفسها
      (meetingParticipants) تُطبَّق هنا على ما أعاده. */
   const [excludedIds, setExcludedIds] = useState<number[]>([]);
+  /* اجتماع القسم: أساتذة القسم من كل كلياته يأتون من الخادم إن حُدّد القسم. */
+  const [familyPeople, setFamilyPeople] = useState<PersonOption[] | null>(null);
   useEffect(() => {
     if (!termId) return;
     let live = true;
-    readJson(`/api/schedules/meeting-participants?termId=${termId}`)
-      .then(body => { if (live) setExcludedIds((body?.excludedInstructorIds || []).map(Number)); })
+    readJson(`/api/schedules/meeting-participants?termId=${termId}${sectionId ? `&sectionId=${sectionId}` : ""}`)
+      .then(body => {
+        if (!live) return;
+        setExcludedIds((body?.excludedInstructorIds || []).map(Number));
+        setFamilyPeople(Array.isArray(body?.participants) ? body.participants : null);
+      })
       .catch(() => { /* الخادم يُسقطهم عند الحساب على أي حال */ });
     return () => { live = false; };
-  }, [termId]);
-  const faculty = useMemo(() => meetingParticipants(instructors, excludedIds), [instructors, excludedIds]);
+  }, [termId, sectionId]);
+  const faculty = useMemo(() => {
+    const people = familyPeople ? [...new Map([...instructors, ...familyPeople].map(p => [Number(p.AdInstructorId), p])).values()] : instructors;
+    return meetingParticipants([...people].sort((a, b) => a.AdInstructorName.localeCompare(b.AdInstructorName, "ar")), excludedIds);
+  }, [instructors, familyPeople, excludedIds]);
   const options = useMemo(() => {
     const needle = query.trim();
     return needle ? faculty.filter(person => person.AdInstructorName.includes(needle)) : faculty;

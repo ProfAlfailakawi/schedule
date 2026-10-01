@@ -12325,6 +12325,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           instructors={instructors.map(person => ({ AdInstructorId: person.AdInstructorId, AdInstructorName: person.AdInstructorName }))}
           scopeNarrowed={Boolean(filterCollege || filterSection)}
           termId={filterTerm}
+          sectionId={filterSection}
           onClose={() => setMeetingOpen(false)}
         />
       ) : null}
