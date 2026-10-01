@@ -25,7 +25,7 @@ import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleCo
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
 import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
-import { departmentFamilyResolver } from "./src/utils/sectionLabel";
+import { departmentFamily, departmentFamilyResolver } from "./src/utils/sectionLabel";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
@@ -7259,7 +7259,20 @@ app.get("/api/schedules/meeting-participants", requirePermission(7), async (req:
   const termId = Number(req.query.termId || 0);
   if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
   const { excluded } = await meetingExcludedIds(termId);
-  res.json({ excludedInstructorIds: excluded });
+  /* اجتماع القسم: القسمُ عائلةٌ عبر كلياته (departmentFamily)، فأساتذته من
+     كل كلياته — لا من الكلية المعروضة وحدها. أسماءٌ وأرقامٌ فقط. */
+  const sectionId = Number(req.query.sectionId || 0);
+  let participants: Array<{ AdInstructorId: number; AdInstructorName: string }> | undefined;
+  if (sectionId) {
+    const sections = await Repository.getSections();
+    const own = (sections as any[]).find(sec => Number(sec.AdSectionId) === sectionId);
+    if (!own || !isScopeAllowed(req, Number(own.AdCollegeId), sectionId)) { res.status(403).json({ error: "خارج نطاقك" }); return; }
+    const family = departmentFamily(sections as any, Number(own.AdCollegeId), sectionId);
+    const lists = await Promise.all(family.map(member => Repository.getInstructorsByScope(member.sectionId, termId)));
+    participants = [...new Map(lists.flat().map(person => [Number(person.AdInstructorId),
+      { AdInstructorId: Number(person.AdInstructorId), AdInstructorName: String(person.AdInstructorName || "") }])).values()];
+  }
+  res.json({ excludedInstructorIds: excluded, participants });
 });
 
 app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -18957,15 +18970,14 @@ function studentSchedulePage(token: string, label: string, nonce: string): strin
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a100f">
+<meta name="theme-color" content="${PUBLIC_THEME_COLOR}">
 <meta name="robots" content="noindex,nofollow">
 <title>${label} · SCHEDULE</title>
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 *,*::before,*::after{box-sizing:border-box}
-:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
-@media (prefers-color-scheme:light){:root{--bg:#f6f4ef;--card:#fff;--line:#e3ded3;--ink:#1b2320;--dim:#66736d;--jade:#1f7a63;--brass:#9a6c2e}}
+:root{${PUBLIC_LIGHT_VARS}}
 body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);font-family:"Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased;padding:max(18px,env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))}
 .wrap{max-width:720px;margin:0 auto}
 .mark{font:600 12px/1 ui-monospace,monospace;letter-spacing:.26em;color:var(--brass)}
@@ -18985,6 +18997,8 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
 .row time{direction:ltr;unicode-bidi:isolate}
 .row i{font-style:normal;color:var(--dim)}
 .empty{text-align:center;color:var(--dim);padding:40px 0;font-size:14px}
+.provisional{margin:0 0 14px;padding:10px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--brass) 40%,var(--line));background:color-mix(in srgb,var(--brass) 10%,var(--card));color:var(--brass);font-size:13px;line-height:1.7}
+.provisional b{font-weight:700}
 .foot{margin-top:24px;text-align:center;color:var(--dim);font-size:12px}
 </style>
 </head>
@@ -19001,6 +19015,7 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
     </div>
     <div class="chips" id="days" role="group" aria-label="تصفية باليوم"></div>
   </div>
+  <p class="provisional" id="provisional" hidden><b>جدول مبدئي</b> — لم يُعتمد بعد، وقد تتغيّر بعض المواعيد أو القاعات قبل الاعتماد.</p>
   <section id="list" aria-live="polite"></section>
   <p class="foot">الجدول المعتمد للفصل الجاري · للقراءة فقط ويتحدّث من نفسه</p>
 </main>
@@ -19030,7 +19045,7 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
   }
   function render() {
     var rows = state.rows.filter(match);
-    if (!rows.length) { list.innerHTML = '<p class="empty">' + (state.rows.length ? "لا نتائج مطابقة" : "لم يُعتمد جدول هذا الفصل بعد") + "</p>"; return; }
+    if (!rows.length) { list.innerHTML = '<p class="empty">' + (state.rows.length ? "لا نتائج مطابقة" : "لا مواعيد لهذا الفصل بعد") + "</p>"; return; }
     var html = "";
     if (state.view === "course") {
       var groups = {}, order = [];
@@ -19073,6 +19088,7 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
     .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "تعذّر فتح الجدول"); return d; }); })
     .then(function (d) {
       state.rows = d.rows || [];
+      document.getElementById("provisional").hidden = !d.provisional;
       document.getElementById("title").textContent = d.section || "جدول القسم";
       document.getElementById("sub").textContent = [d.college, d.term].filter(Boolean).join(" · ");
       render();
@@ -19093,8 +19109,11 @@ app.get("/api/public/students/:token", async (req: Request, res: Response) => {
   const termId = currentTermId(terms) || Number(resolved.link.AdTermId);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
-  const payload = await buildSharePayload(resolved.link, { termId, finalOnly: true });
-  res.json({ ...payload, expiresAt: undefined, label: undefined });
+  /* المعتمد أولاً؛ وقبل الاعتماد يُعرض الجدول الحالي موسوماً «مبدئي» — قرار
+     المالك ٢٠٢٦/١٠/١: الطالب يحتاجه ليخطّط تسجيله قبل التوقيع. */
+  const approved = await buildSharePayload(resolved.link, { termId, finalOnly: true });
+  const payload = approved.rows?.length ? approved : await buildSharePayload(resolved.link, { termId });
+  res.json({ ...payload, provisional: !approved.rows?.length && Boolean(payload.rows?.length), expiresAt: undefined, label: undefined });
 });
 
 app.get("/t/:token", async (req: Request, res: Response) => {

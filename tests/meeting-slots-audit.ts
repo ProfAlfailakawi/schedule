@@ -93,9 +93,11 @@ check(/computeMeetingSlots\(/.test(route) && !/SCHEDULE_DAY_START/.test(route), 
 check(/requirePermission\(7\)/.test(route), "المسار محمي بصلاحية الجدول");
 check(!/AdCourseName|AdRoomCode|AdCollegeName/.test(route), "لا يخرج من المسار إلا متفرغ/مشغول — لا مقرر ولا قاعة ولا كلية");
 check(/meetingExcludedIds\(termId\)/.test(route) && /participantIds/.test(route), "الخادم هو الحَكَم: يُسقط «هيئة تدريسية» والمنتدبين مما أرسله العميل");
-const helper = server.slice(server.indexOf("async function meetingExcludedIds"), server.indexOf('app.post("/api/schedules/meeting-slots"'));
+const helper = server.slice(server.indexOf("async function meetingExcludedIds"), server.indexOf('app.get("/api/schedules/meeting-participants"'));
+const participantsRoute = server.slice(server.indexOf('app.get("/api/schedules/meeting-participants"'), server.indexOf('app.post("/api/schedules/meeting-slots"'));
+check(/departmentFamily\(/.test(participantsRoute) && /isScopeAllowed\(/.test(participantsRoute), "اجتماع القسم: أساتذته من كل كلياته، ضمن نطاق القارئ");
 check(/termVisitingIds\(/.test(helper) && /meetingParticipants\(/.test(helper) && !/collegeId|sectionId/.test(helper.replace(/getDelegateAffiliations/, "")), "المستبعدون من الفصل كله بلا كلية/قسم، وبالقاعدة المشتركة");
-check(/meeting-participants/.test(helper) && /requirePermission\(7\)/.test(helper), "قائمة المستبعدين للواجهة من الخادم وبصلاحية الجدول");
+check(/meeting-participants/.test(participantsRoute) && /requirePermission\(7\)/.test(participantsRoute), "قائمة المستبعدين للواجهة من الخادم وبصلاحية الجدول");
 const live = server.slice(server.indexOf("async function readLiveVisitingRoster"), server.indexOf("async function readLiveVisitingRoster") + 900);
 check(/liveVisitingIds\(/.test(live), "readLiveVisitingRoster يسأل القاعدة نفسها (liveVisitingIds) — لا نسخة ثانية");
 
