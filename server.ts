@@ -17240,6 +17240,15 @@ function priorAddFor(previous: InstructorRequestItem[] | undefined, used: Set<nu
   return (previous || [])[index];
 }
 
+/** مدّةُ لقاءٍ ممتدٍّ من نصّ وقت البند «16:00 – 19:50» حين يكون يوماً واحداً. */
+function blockMinutesOfItem(item: InstructorRequestItem | undefined): number | undefined {
+  const before = item?.before;
+  const m = /(\d{1,2}:\d{2})\D+(\d{1,2}:\d{2})/.exec(String(before?.time || ""));
+  if (!m || String(before?.days || "").split("·").filter(part => part.trim()).length !== 1) return undefined;
+  const span = timeToMinutes(m[2]) - timeToMinutes(m[1]);
+  return span > 80 ? span : undefined;
+}
+
 async function instructorRequestItemsFromPayload(request: InstructorRequest, sent: any[]): Promise<InstructorRequestItem[]> {
   const before = new Map((request.items || []).map(item => [String(item.rowId ?? `add:${item.action}`), item]));
   const [courses, allowedCourseOptions] = await Promise.all([
@@ -17277,7 +17286,8 @@ async function instructorRequestItemsFromPayload(request: InstructorRequest, sen
           ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day))
       : [];
     const start = /^\d{1,2}:\d{2}$/.test(String(entry?.start || "")) ? String(entry.start) : "";
-    const end = start && days.length ? endForRequest(days, start) : "";
+    const blockMin = blockMinutesOfItem(stored);
+    const end = start && days.length ? endForRequest(days, start, blockMin) : "";
 
     items.push({
       rowId,
@@ -17308,7 +17318,7 @@ async function instructorRequestItemsFromPayload(request: InstructorRequest, sen
         days: days.map(day => DAY_LETTERS[day]).join(" · "),
         time: `${start} – ${end}`,
       },
-      slots: days.map(day => ({ day, start, end: endForRequest([day], start) })),
+      slots: days.map(day => ({ day, start, end: endForRequest([day], start, blockMin) })),
       excuse: String(entry?.excuse || "").trim().slice(0, 400) || undefined,
       decision: action === "add"
         ? priorAddFor(request.items, usedPriorAdds, courseId, selectedCollegeId, selectedSectionId, days, start)?.decision
@@ -18146,7 +18156,8 @@ app.post("/api/public/request/:token", rateLimitPublicRequest, async (req: Reque
           ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(day))
       : [];
     const start = /^\d{1,2}:\d{2}$/.test(String(entry?.start || "")) ? String(entry.start) : "";
-    const end = start && days.length ? endForRequest(days, start) : "";
+    const blockMin = blockMinutesOfItem(stored);
+    const end = start && days.length ? endForRequest(days, start, blockMin) : "";
 
     items.push({
       rowId,
@@ -18164,7 +18175,7 @@ sectionId: allowedOption.sectionId,
         days: days.map(day => DAY_LETTERS[day]).join(" · "),
         time: `${start} – ${end}`,
       },
-      slots: days.map(day => ({ day, start, end: endForRequest([day], start) })),
+      slots: days.map(day => ({ day, start, end: endForRequest([day], start, blockMin) })),
       excuse: String(entry?.excuse || "").trim().slice(0, 400) || undefined,
       /* القرارُ السابق يُحفظ: أستاذٌ يعيد الإرسال لا يمحو ما ثبّته القسم. */
       decision: action === "add"
@@ -18271,13 +18282,13 @@ app.post("/api/public/request/:token/reply", rateLimitPublicRequest, async (req:
     const chosen = offered[acceptAt];
     if (!chosen) { res.status(400).json({ error: "هذا المقترح لم يعد قائماً. حدّث الصفحة." }); return; }
     const days = (chosen.days?.length ? chosen.days : [chosen.day]) as RequestDayKey[];
-    const end = endForRequest(days, chosen.start);
+    const end = endForRequest(days, chosen.start, blockMinutesOfItem(item));
     next = {
       ...item,
       action: item.action === "keep" ? "change" : item.action,
       after: { ...(item.after || item.before || { courseId: 0, courseName: "", sectionCode: "", days: "", time: "" }),
         days: days.map(day => DAY_LETTERS[day]).join(" · "), time: `${chosen.start} – ${end}` },
-      slots: days.map(day => ({ day, start: chosen.start, end: endForRequest([day], chosen.start) })),
+      slots: days.map(day => ({ day, start: chosen.start, end: endForRequest([day], chosen.start, blockMinutesOfItem(item)) })),
       chosenAlternative: chosen,
       /* قرارٌ سابقٌ على ما كان يُطلب لا يبقى على ما اتُّفق عليه الآن. */
       decision: undefined,
@@ -18288,7 +18299,7 @@ app.post("/api/public/request/:token/reply", rateLimitPublicRequest, async (req:
     const start = /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "";
     const days = (item.slots || []).map(slot => slot.day);
     const proposal = start && days.length && item.action !== "delete"
-      ? [{ day: days[0], days, start, end: endForRequest(days as RequestDayKey[], start) }] : [];
+      ? [{ day: days[0], days, start, end: endForRequest(days as RequestDayKey[], start, blockMinutesOfItem(item)) }] : [];
     if (!text && !proposal.length) { res.status(400).json({ error: "اكتب ردّك أو اقترح وقتاً." }); return; }
     next = {
       ...item,
@@ -18398,8 +18409,12 @@ function mins(t){var p=String(t||"0:0").split(":");return (+p[0]||0)*60+(+p[1]||
 function clock(m){m=Math.min(m,20*60);return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")}
 /* النهاية تُحسب كما تحسبها اللائحة في الخادم بالضبط. وهي تُعرض هنا راحةً
    للقارئ لا حُكماً: الخادمُ يعيد حسابها ولا يقبل ما تقوله الصفحة. */
-function endOf(days,start){if(!days.length||!start)return "";
+function endOf(days,start,blk){if(!days.length||!start)return "";
+if(blk&&days.length===1)return clock(mins(start)+blk);
 var m=0;days.forEach(function(d){m=Math.max(m,LONG[d]||SHORT)});return clock(mins(start)+m)}
+/* لقاءٌ ممتدّ (مختبر/ورشة): يومٌ واحد أطول من محاضرة اللائحة — يبقى طولُه إن نُقل. */
+function blockOf(b){if(!b)return 0;var m=/(\\d{1,2}:\\d{2})\\D+(\\d{1,2}:\\d{2})/.exec(String(b.time||""));
+if(!m||String(b.days||"").split("·").filter(function(x){return x.trim()}).length!==1)return 0;var span=mins(m[2])-mins(m[1]);return span>LONG.fmonday?span:0}
 /* بداياتٌ جاهزة بضغطة: الأحد والثلاثاء والخميس محاضراتٌ قصيرة كل ساعة،
    والاثنين والأربعاء محاضراتٌ طويلة كل ساعة ونصف. ووقتٌ آخر يبقى متاحاً. */
 function startChoices(days){var long=days.some(function(d){return LONG[d]}),short=days.some(function(d){return !LONG[d]});
@@ -18418,7 +18433,7 @@ var NEG=${JSON.stringify(NEGOTIATION_LABEL)};
 function actionName(action){return action==="add"?"مضاف":action==="change"?"معدّل":action==="delete"?"محذوف":"كما هو"}
 function requestedText(it){
  if(it.action==="delete")return "حذف المقرر من الجدول";
- if(it.action==="change"||it.action==="add")return (it.days.length?fmtDays(it.days):"لم تُحدّد الأيام")+" · "+(it.start?(it.start+" – "+endOf(it.days,it.start)):"لم يُحدّد الوقت");
+ if(it.action==="change"||it.action==="add")return (it.days.length?fmtDays(it.days):"لم تُحدّد الأيام")+" · "+(it.start?(it.start+" – "+endOf(it.days,it.start,it.blk)):"لم يُحدّد الوقت");
  var base=it.before||it.after||{};return (base.days||"")+" · "+(base.time||"")
 }
 function payloadItems(){return state.map(function(it){return{rowId:it.rowId,action:it.action,
@@ -18521,7 +18536,7 @@ function actionsHtml(it,i){
  return actBtn(i,"keep","undo","تراجع عن الحذف");
 }
 function editHtml(it,i){var h="";h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
-    h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'"><i aria-hidden="true">'+(it.tone==="ok"?"✓":it.tone==="bad"?"✕":it.tone==="warn"?"!":"…")+'</i><span>'+esc(friendly(it.note||""))+'</span>'+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>';return h}
+    h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).filter(function(t){return !it.blk||it.days.length!==1||mins(t)+it.blk<=20*60}).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start,it.blk)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'"><i aria-hidden="true">'+(it.tone==="ok"?"✓":it.tone==="bad"?"✕":it.tone==="warn"?"!":"…")+'</i><span>'+esc(friendly(it.note||""))+'</span>'+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>';return h}
 function bodyHtml(it,i,open){var h=decisionBox(it,i,open)+threadBox(it,i);
  if(open){h+='<div class="acts" role="group" aria-label="خيارات الموعد">'+actionsHtml(it,i)+'</div>';if(it.action==="change"||it.action==="add")h+=editHtml(it,i)}
  else if(!h)h='<p class="appt-ro">انتهت مدّة الطلبات — هذا الموعد للاطلاع.</p>';
@@ -18534,7 +18549,7 @@ function planTable(){
   return (ka<0?9:ka)-(kb<0?9:kb)||mins(planStart(a.it))-mins(planStart(b.it))});
  return '<div class="plan"><div class="plan-head"><div><b>جدولك</b><small>'+countOf(state.length,AR.appointment)+(open?' · اضغط الموعد لتغييره أو حذفه':'')+'</small></div><span class="legend"><span data-act="add">مضاف</span><span data-act="change">معدّل</span><span data-act="delete">محذوف</span></span></div><div class="appts" role="list">'+
   order.map(function(x){var it=x.it,i=x.i,b=it.before||{},moved=it.action==="change";
-   var newDays=it.days.length?fmtDays(it.days):"—",newTime=it.start?(it.start+" – "+endOf(it.days,it.start)):"—";
+   var newDays=it.days.length?fmtDays(it.days):"—",newTime=it.start?(it.start+" – "+endOf(it.days,it.start,it.blk)):"—";
    var days=it.action==="add"||moved?newDays:(b.days||"—"),time=it.action==="add"||moved?newTime:rangeText(b.time||"—");
    var col=collegeNameOf(it),decidedHere=it.decision&&it.decision.state&&it.decision.state!=="pending";
    var expanded=openCards[i]!==undefined?!!openCards[i]:(it.negotiation==="proposed"||!decidedHere&&(it.action==="change"||it.action==="add"||it.tone==="bad"));
@@ -18757,7 +18772,7 @@ fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
  state=(data.request.items||[]).map(function(it){var a=it.after||{};return{rowId:it.rowId,action:it.action||"keep",
   courseId:it.action==="add"?Number(a.courseId||0):undefined,collegeId:it.action==="add"?Number(a.collegeId||0):undefined,
   sectionId:it.action==="add"?Number(a.sectionId||0):undefined,collegeName:it.action==="add"?(a.collegeName||""):"",
-  before:it.before||it.after,after:it.after,slots:it.slots||[],days:(it.action==="change"||it.action==="add")?(it.slots||[]).map(function(s){return s.day}):[],
+  before:it.before||it.after,blk:blockOf(it.before||it.after),after:it.after,slots:it.slots||[],days:(it.action==="change"||it.action==="add")?(it.slots||[]).map(function(s){return s.day}):[],
   start:(it.action==="change"||it.action==="add")&&it.slots&&it.slots[0]?it.slots[0].start:"",excuse:it.excuse||"",
   decision:it.decision||null,thread:it.thread||[],negotiation:it.negotiation||"",tone:it.verdict==="clear"?"ok":it.verdict==="exception"?"warn":it.verdict==="conflict"?"bad":"",
   note:it.reasons&&it.reasons.length?it.reasons[0].text:(it.verdict==="clear"?"الوقت متاح":""),alts:it.nearestTimes||[]}});
