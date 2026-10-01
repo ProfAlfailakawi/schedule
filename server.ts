@@ -613,6 +613,16 @@ const rateLimitPublicRequest = rateLimit({
   message: { error: "محاولاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
 });
 
+/* كشفُ «المتبقي» يُقرأ ملفاً كاملاً، وقد يمرّ بالقراءة الضوئية: حدٌّ سخيٌّ
+   لقسمٍ يرفع كشفه ويعيده، يمنع حلقةً من شغل طابور القراءة عن الجميع. */
+const rateLimitDocumentRead = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "ملفاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد رفع الكشف." },
+});
+
 const rateLimitDemoRole = rateLimit({
   windowMs: 60_000,
   limit: 30,
@@ -14235,7 +14245,7 @@ function authorityDepartmentKeyOf(college: any, section: any): string {
 /* ── كشفُ «المتبقي» PDF ← معاينة ─────────────────────────────────────────────
    لا يُحفظ شيءٌ هنا ولا يُبقى الملف: تُعاد القراءةُ (الأعمدة وأرقام كل مقرر)
    والواجهة تعرضها، والقسم يختار العمود ويُملأ ثم يُحفظ بالباب المعتاد. */
-app.post("/api/registration-stats/remaining-pdf", requirePermission(7), express.raw({ type: ["application/octet-stream", "application/pdf"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw({ type: ["application/octet-stream", "application/pdf"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
