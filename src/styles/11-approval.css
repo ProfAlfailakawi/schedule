@@ -1266,6 +1266,8 @@
   display:block;flex:1 1 100%;padding:4px 12px 8px;
   color:var(--info);font-size:.8rem;
 }
+/* كتلةٌ لا مرنة هنا، فتضيع فجوةُ المرن: مسافةٌ صريحة بين الطلب وسببه ومقدّمه. */
+.changes-extension-request>*+*{margin-inline-start:6px}
 .changes-note-history{font-size:.8rem;color:var(--muted)}
 .changes-note-history summary{cursor:pointer}
 .changes-note-history ul{margin:4px 0 0;padding-inline-start:16px;display:grid;gap:3px}
