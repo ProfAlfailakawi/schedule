@@ -18970,6 +18970,8 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
 .row time{direction:ltr;unicode-bidi:isolate}
 .row i{font-style:normal;color:var(--dim)}
 .empty{text-align:center;color:var(--dim);padding:40px 0;font-size:14px}
+.provisional{margin:0 0 14px;padding:10px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--brass) 40%,var(--line));background:color-mix(in srgb,var(--brass) 10%,var(--card));color:var(--brass);font-size:13px;line-height:1.7}
+.provisional b{font-weight:700}
 .foot{margin-top:24px;text-align:center;color:var(--dim);font-size:12px}
 </style>
 </head>
@@ -18986,6 +18988,7 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
     </div>
     <div class="chips" id="days" role="group" aria-label="تصفية باليوم"></div>
   </div>
+  <p class="provisional" id="provisional" hidden><b>جدول مبدئي</b> — لم يُعتمد بعد، وقد تتغيّر بعض المواعيد أو القاعات قبل الاعتماد.</p>
   <section id="list" aria-live="polite"></section>
   <p class="foot">الجدول المعتمد للفصل الجاري · للقراءة فقط ويتحدّث من نفسه</p>
 </main>
@@ -19015,7 +19018,7 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
   }
   function render() {
     var rows = state.rows.filter(match);
-    if (!rows.length) { list.innerHTML = '<p class="empty">' + (state.rows.length ? "لا نتائج مطابقة" : "لم يُعتمد جدول هذا الفصل بعد") + "</p>"; return; }
+    if (!rows.length) { list.innerHTML = '<p class="empty">' + (state.rows.length ? "لا نتائج مطابقة" : "لا مواعيد لهذا الفصل بعد") + "</p>"; return; }
     var html = "";
     if (state.view === "course") {
       var groups = {}, order = [];
@@ -19058,6 +19061,7 @@ input[type=search]{width:100%;padding:12px 14px;border:1px solid var(--line);bor
     .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "تعذّر فتح الجدول"); return d; }); })
     .then(function (d) {
       state.rows = d.rows || [];
+      document.getElementById("provisional").hidden = !d.provisional;
       document.getElementById("title").textContent = d.section || "جدول القسم";
       document.getElementById("sub").textContent = [d.college, d.term].filter(Boolean).join(" · ");
       render();
@@ -19078,8 +19082,11 @@ app.get("/api/public/students/:token", async (req: Request, res: Response) => {
   const termId = currentTermId(terms) || Number(resolved.link.AdTermId);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
-  const payload = await buildSharePayload(resolved.link, { termId, finalOnly: true });
-  res.json({ ...payload, expiresAt: undefined, label: undefined });
+  /* المعتمد أولاً؛ وقبل الاعتماد يُعرض الجدول الحالي موسوماً «مبدئي» — قرار
+     المالك ٢٠٢٦/١٠/١: الطالب يحتاجه ليخطّط تسجيله قبل التوقيع. */
+  const approved = await buildSharePayload(resolved.link, { termId, finalOnly: true });
+  const payload = approved.rows?.length ? approved : await buildSharePayload(resolved.link, { termId });
+  res.json({ ...payload, provisional: !approved.rows?.length && Boolean(payload.rows?.length), expiresAt: undefined, label: undefined });
 });
 
 app.get("/t/:token", async (req: Request, res: Response) => {
