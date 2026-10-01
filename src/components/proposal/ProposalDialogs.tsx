@@ -198,7 +198,7 @@ export function SendDialog({ ws, onClose, onSent }: { ws: Workspace; onClose: ()
             {ws.evalCurrent && evaluation ? (
               <ProposalWeekGrid mode={gridMode} onMode={setGridMode} showGhosts onShowGhosts={() => undefined}
                 currentItems={evaluation.before.items} afterItems={evaluation.after.items} ghosts={evaluation.after.ghosts} draft={null}
-                marks={{ blocker: new Set(), review: new Set() }} focusKeys={new Set()} selectedKey={selected} onSelect={setSelected} onCell={() => undefined}
+                marks={{ blocker: new Set(), review: new Set() }} focusKeys={new Set()} selectedKey={selected} onSelect={setSelected} onPaint={() => undefined} readOnly
                 checking={false} findingsFor={() => []} actionsFor={() => []} variant="grid" />
             ) : <p className="sp-state"><LoaderCircle className="sp-spin" aria-hidden="true" />جاري تجهيز المعاينة…</p>}
           </div>
@@ -302,7 +302,7 @@ export function CommitDialog({ ws, onClose, onDone }: { ws: Workspace; onClose: 
             {ev ? (
               <ProposalWeekGrid mode={mode} onMode={setMode} showGhosts onShowGhosts={() => undefined}
                 currentItems={ev.before.items} afterItems={ev.after.items} ghosts={ev.after.ghosts} draft={null}
-                marks={{ blocker: new Set(), review: new Set() }} focusKeys={new Set()} selectedKey={null} onSelect={() => undefined} onCell={() => undefined}
+                marks={{ blocker: new Set(), review: new Set() }} focusKeys={new Set()} selectedKey={null} onSelect={() => undefined} onPaint={() => undefined} readOnly
                 checking={false} findingsFor={() => []} actionsFor={() => []} variant="grid" />
             ) : null}
             {ev?.counts.reviews ? <p className="sp-hint"><AlertTriangle aria-hidden="true" />{countOf(ev.counts.reviews, AR.note)} للمراجعة — لا تمنع التثبيت.</p> : null}
