@@ -2256,6 +2256,8 @@ async function seedDemoStories(): Promise<void> {
       expiresAt: new Date(Math.max(Date.now() + REQUEST_LINK_DAYS * 86_400_000, Date.parse(termLinkExpiresAt(term)))).toISOString(),
       showInstructors: false,
     } as any);
+    /* الأستاذ فتح رابطه (linkOpenedAt أدناه): العدّادُ يوافق القصة لا «0». */
+    for (let opened = 0; opened < 3 + index; opened++) await Repository.touchShareLink(link.id);
     const opened = iso(-6);
     let request = await Repository.createInstructorRequest({
       AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId, AdInstructorId: instructorId, linkId: link.id,

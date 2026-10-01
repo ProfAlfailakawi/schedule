@@ -568,8 +568,19 @@ export default function App() {
    * تفتح على قسم الحاسب — مسرح البيانات. ما اختاره المجرِّب بنفسه لا يُمسّ. */
   setDemoSession(Boolean(demoInfo));
   if (demoInfo && user?.SystemUserId && !readSharedScope(Number(user.SystemUserId)).collegeId) {
-    /* في الرسم نفسه لا في effect: الشاشات تقرأ النطاق في أوّل effect لها. */
-    writeSharedScope({ collegeId: 1, sectionId: 0, termId: 1 }, { userId: Number(user.SystemUserId), source: "demo-default" });
+    /* في الرسم نفسه لا في effect: الشاشات تقرأ النطاق في أوّل effect لها.
+       ومن نطاقُه أقسامٌ بعينها (رئيس القسم، اللجنة، المتعدّد المواقع) يفتح على
+       قسمه هو: «الكلية كلها» خارج نطاقه فتردّ تقاريرُ القاعات والمنتدبين 403. */
+    const own = (Array.isArray(scopes) ? scopes : []).filter((scope: any) => Number(scope?.AdCollegeId) > 0);
+    const wide = own.some((scope: any) => !Number(scope?.AdSectionId) || scope?.AdCollegeWide);
+    const firstSection = own.find((scope: any) => Number(scope?.AdSectionId) > 0);
+    const sectionScoped = !(user?.IsAdminUser || user?.IsRootAdmin) && !wide && firstSection;
+    if (sectionScoped || (user?.IsAdminUser || user?.IsRootAdmin) || own.length)
+      writeSharedScope(
+        sectionScoped
+          ? { collegeId: Number(firstSection.AdCollegeId), sectionId: Number(firstSection.AdSectionId), termId: 1 }
+          : { collegeId: 1, sectionId: 0, termId: 1 },
+        { userId: Number(user.SystemUserId), source: "demo-default" });
   }
   const [guideContext, setGuideContext] = useState<any>(null);
   const [guideHint, setGuideHint] = useState<{ key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
