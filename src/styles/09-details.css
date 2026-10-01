@@ -1922,3 +1922,14 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .pfl-pager,.pfl-search,.pfl-empty{display:none!important}
 }
 .pfl-hits{flex:none;padding:1px 7px;border-radius:var(--r-full);background:var(--accent-soft);color:var(--accent-ink);font-size:var(--t-eyebrow);font-weight:700;font-variant-numeric:tabular-nums;direction:ltr}
+
+/* مفاتيح شريط المراجعة على الهاتف: بطاقتان في كل صف، والرقم واسمه في سطرٍ
+   واحد لا ينكسر («44 موعداً للمراجعة»)، لا كلماتٌ متناثرة على أسطر. */
+@media (max-width:640px){
+  .review-sheet .spread-keys{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important;justify-content:stretch!important}
+  .review-sheet .spread-keys span{display:flex!important;align-items:center;justify-content:flex-start!important;gap:6px!important;min-width:0;min-height:44px;padding:8px 10px!important;border-radius:14px;background:var(--surface)!important;border:1px solid var(--line);font-size:12.5px!important;white-space:nowrap}
+  .review-sheet .spread-keys span::before{display:none}
+  .review-sheet .spread-keys span svg{flex:none}
+  .review-sheet .spread-keys span b{font-size:13px!important;white-space:nowrap}
+  .review-sheet .spread-keys span small{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
