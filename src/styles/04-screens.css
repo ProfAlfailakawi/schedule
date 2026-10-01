@@ -777,7 +777,9 @@
   overflow:hidden;
   border:1px solid var(--line);
   border-radius:var(--r-2xl);
-  background:var(--surface);
+  /* The inspector's tint, so a short inspector beside a long list does not
+     stop in mid-card; the list column paints its own surface. */
+  background:var(--surface-2);
   box-shadow:var(--shadow-sm);
 }
 .catalog-master,.master-pane{
@@ -965,6 +967,18 @@
 .master-list strong{font-size:var(--t-h4);font-weight:600;line-height:1.45}
 .master-list small{margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.45}
 .master-list .record-card-meta{margin-top:var(--s2)}
+/* A row carrying more chips than the four grid tracks (avatar, name, two
+   badges, chevron) used to spill the chevron to a second row and squeeze the
+   name to one letter per line. Such rows read like the phone layout instead:
+   avatar and full-width name, the badges on a line beneath. */
+.master-list>button:has(>:nth-child(5)),.master-list>article:has(>:nth-child(5)){
+  display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--s3);row-gap:6px;
+}
+.master-list>:is(button,article):has(>:nth-child(5))>:is(.master-avatar,.master-symbol){flex:0 0 38px}
+.master-list>:is(button,article):has(>:nth-child(5))>div{flex:1 1 calc(100% - 38px - 15px - 2 * var(--s3) - 1px);min-width:0}
+.master-list>:is(button,article):has(>:nth-child(5))>svg:last-child{flex:0 0 15px;order:1}
+.master-list>:is(button,article):has(>:nth-child(5))>:not(.master-avatar,.master-symbol,div,svg){order:2;max-width:100%}
+.master-list>:is(button,article):has(>:nth-child(5))>div+:not(svg){margin-inline-start:calc(38px + var(--s3))}
 .master-filter-stack{padding:var(--s4);display:grid;gap:var(--s2);border-bottom:1px solid var(--line)}
 
 .academic-inspector,.inspector-pane{
