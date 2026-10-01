@@ -417,6 +417,9 @@ const DEMO_MASTER_STAGE = { collegeId: 1, sectionId: 1 } as const;
 
 interface DemoRoleSeed { role: AcademicRole; id: number; name: string; login: string; }
 
+/** حسابٌ تجريبي ← أستاذٌ في سجلّ الأساتذة (كلية العلوم). */
+const DEMO_USER_INSTRUCTOR_LINKS: Record<number, number> = { 15: 1, 16: 2, 17: 3 };
+
 const DEMO_ROLE_SEEDS: DemoRoleSeed[] = [
   { role: "dean",           id: 10, name: "د. عميد كلية العلوم",       login: "demo.dean" },
   { role: "viceDean",       id: 11, name: "د. العميد المساعد الأكاديمي", login: "demo.vicedean" },
@@ -732,6 +735,9 @@ export function createDemoSandboxState(): DemoSandboxState {
     ...DEMO_ROLE_SEEDS.map(seed => ({
       SystemUserId: seed.id, Name: seed.name, SystemUserLogin: seed.login, SystemUserPass: "",
       IsAdminUser: false, IsActive: true, IsLocked: false, IsDeleted: false, Role: seed.role,
+      /* من يدرّس فعلاً (رئيس القسم، رئيس اللجنة، المستخدم العادي) مربوطٌ بأستاذٍ في
+         كلية العلوم: فيعرض «المستخدمون» لوحاتٍ شخصيةً ولا يبقى العدّاد صفراً. */
+      ...(DEMO_USER_INSTRUCTOR_LINKS[seed.id] ? { AdInstructorId: DEMO_USER_INSTRUCTOR_LINKS[seed.id] } : {}),
     } as SystemUser)),
     {
       SystemUserId: DEMO_MULTI_SITE.id, Name: DEMO_MULTI_SITE.name, SystemUserLogin: DEMO_MULTI_SITE.login, SystemUserPass: "",

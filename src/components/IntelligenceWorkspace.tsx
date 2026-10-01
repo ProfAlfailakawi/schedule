@@ -1,3 +1,4 @@
+import { DEMO_STAGE_SECTION_ID, isDemoSession } from "../utils/demoSession";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { DnaStepper } from "./dna";
 import { runVisualTransition } from "../utils/visualTransition";
@@ -664,7 +665,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           fallbackTermId: stored.termId ? Number(sortedTerms[0]?.AdTermId || 0) : 0,
         });
         setCollegeId(scoped.collegeId);
-        setSectionId(scoped.sectionId);
+        /* التجربة: شاشةٌ لا تعمل إلا على قسمٍ واحد لا تُفتح على «اختر القسم» — قسم الحاسب مسرح البيانات. */
+        setSectionId(scoped.sectionId || (isDemoSession() && scoped.collegeId ? DEMO_STAGE_SECTION_ID : 0));
         setTermId(scoped.termId);
         setCompareTo(sortedTerms[0]?.AdTermId || 0);
         setCompareFrom(sortedTerms[1]?.AdTermId || sortedTerms[0]?.AdTermId || 0);

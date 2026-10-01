@@ -42,8 +42,9 @@ import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 import { singleDepartmentOf } from "./utils/scopeContext";
-import { readSharedScope, setSharedScopeUser } from "./utils/sharedScope";
+import { readSharedScope, setSharedScopeUser, writeSharedScope } from "./utils/sharedScope";
 import { warmStart } from "./utils/warmStart";
+import { setDemoSession } from "./utils/demoSession";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
 import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb, telemetryGuide } from "./utils/clientTelemetry";
 import { AR, countOf, nounFor } from "./utils/arabicCount";
@@ -559,6 +560,17 @@ export default function App() {
    * الخادم مع حمولة الجلسة، وتغيب تماماً خارج البيئة التجريبية. */
   const [demoInfo, setDemoInfo] = useState<{ roles: Array<{ role: string; label: string }>; activeRole: string } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  /* ── البيئة التجريبية تفتح على نطاقٍ مختار ───────────────────────────────────
+   * مديرُ التجربة يرى الكليات كلَّها فلا نطاقَ يُفترض له، فكانت شاشات الجدول
+   * والاستعلامات ومركز الذكاء تفتح على «اختر الكلية» وقوائم فارغة أمام الجمهور.
+   * في التجربة وحدها، ولمن لم يختر بعدُ: كلية العلوم (كلُّ أقسامها) والفصل
+   * الجاري؛ والشاشاتُ التي لا تعمل إلا على قسمٍ واحد (مركز الذكاء، كشف التسجيل)
+   * تفتح على قسم الحاسب — مسرح البيانات. ما اختاره المجرِّب بنفسه لا يُمسّ. */
+  setDemoSession(Boolean(demoInfo));
+  if (demoInfo && user?.SystemUserId && !readSharedScope(Number(user.SystemUserId)).collegeId) {
+    /* في الرسم نفسه لا في effect: الشاشات تقرأ النطاق في أوّل effect لها. */
+    writeSharedScope({ collegeId: 1, sectionId: 0, termId: 1 }, { userId: Number(user.SystemUserId), source: "demo-default" });
+  }
   const [guideContext, setGuideContext] = useState<any>(null);
   const [guideHint, setGuideHint] = useState<{ key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
   const [guideProfileRevision, setGuideProfileRevision] = useState(0);
