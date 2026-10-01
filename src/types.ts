@@ -1075,7 +1075,10 @@ export type InstructorRequestEventKind =
   | "link-created" | "link-opened" | "submitted" | "received"
   | "item-fixed" | "item-rejected" | "alternative-offered" | "alternative-chosen"
   | "settled" | "schedule-approved"
-  | "department-replied" | "instructor-replied" | "proposal-accepted";
+  | "department-replied" | "instructor-replied" | "proposal-accepted"
+  | "study-proposal-sent" | "study-proposal-approved" | "study-proposal-changes"
+  | "study-proposal-revised" | "study-proposal-withdrawn" | "study-proposal-committed"
+  | "study-proposal-expired";
 
 export interface InstructorRequestEvent {
   kind: InstructorRequestEventKind;
@@ -1347,4 +1350,201 @@ export interface ScheduleApproval {
   /** سجلُّ ما جرى على الدورة، أحدثُه آخرُه، بسقفٍ ثابت. */
   events?: ScheduleApprovalEvent[];
   updatedAt: string;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   المقترح الدراسي — ترتيبٌ كاملٌ لعدة مواد يعدّه القسم للأستاذ
+
+   ليس جدولاً موازياً: المقترحُ مسودةٌ مستقلة عن الجدول الفعلي. لا يُنشأ فيه
+   موعدٌ ولا يُحجز فيه رقمُ شعبة ولا قاعة حتى يوافق الأستاذ ويثبّت القسم، ويمرّ
+   التثبيتُ بالفاحص نفسه الذي يمرّ به كلُّ حفظٍ في الجدول.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type StudyProposalOpKind = "assign" | "create" | "edit" | "replace";
+
+/** مسودة / مرسَل / وافق الأستاذ على الكل / وافق على بعض / طلب تعديلاً / مسحوب / انتهت صلاحيته / ثُبّت / حلّت نسخةٌ أحدث محلّه. */
+export type StudyProposalStatus =
+  | "draft" | "sent" | "approved" | "partial" | "changes"
+  | "withdrawn" | "expired" | "committed";
+
+export type StudyProposalResponseMode = "independent" | "linked";
+
+export type StudyProposalDayKey = "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
+
+/** لقطةٌ من موعدٍ قائمٍ وقت الإعداد: بها يُعرف أنه تغيّر بعد ذلك. */
+export interface StudyProposalRowSnapshot {
+  id: number;
+  rev: number;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdCourseId: number;
+  courseName: string;
+  courseCode: string;
+  SCode: string;
+  AdInstructorId: number;
+  /** اسم صاحب الموعد وقت اللقطة — للعرض فقط. */
+  instructorName?: string;
+  days: StudyProposalDayKey[];
+  fstarttime: string;
+  fendtime: string;
+  AdRoomCode: string;
+  AdRoomHall: string;
+  buildingId?: string;
+  roomId?: string;
+  locationStatus?: ScheduleLocationStatus;
+}
+
+/** الشكل النهائي المطلوب للموعد الداخل إلى جدول الأستاذ. */
+export interface StudyProposalRowSpec {
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdCourseId: number;
+  courseName: string;
+  courseCode: string;
+  SCode: string;
+  days: StudyProposalDayKey[];
+  fstarttime: string;
+  fendtime: string;
+  AdRoomCode: string;
+  AdRoomHall: string;
+  buildingId?: string;
+  roomId?: string;
+  locationStatus?: ScheduleLocationStatus;
+}
+
+export interface StudyProposalOp {
+  id: string;
+  kind: StudyProposalOpKind;
+  /**
+   * assign: الشعبة القائمة (هيئة تدريسية) · edit: موعد الأستاذ الذي يتغيّر ·
+   * replace مع incoming="assign": الشعبة القائمة الداخلة.
+   */
+  source?: StudyProposalRowSnapshot;
+  /** replace: الموعد الذي يخرج من جدول الأستاذ، وما يُفعل به. */
+  out?: { snapshot: StudyProposalRowSnapshot; action: "unassign" | "delete" };
+  /** replace: هل الداخل شعبةٌ قائمة أم جديدة. */
+  incoming?: "assign" | "create";
+  target: StudyProposalRowSpec;
+  note?: string;
+}
+
+export interface StudyProposalDecision {
+  opId: string;
+  decision: "approve" | "changes";
+}
+
+export type StudyProposalChangeReason = "time" | "place" | "days" | "load" | "other";
+
+export interface StudyProposalResponse {
+  id: string;
+  /** النسخةُ التي رُدّ عليها. موافقةُ نسخةٍ قديمة لا تنطبق على أحدث. */
+  version: number;
+  at: string;
+  by: "instructor" | "department";
+  /** من وقّع: يطابق ما في طلب الأستاذ. لا يُخزَّن الرقم المدني. */
+  verifyCode?: string;
+  fingerprint?: string;
+  decisions: StudyProposalDecision[];
+  reason?: StudyProposalChangeReason;
+  note?: string;
+  suggestedStart?: string;
+  suggestedDays?: StudyProposalDayKey[];
+  /** الموادُّ التي طلب فيها تعديلاً (للعرض). */
+  opId?: string;
+}
+
+export interface StudyProposalEvent {
+  kind: "created" | "saved" | "sent" | "approved" | "partial" | "changes" | "revised" | "withdrawn" | "expired" | "committed" | "commit-refused" | "link-shared";
+  at: string;
+  by?: string;
+  version?: number;
+  detail?: string;
+}
+
+export interface StudyProposalVersion {
+  version: number;
+  sentAt: string;
+  sentBy: number;
+  sentByName?: string;
+  message: string;
+  responseMode: StudyProposalResponseMode;
+  expiresAt?: string;
+  ops: StudyProposalOp[];
+  title: string;
+  /** ما رآه الأستاذ من أثرٍ وقت الإرسال (أرقامٌ حسبها النظام). */
+  impact?: StudyProposalImpact;
+}
+
+export interface StudyProposalMetrics {
+  /** عدد الشعب (مقرر + شعبة) في الجدول. */
+  sections: number;
+  /** النصاب بالساعات المعتمدة، أو null حين لا تتوفر ساعات المقررات. */
+  loadUnits: number | null;
+  /** مجموع دقائق التدريس الفعلية. */
+  teachingMinutes: number;
+  /** ساعات الحضور: من أول محاضرة إلى آخر محاضرة في كل يوم، مجموعةً. */
+  presenceMinutes: number;
+  attendanceDays: number;
+  dayKeys: StudyProposalDayKey[];
+  gapMinutes: number;
+  maxGap: number;
+  /** بيانات ناقصة تمنع حساب مؤشرٍ ما. */
+  unknown: Array<"load">;
+}
+
+export interface StudyProposalImpact {
+  before: StudyProposalMetrics;
+  after: StudyProposalMetrics;
+  loadCap: number | null;
+}
+
+export interface StudyProposalCommitResult {
+  at: string;
+  by: number;
+  byName?: string;
+  version: number;
+  results: Array<{
+    opId: string;
+    state: "applied" | "skipped";
+    /** السجلات الناتجة في الجدول الفعلي. */
+    createdRowIds?: number[];
+    updatedRowIds?: number[];
+    deletedRowIds?: number[];
+  }>;
+}
+
+export interface StudyProposal {
+  id: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdTermId: number;
+  AdInstructorId: number;
+  /** طلبُ الأستاذ (الحوار) الذي يخرج منه المقترح، ورابطُه الشخصي. */
+  requestId: string;
+  linkId: string;
+  /** البندُ المرتبط في الحوار إن وُجد. */
+  itemIndex?: number | null;
+  title: string;
+  status: StudyProposalStatus;
+  /** نسخةُ العمل. تزيد حين تتغير تفاصيلُ ما سبق إرسالُه. */
+  version: number;
+  /** آخر نسخةٍ أُرسلت (0 = لم يُرسَل شيء). */
+  sentVersion: number;
+  responseMode: StudyProposalResponseMode;
+  message: string;
+  ops: StudyProposalOp[];
+  /** مدة صلاحية الرد المختارة بالأيام؛ تتحوّل إلى expiresAt عند الإرسال. */
+  expiryDays?: number;
+  expiresAt?: string;
+  versions: StudyProposalVersion[];
+  responses: StudyProposalResponse[];
+  events: StudyProposalEvent[];
+  commit?: StudyProposalCommitResult;
+  createdBy: number;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+  /** عدّاد تزامن: كل كتابةٍ تقارنه بما قرأته. */
+  rev: number;
 }

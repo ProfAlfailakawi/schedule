@@ -71,6 +71,13 @@ const EVENT: Record<InstructorRequestEventKind, { title: string; icon: ReactElem
   "department-replied": { title: "ردّ القسم واقترح", icon: <MessageSquare />, tone: "amber" },
   "instructor-replied": { title: "ردّ الأستاذ", icon: <MessageSquare />, tone: "sky" },
   "proposal-accepted": { title: "وافق الأستاذ على المقترح", icon: <BadgeCheck />, tone: "mint" },
+  "study-proposal-sent": { title: "أُرسل مقترح دراسي", icon: <Send />, tone: "indigo" },
+  "study-proposal-approved": { title: "وافق الأستاذ على المقترح الدراسي", icon: <BadgeCheck />, tone: "mint" },
+  "study-proposal-changes": { title: "طلب الأستاذ تعديل المقترح", icon: <Replace />, tone: "amber" },
+  "study-proposal-revised": { title: "أُرسلت نسخةٌ معدّلة من المقترح", icon: <Send />, tone: "indigo" },
+  "study-proposal-withdrawn": { title: "سُحب المقترح الدراسي", icon: <CircleX />, tone: "neutral" },
+  "study-proposal-committed": { title: "ثُبّت المقترح الدراسي", icon: <CheckCheck />, tone: "mint" },
+  "study-proposal-expired": { title: "انتهت صلاحية المقترح", icon: <CircleX />, tone: "coral" },
 };
 
 const eventDate = (iso: string) => {

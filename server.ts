@@ -28,6 +28,7 @@ import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/ut
 import { departmentFamily, departmentFamilyResolver } from "./src/utils/sectionLabel";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
+import { registerStudyProposalRoutes } from "./src/server/studyProposalRoutes";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
@@ -4478,14 +4479,20 @@ async function departmentStyle(row:any):Promise<DepartmentStyle>{
   }catch{return{reading:null,doorway:0,memory:null,...NO_COHORT};}
 }
 
-async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
+/**
+ * `hypothetical` is the whole term as it WOULD be — used by the study proposal,
+ * which asks this very gate about rows that do not exist yet. Everything else
+ * (hall scope, barter windows, hall-owner notices, travel, rhythm) is the
+ * ordinary save gate, unchanged: one verdict, never a second checker.
+ */
+async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0,hypothetical?:FSchedule[]){
   const termId=Number(row?.AdTermId||0);
   if(!termId||!row?.fstarttime||!row?.fendtime||!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))return[];
   const candidate:any={...row,id:excludeId||Number(row?.id||-900000),AdTermId:termId};
   const [termRowsRaw, instructor, roomNotice, hallBarterRequests, registry]=await Promise.all([
     // One current-term read (cached by the repository) is intentional here: it closes the
     // pre-migration alias gap without ever scanning ten years during interactive use.
-    Repository.getSchedulesByScope({termId}),
+    hypothetical?Promise.resolve(hypothetical):Repository.getSchedulesByScope({termId}),
     Number(candidate.AdInstructorId||0) ? Repository.getInstructorById(Number(candidate.AdInstructorId)) : Promise.resolve(null),
     roomScopeNotice(candidate),
     Repository.getHallBarterRequests(termId),
@@ -18763,6 +18770,32 @@ app.get("/api/public/request/:token/movement", async (req: Request, res: Respons
     .slice(0, 100);
   res.setHeader("Cache-Control", "no-store");
   res.json({ movementHistory: entries });
+});
+
+/* ── المقترح الدراسي: ما يعدّه القسم للأستاذ من عدة مواد ─────────────────────
+   كلُّ ما يلزمه من هذا الملف يُحقَن حقناً: الفاحصُ هو scheduleConflicts نفسه
+   (على الجدول الناتج)، والتثبيتُ يمرّ بصلاحيات الحفظ وقفل الجدول والنسخ نفسها. */
+registerStudyProposalRoutes(app, {
+  requirePermission,
+  broadcastNotify,
+  resolveRequestLink: resolveRequestLink as any,
+  verifyRequestSigner,
+  surveyFingerprint,
+  verificationCode,
+  captureScopeVersion: captureScopeVersion as any,
+  recordVersionAfter,
+  noteScheduleMutation: noteScheduleMutation as any,
+  departmentScopes: instructorRequestDepartmentScopes,
+  roleLabel: roleLabel as any,
+  demoSessionId: () => Repository.currentDemoSessionId(),
+  scheduleConflicts: scheduleConflicts as any,
+  scheduleLockRefusal: scheduleLockRefusal as any,
+  canWrite: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
+  canSee: (req, collegeId, sectionId) => Boolean(req?.user?.IsAdminUser) || isScopeAllowed(req, collegeId, sectionId),
+  canonicalizeLocation: async (row, collegeId, sectionId) => {
+    const located = await canonicalizeLocationForWrite(row, collegeId, sectionId);
+    return { ok: Boolean(located.check.ok), message: located.check.issues?.[0]?.message, canonical: located.check.canonical };
+  },
 });
 
 /** بابُ الأستاذ. رابطٌ واحدٌ لشخصٍ واحد، ولا شيء خلفه إلا جدولُه هو. */

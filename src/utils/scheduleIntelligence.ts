@@ -723,7 +723,7 @@ export function fastConflictScan(rows:FSchedule[], options?:{placeholderInstruct
   return {ids,pairs:seen.size,instructorPairs,roomPairs,duplicatePairs,sectionTwicePairs,warningIds,notes};
 }
 
-function instructorGapStats(rows:FSchedule[]){
+export function instructorGapStats(rows:FSchedule[]){
   const byInstructor=new Map<number,FSchedule[]>();
   rows.forEach(row=>{if(row.AdInstructorId){const list=byInstructor.get(row.AdInstructorId)||[];list.push(row);byInstructor.set(row.AdInstructorId,list)}});
   const result=new Map<number,{gapMinutes:number;maxGap:number;weeklyMinutes:number;days:Set<DayKey>;maxContinuous:number}>();
