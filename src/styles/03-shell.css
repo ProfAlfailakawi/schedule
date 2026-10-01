@@ -1024,6 +1024,13 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
 .user-card strong{line-height:1.45}
 .user-card-section{margin-top:2px !important;color:var(--nav-ink) !important;line-height:1.45;font-weight:600}
 .user-card-tools{align-self:center}
+/* الاسم يأخذ عرض البطاقة كله، والأدوات في سطرٍ تحته بفاصلٍ رفيع: كانت
+   الأدوات الثلاث تحشر الاسم في عمودٍ ضيّق فتنكسر الكلمة في نصفها. */
+.user-card{grid-template-columns:36px minmax(0,1fr);row-gap:var(--s2)}
+.user-card-tools{
+  grid-column:1/-1;justify-content:flex-end;
+  padding-top:var(--s2);border-top:1px solid var(--nav-line);
+}
 
 /* Department identity: one quiet academic name only. The college / gender /
    “+ N sections” metadata was useful in an admin list, not in a personal rail. */
