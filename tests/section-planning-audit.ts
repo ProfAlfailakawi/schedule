@@ -221,7 +221,7 @@ check(server.includes("termSeasonOf(row.AdTermName) === season") && server.inclu
 check(server.includes("Repository.getCourseTransitions(sectionId)") && server.includes("ancestorsOf(id)") && server.includes("remaining: known.reduce("), "المقرر المعاد ترقيمه يرث شعب سلفه ومتبقّيه");
 check(ui.includes("suggestSectionCount("), "الواجهة تستعمل الحساب نفسه");
 check(ui.includes('"x-page-sizes": files.map(file => file.size).join(",")') && ui.includes("files.length <= 4 && files.every(isImage)")
-  && server.includes('String(req.get("x-page-sizes") || "")') && server.includes("sizes.reduce((sum, size) => sum + size, 0) !== bytes.length")
+  && server.includes('String(req.get("x-page-sizes") || "")') && server.includes("sizes.reduce((sum, size) => sum + size, 0) !== bodyBytes")
   && fs.readFileSync("src/utils/documentOcr.ts", "utf8").includes("return readReportScan(input.map(part=>({buffer:part,mime:reportImageMime(part,\"\")})),false,blanks,firstTemplate);"),
   "صور صفحات الكشف (حتى أربع) تُقرأ في طلبٍ واحد: أعمدتها معاً، وإنقاذ العمود الفائت في كل صورة");
 const transfer = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");

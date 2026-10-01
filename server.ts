@@ -14308,9 +14308,11 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
   } catch { /* no template: a first page */ }
   /* صورُ صفحاتٍ (حتى أربع) في طلبٍ واحد: «x-page-sizes» يقسم البايتات صورةً صورة. */
   let input: Buffer | Buffer[] = bytes;
+  /* الطول بالبايت من Buffer.byteLength لا من «‎.length‎» على قيمةٍ أصلها الطلب. */
+  const bodyBytes = Buffer.byteLength(bytes);
   const sizes = String(req.get("x-page-sizes") || "").split(",").filter(Boolean).map(Number);
   if (sizes.length) {
-    if (sizes.length > 4 || sizes.some(size => !Number.isInteger(size) || size <= 0) || sizes.reduce((sum, size) => sum + size, 0) !== bytes.length) {
+    if (sizes.length > 4 || sizes.some(size => !Number.isInteger(size) || size <= 0) || sizes.reduce((sum, size) => sum + size, 0) !== bodyBytes) {
       res.status(400).json({ error: "صفحات الكشف لم تصل كاملة — أعد اختيار الصور (حتى أربع)." }); return;
     }
     let offset = 0;
