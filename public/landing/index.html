@@ -423,6 +423,16 @@
     @media (max-width: 520px) {
       .frame-topbar { height: auto; min-height: 46px; padding-block: 6px; gap: 8px; }
       .frame-topbar > div:last-child { min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+      /* Phone tap targets ≥40px. The pills keep their look; a transparent hit area grows
+         them to 40px inside a slightly roomier bar (the frame clips anything outside it).
+         The plain footer links take padding offset by negative margin, so nothing moves. */
+      .frame-topbar { padding-block: 14px; }
+      .frame-topbar > div:last-child { row-gap: 12px !important; }
+      #btn-view-live, #btn-view-screen { position: relative; }
+      #btn-view-live::after, #btn-view-screen::after { content: ""; position: absolute; }
+      #btn-view-live::after { inset: -14px 0 -6px; }
+      #btn-view-screen::after { inset: -6px 0 -14px; }
+      .footer-inner > div:last-child > a:not(.btn) { display: inline-block; padding-block: 9px; margin-block: -9px; }
     }
     .frame-dot {
       width: 10px;

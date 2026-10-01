@@ -541,6 +541,15 @@ figcaption, .src, .demo__state, .hint, .anat__lb small, .bigc small, .chip__l{
 .ctl{font-weight:500; line-height:1.9; padding-block:6px}
 .hint, .demo__state, .src, figcaption{padding-block:1px}
 
+/* Phones: the remaining Arabic labels drop their tracking so letters stay joined. */
+@media (max-width:639px), (max-height:500px){
+  .shift__c small, .dial__s, .cite span, .cite b, .bd__k, .ours__meta, .node small{letter-spacing:0}
+}
+/* Landscape phones: a tall first slide must start below the fixed chrome, not under it. */
+@media (max-height:500px){
+  body.deck .slide{justify-content:safe center}
+}
+
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important; transition-duration:.001ms!important}
   html{scroll-behavior:auto}
