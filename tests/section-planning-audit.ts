@@ -40,7 +40,8 @@ check(fs.readFileSync("src/components/SectionPlanning.tsx", "utf8").includes("su
 
 /* ── رمز QR للطلبة ── */
 const studentsApi = server.slice(server.indexOf('app.get("/api/public/students/:token"'), server.indexOf('app.get("/t/:token"'));
-check(studentsApi.includes("currentTermId(terms)") && studentsApi.includes("finalOnly: true"), "جدول الطلبة: الفصل الجاري والمعتمد وحده");
+check(studentsApi.includes("currentTermId(terms)") && studentsApi.includes("finalOnly: true"), "جدول الطلبة: الفصل الجاري، والمعتمد أولاً");
+check(studentsApi.includes("provisional:") && server.includes('id="provisional"'), "جدول الطلبة قبل الاعتماد: يُعرض موسوماً «مبدئي»");
 check(server.includes("const rows = options.finalOnly ? await finalRowsOnly(liveRows, termId) : liveRows;"), "finalOnly يمرّ بـ finalRowsOnly");
 const publicSchedule = server.slice(server.indexOf('app.get("/api/public/schedule/:token"'), server.indexOf("const TERM_WEEKS"));
 check(publicSchedule.includes('resolved.link.kind === "students"'), "رابط الطلبة لا يفتح جدول القسم الحيّ (مسودّة)");
