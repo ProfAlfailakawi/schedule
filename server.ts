@@ -6969,7 +6969,13 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
   const instructorId = Number(body.AdInstructorId || 0);
   const excludeId = Number(body.excludeId || 0);
   const dayKeys = SCHEDULE_DAY_KEYS.filter(key => Boolean(body[key]));
-  const duration = Math.max(30, Math.min(300, Number(body.durationMinutes || 60)));
+  /* «اقترح قاعة»: الوقت محسوم والسؤال عن القاعة وحدها. القاعدة نفسها (قاعات
+     القسم + المستعارة المعتمدة، الفراغ، الأستاذ، الانتقال) لكن عند خانة واحدة،
+     وتُعاد عدة قاعات بدل عدة أوقات. */
+  const fixedStart = body.roomOnly && body.fstarttime ? timeToMinutes(body.fstarttime) : NaN;
+  const fixedEnd = body.roomOnly && body.fendtime ? timeToMinutes(body.fendtime) : NaN;
+  const roomOnly = Number.isFinite(fixedStart) && Number.isFinite(fixedEnd) && fixedEnd > fixedStart;
+  const duration = roomOnly ? fixedEnd - fixedStart : Math.max(30, Math.min(300, Number(body.durationMinutes || 60)));
 
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!dayKeys.length) { res.status(400).json({ error: "اختر يوماً واحداً على الأقل" }); return; }
@@ -7003,7 +7009,10 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
   const instructorRows = instructorId ? live.filter(row => Number(row.AdInstructorId) === instructorId) : [];
 
   const candidates: any[] = [];
-  for (let start = DAY_START; start + duration <= DAY_END; start += STEP) {
+  const starts: number[] = [];
+  if (roomOnly) starts.push(fixedStart);
+  else for (let start = DAY_START; start + duration <= DAY_END; start += STEP) starts.push(start);
+  for (const start of starts) {
     const end = start + duration;
     for (const hall of halls) {
       const hallRows = live.filter(row => row.roomId && String(row.roomId)===hall.roomId);
@@ -7073,8 +7082,8 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
   const seen = new Set<string>();
   const slots = candidates
     .sort((a, b) => b.score - a.score || a.start.localeCompare(b.start))
-    .filter(slot => { if (seen.has(slot.start)) return false; seen.add(slot.start); return true; })
-    .slice(0, 3);
+    .filter(slot => { if (roomOnly) return true; if (seen.has(slot.start)) return false; seen.add(slot.start); return true; })
+    .slice(0, roomOnly ? 6 : 3);
 
   res.json({ slots, considered: candidates.length });
 });
