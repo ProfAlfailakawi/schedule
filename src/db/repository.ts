@@ -41,6 +41,7 @@ import {
   CampusMobilityProfile,
   ScheduleShareLink, ShareLinkInstructorMark,
   InstructorRequest,
+  StudyProposal,
   VisitingRoster,
   DepartmentDelegateDirectory,
   DepartmentRoomDirectory,
@@ -219,6 +220,7 @@ interface DBState {
   clientTelemetry?: ClientTelemetryEntry[];
   scheduleComments?: ScheduleComment[];
   instructorRequests?: InstructorRequest[];
+  studyProposals?: StudyProposal[];
   studentNeeds?: StudentNeed[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
@@ -260,7 +262,7 @@ interface LegacySnapshot extends DBState {
 let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
-  clientTelemetry: [], scheduleComments: [], instructorRequests: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
+  clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
   scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
@@ -828,6 +830,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.clientTelemetry)) db.clientTelemetry = [];
       if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
       if (!Array.isArray(db.instructorRequests)) db.instructorRequests = [];
+      if (!Array.isArray(db.studyProposals)) db.studyProposals = [];
       if (!Array.isArray(db.schedulePublications)) db.schedulePublications = [];
       if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
       if (!Array.isArray(db.degreeRules)) db.degreeRules = [];
@@ -921,6 +924,22 @@ export class ScheduleRevisionConflict extends Error {
   constructor(public current: FSchedule) {
     super("تغيّر هذا الموعد أثناء عملك.");
     this.name = "ScheduleRevisionConflict";
+  }
+}
+
+/** المقترحُ الدراسي تغيّر بين قراءته وكتابته: لا تُكتب نسخةٌ فوق أخرى لم تُرَ. */
+export class StudyProposalRevisionConflict extends Error {
+  constructor(public current: StudyProposal) {
+    super("تغيّر هذا المقترح أثناء عملك.");
+    this.name = "StudyProposalRevisionConflict";
+  }
+}
+
+/** التثبيتُ نُفّذ من قبل: الضغطةُ الثانية لا تُنشئ ولا تُسند مرةً أخرى. */
+export class StudyProposalAlreadyCommitted extends Error {
+  constructor(public current: StudyProposal) {
+    super("ثُبّت هذا المقترح من قبل.");
+    this.name = "StudyProposalAlreadyCommitted";
   }
 }
 
@@ -2182,7 +2201,7 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
     const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
     replaceCurrentDb({
       users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
-      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], instructorRequests: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
+      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
     });
     saveDatabase();
   }
@@ -4320,6 +4339,165 @@ export const Repository = {
     return (db.instructorRequests || [])
       .filter(inScope)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+
+  /* ══════════════════════════════════════════════════════════════════════
+     المقترحات الدراسية
+     ══════════════════════════════════════════════════════════════════════
+
+     مسودةٌ يعدّها القسم لأستاذٍ في فصلٍ واحد، مستقلةٌ عن جدول المواعيد: لا
+     صفَّ فيه ولا حجزَ حتى التثبيت. كلُّ كتابةٍ تقارن `rev` بما قرأته، فلا
+     تُمحى موافقةٌ ولا نسخةٌ لم يرَها الكاتب (الأستاذ والقسم يكتبان معاً).   */
+
+  createStudyProposal: async (entry: Omit<StudyProposal, "id" | "createdAt" | "updatedAt" | "rev">): Promise<StudyProposal> => {
+    const now = new Date().toISOString();
+    const row: StudyProposal = { ...entry, id: randomUUID(), createdAt: now, updatedAt: now, rev: 1 };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("studyProposals").doc(row.id).set(row);
+      return row;
+    }
+    if (!Array.isArray(db.studyProposals)) db.studyProposals = [];
+    db.studyProposals.unshift(row);
+    saveDatabase();
+    return row;
+  },
+
+  getStudyProposal: async (id: string): Promise<StudyProposal | undefined> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("studyProposals").doc(String(id)).get();
+      return doc.exists ? (doc.data() as StudyProposal) : undefined;
+    }
+    return (db.studyProposals || []).find(row => row.id === id);
+  },
+
+  getStudyProposalsByTerm: async (termId: number): Promise<StudyProposal[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("studyProposals").where("AdTermId", "==", termId).limit(2000).get();
+      return snap.docs.map(doc => doc.data() as StudyProposal).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return (db.studyProposals || []).filter(row => Number(row.AdTermId) === termId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  getStudyProposalsByRequest: async (requestId: string): Promise<StudyProposal[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("studyProposals").where("requestId", "==", requestId).limit(200).get();
+      return snap.docs.map(doc => doc.data() as StudyProposal).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return (db.studyProposals || []).filter(row => row.requestId === requestId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  /** يكتب `next` إن كان `expectedRev` ما زال هو الحالي، وإلا يرمي StudyProposalRevisionConflict. */
+  saveStudyProposal: async (next: StudyProposal, expectedRev: number): Promise<StudyProposal> => {
+    const written: StudyProposal = { ...next, rev: expectedRev + 1, updatedAt: new Date().toISOString() };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("studyProposals").doc(next.id);
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(ref);
+        if (!doc.exists) throw new Error("المقترح غير موجود");
+        const current = doc.data() as StudyProposal;
+        if (Number(current.rev || 0) !== expectedRev) throw new StudyProposalRevisionConflict(current);
+        transaction.set(ref, written);
+        return written;
+      });
+    }
+    if (!Array.isArray(db.studyProposals)) db.studyProposals = [];
+    const at = db.studyProposals.findIndex(item => item.id === next.id);
+    if (at < 0) throw new Error("المقترح غير موجود");
+    if (Number(db.studyProposals[at].rev || 0) !== expectedRev) throw new StudyProposalRevisionConflict(db.studyProposals[at]);
+    db.studyProposals[at] = written;
+    saveDatabase();
+    return written;
+  },
+
+  /**
+   * تثبيتُ المقترح: كلُّ التغييرات المترابطة وحالةُ المقترح نفسه في معاملةٍ
+   * واحدة. إما أن يهبط الجميع أو لا يهبط شيء؛ ولا تُنشأ شعبةٌ مرتين لأن
+   * المعاملة تقرأ المقترحَ فتجد `commit` إن سبقتها ضغطةٌ أخرى.
+   *
+   * `build` يستلم الصفوف الجديدة (بمعرّفاتها الحقيقية بالترتيب نفسه الذي
+   * أُعطيت به) ويعيد وثيقة المقترح النهائية بنتيجة التثبيت.
+   */
+  commitStudyProposal: async (plan: {
+    proposalId: string;
+    expectedRev: number;
+    /** الفصل ودالّةُ حارسٍ تُشغَّل على صفوفه المقروءة داخل المعاملة نفسها (فتدخل في مجموعة القراءة). */
+    termId?: number;
+    guard?: (termRows: FSchedule[]) => void;
+    creates: Array<Omit<FSchedule, "id">>;
+    updates: Array<{ id: number; fields: Partial<FSchedule>; expectedRev: number }>;
+    deletes: Array<{ id: number; expectedRev: number }>;
+    build: (created: FSchedule[]) => StudyProposal;
+  }): Promise<{ proposal: StudyProposal; created: FSchedule[]; updated: FSchedule[] }> => {
+    invalidateSchedules();
+    invalidateReference(REFERENCE_KEYS.scheduleCount);
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const firstId = plan.creates.length ? await reserveFirestoreIds("schedules", plan.creates.length) : 0;
+      const proposalRef = firestoreDb.collection("studyProposals").doc(plan.proposalId);
+      const updateRefs = plan.updates.map(u => firestoreDb!.collection("schedules").doc(`schedule_${u.id}`));
+      const deleteRefs = plan.deletes.map(d => firestoreDb!.collection("schedules").doc(`schedule_${d.id}`));
+      const result = await firestoreDb.runTransaction(async transaction => {
+        const proposalDoc = await transaction.get(proposalRef);
+        if (!proposalDoc.exists) throw new Error("المقترح غير موجود");
+        const current = proposalDoc.data() as StudyProposal;
+        if (current.commit || current.status === "committed") throw new StudyProposalAlreadyCommitted(current);
+        if (Number(current.rev || 0) !== plan.expectedRev) throw new StudyProposalRevisionConflict(current);
+        if (plan.guard && plan.termId !== undefined) {
+          const termSnap = await transaction.get(firestoreDb!.collection("schedules").where("AdTermId", "==", plan.termId));
+          plan.guard(termSnap.docs.map(doc => doc.data() as FSchedule));
+        }
+        const refs = [...updateRefs, ...deleteRefs];
+        const docs = refs.length ? await transaction.getAll(...refs) : [];
+        const updated: FSchedule[] = [];
+        docs.forEach((doc, index) => {
+          if (!doc.exists) throw new Error("الجدول غير موجود");
+          const row = doc.data() as FSchedule;
+          const expected = index < plan.updates.length ? plan.updates[index].expectedRev : plan.deletes[index - plan.updates.length].expectedRev;
+          if (Number(row.rev || 0) !== expected) throw new ScheduleRevisionConflict(row);
+          if (index < plan.updates.length) updated.push({ ...row, ...plan.updates[index].fields, rev: Number(row.rev || 0) + 1 });
+        });
+        const created: FSchedule[] = plan.creates.map((row, index) => ({ ...row, id: firstId + index, rev: 1 }));
+        updated.forEach((row, index) => transaction.set(updateRefs[index], row));
+        deleteRefs.forEach(ref => transaction.delete(ref));
+        created.forEach(row => transaction.set(firestoreDb!.collection("schedules").doc(`schedule_${row.id}`), row));
+        const next = { ...plan.build(created), rev: plan.expectedRev + 1, updatedAt: new Date().toISOString() };
+        transaction.set(proposalRef, next);
+        return { proposal: next, created, updated };
+      });
+      invalidateSchedules();
+      return result;
+    }
+    /* Demo / local: the check and the apply run with no await between them, so
+       nothing can interleave. Everything is verified before anything is touched. */
+    if (!Array.isArray(db.studyProposals)) db.studyProposals = [];
+    const at = db.studyProposals.findIndex(item => item.id === plan.proposalId);
+    if (at < 0) throw new Error("المقترح غير موجود");
+    const current = db.studyProposals[at];
+    if (current.commit || current.status === "committed") throw new StudyProposalAlreadyCommitted(current);
+    if (Number(current.rev || 0) !== plan.expectedRev) throw new StudyProposalRevisionConflict(current);
+    if (plan.guard && plan.termId !== undefined) plan.guard(db.schedules.filter(r => Number(r.AdTermId) === plan.termId));
+    for (const item of [...plan.updates, ...plan.deletes]) {
+      const row = db.schedules.find(r => r.id === item.id);
+      if (!row) throw new Error("الجدول غير موجود");
+      if (Number(row.rev || 0) !== item.expectedRev) throw new ScheduleRevisionConflict(row);
+    }
+    const updated: FSchedule[] = [];
+    for (const item of plan.updates) {
+      const idx = db.schedules.findIndex(r => r.id === item.id);
+      db.schedules[idx] = { ...db.schedules[idx], ...item.fields, rev: Number(db.schedules[idx].rev || 0) + 1 };
+      updated.push(db.schedules[idx]);
+    }
+    const deleteIds = new Set(plan.deletes.map(d => d.id));
+    if (deleteIds.size) db.schedules = db.schedules.filter(r => !deleteIds.has(r.id));
+    let nextId = db.schedules.length > 0 ? Math.max(...db.schedules.map(r => r.id)) + 1 : 1;
+    const created: FSchedule[] = plan.creates.map(row => ({ ...row, id: nextId++, rev: 1 }));
+    db.schedules.push(...created);
+    const next = { ...plan.build(created), rev: plan.expectedRev + 1, updatedAt: new Date().toISOString() };
+    db.studyProposals[at] = next;
+    saveDatabase();
+    return { proposal: next, created, updated };
   },
 
   /* ══════════════════════════════════════════════════════════════════════

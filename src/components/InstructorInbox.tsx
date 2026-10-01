@@ -29,11 +29,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
-  MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
+  ClipboardPen, MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
 import { DnaCount } from "./dna";
 import { RequestStatusStepper, RequestTimelineToggle, RequestTotalsFunnel } from "./dna/requestDna";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
+import { ProposalLauncherBar, ProposalStrip, type OpenWorkspace } from "./proposal/ProposalInboxParts";
+import { proposalApi, type StaffProposalView } from "./proposal/proposalApi";
+const StudyProposalWorkspace = React.lazy(() => import("./proposal/StudyProposalWorkspace"));
 import ScopeAskBar, { type ScopeAskSelect } from "./ScopeAskBar";
 import {
   Badge, EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton, Surface,
@@ -269,11 +272,13 @@ const READINESS: Record<Readiness, string> = {
  * ما قاله القسمُ والأستاذ في البند بترتيبه، وحالتُه من القاعدة الواحدة
  * (`negotiationState`)، وسطرُ ردٍّ يحمل أوقاتاً مقترحة من أقرب المتاح. ليس
  * قراراً: لا يكتب في الجدول. التثبيتُ والرفضُ يبقيان زرّيهما. */
-function RequestThread({ item, busy, onReply, onClose }: {
+function RequestThread({ item, busy, onReply, onClose, onProposal }: {
   item: InstructorRequestItem;
   busy: boolean;
   onReply: (text: string, slots: any[]) => void;
   onClose?: () => void;
+  /** يفتح مساحة «إعداد مقترح دراسي» مرتبطةً بهذا البند. */
+  onProposal?: () => void;
 }) {
   const slotKey = (slot: { day: string; days?: string[]; start: string; end: string }) =>
     `${(slot.days?.length ? slot.days : [slot.day]).join(",")}|${slot.start}|${slot.end}`;
@@ -290,6 +295,11 @@ function RequestThread({ item, busy, onReply, onClose }: {
       <header>
         <strong><MessageSquare aria-hidden="true" /> الحوار مع الأستاذ</strong>
         <span className="request-negotiation" data-negotiation={state}>{NEGOTIATION_LABEL[state]}</span>
+        {onProposal ? (
+          <button type="button" className="request-thread-proposal" onClick={onProposal} data-guide-target="proposal-from-thread">
+            <ClipboardPen aria-hidden="true" /> إعداد مقترح دراسي
+          </button>
+        ) : null}
         {onClose ? <button type="button" onClick={onClose} aria-label="إغلاق" data-guide-ignore="إغلاق الحوار — لا يغيّر شيئاً"><X /></button> : null}
       </header>
       {thread.length ? (
@@ -357,7 +367,7 @@ function RequestThread({ item, busy, onReply, onClose }: {
   );
 }
 
-function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, rowErrors }: {
+function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, rowErrors, proposals, onOpenProposal }: {
   key?: React.Key;
   row: InboxRequest;
   currentRows: Map<number, FSchedule>;
@@ -366,6 +376,8 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
   busyKey: string | null;
   filter: (item: InstructorRequestItem) => boolean;
   rowErrors: Record<string, string>;
+  proposals: StaffProposalView[];
+  onOpenProposal: (open: OpenWorkspace) => void;
 }) {
   const [rejecting, setRejecting] = useState<number | null>(null);
 
@@ -402,6 +414,9 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
           </span>
         ) : null}
         {row.status === "settled" ? <Badge tone="success">انتهى</Badge> : null}
+        <button type="button" className="request-propose" onClick={() => onOpenProposal({ requestId: row.id })} data-guide-target="proposal-start">
+          <ClipboardPen aria-hidden="true" /> إعداد مقترح دراسي
+        </button>
         {/* ── إبلاغُ الأستاذ بالقرار ──────────────────────────────────────
             حين يُقرَّر بندٌ واحدٌ على الأقل: رسالةُ واتساب جاهزة تعدّ ما ثُبّت
             وما رُفض، ومعها رابطُه نفسه ليرى التفاصيل والبدائل. */}
@@ -440,6 +455,9 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
         />
       </div>
 
+      {/* المقترحات الدراسية لهذا الأستاذ، وزرُّ البدء منها. */}
+      <ProposalStrip requestId={row.id} proposals={proposals} onOpen={onOpenProposal} compact />
+
       {/* ── جدولٌ لا كومةُ بطاقات ─────────────────────────────────────────
           كلُّ بندٍ صفٌّ واحد بأعمدةٍ ثابتة: ما هو، وأيُّ مقرّر، وكان، والمطلوب،
           والفحص، والقرار. فيُقرأ الطلبُ كلُّه بنظرة كما يُقرأ تقريرُ
@@ -472,6 +490,7 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
             onCloseReject={() => setRejecting(null)}
             onDecide={onDecide}
             onReply={onReply}
+            onProposal={itemIndex => onOpenProposal({ requestId: row.id, itemIndex })}
           />
         ))}
           </tbody>
@@ -484,13 +503,14 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
 /* ── صفُّ بند ─────────────────────────────────────────────────────────────
  * الحكمُ المحفوظ مع الطلب والفحصُ الحيّ يُقرآن معاً: ما منعه أحدُهما مُنع،
  * وما نبّه إليه أحدُهما قيل. ولا يُكرَّر السببُ نفسُه مرّتين. */
-function RequestRow({ row, item, index, current, busy, rejecting, error, onReject, onCloseReject, onDecide, onReply }: {
+function RequestRow({ row, item, index, current, busy, rejecting, error, onReject, onCloseReject, onDecide, onReply, onProposal }: {
   key?: React.Key;
   row: InboxRequest; item: InstructorRequestItem; index: number; current?: FSchedule;
   busy: boolean; rejecting: boolean; error?: string;
   onReject: () => void; onCloseReject: () => void;
   onDecide: (index: number, state: "fixed" | "rejected", extra?: any) => void;
   onReply: (index: number, text: string, slots: any[]) => void;
+  onProposal?: (index: number) => void;
 }) {
   const decided = item.decision?.state;
   const negotiation = negotiationState(item);
@@ -647,6 +667,7 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
             busy={busy}
             onClose={hasThread ? undefined : () => setTalking(false)}
             onReply={(text, slots) => onReply(index, text, slots)}
+            onProposal={onProposal ? () => onProposal(index) : undefined}
           />
         </td></tr>
       ) : null}
@@ -742,6 +763,9 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [ask, setAsk] = useState("");
   const [showUnchanged, setShowUnchanged] = useState(false);
+  /* المقترحات الدراسية: قائمتها في النطاق، والمساحة المفتوحة الآن (إن وُجدت). */
+  const [proposals, setProposals] = useState<StaffProposalView[]>([]);
+  const [workspace, setWorkspace] = useState<OpenWorkspace | null>(null);
   /* ── المرشّحات ──────────────────────────────────────────────────────────
      أربعةُ أسئلةٍ يسألها المنسّق فعلاً: ما الذي ينتظرني؟ أيُّ نوع؟ ما الجاهزُ
      منه؟ وفي أيّ قسم؟ وكلٌّ منها زرٌّ واحد، لا قائمةٌ منسدلة. */
@@ -842,6 +866,10 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       setRows(data.rows || []);
       setTotals(data.totals || null);
       setCurrentRows(new Map((data.currentRows || []).map((row: FSchedule) => [Number(row.id), row])));
+      /* المقترحات تأتي بعد الطلبات ولا تُوقف عرضها إن تعذّرت. */
+      proposalApi.list(collegeId, sectionId, termId)
+        .then(result => setProposals(result.proposals || []))
+        .catch(() => undefined);
     } catch (e: any) { setError(e.message); setRows([]); }
   }, [collegeId, sectionId, termId]);
 
@@ -1223,6 +1251,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
             </RequestTotalsFunnel>
           </Surface>
 
+          <ProposalLauncherBar rows={rows} proposals={proposals} onOpen={setWorkspace} />
+
           {silent.length ? (
             <div className="request-silent">
               <MailQuestion aria-hidden="true" />
@@ -1320,6 +1350,8 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                   busyKey={busyKey}
                   filter={itemFilter}
                   rowErrors={rowErrors}
+                  proposals={proposals.filter(view => view.proposal.requestId === row.id)}
+                  onOpenProposal={setWorkspace}
                   onDecide={(index, state, extra) => void decide(row, index, state, extra)}
                   onReply={(index, text, slots) => void reply(row, index, text, slots)}
                 />
@@ -1373,6 +1405,19 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           />
         );
       })() : null}
+
+      {workspace ? (
+        <React.Suspense fallback={<MicroLoader label="يفتح مساحة المقترح…" />}>
+          <StudyProposalWorkspace
+            requestId={workspace.requestId}
+            proposalId={workspace.proposalId}
+            itemIndex={workspace.itemIndex ?? null}
+            startWith={workspace.startWith ?? null}
+            onClose={() => { setWorkspace(null); void load(); }}
+            onChanged={() => void load()}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 }
