@@ -601,6 +601,16 @@ const rateLimitHeavyReport = rateLimit({
   message: { error: "طلباتٌ كثيرة لهذا التقرير في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
 });
 
+/* طلبُ الأستاذ وردُّه من رابطه العام: حدٌّ سخيٌّ لإنسانٍ يكتب، فوق عدّاد
+   المحاولات الموقّعة (publicAttempts) لا بدلاً منه. */
+const rateLimitPublicRequest = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "محاولاتٌ كثيرة في وقتٍ قصير. انتظر قليلاً ثم أعد المحاولة." },
+});
+
 const rateLimitDemoRole = rateLimit({
   windowMs: 60_000,
   limit: 30,
@@ -17862,7 +17872,7 @@ async function verifyRequestSigner(request: InstructorRequest, req: Request, res
   return civil;
 }
 
-app.post("/api/public/request/:token", async (req: Request, res: Response) => {
+app.post("/api/public/request/:token", rateLimitPublicRequest, async (req: Request, res: Response) => {
   const resolved = await resolveRequestLink(String(req.params.token || ""));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (!requestWindowOpen(resolved.request)) {
@@ -18038,7 +18048,7 @@ sectionId: allowedOption.sectionId,
  * وهو توقيعٌ كالإرسال نفسه، ويبقى مفتوحاً بعد إغلاق نافذة الطلبات: الحوارُ
  * يجري بعدها، ولا يُغلقه إلا فصلٌ جُمِّد.
  */
-app.post("/api/public/request/:token/reply", async (req: Request, res: Response) => {
+app.post("/api/public/request/:token/reply", rateLimitPublicRequest, async (req: Request, res: Response) => {
   const resolved = await resolveRequestLink(String(req.params.token || ""));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (!resolved.request.submittedAt) { res.status(409).json({ error: "أرسل طلبك أولاً، ثم يبدأ الحوار مع القسم." }); return; }
