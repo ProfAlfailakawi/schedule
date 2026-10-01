@@ -1853,3 +1853,8 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .section-plan-report-table th,.section-plan-report-table td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:start;vertical-align:top}
 .section-plan-report-table th{color:var(--muted);font-size:var(--t-xs);font-weight:600}
 .section-plan-report-table tfoot td{font-weight:700;border-bottom:0}
+
+/* أدوات الجدول ستّ تبويبات بعد «تخطيط الشعب»: صفٌّ واحد على الشاشة الواسعة،
+   وصفّان متساويان (٣ × ٢) على الهاتف — لا تبويبٌ يتيم في سطرٍ وحده. */
+.transfer-tabs{grid-template-columns:repeat(6,minmax(0,1fr))!important}
+@media (max-width:760px){.transfer-tabs{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
