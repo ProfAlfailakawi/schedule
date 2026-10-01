@@ -1834,10 +1834,17 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .section-plan-row input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink)}
 .section-plan-count{font-weight:700;font-size:var(--t-md,16px)}
 .section-plan-reason{color:var(--muted);line-height:1.7}
+/* الهاتف: كل مقرر بطاقة — اسمه، ثم أربع خانات معنونة متساوية، ثم السبب. */
 @media (max-width:760px){
-  .section-plan-row{grid-template-columns:1fr auto auto}
   .section-plan-row.head{display:none}
-  .section-plan-row>span:first-child,.section-plan-reason{grid-column:1/-1}
+  .section-plan-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 8px;padding:12px}
+  .section-plan-course{grid-column:1/-1;order:0;font-size:var(--t-md,16px)}
+  .section-plan-left{order:1}.section-plan-cap{order:2}.section-plan-count{order:3}.section-plan-pick{order:4}
+  .section-plan-reason{grid-column:1/-1;order:5;font-size:var(--t-xs)}
+  .section-plan-row>[data-label]{display:grid;align-content:start;gap:4px;font-size:var(--t-md,16px)}
+  .section-plan-row>[data-label]::before{content:attr(data-label);color:var(--muted);font-size:var(--t-xs);font-weight:600}
+  .section-plan-row input{width:100%;min-width:0;text-align:center}
+  .section-plan-pick{justify-items:stretch}
 }
 .section-plan-warning{display:block;margin:0;color:var(--danger);font-style:normal;font-size:var(--t-sm);line-height:1.7}
 .section-plan-save{box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 28%,transparent)}
@@ -1884,6 +1891,9 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
    وصفّان متساويان (٣ × ٢) على الهاتف — لا تبويبٌ يتيم في سطرٍ وحده. */
 .transfer-tabs{grid-template-columns:repeat(6,minmax(0,1fr))!important}
 @media (max-width:760px){.transfer-tabs{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+/* فصلٌ منتهٍ: أربع تبويبات (لا استيراد ولا تخطيط) — صفٌّ واحد، وصفّان متساويان على الهاتف. */
+.transfer-tabs.is-ended{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+@media (max-width:760px){.transfer-tabs.is-ended{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 
 /* ── قائمة الملاحظة كاملةً، صفحةً صفحة (PagedFindingList) ─────────────────
    ملخّصٌ وبحثٌ فوق، والعناصر بتخطيطها الأصلي (الحاوية تأخذ صنف القائمة التي

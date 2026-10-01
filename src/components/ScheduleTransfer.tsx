@@ -58,6 +58,9 @@ type Tab = "export" | "import" | "publish" | "retire" | "visiting" | "planning";
 export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onSectionChange, onClose }: Props) {
   useDialogDismiss(true, onClose);
   const [tab, setTab] = useState<Tab>("export");
+  /* فصلٌ منتهٍ: لا استيراد ولا تخطيط شعب فيه — يُقرأ ويُصدَّر فقط، كي لا يُكتب في أرشيف. */
+  const termEnded = termIsArchive(terms.find(term => Number(term.AdTermId) === Number(termId)) as any, terms as any);
+  useEffect(() => { if (termEnded && (tab === "import" || tab === "planning")) setTab("export"); }, [termEnded, tab]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<any>(null);
@@ -1113,7 +1116,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         <header>
           <div>
             <span className="surface-kicker">الجدول كوحدة واحدة</span>
-            <h2>تصدير · استيراد · نشر · استبدال · منتدبون · تخطيط</h2>
+            <h2>{termEnded ? "تصدير · نشر · استبدال · منتدبون" : "تصدير · استيراد · نشر · استبدال · منتدبون · تخطيط"}</h2>
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
@@ -1121,13 +1124,17 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
         {/* التبويبات تختفي مع الحصيلة: الشاشة قالت ما جرى، ولا عودة إلى
             تبويبات النقل إلا بعد إغلاقها. */}
         {publishReceipt ? null : (
-        <nav className="transfer-tabs">
+        <nav className={`transfer-tabs${termEnded ? " is-ended" : ""}`}>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")} title="تصدير"><Download />تصدير</button>
-          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")} title="استيراد"><Upload />استيراد</button>
+          {termEnded ? null : (
+            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")} title="استيراد"><Upload />استيراد</button>
+          )}
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "publish" ? "active" : ""} onClick={() => setTab("publish")} title="نشر"><Link2 />نشر</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")} title="استبدال"><UserMinus />استبدال</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
-          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "planning" ? "active" : ""} onClick={() => setTab("planning")} title="تخطيط الشعب"><UsersRound />تخطيط الشعب</button>
+          {termEnded ? null : (
+            <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "planning" ? "active" : ""} onClick={() => setTab("planning")} title="تخطيط الشعب"><UsersRound />تخطيط الشعب</button>
+          )}
         </nav>
         )}
 

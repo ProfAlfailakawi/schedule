@@ -269,19 +269,19 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         </div>
         {visible.map(({ course, key, suggestion, outside, lineage }) => (
           <div className="section-plan-row" role="row" key={key}>
-            <span role="cell"><b dir="ltr">{course.code}</b> {course.name}</span>
-            <span role="cell">
+            <span role="cell" className="section-plan-course"><b dir="ltr">{course.code}</b> {course.name}</span>
+            <span role="cell" className="section-plan-left" data-label="المتبقي">
               <input type="number" min={0} max={100000} inputMode="numeric" value={remaining[key] ?? ""} placeholder="—" aria-label={`المتبقي في ${course.name}`}
                 title="من كشف عمادة التسجيل؛ يُصحَّح هنا إن أخطأت القراءة"
                 onChange={e => edit(setRemaining, key, e.target.value)} />
             </span>
-            <span role="cell">{course.capacity || "—"}</span>
-            <span role="cell" className="section-plan-count">{suggestion.min == null ? "—" : rangeText(suggestion)}</span>
+            <span role="cell" className="section-plan-cap" data-label="السعة">{course.capacity || "—"}</span>
+            <span role="cell" className="section-plan-count" data-label="المقترح">{suggestion.min == null ? "—" : rangeText(suggestion)}</span>
             <span role="cell" className="section-plan-reason">
               <b>{suggestion.headline}</b> — {suggestion.reason}{lineage ? ` · تاريخه من رقمه السابق ${lineage}` : ""}
               {suggestion.backlog ? <em className="section-plan-backlog-note"><AlertTriangle aria-hidden="true" /> {suggestion.backlog}</em> : null}
             </span>
-            <span role="cell" className="section-plan-pick">
+            <span role="cell" className="section-plan-pick" data-label="المختار">
               <input type="number" min={0} max={500} inputMode="numeric" value={chosen[key] ?? ""} placeholder={suggestion.suggested == null ? "" : String(suggestion.suggested)}
                 aria-label={`الشعب المختارة لـ${course.name}`} title="اتركها فارغة ليُعتمد المقترح"
                 onChange={e => edit(setChosen, key, e.target.value)} />
