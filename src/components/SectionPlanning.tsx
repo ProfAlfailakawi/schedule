@@ -336,6 +336,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
               {preview.missing.length ? <li>لم يرد في الكشف: <b>{countOf(preview.missing.length, AR.course)}</b> — يبقى متبقّيها كما هو</li> : null}
               {preview.foreign.length ? <li>رموزٌ ليست من مقررات القسم: <b>{preview.foreign.length}</b> — لا تُستورد</li> : null}
               {preview.source === "scan" ? <li className="is-warn">الكشف ممسوحٌ أو مصوَّر: راجع الأرقام قبل التعبئة</li> : null}
+              {preview.column != null && preview.rows.some(row => remainingOf(row, preview.column!, preview.fallback, preview.column).value == null) ? <li className="is-warn">لم تُقرأ خانته: <b>{countOf(preview.rows.filter(row => remainingOf(row, preview.column!, preview.fallback, preview.column).value == null).length, AR.course)}</b> — يُدخل بعد التعبئة</li> : null}
               {preview.rows.some(row => row.doubt) ? <li className="is-warn">قراءتان مختلفتان: <b>{countOf(preview.rows.filter(row => row.doubt).length, AR.course)}</b> — اختر الصحيح</li> : null}
             </ul>
             {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
@@ -365,6 +366,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                       <td>
                         {doubt ? null : <b>{value ?? "—"}</b>}
                         {read.fromFallback ? <small className="section-plan-cell-note"> من «لم يجتازوا» — لا شعب في الكشف</small> : null}
+                        {read.value == null && !doubt && column === preview.column ? <small className="section-plan-cell-note is-unread"> لم تُقرأ خانته — أدخله بعد التعبئة</small> : null}
                         {doubt ? (
                           <span className="section-plan-doubt" role="group" aria-label="اختر القراءة الصحيحة">
                             {[...new Set([doubt.read, doubt.derived])].map(option => (
