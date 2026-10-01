@@ -170,6 +170,15 @@ const collectionMeta: Record<string, { label: string, icon: React.FC<any> }> = {
   collegeUserAssign: { label: "ربط الكليات", icon: UserCog },
 };
 
+/** أسماءُ الكيانات في السجل بالعربية — من تسميات الشاشات نفسها؛ وما لا اسمَ له يبقى كما هو. */
+const AUDIT_ENTITY_LABEL: Record<string, string> = {
+  auth: "الدخول", schedules: "الجداول", approvals: "الاعتماد", users: "المستخدمون",
+  permissions: "الصلاحيات", colleges: "الكليات", sections: "الأقسام", courses: "المقررات",
+  instructors: "الأساتذة", terms: "الفصول", "user-scopes": "النطاقات", "system-backup": "النسخة الاحتياطية",
+  intelligence: "مركز الذكاء", "instructor-requests": "رغبات الأساتذة", "student-registration": "كشف التسجيل",
+};
+const auditEntityLabel = (entity: string) => AUDIT_ENTITY_LABEL[entity] || entity;
+
 export default function AdminUsers({
   mode,
   onNavigate,
@@ -2059,7 +2068,7 @@ export default function AdminUsers({
                 </span>
                 <div>
                   <strong>
-                    {x.action} · {x.entity}
+                    {x.action} · {auditEntityLabel(x.entity)}
                   </strong>
                   {/* What changed, in the row itself — the log is read by
                       scanning, and the answer should not need a second click. */}
@@ -2095,7 +2104,7 @@ export default function AdminUsers({
                 <div>
                   <small>عملية مسجلة</small>
                   <h2>
-                    {selectedLog.action} · {selectedLog.entity}
+                    {selectedLog.action} · {auditEntityLabel(selectedLog.entity)}
                   </h2>
                   <p>
                     {new Date(selectedLog.timestamp).toLocaleString("ar-KW-u-nu-latn")}

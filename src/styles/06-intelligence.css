@@ -4706,3 +4706,7 @@ button.twin-delta{width:100%}
 /* قسمٌ واحد: منتقي القسم لا يُرسم (singleDepartmentOf)، فتبقى «الكلية + الفصل»
    عموداً عموداً بلا خانةٍ فارغةٍ مكانه، والزرّ في طرفه كما كان. */
 @media screen and (min-width:761px){.query-scope[data-count="2"]{grid-template-columns:repeat(2,minmax(150px,1fr)) auto}}
+
+/* رأسُ لوحة الاستعلام بلا محتوى (حالات الفراغ): لا شريطَ فارغاً فوق الرسالة. */
+.query-canvas-head:empty,
+.query-canvas-head:has(>.query-count:empty):not(:has(>:not(.query-count))){display:none}

@@ -173,6 +173,13 @@
      toast, a suggestion. Everything else decelerates, because a tool read for
      hours at a time should come to rest, not bounce. */
   --ease-spring:cubic-bezier(.34,1.56,.64,1);
+
+  /* أسماءٌ قديمة تقرؤها أنماطُ سجل المباني؛ تُربط بالرموز فتتبع السمة الداكنة
+     بدل الرجوع إلى ألوانها الاحتياطية الفاتحة. */
+  --text:var(--ink);
+  --muted-text:var(--muted);
+  --soft-surface:var(--surface-2);
+  --foreground:var(--ink);
 }
 
 :root[data-theme="dark"]{
