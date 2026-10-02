@@ -5,7 +5,7 @@
 import fs from "fs";
 import {
   assessRemainingImport, detectReportDepartment, imageOrientationRefusal, imageSize,
-  readRemainingReport, remainingOf, remainingValues, type ReportCell,
+  confirmReportDepartment, HEADER_DIGITS_MARK, manualRemainingValue, planRemainingApply, readRemainingReport, remainingOf, remainingValues, type ReportCell,
 } from "../src/utils/remainingReport";
 import { readReportCells } from "../src/utils/documentOcr";
 
@@ -40,7 +40,7 @@ const clear = [
 let r = readRemainingReport(clear, catalogue, "0101");
 let a = assessRemainingImport(r, context);
 let v = remainingValues(r, r.column!);
-check(a.reject === null && a.blockers.length === 0 && a.read === 4, "كشفٌ واضح: يُقبل بلا موانع");
+check(a.reject === null && a.notes.length === 0 && !a.needsDepartmentConfirmation && a.read === 4, "كشفٌ واضح: يُقبل بلا ملاحظات ولا تأكيد قسم");
 check(v["1"] === 1336 && v["3"] === 250 && v["4"] === 200 && v["6"] === 0, "القيم من «المقاعد المتبقية» (1336، 250، 200، 0) — لا من «لم يسجلوا» (54، 370، 48، 12)");
 check(!("2" in v) && a.noSections.includes(2), "مقررٌ بلا شعب في الكشف: لا قيمة تُستورد، ولا يؤخذ «لم يجتازوا» (297)");
 check(r.missing.includes(5) && r.rows.length === 5, "الصفحتان تُقرآن معاً، ومقرر القسم الغائب (255) يُذكر");
@@ -59,20 +59,76 @@ r = readRemainingReport(mixed, mixedCatalogue, "0101");
 v = remainingValues(r, r.column!);
 check(v["1"] === 1336 && v["3"] === 250, "رموزٌ وأرقامٌ هندية (٠١٠١١٠٢) وفارسية (۰۱۰۱۲۰۱) تطابق 102 و0101201");
 
-/* ── قراءةٌ ناقصة: خانةٌ واحدة لم تُقرأ ← تُعرض وتمنع التعبئة ── */
+/* ── قراءةٌ ناقصة: خانةٌ واحدة لم تُقرأ ← يُقبل الكشف، والخانة صفراء فارغة، ولا تُملأ إلا بيد المستخدم ── */
 const partial = [page(0, [["0101102", [54, 1336, 0, 1336, 19, 54]], ["0101201", [570, 256, 6, null, 9, 370]], ["0101254", [48, 210, 10, 200, 3, 48]], ["0101310", [12, 70, 70, 0, 1, 12]]])];
 r = readRemainingReport(partial, catalogue, "0101");
 a = assessRemainingImport(r, context);
-check(a.reject === null && a.unread.includes(3) && a.blockers.some(b => b.includes("صورةً أوضح")), "قراءةٌ ناقصة: تُعرض «لم تُقرأ» وتُمنع التعبئة مع طلب صورةٍ أوضح");
+check(a.reject === null && a.read === 3 && a.unread.length === 1 && a.unread[0] === 3, "قراءةٌ ناقصة: الكشف يُقبل ويُعرض، والخانة غير المقروءة تُعدّ للمراجعة (لا رفض كلي)");
 check(!("3" in remainingValues(r, r.column!)) && remainingOf(r.rows.find(row => row.courseId === 3)!, r.column!).state === "unread",
   "الخانة الفارغة لا تُخمَّن من عمودٍ مجاور (256 السعة، 9 الشعب، 370 لم يسجلوا)");
+let plan = planRemainingApply(r, r.column!);
+check(plan.total === 3 && plan.fromSheet === 3 && plan.manual === 0 && !("3" in plan.next) && plan.untouched.join() === "3"
+  && plan.next["1"] === 1336 && plan.next["4"] === 200 && plan.next["6"] === 0,
+  "التطبيق: المقروء وحده (1336، 200، والصفر المقروء فعلاً)؛ غير المقروء لا يُكتب — لا صفر ولا تخمين");
+plan = planRemainingApply(r, r.column!, { "3": "75" });
+check(plan.total === 4 && plan.manual === 1 && plan.next["3"] === 75 && plan.fromSheet === 3, "قيمةٌ كتبها المستخدم لخانةٍ غير مقروءة: تُقبل وتُحسب يدوية");
+plan = planRemainingApply(r, r.column!, { "3": "abc" });
+check(plan.manual === 0 && !("3" in plan.next) && plan.untouched.includes(3), "قيمةٌ يدوية غير عددية لا تُقبل");
+plan = planRemainingApply(r, r.column!, { "3": "" }, { "3": "40", "5": "9", "1": "7" });
+check(plan.next["3"] === 40 && plan.next["5"] === 9 && plan.next["1"] === 1336 && plan.untouched.includes(3),
+  "القيمة المحفوظة سابقاً لخانةٍ لم تُقرأ تبقى كما هي، والمقرر الغائب من الكشف لا يُمسّ، والمقروء يحلّ محل القديم");
+check(manualRemainingValue("٣٥") === 35 && manualRemainingValue("-2") === undefined && manualRemainingValue("1.5") === undefined && manualRemainingValue("") === undefined,
+  "قيمة المستخدم: أرقامٌ هندية تُقبل، والسالب والكسر والفراغ لا");
 
-/* ── قراءةٌ رديئة: أكثر الخانات فارغة أو ضعيفة ← رفض ── */
+/* ── قراءةٌ رديئة: أكثر الخانات فارغة أو ضعيفة ← يُقبل ما قُرئ، وكل ما سواه أصفر ── */
 const poor = [page(0, [["0101102", [54, 1336, 0, null, 19, 54]], ["0101201", [570, 256, 6, 250, 9, 370], 20], ["0101254", [48, 210, 10, null, 3, 48]], ["0101310", [12, 70, 70, 0, 1, 12]]])];
 r = readRemainingReport(poor, catalogue, "0101");
 a = assessRemainingImport(r, context);
-check(Boolean(a.reject?.includes("القراءة غير واضحة") && a.reject.includes("صورةٌ أوضح")), `قراءةٌ رديئة تُرفض بشرح: ${a.reject}`);
+check(a.reject === null && a.read === 1 && a.unread.length === 3, "قراءةٌ رديئة (خانة واحدة من أربع): لا رفض كلي؛ المقروء واحد والباقي للمراجعة");
 check(remainingOf(r.rows.find(row => row.courseId === 3)!, r.column!).state === "lowConfidence", "خانةٌ بثقةٍ ضعيفة (20) لا تُعتمد");
+plan = planRemainingApply(r, r.column!);
+check(plan.total === 1 && plan.next["6"] === 0 && Object.keys(plan.next).length === 1, "ولا يُطبَّق منها إلا الخانة المقروءة");
+const nothing = [page(0, [["0101102", [54, 1336, 0, 1336, 19, 54], 20], ["0101201", [570, 256, 6, 250, 9, 370], 20], ["0101254", [48, 210, 10, 200, 3, 48], 20]])];
+r = readRemainingReport(nothing, catalogue, "0101");
+a = assessRemainingImport(r, context);
+check(r.rows.length === 3 && a.read === 0 && Boolean(a.reject?.includes("لأي مقرر")), `لا خانة مقروءة أصلاً: يُرفض — ${a.reject}`);
+
+/* ── رأس الكشف غير مقروء: تأكيدٌ صريح لا رفض ── */
+/* كشفٌ يطبع الرمز بثلاث خانات: الرأس وحده دليل القسم. */
+const threeDigits = clear.map(cells => cells.map(cell => /^0101\d{3}$/.test(cell.text) ? { ...cell, text: cell.text.slice(4) } : cell));
+r = readRemainingReport(threeDigits, catalogue, "0101");
+a = assessRemainingImport(r, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: "" });
+check(a.reject === null && a.read === 4 && a.needsDepartmentConfirmation, "رأسٌ بلا رمز القسم ولا اسمه: لا يُرفض، ويُطلب من المستخدم تأكيد القسم");
+a = assessRemainingImport(r, context);
+check(!a.needsDepartmentConfirmation, "والرأس المقروء: لا تأكيد");
+const garbled = "مر القسم العلصر, | !0010 dl نيه الإصسلاميةه\nالفصل الدراسي : 202420";
+check(!confirmReportDepartment(garbled, "0101", "التربية الإسلامية").confirmed, "الرأس المشوّه وحده لا يكفي");
+check(confirmReportDepartment(`${garbled}\n${HEADER_DIGITS_MARK} 202420 0101 01`, "0101", "التربية الإسلامية").byCode, "قراءة الأرقام وحدها تُظهر 0101 رمزاً مستقلاً والرأس العربي فيه «القسم»: يُتحقق");
+check(!confirmReportDepartment(`${garbled}\n${HEADER_DIGITS_MARK} 202420 01010 01`, "0101", "التربية الإسلامية").confirmed
+  && !confirmReportDepartment(`رأس بلا كلمة\n${HEADER_DIGITS_MARK} 0101`, "0101", "").confirmed
+  && !confirmReportDepartment(`${garbled}\n${HEADER_DIGITS_MARK} 202420 0102`, "0101", "").confirmed, "ولا يُقبل رمزٌ ملتصق بأرقام أخرى، ولا بلا «القسم»، ولا رمز قسمٍ آخر");
+
+/* ── رمزٌ أخطأت القراءة رقماً منه (263 ← 203): يُعرض للمراجعة ولا يُطبَّق ── */
+{
+  const cat = ["254", "255", "262", "263", "264", "301"].map((code, index) => ({ id: index + 1, code: `0101${code}` }));
+  const rows3: Row[] = [["254", [1, 70, 0, 70, 1, 1]], ["255", [1, 70, 0, 70, 1, 1]], ["262", [1, 140, 0, 140, 2, 1]], ["203", [9, 70, 0, 70, 1, 9]], ["264", [1, 70, 0, 70, 1, 1]], ["301", [1, 70, 0, 70, 1, 1]]];
+  const sr = readRemainingReport([page(0, rows3)], cat, "0101");
+  const sa = assessRemainingImport(sr, context);
+  check(sr.rows.length === 5 && sr.suspects?.length === 1 && sr.suspects[0].courseId === 4 && sr.suspects[0].read === "203" && sr.suspects[0].expected === "0101263",
+    "سطرٌ رمزه 203 بين 262 و264 يخالف 263 الغائب برقمٍ واحد: يُعدّ مشتبهاً به");
+  check(!sr.missing.includes(4) && !sr.foreign.includes("203") && sa.reject === null && sa.read === 5, "ولا يُحسب غائباً ولا غريباً، ولا يدخل المقروء");
+  const col = sr.column!;
+  let sp = planRemainingApply(sr, col, {}, {}, [], sr.suspects);
+  check(!("4" in sp.next) && sp.total === 5 && sp.untouched.includes(4), "لا تُطبَّق قيمته قبل التأكيد");
+  sp = planRemainingApply(sr, col, {}, {}, [4], sr.suspects);
+  check(sp.next["4"] === 70 && sp.total === 6, "وبعد تأكيد المستخدم تُطبَّق قيمته (70) للمقرر 263");
+  /* خارج ترتيب الجارين ← لا اشتباه. */
+  const outOfOrder = readRemainingReport([page(0, [["254", [1, 70, 0, 70, 1, 1]], ["255", [1, 70, 0, 70, 1, 1]], ["301", [1, 70, 0, 70, 1, 1]], ["203", [9, 70, 0, 70, 1, 9]], ["264", [1, 70, 0, 70, 1, 1]], ["262", [1, 70, 0, 70, 1, 1]]])], cat, "0101");
+  check(!outOfOrder.suspects?.length && outOfOrder.foreign.includes("203") && outOfOrder.missing.includes(4), "رمزٌ شبيه لكنه ليس بين جارَي المقرر الغائب: يبقى غريباً");
+  /* يخالف برقمين ← لا اشتباه. */
+  const twoDigits = readRemainingReport([page(0, [["254", [1, 70, 0, 70, 1, 1]], ["262", [1, 70, 0, 70, 1, 1]], ["204", [9, 70, 0, 70, 1, 9]], ["264", [1, 70, 0, 70, 1, 1]]])], cat, "0101");
+  check(!twoDigits.suspects?.length, "ويخالف برقمين: لا اشتباه");
+}
 
 /* ── قسمٌ آخر ── */
 r = readRemainingReport(clear, catalogue, "0101");
@@ -110,7 +166,7 @@ const cells = await readReportCells(fs.readFileSync("tests/fixtures/remaining-re
 const pdfCatalogue = [{ id: 1, code: "101" }, { id: 2, code: "102" }, { id: 3, code: "210" }, { id: 4, code: "315" }];
 r = readRemainingReport(cells.pages, pdfCatalogue, "0101");
 a = assessRemainingImport(r, { departmentCode: "0101", headerText: cells.headerText });
-check(cells.source === "text" && a.reject === null && a.blockers.length === 0 && remainingValues(r, r.column!)["2"] === 102, "ملف PDF حقيقي: يُقرأ ويُقبل، والقيم من عمود المتبقي");
+check(cells.source === "text" && a.reject === null && a.notes.length === 0 && !a.needsDepartmentConfirmation && remainingValues(r, r.column!)["2"] === 102, "ملف PDF حقيقي: يُقرأ ويُقبل، والقيم من عمود المتبقي");
 a = assessRemainingImport(r, { departmentCode: "0202", headerText: "رمز القسم العلمي 0101" });
 check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "والملف نفسه لقسمٍ مختار آخر: يُرفض قبل التطبيق");
 
@@ -123,7 +179,7 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   const gapReading = readRemainingReport([lost], catalogue, "0101");
   const gapAssessment = assessRemainingImport(gapReading, context);
   check((gapReading.gaps || []).some(gap => gap.after === "0101201" && gap.before === "0101255"), "سطرٌ بلا رقم مقرر يُكشف بفجوته بين جارَيه");
-  check(gapAssessment.blockers.some(text => /لم يُقرأ رقم مقرره/.test(text)), "ويمنع التعبئة حتى تُرفع صورةٌ أوضح");
+  check(gapAssessment.reject === null && gapAssessment.notes.some(text => /لم يُقرأ رقم مقرره/.test(text)), "ويُعرض ملاحظةً صفراء ولا يمنع التعبئة");
   check((readRemainingReport([full], catalogue, "0101").gaps || []).length === 0, "والكشف الكامل بلا فجوات");
 }
 
@@ -136,7 +192,7 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   const values = remainingValues(mixedReading, mixedReading.column!);
   check(mixedReading.rows.length === 6 && !Object.values(values).includes(140), "مقررات خارج القسم لا تُستورد ولا تختلط قيمها بمقررات القسم");
   check(mixedReading.foreign.length === 2, "وتُذكر للعلم فقط");
-  check(mixedAssessment.reject === null && mixedAssessment.blockers.length === 0, "ولا تمنع الاستيراد ولا تُعدّ سطراً ناقصاً");
+  check(mixedAssessment.reject === null && mixedAssessment.notes.length === 0, "ولا تمنع الاستيراد ولا تُعدّ سطراً ناقصاً");
 }
 
 console.log(`\nSection planning import audit: ${passed} passed, ${failed} failed`);

@@ -2430,3 +2430,35 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 /* الجاهزية: الرقم نفسه مع حلقته — الرسم يكرّر الرقم الظاهر ولا يضيف قراءة. */
 .deck-signals .signal-ring-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .deck-signals .signal-ring-row .mini-ring{flex:none}
+
+/* نوع التعاقد (منتدب/معيّن) في شاشة تعديل الأستاذ */
+.visiting-conversion{border:1px dashed var(--border);border-radius:var(--r-md,10px);padding:var(--s3);margin-top:var(--s3)}
+.visiting-conversion legend{display:flex;align-items:center;gap:var(--s2);font-weight:700;padding:0 var(--s2)}
+.visiting-conversion legend svg{width:1rem;height:1rem;color:var(--accent)}
+.visiting-conversion .smart-term-hint{margin-top:0}
+.visiting-conversion .visiting-conversion-warn svg{color:var(--warning)}
+.visiting-conversion-list label{display:block}
+.visiting-conversion-grid{display:grid;gap:var(--s2)}
+.visiting-conversion-preview{margin:var(--s2) 0}
+.visiting-conversion-msg.error{color:var(--danger)}
+
+/* --- الإنذار المبكر للفصل: بطاقةٌ هادئة، لا لونَ إلا لمخاطرٍ حقيقية --- */
+.term-forecast{border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface);padding:var(--s4) var(--s5);display:grid;gap:var(--s3)}
+.term-forecast>header{display:flex;align-items:center;gap:var(--s2);color:var(--muted);font-size:var(--t-xs);font-weight:600}
+.term-forecast>header svg{width:15px;height:15px}
+.term-forecast-body{display:flex;align-items:center;gap:var(--s5);flex-wrap:wrap}
+.forecast-gauge{position:relative;display:grid;place-items:center;width:84px;flex:none;gap:2px;text-align:center}
+.forecast-gauge .mini-ring{grid-area:1/1}
+.forecast-gauge b{grid-area:1/1;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums lining-nums;margin-bottom:0}
+.forecast-gauge small{grid-row:2;color:var(--muted);font-size:var(--t-xs)}
+.forecast-list{flex:1;min-width:200px;display:grid;gap:var(--s2)}
+.forecast-list ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.forecast-risk{display:flex;align-items:center;gap:var(--s2);font-size:var(--t-sm,14px)}
+.forecast-risk i{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;flex:none;background:var(--surface-2);color:var(--muted)}
+.forecast-risk i svg{width:14px;height:14px}
+.forecast-risk.tone-danger i{background:var(--danger-soft);color:var(--danger)}
+.forecast-risk.tone-warning i{background:var(--warning-soft);color:var(--warning)}
+.forecast-note,.forecast-calm{margin:0;color:var(--muted);font-size:var(--t-xs)}
+.forecast-more{justify-self:start;display:inline-flex;align-items:center;gap:4px;background:none;border:0;padding:0;color:var(--muted);font:inherit;font-size:var(--t-xs);cursor:pointer}
+.forecast-more svg{width:14px;height:14px;transition:transform .2s}
+.forecast-more[aria-expanded="true"] svg{transform:rotate(180deg)}

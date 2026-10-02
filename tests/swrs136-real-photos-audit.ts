@@ -9,7 +9,7 @@
  */
 import fs from "fs";
 import { readReportCells } from "../src/utils/documentOcr";
-import { readRemainingReport, assessRemainingImport, remainingOf, blankSpots, imageOrientationRefusal, confirmReportDepartment } from "../src/utils/remainingReport";
+import { readRemainingReport, assessRemainingImport, planRemainingApply, remainingOf, blankSpots, imageOrientationRefusal, confirmReportDepartment } from "../src/utils/remainingReport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string, detail?: unknown) => {
@@ -46,7 +46,7 @@ async function main() {
   const cells = await readReportCells(pages, "image/jpeg", found => blankSpots(found, catalogue, "0101"));
   const reading = readRemainingReport(cells.pages, catalogue, "0101");
   const assessment = assessRemainingImport(reading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: cells.headerText });
-  check(assessment.reject === null && assessment.blockers.length === 0, "الكشف الحقيقي الواضح: يُقبل بلا موانع", assessment);
+  check(assessment.reject === null && assessment.notes.length === 0 && !assessment.needsDepartmentConfirmation, "الكشف الحقيقي الواضح: يُقبل بلا ملاحظات ولا تأكيد قسم", assessment);
   check(reading.rows.length === 38 && reading.missing.length === 0, "كل مقررات الصفحتين (٣٨) قُرئت — بما فيها رموزٌ أسقطت القراءةُ الأولى رقماً منها (252، 255)", reading.missing);
   const wrong: string[] = [], unread: string[] = [];
   for (const row of reading.rows) {
@@ -59,12 +59,31 @@ async function main() {
   check(unread.length === 0, "ولا خانة ناقصة", unread);
   check(confirmReportDepartment(cells.headerText, "0101", "التربية الإسلامية").confirmed, "القسم يُتحقق منه من رأس الكشف رغم تشوّه القراءة («دمر القسم 0١10١»)");
 
+  /* PDF ممسوح بصفحتين (يُبنى من الصورتين بـ scripts/make-scan-pdf.mjs): المسار نفسه الذي يرفع به المستخدم ملفاً.
+     رمزٌ قُرئ خطأً بصيغةٍ صالحة (263 ← 203) يظهر مشتبهاً أصفر ولا يُطبَّق قبل التأكيد، ولا قيمةَ خاطئة. */
+  const pdfCells = await readReportCells(fs.readFileSync("tests/fixtures/swrs136/report.pdf"), "application/pdf", found => blankSpots(found, catalogue, "0101"));
+  const pdfReading: any = readRemainingReport(pdfCells.pages, catalogue, "0101");
+  const pdfAssessment: any = assessRemainingImport(pdfReading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: pdfCells.headerText });
+  check(pdfCells.pageCount === 2 && pdfAssessment.reject === null, "PDF ممسوح بصفحتين: يُقبل (لا رفض كامل)", pdfAssessment.reject);
+  const suspect = (pdfReading.suspects || []).find((item: any) => item.expected.endsWith("263"));
+  const id263 = catalogue.find(course => course.code.endsWith("263"))!.id;
+  check(Boolean(suspect) && !pdfReading.missing.includes(id263), "الرمز المقروء خطأً (203) يظهر مشتبهاً بـ263 ولا يضيع الصف", pdfReading.suspects);
+  const unconfirmed = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [], pdfReading.suspects || []);
+  const confirmedPlan = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [id263], pdfReading.suspects || []);
+  const pdfWrong: string[] = [];
+  for (const [key, value] of Object.entries(confirmedPlan.next)) {
+    const code = catalogue.find(course => course.id === Number(key))!.code.slice(4);
+    if (truth[code] !== value) pdfWrong.push(`${code}=${value}≠${truth[code]}`);
+  }
+  check(!(String(id263) in unconfirmed.next), "المشتبه لا يُطبَّق قبل التأكيد");
+  check(confirmedPlan.next[String(id263)] === truth["263"] && pdfWrong.length === 0, "وبعد التأكيد قيمته صحيحة (140)، ولا قيمةٌ خاطئة في كل ما طُبِّق", pdfWrong);
+
   /* القسم المخالف: الأرقام الثلاثية نفسها في كتالوج قسمٍ آخر — لا يجوز أن تُطبَّق. */
   const other = catalogueFor("0202");
   const otherReading = readRemainingReport(cells.pages, other, "0202");
   const otherAssessment = assessRemainingImport(otherReading, { departmentCode: "0202", departmentName: "الرياضيات", headerText: cells.headerText });
-  check(Boolean(otherAssessment.reject) || otherAssessment.blockers.some(text => /القسم/.test(text)), "كشف قسمٍ آخر لا يُطبَّق ولو تطابقت أرقام المقررات", otherAssessment);
-  check(/الرياضيات/.test(otherAssessment.reject || otherAssessment.blockers.join(" ")), "والرسالة تسمّي القسم المختار");
+  check(Boolean(otherAssessment.reject) || otherAssessment.needsDepartmentConfirmation, "كشف قسمٍ آخر لا يُطبَّق ولو تطابقت أرقام المقررات: رفض، أو تأكيدٌ صريح من المستخدم لا غير", otherAssessment);
+  check(!otherAssessment.reject || /الرياضيات/.test(otherAssessment.reject), "والرسالة تسمّي القسم المختار");
 
   /* الطولية: الصورة نفسها مدوّرةً ربع دورة. */
   const portrait = await transformed(pages[0], (ctx, image, surface) => { ctx.translate(surface.width, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(image, 0, 0); }, (w, h) => [h, w]);
@@ -80,7 +99,22 @@ async function main() {
   else {
     const poorReading = readRemainingReport(poorCells.pages, catalogue, "0101");
     const poorAssessment = assessRemainingImport(poorReading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: poorCells.headerText });
-    check(Boolean(poorAssessment.reject) || poorAssessment.blockers.length > 0, "الصورة الرديئة: رفضٌ أو مانع قبل التطبيق", poorAssessment);
+    /* لا رفضٌ كليّ لقراءةٍ ناقصة: يُعرض ما قُرئ، ولا تدخل خطةَ التطبيق إلا قيمةٌ تطابق الورقة. */
+    const poorWrong: string[] = [];
+    let poorRead = 0;
+    if (!poorAssessment.reject) {
+      for (const row of poorReading.rows) {
+        const code = catalogue.find(course => course.id === row.courseId)!.code.slice(4);
+        const { value } = remainingOf(row, poorReading.column!);
+        if (value === undefined) continue;
+        poorRead++;
+        if (truth[code] == null || value !== truth[code]) poorWrong.push(`${code}=${value}≠${truth[code]}`);
+      }
+      const applied = planRemainingApply(poorReading, poorReading.column!);
+      check(applied.total === poorRead && Object.entries(applied.next).every(([id, value]) => truth[catalogue.find(course => course.id === Number(id))!.code.slice(4)] === value),
+        "الصورة الرديئة: ما يُطبَّق هو المقروء وحده، وكله يطابق الورقة", applied);
+    }
+    check(Boolean(poorAssessment.reject) || poorWrong.length === 0, "الصورة الرديئة: رفضٌ، أو قبولٌ جزئي بلا قيمةٍ خاطئة واحدة (والناقص يُعرض أصفر)", { poorWrong, poorRead });
   }
 }
 
