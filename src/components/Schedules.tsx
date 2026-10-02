@@ -10354,7 +10354,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                           {c?.CourseCode || "—"}
                         </span>
                         <strong>{s.AdCourseName || c?.CourseName || ""}</strong>
-                        <Badge tone="neutral">شعبة {s.SCode}</Badge>
                         {liveNow.running.has(s.id) ? (
                           <span className="agenda-live-tag">جارية الآن</span>
                         ) : liveNow.next === s.id ? (
@@ -10362,6 +10361,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         ) : null}
                       </div>
                       <div className="agenda-sub">
+                        {/* رقم الشعبة معلومةٌ تعريفية: يثبت في سطر المعلومات لا بجانب
+                            العنوان، فلا يُقطع خلف الأزرار على الهاتف. */}
+                        <Badge tone="neutral">شعبة {s.SCode}</Badge>
                         <span>
                           <UsersRound />
                           {i?.AdInstructorName || "بدون أستاذ"}

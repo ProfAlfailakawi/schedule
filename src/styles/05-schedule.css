@@ -8043,7 +8043,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .visiting-badge.compact{min-height:18px;padding-inline:6px;font-size:11px;margin-inline-start:5px}
 .schedule-instructor-with-badge,.report-instructor-with-badge{display:inline-flex;align-items:center;gap:4px;min-width:0}
 .week-who .visiting-badge{transform:translateY(-.5px)}
-.agenda-sub>span:first-child{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+.agenda-sub>span:first-child,.agenda-sub>.badge+span{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
 .rooms-card .schedule-instructor-with-badge{max-width:100%}
 
 /* Time is one semantic value. Never let a dash become a line break that makes
@@ -8495,12 +8495,27 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
    for empty values (code, units, hours, room) are not drawn. Every real value
    stays in the DOM and on screen. */
 @media (max-width:760px){
+  /* The first column is the flexible one. It used to be the last, with the two
+     before it sized by the title's own width — a long title therefore pushed
+     the section pill under the edit/delete buttons and cut its number off. Now
+     the title takes what is left and wraps to a second line, never past it. */
   .schedule-agenda .agenda-card{
-    grid-template-columns:auto auto minmax(0,1fr);
-    gap:var(--s1) var(--s3);
-    padding:var(--s3) var(--s5);
+    grid-template-columns:minmax(0,1fr) auto auto;
+    gap:var(--s2) var(--s3);
+    padding:var(--s4) var(--s5);
     min-height:0;
     align-items:center;
+  }
+  .schedule-agenda .agenda-title-row>strong{
+    flex:1 1 0;white-space:normal;overflow:hidden;text-overflow:ellipsis;
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.45;
+  }
+  .schedule-agenda .agenda-title-row>.code-chip{flex:none}
+  .schedule-agenda .agenda-sub{align-items:center;gap:var(--s2) var(--s3)}
+  .schedule-agenda .agenda-sub>.badge{
+    min-height:22px;padding:1px var(--s3);flex:none;
+    background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
+    font-size:var(--t-xs);font-weight:700;
   }
   .schedule-agenda .agenda-card{
     grid-template-areas:
@@ -8513,7 +8528,7 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
       "time place place";
   }
   .schedule-agenda .agenda-actions{
-    grid-area:actions;width:auto;padding:0;margin:0;border-top:0;justify-content:flex-end;align-self:start;
+    grid-area:actions;width:auto;padding:0;margin:0;border-top:0;justify-content:flex-end;align-self:start;flex:none;
   }
   .schedule-agenda .agenda-meta{justify-self:end}
   .schedule-agenda .agenda-place{justify-self:start;min-width:0}
