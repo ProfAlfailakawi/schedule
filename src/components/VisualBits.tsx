@@ -125,7 +125,11 @@ export function TravelHeatMatrix({ buildings, pairs, sameBuildingMinutes }: {
     minutesOf.set(`${pair.fromBuilding}|${pair.toBuilding}`, pair.minutes);
     minutesOf.set(`${pair.toBuilding}|${pair.fromBuilding}`, pair.minutes);
   }
-  const values = pairs.map(pair => pair.minutes).filter(Number.isFinite);
+  const shown = new Set(names);
+  const values = pairs
+    .filter(pair => shown.has(pair.fromBuilding) && shown.has(pair.toBuilding))
+    .map(pair => pair.minutes)
+    .filter(Number.isFinite);
   const max = Math.max(1, ...values);
   const min = Math.min(max, ...values);
   const fmt = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
