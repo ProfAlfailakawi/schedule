@@ -157,11 +157,11 @@ function memorySentence(terms: number): string {
 }
 
 const STATIONS = [
-  { key: "start", title: "البداية", detail: "مهمة واحدة معقّدة: جدول أكاديمي قابل للعمل، لا جدول يُطبع فقط.", Icon: Sparkles },
-  { key: "link", title: "الترابط", detail: "مقررات وأعضاء هيئة تدريس وأقسام وكليات وقاعات داخل سياق واحد.", Icon: Layers },
-  { key: "guard", title: "الضبط", detail: "التعارض يُكتشف قبل أن يصير واقعاً، والاعتماد يمرّ بمراجعة تُقرأ.", Icon: ShieldCheck },
-  { key: "decide", title: "القرار", detail: "المعلومة تصل في اللحظة التي يُتَّخذ فيها القرار، لا بعده.", Icon: BrainCircuit },
-  { key: "next", title: "القادم", detail: "كل فصل يضيف معرفة جديدة دون أن يضيف ضوضاء إلى الواجهة.", Icon: CalendarDays },
+  { key: "start", title: "البداية", detail: "جدول قابل للعمل", Icon: Sparkles },
+  { key: "link", title: "الترابط", detail: "سياق واحد", Icon: Layers },
+  { key: "guard", title: "الضبط", detail: "تعارض مكشوف", Icon: ShieldCheck },
+  { key: "decide", title: "القرار", detail: "معلومة في وقتها", Icon: BrainCircuit },
+  { key: "next", title: "القادم", detail: "معرفة بلا ضوضاء", Icon: CalendarDays },
 ] as const;
 
 export default function ScheduleJourney({ version, onClose }: { version?: string; onClose: () => void }) {

@@ -4755,3 +4755,28 @@ button.twin-delta{width:100%}
 /* رأسُ لوحة الاستعلام بلا محتوى (حالات الفراغ): لا شريطَ فارغاً فوق الرسالة. */
 .query-canvas-head:empty,
 .query-canvas-head:has(>.query-count:empty):not(:has(>:not(.query-count))){display:none}
+
+/* ==========================================================================
+   Visual polish — campus travel map and worked-sum chips (presentation only)
+   ========================================================================== */
+.campus-map{margin:0;padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.campus-map svg{display:block;width:100%;max-width:460px;height:auto;margin-inline:auto}
+.campus-map line{stroke:var(--warning);opacity:.85}
+.campus-map .is-high line{stroke:var(--danger);opacity:1}
+.campus-map-node circle{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.5}
+.campus-map-node text{fill:var(--ink);font-size:11px;font-weight:600;font-family:var(--font-mono,inherit)}
+.campus-map-min{fill:var(--ink-2);font-size:11px;font-weight:600;paint-order:stroke;stroke:var(--surface-2);stroke-width:4px;stroke-linejoin:round}
+.equation-chips{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);margin-top:var(--s3);direction:ltr}
+.equation-chips .eq-term{display:grid;gap:2px;justify-items:center;min-width:64px;padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.equation-chips .eq-term b{font-size:var(--t-h4);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.equation-chips .eq-term small{font-size:var(--t-xs);color:var(--muted);direction:rtl}
+.equation-chips .eq-op{font-size:var(--t-h3);color:var(--muted);font-weight:600}
+.equation-chips .eq-result.tone-danger{border-color:var(--danger);background:var(--danger-soft)}
+.equation-chips .eq-result.tone-danger b{color:var(--danger)}
+.equation-chips .eq-result.tone-ok{border-color:var(--success);background:var(--success-soft)}
+.equation-chips .eq-result.tone-ok b{color:var(--success)}
+.castling-options small>svg{width:18px;height:18px}
+@media (forced-colors:active){
+  .campus-map line{stroke:CanvasText}
+  .campus-map .is-high line{stroke:Mark}
+}

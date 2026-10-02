@@ -21,6 +21,7 @@ import {
 } from "./ui";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
+import { TravelHeatMatrix } from "./VisualBits";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
 export default function Colleges({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
@@ -359,6 +360,11 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                             <button type="button" data-guide-ignore="مسح بحث حركة المباني فقط" onClick={() => setMobilityFind("")} aria-label="مسح البحث" title="مسح"><X aria-hidden="true" /></button>
                           ) : null}
                         </label>
+                        <TravelHeatMatrix
+                          buildings={(mobility.buildings || []).map((b: any) => String(b.code))}
+                          pairs={mobilityPairs}
+                          sameBuildingMinutes={mobility.profile?.sameBuildingMinutes ?? SAME_BUILDING_MINUTES}
+                        />
                         {shown.length ? (
                           <div className="travel-matrix">
                             {shown.map(pair => <label key={`${pair.fromBuilding}-${pair.toBuilding}`}><span className="travel-pair-name"><b>{pair.fromBuilding}</b><ArrowLeftRight aria-hidden="true" /><b>{pair.toBuilding}</b></span><div><input aria-label={`زمن الانتقال بين ${pair.fromBuilding} و${pair.toBuilding}`} type="number" min="1" max="120" value={pair.minutes} onChange={e=>updateTravelPair(pair.fromBuilding,pair.toBuilding,Number(e.target.value))}/><b>دقيقة</b></div></label>)}
