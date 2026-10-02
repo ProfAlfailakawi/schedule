@@ -1829,22 +1829,34 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .section-plan-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3)}
 .section-plan-bar input{flex:1 1 180px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink)}
 .section-plan-table{display:grid;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
-.section-plan-row{display:grid;grid-template-columns:minmax(160px,2fr) 90px 60px 70px minmax(180px,3fr) auto;gap:var(--s2);align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:var(--t-sm)}
+.section-plan-row{display:grid;grid-template-columns:minmax(180px,2fr) minmax(92px,.8fr) 64px minmax(128px,1.1fr) minmax(92px,.8fr);gap:var(--s2);align-items:center;padding:10px 12px;border-top:1px solid var(--line);font-size:var(--t-sm)}
 .section-plan-row.head{border-top:0;color:var(--muted);font-size:var(--t-xs);font-weight:600}
 .section-plan-row input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink)}
-.section-plan-count{font-weight:700;font-size:var(--t-md,16px)}
-.section-plan-reason{color:var(--muted);line-height:1.7}
+.section-plan-count{display:grid;justify-items:start;gap:3px;font-weight:700;font-size:var(--t-md,16px)}
+.section-plan-proposal-value{display:inline-flex;align-items:baseline;gap:6px;color:var(--accent)}
+.section-plan-proposal-value svg{width:15px;height:15px;align-self:center;stroke-width:2.2}
+.section-plan-proposal-value b{font-size:1.3em;font-variant-numeric:tabular-nums}
+.section-plan-proposal-value small,.section-plan-proposal-range,.section-plan-lineage{color:var(--muted);font-size:var(--t-xs);font-weight:500}
+.section-plan-proposal-range{line-height:1.5}
+.section-plan-why{position:relative;color:var(--muted);font-size:var(--t-xs);font-weight:500}
+.section-plan-why summary{display:inline-flex;align-items:center;gap:4px;cursor:pointer;list-style:none;color:var(--accent)}
+.section-plan-why summary::-webkit-details-marker{display:none}
+.section-plan-why summary svg{width:14px;height:14px}
+.section-plan-why p{position:absolute;z-index:3;inset-inline-start:0;top:100%;width:min(280px,70vw);margin:4px 0 0;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface,var(--bg));box-shadow:0 8px 28px #172b241c;line-height:1.7;font-size:var(--t-xs)}
 /* الهاتف: كل مقرر بطاقة — اسمه، ثم أربع خانات معنونة متساوية، ثم السبب. */
 @media (max-width:760px){
   .section-plan-row.head{display:none}
   .section-plan-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 8px;padding:12px}
   .section-plan-course{grid-column:1/-1;order:0;font-size:var(--t-md,16px)}
   .section-plan-left{order:1}.section-plan-cap{order:2}.section-plan-count{order:3}.section-plan-pick{order:4}
-  .section-plan-reason{grid-column:1/-1;order:5;font-size:var(--t-xs)}
   .section-plan-row>[data-label]{display:grid;align-content:start;gap:4px;font-size:var(--t-md,16px)}
   .section-plan-row>[data-label]::before{content:attr(data-label);color:var(--muted);font-size:var(--t-xs);font-weight:600}
   .section-plan-row input{width:100%;min-width:0;text-align:center}
   .section-plan-pick{justify-items:stretch}
+  .section-plan-count{align-content:start}
+  .section-plan-proposal-value{align-items:center}
+  .section-plan-lineage{grid-column:1/-1}
+  .section-plan-why p{position:fixed;inset-inline:12px;top:auto;bottom:12px;width:auto}
 }
 .section-plan-warning{display:block;margin:0;color:var(--danger);font-style:normal;font-size:var(--t-sm);line-height:1.7}
 .section-plan-save{box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 28%,transparent)}

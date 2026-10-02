@@ -3,8 +3,8 @@ import { authorityCourseCodeMatches } from "./authorityAcademicCodes";
 /**
  * ── كشفُ «المتبقي» من عمادة التسجيل ─────────────────────────────────────────
  *
- * العمادة تعطي القسم كل فصل كشفاً PDF: لكل مقرر عددُ الطلبة الذين لم يسجّلوه
- * بعد. كتابتُه يدوياً أربعين رقماً كل فصل عناءٌ ومصدرُ خطأ، فيُقرأ الملف نفسه.
+ * العمادة تعطي القسم كل فصل كشفاً PDF. يقرأ تخطيط الشعب عمود «المقاعد المتبقية»
+ * وحده مدخلاً لبناء المقترح، كي لا تختلط أرقام الطلبة أو التسجيل بالمقاعد.
  *
  * ولا نموذج ثابتاً للكشف نعتمد عليه، فالقراءة بالأعمدة لا بالمواضع المحفوظة:
  *
@@ -14,8 +14,8 @@ import { authorityCourseCodeMatches } from "./authorityAcademicCodes";
  *      عددٌ مثل 105 مقرراً.
  *   2) الأرقام الأخرى في صفوف المقررات تتجمّع أعمدةً بمواضعها، ولكل عمودٍ
  *      عنوانُه المطبوع فوقه.
- *   3) العمود الذي عنوانه «المتبقي» يُختار تلقائياً؛ وإلا يختار القسم بنفسه
- *      وهو يرى أمثلةً من أرقام كل عمود.
+ *   3) العمود الذي عنوانه «المقاعد المتبقية» يُختار تلقائياً؛ ولا يُستعاض
+ *      عنه بعمود آخر.
  *   4) المقرر المكرّر في الكشف يُجمع ويُقال ذلك؛ ورموزٌ ليست من مقررات القسم
  *      تُذكر ولا تُستورد.
  *
@@ -57,15 +57,31 @@ export interface ReportRow {
 
 export interface RemainingReading {
   columns: ReportColumn[];
-  /** عمود «المتبقي»: «الذين لم يسجلوا»، وإلا «لم يجتازوا»، وإلا عنوانٌ فيه «المتبقي»؛ أو null فيختار القسم. */
+  /** عمود المقاعد المتبقية وحده هو مدخل تخطيط الشعب. */
   column: number | null;
-  /** يُؤخذ منه حين تكون خانة العمود فارغة: «لم يجتازوا» لمقررٍ بلا شعب في الكشف. */
+  /** لا بديل عن المقاعد المتبقية؛ القيمة المجهولة تبقى للمراجعة. */
   fallback: number | null;
   rows: ReportRow[];
   /** رموزٌ بشكل رموز المقررات وليست من مقررات القسم. */
   foreign: string[];
   /** مقررات القسم التي لم ترد في الكشف. */
   missing: number[];
+}
+
+/** Reject an OCR scan that did not yield enough legible table evidence. */
+export function remainingScanQualityError(pages: readonly ReportCell[][]): string {
+  const confidence: number[] = [];
+  let pagesWithReadableText = 0;
+  for (const page of pages) {
+    const cells = page.filter(cell => normalize(cell.text).trim());
+    const characters = cells.reduce((sum, cell) => sum + (cell.text.match(/[ء-يA-Za-z0-9]/g) || []).length, 0);
+    if (characters >= 60) pagesWithReadableText++;
+    for (const cell of cells) if (Number.isFinite(cell.confidence)) confidence.push(Number(cell.confidence));
+  }
+  const averageConfidence = confidence.length ? confidence.reduce((sum, value) => sum + value, 0) / confidence.length : 0;
+  if (pagesWithReadableText !== pages.length || !confidence.length || averageConfidence < 42)
+    return "الصورة غير واضحة بما يكفي لقراءة الكشف بثقة. أعد تصوير الصفحة أفقياً وبإضاءة جيدة، أو ارفع PDF أصلياً — لم تُعبأ أي بيانات.";
+  return "";
 }
 
 const normalize = (value: string) => String(value || "")
@@ -83,9 +99,9 @@ const fold = (value: string) => normalize(value)
  *   لم يجتازوا (في بداية التسجيل) · سعة الشعب · عدد المسجلين · المقاعد المتبقية
  *   · عدد الشعب · اعداد الذين لم يسجلوا
  *
- * «المتبقي» عند القسم هو «الذين لم يسجلوا» — لا «المقاعد المتبقية» وإن اشتركا
- * في الكلمة. والعنوان يُقرأ بقطعٍ ثابتة لأن القراءة الضوئية تُشوّه أطرافه
- * («اعدد انين أم يسجلرا»)، والنصّ العربي قد يخرج من PDF معكوساً.
+ * تخطيط الشعب يعتمد «المقاعد المتبقية» تحديداً ولا يخلطها مع «الذين لم يسجلوا»
+ * أو «لم يجتازوا». والعنوان يُقرأ بقطعٍ ثابتة لأن القراءة الضوئية قد تشوّه
+ * أطرافه، والنصّ العربي قد يخرج من PDF معكوساً.
  */
 export type ColumnKind = "unregistered" | "notPassed" | "seats" | "capacity" | "registered" | "sections" | "remaining";
 export const COLUMN_TITLES: Record<ColumnKind, string> = {
@@ -382,8 +398,8 @@ export function readRemainingReport(
   });
   const ofKind = (kind: ColumnKind) => columns.filter(column => column.kind === kind).sort((a, b) => b.filled - a.filled)[0]?.id ?? null;
   const unregistered = ofKind("unregistered"), notPassed = ofKind("notPassed");
-  const column = unregistered ?? notPassed ?? ofKind("remaining");
-  const fallback = unregistered != null && notPassed != null ? notPassed : null;
+  const column = ofKind("seats");
+  const fallback = null;
 
   /* 4) الصفوف: المقرر المكرّر يُجمع. */
   const rowsOf = new Map<number, ReportRow>();
@@ -415,7 +431,7 @@ export function readRemainingReport(
 
   /* 6) حسابُ الكشف نفسه يفحص القراءة: «لم يسجلوا» = «لم يجتازوا» − «المسجلين».
      يُفحص حين تُقرأ الثلاثة كلها؛ وخلافُها قراءةٌ أخطأت: يُعتمد أوثقها ويُعلَّم الصف. */
-  if (unregistered != null && notPassed != null && registered != null) for (const row of rows) {
+  if (column == null && unregistered != null && notPassed != null && registered != null) for (const row of rows) {
     const read = row.values[unregistered], passed = row.values[notPassed], enrolled = row.values[registered];
     if (read == null || passed == null || enrolled == null) continue;
     const derived = Math.max(0, passed - enrolled);
@@ -447,14 +463,16 @@ export function remainingValues(reading: Pick<RemainingReading, "rows"> & Partia
  *   «رمز القسم العلمي 0101 التربيه الاسلاميه»
  *   «الفصل الدراسي : 202420 الفصل الدراسي الثاني 2025-2024»
  */
-export function readReportHeader(text: string): { department?: string; season?: "first" | "second" | "summer"; years?: [number, number] } {
+export function readReportHeader(text: string): { department?: string; departmentName?: string; season?: "first" | "second" | "summer"; years?: [number, number] } {
   const plain = fold(text).replace(/\s+/g, " ");
   const department = plain.match(/القسم العلمي\s*:?\s*(\d{4})(?!\d)/)?.[1];
+  const departmentNameRaw = plain.match(/القسم(?: العلمي)?\s*:?\s*[\d\sA-Za-z]{0,20}([ء-ي][ء-ي\s]{3,55})/)?.[1];
+  const departmentName = departmentNameRaw?.split(/(?:الفصل|الكلية|الفرع|التاريخ)/)[0]?.trim().replace(/\s+/g, " ");
   const named = plain.match(/(الاول|الثاني|الصيفي)\s*(\d{4})\s*[-/]\s*(\d{4})/);
   const coded = plain.match(/(?<!\d)(20\d{2})(10|20|30)(?!\d)/);
   const season = named ? ({ "الاول": "first", "الثاني": "second", "الصيفي": "summer" } as const)[named[1] as "الاول"]
     : coded ? ({ "10": "first", "20": "second", "30": "summer" } as const)[coded[2] as "10"] : undefined;
   const years = named ? [Math.min(Number(named[2]), Number(named[3])), Math.max(Number(named[2]), Number(named[3]))] as [number, number]
     : coded ? [Number(coded[1]), Number(coded[1]) + 1] as [number, number] : undefined;
-  return { ...(department ? { department } : {}), ...(season ? { season } : {}), ...(years ? { years } : {}) };
+  return { ...(department ? { department } : {}), ...(departmentName ? { departmentName } : {}), ...(season ? { season } : {}), ...(years ? { years } : {}) };
 }

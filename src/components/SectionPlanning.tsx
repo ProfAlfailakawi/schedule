@@ -1,20 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, FileUp, Printer, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, FileUp, Info, Printer, RotateCcw, Sparkles, X } from "lucide-react";
 import { PrimaryButton, PrintPortal, SecondaryButton, useDialogDismiss } from "./ui";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import {
   departmentLoadWarning, departmentTypicalTotal, suggestSectionCount,
   type DepartmentTermLoad, type SimilarTermHistory,
 } from "../utils/sectionCountSuggestion";
-import { COLUMN_TITLES, remainingOf, remainingValues, type RemainingReading } from "../utils/remainingReport";
+import { remainingOf, remainingValues, type RemainingReading } from "../utils/remainingReport";
 
 /**
- * ── تخطيط الشعب: كشفُ المتبقي ← مدىً يرسيه التاريخ ← تقرير ─────────────────
+ * ── تخطيط الشعب: المقاعد المتبقية ← مدىً يرسيه التاريخ ← تقرير ────────────
  *
- * يُعمل قبل بناء الجدول. «المتبقي» (طلبةٌ لم يسجّلوا المقرر بعد) لا يُكتب
- * يدوياً: يُستورد من كشف عمادة التسجيل PDF، ويُرى قبل أن يُملأ. لكل مقرر
- * (مرتّباً برقمه): المتبقي، ومدى الشعب المقترح وسببه، والمختار — وخانةُ المختار
+ * يُعمل قبل بناء الجدول. «المقاعد المتبقية» لا تُكتب يدوياً: تُستورد من كشف
+ * عمادة التسجيل PDF، ويُراجع العمود قبل أن يُملأ. لكل مقرر: المقاعد المتبقية،
+ * وسعة الشعبة، وعدد الشعب المقترح، والمختار — وخانةُ المختار
  * الفارغة تعني «المقترح». كلُّ تعديلٍ يُحفظ وحده، والتقرير يُطبع بأسلوب تقارير
  * الموقع. الحساب في sectionCountSuggestion.ts، وقراءة الكشف في remainingReport.ts.
  */
@@ -23,7 +23,7 @@ interface Payload {
   similarTerms: string[];
   courses: Array<{ id: number; code: string; name: string; capacity: number }>;
   remaining: Record<string, number>;
-  remainingSource: { fileName: string; importedAt: string } | null;
+  remainingSource: { fileName: string; importedAt: string; kind?: "seats" } | null;
   accepted: Record<string, number>;
   updatedAt: string;
   updatedBy?: string;
@@ -63,8 +63,6 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [reading, setReading] = useState(false);
   const [preview, setPreview] = useState<ImportReading | null>(null);
   const [column, setColumn] = useState<number | null>(null);
-  /* صفٌّ اختلفت قراءتاه (لم يسجلوا ≠ لم يجتازوا − المسجلين): ما اختاره القسم. */
-  const [doubtPicks, setDoubtPicks] = useState<Record<number, number>>({});
   const [readingNote, setReadingNote] = useState("");
   const [edits, setEdits] = useState(0);
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -177,7 +175,6 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         if (!response.ok) throw new Error(result?.error || "تعذّرت قراءة الكشف");
         const found = result as ImportReading;
         setColumn(found.column ?? (found.columns.length === 1 ? found.columns[0].id : null));
-        setDoubtPicks({});
         setPreview(found);
         return;
       }
@@ -200,7 +197,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
       if (results.length > 1) {
         const response = await fetch("/api/registration-stats/remaining-cells", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ collegeId, sectionId, termId, pages: results.flatMap(item => item.cells || []), headerText: results[0].headerText || "" }),
+          body: JSON.stringify({ collegeId, sectionId, termId, pages: results.flatMap(item => item.cells || []), headerText: results[0].headerText || "", scanned: results.some(item => item.source === "scan") }),
         });
         const merged = await response.json().catch(() => null);
         if (!response.ok) throw new Error(merged?.error || "تعذّرت قراءة الصفحات معاً");
@@ -208,17 +205,14 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
           pageCount: results.reduce((sum, item) => sum + item.pageCount, 0), fileName: files.map(file => file.name).join("، ") };
       }
       setColumn(found.column ?? (found.columns.length === 1 ? found.columns[0].id : null));
-      setDoubtPicks({});
       setPreview(found);
     } catch (e: any) { setError(e.message); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
   };
-  const fallbackFor = (found: ImportReading, chosen: number) => chosen === found.column ? found.fallback : null;
   const applyImport = () => {
     if (!preview || column == null) return;
-    const values: Record<string, number> = { ...remainingValues(preview, column, fallbackFor(preview, column)),
-      ...(column === preview.column ? Object.fromEntries(Object.entries(doubtPicks).map(([id, value]) => [id, Number(value)])) : {}) };
+    const values: Record<string, number> = { ...remainingValues(preview, column) };
     setRemaining(current => ({ ...current, ...asText(values) }));
-    setSource({ fileName: preview.fileName, importedAt: new Date().toISOString() });
+    setSource({ fileName: preview.fileName, importedAt: new Date().toISOString(), kind: "seats" });
     setPreview(null);
     setEdits(n => n + 1);
   };
@@ -244,7 +238,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const lastTerms = (history: SimilarTermHistory[]) => history.filter(item => item.sections > 0).slice(0, 3)
     .map(item => `${item.sections} (${item.termName.replace("الفصل ", "")})`).join(" · ") || "—";
   /* اسم الملف لاتينيٌّ غالباً: يُعزل اتجاهه كي لا تنقلب الأقواس حوله. */
-  const sourceLine = source ? `المتبقي من «\u2068${source.fileName}\u2069» — استُورد ${fmtDate(source.importedAt)}` : "لم يُستورد كشف المتبقي لهذا الفصل بعد";
+  const sourceLine = source ? `المقاعد المتبقية من «\u2068${source.fileName}\u2069» — استُورد ${fmtDate(source.importedAt)}` : "لم يُستورد عدد المقاعد المتبقية لهذا الفصل بعد";
   const saveLine = saveState === "saving" ? "يُحفظ…"
     : saveState === "error" ? "تعذّر الحفظ"
     : savedAt ? `حُفظ ${fmtDate(savedAt)} ${fmtTime(savedAt)}${savedBy ? ` — ${savedBy}` : ""}` : "";
@@ -258,7 +252,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
       <p className="section-plan-source">{sourceLine}</p>
       {loadWarning ? <p className="section-plan-warning">{loadWarning}</p> : null}
       <table className="section-plan-report-table">
-        <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المتبقي</th><th>المختار</th><th>المدى المقترح</th><th>آخر الفصول</th></tr></thead>
+        <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المقاعد المتبقية</th><th>المختار</th><th>المدى المقترح</th><th>آخر الفصول</th></tr></thead>
         <tbody>
           {planned.map(row => (
             <tr key={row.key} className={row.outside ? "is-outside" : undefined}>
@@ -286,14 +280,14 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   return (
     <div className="section-plan">
       <p className="section-plan-note">
-        يُقترح لكل مقرر في «{data.termName}» مدىً من الشعب يرسيه ما فتحه القسم فعلاً
-        {data.similarTerms.length ? <> في الفصول المماثلة ({data.similarTerms.join("، ")})</> : null}، و«المتبقي» من كشف عمادة التسجيل يميل به قليلاً — ولا ينزل به تحت ما يُفتح عادةً.
+        يُبنى اقتراح الشعب لكل مقرر في «{data.termName}» على المقاعد المتبقية وسعة الشعبة، مع الاسترشاد بما فتحه القسم فعلاً
+        {data.similarTerms.length ? <> في الفصول المماثلة ({data.similarTerms.join("، ")})</> : null}، ويُظهر سبب الاقتراح عند فتح «التفاصيل».
       </p>
       <div className="section-plan-import">
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
-          <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي"}
+          <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد المقاعد المتبقية"}
         </PrimaryButton>
-        <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي من عمادة التسجيل: PDF أو صور صفحاته"
+        <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المقاعد المتبقية من عمادة التسجيل: PDF أو صور صفحاته"
           onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
         <span className="section-plan-source">
           {reading ? "الكشف PDF من النظام يُقرأ في ثوانٍ؛ والممسوح أو صور الهاتف قرابة نصف دقيقة للصفحة." : <>{sourceLine}{source ? ` · في ${countOf(imported, oblique(AR.course))}` : ""}</>}
@@ -312,24 +306,26 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
       </div>
       {error ? <p className="section-plan-note" role="alert">{error}</p> : null}
       {loadWarning ? <p className="section-plan-warning" role="status">{loadWarning}</p> : null}
-      <div className="section-plan-table" role="table" aria-label="المتبقي واقتراح الشعب">
+      <div className="section-plan-table" role="table" aria-label="المقاعد المتبقية واقتراح الشعب">
         <div className="section-plan-row head" role="row">
-          <span role="columnheader">المقرر</span><span role="columnheader">المتبقي</span><span role="columnheader">السعة</span>
-          <span role="columnheader">المقترح</span><span role="columnheader">السبب</span><span role="columnheader">المختار</span>
+          <span role="columnheader">المقرر</span><span role="columnheader">المقاعد المتبقية</span><span role="columnheader">السعة</span>
+          <span role="columnheader">المقترح</span><span role="columnheader">المختار</span>
         </div>
         {visible.map(({ course, key, suggestion, outside, lineage }) => (
           <div className="section-plan-row" role="row" key={key}>
             <span role="cell" className="section-plan-course"><b dir="ltr">{course.code}</b> {course.name}</span>
-            <span role="cell" className="section-plan-left" data-label="المتبقي">
-              <input type="number" min={0} max={100000} inputMode="numeric" value={remaining[key] ?? ""} placeholder="—" aria-label={`المتبقي في ${course.name}`}
-                title="من كشف عمادة التسجيل؛ يُصحَّح هنا إن أخطأت القراءة"
+            <span role="cell" className="section-plan-left" data-label="المقاعد المتبقية">
+              <input type="number" min={0} max={100000} inputMode="numeric" value={remaining[key] ?? ""} placeholder="—" aria-label={`المقاعد المتبقية في ${course.name}`}
+                title="عدد المقاعد المتبقية من كشف الهيئة؛ يُصحَّح هنا إن أخطأت القراءة"
                 onChange={e => edit(setRemaining, key, e.target.value)} />
             </span>
             <span role="cell" className="section-plan-cap" data-label="السعة">{course.capacity || "—"}</span>
-            <span role="cell" className="section-plan-count" data-label="المقترح">{suggestion.min == null ? "—" : rangeText(suggestion)}</span>
-            <span role="cell" className="section-plan-reason">
-              <b>{suggestion.headline}</b> — {suggestion.reason}{lineage ? ` · تاريخه من رقمه السابق ${lineage}` : ""}
+            <span role="cell" className="section-plan-count" data-label="المقترح" title={suggestion.reason}>
+              <span className="section-plan-proposal-value"><Sparkles aria-hidden="true" /><b>{suggestion.suggested ?? "—"}</b><small>شعبة</small></span>
+              <span className="section-plan-proposal-range">{suggestion.min == null ? "لا اقتراح بعد" : rangeText(suggestion)}</span>
+              {lineage ? <span className="section-plan-lineage">تاريخ المقرر: {lineage}</span> : null}
               {suggestion.backlog ? <em className="section-plan-backlog-note"><AlertTriangle aria-hidden="true" /> {suggestion.backlog}</em> : null}
+              <details className="section-plan-why"><summary aria-label={`لماذا هذا المقترح؟ ${course.name}`}><Info aria-hidden="true" /><span>التفاصيل</span></summary><p>{suggestion.reason}</p></details>
             </span>
             <span role="cell" className="section-plan-pick" data-label="المختار">
               <input type="number" min={0} max={500} inputMode="numeric" value={chosen[key] ?? ""} placeholder={suggestion.suggested == null ? "" : String(suggestion.suggested)}
@@ -350,48 +346,26 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             </header>
             <ul className="section-plan-import-summary">
               <li><b>{countOf(preview.rows.length, AR.course)}</b> من مقررات القسم في الكشف</li>
-              {preview.missing.length ? <li>لم يرد في الكشف: <b>{countOf(preview.missing.length, AR.course)}</b> — يبقى متبقّيها كما هو</li> : null}
+              {preview.missing.length ? <li>لم يرد في الكشف: <b>{countOf(preview.missing.length, AR.course)}</b> — تبقى مقاعدها كما هي</li> : null}
               {preview.foreign.length ? <li>رموزٌ ليست من مقررات القسم: <b>{preview.foreign.length}</b> — لا تُستورد</li> : null}
-              {preview.source === "scan" ? <li className="is-warn">الكشف ممسوحٌ أو مصوَّر: راجع الأرقام قبل التعبئة</li> : null}
-              {column != null && preview.rows.some(row => remainingOf(row, column, fallbackFor(preview, column), preview.column).value == null) ? <li className="is-warn">لم تُقرأ خانته: <b>{countOf(preview.rows.filter(row => remainingOf(row, column, fallbackFor(preview, column), preview.column).value == null).length, AR.course)}</b> — يُدخل بعد التعبئة</li> : null}
-              {preview.rows.some(row => row.doubt) ? <li className="is-warn">قراءتان مختلفتان: <b>{countOf(preview.rows.filter(row => row.doubt).length, AR.course)}</b> — اختر الصحيح</li> : null}
+              {preview.source === "scan" ? <li className="is-warn">كشف مصوّر: راجع المقاعد المتبقية قبل التعبئة</li> : null}
+              {column != null && preview.rows.some(row => remainingOf(row, column).value == null) ? <li className="is-warn">لم تُقرأ المقاعد المتبقية في: <b>{countOf(preview.rows.filter(row => remainingOf(row, column).value == null).length, AR.course)}</b> — تُراجع بعد التعبئة</li> : null}
             </ul>
             {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
-            {preview.columns.length > 1 || preview.column == null ? (
-              <fieldset className="section-plan-columns">
-                <legend>{preview.column == null ? "لم أجد عموداً عنوانه «المتبقي» — اختر عموده:" : "عمود المتبقي:"}</legend>
-                {preview.columns.map(item => (
-                  <label key={item.id} className={column === item.id ? "is-active" : undefined}>
-                    <input type="radio" name="remaining-column" checked={column === item.id} onChange={() => setColumn(item.id)} />
-                    <span><b>{item.kind ? COLUMN_TITLES[item.kind] : item.label || `عمود ${item.id + 1}`}</b><small>{item.samples.join("، ")}…</small></span>
-                  </label>
-                ))}
-              </fieldset>
-            ) : null}
             <table className="section-plan-report-table">
-              <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المتبقي في الكشف</th><th>الحالي</th></tr></thead>
+              <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المقاعد المتبقية</th><th>المحفوظ حالياً</th></tr></thead>
               <tbody>
                 {[...preview.rows].sort((a, b) => courseNumber(courseName.get(a.courseId)?.code || "") - courseNumber(courseName.get(b.courseId)?.code || "")).map(row => {
-                  const read = column == null ? { value: undefined, fromFallback: false } : remainingOf(row, column, fallbackFor(preview, column), preview.column);
-                  const doubt = column === preview.column ? row.doubt : undefined;
-                  const value = doubt ? doubtPicks[row.courseId] ?? read.value : read.value;
+                  const read = column == null ? { value: undefined, fromFallback: false } : remainingOf(row, column);
+                  const value = read.value;
                   const current = remaining[String(row.courseId)];
                   return (
-                    <tr key={row.courseId} className={doubt ? "is-outside" : undefined}>
+                    <tr key={row.courseId}>
                       <td dir="ltr">{courseName.get(row.courseId)?.code || row.printed}</td>
                       <td>{courseName.get(row.courseId)?.name || ""}{row.occurrences > 1 ? <small> (ورد {countOf(row.occurrences, oblique(AR.visit))} — جُمع)</small> : null}</td>
                       <td>
-                        {doubt ? null : <b>{value ?? "—"}</b>}
-                        {read.fromFallback ? <small className="section-plan-cell-note"> من «لم يجتازوا» — لا شعب في الكشف</small> : null}
-                        {read.value == null && !doubt && column != null ? <small className="section-plan-cell-note is-unread"> لم تُقرأ خانته — أدخله بعد التعبئة</small> : null}
-                        {doubt ? (
-                          <span className="section-plan-doubt" role="group" aria-label="اختر القراءة الصحيحة">
-                            {[...new Set([doubt.read, doubt.derived])].map(option => (
-                              <button key={option} data-guide-feature-id="schedule.tool.data" type="button" className={value === option ? "is-active" : undefined}
-                                onClick={() => setDoubtPicks(picks => ({ ...picks, [row.courseId]: option }))}>{option}</button>
-                            ))}
-                          </span>
-                        ) : null}
+                        <b>{value ?? "—"}</b>
+                        {read.value == null && column != null ? <small className="section-plan-cell-note is-unread"> لم تُقرأ خانته — أدخلها بعد التعبئة</small> : null}
                       </td>
                       <td>{current !== undefined && current !== "" && Number(current) !== value ? current : ""}</td>
                     </tr>
@@ -403,7 +377,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
               <p className="section-plan-note">لم يرد في الكشف: {preview.missing.map(id => courseName.get(id)?.code).filter(Boolean).slice(0, 20).join("، ")}{preview.missing.length > 20 ? "…" : ""}</p>
             ) : null}
             <div className="section-plan-report-actions">
-              <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={applyImport} disabled={column == null}>تعبئة المتبقي</PrimaryButton>
+              <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={applyImport} disabled={column == null}>تعبئة المقاعد المتبقية</PrimaryButton>
               <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={() => setPreview(null)}>إلغاء</SecondaryButton>
             </div>
           </div>

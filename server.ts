@@ -127,7 +127,7 @@ import {
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL, readReportCells } from "./src/utils/documentOcr";
-import { blankSpots, columnKind, readRemainingReport, readReportHeader } from "./src/utils/remainingReport";
+import { blankSpots, columnKind, readRemainingReport, readReportHeader, remainingScanQualityError } from "./src/utils/remainingReport";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -14267,7 +14267,7 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
       if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
       sectionsOf.get(id)!.add(String(row.SCode || row.id));
     }
-    perTerm.push({ sectionsOf, remaining: pastStats?.remaining || {} });
+    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.kind === "seats" ? pastStats.remaining || {} : {} });
     department.push({
       termName: past.AdTermName, similar: past.similar,
       sections: [...sectionsOf.values()].reduce((sum, set) => sum + set.size, 0),
@@ -14299,8 +14299,8 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     similarTerms: similar.filter(item => item.similar).map(item => item.AdTermName),
     department,
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
-    remaining: stats?.remaining || {},
-    remainingSource: stats?.remainingSource || null,
+    remaining: stats?.remainingSource?.kind === "seats" ? stats.remaining || {} : {},
+    remainingSource: stats?.remainingSource?.kind === "seats" ? stats.remainingSource : null,
     accepted: stats?.accepted || {},
     updatedAt: stats?.updatedAt || "",
     updatedBy: stats?.updatedBy || "",
@@ -14341,14 +14341,30 @@ async function remainingContext(collegeId: number, sectionId: number, termId: nu
     sections.find((row: any) => Number(row.AdSectionId) === sectionId),
   );
   const catalogue = courses.map(course => ({ id: Number(course.AdCourseId), code: String(course.CourseCode || "") }));
-  return { departmentCode, catalogue, termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || "") };
+  return {
+    departmentCode,
+    sectionName: String(sections.find((row: any) => Number(row.AdSectionId) === sectionId)?.AdSectionName || ""),
+    catalogue,
+    termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || ""),
+  };
 }
-/* الترويسة تقول لأيّ قسمٍ وأيّ فصلٍ طُبع الكشف: يُنبَّه القسم ولا يُمنع، فالقراءة الضوئية قد تخطئ رقماً. */
+/* الترويسة تحدد القسم: الاختلاف الموثّق يوقف الاستيراد قبل المعاينة أو التعبئة. */
+function remainingDepartmentMismatch(headerText: string, departmentCode: string, sectionName: string): string {
+  const header = readReportHeader(headerText);
+  const codeMismatch = Boolean(header.department && departmentCode && header.department !== departmentCode);
+  const observedName = foldHeaderIdentity(header.departmentName).replace(/\s+/g, "");
+  const selectedName = foldHeaderIdentity(sectionName).replace(/\s+/g, "");
+  const nameMatches = header.departmentName && sectionName && (academicSectionNameMatches(header.departmentName, sectionName)
+    || observedName.includes(selectedName) || selectedName.includes(observedName));
+  const nameMismatch = Boolean(header.departmentName && sectionName && !nameMatches);
+  if (!codeMismatch && !nameMismatch) return "";
+  const observed = header.departmentName || header.department || "غير معروف";
+  const selected = sectionName || departmentCode;
+  return `هذا الكشف للقسم «${observed}»، بينما القسم المحدد «${selected}». لم تُستورد أي بيانات؛ اختر القسم المطابق ثم أعد رفع الملف.`;
+}
 function remainingWarnings(headerText: string, departmentCode: string, termName: string): string[] {
   const header = readReportHeader(headerText);
   const warnings: string[] = [];
-  if (header.department && departmentCode && header.department !== departmentCode)
-    warnings.push(`الكشف لرمز القسم العلمي ${header.department}، وقسمك ${departmentCode} — تأكد أنه كشف قسمك.`);
   const season = REMAINING_SEASONS[String(termSeasonOf(termName) || "")];
   const years = termName.match(/(\d{4})\s*\/\s*(\d{4})/);
   if (header.season && header.years && (header.season !== season || (years && Number(years[1]) !== header.years[0])))
@@ -14356,6 +14372,8 @@ function remainingWarnings(headerText: string, departmentCode: string, termName:
   return warnings;
 }
 function remainingRefusal(reading: ReturnType<typeof readRemainingReport>): string {
+  if (!reading.columns.some(column => column.kind === "seats"))
+    return "لم أجد عمود «المقاعد المتبقية» في الكشف. ارفع كشف الهيئة الذي يظهر فيه هذا العمود بوضوح؛ لن أستخدم أي عمود آخر بديلاً عنه.";
   if (!reading.rows.length) return reading.foreign.length
     ? `الكشف لا يحوي مقررات هذا القسم (فيه رموزٌ مثل ${reading.foreign.slice(0, 3).join("، ")}) — هل هو كشف قسمٍ آخر؟`
     : "لم أجد في الملف أرقام مقررات هذا القسم — تأكد أنه كشف المتبقي من عمادة التسجيل.";
@@ -14392,9 +14410,15 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
     let offset = 0;
     input = sizes.map(size => { const part = bytes.subarray(offset, offset + size); offset += size; return part; });
   }
-  const { departmentCode, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  const { departmentCode, sectionName, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
   try {
     const cells = await readReportCells(input, mime, pages => blankSpots(pages, catalogue, departmentCode), template);
+    const departmentError = remainingDepartmentMismatch(cells.headerText, departmentCode, sectionName);
+    if (departmentError) { res.status(409).json({ error: departmentError, code: "REMAINING_DEPARTMENT_MISMATCH" }); return; }
+    if (cells.source === "scan") {
+      const qualityError = remainingScanQualityError(cells.pages);
+      if (qualityError) { res.status(422).json({ error: qualityError, code: "REMAINING_SCAN_UNCLEAR" }); return; }
+    }
     const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
     const refusal = remainingRefusal(reading);
     if (refusal) { res.status(422).json({ error: refusal }); return; }
@@ -14419,8 +14443,14 @@ app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requi
       ...(Number.isFinite(Number(cell?.confidence)) ? { confidence: Math.max(0, Math.min(100, Number(cell.confidence))) } : {}),
     })));
   if (!pages.length) { res.status(400).json({ error: "لا صفحات تُقرأ" }); return; }
-  const { departmentCode, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  const { departmentCode, sectionName, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  const departmentError = remainingDepartmentMismatch(String(req.body?.headerText || "").slice(0, 4000), departmentCode, sectionName);
+  if (departmentError) { res.status(409).json({ error: departmentError, code: "REMAINING_DEPARTMENT_MISMATCH" }); return; }
   const reading = readRemainingReport(pages, catalogue, departmentCode);
+  if (req.body?.scanned === true) {
+    const qualityError = remainingScanQualityError(pages);
+    if (qualityError) { res.status(422).json({ error: qualityError, code: "REMAINING_SCAN_UNCLEAR" }); return; }
+  }
   const refusal = remainingRefusal(reading);
   if (refusal) { res.status(422).json({ error: refusal }); return; }
   res.json({ ...reading, warnings: remainingWarnings(String(req.body?.headerText || "").slice(0, 4000), departmentCode, termName) });

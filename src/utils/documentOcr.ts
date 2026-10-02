@@ -1167,7 +1167,7 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
   }
   await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"7" as any});
   /* ما لا يُحتاج إليه في الحساب لا يُقرأ: المقاعد والسعة وعدد الشعب. */
-  const skipped=new Set(["seats","capacity","sections"]);
+  const skipped=new Set(["capacity","sections"]);
   for(const [index,column] of columns.entries()){
     if(column.right-column.left>median*1.8||skipped.has(String(kinds[index])))continue;
     for(const band of bands){
@@ -1241,6 +1241,16 @@ async function readReportScan(parts:Array<{buffer:Buffer;mime:string}>,isPdf:boo
     const images=isPdf?await renderPdf(parts[0].buffer,TARGET_LONG_EDGE)
       :(await Promise.all(parts.map(async part=>Promise.all((await imagePages(part.buffer,part.mime,TARGET_LONG_EDGE)).map(enlarge))))).flat();
     assertPageLimit(images.length);
+    /* The Registration Deanship report is a wide table. Refuse portrait phone
+       photos before OCR can return a convincing but column-shifted partial read. */
+    {
+      const lib=await canvas();
+      for(const image of images){
+        const dimensions=await lib.loadImage(image);
+        if(Number(dimensions.width||0)<=Number(dimensions.height||0))
+          throw new Error("صفحة الكشف بالطول. أعد تصويرها أو تدويرها للوضع الأفقي ثم ارفعها من جديد — لم تُقرأ أي أرقام.");
+      }
+    }
     const worker=await getHeaderWorker();
     const pages:ReportCell[][]=[];
     const ruledPages=new Set<number>();
@@ -1256,7 +1266,7 @@ async function readReportScan(parts:Array<{buffer:Buffer;mime:string}>,isPdf:boo
       const cells:ReportCell[]=[];
       for(const block of result?.data?.blocks||[])for(const paragraph of block?.paragraphs||[])for(const line of paragraph?.lines||[])for(const word of line?.words||[]){
         const text=String(word?.text||"").normalize("NFKC").trim();
-        if(text&&word?.bbox)cells.push({text,x0:word.bbox.x0/width,x1:word.bbox.x1/width,y:(word.bbox.y0+word.bbox.y1)/2/height});
+        if(text&&word?.bbox)cells.push({text,x0:word.bbox.x0/width,x1:word.bbox.x1/width,y:(word.bbox.y0+word.bbox.y1)/2/height,confidence:Number(word.confidence)||0});
       }
       pages.push(cells);
       if(!headerText)headerText=reportLinesText(cells.filter(cell=>cell.y<.3));
