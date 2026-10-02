@@ -10394,11 +10394,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       {historicalLocationNeedsReview(s)?<Badge tone="neutral">بيانات مكان تاريخية غير موثقة</Badge>:null}
                     </div>
                     <div className="agenda-meta">
-                      <span className={`unit-pill${c?.CourseCredit == null ? " is-empty" : ""}`} title="وحدات">
+                      <span className={`unit-pill${c?.CourseCredit == null ? " is-empty" : ""}`} title="وحدات" role="img" aria-label={`وحدات: ${c?.CourseCredit ?? "—"}`}>
                         <Layers aria-hidden="true" />
                         {c?.CourseCredit ?? "—"}
                       </span>
-                      <span className={`unit-pill${c?.CourseHours == null ? " is-empty" : ""}`} title="ساعات">
+                      <span className={`unit-pill${c?.CourseHours == null ? " is-empty" : ""}`} title="ساعات" role="img" aria-label={`ساعات: ${c?.CourseHours ?? "—"}`}>
                         <Hourglass aria-hidden="true" />
                         {c?.CourseHours ?? "—"}
                       </span>
