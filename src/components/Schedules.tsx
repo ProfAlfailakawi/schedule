@@ -270,6 +270,7 @@ const shelveBoard = (key: string, board: ShelvedBoard) => {
 };
 
 const AGENDA_PAGE_SIZE = 60;
+const AGENDA_PHONE_HEAD = 6;
 
 /* Hidden for now, deliberately not deleted. The data model/endpoints stay in
    place so team notes can be restored later without rebuilding the feature. */
@@ -1095,6 +1096,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
      */
     [rowsScope, setRowsScope] = useState(""),
     [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
+  const [agendaNarrow, setAgendaNarrow] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 760px)").matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 760px)");
+    if (!mq) return;
+    const on = () => setAgendaNarrow(mq.matches);
+    on();
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
   const [departmentStartRhythm, setDepartmentStartRhythm] = useState<DepartmentStartRhythm | null>(null);
   const [formStartRhythm, setFormStartRhythm] = useState<DepartmentStartRhythm | null>(null);
   // Every room the department has ever used, plus rooms the coordinator chose
@@ -10312,7 +10322,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           ) : null}
           {agendaRows.length ? (
             <div className="schedule-agenda">
-              {agendaRows.slice(0, visibleLimit).map((s, idx) => {
+              {(() => { const agendaEls = agendaRows.slice(0, visibleLimit).map((s, idx) => {
                 const c = courseById.get(s.AdCourseId),
                   i = instructorById.get(s.AdInstructorId);
                 return (
@@ -10407,7 +10417,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     </div>
                   </article>
                 );
-              })}
+              });
+              /* Phones only: six rows, the rest behind a native disclosure (closed by default). */
+              return agendaNarrow && agendaEls.length > AGENDA_PHONE_HEAD ? (
+                <>
+                  {agendaEls.slice(0, AGENDA_PHONE_HEAD)}
+                  <details className="agenda-rest">
+                    <summary data-guide-ignore="طيّ بقية صفوف القائمة على الهاتف عرضٌ فقط">عرض الكل ({agendaRows.length.toLocaleString("ar-KW-u-nu-latn")})</summary>
+                    {agendaEls.slice(AGENDA_PHONE_HEAD)}
+                  </details>
+                </>
+              ) : agendaEls; })()}
             </div>
           ) : (
             <EmptyState
