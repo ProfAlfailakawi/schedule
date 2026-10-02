@@ -4796,3 +4796,11 @@ button.twin-delta{width:100%}
   .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:auto}
   .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(2n+1){grid-column:1/-1}
 }
+
+/* «تفاصيل»: desktop table never shows the toggle; phone cards fold the secondary lines. */
+.student-case-more-toggle{display:none}
+@media(max-width:760px){
+  .student-case-more-toggle{display:inline-flex;align-items:center;justify-self:start;min-height:28px;margin-top:4px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font:600 11px/1 var(--font-ui);cursor:pointer}
+  .student-case-more-toggle[aria-expanded="true"]{color:var(--ink)}
+  .student-cases-table tr:not(.is-more-open) td.student-case-secondary{display:none}
+}

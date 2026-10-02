@@ -117,6 +117,9 @@ export default function StudentCasesTable({
 }: Props) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [printMode, setPrintMode] = useState<TypeFilter | null>(null);
+  /* Phone cards: the secondary lines fold behind «تفاصيل»; display only. */
+  const [openMore, setOpenMore] = useState<ReadonlySet<string | number>>(() => new Set());
+  const toggleMore = (id: string | number) => setOpenMore(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const counts = useMemo(() => ({
     all: cases.length,
     "new-course": cases.filter(item => typeOf(item) === "new-course").length,
@@ -235,19 +238,20 @@ export default function StudentCasesTable({
               <tbody>{visible.map(item => {
                 const type = typeOf(item);
                 return (
-                  <tr key={item.id} className={`case-${type}`}>
+                  <tr key={item.id} className={`case-${type}${openMore.has(item.id) ? " is-more-open" : ""}`}>
                     <td data-label="رقم الحالة" dir="ltr"><code>{item.caseRef || "—"}</code></td>
-                    <td data-label="الطالب"><strong>{item.name || "—"}</strong></td>
-                    <td data-label="الرقم المدني" dir="ltr">{item.civil || "—"}</td>
-                    <td data-label="قسم الطالب">{item.studentSectionName || "—"}{curriculumTag(item)}</td>
-                    <td data-label="نوع الطلب"><Badge tone={typeTone(type)}>{STUDENT_CASE_TYPE_LABEL[type]}</Badge></td>
+                    <td data-label="الطالب"><strong>{item.name || "—"}</strong>
+                      <button type="button" className="student-case-more-toggle" aria-expanded={openMore.has(item.id)} onClick={() => toggleMore(item.id)} data-guide-ignore="طيّ التفاصيل الثانوية لبطاقة الحالة على الهاتف عرضٌ فقط">تفاصيل</button></td>
+                    <td className="student-case-secondary" data-label="الرقم المدني" dir="ltr">{item.civil || "—"}</td>
+                    <td className="student-case-secondary" data-label="قسم الطالب">{item.studentSectionName || "—"}{curriculumTag(item)}</td>
+                    <td className="student-case-secondary" data-label="نوع الطلب"><Badge tone={typeTone(type)}>{STUDENT_CASE_TYPE_LABEL[type]}</Badge></td>
                     <td data-label="المقررات / السبب" className="student-case-detail-cell">{detailCell(item)}</td>
                     {showVerification ? (
-                      <td data-label="تحقق التخرج">{type === "graduate"
+                      <td className="student-case-secondary" data-label="تحقق التخرج">{type === "graduate"
                         ? <span className={item.eligibility === "eligible" ? "case-eligible" : "case-ineligible"}>{item.passedUnits ?? "—"} / {item.requiredUnits ?? "—"} {nounFor(Number(item.requiredUnits || 0), AR.unit)}</span>
                         : null}</td>
                     ) : null}
-                    <td data-label="التاريخ">{caseMoment(item.createdAt)}</td>
+                    <td className="student-case-secondary" data-label="التاريخ">{caseMoment(item.createdAt)}</td>
                   </tr>
                 );
               })}</tbody>
