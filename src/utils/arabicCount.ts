@@ -115,6 +115,7 @@ export const AR = {
   instructor:  { one: "أستاذ", two: "أستاذان", few: "أساتذة", many: "أستاذاً" },
   colleague:   { one: "زميل", two: "زميلان", few: "زملاء", many: "زميلاً" },
   room:        { one: "قاعة", two: "قاعتان", few: "قاعات", many: "قاعة" },
+  college:     { one: "كلية", two: "كليتان", few: "كليات", many: "كلية" },
   building:    { one: "مبنى", two: "مبنيان", few: "مبانٍ", many: "مبنى" },
   term:        { one: "فصل", two: "فصلان", few: "فصول", many: "فصلاً" },
   day:         { one: "يوم", two: "يومان", few: "أيام", many: "يوماً" },

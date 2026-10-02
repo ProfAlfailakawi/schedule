@@ -1829,24 +1829,48 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .section-plan-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3)}
 .section-plan-bar input{flex:1 1 180px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink)}
 .section-plan-table{display:grid;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
-.section-plan-row{display:grid;grid-template-columns:minmax(160px,2fr) 90px 60px 70px minmax(180px,3fr) auto;gap:var(--s2);align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:var(--t-sm)}
+.section-plan-row{display:grid;grid-template-columns:minmax(180px,3fr) 120px minmax(110px,1fr) 110px auto;gap:var(--s2);align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:var(--t-sm)}
 .section-plan-row.head{border-top:0;color:var(--muted);font-size:var(--t-xs);font-weight:600}
 .section-plan-row input{width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink)}
-.section-plan-count{font-weight:700;font-size:var(--t-md,16px)}
+.section-plan-count{font-weight:800;font-size:18px;color:var(--ink)}
+.section-plan-left input{font-weight:800;font-size:17px;border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent-soft) 40%,transparent)}
+.section-plan-pick input{font-weight:800;font-size:17px}
+.section-plan-row.is-outside{background:color-mix(in srgb,var(--warning-soft) 45%,transparent)}
+.section-plan-why-toggle{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid var(--line);border-radius:var(--r-full,999px);background:transparent;color:var(--muted);font:inherit;font-size:var(--t-xs);cursor:pointer}
+.section-plan-why-toggle svg{width:14px;height:14px;transition:transform .15s}
+.section-plan-why-toggle.is-open svg:last-child{transform:rotate(180deg)}
+.section-plan-why-toggle.is-warn{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 45%,var(--line))}
+.section-plan-why{display:grid;gap:var(--s2);padding:10px 14px;border-top:1px dashed var(--line);background:color-mix(in srgb,var(--surface-2,var(--bg)) 60%,transparent);color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+.section-plan-why dl{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);margin:0}
+.section-plan-why dl div{display:grid;gap:2px}
+.section-plan-why dt{font-size:var(--t-xs)}
+.section-plan-why dd{margin:0;color:var(--ink);font-weight:600}
+.section-plan-why p{margin:0}
+.section-plan-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s2)}
+.section-plan-summary>div{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:2px 8px;padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-sm)}
+.section-plan-summary svg{grid-row:span 2;width:20px;height:20px;color:var(--muted)}
+.section-plan-summary span{color:var(--muted);font-size:var(--t-xs)}
+.section-plan-summary b{font-size:22px;line-height:1.2}
+.section-plan-summary small{font-size:var(--t-xs);color:var(--muted);font-weight:400}
+.section-plan-summary .is-main{border-color:var(--accent);background:color-mix(in srgb,var(--accent-soft) 50%,transparent)}
+.section-plan-summary .is-main svg{color:var(--accent)}
+.section-plan-import-text{display:grid;gap:2px;flex:1 1 220px}
+.section-plan-import-text strong{font-size:var(--t-sm)}
 .section-plan-reason{color:var(--muted);line-height:1.7}
 /* الهاتف: كل مقرر بطاقة — اسمه، ثم أربع خانات معنونة متساوية، ثم السبب. */
 @media (max-width:760px){
   .section-plan-row.head{display:none}
-  .section-plan-row{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 8px;padding:12px}
+  .section-plan-row{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 8px;padding:12px}
   .section-plan-course{grid-column:1/-1;order:0;font-size:var(--t-md,16px)}
-  .section-plan-left{order:1}.section-plan-cap{order:2}.section-plan-count{order:3}.section-plan-pick{order:4}
-  .section-plan-reason{grid-column:1/-1;order:5;font-size:var(--t-xs)}
+  .section-plan-left{order:1}.section-plan-count{order:2}.section-plan-pick{order:3}
+  .section-plan-why-cell{grid-column:1/-1;order:4}
   .section-plan-row>[data-label]{display:grid;align-content:start;gap:4px;font-size:var(--t-md,16px)}
   .section-plan-row>[data-label]::before{content:attr(data-label);color:var(--muted);font-size:var(--t-xs);font-weight:600}
   .section-plan-row input{width:100%;min-width:0;text-align:center}
   .section-plan-pick{justify-items:stretch}
 }
-.section-plan-warning{display:block;margin:0;color:var(--danger);font-style:normal;font-size:var(--t-sm);line-height:1.7}
+.section-plan-warning{display:flex;align-items:flex-start;gap:6px;margin:0;color:var(--danger);font-style:normal;font-size:var(--t-sm);line-height:1.7}
+.section-plan-warning>svg{flex:none;width:16px;height:16px;margin-top:4px}
 .section-plan-save{box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 28%,transparent)}
 .section-plan-report{width:min(920px,100%);max-height:calc(100dvh - 32px);overflow:auto;padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-md,14px);background:var(--surface,var(--bg));color:var(--ink);display:grid;gap:var(--s4)}
 .section-plan-report>header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s3)}

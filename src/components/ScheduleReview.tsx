@@ -16,6 +16,7 @@ import { blockingRowIds, describeWarnings, doubleEntryCount, placeholderInstruct
 import { blockingSummaryPhrase } from "../utils/approvalWorkflow";
 import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
+import { rowsInApprovalScope } from "../utils/approvalScope";
 
 /**
  * The last read before a schedule is adopted.
@@ -153,7 +154,9 @@ function HistoryInfographic({rows,courses}:{rows:FSchedule[];courses:Map<number,
   </div>;
 }
 
-export default function ScheduleReview({ rows, courses, instructors, visitingIds, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
+export default function ScheduleReview({ rows: rowsProp, courses, instructors, visitingIds, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
+  /* المراجعةُ لنطاقها وحده: لا صفَّ من قسمٍ شقيقٍ في كليةٍ أخرى (approvalScope). */
+  const rows = useMemo(() => rowsInApprovalScope(rowsProp, { collegeId, sectionId, termId }), [rowsProp, collegeId, sectionId, termId]);
   const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], Number).filter(Boolean)), [visitingIds]);
   const baseFindings = useMemo(
     () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
@@ -176,6 +179,8 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
   useEffect(() => {
     if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setServerWarnings([]); setReadinessChecked(true); setReadinessError(true); return; }
     const controller = new AbortController();
+    /* ما قرأه الخادم لنطاقٍ سابق لا يبقى معروضاً تحت النطاق الجديد. */
+    setServerBlockers([]); setServerWarnings([]); setServerSummary(null);
     setReadinessChecked(false);
     setReadinessError(false);
     void fetch(`/api/schedules/review-readiness?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { credentials: "include", signal: controller.signal })

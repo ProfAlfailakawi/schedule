@@ -574,7 +574,24 @@
    the historical fairness view. The history is intentionally card-based rather
    than a wide spreadsheet so the first glance answers the real question:
    who has been delegated more often across the years? */
-.lens-visiting>article>button{grid-template-columns:36px minmax(0,1fr) minmax(80px,180px) 78px 16px}
+.lens-visiting>article>button{grid-template-columns:36px minmax(0,1fr) minmax(80px,180px) auto 16px}
+/* البطاقة تُجيب أولاً: كم شعبة وكم ساعة؛ والمقررات ومواقع التدريس أهدأ. */
+.visiting-card-identity{min-width:0;display:grid;gap:2px}
+.visiting-card-places{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:var(--t-xs);font-weight:500}
+.lens-visiting .visiting-card-load{white-space:nowrap;font-size:var(--t-h4);font-weight:800;color:var(--ink)}
+.visiting-history-total-hint{display:block;color:var(--muted);font-size:var(--t-xs);font-weight:500}
+.visiting-history-overlap-note{margin:0;color:var(--muted);font-size:var(--t-xs)}
+.visiting-row-place{color:var(--muted);font-size:var(--t-xs)}
+.visiting-family-scope{display:flex;align-items:flex-start;gap:var(--s2);margin:var(--s3) var(--s5) 0;padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);color:var(--muted);font-size:var(--t-sm)}
+.visiting-family-scope svg{flex:none;width:16px;height:16px;margin-top:2px}
+.visiting-family-scope b{color:var(--ink)}
+.visiting-family-scope.is-partial{border-color:color-mix(in srgb,var(--warning) 45%,var(--line));background:color-mix(in srgb,var(--warning) 9%,var(--surface))}
+.visiting-family-scope.is-partial strong{color:var(--ink)}
+@media (max-width:760px){
+  .lens-visiting>article>button{grid-template-columns:32px minmax(0,1fr) auto 16px}
+  .lens-visiting>article>button .group-bar{display:none}
+  .visiting-family-scope{margin:var(--s2) var(--s3) 0}
+}
 
 .visiting-scope-switch{
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2);

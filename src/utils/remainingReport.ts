@@ -49,18 +49,18 @@ export interface ReportRow {
   /** رقم العمود ← أدنى ثقةٍ قُرئ بها (لا تُذكر لطبقة النص). */
   confidence: Record<number, number>;
   occurrences: number;
-  /** «لم يسجلوا» لا يساوي «لم يجتازوا − المسجلين»: قراءةٌ أخطأت. يُعتمد أوثقُهما ويُعلَّم الصف. */
-  doubt?: { read: number; derived: number; chosen: number };
-  /** خانة «لم يسجلوا» فارغةٌ بتصميم الكشف (لا شعب للمقرر): يؤخذ «لم يجتازوا». */
+  /** «المقاعد المتبقية» المقروءة لا تساوي «سعة الشعب − عدد المسجلين»: قراءةٌ أخطأت؛ لا تُعتمد. */
+  doubt?: { read: number; derived: number };
+  /** خانة «المقاعد المتبقية» فارغةٌ بتصميم الكشف (لا شعب للمقرر فيه): لا قيمة تُستورد، ولا تُخمَّن من عمودٍ آخر. */
   blankByDesign?: boolean;
 }
 
 export interface RemainingReading {
   columns: ReportColumn[];
-  /** عمود «المتبقي»: «الذين لم يسجلوا»، وإلا «لم يجتازوا»، وإلا عنوانٌ فيه «المتبقي»؛ أو null فيختار القسم. */
+  /** عمود «المقاعد المتبقية» (أو عنوانٌ «المتبقي» وحده)؛ null إن لم يوجد — ولا يُستبدل به عمودٌ آخر. */
   column: number | null;
-  /** يُؤخذ منه حين تكون خانة العمود فارغة: «لم يجتازوا» لمقررٍ بلا شعب في الكشف. */
-  fallback: number | null;
+  /** لا بديل: أُبقي للتوافق، وهو null دائماً. */
+  fallback: null;
   rows: ReportRow[];
   /** رموزٌ بشكل رموز المقررات وليست من مقررات القسم. */
   foreign: string[];
@@ -83,8 +83,8 @@ const fold = (value: string) => normalize(value)
  *   لم يجتازوا (في بداية التسجيل) · سعة الشعب · عدد المسجلين · المقاعد المتبقية
  *   · عدد الشعب · اعداد الذين لم يسجلوا
  *
- * «المتبقي» عند القسم هو «الذين لم يسجلوا» — لا «المقاعد المتبقية» وإن اشتركا
- * في الكلمة. والعنوان يُقرأ بقطعٍ ثابتة لأن القراءة الضوئية تُشوّه أطرافه
+ * مدخلُ التخطيط هو «المقاعد المتبقية» وحده — لا «الذين لم يسجلوا» ولا «لم
+ * يجتازوا» وإن اشتركت في المعنى القريب. والعنوان يُقرأ بقطعٍ ثابتة لأن القراءة الضوئية تُشوّه أطرافه
  * («اعدد انين أم يسجلرا»)، والنصّ العربي قد يخرج من PDF معكوساً.
  */
 export type ColumnKind = "unregistered" | "notPassed" | "seats" | "capacity" | "registered" | "sections" | "remaining";
@@ -106,11 +106,13 @@ export function columnKind(label: string): ColumnKind | null {
   if (has("متبق") || has("remain")) return "remaining";
   return null;
 }
-/** هل هذا عنوانُ عمودٍ يصلح «متبقياً»؟ */
+/** هل هذا عنوانُ عمود «المقاعد المتبقية» (مدخل التخطيط)؟ */
 export function labelLooksRemaining(label: string): boolean {
   const kind = columnKind(label);
-  return kind === "unregistered" || kind === "notPassed" || kind === "remaining";
+  return kind === "seats" || kind === "remaining";
 }
+/** أقلُّ ثقةِ قراءةٍ ضوئية تُقبل بها خانة «المقاعد المتبقية». */
+export const MIN_CELL_CONFIDENCE = 55;
 
 interface Token { text: string; x: number; value: number | null; code: string; cell: ReportCell; confidence: number }
 interface Line { page: number; y: number; cells: ReportCell[]; tokens: Token[] }
@@ -209,7 +211,8 @@ function tableOf(pages: readonly ReportCell[][], courses: ReadonlyArray<{ id: nu
   /* رموزٌ بطول رموز الكشف في صفوفٍ لم تطابق مقررات القسم. */
   const byLength = new Map<number, number>();
   for (const item of matched) byLength.set(item.code.code.length, (byLength.get(item.code.code.length) || 0) + 1);
-  const usualLength = [...byLength.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 0;
+  /* لا مطابقة أصلاً (كشف قسمٍ آخر): الرموز الكاملة ذات السبع خانات تُذكر ليُعرف قسمها. */
+  const usualLength = [...byLength.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 7;
   const matchedLines = new Set(matched.map(item => item.line));
   const foreign = [...new Set(lines.filter(line => !matchedLines.has(line))
     .flatMap(line => line.tokens.filter(token => token.code.length === usualLength && (usualLength >= 4 || /[A-Za-z]/.test(token.text) || inCode(line.page, token.x))
@@ -381,9 +384,8 @@ export function readRemainingReport(
     return { id, x: column.x, label, samples, filled: column.filled, kind };
   });
   const ofKind = (kind: ColumnKind) => columns.filter(column => column.kind === kind).sort((a, b) => b.filled - a.filled)[0]?.id ?? null;
-  const unregistered = ofKind("unregistered"), notPassed = ofKind("notPassed");
-  const column = unregistered ?? notPassed ?? ofKind("remaining");
-  const fallback = unregistered != null && notPassed != null ? notPassed : null;
+  /* «المقاعد المتبقية» وحدها، وإلا عمودٌ عنوانه «المتبقي» — ولا يُستبدل بها «لم يسجلوا» ولا «لم يجتازوا». */
+  const column = ofKind("seats") ?? ofKind("remaining");
 
   /* 4) الصفوف: المقرر المكرّر يُجمع. */
   const rowsOf = new Map<number, ReportRow>();
@@ -399,46 +401,154 @@ export function readRemainingReport(
   });
   const rows = [...rowsOf.values()];
 
-  /* «عدد المسجلين» إن لم يُعرف عنوانه: عمودٌ بلا عنوانٍ معروف كلُّ ما فيه صفر،
-     وقد امتلأ في أكثر الصفوف — هكذا يُطبع قبل التسجيل. */
-  const registered = ofKind("registered") ?? columns.find(item => item.kind == null && item.filled >= rows.length * 0.5
-    && rows.every(row => row.values[item.id] == null || row.values[item.id] === 0) && rows.some(row => row.values[item.id] === 0))?.id ?? null;
+  const registered = ofKind("registered"), capacity = ofKind("capacity"), sections = ofKind("sections");
 
-  /* 5) الخانة الفارغة بتصميم الكشف لا بخطأ القراءة: مقررٌ لا شعب له هذا الفصل
-     يُترك صفّه فارغاً إلا «لم يجتازوا» (وعدد الشعب صفر). فلا يُؤخذ البديل إلا
-     لصفٍّ هذه صورته؛ وما سواه خانةٌ لم تُقرأ، تُترك للمراجعة. */
-  if (unregistered != null && fallback != null) for (const row of rows) {
-    if (row.values[unregistered] != null || row.values[fallback] == null) continue;
-    const others = Object.entries(row.values).filter(([id]) => Number(id) !== fallback && Number(id) !== unregistered);
-    if (others.length <= 1 && others.every(([, value]) => value === 0)) row.blankByDesign = true;
+  /* 5) خانةٌ فارغة بتصميم الكشف: مقررٌ لا شعب له في الكشف (عدد الشعب صفر، أو
+     السعة والمسجّلون فارغان معها). لا قيمة تُستورد له، ولا تُخمَّن من جاره. */
+  if (column != null) for (const row of rows) {
+    if (row.values[column] != null) continue;
+    const noSections = sections != null ? row.values[sections] === 0
+      : (capacity == null || row.values[capacity] == null) && (registered == null || row.values[registered] == null);
+    if (noSections) row.blankByDesign = true;
   }
 
-  /* 6) حسابُ الكشف نفسه يفحص القراءة: «لم يسجلوا» = «لم يجتازوا» − «المسجلين».
-     يُفحص حين تُقرأ الثلاثة كلها؛ وخلافُها قراءةٌ أخطأت: يُعتمد أوثقها ويُعلَّم الصف. */
-  if (unregistered != null && notPassed != null && registered != null) for (const row of rows) {
-    const read = row.values[unregistered], passed = row.values[notPassed], enrolled = row.values[registered];
-    if (read == null || passed == null || enrolled == null) continue;
-    const derived = Math.max(0, passed - enrolled);
-    if (read === derived) continue;
-    row.doubt = { read, derived, chosen: (row.confidence[notPassed] ?? 100) > (row.confidence[unregistered] ?? 100) ? derived : read };
+  /* 6) حسابُ الكشف يفحص القراءة: «المقاعد المتبقية» = «سعة الشعب» − «عدد المسجلين».
+     يُفحص حين تُقرأ الثلاثة؛ وخلافُها قراءةٌ أخطأت — لا يُعتمد الرقم، ويُطلب أوضح. */
+  if (column != null && registered != null && capacity != null) for (const row of rows) {
+    const read = row.values[column], cap = row.values[capacity], enrolled = row.values[registered];
+    if (read == null || cap == null || enrolled == null) continue;
+    const derived = Math.max(0, cap - enrolled);
+    if (read !== derived) row.doubt = { read, derived };
   }
   const seen = new Set(rows.map(row => row.courseId));
-  return { columns, column, fallback, rows, foreign, missing: courses.filter(course => !seen.has(course.id)).map(course => course.id) };
+  return { columns, column, fallback: null, rows, foreign, missing: courses.filter(course => !seen.has(course.id)).map(course => course.id) };
 }
 
-/** قيمة المتبقي لصفّ: من العمود (أو ما رجّحه فحصُ الحساب)، وإلا من البديل حين تفرغ خانته. */
-export function remainingOf(row: Pick<ReportRow, "values" | "doubt" | "blankByDesign">, columnId: number, fallbackId: number | null = null, primaryId: number | null = null): { value: number | undefined; fromFallback: boolean } {
-  if (row.doubt && columnId === primaryId) return { value: row.doubt.chosen, fromFallback: false };
-  if (row.values[columnId] != null) return { value: row.values[columnId], fromFallback: false };
-  if (fallbackId != null && row.blankByDesign && row.values[fallbackId] != null) return { value: row.values[fallbackId], fromFallback: true };
-  return { value: undefined, fromFallback: false };
+export type CellState = "read" | "unread" | "noSections" | "mismatch" | "lowConfidence";
+/**
+ * قيمة «المقاعد المتبقية» لصفّ كما قُرئت من عمودها وحده. خانةٌ فارغة أو
+ * ضعيفة القراءة أو تخالف حسابَ الكشف ← لا قيمة (لا تُخمَّن من عمودٍ مجاور).
+ */
+export function remainingOf(row: Pick<ReportRow, "values" | "doubt" | "blankByDesign"> & Partial<Pick<ReportRow, "confidence">>, columnId: number): { value: number | undefined; state: CellState } {
+  if (row.doubt) return { value: undefined, state: "mismatch" };
+  const value = row.values[columnId];
+  if (value == null) return { value: undefined, state: row.blankByDesign ? "noSections" : "unread" };
+  if ((row.confidence?.[columnId] ?? 100) < MIN_CELL_CONFIDENCE) return { value: undefined, state: "lowConfidence" };
+  return { value, state: "read" };
 }
 
-/** قيم عمودٍ واحد (وبديله): رقم المقرر ← المتبقي. */
-export function remainingValues(reading: Pick<RemainingReading, "rows"> & Partial<Pick<RemainingReading, "column">>, columnId: number, fallbackId: number | null = null): Record<string, number> {
+/** قيم عمود «المقاعد المتبقية»: رقم المقرر ← العدد، لما قُرئ بوضوحٍ فقط. */
+export function remainingValues(reading: Pick<RemainingReading, "rows">, columnId: number): Record<string, number> {
   return Object.fromEntries(reading.rows
-    .map(row => [String(row.courseId), remainingOf(row, columnId, fallbackId, reading.column ?? null).value] as const)
+    .map(row => [String(row.courseId), remainingOf(row, columnId).value] as const)
     .filter((entry): entry is readonly [string, number] => entry[1] != null));
+}
+
+/**
+ * القسم الذي طُبع له الكشف: من ترويسته («رمز القسم العلمي 0101»)، وإلا من
+ * بادئة رموز المقررات ذات السبع خانات إن اتفق أكثرها على قسمٍ واحد.
+ */
+export function detectReportDepartment(headerText: string, printedCodes: readonly string[]): string | undefined {
+  const fromHeader = readReportHeader(headerText).department;
+  if (fromHeader) return fromHeader;
+  const prefixes = printedCodes.map(code => normalize(code).replace(/\D/g, "")).filter(code => code.length === 7).map(code => code.slice(0, 4));
+  if (prefixes.length < 2) return undefined;
+  const counts = new Map<string, number>();
+  for (const prefix of prefixes) counts.set(prefix, (counts.get(prefix) || 0) + 1);
+  const [best, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+  return n / prefixes.length >= 0.6 ? best : undefined;
+}
+
+export interface ImportAssessment {
+  /** يُرفض الملف قبل المعاينة (قسمٌ آخر، أو قراءةٌ غير واضحة، أو لا عمود «المقاعد المتبقية»). */
+  reject: string | null;
+  /** يُعرض ويمنع «تعبئة» حتى يُرفع كشفٌ أوضح. */
+  blockers: string[];
+  detectedDepartment?: string;
+  /** مقرراتٌ لم تُقرأ خانتها (فارغة أو ضعيفة أو تخالف حساب الكشف). */
+  unread: number[];
+  /** مقرراتٌ لا شعب لها في الكشف: لا قيمة تُستورد. */
+  noSections: number[];
+  read: number;
+}
+
+/**
+ * الحكم على قراءة الكشف قبل أن يُعرض أو يُطبَّق — دالةٌ صافية يستعملها الخادم والاختبار.
+ * departmentName اسم القسم المختار ليُذكر في الرسالة.
+ */
+export function assessRemainingImport(
+  reading: RemainingReading,
+  context: { departmentCode: string; departmentName?: string; headerText?: string },
+): ImportAssessment {
+  const printed = [...reading.rows.map(row => row.printed), ...reading.foreign];
+  const detected = detectReportDepartment(context.headerText || "", printed);
+  const selected = context.departmentName ? `«${context.departmentName}» (${context.departmentCode})` : context.departmentCode;
+  const base = { detectedDepartment: detected, unread: [] as number[], noSections: [] as number[], read: 0, blockers: [] as string[] };
+  if (detected && context.departmentCode && detected !== context.departmentCode) {
+    return { ...base, reject: `الكشف لقسمٍ آخر: القسم المختار في النظام ${selected}، والقسم في الكشف ${detected}. اختر القسم الصحيح أو ارفع كشف قسمك — لم يُستورد شيء.` };
+  }
+  if (!reading.rows.length) {
+    return { ...base, reject: reading.foreign.length
+      ? `الكشف لا يحوي مقررات القسم المختار ${selected} (فيه رموزٌ مثل ${reading.foreign.slice(0, 3).join("، ")}) — هل هو كشف قسمٍ آخر؟`
+      : "لم أجد في الملف أرقام مقررات هذا القسم — تأكد أنه كشف «المقاعد المتبقية» من عمادة التسجيل، وأن الصورة واضحة." };
+  }
+  if (reading.column == null) {
+    return { ...base, reject: "لم أجد في الكشف عمود «المقاعد المتبقية» — وهو وحده ما تُبنى عليه خطة الشعب، فلا يؤخذ عمودٌ آخر بدله. ارفع صورةً أوضح تظهر فيها عناوين الأعمدة، أو الكشف PDF." };
+  }
+  const states = reading.rows.map(row => ({ id: row.courseId, ...remainingOf(row, reading.column!) }));
+  const unread = states.filter(item => item.state !== "read" && item.state !== "noSections").map(item => item.id);
+  const noSections = states.filter(item => item.state === "noSections").map(item => item.id);
+  const read = states.filter(item => item.state === "read").length;
+  const readable = reading.rows.length - noSections.length;
+  if (!read || (readable >= 3 && unread.length / readable > 0.34)) {
+    return { ...base, unread, noSections, read, reject: `القراءة غير واضحة: قُرئت «المقاعد المتبقية» لعددٍ من المقررات هو ${read} من أصل ${readable}. يلزم صورةٌ أوضح (مستقيمة، بإضاءةٍ جيدة، وتظهر الأعمدة كاملة) أو الكشف PDF.` };
+  }
+  const blockers = unread.length
+    ? [`قراءةٌ ناقصة: ${unread.length} من المقررات لم تُقرأ خانة «المقاعد المتبقية» فيها بوضوح — ارفع صورةً أوضح لهذه الصفحة قبل التعبئة.`]
+    : [];
+  return { ...base, unread, noSections, read, blockers, reject: null };
+}
+
+/** أبعاد صورة PNG أو JPEG (مع اتجاه EXIF)؛ null لغيرها. */
+export function imageSize(bytes: Uint8Array): { width: number; height: number } | null {
+  const b = bytes;
+  if (b.length > 24 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    const u32 = (i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+    return { width: u32(16), height: u32(20) };
+  }
+  if (b[0] !== 0xff || b[1] !== 0xd8) return null;
+  let rotated = false, i = 2;
+  while (i + 9 < b.length) {
+    if (b[i] !== 0xff) { i++; continue; }
+    const marker = b[i + 1], length = (b[i + 2] << 8) | b[i + 3];
+    if (marker === 0xe1 && String.fromCharCode(b[i + 4], b[i + 5], b[i + 6], b[i + 7]) === "Exif") {
+      const t = i + 10, little = b[t] === 0x49;
+      const u16 = (k: number) => little ? b[k] | (b[k + 1] << 8) : (b[k] << 8) | b[k + 1];
+      const u32 = (k: number) => little ? (b[k] | (b[k + 1] << 8) | (b[k + 2] << 16) | (b[k + 3] << 24)) >>> 0 : ((b[k] << 24) | (b[k + 1] << 16) | (b[k + 2] << 8) | b[k + 3]) >>> 0;
+      const ifd = t + u32(t + 4), count = ifd + 2 <= b.length ? u16(ifd) : 0;
+      for (let e = 0; e < count; e++) {
+        const at = ifd + 2 + e * 12;
+        if (at + 10 > b.length) break;
+        if (u16(at) === 0x0112) { const o = u16(at + 8); rotated = o >= 5 && o <= 8; }
+      }
+    }
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      const height = (b[i + 5] << 8) | b[i + 6], width = (b[i + 7] << 8) | b[i + 8];
+      return rotated ? { width: height, height: width } : { width, height };
+    }
+    i += 2 + length;
+  }
+  return null;
+}
+
+/** كشف العمادة عريضٌ (أفقي): صورةٌ طوليّة لا تُقرأ أعمدتها كاملة — تُرفض قبل القراءة. */
+export function imageOrientationRefusal(bytes: Uint8Array, fileName = ""): string {
+  const size = imageSize(bytes);
+  if (!size || !size.width || !size.height) return "";
+  if (size.height > size.width * 1.05) {
+    return `${fileName ? `«${fileName}»: ` : ""}الصورة طوليّة (${size.width}×${size.height}) وكشف العمادة عريض — صوّره أفقياً (أدِر الهاتف) لتظهر أعمدته كاملة، ثم ارفعه.`;
+  }
+  return "";
 }
 
 /**

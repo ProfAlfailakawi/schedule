@@ -26,6 +26,9 @@ import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQue
 import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
 import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
 import { departmentFamily, departmentFamilyResolver } from "./src/utils/sectionLabel";
+import { readConversionState, runVisitingConversion } from "./src/db/visitingConversion";
+import { readVisitingTeaching } from "./src/server/visitingTeachingRead";
+import { aggregateVisitingHistory } from "./src/utils/visitingHistory";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readOnlyRefusal, roleWriteDecision } from "./src/server/roleGuard";
 import { registerStudyProposalRoutes, seedDemoStudyProposals } from "./src/server/studyProposalRoutes";
@@ -70,6 +73,7 @@ import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./sr
 import { describeScopeChanges, fingerprintOfSignatures, replacementLoss, scopeBase, scopeSignatures, type ScopeBase } from "./src/utils/scopeFingerprint";
 import { approvalBlockerCount, approvalBlockerSummary, approvalWarnings, blockingConflictDetails, blockingConflicts, blockingRowIds, doubleEntryCount, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
+import { authorityRowsForScope } from "./src/utils/approvalScope";
 import { buildNotifications } from "./src/utils/notificationCenter";
 import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
@@ -127,7 +131,7 @@ import {
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL, readReportCells } from "./src/utils/documentOcr";
-import { blankSpots, columnKind, readRemainingReport, readReportHeader } from "./src/utils/remainingReport";
+import { assessRemainingImport, blankSpots, columnKind, imageOrientationRefusal, readRemainingReport, readReportHeader } from "./src/utils/remainingReport";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -6214,6 +6218,21 @@ app.get("/api/reports/visiting-roster", requireAnyPermission([7, 8, 9, 10, 14, 1
   res.json({ instructorIds, instructors: instructorsForReader(req, instructors as any[]) });
 });
 
+/** ── استعلام المنتدبين: القسم العلمي عبر كلياته ─────────────────────────────
+ *  الكلية والقسم هنا يحدّدان «القسم العلمي» لا حدود النتيجة: يُقرأ منتدبو
+ *  عائلته وتدريسهم في كل كلية فيها قسمٌ مناظر يملك القارئ صلاحيتها. وما لا
+ *  يملكها يُذكر باسمه ويُعلَّم الإجمالي «غير مكتمل» — لا يُعرض ناقصٌ كأنه كامل.
+ *  خاصٌّ بهذا الاستعلام: بقية الاستعلامات والاعتماد على نطاقها كما هو. */
+app.get("/api/reports/visiting-teaching", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const result = await readVisitingTeaching((c, s) => isScopeAllowed(req, c, s), collegeId, sectionId, termId);
+  res.json({ ...result, instructors: instructorsForReader(req, result.instructors as any[]) });
+});
+
 // A delegate badge is global to the person, but department directories are not.
 /** ── لكل اسم نسبه ──────────────────────────────────────────────────────────
  *  «منتدب» وحده لا يقول لمن، فتبقى الإدارة أمام اسم بلا قسم. وأعضاء هيئة
@@ -6396,6 +6415,51 @@ app.delete("/api/department-delegates/:instructorId", requirePermission(7), asyn
   res.json({instructorIds,...(roster?{roster}:{})});
 });
 
+/** ── تحويل منتدب ⇄ معيّن من شاشة تعديل الأستاذ ──────────────────────────────
+ *  الحالة: أين هو منتدبٌ (داخل نطاق القارئ)، والأقسام التي يحقّ له الانتداب
+ *  إليها، والفصول القابلة للكتابة (الحالي وحده؛ الماضي تاريخٌ لا يُكتب). */
+app.get("/api/instructors/:id/visiting-state", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const instructorId = Number(req.params.id || 0);
+  if (!Number.isInteger(instructorId) || instructorId <= 0) { res.status(400).json({ error: "معرّف الأستاذ غير صالح" }); return; }
+  const [state, sections, colleges, terms] = await Promise.all([
+    readConversionState(instructorId), Repository.getSections(), Repository.getColleges(), Repository.getTerms(),
+  ]);
+  const collegeName = new Map((colleges as any[]).map(c => [Number(c.AdCollegeId), String(c.AdCollegeName || "")]));
+  const sectionName = new Map((sections as any[]).map(s => [Number(s.AdSectionId), String(s.AdSectionName || "")]));
+  const label = (c: number, s: number) => [sectionName.get(s), collegeName.get(c)].filter(Boolean).join(" · ");
+  const allowed = (c: number, s: number) => isScopeAllowed(req, c, s);
+  const past = new Set(state.pastTermIds);
+  res.json({
+    instructorId,
+    currentTermId: state.currentTermId,
+    delegate: state.directory.filter(d => allowed(d.collegeId, d.sectionId)).map(d => ({ ...d, label: label(d.collegeId, d.sectionId) })),
+    rosters: state.rosters.filter(r => allowed(r.collegeId, r.sectionId)).map(r => ({ ...r, label: label(r.collegeId, r.sectionId), past: past.has(r.termId) })),
+    scopes: (sections as any[]).filter(s => allowed(Number(s.AdCollegeId), Number(s.AdSectionId)))
+      .map(s => ({ collegeId: Number(s.AdCollegeId), sectionId: Number(s.AdSectionId), label: label(Number(s.AdCollegeId), Number(s.AdSectionId)) })),
+    terms: (terms as any[]).filter(t => !past.has(Number(t.AdTermId))).map(t => ({ termId: Number(t.AdTermId), name: String(t.AdTermName || "") })),
+  });
+});
+
+/** التنفيذ (أو المعاينة بـ dryRun): كل قسمٍ في الطلب يُفحص بنطاق القارئ،
+ *  والخطة من planVisitingConversion وحدها. لا يُمسّ جدولٌ ولا روستر فصلٍ مضى. */
+app.post("/api/instructors/:id/visiting-conversion", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const instructorId = Number(req.params.id || 0);
+  const direction = req.body?.direction;
+  if (!Number.isInteger(instructorId) || instructorId <= 0) { res.status(400).json({ error: "معرّف الأستاذ غير صالح" }); return; }
+  if (direction !== "toAppointed" && direction !== "toVisiting") { res.status(400).json({ error: "اتجاه التحويل غير معروف." }); return; }
+  const rawScopes: unknown[] = Array.isArray(req.body?.scopes) ? req.body.scopes.slice(0, 50) : [];
+  const scopes = rawScopes.map((s: any) => ({ collegeId: Number(s?.collegeId || 0), sectionId: Number(s?.sectionId || 0) }));
+  if (scopes.some(s => !Number.isInteger(s.collegeId) || !Number.isInteger(s.sectionId) || s.collegeId <= 0 || s.sectionId <= 0)) { res.status(400).json({ error: "قسمٌ أو كليةٌ غير صالحة في الطلب." }); return; }
+  if (!scopes.every(s => isScopeAllowed(req, s.collegeId, s.sectionId))) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (!(await Repository.getInstructorById(instructorId))) { res.status(404).json({ error: "الأستاذ غير موجود" }); return; }
+  const request = direction === "toVisiting"
+    ? { direction, instructorId, scopes, termId: Number(req.body?.termId || 0) } as const
+    : { direction, instructorId, scopes, removeFromTermIds: (Array.isArray(req.body?.removeFromTermIds) ? req.body.removeFromTermIds : []).map(Number).filter((n: number) => Number.isInteger(n) && n > 0).slice(0, 20) } as const;
+  const result = await runVisitingConversion(request, { dryRun: Boolean(req.body?.dryRun) });
+  if (result.errors.length) { res.status(400).json({ error: result.errors.join(" "), errors: result.errors, changes: [] }); return; }
+  res.json(result);
+});
+
 /** Backwards-compatible creation path now writes the department directory too. */
 app.post("/api/visiting-roster/instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
@@ -6436,81 +6500,60 @@ app.get("/api/reports/visiting-history", requireAnyPermission([7, 8, 9, 10, 14, 
   /* مستوى الكلية (N7): أقسامُ الكلية كلها لمن يغطّيها. */
   const sectionIds=sectionId?[sectionId]:await wholeCollegeSectionIds(req,collegeId);
   if(!sectionIds.length||!sectionIds.every(id=>isScopeAllowed(req,collegeId,id))){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [rosterGroups,instructors,terms,directories]=await Promise.all([
-    Promise.all(sectionIds.map(id=>Repository.getVisitingRosterHistory(collegeId,id).then(list=>list.map((row:any)=>({...row,sectionId:id}))))),
+  const [instructors,terms,directories,allSections,colleges]=await Promise.all([
     Repository.getInstructors(),
     Repository.getTerms(),
     Promise.all(sectionIds.map(id=>Repository.getDepartmentDelegates(collegeId,id))),
+    Repository.getSections(),
+    Repository.getColleges(),
   ]);
-  const rosters=rosterGroups.flat();
-  /* التاريخُ تاريخ: من كان منتدباً في فصلٍ مضى يبقى فيه ولو خرج من دليل القسم
-     اليوم (N7). كان يُسقَط، فيقرأ العميدُ «لم ينتدب القسم أحداً» عن فصلٍ انتُدب
-     فيه ثلاثة. ويُعلَّم من لم يعد في الدليل. */
+  /* سجلّ المنتدبين جزءٌ من استعلام المنتدبين: القسم المختار يحدّد «القسم
+     العلمي»، ويُقرأ تدريس منتدبيه في كل كلياته التي يملك القارئ صلاحيتها.
+     مستوى الكلية (بلا قسم) يبقى على أقسام الكلية كما كان. */
+  const sectionNames=new Map((allSections as any[]).map(row=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
+  const collegeNames=new Map((colleges as any[]).map(row=>[Number(row.AdCollegeId),String(row.AdCollegeName||"")]));
+  const members=(sectionId?departmentFamily(allSections as any[],collegeId,sectionId):sectionIds.map(id=>({collegeId,sectionId:id})))
+    .map(member=>({...member,collegeName:collegeNames.get(member.collegeId)||"",sectionName:sectionNames.get(member.sectionId)||"",allowed:isScopeAllowed(req,member.collegeId,member.sectionId)}));
+  const readable=members.filter(member=>member.allowed);
+  /* روستر الفصل في المستودع اتحادُ العائلة أصلاً؛ ويُدمج هنا فصلاً فصلاً. */
+  const rosterGroups=await Promise.all(sectionIds.map(id=>Repository.getVisitingRosterHistory(collegeId,id)));
+  const rosterByTerm=new Map<number,Set<number>>();
+  for(const row of rosterGroups.flat()){const termId=Number(row.termId||0);if(!termId)continue;const set=rosterByTerm.get(termId)||new Set<number>();(row.instructorIds||[]).forEach((id:unknown)=>set.add(Number(id)));rosterByTerm.set(termId,set);}
+  const rosters=[...rosterByTerm.entries()].map(([termId,ids])=>({termId,instructorIds:[...ids]}));
   const activeDelegateIds=new Set(directories.flat().map(Number));
   const peopleById=new Map(instructors.map(person=>[Number(person.AdInstructorId),person]));
   const termsById=new Map(terms.map(term=>[Number(term.AdTermId),term]));
-  const termIds=[...new Set(rosters.map(row=>Number(row.termId)).filter(Boolean))];
-  const rowsByTerm=new Map<string,any[]>();
-  await Promise.all(rosters.map(async (roster:any)=>{
-    const key=`${Number(roster.sectionId)}:${Number(roster.termId||0)}`;
-    if(rowsByTerm.has(key))return;
-    rowsByTerm.set(key,[]);
-    rowsByTerm.set(key,await Repository.getSchedulesByScope({collegeId,sectionId:Number(roster.sectionId),termId:Number(roster.termId||0)}));
+  const termIds=[...rosterByTerm.keys()];
+  const rowsByTerm=new Map<number,any[]>();
+  await Promise.all(termIds.map(async termId=>{
+    const groups=await Promise.all(readable.map(member=>Repository.getSchedulesByScope({collegeId:member.collegeId,sectionId:member.sectionId,termId})));
+    rowsByTerm.set(termId,groups.flat());
   }));
-  const people=new Map<number,{instructorId:number;name:string;civil:string;times:number;sections:number;courses:number;terms:any[];listedNow:boolean}>();
-  for(const roster of rosters){
-    const termId=Number(roster.termId||0);
-    const term=termsById.get(termId);
-    const ids:number[]=[...new Set<number>(
-      ((roster.instructorIds||[]) as unknown[])
-        .map(Number)
-        .filter((id:number)=>Boolean(id)&&peopleById.has(id))
-    )];
-    const termRows=rowsByTerm.get(`${Number(roster.sectionId)}:${termId}`)||[];
-    for(const instructorId of ids){
-      const mine=termRows.filter(row=>Number(row.AdInstructorId)===instructorId);
-      const distinctCourses=new Set(mine.map(row=>Number(row.AdCourseId||0)).filter(Boolean)).size;
-      const person=peopleById.get(instructorId);
-      const current=people.get(instructorId)||{
-        instructorId,
-        name:person?.AdInstructorName||`منتدب ${instructorId}`,
-        civil:person ? instructorsForReader(req,[person])[0].AdInstructorCivil||"" : "",
-        times:0,
-        sections:0,
-        courses:0,
-        terms:[],
-        listedNow:activeDelegateIds.has(instructorId),
-      };
-      current.sections+=mine.length;
-      current.courses+=distinctCourses;
-      const items=mine.map((row:any)=>({
-        scheduleId:Number(row.id||0),
-        courseId:Number(row.AdCourseId||0),
-        courseName:String(row.AdCourseName||""),
-        sectionCode:String(row.SCode||"").trim(),
-      }));
-      /* على مستوى الكلية قد يُنتدب الشخص في قسمين في الفصل نفسه: فصلٌ واحد. */
-      const sameTerm=current.terms.find((entry:any)=>entry.termId===termId);
-      if(sameTerm){sameTerm.sections+=mine.length;sameTerm.courses+=distinctCourses;sameTerm.items.push(...items);people.set(instructorId,current);continue;}
-      current.times+=1;
-      current.terms.push({
-        termId,
-        termName:term?.AdTermName||String(termId),
-        rostered:true,
-        sections:mine.length,
-        courses:distinctCourses,
-        items,
-      });
-      people.set(instructorId,current);
-    }
-  }
+  /* التاريخُ تاريخ: من كان منتدباً في فصلٍ مضى يبقى فيه ولو خرج من دليل القسم
+     اليوم (N7)، ويُعلَّم من لم يعد في الدليل. */
+  const people=aggregateVisitingHistory({
+    rosters,
+    rowsByTerm,
+    known:id=>peopleById.has(id),
+    termName:termId=>String(termsById.get(termId)?.AdTermName||termId),
+  }).map(entry=>{
+    const person=peopleById.get(entry.instructorId);
+    return {
+      ...entry,
+      name:person?.AdInstructorName||`منتدب ${entry.instructorId}`,
+      civil:person?instructorsForReader(req,[person])[0].AdInstructorCivil||"":"",
+      listedNow:activeDelegateIds.has(entry.instructorId),
+    };
+  });
   const knownOrderedTermIds=sortTermsNewestServer(terms.filter(term=>termIds.includes(Number(term.AdTermId))))
     .map(term=>Number(term.AdTermId));
   const knownTermIdSet=new Set(knownOrderedTermIds);
   const orderedTermIds=[...knownOrderedTermIds,...termIds.filter(termId=>!knownTermIdSet.has(termId)).sort((a,b)=>b-a)];
   res.json({
     terms:orderedTermIds.map(termId=>({termId,termName:termsById.get(termId)?.AdTermName||String(termId)})),
-    people:[...people.values()],
+    people,
+    family:members,
+    complete:members.every(member=>member.allowed),
   });
 });
 
@@ -9622,11 +9665,8 @@ async function authorityBaselineForScope(baseline:any[],draft:{AdCollegeId:numbe
   if(!rows.length)return rows;
   const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
   const split=splitRowsByBranch(rows,{colleges:colleges as any,sections:sections as any,baseCollegeId:draft.AdCollegeId,baseSectionId:draft.AdSectionId});
-  if(split.groups.length<=1&&!split.unplaced.length)return rows;
-  const mine=split.groups.find(group=>Number(group.scope.collegeId)===Number(collegeId)&&Number(group.scope.sectionId)===Number(sectionId));
-  const isDraftScope=Number(collegeId)===Number(draft.AdCollegeId)&&Number(sectionId)===Number(draft.AdSectionId);
-  // صف تعذّر تحديد موقعه لم يغادر مكان الاستيراد، فيبقى في تقريره.
-  return [...(mine?mine.rows:[]),...(isDraftScope?split.unplaced.flatMap(entry=>entry.rows):[])];
+  /* وثيقةُ الموقع الشقيق لا تصير أساسَ هذا القسم إلا بصفوفه هو (approvalScope). */
+  return authorityRowsForScope(rows,split,draft,collegeId,sectionId);
 }
 
 /**
@@ -14224,7 +14264,8 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
       if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
       sectionsOf.get(id)!.add(String(row.SCode || row.id));
     }
-    perTerm.push({ sectionsOf, remaining: pastStats?.remaining || {} });
+    /* متبقّي فصلٍ سابق يدخل المقارنة إن كان «المقاعد المتبقية» نفسها؛ القديم عمودٌ آخر لا يُخلط بها. */
+    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.column === "seats" ? pastStats.remaining || {} : {} });
     department.push({
       termName: past.AdTermName, similar: past.similar,
       sections: [...sectionsOf.values()].reduce((sum, set) => sum + set.size, 0),
@@ -14256,8 +14297,11 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     similarTerms: similar.filter(item => item.similar).map(item => item.AdTermName),
     department,
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
-    remaining: stats?.remaining || {},
-    remainingSource: stats?.remainingSource || null,
+    /* «المقاعد المتبقية» وحدها مدخلُ التخطيط؛ ما حُفظ قبلها (عمود «الذين لم يسجلوا») يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
+    remaining: stats?.remainingSource?.column === "seats" ? stats.remaining || {} : {},
+    remainingSource: stats?.remainingSource?.column === "seats" ? stats.remainingSource : null,
+    legacyRemaining: stats?.remainingSource?.column !== "seats" && Object.keys(stats?.remaining || {}).length
+      ? { values: stats!.remaining, fileName: stats!.remainingSource?.fileName || "", importedAt: stats!.remainingSource?.importedAt || "" } : null,
     accepted: stats?.accepted || {},
     updatedAt: stats?.updatedAt || "",
     updatedBy: stats?.updatedBy || "",
@@ -14298,25 +14342,22 @@ async function remainingContext(collegeId: number, sectionId: number, termId: nu
     sections.find((row: any) => Number(row.AdSectionId) === sectionId),
   );
   const catalogue = courses.map(course => ({ id: Number(course.AdCourseId), code: String(course.CourseCode || "") }));
-  return { departmentCode, catalogue, termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || "") };
+  const departmentName = String(sections.find((row: any) => Number(row.AdSectionId) === sectionId)?.AdSectionName || "");
+  return { departmentCode, departmentName, catalogue, termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || "") };
 }
 /* الترويسة تقول لأيّ قسمٍ وأيّ فصلٍ طُبع الكشف: يُنبَّه القسم ولا يُمنع، فالقراءة الضوئية قد تخطئ رقماً. */
 function remainingWarnings(headerText: string, departmentCode: string, termName: string): string[] {
   const header = readReportHeader(headerText);
   const warnings: string[] = [];
-  if (header.department && departmentCode && header.department !== departmentCode)
-    warnings.push(`الكشف لرمز القسم العلمي ${header.department}، وقسمك ${departmentCode} — تأكد أنه كشف قسمك.`);
   const season = REMAINING_SEASONS[String(termSeasonOf(termName) || "")];
   const years = termName.match(/(\d{4})\s*\/\s*(\d{4})/);
   if (header.season && header.years && (header.season !== season || (years && Number(years[1]) !== header.years[0])))
     warnings.push(`الكشف للفصل ${REMAINING_SEASON_NAMES[header.season]} ${header.years[0]}/${header.years[1]}، وأنت تخطط «${termName}».`);
   return warnings;
 }
-function remainingRefusal(reading: ReturnType<typeof readRemainingReport>): string {
-  if (!reading.rows.length) return reading.foreign.length
-    ? `الكشف لا يحوي مقررات هذا القسم (فيه رموزٌ مثل ${reading.foreign.slice(0, 3).join("، ")}) — هل هو كشف قسمٍ آخر؟`
-    : "لم أجد في الملف أرقام مقررات هذا القسم — تأكد أنه كشف المتبقي من عمادة التسجيل.";
-  return reading.columns.length ? "" : "وجدتُ مقررات القسم في الكشف، ولم أجد بجانبها أعداداً تُقرأ.";
+/* القسم المختار ≠ قسم الكشف، أو قراءةٌ غير واضحة، أو لا عمود «المقاعد المتبقية» ← يُرفض قبل المعاينة. */
+function remainingAssessment(reading: ReturnType<typeof readRemainingReport>, departmentCode: string, departmentName: string, headerText: string) {
+  return assessRemainingImport(reading, { departmentCode, departmentName, headerText });
 }
 
 app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw({ type: ["application/octet-stream", "application/pdf", "image/*"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
@@ -14349,13 +14390,17 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
     let offset = 0;
     input = sizes.map(size => { const part = bytes.subarray(offset, offset + size); offset += size; return part; });
   }
-  const { departmentCode, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  /* صورةٌ طوليّة تُرفض قبل القراءة: كشف العمادة عريض. */
+  const names = fileName.split("، ");
+  const orientation = (Array.isArray(input) ? input : [input]).map((part, index) => imageOrientationRefusal(part, Array.isArray(input) ? names[index] || "" : "")).find(Boolean);
+  if (orientation) { res.status(422).json({ error: orientation, code: "orientation" }); return; }
+  const { departmentCode, departmentName, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
   try {
     const cells = await readReportCells(input, mime, pages => blankSpots(pages, catalogue, departmentCode), template);
     const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
-    const refusal = remainingRefusal(reading);
-    if (refusal) { res.status(422).json({ error: refusal }); return; }
-    res.json({ ...reading, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
+    const assessment = remainingAssessment(reading, departmentCode, departmentName, cells.headerText);
+    if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
+    res.json({ ...reading, assessment, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
       warnings: remainingWarnings(cells.headerText, departmentCode, termName),
       cells: cells.pages, headerText: cells.headerText.slice(0, 4000), template: cells.template || null });
   } catch (error: any) {
@@ -14376,11 +14421,12 @@ app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requi
       ...(Number.isFinite(Number(cell?.confidence)) ? { confidence: Math.max(0, Math.min(100, Number(cell.confidence))) } : {}),
     })));
   if (!pages.length) { res.status(400).json({ error: "لا صفحات تُقرأ" }); return; }
-  const { departmentCode, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  const { departmentCode, departmentName, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
   const reading = readRemainingReport(pages, catalogue, departmentCode);
-  const refusal = remainingRefusal(reading);
-  if (refusal) { res.status(422).json({ error: refusal }); return; }
-  res.json({ ...reading, warnings: remainingWarnings(String(req.body?.headerText || "").slice(0, 4000), departmentCode, termName) });
+  const headerText = String(req.body?.headerText || "").slice(0, 4000);
+  const assessment = remainingAssessment(reading, departmentCode, departmentName, headerText);
+  if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
+  res.json({ ...reading, assessment, warnings: remainingWarnings(headerText, departmentCode, termName) });
 });
 
 // --- Public surface (no account) --------------------------------------------

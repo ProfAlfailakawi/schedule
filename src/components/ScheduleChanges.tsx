@@ -38,6 +38,7 @@ import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeCont
 import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import PagedFindingList from "./PagedFindingList";
+import { approvalScopeKey, authorityBaselineLabel, AUTHORITY_BASELINE_LABEL, createScopeGuard } from "../utils/approvalScope";
 
 type NoteField = DiffFieldKey | "row";
 type NoteState = "open" | "changed" | "answered" | "resolved" | "removed";
@@ -906,12 +907,25 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
     a.course.localeCompare(b.course, "ar")
   ), [report?.fullSchedule]);
 
+  /* كلُّ قراءةٍ موسومةٌ بنطاقها، والأقدمُ تُلغى: تقريرُ قسمٍ سابق — أو قراءةٌ
+     سبقتها أحدثُ منها — لا يقع على الشاشة بعد تبدّل القسم (approvalScope). */
+  const scopeKey = approvalScopeKey({ collegeId: scope.collegeId, sectionId: scope.sectionId, termId });
+  const guardRef = useRef(createScopeGuard());
+  const inFlight = useRef<AbortController | null>(null);
+  if (guardRef.current.scope !== scopeKey) guardRef.current.setScope(scopeKey);
+  useEffect(() => () => inFlight.current?.abort(), []);
   const load = useCallback(async (round?: number, base: "auto" | "round" | "authority" = "auto") => {
     setError(null);
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const token = guardRef.current.begin(scopeKey);
     try {
       const query = `collegeId=${scope.collegeId}&sectionId=${scope.sectionId}&termId=${termId}${round ? `&round=${round}` : ""}${base !== "auto" ? `&baseline=${base}` : ""}`;
-      setReport(await request(`/api/reports/schedule-changes?${query}`));
+      const next = await request(`/api/reports/schedule-changes?${query}`, { signal: controller.signal });
+      if (guardRef.current.accepts(token)) setReport(next);
     } catch (e: any) {
+      if (e?.name === "AbortError" || !guardRef.current.accepts(token)) return;
       /**
        * ── تقريرٌ أخفقت قراءتُه لا يبقى معروضاً ───────────────────────────
        *
@@ -922,12 +936,14 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
       setReport(null);
       setError(e.message);
     }
-  }, [scope.collegeId, scope.sectionId, termId]);
+  }, [scope.collegeId, scope.sectionId, termId, scopeKey]);
 
   /* وتبدّلُ القسم يُفرغ ما قبله قبل أن تصل القراءة: لا رأسُ قسمٍ فوق تغييرات
      قسمٍ آخر، ولو للحظة. */
   useEffect(() => {
+    inFlight.current?.abort();
     setReport(null);
+    setError(null);
     setShowRounds(false);
     setView("changes");
     setNoteDraft(null);
@@ -1159,11 +1175,13 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
               أو أساسٌ لم يُوجد فقُورن الجدولُ بالعدم. والفرقُ بينهما هو الفرقُ
               بين مراجعةٍ صحيحةٍ ومراجعةٍ ضائعة، فلا يُترك ليُستنتج. */}
           {report.baselineSource === "authority" ? (
-            <small className="changes-baseline-note">المقارنة مع النسخة المعتمدة «{report.authoritySource?.sourceFileName || "الجدول المعتمد.pdf"}» — بنفس أساس تقرير تغييرات الجدول الرسمي.</small>
+            <small className="changes-baseline-note" data-baseline-source="authority">{authorityBaselineLabel(report.authoritySource)} بنفس أساس تقرير تغييرات الجدول الرسمي.</small>
           ) : report.baselineSource === "none" ? (
             <small className="changes-baseline-note">أولُ مراجعةٍ لهذا القسم — لا نسخةَ سابقةَ يُقارَن بها، فكلُّ موعدٍ يُعرض مضافاً.</small>
           ) : report.baselineSource === "reviewed" ? (
             <small className="changes-baseline-note">لم يتحرّك شيءٌ منذ آخر مراجعةٍ للتسجيل — الجدول كما رآه.</small>
+          ) : report.baselineSource === "round" ? (
+            <small className="changes-baseline-note" data-baseline-source="round">منذ آخر مراجعة: المقارنة مع نسخة الجدول المحفوظة التي رآها التسجيل قبل هذه الجولة.</small>
           ) : report.baselineSource === "capture" ? (
             <small className="changes-baseline-note">لم تحمل الجولاتُ السابقة نسخةً محفوظة، فالمقارنةُ من آخر لقطةٍ للجدول قبل هذه الجولة.</small>
           ) : null}
@@ -1184,7 +1202,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
               منذ آخر مراجعة
             </button>
             <button type="button" data-active={report.baselineSource === "authority" || undefined} aria-pressed={report.baselineSource === "authority"} data-guide-ignore="المقارنة بوثيقة الهيئة المعتمدة — عرضٌ لا فعل" onClick={() => { setBaseline("authority"); void load(viewRound, "authority"); }}>
-              منذ وثيقة الهيئة
+              {AUTHORITY_BASELINE_LABEL}
             </button>
           </div>
         ) : null}

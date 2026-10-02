@@ -3,6 +3,7 @@ import { Phone, Trash2, UserRound } from "lucide-react";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
 import { sortByName } from "../utils/sorting";
+import VisitingConversionPanel from "./VisitingConversionPanel";
 import {
   AddButton,
   EmbeddedAction,
@@ -335,6 +336,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                 {status === "retired" ? "متقاعد" : "متفرّغ"}: يبقى في السجل ويحتفظ بمواعيده السابقة، لكن لا يظهر عند إسناد مواعيد جديدة.
               </p>
             ) : null}
+            {mode === "edit" && editId ? <VisitingConversionPanel instructorId={Number(editId)} /> : null}
             <FormActions
               onBack={back}
               loading={loading || submitting}

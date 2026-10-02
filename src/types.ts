@@ -1188,10 +1188,11 @@ export interface RegistrationStats {
   termId: number;
   /** AdCourseId → عدد الطلبة المسجّلين — الإدخال القديم، لم يعد يُكتب من الشاشة ويُحفظ كما هو. */
   counts: Record<string, number>;
-  /** AdCourseId → المتبقي من كشف عمادة التسجيل: طلبةٌ لم يسجّلوا المقرر بعد. */
+  /** AdCourseId → «المقاعد المتبقية» من كشف عمادة التسجيل (حين remainingSource.column === "seats").
+      ما حُفظ قبل ذلك كان عموداً آخر («الذين لم يسجلوا»): قديمٌ لا يُخلط بها. */
   remaining?: Record<string, number>;
-  /** من أين جاء المتبقي: الملف ومتى استُورد. */
-  remainingSource?: { fileName: string; importedAt: string };
+  /** من أين جاء المتبقي: الملف ومتى استُورد، وأيّ عمودٍ هو ("seats" = المقاعد المتبقية). */
+  remainingSource?: { fileName: string; importedAt: string; column?: "seats" };
   /** AdCourseId → عدد الشعب الذي قبله القسم (اختياري) */
   accepted?: Record<string, number>;
   updatedAt: string;
