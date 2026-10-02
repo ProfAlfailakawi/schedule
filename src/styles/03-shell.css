@@ -2037,7 +2037,11 @@ html[data-dialog-open] .notify-toast{visibility:hidden}
   .smart-guide-fab:not(.icon-only) .smart-guide-fab-pulse,.smart-guide-fab:not(.icon-only) .smart-guide-fab-new{position:absolute;inset-inline-start:-3px;inset-block-start:-3px}
   .smart-guide-fab{box-shadow:0 6px 16px rgba(17,24,39,.14);opacity:.96}
   .smart-guide-fab:hover,.smart-guide-fab.active{box-shadow:0 8px 18px rgba(17,24,39,.16)}
-}
+  /* Edge tab: flush with the screen edge so it sits in the page gutter and
+     never over a card header's action (display only; same button). */
+  .smart-guide-fab:not(.icon-only){left:0;width:34px;min-width:34px;border-radius:0 14px 14px 0;border-inline-start-width:0}
+  .smart-guide-fab:not(.icon-only) .smart-guide-fab-mark{width:26px;height:26px;border-radius:9px}
+  .smart-guide-fab:not(.icon-only) .smart-guide-fab-mark svg{width:15px;height:15px}
 }
 
 /* Dark: the state colours turn light, so white text on them fell to ~2.4:1.
