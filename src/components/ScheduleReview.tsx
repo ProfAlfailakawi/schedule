@@ -602,7 +602,7 @@ export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, i
                         renderFindingPeople(finding)
                       )}
                       {onFocusRows && finding.rowIds.some(id => loadedIds.has(id)) ? (
-                        <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds.filter(id => loadedIds.has(id))); onClose(); }}>
+                        <SecondaryButton type="button" data-guide-ignore="إبراز مواعيد الملاحظة على الجدول فقط، لا يغيّر شيئاً" onClick={() => { onFocusRows(finding.rowIds.filter(id => loadedIds.has(id))); onClose(); }}>
                           أظهرها على الجدول
                         </SecondaryButton>
                       ) : null}
