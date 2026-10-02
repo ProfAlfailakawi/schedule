@@ -2049,3 +2049,8 @@ html[data-dialog-open] .notify-toast{visibility:hidden}
   .shortcut-strip{display:none}
   .cmdk-field>kbd,.cmdk .cmdk-shortcut{display:none}
 }
+
+/* Tour: when the list is taller than the screen (six chapters on a phone, or a
+   short laptop) the card scrolls inside itself — the start button must stay in
+   view instead of scrolling away with the list. */
+.ob-card .ob-foot{position:sticky;inset-block-end:0;z-index:2;background:var(--surface);margin:8px 0 0;padding:12px clamp(20px,3.4vw,36px) calc(12px + env(safe-area-inset-bottom))}
