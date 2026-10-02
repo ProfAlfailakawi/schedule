@@ -1644,3 +1644,11 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .student-case-more-toggle{min-height:44px}
   .changes-chip{min-height:44px}
 }
+
+/* ── الهاتف: محرِّر الموعد — أزرارٌ صغيرة داخل الحقول ───────────────────────
+   زرُّ عدّاد الوقت 28×28 داخل حقلٍ ارتفاعُه 44 (طبقةٌ شفافة تملأ ارتفاعَ الحقل،
+   والرسمُ كما هو)، وزرُّ «اقترح لي وقتاً» 40 → 44. */
+@media (pointer:coarse) and (max-width:760px){
+  .schedule-time-counter-toggle::after{content:"";position:absolute;inset:-8px -6px}
+  .slot-advisor-ask{min-height:44px}
+}
