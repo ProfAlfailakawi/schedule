@@ -29,7 +29,7 @@
 import MiniRing from "./MiniRing";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
   ClipboardPen, Equal, Grid3x3, MailCheck, MailOpen, MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
 import { DnaCount } from "./dna";
@@ -441,10 +441,7 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
           );
         })()}
         </div>
-      </header>
-
-      {/* مسارُ الطلب بنظرة، وسجلُّ أحداثه مطويٌّ خلف أيقونة. */}
-      <div className="request-card-relay">
+        {/* مسارُ الطلب وسجلُّه مطويٌّ خلف أيقونة في رأس البطاقة نفسها، والمقترحاتُ الدراسية سطرٌ فيه. */}
         <RequestTimelineToggle
           timeline={row.timeline}
           itemLabel={index => row.items?.[index]?.after?.courseName || row.items?.[index]?.before?.courseName || undefined}
@@ -454,10 +451,8 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
             : event.kind === "alternative-chosen" || event.kind === "proposal-accepted" ? `البديل ${event.detail}`
             : event.detail}
         />
-      </div>
-
-      {/* المقترحات الدراسية لهذا الأستاذ، وزرُّ البدء منها. */}
-      <ProposalStrip requestId={row.id} proposals={proposals} onOpen={onOpenProposal} compact />
+        <ProposalStrip requestId={row.id} proposals={proposals} onOpen={onOpenProposal} compact />
+      </header>
 
       {/* ── جدولٌ لا كومةُ بطاقات ─────────────────────────────────────────
           كلُّ بندٍ صفٌّ واحد بأعمدةٍ ثابتة: ما هو، وأيُّ مقرّر، وكان، والمطلوب،
@@ -469,10 +464,7 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
           <thead>
             <tr>
               <th scope="col">الطلب</th>
-              <th scope="col">المقرر</th>
-              <th scope="col">كان</th>
-              <th scope="col">المطلوب</th>
-              <th scope="col">الفحص</th>
+              <th scope="col">التغيير</th>
               <th scope="col">القرار</th>
             </tr>
           </thead>
@@ -556,27 +548,26 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
       <tr className="request-row" data-action={item.action} data-verdict={item.verdict || "clear"} data-decided={decided || undefined} data-readiness={readiness}>
         <td data-label="الطلب">
           <span className="request-action" data-action={item.action}>{ACTION_LABEL[item.action] || item.action}</span>
-        </td>
-        <td data-label="المقرر">
           <strong>{item.after?.courseName || item.before?.courseName || "—"}</strong>
           {item.before?.sectionCode ? <small>شعبة {item.before.sectionCode}</small> : null}
           {item.action === "add" && item.after?.collegeName ? <small>{item.after.collegeName}</small> : null}
         </td>
-        <td data-label="كان">
-          {item.before && item.action !== "add" ? (
-            <span className={item.action === "delete" ? "request-was-gone" : undefined}>
-              {item.before.days}<br /><bdi dir="ltr">{item.before.time}</bdi>
-              {item.before.room ? <small className="request-room"><bdi dir="ltr">{item.before.room}</bdi></small> : null}
-            </span>
-          ) : <span className="request-none">—</span>}
-        </td>
-        <td data-label="المطلوب">
-          {item.action === "delete" ? <span className="request-none">حذف الموعد</span>
-            : item.after ? <span>{item.after.days}<br /><bdi dir="ltr">{item.after.time}</bdi></span>
-            : <span className="request-none">—</span>}
+        <td data-label="التغيير">
+          <div className="request-flow">
+            {item.before && item.action !== "add" ? (
+              <span className="request-was-gone" title="كان">
+                {item.before.days}<br /><bdi dir="ltr">{item.before.time}</bdi>
+                {item.before.room ? <small className="request-room"><bdi dir="ltr">{item.before.room}</bdi></small> : null}
+              </span>
+            ) : null}
+            {item.before && item.action === "change" ? <ArrowLeft className="request-flow-arrow" aria-hidden="true" /> : null}
+            {item.action === "delete" ? <span className="request-none">حذف الموعد</span>
+              : item.after ? <span title="المطلوب">{item.after.days}<br /><bdi dir="ltr">{item.after.time}</bdi></span>
+              : <span className="request-none">—</span>}
+          </div>
           {item.excuse ? <small className="request-excuse"><MessageSquare aria-hidden="true" /> {item.excuse}</small> : null}
         </td>
-        <td data-label="الفحص">
+        <td data-label="القرار">
           {!decided ? (
             <span className="request-readiness" data-readiness={readiness}>
               {readiness === "checking" ? <Loader2 aria-hidden="true" className="spin" />
@@ -623,8 +614,6 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
           {(item.roomCandidates || []).length && item.action !== "delete" && !decided ? (
             <small className="request-rooms">قاعاتٌ متاحة في هذا الوقت: {countOf(item.roomCandidates!.length, AR.room)}</small>
           ) : null}
-        </td>
-        <td data-label="القرار">
           {hasThread || negotiation === "proposed" ? (
             <span className="request-negotiation" data-negotiation={negotiation}>{NEGOTIATION_LABEL[negotiation]}</span>
           ) : null}
@@ -662,7 +651,7 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
         </td>
       </tr>
       {hasThread || talking ? (
-        <tr className="request-thread-row"><td colSpan={6}>
+        <tr className="request-thread-row"><td colSpan={3}>
           <RequestThread
             item={item}
             busy={busy}
@@ -673,7 +662,7 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
         </td></tr>
       ) : null}
       {rejecting ? (
-        <tr className="request-reject-row"><td colSpan={6}>
+        <tr className="request-reject-row"><td colSpan={3}>
           <RejectSheet
             item={item}
             busy={busy}
@@ -1228,6 +1217,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   return (
     <div className="content-stack changes-screen visual-minimal">
       <PageTitle
+        action={rows && rows.length ? <ProposalLauncherBar rows={rows} proposals={proposals} onOpen={setWorkspace} /> : undefined}
         eyebrow={<><Inbox aria-hidden="true" /> رغبات الأساتذة</>}
         subtitle="ما طلبه الأساتذة على مسوّداتهم، لا الجدول كله"
       >
@@ -1324,7 +1314,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
                             <span key={day} role="cell" className="heat-cell" data-heat={level}
                               title={`${name} ${time}: ${num(count)} ${count === 1 ? "موعد" : "مواعيد"}`}
                               aria-label={`${name} ${time}: ${num(count)}`}>
-                              {count ? num(count) : ""}
+                              {""}
                             </span>
                           );
                         })}
@@ -1340,8 +1330,6 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
               ) : null}
             </div>
           ) : null}
-
-          <ProposalLauncherBar rows={rows} proposals={proposals} onOpen={setWorkspace} />
 
           {silent.length ? (
             <div className="request-silent">
