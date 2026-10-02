@@ -5,19 +5,26 @@
  */
 import { Repository } from "./repository";
 import { departmentFamilyResolver } from "../utils/sectionLabel";
-import { sortTermsNewest } from "../utils/termSequence";
+import { currentTermId as liveTermId, sortTermsNewest, termChronology } from "../utils/termSequence";
 import { ConversionChange, ConversionRequest, ConversionState, planVisitingConversion } from "../utils/visitingConversion";
 
-export async function readConversionState(instructorId: number): Promise<ConversionState & { currentTermId: number }> {
+export async function readConversionState(instructorId: number): Promise<ConversionState & { currentTermId: number; futureTermIds: number[] }> {
   const [affiliations, sections, terms] = await Promise.all([Repository.getDelegateAffiliations(), Repository.getSections(), Repository.getTerms()]);
   const id = Number(instructorId);
   const ordered = sortTermsNewest(terms as any[]);
-  const currentTermId = Number(ordered[0]?.AdTermId || 0);
+  /* الجاري الحقيقي (لا «الأحدث»): الماضي ما سبقه زمنياً، والجاري وكل قادمٍ قابلٌ للكتابة،
+     ولو أُنشئ فصلٌ قادمٌ قبل أن يبدأ وبلا جداول. */
+  const currentTermId = liveTermId(terms as any[]);
+  const currentChron = termChronology((terms as any[]).find(t => Number(t.AdTermId) === currentTermId));
+  const pastTermIds = currentTermId
+    ? ordered.filter(t => termChronology(t) < currentChron).map(t => Number(t.AdTermId))
+    : [];
   return {
     currentTermId,
     directory: affiliations.filter(r => r.kind === "directory" && r.instructorIds.includes(id)).map(r => ({ collegeId: r.collegeId, sectionId: r.sectionId })),
     rosters: affiliations.filter(r => r.kind === "roster" && r.termId && r.instructorIds.includes(id)).map(r => ({ collegeId: r.collegeId, sectionId: r.sectionId, termId: Number(r.termId) })),
-    pastTermIds: ordered.slice(1).map(t => Number(t.AdTermId)),
+    pastTermIds,
+    futureTermIds: ordered.filter(t => termChronology(t) > currentChron).map(t => Number(t.AdTermId)),
     knownTermIds: ordered.map(t => Number(t.AdTermId)),
     familyOf: departmentFamilyResolver(sections as any[]),
   };

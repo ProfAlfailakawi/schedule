@@ -11,7 +11,7 @@
 export type ConversionScope = { collegeId: number; sectionId: number };
 
 export type ConversionRequest =
-  | { direction: "toAppointed"; instructorId: number; scopes: ConversionScope[]; removeFromTermIds?: number[] }
+  | { direction: "toAppointed"; instructorId: number; scopes: ConversionScope[] }
   | { direction: "toVisiting"; instructorId: number; scopes: ConversionScope[]; termId?: number };
 
 export type ConversionState = {
@@ -19,7 +19,7 @@ export type ConversionState = {
   directory: ConversionScope[];
   /** رواستر الفصول التي فيها اسمه. */
   rosters: Array<ConversionScope & { termId: number }>;
-  /** الفصول التي مضت: رواسترها لا تُكتب أبداً. */
+  /** الفصول التي سبقت الجاري: رواسترها لا تُكتب أبداً. الجاري والقادمة قابلةٌ للكتابة. */
   pastTermIds: number[];
   /** الفصول الموجودة (لرفض فصلٍ مجهول). */
   knownTermIds: number[];
@@ -68,11 +68,7 @@ export function planVisitingConversion(request: ConversionRequest, state: Conver
   }
 
   if (request.direction !== "toAppointed") return { changes, errors: ["اتجاه التحويل غير معروف."] };
-  const terms = [...new Set((request.removeFromTermIds || []).map(Number))];
-  for (const t of terms) {
-    if (!known.has(t)) errors.push(`الفصل ${t} غير موجود.`);
-    else if (past.has(t)) errors.push("روستر الفصول الماضية سجلٌّ تاريخي لا يُعدَّل.");
-  }
+  const writable = state.knownTermIds.map(Number).filter(t => !past.has(t)).sort((x, y) => x - y);
   const seen = new Set<string>();
   for (const { collegeId, sectionId } of scopes) {
     const key = family(collegeId, sectionId);
@@ -80,8 +76,7 @@ export function planVisitingConversion(request: ConversionRequest, state: Conver
     seen.add(key);
     if (!dirFamilies.has(key)) { errors.push("الأستاذ ليس في دليل منتدبي أحد الأقسام المختارة."); continue; }
     changes.push({ kind: "directory-remove", collegeId, sectionId });
-    for (const termId of terms) {
-      if (past.has(termId) || !known.has(termId)) continue;
+    for (const termId of writable) {
       if (state.rosters.some(r => r.termId === termId && family(r.collegeId, r.sectionId) === key))
         changes.push({ kind: "roster-remove", collegeId, sectionId, termId });
     }

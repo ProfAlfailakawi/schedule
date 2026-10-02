@@ -73,7 +73,7 @@ import { diffSchedules, fieldValue as diffFieldValue, summarizeDiff } from "./sr
 import { describeScopeChanges, fingerprintOfSignatures, replacementLoss, scopeBase, scopeSignatures, type ScopeBase } from "./src/utils/scopeFingerprint";
 import { approvalBlockerCount, approvalBlockerSummary, approvalWarnings, blockingConflictDetails, blockingConflicts, blockingRowIds, doubleEntryCount, placeholderInstructorIds as sharedPlaceholderInstructorIds, type ApprovalBlockerOptions } from "./src/utils/scheduleBlockers";
 import { chooseCaptureBaseline } from "./src/utils/changesBaseline";
-import { authorityRowsForScope } from "./src/utils/approvalScope";
+import { approvalScopeKey, authorityRowsForScope } from "./src/utils/approvalScope";
 import { buildNotifications } from "./src/utils/notificationCenter";
 import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
@@ -132,6 +132,7 @@ import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseS
 import { displayInstructorText, instructorCleanName, foldInstructorText, instructorIdentityTokens, readableInstructorName, registryCandidatesFor } from "./src/utils/instructorIdentity";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, instructorRegistryOutcome, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead, SCAN_READING_BUSY_MESSAGE, ScanReadingBusyError, GREY_PHOTO_REFUSAL, readReportCells } from "./src/utils/documentOcr";
 import { assessRemainingImport, blankSpots, columnKind, imageOrientationRefusal, readRemainingReport, readReportHeader } from "./src/utils/remainingReport";
+import { computeTermForecast } from "./src/utils/termForecast";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import {
   academicDigits,
@@ -6432,6 +6433,7 @@ app.get("/api/instructors/:id/visiting-state", requirePermission(7), async (req:
   res.json({
     instructorId,
     currentTermId: state.currentTermId,
+    futureTermIds: state.futureTermIds,
     delegate: state.directory.filter(d => allowed(d.collegeId, d.sectionId)).map(d => ({ ...d, label: label(d.collegeId, d.sectionId) })),
     rosters: state.rosters.filter(r => allowed(r.collegeId, r.sectionId)).map(r => ({ ...r, label: label(r.collegeId, r.sectionId), past: past.has(r.termId) })),
     scopes: (sections as any[]).filter(s => allowed(Number(s.AdCollegeId), Number(s.AdSectionId)))
@@ -6454,7 +6456,7 @@ app.post("/api/instructors/:id/visiting-conversion", requirePermission(7), async
   if (!(await Repository.getInstructorById(instructorId))) { res.status(404).json({ error: "الأستاذ غير موجود" }); return; }
   const request = direction === "toVisiting"
     ? { direction, instructorId, scopes, termId: Number(req.body?.termId || 0) } as const
-    : { direction, instructorId, scopes, removeFromTermIds: (Array.isArray(req.body?.removeFromTermIds) ? req.body.removeFromTermIds : []).map(Number).filter((n: number) => Number.isInteger(n) && n > 0).slice(0, 20) } as const;
+    : { direction, instructorId, scopes } as const;
   const result = await runVisitingConversion(request, { dryRun: Boolean(req.body?.dryRun) });
   if (result.errors.length) { res.status(400).json({ error: result.errors.join(" "), errors: result.errors, changes: [] }); return; }
   res.json(result);
@@ -14310,6 +14312,29 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
   });
 });
 
+/* ── الإنذار المبكر للفصل ────────────────────────────────────────────────────
+   توقّعٌ حتميّ لقسمٍ وفصلٍ واحد من بياناتٍ محفوظة (القواعد في src/utils/termForecast.ts).
+   الفصل الغائب = الأحدث، كما تفعل لوحة البداية. يُردّ مفتاحُ النطاق ليرمي المتصفحُ ما بات بائتاً. */
+app.get("/api/forecast/term", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0);
+  if (!collegeId || !sectionId) { res.status(400).json({ error: "حدد الكلية والقسم" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const termId = Number(req.query.termId || 0) || Number(sortTermsNewestServer(await Repository.getTerms())[0]?.AdTermId || 0);
+  if (!termId) { res.status(400).json({ error: "لا فصل" }); return; }
+  const [rows, courses, instructors, stats] = await Promise.all([
+    readSchedulesForRequest(req, collegeId, sectionId, termId), Repository.getCoursesBySection(sectionId),
+    Repository.getInstructors(), Repository.getRegistrationStats(collegeId, sectionId, termId),
+  ]);
+  const scoped = rows.filter(row => Number(row.AdSectionId) === sectionId);
+  const mine = new Set(scoped.map(row => Number(row.AdInstructorId)));
+  const forecast = computeTermForecast({
+    rows: scoped, courses,
+    instructors: instructors.filter(item => mine.has(Number(item.AdInstructorId))),
+    remaining: stats?.remainingSource?.column === "seats" ? stats.remaining || {} : null,
+  });
+  res.json({ scopeKey: approvalScopeKey({ collegeId, sectionId, termId }), collegeId, sectionId, termId, ...forecast });
+});
+
 app.put("/api/registration-stats", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
@@ -14355,7 +14380,7 @@ function remainingWarnings(headerText: string, departmentCode: string, termName:
     warnings.push(`الكشف للفصل ${REMAINING_SEASON_NAMES[header.season]} ${header.years[0]}/${header.years[1]}، وأنت تخطط «${termName}».`);
   return warnings;
 }
-/* القسم المختار ≠ قسم الكشف، أو قراءةٌ غير واضحة، أو لا عمود «المقاعد المتبقية» ← يُرفض قبل المعاينة. */
+/* يُرفض قبل المعاينة: قسمٌ آخر، أو لا عمود «المقاعد المتبقية»، أو لا خانةً مقروءة. وما قُرئ جزئياً يُعرض والناقص أصفر. */
 function remainingAssessment(reading: ReturnType<typeof readRemainingReport>, departmentCode: string, departmentName: string, headerText: string) {
   return assessRemainingImport(reading, { departmentCode, departmentName, headerText });
 }
@@ -14400,7 +14425,7 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
     const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
     const assessment = remainingAssessment(reading, departmentCode, departmentName, cells.headerText);
     if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
-    res.json({ ...reading, assessment, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
+    res.json({ ...reading, assessment, departmentName, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
       warnings: remainingWarnings(cells.headerText, departmentCode, termName),
       cells: cells.pages, headerText: cells.headerText.slice(0, 4000), template: cells.template || null });
   } catch (error: any) {
@@ -14426,7 +14451,7 @@ app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requi
   const headerText = String(req.body?.headerText || "").slice(0, 4000);
   const assessment = remainingAssessment(reading, departmentCode, departmentName, headerText);
   if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
-  res.json({ ...reading, assessment, warnings: remainingWarnings(headerText, departmentCode, termName) });
+  res.json({ ...reading, assessment, departmentName, warnings: remainingWarnings(headerText, departmentCode, termName) });
 });
 
 // --- Public surface (no account) --------------------------------------------

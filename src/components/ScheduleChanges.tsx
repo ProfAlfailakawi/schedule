@@ -17,7 +17,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { takeNotifyFocus, type NotifyFocus } from "../utils/notifyFocus";
 import {
   AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardCheck, ClipboardList, Clock3,
-  CalendarPlus, CornerUpLeft, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
+  CalendarPlus, CornerUpLeft, FileCheck, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
   UsersRound, X, FilePenLine, OctagonAlert, MessageSquareWarning, MessageSquareReply, ListPlus,
 } from "lucide-react";
 import { DnaCount, DnaTimeline } from "./dna";
@@ -38,6 +38,7 @@ import { singleDepartmentOf, type ScopeAssignmentLike } from "../utils/scopeCont
 import { inboxAudience, multiSiteHeadline, type InboxAudience } from "../utils/inboxAudience";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
 import PagedFindingList from "./PagedFindingList";
+import ApprovalDossier from "./ApprovalDossier";
 import { approvalScopeKey, authorityBaselineLabel, AUTHORITY_BASELINE_LABEL, createScopeGuard } from "../utils/approvalScope";
 
 type NoteField = DiffFieldKey | "row";
@@ -879,6 +880,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showRounds, setShowRounds] = useState(false);
+  const [dossierOpen, setDossierOpen] = useState(false);
   /* «ما تحرّك» مدخلُ المراجعة السريعة، و«الجدول كامل» ما يطلبه القسم: أن يرى
      جدولَه كلَّه والملاحظات في مواضعها، لا الملاحظات وحدها. */
   const [view, setView] = useState<"changes" | "full">("changes");
@@ -946,6 +948,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
     setError(null);
     setShowRounds(false);
     setView("changes");
+    setDossierOpen(false);
     setNoteDraft(null);
     setRebutting(null);
     setMessage(null);
@@ -1125,8 +1128,14 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
         <div className="changes-report-state">
           <ApprovalChip status={report.approval.status} />
           {report.round > 1 ? <Badge tone="info">الجولة {report.round}</Badge> : null}
+          <button type="button" className="changes-note-add" data-guide-ignore="يفتح معاينة ملف الاعتماد للطباعة — قراءةٌ فقط" onClick={() => setDossierOpen(true)}>
+            <FileCheck aria-hidden="true" /> ملف الاعتماد
+          </button>
         </div>
       </header>
+      {dossierOpen ? (
+        <ApprovalDossier collegeId={scope.collegeId} sectionId={scope.sectionId} termId={termId} collegeName={scope.collegeName} sectionName={scope.sectionName} termName={termName} onClose={() => setDossierOpen(false)} />
+      ) : null}
 
       {/* ── شريط الاعتماد لجهة القسم ─────────────────────────────────────────
           رئيسُ القسم واللجنة يوقّعان ويُرسلان من هنا — لا من ورشة تعديلٍ لا

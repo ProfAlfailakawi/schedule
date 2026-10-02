@@ -780,7 +780,7 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
         const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
           ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—]?\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
-        const digitRuns=ascii.match(/\d+/g)||[];
+        const digitRuns:string[]=ascii.match(/\d+/g)||[];
         const hasTableKey=digitRuns.some(run=>run.length>=4)||/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii)||/[ء-ي]{4,}/.test(row.line);
         return hasTime||(hasTableKey&&digitRuns.length>=3);
       }).length;
@@ -1225,6 +1225,11 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
     top.getContext("2d").drawImage(surface,0,0,W,header.top,0,0,W,header.top);
     const result:any=await worker.recognize(top.toBuffer("image/png")).catch(()=>null);
     headerText=String(result?.data?.text||"").normalize("NFKC");
+    /* قراءةٌ ثانية رخيصة للرأس نفسه بالأرقام وحدها: العربية تتشوّه فيضيع رمز القسم (0101)، والأرقام تثبت. */
+    await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"6" as any});
+    const digits:any=await worker.recognize(top.toBuffer("image/png")).catch(()=>null);
+    const digitsText=String(digits?.data?.text||"").normalize("NFKC").replace(/\s+/g," ").trim();
+    if(digitsText)headerText+=`\n#digits: ${digitsText}`;
   }
   return{cells,headerText,template:{labels,kinds}};
 }
@@ -6100,7 +6105,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     if(line.replace(/[^ء-يa-zA-Z0-9]/g,"").length<6)continue;
     if(isHeaderLine(line))continue;
     const rowDigitsSpaced=cells.map(cell=>toAscii(cell.text)).join(" ");
-    const digitRuns=(rowDigitsSpaced.match(/\d+/g)||[]);
+    const digitRuns:string[]=(rowDigitsSpaced.match(/\d+/g)||[]);
 
     // Rule 1: Course identity comes from its NUMBER only. The Arabic name is
     // never allowed to manufacture a canonical course ID.
