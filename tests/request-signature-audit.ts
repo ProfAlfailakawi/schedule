@@ -90,7 +90,7 @@ check(types.includes("signature?: InstructorRequestSignature;"),
 
 check(server.includes("بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك."),
   "والصفحةُ تقول إنه توقيع، لا «تحقّق من هويتك» — لأنه توقيع");
-check(server.includes('var field=document.getElementById("civil");')
+check(server.includes('inp=document.getElementById("civil")') && server.includes("v=digitsOf(inp.value).slice(0,12)")
   && server.includes('.replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})'),
   "والأرقامُ العربيةُ تُقبل كما تُكتب على لوحة الهاتف");
 check(server.includes("رمز توقيعك:"),

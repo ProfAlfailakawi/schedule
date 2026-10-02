@@ -35,6 +35,7 @@ import { registerStudyProposalRoutes, seedDemoStudyProposals } from "./src/serve
 import { effectiveStatus as studyProposalStatus, decisionStateOf as studyProposalDecision } from "./src/utils/studyProposal";
 import { studyProposalPage } from "./src/server/studyProposalPage";
 import { PROPOSAL_ALERT_CSS, PROPOSAL_ALERT_SCRIPT } from "./src/server/studyProposalAlert";
+import { REQUEST_V3_CSS } from "./src/server/requestPageStyles";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
@@ -18497,7 +18498,8 @@ label.sign input::placeholder,.course-search::placeholder,textarea::placeholder{
 .sendbox .signnote{display:none;margin:6px 0 0}.sendbox:focus-within .signnote{display:block}
 .wrap{padding-bottom:150px}
 ${PROPOSAL_ALERT_CSS}
-</style></head><body>${demoHint?`<div id="demoTop" style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div>
+${REQUEST_V3_CSS}
+</style></head><body>${demoHint?`<div id="demoTop" style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div><div class="scrim" id="scrim" hidden></div><div class="toast" id="toast" role="status" hidden></div>
 <script nonce="${nonce}">(function(){
 var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),demoNode=document.querySelector("#demoTop .demo-hint"),demoOpen=false,data=null,state=[],signCivil="",activeTab="schedule",chooserOpen=false;
 var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
@@ -18535,6 +18537,12 @@ function requestedText(it){
  if(it.action==="change"||it.action==="add")return (it.days.length?fmtDays(it.days):"لم تُحدّد الأيام")+" · "+(it.start?(it.start+" – "+endOf(it.days,it.start,it.blk)):"لم يُحدّد الوقت");
  var base=it.before||it.after||{};return (base.days||"")+" · "+(base.time||"")
 }
+/* النطاقُ الزمنيّ جزيرةٌ يسارية: «14:00 – 15:20» تُقرأ هكذا في كل موضعٍ من الصفحة، لا معكوسةً داخل سطرٍ عربي. */
+function ltr(t){return t?'<bdi dir="ltr" class="num">'+esc(t)+'</bdi>':""}
+function requestedHtml(it){
+ if(it.action==="delete")return "حذف المقرر من الجدول";
+ if(it.action==="change"||it.action==="add")return esc(it.days.length?fmtDays(it.days):"لم تُحدّد الأيام")+" · "+(it.start?ltr(it.start+" – "+endOf(it.days,it.start,it.blk)):"لم يُحدّد الوقت");
+ var base=it.before||it.after||{};return esc(base.days||"")+" · "+ltr(rangeText(base.time||""))}
 function payloadItems(){return state.map(function(it){return{rowId:it.rowId,action:it.action,
  courseId:it.action==="add"?it.courseId:undefined,
  collegeId:it.action==="add"?it.collegeId:undefined,sectionId:it.action==="add"?it.sectionId:undefined,
@@ -18576,43 +18584,196 @@ function decisionBox(it,i,open){var d=it.decision;if(!d||!d.state||d.state==="pe
   (alts.length&&open?'<p>بدائل القسم:</p><div class="alts">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-dept-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+
   /* وبعد إغلاق الاستقبال تبقى البدائلُ مقروءة: هي جزءٌ من قرار القسم، لا زرٌّ فحسب. */
   (alts.length&&!open?'<p>بدائل القسم (للاطلاع — أُغلق استقبال الطلبات):</p><div class="alts alts-ro">'+alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<span>'+fmtDays(ds)+" "+esc(a.start)+'</span>'}).join("")+'</div>':'')+'</div>'}
-/* ── الحوارُ مع القسم ───────────────────────────────────────────────────
-   بعد الإرسال يصير كلُّ بندٍ خيطاً: ما قاله القسم وما اقترحه، وما ردّ به
-   الأستاذ. وحالتُه من الخادم — بانتظار الرد، مقترح من القسم، موافَق — وزرُّ
-   «أوافق» على وقتٍ مقترح يجعله المطلوبَ في البند بلا إعادة إرسال الطلب كلِّه. */
-var replyDraft={};
-function slotText(a){var ds=a.days&&a.days.length?a.days:[a.day];return fmtDays(ds)+" "+a.start}
-function threadBox(it,i){var r=data.request,th=it.thread||[],neg=it.negotiation||"";
- if(!r.submittedAt||!neg||it.action==="keep"&&!th.length)return "";
- var last=th[th.length-1];
- var offered=neg!=="proposed"?[]:(last&&last.from==="department"&&(last.slots||[]).length?last.slots:((it.decision&&it.decision.alternatives)||[]));
- var h='<div class="thread" data-neg="'+esc(neg)+'"><div class="thread-head"><b>الحوار مع القسم</b><span class="neg" data-neg="'+esc(neg)+'">'+esc(NEG[neg]||"")+'</span></div>';
- if(th.length)h+='<ol class="msgs">'+th.map(function(m){
-  var ss=(m.slots||[]).map(function(a){return '<span class="slot">'+esc(fmtDays(a.days&&a.days.length?a.days:[a.day]))+' <bdi dir="ltr">'+esc(a.start+" – "+a.end)+'</bdi></span>'}).join("");
-  return '<li data-from="'+esc(m.from)+'"><small>'+(m.from==="department"?esc(m.by||"القسم"):"أنت")+' · '+esc(dt(m.at))+'</small>'+(m.accepted?'<p>✓ وافقتَ على المقترح</p>':'')+(m.text?'<p>'+esc(m.text)+'</p>':'')+(ss?'<div class="slots">'+ss+'</div>':'')+'</li>'}).join("")+'</ol>';
- else if(neg==="awaiting")h+='<p class="thread-q">وصل طلبك القسمَ، وردُّه يظهر هنا.</p>';
- if(neg!=="agreed"){
-  h+=(offered.length?'<p class="thread-q">هل يناسبك أحد مقترحات القسم؟</p><div class="alts">'+offered.map(function(a,k){return '<button type="button" data-i="'+i+'" data-accept="'+k+'">أوافق: '+esc(slotText(a))+'</button>'}).join("")+'</div>':'')+
-   '<div class="reply"><textarea data-reply-text="'+i+'" rows="2" maxlength="400" placeholder="'+(offered.length?'أو اكتب ما يناسبك…':'اكتب ردّك للقسم…')+'"></textarea>'+
-   (it.action!=="delete"&&(it.slots||[]).length?'<label class="time"><span>اقترح بدايةً أخرى على الأيام نفسها (اختياري)</span><input type="time" data-reply-start="'+i+'"></label>':'')+
-   (signCivil.length===12?'':'<label class="sign"><span>رقمك المدني — توقيعك على الرد</span><input data-reply-civil="1" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا"></label>')+
-   '<button type="button" data-reply="'+i+'">أرسل الرد</button></div>';
- }
- return h+'</div>'}
-function sendReply(i,accept){var it=state[i],d=replyDraft[i]||{};if(!it)return;
- if(signCivil.length!==12){focusItem(i,"اكتب رقمك المدني كاملاً — 12 رقمًا — فهو توقيعك على الرد.");return}
- if(accept===null&&!String(d.text||"").trim()&&!d.start){focusItem(i,"اكتب ردّك أو اقترح وقتاً.");return}
+/* ── مسارُ التفاوض ──────────────────────────────────────────────────────────
+   كلُّ ما يخصّ الحوار صار في موضعٍ واحدٍ يُرى من أعلى الصفحة: «قرارُك» بطاقةٌ
+   واحدة، بند بعد بند (٢ من ٥)، ومعها الموعدُ المقترح كرسمٍ لا كنص، وثلاثةُ
+   أزرار: يناسبني، وقتٌ آخر، رسالة. والبنودُ الأخرى تبقى مطويّةً في القائمة. */
+var G={
+send:'<path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
+eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+you:'<circle cx="9" cy="7" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2"/><path d="m15 17 2 2 4-4"/>',
+shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+door:'<path d="M5 21V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><path d="M14 12h.01"/>',
+clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+sunrise:'<path d="M12 3v4"/><path d="m5.6 8.6 1.4 1.4"/><path d="m18.4 8.6-1.4 1.4"/><path d="M3 17h18"/><path d="M7 17a5 5 0 0 1 10 0"/><path d="M8 21h8"/>',
+sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+sunset:'<path d="M12 9V3"/><path d="m8.5 6.5 3.5 3.5 3.5-3.5"/><path d="M3 17h18"/><path d="M7 17a5 5 0 0 1 10 0"/><path d="M8 21h8"/>',
+chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+cal:'<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+finger:'<path d="M6.5 9a6.5 6.5 0 0 1 11 0"/><path d="M5 14v-1a7 7 0 0 1 14 0v1"/><path d="M8.5 21C7.7 19.5 7 17.6 7 14.5a5 5 0 0 1 10 0c0 1.2-.1 2.3-.3 3.3"/><path d="M12 14.5c0 2.5.6 4.6 1.7 6.5"/>',
+hour:'<path d="M7 3h10M7 21h10"/><path d="M8 3c0 5 8 5 8 9s-8 4-8 9"/><path d="M16 3c0 5-8 5-8 9s8 4 8 9"/>',
+swap:'<path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/>',
+x:'<path d="M6 6l12 12M18 6 6 18"/>',
+coffee:'<path d="M4 8h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 10h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3v2M12 3v2"/>',
+lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+pen:'<path d="M4 20l1.2-4.2L16.6 4.4a2 2 0 0 1 3 3L8.2 18.8z"/>',
+plus:'<path d="M12 5v14M5 12h14"/>',
+trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+star:'<path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z"/>',
+arL:'<path d="M15 6l-6 6 6 6"/>',
+arR:'<path d="M9 6l6 6-6 6"/>',
+arrow:'<path d="M12 5v14"/><path d="m6 13 6 6 6-6"/>'};
+function gi(n){return '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'+(G[n]||"")+'</svg>'}
+function hh(m){m=Math.max(0,Math.round(m));return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")}
+function rangeOf(text){var p=String(text||"").split("–");return p.length>1&&p[0].trim()&&p[1].trim()?[mins(p[0].trim()),mins(p[1].trim())]:null}
+function dayShort(k){var n=DAYS.filter(function(d){return d[0]===k})[0];return n?n[1].replace("ال",""):k}
+function periodIc(s){return s<720?"sunrise":s<900?"sun":"sunset"}
+function initials(n){var w=String(n||"").split(" ").filter(function(x){return x&&x!=="د."&&x!=="أ."&&x!=="أ.د."&&x!=="د"});return w.length?w[0].charAt(0)+(w.length>1?" "+w[w.length-1].charAt(0):""):"أ"}
+/* الموعدُ الرسمي الحالي (قبل أي طلب)، والموعدُ المطلوب، والمقترحاتُ المعروضة. */
+function curSlot(it){var o=originalOf(it),r=rangeOf((it.before||{}).time);if(!o.days.length||!o.start)return null;
+ var s=mins(o.start);return{d:o.days,s:s,e:r?r[1]:mins(endOf(o.days,o.start,it.blk))}}
+function askSlot(it){var d=planDays(it),st=planStart(it);if(!d.length||!st)return null;
+ var sl=(it.slots||[])[0],e=it.action==="change"||it.action==="add"?mins(endOf(d,st,it.blk)):(sl&&sl.end?mins(sl.end):mins(st)+SHORT);
+ return{d:d,s:mins(st),e:e}}
+function offeredOf(it){var th=it.thread||[],last=th[th.length-1];
+ var list=it.negotiation!=="proposed"?[]:(last&&last.from==="department"&&(last.slots||[]).length?last.slots:((it.decision&&it.decision.alternatives)||[]));
+ return list.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return{d:ds,s:mins(a.start),e:a.end?mins(a.end):mins(endOf(ds,a.start,it.blk))}})}
+function pendingList(){var out=[];if(!data||!data.request.submittedAt)return out;state.forEach(function(it,i){if(it.negotiation==="proposed"&&offeredOf(it).length)out.push(i)});return out}
+/* بقيةُ محاضراته كما هي الآن: ما رُفض طلبُه لا يُحسب، فموعدُه الرسمي هو القائم. */
+function othersFor(i){var out=[];state.forEach(function(it,k){if(k===i||it.action==="delete")return;
+ var x=(it.action==="change"||it.action==="add")&&it.negotiation!=="proposed"?askSlot(it):(curSlot(it)||askSlot(it));
+ if(x)out.push({n:courseOf(it),d:x.d,s:x.s,e:x.e})});return out}
+/* رؤى من جدوله هو وحده — والخادمُ هو الحَكَم عند الإرسال، فلا يُقال هنا شيءٌ عن المكان ولا عن اللائحة. */
+function gapText(g){var h=Math.floor(g/60),m=g%60;return h?countOf(h,AR.hour)+(m?" و"+countOf(m,AR.minute):""):countOf(m,AR.minute)}
+function insights(x,i){var out=[],hit=null,gap=null,os=othersFor(i);
+ os.forEach(function(o){if(o.d.some(function(d){return x.d.indexOf(d)>=0})){
+  if(x.s<o.e&&o.s<x.e)hit=o;
+  var g=o.s>=x.e?o.s-x.e:x.s>=o.e?x.s-o.e:null;if(g!==null&&(gap===null||g<gap.g))gap={g:g,o:o,after:o.s>=x.e}}});
+ if(hit){out.push({t:"bad",i:"x",h:"يتعارض مع "+hit.n+" في جدولك"});return out}
+ var first=x.d.every(function(d){return os.every(function(o){return o.d.indexOf(d)<0||o.s>=x.e})});
+ out.push({t:"ok",i:periodIc(x.s),h:(first?"أوّل محاضرة لك في ":"تبدأ في ")+fmtDays(x.d)+" الساعة "+hh(x.s)});
+ if(gap&&gap.g<=120)out.push({t:gap.g<15?"warn":"ok",i:"coffee",h:gap.g===0?"متتالية مع "+gap.o.n:(gap.g<15?"استراحة قصيرة: ":"فراغ ")+gapText(gap.g)+(gap.after?" قبل ":" بعد ")+gap.o.n});
+ out.push({t:"ok",i:"check",h:"لا تعارض مع بقية جدولك"});return out}
+/* مسارُ الطلب: أين نحن؟ 0 لم يُرسل، 1 عند القسم، 2 دورُك، 3 اتفقتما وينتظر التثبيت، 4 اكتمل. */
+function stageIdx(){var r=data.request;if(!r.submittedAt)return 0;
+ var act=state.filter(function(it){return it.action!=="keep"||(it.thread||[]).length});if(!act.length)return 1;
+ if(act.some(function(it){return it.negotiation==="proposed"}))return 2;
+ var closed=function(it){return it.negotiation==="rejected"||it.negotiation==="agreed"&&it.decision&&it.decision.state==="fixed"};
+ if(act.every(closed))return 4;
+ if(act.every(function(it){return closed(it)||it.negotiation==="agreed"}))return 3;
+ return 1}
+var PATH=[["send","أرسلتَ"],["eye","القسم يراجع"],["you","قرارك"],["shield","التثبيت"]];
+function pathHtml(s){if(s===undefined)s=stageIdx();var w=Math.min(s,3)/3*75;
+ return '<nav class="path" aria-label="مسار طلبك"><i class="fill" style="inline-size:'+w+'%"></i>'+PATH.map(function(p,k){
+  var st=s>=4||k<s?"done":k===s?"now":"next",label=k===0&&s===0?"أرسِل":k===3&&s>=4?"ثُبّت":p[1];
+  return '<div class="st" data-s="'+st+'"'+(k===2&&st==="now"?' data-you="1"':'')+'><span class="c">'+gi(st==="done"?"check":p[0])+'</span>'+label+'</div>'}).join("")+'</nav>'}
+/* الموعدُ كرسم: أيامُ الأسبوع، ومسطرةُ اليوم من الثامنة إلى الثامنة مساءً. */
+function slotCard(x,k,old,tag){var L=480,R=1200;function pos(m){return Math.max(0,Math.min(100,(m-L)/(R-L)*100))}
+ var days=DAYS.map(function(d){var kk=x.d.indexOf(d[0])>=0?k:(old&&old.d.indexOf(d[0])>=0?"old":"");return '<div class="sd" data-k="'+kk+'"><i></i>'+dayShort(d[0])+'</div>'}).join("");
+ function blk(o,kk){var a=pos(o.s),b=pos(o.e);return '<i class="blk" data-k="'+kk+'" style="right:'+a+'%;width:'+Math.max(2,b-a)+'%"></i>'}
+ var ticks=[8,10,12,14,16,18,20].map(function(h){return '<span class="tk num" style="right:'+pos(h*60)+'%;transform:translateX('+(h===8?"0":h===20?"100%":"50%")+')">'+h+'</span>'}).join("");
+ return '<div class="slot"><div class="when"><span class="big num">'+hh(x.s)+' – '+hh(x.e)+'</span><span class="tag" data-k="'+k+'">'+gi(k==="new"?"star":"pen")+tag+'</span></div>'+
+  '<div class="sdays" role="img" aria-label="'+esc(fmtDays(x.d))+'">'+days+'</div>'+
+  '<div class="ruler" aria-hidden="true"><i class="track"></i>'+(old?blk(old,"old"):"")+blk(x,k)+ticks+'</div>'+
+  (old?'<div class="skey"><span><b style="background:'+(k==="new"?"var(--ok)":"#b07d00")+'"></b>'+tag+'</span><span><b style="border:1.5px dashed var(--bad)"></b>موعدك الحالي: '+esc(fmtDays(old.d))+' <span class="num">'+hh(old.s)+'</span></span></div>':'')+'</div>'}
+function factsHtml(x,i){return '<ul class="facts">'+insights(x,i).map(function(f){return '<li data-t="'+f.t+'"><span class="b">'+gi(f.i)+'</span><span>'+esc(f.h)+'</span></li>'}).join("")+'</ul>'}
+var deckAt=0,deckPick={};
+function deckHtml(){var list=pendingList(),n=list.length;if(!n)return "";
+ if(deckAt>=n)deckAt=n-1;if(deckAt<0)deckAt=0;
+ var i=list[deckAt],it=state[i],offers=offeredOf(it),pk=deckPick[i]||0;if(pk>=offers.length)pk=0;
+ var o=offers[pk],cur=curSlot(it),b=it.before||{},d=it.decision||{},th=it.thread||[],last=th[th.length-1];
+ var why=d.state==="rejected"?(REASONS[d.reasonCode]||"رفض القسم الموعد الذي طلبتَه"):"اقترح عليك القسم موعدًا مناسبًا";
+ var note=d.state==="rejected"?(d.note||""):(last&&last.from==="department"?(last.text||""):"");
+ var nav=n>1?'<span class="dk-nav"><button type="button" data-deck="-1" aria-label="القرار السابق"'+(deckAt===0?' disabled':'')+'>'+gi("arR")+'</button><button type="button" data-deck="1" aria-label="القرار التالي"'+(deckAt===n-1?' disabled':'')+'>'+gi("arL")+'</button></span>':'';
+ var dots=n>1?'<div class="dk-dots" aria-hidden="true">'+list.map(function(_,k){return '<i'+(k===deckAt?' data-on="1"':'')+'></i>'}).join("")+'</div>':'';
+ var h='<section class="deck" id="deck" aria-label="قرارك على اقتراح القسم"><div class="dk-top"><span class="dk-ct">'+gi("you")+(n>1?'قراراتك: <b>'+(deckAt+1)+'</b> من <b>'+n+'</b>':'قرارك')+'</span>'+nav+'</div>'+dots+
+  '<div class="dk-h"><h2>هل يناسبك هذا الموعد؟</h2><p>'+esc(courseOf(it))+(b.sectionCode?' · شعبة '+esc(b.sectionCode):'')+'</p></div>'+
+  '<div class="dk-why"><span class="b">'+gi(d.reasonCode==="room"?"door":"clock")+'</span><div>'+esc(why)+(note?'<small>'+esc(note)+'</small>':'')+'</div></div>';
+ if(offers.length>1)h+='<div class="offers" role="group" aria-label="اقتراحات القسم">'+offers.map(function(a,k){return '<button type="button" data-offer="'+k+'" data-i="'+i+'" aria-pressed="'+(k===pk)+'">'+esc(fmtDays(a.d))+' <span class="num">'+hh(a.s)+'</span></button>'}).join("")+'</div>';
+ h+=slotCard(o,"new",cur,"مقترح القسم")+factsHtml(o,i)+
+  '<div class="dk-acts"><button type="button" class="btn-main" data-accept="'+pk+'" data-i="'+i+'">'+gi("check")+'يناسبني</button><div class="pair">'+
+  (it.action!=="delete"?'<button type="button" class="btn-alt" data-counter="'+i+'">'+gi("swap")+'وقت آخر</button>':'')+
+  '<button type="button" class="btn-alt" data-msg="'+i+'">'+gi("chat")+'اكتب للقسم</button></div></div></section>';
+ return h}
+function calmHtml(){var r=data.request;if(!r.submittedAt||pendingList().length)return "";
+ var s=stageIdx();if(!state.some(function(it){return it.action!=="keep"||(it.thread||[]).length}))return "";
+ var m=s===4?["shield","ok","اكتملت مراجعة القسم","كلُّ ما طلبتَه وصله قرارُه."]:s===3?["check","ok","اتفقتما، وبانتظار التثبيت","يثبّته القسم قريبًا. جدولك الرسمي لم يتغيّر بعد."]:["hour","wait","طلبك عند القسم","لا شيء مطلوب منك الآن. سيظهر الردّ هنا."];
+ return '<div class="calm" data-t="'+m[1]+'" role="status"><span class="b">'+gi(m[0])+'</span><div><b>'+m[2]+'</b><small>'+m[3]+'</small></div></div>'}
+/* ── ورقةٌ سفلية، وتوقيعٌ واحدٌ بلمسة ────────────────────────────────────────
+   كان الرقمُ المدني يُطلب في حقلين وفي كل جولة. صار ورقةً واحدة تقول ما سيُوقَّع
+   عليه، ويبقى الرقمُ في ذاكرة الصفحة وحدها دقائقَ معدودة (لا في تخزين المتصفح
+   ولا في المسودة) فتكفي لمسةٌ للجولة التالية. والخادمُ يتحقق من الرقم في كل
+   طلبٍ كما كان، فلا يتغيّر شيءٌ من جهته. */
+var SIGN_TTL=600000,signAt=0;
+function signedIn(){return signCivil.length===12&&Date.now()-signAt<SIGN_TTL}
+var scrimEl=document.getElementById("scrim"),toastEl=document.getElementById("toast"),toastT=0;
+function openSheet(html){toastEl.hidden=true;scrimEl.innerHTML='<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>'+html+'</div>';scrimEl.hidden=false;document.body.classList.add("noscroll")}
+function closeSheet(){scrimEl.hidden=true;scrimEl.innerHTML="";document.body.classList.remove("noscroll")}
+scrimEl.onclick=function(e){if(e.target===scrimEl)closeSheet()};
+document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!scrimEl.hidden)closeSheet()});
+window.addEventListener("pagehide",function(){signCivil=""});
+function toast(icon,text){toastEl.innerHTML=gi(icon)+'<span>'+esc(text)+'</span>';toastEl.hidden=false;clearTimeout(toastT);toastT=setTimeout(function(){toastEl.hidden=true},3200)}
+function signSheet(o){var again=false;
+ function draw(initErr){var known=signedIn()&&!again;
+  openSheet('<div class="sh-h"><span class="sh-b">'+gi("finger")+'</span><div><h3>وقّع بلمسة واحدة</h3><p>رقمك المدني هو توقيعك على هذا الرد</p></div></div>'+
+   '<div class="sh-what">'+o.what+'</div>'+
+   (known?'<div class="sh-known">'+gi("lock")+'<span>رقمك المدني محفوظ في هذه الصفحة لدقائق، وينتهي بـ <b class="num">'+esc(signCivil.slice(-4))+'</b></span><button type="button" class="link" id="signOther">رقم آخر</button></div>'
+    :'<div class="otpw"><div class="otp" id="otp" aria-hidden="true"></div><input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا" aria-label="رقمك المدني — 12 رقمًا"></div>')+
+   '<div class="sh-err" id="signErr" role="alert" hidden></div>'+
+   '<button type="button" class="btn-main" id="signGo"'+(known?'':' disabled')+'>'+gi("send")+'وقّع وأرسل</button>'+
+   '<p class="sh-hint">'+(known?'':'اكتب رقمك المدني كاملاً — 12 رقمًا — فهو توقيعك. ')+'بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.</p>'+
+   '<p class="sh-priv">'+gi("lock")+'لا نحفظ رقمك على جهازك، ويُمحى من الصفحة بعد دقائق أو بإغلاقها.</p>');
+  var go=document.getElementById("signGo"),err=document.getElementById("signErr"),inp=document.getElementById("civil"),otp=document.getElementById("otp"),v="";
+  function paintOtp(){if(!otp)return;otp.innerHTML=Array.apply(null,{length:12}).map(function(_,k){return '<i class="'+(k===v.length?"on":k<v.length?"fill":"")+'">'+(v.charAt(k)||"")+'</i>'}).join("");go.disabled=v.length<12}
+  if(initErr){err.textContent=initErr;err.hidden=false}
+  if(inp){paintOtp();inp.oninput=function(){v=digitsOf(inp.value).slice(0,12);inp.value=v;paintOtp()};setTimeout(function(){inp.focus()},120)}
+  var other=document.getElementById("signOther");if(other)other.onclick=function(){again=true;signCivil="";draw()};
+  go.onclick=function(){var civ=known?signCivil:v;if(civ.length!==12)return;
+   go.disabled=true;err.hidden=true;go.innerHTML=gi("clock")+'يرسل…';
+   o.run(civ,function(msg,status){
+    if(msg){go.disabled=false;go.innerHTML=gi("send")+'وقّع وأرسل';err.textContent=msg;err.hidden=false;
+     if(status===403){signCivil="";again=true;draw(msg)}return}
+    signCivil=civ;signAt=Date.now();closeSheet();if(o.ok)toast("check",o.ok)})}}
+ draw()}
+function sendReply(i,accept,civil,text,start,cb){var it=state[i];if(!it){cb("تعذّر إرسال الرد");return}
  fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/reply",{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({civil:signCivil,itemIndex:i,accept:accept,text:d.text||"",start:accept===null?(d.start||""):""})})
- .then(function(r){return r.json().then(function(x){return{ok:r.ok,d:x}})}).then(function(x){
-  if(!x.ok){focusItem(i,x.d.error||"تعذّر إرسال الرد");return}
+  body:JSON.stringify({civil:civil,itemIndex:i,accept:accept,text:text||"",start:accept===null?(start||""):""})})
+ .then(function(r){return r.json().then(function(x){return{ok:r.ok,status:r.status,d:x}})}).then(function(x){
+  if(!x.ok){cb(x.d.error||"تعذّر إرسال الرد",x.status);return}
   var fresh=(x.d.request.items||[])[i]||{};data.request=x.d.request;
   it.thread=fresh.thread||[];it.negotiation=fresh.negotiation||"";it.decision=fresh.decision||null;
   if(accept!==null){it.action=fresh.action||it.action;it.after=fresh.after||it.after;it.slots=fresh.slots||[];
    it.days=it.slots.map(function(s){return s.day});it.start=it.slots[0]?it.slots[0].start:"";it.tone="";it.note=""}
-  delete replyDraft[i];openCards[i]=true;paint()})
- .catch(function(){focusItem(i,"تعذّر الاتصال. تحقّق من الإنترنت.")});
-}
+  rebase(i);openCards[i]=false;paint();cb(null)})
+ .catch(function(){cb("تعذّر الاتصال. تحقّق من الإنترنت.")})}
+function askAccept(i,k){var it=state[i],o=offeredOf(it)[k];if(!o)return;
+ signSheet({ok:"سُجّلت موافقتك · بانتظار تثبيت القسم",
+  what:'<div>'+gi("check")+'<span>توافق على: <b>'+esc(courseOf(it))+'</b></span></div><div>'+gi(periodIc(o.s))+'<span>'+esc(fmtDays(o.d))+' · <span class="num">'+hh(o.s)+' – '+hh(o.e)+'</span></span></div>',
+  run:function(civil,done){sendReply(i,k,civil,"","",done)}})}
+function openCounter(i){var it=state[i],days=(it.slots||[]).map(function(s){return s.day});if(!days.length)days=originalOf(it).days;
+ var choices=startChoices(days).filter(function(t){return !it.blk||days.length!==1||mins(t)+it.blk<=20*60}),choice="";
+ function draw(){var x=choice?{d:days,s:mins(choice),e:mins(endOf(days,choice,it.blk))}:null,ins=x?insights(x,i):[],bad=ins[0]&&ins[0].t==="bad";
+  openSheet('<div class="sh-h"><span class="sh-b">'+gi("swap")+'</span><div><h3>اقترح وقتًا آخر</h3><p>على الأيام نفسها: '+esc(fmtDays(days))+'</p></div></div>'+
+   '<span class="sh-lbl">'+gi("clock")+'وقت البداية</span><div class="sh-tm">'+choices.map(function(t){return '<button type="button" data-t="'+t+'" aria-pressed="'+(t===choice)+'">'+t+'</button>'}).join("")+'</div>'+
+   (x?'<div class="sh-v" data-t="'+(bad?"bad":"ok")+'">'+gi(bad?"x":"check")+'<span>'+esc(bad?ins[0].h:"ينتهي "+hh(x.e)+ins.filter(function(f){return f.i==="coffee"}).map(function(f){return " · "+f.h}).join("")+" · لا تعارض مع بقية جدولك")+'</span></div>':'')+
+   '<button type="button" class="btn-main" id="ctrGo"'+(x&&!bad?'':' disabled')+'>'+gi("finger")+'التالي: التوقيع</button>');
+  scrimEl.querySelectorAll("button[data-t]").forEach(function(b){b.onclick=function(){choice=b.dataset.t;draw()}});
+  var go=document.getElementById("ctrGo");if(go)go.onclick=function(){
+   signSheet({ok:"وصل اقتراحك إلى القسم",
+    what:'<div>'+gi("swap")+'<span>تقترح على القسم: <b>'+esc(courseOf(it))+'</b></span></div><div>'+gi(periodIc(x.s))+'<span>'+esc(fmtDays(days))+' · <span class="num">'+hh(x.s)+' – '+hh(x.e)+'</span></span></div>',
+    run:function(civil,done){sendReply(i,null,civil,"",choice,done)}})}}
+ draw()}
+function openMsg(i){var it=state[i];
+ openSheet('<div class="sh-h"><span class="sh-b">'+gi("chat")+'</span><div><h3>اكتب للقسم</h3><p>'+esc(courseOf(it))+'</p></div></div>'+
+  '<textarea id="msgText" maxlength="400" data-show="1" placeholder="اكتب ردّك للقسم…" style="display:block"></textarea>'+
+  '<button type="button" class="btn-main" id="msgGo" data-reply="'+i+'">'+gi("finger")+'التالي: التوقيع</button>');
+ var ta=document.getElementById("msgText");setTimeout(function(){ta.focus()},120);
+ document.getElementById("msgGo").onclick=function(){var t=ta.value.trim();if(!t){ta.focus();return}
+  signSheet({ok:"وصلت رسالتك إلى القسم",what:'<div>'+gi("chat")+'<span>'+esc(t.length>160?t.slice(0,160)+"…":t)+'</span></div>',
+   run:function(civil,done){sendReply(i,null,civil,t,"",done)}})}}
+/* خيطُ البند: التاريخُ فقط. أمّا الردّ فمن بطاقة «قرارك» أو من زرّ الرسالة. */
+function threadBox(it,i){var r=data.request,th=it.thread||[],neg=it.negotiation||"";
+ if(!r.submittedAt||!neg||it.action==="keep"&&!th.length)return "";
+ var h='<div class="thread" data-neg="'+esc(neg)+'"><div class="thread-head"><b>الحوار مع القسم</b><span class="neg" data-neg="'+esc(neg)+'">'+esc(NEG[neg]||"")+'</span></div>';
+ if(th.length)h+='<ol class="msgs">'+th.map(function(m){
+  var ss=(m.slots||[]).map(function(a){return '<span class="slot-chip">'+esc(fmtDays(a.days&&a.days.length?a.days:[a.day]))+' <bdi dir="ltr">'+esc(a.start+" – "+a.end)+'</bdi></span>'}).join("");
+  return '<li data-from="'+esc(m.from)+'"><small>'+(m.from==="department"?esc(m.by||"القسم"):"أنت")+' · '+esc(dt(m.at))+'</small>'+(m.accepted?'<p>✓ وافقتَ على المقترح</p>':'')+(m.text?'<p>'+esc(m.text)+'</p>':'')+(ss?'<div class="slots">'+ss+'</div>':'')+'</li>'}).join("")+'</ol>';
+ else if(neg==="awaiting")h+='<p class="thread-q">وصل طلبك القسمَ، وردُّه يظهر هنا.</p>';
+ if(neg==="proposed")h+='<div class="thread-act"><button type="button" class="pri" data-focus="'+i+'">'+gi("you")+'قرّر الآن</button></div>';
+ else if(neg!=="agreed"||it.decision&&it.decision.state!=="fixed")h+='<div class="thread-act"><button type="button" data-msg="'+i+'">'+gi("chat")+'اكتب رسالة للقسم</button></div>';
+ return h+'</div>'}
+
 /* ── قائمةٌ واحدة ────────────────────────────────────────────────────────
    كانت الصفحةُ تعرض المواعيدَ مرّتين: جدولاً للقراءة فوق، ثم «عدّل مواعيدك»
    ببطاقاتٍ للمواعيد نفسها تحته — فيسأل الأستاذ أيّهما جدوله. فصار الجدولُ هو
@@ -18637,9 +18798,19 @@ function actionsHtml(it,i){
 function editHtml(it,i){var h="";h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
     h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).filter(function(t){return !it.blk||it.days.length!==1||mins(t)+it.blk<=20*60}).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start,it.blk)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'"><i aria-hidden="true">'+(it.tone==="ok"?"✓":it.tone==="bad"?"✕":it.tone==="warn"?"!":"…")+'</i><span>'+esc(friendly(it.note||""))+'</span>'+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>';return h}
 function bodyHtml(it,i,open){var h=decisionBox(it,i,open)+threadBox(it,i);
- if(open){h+='<div class="acts" role="group" aria-label="خيارات الموعد">'+actionsHtml(it,i)+'</div>';if(it.action==="change"||it.action==="add")h+=editHtml(it,i)}
+ if(open){if(it.negotiation==="proposed")h+='<p class="hint-pro">للرد على اقتراح القسم استخدم بطاقة «قرارك» في أعلى الصفحة. وتعديل الموعد من هنا يبدأ طلبًا جديدًا.</p>';h+='<div class="acts" role="group" aria-label="خيارات الموعد">'+actionsHtml(it,i)+'</div>';if(it.action==="change"||it.action==="add")h+=editHtml(it,i)}
  else if(!h)h='<p class="appt-ro">انتهت مدّة الطلبات — هذا الموعد للاطلاع.</p>';
  return h}
+/* ما عدّله الأستاذ في هذه الزيارة ولم يُرسل بعد: قيسٌ على ما حمّله الخادم، لا على «ما تغيّر عن الجدول»
+   — فمن أرسل طلبه لا يُقال له «أرسل» وهو لم يلمس شيئاً. */
+var baseItems=null;
+function editedCount(){if(!baseItems)return 0;var cur=payloadItems(),n=0,len=Math.max(cur.length,baseItems.length);
+ for(var k=0;k<len;k++){if(JSON.stringify(cur[k])!==JSON.stringify(baseItems[k]))n++}return n}
+function rebase(i){var cur=payloadItems();if(baseItems&&cur[i])baseItems[i]=JSON.parse(JSON.stringify(cur[i]))}
+var PIPS=["ح","ن","ث","ر","خ"];
+function pipsHtml(days){return '<span class="pips" aria-hidden="true">'+DAYS.map(function(d,k){return '<i data-on="'+(days.indexOf(d[0])>=0?1:0)+'">'+PIPS[k]+'</i>'}).join("")+'</span>'}
+function rowIcon(it){var neg=it.negotiation,fixed=it.decision&&it.decision.state==="fixed";
+ return neg==="proposed"?"you":neg==="rejected"?"x":neg==="agreed"?(fixed?"shield":"check"):it.action==="add"?"plus":it.action==="delete"?"trash":it.action==="change"?"pen":"cal"}
 function planTable(){
  if(!state.length)return "";
  var many=manyColleges(),open=data.windowOpen;
@@ -18650,15 +18821,22 @@ function planTable(){
   order.map(function(x){var it=x.it,i=x.i,b=it.before||{},moved=it.action==="change";
    var newDays=it.days.length?fmtDays(it.days):"—",newTime=it.start?(it.start+" – "+endOf(it.days,it.start,it.blk)):"—";
    var days=it.action==="add"||moved?newDays:(b.days||"—"),time=it.action==="add"||moved?newTime:rangeText(b.time||"—");
-   var col=collegeNameOf(it),decidedHere=it.decision&&it.decision.state&&it.decision.state!=="pending";
-   var expanded=openCards[i]!==undefined?!!openCards[i]:(it.negotiation==="proposed"||!decidedHere&&(it.action==="change"||it.action==="add"||it.tone==="bad"));
-   var neg=it.negotiation&&((it.thread||[]).length||decidedHere)?'<span class="neg" data-neg="'+esc(it.negotiation)+'">'+esc(NEG[it.negotiation]||"")+'</span>':'';
-   return '<div class="appt" role="listitem" id="item-'+i+'" data-act="'+esc(it.action)+'" data-open="'+(expanded?"1":"0")+'">'+
+   var dset=it.action==="add"||moved?it.days:originalOf(it).days;
+   var col=collegeNameOf(it),decidedHere=it.decision&&it.decision.state&&it.decision.state!=="pending",proposed=it.negotiation==="proposed";
+   /* ما ينتظر قرارَه يُقرأ في بطاقة «قرارك» أعلى الصفحة، فيبقى صفُّه مطويّاً. */
+   var expanded=openCards[i]!==undefined?!!openCards[i]:(!proposed&&!decidedHere&&(it.action==="change"||it.action==="add"||it.tone==="bad"));
+   var negShown=!!(it.negotiation&&((it.thread||[]).length||decidedHere));
+   var neg=negShown?'<span class="neg" data-neg="'+esc(it.negotiation)+'">'+esc(NEG[it.negotiation]||"")+'</span>':'';
+   /* وحين يكون للبند حوارٌ تكفي حالةُ الحوار: «معدّل» و«الوقت متاح» و«رفضه القسم» معاً تتناقض. */
+   var stat=negShown?'':'<span class="status" data-act="'+esc(it.action)+'">'+(it.action==="keep"?"كما هو":actionName(it.action))+'</span>';
+   var tone=!negShown&&it.action!=="keep"&&it.action!=="delete"&&toneText(it)?'<small class="plan-check" data-tone="'+esc(it.tone)+'">'+esc(toneText(it))+'</small>':'';
+   var sub=(b.sectionCode?'شعبة '+esc(b.sectionCode):'')+((many||it.action==="add")&&col?(b.sectionCode?' · ':'')+esc(shortCollege(col)):'');
+   return '<div class="appt" role="listitem" id="item-'+i+'" data-act="'+esc(it.action)+'" data-neg="'+esc(it.negotiation||"")+'" data-open="'+(expanded?"1":"0")+'">'+
     '<button type="button" class="appt-head" data-toggle="'+i+'" aria-expanded="'+expanded+'" aria-controls="item-body-'+i+'" aria-label="'+esc(courseOf(it)+" — "+(it.action==="keep"?"كما هو":actionName(it.action))+(expanded?"، اضغط للطيّ":"، اضغط لعرض الخيارات"))+'">'+
-     '<span class="appt-course"><b>'+esc(courseOf(it))+'</b>'+(b.sectionCode?'<small>شعبة '+esc(b.sectionCode)+'</small>':'')+(many||it.action==="add"?(col?'<small>'+esc(shortCollege(col))+'</small>':''):'')+'</span>'+
-     '<span class="appt-days">'+esc(days)+(moved&&b.days&&b.days!==newDays?'<s>'+esc(b.days)+'</s>':'')+'</span>'+
-     '<span class="appt-time"><bdi dir="ltr">'+esc(time)+'</bdi>'+(moved&&b.time&&rangeText(b.time)!==newTime?'<s><bdi dir="ltr">'+esc(rangeText(b.time))+'</bdi></s>':'')+'</span>'+
-     '<span class="appt-status"><span class="status" data-act="'+esc(it.action)+'">'+(it.action==="keep"?"كما هو":actionName(it.action))+'</span>'+neg+(it.action!=="keep"&&it.action!=="delete"&&toneText(it)?'<small class="plan-check" data-tone="'+esc(it.tone)+'">'+esc(toneText(it))+'</small>':'')+'</span>'+
+     '<span class="ap-ic">'+gi(rowIcon(it))+'</span>'+
+     '<span class="ap-main"><b>'+esc(courseOf(it))+'</b>'+(sub?'<small>'+sub+'</small>':'')+
+      '<span class="ap-when">'+pipsHtml(dset)+'<span class="sr">'+esc(days)+'</span><bdi dir="ltr" class="num">'+esc(time)+'</bdi>'+(moved&&b.time&&rangeText(b.time)!==newTime?'<s><bdi dir="ltr">'+esc(rangeText(b.time))+'</bdi></s>':'')+'</span></span>'+
+     '<span class="ap-st">'+stat+neg+tone+'</span>'+
      '<span class="appt-chev">'+ic("chev")+'</span></button>'+
     '<div class="appt-body" id="item-body-'+i+'"'+(expanded?'':' hidden')+'>'+(expanded?bodyHtml(it,i,open):'')+'</div></div>'}).join("")+
   '</div></div>'
@@ -18688,13 +18866,13 @@ function activityHtml(r){
   var decisionText=decision.state==="fixed"?"قرار القسم: ثُبّت":decision.state==="rejected"?"قرار القسم: رُفض"+(decision.note?" · "+decision.note:""):submitted?"قرار القسم: بانتظار المراجعة":"لم يُرسل بعد — مسودة";
   return '<li class="activity-item" data-kind="'+esc(it.action)+'"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(actionName(it.action))+" · "+esc(courseOf(it))+'</b>'+
    (college?'<p class="activity-meta">الكلية: '+esc(college)+'</p>':'')+
-   (was?'<p class="activity-meta">كان: '+esc(was)+'</p>':'')+
-   '<p>'+(it.action==="delete"?'':'المطلوب: ')+esc(requestedText(it))+'</p>'+
+   (was?'<p class="activity-meta">كان: '+esc((it.before||{}).days||"")+' · '+ltr(rangeText((it.before||{}).time||""))+'</p>':'')+
+   '<p>'+(it.action==="delete"?'':'المطلوب: ')+requestedHtml(it)+'</p>'+
    (status&&it.action!=="delete"?'<p class="activity-meta" data-tone="'+esc(it.tone)+'">الفحص: '+esc(status)+'</p>':'')+
    '<div class="decision" data-state="'+esc(decision.state||"pending")+'">'+esc(decisionText)+'</div></div><time>البند '+(x.i+1)+'</time></li>'}).join("");
  var timeline=(r.timeline||[]).slice().reverse().map(function(e){var item=typeof e.itemIndex==="number"?state[e.itemIndex]:null,b=item&&(item.before||item.after)||{};
-  var detail=(item?(actionName(item.action)+" · "+courseOf(item)+(collegeOf(item)?" · "+collegeOf(item):"")+" · "+requestedText(item)):e.detail||"");
-  return '<li class="activity-item" data-kind="event"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(EVENTS[e.kind]||e.kind)+'</b>'+(detail?'<p>'+esc(detail)+'</p>':'')+(e.by?'<div class="decision">بواسطة '+esc(e.by)+'</div>':'')+'</div><time>'+esc(dt(e.at))+'</time></li>'}).join("");
+  var detail=(item?(esc(actionName(item.action)+" · "+courseOf(item)+(collegeOf(item)?" · "+collegeOf(item):"")+" · ")+requestedHtml(item)):esc(e.detail||""));
+  return '<li class="activity-item" data-kind="event"><i class="activity-dot" aria-hidden="true"></i><div class="activity-main"><b>'+esc(EVENTS[e.kind]||e.kind)+'</b>'+(detail?'<p>'+detail+'</p>':'')+(e.by?'<div class="decision">بواسطة '+esc(e.by)+'</div>':'')+'</div><time>'+esc(dt(e.at))+'</time></li>'}).join("");
  loadMovement();
  return '<div class="section-head"><b>طلبك</b><small>ما طلبتَه، وقرار القسم في كل بند</small></div>'+(rows||timeline?'<ul class="activity-list">'+rows+timeline+'</ul>':'<div class="activity-empty">لم تطلب شيئاً بعد. أي إضافة أو تعديل أو حذف يظهر هنا فوراً.</div>')+officialHtml()
 }
@@ -18709,14 +18887,22 @@ window.addEventListener("beforeunload",function(e){if(dirty){e.preventDefault();
 function paint(){
  if(data&&data.windowOpen&&state.length){var sig=JSON.stringify(payloadItems());if(paint.last!==undefined&&paint.last!==sig){dirty=true;saveDraft()}paint.last=sig}
  if(!data){host.innerHTML='<div class="err">تعذّر فتح الرابط.</div>';return}
- var r=data.request,open=data.windowOpen,approved=r.status==="settled";
+ var r=data.request,open=data.windowOpen,approved=r.status==="settled",sent=!!r.submittedAt;
  var changed=state.filter(function(it){return it.action!=="keep"}).length;
  var blocked=state.filter(function(it){return it.tone==="bad"||it.tone==="checking"}).length;
  var ready=blocked?"راجع الموانع":changed?countOf(changed,AR.change)+" "+nounFor(changed,AR.readyAdj):"لم تغيّر شيئاً";
- var h=proposalBanner+'<div class="statusline" role="status" data-approved="'+(approved?"1":"0")+'"><span class="chip st">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</span><span class="chip rd"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,AR.item)+" "+nounFor(blocked,AR.needsVerb):"فحص مباشر قبل الإرسال")+'</small></span><span id="demoSlot"></span></div>'+
-  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div></div>'+
-  '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
- h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable();
+ var edited=editedCount(),pend=pendingList().length,events=(r.timeline||[]).length;
+ /* الشارةُ تقول الحقيقة في كل حال: مسودة قبل الإرسال، ومرسَلٌ غير معتمدٍ بعده، وهي باقيةٌ في اللقطة والطباعة. */
+ var stateTxt=approved?"انتهت مراجعة القسم لطلبك":sent?"مرسَل · غير معتمد بعد · لا يُعتبر تكليفاً":"مسودة · غير معتمدة · لا تُعتبر تكليفاً";
+ var showReady=open&&(!sent||edited>0);
+ var readyTxt=sent&&!blocked?countOf(edited,AR.edit):ready;
+ var readySub=blocked?countOf(blocked,AR.item)+" "+nounFor(blocked,AR.needsVerb):(sent?"لم تُرسل بعد":"فحص مباشر قبل الإرسال");
+ var h=proposalBanner+
+  '<div class="hd"><span class="av" aria-hidden="true">'+esc(initials(data.instructorName))+'</span><div><span class="hd-k">جدولك</span><h1>'+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p>'+
+  '<div class="statusline" role="status" data-approved="'+(approved?"1":"0")+'"><span class="chip st">'+stateTxt+'</span><span id="demoSlot"></span></div></div></div>'+
+  pathHtml()+
+  '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات'+(pend?'<span class="tb">'+pend+'</span>':'')+'</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة'+(events?'<span class="tb" data-q="mute">'+events+'</span>':'')+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
+ h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+(deckHtml()||calmHtml())+planTable();
  if(open&&data.courses&&data.courses.length){
   var collegeMap={};data.courses.forEach(function(c){if(c.collegeId&&!collegeMap[c.collegeId])collegeMap[c.collegeId]=c.collegeName||("كلية "+c.collegeId)});
   var collegeOptions=Object.keys(collegeMap).map(function(id){return{id:Number(id),name:collegeMap[id]}});
@@ -18728,13 +18914,9 @@ function paint(){
  }
 
  h+='</section><section data-panel="activity" '+(activeTab==="activity"?'':'hidden')+'>'+activityHtml(r)+'</section>';
- /* التوقيع: حقلٌ واحدٌ فوق الزرّ، وجملةٌ تقول ما يعنيه الضغط. ولا يُقال
-    «تحقّق من هويتك» — يُقال إنه توقيع، لأنه توقيع. */
- if(open&&!chooserOpen)h+='<div class="send"><div class="sendbox" title="بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك."><div class="sendrow"><label class="sign"><span>رقمك المدني</span>'+
-  '<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" '+
-  'placeholder="12 رقمًا" value="'+esc(signCivil)+'"></label>'+
-  '<button type="button" id="send" '+(blocked?'disabled':'')+'>'+(blocked?'عالج الموانع قبل الإرسال':'أرسل الطلب')+'</button></div>'+
-  '<p class="signnote">بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.</p></div></div>';
+ /* الإرسالُ شريطٌ صغير لا يظهر إلا حين يكون عند الأستاذ ما يُرسل. والتوقيعُ في ورقةٍ تقول ما سيُوقَّع عليه. */
+ if(open&&!chooserOpen&&(!sent||edited>0))h+='<div class="send"><div class="sendbar"><div class="sb-t"><b>'+esc(readyTxt)+'</b><small>'+readySub+'</small></div>'+
+  '<button type="button" id="send" '+(blocked?'data-blocked="1"':'')+'>'+(blocked?gi("arrow")+'عالج الموانع قبل الإرسال':gi("finger")+(sent?'أرسل التعديلات':'أرسل الطلب'))+'</button></div></div>';
  host.innerHTML=h;
  var slot=document.getElementById("demoSlot");
  if(demoNode&&slot){var det=document.createElement("details");det.className="demo";det.open=demoOpen;
@@ -18802,14 +18984,13 @@ function wire(){
     جوابُ الحكم حين يصل متأخّراً — والحقلُ يُبنى من signCivil، فما كُتب ولم
     يُحفظ يُمحى تحت يده ويُردّ إرسالُه بلا سبب. */
  var drop=document.getElementById("dropDraft");if(drop)drop.onclick=function(){clearDraft();dirty=false;location.reload()};
- var civilBox=document.getElementById("civil");
- if(civilBox)civilBox.oninput=function(){signCivil=digitsOf(civilBox.value);civilBox.value=signCivil};
  var send=document.getElementById("send");if(send)send.onclick=submit;
- host.querySelectorAll("[data-reply-text]").forEach(function(el){var i=+el.dataset.replyText;el.value=(replyDraft[i]||{}).text||"";el.oninput=function(){(replyDraft[i]=replyDraft[i]||{}).text=el.value}});
- host.querySelectorAll("[data-reply-start]").forEach(function(el){var i=+el.dataset.replyStart;el.value=(replyDraft[i]||{}).start||"";el.onchange=function(){(replyDraft[i]=replyDraft[i]||{}).start=el.value}});
- host.querySelectorAll("[data-reply-civil]").forEach(function(el){el.value=signCivil;el.oninput=function(){signCivil=digitsOf(el.value);el.value=signCivil}});
- host.querySelectorAll("[data-reply]").forEach(function(el){el.onclick=function(){sendReply(+el.dataset.reply,null)}});
- host.querySelectorAll("[data-accept]").forEach(function(el){el.onclick=function(){sendReply(+el.dataset.i,+el.dataset.accept)}});
+ host.querySelectorAll("[data-accept]").forEach(function(el){el.onclick=function(){askAccept(+el.dataset.i,+el.dataset.accept)}});
+ host.querySelectorAll("[data-counter]").forEach(function(el){el.onclick=function(){openCounter(+el.dataset.counter)}});
+ host.querySelectorAll("[data-msg]").forEach(function(el){el.onclick=function(){openMsg(+el.dataset.msg)}});
+ host.querySelectorAll("[data-offer]").forEach(function(el){el.onclick=function(){deckPick[+el.dataset.i]=+el.dataset.offer;paint()}});
+ host.querySelectorAll("[data-deck]").forEach(function(el){el.onclick=function(){deckAt+=+el.dataset.deck;paint()}});
+ host.querySelectorAll("[data-focus]").forEach(function(el){el.onclick=function(){var at=pendingList().indexOf(+el.dataset.focus);if(at>=0)deckAt=at;activeTab="schedule";paint();var d=document.getElementById("deck");if(d)d.scrollIntoView({behavior:"smooth",block:"start"})}});
 }
 /* الحكمُ يُسأل عنه الخادمُ عند كل تغيير: هو وحده يرى الجدول كاملاً، والصفحةُ
    ترى جدولَ صاحبها. وهي تعرض ما يقوله ولا تقرّر شيئاً بنفسها. */
@@ -18848,34 +19029,36 @@ function submit(){
  if(excuse>=0){focusItem(excuse,"اكتب سبب الاستثناء للموعد "+(excuse+1)+".");return}
  var blocked=state.findIndex(function(it){return it.tone==="bad"||it.tone==="checking"});
  if(blocked>=0){activeTab="schedule";paint();var card=document.getElementById("item-"+blocked);if(card)card.scrollIntoView({behavior:"smooth",block:"center"});return}
- var field=document.getElementById("civil");
- /* الأرقامُ العربيةُ تُقبل كما تُكتب على لوحة الهاتف. */
- var civil=digitsOf(field&&field.value||"");
- signCivil=civil;
- if(civil.length!==12){
-  document.getElementById("err").innerHTML='<div class="err">اكتب رقمك المدني كاملاً — 12 رقمًا — فهو توقيعك على الطلب.</div>';
-  if(field)field.focus();window.scrollTo(0,document.body.scrollHeight);return}
- var send=document.getElementById("send");send.disabled=true;send.textContent="يرسل…";
+ var chg=state.filter(function(it){return it.action!=="keep"}),sent=!!data.request.submittedAt;
+ var lines=chg.slice(0,5).map(function(it){return '<li><span>'+esc(actionName(it.action))+' · <b>'+esc(courseOf(it))+'</b>'+(it.action==="delete"?'':' — <bdi>'+requestedHtml(it)+'</bdi>')+'</span></li>'}).join("");
+ signSheet({
+  what:'<div>'+gi("send")+'<span>'+(chg.length?countOf(chg.length,AR.change)+' ستصل القسم':'جدولك كما هو سيصل القسم')+'</span></div>'+(lines?'<ul class="sh-list">'+lines+(chg.length>5?'<li><span>و'+countOf(chg.length-5,AR.change)+' أخرى</span></li>':'')+'</ul>':''),
+  run:function(civil,done){postSubmit(civil,done)}})
+}
+/* الإرسالُ نفسُه كما كان: الخادمُ يعيد الحكمَ ويتحقق من التوقيع، والصفحةُ تعرض ما يقوله. */
+function postSubmit(civil,done){
  fetch("/api/public/request/"+encodeURIComponent(TOKEN),{method:"POST",
   headers:{"Content-Type":"application/json"},
   body:JSON.stringify({civil:civil,items:payloadItems()})})
- .then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})})
+ .then(function(r){return r.json().then(function(d){return{ok:r.ok,status:r.status,d:d}})})
  .then(function(x){
-  if(!x.ok){send.disabled=false;send.textContent="أرسل الطلب";
-   if(typeof x.d.itemIndex==="number"&&state[x.d.itemIndex]){var bad=state[x.d.itemIndex];if(bad.action!=="delete"&&bad.action!=="keep"){bad.tone="bad";bad.note=x.d.error||bad.note}focusItem(x.d.itemIndex,x.d.error||"تعذّر الإرسال");return}
-   document.getElementById("err").innerHTML='<div class="err">'+esc(x.d.error||"تعذّر الإرسال")+'</div>';
-   window.scrollTo(0,0);return}
+  if(!x.ok){
+   if(typeof x.d.itemIndex==="number"&&state[x.d.itemIndex]){var bad=state[x.d.itemIndex];if(bad.action!=="delete"&&bad.action!=="keep"){bad.tone="bad";bad.note=x.d.error||bad.note}closeSheet();focusItem(x.d.itemIndex,x.d.error||"تعذّر الإرسال");return}
+   done(x.d.error||"تعذّر الإرسال",x.status);return}
   dirty=false;clearDraft();
   var code=x.d.request&&x.d.request.signature&&x.d.request.signature.verifyCode||"";
-  host.innerHTML='<div class="done"><div class="tick"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><h1>وصل طلبك إلى القسم</h1>'+
+  signCivil=civil;signAt=Date.now();closeSheet();
+  host.innerHTML='<div class="done"><div class="tick">'+gi("check")+'</div><h1>وصل طلبك إلى القسم</h1><div class="done-path">'+pathHtml(pendingList().length?2:1)+'</div>'+
    '<p class="sub">'+esc(countOf(x.d.changed,AR.edit,"بلا تعديلات"))+
    ' · يمكنك فتح الرابط نفسه لمتابعة ما ثُبّت وما رُفض.</p>'+
    /* رمزُ التوقيع يُعطى لصاحبه: هو ما يُطابَق به طلبُه بعد شهرين. */
-   (code?'<p class="sub">رمز توقيعك: <b dir="ltr">'+esc(code)+'</b></p>':'')+
-   '</div>';window.scrollTo(0,0)})
- .catch(function(){send.disabled=false;send.textContent="أرسل الطلب";
-  document.getElementById("err").innerHTML='<div class="err">تعذّر الاتصال.</div>'});
+   (code?'<p class="sub">رمز توقيعك: <b class="code num">'+esc(code)+'</b></p>':'')+
+   '<button type="button" class="btn-main" id="again">'+gi("eye")+'افتح جدولك</button></div>';
+  var again=document.getElementById("again");if(again)again.onclick=function(){location.reload()};
+  window.scrollTo(0,0)})
+ .catch(function(){done("تعذّر الاتصال. تحقّق من الإنترنت.")});
 }
+
 fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
  return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){
  if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذّر فتح الرابط")+'</div>';return}
@@ -18887,6 +19070,7 @@ fetch("/api/public/request/"+encodeURIComponent(TOKEN)).then(function(r){
   start:(it.action==="change"||it.action==="add")&&it.slots&&it.slots[0]?it.slots[0].start:"",excuse:it.excuse||"",
   decision:it.decision||null,thread:it.thread||[],negotiation:it.negotiation||"",tone:it.verdict==="clear"?"ok":it.verdict==="exception"?"warn":it.verdict==="conflict"?"bad":"",
   note:it.reasons&&it.reasons.length?it.reasons[0].text:(it.verdict==="clear"?"الوقت متاح":""),alts:it.nearestTimes||[]}});
+ baseItems=JSON.parse(JSON.stringify(payloadItems()));
  var draft=data.windowOpen?readDraft():null;
  if(draft&&Array.isArray(draft.items)){var byRow={};state.forEach(function(it){if(it.rowId!=null)byRow[it.rowId]=it});var adds=[];
   draft.items.forEach(function(d,k){var nm=(draft.names||[])[k]||{};if(d.rowId!=null&&byRow[d.rowId]){var it=byRow[d.rowId];if(d.action!==it.action||(d.action==="change"&&(String(d.days)!==String(it.days)||d.start!==it.start))){it.action=d.action;it.days=d.days||[];it.start=d.start||"";it.excuse=d.excuse||"";it.tone="";it.note=""}}
