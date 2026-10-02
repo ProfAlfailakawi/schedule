@@ -6302,7 +6302,8 @@ app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (req
       college: collegeName.get(collegeId) || "",
     });
   };
-  for (const row of affiliations) for (const id of row.instructorIds) place(id, row.collegeId, row.sectionId, "delegate");
+  /* الانتداب الحالي من دليل القسم وحده؛ روستر فصلٍ مضى تاريخٌ لا يُبقي «منتدب لدى» بعد التحويل. */
+  for (const row of affiliations) if (row.kind === "directory") for (const id of row.instructorIds) place(id, row.collegeId, row.sectionId, "delegate");
   for (const row of latestRows as any[]) place(Number(row.AdInstructorId || 0), Number(row.AdCollegeId || 0), Number(row.AdSectionId || 0), "teaching");
   res.json({
     termId: latestTermId,
@@ -6321,6 +6322,7 @@ app.get("/api/delegates", requireAnyPermission([3, 7]), async (req: Authenticate
   const allowedFamilies = new Set((sections as any[]).filter(sec => isScopeAllowed(req, Number(sec.AdCollegeId), Number(sec.AdSectionId))).map(sec => familyOf(Number(sec.AdCollegeId), Number(sec.AdSectionId))));
   const ids = new Set<number>();
   for (const row of directories) {
+    if (row.kind !== "directory") continue;
     if (!allowedFamilies.has(familyOf(Number(row.collegeId), Number(row.sectionId)))) continue;
     for (const id of row.instructorIds) ids.add(Number(id));
   }
