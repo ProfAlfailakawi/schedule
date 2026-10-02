@@ -1747,7 +1747,7 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
 .mini-ring.tone-bad{color:var(--danger)}
 .mini-ring>b{
   position:relative;
-  font:600 calc(var(--ring-size) * .31)/1 var(--font-mono);
+  font:600 max(11px,calc(var(--ring-size) * .31))/1 var(--font-mono);
   font-variant-numeric:tabular-nums lining-nums;
   color:var(--ink);letter-spacing:-.02em;
   direction:ltr;unicode-bidi:isolate;
@@ -4781,4 +4781,11 @@ button.twin-delta{width:100%}
 @media (forced-colors:active){
   .campus-map line{stroke:CanvasText}
   .campus-map .is-high line{stroke:Mark}
+}
+
+/* Hub tiles: the description line is a tooltip (title) and screen-reader text
+   only; it stays in the DOM. Display only. */
+.insight-preview-list>.insight-preview>.insight-preview-copy small{
+  display:block!important;position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  border:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap;
 }
