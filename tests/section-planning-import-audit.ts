@@ -114,5 +114,30 @@ check(cells.source === "text" && a.reject === null && a.blockers.length === 0 &&
 a = assessRemainingImport(r, { departmentCode: "0202", headerText: "رمز القسم العلمي 0101" });
 check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "والملف نفسه لقسمٍ مختار آخر: يُرفض قبل التطبيق");
 
+
+/* ── سطرٌ ضاع رقم مقرره: لا يُسكت عنه ── */
+{
+  const many: Row[] = ["102", "120", "201", "254", "255", "310"].map(code => [`0101${code}`, [10, 70, 0, 70, 1, 10]] as Row);
+  const full = page(0, many);
+  const lost = full.filter(cell => cell.text !== "0101254");
+  const gapReading = readRemainingReport([lost], catalogue, "0101");
+  const gapAssessment = assessRemainingImport(gapReading, context);
+  check((gapReading.gaps || []).some(gap => gap.after === "0101201" && gap.before === "0101255"), "سطرٌ بلا رقم مقرر يُكشف بفجوته بين جارَيه");
+  check(gapAssessment.blockers.some(text => /لم يُقرأ رقم مقرره/.test(text)), "ويمنع التعبئة حتى تُرفع صورةٌ أوضح");
+  check((readRemainingReport([full], catalogue, "0101").gaps || []).length === 0, "والكشف الكامل بلا فجوات");
+}
+
+/* ── مقرراتٌ من خارج القسم بين مقرراته: تُتجاهل، ولا تُعدّ سطراً ناقصاً ── */
+{
+  const mixedRows: Row[] = [["0101102", [10, 70, 0, 70, 1, 10]], ["0101120", [10, 70, 0, 70, 1, 10]], ["0202777", [99, 140, 0, 140, 2, 99]],
+    ["0101201", [10, 70, 0, 70, 1, 10]], ["0303888", [5, 70, 0, 70, 1, 5]], ["0101254", [10, 70, 0, 70, 1, 10]], ["0101255", [10, 70, 0, 70, 1, 10]], ["0101310", [10, 70, 0, 70, 1, 10]]];
+  const mixedReading = readRemainingReport([page(0, mixedRows)], catalogue, "0101");
+  const mixedAssessment = assessRemainingImport(mixedReading, context);
+  const values = remainingValues(mixedReading, mixedReading.column!);
+  check(mixedReading.rows.length === 6 && !Object.values(values).includes(140), "مقررات خارج القسم لا تُستورد ولا تختلط قيمها بمقررات القسم");
+  check(mixedReading.foreign.length === 2, "وتُذكر للعلم فقط");
+  check(mixedAssessment.reject === null && mixedAssessment.blockers.length === 0, "ولا تمنع الاستيراد ولا تُعدّ سطراً ناقصاً");
+}
+
 console.log(`\nSection planning import audit: ${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
