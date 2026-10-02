@@ -2426,3 +2426,7 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 @media (max-width:640px){
   .location-admin-page .location-health-grid>.surface:nth-child(n+6){grid-column:1/-1}
 }
+
+/* الجاهزية: الرقم نفسه مع حلقته — الرسم يكرّر الرقم الظاهر ولا يضيف قراءة. */
+.deck-signals .signal-ring-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.deck-signals .signal-ring-row .mini-ring{flex:none}

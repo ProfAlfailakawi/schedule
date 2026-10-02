@@ -2387,8 +2387,8 @@ export default function App() {
           </button>
         </div>
         {user.IsDemo ? (
-          <div className="demo-rail-chip" role="status" aria-label="بيئة Demo معزولة">
-            <FlaskConical aria-hidden="true" /><span>DEMO</span><i aria-hidden="true" />
+          <div className="demo-rail-chip" role="status" aria-label="بيئة تجريبية معزولة">
+            <FlaskConical aria-hidden="true" /><span>تجريبي</span><i aria-hidden="true" />
             {demoInfo && demoInfo.roles.length ? (
               <label className="demo-role-switch" title="جرّب النظام بصفةٍ مختلفة">
                 <span className="demo-role-switch-label">الصفة</span>

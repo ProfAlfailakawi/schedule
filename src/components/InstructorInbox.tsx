@@ -26,6 +26,7 @@
  * سببه والبدائل. ولا أثرَ له في تقرير التغييرات، لأن شيئاً لم يتغيّر.
  */
 
+import MiniRing from "./MiniRing";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
@@ -1261,7 +1262,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
           {/* سطرٌ واحد بدل شريط المراحل: كم أجاب، وكم طلبوا تغييراً. */}
           {totals ? (
             <div className="request-summary" role="status">
-              <span>أجاب: {num(Number(totals.answered || 0))} من {num(Number(totals.sent || 0))}</span>
+              <span>{Number(totals.sent || 0) > 0 ? <MiniRing value={Math.round((Number(totals.answered || 0) / Number(totals.sent || 1)) * 100)} size={26} decorative>{""}</MiniRing> : null}أجاب: {num(Number(totals.answered || 0))} من {num(Number(totals.sent || 0))}</span>
               {totals?.changed ? <div><Replace aria-hidden="true" />طلبوا تغييراً: {num(Number(totals.changed))}</div> : null}
               {totals?.unchanged ? <div><Check aria-hidden="true" />بلا تغيير: {num(Number(totals.unchanged))}</div> : null}
             </div>

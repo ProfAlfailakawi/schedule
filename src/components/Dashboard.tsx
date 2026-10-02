@@ -2,6 +2,7 @@ import React,{useEffect,useMemo,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,TrendingDown,TrendingUp,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
+import MiniRing from"./MiniRing";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
 
@@ -189,7 +190,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
   * in flight the tiles are already there holding «—»; if a read fails they drop
   * out exactly as they always did.
   */
- const signals:Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean}>=[
+ const signals:Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean;ring?:number}>=[
   {key:"today",label:"محاضرات اليوم",value:num(today.length)},
   /* الصفر لا يُعرض لوحةً: «الجدول سليم» تقوله بطاقةُ القرار فوقها. */
   criticalCount?{key:"conflicts",label:"تعارضات حرجة",value:num(criticalCount),tone:"danger"}:null,
@@ -198,9 +199,9 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    ?{key:"gap",label:"متوسط الفراغ",value:formatCompactDurationArabic(overview.metrics.avgInstructorGap)}
    :insightsPending?{key:"gap",label:"متوسط الفراغ",value:"—",awaiting:true}:null,
   living?.health
-   ?{key:"ready",label:"الجاهزية",value:`${num(percent(living.health.quality))}٪`}
+   ?{key:"ready",label:"الجاهزية",value:`${num(percent(living.health.quality))}٪`,ring:percent(living.health.quality)}
    :insightsPending?{key:"ready",label:"الجاهزية",value:"—",awaiting:true}:null,
- ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean}>;
+ ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean;ring?:number}>;
 
  return <div className="content-stack dashboard-page command-deck visual-minimal">
   <header className="deck-bar" aria-label="ملخص الحساب والنطاق الحالي">
@@ -232,7 +233,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
 
    {signals.length>1?<section className="deck-signals" aria-label="مؤشرات الجاهزية">
     {signals.map(item=><article key={item.key} className={[item.tone?`signal-${item.tone}`:"",item.awaiting?"is-awaiting":""].filter(Boolean).join(" ")||undefined} aria-busy={item.awaiting||undefined}>
-     <b>{item.value}</b>
+     {item.ring!=null?<div className="signal-ring-row"><b>{item.value}</b><MiniRing value={item.ring} size={30} decorative>{""}</MiniRing></div>:<b>{item.value}</b>}
      <span>{item.label}</span>
     </article>)}
    </section>:null}

@@ -1819,7 +1819,7 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
 /* Demo status is informative, not alarming: permanent, compact, and resettable. */
 
 /* Compact Demo status stays in navigation chrome and never covers content. */
-.demo-rail-chip{margin:4px 14px 8px;min-height:32px;padding:4px 6px 4px 10px;display:flex;align-items:center;gap:7px;width:max-content;max-width:calc(100% - 28px);border:1px solid color-mix(in srgb,#b78a3a 34%,transparent);border-radius:999px;background:color-mix(in srgb,#8a641c 12%,var(--nav));color:#c7a86c;font-size:10px;font-weight:700;letter-spacing:.12em}.demo-rail-chip>svg{width:13px;height:13px}.demo-rail-chip>i{width:5px;height:5px;border-radius:50%;background:#55b99a;box-shadow:0 0 0 3px color-mix(in srgb,#55b99a 12%,transparent)}.demo-rail-chip>button{display:grid;place-items:center;width:24px;height:24px;padding:0;margin-inline-start:1px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}.demo-rail-chip>button:hover{background:color-mix(in srgb,#fff 7%,transparent)}.demo-rail-chip>button svg{width:12px;height:12px}
+.demo-rail-chip{margin:4px 14px 8px;min-height:32px;padding:4px 6px 4px 10px;display:flex;align-items:center;gap:7px;width:max-content;max-width:calc(100% - 28px);border:1px solid color-mix(in srgb,#b78a3a 34%,transparent);border-radius:999px;background:color-mix(in srgb,#8a641c 12%,var(--nav));color:#c7a86c;font-size:11px;font-weight:700;letter-spacing:0}.demo-rail-chip>svg{width:13px;height:13px}.demo-rail-chip>i{width:5px;height:5px;border-radius:50%;background:#55b99a;box-shadow:0 0 0 3px color-mix(in srgb,#55b99a 12%,transparent)}.demo-rail-chip>button{display:grid;place-items:center;width:24px;height:24px;padding:0;margin-inline-start:1px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}.demo-rail-chip>button:hover{background:color-mix(in srgb,#fff 7%,transparent)}.demo-rail-chip>button svg{width:12px;height:12px}
 /* مبدّل الصفة داخل شريط الديمو: يفتح شاشةَ كل صفة ببياناتها الوهمية. */
 .demo-rail-chip>.demo-role-switch{display:inline-flex;align-items:center;gap:5px;margin-inline-start:2px;letter-spacing:normal;min-width:0;flex:1 1 auto}
 .demo-role-switch-label{font-size:9px;font-weight:700;opacity:.75}
@@ -2026,3 +2026,31 @@ html[data-dialog-open] .notify-toast{visibility:hidden}
 @media screen and (min-width:1120px){
   .app-main{padding-inline-end:max(var(--gutter),var(--notify-lane))}
 }
+
+/* Phone: the guide launcher is a compact mark, not a wide pill — the pill sat on
+   top of chart axes and list rows at the bottom-left. Visual only: same button,
+   same label for assistive tech, same click. */
+@media (max-width:900px){
+  .smart-guide-fab:not(.icon-only){min-width:0;width:44px;height:44px;min-height:44px;padding:0;border-radius:15px;justify-content:center;gap:0;left:10px}
+  .smart-guide-fab:not(.icon-only) .smart-guide-fab-copy{display:none}
+  .smart-guide-fab:not(.icon-only) .smart-guide-fab-mark{width:32px;height:32px;border-radius:11px;box-shadow:none}
+  .smart-guide-fab:not(.icon-only) .smart-guide-fab-pulse,.smart-guide-fab:not(.icon-only) .smart-guide-fab-new{position:absolute;inset-inline-start:-3px;inset-block-start:-3px}
+  .smart-guide-fab{box-shadow:0 6px 16px rgba(17,24,39,.14);opacity:.96}
+  .smart-guide-fab:hover,.smart-guide-fab.active{box-shadow:0 8px 18px rgba(17,24,39,.16)}
+}
+
+/* Dark: the state colours turn light, so white text on them fell to ~2.4:1.
+   The text takes the page's near-black instead (light theme is unchanged). */
+:root[data-theme="dark"] .notify-count{color:#1b0b0a}
+:root[data-theme="dark"] .request-action{color:#0d1411}
+
+/* Phones have no Alt or Esc: keyboard hints there are noise, not help. */
+@media (max-width:900px),(hover:none){
+  .shortcut-strip{display:none}
+  .cmdk-field>kbd,.cmdk .cmdk-shortcut{display:none}
+}
+
+/* Tour: when the list is taller than the screen (six chapters on a phone, or a
+   short laptop) the card scrolls inside itself — the start button must stay in
+   view instead of scrolling away with the list. */
+.ob-card .ob-foot{position:sticky;inset-block-end:0;z-index:2;background:var(--surface);margin:8px 0 0;padding:12px clamp(20px,3.4vw,36px) calc(12px + env(safe-area-inset-bottom))}

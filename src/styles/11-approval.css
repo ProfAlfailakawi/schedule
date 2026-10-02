@@ -867,7 +867,7 @@
 .changes-view-toggle{display:inline-flex;gap:4px;padding:3px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2)}
 .changes-view-toggle>button{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:0;border-radius:calc(var(--r-md) - 3px);background:transparent;color:var(--ink-2);font-size:.84rem;font-weight:700;cursor:pointer}
 .changes-view-toggle>button>svg{inline-size:15px;block-size:15px}
-.changes-view-toggle>button[data-active]{background:var(--accent);color:var(--on-accent,#fff)}
+.changes-view-toggle>button[data-active]{background:var(--accent);color:var(--accent-contrast,#fff)}
 
 /* زرُّ تعليقٍ واحدٍ لكل موعد — بدل صفٍّ من ستّة أزرارٍ كان يزاحم كل بطاقة. */
 .changes-note-add{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:6px 12px;border-radius:var(--r-full);border:1px dashed color-mix(in srgb,var(--accent) 40%,var(--line));background:transparent;color:var(--accent-ink);font-size:.82rem;font-weight:700;cursor:pointer}
