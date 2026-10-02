@@ -4790,11 +4790,21 @@ button.twin-delta{width:100%}
   border:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap;
 }
 
-/* A lone last tile spans the row instead of leaving a hole beside it. */
-.insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:1/-1}
-@media (max-width:640px){
+/* Reading tiles: the column count is explicit per rail width (a container
+   query on the rail itself, so the sidebar is accounted for), and a lone last
+   tile spans the row only for the count that is actually in force. */
+.insight-preview-rail{container-type:inline-size}
+.insight-preview-rail .insight-preview-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+.insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(2n+1){grid-column:1/-1}
+@container (min-width:774px){
+  .insight-preview-rail .insight-preview-list{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(2n+1){grid-column:auto}
+  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:1/-1}
+}
+@container (min-width:1036px){
+  .insight-preview-rail .insight-preview-list{grid-template-columns:repeat(4,minmax(0,1fr))}
   .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:auto}
-  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(2n+1){grid-column:1/-1}
+  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(4n+1){grid-column:1/-1}
 }
 
 /* «تفاصيل»: desktop table never shows the toggle; phone cards fold the secondary lines. */
