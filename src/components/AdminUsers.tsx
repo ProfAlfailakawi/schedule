@@ -2142,7 +2142,7 @@ export default function AdminUsers({
                 </article>
                 <article>
                   <span>المسار</span>
-                  <b dir="ltr" className="inspector-path">
+                  <b dir="ltr" className="inspector-path" title={selectedLog.path}>
                     {selectedLog.path}
                   </b>
                 </article>
