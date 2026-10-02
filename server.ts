@@ -16481,7 +16481,6 @@ ${PROPOSAL_ALERT_CSS}
     <div class="tools">
       <a id="ics" href="#" role="button" aria-expanded="false" aria-controls="sub">إضافة إلى التقويم</a>
       <a href="#" id="print">طباعة</a>
-      <a href="#" id="edit" role="button">تعديل</a>
     </div>
     <div class="sub" id="sub" hidden>
       <p id="subLife">اشتراك يتابع جدولك من نفسه حتى نهاية الفصل، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
@@ -16621,9 +16620,7 @@ ${PROPOSAL_ALERT_CSS}
     selectTab("requests");
     var panel=document.getElementById("panel-requests");if(panel)panel.scrollIntoView({block:"nearest",behavior:"smooth"});
   };
-  /* «تعديل» في شريط الأدوات هو البابُ نفسُه، لا بابٌ ثانٍ بقاعدةٍ أخرى. */
-  var editBtn=document.getElementById("edit");
-  if(editBtn)editBtn.onclick=function(e){e.preventDefault();if(tabRequests)tabRequests.onclick();};
+  /* لا زرّ «تعديل» ثانٍ في الأدوات: تبويب «طلب تعديل الجدول» هو البابُ الوحيد. */
 
   function visibleCardCollege(value){var name=String(value||"");return /التربية\\s*الأساسية.*بنات/.test(name)?"":name}
   function shortCardCollege(value){return String(value||"").replace(/^\\s*[0-9٠-٩]+\\s*[·\\-–]?\\s*/,"").replace(/^\\s*كلية\\s+/,"").trim()}
