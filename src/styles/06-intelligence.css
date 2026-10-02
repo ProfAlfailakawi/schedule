@@ -106,7 +106,7 @@
 }
 .lens-strip button svg{width:16px;height:16px}
 .lens-strip button:hover{color:var(--ink);background:var(--surface-2)}
-.lens-strip button.active{background:var(--ink);color:var(--surface);font-weight:600}
+.lens-strip button.active{background:var(--accent-soft);color:var(--accent-ink);font-weight:600;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 28%,transparent)}
 
 /* --- Result canvas -------------------------------------------------------- */
 
@@ -212,12 +212,12 @@
 .lens-days i{
   font-style:normal;padding:1px 6px;border-radius:var(--r-full);
   background:var(--surface-3);color:var(--muted);
-  font-size:10px;white-space:nowrap;
+  font-size:var(--t-micro);white-space:nowrap;
 }
 .lens-days b{
   padding:1px 6px;border-radius:var(--r-full);
   background:var(--warning-soft);color:var(--warning);
-  font-size:10px;font-weight:600;
+  font-size:var(--t-micro);font-weight:600;
 }
 .lens-more{display:flex;justify-content:center;padding:var(--s5);border-top:1px solid var(--line)}
 
@@ -1721,6 +1721,8 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
   font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.04em;
   white-space:nowrap;
 }
+/* A reading of zero (or still loading) stands back; the ring and its number stay visible. */
+.living-health-strip>span.is-loading,.living-health-strip>span[style*="--reading:0%"]{opacity:.62}
 /* The number lives inside the ring now; the <b> stays for screen readers. */
 
 /* --- Score ring ---------------------------------------------------------------
@@ -3544,7 +3546,7 @@ button.twin-delta{width:100%}
 }
 .demand-bars .demand-course-label>small{
   flex:none;color:var(--muted-2);font-family:var(--mono,ui-monospace,monospace);
-  font-size:10px;font-weight:500;letter-spacing:.02em;
+  font-size:var(--t-micro);font-weight:500;letter-spacing:.02em;
   font-variant-numeric:tabular-nums lining-nums;
 }
 
@@ -3767,7 +3769,7 @@ button.twin-delta{width:100%}
 .visual-minimal.query-page .query-primary-filters .field,
 .visual-minimal.query-page .query-more .field{padding:9px 10px;border:1px solid var(--line);background:var(--surface-2)}
 .visual-minimal.query-page .query-primary-filters .field>label,
-.visual-minimal.query-page .query-more .field>label{font-size:.66rem;color:var(--muted);font-weight:700}
+.visual-minimal.query-page .query-more .field>label{font-size:var(--t-micro);color:var(--muted);font-weight:700}
 .visual-minimal.query-page .query-primary-filters select,
 .visual-minimal.query-page .query-more select,
 .visual-minimal.query-page .query-more input{background:var(--surface);border-radius:12px}
@@ -3839,7 +3841,7 @@ button.twin-delta{width:100%}
 }
 .intel-context.visual-minimal .intel-context-fields{gap:8px}
 .intel-context.visual-minimal .intel-context-fields .field{padding:8px 10px;border:1px solid var(--line);background:var(--surface-2)}
-.intel-context.visual-minimal .intel-context-fields .field>label{font-size:.65rem;color:var(--muted)}
+.intel-context.visual-minimal .intel-context-fields .field>label{font-size:var(--t-micro);color:var(--muted)}
 .intel-context.visual-minimal .intel-context-fields select{border-radius:12px;background:var(--surface)}
 
 @media(max-width:760px){
@@ -4666,7 +4668,7 @@ button.twin-delta{width:100%}
 .visual-minimal .ask-scope-bar .query-primary-filters .field,
 .visual-minimal .ask-scope-bar .query-more .field{padding:9px 10px;border:1px solid var(--line);background:var(--surface-2)}
 .visual-minimal .ask-scope-bar .query-primary-filters .field>label,
-.visual-minimal .ask-scope-bar .query-more .field>label{font-size:.66rem;color:var(--muted);font-weight:700}
+.visual-minimal .ask-scope-bar .query-more .field>label{font-size:var(--t-micro);color:var(--muted);font-weight:700}
 .visual-minimal .ask-scope-bar .query-primary-filters select,
 .visual-minimal .ask-scope-bar .query-more select,
 .visual-minimal .ask-scope-bar .query-more input{background:var(--surface);border-radius:12px}

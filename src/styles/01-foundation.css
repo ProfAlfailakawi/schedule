@@ -139,6 +139,8 @@
   --t-sm:12.5px;
   --t-xs:11.5px;
   --t-eyebrow:11px;
+  /* The smallest text that still carries meaning (field captions, chips, legends). */
+  --t-micro:11px;
 
   /* Layout */
   --sidebar-w:266px;
