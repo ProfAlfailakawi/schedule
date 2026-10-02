@@ -6256,7 +6256,7 @@ app.get("/api/instructors/:id/affiliation", requireAnyPermission([3, 7]), async 
   const termName = new Map((terms as any[]).map(item => [Number(item.AdTermId), String(item.AdTermName || "")]));
   const delegate = new Map<string, any>();
   for (const row of directories) {
-    if (!row.instructorIds.includes(instructorId)) continue;
+    if (row.kind !== "directory" || !row.instructorIds.includes(instructorId)) continue;
     delegate.set(`${row.collegeId}:${row.sectionId}`, {
       collegeId: row.collegeId, sectionId: row.sectionId,
       section: sectionName.get(row.sectionId) || "", college: collegeName.get(row.collegeId) || "",
