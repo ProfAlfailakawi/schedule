@@ -19682,7 +19682,7 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
       r.days.forEach(function (d) { if (d >= 0 && d < 5) { var k = b + "|" + d; cell[k] = (cell[k] || 0) + 1; } });
     });
     if (hi < 0) { box.hidden = true; return; }
-    var h = '<div class="wk-r" role="row"><span role="presentation"></span>' + DAYS.map(function (n, d) { return '<span class="wk-h" role="columnheader" data-today="' + (d === TODAY ? 1 : 0) + '">' + esc(n) + "</span>"; }).join("") + "</div>";
+    var h = '<div class="wk-r" role="row"><span role="columnheader" aria-label="الوقت"></span>' + DAYS.map(function (n, d) { return '<span class="wk-h" role="columnheader" data-today="' + (d === TODAY ? 1 : 0) + '">' + esc(n) + "</span>"; }).join("") + "</div>";
     for (var b = lo; b <= hi; b += 2) {
       var band = (b < 10 ? "0" : "") + b + ":00";
       h += '<div class="wk-r" role="row"><span class="wk-t" role="rowheader">' + band + "</span>";
