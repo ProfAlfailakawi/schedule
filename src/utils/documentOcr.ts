@@ -1169,6 +1169,7 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
   /* «المقاعد المتبقية» هي مدخل التخطيط، والسعة والمسجّلون وعدد الشعب تفحصها؛
      ولا يُقرأ ما لا يُحتاج إليه: «لم يجتازوا» و«الذين لم يسجلوا». */
   const skipped=new Set(["notPassed","unregistered"]);
+  const read:Array<{column:number;band:{top:number;bottom:number};cell:ReportCell}>=[];
   for(const [index,column] of columns.entries()){
     if(column.right-column.left>median*1.8||skipped.has(String(kinds[index])))continue;
     for(const band of bands){
@@ -1184,9 +1185,34 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
       const agreed=reads.find((read,i)=>reads.some((other,j)=>j!==i&&other.text===read.text));
       const best=agreed?{text:agreed.text,confidence:Math.max(...reads.filter(read=>read.text===agreed.text).map(read=>read.confidence))}
         :reads.sort((a,b)=>b.confidence-a.confidence)[0];
-      if(best&&best.confidence>=50)cells.push({text:best.text,x0:column.left/W,x1:column.right/W,y:(band.top+band.bottom)/2/H,confidence:best.confidence});
+      if(best&&best.confidence>=50){const cell={text:best.text,x0:column.left/W,x1:column.right/W,y:(band.top+band.bottom)/2/H,confidence:best.confidence};cells.push(cell);read.push({column:index,band,cell});}
     }
   }
+  /* رقم مقررٍ قُرئ ناقصاً («22» بدل «252» في صورة هاتف حقيقية): يضيع الصفّ كله.
+     في عمودٍ أغلب خاناته رموزٌ بطولٍ واحد (٣ أو ٧)، الخانةُ المخالفة تُعاد
+     قراءتها من خانتها نفسها في الجدول المستقيم — بقصٍّ أوسع وأنماطٍ أخرى —
+     ولا تُستبدل إلا بقراءةٍ بالطول نفسه وثقةٍ كافية. وإلا بقيت، وأبلغ الحكمُ
+     عن السطر الناقص بدل أن يُسكت عنه. */
+  for(const [index,column] of columns.entries()){
+    const mine=read.filter(item=>item.column===index);
+    const lengths=new Map<number,number>();mine.forEach(item=>lengths.set(item.cell.text.length,(lengths.get(item.cell.text.length)||0)+1));
+    const [size,count]=[...lengths.entries()].sort((a,b)=>b[1]-a[1])[0]||[0,0];
+    if(!(size===3||size===7)||count<5||count<mine.length*.7)continue;
+    for(const item of mine.filter(entry=>entry.cell.text.length!==size)){
+      let fixed:{text:string;confidence:number}|null=null;
+      for(const psm of ["7","8","13"]){
+        await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:psm as any});
+        for(const radius of [null,20,10]){
+          const result:any=await worker.recognize(crop(column.left-2,column.right+2,item.band.top-2,item.band.bottom+2,radius)).catch(()=>null);
+          const text=String(result?.data?.text||"").replace(/\s+/g,""),confidence=Number(result?.data?.confidence||0);
+          if(text.length===size&&/^\d+$/.test(text)&&confidence>=60){fixed={text,confidence};break;}
+        }
+        if(fixed)break;
+      }
+      if(fixed){item.cell.text=fixed.text;item.cell.confidence=fixed.confidence;}
+    }
+  }
+  await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"7" as any});
   /* الترويسة فوق الجدول: القسم والفصل — من الصفحة الأولى. */
   let headerText="";
   if(!reuse&&header.top>H*.04){

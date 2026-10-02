@@ -66,6 +66,8 @@ export interface RemainingReading {
   foreign: string[];
   /** مقررات القسم التي لم ترد في الكشف. */
   missing: number[];
+  /** فجواتٌ بين صفوفٍ مقروءة بقدر سطرٍ أو أكثر: سطرٌ في الكشف لم يُقرأ رقم مقرره. */
+  gaps?: Array<{ page: number; after: string; before: string }>;
 }
 
 const normalize = (value: string) => String(value || "")
@@ -421,7 +423,19 @@ export function readRemainingReport(
     if (read !== derived) row.doubt = { read, derived };
   }
   const seen = new Set(rows.map(row => row.courseId));
-  return { columns, column, fallback: null, rows, foreign, missing: courses.filter(course => !seen.has(course.id)).map(course => course.id) };
+  /* 7) سطرٌ ضاع رقم مقرره (القراءة الضوئية أسقطته) يترك فجوةً بين جارَيه بقدر
+     سطرٍ كامل: يُذكر ولا يُسكت عنه، فلا يبدو الكشف مكتملاً وهو ناقص. */
+  const gaps: Array<{ page: number; after: string; before: string }> = [];
+  for (const page of new Set(matched.map(item => item.line.page))) {
+    const lines = matched.filter(item => item.line.page === page).sort((a, b) => a.line.y - b.line.y);
+    const steps = lines.slice(1).map((item, index) => item.line.y - lines[index].line.y).filter(step => step > 0.004).sort((a, b) => a - b);
+    if (steps.length < 4) continue;
+    const pitch = steps[Math.floor(steps.length / 2)];
+    lines.slice(1).forEach((item, index) => {
+      if (item.line.y - lines[index].line.y > pitch * 1.6) gaps.push({ page: page + 1, after: lines[index].code.text, before: item.code.text });
+    });
+  }
+  return { columns, column, fallback: null, rows, foreign, missing: courses.filter(course => !seen.has(course.id)).map(course => course.id), gaps };
 }
 
 export type CellState = "read" | "unread" | "noSections" | "mismatch" | "lowConfidence";
@@ -459,6 +473,23 @@ export function detectReportDepartment(headerText: string, printedCodes: readonl
   return n / prefixes.length >= 0.6 ? best : undefined;
 }
 
+/**
+ * هل رأس الكشف لقسمنا؟ برمزه (بقراءةٍ قد تزيد رقماً واحداً: «0١10١») أو باسمه.
+ * لا يكفي تطابق أرقام المقررات وحدها: الأرقام الثلاثية تتكرر بين الأقسام.
+ */
+export function confirmReportDepartment(headerText: string, departmentCode: string, departmentName = "", detected?: string): { confirmed: boolean; byCode: boolean; byName: boolean } {
+  const code = String(departmentCode || "");
+  const plain = fold(headerText).replace(/\s+/g, " ");
+  const tokens = [...plain.matchAll(/القسم(?:\s*العلمي)?[^\d]{0,8}?([\d\s]{4,9})/g)].map(match => match[1].replace(/\s/g, ""));
+  const nearCode = (token: string) => token === code
+    || (token.length === code.length + 1 && [...token].some((_, index) => token.slice(0, index) + token.slice(index + 1) === code));
+  const byCode = Boolean(code) && (detected === code || tokens.some(nearCode));
+  const squash = (value: string) => fold(value).replace(/^قسم\s+/, "").replace(/[^ء-ي0-9]/g, "");
+  const name = squash(departmentName);
+  const byName = name.length >= 4 && squash(headerText).includes(name);
+  return { confirmed: byCode || byName, byCode, byName };
+}
+
 export interface ImportAssessment {
   /** يُرفض الملف قبل المعاينة (قسمٌ آخر، أو قراءةٌ غير واضحة، أو لا عمود «المقاعد المتبقية»). */
   reject: string | null;
@@ -484,7 +515,8 @@ export function assessRemainingImport(
   const detected = detectReportDepartment(context.headerText || "", printed);
   const selected = context.departmentName ? `«${context.departmentName}» (${context.departmentCode})` : context.departmentCode;
   const base = { detectedDepartment: detected, unread: [] as number[], noSections: [] as number[], read: 0, blockers: [] as string[] };
-  if (detected && context.departmentCode && detected !== context.departmentCode) {
+  const confirmation = confirmReportDepartment(context.headerText || "", context.departmentCode, context.departmentName, detected);
+  if (detected && context.departmentCode && detected !== context.departmentCode && !confirmation.byName) {
     return { ...base, reject: `الكشف لقسمٍ آخر: القسم المختار في النظام ${selected}، والقسم في الكشف ${detected}. اختر القسم الصحيح أو ارفع كشف قسمك — لم يُستورد شيء.` };
   }
   if (!reading.rows.length) {
@@ -506,6 +538,10 @@ export function assessRemainingImport(
   const blockers = unread.length
     ? [`قراءةٌ ناقصة: ${unread.length} من المقررات لم تُقرأ خانة «المقاعد المتبقية» فيها بوضوح — ارفع صورةً أوضح لهذه الصفحة قبل التعبئة.`]
     : [];
+  for (const gap of reading.gaps || []) blockers.push(`قراءةٌ ناقصة: سطرٌ لم يُقرأ رقم مقرره بين المقرر ${gap.after} والمقرر ${gap.before} (الصفحة ${gap.page}) — ارفع صورةً أوضح لهذه الصفحة.`);
+  if (!confirmation.confirmed) blockers.push(detected && detected !== context.departmentCode
+    ? `تعذّر التحقق من القسم: رمز القسم المقروء في الكشف ${detected} يخالف القسم المختار ${selected}، والاسم لا يحسم ذلك — ارفع صورةً أوضح لرأس الكشف.`
+    : `تعذّر التحقق من أن الكشف لقسم ${selected}: لم يُقرأ رمز القسم ولا اسمه في رأس الكشف — ارفع صورةً يظهر فيها رأس الكشف بوضوح.`);
   return { ...base, unread, noSections, read, blockers, reject: null };
 }
 
