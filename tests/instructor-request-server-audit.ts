@@ -22,6 +22,8 @@ function check(condition: boolean, name: string) {
 }
 
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+/* ورقةُ التوقيع في العدّة المشتركة للصفحات العامة، لا في صفحة الطلب وحدها. */
+const kit = fs.readFileSync(path.join(process.cwd(), "src/server/publicKit.ts"), "utf8");
 const types = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8");
 const repo = fs.readFileSync(path.join(process.cwd(), "src/db/repository.ts"), "utf8");
 const inbox = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
@@ -195,7 +197,7 @@ check(server.includes("const [courses, allowedCourseOptions] = await Promise.all
   && server.includes("selectedCollegeId")
   && server.includes("selectedSectionId"),
   "والإرسال يتحقق من المقرر والكلية والقسم باستخدام الخيارات نفسها التي تعتمد عليها الصفحة");
-check(page.includes('placeholder="12 رقمًا"') && page.includes("— 12 رقمًا —"),
+check(kit.includes('placeholder="12 رقمًا"') && kit.includes("— 12 رقمًا —") && page.includes("SK.sign"),
   "والرقم المدني يُشرح بالأرقام الإنجليزية المتفق عليها");
 
 /* بطاقةُ الأستاذ للقراءة؛ بابُ التعديل الكامل يظهر كتَبويبٍ واحدٍ حين يكون

@@ -19,14 +19,10 @@
  * (backtick) ولا ‎${‎ داخل السكربت: أولُّهما يُغلق القالب والثاني يُحلّ في الخادم.
  */
 import { ARABIC_COUNT_SCRIPT } from "../utils/arabicCount";
-
-const FONT_FACES = ["400", "500", "600", "700"].map(w =>
-  `@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:${w};font-display:swap;src:url("/fonts/plex-arabic-arabic-${w}.woff2") format("woff2")}` +
-  `@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:${w};font-display:swap;unicode-range:U+0000-00FF,U+2000-206F;src:url("/fonts/plex-arabic-latin-${w}.woff2") format("woff2")}`,
-).join("");
+import { PUBLIC_FONT_FACES, PUBLIC_KIT_CSS, PUBLIC_KIT_SCRIPT } from "./publicKit";
 
 const PAGE_CSS = String.raw`
-:root{--ink:#15251d;--ink2:#2c3f34;--muted:#5d6e64;--muted2:#8a9890;--line:#dde6e0;--line2:#c8d5cd;--bg:#f3f7f4;--card:#fff;--soft:#edf5f0;
+:root{--raise:#fff;--on:#fff;--seg:#e8efea;--tt-bg:#fbfdfc;--tt-sum:linear-gradient(#fbfdfc,#f6faf7);--chip-mute:#eef2ef;--sk-on:#fff;--ink:#15251d;--ink2:#2c3f34;--muted:#5d6e64;--muted2:#8a9890;--line:#dde6e0;--line2:#c8d5cd;--bg:#f3f7f4;--card:var(--raise);--soft:#edf5f0;
 --accent:#247756;--accent-d:#1b5c43;--accent-soft:#e1f2e9;--accent-line:#9fcdb6;
 --amber:#85580a;--amber-soft:#fff4d6;--amber-line:#e3c26a;--bad:#a8322b;--bad-soft:#fdecea;--bad-line:#e1a39d;
 --info:#2b5d88;--info-soft:#e7f0f8;--info-line:#a9c6de;
@@ -44,17 +40,17 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .wrap{max-width:1100px;margin:0 auto;padding:16px 16px 40px}
 .wrap.has-bar{padding-bottom:104px}
 /* الهيدر */
-.hero{position:relative;overflow:hidden;border-radius:24px;padding:22px 22px 18px;color:#fff;background:linear-gradient(135deg,#17513c 0%,#247756 62%,#2f8d68 100%);box-shadow:var(--shadow)}
+.hero{position:relative;overflow:hidden;border-radius:24px;padding:18px 20px 16px;color:#fff;background:linear-gradient(135deg,#17513c 0%,#247756 62%,#2f8d68 100%);box-shadow:var(--shadow)}
 .hero::after{content:"";position:absolute;inset:auto auto -70px -50px;width:230px;height:230px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.14),transparent 68%);pointer-events:none}
 .hero-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .brand{font:600 12px/1 system-ui,sans-serif;letter-spacing:.28em;opacity:.78}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px 5px 14px;border-radius:999px;font-size:13px;font-weight:700;line-height:1.5;border:1px solid transparent}
-.hero .badge{background:#fff;color:var(--ink)}
+.hero .badge{background:#fff;color:#15251d}
 .badge[data-tone=ok]{color:var(--accent-d);background:var(--accent-soft);border-color:var(--accent-line)}
 .badge[data-tone=wait]{color:var(--amber);background:var(--amber-soft);border-color:var(--amber-line)}
 .badge[data-tone=bad]{color:var(--bad);background:var(--bad-soft);border-color:var(--bad-line)}
 .badge[data-tone=info]{color:var(--info);background:var(--info-soft);border-color:var(--info-line)}
-.badge[data-tone=mute]{color:var(--muted);background:#eef2ef;border-color:var(--line2)}
+.badge[data-tone=mute]{color:var(--muted);background:var(--chip-mute);border-color:var(--line2)}
 .hero h1{margin:0 0 4px;font-size:clamp(21px,3.6vw,30px);line-height:1.4;letter-spacing:-.01em;font-weight:700}
 .hero .who{margin:0;font-size:15px;opacity:.92}
 .meta{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0;padding:0;list-style:none}
@@ -128,7 +124,7 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .m .warn{display:flex;gap:6px;align-items:flex-start;margin-top:4px;padding:5px 9px;border-radius:10px;background:var(--amber-soft);border:1px solid var(--amber-line);font-size:12.5px;color:var(--amber);line-height:1.5}
 /* الجدول الأسبوعي */
 .tools{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin-bottom:12px}
-.seg{display:inline-flex;padding:4px;gap:4px;border-radius:15px;background:#e8efea;border:1px solid var(--line)}
+.seg{display:inline-flex;padding:4px;gap:4px;border-radius:15px;background:var(--seg);border:1px solid var(--line)}
 .seg button{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:11px;padding:8px 15px;background:transparent;color:var(--muted);font-weight:600;font-size:14.5px;min-height:40px;transition:background .16s,color .16s,box-shadow .16s}
 .seg button[aria-pressed=true]{background:var(--card);color:var(--accent-d);box-shadow:0 1px 3px rgba(22,57,40,.16)}
 .seg.sm button{padding:6px 11px;min-height:36px;font-size:13.5px}
@@ -136,11 +132,11 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
 .chk:focus-within{box-shadow:var(--ring);border-color:var(--accent)}
 .ttcard{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
-.tt-sum{display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);background:linear-gradient(#fbfdfc,#f6faf7);font-size:13.5px;color:var(--ink2)}
-.tt-sum .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line2);background:#fff;font-weight:600}
+.tt-sum{display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--tt-sum);font-size:13.5px;color:var(--ink2)}
+.tt-sum .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line2);background:var(--raise);font-weight:600}
 .pill[data-st=proposed]{color:var(--accent-d);background:var(--accent-soft);border-color:var(--accent-line)}
 .pill[data-st=modified]{color:var(--amber);background:var(--amber-soft);border-color:var(--amber-line)}
-.pill[data-st=out]{color:var(--bad);background:#fff;border:1px dashed var(--bad-line)}
+.pill[data-st=out]{color:var(--bad);background:var(--raise);border:1px dashed var(--bad-line)}
 .tt-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .tt{min-width:580px;padding:10px 10px 12px}
 .tt-row{display:grid;grid-template-columns:50px repeat(5,minmax(0,1fr));gap:0 6px}
@@ -156,14 +152,14 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .ev .n{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ev .t{font-size:11.5px;color:var(--ink2);white-space:nowrap}
 .ev .p{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ev .tag{display:inline-flex;align-items:center;gap:3px;align-self:flex-start;font-size:10.5px;font-weight:700;line-height:1.35;padding:0 6px;border-radius:999px;background:#fff;border:1px solid currentColor;white-space:nowrap}
+.ev .tag{display:inline-flex;align-items:center;gap:3px;align-self:flex-start;font-size:10.5px;font-weight:700;line-height:1.35;padding:0 6px;border-radius:999px;background:var(--raise);border:1px solid currentColor;white-space:nowrap}
 .ev .tag .i{width:1em;height:1em}
 .ev[data-st=current]{background:#eef3f0;border-color:#c1cfc6;border-inline-start-color:#82988b}
 .ev[data-st=proposed]{background:var(--accent-soft);border-color:var(--accent);border-inline-start-width:5px;color:#0f3d2b}
 .ev[data-st=proposed] .tag{color:var(--accent-d)}
 .ev[data-st=modified]{background:var(--amber-soft);border:2px solid var(--amber-line);border-inline-start:5px double #b57a10;color:#4f3500}
 .ev[data-st=modified] .tag{color:var(--amber)}
-.ev[data-st=out]{background:repeating-linear-gradient(135deg,#fff,#fff 6px,#fbeeed 6px,#fbeeed 12px);border:1.5px dashed var(--bad-line);border-inline-start-width:1.5px;color:#7c3a35;opacity:.82}
+.ev[data-st=out]{background:repeating-linear-gradient(135deg,var(--raise),var(--raise) 6px,#fbeeed 6px,#fbeeed 12px);border:1.5px dashed var(--bad-line);border-inline-start-width:1.5px;color:#7c3a35;opacity:.82}
 .ev[data-st=out] .n{text-decoration:line-through;text-decoration-thickness:1.5px}
 .ev[data-st=out] .tag{color:var(--bad)}
 .ev[data-compact="1"] .n{white-space:normal;font-size:11.5px;line-height:1.25}
@@ -182,11 +178,11 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .legend i[data-st=current]{background:#eef3f0;border-inline-start:4px solid #82988b}
 .legend i[data-st=proposed]{background:var(--accent-soft);border:1px solid var(--accent);border-inline-start-width:4px}
 .legend i[data-st=modified]{background:var(--amber-soft);border:2px solid var(--amber-line);border-inline-start:4px double #b57a10}
-.legend i[data-st=out]{background:repeating-linear-gradient(135deg,#fff,#fff 3px,#fbeeed 3px,#fbeeed 6px);border:1.5px dashed var(--bad-line)}
+.legend i[data-st=out]{background:repeating-linear-gradient(135deg,var(--raise),var(--raise) 3px,#fbeeed 3px,#fbeeed 6px);border:1.5px dashed var(--bad-line)}
 .empty{padding:30px 16px;text-align:center;color:var(--muted);font-size:14.5px}
 /* قائمة اليوم */
 .days{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px 10px 4px}
-.days button{display:flex;flex-direction:column;align-items:center;gap:1px;border:1px solid var(--line);border-radius:13px;background:#fff;padding:7px 2px;font-size:13.5px;font-weight:600;color:var(--muted);min-width:0}
+.days button{display:flex;flex-direction:column;align-items:center;gap:1px;border:1px solid var(--line);border-radius:13px;background:var(--raise);padding:7px 2px;font-size:13.5px;font-weight:600;color:var(--muted);min-width:0}
 .days button small{font-size:11px;font-weight:500;color:var(--muted2)}
 .days button[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-d)}
 .days button[aria-pressed=true] small{color:var(--accent-d)}
@@ -203,7 +199,7 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .dlg header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
 .dlg h3{margin:0;font-size:19px;line-height:1.45}
 .dlg h3 small{display:block;font-size:13.5px;font-weight:500;color:var(--muted)}
-.x{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:#fff}
+.x{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--raise)}
 .dlg .facts{grid-template-columns:1fr 1fr;margin:12px 0}
 @media (min-width:700px){.ov{align-items:center}.dlg{border-radius:22px}}
 /* الرد */
@@ -216,9 +212,9 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .rrow[data-c=changes]{border-color:var(--amber-line);background:var(--amber-soft)}
 .rrow b{display:block;font-size:15px;line-height:1.5}.rrow small{display:block;color:var(--muted);font-size:12.5px}
 .pick{display:inline-flex;gap:6px}
-.pick button,.big button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1.5px solid var(--line2);border-radius:12px;background:#fff;padding:8px 14px;min-height:44px;font-weight:600;font-size:14.5px;color:var(--ink2);transition:background .16s,border-color .16s,color .16s}
-.pick button[data-v=approve][aria-pressed=true],.big button[data-v=approve][aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
-.pick button[data-v=changes][aria-pressed=true],.big button[data-v=changes][aria-pressed=true]{background:#b57a10;border-color:#b57a10;color:#fff}
+.pick button,.big button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1.5px solid var(--line2);border-radius:12px;background:var(--raise);padding:8px 14px;min-height:44px;font-weight:600;font-size:14.5px;color:var(--ink2);transition:background .16s,border-color .16s,color .16s}
+.pick button[data-v=approve][aria-pressed=true],.big button[data-v=approve][aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on)}
+.pick button[data-v=changes][aria-pressed=true],.big button[data-v=changes][aria-pressed=true]{background:#b57a10;border-color:#b57a10;color:var(--on)}
 .big{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
 .big button{min-height:58px;font-size:16px;border-radius:15px}
 .quick{margin:0 0 12px}
@@ -229,9 +225,9 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .fld>span,.fld>legend{font-size:13.5px;font-weight:600;color:var(--ink2)}
 fieldset.fld{border:0;margin:0;padding:0;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
-.chips button{border:1.5px solid var(--line2);background:#fff;border-radius:999px;padding:7px 15px;min-height:42px;font-size:14.5px;color:var(--ink2)}
-.chips button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
-textarea,input[type=time],input.civil{width:100%;padding:11px 13px;border:1.5px solid var(--line2);border-radius:13px;background:#fff;min-height:46px}
+.chips button{border:1.5px solid var(--line2);background:var(--raise);border-radius:999px;padding:7px 15px;min-height:42px;font-size:14.5px;color:var(--ink2)}
+.chips button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--on);font-weight:600}
+textarea,input[type=time],input.civil{width:100%;padding:11px 13px;border:1.5px solid var(--line2);border-radius:13px;background:var(--raise);min-height:46px}
 textarea{min-height:92px;resize:vertical;line-height:1.7}
 input[type=time]{max-width:180px;direction:ltr;text-align:center}
 .cnt{font-size:12px;color:var(--muted2);text-align:end}
@@ -241,10 +237,10 @@ input.civil{direction:ltr;text-align:center;letter-spacing:.14em;font-size:17px;
 .sign p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.7}
 .err{display:flex;gap:9px;align-items:flex-start;margin-top:14px;padding:12px 14px;border-radius:14px;background:var(--bad-soft);border:1px solid var(--bad-line);color:var(--bad);font-size:14.5px}
 .err .btn{margin-top:8px}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1.5px solid var(--accent);border-radius:14px;background:var(--accent);color:#fff;padding:11px 20px;min-height:48px;font-weight:700;font-size:15.5px;text-decoration:none;transition:background .16s,opacity .16s}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1.5px solid var(--accent);border-radius:14px;background:var(--accent);color:var(--on);padding:11px 20px;min-height:48px;font-weight:700;font-size:15.5px;text-decoration:none;transition:background .16s,opacity .16s}
 .btn:hover{background:var(--accent-d)}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
-.btn.ghost{background:#fff;color:var(--accent-d)}
+.btn.ghost{background:var(--raise);color:var(--accent-d)}
 .btn.ghost:hover{background:var(--accent-soft)}
 .btn.full{width:100%}
 .sendrow{margin-top:14px;display:grid;gap:8px}
@@ -256,7 +252,7 @@ details.hist summary::-webkit-details-marker{display:none}
 details.hist[open] summary{border-bottom:1px solid var(--line);border-radius:16px 16px 0 0}
 .tl{list-style:none;margin:0;padding:12px 15px 14px;display:grid;gap:12px}
 .tl li{position:relative;padding-inline-start:20px;font-size:14px;line-height:1.7}
-.tl li::before{content:"";position:absolute;inset-inline-start:2px;top:9px;width:9px;height:9px;border-radius:50%;background:var(--accent-line);border:2px solid #fff;box-shadow:0 0 0 1px var(--accent-line)}
+.tl li::before{content:"";position:absolute;inset-inline-start:2px;top:9px;width:9px;height:9px;border-radius:50%;background:var(--accent-line);border:2px solid var(--card);box-shadow:0 0 0 1px var(--accent-line)}
 .tl li b{font-weight:700}.tl li small{display:block;color:var(--muted);font-size:12.5px}
 .tl li q{display:block;margin-top:2px;color:var(--ink2);quotes:"«" "»"}
 /* شريط الرد */
@@ -288,11 +284,54 @@ noscript{display:block;padding:30px;text-align:center}
 }
 @media (max-width:380px){.impact{grid-template-columns:1fr}.bar-in{gap:8px}.bar .btn{padding:9px 13px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
-@media print{body{background:#fff}.bar,.tools,.btn,.seg,.days,.form,.sign,.sendrow,.ov{display:none!important}.wrap{max-width:none;padding:0}.card,.op,.m,.msg,.ttcard,.hero{box-shadow:none;break-inside:avoid}.hero{color:#000;background:#fff;border:1px solid #999}.hero .badge{border:1px solid #999}.meta li{background:#fff;border-color:#bbb}.tt-scroll{overflow:visible}.tt{min-width:0}}
+@media print{body{background:#fff}.bar,.tools,.btn,.seg,.days,.form,.sign,.sendrow,.ov{display:none!important}.wrap{max-width:none;padding:0}.card,.op,.m,.msg,.ttcard,.hero{box-shadow:none;break-inside:avoid}.hero{color:#000;background:#fff;border:1px solid #999}.hero .badge{border:1px solid #999}.meta li{background:var(--raise);border-color:#bbb}.tt-scroll{overflow:visible}.tt{min-width:0}}
+
+/* طيّات: الجدول والأثر بعد الرد، مختصران حتى يُفتحا */
+.fold{margin-top:16px}
+.fold-h{display:flex;align-items:center;gap:12px;inline-size:100%;padding:13px 15px;border:1px solid var(--line);border-radius:20px;background:var(--card);box-shadow:var(--shadow);text-align:start;cursor:pointer;min-block-size:64px}
+.fold-h .ic{flex:none;display:grid;place-items:center;inline-size:40px;block-size:40px;border-radius:13px;background:var(--soft);color:var(--accent)}
+.fold-h .ic svg{inline-size:20px;block-size:20px}
+.fold-h .tx{flex:1;min-inline-size:0}
+.fold-h .tx b{display:block;font-size:16px;line-height:1.4}
+.fold-h .tx small{display:block;font-size:12.5px;color:var(--muted);line-height:1.5}
+.fold-h .chev{flex:none;color:var(--muted2);transition:transform .2s;display:grid}
+.fold[data-open="1"] .fold-h .chev{transform:rotate(180deg)}
+.fold-b{margin-top:12px}
+.fold-b:empty{display:none}
+.quickbig{margin:0 0 14px}
+.quickbig .btn{inline-size:100%;min-block-size:56px;font-size:17px;border-radius:18px}
+.sk-sheet .hint{margin:0}
+@media (max-width:639px){.meta li[data-s="1"]{display:none}.hero .badge{font-size:12.5px}}
+@media (prefers-color-scheme:dark){
+:root{--raise:#1d2b23;--on:#08140e;--seg:#1b2a22;--tt-bg:#16211b;--tt-sum:#1b2a22;--chip-mute:#1b2a22;--sk-on:#08140e;--sk-toast-bg:#e6efe9;--sk-toast-fg:#0e1612;
+--ink:#e6efe9;--ink2:#cfdcd4;--muted:#a2b2a9;--muted2:#7d8d84;--line:#26362d;--line2:#35483d;--bg:#0e1612;--card:#16211b;--soft:#1b2a22;
+--accent:#4fbf8c;--accent-d:#86dcb1;--accent-soft:#17372a;--accent-line:#2f6a50;--amber:#e8b64d;--amber-soft:#332a10;--amber-line:#6a5320;
+--bad:#f08c84;--bad-soft:#3a1c1a;--bad-line:#7a3a35;--info:#8fc1ec;--info-soft:#16283a;--info-line:#2f5273;--shadow:0 12px 32px rgba(0,0,0,.4);--ring:0 0 0 3px rgba(79,191,140,.35);color-scheme:dark}
+body{background:radial-gradient(circle at 90% -5%,rgba(79,191,140,.08),transparent 30%),var(--bg)}
+.note[data-tone=ok] p{color:#a8d5be}.note[data-tone=wait] p{color:#e5cf8f}.note[data-tone=bad] p{color:#f3b9b4}.note[data-tone=info] p{color:#b5d3ee}
+.kind[data-k=replace]{color:#c9b3f0;background:#241c33;border-color:#4a3a6b}
+.seg button[aria-pressed=true]{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.tt-col{background-color:var(--tt-bg);background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(rgba(53,72,61,.5) 1px,transparent 1px)}
+.ev{background:#1f2e26;color:var(--ink)}
+.ev[data-st=current]{background:#1f2e26;border-color:#3b5245;border-inline-start-color:#6c8878}
+.ev[data-st=proposed]{background:var(--accent-soft);border-color:var(--accent);color:#bfeed7}
+.ev[data-st=modified]{background:var(--amber-soft);border-color:var(--amber-line);border-inline-start-color:var(--amber);color:#f4dc9b}
+.ev[data-st=out]{background:repeating-linear-gradient(135deg,#16211b,#16211b 6px,#2a1c1b 6px,#2a1c1b 12px);color:#f3b9b4}
+.legend i[data-st=current]{background:#1f2e26;border-inline-start-color:#6c8878}
+.legend i[data-st=modified]{border-color:var(--amber-line);border-inline-start-color:var(--amber)}
+.legend i[data-st=out]{background:repeating-linear-gradient(135deg,#16211b,#16211b 3px,#2a1c1b 3px,#2a1c1b 6px)}
+.rrow{background:var(--soft)}
+.form{background:#241f10;border-color:var(--amber-line)}
+.pick button[data-v=changes][aria-pressed=true],.big button[data-v=changes][aria-pressed=true]{background:var(--amber);border-color:var(--amber);color:var(--on)}
+.bar{background:rgba(22,33,27,.94);box-shadow:0 -8px 28px rgba(0,0,0,.4)}
+.sk{background:linear-gradient(90deg,#1b2a22 25%,#223329 50%,#1b2a22 75%);background-size:200% 100%}
+.m .dir[data-d=up]{background:var(--info-soft)}
+}
 `;
 
 const PAGE_SCRIPT = String.raw`
 (function(){
+__KIT__
 var TOKEN=__TOKEN__,PID=__PID__,host=document.getElementById("host");
 var API="/api/public/request/"+encodeURIComponent(TOKEN)+"/proposals/"+encodeURIComponent(PID);
 var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
@@ -301,11 +340,10 @@ var KIND_IC={create:"plus",assign:"inflow",edit:"pen",replace:"swap"};
 var REASONS=[["time","الوقت"],["place","المكان"],["days","الأيام"],["load","النصاب"],["other","سبب آخر"]];
 var REASON_TXT={time:"الوقت",place:"المكان",days:"الأيام",load:"النصاب",other:"سبب آخر"};
 var D=null,META={term:"",who:""},LOADING=true,LOADERR=null,LOADCODE=0;
-var UI={mode:"after",view:window.innerWidth<640?"agenda":"grid",ghosts:true,day:"",choice:{},linked:"",reason:"",note:"",start:"",sdays:[],civil:"",editing:false,sending:false,err:"",errCode:"",open:null,lastFocus:null,barHide:false};
+var UI={mode:"after",view:window.innerWidth<640?"agenda":"grid",ghosts:true,day:"",choice:{},linked:"",reason:"",note:"",start:"",sdays:[],fold:{tt:false,im:false},editing:false,sending:false,err:"",errCode:"",open:null,lastFocus:null,barHide:false};
 var CRED={one:"ساعة معتمدة",two:"ساعتان معتمدتان",few:"ساعات معتمدة",many:"ساعة معتمدة"};
 ${ARABIC_COUNT_SCRIPT}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
-function digitsOf(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\D/g,"")}
 function mins(t){var p=String(t||"0:0").split(":");return (+p[0]||0)*60+(+p[1]||0)}
 function pad(n){return (n<10?"0":"")+n}
 function clk(t){var p=String(t||"").split(":");return p.length<2?String(t||""):pad(+p[0]||0)+":"+pad(+p[1]||0)}
@@ -384,7 +422,7 @@ function heroHtml(){var p=D,si=statusInfo(p),h='';
   h+='<li'+(urgent(p.expiresAt)?' data-urgent="1"':'')+'>'+ic("clock")+'<span>آخر موعد للرد: <b>'+esc(dateLong(p.expiresAt))+'</b>'+(u?' · '+esc(u):'')+'</span></li>'}
  else if(p.expiresAt&&p.status==="expired")h+='<li>'+ic("clock")+'<span>انتهت المهلة في <b>'+esc(dateLong(p.expiresAt))+'</b></span></li>';
  if(p.version>1)h+='<li>'+ic("refresh")+'<span><b>النسخة '+esc(p.version)+'</b> · بعد مراجعة القسم</span></li>';
- if(p.sentAt)h+='<li>'+ic("send")+'<span>أُرسل '+esc(dateShort(p.sentAt))+(p.sentByName?' · '+esc(p.sentByName):'')+'</span></li>';
+ if(p.sentAt)h+='<li data-s="1">'+ic("send")+'<span>أُرسل '+esc(dateShort(p.sentAt))+(p.sentByName?' · '+esc(p.sentByName):'')+'</span></li>';
  h+='</ul>';return h}
 function noteHtml(tone,icon,title,body,extra){return '<div class="note" data-tone="'+tone+'" role="'+(tone==="bad"?"alert":"status")+'">'+ic(icon)+'<div><b>'+esc(title)+'</b>'+(body?'<p>'+esc(body)+'</p>':'')+(extra||'')+'</div></div>'}
 function alertsHtml(){var p=D,h='',g=p.gate||{};
@@ -554,16 +592,14 @@ function respHtml(){var p=D,g=p.gate||{},h='';
  h+='<p class="lead">'+(linked?"هذا ترتيبٌ واحد متكامل: توافق على المجموعة كاملة أو تطلب تعديلها.":"اختر ردّك على كل مادة. ما تتركه دون اختيار يبقى بانتظار ردّك.")+' الموافقة لا تغيّر جدولك قبل أن يثبّت القسم.</p>';
  if(linked){h+='<div class="note" data-tone="info" style="margin:0 0 14px">'+ic("info")+'<div><b>ترتيبٌ واحد لا يتجزّأ</b><p>يوافق الأستاذ على المجموعة كاملة أو يطلب تعديلها. لا موافقةَ على بعض المواد دون بعض.</p></div></div>'+
   '<div class="big" role="group" aria-label="ردّك على المقترح كاملاً"><button type="button" data-act="linked" data-v="approve" data-k="l-ok" aria-pressed="'+(UI.linked==="approve")+'">'+ic("check")+'أوافق على المقترح</button><button type="button" data-act="linked" data-v="changes" data-k="l-ch" aria-pressed="'+(UI.linked==="changes")+'">'+ic("pen")+'أحتاج تعديلاً</button></div>'}
- else{h+='<div class="quick"><button type="button" class="link" data-act="all-ok" data-k="all-ok">أوافق على كل المواد</button></div><div class="rows">'+(p.ops||[]).map(function(o,i){var c=UI.choice[o.id]||"";
+ else{h+='<div class="quickbig"><button type="button" class="btn" data-act="all-ok" data-k="all-ok">'+ic("check")+'أوافق على كل المواد</button></div><div class="rows">'+(p.ops||[]).map(function(o,i){var c=UI.choice[o.id]||"";
   return '<div class="rrow" data-c="'+c+'" role="group" aria-label="ردّك على '+esc(opName(o))+'"><div><b>'+esc(o.target.courseName||o.target.courseCode)+(o.target.SCode?' · شعبة '+esc(o.target.SCode):'')+'</b><small>'+esc(KIND[o.kind])+' · '+esc(daysText(o.target.days))+' · '+rngHtml(o.target.start,o.target.end)+'</small></div>'+
   '<div class="pick"><button type="button" data-act="choice" data-op="'+esc(o.id)+'" data-v="approve" data-k="c-'+i+'-a" aria-pressed="'+(c==="approve")+'">'+ic("check")+'أوافق</button><button type="button" data-act="choice" data-op="'+esc(o.id)+'" data-v="changes" data-k="c-'+i+'-c" aria-pressed="'+(c==="changes")+'">'+ic("pen")+'أحتاج تعديلاً</button></div></div>'}).join("")+'</div>'}
  if(wantsChange()){h+='<div class="form"><h3>ما الذي تحتاج تعديله؟</h3>'+
   '<fieldset class="fld"><legend>السبب الرئيسي</legend><div class="chips">'+REASONS.map(function(r){return '<button type="button" data-act="reason" data-v="'+r[0]+'" data-k="r-'+r[0]+'" aria-pressed="'+(UI.reason===r[0])+'">'+r[1]+'</button>'}).join("")+'</div></fieldset>'+
   '<label class="fld"><span>ملاحظتك للقسم (اختياري إن اخترت سبباً)</span><textarea data-k="note" data-input="note" maxlength="600" placeholder="مثال: لديّ التزامٌ في هذا الوقت، وأفضّل ما بعد الظهر.">'+esc(UI.note)+'</textarea><span class="cnt" data-cnt="1">'+esc(UI.note.length)+' / 600</span></label>'+
-  '<label class="fld"><span>وقت بداية تقترحه (اختياري)</span><input type="time" data-k="start" data-input="start" min="08:00" max="19:00" value="'+esc(UI.start)+'"></label>'+
+  '<label class="fld"><span>وقت بداية تقترحه (اختياري)</span>'+SK.tf('data-k="start" data-start="1" aria-label="وقت بداية تقترحه"',UI.start,"08:00","19:00")+'</label>'+
   '<fieldset class="fld"><legend>أيام تقترحها (اختياري)</legend><div class="chips">'+DAYS.map(function(d){return '<button type="button" data-act="sday" data-v="'+d[0]+'" data-k="sd-'+d[0]+'" aria-pressed="'+(UI.sdays.indexOf(d[0])>=0)+'">'+d[1]+'</button>'}).join("")+'</div></fieldset></div>'}
- h+='<div class="sign"><label for="civil">رقمك المدني — توقيعك على هذا الرد<input class="civil" id="civil" data-k="civil" data-input="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا" value="'+esc(UI.civil)+'"></label>'+
-  '<p>بإدخال رقمك المدني والضغط على زر الإرسال فأنت توقّع هذا الرد باسمك. لا يُحفظ الرقم في هذا المتصفح.</p></div>';
  if(UI.err)h+='<div class="err" role="alert" id="err">'+ic("alert")+'<div>'+esc(UI.err)+((UI.errCode==="stale-version"||UI.errCode==="closed"||UI.errCode==="busy")?'<br><button type="button" class="btn ghost" data-act="reload" data-k="reload">'+ic("refresh")+(UI.errCode==="stale-version"?"افتح النسخة الأحدث":"حدّث الصفحة")+'</button>':'')+'</div></div>';
  var label=!anyChoice()?"اختر ردّك أولاً":(wantsChange()?"أرسل طلب التعديل":"أرسل موافقتي");
  h+='<div class="sendrow"><button type="button" class="btn full" data-act="send" data-k="send"'+((UI.sending||!anyChoice())?' disabled':'')+'>'+ic("send")+(UI.sending?"يُرسل…":label)+'</button>'+
@@ -583,19 +619,38 @@ function barHtml(){var g=D.gate||{};if(D.committedAt||!g.open)return "";
 /* ── الرسم ───────────────────────────────────────────────────────────────── */
 function shell(){host.innerHTML='<div class="wrap" id="wrap"><header class="hero" id="r-hero"></header><div id="r-alert"></div><section class="msg" id="r-msg" hidden></section>'+
  '<section class="sec" aria-labelledby="t-ops"><div class="sec-h"><div><h2 id="t-ops">ماذا يقترح القسم</h2><p>كل مادة بما يتغيّر فيها، لا يُنفَّذ شيءٌ منها قبل ردّك وتثبيت القسم.</p></div></div><div id="r-ops"></div></section>'+
- '<section class="sec" aria-labelledby="t-tt"><div class="sec-h"><div><h2 id="t-tt">جدولك الأسبوعي</h2><p>قارن بين جدولك الحالي وما بعد المقترح. اضغط أي موعد لتفاصيله.</p></div></div><div id="r-tt"></div></section>'+
- '<section class="sec" id="s-impact" aria-labelledby="t-im"><div class="sec-h"><div><h2 id="t-im">أثر المقترح عليك</h2><p>الحاليُّ مقابل ما بعد المقترح. أرقامٌ يحسبها النظام من جدولك.</p></div></div><div id="r-impact"></div></section>'+
- '<div class="sec" id="r-resp"></div></div><div class="bar" id="bar" data-hide="1" hidden></div><div id="dlg"></div><div class="sr" id="live" aria-live="polite"></div>'}
+ '<div class="sec" id="r-resp"></div>'+
+ '<section class="fold" id="s-tt"><button type="button" class="fold-h" id="f-tt" data-act="fold" data-v="tt" aria-controls="r-tt"></button><div class="fold-b" id="r-tt"></div></section>'+
+ '<section class="fold" id="s-impact"><button type="button" class="fold-h" id="f-im" data-act="fold" data-v="im" aria-controls="r-impact"></button><div class="fold-b" id="r-impact"></div></section></div>'+
+ '<div class="bar" id="bar" data-hide="1" hidden></div><div id="dlg"></div><div class="sr" id="live" aria-live="polite"></div>'}
+/* ملخّص الجدول والأثر في سطرٍ واحد، فلا يُفتح إلا ما يريد الأستاذ قراءته. */
+function ttSummaryText(){var S=D.schedule;if(!S)return "";if(D.committedAt)return "جدولك بعد أن ثبّت القسم المقترح";
+ var l=S.after.items.slice().concat(S.after.ghosts||[]),c={proposed:0,modified:0,out:0};l.forEach(function(it){if(c[it.state]!=null)c[it.state]++});
+ var t=[];if(c.proposed)t.push(countOf(c.proposed,AR.appointment)+" مقترح");if(c.modified)t.push(countOf(c.modified,AR.appointment)+" معدّل");if(c.out)t.push(countOf(c.out,AR.appointment)+" يخرج");
+ return t.length?t.join(" · "):"لا يغيّر مواعيدك الحالية"}
+function impactSummaryText(){var S=D.schedule;if(!S)return "";var b=S.before.metrics,a=S.after.metrics,t=[];
+ if(a.loadUnits!=null&&b.loadUnits!=null&&a.loadUnits!==b.loadUnits)t.push("النصاب: "+b.loadUnits+" ← "+a.loadUnits);
+ if(a.sections!=null&&b.sections!=null&&a.sections!==b.sections)t.push("الشعب: "+b.sections+" ← "+a.sections);
+ if(a.attendanceDays!=null&&b.attendanceDays!=null&&a.attendanceDays!==b.attendanceDays)t.push("أيام الحضور: "+b.attendanceDays+" ← "+a.attendanceDays);
+ return t.length?t.join(" · "):"الحاليُّ مقابل ما بعد المقترح"}
+function foldHead(id,icon,title,sub,open){var el=document.getElementById(id);if(!el)return;
+ el.setAttribute("aria-expanded",open?"true":"false");el.parentNode.setAttribute("data-open",open?"1":"0");
+ el.innerHTML='<span class="ic">'+ic(icon)+'</span><span class="tx"><b>'+esc(title)+'</b><small>'+esc(sub)+'</small></span><span class="chev">'+ic("down")+'</span>'}
+function paintFolds(){if(!D||!D.schedule){var a=document.getElementById("s-tt"),b=document.getElementById("s-impact");if(a)a.hidden=true;if(b)b.hidden=true;return}
+ var done=!!D.committedAt;if(done)UI.fold.tt=true;
+ foldHead("f-tt","cal",done?"جدولك الآن":"جدولك الأسبوعي",ttSummaryText(),UI.fold.tt);
+ setRegion("r-tt",UI.fold.tt?ttHtml(false):"");
+ var si=document.getElementById("s-impact");if(si)si.hidden=done;
+ if(!done){foldHead("f-im","chart","أثر المقترح عليك",impactSummaryText(),UI.fold.im);setRegion("r-impact",UI.fold.im?impactHtml():"")}}
 function paintAll(swap){
  if(LOADING){host.innerHTML='<div class="wrap" aria-busy="true"><div class="sk" style="height:170px"></div><div class="sk" style="height:90px;margin-top:14px"></div><div class="sk" style="height:300px;margin-top:14px"></div><span class="sr">يفتح مقترحك…</span></div>';return}
  if(LOADERR){host.innerHTML='<div class="card state" role="alert"><div class="big-i">'+ic(LOADCODE===404?"ban":"alert")+'</div><h1>'+esc(LOADCODE===404?"لا يوجد مقترحٌ بهذا المعرّف":"تعذّر فتح المقترح")+'</h1><p>'+esc(LOADERR)+'</p><button type="button" class="btn" data-act="reload" data-k="reload">'+ic("refresh")+'حاول مرةً أخرى</button></div>';return}
  if(!document.getElementById("r-hero"))shell();
  setRegion("r-hero",heroHtml());setRegion("r-alert",alertsHtml());
  var m=document.getElementById("r-msg");m.hidden=!D.message;setRegion("r-msg",msgHtml());
- setRegion("r-ops",opsHtml());paintTT(swap);setRegion("r-impact",impactHtml());paintResp();paintBar();
- var si=document.getElementById("s-impact");if(si)si.hidden=!!D.committedAt;var tt=document.getElementById("t-tt");if(tt)tt.textContent=D.committedAt?"جدولك الآن":"جدولك الأسبوعي";
+ setRegion("r-ops",opsHtml());paintFolds();paintResp();paintBar();
  document.title="مقترحك الدراسي — "+(D.title||"")}
-function paintTT(swap){setRegion("r-tt",ttHtml(swap))}
+function paintTT(swap){if(UI.fold.tt||D.committedAt)setRegion("r-tt",ttHtml(swap))}
 function paintResp(){setRegion("r-resp",respHtml())}
 function paintBar(){var b=document.getElementById("bar"),w=document.getElementById("wrap");if(!b)return;var h=barHtml();b.hidden=!h;b.innerHTML=h;w.className="wrap"+(h?" has-bar":"");syncBar()}
 function syncBar(){var b=document.getElementById("bar"),c=document.getElementById("respcard");if(!b||b.hidden)return;
@@ -613,29 +668,35 @@ function load(keep){if(!keep){LOADING=true;LOADERR=null;paintAll()}
  .catch(function(){LOADING=false;LOADERR="تعذّر الاتصال بالخادم. تحقّق من الإنترنت وحاول مجدداً.";LOADCODE=0;D=null;paintAll()})}
 
 /* ── الإرسال ─────────────────────────────────────────────────────────────── */
-function payload(){var civil=digitsOf(UI.civil),b={civil:civil,version:D.version};
+function payload(civil){var b={civil:civil,version:D.version};
  if(D.responseMode==="linked")b.decision=UI.linked;
  else{b.decisions=[];(D.ops||[]).forEach(function(o){if(UI.choice[o.id])b.decisions.push({opId:o.id,decision:UI.choice[o.id]})})}
  if(wantsChange()){b.reason=UI.reason||undefined;b.note=UI.note.trim()||undefined;b.suggestedStart=UI.start||undefined;b.suggestedDays=UI.sdays.length?UI.sdays.slice():undefined}
  return b}
 function fail(msg,code,focusId){UI.err=msg;UI.errCode=code||"";paintResp();var e=document.getElementById("err");if(e&&e.scrollIntoView)e.scrollIntoView({block:"center",behavior:"auto"});
  if(focusId){var f=document.getElementById(focusId);if(f)f.focus()}}
+/* التوقيعُ في الورقة السفلية المشتركة: تقول ما سيُوقَّع عليه، ولا يُحفظ الرقمُ في UI ولا في المتصفح. */
+function signWhat(){var ch=wantsChange(),h='<div>'+SK.gi(ch?"pen":"check")+'<span>'+(ch?"تطلب تعديلاً على المقترح":"توافق على المقترح")+'</span></div>';
+ if(D.responseMode!=="linked"){var li=(D.ops||[]).filter(function(o){return UI.choice[o.id]}).map(function(o){return '<li><span><b>'+esc(o.target.courseName||o.target.courseCode)+'</b> — '+(UI.choice[o.id]==="approve"?"أوافق":"أحتاج تعديلاً")+'</span></li>'}).join("");if(li)h+='<ul class="sk-list">'+li+'</ul>'}
+ return h}
 function send(){if(UI.sending||!D)return;UI.err="";UI.errCode="";
  if(!anyChoice()){fail("اختر ردّك أولاً: أوافق أو أحتاج تعديلاً.");return}
  if(wantsChange()&&!UI.reason&&!UI.note.trim()){fail("اختر سبباً مختصراً أو اكتب ملاحظةً عمّا تحتاج تعديله.");return}
- if(digitsOf(UI.civil).length!==12){fail("اكتب رقمك المدني كاملاً — 12 رقمًا — فهو توقيعك على هذا الرد.","","civil");return}
- var body=payload();UI.sending=true;paintResp();
+ SK.sign({ok:wantsChange()?"سجّلنا طلب التعديل · سيراجعه القسم":"تم تسجيل موافقتك · بانتظار تثبيت القسم",
+  hint:"بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الرد باسمك.",what:signWhat(),
+  run:function(civil,done){postRespond(civil,done)}})}
+function postRespond(civil,done){var body=payload(civil);UI.sending=true;
  fetch(API+"/respond",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
  .then(function(r){return r.json().catch(function(){return {}}).then(function(d){return {ok:r.ok,status:r.status,d:d}})})
  .then(function(x){UI.sending=false;
-  if(x.ok&&x.d.proposal){D=x.d.proposal;UI.civil="";UI.editing=false;UI.err="";UI.errCode="";seedFromRecorded();paintAll();
+  if(x.ok&&x.d.proposal){D=x.d.proposal;UI.editing=false;UI.err="";UI.errCode="";seedFromRecorded();paintAll();done(null);
    liveRegion(wantsChangeOf(x.d.proposal)?"سجّلنا طلب التعديل · سيراجعه القسم":"تم تسجيل موافقتك · بانتظار تثبيت القسم");
    var n=document.querySelector('[data-k="recorded"]');if(n){n.setAttribute("tabindex","-1");n.scrollIntoView({block:"center"});n.focus({preventScroll:true})}return}
   var code=(x.d&&x.d.code)||"";
-  if(x.status===409&&code==="stale-version")fail("وصلتك نسخةٌ أحدث من هذا المقترح. أعد فتحه لتراجع الجديد قبل أن تردّ.",code);
-  else if(x.status===409)fail((x.d&&x.d.error)||"لا يمكن الرد الآن.",code||"closed");
-  else fail((x.d&&x.d.error)||(x.status===429?"محاولاتٌ كثيرة. انتظر قليلاً ثم أعد المحاولة.":"تعذّر إرسال ردّك."),"",x.status===403||x.status===400?"civil":"")})
- .catch(function(){UI.sending=false;fail("تعذّر الاتصال. لم يُسجَّل ردّك؛ حاول مجدداً.")})}
+  if(x.status===409&&code==="stale-version"){SK.close();fail("وصلتك نسخةٌ أحدث من هذا المقترح. أعد فتحه لتراجع الجديد قبل أن تردّ.",code)}
+  else if(x.status===409){SK.close();fail((x.d&&x.d.error)||"لا يمكن الرد الآن.",code||"closed")}
+  else done((x.d&&x.d.error)||(x.status===429?"محاولاتٌ كثيرة. انتظر قليلاً ثم أعد المحاولة.":"تعذّر إرسال ردّك."),x.status)})
+ .catch(function(){UI.sending=false;done("تعذّر الاتصال. لم يُسجَّل ردّك؛ حاول مجدداً.")})}
 function wantsChangeOf(p){return ((p.decision||{}).changes||[]).length>0}
 
 /* ── الأحداث: مُفوَّضةٌ على الصفحة فلا تُفقد عند إعادة رسم منطقة ───────────── */
@@ -649,7 +710,8 @@ document.addEventListener("click",function(e){var el=closest(e.target,"[data-act
  if(a==="view"){UI.view=v;paintTT(true);return}
  if(a==="day"){UI.day=v;paintTT(true);return}
  if(a==="choice"){var id=el.getAttribute("data-op");UI.choice[id]=UI.choice[id]===v?"":v;UI.err="";paintResp();return}
- if(a==="all-ok"){(D.ops||[]).forEach(function(o){UI.choice[o.id]="approve"});UI.err="";paintResp();return}
+ if(a==="all-ok"){(D.ops||[]).forEach(function(o){UI.choice[o.id]="approve"});UI.err="";paintResp();send();return}
+ if(a==="fold"){UI.fold[v]=!UI.fold[v];paintFolds();return}
  if(a==="linked"){UI.linked=UI.linked===v?"":v;UI.err="";paintResp();return}
  if(a==="reason"){UI.reason=UI.reason===v?"":v;paintResp();return}
  if(a==="sday"){var i=UI.sdays.indexOf(v);if(i>=0)UI.sdays.splice(i,1);else UI.sdays.push(v);paintResp();return}
@@ -661,9 +723,8 @@ document.addEventListener("click",function(e){var el=closest(e.target,"[data-act
 });
 document.addEventListener("change",function(e){var el=e.target;if(el&&el.getAttribute&&el.getAttribute("data-act")==="ghosts"){UI.ghosts=!!el.checked;paintTT(true)}});
 document.addEventListener("input",function(e){var el=e.target,k=el&&el.getAttribute&&el.getAttribute("data-input");if(!k)return;
- if(k==="note"){UI.note=el.value;var c=document.querySelector("[data-cnt]");if(c)c.textContent="\u2066"+UI.note.length+" / 600\u2069"}
- else if(k==="start")UI.start=el.value;
- else if(k==="civil"){UI.civil=digitsOf(el.value).slice(0,12);if(el.value!==UI.civil)el.value=UI.civil}});
+ if(k==="note"){UI.note=el.value;var c=document.querySelector("[data-cnt]");if(c)c.textContent="\u2066"+UI.note.length+" / 600\u2069"}});
+SK.onTime(function(el,v){if(el.getAttribute("data-start")!=null)UI.start=v});
 document.addEventListener("keydown",function(e){if(!UI.open)return;
  if(e.key==="Escape"){e.preventDefault();closeItem();return}
  if(e.key==="Tab"){var d=document.querySelector(".dlg");if(!d)return;var f=d.querySelectorAll("button");if(!f.length)return;var first=f[0],last=f[f.length-1];
@@ -677,13 +738,14 @@ paintAll();load(true);
 export function studyProposalPage(token: string, proposalId: string, nonce: string, demoHint = ""): string {
   /* القيمُ تدخل السكربت JSON، ويُهرَّب '<' فلا يُغلق وسمٌ مبكّراً ولا يُقرأ ‎<!--‎ تعليقاً. */
   const lit = (v: string) => JSON.stringify(String(v)).replace(/</g, "\\u003c");
-  const script = PAGE_SCRIPT.replace("__TOKEN__", () => lit(token)).replace("__PID__", () => lit(proposalId));
+  const script = PAGE_SCRIPT.replace("__TOKEN__", () => lit(token)).replace("__PID__", () => lit(proposalId))
+    .replace("__KIT__", () => PUBLIC_KIT_SCRIPT);
   return `<!doctype html><html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#247756">
 <title>مقترحك الدراسي — SCHEDULE</title>
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png">
-<style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */${FONT_FACES}${PAGE_CSS}</style></head><body>${demoHint ? `<div style="max-width:1100px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>` : ""}<noscript>تحتاج هذه الصفحة إلى تفعيل جافاسكربت في المتصفح.</noscript><div id="host"></div>
+<style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */${PUBLIC_FONT_FACES}${PAGE_CSS}${PUBLIC_KIT_CSS}</style></head><body>${demoHint ? `<div style="max-width:1100px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>` : ""}<noscript>تحتاج هذه الصفحة إلى تفعيل جافاسكربت في المتصفح.</noscript><div id="host"></div>
 <script nonce="${nonce}">${script}</script></body></html>`;
 }
 

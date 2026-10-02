@@ -36,6 +36,7 @@ import { effectiveStatus as studyProposalStatus, decisionStateOf as studyProposa
 import { studyProposalPage } from "./src/server/studyProposalPage";
 import { PROPOSAL_ALERT_CSS, PROPOSAL_ALERT_SCRIPT } from "./src/server/studyProposalAlert";
 import { REQUEST_V3_CSS } from "./src/server/requestPageStyles";
+import { PUBLIC_FONT_FACES, PUBLIC_KIT_CSS, PUBLIC_KIT_SCRIPT } from "./src/server/publicKit";
 import { cleanSeenIds, seenKey } from "./src/utils/notificationSeen";
 import { calendarFeedKey, createCalendarSecretResolver } from "./src/server/calendarSecret";
 import { readsUntilTermEnd, requestsCloseAtFromDate, shareLinkReadable, termLinkExpiresAt } from "./src/utils/shareLinkLifetime";
@@ -46,7 +47,7 @@ import { createCoalescer, createTtlMemo, studentQueueAggregate, type StudentQueu
 import { createDataContextKey } from "./src/server/dataContextCache";
 import { isDemoLinkToken, publicLinkTokenFromPath, PUBLIC_LINK_PAGE_PREFIXES } from "./src/utils/demoLinkToken";
 import { chosenAlternativeIndex } from "./src/utils/requestAlternatives";
-import { NEGOTIATION_LABEL, THREAD_LIMIT, THREAD_TEXT_LIMIT, negotiationState, parseOfferedSlots } from "./src/utils/instructorRequestThread";
+import { NEGOTIATION_LABEL, THREAD_TEXT_LIMIT, capThread, negotiationState, parseOfferedSlots } from "./src/utils/instructorRequestThread";
 import { coverConflict } from "./src/utils/coverAvailability";
 import { storableMobile, whatsappNumber } from "./src/utils/reachInstructor";
 import { instructorScheduleFingerprint } from "./src/utils/scheduleFingerprint";
@@ -17154,6 +17155,10 @@ function showProofUpload(message){var upload=document.getElementById("proofUploa
 function acceptVerifiedProof(d,reused){var upload=document.getElementById("proofUpload"),example=document.getElementById("proofExample"),title=document.getElementById("proofTitle"),lead=document.getElementById("proofLead"),status=document.getElementById("proofStatus"),options=document.getElementById("graduateOptions");proofEligible=!!d.eligible;proofToken=d.proofToken||"";proofAt=proofToken?Date.now():0;if(upload)upload.hidden=true;if(example)example.hidden=true;if(title)title.textContent=reused?"تم التحقق مسبقًا":"تم التحقق من صحيفة التخرج";if(lead)lead.textContent=reused?"لا حاجة لرفع الصحيفة مرة أخرى لهذا الفصل والقسم.":"تم اعتماد بيانات الصحيفة لهذه الجلسة.";if(status){status.className="proof-status "+(reused?"reused":"ok");status.textContent=d.message||"تم التحقق، ويمكنك متابعة الطلب."}if(options){options.hidden=false;wireGraduateDetails()}refreshGraduateSubmit()}
 function checkPriorGraduateProof(){var rule=section().graduateRule;if(rule&&rule.saved===false){var up=document.getElementById("proofUpload"),ex=document.getElementById("proofExample"),st=document.getElementById("proofStatus");if(up)up.hidden=true;if(ex)ex.hidden=true;if(st){st.className="proof-status bad";st.textContent="لم يعتمد قسمك العلمي قواعد التخرج في النظام بعد، فلا يمكن التحقق من صحيفة التخرج الآن. راجع القسم، ويمكنك اختيار نوع طلب آخر."}proofEligible=false;proofToken="";refreshGraduateSubmit();return}if(proofEligible&&proofToken){acceptVerifiedProof({eligible:true,proofToken:proofToken,message:"تم التحقق من صحيفة التخرج في هذه الجلسة. يمكنك متابعة الطلب."},false);return}fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({civil:student.civil,sectionId:student.sectionId,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(x.ok&&x.d.verified){acceptVerifiedProof(x.d,true);return}showProofUpload(x.ok?"لم يتم التحقق من صحيفة التخرج لهذا الطالب بعد.":(x.d.error||"تعذر التحقق من الحالة السابقة."))}).catch(function(){showProofUpload("تعذر التحقق من الحالة السابقة؛ يمكنك رفع الصحيفة الآن.")})}
 function wireProof(){var verify=document.getElementById("verify");if(verify)verify.onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر صحيفة التخرج أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الصحيفة والتحقق منها.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent>MAX_PROOF_BYTES){button.disabled=false;button.textContent="إعادة التحقق";meter.hidden=true;status.className="proof-status bad";status.textContent="حجم الملف "+formatBytes(sent)+" أكبر من الحد (14 MB). صوّر الصفحة الرسمية وحدها أو احفظها PDF بحجمٍ أصغر.";refreshGraduateSubmit();return}if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة صحيفة التخرج والتحقق…";button.textContent="يتحقق من الصحيفة…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}")}catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";refreshGraduateSubmit();return}acceptVerifiedProof(d,false)};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال.";refreshGraduateSubmit()};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع.";refreshGraduateSubmit()})};checkPriorGraduateProof()}
+/* من يعدّل موعداً عليه اقتراحٌ معلّق ثم يُرسل يستبدل اقتراحَ القسم بطلبٍ جديد: يُقال له قبل التوقيع لا بعده. */
+function replacedWarn(){var cur=payloadItems(),names=[];
+ state.forEach(function(it,i){if(it.negotiation==="proposed"&&baseItems&&JSON.stringify(cur[i])!==JSON.stringify(baseItems[i]))names.push(courseOf(it))});
+ return names.length?'<div class="sk-warn">'+gi("alert")+'<span>تعديلك على <b>'+esc(names.join("، "))+'</b> يستبدل اقتراح القسم بطلبٍ جديد. إن أردت قبول اقتراحه فارجع واضغط «يناسبني».</span></div>':""}
 function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&proofEligible&&proofAt&&Date.now()-proofAt>PROOF_TTL-60000){showProofUpload("انتهت مهلة التحقق من صحيفة التخرج (20 دقيقة). أعد رفعها للتحقق — ملاحظاتك ونوع طلبك باقيان.");var up=document.getElementById("proofUpload");if(up&&up.scrollIntoView)up.scrollIntoView({block:"center"});return fail("أعد التحقق من صحيفة التخرج ثم أرسل.")}if(kind==="graduate"&&!proofEligible)return fail("تحقق من صحيفة التخرج أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");var graduateDetails=kind==="graduate"?String((document.getElementById("graduateDetails")||{}).value||"").trim():"";if(kind==="graduate"&&graduateDetails.length<3)return fail("اكتب ملاحظات الطلب وسبب احتياجك قبل الإرسال");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:graduateDetails,caseRef:caseRef})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent=sendLabel();if(kind==="graduate"&&(x.d.code==="proof-expired"||x.d.code==="proof-required")){showProofUpload(x.d.error);var up=document.getElementById("proofUpload");if(up&&up.scrollIntoView)up.scrollIntoView({block:"center"})}return fail(x.d.error||"تعذر الإرسال")}identityLocked=true;caseRef=String(x.d.caseRef||caseRef);host.innerHTML='<div class="done"><div class="tick"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.<br><a href="/m/'+encodeURIComponent(TOKEN)+'#'+encodeURIComponent(caseRef)+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">تابع حالة طلبك</a></p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent=sendLabel();fail("تعذر الإرسال — تحقق من الاتصال.")})}
 fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}if(x.d.termEnded){host.innerHTML='<div class="done" role="status"><h2>انتهى هذا الفصل</h2><p>'+esc(x.d.message||"")+'</p><a href="'+esc(x.d.statusUrl||"#")+'" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:11px;background:#2e7d5b;color:#fff;text-decoration:none;font-weight:700">حالة طلبي</a></div>';return}data=x.d;student={name:"",civil:"",sectionId:0};identityLocked=false;identityChecked=false;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
@@ -18069,7 +18074,7 @@ app.post("/api/instructor-requests/:id/reply", requirePermission(7), async (req:
   const items = [...(stored.items || [])];
   items[index] = {
     ...item,
-    thread: [...(item.thread || []), { from: "department" as const, at: now, by, ...(text ? { text } : {}), ...(slots.length ? { slots } : {}) }].slice(-THREAD_LIMIT),
+    thread: capThread([...(item.thread || []), { from: "department" as const, at: now, by, ...(text ? { text } : {}), ...(slots.length ? { slots } : {}) }]),
   };
   const saved = await Repository.saveInstructorRequest({
     ...stored, items, status: "in-review",
@@ -18365,18 +18370,28 @@ app.post("/api/public/request/:token/reply", rateLimitPublicRequest, async (req:
       chosenAlternative: chosen,
       /* قرارٌ سابقٌ على ما كان يُطلب لا يبقى على ما اتُّفق عليه الآن. */
       decision: undefined,
-      thread: [...(item.thread || []), { from: "instructor" as const, at: now, accepted: true, slots: [chosen], ...(text ? { text } : {}) }].slice(-THREAD_LIMIT),
+      thread: capThread([...(item.thread || []), { from: "instructor" as const, at: now, accepted: true, slots: [chosen], ...(text ? { text } : {}) }]),
     };
     kind = "proposal-accepted";
   } else {
     const start = /^\d{1,2}:\d{2}$/.test(String(req.body?.start || "")) ? String(req.body.start) : "";
-    const days = (item.slots || []).map(slot => slot.day);
+    /* الأيامُ تُقترح كما تُقترح البداية، بشرط أن يبقى عددُها: المقرّرُ له ساعاتٌ في الأسبوع، وتوزيعُها على عددٍ آخر من الأيام
+       قرارٌ للقسم لا للأستاذ. فمن غيّر العددَ يُقال له، ولا يُقبل بصمت. */
+    const baseDays = (item.slots || []).map(slot => slot.day);
+    const dayKeys = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"];
+    const sentDays = Array.isArray(req.body?.days)
+      ? [...new Set((req.body.days as unknown[]).map(String).filter(day => dayKeys.includes(day)))] : [];
+    if (sentDays.length && baseDays.length && sentDays.length !== baseDays.length) {
+      res.status(400).json({ error: "يبقى عدد أيام المقرر كما هو. اختر أياماً بالعدد نفسه." });
+      return;
+    }
+    const days = (sentDays.length ? sentDays : baseDays) as typeof baseDays;
     const proposal = start && days.length && item.action !== "delete"
       ? [{ day: days[0], days, start, end: endForRequest(days as RequestDayKey[], start, blockMinutesOfItem(item)) }] : [];
     if (!text && !proposal.length) { res.status(400).json({ error: "اكتب ردّك أو اقترح وقتاً." }); return; }
     next = {
       ...item,
-      thread: [...(item.thread || []), { from: "instructor" as const, at: now, ...(text ? { text } : {}), ...(proposal.length ? { slots: proposal } : {}) }].slice(-THREAD_LIMIT),
+      thread: capThread([...(item.thread || []), { from: "instructor" as const, at: now, ...(text ? { text } : {}), ...(proposal.length ? { slots: proposal } : {}) }]),
     };
   }
   const items = [...(resolved.request.items || [])];
@@ -18411,7 +18426,7 @@ function instructorRequestPage(token: string, nonce: string, demoHint = ""): str
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <title>جدولي — طلب تعديل</title>
-<style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
+<style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */${PUBLIC_FONT_FACES}
 :root{--ink:#15251d;--muted:#627269;--muted2:#8b9991;--line:#dce5df;--line2:#cbd8d0;--bg:#f3f7f4;--card:#fff;
 --soft:#edf5f0;--ok:#247756;--ok2:#dff2e8;--warn:#9a6a00;--warn2:#fff5d9;--bad:#ad2f28;--bad2:#fdecea;--accent:#247756;--shadow:0 12px 34px rgba(22,57,40,.07)}
 *{box-sizing:border-box}
@@ -18497,10 +18512,12 @@ label.sign input::placeholder,.course-search::placeholder,textarea::placeholder{
 .sendbox .signnote{display:none;margin:6px 0 0}.sendbox:focus-within .signnote{display:block}
 .wrap{padding-bottom:150px}
 ${PROPOSAL_ALERT_CSS}
+${PUBLIC_KIT_CSS}
 ${REQUEST_V3_CSS}
-</style></head><body>${demoHint?`<div id="demoTop" style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div><div class="scrim" id="scrim" hidden></div><div class="toast" id="toast" role="status" hidden></div>
+</style></head><body>${demoHint?`<div id="demoTop" style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div>
 <script nonce="${nonce}">(function(){
-var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),demoNode=document.querySelector("#demoTop .demo-hint"),demoOpen=false,data=null,state=[],signCivil="",activeTab="schedule",chooserOpen=false;
+${PUBLIC_KIT_SCRIPT}
+var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),demoNode=document.querySelector("#demoTop .demo-hint"),demoOpen=false,data=null,state=[],activeTab="schedule",chooserOpen=false;
 var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
 var LONG={fmonday:80,fwednesday:80},SHORT=50;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
@@ -18587,33 +18604,7 @@ function decisionBox(it,i,open){var d=it.decision;if(!d||!d.state||d.state==="pe
    كلُّ ما يخصّ الحوار صار في موضعٍ واحدٍ يُرى من أعلى الصفحة: «قرارُك» بطاقةٌ
    واحدة، بند بعد بند (٢ من ٥)، ومعها الموعدُ المقترح كرسمٍ لا كنص، وثلاثةُ
    أزرار: يناسبني، وقتٌ آخر، رسالة. والبنودُ الأخرى تبقى مطويّةً في القائمة. */
-var G={
-send:'<path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
-eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
-you:'<circle cx="9" cy="7" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2"/><path d="m15 17 2 2 4-4"/>',
-shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
-check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
-door:'<path d="M5 21V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><path d="M14 12h.01"/>',
-clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-sunrise:'<path d="M12 3v4"/><path d="m5.6 8.6 1.4 1.4"/><path d="m18.4 8.6-1.4 1.4"/><path d="M3 17h18"/><path d="M7 17a5 5 0 0 1 10 0"/><path d="M8 21h8"/>',
-sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-sunset:'<path d="M12 9V3"/><path d="m8.5 6.5 3.5 3.5 3.5-3.5"/><path d="M3 17h18"/><path d="M7 17a5 5 0 0 1 10 0"/><path d="M8 21h8"/>',
-chat:'<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
-cal:'<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>',
-finger:'<path d="M6.5 9a6.5 6.5 0 0 1 11 0"/><path d="M5 14v-1a7 7 0 0 1 14 0v1"/><path d="M8.5 21C7.7 19.5 7 17.6 7 14.5a5 5 0 0 1 10 0c0 1.2-.1 2.3-.3 3.3"/><path d="M12 14.5c0 2.5.6 4.6 1.7 6.5"/>',
-hour:'<path d="M7 3h10M7 21h10"/><path d="M8 3c0 5 8 5 8 9s-8 4-8 9"/><path d="M16 3c0 5-8 5-8 9s8 4 8 9"/>',
-swap:'<path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/>',
-x:'<path d="M6 6l12 12M18 6 6 18"/>',
-coffee:'<path d="M4 8h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 10h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M8 3v2M12 3v2"/>',
-lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
-pen:'<path d="M4 20l1.2-4.2L16.6 4.4a2 2 0 0 1 3 3L8.2 18.8z"/>',
-plus:'<path d="M12 5v14M5 12h14"/>',
-trash:'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
-star:'<path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6-4.5-4.2 6.1-.7z"/>',
-arL:'<path d="M15 6l-6 6 6 6"/>',
-arR:'<path d="M9 6l6 6-6 6"/>',
-arrow:'<path d="M12 5v14"/><path d="m6 13 6 6 6-6"/>'};
-function gi(n){return '<svg class="gi" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'+(G[n]||"")+'</svg>'}
+var G=SK.G,gi=SK.gi;
 function hh(m){m=Math.max(0,Math.round(m));return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")}
 function rangeOf(text){var p=String(text||"").split("–");return p.length>1&&p[0].trim()&&p[1].trim()?[mins(p[0].trim()),mins(p[1].trim())]:null}
 function dayShort(k){var n=DAYS.filter(function(d){return d[0]===k})[0];return n?n[1].replace("ال",""):k}
@@ -18628,6 +18619,7 @@ function askSlot(it){var d=planDays(it),st=planStart(it);if(!d.length||!st)retur
 function offeredOf(it){var th=it.thread||[],last=th[th.length-1];
  var list=it.negotiation!=="proposed"?[]:(last&&last.from==="department"&&(last.slots||[]).length?last.slots:((it.decision&&it.decision.alternatives)||[]));
  return list.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return{d:ds,s:mins(a.start),e:a.end?mins(a.end):mins(endOf(ds,a.start,it.blk))}})}
+function proposed0(it){var o=it.negotiation==='proposed'?offeredOf(it):[];return o.length?o[0]:null}
 function pendingList(){var out=[];if(!data||!data.request.submittedAt)return out;state.forEach(function(it,i){if(it.negotiation==="proposed"&&offeredOf(it).length)out.push(i)});return out}
 /* بقيةُ محاضراته كما هي الآن: ما رُفض طلبُه لا يُحسب، فموعدُه الرسمي هو القائم. */
 function othersFor(i){var out=[];state.forEach(function(it,k){if(k===i||it.action==="delete")return;
@@ -18683,51 +18675,21 @@ function deckHtml(){var list=pendingList(),n=list.length;if(!n)return "";
  h+=slotCard(o,"new",cur,"مقترح القسم")+factsHtml(o,i)+
   '<div class="dk-acts"><button type="button" class="btn-main" data-accept="'+pk+'" data-i="'+i+'">'+gi("check")+'يناسبني</button><div class="pair">'+
   (it.action!=="delete"?'<button type="button" class="btn-alt" data-counter="'+i+'">'+gi("swap")+'وقت آخر</button>':'')+
-  '<button type="button" class="btn-alt" data-msg="'+i+'">'+gi("chat")+'اكتب للقسم</button></div></div></section>';
+  '<button type="button" class="btn-alt" data-msg="'+i+'">'+gi("chat")+'اكتب للقسم</button></div>'+
+  (n>1?'<button type="button" class="btn-alt wide" data-accept-all="1">'+gi("check")+'وافق على كل القرارات ('+n+')</button>':'')+'</div></section>';
  return h}
 function calmHtml(){var r=data.request;if(!r.submittedAt||pendingList().length)return "";
  var s=stageIdx();if(!state.some(function(it){return it.action!=="keep"||(it.thread||[]).length}))return "";
  var m=s===4?["shield","ok","اكتملت مراجعة القسم","كلُّ ما طلبتَه وصله قرارُه."]:s===3?["check","ok","اتفقتما، وبانتظار التثبيت","يثبّته القسم قريبًا. جدولك الرسمي لم يتغيّر بعد."]:["hour","wait","طلبك عند القسم","لا شيء مطلوب منك الآن. سيظهر الردّ هنا."];
  return '<div class="calm" data-t="'+m[1]+'" role="status"><span class="b">'+gi(m[0])+'</span><div><b>'+m[2]+'</b><small>'+m[3]+'</small></div></div>'}
-/* ── ورقةٌ سفلية، وتوقيعٌ واحدٌ بلمسة ────────────────────────────────────────
-   كان الرقمُ المدني يُطلب في حقلين وفي كل جولة. صار ورقةً واحدة تقول ما سيُوقَّع
-   عليه، ويبقى الرقمُ في ذاكرة الصفحة وحدها دقائقَ معدودة (لا في تخزين المتصفح
-   ولا في المسودة) فتكفي لمسةٌ للجولة التالية. والخادمُ يتحقق من الرقم في كل
-   طلبٍ كما كان، فلا يتغيّر شيءٌ من جهته. */
-var SIGN_TTL=600000,signAt=0;
-function signedIn(){return signCivil.length===12&&Date.now()-signAt<SIGN_TTL}
-var scrimEl=document.getElementById("scrim"),toastEl=document.getElementById("toast"),toastT=0;
-function openSheet(html){toastEl.hidden=true;scrimEl.innerHTML='<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>'+html+'</div>';scrimEl.hidden=false;document.body.classList.add("noscroll")}
-function closeSheet(){scrimEl.hidden=true;scrimEl.innerHTML="";document.body.classList.remove("noscroll")}
-scrimEl.onclick=function(e){if(e.target===scrimEl)closeSheet()};
-document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!scrimEl.hidden)closeSheet()});
-window.addEventListener("pagehide",function(){signCivil=""});
-function toast(icon,text){toastEl.innerHTML=gi(icon)+'<span>'+esc(text)+'</span>';toastEl.hidden=false;clearTimeout(toastT);toastT=setTimeout(function(){toastEl.hidden=true},3200)}
-function signSheet(o){var again=false;
- function draw(initErr){var known=signedIn()&&!again;
-  openSheet('<div class="sh-h"><span class="sh-b">'+gi("finger")+'</span><div><h3>وقّع بلمسة واحدة</h3><p>رقمك المدني هو توقيعك على هذا الرد</p></div></div>'+
-   '<div class="sh-what">'+o.what+'</div>'+
-   (known?'<div class="sh-known">'+gi("lock")+'<span>رقمك المدني محفوظ في هذه الصفحة لدقائق، وينتهي بـ <b class="num">'+esc(signCivil.slice(-4))+'</b></span><button type="button" class="link" id="signOther">رقم آخر</button></div>'
-    :'<div class="otpw"><div class="otp" id="otp" aria-hidden="true"></div><input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا" aria-label="رقمك المدني — 12 رقمًا"></div>')+
-   '<div class="sh-err" id="signErr" role="alert" hidden></div>'+
-   '<button type="button" class="btn-main" id="signGo"'+(known?'':' disabled')+'>'+gi("send")+'وقّع وأرسل</button>'+
-   '<p class="sh-hint">'+(known?'':'اكتب رقمك المدني كاملاً — 12 رقمًا — فهو توقيعك. ')+'بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.</p>'+
-   '<p class="sh-priv">'+gi("lock")+'لا نحفظ رقمك على جهازك، ويُمحى من الصفحة بعد دقائق أو بإغلاقها.</p>');
-  var go=document.getElementById("signGo"),err=document.getElementById("signErr"),inp=document.getElementById("civil"),otp=document.getElementById("otp"),v="";
-  function paintOtp(){if(!otp)return;otp.innerHTML=Array.apply(null,{length:12}).map(function(_,k){return '<i class="'+(k===v.length?"on":k<v.length?"fill":"")+'">'+(v.charAt(k)||"")+'</i>'}).join("");go.disabled=v.length<12}
-  if(initErr){err.textContent=initErr;err.hidden=false}
-  if(inp){paintOtp();inp.oninput=function(){v=digitsOf(inp.value).slice(0,12);inp.value=v;paintOtp()};setTimeout(function(){inp.focus()},120)}
-  var other=document.getElementById("signOther");if(other)other.onclick=function(){again=true;signCivil="";draw()};
-  go.onclick=function(){var civ=known?signCivil:v;if(civ.length!==12)return;
-   go.disabled=true;err.hidden=true;go.innerHTML=gi("clock")+'يرسل…';
-   o.run(civ,function(msg,status){
-    if(msg){go.disabled=false;go.innerHTML=gi("send")+'وقّع وأرسل';err.textContent=msg;err.hidden=false;
-     if(status===403){signCivil="";again=true;draw(msg)}return}
-    signCivil=civ;signAt=Date.now();closeSheet();if(o.ok)toast("check",o.ok)})}}
- draw()}
-function sendReply(i,accept,civil,text,start,cb){var it=state[i];if(!it){cb("تعذّر إرسال الرد");return}
+/* الورقةُ السفلية والتوقيعُ والإشعارُ من العدّة المشتركة (src/server/publicKit.ts). */
+var openSheet=SK.sheet,closeSheet=SK.close,toast=SK.toast,signSheet=SK.sign;
+/* حقلُ «وقت آخر»: يكتب 930 فيصير 09:30 بأرقامٍ إنجليزية، ولا يُؤخذ إلا إن كان كاملاً وداخل الدوام. */
+SK.onTime(function(el,val){if(el.getAttribute("data-start")==null||!val)return;var i=+el.getAttribute("data-i");
+ if(!state[i]||state[i].start===val)return;state[i].start=val;paint();recheckAll(i)});
+function sendReply(i,accept,civil,text,start,cb,days){var it=state[i];if(!it){cb("تعذّر إرسال الرد");return}
  fetch("/api/public/request/"+encodeURIComponent(TOKEN)+"/reply",{method:"POST",headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({civil:civil,itemIndex:i,accept:accept,text:text||"",start:accept===null?(start||""):""})})
+  body:JSON.stringify({civil:civil,itemIndex:i,accept:accept,text:text||"",start:accept===null?(start||""):"",days:accept===null&&days&&days.length?days:undefined})})
  .then(function(r){return r.json().then(function(x){return{ok:r.ok,status:r.status,d:x}})}).then(function(x){
   if(!x.ok){cb(x.d.error||"تعذّر إرسال الرد",x.status);return}
   var fresh=(x.d.request.items||[])[i]||{};data.request=x.d.request;
@@ -18740,23 +18702,40 @@ function askAccept(i,k){var it=state[i],o=offeredOf(it)[k];if(!o)return;
  signSheet({ok:"سُجّلت موافقتك · بانتظار تثبيت القسم",
   what:'<div>'+gi("check")+'<span>توافق على: <b>'+esc(courseOf(it))+'</b></span></div><div>'+gi(periodIc(o.s))+'<span>'+esc(fmtDays(o.d))+' · <span class="num">'+hh(o.s)+' – '+hh(o.e)+'</span></span></div>',
   run:function(civil,done){sendReply(i,k,civil,"","",done)}})}
-function openCounter(i){var it=state[i],days=(it.slots||[]).map(function(s){return s.day});if(!days.length)days=originalOf(it).days;
- var choices=startChoices(days).filter(function(t){return !it.blk||days.length!==1||mins(t)+it.blk<=20*60}),choice="";
- function draw(){var x=choice?{d:days,s:mins(choice),e:mins(endOf(days,choice,it.blk))}:null,ins=x?insights(x,i):[],bad=ins[0]&&ins[0].t==="bad";
-  openSheet('<div class="sh-h"><span class="sh-b">'+gi("swap")+'</span><div><h3>اقترح وقتًا آخر</h3><p>على الأيام نفسها: '+esc(fmtDays(days))+'</p></div></div>'+
-   '<span class="sh-lbl">'+gi("clock")+'وقت البداية</span><div class="sh-tm">'+choices.map(function(t){return '<button type="button" data-t="'+t+'" aria-pressed="'+(t===choice)+'">'+t+'</button>'}).join("")+'</div>'+
-   (x?'<div class="sh-v" data-t="'+(bad?"bad":"ok")+'">'+gi(bad?"x":"check")+'<span>'+esc(bad?ins[0].h:"ينتهي "+hh(x.e)+ins.filter(function(f){return f.i==="coffee"}).map(function(f){return " · "+f.h}).join("")+" · لا تعارض مع بقية جدولك")+'</span></div>':'')+
-   '<button type="button" class="btn-main" id="ctrGo"'+(x&&!bad?'':' disabled')+'>'+gi("finger")+'التالي: التوقيع</button>');
-  scrimEl.querySelectorAll("button[data-t]").forEach(function(b){b.onclick=function(){choice=b.dataset.t;draw()}});
+/* أنماطُ الأيام التي يعرضها «وقت آخر»: بعدد أيام البند نفسه، فالقسمُ يقرّر توزيعَ ساعات المقرّر لا الأستاذ. */
+var DPATS={1:[["fsunday"],["fmonday"],["ftuesday"],["fwednesday"],["fthursday"]],2:[["fsunday","ftuesday"],["fmonday","fwednesday"]],3:[["fsunday","ftuesday","fthursday"],["fmonday","fwednesday","fthursday"]]};
+function patsFor(days){var base=days.slice().sort().join(),list=(DPATS[days.length]||[]).map(function(p){return p.slice()});
+ if(!list.some(function(p){return p.slice().sort().join()===base}))list.unshift(days.slice());return list}
+function openCounter(i){var it=state[i],days0=(it.slots||[]).map(function(s){return s.day});if(!days0.length)days0=originalOf(it).days;
+ var pats=patsFor(days0),pat=0,choice="";
+ pats.forEach(function(p,k){if(p.slice().sort().join()===days0.slice().sort().join())pat=k});
+ function draw(){var days=pats[pat],choices=startChoices(days).filter(function(t){return !it.blk||days.length!==1||mins(t)+it.blk<=20*60});
+  if(choices.indexOf(choice)<0)choice="";
+  var x=choice?{d:days,s:mins(choice),e:mins(endOf(days,choice,it.blk))}:null,ins=x?insights(x,i):[],bad=ins[0]&&ins[0].t==="bad";
+  openSheet('<div class="sk-h"><span class="sk-b">'+gi("swap")+'</span><div><h3>اقترح وقتًا آخر</h3></div></div>'+
+   (pats.length>1?'<span class="sk-lbl">'+gi("cal")+'الأيام</span><div class="sk-pick" style="--sk-cols:'+(pats[0].length>1?pats.length:3)+'">'+pats.map(function(p,k){return '<button type="button" data-pat="'+k+'" aria-pressed="'+(k===pat)+'">'+esc(fmtDays(p))+(p.slice().sort().join()===days0.slice().sort().join()?'<small>الحالية</small>':'')+'</button>'}).join("")+'</div>':'')+
+   '<span class="sk-lbl">'+gi("clock")+'وقت البداية</span><div class="sk-times">'+choices.map(function(t){return '<button type="button" data-t="'+t+'" aria-pressed="'+(t===choice)+'">'+t+'</button>'}).join("")+'</div>'+
+   (x?'<div class="sk-v" data-t="'+(bad?"bad":"ok")+'">'+gi(bad?"x":"check")+'<span>'+esc(bad?ins[0].h:"ينتهي "+hh(x.e)+ins.filter(function(f){return f.i==="coffee"}).map(function(f){return " · "+f.h}).join("")+" · لا تعارض مع بقية جدولك")+'</span></div>':'')+
+   '<button type="button" class="sk-btn" id="ctrGo"'+(x&&!bad?'':' disabled')+'>'+gi("finger")+'التالي: التوقيع</button>');
+  document.querySelectorAll(".sk-sheet button[data-t]").forEach(function(b){b.onclick=function(){choice=b.dataset.t;draw()}});
+  document.querySelectorAll(".sk-sheet button[data-pat]").forEach(function(b){b.onclick=function(){pat=+b.dataset.pat;draw()}});
   var go=document.getElementById("ctrGo");if(go)go.onclick=function(){
    signSheet({ok:"وصل اقتراحك إلى القسم",
     what:'<div>'+gi("swap")+'<span>تقترح على القسم: <b>'+esc(courseOf(it))+'</b></span></div><div>'+gi(periodIc(x.s))+'<span>'+esc(fmtDays(days))+' · <span class="num">'+hh(x.s)+' – '+hh(x.e)+'</span></span></div>',
-    run:function(civil,done){sendReply(i,null,civil,"",choice,done)}})}}
+    run:function(civil,done){sendReply(i,null,civil,"",choice,done,days)}})}}
  draw()}
+/* «وافق على الكل»: كلُّ قرارٍ معلّق على الاقتراح الذي اخترتَه فيه (الأول إن لم تختر)، بتوقيعٍ واحد. */
+function askAcceptAll(){var rows=pendingList().map(function(i){var it=state[i],offers=offeredOf(it),pk=deckPick[i]||0;if(pk>=offers.length)pk=0;return{i:i,k:pk,it:it,o:offers[pk]}});
+ if(!rows.length)return;
+ var lines=rows.map(function(r){return '<li><span><b>'+esc(courseOf(r.it))+'</b> — '+esc(fmtDays(r.o.d))+' <span class="num">'+hh(r.o.s)+'</span></span></li>'}).join("");
+ signSheet({ok:"سُجّلت موافقتك على "+countOf(rows.length,AR.decision),
+  what:'<ul class="sk-list">'+lines+'</ul>',
+  run:function(civil,done){var n=0;(function next(){if(n>=rows.length){done(null);return}
+   var r=rows[n];sendReply(r.i,r.k,civil,"","",function(msg,status){if(msg){done(n?"تعذّر إكمال الموافقة على الباقي: "+msg:msg,status);return}n++;next()})})()}})}
 function openMsg(i){var it=state[i];
- openSheet('<div class="sh-h"><span class="sh-b">'+gi("chat")+'</span><div><h3>اكتب للقسم</h3><p>'+esc(courseOf(it))+'</p></div></div>'+
+ openSheet('<div class="sk-h"><span class="sk-b">'+gi("chat")+'</span><div><h3>اكتب للقسم</h3><p>'+esc(courseOf(it))+'</p></div></div>'+
   '<textarea id="msgText" maxlength="400" data-show="1" placeholder="اكتب ردّك للقسم…" style="display:block"></textarea>'+
-  '<button type="button" class="btn-main" id="msgGo" data-reply="'+i+'">'+gi("finger")+'التالي: التوقيع</button>');
+  '<button type="button" class="sk-btn" id="msgGo" data-reply="'+i+'">'+gi("finger")+'التالي: التوقيع</button>');
  var ta=document.getElementById("msgText");setTimeout(function(){ta.focus()},120);
  document.getElementById("msgGo").onclick=function(){var t=ta.value.trim();if(!t){ta.focus();return}
   signSheet({ok:"وصلت رسالتك إلى القسم",what:'<div>'+gi("chat")+'<span>'+esc(t.length>160?t.slice(0,160)+"…":t)+'</span></div>',
@@ -18795,7 +18774,7 @@ function actionsHtml(it,i){
  return actBtn(i,"keep","undo","تراجع عن الحذف");
 }
 function editHtml(it,i){var h="";h+='<div class="edit"><span class="field-title">أيام المحاضرة</span><div class="days">';DAYS.forEach(function(d){h+='<button type="button" data-i="'+i+'" data-day="'+d[0]+'" aria-pressed="'+(it.days.indexOf(d[0])>=0)+'">'+d[1]+'</button>'});
-    h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).filter(function(t){return !it.blk||it.days.length!==1||mins(t)+it.blk<=20*60}).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span><input type="time" data-i="'+i+'" data-start="1" value="'+esc(it.start)+'"></label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start,it.blk)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'"><i aria-hidden="true">'+(it.tone==="ok"?"✓":it.tone==="bad"?"✕":it.tone==="warn"?"!":"…")+'</i><span>'+esc(friendly(it.note||""))+'</span>'+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>';return h}
+    h+='</div><span class="field-title">وقت البداية</span><div class="starts">'+startChoices(it.days).filter(function(t){return !it.blk||it.days.length!==1||mins(t)+it.blk<=20*60}).map(function(t){return '<button type="button" data-i="'+i+'" data-quick="'+t+'" aria-pressed="'+(it.start===t)+'">'+t+'</button>'}).join("")+'</div><label class="time"><span>وقت آخر</span>'+SK.tf('data-i="'+i+'" data-start="1" aria-label="وقت آخر"',it.start)+'</label><p class="ends">'+(sameAsBefore(it)?"هذا هو موعدك الحالي نفسه — اختر يوماً أو وقتاً مختلفاً، أو اضغط «إلغاء التعديل».":it.days.length&&it.start?"ينتهي "+endOf(it.days,it.start,it.blk)+" — مدّةُ المحاضرة من اللائحة":"اختر اليوم ثم وقت البداية")+'</p><div class="verdict" data-i="'+i+'" data-tone="'+(it.tone||"")+'"><i aria-hidden="true">'+(it.tone==="ok"?"✓":it.tone==="bad"?"✕":it.tone==="warn"?"!":"…")+'</i><span>'+esc(friendly(it.note||""))+'</span>'+(it.alts&&it.alts.length?'<div class="alts">'+it.alts.map(function(a){var ds=a.days&&a.days.length?a.days:[a.day];return '<button type="button" data-i="'+i+'" data-alt="'+esc(ds.join(",")+"|"+a.start)+'">'+fmtDays(ds)+" "+esc(a.start)+'</button>'}).join("")+'</div>':'')+'</div><textarea data-i="'+i+'" data-excuse="1" data-show="'+(it.tone==="warn"?"1":"0")+'" placeholder="سبب الاستثناء — إلزامي">'+esc(it.excuse||"")+'</textarea></div>';return h}
 function bodyHtml(it,i,open){var h=decisionBox(it,i,open)+threadBox(it,i);
  if(open){if(it.negotiation==="proposed")h+='<p class="hint-pro">للرد على اقتراح القسم استخدم بطاقة «قرارك» في أعلى الصفحة. وتعديل الموعد من هنا يبدأ طلبًا جديدًا.</p>';h+='<div class="acts" role="group" aria-label="خيارات الموعد">'+actionsHtml(it,i)+'</div>';if(it.action==="change"||it.action==="add")h+=editHtml(it,i)}
  else if(!h)h='<p class="appt-ro">انتهت مدّة الطلبات — هذا الموعد للاطلاع.</p>';
@@ -18821,6 +18800,8 @@ function planTable(){
    var newDays=it.days.length?fmtDays(it.days):"—",newTime=it.start?(it.start+" – "+endOf(it.days,it.start,it.blk)):"—";
    var days=it.action==="add"||moved?newDays:(b.days||"—"),time=it.action==="add"||moved?newTime:rangeText(b.time||"—");
    var dset=it.action==="add"||moved?it.days:originalOf(it).days;
+   /* بندٌ ينتظر قرارَك: يُعرض الموعدُ الذي اقترحه القسم لا الذي رُفض، ويُشطب القديم. */
+   var offer=proposed0(it);if(offer){dset=offer.d;time=hh(offer.s)+" – "+hh(offer.e);days=fmtDays(offer.d);moved=true;newDays=days;newTime=time}
    var col=collegeNameOf(it),decidedHere=it.decision&&it.decision.state&&it.decision.state!=="pending",proposed=it.negotiation==="proposed";
    /* ما ينتظر قرارَه يُقرأ في بطاقة «قرارك» أعلى الصفحة، فيبقى صفُّه مطويّاً. */
    var expanded=openCards[i]!==undefined?!!openCards[i]:(!proposed&&!decidedHere&&(it.action==="change"||it.action==="add"||it.tone==="bad"));
@@ -18973,18 +18954,17 @@ function wire(){
   if(it.action!=="add")it.action="change";it.days=p[0].split(",").filter(Boolean);it.start=p[1];paint();recheckAll(i)}});
  host.querySelectorAll("[data-quick]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i;state[i].start=el.dataset.quick;paint();recheckAll(i)}});
- host.querySelectorAll("[data-start]").forEach(function(el){el.onchange=function(){
-  var i=+el.dataset.i;state[i].start=el.value;paint();recheckAll(i)}});
  host.querySelectorAll("[data-alt]").forEach(function(el){el.onclick=function(){
   var i=+el.dataset.i,p=el.dataset.alt.split("|");state[i].days=p[0].split(",").filter(Boolean);state[i].start=p[1];paint();recheckAll(i)}});
  host.querySelectorAll("[data-excuse]").forEach(function(el){el.oninput=function(){
   state[+el.dataset.i].excuse=el.value}});
  /* ويُحفظ ما كُتب لحظةَ كتابته: كلُّ تعديلٍ على الجدول يعيد الرسم، وكذلك
-    جوابُ الحكم حين يصل متأخّراً — والحقلُ يُبنى من signCivil، فما كُتب ولم
+    جوابُ الحكم حين يصل متأخّراً — والحقلُ يُبنى من حالة الصفحة، فما كُتب ولم
     يُحفظ يُمحى تحت يده ويُردّ إرسالُه بلا سبب. */
  var drop=document.getElementById("dropDraft");if(drop)drop.onclick=function(){clearDraft();dirty=false;location.reload()};
  var send=document.getElementById("send");if(send)send.onclick=submit;
  host.querySelectorAll("[data-accept]").forEach(function(el){el.onclick=function(){askAccept(+el.dataset.i,+el.dataset.accept)}});
+ host.querySelectorAll("[data-accept-all]").forEach(function(el){el.onclick=askAcceptAll});
  host.querySelectorAll("[data-counter]").forEach(function(el){el.onclick=function(){openCounter(+el.dataset.counter)}});
  host.querySelectorAll("[data-msg]").forEach(function(el){el.onclick=function(){openMsg(+el.dataset.msg)}});
  host.querySelectorAll("[data-offer]").forEach(function(el){el.onclick=function(){deckPick[+el.dataset.i]=+el.dataset.offer;paint()}});
@@ -19031,7 +19011,7 @@ function submit(){
  var chg=state.filter(function(it){return it.action!=="keep"}),sent=!!data.request.submittedAt;
  var lines=chg.slice(0,5).map(function(it){return '<li><span>'+esc(actionName(it.action))+' · <b>'+esc(courseOf(it))+'</b>'+(it.action==="delete"?'':' — <bdi>'+requestedHtml(it)+'</bdi>')+'</span></li>'}).join("");
  signSheet({
-  what:'<div>'+gi("send")+'<span>'+(chg.length?countOf(chg.length,AR.change)+' ستصل القسم':'جدولك كما هو سيصل القسم')+'</span></div>'+(lines?'<ul class="sh-list">'+lines+(chg.length>5?'<li><span>و'+countOf(chg.length-5,AR.change)+' أخرى</span></li>':'')+'</ul>':''),
+  what:'<div>'+gi("send")+'<span>'+(chg.length?countOf(chg.length,AR.change)+' ستصل القسم':'جدولك كما هو سيصل القسم')+'</span></div>'+replacedWarn()+(lines?'<ul class="sk-list">'+lines+(chg.length>5?'<li><span>و'+countOf(chg.length-5,AR.change)+' أخرى</span></li>':'')+'</ul>':''),
   run:function(civil,done){postSubmit(civil,done)}})
 }
 /* الإرسالُ نفسُه كما كان: الخادمُ يعيد الحكمَ ويتحقق من التوقيع، والصفحةُ تعرض ما يقوله. */
@@ -19046,7 +19026,7 @@ function postSubmit(civil,done){
    done(x.d.error||"تعذّر الإرسال",x.status);return}
   dirty=false;clearDraft();
   var code=x.d.request&&x.d.request.signature&&x.d.request.signature.verifyCode||"";
-  signCivil=civil;signAt=Date.now();closeSheet();
+  done();
   host.innerHTML='<div class="done"><div class="tick">'+gi("check")+'</div><h1>وصل طلبك إلى القسم</h1><div class="done-path">'+pathHtml(pendingList().length?2:1)+'</div>'+
    '<p class="sub">'+esc(countOf(x.d.changed,AR.edit,"بلا تعديلات"))+
    ' · يمكنك فتح الرابط نفسه لمتابعة ما ثُبّت وما رُفض.</p>'+

@@ -1,4 +1,5 @@
 import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { TimeField } from "./TimeField";
 import {
   Activity,
   AlertTriangle,
@@ -8753,12 +8754,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                   <div className="form-grid">
                 <Field label="بداية الوقت" required>
                   <div className="schedule-time-control" dir="ltr" ref={timeCounterAnchor}>
-                    <input
+                    <TimeField
                       data-guide-editor-field="time"
-                      type="time"
+                     
                       min={SCHEDULE_DAY_START_TIME}
                       max={SCHEDULE_DAY_END_TIME}
-                      step={60}
                       value={form.fstarttime}
                       onChange={(e) => {
                         setScheduleTouched(true);
@@ -8794,11 +8794,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 </Field>
                 <Field label="نهاية الوقت" required>
                   <div className="schedule-time-control" dir="ltr">
-                    <input
-                      type="time"
+                    <TimeField
+                     
                       min={SCHEDULE_DAY_START_TIME}
                       max={SCHEDULE_DAY_END_TIME}
-                      step={60}
                       value={form.fendtime}
                       onChange={(e) => {
                         setScheduleTouched(true);

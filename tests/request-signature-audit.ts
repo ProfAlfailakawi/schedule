@@ -23,6 +23,7 @@ function check(condition: boolean, name: string) {
 }
 
 const server = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+const kit = fs.readFileSync(path.join(process.cwd(), "src/server/publicKit.ts"), "utf8");
 const inbox = fs.readFileSync(path.join(process.cwd(), "src/components/InstructorInbox.tsx"), "utf8");
 const types = fs.readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8");
 
@@ -88,9 +89,9 @@ check(types.includes("signature?: InstructorRequestSignature;"),
 
 /* ── ويُقال للطرفين ──────────────────────────────────────────────────── */
 
-check(server.includes("بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك."),
+check(kit.includes("بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.") && server.includes("signSheet=SK.sign"),
   "والصفحةُ تقول إنه توقيع، لا «تحقّق من هويتك» — لأنه توقيع");
-check(server.includes('inp=document.getElementById("civil")') && server.includes("v=digitsOf(inp.value).slice(0,12)")
+check(kit.includes('inp=document.getElementById("civil")') && kit.includes("v=digits(inp.value).slice(0,12)")
   && server.includes('.replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})'),
   "والأرقامُ العربيةُ تُقبل كما تُكتب على لوحة الهاتف");
 check(server.includes("رمز توقيعك:"),

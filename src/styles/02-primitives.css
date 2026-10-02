@@ -366,7 +366,7 @@
   box-shadow:var(--ring);
 }
 .field input:disabled,.field select:disabled,.field textarea:disabled{opacity:.5;cursor:not-allowed}
-.field input[type="time"],.field input[type="date"]{font-family:var(--font-mono);font-size:var(--t-sm)}
+.field input.time-field,.field input[type="time"],.field input[type="date"]{font-family:var(--font-mono);font-size:var(--t-sm)}
 
 .field-help,.field-hint{color:var(--muted-2);font-size:var(--t-xs);line-height:1.6}
 /* A whisper, not a label: the "first section for this course" note guides

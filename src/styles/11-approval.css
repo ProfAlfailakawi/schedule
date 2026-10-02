@@ -1167,8 +1167,10 @@
   .request-table thead{display:none}
   .request-table,.request-table tbody,.request-table tr,.request-table td{display:block;inline-size:100%}
   .request-row{padding:6px 0;border-bottom:1px solid var(--line)}
-  .request-table td{display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px;padding:6px 14px;border-bottom:0}
-  .request-table td::before{content:attr(data-label);font-size:var(--t-xs);color:var(--muted);font-weight:600}
+  /* التسمية فوق القيمة لا في عمودٍ بجانبها: العمودُ الجانبيّ كان يأكل خُمسَ عرض الهاتف
+     فيلتفّ قرارُ القسم وبدائلُه في ثلاثة أسطرٍ ضيّقة. */
+  .request-table td{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;padding:8px 14px;border-bottom:0}
+  .request-table td::before{content:attr(data-label);font-size:11px;letter-spacing:.02em;color:var(--muted);font-weight:700}
   .request-row td:first-child{box-shadow:none}
   .request-row[data-action="add"]{box-shadow:inset -4px 0 0 var(--success,#1f7a55)}
   .request-row[data-action="change"]{box-shadow:inset -4px 0 0 var(--warning,#a06b00)}
@@ -1179,7 +1181,7 @@
 .request-deck,.request-card,.request-table-wrap{min-inline-size:0;max-inline-size:100%}
 @media (max-width:760px){
   .request-table td{row-gap:4px;align-items:start}
-  .request-table td>*{grid-column:2;min-inline-size:0;justify-self:start}
+  .request-table td>*{grid-column:1;min-inline-size:0;justify-self:start}
   .request-table td>.request-actions{justify-self:stretch}
   .request-table td::before{grid-column:1;grid-row:1}
   .request-table .request-actions .btn{flex:1 1 0;min-inline-size:0}
