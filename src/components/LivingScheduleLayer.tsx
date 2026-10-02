@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { TimeField } from "./TimeField";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import {
   Activity,
@@ -934,22 +935,20 @@ export default function LivingScheduleLayer({
                         </label>
                         <label>
                           <span>البداية</span>
-                          <input
-                            type="time"
+                          <TimeField
+                           
                             min={SCHEDULE_DAY_START_TIME}
                             max={SCHEDULE_DAY_END_TIME}
-                            step={60}
                             value={candidateStart}
                             onChange={(e) => setCandidateStart(e.target.value)}
                           />
                         </label>
                         <label>
                           <span>النهاية</span>
-                          <input
-                            type="time"
+                          <TimeField
+                           
                             min={SCHEDULE_DAY_START_TIME}
                             max={SCHEDULE_DAY_END_TIME}
-                            step={60}
                             value={candidateEnd}
                             onChange={(e) => setCandidateEnd(e.target.value)}
                           />
@@ -1182,8 +1181,8 @@ export default function LivingScheduleLayer({
                                     {flagged ? <tr className="genesis-row-reason"><td colSpan={8}><ShieldAlert /><strong>سبب المنع:</strong><span>{(genesis.rowIssues?.[String(row.id)] || [])[0] || "هذا الموعد مرتبط بمشكلة تمنع النشر."}</span></td></tr> : null}
                                     {editing ? <tr className="genesis-inline-editor"><td colSpan={8}><div>
                                       <label><span>الأستاذ</span><select value={genesisEdit?.AdInstructorId || ""} onChange={e => setGenesisEdit((v:any)=>({...v,AdInstructorId:Number(e.target.value)||0}))}><option value="">اختر</option>{sortByName(instructors, i => i.AdInstructorName).map(i=><option key={i.AdInstructorId} value={i.AdInstructorId}>{i.AdInstructorName}</option>)}</select></label>
-                                      <label><span>من</span><input type="time" value={genesisEdit?.fstarttime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fstarttime:e.target.value}))}/></label>
-                                      <label><span>إلى</span><input type="time" value={genesisEdit?.fendtime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fendtime:e.target.value}))}/></label>
+                                      <label><span>من</span><TimeField value={genesisEdit?.fstarttime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fstarttime:e.target.value}))}/></label>
+                                      <label><span>إلى</span><TimeField value={genesisEdit?.fendtime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fendtime:e.target.value}))}/></label>
                                       <LocationPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={genesisEdit || {}} onChange={patch=>setGenesisEdit((v:any)=>({...v,...patch}))} showRaw />
                                       <fieldset className="genesis-days"><legend>الأيام</legend>{[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]].map(([key,label]) => <label key={key}><input type="checkbox" checked={Boolean(genesisEdit?.[key])} onChange={e=>setGenesisEdit((v:any)=>({...v,[key]:e.target.checked}))}/><span>{label}</span></label>)}</fieldset>
                                       <PrimaryButton type="button" onClick={() => void saveGenesisRow()} disabled={busy}><Save />حفظ وفحص</PrimaryButton>

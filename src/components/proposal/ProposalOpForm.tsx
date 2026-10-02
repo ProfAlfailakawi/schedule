@@ -6,6 +6,7 @@
  * عنهما مرةً ثانية. ولا زرَّ هنا اسمُه «حفظ الموعد»: ما يحدث مسودةٌ فقط.
  */
 import React, { useEffect, useMemo, useState } from "react";
+import { TimeField } from "../TimeField";
 import {
   AlertTriangle, ArrowLeftRight, Building2, Check, CirclePlus, Clock3, FilePlus2, History, Info, Pencil, RotateCcw, Search, UserRoundPlus, Users,
 } from "lucide-react";
@@ -250,11 +251,11 @@ function ScheduleFields({ ws, locked }: { ws: Workspace; locked?: boolean }) {
       </div>
       <div className="sp-two">
         <Field label="بداية الوقت" required>
-          <input type="time" value={draft.start} min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={60} dir="ltr"
+          <TimeField value={draft.start} min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} dir="ltr"
             onChange={e => ws.patchDraft({ start: e.target.value })} aria-invalid={invalidTime || undefined} />
         </Field>
         <Field label="نهاية الوقت" required>
-          <input type="time" value={draft.end} min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={60} dir="ltr"
+          <TimeField value={draft.end} min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} dir="ltr"
             onChange={e => ws.patchDraft({ end: e.target.value, endTouched: true })} aria-invalid={invalidTime || undefined} />
         </Field>
       </div>

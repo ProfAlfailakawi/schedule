@@ -202,6 +202,10 @@ check(profReply.includes("AdTermClosed === true") && !profReply.includes("reques
 check(profReply.includes('kind = "proposal-accepted"') && profReply.includes("decision: undefined") && profReply.includes("endForRequest"),
   "والموافقةُ تجعل المقترحَ هو المطلوب بنهايته من اللائحة، وتُسقط القرارَ القديم");
 check(server.includes("...(stored?.thread?.length ? { thread: stored.thread } : {})"), "وإعادةُ إرسال الطلب لا تمحو الحوار");
+check(profReply.includes("sentDays.length !== baseDays.length") && profReply.includes("req.body?.days"),
+  "و«وقتٌ آخر» يقبل أياماً بعدد أيام البند نفسه، ويردّ ما غيّر العدد");
+check((server.match(/capThread\(\[/g) || []).length === 3 && !server.includes(".slice(-THREAD_LIMIT)"),
+  "والخيطُ عند حدّه يحفظ أولَ رسالةٍ في المسارات الثلاثة (قسمٌ، موافقة، ردّ)");
 check(server.includes("negotiation: negotiationState(rest)"), "وحالةُ الحوار تصل الأستاذَ محسوبةً من الخادم");
 check(page.includes("function threadBox(") && page.includes("data-accept") && page.includes("data-reply=")
   && page.includes("var NEG=${JSON.stringify(NEGOTIATION_LABEL)}"),

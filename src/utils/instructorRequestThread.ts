@@ -23,6 +23,14 @@ export const NEGOTIATION_LABEL: Record<RequestNegotiationState, string> = {
 
 /** أقصى ما يُحفظ من رسائل البند الواحد، وأقصى طول الرسالة. */
 export const THREAD_LIMIT = 40;
+/**
+ * عند الحدّ تبقى أولُ رسالةٍ في الخيط — هي الطلبُ نفسُه — ويُقصّ ما بعدها من الأقدم.
+ * كان القصُّ من الرأس يُضيع الطلبَ الأصليَّ من السجلّ بصمت.
+ */
+export function capThread<T>(thread: readonly T[]): T[] {
+  return thread.length <= THREAD_LIMIT ? [...thread] : [thread[0], ...thread.slice(-(THREAD_LIMIT - 1))];
+}
+
 export const THREAD_TEXT_LIMIT = 400;
 
 const DAY_KEYS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const;

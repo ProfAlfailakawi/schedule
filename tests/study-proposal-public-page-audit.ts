@@ -64,8 +64,8 @@ check(js.includes('"/respond"'), "نداء الرد على /respond");
 /* التوقيع: يُكتب ولا يُحفظ. */
 check(!/localStorage|sessionStorage|indexedDB|document\.cookie/.test(js), "لا تخزينَ في المتصفح (لا رقم مدني محفوظ)");
 check(!/console\.(log|info|debug|warn|error)/.test(js), "لا طباعةَ في السجل (لا رقم مدني مسرَّب)");
-check(/UI\.civil=""/.test(js), "الرقم المدني يُمحى من الذاكرة بعد نجاح الإرسال");
-check(/civil:civil/.test(js) && /digitsOf\(UI\.civil\)\.length!==12/.test(js), "الرقم المدني 12 خانة ويُرسل في الحقل civil");
+check(!/UI\.civil/.test(js) && js.includes("SK.sign(") && /pagehide/.test(js), "الرقم المدني لا يدخل حالة الصفحة: يمرّ من ورقة التوقيع إلى الطلب، ويُمحى من الذاكرة بإغلاق الصفحة");
+check(/civil:civil/.test(js) && /c\.length!==12/.test(js), "الرقم المدني 12 خانة ويُرسل في الحقل civil");
 check(/٠-٩/.test(js) && /۰-۹/.test(js), "الأرقام العربية والفارسية تُحوَّل");
 check(!/history\.(push|replace)State|location\.(search|hash)\s*=/.test(js), "لا يُكتب الرقم في الرابط");
 
@@ -98,7 +98,7 @@ check(["مقترح", "معدّل", "يخرج", "أظهر ما سيخرج أو ي
 check(["أوافق", "أحتاج تعديلاً", "أوافق على المقترح"].every(t => js.includes(t)), "أزرار الرد");
 check(js.includes("يوافق الأستاذ على المجموعة كاملة أو يطلب تعديلها"), "شرح الترتيب المترابط");
 check(["الوقت", "المكان", "الأيام", "النصاب", "سبب آخر"].every(t => js.includes(t)), "أسباب طلب التعديل");
-check(/maxlength="600"/.test(js) && /type="time"/.test(js), "الملاحظة حتى 600 حرف وحقل وقتٍ مقترح");
+check(/maxlength="600"/.test(js) && js.includes("SK.tf(") && !/type="time"/.test(js), "الملاحظة حتى 600 حرف وحقل وقتٍ مقترح بأرقامٍ إنجليزية لا حقل المتصفح");
 check(/يخرج من جدولك|يخرج من جدولك:/.test(js) && js.includes("يدخل:"), "نصّ الاستبدال: يخرج/يدخل");
 check(js.includes("تبقى الشعبة الخارجة في جدول القسم"), "معنى إلغاء الإسناد بكلماتٍ بسيطة");
 check(js.includes("عُدّل وقتُ هذه الشعبة"), "ملاحظة تعديل الشعبة المسندة");

@@ -1,5 +1,6 @@
 import { DEMO_STAGE_SECTION_ID, isDemoSession } from "../utils/demoSession";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { TimeField } from "./TimeField";
 import { DnaStepper } from "./dna";
 import { CampusTravelMap, EquationChips } from "./VisualBits";
 import { runVisualTransition } from "../utils/visualTransition";
@@ -4071,11 +4072,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     )}
                     {constraintDraft.type === "instructor_latest_end" ? (
                       <Field label="آخر نهاية">
-                        <input
-                          type="time"
+                        <TimeField
+                         
                           min={SCHEDULE_DAY_START_TIME}
                           max={SCHEDULE_DAY_END_TIME}
-                          step={60}
                           value={constraintDraft.time}
                           onChange={(e) =>
                             setConstraintDraft((p: any) => ({
@@ -4362,7 +4362,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </Field>
                   {policyDraft.type==="day_off"?<Field label="اليوم"><select value={policyDraft.day} onChange={e=>setPolicyDraft((p:any)=>({...p,day:e.target.value}))}>{Object.entries(dayLabels).map(([key,label])=><option key={key} value={key}>{String(label)}</option>)}</select></Field>:null}
                   {policyDraft.type==="close_building"?<Field label="المبنى"><BuildingPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={policyDraft.buildingId||""} onChange={building=>setPolicyDraft((p:any)=>({...p,buildingId:building?.id||"",building:building?.officialCode||""}))} /></Field>:null}
-                  {policyDraft.type==="no_classes_after"?<Field label="آخر وقت"><input type="time" value={policyDraft.time} onChange={e=>setPolicyDraft((p:any)=>({...p,time:e.target.value}))} /></Field>:null}
+                  {policyDraft.type==="no_classes_after"?<Field label="آخر وقت"><TimeField value={policyDraft.time} onChange={e=>setPolicyDraft((p:any)=>({...p,time:e.target.value}))} /></Field>:null}
                   {policyDraft.type==="growth"?<Field label="النمو %"><input type="number" min="1" max="100" value={policyDraft.growth} onChange={e=>setPolicyDraft((p:any)=>({...p,growth:Number(e.target.value)||1}))} /></Field>:null}
                   {isPowerAdmin?<Field label="النطاق"><select value={policyDraft.scope} onChange={e=>setPolicyDraft((p:any)=>({...p,scope:e.target.value}))}><option value="university">الجامعة</option><option value="department">القسم الحالي</option></select></Field>:null}
                   <PrimaryButton onClick={runPolicy} disabled={policyBusy||(policyDraft.type==="close_building"&&!policyDraft.building.trim())}>{policyBusy?<RefreshCw/>:<Play/>}{policyBusy?"أحاكي…":"اختبر"}</PrimaryButton>
@@ -4618,11 +4618,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {selectedScenario ? (
                     <div className="scenario-fields">
                       <Field label="البداية">
-                        <input
-                          type="time"
+                        <TimeField
+                         
                           min={SCHEDULE_DAY_START_TIME}
                           max={SCHEDULE_DAY_END_TIME}
-                          step={60}
                           value={selectedScenario.fstarttime}
                           onChange={(e) =>
                             patchScenario({ fstarttime: e.target.value })
@@ -4630,11 +4629,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         />
                       </Field>
                       <Field label="النهاية">
-                        <input
-                          type="time"
+                        <TimeField
+                         
                           min={SCHEDULE_DAY_START_TIME}
                           max={SCHEDULE_DAY_END_TIME}
-                          step={60}
                           value={selectedScenario.fendtime}
                           onChange={(e) =>
                             patchScenario({ fendtime: e.target.value })

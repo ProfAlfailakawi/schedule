@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { TimeField } from "./TimeField";
 import { AlertTriangle, Building2, Check, Clock3, MapPin, Pencil, Trash2, UsersRound } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
 import InstructorPicker from "./InstructorPicker";
@@ -398,7 +399,7 @@ export default function ImportPreviewTable({
                     <span className="import-day-chips">{DAY_CHIPS.map(day => <button key={day.key} type="button" disabled={!open} data-guide-ignore="تبديل يوم داخل معاينة الاستيراد قبل أي حفظ" className={row[day.key] ? "on" : ""} onClick={() => patchManual(index, "days", { [day.key]: !row[day.key] } as Partial<ImportRow>)}>{day.label}</button>)}</span>
                   </td>
                   <td className={cellClass("time",missing.time(row))} title={cellTitle("time")} dir="ltr">
-                    {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patchManual(index, "time", { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patchManual(index, "time", { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
+                    {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><TimeField value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patchManual(index, "time", { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><TimeField value={row.fendtime || ""} onChange={event => patchManual(index, "time", { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
                   {/* A hall that failed to link marks the HALL, not its building:
                       012B07 confirmed by the registry was turning red because a

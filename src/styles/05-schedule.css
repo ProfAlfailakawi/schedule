@@ -1185,12 +1185,14 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .schedule-time-control{position:relative}
 /* Keep the centred value clear of the clock button: only the field that carries
    the counter reserves the extra inline-end room. */
+.schedule-editor .field .schedule-time-control:has(.schedule-time-counter-toggle) input.time-field,/* Keep the centred value clear of the clock button: only the field that carries
+   the counter reserves the extra inline-end room. */
 .schedule-editor .field .schedule-time-control:has(.schedule-time-counter-toggle) input[type="time"]{padding-inline:12px 34px!important}
 /* ── ساعةٌ واحدة، لا اثنتان ────────────────────────────────────────────────
    حقلُ الوقت الذي له زرُّ عدّادنا الصغير كان يُظهر معه أيقونة المتصفح
    المكررة. تُخفى أيقونة المتصفح حيث يوجد زرّنا، فتبقى الصغيرة وحدها. */
 .schedule-editor .field .schedule-time-control:has(.schedule-time-counter-toggle) input[type="time"]::-webkit-calendar-picker-indicator{display:none!important}
-.schedule-editor .field .schedule-time-control:has(.schedule-time-counter-toggle) input[type="time"]{appearance:none;-webkit-appearance:none}
+.schedule-editor .field .schedule-time-control:has(.schedule-time-counter-toggle) input.time-field,.schedule-editor .field .schedule-time-control:has(.schedule-time-counter-toggle) input[type="time"]{appearance:none;-webkit-appearance:none}
 /* The wheel counter, brought to the field it belongs to. It reuses every
    `.qc-*` wheel style so the editor and the quick-add card show one control. */
 .time-counter-pop{
@@ -1201,7 +1203,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .schedule-time-control:hover{border-color:var(--line-strong)}
 .schedule-time-control:focus-within{border-color:var(--accent);background:var(--surface);box-shadow:var(--ring)}
-.schedule-editor .field .schedule-time-control input[type="time"]{
+.schedule-editor .field .schedule-time-control input.time-field,.schedule-editor .field .schedule-time-control input[type="time"]{
   display:block;box-sizing:border-box;
   inline-size:auto!important;width:auto!important;max-inline-size:100%!important;max-width:100%!important;
   min-inline-size:0!important;min-width:0!important;
