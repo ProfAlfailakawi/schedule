@@ -212,6 +212,16 @@ const customFetch = ((input:RequestInfo|URL,init?:RequestInit)=>{
       headers.set("X-Schedule-Friendly-Error","1");
       return new Response(JSON.stringify({...data,error}),{status:response.status,statusText:response.statusText,headers});
     }catch{return response}
+  }).catch((error:unknown)=>{
+    /* A dropped connection rejects with the browser's own English text
+       («Failed to fetch», «Load failed»). Screens print error.message, so it
+       reached users verbatim. Same error type, same cause — Arabic wording. */
+    if(error instanceof TypeError&&/Failed to fetch|Load failed|NetworkError|Network request failed/i.test(String(error.message))){
+      const friendly=new TypeError("تعذر الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة؛ لم يتم اعتماد أي تغيير.");
+      (friendly as any).cause=error;
+      throw friendly;
+    }
+    throw error;
   });
 }) as typeof window.fetch;
 

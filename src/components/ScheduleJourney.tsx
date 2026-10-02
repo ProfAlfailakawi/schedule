@@ -287,7 +287,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
           <span className="jr-scroll-cue" aria-hidden="true"><i />تابع القراءة</span>
 
           <div className="jr-mark" aria-hidden="true">
-            <b>SCHEDULE</b><i /><small>ACADEMIC DECISION SYSTEM</small>
+            <b>SCHEDULE</b><i /><small>نظام القرار الأكاديمي</small>
           </div>
         </header>
 

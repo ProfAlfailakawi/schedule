@@ -7,7 +7,7 @@
  */
 import React from "react";
 import {
-  AlertTriangle, ArrowLeft, CalendarCheck2, CalendarDays, Check, Clock, GraduationCap, Hourglass, Layers, Scale, ShieldAlert, X,
+  AlertTriangle, ArrowDown, ArrowLeft, ArrowUp, CalendarCheck2, CalendarDays, Check, Clock, GraduationCap, Hourglass, Layers, Scale, ShieldAlert, X,
 } from "lucide-react";
 import type { StudyProposalMetrics } from "../../types";
 import { AR, countOf } from "../../utils/arabicCount";
@@ -49,7 +49,7 @@ function Tile({ label, Icon, before, after, unit, deltaUnit, delta, direction = 
         {unit && before !== null && after !== null && !checking ? <small>{unit}</small> : null}
       </span>
       <span className="sp-tile-note">
-        {checking ? "" : changed ? <span data-dir={delta! > 0 ? "up" : "down"}>{delta! > 0 ? "▲" : "▼"} <bdi dir="ltr">{delta! > 0 ? "+" : "−"}{num(Math.abs(delta!))}</bdi>{(deltaUnit ?? unit) ? ` ${deltaUnit ?? unit}` : ""}</span> : note || ""}
+        {checking ? "" : changed ? <span data-dir={delta! > 0 ? "up" : "down"}>{delta! > 0 ? <ArrowUp aria-hidden="true" /> : <ArrowDown aria-hidden="true" />} <bdi dir="ltr">{delta! > 0 ? "+" : "−"}{num(Math.abs(delta!))}</bdi>{(deltaUnit ?? unit) ? ` ${deltaUnit ?? unit}` : ""}</span> : note || ""}
       </span>
     </div>
   );

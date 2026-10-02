@@ -711,3 +711,5 @@ body:has(.sp-root) .smart-guide-fab{visibility:hidden}
 .request-filters-more>summary::-webkit-details-marker{display:none}
 .request-filters-more[open]>summary{display:none}
 .request-filters-more:not([open])>:not(summary){display:none}
+
+.sp-tile-note [data-dir]>svg{width:12px;height:12px;stroke-width:2;flex:none}

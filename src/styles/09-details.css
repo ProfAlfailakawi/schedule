@@ -1246,7 +1246,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   font:700 11px/1.4 var(--font-mono);letter-spacing:.16em;
   color:var(--nav-muted);
 }
-.rail-identity-line{font-size:var(--t-xs);color:var(--nav-muted);opacity:.8}
+.rail-identity-line{font-size:var(--t-xs);color:var(--nav-muted);opacity:.96}
 .rail-identity-go{
   position:absolute;inset-inline-end:var(--s3);inset-block-start:50%;
   transform:translateY(-50%);
