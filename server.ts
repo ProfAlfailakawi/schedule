@@ -16228,6 +16228,8 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
    is even at every width the card is read on. */
 .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px}
 @media (min-width:560px){.stats{grid-template-columns:repeat(5,1fr)}}
+/* Five figures in two columns stranded the last one at half width: it takes the whole row. */
+@media (max-width:559px){.stats .stat:last-child:nth-child(odd){grid-column:1/-1}}
 .stat{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
 .stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .stat span{display:block;margin-top:2px;color:var(--dim);font-size:12px}
@@ -16290,7 +16292,7 @@ button.say{
 button.say:hover:not(:disabled){color:var(--jade);border-color:var(--jade)}
 button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .card-tabs{display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:8px}
-.card-tab{padding:8px 16px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--dim);font-weight:600;font-size:13px;line-height:1;font-family:inherit;cursor:pointer}
+.card-tab{flex:1 1 0;min-height:44px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--dim);font-weight:600;font-size:13px;line-height:1.3;font-family:inherit;cursor:pointer}
 .card-tab[aria-selected=true]{background:var(--jade);color:var(--on-accent);border-color:var(--jade)}
 .movement-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .movement-item{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:13px;line-height:1.6}
@@ -16339,9 +16341,9 @@ ${PROPOSAL_ALERT_CSS}
 .pub-week .wslot b{display:block;font-size:12px;font-weight:600;line-height:1.35}
 .pub-week .wslot time{display:block;margin-top:2px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);direction:ltr}
 .pub-week .wslot{min-width:0;overflow:hidden}
-.pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:9.5px;font-weight:400;line-height:1.35;opacity:.78;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pub-week .wslot .wroom{font-family:ui-monospace,monospace;font-size:9px;letter-spacing:-.2px;text-align:start}
-@media(max-width:520px){.pub-week th.t{width:40px;font-size:9.5px}.pub-week th{font-size:11px;padding:8px 2px}.pub-week .wslot{padding:6px 5px}.pub-week .wslot b{font-size:11px;line-height:1.3;overflow-wrap:anywhere}.pub-week .wslot time{font-size:9.5px;line-height:1.35}}
+.pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:10px;font-weight:400;line-height:1.35;opacity:.9;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pub-week .wslot .wroom{font-family:ui-monospace,monospace;font-size:9.5px;letter-spacing:-.2px;text-align:start;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:normal}
+@media(max-width:520px){.pub-week th.t{width:42px;font-size:10px}.pub-week th{font-size:11px;padding:8px 2px}.pub-week .wslot{padding:6px 5px}.pub-week .wslot b{font-size:11px;line-height:1.3;overflow-wrap:anywhere}.pub-week .wslot time{font-size:10px;line-height:1.35}}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @media print{
   @page{size:A4 portrait;margin:12mm 11mm}
@@ -16600,7 +16602,7 @@ ${PROPOSAL_ALERT_CSS}
               /* المختصرُ هادئ: لا رقمَ مقرّر ولا كلمةَ «كلية» ولا اسمَ قسم،
                  والقاعةُ في سطرٍ يُقصّ داخل الخلية فلا يخرج عن حدودها. */
               [shortCardCollege(visibleCardCollege(row.college))].filter(Boolean).map(esc).map(function(v){return '<small class="wcollege">'+v+'</small>'}).join("")+
-              ((row.room||row.hall)?'<small class="wroom" dir="ltr" title="'+esc((row.room||"")+"/"+(row.hall||""))+'">'+esc((row.room||"")+"/"+(row.hall||""))+'</small>':'')+'</span>';
+              ((row.room||row.hall)?'<small class="wroom" dir="ltr" title="'+esc((row.room||"")+"/"+(row.hall||""))+'">'+esc(row.room||"")+"/<wbr>"+esc(row.hall||"")+'</small>':'')+'</span>';
           }).join("")+'</td>';
         }).join("")+'</tr>';
       }).join("")+'</tbody></table>';
