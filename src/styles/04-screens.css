@@ -1265,6 +1265,7 @@
   color:var(--muted);font-size:var(--t-sm);
 }
 .about-editorial-footer span{font-weight:600;letter-spacing:.1em;color:var(--ink-2)}
+.about-editorial-footer small{font-size:var(--t-eyebrow)}
 
 /* Four terms of one number, small enough not to compete with it. */
 .deck-metrics article{position:relative;overflow:hidden}
