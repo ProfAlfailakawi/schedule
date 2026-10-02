@@ -321,7 +321,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    {healthLines.length?<section className={`deck-chart dashboard-health-ribbon${healthAwaiting?" is-awaiting":""}`} aria-labelledby="dashboard-health-title" aria-busy={healthAwaiting||undefined}>
     <header><CheckCircle2 aria-hidden="true"/><span id="dashboard-health-title">صحة الجدول</span></header>
     <div className="bar-rows dashboard-health-lines">
-     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor">
+     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor" style={{["--v" as any]:item.value??0}} data-high={(item.value??0)>=80||undefined}>
       <span>{item.label}</span>
       <i role="progressbar" aria-label={`مؤشر ${item.label}`} aria-valuemin={0} aria-valuemax={100} {...(item.value==null?{}:{"aria-valuenow":item.value})} {...(item.value==null?{"aria-valuetext":"قيد القراءة"}:{})}><b style={{width:`${item.value??0}%`}} aria-hidden="true"/></i>
       <em>{item.value==null?"—":`${num(item.value)}٪`}</em>
@@ -380,7 +380,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     {power?<><article className="deck-chart" aria-labelledby="dashboard-peak-hours-title">
      <header><Clock3 aria-hidden="true"/><span id="dashboard-peak-hours-title">ذروة الأوقات</span></header>
      {ws.busiestHours.length?<div className="bar-rows" role="list">
-      {ws.busiestHours.slice(0,5).map(slot=><div key={slot.hour} role="listitem" aria-label={`${scheduleClockForDisplay(slot.hour)}: ${countOf(slot.count, AR.appointment)}`} title={`${scheduleClockForDisplay(slot.hour)}: ${num(slot.count)}`}>
+      {ws.busiestHours.slice(0,5).map(slot=><div key={slot.hour} role="listitem" aria-label={`${scheduleClockForDisplay(slot.hour)}: ${countOf(slot.count, AR.appointment)}`} title={`${scheduleClockForDisplay(slot.hour)}: ${num(slot.count)}`} style={{["--v" as any]:Math.round(slot.count/maxHour*100)}} data-high={Math.round(slot.count/maxHour*100)>=80||undefined}>
        <span dir="ltr" aria-hidden="true">{scheduleClockForDisplay(slot.hour)}</span>
        <i aria-hidden="true"><b style={{width:`${Math.round(slot.count/maxHour*100)}%`}}/></i>
        <em aria-hidden="true">{num(slot.count)}</em>

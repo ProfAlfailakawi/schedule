@@ -1693,7 +1693,7 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
   gap:var(--s2);
 }
 .living-health-strip>span{
-  display:flex;flex-direction:column;gap:3px;
+  display:flex;align-items:center;gap:var(--s2);
   min-width:66px;
   padding:var(--s2) var(--s3);
   border-radius:var(--r-sm);
@@ -1704,24 +1704,52 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
   font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.04em;
   white-space:nowrap;
 }
-.living-health-strip b{
-  color:var(--ink);
-  font:600 var(--t-h3)/1.1 var(--font-mono);
+/* The number lives inside the ring now; the <b> stays for screen readers. */
+
+/* --- Score ring ---------------------------------------------------------------
+   One small ring for every "x out of 100" already on screen (the board's three
+   health tiles, the intelligence cards). It fills counter-clockwise from the top
+   so it grows the way the Arabic line runs, and its tone is the one the health
+   scene already uses. */
+.mini-ring{
+  --ring-size:38px;
+  position:relative;flex:none;display:inline-grid;place-items:center;
+  width:var(--ring-size);height:var(--ring-size);
+  color:var(--accent);
+}
+.mini-ring>svg{
+  position:absolute;inset:0;width:100%;height:100%;
+  transform:scaleX(-1) rotate(-90deg);
+}
+.mini-ring .ring-track{fill:none;stroke:color-mix(in srgb,var(--line-strong) 60%,transparent);stroke-width:3.4}
+.mini-ring .ring-fill{fill:none;stroke:currentColor;stroke-width:3.4;stroke-linecap:round;transition:stroke-dasharray .6s var(--ease-out)}
+.mini-ring.tone-good{color:var(--success)}
+.mini-ring.tone-warn{color:var(--warning)}
+.mini-ring.tone-bad{color:var(--danger)}
+.mini-ring>b{
+  position:relative;
+  font:600 calc(var(--ring-size) * .31)/1 var(--font-mono);
   font-variant-numeric:tabular-nums lining-nums;
+  color:var(--ink);letter-spacing:-.02em;
+  direction:ltr;unicode-bidi:isolate;
 }
-/* A three-pixel reading of the same number. It fills from the inline start so
-   it grows the way the language runs, and it is drawn from --reading, which
-   the component sets from the score itself. */
-.living-health-strip>span::after{
-  content:"";
-  height:3px;margin-top:1px;
-  border-radius:var(--r-full);
-  background:linear-gradient(var(--accent),var(--accent)) no-repeat,
-             color-mix(in srgb,var(--line-strong) 55%,transparent);
-  background-size:var(--reading,0%) 100%, 100% 100%;
-  background-position:100% 0, 0 0;
+/* Waiting for the reading: the empty track breathes, the number is a soft block. */
+.mini-ring.is-pending .ring-track{animation:skeleton 1.3s ease-in-out infinite alternate}
+.health-skeleton-dot{
+  display:block;width:calc(var(--ring-size) * .38);height:6px;border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--ink) 10%,var(--surface-3));
+  animation:skeleton 1.3s ease-in-out infinite alternate;
 }
-:root:not([dir="rtl"]) .living-health-strip>span::after{background-position:0 0, 0 0}
+@media (prefers-reduced-motion:reduce){
+  .mini-ring.is-pending .ring-track,.health-skeleton-dot{animation:none}
+}
+/* Inside an intelligence card the ring stands where the figure stood. */
+.insight-preview>b.insight-preview-ring,
+.insight-preview-list>.insight-preview>b.insight-preview-ring{
+  font-size:inherit;line-height:0;margin-block-start:var(--s2);direction:inherit;
+}
+.insight-preview-list>.insight-preview>b.insight-preview-ring{margin-block-start:0}
+.score-ring-slot{display:inline-flex;line-height:0}
 
 .living-command-actions{
   display:flex;align-items:center;gap:var(--s2);

@@ -212,17 +212,17 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
     </details>
 
     <div className="location-health-grid">
-      <Surface><Building2/><b>{data.health.officialBuildings||0}</b><span>{nounFor(data.health.officialBuildings||0, AR.building)} {nounFor(data.health.officialBuildings||0, AR.officialAdj)}</span></Surface>
-      <Surface><DoorOpen/><b>{data.health.officialRooms||0}</b><span>{nounFor(data.health.officialRooms||0, AR.room)} {nounFor(data.health.officialRooms||0, AR.officialFemAdj)}</span></Surface>
-      <Surface><UsersRound/><b>{data.health.sharedRooms||0}</b><span>{nounFor(data.health.sharedRooms||0, AR.room)} {nounFor(data.health.sharedRooms||0, AR.sharedFemAdj)}</span></Surface>
-      <Surface><CircleAlert/><b>{data.health.pendingRooms||0}</b><span>بانتظار قاعة</span></Surface>
-      <Surface><ShieldCheck/><b>{data.health.historicalReview||0}</b><span>تاريخية تحتاج توثيق</span></Surface>
+      <Surface className={data.health.officialBuildings?"":"is-zero"}><Building2/><b>{data.health.officialBuildings||0}</b><span>{nounFor(data.health.officialBuildings||0, AR.building)} {nounFor(data.health.officialBuildings||0, AR.officialAdj)}</span></Surface>
+      <Surface className={data.health.officialRooms?"":"is-zero"}><DoorOpen/><b>{data.health.officialRooms||0}</b><span>{nounFor(data.health.officialRooms||0, AR.room)} {nounFor(data.health.officialRooms||0, AR.officialFemAdj)}</span></Surface>
+      <Surface className={data.health.sharedRooms?"":"is-zero"}><UsersRound/><b>{data.health.sharedRooms||0}</b><span>{nounFor(data.health.sharedRooms||0, AR.room)} {nounFor(data.health.sharedRooms||0, AR.sharedFemAdj)}</span></Surface>
+      <Surface className={data.health.pendingRooms?"":"is-zero"}><CircleAlert/><b>{data.health.pendingRooms||0}</b><span>بانتظار قاعة</span></Surface>
+      <Surface className={data.health.historicalReview?"":"is-zero"}><ShieldCheck/><b>{data.health.historicalReview||0}</b><span>تاريخية تحتاج توثيق</span></Surface>
       {/* The two readings the panel never had: what the registry is holding
           back, and what it is carrying that can never be used. Both are
           actionable from this same screen. */}
-      <Surface><CircleAlert/><b>{data.health.awaitingConfirmation||0}</b><span>بانتظار التأكيد — لا تظهر لأحد</span></Surface>
-      <Surface><Building2/><b>{data.health.emptyBuildingsWithHistory||0}</b><span>{nounFor(data.health.emptyBuildingsWithHistory||0, AR.building)} بلا قاعة فعّالة ومع سجل سابق — القاعات تنتظر التأكيد</span></Surface>
-      <Surface><Building2/><b>{data.health.emptyBuildingsUnused||0}</b><span>{nounFor(data.health.emptyBuildingsUnused||0, AR.building)} بلا قاعة ولا استخدام — التعطيل آمن</span></Surface>
+      <Surface className={data.health.awaitingConfirmation?"":"is-zero"}><CircleAlert/><b>{data.health.awaitingConfirmation||0}</b><span>بانتظار التأكيد — لا تظهر لأحد</span></Surface>
+      <Surface className={data.health.emptyBuildingsWithHistory?"":"is-zero"}><Building2/><b>{data.health.emptyBuildingsWithHistory||0}</b><span>{nounFor(data.health.emptyBuildingsWithHistory||0, AR.building)} بلا قاعة فعّالة ومع سجل سابق — القاعات تنتظر التأكيد</span></Surface>
+      <Surface className={data.health.emptyBuildingsUnused?"":"is-zero"}><Building2/><b>{data.health.emptyBuildingsUnused||0}</b><span>{nounFor(data.health.emptyBuildingsUnused||0, AR.building)} بلا قاعة ولا استخدام — التعطيل آمن</span></Surface>
     </div>
 
     <nav className="location-admin-tabs" aria-label="أقسام إدارة المباني والقاعات">

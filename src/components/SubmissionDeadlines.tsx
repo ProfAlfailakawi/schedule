@@ -190,7 +190,7 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
         </header>
 
         <fieldset className="sd-step">
-          <legend><b>١</b> على من؟</legend>
+          <legend><b>1</b> على من؟</legend>
           <div className="sd-seg" role="radiogroup" aria-label="نطاق الاستثناء">
             {([["all", `كل الأقسام (${rows.length})`], ["college", "كلية"], ["departments", "أقسام محدّدة"]] as Array<[ScopeKind, string]>).map(([value, label]) => (
               <button key={value} type="button" role="radio" aria-checked={scope === value} data-active={scope === value || undefined}
@@ -239,7 +239,7 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
         </fieldset>
 
         <fieldset className="sd-step">
-          <legend><b>٢</b> كم؟</legend>
+          <legend><b>2</b> كم؟</legend>
           <div className="sd-seg" role="radiogroup" aria-label="قدر الاستثناء">
             <button type="button" role="radio" aria-checked={mode === "days"} data-active={mode === "days" || undefined}
               data-guide-ignore="اختيار الأيام بدل التاريخ داخل الورقة — اختيارٌ لا فعل" onClick={() => setMode("days")}>أيامٌ إضافية</button>
@@ -270,7 +270,7 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
         </fieldset>
 
         <fieldset className="sd-step">
-          <legend><b>٣</b> لماذا؟</legend>
+          <legend><b>3</b> لماذا؟</legend>
           <label className="sd-field">
             <span>السبب <small>مطلوب — يراه القسم مع موعده</small></span>
             <textarea rows={2} value={reason} onChange={e => setReason(e.target.value)} placeholder="تأخّر اعتماد المنتدبين" />

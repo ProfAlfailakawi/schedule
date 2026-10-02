@@ -1790,27 +1790,40 @@ export default function AdminUsers({
               </select>
             </header>
             <div className="master-list permission-master">
-              {filtered.map((p) => (
-                <button
-                  type="button"
-                  key={permKey(p)}
-                  className={
-                    selected && permKey(selected) === permKey(p) ? "active" : ""
-                  }
-                  onClick={() => setSelectedPermKey(permKey(p))}
-                >
-                  <span className="master-symbol">
-                    <KeyRound />
-                  </span>
-                  <div>
-                    <strong>
-                      {formById.get(p.FormNameId)?.FormName || "صلاحية"}
-                    </strong>
-                    <small>{userById.get(p.SystemUserId)?.Name || ""}</small>
-                  </div>
-                  <ChevronLeft />
-                </button>
-              ))}
+              {filtered.map((p, index) => {
+                /* One heading per run of the same person: the name is said once
+                   with a count, instead of on every identical row. */
+                const startsRun = index === 0 || filtered[index - 1].SystemUserId !== p.SystemUserId;
+                const runLength = startsRun ? (() => { let n = 0; while (filtered[index + n] && filtered[index + n].SystemUserId === p.SystemUserId) n++; return n; })() : 0;
+                const ownerName = userById.get(p.SystemUserId)?.Name || "";
+                return (
+                  <React.Fragment key={permKey(p)}>
+                    {startsRun && ownerName && runLength > 1 ? (
+                      <div className="permission-group-head" role="presentation">
+                        <UserCog aria-hidden="true" />
+                        <span>{ownerName}</span>
+                        <b>{runLength.toLocaleString("ar-KW-u-nu-latn")}</b>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={`${selected && permKey(selected) === permKey(p) ? "active" : ""}${runLength > 1 || !startsRun ? " in-run" : ""}`.trim()}
+                      onClick={() => setSelectedPermKey(permKey(p))}
+                    >
+                      <span className="master-symbol">
+                        <KeyRound />
+                      </span>
+                      <div>
+                        <strong>
+                          {formById.get(p.FormNameId)?.FormName || "صلاحية"}
+                        </strong>
+                        <small>{ownerName}</small>
+                      </div>
+                      <ChevronLeft />
+                    </button>
+                  </React.Fragment>
+                );
+              })}
             </div>
           </section>
           <aside className="inspector-pane">

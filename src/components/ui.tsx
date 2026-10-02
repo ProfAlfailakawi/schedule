@@ -2,7 +2,7 @@ import React from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { runVisualTransition } from "../utils/visualTransition";
-import { AlertTriangle, Check, Edit2, Plus, Search, Trash2, X, Inbox, ChevronLeft, CalendarDays, Clock3, Hash, Hourglass, Layers, ListOrdered, MapPin, Tag, Info, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Check, Edit2, Plus, Search, Trash2, X, Inbox, ChevronLeft, CalendarDays, Clock3, Hash, Hourglass, Layers, ListOrdered, MapPin, Tag, Info, ShieldAlert, Phone, IdCard } from "lucide-react";
 import { scheduleClockForDisplay } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 
@@ -514,7 +514,7 @@ export function ConsoleRail({ value, options, onChange, label }: {
   // can start off-screen. Bring it into view whenever it changes.
   const active = React.useRef<HTMLButtonElement | null>(null);
   React.useEffect(() => {
-    active.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    active.current?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [value]);
 
   return (
@@ -591,7 +591,7 @@ export function RecordCard({icon,title,subtitle,meta,actions,onClick,className="
 const PILL_GLYPHS:Record<string,React.ReactNode>={
   "الوقت":<Clock3/>,"الأيام":<CalendarDays/>,"المكان":<MapPin/>,
   "الوحدات":<Layers/>,"الساعات":<Hourglass/>,"الترتيب":<ListOrdered/>,
-  "الرمز":<Tag/>,"رمز القسم":<Tag/>,"الرقم الأكاديمي":<Hash/>,"السعة":<Hash/>
+  "الرمز":<Tag/>,"رمز القسم":<Tag/>,"رقم الهاتف":<Phone/>,"الرقم المدني":<IdCard/>,"الرقم الأكاديمي":<Hash/>,"السعة":<Hash/>
 };
 export function MetaPill({label,value,dir}:{label:React.ReactNode;value:React.ReactNode;dir?:"ltr"|"rtl"}){
   const key=typeof label==="string"?label:"";
