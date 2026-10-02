@@ -30,7 +30,7 @@ import MiniRing from "./MiniRing";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRight, Check, ChevronDown, Clock3, Inbox, Link2, Loader2, MailQuestion,
-  ClipboardPen, MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
+  ClipboardPen, Equal, Grid3x3, MailCheck, MailOpen, MessageSquare, Replace, Send, ShieldAlert, ShieldCheck, SlidersHorizontal, X,
 } from "lucide-react";
 import { DnaCount } from "./dna";
 import { RequestTimelineToggle } from "./dna/requestDna";
@@ -926,6 +926,31 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     .filter(row => !instructorFilter || Number(row.AdInstructorId) === instructorFilter),
     [rows, needle, instructorFilter]);
 
+  /* «تكدّس الطلبات»: كم موعداً مطلوباً يبدأ في كل خليّة (يوم × وقت بداية).
+     عدٌّ لا غير، من بنود الطلبات المُجابة المحمَّلة أصلاً في الشاشة — لا
+     جلبَ جديداً، ولا تعريفاً للتعارض بين أستاذين. بنودُ «أبقِ» و«احذف» لا
+     تُعدّ لأنها ليست موعداً مطلوباً. */
+  const heat = useMemo(() => {
+    const cells = new Map<string, number>();
+    const starts = new Set<string>();
+    for (const row of rows || []) {
+      if (row.status === "sent") continue;
+      for (const item of row.items || []) {
+        if ((item.action !== "change" && item.action !== "add") || (item as any).hidden) continue;
+        for (const slot of item.slots || []) {
+          if (!INBOX_DAY_NAMES[slot.day] || !/^\d{2}:\d{2}/.test(String(slot.start || ""))) continue;
+          const start = String(slot.start).slice(0, 5);
+          starts.add(start);
+          cells.set(`${slot.day}|${start}`, (cells.get(`${slot.day}|${start}`) || 0) + 1);
+        }
+      }
+    }
+    const times = [...starts].sort();
+    const max = Math.max(0, ...cells.values());
+    return { cells, times, max };
+  }, [rows]);
+  const openedQuiet = (rows || []).filter(row => row.status === "sent" && row.linkOpenedAt).length;
+
   /* الأساتذةُ الذين في الوارد فعلاً، ومن طلب منهم أولاً — كقائمة الأستاذ في
      «الجدول الدراسي». */
   const instructorOptions = useMemo(() => {
@@ -1259,12 +1284,59 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         />
       ) : (
         <>
-          {/* سطرٌ واحد بدل شريط المراحل: كم أجاب، وكم طلبوا تغييراً. */}
+          {/* لمحةٌ بصرية: حلقة الإجابة وتفصيلها، وخريطة «تكدّس الطلبات». المقامُ
+              هو الطلباتُ المُرسلة في هذا النطاق، لا كلُّ الأساتذة. */}
           {totals ? (
-            <div className="request-summary" role="status">
-              <span>{Number(totals.sent || 0) > 0 ? <MiniRing value={Math.round((Number(totals.answered || 0) / Number(totals.sent || 1)) * 100)} size={26} decorative>{""}</MiniRing> : null}أجاب: {num(Number(totals.answered || 0))} من {num(Number(totals.sent || 0))}</span>
-              {totals?.changed ? <div><Replace aria-hidden="true" />طلبوا تغييراً: {num(Number(totals.changed))}</div> : null}
-              {totals?.unchanged ? <div><Check aria-hidden="true" />بلا تغيير: {num(Number(totals.unchanged))}</div> : null}
+            <div className="inbox-glance">
+              <section className="glance-card glance-ring" role="status" aria-label="تغطية الإجابة">
+                <div className="glance-ring-top">
+                  <MiniRing value={Number(totals.sent || 0) > 0 ? Math.round((Number(totals.answered || 0) / Number(totals.sent || 1)) * 100) : null} size={60} decorative className="glance-ring-dial">{num(Number(totals.answered || 0))}</MiniRing>
+                  <div className="glance-ring-text">
+                    <b>أجاب: {num(Number(totals.answered || 0))} من {num(Number(totals.sent || 0))}</b>
+                    <span>من الطلبات المُرسلة في هذا النطاق</span>
+                  </div>
+                </div>
+                <div className="glance-legend">
+                  <div data-tone="answered"><MailCheck aria-hidden="true" /><b>{num(Number(totals.answered || 0))}</b><span>أجابوا</span></div>
+                  {openedQuiet ? <div data-tone="opened"><MailOpen aria-hidden="true" /><b>{num(openedQuiet)}</b><span>فتحوا ولم يجيبوا</span></div> : null}
+                  {totals.unopened ? <div data-tone="unopened"><MailQuestion aria-hidden="true" /><b>{num(Number(totals.unopened))}</b><span>لم يفتحوا</span></div> : null}
+                  {totals.settled ? <div data-tone="settled"><ShieldCheck aria-hidden="true" /><b>{num(Number(totals.settled))}</b><span>انتهى</span></div> : null}
+                  {totals?.changed ? <div><Replace aria-hidden="true" /><b>{num(Number(totals.changed))}</b><span>طلبوا تغييراً</span></div> : null}
+                  {totals?.unchanged ? <div data-tone="unchanged"><Equal aria-hidden="true" /><b>{num(Number(totals.unchanged))}</b><span>بلا تغيير</span></div> : null}
+                </div>
+              </section>
+              {heat.times.length ? (
+                <section className="glance-card glance-heat" aria-label="تكدس الطلبات">
+                  <header><Grid3x3 aria-hidden="true" /><b>تكدس الطلبات</b><span>مواعيدُ البدء المطلوبة</span></header>
+                  <div className="heat-grid" role="table" aria-label="عدد المواعيد المطلوبة لكل يوم ووقت بدء">
+                    <div className="heat-row heat-head" role="row">
+                      <span aria-hidden="true" />
+                      {Object.values(INBOX_DAY_NAMES).map(name => <span key={name} role="columnheader">{name}</span>)}
+                    </div>
+                    {heat.times.map(time => (
+                      <div className="heat-row" role="row" key={time}>
+                        <time role="rowheader">{time}</time>
+                        {Object.entries(INBOX_DAY_NAMES).map(([day, name]) => {
+                          const count = heat.cells.get(`${day}|${time}`) || 0;
+                          const level = count ? Math.max(1, Math.ceil((count / heat.max) * 4)) : 0;
+                          return (
+                            <span key={day} role="cell" className="heat-cell" data-heat={level}
+                              title={`${name} ${time}: ${num(count)} ${count === 1 ? "موعد" : "مواعيد"}`}
+                              aria-label={`${name} ${time}: ${num(count)}`}>
+                              {count ? num(count) : ""}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                  <footer className="heat-legend" aria-hidden="true">
+                    <span>أقل</span>
+                    {[0, 1, 2, 3, 4].map(level => <span key={level} className="heat-swatch heat-cell" data-heat={level} />)}
+                    <span>أكثر</span>
+                  </footer>
+                </section>
+              ) : null}
             </div>
           ) : null}
 
