@@ -10423,7 +10423,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                 <>
                   {agendaEls.slice(0, AGENDA_PHONE_HEAD)}
                   <details className="agenda-rest">
-                    <summary data-guide-ignore="طيّ بقية صفوف القائمة على الهاتف عرضٌ فقط">عرض الكل ({agendaRows.length.toLocaleString("ar-KW-u-nu-latn")})</summary>
+                    <summary data-guide-ignore="طيّ بقية صفوف القائمة على الهاتف عرضٌ فقط">عرض الباقي ({(agendaEls.length - AGENDA_PHONE_HEAD).toLocaleString("ar-KW-u-nu-latn")})</summary>
                     {agendaEls.slice(AGENDA_PHONE_HEAD)}
                   </details>
                 </>
