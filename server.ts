@@ -19581,12 +19581,12 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
 .clear:hover{background:var(--soft);color:var(--ink)}
 .controls{display:grid;gap:8px}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:12px;background:var(--soft);border:1px solid var(--line)}
-.seg button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--dim);font-size:14px;font-weight:500;cursor:pointer;transition:background .18s var(--ease),color .18s,box-shadow .18s}
+.seg button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--dim);font-size:14px;font-weight:500;cursor:pointer;transition:background .18s var(--ease),color .18s,box-shadow .18s}
 .seg button[aria-pressed=true]{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(19,24,23,.08),0 2px 8px -4px rgba(19,24,23,.18)}
 .seg button[aria-pressed=true] svg{color:var(--jade)}
 .chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity;margin:0 calc(-1 * var(--gutter));padding:2px var(--gutter);padding-inline-end:40px;scroll-padding-inline:var(--gutter);-webkit-mask-image:linear-gradient(to left,transparent,#000 var(--gutter),#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to left,transparent,#000 var(--gutter),#000 calc(100% - 40px),transparent)}
 .chips::-webkit-scrollbar{display:none}
-.chips button{flex:none;scroll-snap-align:start;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);font-size:13.5px;cursor:pointer;transition:background .18s var(--ease),border-color .18s,color .18s}
+.chips button{flex:none;scroll-snap-align:start;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);font-size:13.5px;cursor:pointer;transition:background .18s var(--ease),border-color .18s,color .18s}
 .chips button:hover{border-color:var(--line-strong)}
 .chips button .n{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:18px;padding:0 5px;border-radius:999px;background:var(--soft);text-align:center;line-height:18px}
 .chips button .today{width:6px;height:6px;border-radius:50%;background:var(--brass)}
@@ -19672,7 +19672,7 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
 .state.bad .art{background:var(--bad-soft);color:var(--bad)}
 .state h2{margin:0;font-size:16px;font-weight:600}
 .state p{margin:0;max-width:34ch;color:var(--dim);font-size:13.5px;line-height:1.8}
-.state button{margin-top:10px;min-height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--line-strong);background:var(--card);font-size:13.5px;font-weight:500;cursor:pointer}
+.state button{margin-top:10px;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line-strong);background:var(--card);font-size:13.5px;font-weight:500;cursor:pointer}
 .state button:hover{border-color:var(--jade);color:var(--jade)}
 
 /* ── التحميل */
