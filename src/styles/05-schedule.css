@@ -8517,6 +8517,7 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
   .schedule-agenda .agenda-place{justify-self:start;min-width:0}
   .schedule-agenda .agenda-time{min-width:0}
   .schedule-agenda .agenda-place.is-empty,
+  .schedule-agenda .agenda-place .place-dash,
   .schedule-agenda .code-chip.is-empty,
   .schedule-agenda .unit-pill.is-empty,
   .schedule-agenda .agenda-meta:not(:has(.unit-pill:not(.is-empty))){display:none}

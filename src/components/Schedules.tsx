@@ -10378,9 +10378,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         {formatScheduleTimeRange(s.fstarttime, s.fendtime)}
                       </strong>
                     </div>
-                    <div className={`agenda-place${roomDisplay(s) ? "" : " is-empty"}`} title="المكان">
+                    <div className={`agenda-place${roomDisplay(s) || historicalLocationNeedsReview(s) ? "" : " is-empty"}`} title="المكان">
                       <MapPin aria-hidden="true" />
-                      <strong>{roomDisplay(s) || "—"}</strong>
+                      <strong className={roomDisplay(s) ? undefined : "place-dash"}>{roomDisplay(s) || "—"}</strong>
                       {historicalLocationNeedsReview(s)?<Badge tone="neutral">بيانات مكان تاريخية غير موثقة</Badge>:null}
                     </div>
                     <div className="agenda-meta">
