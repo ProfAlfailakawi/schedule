@@ -2501,6 +2501,8 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .dashboard-health-factor[data-tone="good"]>em{color:var(--success)}
 .dashboard-health-factor[data-tone="warn"]>em{color:var(--warning)}
 .dashboard-health-factor[data-tone="bad"]>em{color:var(--danger)}
+.dashboard-health-factor[data-tone="calm"]>i>b{background:color-mix(in srgb,var(--muted-2) 70%,var(--surface))}
+.dashboard-health-factor[data-tone="calm"]>em{color:var(--ink-2)}
 .deck-signals .signal-ring-row{justify-content:flex-start}
 .deck-signals article:has(.signal-ring-row){align-items:center}
 .deck-today.is-empty{
