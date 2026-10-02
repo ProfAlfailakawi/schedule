@@ -4789,3 +4789,10 @@ button.twin-delta{width:100%}
   display:block!important;position:absolute;width:1px;height:1px;margin:-1px;padding:0;
   border:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap;
 }
+
+/* A lone last tile spans the row instead of leaving a hole beside it. */
+.insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:1/-1}
+@media (max-width:640px){
+  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:auto}
+  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(2n+1){grid-column:1/-1}
+}
