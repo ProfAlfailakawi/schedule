@@ -2148,7 +2148,7 @@ export default function AdminUsers({
                 </article>
                 <article>
                   <span>العنصر</span>
-                  <b>
+                  <b dir="ltr">
                     {selectedLog.entityId ? `#${selectedLog.entityId}` : "—"}
                   </b>
                 </article>

@@ -157,11 +157,11 @@ document.addEventListener("invalid", (event) => {
 
 const friendlyInfrastructureError=(text:string,status:number)=>{
   const value=String(text||"").trim();
-  if(!value)return status>=500?"تعذر إكمال العملية بسبب مشكلة مؤقتة في الخادم. لم يتم اعتماد أي تغيير؛ أعد المحاولة بعد التحقق من الاتصال.":"تعذر إكمال العملية. راجع البيانات ثم أعد المحاولة.";
+  if(!value)return status>=500?"تعذر إكمال العملية بسبب مشكلة مؤقتة في الخادم. قد لا يكون الحفظ قد تم؛ إن كنت تحفظ تغييراً فتأكد من حالته قبل إعادة المحاولة.":"تعذر إكمال العملية. راجع البيانات ثم أعد المحاولة.";
   // Preserve Arabic validation/business-rule messages returned by the application itself.
   if(/[\u0600-\u06FF]/.test(value))return value;
   if(/Failed to fetch|NetworkError|ECONN|ENOTFOUND|ETIMEDOUT|socket|network/i.test(value))return"تعذر الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة. إن كنت تحفظ تغييراً فتأكد من حالته قبل التكرار.";
-  if(/Firebase|Firestore|database|SQL|internal server|stack|TypeError|ReferenceError|SyntaxError/i.test(value)||status>=500)return"تعذر إكمال العملية بسبب مشكلة مؤقتة في الخادم. بياناتك الحالية لم تُعتمد كتغيير جديد؛ أعد المحاولة، وإذا تكرر الأمر راجع سجل التغييرات.";
+  if(/Firebase|Firestore|database|SQL|internal server|stack|TypeError|ReferenceError|SyntaxError/i.test(value)||status>=500)return"تعذر إكمال العملية بسبب مشكلة مؤقتة في الخادم. قد لا يكون الحفظ قد تم؛ إن كنت تحفظ تغييراً فتأكد من حالته (أو من سجل التغييرات) قبل إعادة المحاولة.";
   if(status===401)return"انتهت جلسة الدخول أو لم تعد صالحة. سجّل الدخول من جديد ثم أعد المحاولة.";
   if(status===403)return"هذه العملية خارج صلاحيات حسابك أو نطاق قسمك.";
   if(status===404)return"تعذر العثور على الجزء المطلوب. تأكد من رفع ملفات التحديث كاملة مع الحفاظ على المسارات.";
