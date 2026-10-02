@@ -36,6 +36,7 @@ import { DnaCount } from "./dna";
 import { RequestTimelineToggle } from "./dna/requestDna";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
 import { num } from "./proposal/proposalFormat";
+import { effectiveStatus } from "../utils/studyProposal";
 import { ProposalLauncherBar, ProposalStrip, type OpenWorkspace } from "./proposal/ProposalInboxParts";
 import { proposalApi, type StaffProposalView } from "./proposal/proposalApi";
 const StudyProposalWorkspace = React.lazy(() => import("./proposal/StudyProposalWorkspace"));
@@ -416,9 +417,12 @@ function RequestCard({ row, currentRows, onDecide, onReply, busyKey, filter, row
           </span>
         ) : null}
         {row.status === "settled" ? <Badge tone="success">انتهى</Badge> : null}
-        <button type="button" className="request-propose" onClick={() => onOpenProposal({ requestId: row.id })} data-guide-target="proposal-start">
-          <ClipboardPen aria-hidden="true" /> إعداد مقترح دراسي
-        </button>
+        {/* مقترحٌ فعّال يظهر سطره بزرّه («فتح»/«متابعة»)، فلا يتكرر زرٌّ يفتح المساحة نفسها. */}
+        {proposals.some(view => !["withdrawn", "expired"].includes(effectiveStatus(view.proposal))) ? null : (
+          <button type="button" className="request-propose" onClick={() => onOpenProposal({ requestId: row.id })} data-guide-target="proposal-start">
+            <ClipboardPen aria-hidden="true" /> إعداد مقترح دراسي
+          </button>
+        )}
         {/* ── إبلاغُ الأستاذ بالقرار ──────────────────────────────────────
             حين يُقرَّر بندٌ واحدٌ على الأقل: رسالةُ واتساب جاهزة تعدّ ما ثُبّت
             وما رُفض، ومعها رابطُه نفسه ليرى التفاصيل والبدائل. */}
