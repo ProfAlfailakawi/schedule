@@ -412,9 +412,11 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                       </div>
                     </header>
                     {rule.suggested ? (
-                      <Notice type="warning">
+                      <React.Fragment key={selected.AdSectionId}>
+                      <Notice type="warning" inline>
                         اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين. هذه قيمٌ مقترحة من اسم القسم، ولا يُقاس عليها أي طالب قبل حفظها.
                       </Notice>
+                      </React.Fragment>
                     ) : null}
                     <p>
                       عليها يقيس استبيان الطلبة كشف الدرجات المرفوع قبل أن يفتح حالة الخريج أو المتوقع تخرجه،
