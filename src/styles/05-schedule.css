@@ -8472,3 +8472,17 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
 :root:not([data-theme="dark"]) :is(.dock-views>button.on,.dock-act.on){
   color:var(--accent-contrast);background:var(--accent);
 }
+
+/* ── Schedule list calm pass (display only) ─────────────────────────────────
+   Unit/hour pills and the code chip stand back until the row is engaged; the
+   ones holding only «—» are quieter still. Nothing is removed: titles, labels
+   and keyboard focus are unchanged. The toolbar floats over the page's end, so
+   the page keeps a gap the toolbar can never cover. */
+.schedule-agenda .unit-pill{border-color:transparent;background:transparent;color:var(--muted-2)}
+.schedule-agenda .agenda-card:hover .unit-pill,
+.schedule-agenda .agenda-card:focus-within .unit-pill{border-color:var(--line);background:var(--surface-2);color:var(--muted)}
+.schedule-agenda .unit-pill.is-empty,.schedule-agenda .code-chip.is-empty{opacity:.45;border-color:transparent;background:transparent;color:var(--muted-2)}
+.schedule-agenda .agenda-card:hover .unit-pill.is-empty,
+.schedule-agenda .agenda-card:focus-within .unit-pill.is-empty{opacity:.75}
+.schedule-page{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+.living-loading .health-skeleton-dot{display:none}
