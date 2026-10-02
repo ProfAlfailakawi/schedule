@@ -1960,7 +1960,7 @@ html[data-schedule-workspace="focus"] .notify-bell,
 html[data-schedule-workspace="presentation"] .notify-bell{display:none}
 @media (prefers-reduced-motion:reduce){.notify-bell[data-fresh="true"] svg,.notify-panel{animation:none}}
 @media screen and (max-width:1119px){
-  .notify-bell{top:calc((var(--topbar-h,64px) - 40px) / 2);inset-inline-end:64px;width:40px;height:40px;box-shadow:none}
+  .notify-bell{top:calc((var(--topbar-h,64px) - 44px) / 2);inset-inline-end:64px;width:40px;height:40px;box-shadow:none}
   .notify-panel{top:calc(var(--topbar-h,64px) + 8px)}
 }
 
