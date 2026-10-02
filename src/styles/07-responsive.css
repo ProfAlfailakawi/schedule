@@ -1629,3 +1629,18 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .balance-table tbody td:first-child small{margin-top:0}
   .balance-table td.balance-approval{flex-direction:row;flex-wrap:wrap;align-items:center;column-gap:var(--s3);row-gap:var(--s1)}
 }
+
+/* ── الهاتف: صفوفُ تبويبٍ وشرائحُ دون 44 بكسل ────────────────────────────────
+   عناصرُ مرسومةٌ بين 33 و40 بكسل وحدَها في صفّها، بلا طبقةِ توسعةٍ ولا جيرانَ
+   فوقها أو تحتها يلتقطون اللمسة. تُرفع إلى 44 في الارتفاع فقط، والعرضُ والأيقونةُ
+   والخطُّ كما رُسمت. محصورةٌ بأسماءٍ صريحة لا بـ`button` عامّ. */
+@media (pointer:coarse) and (max-width:760px){
+  .lens-strip button,
+  .segmented button,
+  .living-more,
+  .btn.schedule-tools-toggle,
+  .sd-toggle,
+  .query-canvas-head .btn,
+  .student-case-more-toggle{min-height:44px}
+  .changes-chip{min-height:44px}
+}
