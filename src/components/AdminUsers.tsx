@@ -1807,6 +1807,7 @@ export default function AdminUsers({
                     ) : null}
                     <button
                       type="button"
+                      data-guide-ignore="صف اختيار في قائمة الصلاحيات، السلوك نفسه قبل إعادة التنسيق"
                       className={`${selected && permKey(selected) === permKey(p) ? "active" : ""}${runLength > 1 || !startsRun ? " in-run" : ""}`.trim()}
                       onClick={() => setSelectedPermKey(permKey(p))}
                     >

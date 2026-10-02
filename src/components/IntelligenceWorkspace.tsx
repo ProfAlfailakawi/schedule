@@ -340,6 +340,7 @@ const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
           <button
             key={card.value}
             type="button"
+            data-guide-ignore="بطاقة اختيار معاينة داخل الورشة، السلوك نفسه قبل إعادة التنسيق"
             className="insight-preview"
             role="listitem"
             aria-label={`${card.label} — ${card.detail}`}
