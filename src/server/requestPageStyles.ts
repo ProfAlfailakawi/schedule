@@ -140,7 +140,7 @@ export const REQUEST_V3_CSS = `:root{--ok-ink:#16523a;--on:#fff;--amber:#b07d00;
 .slots{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
 .slot-chip,.msgs .slot{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:999px;background:var(--ok2);color:var(--ok-ink);font-size:12px;font-weight:700}
 .thread-act{display:flex;gap:8px;flex-wrap:wrap}
-.thread-act button{display:inline-flex;align-items:center;gap:7px;min-block-size:42px;padding:8px 14px;border-radius:13px;border:1.5px solid var(--line);background:var(--raise);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.thread-act button{display:inline-flex;align-items:center;gap:7px;min-block-size:44px;padding:8px 14px;border-radius:13px;border:1.5px solid var(--line);background:var(--raise);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .thread-act button.pri{background:var(--ok);border-color:var(--ok);color:var(--on)}
 /* شريط الإرسال */
 .send{position:fixed;inset-inline:0;bottom:0;margin:0;padding:8px 12px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 30%);z-index:6;pointer-events:none}
