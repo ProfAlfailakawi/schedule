@@ -8038,7 +8038,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   font-size:10px;font-weight:700;font-style:normal;line-height:1.15;
   white-space:nowrap;vertical-align:middle;
 }
-.visiting-badge.compact{min-height:18px;padding-inline:6px;font-size:9px;margin-inline-start:5px}
+.visiting-badge.compact{min-height:18px;padding-inline:6px;font-size:11px;margin-inline-start:5px}
 .schedule-instructor-with-badge,.report-instructor-with-badge{display:inline-flex;align-items:center;gap:4px;min-width:0}
 .week-who .visiting-badge{transform:translateY(-.5px)}
 .agenda-sub>span:first-child{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
@@ -8523,3 +8523,13 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
   .schedule-agenda .agenda-meta:not(:has(.unit-pill:not(.is-empty))){display:none}
   .schedule-agenda .agenda-sub{margin-top:var(--s1)}
 }
+
+/* Phones: the rows past the sixth fold behind a native disclosure. */
+.schedule-agenda .agenda-rest{display:flex;flex-direction:column}
+.schedule-agenda .agenda-rest>summary{
+  list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;justify-content:center;
+  margin:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);font-weight:700;
+}
+.schedule-agenda .agenda-rest>summary::-webkit-details-marker{display:none}
+.schedule-agenda .agenda-rest[open]>summary{margin-bottom:var(--s2)}

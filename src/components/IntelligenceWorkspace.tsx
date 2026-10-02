@@ -2210,7 +2210,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           value: "approval",
           label: "قبل الاعتماد",
           detail: "ما يمنع النشر، ومتى نُشر آخر مرة",
-          metric: String(overview.blockers ?? overview.metrics?.criticalConflicts ?? 0),
+          /* «—» بدل الفراغ حين لا موانع: عرضٌ فقط. */
+          metric: Number(overview.blockers ?? overview.metrics?.criticalConflicts ?? 0) ? String(overview.blockers ?? overview.metrics?.criticalConflicts) : "—",
           icon: <ShieldCheck />,
         },
         {

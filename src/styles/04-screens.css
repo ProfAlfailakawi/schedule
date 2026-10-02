@@ -1135,7 +1135,7 @@
 .permission-choice-grid>button small{
   padding:1px var(--s2);border-radius:var(--r-full);
   background:var(--surface-3);color:var(--muted);
-  font:600 10px/1.5 var(--font-mono);
+  font:600 11px/1.5 var(--font-mono);
   direction:ltr;unicode-bidi:isolate;
 }
 .permission-choice-grid>button.active small{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
@@ -2501,6 +2501,8 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .dashboard-health-factor[data-tone="good"]>em{color:var(--success)}
 .dashboard-health-factor[data-tone="warn"]>em{color:var(--warning)}
 .dashboard-health-factor[data-tone="bad"]>em{color:var(--danger)}
+.dashboard-health-factor[data-tone="calm"]>i>b{background:color-mix(in srgb,var(--muted-2) 70%,var(--surface))}
+.dashboard-health-factor[data-tone="calm"]>em{color:var(--ink-2)}
 .deck-signals .signal-ring-row{justify-content:flex-start}
 .deck-signals article:has(.signal-ring-row){align-items:center}
 .deck-today.is-empty{

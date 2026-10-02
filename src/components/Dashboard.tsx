@@ -325,7 +325,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    {healthLines.length?<section className={`deck-chart dashboard-health-ribbon${healthAwaiting?" is-awaiting":""}`} aria-labelledby="dashboard-health-title" aria-busy={healthAwaiting||undefined}>
     <header><CheckCircle2 aria-hidden="true"/><span id="dashboard-health-title">صحة الجدول</span></header>
     <div className="bar-rows dashboard-health-lines">
-     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor" data-tone={item.value==null?undefined:item.value<30?"bad":item.value>=85?"good":"mid"} style={{["--v" as any]:item.value??0}} data-high={(item.value??0)>=80||undefined}>
+     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor" data-tone={item.value==null?undefined:item.value<30?(item.label==="إشغال"?"calm":"bad"):item.value>=85?"good":"mid"} style={{["--v" as any]:item.value??0}} data-high={(item.value??0)>=80||undefined}>
       <span>{item.label}</span>
       <i role="progressbar" aria-label={`مؤشر ${item.label}`} aria-valuemin={0} aria-valuemax={100} {...(item.value==null?{}:{"aria-valuenow":item.value})} {...(item.value==null?{"aria-valuetext":"قيد القراءة"}:{})}><b style={{width:`${item.value??0}%`}} aria-hidden="true"/></i>
       <em>{item.value==null?"—":`${num(item.value)}٪`}</em>

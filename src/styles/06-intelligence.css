@@ -4271,12 +4271,12 @@ button.twin-delta{width:100%}
 .student-case-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .student-case-filters,.student-case-print-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .student-case-filters button{min-height:36px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:11px;font-weight:700}
-.student-case-filters button b{min-width:22px;height:22px;display:grid;place-items:center;border-radius:999px;background:var(--surface-2);color:var(--ink);font-size:10px}
+.student-case-filters button b{min-width:22px;height:22px;display:grid;place-items:center;border-radius:999px;background:var(--surface-2);color:var(--ink);font-size:11px}
 .student-case-filters button.active{border-color:color-mix(in srgb,var(--accent) 48%,var(--line));background:var(--accent-softer);color:var(--accent-ink)}
 .student-case-filters button.active b{background:var(--surface);color:var(--accent-ink)}
 .student-case-print-actions .btn{min-height:36px;padding-inline:11px}
 .student-cases-table{min-width:1000px}
-.student-cases-table td code{font:700 10px/1.4 var(--font-mono);letter-spacing:.03em;color:var(--muted);white-space:nowrap}
+.student-cases-table td code{font:700 11px/1.4 var(--font-mono);letter-spacing:.03em;color:var(--muted);white-space:nowrap}
 @media(max-width:760px){.student-case-toolbar{align-items:stretch}.student-case-filters,.student-case-print-actions{width:100%}.student-case-filters button{flex:1;justify-content:center}.student-case-print-actions .btn{flex:1}}
 
 /* V37 — import editor mirrors Add/Edit Schedule vocabularies ---------------- */
@@ -4307,7 +4307,7 @@ button.twin-delta{width:100%}
 .student-conflict-courses>span{display:grid;gap:1px;min-width:0}
 .student-conflict-courses>span+span{padding-inline-start:9px;border-inline-start:1px solid var(--line)}
 .student-conflict-courses b{font-size:12px;font-weight:600;color:var(--ink)}
-.student-conflict-courses small{font-size:9.5px;font-weight:500;color:var(--muted);line-height:1.35}
+.student-conflict-courses small{font-size:11px;font-weight:500;color:var(--muted);line-height:1.35}
 .student-conflict-courses .other small{color:var(--brass)}
 
 /* ── The shared case register (StudentCasesTable) ───────────────────────────
@@ -4321,18 +4321,18 @@ button.twin-delta{width:100%}
 .student-conflict-courses.with-decisions{display:grid;gap:8px}
 .student-conflict-courses.with-decisions>span+span{padding-inline-start:0;border-inline-start:0;padding-top:8px;border-top:1px dashed var(--line)}
 .student-case-decision{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin-top:3px}
-.student-case-decision em{font-style:normal;font-size:10px;color:var(--muted)}
-.student-case-state{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;font-size:10px;font-weight:700;background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.student-case-decision em{font-style:normal;font-size:11px;color:var(--muted)}
+.student-case-state{display:inline-flex;align-items:center;min-height:22px;padding:0 9px;border-radius:999px;font-size:11px;font-weight:700;background:var(--surface-2);color:var(--muted);white-space:nowrap}
 .student-case-state[data-state="pending"]{background:var(--warning-soft);color:var(--warning)}
 .student-case-state[data-state="awaiting-registration"],.student-case-state[data-state="approved"]{background:var(--accent-softer);color:var(--accent-ink)}
 .student-case-state[data-state="registered"]{background:color-mix(in srgb,var(--success) 14%,var(--surface));color:var(--success)}
 .student-case-state[data-state="rejected"],.student-case-state[data-state="committee-rejected"]{background:var(--danger-soft);color:var(--danger)}
 .student-case-actions{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
-.student-case-actions .changes-chip,.student-case-approve-all{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding-inline:9px;font-size:10.5px}
+.student-case-actions .changes-chip,.student-case-approve-all{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding-inline:9px;font-size:11px}
 .student-case-actions .changes-chip svg,.student-case-approve-all svg{width:12px;height:12px}
 .student-case-actions .changes-chip:disabled,.student-case-approve-all:disabled{opacity:.5;cursor:not-allowed}
 .student-case-notes{display:grid;gap:4px;justify-items:start}
-.student-case-notes em{font-style:normal;font-size:10px;color:var(--muted)}
+.student-case-notes em{font-style:normal;font-size:11px;color:var(--muted)}
 .student-cases-register--decisions .student-cases-table td.student-case-detail-cell{min-width:320px}
 /* Phone: the register becomes a stack of cards, each field labelled — no
    sideways scroll, the coloured type edge kept on the card. */
@@ -4347,7 +4347,7 @@ button.twin-delta{width:100%}
   .student-cases-table tr.case-course-conflict{border-inline-start-color:var(--danger)}
   .student-cases-table tr.case-graduate{border-inline-start-color:var(--warning)}
   .student-cases-table td{display:grid;gap:1px;padding:0;border:0!important;min-width:0}
-  .student-cases-table td::before{content:attr(data-label);font-size:9.5px;font-weight:600;color:var(--muted)}
+  .student-cases-table td::before{content:attr(data-label);font-size:11px;font-weight:600;color:var(--muted)}
   .student-cases-table td.student-case-detail-cell{grid-column:1/-1;min-width:0}
   .student-cases-table td:empty{display:none}
   .student-case-filters,.student-case-print-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -4788,4 +4788,19 @@ button.twin-delta{width:100%}
 .insight-preview-list>.insight-preview>.insight-preview-copy small{
   display:block!important;position:absolute;width:1px;height:1px;margin:-1px;padding:0;
   border:0;clip-path:inset(50%);overflow:hidden;white-space:nowrap;
+}
+
+/* A lone last tile spans the row instead of leaving a hole beside it. */
+.insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:1/-1}
+@media (max-width:640px){
+  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(3n+1){grid-column:auto}
+  .insight-preview-rail .insight-preview-list>.insight-preview:last-child:nth-child(2n+1){grid-column:1/-1}
+}
+
+/* «تفاصيل»: desktop table never shows the toggle; phone cards fold the secondary lines. */
+.student-case-more-toggle{display:none}
+@media(max-width:760px){
+  .student-case-more-toggle{display:inline-flex;align-items:center;justify-self:start;min-height:28px;margin-top:4px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font:600 11px/1 var(--font-ui);cursor:pointer}
+  .student-case-more-toggle[aria-expanded="true"]{color:var(--ink)}
+  .student-cases-table tr:not(.is-more-open) td.student-case-secondary{display:none}
 }
