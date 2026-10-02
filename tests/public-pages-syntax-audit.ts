@@ -12,6 +12,7 @@ import { ARABIC_COUNT_SCRIPT } from "../src/utils/arabicCount";
 import { NEGOTIATION_LABEL } from "../src/utils/instructorRequestThread";
 import { PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR } from "../src/server/publicTheme";
 import { PROPOSAL_ALERT_CSS, PROPOSAL_ALERT_SCRIPT } from "../src/server/studyProposalAlert";
+import { REQUEST_V3_CSS } from "../src/server/requestPageStyles";
 import { AR } from "../src/utils/arabicCount";
 
 let passed = 0, failed = 0;
@@ -30,7 +31,7 @@ for (const name of PAGES) {
   if (!node) { check(false, `${name}: موجودة`); continue; }
   const js = ts.transpileModule(node.getText(source), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const args = node.parameters.map(() => JSON.stringify("x")).join(",");
-  const sandbox: any = { out: "", AR, ARABIC_COUNT_SCRIPT, NEGOTIATION_LABEL, PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR, PROPOSAL_ALERT_CSS, PROPOSAL_ALERT_SCRIPT };
+  const sandbox: any = { out: "", AR, ARABIC_COUNT_SCRIPT, NEGOTIATION_LABEL, PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR, PROPOSAL_ALERT_CSS, PROPOSAL_ALERT_SCRIPT, REQUEST_V3_CSS };
   try {
     vm.runInNewContext(`${js}\nout = ${name}(${args});`, sandbox);
   } catch (error: any) {
