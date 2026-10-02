@@ -388,13 +388,20 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                       {activeId === x.AdInstructorId ? <span className="sr-only">، محدد</span> : null}
                     </>
                   )}
-                  subtitle={[homeLabel(x.AdInstructorId), x.AdInstructorMobile ? `هاتف ${x.AdInstructorMobile}` : "لا يوجد رقم هاتف مسجل"].filter(Boolean).join(" · ")}
+                  subtitle={homeLabel(x.AdInstructorId) ? <span className="record-home-line" title={homeLabel(x.AdInstructorId)}>{homeLabel(x.AdInstructorId)}</span> : undefined}
                   meta={
-                    <MetaPill
-                      label="الرقم المدني"
-                      value={x.AdInstructorCivil}
-                      dir="ltr"
-                    />
+                    <>
+                      <MetaPill
+                        label="رقم الهاتف"
+                        value={x.AdInstructorMobile || "لا يوجد رقم هاتف مسجل"}
+                        dir={x.AdInstructorMobile ? "ltr" : undefined}
+                      />
+                      <MetaPill
+                        label="الرقم المدني"
+                        value={x.AdInstructorCivil}
+                        dir="ltr"
+                      />
+                    </>
                   }
                 />
               ))}
@@ -424,7 +431,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
               <span className="surface-kicker">تفاصيل الأستاذ</span>
               <h2>{selected.AdInstructorName}</h2>
               <p>يظهر في الجدول والتقارير.</p>
-              <div className="inspector-facts">
+              <div className="inspector-facts inspector-facts-pairs">
                 <article>
                   <span>الرقم المدني</span>
                   <b dir="ltr">{selected.AdInstructorCivil || "—"}</b>

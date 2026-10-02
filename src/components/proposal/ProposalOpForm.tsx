@@ -32,9 +32,9 @@ const MODES: Array<{ mode: WorkMode; title: string; hint: string; Icon: React.Co
 ];
 
 const PATTERNS: Array<{ label: string; days: StudyProposalDayKey[]; note: string }> = [
-  { label: "أحد · ثلاثاء · خميس", days: ["fsunday", "ftuesday", "fthursday"], note: "٥٠ د" },
-  { label: "أحد · ثلاثاء", days: ["fsunday", "ftuesday"], note: "٥٠ د" },
-  { label: "اثنين · أربعاء", days: ["fmonday", "fwednesday"], note: "٨٠ د" },
+  { label: "أحد · ثلاثاء · خميس", days: ["fsunday", "ftuesday", "fthursday"], note: "50 د" },
+  { label: "أحد · ثلاثاء", days: ["fsunday", "ftuesday"], note: "50 د" },
+  { label: "اثنين · أربعاء", days: ["fmonday", "fwednesday"], note: "80 د" },
 ];
 
 const PERIODS = [
@@ -367,7 +367,7 @@ export default function ProposalOpForm({ ws, onDone }: { ws: Workspace; onDone?:
   const replaceBody = (
     <div className="sp-replace">
       <section className="sp-step" aria-labelledby="sp-out">
-        <h3 id="sp-out"><span>١</span>الموعد الذي سيخرج من جدول الأستاذ</h3>
+        <h3 id="sp-out"><span>1</span>الموعد الذي سيخرج من جدول الأستاذ</h3>
         <RowPicker ws={ws} label="اختر الموعد الذي سيخرج" />
         {draft.rowId != null ? (
           <div className="sp-out-action" role="radiogroup" aria-label="ما يُفعل بالموعد الخارج">
@@ -379,7 +379,7 @@ export default function ProposalOpForm({ ws, onDone }: { ws: Workspace; onDone?:
         ) : null}
       </section>
       <section className="sp-step" aria-labelledby="sp-in">
-        <h3 id="sp-in"><span>٢</span>الشعبة التي ستدخل مكانه</h3>
+        <h3 id="sp-in"><span>2</span>الشعبة التي ستدخل مكانه</h3>
         <div className="sp-seg" role="radiogroup" aria-label="نوع الشعبة الداخلة">
           <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={draft.incoming === "assign"} onClick={() => set({ incoming: "assign", facultyId: null, courseId: null, scode: "" })}>شعبة من «هيئة تدريسية»</button>
           <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="radio" aria-checked={draft.incoming === "create"} onClick={() => set({ incoming: "create", facultyId: null, courseId: null, scode: "" })}>شعبة جديدة</button>

@@ -49,6 +49,7 @@ import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } fr
 import { sortByName } from "../utils/sorting";
 import { roomIdentityKey } from "../utils/locationRegistry";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import MiniRing from "./MiniRing";
 
 type Scene =
   | "pulse"
@@ -755,8 +756,10 @@ export default function LivingScheduleLayer({
         </div>
         <div className="living-health-strip" aria-label="مؤشرات صحة الجدول قيد التحميل">
           {["الجودة", "المرونة", "العدالة"].map(label => (
-            <span key={label} style={{ ["--reading" as any]: "0%" }}>
-              <small>{label}</small><b>—</b>
+            <span key={label} className="is-loading" style={{ ["--reading" as any]: "0%" }}>
+              <MiniRing value={null} size={34}><i className="health-skeleton-dot" aria-hidden="true" /></MiniRing>
+              <small>{label}</small>
+              <b className="sr-only">—</b>
             </span>
           ))}
         </div>
@@ -808,8 +811,9 @@ export default function LivingScheduleLayer({
                    that slips is short before it is read. */
                 style={{ ["--reading" as any]: `${known ? Math.max(0, Math.min(100, reading)) : 0}%` }}
               >
+                {known ? <MiniRing value={reading} size={34} decorative /> : <MiniRing value={null} size={34} />}
                 <small>{metric.label}</small>
-                <b>{known ? reading : "—"}</b>
+                <b className="sr-only">{known ? reading : "—"}</b>
               </span>
             );
           })}

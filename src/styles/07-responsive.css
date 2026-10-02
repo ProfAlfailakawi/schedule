@@ -301,7 +301,7 @@
   .deck-charts{grid-template-columns:minmax(0,1fr)}
   .deck-chart{padding:var(--s4)}
   .bar-columns{height:104px}
-  .bar-rows>div{grid-template-columns:46px minmax(0,1fr) 30px}
+  .bar-rows>div{grid-template-columns:46px minmax(0,1fr)}
 
   /* Catalog / master-detail */
   /* Already a column at every width now; only the padding changes here. */
@@ -424,6 +424,7 @@
   .living-pulse-shell,.living-command-deck{grid-template-columns:minmax(0,1fr);gap:var(--s4);padding:var(--s4)}
   .living-health-strip{width:100%}
   .living-health-strip>span{flex:1;min-width:0}
+  .living-health-strip>span{flex-direction:column;justify-content:center;text-align:center;gap:var(--s1)}
   .living-command-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
   .living-command-actions button{justify-content:center}
   .living-panel,.schedule-context,.intel-drawer{
@@ -689,7 +690,8 @@
   .console-head .console-rail{flex:1 1 100%}
   .console-action-slot{width:100%}
   .console-action-slot .btn{width:100%}
-  .console-tab{min-width:96px;padding:var(--s2) var(--s3)}
+  .console-rail{scroll-snap-type:inline proximity;scroll-padding-inline:var(--s3)}
+  .console-tab{min-width:96px;padding:var(--s2) var(--s3);scroll-snap-align:center}
   .console-tab-icon{width:30px;height:30px}
   .console-tab-icon svg{width:15px;height:15px}
   .console-tab b{font-size:17px}

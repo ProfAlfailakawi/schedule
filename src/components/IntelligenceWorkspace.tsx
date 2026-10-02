@@ -102,6 +102,7 @@ import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetric
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
 import { pageReviewIssues, pagesAwaitingReview, scanLeftCellUnread, pagesWithUnreadCells, pagesLabel } from "../utils/importPageReview";
+import MiniRing, { ringFromScoreText } from "./MiniRing";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -339,6 +340,7 @@ const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
           <button
             key={card.value}
             type="button"
+            data-guide-ignore="بطاقة اختيار معاينة داخل الورشة، السلوك نفسه قبل إعادة التنسيق"
             className="insight-preview"
             role="listitem"
             aria-label={`${card.label} — ${card.detail}`}
@@ -351,7 +353,7 @@ const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
               <strong>{card.label}</strong>
               <small>{card.detail}</small>
             </span>
-            {card.metric ? <b>{card.metric}</b> : null}
+            {card.metric ? (ringFromScoreText(card.metric) ? <b className="insight-preview-ring">{ringFromScoreText(card.metric)}</b> : <b>{card.metric}</b>) : null}
           </button>
         ))}
       </div>
@@ -409,6 +411,8 @@ const validateImportRowsLocally = (rows: ImportRow[]) => {
 /** رقمُ بطاقة القراءة، أو لا شيء حين يكون صفراً أو فارغاً (قاعدة إخفاء الفارغ). */
 function metricBadge(metric: unknown) {
   const text = String(metric ?? "").trim();
+  const ring = ringFromScoreText(text);
+  if (ring) return <b className="insight-preview-ring">{ring}</b>;
   return text && !/^[0٠]$/.test(text) ? <b>{text}</b> : null;
 }
 
@@ -4215,7 +4219,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <>
                     <div className="war-baseline">
                       <span>الوضع الحالي</span>
-                      <b>{warRoom.baseline.score}/100</b>
+                      <b className="score-ring-slot"><MiniRing value={Number(warRoom.baseline.score)} /></b>
                       <small>
                         {countOf(warRoom.baseline.conflicts, AR.blocker)} ·{" "}
                         {warRoom.baseline.avgGap}د فراغ
@@ -4389,7 +4393,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               <strong>{o.title}</strong>
                               <small>{countOf(o.changed, AR.appointment)} {nounFor(o.changed, AR.changesVerb)}</small>
                             </div>
-                            <b>{o.score}/100</b>
+                            <b className="score-ring-slot"><MiniRing value={Number(o.score)} /></b>
                           </div>
                           <div className="auto-metrics">
                             <span>{countOf(o.conflicts, AR.blocker)}</span>
