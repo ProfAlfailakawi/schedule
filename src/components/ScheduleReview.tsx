@@ -154,9 +154,47 @@ function HistoryInfographic({rows,courses}:{rows:FSchedule[];courses:Map<number,
   </div>;
 }
 
-export default function ScheduleReview({ rows: rowsProp, courses, instructors, visitingIds, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
-  /* المراجعةُ لنطاقها وحده: لا صفَّ من قسمٍ شقيقٍ في كليةٍ أخرى (approvalScope). */
-  const rows = useMemo(() => rowsInApprovalScope(rowsProp, { collegeId, sectionId, termId }), [rowsProp, collegeId, sectionId, termId]);
+/** What the server read for the whole department family (all its colleges). */
+interface FamilyReading {
+  rows: FSchedule[];
+  previousRows: FSchedule[];
+  nature: Record<string, CourseNature>;
+  courses: AdCourse[];
+  instructors: AdInstructor[];
+  members?: Array<{ collegeId: number; sectionId: number }>;
+}
+
+export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, instructors: instructorsProp, visitingIds, previousRows: previousRowsProp, nature: natureProp, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
+  /* ── القسمُ واحدٌ في كلياته ────────────────────────────────────────────────
+     «تكنولوجيا التعليم» بنين وبنات قسمٌ واحد، وأساتذته يدرّسون فيهما معاً. فمن
+     فتح أيَّ العضوين رأى التقريرَ نفسه: مواعيدُ العائلة كلها وحِملُ الأستاذ
+     كاملاً. ما دام الخادم لم يردّ، أو تعذّر، فالنطاقُ المحلّي (كلية + قسم) هو
+     البديل. الاعتمادُ والحفظ يبقيان لكل كليةٍ على حدة. */
+  const [family, setFamily] = useState<FamilyReading | null>(null);
+  const localRows = useMemo(() => rowsInApprovalScope(rowsProp, { collegeId, sectionId, termId }), [rowsProp, collegeId, sectionId, termId]);
+  const rows = family?.rows ?? localRows;
+  const courses = useMemo(() => {
+    if (!family) return coursesProp;
+    const merged = new Map(coursesProp);
+    family.courses.forEach(course => { if (!merged.has(Number(course.AdCourseId))) merged.set(Number(course.AdCourseId), course); });
+    return merged;
+  }, [family, coursesProp]);
+  const instructors = useMemo(() => {
+    if (!family) return instructorsProp;
+    const merged = new Map(instructorsProp);
+    family.instructors.forEach(person => { if (!merged.has(Number(person.AdInstructorId))) merged.set(Number(person.AdInstructorId), person); });
+    return merged;
+  }, [family, instructorsProp]);
+  /* الرأس يصف ما قُرئ فعلاً: عائلةٌ بأكثر من عضو، أو الكلية المفتوحة وحدها. */
+  const scopeLabel = family && (family.members?.length || 0) > 1
+    ? `${scopeLine} · مع ${countOf((family.members?.length || 1) - 1, AR.college)} أخرى من القسم`
+    : scopeLine;
+  const loadedIds = useMemo(() => new Set(localRows.map(row => row.id)), [localRows]);
+  const previousRows = family?.previousRows ?? previousRowsProp;
+  const nature = useMemo(
+    () => (family ? new Map(Object.entries(family.nature || {}).map(([id, value]) => [Number(id), value as CourseNature])) : natureProp),
+    [family, natureProp]
+  );
   const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], Number).filter(Boolean)), [visitingIds]);
   const baseFindings = useMemo(
     () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
@@ -177,15 +215,16 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
   useDialogDismiss(true, onClose);
 
   useEffect(() => {
-    if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setServerWarnings([]); setReadinessChecked(true); setReadinessError(true); return; }
+    if (!collegeId || !sectionId || !termId) { setFamily(null); setServerBlockers([]); setServerWarnings([]); setReadinessChecked(true); setReadinessError(true); return; }
     const controller = new AbortController();
     /* ما قرأه الخادم لنطاقٍ سابق لا يبقى معروضاً تحت النطاق الجديد. */
-    setServerBlockers([]); setServerWarnings([]); setServerSummary(null);
+    setFamily(null); setServerBlockers([]); setServerWarnings([]); setServerSummary(null);
     setReadinessChecked(false);
     setReadinessError(false);
-    void fetch(`/api/schedules/review-readiness?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { credentials: "include", signal: controller.signal })
+    void fetch(`/api/schedules/review-readiness?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}&family=1`, { credentials: "include", signal: controller.signal })
       .then(async response => response.ok ? response.json() : Promise.reject(new Error("readiness")))
       .then(data => {
+        setFamily(data?.family && Array.isArray(data.family.rows) ? data.family as FamilyReading : null);
         setServerBlockers(Array.isArray(data?.blockers) ? data.blockers : []);
         setServerWarnings(Array.isArray(data?.warnings) ? data.warnings : []);
         setServerSummary({ conflicts: Number(data?.blockingConflicts || 0), rows: Number(data?.blockingRows || 0), duplicates: Number(data?.blockingDuplicates || 0) });
@@ -193,7 +232,7 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
       .catch(error => { if (error?.name !== "AbortError") { setServerBlockers([]); setServerWarnings([]); setReadinessError(true); } })
       .finally(() => { if (!controller.signal.aborted) setReadinessChecked(true); });
     return () => controller.abort();
-  }, [collegeId, sectionId, termId, rows]);
+  }, [collegeId, sectionId, termId, localRows]);
 
   /* The offline fallback reads the same rule the server does — «هيئة تدريسية»
      included — so losing the network never changes what counts as a blocker.
@@ -562,8 +601,8 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
                       ) : (
                         renderFindingPeople(finding)
                       )}
-                      {onFocusRows ? (
-                        <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds); onClose(); }}>
+                      {onFocusRows && finding.rowIds.some(id => loadedIds.has(id)) ? (
+                        <SecondaryButton type="button" data-guide-ignore="إبراز مواعيد الملاحظة على الجدول فقط، لا يغيّر شيئاً" onClick={() => { onFocusRows(finding.rowIds.filter(id => loadedIds.has(id))); onClose(); }}>
                           أظهرها على الجدول
                         </SecondaryButton>
                       ) : null}
@@ -595,7 +634,7 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
           <div className="review-title">
             <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
             <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
-            <p>{scopeLine}</p>
+            <p>{scopeLabel}</p>
             {readinessChecked && blockerSummary.conflicts > 0 ? <strong className="review-blocker-headline" data-review-headline="blocking">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows, blockerSummary.duplicates)}</strong> : null}
             {readinessError ? <small>تمت مراجعة قرار 1913/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
           </div>
@@ -675,7 +714,7 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
         <div className="print-sheet-modal">
           <div className="print-report print-wide print-query-report print-review-report">
             <section className="print-explicit-page print-review-page">
-              <PrintLetterhead title={`مراجعة الاعتماد · ${DECISION_1912_LABEL}`} scope={scopeLine} />
+              <PrintLetterhead title={`مراجعة الاعتماد · ${DECISION_1912_LABEL}`} scope={scopeLabel} />
               <section className={`print-review-hero tone-${tone}`}>
                 <svg className="print-review-ring" viewBox="0 0 64 64" aria-label={`مطابقة ${DECISION_1912_LABEL} ${score} من 100`}>
                   <circle className="ring-track" cx="32" cy="32" r="26" />
@@ -683,7 +722,7 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
                   <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
                   <text x="32" y="45" className="ring-unit">/ 100</text>
                 </svg>
-                <div><small>مراجعة الاعتماد · {DECISION_1912_LABEL}</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</strong><span>{scopeLine}</span></div>
+                <div><small>مراجعة الاعتماد · {DECISION_1912_LABEL}</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</strong><span>{scopeLabel}</span></div>
               </section>
               <div className="print-review-spread" role="img" aria-label="توزيع المواعيد حسب نتيجة المراجعة">
                 <div className="print-spread-bar">
@@ -708,7 +747,7 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
             </section>
             {printFollowupPages.map((page, pageIndex) => (
               <section className="print-explicit-page print-review-page" key={`review-page-${pageIndex + 2}`}>
-                <PrintLetterhead title={`مراجعة الاعتماد · متابعة الملاحظات (${pageIndex + 2})`} scope={scopeLine} />
+                <PrintLetterhead title={`مراجعة الاعتماد · متابعة الملاحظات (${pageIndex + 2})`} scope={scopeLabel} />
                 <div className="print-review-page-kicker">
                   <small>متابعة التقرير</small>
                   <strong>تفاصيل إضافية من مراجعة الاعتماد</strong>
