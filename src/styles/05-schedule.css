@@ -2804,7 +2804,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .week-legend-chip>.num{
-  flex:none;font:600 9.5px var(--font-mono);font-style:normal;color:var(--muted);
+  flex:none;font:600 var(--t-micro) var(--font-mono);font-style:normal;color:var(--muted);
   font-variant-numeric:tabular-nums;
 }
 .week-legend-chip:hover{
@@ -2839,7 +2839,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .week-legend-basis>.num{
   margin-inline-start:2px;
-  font:700 10px var(--font-mono);color:var(--accent-ink,var(--accent));
+  font:700 var(--t-micro) var(--font-mono);color:var(--accent-ink,var(--accent));
   padding:1px 6px;border-radius:var(--r-full);
   background:color-mix(in srgb,var(--accent) 14%,transparent);
 }

@@ -295,6 +295,18 @@
   outline:0;
   transition:border-color .16s var(--ease),box-shadow .16s var(--ease),background .16s var(--ease);
 }
+/* Create/edit drawers: an empty field reads as a field (firmer border, legible placeholder) and focus is one ring. */
+.catalog-form-drawer .field input:not([type="checkbox"]):not([type="radio"]),
+.catalog-form-drawer .field select,
+.catalog-form-drawer .field textarea{border-color:var(--line-strong);background-color:var(--surface)}
+.catalog-form-drawer .field input::placeholder,
+.catalog-form-drawer .field textarea::placeholder{color:var(--muted);opacity:1}
+.catalog-form-drawer .field input:focus,
+.catalog-form-drawer .field input:focus-visible,
+.catalog-form-drawer .field select:focus,
+.catalog-form-drawer .field select:focus-visible,
+.catalog-form-drawer .field textarea:focus,
+.catalog-form-drawer .field textarea:focus-visible{border-color:var(--accent);box-shadow:var(--ring);outline:0}
 .field textarea,.copilot-compose textarea,.memory-compose textarea{
   min-height:112px;padding:var(--s3) var(--s4);line-height:1.7;resize:vertical;
 }
@@ -350,7 +362,7 @@
 .intel-context-fields select:focus,.copilot-compose textarea:focus,
 .comment-compose input:focus,.constraint-form input:focus,.constraint-form select:focus{
   border-color:var(--accent);
-  background:var(--surface);
+  background-color:var(--surface);
   box-shadow:var(--ring);
 }
 .field input:disabled,.field select:disabled,.field textarea:disabled{opacity:.5;cursor:not-allowed}
