@@ -1193,7 +1193,11 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
      قراءتها من خانتها نفسها في الجدول المستقيم — بقصٍّ أوسع وأنماطٍ أخرى —
      ولا تُستبدل إلا بقراءةٍ بالطول نفسه وثقةٍ كافية. وإلا بقيت، وأبلغ الحكمُ
      عن السطر الناقص بدل أن يُسكت عنه. */
+  /* عمود رقم المقرر وحده: أقصى اليمين، ولا عنوان رقمياً له (السعة والمسجلون
+     والمقاعد قيمٌ مشروعةٌ بأي طول — 70 أو 1336 — فلا تُعاد قراءتها بطول الرموز). */
+  const codeColumn=columns.reduce((best,column,index)=>column.right>columns[best].right?index:best,0);
   for(const [index,column] of columns.entries()){
+    if(index!==codeColumn||kinds[index])continue;
     const mine=read.filter(item=>item.column===index);
     const lengths=new Map<number,number>();mine.forEach(item=>lengths.set(item.cell.text.length,(lengths.get(item.cell.text.length)||0)+1));
     const [size,count]=[...lengths.entries()].sort((a,b)=>b[1]-a[1])[0]||[0,0];
