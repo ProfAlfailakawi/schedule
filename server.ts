@@ -19481,6 +19481,25 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
 .slot-card h3{margin:0;font-size:14.5px;font-weight:600;line-height:1.5}
 .secnum{font-size:12px;color:var(--brass);font-weight:600;white-space:nowrap}
 
+/* ── الأسبوع بنظرة: عرضٌ فقط، مطويٌّ حتى يفتحه الطالب */
+.wk{margin:0 0 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow)}
+.wk summary{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;font-size:14px;font-weight:600;cursor:pointer;list-style:none}
+.wk summary::-webkit-details-marker{display:none}
+.wk summary svg{color:var(--jade)}
+.wk summary::after{content:"";margin-inline-start:auto;inline-size:7px;block-size:7px;border-inline-end:2px solid var(--dim);border-block-end:2px solid var(--dim);transform:rotate(45deg);transition:transform .2s}
+.wk[open] summary::after{transform:rotate(-135deg)}
+.wk-g{display:grid;grid-template-columns:34px repeat(5,minmax(0,1fr));gap:4px;padding:2px 12px 14px;direction:rtl}
+.wk-g>*{min-width:0}
+.wk-h{font-size:11px;color:var(--dim);text-align:center;padding:2px 0 4px;border-radius:8px}
+.wk-h[data-today="1"]{color:var(--jade);font-weight:700;background:var(--accent-soft)}
+.wk-t{font:500 11px/30px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);text-align:center;direction:ltr}
+.wk-c{block-size:30px;border-radius:8px;display:grid;place-items:center;font-size:12px;font-variant-numeric:tabular-nums;background:var(--soft);color:var(--ink)}
+.wk-c[data-l="1"]{background:color-mix(in srgb,var(--jade) 14%,var(--card))}
+.wk-c[data-l="2"]{background:color-mix(in srgb,var(--jade) 32%,var(--card))}
+.wk-c[data-l="3"]{background:color-mix(in srgb,var(--jade) 55%,var(--card));color:#fff}
+.wk-c[data-today="1"]{box-shadow:0 0 0 1.5px var(--jade)}
+@media (min-width:720px){.wk-g{max-inline-size:560px}}
+
 /* ── حالاتُ الفراغ */
 .state{display:grid;justify-items:center;text-align:center;gap:6px;padding:44px 20px;border:1px dashed var(--line-strong);border-radius:var(--radius);background:color-mix(in srgb,var(--card) 60%,transparent)}
 .state .art{display:grid;place-items:center;width:56px;height:56px;border-radius:16px;background:var(--accent-soft);color:var(--jade);margin-bottom:6px}
@@ -19545,6 +19564,7 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
     </div>
   </div>
   <p class="count" id="count" aria-live="polite"></p>
+  <details class="wk" id="wk" hidden><summary data-guide-ignore="عرض للقراءة فقط يطوى ويفتح"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>الأسبوع بنظرة</summary><div class="wk-g" id="wkg" role="img" aria-label="عدد المحاضرات في كل يوم وفترة"></div></details>
   <section id="list" aria-label="الجدول" aria-busy="true"><div class="grid" aria-hidden="true"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></section>
   <p class="foot" id="foot">الجدول المعتمد للفصل الجاري · للقراءة فقط ويتحدّث من نفسه</p>
 </main>
@@ -19649,7 +19669,26 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
     });
     return '<div class="grid by-day">' + html + "</div>";
   }
+  /* الأسبوع بنظرة: من الصفوف المحمّلة نفسها (كل الجدول لا المصفّى)، عرضٌ فقط. */
+  function weekGrid() {
+    var box = document.getElementById("wk"), g = document.getElementById("wkg");
+    if (!state.loaded || !state.rows.length) { box.hidden = true; return; }
+    var cell = {}, lo = 99, hi = -1;
+    state.rows.forEach(function (r) {
+      var m = mins(r.start); if (m >= 1e4) return;
+      var b = Math.floor(m / 120) * 2; lo = Math.min(lo, b); hi = Math.max(hi, b);
+      r.days.forEach(function (d) { if (d >= 0 && d < 5) { var k = b + "|" + d; cell[k] = (cell[k] || 0) + 1; } });
+    });
+    if (hi < 0) { box.hidden = true; return; }
+    var h = '<span></span>' + DAYS.map(function (n, d) { return '<span class="wk-h" data-today="' + (d === TODAY ? 1 : 0) + '">' + esc(n) + "</span>"; }).join("");
+    for (var b = lo; b <= hi; b += 2) {
+      h += '<span class="wk-t">' + (b < 10 ? "0" : "") + b + ":00</span>";
+      for (var d = 0; d < 5; d++) { var n = cell[b + "|" + d] || 0; h += '<span class="wk-c" data-l="' + (n >= 4 ? 3 : n >= 2 ? 2 : n ? 1 : 0) + '" data-today="' + (d === TODAY ? 1 : 0) + '">' + (n || "") + "</span>"; }
+    }
+    g.innerHTML = h; box.hidden = false;
+  }
   function render(anim) {
+    weekGrid();
     var rows = state.rows.filter(match);
     list.className = anim ? "anim" : "";
     countLine(rows);
