@@ -326,9 +326,14 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         </div>
       </div>
       {legacy ? (
-        <p className="section-plan-warning" role="status">
-          <AlertTriangle aria-hidden="true" /> بياناتٌ قديمة: حُفظ لهذا الفصل{legacy.fileName ? <> من «<bdi>{legacy.fileName}</bdi>»</> : null} عمودٌ آخر غير «المقاعد المتبقية» ({countOf(Object.keys(legacy.values).length, AR.course)}). لا يُبنى عليه الاقتراح — أعد استيراد الكشف.
-        </p>
+        <div className="section-plan-warning section-plan-legacy" role="status">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <strong>بياناتٌ قديمة — أعد استيراد الكشف</strong>
+            <p>حُفظ لهذا الفصل عمودٌ آخر غير «المقاعد المتبقية» ({countOf(Object.keys(legacy.values).length, AR.course)})، ولا يُبنى عليه الاقتراح.</p>
+            {legacy.fileName ? <code dir="ltr" title={legacy.fileName}>{legacy.fileName}</code> : null}
+          </div>
+        </div>
       ) : null}
       <div className="section-plan-summary" aria-label="ملخص الخطة">
         <div className="is-main"><Layers aria-hidden="true" /><span>مجموع الشعب المختارة</span><b>{total}</b></div>

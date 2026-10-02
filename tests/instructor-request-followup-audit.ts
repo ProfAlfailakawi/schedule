@@ -212,8 +212,8 @@ check(inbox.includes("function RequestThread(") && inbox.includes("/reply`") && 
 /* ── بابُ التعديل في بطاقتي لا يختفي ──────────────────────────────────────── */
 check(staffHtml.includes('id="tab-requests" role="tab" aria-selected="false">طلب تعديل الجدول</button>') && !/id="tab-requests"[^>]*display:none/.test(staffHtml),
   "تبويبُ «طلب تعديل الجدول» ظاهرٌ دائماً — لا يختفي مع رابط القسم");
-check(staffHtml.includes('<a href="#" id="edit" role="button">تعديل</a>') && staffHtml.includes("if(tabRequests)tabRequests.onclick();"),
-  "وزرُّ «تعديل» في الأدوات هو البابُ نفسُه");
+check(!staffHtml.includes('id="edit"') && staffHtml.includes("tabRequests.onclick=function"),
+  "لا زرّ «تعديل» مكرر في الأدوات: «طلب تعديل الجدول» هو البابُ الوحيد");
 check(server.includes("const requestLinks = (await Promise.all(requestRows.map(") && !server.includes("(personal ? requestRows : []).map"),
   "وبعد الرقم المدني يفتح النموذجَ من رابط القسم كما من الرابط الشخصي");
 

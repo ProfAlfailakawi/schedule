@@ -6256,7 +6256,7 @@ app.get("/api/instructors/:id/affiliation", requireAnyPermission([3, 7]), async 
   const termName = new Map((terms as any[]).map(item => [Number(item.AdTermId), String(item.AdTermName || "")]));
   const delegate = new Map<string, any>();
   for (const row of directories) {
-    if (!row.instructorIds.includes(instructorId)) continue;
+    if (row.kind !== "directory" || !row.instructorIds.includes(instructorId)) continue;
     delegate.set(`${row.collegeId}:${row.sectionId}`, {
       collegeId: row.collegeId, sectionId: row.sectionId,
       section: sectionName.get(row.sectionId) || "", college: collegeName.get(row.collegeId) || "",
@@ -6302,7 +6302,8 @@ app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (req
       college: collegeName.get(collegeId) || "",
     });
   };
-  for (const row of affiliations) for (const id of row.instructorIds) place(id, row.collegeId, row.sectionId, "delegate");
+  /* الانتداب الحالي من دليل القسم وحده؛ روستر فصلٍ مضى تاريخٌ لا يُبقي «منتدب لدى» بعد التحويل. */
+  for (const row of affiliations) if (row.kind === "directory") for (const id of row.instructorIds) place(id, row.collegeId, row.sectionId, "delegate");
   for (const row of latestRows as any[]) place(Number(row.AdInstructorId || 0), Number(row.AdCollegeId || 0), Number(row.AdSectionId || 0), "teaching");
   res.json({
     termId: latestTermId,
@@ -6321,6 +6322,7 @@ app.get("/api/delegates", requireAnyPermission([3, 7]), async (req: Authenticate
   const allowedFamilies = new Set((sections as any[]).filter(sec => isScopeAllowed(req, Number(sec.AdCollegeId), Number(sec.AdSectionId))).map(sec => familyOf(Number(sec.AdCollegeId), Number(sec.AdSectionId))));
   const ids = new Set<number>();
   for (const row of directories) {
+    if (row.kind !== "directory") continue;
     if (!allowedFamilies.has(familyOf(Number(row.collegeId), Number(row.sectionId)))) continue;
     for (const id of row.instructorIds) ids.add(Number(id));
   }
@@ -16479,7 +16481,6 @@ ${PROPOSAL_ALERT_CSS}
     <div class="tools">
       <a id="ics" href="#" role="button" aria-expanded="false" aria-controls="sub">إضافة إلى التقويم</a>
       <a href="#" id="print">طباعة</a>
-      <a href="#" id="edit" role="button">تعديل</a>
     </div>
     <div class="sub" id="sub" hidden>
       <p id="subLife">اشتراك يتابع جدولك من نفسه حتى نهاية الفصل، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
@@ -16619,9 +16620,7 @@ ${PROPOSAL_ALERT_CSS}
     selectTab("requests");
     var panel=document.getElementById("panel-requests");if(panel)panel.scrollIntoView({block:"nearest",behavior:"smooth"});
   };
-  /* «تعديل» في شريط الأدوات هو البابُ نفسُه، لا بابٌ ثانٍ بقاعدةٍ أخرى. */
-  var editBtn=document.getElementById("edit");
-  if(editBtn)editBtn.onclick=function(e){e.preventDefault();if(tabRequests)tabRequests.onclick();};
+  /* لا زرّ «تعديل» ثانٍ في الأدوات: تبويب «طلب تعديل الجدول» هو البابُ الوحيد. */
 
   function visibleCardCollege(value){var name=String(value||"");return /التربية\\s*الأساسية.*بنات/.test(name)?"":name}
   function shortCardCollege(value){return String(value||"").replace(/^\\s*[0-9٠-٩]+\\s*[·\\-–]?\\s*/,"").replace(/^\\s*كلية\\s+/,"").trim()}

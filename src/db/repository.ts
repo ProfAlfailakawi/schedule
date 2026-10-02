@@ -5380,14 +5380,14 @@ export const Repository = {
     return rows;
   },
 
+  /* من هو منتدبٌ الآن = في دليل منتدبي قسمٍ. رواستر الفصول الماضية تبقى تاريخاً
+     بعد التحويل إلى معيّن، فلا تُحسب هنا وإلا بقيت الشارة على من حُوِّل. */
   getAllDelegateInstructorIds: async (): Promise<number[]> => {
     const set = new Set<number>();
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const [rosters,directories] = await Promise.all([firestoreDb.collection("visitingRosters").get(),firestoreDb.collection("departmentDelegates").get()]);
-      rosters.docs.forEach(doc => ((doc.data() as VisitingRoster).instructorIds || []).forEach(id => set.add(Number(id))));
+      const directories = await firestoreDb.collection("departmentDelegates").get();
       directories.docs.forEach(doc => ((doc.data() as DepartmentDelegateDirectory).instructorIds || []).forEach(id => set.add(Number(id))));
     } else {
-      (db.visitingRosters || []).forEach(row => (row.instructorIds || []).forEach(id => set.add(Number(id))));
       (db.departmentDelegates || []).forEach(row => (row.instructorIds || []).forEach(id => set.add(Number(id))));
     }
     return [...set];

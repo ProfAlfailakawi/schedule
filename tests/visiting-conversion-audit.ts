@@ -100,6 +100,7 @@ async function behaviour() {
     check((await Repository.getDepartmentDelegates(b.collegeId, b.sectionId)).includes(person), "e2e: القسم الآخر لم يُمس");
     r = await runVisitingConversion({ direction: "toAppointed", instructorId: person, scopes: [b] });
     check(r.applied && !(await Repository.getVisitingRoster(b.collegeId, b.sectionId, current)).includes(person) && !(await Repository.getVisitingRoster(b.collegeId, b.sectionId, future)).includes(person) && (await Repository.getVisitingRoster(b.collegeId, b.sectionId, past)).includes(person), "e2e: القسم الثاني: الجاري والقادم يُرفعان والماضي يبقى");
+    check(!(await Repository.getAllDelegateInstructorIds()).includes(person), "e2e: بعد التحويل لا شارة «منتدب» رغم بقاء روستر الفصل الماضي");
     check((await Repository.getVisitingRosterHistory(b.collegeId, b.sectionId)).some(h => Number(h.termId) === past && (h.instructorIds || []).map(Number).includes(person)), "e2e: تاريخ الروستر باقٍ");
     const schedulesAfter = (await Repository.getInstructorTeachingScopes(person)).reduce((n, s) => n + s.rows, 0);
     check(schedulesAfter === schedulesBefore, "e2e: الجداول لم تُمس");
