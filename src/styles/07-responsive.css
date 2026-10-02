@@ -691,7 +691,7 @@
   .console-action-slot{width:100%}
   .console-action-slot .btn{width:100%}
   .console-rail{scroll-snap-type:inline proximity;scroll-padding-inline:var(--s3)}
-  .console-tab{min-width:96px;padding:var(--s2) var(--s3);scroll-snap-align:center}
+  .console-tab{flex:1 0 auto;min-width:96px;padding:var(--s2) var(--s3);scroll-snap-align:center}
   .console-tab-icon{width:30px;height:30px}
   .console-tab-icon svg{width:15px;height:15px}
   .console-tab b{font-size:17px}
@@ -1556,4 +1556,33 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .dock-act::after,.dock-add::after{inset:-6px -3px}
   /* العينُ ملاصقةٌ لشريحة الفلتر: نكبّرها عمودياً فقط حتى لا تغطّي حافةَ الشريحة. */
   .week-legend-eye::after{inset:-4px 0}
+}
+
+/* ── Guide panel on phones: legibility floor (visual only) ───────────────────
+   The phone layout of the guide set its captions and buttons at 8–9.5px. Nothing
+   here moves, hides or reorders anything: it only lifts the type to a readable
+   size. Scoped to the guide's own classes, phone width only. */
+@media (max-width:560px){
+  .smart-guide small,.smart-guide em,.smart-guide p,
+  .smart-guide-kicker,.smart-guide-footer>small,.smart-guide-footer button,
+  .smart-guide-back-link,.smart-guide-next-why,.smart-guide-hint small,
+  .smart-guide-selected-context span,.smart-guide-notice,.smart-guide-intent-card em,
+  .smart-guide-intent-card>button,.smart-guide-transaction-undo>b,
+  .guide-point-banner span,.guide-ghost-card>small,
+  .guide-preview p,.schedule-guide-ghost-diff>p,.guide-simulation-brief>p{font-size:11px}
+  .smart-guide button,.smart-guide-browse button,.smart-guide-browse button span,
+  .smart-guide-selected-actions button,.smart-guide-actions button,
+  .smart-guide-workflows button,.smart-guide-routines button,.smart-guide-settings button,
+  .smart-guide-hint>div button,.guide-point-banner button,.guide-ghost-card button,
+  .guide-preview button,.schedule-guide-ghost-diff footer button,
+  .guide-simulation-brief footer button{font-size:11px}
+  .smart-guide-browse i{font-size:9.5px}
+  .smart-guide-onboarding button strong,.smart-guide strong,.guide-ghost-card>strong{font-size:12px}
+  .smart-guide-steps span,.smart-guide-focus-card>header p{font-size:11.5px}
+  .smart-guide-hint>div button{height:30px}
+  .smart-guide-selected-actions button{min-height:30px}
+  /* Rules with a longer selector chain elsewhere set these at 9–10px. */
+  .smart-guide.smart-guide.smart-guide .smart-guide-browse button span,
+  .smart-guide.smart-guide.smart-guide .smart-guide-footer button,
+  .smart-guide.smart-guide.smart-guide .smart-guide-onboarding-toggle>span{font-size:11px}
 }
