@@ -19490,6 +19490,8 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
 .wk[open] summary::after{transform:rotate(-135deg)}
 .wk-g{display:grid;grid-template-columns:34px repeat(5,minmax(0,1fr));gap:4px;padding:2px 12px 14px;direction:rtl}
 .wk-g>*{min-width:0}
+.wk-r{display:contents}
+.wk-r>*{min-width:0}
 .wk-h{font-size:11px;color:var(--dim);text-align:center;padding:2px 0 4px;border-radius:8px}
 .wk-h[data-today="1"]{color:var(--jade);font-weight:700;background:var(--accent-soft)}
 .wk-t{font:500 11px/30px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);text-align:center;direction:ltr}
@@ -19564,7 +19566,7 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
     </div>
   </div>
   <p class="count" id="count" aria-live="polite"></p>
-  <details class="wk" id="wk" hidden><summary data-guide-ignore="عرض للقراءة فقط يطوى ويفتح"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>الأسبوع بنظرة</summary><div class="wk-g" id="wkg" role="img" aria-label="عدد المحاضرات في كل يوم وفترة"></div></details>
+  <details class="wk" id="wk" hidden><summary data-guide-ignore="عرض للقراءة فقط يطوى ويفتح"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>الأسبوع بنظرة</summary><div class="wk-g" id="wkg" role="table" aria-label="عدد المحاضرات في كل يوم وفترة"></div></details>
   <section id="list" aria-label="الجدول" aria-busy="true"><div class="grid" aria-hidden="true"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></section>
   <p class="foot" id="foot">الجدول المعتمد للفصل الجاري · للقراءة فقط ويتحدّث من نفسه</p>
 </main>
@@ -19680,10 +19682,12 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
       r.days.forEach(function (d) { if (d >= 0 && d < 5) { var k = b + "|" + d; cell[k] = (cell[k] || 0) + 1; } });
     });
     if (hi < 0) { box.hidden = true; return; }
-    var h = '<span></span>' + DAYS.map(function (n, d) { return '<span class="wk-h" data-today="' + (d === TODAY ? 1 : 0) + '">' + esc(n) + "</span>"; }).join("");
+    var h = '<div class="wk-r" role="row"><span role="presentation"></span>' + DAYS.map(function (n, d) { return '<span class="wk-h" role="columnheader" data-today="' + (d === TODAY ? 1 : 0) + '">' + esc(n) + "</span>"; }).join("") + "</div>";
     for (var b = lo; b <= hi; b += 2) {
-      h += '<span class="wk-t">' + (b < 10 ? "0" : "") + b + ":00</span>";
-      for (var d = 0; d < 5; d++) { var n = cell[b + "|" + d] || 0; h += '<span class="wk-c" data-l="' + (n >= 4 ? 3 : n >= 2 ? 2 : n ? 1 : 0) + '" data-today="' + (d === TODAY ? 1 : 0) + '">' + (n || "") + "</span>"; }
+      var band = (b < 10 ? "0" : "") + b + ":00";
+      h += '<div class="wk-r" role="row"><span class="wk-t" role="rowheader">' + band + "</span>";
+      for (var d = 0; d < 5; d++) { var n = cell[b + "|" + d] || 0; h += '<span class="wk-c" role="cell" aria-label="' + esc(DAYS[d] + " " + band + ": " + (n ? countOf(n, NOUN.lecture) : "لا محاضرات")) + '" data-l="' + (n >= 4 ? 3 : n >= 2 ? 2 : n ? 1 : 0) + '" data-today="' + (d === TODAY ? 1 : 0) + '">' + (n || "") + "</span>"; }
+      h += "</div>";
     }
     g.innerHTML = h; box.hidden = false;
   }
