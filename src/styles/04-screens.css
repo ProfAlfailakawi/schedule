@@ -136,7 +136,7 @@
   border-top:1px solid #26312d;color:#6d7a73;font-size:var(--t-xs);
 }
 .apex-login-signature{display:inline-flex;align-items:baseline;gap:8px;white-space:nowrap}
-.apex-login-signature small{color:#51605a;font-size:10.5px}
+.apex-login-signature small{color:#51605a;font-size:11px}
 .apex-login-doors{display:inline-flex;align-items:center;gap:10px}
 .demo-entry-link{
   display:inline-flex;align-items:center;gap:6px;
