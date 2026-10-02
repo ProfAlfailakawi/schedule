@@ -1599,3 +1599,56 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
 /* Dark: small captions reach 4.5:1 on the dark card. */
 :root[data-theme="dark"] .apex-login-signature small{color:#9aa8a1;font-size:11.5px}
 :root[data-theme="dark"] .apex-login-principles small{color:#a3b0a9}
+
+/* ── ميزان الأقسام على الهاتف: بطاقةٌ لكل قسم بدل جدولٍ يُمرَّر أفقياً ──────
+   الجدول عرضُه 760px فكانت أعمدةُ المواعيد والأساتذة والقاعات والعدالة والجودة
+   والموانع خارج الشاشة بلا أي إشارة. هنا تُرتَّب الخلايا نفسُها بطاقةً (عرضٌ فقط):
+   لا عمودَ يُحذف، وأزرارُ الفرز في الرأس تبقى شرائحَ قابلةً للّمس. */
+@media (max-width:760px){
+  .balance-lens{padding:var(--s4)}
+  .balance-scroll{overflow:visible;border:0;border-radius:0}
+  .balance-table{display:block;min-width:0;width:100%}
+  .balance-table thead{display:block}
+  .balance-table thead tr{display:flex;flex-wrap:wrap;gap:var(--s2);padding-bottom:var(--s3)}
+  .balance-table th{position:static;display:block;background:none;border:0}
+  .balance-table th button{width:auto;min-height:44px;padding:0 var(--s4);border:1px solid var(--line);border-radius:var(--r-full);background:var(--surface)}
+  .balance-table th button.sorted{border-color:var(--accent)}
+  .balance-table tbody{display:grid;gap:var(--s3)}
+  .balance-table tbody tr{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--s3) var(--s2);padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+  .balance-table tbody tr.has-conflicts{box-shadow:inset 3px 0 0 var(--danger)}
+  .balance-table tbody tr.has-conflicts td:first-child{box-shadow:none}
+  .balance-table tbody td{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:0;border:0;min-width:0}
+  .balance-table tbody tr:hover td{background:none}
+  .balance-table tbody td:first-child,.balance-table td.balance-approval,.balance-table td.balance-empty-cells{grid-column:1/-1}
+  .balance-table td[data-cell="count"]{grid-column:span 4}
+  .balance-table td[data-cell="metric"]{grid-column:span 3}
+  .balance-table td[data-label]::before{content:attr(data-label);font-size:11px;font-weight:600;color:var(--muted)}
+  .balance-table td[data-cell="count"]{font-size:var(--t-h3,18px);font-weight:600}
+  .balance-table tbody td{line-height:1.35}
+  .balance-table tbody td:first-child{flex-direction:row;flex-wrap:wrap;align-items:baseline;column-gap:var(--s2);row-gap:0}
+  .balance-table tbody td:first-child small{margin-top:0}
+  .balance-table td.balance-approval{flex-direction:row;flex-wrap:wrap;align-items:center;column-gap:var(--s3);row-gap:var(--s1)}
+}
+
+/* ── الهاتف: صفوفُ تبويبٍ وشرائحُ دون 44 بكسل ────────────────────────────────
+   عناصرُ مرسومةٌ بين 33 و40 بكسل وحدَها في صفّها، بلا طبقةِ توسعةٍ ولا جيرانَ
+   فوقها أو تحتها يلتقطون اللمسة. تُرفع إلى 44 في الارتفاع فقط، والعرضُ والأيقونةُ
+   والخطُّ كما رُسمت. محصورةٌ بأسماءٍ صريحة لا بـ`button` عامّ. */
+@media (pointer:coarse) and (max-width:760px){
+  .lens-strip button,
+  .segmented button,
+  .living-more,
+  .btn.schedule-tools-toggle,
+  .sd-toggle,
+  .query-canvas-head .btn,
+  .student-case-more-toggle{min-height:44px}
+  .changes-chip{min-height:44px}
+}
+
+/* ── الهاتف: محرِّر الموعد — أزرارٌ صغيرة داخل الحقول ───────────────────────
+   زرُّ عدّاد الوقت 28×28 داخل حقلٍ ارتفاعُه 44 (طبقةٌ شفافة تملأ ارتفاعَ الحقل،
+   والرسمُ كما هو)، وزرُّ «اقترح لي وقتاً» 40 → 44. */
+@media (pointer:coarse) and (max-width:760px){
+  .schedule-time-counter-toggle::after{content:"";position:absolute;inset:-8px -6px}
+  .slot-advisor-ask{min-height:44px}
+}

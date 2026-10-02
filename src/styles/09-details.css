@@ -1149,7 +1149,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   flex:none;
   padding:1px 6px;border-radius:var(--r-xs);
   border:1px solid var(--line);background:var(--surface-2);
-  color:var(--muted);font:600 10px/1.6 var(--font-mono);
+  color:var(--muted);font:600 11px/1.6 var(--font-mono);
 }
 .cmdk kbd svg{width:10px;height:10px;vertical-align:-1px}
 .cmdk-results{

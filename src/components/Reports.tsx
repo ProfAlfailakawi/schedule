@@ -3205,16 +3205,16 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
                     })()}
                   </td>
                 ) : null}
-                <td>{item.empty ? "—" : num(item.rows)}</td>
-                <td>{item.empty ? "—" : num(item.instructors)}</td>
+                <td data-label="المواعيد" data-cell="count">{item.empty ? "—" : num(item.rows)}</td>
+                <td data-label="الأساتذة" data-cell="count">{item.empty ? "—" : num(item.instructors)}</td>
                 {/* «(موثّقة 0)» لا يُكتب (قاعدة إخفاء الفارغ). */}
-                <td>{item.empty ? "—" : item.verifiedRooms
+                <td data-label="القاعات" data-cell="count">{item.empty ? "—" : item.verifiedRooms
                   ? <>{num(item.rooms)} <small>(موثّقة {num(item.verifiedRooms)})</small></>
                   : num(item.rooms)}</td>
                 {item.empty ? (
                   <td colSpan={4} className="balance-empty-cells"><small>لا مواعيد بعد</small></td>
                 ) : (<>
-                <td>
+                <td data-label="صباحي" data-cell="metric">
                   {/* Morning against evening as one bar, rather than two numbers
                       to subtract in your head. */}
                   <span className="balance-split" title={`صباحي ${item.morningPct}٪ · مسائي ${item.eveningPct}٪`}>
@@ -3222,18 +3222,18 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
                   </span>
                   <b>{num(item.morningPct)}٪</b>
                 </td>
-                <td>
+                <td data-label="العدالة" data-cell="metric">
                   <DnaRing className="balance-ring" value={Number(item.fairness)} size={34} stroke={3}
                     tone={item.fairness >= 78 ? "accent" : item.fairness >= 62 ? "warn" : "danger"}
                     label={num(item.fairness)} ariaLabel={`العدالة ${num(item.fairness)}`} />
                   {item.heaviest ? <small title="الأثقل حملاً">{item.heaviest}</small> : null}
                 </td>
-                <td>
+                <td data-label="الجودة" data-cell="metric">
                   <DnaRing className="balance-ring" value={Number(item.quality)} size={34} stroke={3}
                     tone={item.quality >= 85 ? "accent" : item.quality >= 70 ? "warn" : "danger"}
                     label={num(item.quality)} ariaLabel={`الجودة ${num(item.quality)}`} />
                 </td>
-                <td>{item.conflicts ? <b className="balance-bad">{num(item.conflicts)}</b> : <span className="balance-ok">—</span>}</td>
+                <td data-label="موانع" data-cell="metric">{item.conflicts ? <b className="balance-bad">{num(item.conflicts)}</b> : <span className="balance-ok">—</span>}</td>
                 </>)}
               </tr>
             ))}
