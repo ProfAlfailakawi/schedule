@@ -1586,3 +1586,16 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .smart-guide.smart-guide.smart-guide .smart-guide-footer button,
   .smart-guide.smart-guide.smart-guide .smart-guide-onboarding-toggle>span{font-size:11px}
 }
+
+/* Login on a phone: the form comes before the feature chips (visual order only —
+   the DOM and tab order are unchanged). The story block dissolves into the stage
+   grid so its chips can drop below the form. */
+@media (max-width:900px){
+  .apex-login-stage{grid-template-columns:minmax(0,1fr)}
+  .apex-login-story{display:contents}
+  .apex-login-principles{order:5;margin-top:var(--s3)}
+  .apex-login-access{order:3}
+}
+/* Dark: small captions reach 4.5:1 on the dark card. */
+:root[data-theme="dark"] .apex-login-signature small{color:#9aa8a1;font-size:11.5px}
+:root[data-theme="dark"] .apex-login-principles small{color:#a3b0a9}

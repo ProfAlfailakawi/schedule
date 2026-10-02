@@ -745,3 +745,24 @@ body:has(.sp-root) .smart-guide-fab{visibility:hidden}
 .heat-legend{display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:11px;color:var(--muted)}
 .heat-legend .heat-swatch{min-block-size:0;inline-size:18px;block-size:10px;border-radius:3px}
 @media (min-width:900px){.inbox-glance{grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:var(--s4)}.glance-card{padding:var(--s4) var(--s5)}.heat-cell{block-size:20px}}
+
+/* ── Department inbox card: fewer boxes (display only) ──────────────────────
+   History button and proposal line live in the card header; the request table
+   reads as three columns — request / change (old struck, then new) / decision. */
+.request-card-head{flex-wrap:wrap;border-bottom:0;background:transparent;row-gap:var(--s2)}
+.request-card-head>.request-trail-btn{order:3}
+.request-card-head>.request-trail-line{order:5}
+.request-card-head>.sp-thread{order:4;flex:1 1 100%;padding:0;border:0;background:transparent;border-radius:0}
+.request-card-head>.sp-thread .sp-pcard{border:0;background:var(--surface-2);border-radius:var(--r-md)}
+.request-table-wrap{border-top:1px solid var(--line)}
+.request-table thead th{background:transparent}
+.request-table th:nth-child(1){inline-size:24%}
+.request-table th:nth-child(2){inline-size:34%}
+.request-flow{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2) var(--s3)}
+.request-flow>span{display:block}
+.request-flow .request-was-gone{color:var(--muted)}
+.request-flow-arrow{inline-size:16px;block-size:16px;flex:none;color:var(--muted-2)}
+.request-table td>.request-action{display:inline-block;margin-bottom:6px}
+.request-table td[data-label="القرار"]>*+*{margin-top:6px}
+/* Heat map: colour intensity only — the count stays in each cell's title. */
+.heat-cell{font-size:0}

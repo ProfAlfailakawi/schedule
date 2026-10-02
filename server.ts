@@ -18470,10 +18470,29 @@ label.sign{display:grid;grid-template-columns:auto minmax(0,190px);align-items:c
 [hidden]{display:none!important}
 @media(max-width:520px){.wrap{padding:12px 12px 116px}.hero{grid-template-columns:1fr}.readiness{display:flex;align-items:center;justify-content:space-between;text-align:start;padding:8px 12px}.readiness b{font-size:16px}.card{padding:13px}.days{gap:4px}.days button{font-size:11.5px;padding-inline:1px}.course-options{grid-template-columns:1fr}.ends{margin-inline-start:0}.activity-item{grid-template-columns:12px minmax(0,1fr)}.activity-item time{grid-column:2}.tabs{top:6px}}
 @media print{body{background:#fff}.tabs,.pick,.edit,.send,.alts,.add-card{display:none!important}.wrap{max-width:none;padding:0}.card{box-shadow:none;break-inside:avoid}}
+/* شريطُ حالةٍ واحد: مسودة · جاهزية · بيئة تجريبية — شرائحُ صغيرة لا ثلاثُ لافتات. */
+.statusline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:700;line-height:1.5;border:1px solid var(--line);background:var(--card);color:var(--muted)}
+.chip.st{background:var(--warn2);border-color:#eed994;color:#735100}
+.statusline[data-approved="1"] .chip.st{background:#e8f5ee;border-color:#bfe3d0;color:var(--ok)}
+.chip.rd b{display:inline;font-size:13px;color:var(--accent)}.chip.rd small{font-size:11.5px;color:var(--muted)}
+details.demo{display:inline-block}details.demo[open]{flex-basis:100%}
+details.demo>summary{list-style:none;cursor:pointer;background:#fff7e6;border-color:#c79b5f;color:#5b4520}details.demo>summary::-webkit-details-marker{display:none}
+.statusline .demo-hint{margin:6px 0 0!important}
+.hero{grid-template-columns:1fr}
+label.sign input::placeholder,.course-search::placeholder,textarea::placeholder{color:#5f6e66;opacity:1}
+.signnote{color:#5f6e66;font-size:12px}
+.send{padding-top:10px}.sendbox{padding:8px 10px}
+.sendrow{display:flex;align-items:center;gap:8px;min-height:56px}
+.sendrow label.sign{flex:1 1 52%;margin:0;grid-template-columns:auto minmax(0,1fr);justify-content:stretch;gap:8px;white-space:nowrap}
+.sendrow label.sign input{padding:9px 8px;min-width:0}
+.sendrow>button{flex:1 1 40%;width:auto;min-height:44px;padding:8px 12px}
+.sendbox .signnote{display:none;margin:6px 0 0}.sendbox:focus-within .signnote{display:block}
+.wrap{padding-bottom:150px}
 ${PROPOSAL_ALERT_CSS}
-</style></head><body>${demoHint?`<div style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div>
+</style></head><body>${demoHint?`<div id="demoTop" style="max-width:760px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>`:""}<div class="wrap" id="host">يفتح جدولك…</div>
 <script nonce="${nonce}">(function(){
-var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),data=null,state=[],signCivil="",activeTab="schedule",chooserOpen=false;
+var TOKEN=${JSON.stringify(token)},host=document.getElementById("host"),demoNode=document.querySelector("#demoTop .demo-hint"),demoOpen=false,data=null,state=[],signCivil="",activeTab="schedule",chooserOpen=false;
 var DAYS=[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]];
 var LONG={fmonday:80,fwednesday:80},SHORT=50;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
@@ -18680,8 +18699,8 @@ function paint(){
  var changed=state.filter(function(it){return it.action!=="keep"}).length;
  var blocked=state.filter(function(it){return it.tone==="bad"||it.tone==="checking"}).length;
  var ready=blocked?"راجع الموانع":changed?countOf(changed,AR.change)+" "+nounFor(changed,AR.readyAdj):"لم تغيّر شيئاً";
- var h=proposalBanner+'<div class="state" data-approved="'+(approved?"1":"0")+'">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</div>'+
-  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div><div class="readiness"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,AR.item)+" "+nounFor(blocked,AR.needsVerb):"فحص مباشر قبل الإرسال")+'</small></div></div>'+
+ var h=proposalBanner+'<div class="statusline" role="status" data-approved="'+(approved?"1":"0")+'"><span class="chip st">'+(approved?"انتهت مراجعة القسم لطلبك":"مسودة · غير معتمدة · لا تُعتبر تكليفاً")+'</span><span class="chip rd"><b>'+esc(ready)+'</b><small>'+(blocked?countOf(blocked,AR.item)+" "+nounFor(blocked,AR.needsVerb):"فحص مباشر قبل الإرسال")+'</small></span><span id="demoSlot"></span></div>'+
+  '<div class="hero"><div><h1>جدولك — '+esc(data.instructorName)+'</h1><p class="sub">'+esc(data.termName)+(r.source==="previous-term"?" · مبدئيّ من الفصل السابق":"")+(open?"":" · انتهت مدّة الطلبات، والصفحة للقراءة")+'</p></div></div>'+
   '<div class="tabs" role="tablist"><button type="button" data-tab="schedule" role="tab" aria-selected="'+(activeTab==="schedule")+'">الجدول والطلبات</button><button type="button" data-tab="activity" role="tab" aria-selected="'+(activeTab==="activity")+'">الحركة · '+changed+'</button></div>'+(restoredDraft&&open?'<div class="restored">استعدنا ما كتبتَه في زيارتك السابقة ولم يُرسل بعد. <button type="button" id="dropDraft">ابدأ من جديد</button></div>':'')+'<div id="err"></div>';
  h+='<section data-panel="schedule" '+(activeTab==="schedule"?'':'hidden')+'>'+planTable();
  if(open&&data.courses&&data.courses.length){
@@ -18697,12 +18716,17 @@ function paint(){
  h+='</section><section data-panel="activity" '+(activeTab==="activity"?'':'hidden')+'>'+activityHtml(r)+'</section>';
  /* التوقيع: حقلٌ واحدٌ فوق الزرّ، وجملةٌ تقول ما يعنيه الضغط. ولا يُقال
     «تحقّق من هويتك» — يُقال إنه توقيع، لأنه توقيع. */
- if(open&&!chooserOpen)h+='<div class="send"><div class="sendbox"><div class="sendrow"><label class="sign"><span>رقمك المدني</span>'+
+ if(open&&!chooserOpen)h+='<div class="send"><div class="sendbox" title="بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك."><div class="sendrow"><label class="sign"><span>رقمك المدني</span>'+
   '<input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" '+
   'placeholder="12 رقمًا" value="'+esc(signCivil)+'"></label>'+
   '<button type="button" id="send" '+(blocked?'disabled':'')+'>'+(blocked?'عالج الموانع قبل الإرسال':'أرسل الطلب')+'</button></div>'+
   '<p class="signnote">بإدخال رقمك المدني والضغط على «أرسل» فأنت توقّع هذا الطلب باسمك.</p></div></div>';
  host.innerHTML=h;
+ var slot=document.getElementById("demoSlot");
+ if(demoNode&&slot){var det=document.createElement("details");det.className="demo";det.open=demoOpen;
+  var sm=document.createElement("summary");sm.className="chip";sm.textContent="بيئة تجريبية";det.appendChild(sm);det.appendChild(demoNode);
+  det.addEventListener("toggle",function(){demoOpen=det.open});slot.appendChild(det);
+  var top=document.getElementById("demoTop");if(top)top.style.display="none"}
  wire();
 }
 /* الأرقامُ كما تُكتب على أيّ لوحة: عربيةً أو فارسيةً أو لاتينية. وكان
@@ -19358,10 +19382,11 @@ h1{margin:0;font-size:clamp(22px,5.6vw,30px);line-height:1.35;font-weight:700;le
 .sub.err{color:var(--bad)}
 
 /* ── تنبيه «مبدئي» */
-.provisional{display:flex;gap:12px;align-items:flex-start;margin:16px 0 4px;padding:13px 15px;border-radius:14px;border:1px solid color-mix(in srgb,var(--brass) 30%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--brass) 9%,var(--card)),color-mix(in srgb,var(--brass) 5%,var(--card)));color:var(--ink);font-size:13.5px;line-height:1.75}
-.provisional .ic{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:color-mix(in srgb,var(--brass) 16%,var(--card));color:var(--brass)}
-.provisional .ic svg{width:18px;height:18px}
-.provisional b{display:block;color:var(--brass);font-weight:700;font-size:14.5px;margin-bottom:1px}
+.provisional{display:inline-flex;gap:8px;align-items:center;margin:12px 0 4px;padding:4px 12px 4px 6px;border-radius:999px;border:1px solid color-mix(in srgb,var(--brass) 30%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--brass) 9%,var(--card)),color-mix(in srgb,var(--brass) 5%,var(--card)));color:var(--ink);font-size:13px;line-height:1.7}
+.provisional .ic{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:999px;background:color-mix(in srgb,var(--brass) 16%,var(--card));color:var(--brass)}
+.provisional .ic svg{width:15px;height:15px}
+.provisional b{color:var(--brass);font-weight:700;font-size:13px}
+.provisional .more{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .provisional span{color:var(--dim)}
 
 /* ── الشريط اللاصق */
@@ -19382,7 +19407,7 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
 .seg button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:34px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--dim);font-size:14px;font-weight:500;cursor:pointer;transition:background .18s var(--ease),color .18s,box-shadow .18s}
 .seg button[aria-pressed=true]{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(19,24,23,.08),0 2px 8px -4px rgba(19,24,23,.18)}
 .seg button[aria-pressed=true] svg{color:var(--jade)}
-.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity;margin:0 calc(-1 * var(--gutter));padding:2px var(--gutter);scroll-padding-inline:var(--gutter);-webkit-mask-image:linear-gradient(to left,transparent,#000 var(--gutter),#000 calc(100% - var(--gutter)),transparent);mask-image:linear-gradient(to left,transparent,#000 var(--gutter),#000 calc(100% - var(--gutter)),transparent)}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity;margin:0 calc(-1 * var(--gutter));padding:2px var(--gutter);padding-inline-end:40px;scroll-padding-inline:var(--gutter);-webkit-mask-image:linear-gradient(to left,transparent,#000 var(--gutter),#000 calc(100% - 40px),transparent);mask-image:linear-gradient(to left,transparent,#000 var(--gutter),#000 calc(100% - 40px),transparent)}
 .chips::-webkit-scrollbar{display:none}
 .chips button{flex:none;scroll-snap-align:start;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);font-size:13.5px;cursor:pointer;transition:background .18s var(--ease),border-color .18s,color .18s}
 .chips button:hover{border-color:var(--line-strong)}
@@ -19405,18 +19430,19 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
 .course-h .side{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
 .code{display:inline-block;padding:2px 9px;border-radius:7px;background:var(--accent-soft);color:var(--jade);font:600 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.02em;direction:ltr;unicode-bidi:isolate;white-space:nowrap}
 .course-h .nsec{font-size:11.5px;color:var(--dim);white-space:nowrap}
+.course .shared{padding:0 16px 8px}
 .secs{list-style:none;margin:0;padding:0 8px 8px;display:grid;gap:6px}
 .sec{display:flex;gap:12px;align-items:flex-start;padding:11px 10px;border-radius:12px;background:var(--card2);border:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
 .badge{flex:none;display:grid;justify-items:center;align-content:center;min-width:52px;padding:5px 6px;border-radius:10px;background:var(--card);border:1px solid var(--line);color:var(--brass);line-height:1.2}
-.badge small{font-size:10.5px;color:var(--dim)}
+.badge small{font-size:11.5px;color:var(--dim)}
 .badge b{font:700 15px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
 .sec-body{flex:1;min-width:0;display:grid;gap:7px}
 .line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
 .days{display:inline-flex;flex-wrap:wrap;gap:4px}
 .day{padding:1px 9px;border-radius:999px;background:var(--card);border:1px solid var(--line);font-size:12px;line-height:1.75;color:var(--ink)}
 .day.on{background:var(--accent-soft);border-color:color-mix(in srgb,var(--jade) 30%,var(--line));color:var(--jade);font-weight:600}
-.time{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;background:var(--ink);color:#fff;font:600 12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;white-space:nowrap}
-.time .dash{opacity:.6;font-weight:400}
+.time{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;background:color-mix(in srgb,var(--jade) 11%,var(--card));border:1px solid color-mix(in srgb,var(--jade) 24%,var(--line));color:color-mix(in srgb,var(--jade) 78%,#000);font:600 12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;white-space:nowrap}
+.time .dash{opacity:.7;font-weight:400}
 .pill{display:inline-flex;align-items:center;gap:5px;min-width:0;font-size:12.5px;color:var(--dim)}
 .pill svg{width:14px;height:14px;color:color-mix(in srgb,var(--dim) 80%,transparent)}
 .pill.hall{padding:1px 9px 1px 8px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--ink)}
@@ -19483,9 +19509,9 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
     <div class="brand"><span class="mark">SCHEDULE</span><span class="kind">جدول الطلبة</span></div>
     <h1 id="title">${label}</h1>
     <p class="sub" id="sub">يفتح…</p>
-    <div class="provisional" id="provisional" role="note" hidden>
+    <div class="provisional" id="provisional" role="note" title="لم يُعتمد بعد، وقد تتغيّر بعض المواعيد أو القاعات قبل الاعتماد." hidden>
       <span class="ic" aria-hidden="true"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg></span>
-      <div><b>جدول مبدئي</b><span>لم يُعتمد بعد، وقد تتغيّر بعض المواعيد أو القاعات قبل الاعتماد.</span></div>
+      <div><b>جدول مبدئي</b><span> — لم يُعتمد بعد</span><span class="more">، وقد تتغيّر بعض المواعيد أو القاعات قبل الاعتماد.</span></div>
     </div>
   </header>
   <div class="bar" id="bar">
@@ -19579,12 +19605,16 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
     order.sort(function (a, b) { return a.localeCompare(b, "ar", { numeric: true }); });
     return '<div class="grid">' + order.map(function (k) {
       var g = groups[k].slice().sort(bySection), first = g[0], n = uniq(g, sectionKey);
+      var sharedHall = g.length > 1 && place(first) && g.every(function (r) { return place(r) === place(first); });
+      var sharedWho = g.length > 1 && first.instructor && g.every(function (r) { return r.instructor === first.instructor; });
       return '<article class="course fade-in" aria-label="' + esc(first.name) + '"><header class="course-h"><h2>' + esc(first.name || "مقرر") + "</h2>" +
         '<div class="side">' + codePill(first.code) + '<span class="nsec">' + esc(countOf(n, NOUN.section)) + "</span></div></header>" +
+        ((sharedHall || sharedWho) ? '<div class="line shared">' + (sharedHall ? hallPill(first) : "") + (sharedWho ? whoPill(first) : "") + "</div>" : "") +
         '<ul class="secs">' + g.map(function (r) {
-          return '<li class="sec">' + (r.section ? '<span class="badge"><small>شعبة</small><b dir="ltr">' + esc(r.section) + "</b></span>" : "") +
+          var tip = [place(r) ? "القاعة: " + place(r) : "", r.instructor ? "الأستاذ: " + r.instructor : ""].filter(Boolean).join(" · ");
+          return '<li class="sec" title="' + esc(tip) + '">' + (r.section ? '<span class="badge"><small>شعبة</small><b dir="ltr">' + esc(r.section) + "</b></span>" : "") +
             '<div class="sec-body"><div class="line">' + dayChips(r) + range(r) + "</div>" +
-            ((place(r) || r.instructor) ? '<div class="line">' + hallPill(r) + whoPill(r) + "</div>" : "") + "</div></li>";
+            (((place(r) && !sharedHall) || (r.instructor && !sharedWho)) ? '<div class="line">' + (sharedHall ? "" : hallPill(r)) + (sharedWho ? "" : whoPill(r)) + "</div>" : "") + "</div></li>";
         }).join("") + "</ul></article>";
     }).join("") + "</div>";
   }

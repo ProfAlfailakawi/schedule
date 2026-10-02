@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,TrendingDown,TrendingUp,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
-import MiniRing from"./MiniRing";
+import MiniRing,{miniRingTone} from"./MiniRing";
 import TermForecast from"./TermForecast";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
@@ -226,7 +226,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     <span className="deck-decision-mark">{primaryDecision?<ShieldAlert aria-hidden="true"/>:<CheckCircle2 aria-hidden="true"/>}</span>
     <div>
      <strong id="dashboard-primary-decision">{decisionTitle(primaryDecision)||"الجدول سليم"}</strong>
-     <small>{primaryDecision?decisionDetail(primaryDecision):"لا توجد أمور تتطلب قراراً في القراءة الحالية."}</small>
+     <small title={primaryDecision?decisionDetail(primaryDecision):undefined}>{primaryDecision?decisionDetail(primaryDecision):"لا توجد أمور تتطلب قراراً في القراءة الحالية."}</small>
     </div>
     {decisions.length>1?<span className="deck-decision-count" aria-label={`${countOf(decisions.length, AR.matter)} تستحق الانتباه`}>{num(decisions.length)}</span>:null}
     {primaryDecision&&canManageSchedule?<button type="button" aria-label={`معالجة: ${decisionTitle(primaryDecision)}`} onClick={()=>onNavigate?.("schedules")}><ArrowLeft aria-hidden="true"/></button>:null}
@@ -234,7 +234,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
 
    {signals.length>1?<section className="deck-signals" aria-label="مؤشرات الجاهزية">
     {signals.map(item=><article key={item.key} className={[item.tone?`signal-${item.tone}`:"",item.awaiting?"is-awaiting":""].filter(Boolean).join(" ")||undefined} aria-busy={item.awaiting||undefined}>
-     {item.ring!=null?<div className="signal-ring-row"><b>{item.value}</b><MiniRing value={item.ring} size={30} decorative>{""}</MiniRing></div>:<b>{item.value}</b>}
+     {item.ring!=null?<div className="signal-ring-row"><MiniRing value={item.ring} size={60} label={item.label}>{item.value}</MiniRing></div>:<b>{item.value}</b>}
      <span>{item.label}</span>
     </article>)}
    </section>:null}
@@ -256,7 +256,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     </div>:null}
    </section>:null}
 
-   <section className="deck-today" aria-labelledby="dashboard-today-title">
+   <section className={`deck-today${today.length?"":" is-empty"}`} aria-labelledby="dashboard-today-title">
     <h2 className="sr-only" id="dashboard-today-title">مسار محاضرات اليوم</h2>
     <div className="deck-today-lead">
      <b aria-label={`${countOf(today.length, AR.lecture)} اليوم`}>{num(today.length)}</b>
@@ -325,7 +325,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    {healthLines.length?<section className={`deck-chart dashboard-health-ribbon${healthAwaiting?" is-awaiting":""}`} aria-labelledby="dashboard-health-title" aria-busy={healthAwaiting||undefined}>
     <header><CheckCircle2 aria-hidden="true"/><span id="dashboard-health-title">صحة الجدول</span></header>
     <div className="bar-rows dashboard-health-lines">
-     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor" style={{["--v" as any]:item.value??0}} data-high={(item.value??0)>=80||undefined}>
+     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor" data-tone={item.value==null?undefined:miniRingTone(item.value)} style={{["--v" as any]:item.value??0}} data-high={(item.value??0)>=80||undefined}>
       <span>{item.label}</span>
       <i role="progressbar" aria-label={`مؤشر ${item.label}`} aria-valuemin={0} aria-valuemax={100} {...(item.value==null?{}:{"aria-valuenow":item.value})} {...(item.value==null?{"aria-valuetext":"قيد القراءة"}:{})}><b style={{width:`${item.value??0}%`}} aria-hidden="true"/></i>
       <em>{item.value==null?"—":`${num(item.value)}٪`}</em>

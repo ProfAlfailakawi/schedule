@@ -2469,3 +2469,34 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .forecast-more{justify-self:start;display:inline-flex;align-items:center;gap:4px;background:none;border:0;padding:0;color:var(--muted);font:inherit;font-size:var(--t-xs);cursor:pointer}
 .forecast-more svg{width:14px;height:14px;transition:transform .2s}
 .forecast-more[aria-expanded="true"] svg{transform:rotate(180deg)}
+
+/* ── Dashboard calm pass (display only) ─────────────────────────────────────
+   One place for every bar's figure: at the end of the row, outside the track,
+   never on top of it. Health bars take a tone from the same thresholds the
+   score rings use. An empty «today» is a one-line state, not a tall card. */
+.bar-rows>div{grid-template-columns:52px minmax(0,1fr) 3.2em}
+.bar-rows>div>em,.bar-rows>div[data-high]>em{
+  grid-column:3;grid-row:1;justify-self:end;margin:0;transform:none;
+  color:var(--ink-2);position:static;
+}
+.dashboard-health-factor[data-tone="good"]>i>b{background:var(--success)}
+.dashboard-health-factor[data-tone="warn"]>i>b{background:var(--warning)}
+.dashboard-health-factor[data-tone="bad"]>i>b{background:var(--danger)}
+.dashboard-health-factor[data-tone="good"]>em{color:var(--success)}
+.dashboard-health-factor[data-tone="warn"]>em{color:var(--warning)}
+.dashboard-health-factor[data-tone="bad"]>em{color:var(--danger)}
+.deck-signals .signal-ring-row{justify-content:flex-start}
+.deck-signals article:has(.signal-ring-row){align-items:center}
+.deck-today.is-empty{
+  grid-template-columns:auto minmax(0,1fr) auto;
+  padding-block:12px;gap:var(--s4);
+}
+.deck-today.is-empty .daybar{display:none}
+.deck-today.is-empty .deck-today-lead b{font-size:28px}
+.deck-today.is-empty .deck-clear{margin:0}
+.deck-today.is-empty .deck-today-actions{gap:var(--s3)}
+@media (max-width:640px){
+  .deck-today.is-empty{grid-template-columns:auto minmax(0,1fr)}
+  .deck-today.is-empty .deck-today-actions{grid-column:1/-1}
+  .deck-decision small{-webkit-line-clamp:1}
+}

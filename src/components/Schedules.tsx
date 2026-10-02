@@ -10341,7 +10341,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                     </div>
                     <div className="agenda-core">
                       <div className="agenda-title-row">
-                        <span className="code-chip">
+                        <span className={`code-chip${c?.CourseCode ? "" : " is-empty"}`}>
                           {c?.CourseCode || "—"}
                         </span>
                         <strong>{s.AdCourseName || c?.CourseName || ""}</strong>
@@ -10384,11 +10384,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       {historicalLocationNeedsReview(s)?<Badge tone="neutral">بيانات مكان تاريخية غير موثقة</Badge>:null}
                     </div>
                     <div className="agenda-meta">
-                      <span className="unit-pill" title="وحدات">
+                      <span className={`unit-pill${c?.CourseCredit == null ? " is-empty" : ""}`} title="وحدات">
                         <Layers aria-hidden="true" />
                         {c?.CourseCredit ?? "—"}
                       </span>
-                      <span className="unit-pill" title="ساعات">
+                      <span className={`unit-pill${c?.CourseHours == null ? " is-empty" : ""}`} title="ساعات">
                         <Hourglass aria-hidden="true" />
                         {c?.CourseHours ?? "—"}
                       </span>
