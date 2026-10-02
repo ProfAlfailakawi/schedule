@@ -5293,7 +5293,7 @@ export const Repository = {
   },
 
   saveRegistrationStats: async (collegeId: number, sectionId: number, termId: number,
-    input: { counts?: Record<string, number>; remaining?: Record<string, number>; accepted?: Record<string, number>; remainingSource?: { fileName?: unknown; importedAt?: unknown } | null },
+    input: { counts?: Record<string, number>; remaining?: Record<string, number>; accepted?: Record<string, number>; remainingSource?: { fileName?: unknown; importedAt?: unknown; column?: unknown } | null },
     updatedBy = ""): Promise<RegistrationStats> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     const clean = (map: Record<string, unknown> | undefined, max: number) => Object.fromEntries(
@@ -5303,7 +5303,8 @@ export const Repository = {
     /* الشاشة لم تعد تكتب «المسجّلين»: ما حُفظ منه قبلُ يبقى كما هو. */
     const previous = input.counts === undefined ? await Repository.getRegistrationStats(collegeId, sectionId, termId) : null;
     const source = input.remainingSource && String(input.remainingSource.fileName || "").trim()
-      ? { fileName: String(input.remainingSource.fileName).slice(0, 200), importedAt: String(input.remainingSource.importedAt || new Date().toISOString()).slice(0, 40) }
+      ? { fileName: String(input.remainingSource.fileName).slice(0, 200), importedAt: String(input.remainingSource.importedAt || new Date().toISOString()).slice(0, 40),
+          ...(input.remainingSource.column === "seats" ? { column: "seats" as const } : {}) }
       : undefined;
     const row: RegistrationStats = {
       id: scopeKey, scopeKey, collegeId, sectionId, termId,

@@ -20,11 +20,12 @@ import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { sectionLabels } from "../utils/sectionLabel";
 import { currentTermId, sortTermsNewest, termChronology, termIsArchive } from "../utils/termSequence";
 import {
-  buildVisitingHistoryModel, sortVisitingTerms, visitingHeatLevel,
+  buildVisitingHistoryModel, sortVisitingTerms, visitingHeatLevel, termSectionCount,
   type VisitingHistoryPerson, type VisitingHistoryYear,
 } from "../utils/visitingHistory";
 import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { summarizeVisitingTeaching, weeklyHours, type VisitingTeachingSummary } from "../utils/visitingTeaching";
 import { HISTORICAL_FINALITY_LABEL } from "../utils/finality";
 import { takeNotifyFocus } from "../utils/notifyFocus";
 import { buildFairnessEngine } from "../utils/livingSchedule";
@@ -54,6 +55,14 @@ export type ReportMode =
   | "searchInstructor" | "searchRoom" | "searchTime" | "searchRoomTime" | "searchAdvanced"
   | "reportDepartment" | "reportInstructor" | "reportRoom" | "reportTime" | "reportRoomTime";
 
+type VisitingTeachingData = {
+  key: string;
+  family: Array<{ collegeId: number; sectionId: number; collegeName: string; sectionName: string; allowed: boolean }>;
+  complete: boolean;
+  instructorIds: number[];
+  instructors: AdInstructor[];
+  rows: FSchedule[];
+};
 type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "visiting" | "visitingHistory" | "fairness" | "balance";
 type PrintKind = Lens | "comprehensive" | "comprehensive-branch" | null;
 
@@ -431,8 +440,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [terms, setTerms] = useState<AdTerm[]>([]);
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
   const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
-  const [visitingHistory, setVisitingHistory] = useState<{ terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[] } | null>(null);
+  const [visitingHistory, setVisitingHistory] = useState<{ terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[]; family?: VisitingTeachingData["family"]; complete?: boolean; key?: string } | null>(null);
   const [visitingHistoryLoading, setVisitingHistoryLoading] = useState(false);
+  /* استعلام المنتدبين يقرأ القسم العلمي عبر كلياته (لا الكلية المختارة وحدها).
+     يُحفظ مع مفتاح النطاق الذي طُلب له، فلا يظهر ردٌّ قديم تحت قسمٍ جديد. */
+  const [visitingTeaching, setVisitingTeaching] = useState<VisitingTeachingData | null>(null);
+  const [visitingTeachingError, setVisitingTeachingError] = useState("");
   /* ── نافذة السنوات ────────────────────────────────────────────────────────
    * الأرشيف يكبر ولا يصغر: خمس عشرة سنة تعني ثلاثين فصلاً، ولو صُفّت كلها في
    * عرض واحد لصار كل عمود شريطاً لا يُقرأ. فالنافذة تُظهر أحدث ما يُقارَن به
@@ -641,6 +654,28 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   },[filters.collegeId,filters.sectionId,filters.termId]);
 
   useEffect(() => {
+    const key=`${filters.collegeId}:${filters.sectionId}:${filters.termId}`;
+    setVisitingTeaching(previous=>previous?.key===key?previous:null);
+    setVisitingTeachingError("");
+    if(lens!=="visiting"||!filters.collegeId||!filters.sectionId||!filters.termId)return;
+    const controller=new AbortController();
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId),termId:String(filters.termId)});
+    fetch(`/api/reports/visiting-teaching?${qs}`,{signal:controller.signal})
+      .then(async response=>{if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error||"تعذر تحميل تدريس المنتدبين عبر كليات القسم");return response.json();})
+      .then(data=>setVisitingTeaching({
+        key,
+        family:Array.isArray(data?.family)?data.family:[],
+        complete:data?.complete!==false,
+        instructorIds:(Array.isArray(data?.instructorIds)?data.instructorIds:[]).map(Number).filter(Boolean),
+        instructors:Array.isArray(data?.instructors)?data.instructors:[],
+        rows:Array.isArray(data?.rows)?data.rows:[],
+      }))
+      .catch(error=>{if(error?.name!=="AbortError"){setVisitingTeaching(null);setVisitingTeachingError(String(error?.message||error));}});
+    return()=>controller.abort();
+  },[lens,filters.collegeId,filters.sectionId,filters.termId]);
+
+  useEffect(() => {
+    setVisitingHistory(previous=>previous?.key===`${filters.collegeId}:${filters.sectionId}`?previous:null);
     if(lens!=="visitingHistory"||!filters.collegeId){return;}
     const controller=new AbortController();
     const qs=new URLSearchParams({collegeId:String(filters.collegeId)});
@@ -651,6 +686,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       .then(data=>setVisitingHistory({
         terms:Array.isArray(data?.terms)?data.terms:[],
         people:Array.isArray(data?.people)?data.people:[],
+        family:Array.isArray(data?.family)?data.family:[],
+        complete:data?.complete!==false,
+        key:`${filters.collegeId}:${filters.sectionId}`,
       }))
       .catch(error=>{if(error?.name!=="AbortError"){setVisitingHistory(null);setError(String(error?.message||error));}})
       .finally(()=>{if(!controller.signal.aborted)setVisitingHistoryLoading(false);});
@@ -1182,25 +1220,32 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       .sort((a, b) => byRoomLabel(a.name, b.name));
   }, [results, instructorById]);
 
+  const visitingScopeKey = `${filters.collegeId}:${filters.sectionId}:${filters.termId}`;
+  /* بيانات القسم عبر كلياته متى طُلبت للنطاق الظاهر نفسه؛ ومستوى الكلية (بلا
+     قسم) يبقى على صفوف الكلية كما كان — ذاك استعلامٌ آخر لا عائلة له. */
+  const familyTeaching = filters.sectionId && visitingTeaching?.key === visitingScopeKey ? visitingTeaching : null;
   const visitingTermGroups = useMemo(() => {
-    const groups = new Map<number, FSchedule[]>();
-    results
-      .filter(row => visitingIds.has(Number(row.AdInstructorId)))
-      .forEach(row => groups.set(Number(row.AdInstructorId), [...(groups.get(Number(row.AdInstructorId)) || []), row]));
-    return [...groups.entries()].map(([id, rows]) => {
-      const distinctCourses = new Set(rows.map(row => Number(row.AdCourseId || 0)).filter(Boolean)).size;
-      const weeklyMinutes = rows.reduce((total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0);
+    const source = familyTeaching
+      ? summarizeVisitingTeaching(familyTeaching.rows, familyTeaching.instructorIds)
+      : summarizeVisitingTeaching(results, visitingIds);
+    const people = new Map<number, AdInstructor>(familyTeaching ? familyTeaching.instructors.map(person => [Number(person.AdInstructorId), person]) : []);
+    return source.map((summary: VisitingTeachingSummary<FSchedule>) => {
+      const person = instructorById.get(summary.instructorId) || people.get(summary.instructorId);
       return {
-        id,
-        name: instructorById.get(id)?.AdInstructorName || `منتدب ${id}`,
-        civil: instructorById.get(id)?.AdInstructorCivil || "",
-        rows,
-        sections: rows.length,
-        courses: distinctCourses,
-        weeklyMinutes,
+        ...summary,
+        id: summary.instructorId,
+        name: person?.AdInstructorName || `منتدب ${summary.instructorId}`,
+        civil: person?.AdInstructorCivil || "",
       };
-    }).sort((a, b) => b.sections - a.sections || byRoomLabel(a.name, b.name));
-  }, [results, visitingIds, instructorById]);
+    }).sort((a, b) => b.sections - a.sections || b.weeklyMinutes - a.weeklyMinutes || byRoomLabel(a.name, b.name));
+  }, [familyTeaching, results, visitingIds, instructorById]);
+  /* موقع التدريس باسمه: «كلية التربية · الرياضيات». */
+  const visitingPlaceLabel = (collegeId: number, sectionId: number) => {
+    const member = familyTeaching?.family.find(item => item.collegeId === Number(collegeId) && item.sectionId === Number(sectionId));
+    const college = member?.collegeName || colleges.find(item => Number(item.AdCollegeId) === Number(collegeId))?.AdCollegeName || "";
+    const section = member?.sectionName || sections.find(item => Number(item.AdSectionId) === Number(sectionId))?.AdSectionName || "";
+    return [college, section].filter(Boolean).join(" · ") || "—";
+  };
 
   const visitingHistoryRows = useMemo(() => {
     const people = visitingHistory?.people || [];
@@ -1214,14 +1259,12 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       .map(person => {
         const live = instructorById.get(Number(person.instructorId));
         const activeTerms = (person.terms || [])
-          .map(term => {
-            const itemCount = Array.isArray(term.items) ? term.items.length : 0;
-            const sections = Math.max(Number(term.sections || 0), itemCount);
-            return { ...term, sections };
-          })
+          /* الشعبة الفريدة لا عدد المواعيد: محاضرة ومختبر لشعبة واحدة = شعبة. */
+          .map(term => ({ ...term, sections: termSectionCount(term) }))
           .filter(term => Number(term.sections || 0) > 0);
         return {
           ...person,
+          courses: new Set(activeTerms.flatMap(term => (term.items || []).map(item => Number(item.courseId))).filter(Boolean)).size || Number(person.courses || 0),
           name: live?.AdInstructorName || person.name,
           civil: live?.AdInstructorCivil || person.civil || "",
           terms: activeTerms,
@@ -1252,7 +1295,13 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     const options = [4, 6, 10].filter(value => value < total).map(value => ({ value, label: `آخر ${countOf(value, oblique(AR.year))}` }));
     return [...options, { value: 0, label: total ? `كل السنوات (${total.toLocaleString("ar-KW-u-nu-latn")})` : "كل السنوات" }];
   }, [historyModel.totals.years]);
-  const visitingHistorySectionTotal = visitingHistoryRows.reduce((sum, person) => sum + Number(person.sections || 0), 0);
+  /* شعب القسم الفريدة في الفترة كلها — الرقم نفسه في صف «إجمالي القسم». */
+  const visitingHistorySectionTotal = historyModel.totals.sections;
+  /* حين يشترك منتدبان في فصل أو شعبة يختلف مجموع الأفراد عن إجمالي القسم؛
+     فيُذكر الفرق بعنوانه بدل أن يُعرض أحدهما باسم الآخر. */
+  const historyOverlapNote = historyModel.totals.personTerms !== historyModel.totals.terms || historyModel.totals.assignedSections !== historyModel.totals.sections
+    ? `مجموع ما في صفوف المنتدبين: ${countOf(historyModel.totals.personTerms, AR.term)} انتداب و${countOf(historyModel.totals.assignedSections, AR.section)} مسندة؛ والإجمالي يعدّ الفصل والشعبة المشتركين مرة واحدة.`
+    : "";
 
   const byTime = useMemo(() => {
     const groups = new Map<string, FSchedule[]>();
@@ -2480,7 +2529,22 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             ) : null}
           </div>
         ) : lens === "visiting" ? (
-          visitingTermGroups.length ? (
+          <>
+          {filters.sectionId && familyTeaching ? (
+            <div className={`visiting-family-scope${familyTeaching.complete ? "" : " is-partial"}`} role={familyTeaching.complete ? "note" : "alert"}>
+              <UserPlus aria-hidden="true" />
+              <span>
+                {familyTeaching.family.length > 1
+                  ? <>منتدبو القسم وتدريسهم في <b>{countOf(familyTeaching.family.filter(item => item.allowed).length, oblique(AR.college))}</b>: {familyTeaching.family.filter(item => item.allowed).map(item => item.collegeName || "—").join("، ")}</>
+                  : <>منتدبو القسم وتدريسهم في هذه الكلية — لا قسم مناظر له في كلية أخرى.</>}
+                {familyTeaching.complete ? null : (
+                  <strong> الأرقام غير مكتملة: لا تملك صلاحية {familyTeaching.family.filter(item => !item.allowed).map(item => [item.collegeName, item.sectionName].filter(Boolean).join(" · ")).join("، ")}، فلا تُحسب شعب المنتدبين وساعاتهم هناك.</strong>
+                )}
+              </span>
+            </div>
+          ) : null}
+          {visitingTeachingError ? <div className="visiting-family-scope is-partial" role="alert"><span><strong>{visitingTeachingError}</strong> — المعروض أدناه من الكلية المختارة وحدها وليس إجمالي القسم.</span></div> : null}
+          {visitingTermGroups.length ? (
             <div className="lens-groups lens-visiting">
               {visitingTermGroups.map(group => (
                 <article key={group.id} className={openGroup === `visiting-${group.id}` ? "open" : ""}>
@@ -2492,19 +2556,26 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                     onClick={() => setOpenGroup(openGroup === `visiting-${group.id}` ? null : `visiting-${group.id}`)}
                   >
                     <span className="group-avatar"><UserPlus /></span>
-                    <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
+                    <span className="visiting-card-identity">
+                      <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
+                      <small className="visiting-card-places">
+                        {countOf(group.courses, AR.course)}
+                        {group.places.length > 1 || familyTeaching ? <> · {group.places.map(place => visitingPlaceLabel(place.collegeId, place.sectionId)).join("، ")}</> : null}
+                      </small>
+                    </span>
                     <span className="group-bar"><i style={{ width: share(group.sections, Math.max(1, ...visitingTermGroups.map(item => item.sections))) }} /></span>
-                    <b><bdi>{countOf(group.sections, AR.section)}</bdi> · <bdi>{countOf(Math.round(group.weeklyMinutes / 60), AR.hour)}</bdi> أسبوعياً</b>
+                    <b className="visiting-card-load"><bdi>{countOf(group.sections, AR.section)}</bdi> · <bdi>{countOf(weeklyHours(group.weeklyMinutes), AR.hour)}</bdi> أسبوعياً</b>
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {openGroup === `visiting-${group.id}` ? (
                     <div className="group-rows" id={`query-visiting-group-${group.id}`}>
                       {group.rows.map(row => (
-                        <div key={row.id}>
+                        <div key={`${row.AdCollegeId}-${row.id}`}>
                           <span className="code-chip">{row.CourseCodeSnapshot || courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
-                          <span>{courseById.get(row.AdCourseId)?.CourseName || row.AdCourseName}</span>
+                          <span>{courseById.get(row.AdCourseId)?.CourseName || row.AdCourseName}{row.SCode ? <small> · شعبة <bdi>{row.SCode}</bdi></small> : null}</span>
                           <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                           <small>{dayText(row)} · {row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</small>
+                          <small className="visiting-row-place">{visitingPlaceLabel(row.AdCollegeId, row.AdSectionId)}</small>
                         </div>
                       ))}
                     </div>
@@ -2514,7 +2585,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             </div>
           ) : (
             <div className="query-empty"><EmptyState title="لا يوجد منتدبون في هذا الفصل" detail="أضفهم من أداة المنتدبين داخل الجدول الدراسي، ثم سيظهر تقريرهم هنا." /></div>
-          )
+          )}
+          </>
         ) : lens === "visitingHistory" ? (
           visitingHistoryRows.length ? (
             <div className="lens-visiting-history">
@@ -2667,9 +2739,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <th scope="row" className="is-person">إجمالي القسم</th>
-                      <td className="is-total"><b>{num(historyModel.totals.terms)}</b><small>{nounFor(historyModel.totals.terms, AR.term)}</small></td>
-                      <td className="is-total is-sections"><b>{num(historyModel.totals.sections)}</b><small>{nounFor(historyModel.totals.sections, AR.section)}</small></td>
+                      <th scope="row" className="is-person">إجمالي القسم<small className="visiting-history-total-hint">فصول وشعب فريدة</small></th>
+                      <td className="is-total" title="فصول القسم التي فيها انتداب، يُعدّ كل فصل مرة واحدة"><b>{num(historyModel.totals.terms)}</b><small>{nounFor(historyModel.totals.terms, AR.term)}</small></td>
+                      <td className="is-total is-sections" title="شعب القسم المسندة لمنتدبين، تُعدّ كل شعبة مرة واحدة"><b>{num(historyModel.totals.sections)}</b><small>{nounFor(historyModel.totals.sections, AR.section)}</small></td>
                       {historyModel.archive ? (
                         <td className="is-archive"><b>{num(historyModel.archive.years.reduce((sum, year) => sum + year.sections, 0))}</b></td>
                       ) : null}
@@ -2683,6 +2755,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   </tfoot>
                 </table>
               </div>
+              {historyOverlapNote ? <p className="visiting-history-overlap-note">{historyOverlapNote}</p> : null}
+              {visitingHistory?.complete === false ? (
+                <div className="visiting-family-scope is-partial" role="alert"><span><strong>السجل غير مكتمل:</strong> لا تملك صلاحية {(visitingHistory.family || []).filter(item => !item.allowed).map(item => [item.collegeName, item.sectionName].filter(Boolean).join(" · ")).join("، ")}، فلا يُحسب تدريس المنتدبين هناك.</span></div>
+              ) : null}
             </div>
           ) : (
             <div className="query-empty"><EmptyState title="لا يوجد تاريخ منتدبين" detail="بعد حفظ منتدبي الفصول سيظهر هنا سجل المقارنة بين السنوات." /></div>
@@ -2854,6 +2930,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           courseById={printKind === "comprehensive-branch" ? bookCourseById : courseById}
           instructorById={instructorById}
           visitingIds={visitingIds}
+          visitingRows={familyTeaching ? familyTeaching.rows : undefined}
+          visitingScopeNote={familyTeaching ? (familyTeaching.complete ? `القسم في: ${familyTeaching.family.map(item => item.collegeName).filter(Boolean).join("، ")}` : "غير مكتمل: لا صلاحية على بعض كليات القسم") : ""}
+          visitingPlace={visitingPlaceLabel}
           siteGroups={branchSiteGroups}
           approval={printApproval}
           changesAppendix={changesAppendix}
@@ -3423,7 +3502,7 @@ function PrintSheet(props: React.ComponentProps<typeof PrintSheetBody>) {
   );
 }
 
-function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, siteGroups, approval, changesAppendix, balanceApprovals }: {
+function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, visitingRows, visitingScopeNote, visitingPlace, siteGroups, approval, changesAppendix, balanceApprovals }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -3431,7 +3510,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   roomLoad: any;
   roomDay: number | "week";
   balance: any;
-  visitingHistory?: { terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[] } | null;
+  visitingHistory?: { terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[]; complete?: boolean } | null;
   scopeLine: string;
   collegeName: string;
   termName: string;
@@ -3440,6 +3519,10 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
   visitingIds: Set<number>;
+  /** صفوف تدريس المنتدبين عبر كليات القسم (استعلام المنتدبين وحده). */
+  visitingRows?: FSchedule[];
+  visitingScopeNote?: string;
+  visitingPlace?: (collegeId: number, sectionId: number) => string;
   /** مواقع الفرع ومواعيد كل منها — تُمرَّر فقط لوثيقة «كل الفروع». */
   siteGroups?: Array<{ site: BranchScope; rows: FSchedule[] }>;
   /**
@@ -3942,14 +4025,16 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   }
 
   if (kind === "visiting") {
-    const visitingRows = rows.filter(row => visitingIds.has(Number(row.AdInstructorId)));
-    const groups = groupRows(visitingRows, row => instructorOf(row)?.AdInstructorName || "منتدب");
+    const teachingRows = visitingRows || rows.filter(row => visitingIds.has(Number(row.AdInstructorId)));
+    const groups = groupRows(teachingRows, row => instructorOf(row)?.AdInstructorName || "منتدب");
     const pages = groups.flatMap(group => paginateItems(group.rows, PAGE_ROWS.visitingRows).map(groupRows => ({ group, rows: groupRows })));
     return (
       <div className="print-report print-wide print-query-report print-query-groups-report print-visiting-report">
         {pages.length ? pages.map((page, pageIndex) => {
           const instructor = instructorOf(page.group.rows[0]);
-          const load = page.group.rows.reduce((total, row) => total + duration(row) * Math.max(1, dayFlags(row).length), 0);
+          /* الملخص من صفوف الأستاذ كلها وبحساب الشاشة نفسه: شعبٌ فريدة وساعات أسبوعية. */
+          const summary = summarizeVisitingTeaching(page.group.rows, [Number(page.group.rows[0]?.AdInstructorId)])[0];
+          const load = summary?.weeklyMinutes || 0;
           const days = new Set(page.group.rows.flatMap(row => dayFlags(row).map(day => day.key))).size;
           return (
             <section className="print-explicit-page" key={`visiting-${page.group.key}-${pageIndex}`}>
@@ -3960,8 +4045,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                     <strong>{page.group.key}</strong>
                     {instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}
                   </div>
-                  <span><b>{page.group.rows.length}</b> {nounFor(page.group.rows.length, AR.section)}</span>
-                  <span><b>{Math.round(load / 60)}</b> س أسبوعياً</span>
+                  <span><b>{countOf(summary?.sections || 0, AR.section)} · {countOf(weeklyHours(load), AR.hour)} أسبوعياً</b></span>
+                  {visitingScopeNote ? <span className="print-visiting-scope">{visitingScopeNote}</span> : null}
                   <span><b>{days}</b> {nounFor(days, AR.day)}</span>
                 </header>
                 <table>
@@ -3972,7 +4057,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                     <td className="print-days">{dayCell(row)}</td>
                     <td className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</td>
                     <td className="print-ltr">{placeOfRow(row)}</td>
-                    <td className="print-ltr">{row.SCode || "—"}</td>
+                    <td className="print-ltr">{row.SCode || "—"}{visitingPlace && visitingRows ? <small className="print-visiting-place"> {visitingPlace(row.AdCollegeId, row.AdSectionId)}</small> : null}</td>
                   </tr>)}</tbody>
                 </table>
               </section>
@@ -4007,7 +4092,9 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               <span><b>{sortedPeople.length}</b> {nounFor(sortedPeople.length, AR.visitor)} فعلاً</span>
               <span><b>{model.totals.years}</b> {nounFor(model.totals.years, AR.academicYear)}</span>
               {yearPages.length > 1 ? <span>نطاق السنوات <b>{page.yearPageIndex + 1}</b> من <b>{yearPages.length}</b></span> : null}
-              <span className="print-history-legend">داخل كل سنة: <b>الأول</b> ثم <b>الثاني</b> · الرقم = عدد الشعب</span>
+              <span className="print-history-legend">داخل كل سنة: <b>الأول</b> ثم <b>الثاني</b> · الرقم = عدد الشعب · «إجمالي القسم» للفترة كلها بفصول وشعب فريدة</span>
+              {model.totals.personTerms !== model.totals.terms || model.totals.assignedSections !== model.totals.sections ? <span>مجموع صفوف المنتدبين: <b>{countOf(model.totals.personTerms, AR.term)}</b> · <b>{countOf(model.totals.assignedSections, AR.section)}</b> مسندة</span> : null}
+              {visitingHistory?.complete === false ? <span><b>غير مكتمل</b>: لا صلاحية على بعض كليات القسم</span> : null}
             </div>
             <table className="print-history-matrix">
               <colgroup>
@@ -4064,7 +4151,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
               </tbody>
               <tfoot>
                 <tr>
-                  <td className="print-history-person-cell"><strong>إجمالي القسم</strong></td>
+                  <td className="print-history-person-cell"><strong>إجمالي القسم</strong><small>فصول وشعب فريدة</small></td>
                   <td className="print-history-total-cell"><strong>{model.totals.terms}</strong><small>{nounFor(model.totals.terms, AR.term)}</small></td>
                   <td className="print-history-total-cell is-sections"><strong>{model.totals.sections}</strong><small>{nounFor(model.totals.sections, AR.section)}</small></td>
                   {page.pageYears.map(year => (

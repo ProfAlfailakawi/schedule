@@ -27,6 +27,7 @@ import {
 } from "../utils/approvalWorkflow";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { approvalBarPresence } from "../utils/approvalBarPresence";
+import { approvalScopeKey, createScopeGuard } from "../utils/approvalScope";
 import { deadlineDateLong, departmentDeadlineLine, lastExtensionRejection } from "../utils/submissionDeadlines";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
@@ -120,12 +121,20 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
     return next;
   });
 
+  /* حالُ الاعتماد لنطاقٍ بعينه: تبدّلُ النطاق يُفرغ ما قبله، وجوابٌ وصل لنطاقٍ
+     سابق — أو بعد قراءةٍ أحدث — يُرمى (approvalScope). */
+  const guardRef = useRef(createScopeGuard());
+  const scopeKey = approvalScopeKey({ collegeId, sectionId, termId });
+  if (guardRef.current.scope !== scopeKey) guardRef.current.setScope(scopeKey);
+  useEffect(() => { setState(null); setError(null); setSheet(null); }, [scopeKey]);
   const load = useCallback(async () => {
+    const token = guardRef.current.begin(scopeKey);
     if (!collegeId || !sectionId || !termId) { setState(null); return; }
     try {
-      setState(await request(`/api/approvals?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`));
-    } catch { setState(null); }
-  }, [collegeId, sectionId, termId]);
+      const next = await request(`/api/approvals?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`);
+      if (guardRef.current.accepts(token)) setState(next);
+    } catch { if (guardRef.current.accepts(token)) setState(null); }
+  }, [collegeId, sectionId, termId, scopeKey]);
 
   useEffect(() => { void load(); }, [load]);
   /* وإشارةُ الجدول تُعيد القراءة دون أن تُبدّل هويّة `load` — فلا تُقرأ الحال

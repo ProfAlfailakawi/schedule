@@ -1,4 +1,5 @@
 import { termChronology } from "./termSequence";
+import { dedupeVisitingRows, visitingSectionKey, type VisitingTeachingRow } from "./visitingTeaching";
 
 /**
  * ── سجل الانتداب عبر السنوات: نموذج واحد للشاشة وللطباعة ────────────────────
@@ -22,7 +23,88 @@ export interface VisitingHistoryTermEntry {
   rostered?: boolean;
   sections: number;
   courses: number;
-  items?: Array<{ scheduleId: number; courseId: number; courseName?: string; sectionCode?: string }>;
+  items?: VisitingHistoryItem[];
+}
+
+/** موعدٌ درّسه المنتدب في فصل، بموقعه (الكلية والقسم) ومفتاح شعبته الفريد. */
+export interface VisitingHistoryItem {
+  scheduleId: number;
+  courseId: number;
+  courseName?: string;
+  sectionCode?: string;
+  collegeId?: number;
+  sectionId?: number;
+  /** مفتاح الشعبة: موعدا محاضرة ومختبر لشعبة واحدة = شعبة واحدة. */
+  sectionKey?: string;
+}
+
+/** مفتاح الشعبة داخل فصلها؛ والعنصر القديم بلا مفتاح يُعدّ بموعده (لا دمج بالتخمين). */
+export function historyItemSectionKey(termId: number, item: VisitingHistoryItem): string {
+  return `${Number(termId)}|${item.sectionKey || `row:${Number(item.scheduleId) || `${item.courseId}:${item.sectionCode || ""}`}`}`;
+}
+
+/** شعب الفصل الفريدة لمنتدب: من عناصره إن وُجدت، وإلا الرقم المحفوظ. */
+export function termSectionCount(term: Pick<VisitingHistoryTermEntry, "termId" | "sections" | "items">): number {
+  const items = Array.isArray(term.items) ? term.items : [];
+  if (!items.length) return Number(term.sections || 0);
+  return new Set(items.map(item => historyItemSectionKey(term.termId, item))).size;
+}
+
+/**
+ * يبني سجل كل منتدب من روسترات الفصول وصفوف تدريسها — مرة واحدة للخادم والاختبار.
+ * صفوف الفصل تأتي من كل كليات القسم المقروءة، والمكرر منها يسقط، والشعبة تُعدّ
+ * مرةً ولو تعددت مواعيدها، والفصل يُعدّ مرةً للمنتدب ولو ظهر في روسترين.
+ */
+export function aggregateVisitingHistory(input: {
+  rosters: ReadonlyArray<{ termId: number; instructorIds: readonly unknown[] }>;
+  rowsByTerm: ReadonlyMap<number, readonly (VisitingTeachingRow & { CourseCodeSnapshot?: string })[]>;
+  known: (id: number) => boolean;
+  termName: (termId: number) => string;
+}): Array<Omit<VisitingHistoryPerson, "name" | "civil" | "listedNow">> {
+  const people = new Map<number, Map<number, Map<string, VisitingHistoryItem>>>();
+  for (const roster of input.rosters) {
+    const termId = Number(roster.termId || 0);
+    if (!termId) continue;
+    const rows = dedupeVisitingRows(input.rowsByTerm.get(termId) || []);
+    const ids = [...new Set((roster.instructorIds || []).map(Number))].filter(id => id > 0 && input.known(id));
+    for (const instructorId of ids) {
+      const terms = people.get(instructorId) || new Map<number, Map<string, VisitingHistoryItem>>();
+      const items = terms.get(termId) || new Map<string, VisitingHistoryItem>();
+      for (const row of rows) {
+        if (Number(row.AdInstructorId) !== instructorId) continue;
+        const key = `${Number(row.id) || ""}|${row.AdCollegeId}|${row.AdSectionId}|${row.AdCourseId}|${row.SCode || ""}|${row.fstarttime}`;
+        items.set(key, {
+          scheduleId: Number(row.id || 0),
+          courseId: Number(row.AdCourseId || 0),
+          courseName: String(row.AdCourseName || ""),
+          sectionCode: String(row.SCode || "").trim(),
+          collegeId: Number(row.AdCollegeId || 0),
+          sectionId: Number(row.AdSectionId || 0),
+          sectionKey: visitingSectionKey(row),
+        });
+      }
+      terms.set(termId, items);
+      people.set(instructorId, terms);
+    }
+  }
+  return [...people.entries()].map(([instructorId, terms]) => {
+    const entries = [...terms.entries()].map(([termId, items]) => {
+      const list = [...items.values()];
+      const entry: VisitingHistoryTermEntry = {
+        termId, termName: input.termName(termId), rostered: true, sections: 0,
+        courses: new Set(list.map(item => item.courseId).filter(Boolean)).size, items: list,
+      };
+      entry.sections = termSectionCount(entry);
+      return entry;
+    });
+    return {
+      instructorId,
+      times: entries.length,
+      sections: entries.reduce((sum, term) => sum + term.sections, 0),
+      courses: new Set(entries.flatMap(term => (term.items || []).map(item => item.courseId)).filter(Boolean)).size,
+      terms: entries,
+    };
+  });
 }
 
 export interface VisitingHistoryPerson {
@@ -51,8 +133,10 @@ export interface VisitingHistoryYear {
   label: string;
   chronology: number;
   slots: VisitingHistorySlot[];
-  /** مجموع الشعب المسندة لكل المنتدبين في هذه السنة. */
+  /** شعب القسم الفريدة التي درّسها منتدبون في هذه السنة (الشعبة المشتركة تُعدّ مرة). */
   sections: number;
+  /** فصول هذه السنة التي ظهر فيها انتداب فعلي. */
+  terms: number;
   /** عدد المنتدبين الذين ظهروا في هذه السنة. */
   people: number;
 }
@@ -73,7 +157,14 @@ export interface VisitingHistoryModel {
   /** كل السنوات، بما فيها المطوية. */
   allYears: VisitingHistoryYear[];
   archive: VisitingHistoryArchive | null;
-  totals: { people: number; terms: number; sections: number; years: number };
+  /**
+   * إجماليات القسم، كلٌّ بتعريفه:
+   *  terms    — فصول القسم الفريدة التي فيها انتداب (لا مجموع فصول الأفراد).
+   *  sections — شعب القسم الفريدة المسندة لمنتدبين في الفترة كلها.
+   *  personTerms / assignedSections — مجموع ما في صفوف الأفراد؛ يختلف عن
+   *  الفريد حين يشترك منتدبان في فصل أو شعبة، فيُذكر عندها بعنوانه.
+   */
+  totals: { people: number; terms: number; sections: number; years: number; personTerms: number; assignedSections: number };
 }
 
 const ARABIC_INDIC = "٠١٢٣٤٥٦٧٨٩";
@@ -139,11 +230,17 @@ export function buildVisitingHistoryModel(
     orphanTerms.push({ termId: id, termName: term.termName });
   }));
 
-  const sectionsByTerm = new Map<number, number>();
+  /* الشعبة الفريدة لكل فصل: من عناصرها إن وُجدت؛ وفصلٌ بلا عناصر يُعدّ برقمه
+     المحفوظ لكل منتدب (لا يمكن كشف التشارك فيه بلا عناصر). */
+  const sectionsByTerm = new Map<number, Set<string>>();
   const peopleByTerm = new Map<number, Set<number>>();
   people.forEach(person => person.terms.forEach(term => {
     const id = Number(term.termId);
-    sectionsByTerm.set(id, (sectionsByTerm.get(id) || 0) + Number(term.sections || 0));
+    const keys = sectionsByTerm.get(id) || new Set<string>();
+    const items = Array.isArray(term.items) ? term.items : [];
+    if (items.length) items.forEach(item => keys.add(historyItemSectionKey(id, item)));
+    else for (let i = 0; i < Number(term.sections || 0); i++) keys.add(`${id}|person:${person.instructorId}:${i}`);
+    sectionsByTerm.set(id, keys);
     const seen = peopleByTerm.get(id) || new Set<number>();
     seen.add(Number(person.instructorId));
     peopleByTerm.set(id, seen);
@@ -186,7 +283,8 @@ export function buildVisitingHistoryModel(
         label: year.label,
         chronology: year.chronology,
         slots,
-        sections: yearTermIds.reduce((sum, id) => sum + (sectionsByTerm.get(id) || 0), 0),
+        sections: yearTermIds.reduce((sum, id) => sum + (sectionsByTerm.get(id)?.size || 0), 0),
+        terms: yearTermIds.filter(id => peopleByTerm.has(id)).length,
         people: yearPeople.size,
       };
     });
@@ -225,9 +323,11 @@ export function buildVisitingHistoryModel(
     archive,
     totals: {
       people: people.length,
-      terms: people.reduce((sum, person) => sum + Number(person.times || 0), 0),
-      sections: people.reduce((sum, person) => sum + Number(person.sections || 0), 0),
+      terms: allYears.reduce((sum, year) => sum + year.terms, 0),
+      sections: allYears.reduce((sum, year) => sum + year.sections, 0),
       years: allYears.length,
+      personTerms: people.reduce((sum, person) => sum + Number(person.times || 0), 0),
+      assignedSections: people.reduce((sum, person) => sum + Number(person.sections || 0), 0),
     },
   };
 }

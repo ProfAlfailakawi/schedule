@@ -267,11 +267,11 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(fnBody("async function wholeCollegeSectionIds(").includes("coversWholeCollege("), "N7: «يغطّي الكلية» من الحَكَم الواحد");
   const history = routeBody('app.get("/api/reports/visiting-history"');
   check(!history.includes("activeDelegateIds.has(id)&&peopleById.has(id)"), "N7: التاريخ لا يُسقط من خرج من دليل القسم");
-  check(history.includes("listedNow:activeDelegateIds.has(instructorId)"), "N7: ويُعلَّم من لم يعد في الدليل");
+  check(history.includes("listedNow:activeDelegateIds.has(entry.instructorId)"), "N7: ويُعلَّم من لم يعد في الدليل");
   check(history.includes("wholeCollegeSectionIds(req,collegeId)"), "N7: التاريخ على مستوى الكلية أيضاً");
   const reports = read("src/components/Reports.tsx");
   check(reports.includes('if (lens === "visitingHistory" && shownLenses.some(item => item.id === "visiting")) return;'), "N7: «كل الفصول» في متناول من يملك عدسة المنتدبين");
-  check(reports.includes("countOf(Math.round(group.weeklyMinutes / 60), AR.hour)"), "N7: الساعات الأسبوعية لكل منتدب");
+  check(reports.includes("countOf(weeklyHours(group.weeklyMinutes), AR.hour)"), "N7: الساعات الأسبوعية لكل منتدب");
   check(!reports.includes("if(!filters.collegeId||!filters.sectionId||!filters.termId){setVisitingIds"), "N7: الواجهة لا تشترط قسماً لقراءة المنتدبين");
 }
 

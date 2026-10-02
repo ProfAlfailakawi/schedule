@@ -1166,8 +1166,9 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
     if(label)cells.push({text:label,x0:column.left/W,x1:column.right/W,y:(header.top+header.bottom)/2/H});
   }
   await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"7" as any});
-  /* ما لا يُحتاج إليه في الحساب لا يُقرأ: المقاعد والسعة وعدد الشعب. */
-  const skipped=new Set(["seats","capacity","sections"]);
+  /* «المقاعد المتبقية» هي مدخل التخطيط، والسعة والمسجّلون وعدد الشعب تفحصها؛
+     ولا يُقرأ ما لا يُحتاج إليه: «لم يجتازوا» و«الذين لم يسجلوا». */
+  const skipped=new Set(["notPassed","unregistered"]);
   for(const [index,column] of columns.entries()){
     if(column.right-column.left>median*1.8||skipped.has(String(kinds[index])))continue;
     for(const band of bands){
