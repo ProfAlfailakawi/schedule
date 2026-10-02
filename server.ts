@@ -5453,13 +5453,24 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
   if(!collegeId||!sectionId||!termId){res.status(400).json({error:"حدد الكلية والقسم والفصل."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [scopeRows,termRows,hallBarterRequests,instructors,courses]=await Promise.all([
-    Repository.getSchedulesByScope({collegeId,sectionId,termId}),
+  /* ── القسم واحدٌ في كلياته ───────────────────────────────────────────────────
+     بنين وبنات في «تكنولوجيا التعليم» قسمٌ واحد، وأساتذته يدرّسون فيهما معاً:
+     حِملُ الأستاذ لا يُقرأ كاملاً إلا على مواعيد العائلة كلها. `family=1` (شاشة
+     المراجعة) يجمع صفوف كل أعضاء العائلة المسموحة للقارئ، فيرى من يفتح بنين أو
+     بناتٍ التقريرَ نفسَه. بدونه يبقى النطاق كلية+قسم كما كان (شريط الاعتماد). */
+  const familyMode=String(req.query.family||"")==="1";
+  const allSections=await Repository.getSections();
+  const members=familyMode
+    ?departmentFamily(allSections as any[],collegeId,sectionId).filter(member=>isScopeAllowed(req,member.collegeId,member.sectionId))
+    :[{collegeId,sectionId}];
+  const [memberRows,termRows,hallBarterRequests,instructors,courses]=await Promise.all([
+    Promise.all(members.map(member=>Repository.getSchedulesByScope({collegeId:member.collegeId,sectionId:member.sectionId,termId}))),
     Repository.getSchedulesByScope({termId}),
     Repository.getHallBarterRequests(termId),
     Repository.getInstructors(),
     Repository.getCourses(),
   ]);
+  const scopeRows=memberRows.flat();
   const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
   const byId=new Map(termRows.map(row=>[Number(row.id),row] as const));
   const instructorById=new Map(instructors.map(row=>[Number(row.AdInstructorId),String(row.AdInstructorName||"")]));
@@ -5528,7 +5539,30 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
      تدخل العدد، لكنها تصل المراجعةَ بنداً «للمراجعة» (قاعدة المالك 2026-09-27). */
   const warnings=approvalWarnings(scopeRows,termRows,{...await approvalBlockerOptions(),
     courseName:new Map(courses.map(row=>[Number(row.AdCourseId),String(row.CourseCode||row.CourseName||"")] as [number,string]))});
-  res.json({blockers,warnings,blockingConflicts:conflictList.length,blockingRows:touchedRowIds.length,blockingDuplicates:doubleEntryCount(conflictList),checkedRows:scopeRows.length,termRows:termRows.length});
+  let family:any=undefined;
+  if(familyMode){
+    /* ما تحتاجه شاشة المراجعة لتقرأ العائلة كلها بالمعطيات نفسها أيّاً كان العضو
+       المفتوح: صفوف الفصل السابق (التدوير) وطبيعة المقررات المتعلَّمة. */
+    const terms=await Repository.getTerms();
+    const earlier=(terms as any[]).map(term=>Number(term.AdTermId)||0).filter(id=>id<termId).reduce((max,id)=>Math.max(max,id),0);
+    const previousRows=earlier
+      ?(await Promise.all(members.map(member=>Repository.getSchedulesByScope({collegeId:member.collegeId,sectionId:member.sectionId,termId:earlier})))).flat()
+      :[];
+    const memberCourses=(await Promise.all(members.map(member=>Repository.getOperationalCoursesBySection(member.sectionId)))).flat();
+    const courseIds=[...new Set(memberCourses.map(course=>Number(course.AdCourseId)))];
+    const learned=learnAll(await Repository.getScheduleHistoryForCourses(courseIds));
+    const usedCourses=new Set<number>([...scopeRows,...previousRows].map(row=>Number(row.AdCourseId)));
+    const usedInstructors=new Set<number>(scopeRows.map(row=>Number(row.AdInstructorId)).filter(Boolean));
+    family={
+      rows:scopeRows,
+      previousRows,
+      nature:Object.fromEntries([...learned.entries()]),
+      courses:courses.filter(row=>usedCourses.has(Number(row.AdCourseId))),
+      instructors:instructors.filter(row=>usedInstructors.has(Number(row.AdInstructorId))),
+      members:members.map(member=>({collegeId:member.collegeId,sectionId:member.sectionId})),
+    };
+  }
+  res.json({blockers,warnings,blockingConflicts:conflictList.length,blockingRows:touchedRowIds.length,blockingDuplicates:doubleEntryCount(conflictList),checkedRows:scopeRows.length,termRows:termRows.length,...(family?{family}:{})});
 });
 
 /**

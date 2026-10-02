@@ -154,9 +154,41 @@ function HistoryInfographic({rows,courses}:{rows:FSchedule[];courses:Map<number,
   </div>;
 }
 
-export default function ScheduleReview({ rows: rowsProp, courses, instructors, visitingIds, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
-  /* المراجعةُ لنطاقها وحده: لا صفَّ من قسمٍ شقيقٍ في كليةٍ أخرى (approvalScope). */
-  const rows = useMemo(() => rowsInApprovalScope(rowsProp, { collegeId, sectionId, termId }), [rowsProp, collegeId, sectionId, termId]);
+/** What the server read for the whole department family (all its colleges). */
+interface FamilyReading {
+  rows: FSchedule[];
+  previousRows: FSchedule[];
+  nature: Record<string, CourseNature>;
+  courses: AdCourse[];
+  instructors: AdInstructor[];
+}
+
+export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, instructors: instructorsProp, visitingIds, previousRows: previousRowsProp, nature: natureProp, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
+  /* ── القسمُ واحدٌ في كلياته ────────────────────────────────────────────────
+     «تكنولوجيا التعليم» بنين وبنات قسمٌ واحد، وأساتذته يدرّسون فيهما معاً. فمن
+     فتح أيَّ العضوين رأى التقريرَ نفسه: مواعيدُ العائلة كلها وحِملُ الأستاذ
+     كاملاً. ما دام الخادم لم يردّ، أو تعذّر، فالنطاقُ المحلّي (كلية + قسم) هو
+     البديل. الاعتمادُ والحفظ يبقيان لكل كليةٍ على حدة. */
+  const [family, setFamily] = useState<FamilyReading | null>(null);
+  const localRows = useMemo(() => rowsInApprovalScope(rowsProp, { collegeId, sectionId, termId }), [rowsProp, collegeId, sectionId, termId]);
+  const rows = family?.rows ?? localRows;
+  const courses = useMemo(() => {
+    if (!family) return coursesProp;
+    const merged = new Map(coursesProp);
+    family.courses.forEach(course => { if (!merged.has(Number(course.AdCourseId))) merged.set(Number(course.AdCourseId), course); });
+    return merged;
+  }, [family, coursesProp]);
+  const instructors = useMemo(() => {
+    if (!family) return instructorsProp;
+    const merged = new Map(instructorsProp);
+    family.instructors.forEach(person => { if (!merged.has(Number(person.AdInstructorId))) merged.set(Number(person.AdInstructorId), person); });
+    return merged;
+  }, [family, instructorsProp]);
+  const previousRows = family?.previousRows ?? previousRowsProp;
+  const nature = useMemo(
+    () => (family ? new Map(Object.entries(family.nature || {}).map(([id, value]) => [Number(id), value as CourseNature])) : natureProp),
+    [family, natureProp]
+  );
   const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], Number).filter(Boolean)), [visitingIds]);
   const baseFindings = useMemo(
     () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
@@ -177,15 +209,16 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
   useDialogDismiss(true, onClose);
 
   useEffect(() => {
-    if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setServerWarnings([]); setReadinessChecked(true); setReadinessError(true); return; }
+    if (!collegeId || !sectionId || !termId) { setFamily(null); setServerBlockers([]); setServerWarnings([]); setReadinessChecked(true); setReadinessError(true); return; }
     const controller = new AbortController();
     /* ما قرأه الخادم لنطاقٍ سابق لا يبقى معروضاً تحت النطاق الجديد. */
-    setServerBlockers([]); setServerWarnings([]); setServerSummary(null);
+    setFamily(null); setServerBlockers([]); setServerWarnings([]); setServerSummary(null);
     setReadinessChecked(false);
     setReadinessError(false);
-    void fetch(`/api/schedules/review-readiness?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { credentials: "include", signal: controller.signal })
+    void fetch(`/api/schedules/review-readiness?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}&family=1`, { credentials: "include", signal: controller.signal })
       .then(async response => response.ok ? response.json() : Promise.reject(new Error("readiness")))
       .then(data => {
+        setFamily(data?.family && Array.isArray(data.family.rows) ? data.family as FamilyReading : null);
         setServerBlockers(Array.isArray(data?.blockers) ? data.blockers : []);
         setServerWarnings(Array.isArray(data?.warnings) ? data.warnings : []);
         setServerSummary({ conflicts: Number(data?.blockingConflicts || 0), rows: Number(data?.blockingRows || 0), duplicates: Number(data?.blockingDuplicates || 0) });
@@ -193,7 +226,7 @@ export default function ScheduleReview({ rows: rowsProp, courses, instructors, v
       .catch(error => { if (error?.name !== "AbortError") { setServerBlockers([]); setServerWarnings([]); setReadinessError(true); } })
       .finally(() => { if (!controller.signal.aborted) setReadinessChecked(true); });
     return () => controller.abort();
-  }, [collegeId, sectionId, termId, rows]);
+  }, [collegeId, sectionId, termId, localRows]);
 
   /* The offline fallback reads the same rule the server does — «هيئة تدريسية»
      included — so losing the network never changes what counts as a blocker.
