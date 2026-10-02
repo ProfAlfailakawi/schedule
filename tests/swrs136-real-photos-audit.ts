@@ -59,6 +59,25 @@ async function main() {
   check(unread.length === 0, "ولا خانة ناقصة", unread);
   check(confirmReportDepartment(cells.headerText, "0101", "التربية الإسلامية").confirmed, "القسم يُتحقق منه من رأس الكشف رغم تشوّه القراءة («دمر القسم 0١10١»)");
 
+  /* PDF ممسوح بصفحتين (يُبنى من الصورتين بـ scripts/make-scan-pdf.mjs): المسار نفسه الذي يرفع به المستخدم ملفاً.
+     رمزٌ قُرئ خطأً بصيغةٍ صالحة (263 ← 203) يظهر مشتبهاً أصفر ولا يُطبَّق قبل التأكيد، ولا قيمةَ خاطئة. */
+  const pdfCells = await readReportCells(fs.readFileSync("tests/fixtures/swrs136/report.pdf"), "application/pdf", found => blankSpots(found, catalogue, "0101"));
+  const pdfReading: any = readRemainingReport(pdfCells.pages, catalogue, "0101");
+  const pdfAssessment: any = assessRemainingImport(pdfReading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: pdfCells.headerText });
+  check(pdfCells.pageCount === 2 && pdfAssessment.reject === null, "PDF ممسوح بصفحتين: يُقبل (لا رفض كامل)", pdfAssessment.reject);
+  const suspect = (pdfReading.suspects || []).find((item: any) => item.expected.endsWith("263"));
+  const id263 = catalogue.find(course => course.code.endsWith("263"))!.id;
+  check(Boolean(suspect) && !pdfReading.missing.includes(id263), "الرمز المقروء خطأً (203) يظهر مشتبهاً بـ263 ولا يضيع الصف", pdfReading.suspects);
+  const unconfirmed = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [], pdfReading.suspects || []);
+  const confirmedPlan = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [id263], pdfReading.suspects || []);
+  const pdfWrong: string[] = [];
+  for (const [key, value] of Object.entries(confirmedPlan.next)) {
+    const code = catalogue.find(course => course.id === Number(key))!.code.slice(4);
+    if (truth[code] !== value) pdfWrong.push(`${code}=${value}≠${truth[code]}`);
+  }
+  check(!(String(id263) in unconfirmed.next), "المشتبه لا يُطبَّق قبل التأكيد");
+  check(confirmedPlan.next[String(id263)] === truth["263"] && pdfWrong.length === 0, "وبعد التأكيد قيمته صحيحة (140)، ولا قيمةٌ خاطئة في كل ما طُبِّق", pdfWrong);
+
   /* القسم المخالف: الأرقام الثلاثية نفسها في كتالوج قسمٍ آخر — لا يجوز أن تُطبَّق. */
   const other = catalogueFor("0202");
   const otherReading = readRemainingReport(cells.pages, other, "0202");
