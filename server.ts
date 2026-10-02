@@ -18712,7 +18712,7 @@ function openCounter(i){var it=state[i],days0=(it.slots||[]).map(function(s){ret
  function draw(){var days=pats[pat],choices=startChoices(days).filter(function(t){return !it.blk||days.length!==1||mins(t)+it.blk<=20*60});
   if(choices.indexOf(choice)<0)choice="";
   var x=choice?{d:days,s:mins(choice),e:mins(endOf(days,choice,it.blk))}:null,ins=x?insights(x,i):[],bad=ins[0]&&ins[0].t==="bad";
-  openSheet('<div class="sk-h"><span class="sk-b">'+gi("swap")+'</span><div><h3>اقترح وقتًا آخر</h3><p>اختر الأيام ثم وقت البداية. النهاية من اللائحة.</p></div></div>'+
+  openSheet('<div class="sk-h"><span class="sk-b">'+gi("swap")+'</span><div><h3>اقترح وقتًا آخر</h3></div></div>'+
    (pats.length>1?'<span class="sk-lbl">'+gi("cal")+'الأيام</span><div class="sk-pick" style="--sk-cols:'+(pats[0].length>1?pats.length:3)+'">'+pats.map(function(p,k){return '<button type="button" data-pat="'+k+'" aria-pressed="'+(k===pat)+'">'+esc(fmtDays(p))+(p.slice().sort().join()===days0.slice().sort().join()?'<small>الحالية</small>':'')+'</button>'}).join("")+'</div>':'')+
    '<span class="sk-lbl">'+gi("clock")+'وقت البداية</span><div class="sk-times">'+choices.map(function(t){return '<button type="button" data-t="'+t+'" aria-pressed="'+(t===choice)+'">'+t+'</button>'}).join("")+'</div>'+
    (x?'<div class="sk-v" data-t="'+(bad?"bad":"ok")+'">'+gi(bad?"x":"check")+'<span>'+esc(bad?ins[0].h:"ينتهي "+hh(x.e)+ins.filter(function(f){return f.i==="coffee"}).map(function(f){return " · "+f.h}).join("")+" · لا تعارض مع بقية جدولك")+'</span></div>':'')+
@@ -18729,7 +18729,7 @@ function askAcceptAll(){var rows=pendingList().map(function(i){var it=state[i],o
  if(!rows.length)return;
  var lines=rows.map(function(r){return '<li><span><b>'+esc(courseOf(r.it))+'</b> — '+esc(fmtDays(r.o.d))+' <span class="num">'+hh(r.o.s)+'</span></span></li>'}).join("");
  signSheet({ok:"سُجّلت موافقتك على "+countOf(rows.length,AR.decision),
-  what:'<div>'+gi("check")+'<span>توافق على '+countOf(rows.length,AR.decision)+'</span></div><ul class="sk-list">'+lines+'</ul>',
+  what:'<ul class="sk-list">'+lines+'</ul>',
   run:function(civil,done){var n=0;(function next(){if(n>=rows.length){done(null);return}
    var r=rows[n];sendReply(r.i,r.k,civil,"","",function(msg,status){if(msg){done(n?"تعذّر إكمال الموافقة على الباقي: "+msg:msg,status);return}n++;next()})})()}})}
 function openMsg(i){var it=state[i];

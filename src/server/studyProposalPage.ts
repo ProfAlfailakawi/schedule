@@ -678,7 +678,7 @@ function fail(msg,code,focusId){UI.err=msg;UI.errCode=code||"";paintResp();var e
 /* التوقيعُ في الورقة السفلية المشتركة: تقول ما سيُوقَّع عليه، ولا يُحفظ الرقمُ في UI ولا في المتصفح. */
 function signWhat(){var ch=wantsChange(),h='<div>'+SK.gi(ch?"pen":"check")+'<span>'+(ch?"تطلب تعديلاً على المقترح":"توافق على المقترح")+'</span></div>';
  if(D.responseMode!=="linked"){var li=(D.ops||[]).filter(function(o){return UI.choice[o.id]}).map(function(o){return '<li><span><b>'+esc(o.target.courseName||o.target.courseCode)+'</b> — '+(UI.choice[o.id]==="approve"?"أوافق":"أحتاج تعديلاً")+'</span></li>'}).join("");if(li)h+='<ul class="sk-list">'+li+'</ul>'}
- return h+'<div>'+SK.gi("shield")+'<span>لن يتغيّر جدولك قبل أن يثبّت القسم المقترح.</span></div>'}
+ return h}
 function send(){if(UI.sending||!D)return;UI.err="";UI.errCode="";
  if(!anyChoice()){fail("اختر ردّك أولاً: أوافق أو أحتاج تعديلاً.");return}
  if(wantsChange()&&!UI.reason&&!UI.note.trim()){fail("اختر سبباً مختصراً أو اكتب ملاحظةً عمّا تحتاج تعديله.");return}
