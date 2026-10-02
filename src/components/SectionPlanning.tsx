@@ -384,7 +384,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
               {previewRead.some(item => item.state !== "read" && item.state !== "noSections") ? <li className="is-warn">لم تُقرأ بوضوح: <b>{previewRead.filter(item => item.state !== "read" && item.state !== "noSections").length}</b></li> : null}
               {previewRead.some(item => item.state === "noSections") ? <li>بلا شعب في الكشف: <b>{previewRead.filter(item => item.state === "noSections").length}</b></li> : null}
               {preview.missing.length ? <li>من مقررات القسم ولم ترد في الكشف: <b>{preview.missing.length}</b></li> : null}
-              {preview.foreign.length ? <li className="is-warn">رموزٌ لم تطابق مقررات القسم: <b>{preview.foreign.length}</b> — لا تُستورد</li> : null}
+              {preview.foreign.length ? <li>مقررات من خارج القسم في الكشف: <b>{preview.foreign.length}</b> — تُتجاهل، فالتخطيط لمقررات القسم وحدها</li> : null}
             </ul>
             {previewBlockers.map(warning => <p key={warning} className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
             {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-warning" role="status"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
@@ -404,7 +404,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                 })}
               </tbody>
             </table>
-            {preview.foreign.length ? <p className="section-plan-note">لم تطابق مقررات القسم: <bdi>{preview.foreign.slice(0, 20).join("، ")}</bdi>{preview.foreign.length > 20 ? "…" : ""}</p> : null}
+            {preview.foreign.length ? <details className="section-plan-note"><summary>رموز المقررات المتجاهلة</summary><bdi>{preview.foreign.slice(0, 20).join("، ")}</bdi>{preview.foreign.length > 20 ? "…" : ""}</details> : null}
             {preview.missing.length ? (
               <p className="section-plan-note">لم ترد في الكشف (تُفرَّغ مقاعدها بعد التعبئة): {preview.missing.map(id => courseName.get(id)?.code).filter(Boolean).slice(0, 20).join("، ")}{preview.missing.length > 20 ? "…" : ""}</p>
             ) : null}

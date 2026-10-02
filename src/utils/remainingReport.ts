@@ -220,6 +220,11 @@ function tableOf(pages: readonly ReportCell[][], courses: ReadonlyArray<{ id: nu
     .flatMap(line => line.tokens.filter(token => token.code.length === usualLength && (usualLength >= 4 || /[A-Za-z]/.test(token.text) || inCode(line.page, token.x))
       && (!codeXOf.has(line.page) || inCode(line.page, token.x))).map(token => token.text)))].slice(0, 40);
 
+  /* صفوف مقرراتٍ ليست من القسم: لا تُستورد ولا تُحسب، لكنها سطورٌ مقروءة —
+     فلا تُعدّ «سطراً ناقصاً» بين مقررين من القسم. */
+  const foreignLines = lines.filter(line => !matchedLines.has(line) && line.tokens.some(token => token.code.length === usualLength && inCode(line.page, token.x)))
+    .map(line => ({ page: line.page, y: line.y }));
+
   /* 2) الأرقام الأخرى في صفوف المقررات: أعمدةٌ بمواضعها في كل صفحة. */
   const numbers = matched.map(item => item.line.tokens.filter(token => token.cell !== item.code.cell && token.value != null && !inCode(item.line.page, token.x)));
   const pagesWithRows = [...new Set(matched.map(item => item.line.page))];
@@ -344,7 +349,7 @@ function tableOf(pages: readonly ReportCell[][], courses: ReadonlyArray<{ id: nu
     const x = map.a * refX[order[id]] + map.b;
     return x > 0 && x < 1 ? x : null;
   };
-  return { matched, foreign, assigned, kept, xOn };
+  return { matched, foreign, foreignLines, assigned, kept, xOn };
 }
 
 /* العنوان كما يُقرأ: سطراً سطراً من اليمين، والحروف المتلاصقة (يخرجها بعض
@@ -377,7 +382,7 @@ export function readRemainingReport(
   courses: ReadonlyArray<{ id: number; code: string }>,
   departmentCode: string,
 ): RemainingReading {
-  const { matched, foreign, assigned, kept } = tableOf(pages, courses, departmentCode);
+  const { matched, foreign, foreignLines, assigned, kept } = tableOf(pages, courses, departmentCode);
   const columns: ReportColumn[] = kept.map((column, id) => {
     const samples = assigned.map(map => map.get(id)?.value).filter((v): v is number => v != null).slice(0, 4);
     /* عنوانٌ عُرف معناه في أيٍّ من الصفحات يكفي، ولو شوّهت القراءةُ غيره. */
@@ -427,12 +432,21 @@ export function readRemainingReport(
      سطرٍ كامل: يُذكر ولا يُسكت عنه، فلا يبدو الكشف مكتملاً وهو ناقص. */
   const gaps: Array<{ page: number; after: string; before: string }> = [];
   for (const page of new Set(matched.map(item => item.line.page))) {
-    const lines = matched.filter(item => item.line.page === page).sort((a, b) => a.line.y - b.line.y);
-    const steps = lines.slice(1).map((item, index) => item.line.y - lines[index].line.y).filter(step => step > 0.004).sort((a, b) => a - b);
+    const lines = [
+      ...matched.filter(item => item.line.page === page).map(item => ({ y: item.line.y, code: item.code.text as string | null })),
+      ...foreignLines.filter(line => line.page === page).map(line => ({ y: line.y, code: null as string | null })),
+    ].sort((a, b) => a.y - b.y);
+    const steps = lines.slice(1).map((item, index) => item.y - lines[index].y).filter(step => step > 0.004).sort((a, b) => a - b);
     if (steps.length < 4) continue;
     const pitch = steps[Math.floor(steps.length / 2)];
     lines.slice(1).forEach((item, index) => {
-      if (item.line.y - lines[index].line.y > pitch * 1.6) gaps.push({ page: page + 1, after: lines[index].code.text, before: item.code.text });
+      const before = lines[index];
+      /* الفجوة بجوار مقررٍ من خارج القسم لا تُسمّى به: يُذكر أقرب مقررٍ من القسم. */
+      if (item.y - before.y > pitch * 1.6) gaps.push({
+        page: page + 1,
+        after: before.code ?? [...lines.slice(0, index + 1)].reverse().find(line => line.code)?.code ?? "أول الصفحة",
+        before: item.code ?? lines.slice(index + 1).find(line => line.code)?.code ?? "آخر الصفحة",
+      });
     });
   }
   return { columns, column, fallback: null, rows, foreign, missing: courses.filter(course => !seen.has(course.id)).map(course => course.id), gaps };
