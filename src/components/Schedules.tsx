@@ -10378,7 +10378,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         {formatScheduleTimeRange(s.fstarttime, s.fendtime)}
                       </strong>
                     </div>
-                    <div className="agenda-place" title="المكان">
+                    <div className={`agenda-place${roomDisplay(s) ? "" : " is-empty"}`} title="المكان">
                       <MapPin aria-hidden="true" />
                       <strong>{roomDisplay(s) || "—"}</strong>
                       {historicalLocationNeedsReview(s)?<Badge tone="neutral">بيانات مكان تاريخية غير موثقة</Badge>:null}
