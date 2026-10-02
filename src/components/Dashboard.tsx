@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,TrendingDown,TrendingUp,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
-import MiniRing,{miniRingTone} from"./MiniRing";
+import MiniRing from"./MiniRing";
 import TermForecast from"./TermForecast";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
@@ -325,7 +325,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    {healthLines.length?<section className={`deck-chart dashboard-health-ribbon${healthAwaiting?" is-awaiting":""}`} aria-labelledby="dashboard-health-title" aria-busy={healthAwaiting||undefined}>
     <header><CheckCircle2 aria-hidden="true"/><span id="dashboard-health-title">صحة الجدول</span></header>
     <div className="bar-rows dashboard-health-lines">
-     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor" data-tone={item.value==null?undefined:miniRingTone(item.value)} style={{["--v" as any]:item.value??0}} data-high={(item.value??0)>=80||undefined}>
+     {healthLines.map(item=><div key={item.label} className="dashboard-health-factor" data-tone={item.value==null?undefined:item.value<30?"bad":item.value>=85?"good":"mid"} style={{["--v" as any]:item.value??0}} data-high={(item.value??0)>=80||undefined}>
       <span>{item.label}</span>
       <i role="progressbar" aria-label={`مؤشر ${item.label}`} aria-valuemin={0} aria-valuemax={100} {...(item.value==null?{}:{"aria-valuenow":item.value})} {...(item.value==null?{"aria-valuetext":"قيد القراءة"}:{})}><b style={{width:`${item.value??0}%`}} aria-hidden="true"/></i>
       <em>{item.value==null?"—":`${num(item.value)}٪`}</em>

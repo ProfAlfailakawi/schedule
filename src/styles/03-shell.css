@@ -138,7 +138,7 @@
   /* 4.14 on the sidebar's own near-black. The rail runs its own palette, so
      the page tokens never covered it and this stayed unmeasured. Now 5.23. */
   color:#7d8b84;
-  font-size:10.5px;
+  font-size:11px;
   font-weight:600;
   letter-spacing:.1em;
   text-align:start;
@@ -194,7 +194,7 @@
   flex:none;display:inline-grid;place-items:center;min-width:18px;width:auto;height:18px;
   padding:0 5px;border-radius:999px;overflow:visible;
   background:color-mix(in srgb,var(--accent,#1f8f76) 88%,#000);
-  color:#fff;font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;
+  color:#fff;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;
   box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#1f8f76) 22%,transparent);
 }
 .side-nav-link .side-nav-badge>b{font-weight:700}
@@ -2037,6 +2037,11 @@ html[data-dialog-open] .notify-toast{visibility:hidden}
   .smart-guide-fab:not(.icon-only) .smart-guide-fab-pulse,.smart-guide-fab:not(.icon-only) .smart-guide-fab-new{position:absolute;inset-inline-start:-3px;inset-block-start:-3px}
   .smart-guide-fab{box-shadow:0 6px 16px rgba(17,24,39,.14);opacity:.96}
   .smart-guide-fab:hover,.smart-guide-fab.active{box-shadow:0 8px 18px rgba(17,24,39,.16)}
+  /* Edge tab: flush with the screen edge so it sits in the page gutter and
+     never over a card header's action (display only; same button). */
+  .smart-guide-fab:not(.icon-only){left:0;width:34px;min-width:34px;border-radius:0 14px 14px 0;border-inline-start-width:0}
+  .smart-guide-fab:not(.icon-only) .smart-guide-fab-mark{width:26px;height:26px;border-radius:9px}
+  .smart-guide-fab:not(.icon-only) .smart-guide-fab-mark svg{width:15px;height:15px}
 }
 
 /* Dark: the state colours turn light, so white text on them fell to ~2.4:1.

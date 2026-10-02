@@ -412,7 +412,9 @@ const validateImportRowsLocally = (rows: ImportRow[]) => {
 /** رقمُ بطاقة القراءة، أو لا شيء حين يكون صفراً أو فارغاً (قاعدة إخفاء الفارغ). */
 function metricBadge(metric: unknown) {
   const text = String(metric ?? "").trim();
-  const ring = ringFromScoreText(text);
+  /* «84%» is a real out-of-100 figure too (the genome match): same ring. */
+  const pct = /^(\d{1,3}(?:\.\d+)?)\s*%$/.exec(text);
+  const ring = ringFromScoreText(pct ? `${pct[1]}/100` : text);
   if (ring) return <b className="insight-preview-ring">{ring}</b>;
   return text && !/^[0٠]$/.test(text) ? <b>{text}</b> : null;
 }
@@ -2579,6 +2581,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     className={`insight-preview ${selected ? "active" : ""}`}
                     role="listitem"
                     aria-label={`${item.label} — ${item.detail}`}
+                    title={item.detail}
+                    data-guide-ignore="بطاقة اختيار قراءة داخل مركز الذكاء: تفتح القراءة نفسها كما قبل، والوصف صار تلميحاً فقط"
                     onClick={() => showScene(item.value)}
                     onKeyDown={(event) => moveInsightFocus(event, index)}
                   >

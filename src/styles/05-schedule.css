@@ -8486,3 +8486,40 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
 .schedule-agenda .agenda-card:focus-within .unit-pill.is-empty{opacity:.75}
 .schedule-page{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 .living-loading .health-skeleton-dot{display:none}
+
+/* ── Schedule list on a phone: two calm lines per row (display only) ─────────
+   Line 1: title · instructor · days. Line 2: time · room. The edit/delete
+   buttons sit beside the two lines instead of under them. Placeholder dashes
+   for empty values (code, units, hours, room) are not drawn. Every real value
+   stays in the DOM and on screen. */
+@media (max-width:760px){
+  .schedule-agenda .agenda-card{
+    grid-template-columns:auto auto minmax(0,1fr);
+    gap:var(--s1) var(--s3);
+    padding:var(--s3) var(--s5);
+    min-height:0;
+    align-items:center;
+  }
+  .schedule-agenda .agenda-card{
+    grid-template-areas:
+      "core core actions"
+      "time place meta";
+  }
+  .schedule-agenda .agenda-card:has(.agenda-meta:not(:has(.unit-pill:not(.is-empty)))){
+    grid-template-areas:
+      "core core actions"
+      "time place place";
+  }
+  .schedule-agenda .agenda-actions{
+    grid-area:actions;width:auto;padding:0;margin:0;border-top:0;justify-content:flex-end;align-self:start;
+  }
+  .schedule-agenda .agenda-meta{justify-self:end}
+  .schedule-agenda .agenda-place{justify-self:start;min-width:0}
+  .schedule-agenda .agenda-time{min-width:0}
+  .schedule-agenda .agenda-place.is-empty,
+  .schedule-agenda .agenda-place .place-dash,
+  .schedule-agenda .code-chip.is-empty,
+  .schedule-agenda .unit-pill.is-empty,
+  .schedule-agenda .agenda-meta:not(:has(.unit-pill:not(.is-empty))){display:none}
+  .schedule-agenda .agenda-sub{margin-top:var(--s1)}
+}
