@@ -5471,6 +5471,10 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
     Repository.getCourses(),
   ]);
   const scopeRows=memberRows.flat();
+  /* كل صفٍّ يُحكم بنطاق عضوه في العائلة لا بالنطاق المطلوب، فيخرج التقرير نفسه
+     أيَّ عضوٍ فُتح (استعارة القاعات تُنسب لطالبها). */
+  const memberOfRow=new Map<number,{collegeId:number;sectionId:number}>();
+  memberRows.forEach((list,index)=>list.forEach(row=>memberOfRow.set(Number(row.id),members[index])));
   const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
   const byId=new Map(termRows.map(row=>[Number(row.id),row] as const));
   const instructorById=new Map(instructors.map(row=>[Number(row.AdInstructorId),String(row.AdInstructorName||"")]));
@@ -5522,9 +5526,11 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
     const sameRoom=approved.filter((request:any)=>barterRequestRoomKey(request)===key);
     if(!sameRoom.length)continue;
     const active=SCHEDULE_DAY_KEYS.filter(day=>Boolean((row as any)[day]));
-    const mine=sameRoom.filter((request:any)=>Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId);
+    const rowScope=memberOfRow.get(Number(row.id))||{collegeId,sectionId};
+    const isRowScope=(request:any)=>Number(request.requesterCollegeId)===rowScope.collegeId&&Number(request.requesterSectionId)===rowScope.sectionId;
+    const mine=sameRoom.filter(isRowScope);
     const foreign=sameRoom.find((request:any)=>
-      !(Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId)&&
+      !isRowScope(request)&&
       active.some(day=>request.day===day&&scheduleOverlap(String(row.fstarttime||""),String(row.fendtime||""),String(request.startTime||""),String(request.endTime||"")))
     );
     if(foreign){

@@ -12421,8 +12421,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           nature={nature}
           scopeLine={[
             terms.find((t) => t.AdTermId === filterTerm)?.AdTermName,
+            colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,
             sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName,
-            "كل كليات القسم",
           ].filter(Boolean).join(" · ")}
           collegeId={filterCollege}
           sectionId={filterSection}
