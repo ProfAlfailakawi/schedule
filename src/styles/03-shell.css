@@ -1593,7 +1593,7 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
   min-height:42px;display:grid;grid-template-columns:1fr;place-items:center;gap:2px;padding:4px;
 }
 .smart-guide.visual-minimal .smart-guide-browse button>svg{width:17px;height:17px}
-.smart-guide.visual-minimal .smart-guide-browse button>span{font-size:9px}
+.smart-guide.visual-minimal .smart-guide-browse button>span{font-size:11px}
 .smart-guide-selected-actions.icon-only{
   display:grid;grid-template-columns:repeat(5,38px);justify-content:start;gap:7px;
 }
@@ -1862,12 +1862,13 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
   line-height:1;
 }
 .smart-guide-hero-action>span{
-  font-size:8.5px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;color:inherit;
+  font-size:11px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;color:inherit;
 }
 @media (max-width:420px){
   .smart-guide-hero-action{min-width:34px;padding:0!important}
   .smart-guide-hero-action>span{display:none}
 }
+.smart-guide-footer>small{font-size:11px}
 
 /* One line under the four tabs, saying what the open one is showing. */
 .smart-guide-browse-caption{
