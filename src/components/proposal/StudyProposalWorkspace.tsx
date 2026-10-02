@@ -11,7 +11,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, ArrowLeftRight, Ban, CalendarClock, CircleAlert, ClipboardList, Eye, LoaderCircle, Pencil, RefreshCw, Save, Send, ShieldCheck, ShieldAlert, Trash2, CheckCircle2, History, Table2,
+  AlertTriangle, ArrowLeftRight, Ban, CalendarClock, CircleAlert, ClipboardList, Eye, LoaderCircle, Pencil, RefreshCw, Save, Send, ShieldCheck, ShieldAlert, Trash2, CheckCircle2, History, Table2, Plus, UserRoundPlus, X,
 } from "lucide-react";
 import { useDrawerA11y } from "../ui";
 import { commitReadiness, effectiveStatus, type GridItem } from "../../utils/studyProposal";
@@ -20,6 +20,7 @@ import { useProposalWorkspace } from "./useProposalWorkspace";
 import ProposalHeader, { summaryLine } from "./ProposalHeader";
 import ProposalWeekGrid, { type GridMode } from "./ProposalWeekGrid";
 import ProposalOpForm from "./ProposalOpForm";
+import ProposalQuickCard, { type QuickSeed } from "./ProposalQuickCard";
 import ProposalOps from "./ProposalOps";
 import ProposalChecks from "./ProposalChecks";
 import { CommitDialog, ProposalResponses, SendDialog } from "./ProposalDialogs";
@@ -54,7 +55,9 @@ export interface WorkspaceProps {
 export default function StudyProposalWorkspace({ requestId, proposalId = null, itemIndex = null, startWith = null, onClose, onChanged }: WorkspaceProps) {
   const ws = useProposalWorkspace({ requestId, proposalId, itemIndex, onChanged });
   const wide = useMedia("(min-width: 1100px)");
-  const [tab, setTab] = useState<"ops" | "grid" | "checks">("ops");
+  const [tab, setTab] = useState<"ops" | "grid" | "checks">("grid");
+  const [card, setCard] = useState<QuickSeed | null>(null);
+  const [more, setMore] = useState(false);
   const [gridMode, setGridMode] = useState<GridMode>("with");
   const [showGhosts, setShowGhosts] = useState(true);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -105,18 +108,32 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
 
   const findingsFor = (key: string) => (ws.evaluation && ws.evalCurrent ? ws.evaluation.findings.filter(f => f.gridKeys?.includes(key) && f.kind !== "info") : []);
 
-  const goOps = () => { if (!wide) setTab("ops"); };
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const closeCard = () => { setCard(null); ws.cancelEdit(); };
+  const openCreate = (seed: Partial<QuickSeed> = {}, fill?: { day: any; start: number; end: number }) => {
+    if (terminal) return;
+    ws.chooseMode("create");
+    if (fill) ws.patchDraft({ days: [fill.day], start: hhmm(fill.start), end: hhmm(fill.end), endTouched: true });
+    setCard({ kind: "create", ...seed });
+  };
+  const openAssign = () => { if (terminal) return; ws.chooseMode("assign"); setCard({ kind: "assign" }); };
+  const openForOp = (opId: string) => {
+    const op = ws.ops.find(o => o.id === opId); if (!op) return;
+    ws.editOp(opId);
+    if (op.kind === "replace") setMore(true);
+    else setCard({ kind: op.kind === "assign" ? "assign" : op.kind === "edit" ? "edit" : "create" });
+  };
   const actionsFor = (item: GridItem) => {
     const list: Array<{ label: string; Icon: React.ComponentType<any>; run: () => void; tone?: "danger" }> = [];
     if (terminal) return list;
     const op = item.opId ? ws.ops.find(o => o.id === item.opId) : undefined;
     if (op) {
-      list.push({ label: "تعديل المادة", Icon: Pencil, run: () => { ws.editOp(op.id); goOps(); } });
+      list.push({ label: "تعديل المادة", Icon: Pencil, run: () => openForOp(op.id) });
       if (ws.marks.blocker.has(item.key)) list.push({ label: "أوقات بديلة", Icon: CalendarClock, run: () => { ws.loadAlternatives(op.id); if (!wide) setTab("checks"); } });
       list.push({ label: "إزالة من المقترح", Icon: Trash2, tone: "danger", run: () => { ws.removeOp(op.id); ws.setSelectedKey(null); } });
     } else if (item.state === "current" && !item.outside && item.rowId > 0) {
-      list.push({ label: "تعديل موعد هذا الأستاذ", Icon: Pencil, run: () => { ws.chooseMode("edit"); ws.pickRow(item.rowId); goOps(); } });
-      list.push({ label: "استبدال هذا الموعد", Icon: ArrowLeftRight, run: () => { ws.chooseMode("replace"); ws.pickRow(item.rowId); goOps(); } });
+      list.push({ label: "تعديل موعد هذا الأستاذ", Icon: Pencil, run: () => { ws.chooseMode("edit"); ws.pickRow(item.rowId); setCard({ kind: "edit" }); } });
+      list.push({ label: "استبدال هذا الموعد", Icon: ArrowLeftRight, run: () => { ws.chooseMode("replace"); ws.pickRow(item.rowId); setMore(true); } });
     }
     return list;
   };
@@ -157,7 +174,7 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
   const hasNewVersion = Boolean(proposal && sent && proposal.version > proposal.sentVersion);
   const previewLabel = sent && hasNewVersion ? `معاينة وإرسال النسخة ${num(proposal!.version)}` : "معاينة وإرسال";
 
-  const sidePane = (
+  const banners = (
     <>
       <ProposalResponses ws={ws} />
       {ws.restorable ? (
@@ -166,27 +183,36 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
       ) : null}
       {ws.conflict ? (
         <div className="sp-banner" role="alert" data-tone="bad"><AlertTriangle aria-hidden="true" /><span>عدّل شخصٌ آخر هذا المقترح أثناء عملك.</span>
-          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.takeTheirs}>اعتماد نسخته</button><button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.keepMine}>الاحتفاظ بتعديلاتي</button></div>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.takeTheirs}>اعتماد نسخته</button><button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-link" onClick={ws.keepMine}>الاحتفاظ بتعديلي</button></div>
       ) : null}
       {(() => {
         const others = ctx.proposals.filter(view => view.proposal.id !== proposal?.id && !["withdrawn", "committed", "expired"].includes(effectiveStatus(view.proposal)));
         return others.length ? (
           <div className="sp-banner" role="status" data-tone="info"><AlertTriangle aria-hidden="true" />
-            <span>لهذا الأستاذ مقترحاتٌ نشطةٌ أخرى ({num(others.length)}). الإرسال لا يحجز شيئاً، فراجع أن لا تتعارض المقترحات فيما بينها قبل التثبيت.</span></div>
+            <span>لهذا الأستاذ مقترحاتٌ نشطةٌ أخرى ({num(others.length)}). الإرسال لا يحجز شيئاً، فراجع أن لا تتعارض فيما بينها قبل التثبيت.</span></div>
         ) : null;
       })()}
       {ctx.term.closed ? <div className="sp-banner" role="status" data-tone="bad"><Ban aria-hidden="true" /><span>انتهى هذا الفصل؛ لا تُرسل فيه مقترحات جديدة.</span></div> : null}
-      <div className="sp-ops-wrap">
-        <div className="sp-ops-head"><h2><ClipboardList aria-hidden="true" />مواد المقترح</h2>
-          <p role="status">{summaryLine(ws.ops.length, blockers, reviews, Boolean(checked))}</p></div>
-        <ProposalOps ws={ws} />
-      </div>
       {terminal ? (
         <div className="sp-banner" role="status" data-tone="neutral"><CheckCircle2 aria-hidden="true" /><span>{status === "committed" ? "ثُبّت هذا المقترح ولم يعد قابلاً للتعديل." : "سُحب هذا المقترح. أنشئ مقترحاً جديداً من الحوار."}</span></div>
-      ) : (
-        <div className="sp-form-wrap"><ProposalOpForm ws={ws} /></div>
-      )}
+      ) : null}
     </>
+  );
+
+  const opsPane = (
+    <div className="sp-ops-wrap">
+      <div className="sp-ops-head"><h2><ClipboardList aria-hidden="true" />مواد المقترح</h2>
+        <p role="status">{summaryLine(ws.ops.length, blockers, reviews, Boolean(checked))}</p></div>
+      <ProposalOps ws={ws} onEdit={openForOp} />
+    </div>
+  );
+
+  const toolbar = terminal ? null : (
+    <div className="sp-toolbar" role="toolbar" aria-label="إضافة مادة إلى المقترح">
+      <button type="button" className="btn btn-primary" onClick={() => openCreate()} data-guide-target="proposal-add"><Plus aria-hidden="true" />شعبة جديدة</button>
+      <button type="button" className="btn btn-secondary" onClick={openAssign} data-guide-ignore="يفتح بطاقة إسناد شعبة من «هيئة تدريسية» — لا يكتب في الجدول"><UserRoundPlus aria-hidden="true" />إسناد شعبة</button>
+      <span className="sp-toolbar-hint">{wide ? "أو اسحب على فراغٍ في الجدول لتحديد اليوم والوقت." : "أو اضغط «إضافة» تحت اليوم المطلوب."}</span>
+    </div>
   );
 
   const gridPane = (
@@ -194,7 +220,9 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
       mode={gridMode} onMode={setGridMode} showGhosts={showGhosts} onShowGhosts={setShowGhosts}
       currentItems={ws.currentItems} afterItems={ws.afterItems} ghosts={ws.ghostItems} draft={ws.draftItem}
       marks={ws.marks} focusKeys={ws.focusKeys} selectedKey={ws.selectedKey} onSelect={ws.setSelectedKey}
-      onCell={(day, minutes) => { if (terminal) return; ws.fillFromCell(day, minutes); if (!wide) { setTab("ops"); setNotice("مُلئ اليوم والوقت في النموذج."); } }}
+      readOnly={terminal}
+      onPaint={(day, start, end, x, y) => openCreate({ x, y }, { day, start, end })}
+      onAddDay={wide || terminal ? undefined : day => openCreate({}, { day, start: 8 * 60, end: 8 * 60 + 50 })}
       checking={ws.ops.length > 0 && !ws.evalCurrent && ws.evalState !== "failed"} findingsFor={findingsFor} actionsFor={actionsFor}
       empty={ctx.current.items.length ? undefined : <p><b>ليس للأستاذ مواعيد حالياً.</b> ستظهر هنا أول مادةٍ تضيفها إلى المقترح.</p>}
       variant="auto"
@@ -210,10 +238,12 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
           loadCap={ctx.instructor.loadCap} blockers={blockers} reviews={reviews} evalState={ws.evalState} evalCurrent={ws.evalCurrent}
           evalError={ws.evalError} hasOps={ws.ops.length > 0 && !ws.terminal} onRetry={ws.retryEvaluation} onClose={requestClose} />
 
+        {toolbar}
+
         {!wide ? (
           <nav className="sp-tabs" role="tablist" aria-label="أقسام المساحة">
-            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={tab === "ops"} onClick={() => setTab("ops")}><ClipboardList aria-hidden="true" />المواد{ws.ops.length ? <span className="sp-count">{ws.ops.length}</span> : null}</button>
             <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={tab === "grid"} onClick={() => setTab("grid")}><Table2 aria-hidden="true" />الجدول</button>
+            <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={tab === "ops"} onClick={() => setTab("ops")}><ClipboardList aria-hidden="true" />المواد{ws.ops.length ? <span className="sp-count">{num(ws.ops.length)}</span> : null}</button>
             <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" role="tab" aria-selected={tab === "checks"} onClick={() => setTab("checks")}>
               {blockers ? <ShieldAlert aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}الفحص
               {checked && (blockers || reviews) ? <span className="sp-count" data-tone={blockers ? "bad" : "warn"}>{(blockers || 0) + (reviews || 0)}</span> : null}
@@ -221,16 +251,16 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
           </nav>
         ) : null}
 
-        <div className="sp-body" data-wide={wide || undefined}>
+        <div className="sp-body" data-wide={wide || undefined} data-quick="true">
           {wide ? (
             <>
-              <aside className="sp-side" aria-label="إعداد المادة">{sidePane}</aside>
-              <main className="sp-main"><div className="sp-grid-pane">{gridPane}</div><div className="sp-checks-pane">{checksPane}</div></main>
+              <main className="sp-main"><div className="sp-grid-pane">{gridPane}</div></main>
+              <aside className="sp-side" aria-label="مواد المقترح والفحص">{banners}{opsPane}{checksPane}</aside>
             </>
           ) : (
             <>
-              <div className="sp-panel" role="tabpanel" hidden={tab !== "ops"}>{sidePane}</div>
-              <div className="sp-panel sp-panel-grid" role="tabpanel" hidden={tab !== "grid"}>{gridPane}</div>
+              <div className="sp-panel sp-panel-grid" role="tabpanel" hidden={tab !== "grid"}>{banners}{gridPane}</div>
+              <div className="sp-panel" role="tabpanel" hidden={tab !== "ops"}>{opsPane}</div>
               <div className="sp-panel" role="tabpanel" hidden={tab !== "checks"}>{checksPane}</div>
             </>
           )}
@@ -263,6 +293,14 @@ export default function StudyProposalWorkspace({ requestId, proposalId = null, i
         </footer>
       </div>
 
+      {card ? <ProposalQuickCard ws={ws} seed={card} onClose={closeCard} onMore={() => { setCard(null); setMore(true); }} /> : null}
+      {more ? (
+        <aside className="sp-more-drawer" role="dialog" aria-modal="false" aria-label="النموذج الكامل">
+          <header><strong>النموذج الكامل</strong>
+            <button type="button" className="sp-icon-btn" onClick={() => { setMore(false); ws.cancelEdit(); }} aria-label="إغلاق النموذج الكامل" data-guide-ignore="يغلق النموذج الكامل"><X aria-hidden="true" /></button></header>
+          <ProposalOpForm ws={ws} onDone={() => setMore(false)} />
+        </aside>
+      ) : null}
       {dialog === "send" ? <SendDialog ws={ws} onClose={() => setDialog(null)} onSent={() => setNotice("أُرسل المقترح.")} /> : null}
       {dialog === "commit" ? <CommitDialog ws={ws} onClose={() => setDialog(null)} onDone={() => setNotice("ثُبّت المقترح.")} /> : null}
       {dialog === "close" ? (

@@ -32,7 +32,7 @@ const STATE_TEXT: Record<OpState, { text: string; Icon: React.ComponentType<any>
   checking: { text: "جاري الفحص", Icon: Hourglass },
 };
 
-function OpCard({ ws, op }: { key?: React.Key; ws: Workspace; op: StudyProposalOp }) {
+function OpCard({ ws, op, onEdit }: { key?: React.Key; ws: Workspace; op: StudyProposalOp; onEdit?: (opId: string) => void }) {
   const t = op.target;
   const state = opState(ws, op.id);
   const { text, Icon: StateIcon } = STATE_TEXT[state];
@@ -71,7 +71,7 @@ function OpCard({ ws, op }: { key?: React.Key; ws: Workspace; op: StudyProposalO
         ) : null}
         <span className="sp-op-actions">
           {state === "blocked" ? <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-text" onClick={() => ws.loadAlternatives(op.id)}><Wand2 aria-hidden="true" />أوقات بديلة</button> : null}
-          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-text" onClick={() => ws.editOp(op.id)} aria-label={`تعديل مادة ${t.courseName}`}><Pencil aria-hidden="true" />تعديل</button>
+          <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-text" onClick={() => (onEdit ? onEdit(op.id) : ws.editOp(op.id))} aria-label={`تعديل مادة ${t.courseName}`}><Pencil aria-hidden="true" />تعديل</button>
           <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" type="button" className="sp-icon-text" data-tone="danger" onClick={() => ws.removeOp(op.id)} aria-label={`إزالة ${t.courseName} من المسودة`}><Trash2 aria-hidden="true" />إزالة</button>
         </span>
       </div>
@@ -79,7 +79,7 @@ function OpCard({ ws, op }: { key?: React.Key; ws: Workspace; op: StudyProposalO
   );
 }
 
-export default function ProposalOps({ ws }: { ws: Workspace }) {
+export default function ProposalOps({ ws, onEdit }: { ws: Workspace; onEdit?: (opId: string) => void }) {
   if (!ws.ops.length) {
     return (
       <section className="sp-ops sp-ops-empty" aria-label="مواد المقترح">
@@ -89,7 +89,7 @@ export default function ProposalOps({ ws }: { ws: Workspace }) {
   }
   return (
     <section className="sp-ops" aria-label="مواد المقترح">
-      <ul>{ws.ops.map(op => <li key={op.id}><OpCard ws={ws} op={op} /></li>)}</ul>
+      <ul>{ws.ops.map(op => <li key={op.id}><OpCard ws={ws} op={op} onEdit={onEdit} /></li>)}</ul>
     </section>
   );
 }

@@ -158,7 +158,7 @@ function RowPicker({ ws, label }: { ws: Workspace; label: string }) {
 
 /* ── الأيام والوقت والمكان ───────────────────────────────────────────────── */
 
-function scopeOfDraft(ws: Workspace): { collegeId: number; sectionId: number } {
+export function scopeOfDraft(ws: Workspace): { collegeId: number; sectionId: number } {
   const { draft, ctx } = ws;
   const faculty = draft.facultyId != null ? ctx?.faculty.find(f => f.snapshot.id === draft.facultyId)?.snapshot : undefined;
   if (faculty) return { collegeId: faculty.AdCollegeId, sectionId: faculty.AdSectionId };
@@ -173,7 +173,7 @@ function scopeOfDraft(ws: Workspace): { collegeId: number; sectionId: number } {
 
 const historyCache = new Map<string, CourseHistory>();
 
-function CourseHistoryNote({ ws, scope }: { ws: Workspace; scope: { collegeId: number; sectionId: number } }) {
+export function CourseHistoryNote({ ws, scope, compact = false }: { ws: Workspace; scope: { collegeId: number; sectionId: number }; compact?: boolean }) {
   const { draft, ctx } = ws;
   const row = draft.rowId != null ? ws.currentItems.find(i => i.rowId === draft.rowId) : undefined;
   const courseId = draft.courseId ?? (draft.mode === "edit" ? row?.src?.courseId ?? null : null);
@@ -197,7 +197,7 @@ function CourseHistoryNote({ ws, scope }: { ws: Workspace; scope: { collegeId: n
   });
   return (
     <section className="sp-history" aria-label="سجل المقرر في الفصول السابقة">
-      <p><History aria-hidden="true" />نزل هذا المقرر في {countOf(history.terms, { one: "فصل", two: "فصلين", few: "فصول", many: "فصلاً" })} ({history.firstTerm}{history.latestTerm && history.latestTerm !== history.firstTerm ? ` ← ${history.latestTerm}` : ""}). الأوضاع المعتادة:</p>
+      <p title={compact ? `نزل هذا المقرر في ${countOf(history.terms, { one: "فصل", two: "فصلين", few: "فصول", many: "فصلاً" })}` : undefined}><History aria-hidden="true" />{compact ? "المعتاد في الفصول السابقة:" : null}{compact ? null : <>نزل هذا المقرر في {countOf(history.terms, { one: "فصل", two: "فصلين", few: "فصول", many: "فصلاً" })} ({history.firstTerm}{history.latestTerm && history.latestTerm !== history.firstTerm ? ` ← ${history.latestTerm}` : ""}). الأوضاع المعتادة:</>}</p>
       <ul>
         {history.layouts.map(layout => {
           const on = draft.days.join() === layout.days.join() && draft.start === layout.start && draft.end === layout.end;
@@ -315,7 +315,7 @@ function CreateFields({ ws }: { ws: Workspace }) {
 
 /* ── النموذج كاملاً ──────────────────────────────────────────────────────── */
 
-export default function ProposalOpForm({ ws }: { ws: Workspace }) {
+export default function ProposalOpForm({ ws, onDone }: { ws: Workspace; onDone?: () => void }) {
   const { draft, ctx } = ws;
   const editing = Boolean(draft.editingOpId);
   const set = ws.patchDraft;
@@ -391,7 +391,7 @@ export default function ProposalOpForm({ ws }: { ws: Workspace }) {
   );
 
   return (
-    <form className="sp-form" onSubmit={e => { e.preventDefault(); ws.submitDraft(); }} aria-labelledby="sp-form-title" noValidate>
+    <form className="sp-form" onSubmit={e => { e.preventDefault(); if (ws.submitDraft()) onDone?.(); }} aria-labelledby="sp-form-title" noValidate>
       <div className="sp-form-head">
         <h2 id="sp-form-title">{editing ? "تعديل مادة في المقترح" : "إضافة مادة إلى المقترح"}</h2>
         <p className="sp-fixed"><span><Users aria-hidden="true" />{ctx.instructor.name}</span><span>{ctx.term.name}</span></p>
