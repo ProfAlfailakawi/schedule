@@ -938,8 +938,9 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       for (const item of row.items || []) {
         if ((item.action !== "change" && item.action !== "add") || (item as any).hidden) continue;
         for (const slot of item.slots || []) {
-          if (!INBOX_DAY_NAMES[slot.day] || !/^\d{2}:\d{2}/.test(String(slot.start || ""))) continue;
-          const start = String(slot.start).slice(0, 5);
+          const match = /^(\d{1,2}):(\d{2})/.exec(String(slot.start || ""));
+          if (!INBOX_DAY_NAMES[slot.day] || !match) continue;
+          const start = `${match[1].padStart(2, "0")}:${match[2]}`;
           starts.add(start);
           cells.set(`${slot.day}|${start}`, (cells.get(`${slot.day}|${start}`) || 0) + 1);
         }
