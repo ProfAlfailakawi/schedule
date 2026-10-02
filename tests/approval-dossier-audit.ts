@@ -40,7 +40,7 @@ const base = (patch: Partial<DossierInput> = {}, data: any = {}): DossierInput =
   check(m.changes.tiles.map(t => t.percent).join() === "50,25,25", "النسب من مجموع التغييرات: 50/25/25");
   check(m.changes.unchanged === 6 && m.changes.stablePercent === 67, "حصة ما لم يُمسّ: 6 من 9 في الجدول الحيّ = 67%");
   check(m.changes.tiles[0].label === "موعدان مضافان" && m.changes.tiles[2].label === "موعد محذوف", "تسميات البطاقات تمرّ بصيغ العدد والمعدود");
-  check(m.baseline.title === "منذ الجدول المعتمد" && /approved\.pdf/.test(m.baseline.sourceLine || "") && /2026-09-01/.test(m.baseline.sourceLine || ""), "سطر المصدر يسمّي الوثيقة وتاريخ اعتمادها");
+  check(m.baseline.title === "منذ الجدول المعتمد" && /approved\.pdf/.test(m.baseline.sourceLine || "") && /01\/09\/2026/.test(m.baseline.sourceLine || ""), "سطر المصدر يسمّي الوثيقة وتاريخ اعتمادها");
   check(m.printedOn === "02/10/2026", "تاريخ الطباعة بأرقام غربية dd/mm/yyyy");
   check(proportionalPercents([1, 1, 1]).reduce((a, b) => a + b, 0) === 100 && proportionalPercents([0, 0, 0]).join() === "0,0,0", "النسب مجموعها ١٠٠ دائماً، وصفرٌ حين لا تغيير");
 }
@@ -115,7 +115,7 @@ const base = (patch: Partial<DossierInput> = {}, data: any = {}): DossierInput =
   check(m.shownItems === DOSSIER_ITEM_CAP && m.hiddenItems === 8 && m.hiddenLabel === "و8 مواعيد أخرى", "ما فوق 12 يُطوى: «و8 مواعيد أخرى»");
   check(m.groups.length === 2 && m.groups[0].items.length === 10 && m.groups[1].items.length === 2, "التجميع بحسب المقرر ثم القصّ");
   const mod = buildApprovalDossier(base());
-  check(mod.groups.flatMap(g => g.items).find(i => i.kind === "modified")?.lines[0] === "القاعة: A1 ← B2", "سطر التعديل: الخانة قبل ← بعد");
+  check(mod.groups.flatMap(g => g.items).find(i => i.kind === "modified")?.lines[0] === "القاعة: \u2066A1\u2069 ← \u2066B2\u2069", "سطر التعديل: الخانة قبل ← بعد");
 }
 
 /* ٧) النطاق */

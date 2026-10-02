@@ -1225,6 +1225,11 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
     top.getContext("2d").drawImage(surface,0,0,W,header.top,0,0,W,header.top);
     const result:any=await worker.recognize(top.toBuffer("image/png")).catch(()=>null);
     headerText=String(result?.data?.text||"").normalize("NFKC");
+    /* قراءةٌ ثانية رخيصة للرأس نفسه بالأرقام وحدها: العربية تتشوّه فيضيع رمز القسم (0101)، والأرقام تثبت. */
+    await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"6" as any});
+    const digits:any=await worker.recognize(top.toBuffer("image/png")).catch(()=>null);
+    const digitsText=String(digits?.data?.text||"").normalize("NFKC").replace(/\s+/g," ").trim();
+    if(digitsText)headerText+=`\n#digits: ${digitsText}`;
   }
   return{cells,headerText,template:{labels,kinds}};
 }

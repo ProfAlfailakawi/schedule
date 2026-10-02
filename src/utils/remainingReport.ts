@@ -55,6 +55,9 @@ export interface ReportRow {
   blankByDesign?: boolean;
 }
 
+/** سطرٌ رمزه المقروء يشبه رمز مقررٍ غائبٍ برقمٍ واحد: يُعرض للمراجعة، ولا تُطبَّق قيمته حتى يؤكده المستخدم. */
+export interface ReportSuspect extends ReportRow { /** الرمز المقروء في الكشف (203). */ read: string; /** رمز المقرر المحتمل في النظام (263). */ expected: string }
+
 export interface RemainingReading {
   columns: ReportColumn[];
   /** عمود «المقاعد المتبقية» (أو عنوانٌ «المتبقي» وحده)؛ null إن لم يوجد — ولا يُستبدل به عمودٌ آخر. */
@@ -68,6 +71,8 @@ export interface RemainingReading {
   missing: number[];
   /** فجواتٌ بين صفوفٍ مقروءة بقدر سطرٍ أو أكثر: سطرٌ في الكشف لم يُقرأ رقم مقرره. */
   gaps?: Array<{ page: number; after: string; before: string }>;
+  /** أسطرٌ يُرجَّح أنها مقرراتٌ غائبة أخطأت القراءةُ رقماً من رمزها؛ لا تدخل rows ولا missing ولا foreign. */
+  suspects?: ReportSuspect[];
 }
 
 const normalize = (value: string) => String(value || "")
@@ -336,6 +341,45 @@ function tableOf(pages: readonly ReportCell[][], courses: ReadonlyArray<{ id: nu
     for (const token of numbers[index]) { const column = columnOf(item.line.page, token.x); if (column >= 0 && !map.has(column)) map.set(column, token); }
     return map;
   });
+  /* 2ب) سطرٌ رمزه يخالف رمز مقررٍ غائبٍ من القسم برقمٍ واحدٍ فقط، ويقع في ترتيب الكشف
+     بين جارَيه اللذين يحيطان بذلك المقرر: غالباً هو نفسه وقد أخطأت القراءةُ رقماً.
+     يُعرض للمراجعة ولا يُقبل من تلقاء نفسه. */
+  const matchedIds = new Set(matched.map(item => item.courseId));
+  const missingCourses = courses.filter(course => !matchedIds.has(course.id));
+  const orderOf = (page: number, y: number) => page * 10 + y;
+  const sortedMatched = [...matched].sort((a, b) => orderOf(a.line.page, a.line.y) - orderOf(b.line.page, b.line.y));
+  const numberOf = (code: string) => Number(normalize(code).replace(/\D/g, "")) || 0;
+  const suspectCandidates: Array<{ line: Line; courseId: number; code: Token }> = [];
+  for (const line of lines) {
+    if (matchedLines.has(line)) continue;
+    const code = line.tokens.find(token => token.code.length === usualLength && inCode(line.page, token.x));
+    if (!code) continue;
+    const hits = missingCourses.filter(course => {
+      const digits = normalize(course.code).replace(/\D/g, "");
+      const tail = digits.slice(-code.code.length);
+      if (tail.length !== code.code.length || tail === code.code) return false;
+      return [...tail].filter((digit, index) => digit !== code.code[index]).length === 1;
+    });
+    if (hits.length !== 1) continue;
+    const here = orderOf(line.page, line.y);
+    const before = [...sortedMatched].reverse().find(item => orderOf(item.line.page, item.line.y) < here);
+    const after = sortedMatched.find(item => orderOf(item.line.page, item.line.y) > here);
+    const target = numberOf(hits[0].code.slice(-code.code.length));
+    if (!before && !after) continue;
+    if (before && numberOf(before.code.code) >= target) continue;
+    if (after && numberOf(after.code.code) <= target) continue;
+    suspectCandidates.push({ line, courseId: hits[0].id, code });
+  }
+  /* مقررٌ واحد لسطرٍ واحد: التعدد التباس لا يُرجَّح فيه. */
+  const suspectCounts = new Map<number, number>();
+  for (const item of suspectCandidates) suspectCounts.set(item.courseId, (suspectCounts.get(item.courseId) || 0) + 1);
+  const suspected = suspectCandidates.filter(item => suspectCounts.get(item.courseId) === 1);
+  const suspectAssigned = suspected.map(item => {
+    const map = new Map<number, Token>();
+    const tokens = item.line.tokens.filter(token => token.cell !== item.code.cell && token.value != null && !inCode(item.line.page, token.x));
+    for (const token of tokens) { const column = columnOf(item.line.page, token.x); if (column >= 0 && !map.has(column)) map.set(column, token); }
+    return map;
+  });
   const kept = order.map((slot, id) => ({
     x: refX[slot], labels: globals[slot].labels, identity: globals[slot].identity,
     filled: assigned.filter(map => map.has(id)).length,
@@ -349,7 +393,7 @@ function tableOf(pages: readonly ReportCell[][], courses: ReadonlyArray<{ id: nu
     const x = map.a * refX[order[id]] + map.b;
     return x > 0 && x < 1 ? x : null;
   };
-  return { matched, foreign, foreignLines, assigned, kept, xOn };
+  return { matched, foreign, foreignLines, assigned, kept, xOn, suspected, suspectAssigned };
 }
 
 /* العنوان كما يُقرأ: سطراً سطراً من اليمين، والحروف المتلاصقة (يخرجها بعض
@@ -382,7 +426,7 @@ export function readRemainingReport(
   courses: ReadonlyArray<{ id: number; code: string }>,
   departmentCode: string,
 ): RemainingReading {
-  const { matched, foreign, foreignLines, assigned, kept } = tableOf(pages, courses, departmentCode);
+  const { matched, foreign, foreignLines, assigned, kept, suspected, suspectAssigned } = tableOf(pages, courses, departmentCode);
   const columns: ReportColumn[] = kept.map((column, id) => {
     const samples = assigned.map(map => map.get(id)?.value).filter((v): v is number => v != null).slice(0, 4);
     /* عنوانٌ عُرف معناه في أيٍّ من الصفحات يكفي، ولو شوّهت القراءةُ غيره. */
@@ -407,12 +451,17 @@ export function readRemainingReport(
     rowsOf.set(item.courseId, row);
   });
   const rows = [...rowsOf.values()];
+  const suspects: ReportSuspect[] = suspected.map((item, index) => {
+    const row: ReportSuspect = { courseId: item.courseId, printed: item.code.text, read: item.code.text, expected: courses.find(course => course.id === item.courseId)?.code || "", values: {}, confidence: {}, occurrences: 1 };
+    for (const [id, token] of suspectAssigned[index]) if (token.value != null) { row.values[id] = token.value; row.confidence[id] = token.confidence; }
+    return row;
+  });
 
   const registered = ofKind("registered"), capacity = ofKind("capacity"), sections = ofKind("sections");
 
   /* 5) خانةٌ فارغة بتصميم الكشف: مقررٌ لا شعب له في الكشف (عدد الشعب صفر، أو
      السعة والمسجّلون فارغان معها). لا قيمة تُستورد له، ولا تُخمَّن من جاره. */
-  if (column != null) for (const row of rows) {
+  if (column != null) for (const row of [...rows, ...suspects]) {
     if (row.values[column] != null) continue;
     const noSections = sections != null ? row.values[sections] === 0
       : (capacity == null || row.values[capacity] == null) && (registered == null || row.values[registered] == null);
@@ -421,13 +470,14 @@ export function readRemainingReport(
 
   /* 6) حسابُ الكشف يفحص القراءة: «المقاعد المتبقية» = «سعة الشعب» − «عدد المسجلين».
      يُفحص حين تُقرأ الثلاثة؛ وخلافُها قراءةٌ أخطأت — لا يُعتمد الرقم، ويُطلب أوضح. */
-  if (column != null && registered != null && capacity != null) for (const row of rows) {
+  if (column != null && registered != null && capacity != null) for (const row of [...rows, ...suspects]) {
     const read = row.values[column], cap = row.values[capacity], enrolled = row.values[registered];
     if (read == null || cap == null || enrolled == null) continue;
     const derived = Math.max(0, cap - enrolled);
     if (read !== derived) row.doubt = { read, derived };
   }
-  const seen = new Set(rows.map(row => row.courseId));
+  const seen = new Set([...rows, ...suspects].map(row => row.courseId));
+  const suspectCodes = new Set(suspects.map(row => row.read));
   /* 7) سطرٌ ضاع رقم مقرره (القراءة الضوئية أسقطته) يترك فجوةً بين جارَيه بقدر
      سطرٍ كامل: يُذكر ولا يُسكت عنه، فلا يبدو الكشف مكتملاً وهو ناقص. */
   const gaps: Array<{ page: number; after: string; before: string }> = [];
@@ -449,7 +499,7 @@ export function readRemainingReport(
       });
     });
   }
-  return { columns, column, fallback: null, rows, foreign, missing: courses.filter(course => !seen.has(course.id)).map(course => course.id), gaps };
+  return { columns, column, fallback: null, rows, foreign: foreign.filter(code => !suspectCodes.has(code)), missing: courses.filter(course => !seen.has(course.id)).map(course => course.id), gaps, ...(suspects.length ? { suspects } : {}) };
 }
 
 export type CellState = "read" | "unread" | "noSections" | "mismatch" | "lowConfidence";
@@ -491,13 +541,20 @@ export function detectReportDepartment(headerText: string, printedCodes: readonl
  * هل رأس الكشف لقسمنا؟ برمزه (بقراءةٍ قد تزيد رقماً واحداً: «0١10١») أو باسمه.
  * لا يكفي تطابق أرقام المقررات وحدها: الأرقام الثلاثية تتكرر بين الأقسام.
  */
+/** سطر الأرقام وحدها من الرأس (قراءةٌ ثانية بقائمة أرقامٍ فقط) يلحقه المستخرج بالرأس بعد هذا الفاصل. */
+export const HEADER_DIGITS_MARK = "#digits:";
 export function confirmReportDepartment(headerText: string, departmentCode: string, departmentName = "", detected?: string): { confirmed: boolean; byCode: boolean; byName: boolean } {
   const code = String(departmentCode || "");
+  const markAt = String(headerText || "").indexOf(HEADER_DIGITS_MARK);
+  const digitsText = markAt >= 0 ? normalize(String(headerText).slice(markAt + HEADER_DIGITS_MARK.length)) : "";
+  headerText = markAt >= 0 ? String(headerText).slice(0, markAt) : headerText;
   const plain = fold(headerText).replace(/\s+/g, " ");
   const tokens = [...plain.matchAll(/القسم(?:\s*العلمي)?[^\d]{0,8}?([\d\s]{4,9})/g)].map(match => match[1].replace(/\s/g, ""));
   const nearCode = (token: string) => token === code
     || (token.length === code.length + 1 && [...token].some((_, index) => token.slice(0, index) + token.slice(index + 1) === code));
-  const byCode = Boolean(code) && (detected === code || tokens.some(nearCode));
+  /* الرأس العربي مشوّهٌ لكنه يحوي «القسم»، والرمز يظهر وحده رمزاً من أربع خاناتٍ في قراءة الأرقام وحدها. */
+  const byDigits = Boolean(code) && /القسم/.test(plain) && digitsText.split(/[^\d]+/).includes(code);
+  const byCode = Boolean(code) && (detected === code || tokens.some(nearCode) || byDigits);
   const squash = (value: string) => fold(value).replace(/^قسم\s+/, "").replace(/[^ء-ي0-9]/g, "");
   const name = squash(departmentName);
   const byName = name.length >= 4 && squash(headerText).includes(name);
@@ -585,7 +642,11 @@ export function planRemainingApply(
   columnId: number,
   manual: Readonly<Record<string, string | number>> = {},
   previous: Readonly<Record<string, string | number>> = {},
+  /** مقرراتٌ أكّد المستخدم أن سطراً مشتبهاً بقراءة رمزه هو لها. */
+  confirmedSuspects: Iterable<number> = [],
+  suspects: ReadonlyArray<ReportSuspect> = [],
 ): RemainingApplyPlan {
+  const confirmed = new Set(confirmedSuspects);
   const next: Record<string, number> = {};
   for (const [key, value] of Object.entries(previous)) {
     const kept = manualRemainingValue(value);
@@ -593,12 +654,18 @@ export function planRemainingApply(
   }
   let fromSheet = 0, typed = 0;
   const untouched: number[] = [];
-  for (const row of reading.rows) {
+  for (const row of [...reading.rows, ...suspects.filter(item => confirmed.has(item.courseId))]) {
     const key = String(row.courseId);
     const hand = manualRemainingValue(manual[key]);
     if (hand !== undefined) { next[key] = hand; typed++; continue; }
     const { value } = remainingOf(row, columnId);
     if (value !== undefined) { next[key] = value; fromSheet++; } else untouched.push(row.courseId);
+  }
+  /* مشتبهٌ لم يؤكَّد: قيمته لا تُطبَّق، وما كتبه المستخدم بيده لمقرره وحده يُطبَّق. */
+  for (const row of suspects) {
+    if (confirmed.has(row.courseId)) continue;
+    const hand = manualRemainingValue(manual[String(row.courseId)]);
+    if (hand !== undefined) { next[String(row.courseId)] = hand; typed++; } else untouched.push(row.courseId);
   }
   return { next, fromSheet, manual: typed, total: fromSheet + typed, untouched };
 }

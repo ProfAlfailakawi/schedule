@@ -175,6 +175,7 @@ export function ApprovalDossierSheet({ model }: { model: ApprovalDossierModel })
       {changes.available && model.groups.length ? (
         <section className="ad-list" aria-label="التغييرات بحسب المقرر">
           <h2>التغييرات بحسب المقرر</h2>
+          <div className="ad-courses">
           {model.groups.map(group => (
             <div className="ad-course" key={group.key}>
               <h3>{group.code ? <code dir="ltr">{group.code}</code> : null} {group.course}</h3>
@@ -194,6 +195,7 @@ export function ApprovalDossierSheet({ model }: { model: ApprovalDossierModel })
               </ul>
             </div>
           ))}
+          </div>
           {model.hiddenLabel ? <p className="ad-more">{model.hiddenLabel}</p> : null}
         </section>
       ) : null}

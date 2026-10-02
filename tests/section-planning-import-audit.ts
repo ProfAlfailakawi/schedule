@@ -5,7 +5,7 @@
 import fs from "fs";
 import {
   assessRemainingImport, detectReportDepartment, imageOrientationRefusal, imageSize,
-  manualRemainingValue, planRemainingApply, readRemainingReport, remainingOf, remainingValues, type ReportCell,
+  confirmReportDepartment, HEADER_DIGITS_MARK, manualRemainingValue, planRemainingApply, readRemainingReport, remainingOf, remainingValues, type ReportCell,
 } from "../src/utils/remainingReport";
 import { readReportCells } from "../src/utils/documentOcr";
 
@@ -88,17 +88,47 @@ check(a.reject === null && a.read === 1 && a.unread.length === 3, "قراءةٌ 
 check(remainingOf(r.rows.find(row => row.courseId === 3)!, r.column!).state === "lowConfidence", "خانةٌ بثقةٍ ضعيفة (20) لا تُعتمد");
 plan = planRemainingApply(r, r.column!);
 check(plan.total === 1 && plan.next["6"] === 0 && Object.keys(plan.next).length === 1, "ولا يُطبَّق منها إلا الخانة المقروءة");
-const nothing = [page(0, [["0101102", [54, 1336, 0, null, 19, 54]], ["0101201", [570, 256, 6, null, 9, 370]], ["0101254", [48, 210, 10, null, 3, 48]]])];
+const nothing = [page(0, [["0101102", [54, 1336, 0, 1336, 19, 54], 20], ["0101201", [570, 256, 6, 250, 9, 370], 20], ["0101254", [48, 210, 10, 200, 3, 48], 20]])];
 r = readRemainingReport(nothing, catalogue, "0101");
 a = assessRemainingImport(r, context);
 check(r.rows.length === 3 && a.read === 0 && Boolean(a.reject?.includes("لأي مقرر")), `لا خانة مقروءة أصلاً: يُرفض — ${a.reject}`);
 
 /* ── رأس الكشف غير مقروء: تأكيدٌ صريح لا رفض ── */
-r = readRemainingReport(clear, catalogue, "0101");
+/* كشفٌ يطبع الرمز بثلاث خانات: الرأس وحده دليل القسم. */
+const threeDigits = clear.map(cells => cells.map(cell => /^0101\d{3}$/.test(cell.text) ? { ...cell, text: cell.text.slice(4) } : cell));
+r = readRemainingReport(threeDigits, catalogue, "0101");
 a = assessRemainingImport(r, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: "" });
-check(a.reject === null && a.needsDepartmentConfirmation, "رأسٌ بلا رمز القسم ولا اسمه: لا يُرفض، ويُطلب من المستخدم تأكيد القسم");
+check(a.reject === null && a.read === 4 && a.needsDepartmentConfirmation, "رأسٌ بلا رمز القسم ولا اسمه: لا يُرفض، ويُطلب من المستخدم تأكيد القسم");
 a = assessRemainingImport(r, context);
 check(!a.needsDepartmentConfirmation, "والرأس المقروء: لا تأكيد");
+const garbled = "مر القسم العلصر, | !0010 dl نيه الإصسلاميةه\nالفصل الدراسي : 202420";
+check(!confirmReportDepartment(garbled, "0101", "التربية الإسلامية").confirmed, "الرأس المشوّه وحده لا يكفي");
+check(confirmReportDepartment(`${garbled}\n${HEADER_DIGITS_MARK} 202420 0101 01`, "0101", "التربية الإسلامية").byCode, "قراءة الأرقام وحدها تُظهر 0101 رمزاً مستقلاً والرأس العربي فيه «القسم»: يُتحقق");
+check(!confirmReportDepartment(`${garbled}\n${HEADER_DIGITS_MARK} 202420 01010 01`, "0101", "التربية الإسلامية").confirmed
+  && !confirmReportDepartment(`رأس بلا كلمة\n${HEADER_DIGITS_MARK} 0101`, "0101", "").confirmed
+  && !confirmReportDepartment(`${garbled}\n${HEADER_DIGITS_MARK} 202420 0102`, "0101", "").confirmed, "ولا يُقبل رمزٌ ملتصق بأرقام أخرى، ولا بلا «القسم»، ولا رمز قسمٍ آخر");
+
+/* ── رمزٌ أخطأت القراءة رقماً منه (263 ← 203): يُعرض للمراجعة ولا يُطبَّق ── */
+{
+  const cat = ["254", "255", "262", "263", "264", "301"].map((code, index) => ({ id: index + 1, code: `0101${code}` }));
+  const rows3: Row[] = [["254", [1, 70, 0, 70, 1, 1]], ["255", [1, 70, 0, 70, 1, 1]], ["262", [1, 140, 0, 140, 2, 1]], ["203", [9, 70, 0, 70, 1, 9]], ["264", [1, 70, 0, 70, 1, 1]], ["301", [1, 70, 0, 70, 1, 1]]];
+  const sr = readRemainingReport([page(0, rows3)], cat, "0101");
+  const sa = assessRemainingImport(sr, context);
+  check(sr.rows.length === 5 && sr.suspects?.length === 1 && sr.suspects[0].courseId === 4 && sr.suspects[0].read === "203" && sr.suspects[0].expected === "0101263",
+    "سطرٌ رمزه 203 بين 262 و264 يخالف 263 الغائب برقمٍ واحد: يُعدّ مشتبهاً به");
+  check(!sr.missing.includes(4) && !sr.foreign.includes("203") && sa.reject === null && sa.read === 5, "ولا يُحسب غائباً ولا غريباً، ولا يدخل المقروء");
+  const col = sr.column!;
+  let sp = planRemainingApply(sr, col, {}, {}, [], sr.suspects);
+  check(!("4" in sp.next) && sp.total === 5 && sp.untouched.includes(4), "لا تُطبَّق قيمته قبل التأكيد");
+  sp = planRemainingApply(sr, col, {}, {}, [4], sr.suspects);
+  check(sp.next["4"] === 70 && sp.total === 6, "وبعد تأكيد المستخدم تُطبَّق قيمته (70) للمقرر 263");
+  /* خارج ترتيب الجارين ← لا اشتباه. */
+  const outOfOrder = readRemainingReport([page(0, [["254", [1, 70, 0, 70, 1, 1]], ["255", [1, 70, 0, 70, 1, 1]], ["301", [1, 70, 0, 70, 1, 1]], ["203", [9, 70, 0, 70, 1, 9]], ["264", [1, 70, 0, 70, 1, 1]], ["262", [1, 70, 0, 70, 1, 1]]])], cat, "0101");
+  check(!outOfOrder.suspects?.length && outOfOrder.foreign.includes("203") && outOfOrder.missing.includes(4), "رمزٌ شبيه لكنه ليس بين جارَي المقرر الغائب: يبقى غريباً");
+  /* يخالف برقمين ← لا اشتباه. */
+  const twoDigits = readRemainingReport([page(0, [["254", [1, 70, 0, 70, 1, 1]], ["262", [1, 70, 0, 70, 1, 1]], ["204", [9, 70, 0, 70, 1, 9]], ["264", [1, 70, 0, 70, 1, 1]]])], cat, "0101");
+  check(!twoDigits.suspects?.length, "ويخالف برقمين: لا اشتباه");
+}
 
 /* ── قسمٌ آخر ── */
 r = readRemainingReport(clear, catalogue, "0101");

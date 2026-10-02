@@ -19,7 +19,7 @@
  */
 
 import { AR, countOf, nounFor } from "./arabicCount";
-import { approvalScopeKey, authorityBaselineLabel, AUTHORITY_BASELINE_LABEL, rowsInApprovalScope, type ApprovalScope } from "./approvalScope";
+import { approvalScopeKey, AUTHORITY_BASELINE_LABEL, rowsInApprovalScope, type ApprovalScope } from "./approvalScope";
 
 /* ── ما يصل من الخوادم (أشكالٌ ضيّقة: ما نقرؤه فقط) ───────────────────────── */
 
@@ -203,19 +203,28 @@ function baselineBlock(report: DossierReport | null): ApprovalDossierModel["base
     return { available: false, kind: "none", title: AUTHORITY_BASELINE_LABEL, sourceLine: null };
   }
   if (kind === "authority") {
-    return { available: true, kind, title: AUTHORITY_BASELINE_LABEL, sourceLine: authorityBaselineLabel(report.authoritySource || undefined) };
+    const source = report.authoritySource;
+    const file = String(source?.sourceFileName || source?.name || "الجدول المعتمد.pdf");
+    const when = dossierDate(source?.publishedAt || source?.importedAt);
+    const verb = source?.publishedAt ? "اعتُمدت" : "استُوردت";
+    /* اسم الملف بعلامتي عزل: «.pdf» اللاتينية لا تقلب ترتيب ما حولها. */
+    return { available: true, kind, title: AUTHORITY_BASELINE_LABEL, sourceLine: `المقارنة مع «\u2068${file}\u2069»${when ? ` — ${verb} ${when}` : ""}.` };
   }
   if (kind === "round") return { available: true, kind, title: "منذ ما رآه التسجيل", sourceLine: "المقارنة مع النسخة التي رآها التسجيل في الجولة السابقة — لا وثيقة معتمدة لهذا القسم." };
   if (kind === "capture") return { available: true, kind, title: "منذ آخر نسخة محفوظة", sourceLine: "المقارنة مع آخر لقطةٍ محفوظة قبل التعديل — لا وثيقة معتمدة لهذا القسم." };
   return { available: true, kind, title: "منذ آخر مراجعة", sourceLine: "المقارنة مع الجدول كما رآه التسجيل آخر مرة — لا وثيقة معتمدة لهذا القسم." };
 }
 
+/** قيمةٌ لاتينية/رقمية (وقت، قاعة) تُعزل لتبقى في ترتيبها داخل جملةٍ عربية. */
+const ltr = (value: string) => (value && /^[\d\s:.\-–/A-Za-z]+$/.test(value) ? `\u2066${value}\u2069` : value);
+
 function describeItem(entry: DossierDiffEntry, kind: DossierKind): DossierChangeItem {
   const display = entry.display || {};
-  const where = [display.days, display.time].filter(Boolean).join(" · ");
+  const where = [display.days, ltr(String(display.time || ""))].filter(Boolean).join(" · ");
   const lines: string[] = [];
   if (kind === "modified") {
-    for (const change of entry.changes || []) lines.push(`${change.label}: ${change.before || "—"} ← ${change.after || "—"}`);
+    const parts = (entry.changes || []).map(change => `${change.label}: ${ltr(change.before || "—")} ← ${ltr(change.after || "—")}`);
+    if (parts.length) lines.push(parts.join(" · "));
   } else {
     const detail = [display.room, display.instructor].filter(value => value && value !== "—").join(" · ");
     if (detail) lines.push(detail);
