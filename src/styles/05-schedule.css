@@ -8507,7 +8507,8 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
     align-items:center;
   }
   .schedule-agenda .agenda-title-row>strong{
-    flex:1 1 0;white-space:normal;overflow:hidden;text-overflow:ellipsis;
+    /* A usable minimum: when a live tag shares the row, the tag wraps first. */
+    flex:1 1 9em;min-width:9em;white-space:normal;overflow:hidden;text-overflow:ellipsis;
     display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.45;
   }
   .schedule-agenda .agenda-title-row>.code-chip{flex:none}
