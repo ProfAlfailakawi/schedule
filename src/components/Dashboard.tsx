@@ -3,6 +3,7 @@ import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,Chev
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
 import MiniRing from"./MiniRing";
+import TermForecast from"./TermForecast";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
 
@@ -318,6 +319,8 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
      {reportView||searchView?<button type="button" className="editorial-text-action" onClick={()=>onNavigate?.((reportView||searchView) as string)}>التقارير<ArrowLeft aria-hidden="true"/></button>:null}
     </div>
    </section>
+
+   {canManageSchedule?<TermForecast scopes={scopes} isAdmin={power} onImport={()=>onNavigate?.("schedules")}/>:null}
 
    {healthLines.length?<section className={`deck-chart dashboard-health-ribbon${healthAwaiting?" is-awaiting":""}`} aria-labelledby="dashboard-health-title" aria-busy={healthAwaiting||undefined}>
     <header><CheckCircle2 aria-hidden="true"/><span id="dashboard-health-title">صحة الجدول</span></header>

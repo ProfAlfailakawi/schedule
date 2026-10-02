@@ -9,7 +9,7 @@
  */
 import fs from "fs";
 import { readReportCells } from "../src/utils/documentOcr";
-import { readRemainingReport, assessRemainingImport, remainingOf, blankSpots, imageOrientationRefusal, confirmReportDepartment } from "../src/utils/remainingReport";
+import { readRemainingReport, assessRemainingImport, planRemainingApply, remainingOf, blankSpots, imageOrientationRefusal, confirmReportDepartment } from "../src/utils/remainingReport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string, detail?: unknown) => {
@@ -46,7 +46,7 @@ async function main() {
   const cells = await readReportCells(pages, "image/jpeg", found => blankSpots(found, catalogue, "0101"));
   const reading = readRemainingReport(cells.pages, catalogue, "0101");
   const assessment = assessRemainingImport(reading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: cells.headerText });
-  check(assessment.reject === null && assessment.blockers.length === 0, "الكشف الحقيقي الواضح: يُقبل بلا موانع", assessment);
+  check(assessment.reject === null && assessment.notes.length === 0 && !assessment.needsDepartmentConfirmation, "الكشف الحقيقي الواضح: يُقبل بلا ملاحظات ولا تأكيد قسم", assessment);
   check(reading.rows.length === 38 && reading.missing.length === 0, "كل مقررات الصفحتين (٣٨) قُرئت — بما فيها رموزٌ أسقطت القراءةُ الأولى رقماً منها (252، 255)", reading.missing);
   const wrong: string[] = [], unread: string[] = [];
   for (const row of reading.rows) {
@@ -63,8 +63,8 @@ async function main() {
   const other = catalogueFor("0202");
   const otherReading = readRemainingReport(cells.pages, other, "0202");
   const otherAssessment = assessRemainingImport(otherReading, { departmentCode: "0202", departmentName: "الرياضيات", headerText: cells.headerText });
-  check(Boolean(otherAssessment.reject) || otherAssessment.blockers.some(text => /القسم/.test(text)), "كشف قسمٍ آخر لا يُطبَّق ولو تطابقت أرقام المقررات", otherAssessment);
-  check(/الرياضيات/.test(otherAssessment.reject || otherAssessment.blockers.join(" ")), "والرسالة تسمّي القسم المختار");
+  check(Boolean(otherAssessment.reject) || otherAssessment.needsDepartmentConfirmation, "كشف قسمٍ آخر لا يُطبَّق ولو تطابقت أرقام المقررات: رفض، أو تأكيدٌ صريح من المستخدم لا غير", otherAssessment);
+  check(!otherAssessment.reject || /الرياضيات/.test(otherAssessment.reject), "والرسالة تسمّي القسم المختار");
 
   /* الطولية: الصورة نفسها مدوّرةً ربع دورة. */
   const portrait = await transformed(pages[0], (ctx, image, surface) => { ctx.translate(surface.width, 0); ctx.rotate(Math.PI / 2); ctx.drawImage(image, 0, 0); }, (w, h) => [h, w]);
@@ -80,7 +80,22 @@ async function main() {
   else {
     const poorReading = readRemainingReport(poorCells.pages, catalogue, "0101");
     const poorAssessment = assessRemainingImport(poorReading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: poorCells.headerText });
-    check(Boolean(poorAssessment.reject) || poorAssessment.blockers.length > 0, "الصورة الرديئة: رفضٌ أو مانع قبل التطبيق", poorAssessment);
+    /* لا رفضٌ كليّ لقراءةٍ ناقصة: يُعرض ما قُرئ، ولا تدخل خطةَ التطبيق إلا قيمةٌ تطابق الورقة. */
+    const poorWrong: string[] = [];
+    let poorRead = 0;
+    if (!poorAssessment.reject) {
+      for (const row of poorReading.rows) {
+        const code = catalogue.find(course => course.id === row.courseId)!.code.slice(4);
+        const { value } = remainingOf(row, poorReading.column!);
+        if (value === undefined) continue;
+        poorRead++;
+        if (truth[code] == null || value !== truth[code]) poorWrong.push(`${code}=${value}≠${truth[code]}`);
+      }
+      const applied = planRemainingApply(poorReading, poorReading.column!);
+      check(applied.total === poorRead && Object.entries(applied.next).every(([id, value]) => truth[catalogue.find(course => course.id === Number(id))!.code.slice(4)] === value),
+        "الصورة الرديئة: ما يُطبَّق هو المقروء وحده، وكله يطابق الورقة", applied);
+    }
+    check(Boolean(poorAssessment.reject) || poorWrong.length === 0, "الصورة الرديئة: رفضٌ، أو قبولٌ جزئي بلا قيمةٍ خاطئة واحدة (والناقص يُعرض أصفر)", { poorWrong, poorRead });
   }
 }
 

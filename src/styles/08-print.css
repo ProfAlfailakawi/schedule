@@ -2679,3 +2679,16 @@
   .section-plan-print .section-plan-backlog{margin-top:4mm!important;border:.5pt solid #d9c08a!important;padding:2mm 3mm!important;font-size:9pt!important}
   .section-plan-print .section-plan-backlog ul{margin:1.5mm 0 0!important;padding-inline-start:5mm!important}
 }
+
+/* ملف الاعتماد: ورقةٌ عموديةٌ واحدة (A4) بنفس عناصر المعاينة. */
+@page dossier{size:A4 portrait;margin:10mm}
+@media print{
+  #app-print-root>.approval-dossier-print-host,
+  body.has-print-portal>#app-print-root>.approval-dossier-print-host,
+  .approval-dossier-print-host{display:none!important}
+  html[data-print-kind="approval-dossier"] #app-print-root>.print-only:not(.approval-dossier-print-host){display:none!important}
+  html[data-print-kind="approval-dossier"] #app-print-root>.approval-dossier-print-host{display:block!important;visibility:visible!important;page:dossier!important}
+  .approval-dossier-print-host .ad-sheet{border:0!important;border-radius:0!important;padding:0!important;gap:4mm!important;font-size:9.5pt!important;background:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .approval-dossier-print-host .ad-tile b{font-size:24pt}
+  .approval-dossier-print-host .ad-card,.approval-dossier-print-host .ad-course,.approval-dossier-print-host .ad-tile{break-inside:avoid}
+}

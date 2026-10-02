@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CheckCircle2, ChevronDown, FileUp, History, Layers, Printer, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, FileQuestion, FileUp, History, Layers, MinusCircle, PencilLine, Printer, RotateCcw, X } from "lucide-react";
 import { PrimaryButton, PrintPortal, SecondaryButton, useDialogDismiss } from "./ui";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import {
   departmentLoadWarning, departmentTypicalTotal, suggestSectionCount,
   type DepartmentTermLoad, type SimilarTermHistory,
 } from "../utils/sectionCountSuggestion";
-import { remainingOf, remainingValues, type CellState, type ImportAssessment, type RemainingReading } from "../utils/remainingReport";
+import { manualRemainingValue, planRemainingApply, remainingOf, type CellState, type ImportAssessment, type RemainingReading } from "../utils/remainingReport";
 
 /**
  * ── تخطيط الشعب: كشفُ المتبقي ← مدىً يرسيه التاريخ ← تقرير ─────────────────
@@ -35,6 +35,7 @@ interface Payload {
 }
 type ImportReading = RemainingReading & {
   assessment?: ImportAssessment;
+  departmentName?: string;
   source: "text" | "scan"; pageCount: number; fileName: string; warnings: string[];
   cells?: unknown[]; headerText?: string; template?: unknown;
 };
@@ -65,6 +66,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [report, setReport] = useState(false);
   const [reading, setReading] = useState(false);
   const [preview, setPreview] = useState<ImportReading | null>(null);
+  /* قيمٌ كتبها المستخدم بيده لخاناتٍ لم تُقرأ، وتأكيده أن الكشف لقسمه حين لم يُقرأ رأسه. */
+  const [manual, setManual] = useState<Record<string, string>>({});
+  const [deptConfirmed, setDeptConfirmed] = useState(false);
   const [openWhy, setOpenWhy] = useState<Record<string, boolean>>({});
   const [readingNote, setReadingNote] = useState("");
   const [edits, setEdits] = useState(0);
@@ -160,6 +164,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   /* ── كشف المتبقي ← معاينة ← تعبئة ─────────────────────────────────────── */
   /* كشفٌ PDF، أو صور صفحاته (تصوير الهاتف): كلُّ صورةٍ تُقرأ وحدها وتحمل
      معها عناوين الأولى، ثم تُقرأ صفحاتها معاً فتتطابق أعمدتها. */
+  const showPreview = (found: ImportReading) => { setManual({}); setDeptConfirmed(false); setPreview(found); };
   const readFiles = async (files: File[]) => {
     setReading(true); setError(null); setReadingNote("");
     try {
@@ -177,7 +182,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         const result = await response.json().catch(() => null);
         if (!response.ok) throw new Error(result?.error || "تعذّرت قراءة الكشف");
         const found = result as ImportReading;
-        setPreview(found);
+        showPreview(found);
         return;
       }
       for (const [index, file] of files.entries()) {
@@ -206,15 +211,17 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         found = { ...merged, source: results.some(item => item.source === "scan") ? "scan" : "text",
           pageCount: results.reduce((sum, item) => sum + item.pageCount, 0), fileName: files.map(file => file.name).join("، ") };
       }
-      setPreview(found);
+      showPreview(found);
     } catch (e: any) { setError(e.message); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
   };
-  /* التعبئة تستبدل «المقاعد المتبقية» كلها بقراءة هذا الكشف: لا تختلط بكشفٍ سابق.
-     وتُمنع ما بقيت في المعاينة قراءةٌ ناقصة. */
-  const previewBlockers = preview ? (preview.column == null ? ["لم يُعرف عمود «المقاعد المتبقية» في الكشف."] : preview.assessment?.blockers || []) : [];
+  /* التعبئة تكتب المقروءَ بوضوح وما كتبه المستخدم وحده (planRemainingApply)؛ ما لم يُقرأ يبقى فارغاً
+     أو على قيمته المحفوظة، ولا يصير صفراً ولا يُخمَّن. القسم غير المتحقَّق منه يلزمه تأكيدٌ صريح. */
+  const plan = useMemo(() => preview && preview.column != null ? planRemainingApply(preview, preview.column, manual, remaining) : null, [preview, manual, remaining]);
+  const needsConfirm = Boolean(preview?.assessment?.needsDepartmentConfirmation);
+  const canApply = Boolean(plan && plan.total > 0 && (!needsConfirm || deptConfirmed));
   const applyImport = () => {
-    if (!preview || preview.column == null || previewBlockers.length) return;
-    setRemaining(asText(remainingValues(preview, preview.column)));
+    if (!preview || !plan || !canApply) return;
+    setRemaining(asText(plan.next));
     setSource({ fileName: preview.fileName, importedAt: new Date().toISOString(), column: "seats" });
     setPreview(null);
     setEdits(n => n + 1);
@@ -285,7 +292,15 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     unread: "لم تُقرأ الخانة", lowConfidence: "قراءة غير واضحة", mismatch: "تخالف حساب الكشف (السعة − المسجلين)", noSections: "لا شعب له في الكشف — لا قيمة",
   };
   const previewCourses = preview ? [...preview.rows].sort((a, b) => courseNumber(courseName.get(a.courseId)?.code || "") - courseNumber(courseName.get(b.courseId)?.code || "")) : [];
-  const previewRead = preview && preview.column != null ? previewCourses.map(row => ({ row, ...remainingOf(row, preview.column!) })) : [];
+  const previewRead = preview && preview.column != null ? previewCourses.map(row => {
+    const cell = remainingOf(row, preview.column!);
+    const typed = manualRemainingValue(manual[String(row.courseId)]);
+    return { row, ...cell, typed, review: cell.state !== "read" && cell.state !== "noSections" };
+  }) : [];
+  const nRead = previewRead.filter(item => item.state === "read").length;
+  const nReview = previewRead.filter(item => item.review).length;
+  const nNoSections = previewRead.filter(item => item.state === "noSections").length;
+  const nMissing = preview?.missing.length || 0;
 
   return (
     <div className="section-plan">
@@ -378,38 +393,82 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
               <div><span className="surface-kicker">مراجعة قبل التعبئة — عمود «المقاعد المتبقية»</span><h2><bdi>{preview.fileName}</bdi></h2></div>
               <button data-guide-feature-id="schedule.tool.data" type="button" className="student-qr-close" onClick={() => setPreview(null)} aria-label="إغلاق"><X aria-hidden="true" /></button>
             </header>
-            <ul className="section-plan-import-summary">
-              <li><b>{countOf(previewRead.filter(item => item.state === "read").length, AR.course)}</b> قُرئت مقاعدها</li>
-              <li>{countOf(preview.pageCount || 1, AR.page)}{preview.source === "scan" ? " · ممسوح/مصوَّر" : ""}</li>
-              {previewRead.some(item => item.state !== "read" && item.state !== "noSections") ? <li className="is-warn">لم تُقرأ بوضوح: <b>{previewRead.filter(item => item.state !== "read" && item.state !== "noSections").length}</b></li> : null}
-              {previewRead.some(item => item.state === "noSections") ? <li>بلا شعب في الكشف: <b>{previewRead.filter(item => item.state === "noSections").length}</b></li> : null}
-              {preview.missing.length ? <li>من مقررات القسم ولم ترد في الكشف: <b>{preview.missing.length}</b></li> : null}
-              {preview.foreign.length ? <li>مقررات من خارج القسم في الكشف: <b>{preview.foreign.length}</b> — تُتجاهل، فالتخطيط لمقررات القسم وحدها</li> : null}
-            </ul>
-            {previewBlockers.map(warning => <p key={warning} className="section-plan-warning" role="alert"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
-            {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-warning" role="status"><AlertTriangle aria-hidden="true" /> {warning}</p>)}
-            <table className="section-plan-report-table">
-              <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المقاعد المتبقية في الكشف</th><th>الحالي</th></tr></thead>
-              <tbody>
-                {previewRead.map(({ row, value, state }) => {
-                  const current = remaining[String(row.courseId)];
-                  return (
-                    <tr key={row.courseId} className={state !== "read" && state !== "noSections" ? "is-outside" : undefined}>
-                      <td dir="ltr">{courseName.get(row.courseId)?.code || row.printed}</td>
-                      <td>{courseName.get(row.courseId)?.name || ""}{row.occurrences > 1 ? <small> (ورد {countOf(row.occurrences, oblique(AR.visit))} — جُمع)</small> : null}</td>
-                      <td>{state === "read" ? <b>{value}</b> : <small className={`section-plan-cell-note${state === "noSections" ? "" : " is-unread"}`}>{STATE_NOTE[state]}</small>}</td>
-                      <td>{current !== undefined && current !== "" && Number(current) !== value ? current : ""}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <p className="section-plan-source">
+              {countOf(preview.pageCount || 1, AR.page)}{preview.source === "scan" ? " · ممسوح/مصوَّر" : ""} · استُورد {fmtDate(new Date().toISOString())} · «المقاعد المتبقية» المستوردة هي ما تُبنى عليه خطة الشعب
+            </p>
+            <div className="import-summary-cards" aria-label="ملخص قراءة الكشف">
+              <span className="ready"><CheckCircle2 aria-hidden="true" /><b>{nRead.toLocaleString("ar-KW-u-nu-latn")}</b><small>مقروء</small></span>
+              <span className={nReview ? "warn" : ""}><AlertTriangle aria-hidden="true" /><b>{nReview.toLocaleString("ar-KW-u-nu-latn")}</b><small>يحتاج مراجعة</small></span>
+              <span><MinusCircle aria-hidden="true" /><b>{nNoSections.toLocaleString("ar-KW-u-nu-latn")}</b><small>بلا شعب</small></span>
+              <span><FileQuestion aria-hidden="true" /><b>{nMissing.toLocaleString("ar-KW-u-nu-latn")}</b><small>غير وارد</small></span>
+            </div>
+            {nReview ? (
+              <p className="section-plan-yellow-note" role="status">
+                <AlertTriangle aria-hidden="true" />
+                <span>لم تُقرأ بوضوح «المقاعد المتبقية» لـ{countOf(nReview, AR.course)}: خاناتها صفراء وفارغة، ولن تُعبَّأ إلا إن كتبتَ قيمتها بيدك — لا تصير صفراً ولا تؤخذ من عمودٍ مجاور.</span>
+              </p>
+            ) : null}
+            {(preview.assessment?.notes || []).map(note => <p key={note} className="section-plan-yellow-note" role="status"><AlertTriangle aria-hidden="true" /><span>{note}</span></p>)}
+            {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-yellow-note" role="status"><AlertTriangle aria-hidden="true" /><span>{warning}</span></p>)}
+            {preview.foreign.length ? <p className="section-plan-note">{countOf(preview.foreign.length, AR.course)} من خارج القسم في الكشف — تُتجاهل، فالتخطيط لمقررات القسم وحدها.</p> : null}
+            <div className="import-preview-table-wrap">
+              <table className="import-preview-table section-plan-import-table">
+                <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المقاعد المتبقية في الكشف</th><th>الحالة</th><th>الحالي</th></tr></thead>
+                <tbody>
+                  {previewRead.map(({ row, value, state, typed, review }) => {
+                    const key = String(row.courseId);
+                    const current = remaining[key];
+                    const course = courseName.get(row.courseId);
+                    const shown = typed ?? value;
+                    return (
+                      <tr key={row.courseId} className={state === "noSections" ? "is-muted" : undefined}>
+                        <td dir="ltr">{course?.code || row.printed}</td>
+                        <td className="import-cell-course">{course?.name || ""}{row.occurrences > 1 ? <small> (ورد {countOf(row.occurrences, oblique(AR.visit))} — جُمع)</small> : null}</td>
+                        {review ? (
+                          <td className={typed !== undefined ? "import-cell-manual" : "import-cell-review"}>
+                            <input type="number" min={0} max={100000} inputMode="numeric" value={manual[key] ?? ""} placeholder="—" aria-label={`المقاعد المتبقية في ${course?.name || row.printed} (اكتبها بيدك)`}
+                              onChange={e => setManual(currentManual => ({ ...currentManual, [key]: e.target.value }))} />
+                            <br />
+                            {typed !== undefined
+                              ? <span className="section-plan-reason-chip is-manual"><PencilLine aria-hidden="true" /> أُدخلت يدوياً</span>
+                              : <span className="section-plan-reason-chip"><AlertTriangle aria-hidden="true" /> {STATE_NOTE[state as Exclude<CellState, "read">]}</span>}
+                          </td>
+                        ) : state === "noSections" ? (
+                          <td><small className="section-plan-cell-note">{STATE_NOTE.noSections}</small></td>
+                        ) : <td><b>{shown}</b></td>}
+                        <td>
+                          {state === "noSections" ? <span className="section-plan-state"><MinusCircle aria-hidden="true" /> بلا شعب</span>
+                            : typed !== undefined ? <span className="section-plan-state is-manual"><PencilLine aria-hidden="true" /> يدوي</span>
+                            : review ? <span className="section-plan-state is-review"><AlertTriangle aria-hidden="true" /> يحتاج مراجعة</span>
+                            : <span className="section-plan-state is-read"><CheckCircle2 aria-hidden="true" /> مقروء</span>}
+                        </td>
+                        <td>{current !== undefined && current !== "" && Number(current) !== shown ? current : ""}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
             {preview.foreign.length ? <details className="section-plan-note"><summary>رموز المقررات المتجاهلة</summary><bdi>{preview.foreign.slice(0, 20).join("، ")}</bdi>{preview.foreign.length > 20 ? "…" : ""}</details> : null}
-            {preview.missing.length ? (
-              <p className="section-plan-note">لم ترد في الكشف (تُفرَّغ مقاعدها بعد التعبئة): {preview.missing.map(id => courseName.get(id)?.code).filter(Boolean).slice(0, 20).join("، ")}{preview.missing.length > 20 ? "…" : ""}</p>
+            {nMissing ? (
+              <details className="section-plan-missing-list">
+                <summary>غير واردة في الكشف: {countOf(nMissing, AR.course)} — تبقى خاناتها على حالها</summary>
+                <ul>{preview.missing.map(id => courseName.get(id)).filter(Boolean).map(course => <li key={course!.id}><b dir="ltr">{course!.code}</b> {course!.name}</li>)}</ul>
+              </details>
+            ) : null}
+            {needsConfirm ? (
+              <div className="section-plan-yellow-note" role="status">
+                <AlertTriangle aria-hidden="true" />
+                <label className="section-plan-confirm">
+                  <input type="checkbox" checked={deptConfirmed} onChange={e => setDeptConfirmed(e.target.checked)} />
+                  <span>أؤكد أن هذا الكشف لقسم «{preview.departmentName || "هذا القسم"}» — لم يُقرأ رمز القسم ولا اسمه في رأس الكشف.</span>
+                </label>
+              </div>
             ) : null}
             <div className="section-plan-report-actions">
-              <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={applyImport} disabled={previewBlockers.length > 0}>تعبئة المقاعد المتبقية</PrimaryButton>
+              <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={applyImport} disabled={!canApply}>
+                {plan && plan.total > 0 ? `تعبئة ${countOf(plan.total, AR.course)}${plan.manual ? ` (منها ${countOf(plan.manual, AR.course)} يدوياً)` : ""}` : "لا شيء يُعبَّأ"}
+              </PrimaryButton>
               <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={() => setPreview(null)}>إلغاء</SecondaryButton>
             </div>
           </div>

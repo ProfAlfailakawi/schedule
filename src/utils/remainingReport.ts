@@ -505,21 +505,24 @@ export function confirmReportDepartment(headerText: string, departmentCode: stri
 }
 
 export interface ImportAssessment {
-  /** يُرفض الملف قبل المعاينة (قسمٌ آخر، أو قراءةٌ غير واضحة، أو لا عمود «المقاعد المتبقية»). */
+  /** يُرفض الملف كله (لا يُطبَّق منه شيء): قسمٌ آخر، أو لا عمود «المقاعد المتبقية»، أو لا خانة واحدة مقروءة. */
   reject: string | null;
-  /** يُعرض ويمنع «تعبئة» حتى يُرفع كشفٌ أوضح. */
-  blockers: string[];
   detectedDepartment?: string;
-  /** مقرراتٌ لم تُقرأ خانتها (فارغة أو ضعيفة أو تخالف حساب الكشف). */
+  /** مقرراتٌ لم تُقرأ خانتها (فارغة أو ضعيفة أو تخالف حساب الكشف): تُعرض صفراء فارغة، ولا تُحسب. */
   unread: number[];
   /** مقرراتٌ لا شعب لها في الكشف: لا قيمة تُستورد. */
   noSections: number[];
   read: number;
+  /** ملاحظاتٌ صفراء تُعرض ولا تمنع (مثل سطرٍ لم يُقرأ رقم مقرره). */
+  notes: string[];
+  /** لم يُقرأ في رأس الكشف رمز القسم ولا اسمه: على المستخدم أن يؤكد أن الكشف لقسمه قبل التطبيق (ليس رفضاً). */
+  needsDepartmentConfirmation: boolean;
 }
 
 /**
  * الحكم على قراءة الكشف قبل أن يُعرض أو يُطبَّق — دالةٌ صافية يستعملها الخادم والاختبار.
- * departmentName اسم القسم المختار ليُذكر في الرسالة.
+ * يُرفض الكشف كله في أربع حالات فقط: قسمٌ آخر، لا مقررات للقسم، لا عمود «المقاعد المتبقية»،
+ * ولا خانةً واحدة مقروءة. غير ذلك يُعرض ما قُرئ، وما لم يُقرأ يظهر لصاحبه أصفر فارغاً.
  */
 export function assessRemainingImport(
   reading: RemainingReading,
@@ -528,7 +531,7 @@ export function assessRemainingImport(
   const printed = [...reading.rows.map(row => row.printed), ...reading.foreign];
   const detected = detectReportDepartment(context.headerText || "", printed);
   const selected = context.departmentName ? `«${context.departmentName}» (${context.departmentCode})` : context.departmentCode;
-  const base = { detectedDepartment: detected, unread: [] as number[], noSections: [] as number[], read: 0, blockers: [] as string[] };
+  const base = { detectedDepartment: detected, unread: [] as number[], noSections: [] as number[], read: 0, notes: [] as string[], needsDepartmentConfirmation: false };
   const confirmation = confirmReportDepartment(context.headerText || "", context.departmentCode, context.departmentName, detected);
   if (detected && context.departmentCode && detected !== context.departmentCode && !confirmation.byName) {
     return { ...base, reject: `الكشف لقسمٍ آخر: القسم المختار في النظام ${selected}، والقسم في الكشف ${detected}. اختر القسم الصحيح أو ارفع كشف قسمك — لم يُستورد شيء.` };
@@ -545,18 +548,59 @@ export function assessRemainingImport(
   const unread = states.filter(item => item.state !== "read" && item.state !== "noSections").map(item => item.id);
   const noSections = states.filter(item => item.state === "noSections").map(item => item.id);
   const read = states.filter(item => item.state === "read").length;
-  const readable = reading.rows.length - noSections.length;
-  if (!read || (readable >= 3 && unread.length / readable > 0.34)) {
-    return { ...base, unread, noSections, read, reject: `القراءة غير واضحة: قُرئت «المقاعد المتبقية» لعددٍ من المقررات هو ${read} من أصل ${readable}. يلزم صورةٌ أوضح (مستقيمة، بإضاءةٍ جيدة، وتظهر الأعمدة كاملة) أو الكشف PDF.` };
+  if (!read) {
+    return { ...base, unread, noSections, read, reject: `لم تُقرأ خانة «المقاعد المتبقية» لأي مقرر — لا شيء يُعرض للمراجعة. ارفع صورةً أوضح (مستقيمة، بإضاءةٍ جيدة، وتظهر الأعمدة كاملة) أو الكشف PDF.` };
   }
-  const blockers = unread.length
-    ? [`قراءةٌ ناقصة: ${unread.length} من المقررات لم تُقرأ خانة «المقاعد المتبقية» فيها بوضوح — ارفع صورةً أوضح لهذه الصفحة قبل التعبئة.`]
-    : [];
-  for (const gap of reading.gaps || []) blockers.push(`قراءةٌ ناقصة: سطرٌ لم يُقرأ رقم مقرره بين المقرر ${gap.after} والمقرر ${gap.before} (الصفحة ${gap.page}) — ارفع صورةً أوضح لهذه الصفحة.`);
-  if (!confirmation.confirmed) blockers.push(detected && detected !== context.departmentCode
-    ? `تعذّر التحقق من القسم: رمز القسم المقروء في الكشف ${detected} يخالف القسم المختار ${selected}، والاسم لا يحسم ذلك — ارفع صورةً أوضح لرأس الكشف.`
-    : `تعذّر التحقق من أن الكشف لقسم ${selected}: لم يُقرأ رمز القسم ولا اسمه في رأس الكشف — ارفع صورةً يظهر فيها رأس الكشف بوضوح.`);
-  return { ...base, unread, noSections, read, blockers, reject: null };
+  const notes = (reading.gaps || []).map(gap => `سطرٌ لم يُقرأ رقم مقرره بين المقرر ${gap.after} والمقرر ${gap.before} (الصفحة ${gap.page}) — قد يكون مقرراً من مقرراتك؛ أضف قيمته يدوياً إن وُجد.`);
+  return { ...base, unread, noSections, read, notes, needsDepartmentConfirmation: !confirmation.confirmed, reject: null };
+}
+
+export interface RemainingApplyPlan {
+  /** الخريطة الجديدة المحفوظة: رقم المقرر ← العدد. */
+  next: Record<string, number>;
+  /** كم مقرراً يُكتب له قيمةٌ من الكشف. */
+  fromSheet: number;
+  /** كم مقرراً يُكتب له قيمةٌ كتبها المستخدم يدوياً. */
+  manual: number;
+  /** مجموع ما يُكتب (fromSheet + manual). */
+  total: number;
+  /** مقررات الكشف التي لا تُكتب لها قيمة فتبقى خانتها على حالها (لا صفر ولا تخمين). */
+  untouched: number[];
+}
+
+/** قيمةٌ كتبها المستخدم: عددٌ صحيح غير سالب، وإلا لا شيء. */
+export function manualRemainingValue(raw: unknown): number | undefined {
+  const text = normalize(String(raw ?? "")).trim();
+  if (!/^\d{1,6}$/.test(text)) return undefined;
+  return Number(text);
+}
+
+/**
+ * ما يُطبَّق من المعاينة — دالةٌ صافية: المقروءُ بوضوح + ما كتبه المستخدم يدوياً فقط.
+ * الخانة التي لم تُقرأ تبقى فارغةً (أو على قيمتها المحفوظة سابقاً)، لا تصير صفراً ولا
+ * تُؤخذ من عمودٍ مجاور؛ والقيمة المحفوظة سابقاً لمقررٍ لا تُمسّ إلا بقراءةٍ واضحة أو بما كتبه المستخدم.
+ */
+export function planRemainingApply(
+  reading: Pick<RemainingReading, "rows">,
+  columnId: number,
+  manual: Readonly<Record<string, string | number>> = {},
+  previous: Readonly<Record<string, string | number>> = {},
+): RemainingApplyPlan {
+  const next: Record<string, number> = {};
+  for (const [key, value] of Object.entries(previous)) {
+    const kept = manualRemainingValue(value);
+    if (kept !== undefined) next[key] = kept;
+  }
+  let fromSheet = 0, typed = 0;
+  const untouched: number[] = [];
+  for (const row of reading.rows) {
+    const key = String(row.courseId);
+    const hand = manualRemainingValue(manual[key]);
+    if (hand !== undefined) { next[key] = hand; typed++; continue; }
+    const { value } = remainingOf(row, columnId);
+    if (value !== undefined) { next[key] = value; fromSheet++; } else untouched.push(row.courseId);
+  }
+  return { next, fromSheet, manual: typed, total: fromSheet + typed, untouched };
 }
 
 /** أبعاد صورة PNG أو JPEG (مع اتجاه EXIF)؛ null لغيرها. */

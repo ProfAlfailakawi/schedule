@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { describeConversionChange, ConversionChange } from "../utils/visitingConversion";
+import { ArrowLeftRight, History, TriangleAlert } from "lucide-react";
 import { visualConfirm } from "./ui";
+import { AR, countOf } from "../utils/arabicCount";
 
 type Scope = { collegeId: number; sectionId: number; label: string };
 type VisitingState = {
   currentTermId: number;
+  futureTermIds?: number[];
   delegate: Scope[];
   rosters: Array<Scope & { termId: number; past: boolean }>;
   scopes: Scope[];
@@ -20,7 +23,6 @@ const key = (s: { collegeId: number; sectionId: number }) => `${s.collegeId}:${s
 export default function VisitingConversionPanel({ instructorId, onChanged }: { instructorId: number; onChanged?: () => void }) {
   const [state, setState] = useState<VisitingState | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [alsoRoster, setAlsoRoster] = useState(true);
   const [target, setTarget] = useState("");
   const [termId, setTermId] = useState(0);
   const [preview, setPreview] = useState<ConversionChange[] | null>(null);
@@ -46,8 +48,20 @@ export default function VisitingConversionPanel({ instructorId, onChanged }: { i
     || state.delegate.find(x => x.collegeId === c && x.sectionId === s)?.label || `${c}:${s}`;
   const termName = (t: number) => state.terms.find(x => x.termId === t)?.name || String(t);
 
+  /** ملخص المعاينة: ما يتغيّر بالضبط لكل قسم وفصل، وما يبقى. */
+  const summarize = (changes: ConversionChange[]) => {
+    const dirs = changes.filter(c => c.kind === "directory-remove" || c.kind === "directory-add");
+    const rosters = changes.filter(c => c.kind === "roster-remove" || c.kind === "roster-add");
+    const termIds = [...new Set(rosters.map(c => (c as any).termId as number))];
+    return [
+      `عدد السجلات التي ستتغير: ${countOf(changes.length, AR.record)}`,
+      dirs.length ? `الأدلة: ${countOf(dirs.length, AR.department)}` : "",
+      termIds.length ? `الرواستر: ${countOf(rosters.length, AR.record)} في ${countOf(termIds.length, AR.term)} (${termIds.map(termName).join("، ")})` : "",
+    ].filter(Boolean).join("\n");
+  };
+
   const body = () => isVisiting
-    ? { direction: "toAppointed", scopes: state.delegate.filter(d => picked.has(key(d))).map(({ collegeId, sectionId }) => ({ collegeId, sectionId })), removeFromTermIds: alsoRoster && state.currentTermId ? [state.currentTermId] : [] }
+    ? { direction: "toAppointed", scopes: state.delegate.filter(d => picked.has(key(d))).map(({ collegeId, sectionId }) => ({ collegeId, sectionId })) }
     : { direction: "toVisiting", scopes: target ? [{ collegeId: Number(target.split(":")[0]), sectionId: Number(target.split(":")[1]) }] : [], termId };
 
   const call = async (dryRun: boolean) => {
@@ -71,7 +85,7 @@ export default function VisitingConversionPanel({ instructorId, onChanged }: { i
       const lines = plan.changes.map(c => describeConversionChange(c, labelOf, termName));
       const ok = await visualConfirm({
         title: isVisiting ? "تحويل إلى معيّن" : "تحويل إلى منتدب",
-        message: `عدد السجلات التي ستتغير: ${plan.changes.length}\n• ${lines.join("\n• ")}\n\nلا تُحذف الجداول ولا رواستر الفصول الماضية.`,
+        message: `${summarize(plan.changes)}\n• ${lines.join("\n• ")}\n\nتبقى الجداول ورواستر الفصول الماضية وتاريخها كما هي.`,
         confirmLabel: "تنفيذ التحويل",
       });
       if (!ok) return;
@@ -84,28 +98,27 @@ export default function VisitingConversionPanel({ instructorId, onChanged }: { i
   };
 
   return (
-    <fieldset className="visiting-conversion" style={{ border: "1px dashed var(--border, #c9c9c9)", borderRadius: 10, padding: 12, marginTop: 12 }}>
-      <legend style={{ fontWeight: 700, padding: "0 6px" }}>نوع التعاقد: {isVisiting ? "منتدب" : "معيّن"}</legend>
-      <p className="smart-term-hint" style={{ marginTop: 0 }}>منفصلٌ عن «الحالة» أعلاه. الانتداب يُسجَّل لكل قسمٍ وفصل؛ تحويله لا يحذف جدولاً ولا تاريخاً سابقاً.</p>
+    <fieldset className="visiting-conversion">
+      <legend><ArrowLeftRight aria-hidden="true" /> نوع التعاقد: {isVisiting ? "منتدب" : "معيّن"}</legend>
+      <p className="smart-term-hint"><History aria-hidden="true" />منفصلٌ عن «الحالة» أعلاه. تبقى الفصول الماضية منتدبةً كما كانت، ولا يحمله أيُّ فصلٍ جديد.</p>
       {isVisiting ? (
         <>
-          <div role="group" aria-label="أقسام الانتداب">
+          <div role="group" aria-label="أقسام الانتداب" className="visiting-conversion-list">
             {state.delegate.map(d => (
-              <label key={key(d)} style={{ display: "block" }}>
+              <label key={key(d)}>
                 <input type="checkbox" checked={picked.has(key(d))} onChange={e => {
                   const next = new Set(picked); e.target.checked ? next.add(key(d)) : next.delete(key(d)); setPicked(next); setPreview(null);
                 }} /> {d.label}
               </label>
             ))}
           </div>
-          {state.currentTermId ? (
-            <label style={{ display: "block", marginTop: 6 }}>
-              <input type="checkbox" checked={alsoRoster} onChange={e => setAlsoRoster(e.target.checked)} /> ارفعه أيضاً من روستر الفصل الحالي ({termName(state.currentTermId)})
-            </label>
-          ) : null}
+          <p className="smart-term-hint visiting-conversion-warn">
+            <TriangleAlert aria-hidden="true" />
+            يُرفع تلقائياً من دليل منتدبي القسم (وعائلته عبر الكليات) ومن رواستر الفصل الحالي وكل فصلٍ قادم؛ لا تُمسّ الفصول الماضية.
+          </p>
         </>
       ) : (
-        <div style={{ display: "grid", gap: 6 }}>
+        <div className="visiting-conversion-grid">
           <select aria-label="القسم المنتدب إليه" value={target} onChange={e => { setTarget(e.target.value); setPreview(null); }}>
             <option value="">— اختر الكلية والقسم —</option>
             {state.scopes.map(s => <option key={key(s)} value={key(s)}>{s.label}</option>)}
@@ -117,9 +130,9 @@ export default function VisitingConversionPanel({ instructorId, onChanged }: { i
         </div>
       )}
       {preview && preview.length ? (
-        <ul style={{ margin: "8px 0" }}>{preview.map((c, i) => <li key={i}>{describeConversionChange(c, labelOf, termName)}</li>)}</ul>
+        <ul className="visiting-conversion-preview">{preview.map((c, i) => <li key={i}>{describeConversionChange(c, labelOf, termName)}</li>)}</ul>
       ) : null}
-      {message ? <p role={message.tone === "error" ? "alert" : "status"} style={{ color: message.tone === "error" ? "var(--danger, #b42318)" : undefined }}>{message.text}</p> : null}
+      {message ? <p role={message.tone === "error" ? "alert" : "status"} className={`visiting-conversion-msg ${message.tone}`}>{message.text}</p> : null}
       <button type="button" className="secondary-button" data-guide-ignore="يعرض أولاً معاينة السجلات التي ستتغير ويطلب التأكيد؛ لا يغيّر شيئاً قبل الموافقة الصريحة" disabled={busy} onClick={run}>
         {isVisiting ? "تحويل إلى معيّن…" : "تحويل إلى منتدب…"}
       </button>
