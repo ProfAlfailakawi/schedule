@@ -18465,6 +18465,7 @@ label.time input:focus,select:focus,textarea:focus,label.sign input:focus{outlin
 .alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .alts button{padding:7px 11px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:12px;cursor:pointer}
 .alts-ro span{padding:7px 11px;border-radius:999px;border:1px dashed var(--line);background:var(--soft,#f4f6f5);color:var(--ink,#1d2b24);font-size:12px}
+.days button,.starts button,.alts button,.reply button,.acts .act{min-height:44px}
 textarea{width:100%;margin-top:9px;padding:11px;border-radius:11px;border:1px solid var(--line);font-size:14px;min-height:68px;background:#fff;display:none;resize:vertical}
 textarea[data-show="1"]{display:block}
 .add-card{border-style:dashed;border-color:#9fc8b5;background:rgba(255,255,255,.72)}.add-card header{margin-bottom:10px}.add-card header b{display:block}.add-card header small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
