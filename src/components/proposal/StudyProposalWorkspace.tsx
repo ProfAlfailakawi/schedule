@@ -330,7 +330,7 @@ function ConfirmDialog({ title, text, actions, onDismiss }: {
       <div ref={ref} className="sp-modal sp-modal-sm" role="dialog" aria-modal="true" aria-label={title}>
         <h2>{title}</h2><p>{text}</p>
         <div className="sp-modal-actions">
-          {actions.map(a => <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={a.label} type="button" className={`btn ${a.primary ? "btn-primary" : "btn-secondary"}`} data-tone={a.tone} onClick={a.run}>{a.label}</button>)}
+          {actions.map(a => <button data-guide-ignore="جزء من مساحة إعداد المقترح الدراسي — تشرحه بطاقة المساحة نفسها" key={a.label} type="button" className={`btn ${a.primary ? (a.tone === "danger" ? "btn-danger" : "btn-primary") : "btn-secondary"}`} data-tone={a.tone} onClick={a.run}>{a.label}</button>)}
         </div>
       </div>
     </div>
