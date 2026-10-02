@@ -2430,3 +2430,10 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 /* الجاهزية: الرقم نفسه مع حلقته — الرسم يكرّر الرقم الظاهر ولا يضيف قراءة. */
 .deck-signals .signal-ring-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .deck-signals .signal-ring-row .mini-ring{flex:none}
+
+/* Read-only travel-time heat map above the editable pairs. */
+.travel-heat{overflow-x:auto;margin-bottom:var(--s3);padding:var(--s2);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.travel-heat-grid{display:grid;gap:3px;min-width:max-content;direction:ltr}
+.travel-heat-head{display:grid;place-items:center;padding:0 var(--s2);font-size:var(--t-xs);font-weight:600;color:var(--ink-2)}
+.travel-heat-cell{display:grid;place-items:center;min-height:30px;border-radius:6px;font-size:var(--t-xs);font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;background:color-mix(in srgb,var(--warning) var(--heat-pct,0%),var(--surface))}
+.travel-heat-cell.is-self{background:var(--surface-3);color:var(--muted);font-weight:500}

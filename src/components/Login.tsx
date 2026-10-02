@@ -93,25 +93,18 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             <br />
             <em>يبدأ من قرار.</em>
           </h1>
-          <p>
-            مساحة هادئة لبناء الجدول الدراسي، فهم أثر كل حركة، والوصول إلى
-            القرار الصحيح بدون ضوضاء.
-          </p>
           <div className="apex-login-principles" aria-hidden="true">
             <span>
               <ShieldCheck />
               <b>صلاحيات دقيقة</b>
-              <small>كل مستخدم يرى ما يحتاجه فقط</small>
             </span>
             <span>
               <Sparkles />
               <b>ذكاء في السياق</b>
-              <small>القرار يظهر حيث تعمل</small>
             </span>
             <span>
               <Command />
               <b>وصول مباشر</b>
-              <small>كل المساحة تحت أمرك</small>
             </span>
           </div>
         </div>

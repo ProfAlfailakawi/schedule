@@ -1,6 +1,7 @@
 import { DEMO_STAGE_SECTION_ID, isDemoSession } from "../utils/demoSession";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { DnaStepper } from "./dna";
+import { CampusTravelMap, EquationChips } from "./VisualBits";
 import { runVisualTransition } from "../utils/visualTransition";
 import {
   AlertTriangle,
@@ -2875,17 +2876,29 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </React.Fragment>
               ))}
             </div>
-            <div className="heat-legend">
-              <span>هادئ</span>
+            <div className="heat-legend" role="img" aria-label="تدرج الألوان من هادئ إلى ذروة">
               <i />
               <i />
               <i />
               <i />
-              <span>ذروة</span>
             </div>
             <details className="insight-disclosure">
               <summary>كيف وصلنا لهذه النتيجة؟</summary>
-              <p className="insight-method">تُحسب الكثافة بعدّ المواعيد المتزامنة في كل خانة (يوم × ساعة) داخل النطاق المختار، ثم تُقارن كل خانة بالخانة الأعلى ازدحامًا لتحديد شدّة التلوين.</p>
+              {(() => {
+                const counts = heatData.map((x: any) => Number(x.count) || 0).filter((n: number) => n > 0);
+                const sample = counts.length && heatMax > 0 ? Math.min(...counts) : 0;
+                return (
+                  <>
+                    {sample ? (
+                      <EquationChips
+                        parts={[{ value: String(sample), label: "مواعيد الخانة" }, { op: "÷" }, { value: String(heatMax), label: "أعلى خانة" }]}
+                        result={{ value: String(Math.round((sample / heatMax) * 100)), unit: "%", label: "شدة اللون" }}
+                      />
+                    ) : null}
+                    <p className={`insight-method${sample ? " sr-only" : ""}`}>تُحسب الكثافة بعدّ المواعيد المتزامنة في كل خانة (يوم × ساعة) داخل النطاق المختار، ثم تُقارن كل خانة بالخانة الأعلى ازدحامًا لتحديد شدّة التلوين.</p>
+                  </>
+                );
+              })()}
             </details>
           </Surface>
             </div>
@@ -2917,6 +2930,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {overview.roomCastling?.length ? <article><span className="spatial-metric-icon"><Building2 /></span><b><Num value={overview.roomCastling.length} /></b><span>تبديل آمن</span></article> : null}
                 </div>
               </div>
+              {overview.spatialBurnout.risks?.length ? <CampusTravelMap risks={overview.spatialBurnout.risks} /> : null}
               {overview.spatialBurnout.risks?.length ? (
                 <div className="spatial-risk-list">
                   {overview.spatialBurnout.risks.slice(0, 5).map((risk: any) => (
@@ -2941,7 +2955,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     }}>
                       <span className="castling-person"><UsersRound />{proposal.instructorName}</span>
                       <strong dir="ltr">{proposal.before.roomCode}/{proposal.before.roomHall} <ArrowLeftRight /> {proposal.after.roomCode}/{proposal.after.roomHall}</strong>
-                      <small><CheckCircle2 /> متاح وآمن</small>
+                      <small role="img" aria-label="متاح وآمن" title="متاح وآمن"><CheckCircle2 aria-hidden="true" /></small>
                       <ChevronLeft className="castling-open" />
                     </button>
                   ))}
@@ -2950,7 +2964,23 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               ) : null}
               <details className="insight-disclosure">
                 <summary>كيف وصلنا لهذه النتيجة؟</summary>
-                <p className="insight-method">نقارن الفراغ المتاح بزمن الانتقال المطلوب بين المباني؛ كل انتقال أضيق من اللازم يخفض راحة الحركة.</p>
+                {(() => {
+                  const top: any = overview.spatialBurnout.risks?.[0];
+                  const gap = Number(top?.gapMinutes), need = Number(top?.requiredMinutes);
+                  const ok = Number.isFinite(gap) && Number.isFinite(need);
+                  return (
+                    <>
+                      {ok ? (
+                        <EquationChips
+                          parts={[{ value: String(gap), unit: "د", label: "فراغ متاح" }, { op: "\u2212" }, { value: String(need), unit: "د", label: "مطلوب" }]}
+                          result={{ value: String(gap - need), unit: "د", label: "الهامش" }}
+                          tone={gap - need < 0 ? "danger" : "ok"}
+                        />
+                      ) : null}
+                      <p className={`insight-method${ok ? " sr-only" : ""}`}>نقارن الفراغ المتاح بزمن الانتقال المطلوب بين المباني؛ كل انتقال أضيق من اللازم يخفض راحة الحركة.</p>
+                    </>
+                  );
+                })()}
               </details>
             </Surface>
             </div>
