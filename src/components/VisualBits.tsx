@@ -1,4 +1,5 @@
 import React from "react";
+import { AR, countOf } from "../utils/arabicCount";
 
 /**
  * Presentation-only drawings. Every figure is derived from numbers the caller
@@ -56,7 +57,7 @@ export function CampusTravelMap({ risks }: { risks: CampusRisk[] }) {
   }));
   const maxMinutes = Math.max(1, ...model.list.map(edge => edge.minutes));
   const summary = model.list
-    .map(edge => `${edge.a} إلى ${edge.b} ${edge.minutes.toLocaleString("ar-KW-u-nu-latn")} دقيقة${edge.high ? " مرهق" : ""}`)
+    .map(edge => `${edge.a} إلى ${edge.b} ${countOf(edge.minutes, AR.minute)}${edge.high ? " مرهق" : ""}`)
     .join("، ");
 
   return (
@@ -134,7 +135,7 @@ export function TravelHeatMatrix({ buildings, pairs, sameBuildingMinutes }: {
   const min = Math.min(max, ...values);
   const fmt = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
   return (
-    <div className="travel-heat" role="img" aria-label={`خريطة حرارية لأزمنة الانتقال بين ${fmt(names.length)} مبانٍ، من ${fmt(min)} إلى ${fmt(max)} دقيقة. التعديل في الحقول أدناه.`}>
+    <div className="travel-heat" role="img" aria-label={`خريطة حرارية لأزمنة الانتقال بين ${countOf(names.length, AR.building)}، من ${fmt(min)} إلى ${countOf(max, AR.minute)}. التعديل في الحقول أدناه.`}>
       <div className="travel-heat-grid" style={{ gridTemplateColumns: `auto repeat(${names.length}, minmax(34px, 1fr))` }}>
         <span aria-hidden="true" />
         {names.map(name => <b key={`h-${name}`} className="travel-heat-head" dir="ltr">{name}</b>)}
