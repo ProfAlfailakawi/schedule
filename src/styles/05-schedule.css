@@ -8500,7 +8500,9 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
      the section pill under the edit/delete buttons and cut its number off. Now
      the title takes what is left and wraps to a second line, never past it. */
   .schedule-agenda .agenda-card{
-    grid-template-columns:minmax(0,1fr) auto auto;
+    /* The first column is exactly the time's own width (the title spans past it),
+       so the clock glyph and the digits cannot touch; the room shrinks first. */
+    grid-template-columns:auto minmax(0,1fr) auto;
     gap:var(--s2) var(--s3);
     padding:var(--s4) var(--s5);
     min-height:0;
