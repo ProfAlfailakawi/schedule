@@ -1673,10 +1673,19 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   /* offsets are from the padding box, so a 1px border costs 1px a side */
   .sd-icon::after{inset:-6px}
   .apb-icon-btn::after{inset:-5px}
+  .install-pop>header>button{position:relative}
+  .install-pop>header>button::after{content:"";position:absolute;inset:-10px}
   /* index.css sets these with later, !important rules */
   .location-admin-page .location-admin-toolbar :is(select,input),.location-admin-page .location-search,
   .location-admin-page .location-admin-tabs>button,
   .location-admin-page .location-title-actions button,.location-admin-page .location-room-actions button{min-height:44px!important}
   .apb-tip-target{position:relative}
-  .apb-tip-target::before{content:"";position:absolute;inset:-8px -4px}
+  .apb-tip-target::before{content:"";position:absolute;inset:-4px}
+}
+
+/* Guide header on narrow phones: the place name ends with an ellipsis before the
+   tool buttons instead of running 10px under them. */
+@media (max-width:760px){
+  .smart-guide-hero>div:first-child .smart-guide-kicker{max-width:100%;min-width:0}
+  .smart-guide-hero>div:first-child .smart-guide-kicker b{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }

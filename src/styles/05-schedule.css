@@ -4882,7 +4882,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .field-label-required-inline{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
 .field-inline-hint{
   display:inline-flex;align-items:center;min-height:24px;padding:3px 9px;border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));border-radius:999px;
-  background:color-mix(in srgb,var(--accent-softer) 46%,var(--surface));color:var(--muted);font-size:10px;font-weight:600;line-height:1.25;white-space:normal;
+  background:color-mix(in srgb,var(--accent-softer) 46%,var(--surface));color:var(--muted);font-size:11px;font-weight:600;line-height:1.25;white-space:normal;
 }
 
 /* Save blockers: one readable card per decision, with no paired-icon
@@ -5073,13 +5073,13 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   border:1px solid color-mix(in srgb,var(--decision-tone) 14%,var(--line));border-radius:999px;
   background:color-mix(in srgb,var(--decision-tone) 7%,var(--surface));
   color:color-mix(in srgb,var(--decision-tone) 82%,var(--muted));
-  font-size:.66rem;font-weight:700;line-height:1;
+  font-size:11px;font-weight:700;line-height:1;
 }
 .decision-card-flag{
   display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:0 10px;
   border:1px solid color-mix(in srgb,var(--decision-tone) 14%,var(--line));border-radius:999px;
   background:color-mix(in srgb,var(--surface-2) 85%,var(--surface));
-  color:var(--muted);font-style:normal;font-size:.65rem;font-weight:700;line-height:1;
+  color:var(--muted);font-style:normal;font-size:11px;font-weight:700;line-height:1;
 }
 .decision-card-hero,.decision-feature-hero{
   display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:14px;

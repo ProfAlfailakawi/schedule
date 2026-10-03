@@ -2040,6 +2040,11 @@
 @media(max-width:640px){
   .schedule-confirm-inline{min-height:54px;padding:6px 7px;border-radius:19px}
   .schedule-confirm-inline-mark,.schedule-confirm-inline button{width:40px;height:40px;border-radius:13px}
+  /* The confirm sits centred on the tapped button but never closer than 70px to an
+     edge. Check + cross at 44px fit inside that; the decorative trash mark (hidden
+     from assistive tech already) made the pill 148px wide and 4px off-screen. */
+  .schedule-confirm-inline-mark{display:none}
+  .schedule-confirm-inline button{width:44px;height:44px}
 }
 @media(prefers-reduced-motion:reduce){.schedule-confirm-inline{animation:none}.schedule-confirm-inline button{transition:none}}
 
@@ -2059,7 +2064,7 @@
   background:var(--accent-soft);color:var(--accent);
 }
 .install-step-icon svg{width:16px!important;height:16px!important}
-.install-steps-grid li>div{min-width:0}.install-steps-grid li b{font-size:12px}.install-steps-grid li small{font-size:10.5px;line-height:1.45}
+.install-steps-grid li>div{min-width:0}.install-steps-grid li b{font-size:12px}.install-steps-grid li small{font-size:11px;line-height:1.45}
 .install-login .install-step-icon{background:#17231f;color:#b6d8cc}
 .install-login .install-steps-grid li{background:#0d1412;border-color:#2b3630}
 
