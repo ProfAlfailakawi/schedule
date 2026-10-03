@@ -8550,7 +8550,8 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
   }
   .schedule-agenda .agenda-meta{justify-self:end}
   .schedule-agenda .agenda-place{justify-self:start;min-width:0}
-  .schedule-agenda .agenda-time{min-width:0}
+  /* The clock and its digits are one unit that never shrinks; the room gives way first. */
+  .schedule-agenda .agenda-time{min-width:max-content}
   .schedule-agenda .agenda-place.is-empty,
   .schedule-agenda .agenda-place .place-dash,
   .schedule-agenda .code-chip.is-empty,

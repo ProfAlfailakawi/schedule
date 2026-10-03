@@ -34,6 +34,8 @@
   font-size:var(--t-h4);color:var(--ink);
 }
 .query-ask input::placeholder{color:var(--muted-2)}
+/* A long example sentence ends with an ellipsis instead of a cut-off word on narrow phones. */
+.query-ask input{text-overflow:ellipsis}
 .query-ask>button{
   width:26px;height:26px;flex:none;display:grid;place-items:center;
   border-radius:var(--r-full);background:var(--surface-3);color:var(--muted);

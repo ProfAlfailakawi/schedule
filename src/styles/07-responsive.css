@@ -1669,12 +1669,14 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .student-case-filters button,.student-case-print-actions .btn,.student-case-actions .changes-chip,
   .approval-bar .apb-primary,.apb-primary,.install-trigger,.changes-term-picker select,.changes-view-toggle button,.changes-note-add{min-height:44px}
   .request-trail-btn,.deck-decision button{position:relative}
-  .request-trail-btn::after,.deck-decision button::after{content:"";position:absolute;inset:-4px}
-  .sd-icon::after{inset:-5px}
+  .request-trail-btn::after,.deck-decision button::after{content:"";position:absolute;inset:-5px}
+  /* offsets are from the padding box, so a 1px border costs 1px a side */
+  .sd-icon::after{inset:-6px}
+  .apb-icon-btn::after{inset:-5px}
   /* index.css sets these with later, !important rules */
   .location-admin-page .location-admin-toolbar :is(select,input),.location-admin-page .location-search,
   .location-admin-page .location-admin-tabs>button,
   .location-admin-page .location-title-actions button,.location-admin-page .location-room-actions button{min-height:44px!important}
   .apb-tip-target{position:relative}
-  .apb-tip-target::before{content:"";position:absolute;inset:-8px -3px}
+  .apb-tip-target::before{content:"";position:absolute;inset:-8px -4px}
 }
