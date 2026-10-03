@@ -2441,7 +2441,7 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .location-admin-page .location-health-grid>.surface.is-zero b{font-size:1.05rem;font-weight:500;color:var(--muted)}
 .location-admin-page .location-health-grid>.surface.is-zero svg{color:var(--muted-2)}
 @media (max-width:640px){
-  .location-admin-page .location-health-grid>.surface:nth-child(n+6){grid-column:1/-1}
+  .location-admin-page .location-health-grid>.surface:nth-child(n+5){grid-column:1/-1}
 }
 
 /* الجاهزية: الرقم نفسه مع حلقته — الرسم يكرّر الرقم الظاهر ولا يضيف قراءة. */
