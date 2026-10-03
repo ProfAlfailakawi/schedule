@@ -378,7 +378,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                     <header>
                       <div>
                         <span className="surface-kicker"><GraduationCap aria-hidden="true" /> وحدات القسم وشروط التخرج</span>
-                        <small>{rule.suggested ? "اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين" : rule.updatedBy ? `آخر تعديل بواسطة ${rule.updatedBy}` : "قيم القسم المحفوظة"}</small>
+                        <small className={rule.suggested ? "degree-rule-suggested-line" : undefined}>{rule.suggested ? "اقتراح غير محفوظ — احفظه ليعمل تحقق الخريجين" : rule.updatedBy ? `آخر تعديل بواسطة ${rule.updatedBy}` : "قيم القسم المحفوظة"}</small>
                       </div>
                       <div className="degree-rule-actions degree-rule-actions-top">
                         {draft ? (

@@ -2047,3 +2047,17 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
     max-height:calc(100dvh - max(var(--s3),env(safe-area-inset-top)) - var(--dock-h) - env(safe-area-inset-bottom));
   }
 }
+
+/* The unsaved-suggestion sentence is the warning notice right below it: say it once. */
+.degree-rule-card .degree-rule-suggested-line{display:none}
+
+/* Location registry — a code heading is drawn left-to-right, but its block is
+   right-aligned like the label above and the sentence below it. */
+.location-admin-title h2[dir="ltr"]{text-align:right}
+
+/* A notice placed in the page (not a toast) says all of its sentence: the
+   4-line clamp is for the floating toast layer only. */
+:not(.toast-layer)>.notice>.notice-copy>span{display:block;-webkit-line-clamp:unset}
+
+/* Status badges beside each other (role, read-only, active) breathe: they used to touch. */
+.inspector-status{display:flex;flex-wrap:wrap;gap:6px}

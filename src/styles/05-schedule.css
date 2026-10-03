@@ -4882,7 +4882,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .field-label-required-inline{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
 .field-inline-hint{
   display:inline-flex;align-items:center;min-height:24px;padding:3px 9px;border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));border-radius:999px;
-  background:color-mix(in srgb,var(--accent-softer) 46%,var(--surface));color:var(--muted);font-size:10px;font-weight:600;line-height:1.25;white-space:normal;
+  background:color-mix(in srgb,var(--accent-softer) 46%,var(--surface));color:var(--muted);font-size:11px;font-weight:600;line-height:1.25;white-space:normal;
 }
 
 /* Save blockers: one readable card per decision, with no paired-icon
@@ -5073,13 +5073,13 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   border:1px solid color-mix(in srgb,var(--decision-tone) 14%,var(--line));border-radius:999px;
   background:color-mix(in srgb,var(--decision-tone) 7%,var(--surface));
   color:color-mix(in srgb,var(--decision-tone) 82%,var(--muted));
-  font-size:.66rem;font-weight:700;line-height:1;
+  font-size:11px;font-weight:700;line-height:1;
 }
 .decision-card-flag{
   display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:0 10px;
   border:1px solid color-mix(in srgb,var(--decision-tone) 14%,var(--line));border-radius:999px;
   background:color-mix(in srgb,var(--surface-2) 85%,var(--surface));
-  color:var(--muted);font-style:normal;font-size:.65rem;font-weight:700;line-height:1;
+  color:var(--muted);font-style:normal;font-size:11px;font-weight:700;line-height:1;
 }
 .decision-card-hero,.decision-feature-hero{
   display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:14px;
@@ -8500,7 +8500,9 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
      the section pill under the edit/delete buttons and cut its number off. Now
      the title takes what is left and wraps to a second line, never past it. */
   .schedule-agenda .agenda-card{
-    grid-template-columns:minmax(0,1fr) auto auto;
+    /* The first column is exactly the time's own width (the title spans past it),
+       so the clock glyph and the digits cannot touch; the room shrinks first. */
+    grid-template-columns:auto minmax(0,1fr) auto;
     gap:var(--s2) var(--s3);
     padding:var(--s4) var(--s5);
     min-height:0;
@@ -8528,17 +8530,34 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
       "core core actions"
       "time place place";
   }
+  /* On a narrow phone time, room and the units/hours pills no longer fit on one
+     line (the room used to run under the pills): the pills take their own line. */
+  @media (max-width:420px){
+    .schedule-agenda .agenda-card{
+      grid-template-areas:
+        "core core actions"
+        "time place place"
+        "meta meta meta";
+    }
+    .schedule-agenda .agenda-card:has(.agenda-meta:not(:has(.unit-pill:not(.is-empty)))){
+      grid-template-areas:
+        "core core actions"
+        "time place place";
+    }
+  }
   .schedule-agenda .agenda-actions{
     grid-area:actions;width:auto;padding:0;margin:0;border-top:0;justify-content:flex-end;align-self:start;flex:none;
   }
   .schedule-agenda .agenda-meta{justify-self:end}
   .schedule-agenda .agenda-place{justify-self:start;min-width:0}
-  .schedule-agenda .agenda-time{min-width:0}
+  /* The clock and its digits are one unit that never shrinks; the room gives way first. */
+  .schedule-agenda .agenda-time{min-width:max-content}
   .schedule-agenda .agenda-place.is-empty,
   .schedule-agenda .agenda-place .place-dash,
   .schedule-agenda .code-chip.is-empty,
   .schedule-agenda .unit-pill.is-empty,
   .schedule-agenda .agenda-meta:not(:has(.unit-pill:not(.is-empty))){display:none}
+  @media (max-width:420px){.schedule-agenda .agenda-meta{justify-self:start}}
   .schedule-agenda .agenda-sub{margin-top:var(--s1)}
 }
 

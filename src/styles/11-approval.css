@@ -429,6 +429,8 @@
 @media (max-width:640px){
   .changes-inbox-open{flex-wrap:wrap;gap:8px 12px}
   .changes-inbox-title{flex:1 1 100%}
+  /* the stepper, ring and status chip wrap inside their column instead of running under the extend button */
+  .changes-inbox-state{flex:1 1 100%;flex-wrap:wrap;min-width:0}
   .changes-inbox-open>svg:last-child{display:none}
   .changes-fields dt{min-inline-size:0}
   .changes-fields>div{gap:4px 10px}
