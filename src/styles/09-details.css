@@ -2047,3 +2047,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
     max-height:calc(100dvh - max(var(--s3),env(safe-area-inset-top)) - var(--dock-h) - env(safe-area-inset-bottom));
   }
 }
+
+/* The unsaved-suggestion sentence is the warning notice right below it: say it once. */
+.degree-rule-card .degree-rule-suggested-line{display:none}
+

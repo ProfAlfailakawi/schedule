@@ -690,6 +690,7 @@
   .console-head .console-rail{flex:1 1 100%}
   .console-action-slot{width:100%}
   .console-action-slot .btn{width:100%}
+  .console-action-slot .course-head-actions{display:grid;gap:var(--s2);width:100%}
   .console-rail{scroll-snap-type:inline proximity;scroll-padding-inline:var(--s3)}
   .console-tab{flex:1 0 auto;min-width:96px;padding:var(--s2) var(--s3);scroll-snap-align:center}
   .console-tab-icon{width:30px;height:30px}

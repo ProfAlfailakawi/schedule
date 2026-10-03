@@ -598,7 +598,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
               <span className="surface-kicker">تفاصيل المقرر</span>
               <h2>{selected.CourseName}</h2>
               <p>{sec(selected.AdSectionId)} · {coll(selected.AdCollegeId)}</p>
-              <div className="inspector-facts">
+              <div className="inspector-facts inspector-facts-pairs">
                 <article><span>الوحدات</span><b>{selected.CourseCredit}</b></article>
                 <article><span>الساعات</span><b>{selected.CourseHours}</b></article>
                 <article><span>السعة</span><b>{selected.MaxStudent || 0}</b></article>
