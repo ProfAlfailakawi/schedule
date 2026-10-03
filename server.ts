@@ -19532,9 +19532,7 @@ app.get("/m/:token", async (req: Request, res: Response) => {
     const message = resolved.error;
     const status = resolved.status;
     res.status(status).type("text/html; charset=utf-8").send(
-      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
-<body style="font:400 16px/1.7 'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none;padding:40px;text-align:center;color:#16281f">${message}</body></html>`);
+      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}:root{${PUBLIC_LIGHT_VARS}}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:0 24px;box-sizing:border-box;background:var(--bg);color:var(--ink);font:400 16px/1.7 "Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;text-align:center}.brand{font:600 13px/1 system-ui;letter-spacing:.24em;color:var(--brass);margin-bottom:12px}p{margin:0;font-size:15px;color:var(--muted)}</style></head><body><div><div class="brand">SCHEDULE</div><p>${message}</p></div></body></html>`);
     return;
   }
   res.type("text/html; charset=utf-8").send(studentCaseStatusPage(resolved.link.id, publicPageNonce(res), await demoPageHint(resolved.link, "status")));
