@@ -997,6 +997,8 @@
 .master-list>:is(button,article):has(>:nth-child(5))>:not(.master-avatar,.master-symbol,div,svg){order:2;max-width:100%}
 .master-list>:is(button,article):has(>:nth-child(5))>div+:not(svg){margin-inline-start:calc(38px + var(--s3))}
 .master-filter-stack{padding:var(--s4);display:grid;gap:var(--s2);border-bottom:1px solid var(--line)}
+/* The stack already pads 16px; the search's own 16px margin used to double it, so the field sat narrower than the select below it. */
+.master-filter-stack>.master-search{margin:0}
 
 .academic-inspector,.inspector-pane{
   min-width:0;
