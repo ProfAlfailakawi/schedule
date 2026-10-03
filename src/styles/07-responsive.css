@@ -1682,6 +1682,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .location-admin-page .location-title-actions button,.location-admin-page .location-room-actions button{min-height:44px!important}
   .apb-tip-target{position:relative}
   .apb-tip-target::before{content:"";position:absolute;inset:-6px -4px}
+  .apb-tip-target.apb-badge::before{inset:-9px -4px}
 }
 
 /* Guide header on narrow phones: the place name ends with an ellipsis before the
