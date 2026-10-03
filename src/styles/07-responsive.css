@@ -1621,6 +1621,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .balance-table tbody td{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:0;border:0;min-width:0}
   .balance-table tbody tr:hover td{background:none}
   .balance-table tbody td:first-child,.balance-table td.balance-approval,.balance-table td.balance-empty-cells{grid-column:1/-1}
+  /* A department with no appointments says so once; three dashes under it said it again. */
+  .balance-table td.balance-empty-dash{display:none}
   .balance-table td[data-cell="count"]{grid-column:span 4}
   .balance-table td[data-cell="metric"]{grid-column:span 3}
   .balance-table td[data-label]::before{content:attr(data-label);font-size:11px;font-weight:600;color:var(--muted)}

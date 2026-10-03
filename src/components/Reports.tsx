@@ -3205,10 +3205,10 @@ function BalancePanel({ balance, sort, onSort, num, approvals, focusSectionId = 
                     })()}
                   </td>
                 ) : null}
-                <td data-label="المواعيد" data-cell="count">{item.empty ? "—" : num(item.rows)}</td>
-                <td data-label="الأساتذة" data-cell="count">{item.empty ? "—" : num(item.instructors)}</td>
+                <td data-label="المواعيد" data-cell="count" className={item.empty ? "balance-empty-dash" : undefined}>{item.empty ? "—" : num(item.rows)}</td>
+                <td data-label="الأساتذة" data-cell="count" className={item.empty ? "balance-empty-dash" : undefined}>{item.empty ? "—" : num(item.instructors)}</td>
                 {/* «(موثّقة 0)» لا يُكتب (قاعدة إخفاء الفارغ). */}
-                <td data-label="القاعات" data-cell="count">{item.empty ? "—" : item.verifiedRooms
+                <td data-label="القاعات" data-cell="count" className={item.empty ? "balance-empty-dash" : undefined}>{item.empty ? "—" : item.verifiedRooms
                   ? <>{num(item.rooms)} <small>(موثّقة {num(item.verifiedRooms)})</small></>
                   : num(item.rooms)}</td>
                 {item.empty ? (
