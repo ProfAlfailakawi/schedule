@@ -2054,3 +2054,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 /* Location registry — a code heading is drawn left-to-right, but its block is
    right-aligned like the label above and the sentence below it. */
 .location-admin-title h2[dir="ltr"]{text-align:right}
+
+/* A notice placed in the page (not a toast) says all of its sentence: the
+   4-line clamp is for the floating toast layer only. */
+:not(.toast-layer)>.notice>.notice-copy>span{display:block;-webkit-line-clamp:unset}
