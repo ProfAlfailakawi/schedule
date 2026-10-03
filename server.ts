@@ -19421,7 +19421,7 @@ function studentCaseStatusPage(token: string, nonce: string, demoHint = ""): str
 <meta name="robots" content="noindex,nofollow">
 <title>حالة طلبي</title>
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
-:root{--ink:#16281f;--muted:#5d6f66;--line:#dde5e0;--bg:#f4f7f5;--ok:#2e7d5b;--bad:#b3261e}
+:root{${PUBLIC_LIGHT_VARS};--ok:var(--jade)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.65 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}
 .wrap{max-width:520px;margin:0 auto;padding:22px 16px}
@@ -19433,7 +19433,7 @@ font-size:17px;background:#fff;text-align:center;letter-spacing:.06em}
 button{width:100%;margin-top:11px;padding:14px;border-radius:12px;border:0;background:var(--ok);
 color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}
 button:disabled{opacity:.55;cursor:not-allowed}
-.err{background:#fdeceb;color:var(--bad);padding:11px 13px;border-radius:11px;margin-top:13px;font-size:14px}
+.err{background:var(--bad-soft);color:var(--bad);padding:11px 13px;border-radius:11px;margin-top:13px;font-size:14px}
 .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:18px}
 .ref{font-size:25px;font-weight:700;letter-spacing:.09em;text-align:center;margin:0 0 4px}
 .reflabel{text-align:center;color:var(--muted);font-size:12px;margin:0 0 15px}
@@ -19451,9 +19451,9 @@ li span{display:flex;flex-direction:column;gap:3px}
 .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
 label.gap{margin-top:13px}
 .help{display:block;margin-top:6px;font-size:12px;color:var(--muted)}
-.case{margin:0 0 12px;padding:11px 13px;border-radius:11px;background:#eef4f0;font-size:14px;font-weight:600}
+.case{margin:0 0 12px;padding:11px 13px;border-radius:11px;background:var(--soft);font-size:14px;font-weight:600}
 .case[data-s=registered]{color:var(--ok)}
-.case[data-s=rejected],.case[data-s=committee-rejected]{color:var(--bad);background:#fdeceb}
+.case[data-s=rejected],.case[data-s=committee-rejected]{color:var(--bad);background:var(--bad-soft)}
 .case small{font-weight:400;color:var(--ink)}
 </style></head><body><div class="wrap">
 <h1>حالة طلبي</h1>
