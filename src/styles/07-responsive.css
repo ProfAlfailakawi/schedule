@@ -506,7 +506,9 @@
   /* The scope reads on its own line rather than being trimmed off the edge. */
   .query-count{flex-wrap:wrap;row-gap:2px}
   .query-count small{width:100%;margin-inline-start:0;white-space:normal}
-  .query-canvas-actions{display:grid;grid-template-columns:1fr 1fr}
+  /* Print and Excel sit side by side at the start; the report button takes the next line. */
+  .query-canvas-actions{display:flex;flex-wrap:wrap;gap:var(--s2)}
+  .query-canvas-actions>.query-report-action{flex:1 1 100%}
   .query-canvas-actions .btn{width:100%}
   .print-menu-pop{inset-inline:0}
   .lens-list>article{
