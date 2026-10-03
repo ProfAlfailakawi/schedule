@@ -1691,3 +1691,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .smart-guide-hero>div:first-child .smart-guide-kicker{max-width:100%;min-width:0}
   .smart-guide-hero>div:first-child .smart-guide-kicker b{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
+
+/* Buildings and rooms on phones: the room list flows with the page instead of
+   being a second scroll area inside it (the building list above keeps its own). */
+@media (max-width:760px){
+  .location-admin-page .location-room-table{max-height:none!important;overflow:visible!important}
+}
