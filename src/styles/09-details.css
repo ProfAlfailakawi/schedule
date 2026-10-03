@@ -2058,3 +2058,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 /* A notice placed in the page (not a toast) says all of its sentence: the
    4-line clamp is for the floating toast layer only. */
 :not(.toast-layer)>.notice>.notice-copy>span{display:block;-webkit-line-clamp:unset}
+
+/* Status badges beside each other (role, read-only, active) breathe: they used to touch. */
+.inspector-status{display:flex;flex-wrap:wrap;gap:6px}
