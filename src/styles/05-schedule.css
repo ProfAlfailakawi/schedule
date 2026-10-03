@@ -8530,6 +8530,21 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
       "core core actions"
       "time place place";
   }
+  /* On a narrow phone time, room and the units/hours pills no longer fit on one
+     line (the room used to run under the pills): the pills take their own line. */
+  @media (max-width:420px){
+    .schedule-agenda .agenda-card{
+      grid-template-areas:
+        "core core actions"
+        "time place place"
+        "meta meta meta";
+    }
+    .schedule-agenda .agenda-card:has(.agenda-meta:not(:has(.unit-pill:not(.is-empty)))){
+      grid-template-areas:
+        "core core actions"
+        "time place place";
+    }
+  }
   .schedule-agenda .agenda-actions{
     grid-area:actions;width:auto;padding:0;margin:0;border-top:0;justify-content:flex-end;align-self:start;flex:none;
   }
@@ -8541,6 +8556,7 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
   .schedule-agenda .code-chip.is-empty,
   .schedule-agenda .unit-pill.is-empty,
   .schedule-agenda .agenda-meta:not(:has(.unit-pill:not(.is-empty))){display:none}
+  @media (max-width:420px){.schedule-agenda .agenda-meta{justify-self:start}}
   .schedule-agenda .agenda-sub{margin-top:var(--s1)}
 }
 
