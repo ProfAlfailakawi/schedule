@@ -32,7 +32,25 @@ export async function readVisitingTeaching(
       await Repository.getDepartmentDelegates(member.collegeId, member.sectionId),
       id => instructorById.has(id),
     ))),
-    Promise.all(readable.map(member => Repository.getSchedulesByScope({ collegeId: member.collegeId, sectionId: member.sectionId, termId }))),
+    Promise.all(readable.map(async member => {
+      const [rows, courses] = await Promise.all([
+        Repository.getSchedulesByScope({ collegeId: member.collegeId, sectionId: member.sectionId, termId }),
+        Repository.getCoursesBySection(member.sectionId),
+      ]);
+      const courseById = new Map(courses.map(course => [Number(course.AdCourseId), course]));
+      return rows.map(row => {
+        const course = courseById.get(Number(row.AdCourseId));
+        return {
+          ...row,
+          // The report crosses college boundaries, while its regular course
+          // catalogue is scoped to the selected section. Attach the source
+          // section's code before returning rows so its course number is not
+          // lost and rendered as "—" in the visiting-teaching report.
+          CourseCodeSnapshot: row.CourseCodeSnapshot || course?.CourseCode || undefined,
+          CourseNameSnapshot: row.CourseNameSnapshot || course?.CourseName || undefined,
+        };
+      });
+    })),
   ]);
   const instructorIds = [...new Set(rosterGroups.flat())];
   const wanted = new Set(instructorIds);
