@@ -1558,7 +1558,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     printReport("comprehensive");
   };
 
-  const printReport = (kind: Exclude<PrintKind, null> = lens) => {
+  const printReport = (kind: Exclude<PrintKind, null> = lens, titleOverride?: string) => {
     if (showPwaPrintHelp()) return;
     /* Safari/WebKit has a long-standing failure mode where an active EventSource
        can make window.print() silently do nothing. Pause the live schedule stream
@@ -1578,6 +1578,14 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     }
 
     const root = document.documentElement;
+    const originalTitle = document.title;
+    const reportTitles: Record<Exclude<PrintKind, null>, string> = {
+      list: "نتائج الاستعلام", week: "الأسبوع", instructor: "تقرير الأستاذ", room: "إشغال القاعات والفراغات",
+      matrix: "القاعات والأوقات", time: "الأوقات", visiting: "المنتدبون — الفصل الحالي",
+      visitingHistory: "المنتدبون — كل الفصول", fairness: "عدالة توزيع العبء", balance: "ميزان الأقسام",
+      comprehensive: "تقرير الجدول الشامل", "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
+    };
+    document.title = `SCHEDULE · ${titleOverride || reportTitles[kind]}`;
     root.dataset.printKind = kind;
     /* ── ورقة واحدة لكل التقارير: عرضية ─────────────────────────────────
        Every report in this program is designed on a wide sheet, and the two
@@ -1617,6 +1625,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       window.removeEventListener("afterprint", resume);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       clearPrintFlags();
+      document.title = originalTitle;
       openReportEvents();
     };
     const onVisibilityChange = () => {
@@ -1642,6 +1651,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     window.setTimeout(() => {
       if (!leftForPrint && !resumed) {
         openReportEvents();
+        document.title = originalTitle;
         setChangesAppendix(null);
         setPrintRowsOverride(null);
         setPrintCollegeOverride("");
@@ -1651,7 +1661,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
 
   /* يطبع تقرير الأستاذ من نطاق مستقل عن مرشحات العرض الحالية. كل قراءة تمر
      عبر /api/schedules، الذي يقصر الصفوف على صلاحيات الحساب قبل إرجاعها. */
-  const printInstructorScope = async (scope: "college" | "all-colleges" | "branches", collegeId = filters.collegeId) => {
+  const printInstructorScope = async (scope: "college" | "all-colleges", collegeId = filters.collegeId) => {
     if (showPwaPrintHelp() || !filters.termId) return;
     const instructorId = Number(filters.instructorId || 0);
     if (!instructorId && !filters.instructorQuery.trim()) return;
@@ -1661,9 +1671,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     try {
       const targets = scope === "all-colleges"
         ? [{ id: 0, name: "كل الكليات" }]
-        : scope === "branches"
-          ? branchSites.map(site => ({ id: site.collegeId, name: site.siteLabel }))
-          : [{ id: collegeId, name: collegeById.get(collegeId)?.AdCollegeName || "الكلية المحددة" }];
+        : [{ id: collegeId, name: collegeById.get(collegeId)?.AdCollegeName || "الكلية المحددة" }];
       const responses = await Promise.all(targets.map(async target => {
         const query = new URLSearchParams({ termId: String(filters.termId) });
         if (target.id) query.set("collegeId", String(target.id));
@@ -1676,9 +1684,11 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         const q = sortKey(filters.instructorQuery).toLowerCase();
         return sortKey(instructorById.get(Number(row.AdInstructorId))?.AdInstructorName || "").toLowerCase().includes(q);
       });
-      const chosenCollege = scope === "college" ? collegeById.get(collegeId)?.AdCollegeName || "" : scope === "branches" ? "كل الفروع" : "كل الكليات";
+      const chosenCollege = scope === "college" ? collegeById.get(collegeId)?.AdCollegeName || "" : "كل الكليات";
+      const instructorName = instructorId ? instructorById.get(instructorId)?.AdInstructorName : filters.instructorQuery.trim();
+      const title = `تقرير الأستاذ — ${instructorName || "استعلام"} — ${scope === "college" ? chosenCollege : "كل الكليات"}`;
       flushSync(() => { setPrintRowsOverride(matches); setPrintCollegeOverride(chosenCollege); setPrintKind("instructor"); setAuthorityReport(null); setAuthorityBook(null); });
-      printReport("instructor");
+      printReport("instructor", title);
     } catch (e: any) {
       setError(e?.message || "تعذر إعداد تقرير الأستاذ");
     } finally { setBranchBusy(false); }
@@ -1706,6 +1716,13 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const runPrint = (kind: string) => {
     closeReportEvents();
     const root = document.documentElement;
+    const originalTitle = document.title;
+    const titles: Record<string, string> = {
+      comprehensive: "تقرير الجدول الشامل",
+      "comprehensive-branch": "تقرير الجدول الشامل — كل الفروع",
+      "authority-pdf": "تقرير تغييرات الجدول",
+    };
+    document.title = `SCHEDULE · ${titles[kind] || "التقرير"}`;
     root.dataset.printKind = kind;
     if (SAFARI_PRINT_ENGINE || IOS_CHROME_PRINT_ENGINE) root.dataset.printRotate = "1";
     if (CHROMIUM_PRINT_ENGINE) root.dataset.printChromium = "1";
@@ -1722,6 +1739,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       window.removeEventListener("afterprint", resume);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       clearPrintFlags();
+      document.title = originalTitle;
       openReportEvents();
     };
     const onVisibilityChange = () => {
@@ -1735,7 +1753,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }
     if (!invoked) window.print();
-    window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
+    window.setTimeout(() => { if (!leftForPrint && !resumed) { openReportEvents(); document.title = originalTitle; } }, 2500);
   };
 
   const printBranchComprehensive = async () => {
@@ -1794,6 +1812,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       flushSync(() => { setAuthorityBook(null); setAuthorityReport(data as AuthorityReport); });
 
       const root = document.documentElement;
+      const originalTitle = document.title;
+      document.title = `SCHEDULE · تقرير تغييرات الجدول — ${sectionName || "القسم"}`;
       root.dataset.printKind = "authority-pdf";
       if (SAFARI_PRINT_ENGINE || IOS_CHROME_PRINT_ENGINE) root.dataset.printRotate = "1";
       if (CHROMIUM_PRINT_ENGINE) root.dataset.printChromium = "1";
@@ -1810,6 +1830,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         window.removeEventListener("afterprint", resume);
         document.removeEventListener("visibilitychange", onVisibilityChange);
         clearPrintFlags();
+        document.title = originalTitle;
         openReportEvents();
       };
       const onVisibilityChange = () => {
@@ -1824,7 +1845,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         try { invoked = document.execCommand("print"); } catch { invoked = false; }
       }
       if (!invoked) window.print();
-      window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
+      window.setTimeout(() => { if (!leftForPrint && !resumed) { openReportEvents(); document.title = originalTitle; } }, 2500);
     } catch (e: any) {
       setError(e?.message || "تعذر إعداد تقرير تغييرات الجدول");
     } finally {
@@ -2221,12 +2242,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   </SecondaryButton>
                   {scopeMenu === "instructor" ? (
                     <div className="query-scope-menu" role="menu" aria-label="نطاق تقرير الأستاذ">
-                      {filters.collegeId ? <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ للكلية الحالية؛ قراءة فقط" onClick={() => void printInstructorScope("college", filters.collegeId)}>هذه الكلية<small>{collegeById.get(filters.collegeId)?.AdCollegeName || "الكلية المحددة"}</small></button> : null}
-                      {collegeOptions.filter(college => Number(college.AdCollegeId) !== Number(filters.collegeId)).map(college => (
-                        <button key={college.AdCollegeId} type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ لكلية محددة ضمن الصلاحيات؛ قراءة فقط" onClick={() => void printInstructorScope("college", Number(college.AdCollegeId))}>كلية محددة<small>{college.AdCollegeName}</small></button>
-                      ))}
-                      <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ لكل الكليات المسموحة؛ قراءة فقط" onClick={() => void printInstructorScope("all-colleges")}>كل الكليات<small>ضمن صلاحيات حسابك</small></button>
-                      {branchSites.length > 1 ? <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ لكل الفروع؛ قراءة فقط" onClick={() => void printInstructorScope("branches")}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button> : null}
+                      {filters.collegeId ? <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ للكلية الحالية؛ قراءة فقط" onClick={() => void printInstructorScope("college", filters.collegeId)}>الكلية المحددة حالياً<small>{collegeById.get(filters.collegeId)?.AdCollegeName || "الكلية المحددة"}</small></button> : null}
+                      <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ لكل الكليات المسموحة؛ قراءة فقط" onClick={() => void printInstructorScope("all-colleges")}>الكل<small>ضمن صلاحيات حسابك</small></button>
                     </div>
                   ) : null}
                 </div>
