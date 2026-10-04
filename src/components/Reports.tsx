@@ -3931,14 +3931,14 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                   <span><b>{page.group.rows.length}</b> {nounFor(page.group.rows.length, AR.appointment)}</span><span><b>{Math.round(load / 60)}</b> س</span><span><b>{days}</b> {nounFor(days, AR.day)}</span>
                 </header>
                 <table>
-                  <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
-                  <thead><tr><th>المقرر</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الشعبة</th></tr></thead>
+                  <colgroup><col style={{ width: "38%" }} /><col style={{ width: "10%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /></colgroup>
+                  <thead><tr><th>المقرر ورمزه</th><th>الشعبة</th><th>الأيام</th><th>الوقت</th><th>القاعة</th></tr></thead>
                   <tbody>{page.rows.map(row => <tr key={row.id}>
                     <td className="print-course-block"><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"}</bdi></span></td>
+                    <td className="print-ltr">{row.SCode || "—"}{showCollegeOnInstructorRows ? <small dir="rtl" className="print-visiting-place">{collegeById.get(Number(row.AdCollegeId))?.AdCollegeName || "كلية غير مسماة"}</small> : null}</td>
                     <td className="print-days">{dayCell(row)}</td>
                     <td className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</td>
                     <td className="print-ltr">{placeOfRow(row)}</td>
-                    <td className="print-ltr">{row.SCode || "—"}{showCollegeOnInstructorRows ? <small className="print-visiting-place">{collegeById.get(Number(row.AdCollegeId))?.AdCollegeName || "كلية غير مسماة"}</small> : null}</td>
                   </tr>)}</tbody>
                 </table>
               </section>

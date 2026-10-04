@@ -627,6 +627,7 @@
   .print-query-group>header>div{min-width:0 !important;flex:1 !important;display:flex !important;align-items:baseline !important;gap:2mm !important;flex-wrap:wrap !important}
   .print-query-group>header strong{font-size:9.5pt !important}.print-query-group>header small{font-size:6.6pt !important;color:#6d7773 !important}.print-query-group>header>span{font-size:7pt !important;color:#5c6662 !important}.print-query-group>header>span b{color:#0f4239 !important}
   .print-query-group table{margin-top:0 !important}.print-query-group th,.print-query-group td{padding:1.7mm 1.4mm !important;font-size:7.5pt !important}
+  .print-query-groups-report .print-visiting-place{display:block !important;box-sizing:border-box !important;width:100% !important;max-width:100% !important;margin-top:.6mm !important;color:#69736f !important;font-family:"Plex Arabic",Arial,"Noto Sans Arabic",sans-serif !important;font-size:5.2pt !important;font-weight:400 !important;line-height:1.25 !important;text-align:center !important;white-space:normal !important;overflow-wrap:anywhere !important;word-break:normal !important}
 
   .print-occupancy-table th,.print-occupancy-table td{padding:1.25mm .8mm !important;text-align:center !important;font-size:6.6pt !important}
   .print-occupancy-table tbody th{white-space:nowrap !important;font-family:"Plex Mono",ui-monospace,monospace !important}
