@@ -878,7 +878,7 @@
   .print-unapproved-mark{
     position:absolute !important;
     inset:0 !important;
-    display:grid !important;
+    display:none !important;
     place-items:center !important;
     transform:rotate(-24deg) !important;
     font-size:44pt !important;
@@ -2076,7 +2076,8 @@
   html[data-print-rotate="1"] .print-only{
     width:210mm !important;
     max-width:210mm !important;
-    overflow:hidden !important;
+    /* The centred sheet paints past its original flow slot. */
+    overflow:visible !important;
   }
   html[data-print-rotate="1"] .print-report.print-wide{
     width:210mm !important;
@@ -2105,9 +2106,9 @@
     /* Reserve exactly the vertical room the ROTATED sheet occupies (297·s),
        minus the 210mm the unrotated box already contributes to the flow. */
     margin:0 0 calc(297mm * var(--safari-rot-scale) - 210mm) 0 !important;
-    /* Rotating about the top-left maps the sheet to x ∈ [−210·s, 0]; the
-       translate walks it back so it starts at the paper's own left edge. */
-    transform:translateX(calc(210mm * var(--safari-rot-scale))) rotate(90deg) scale(var(--safari-rot-scale)) !important;
+    /* Keep the existing sheet and scale. Half the unused portrait height
+       centres it horizontally when the saved PDF is turned to landscape. */
+    transform:translate(calc(210mm * var(--safari-rot-scale)), calc((297mm - 297mm * var(--safari-rot-scale)) / 2)) rotate(90deg) scale(var(--safari-rot-scale)) !important;
     transform-origin:0 0 !important;
     break-inside:avoid-page !important;
     page-break-inside:avoid !important;

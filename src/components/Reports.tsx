@@ -1607,9 +1607,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       /* وملحقُ التغييرات معها: هو جزءٌ من الوثيقة المعروضة، ونزعُه أثناء
          المعاينة يُسقطه من المطبوع أو يُعيد ترتيب الصفحات — وهو العطبُ نفسه
          الذي وُصف أعلاه، لا عطبٌ آخر. */
-      setChangesAppendix(null);
       setPrintRowsOverride(null);
       setPrintCollegeOverride("");
+      setChangesAppendix(null);
     };
     const resume = () => {
       if (resumed) return;
@@ -2216,22 +2216,22 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
             {results.length ? <>
               {lens === "instructor" ? (
                 <div className="query-report-action">
-                  <SecondaryButton type="button" className="query-print-icon" aria-label="طباعة تقرير الأستاذ" aria-haspopup="menu" aria-expanded={scopeMenu === "instructor" || undefined} onClick={() => setScopeMenu(scopeMenu === "instructor" ? null : "instructor")} disabled={branchBusy} title="اختر نطاق تقرير الأستاذ للطباعة">
+                  <SecondaryButton type="button" className="query-print-icon" data-guide-ignore="اختيار نطاق طباعة تقرير الأستاذ؛ قراءة فقط" aria-label="طباعة تقرير الأستاذ" aria-haspopup="menu" aria-expanded={scopeMenu === "instructor" || undefined} onClick={() => setScopeMenu(scopeMenu === "instructor" ? null : "instructor")} disabled={branchBusy} title="اختر نطاق تقرير الأستاذ للطباعة">
                     <Printer aria-hidden="true" />
                   </SecondaryButton>
                   {scopeMenu === "instructor" ? (
                     <div className="query-scope-menu" role="menu" aria-label="نطاق تقرير الأستاذ">
-                      {filters.collegeId ? <button type="button" role="menuitem" onClick={() => void printInstructorScope("college", filters.collegeId)}>هذه الكلية<small>{collegeById.get(filters.collegeId)?.AdCollegeName || "الكلية المحددة"}</small></button> : null}
+                      {filters.collegeId ? <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ للكلية الحالية؛ قراءة فقط" onClick={() => void printInstructorScope("college", filters.collegeId)}>هذه الكلية<small>{collegeById.get(filters.collegeId)?.AdCollegeName || "الكلية المحددة"}</small></button> : null}
                       {collegeOptions.filter(college => Number(college.AdCollegeId) !== Number(filters.collegeId)).map(college => (
-                        <button key={college.AdCollegeId} type="button" role="menuitem" onClick={() => void printInstructorScope("college", Number(college.AdCollegeId))}>كلية محددة<small>{college.AdCollegeName}</small></button>
+                        <button key={college.AdCollegeId} type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ لكلية محددة ضمن الصلاحيات؛ قراءة فقط" onClick={() => void printInstructorScope("college", Number(college.AdCollegeId))}>كلية محددة<small>{college.AdCollegeName}</small></button>
                       ))}
-                      <button type="button" role="menuitem" onClick={() => void printInstructorScope("all-colleges")}>كل الكليات<small>ضمن صلاحيات حسابك</small></button>
-                      {branchSites.length > 1 ? <button type="button" role="menuitem" onClick={() => void printInstructorScope("branches")}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button> : null}
+                      <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ لكل الكليات المسموحة؛ قراءة فقط" onClick={() => void printInstructorScope("all-colleges")}>كل الكليات<small>ضمن صلاحيات حسابك</small></button>
+                      {branchSites.length > 1 ? <button type="button" role="menuitem" data-guide-ignore="طباعة تقرير الأستاذ لكل الفروع؛ قراءة فقط" onClick={() => void printInstructorScope("branches")}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button> : null}
                     </div>
                   ) : null}
                 </div>
               ) : (
-                <button type="button" className="query-print-icon" onClick={() => printReport(lens)} aria-label="طباعة هذا العرض" title="طباعة هذا العرض">
+                <button type="button" className="query-print-icon" data-guide-ignore="طباعة العرض الحالي؛ قراءة فقط" onClick={() => printReport(lens)} aria-label="طباعة هذا العرض" title="طباعة هذا العرض">
                   <Printer aria-hidden="true" />
                 </button>
               )}
