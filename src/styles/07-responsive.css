@@ -589,7 +589,8 @@
     grid-template-columns:auto minmax(0,1fr);
     grid-template-areas:
       "code name"
-      "time days";
+      "time days"
+      ". place";
     align-items:center;
     gap:var(--s1) var(--s3);
     padding:var(--s2) 0;
@@ -621,6 +622,13 @@
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
+  }
+  .group-rows .visiting-row-place{
+    grid-area:place;
+    min-width:0;
+    overflow:visible;
+    white-space:normal;
+    overflow-wrap:anywhere;
   }
   .lens-times>article{
     grid-template-columns:56px minmax(0,1fr) 36px;

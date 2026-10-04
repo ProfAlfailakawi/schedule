@@ -119,6 +119,7 @@ import { coerceScopeValues, describeScopeSelection, resolveScopeSelection, singl
 import { readSharedScope, resolveSharedScope, useSharedScope, type SharedScope } from "../utils/sharedScope";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
+import { compareCourseSection } from "../utils/scheduleOrder";
 import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, currentTermId, termIsArchive } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
@@ -3605,10 +3606,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     let source=pendingOnly?rows.filter(r=>r.locationStatus==="PENDING_ROOM"&&(!user?.AdInstructorId||Number(r.AdInstructorId)===Number(user.AdInstructorId))):rows;
     if(visitingOnly)source=source.filter(r=>scheduledVisitingIds.has(Number(r.AdInstructorId)));
     const visible=q?source.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)}):[...source];
-    return visible.sort((a,b)=>
-      byArabic(a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName||"",b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName||"")||
-      byArabic(a.SCode,b.SCode)||mins(a.fstarttime)-mins(b.fstarttime)||Number(a.id)-Number(b.id)
-    );
+    return visible.sort((a,b)=>compareCourseSection(
+      {courseCode:courseById.get(a.AdCourseId)?.CourseCode,sectionCode:a.SCode,courseName:a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName,id:a.id},
+      {courseCode:courseById.get(b.AdCourseId)?.CourseCode,sectionCode:b.SCode,courseName:b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName,id:b.id},
+    )||mins(a.fstarttime)-mins(b.fstarttime));
   },[rows,deferredSearch,courseById,instructorById,pendingOnly,visitingOnly,scheduledVisitingIds,user?.AdInstructorId]);
 
   /**
@@ -3638,12 +3639,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     };
     return displayRows.slice().sort((a, b) =>
       firstDay(a) - firstDay(b) ||
-      mins(a.fstarttime) - mins(b.fstarttime) ||
-      byArabic(
-        a.AdCourseName || courseById.get(a.AdCourseId)?.CourseName || "",
-        b.AdCourseName || courseById.get(b.AdCourseId)?.CourseName || "",
-      ) ||
-      Number(a.id) - Number(b.id),
+      compareCourseSection(
+        {courseCode:courseById.get(a.AdCourseId)?.CourseCode,sectionCode:a.SCode,courseName:a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName,id:a.id},
+        {courseCode:courseById.get(b.AdCourseId)?.CourseCode,sectionCode:b.SCode,courseName:b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName,id:b.id},
+      ) || mins(a.fstarttime)-mins(b.fstarttime),
     );
   }, [displayRows, courseById]);
   const schedulePrintRows = useMemo(() => {
@@ -3653,12 +3652,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     };
     return filteredRows.slice().sort((a, b) =>
       firstDay(a) - firstDay(b) ||
-      mins(a.fstarttime) - mins(b.fstarttime) ||
-      byArabic(
-        a.AdCourseName || courseById.get(a.AdCourseId)?.CourseName || "",
-        b.AdCourseName || courseById.get(b.AdCourseId)?.CourseName || "",
-      ) ||
-      Number(a.id) - Number(b.id),
+      compareCourseSection(
+        {courseCode:courseById.get(a.AdCourseId)?.CourseCode,sectionCode:a.SCode,courseName:a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName,id:a.id},
+        {courseCode:courseById.get(b.AdCourseId)?.CourseCode,sectionCode:b.SCode,courseName:b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName,id:b.id},
+      ) || mins(a.fstarttime)-mins(b.fstarttime),
     );
   }, [filteredRows, courseById]);
   /**
