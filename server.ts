@@ -6355,7 +6355,7 @@ app.get("/api/instructor-affiliations", requireAnyPermission([3, 7]), async (req
   });
 });
 
-app.get("/api/delegates", requireAnyPermission([3, 7]), async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/delegates", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   /* الإدارة ترى منتدبي الجامعة؛ وغيرُها منتدبي أدلّة أقسامه وحدها. */
   if (req.user?.IsAdminUser) { res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() }); return; }
   /* والقسمُ عائلةٌ عبر كلياته: منتدبو أخته في كليةٍ أخرى منتدبوه. */
@@ -11731,6 +11731,8 @@ app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, asyn
       .sort((a, b) =>
         (a.display.dayOrder ?? 99) - (b.display.dayOrder ?? 99)
         || (a.display.startMinutes ?? 99999) - (b.display.startMinutes ?? 99999)
+        || String(a.display.courseCode || "").localeCompare(String(b.display.courseCode || ""), "ar", { numeric: true })
+        || String(a.display.sectionCode || "").localeCompare(String(b.display.sectionCode || ""), "ar", { numeric: true })
         || a.display.course.localeCompare(b.display.course, "ar")),
   };
 
@@ -11756,6 +11758,8 @@ app.get("/api/reports/schedule-changes", rateLimitHeavyReport, requireAuth, asyn
     .sort((a, b) =>
       (a.dayOrder ?? 99) - (b.dayOrder ?? 99)
       || (a.startMinutes ?? 99999) - (b.startMinutes ?? 99999)
+      || String(a.courseCode || "").localeCompare(String(b.courseCode || ""), "ar", { numeric: true })
+      || String(a.sectionCode || "").localeCompare(String(b.sectionCode || ""), "ar", { numeric: true })
       || a.course.localeCompare(b.course, "ar"));
 
   res.json({

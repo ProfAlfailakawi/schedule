@@ -19,6 +19,7 @@
  */
 
 import { AR, countOf, nounFor } from "./arabicCount";
+import { compareCourseSection } from "./scheduleOrder";
 import { approvalScopeKey, AUTHORITY_BASELINE_LABEL, rowsInApprovalScope, type ApprovalScope } from "./approvalScope";
 
 /* ── ما يصل من الخوادم (أشكالٌ ضيّقة: ما نقرؤه فقط) ───────────────────────── */
@@ -294,8 +295,8 @@ export function buildApprovalDossier(input: DossierInput): ApprovalDossierModel 
     group.items.push(describeItem(entry, KIND_FROM_DIFF[entry.kind] || "modified"));
     groupMap.set(key, group);
   }
-  const allGroups = [...groupMap.values()].sort((a, b) => a.course.localeCompare(b.course, "ar") || a.key.localeCompare(b.key));
-  for (const group of allGroups) group.items.sort((a, b) => a.section.localeCompare(b.section, "ar", { numeric: true }) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.scheduleId - b.scheduleId);
+  const allGroups = [...groupMap.values()].sort((a, b) => compareCourseSection({courseCode:a.code,courseName:a.course}, {courseCode:b.code,courseName:b.course}) || a.key.localeCompare(b.key));
+  for (const group of allGroups) group.items.sort((a, b) => compareCourseSection({sectionCode:a.section,id:a.scheduleId}, {sectionCode:b.section,id:b.scheduleId}) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.scheduleId - b.scheduleId);
   let budget = DOSSIER_ITEM_CAP;
   const groups: DossierCourseGroup[] = [];
   for (const group of allGroups) {

@@ -15,6 +15,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { takeNotifyFocus, type NotifyFocus } from "../utils/notifyFocus";
+import { compareCourseSection } from "../utils/scheduleOrder";
 import {
   AlertTriangle, ArrowRight, CalendarDays, CalendarRange, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardCheck, ClipboardList, Clock3,
   CalendarPlus, CornerUpLeft, FileCheck, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
@@ -900,13 +901,13 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
       (a.display.dayOrder ?? 99) - (b.display.dayOrder ?? 99) ||
       (a.display.startMinutes ?? 99999) - (b.display.startMinutes ?? 99999) ||
       kindOrder[a.kind] - kindOrder[b.kind] ||
-      a.display.course.localeCompare(b.display.course, "ar")
+      compareCourseSection({courseCode:a.display.courseCode,sectionCode:a.display.sectionCode,courseName:a.display.course,id:a.display.scheduleId}, {courseCode:b.display.courseCode,sectionCode:b.display.sectionCode,courseName:b.display.course,id:b.display.scheduleId})
     );
   }, [report?.diff.entries]);
   const sortedFullSchedule = useMemo(() => [...(report?.fullSchedule || [])].sort((a, b) =>
     (a.dayOrder ?? 99) - (b.dayOrder ?? 99) ||
     (a.startMinutes ?? 99999) - (b.startMinutes ?? 99999) ||
-    a.course.localeCompare(b.course, "ar")
+    compareCourseSection({courseCode:a.courseCode,sectionCode:a.sectionCode,courseName:a.course,id:a.scheduleId}, {courseCode:b.courseCode,sectionCode:b.sectionCode,courseName:b.course,id:b.scheduleId})
   ), [report?.fullSchedule]);
 
   /* كلُّ قراءةٍ موسومةٌ بنطاقها، والأقدمُ تُلغى: تقريرُ قسمٍ سابق — أو قراءةٌ

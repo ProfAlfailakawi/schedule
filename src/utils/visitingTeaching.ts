@@ -1,3 +1,5 @@
+import { compareCourseSection } from "./scheduleOrder";
+
 /**
  * ── تدريس المنتدبين عبر كليات القسم: حسابٌ واحد للشاشة وللطباعة وللاختبار ──
  *
@@ -89,6 +91,10 @@ export function summarizeVisitingTeaching<R extends VisitingTeachingRow>(
     byPerson.set(id, [...(byPerson.get(id) || []), row]);
   }
   return [...byPerson.entries()].map(([instructorId, mine]) => {
+    mine.sort((a, b) => compareCourseSection(
+      { courseCode: a.CourseCodeSnapshot, sectionCode: a.SCode, courseName: a.AdCourseName, id: a.id },
+      { courseCode: b.CourseCodeSnapshot, sectionCode: b.SCode, courseName: b.AdCourseName, id: b.id },
+    ) || clockMinutes(a.fstarttime) - clockMinutes(b.fstarttime));
     const places = new Map<string, { collegeId: number; sectionId: number; sectionKeys: Set<string>; weeklyMinutes: number }>();
     for (const row of mine) {
       const key = `${Number(row.AdCollegeId)}:${Number(row.AdSectionId)}`;

@@ -17,6 +17,7 @@ import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sh
 import { safeStorage } from "../utils/safeStorage";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
+import { compareCourseSection } from "../utils/scheduleOrder";
 import { sectionLabels } from "../utils/sectionLabel";
 import { currentTermId, sortTermsNewest, termChronology, termIsArchive } from "../utils/termSequence";
 import {
@@ -440,6 +441,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [terms, setTerms] = useState<AdTerm[]>([]);
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
   const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
+  const [directoryVisitingIds, setDirectoryVisitingIds] = useState<Set<number>>(new Set());
+  const isVisitingInstructor = (id: number) => visitingIds.has(Number(id)) || directoryVisitingIds.has(Number(id));
   const [visitingHistory, setVisitingHistory] = useState<{ terms: Array<{ termId: number; termName: string }>; people: VisitingHistoryPerson[]; family?: VisitingTeachingData["family"]; complete?: boolean; key?: string } | null>(null);
   const [visitingHistoryLoading, setVisitingHistoryLoading] = useState(false);
   /* استعلام المنتدبين يقرأ القسم العلمي عبر كلياته (لا الكلية المختارة وحدها).
@@ -652,6 +655,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       .catch(error=>{if(error?.name!=="AbortError")setVisitingIds(new Set());});
     return()=>controller.abort();
   },[filters.collegeId,filters.sectionId,filters.termId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/delegates", { signal: controller.signal })
+      .then(response => response.ok ? response.json() : { instructorIds: [] })
+      .then(data => setDirectoryVisitingIds(new Set((Array.isArray(data?.instructorIds) ? data.instructorIds : []).map(Number).filter(Boolean))))
+      .catch(error => { if (error?.name !== "AbortError") setDirectoryVisitingIds(new Set()); });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const key=`${filters.collegeId}:${filters.sectionId}:${filters.termId}`;
@@ -1047,12 +1059,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     if (filters.courseCode.trim()) rows = rows.filter(s => (s.CourseCodeSnapshot || courseById.get(s.AdCourseId)?.CourseCode || "") === filters.courseCode.trim());
     const chosenDays = DAYS.filter(day => filters[day.key]);
     if (chosenDays.length) rows = rows.filter(s => chosenDays.some(day => (s as any)[day.flag]));
-    return rows.sort((a, b) =>
-      byArabic(courseById.get(a.AdCourseId)?.CourseName || a.AdCourseName, courseById.get(b.AdCourseId)?.CourseName || b.AdCourseName) ||
-      byArabic(a.SCode, b.SCode) ||
-      String(a.fstarttime).localeCompare(String(b.fstarttime)) ||
-      Number(a.id) - Number(b.id)
-    );
+    return rows.sort((a, b) => compareCourseSection(
+      {courseCode:a.CourseCodeSnapshot||courseById.get(a.AdCourseId)?.CourseCode,sectionCode:a.SCode,courseName:a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName,id:a.id},
+      {courseCode:b.CourseCodeSnapshot||courseById.get(b.AdCourseId)?.CourseCode,sectionCode:b.SCode,courseName:b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName,id:b.id},
+    ) || String(a.fstarttime).localeCompare(String(b.fstarttime)));
   }, [all, filters, instructorById, courseById, courseIdentityKey]);
 
   const set = (key: keyof Filters, value: any) => setFilters(prev => ({ ...prev, [key]: value }));
@@ -1795,7 +1805,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         </header>
         <div className="occupancy-pick-rows">
           <article>
-            <strong className="report-instructor-with-badge">{pickedInstructor?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(selectedResult.AdInstructorId) ? <VisitingBadge compact /> : null}</strong>
+            <strong className="report-instructor-with-badge">{pickedInstructor?.AdInstructorName || "بدون أستاذ"}{isVisitingInstructor(selectedResult.AdInstructorId) ? <VisitingBadge compact /> : null}</strong>
             <span>{sectionById.get(selectedResult.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
             <em>{dayText(selectedResult) || "بلا أيام"}</em>
             <time dir="ltr">{formatScheduleTimeRange(selectedResult.fstarttime, selectedResult.fendtime)}</time>
@@ -2256,7 +2266,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                     <div className="lens-tags">
                       <span className="code-chip">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</span>
                       <span>{row.SCode}</span>
-                      <span className="report-instructor-with-badge"><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
+                      <span className="report-instructor-with-badge"><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                       {finality[`${Number(row.AdCollegeId || 0)}:${Number(row.AdSectionId || 0)}`] === "historical"
                         ? <span className="finality-historical-chip" title="فصلٌ انتهى وقسمٌ لم يمرّ بدورة الاعتماد">{HISTORICAL_FINALITY_LABEL}</span>
                         : null}
@@ -2295,7 +2305,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                       <div>
                         <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
-                        <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
+                        <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                       </div>
                       <small>
                         <b>{row.CourseCodeSnapshot || courseById.get(row.AdCourseId)?.CourseCode || "—"}</b>
@@ -2353,7 +2363,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                             {cell.rows.map(row => (
                               <span key={row.id} className="matrix-slot">
                                 <b>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</b>
-                                <em className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</em>
+                                <em className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "—"}{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</em>
                                 <i dir="ltr">{row.CourseCodeSnapshot || courseById.get(row.AdCourseId)?.CourseCode || "—"} · {row.SCode}</i>
                               </span>
                             ))}
@@ -2449,12 +2459,10 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   return index < 0 ? DAYS.length : index;
                 };
                 return firstDay(a) - firstDay(b) ||
-                  minutes(a.fstarttime) - minutes(b.fstarttime) ||
-                  String(a.AdCourseName || courseById.get(a.AdCourseId)?.CourseName || "").localeCompare(
-                    String(b.AdCourseName || courseById.get(b.AdCourseId)?.CourseName || ""),
-                    "ar",
-                  ) ||
-                  Number(a.id) - Number(b.id);
+                  compareCourseSection(
+                    {courseCode:a.CourseCodeSnapshot||courseById.get(a.AdCourseId)?.CourseCode,sectionCode:a.SCode,courseName:a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName,id:a.id},
+                    {courseCode:b.CourseCodeSnapshot||courseById.get(b.AdCourseId)?.CourseCode,sectionCode:b.SCode,courseName:b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName,id:b.id},
+                  ) || minutes(a.fstarttime)-minutes(b.fstarttime);
               });
               return (
                 <>
@@ -2473,7 +2481,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                       {picked.map(row => (
                         <article key={row.id}>
                           <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
-                          <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
+                          <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                           <em>{dayText(row)}</em>
                           <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                         </article>
@@ -2530,18 +2538,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
           </div>
         ) : lens === "visiting" ? (
           <>
-          {filters.sectionId && familyTeaching ? (
-            <div className={`visiting-family-scope${familyTeaching.complete ? "" : " is-partial"}`} role={familyTeaching.complete ? "note" : "alert"}>
-              <UserPlus aria-hidden="true" />
-              <span>
-                {familyTeaching.family.length > 1
-                  ? <>منتدبو القسم وتدريسهم في <b>{countOf(familyTeaching.family.filter(item => item.allowed).length, oblique(AR.college))}</b>: {familyTeaching.family.filter(item => item.allowed).map(item => item.collegeName || "—").join("، ")}</>
-                  : <>منتدبو القسم وتدريسهم في هذه الكلية — لا قسم مناظر له في كلية أخرى.</>}
-                {familyTeaching.complete ? null : (
-                  <strong> الأرقام غير مكتملة: لا تملك صلاحية {familyTeaching.family.filter(item => !item.allowed).map(item => [item.collegeName, item.sectionName].filter(Boolean).join(" · ")).join("، ")}، فلا تُحسب شعب المنتدبين وساعاتهم هناك.</strong>
-                )}
-              </span>
-            </div>
+          {filters.sectionId && familyTeaching && !familyTeaching.complete ? (
+            <div className="visiting-family-scope is-partial" role="alert"><span><strong>الأرقام غير مكتملة:</strong> لا تملك صلاحية {familyTeaching.family.filter(item => !item.allowed).map(item => [item.collegeName, item.sectionName].filter(Boolean).join(" · ")).join("، ")}، فلا تُحسب شعب المنتدبين وساعاتهم هناك.</span></div>
           ) : null}
           {visitingTeachingError ? <div className="visiting-family-scope is-partial" role="alert"><span><strong>{visitingTeachingError}</strong> — المعروض أدناه من الكلية المختارة وحدها وليس إجمالي القسم.</span></div> : null}
           {visitingTermGroups.length ? (
@@ -2557,7 +2555,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   >
                     <span className="group-avatar"><UserPlus /></span>
                     <span className="visiting-card-identity">
-                      <strong className="report-instructor-with-badge">{group.name}<VisitingBadge compact /></strong>
+                      <strong className="report-instructor-with-badge">{group.name}{directoryVisitingIds.has(Number(group.id)) ? <VisitingBadge compact /> : null}</strong>
                       <small className="visiting-card-places">
                         {countOf(group.courses, AR.course)}
                         {group.places.length > 1 || familyTeaching ? <> · {group.places.map(place => visitingPlaceLabel(place.collegeId, place.sectionId)).join("، ")}</> : null}
@@ -2775,7 +2773,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}
                 >
                   <span className="group-avatar"><UserRound /></span>
-                  <strong className="report-instructor-with-badge">{group.name}{visitingIds.has(Number(group.id)) ? <VisitingBadge compact /> : null}</strong>
+                  <strong className="report-instructor-with-badge">{group.name}{isVisitingInstructor(Number(group.id)) ? <VisitingBadge compact /> : null}</strong>
                   <span className="group-bar"><i style={{ width: share(group.load, maxLoad) }} /></span>
                   <b>{num(group.count)}</b>
                   <em>{num(Math.round(group.load / 60))}س</em>
@@ -2849,7 +2847,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                                 <span className="code-chip">{row.CourseCodeSnapshot || course?.CourseCode || "—"}</span>
                                 <span>شعبة {row.SCode || "—"}</span>
                               </div>
-                              <small className="report-instructor-with-badge">{instructor?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</small>
+                              <small className="report-instructor-with-badge">{instructor?.AdInstructorName || "بدون أستاذ"}{isVisitingInstructor(row.AdInstructorId) ? <VisitingBadge compact /> : null}</small>
                               <em>{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
                               <i>{dayText(row) || "بلا أيام"}</i>
                             </button>
@@ -3595,18 +3593,17 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
      * الوثيقة كلها: مستند واحد يُسلَّم كاملاً، ونسخة مطبوعة يمكن فصلها بحسب
      * الموقع دون قطع صفحة في نصفها.
      */
-    /* ── ترتيب المستند هو ترتيب المستند المعتمد ─────────────────────────────
-     * الصف المستورد يحمل موضعه الأصلي في ملف الجهة، وهو الترتيب الذي يقرأ به
-     * القسم جدوله ويقارنه بورقته. فهو المقدَّم؛ والترتيب الأبجدي القديم يبقى
-     * لما لا يحمل موضعاً (صف أُضيف يدوياً) وللأوراق التي لا أصل مستورداً لها. */
+    /* ترتيب كل قوائم المحاضرات واحد: رمز المقرر ثم الشعبة؛ موضع الاستيراد
+       يبقى فاصلاً عند تطابقهما، ثم الوقت للصفوف التي لا تحمل موضعاً. */
     const importOrder = (row: FSchedule) => {
       const order = Number((row as any).sourceOrder);
       return Number.isFinite(order) ? order : Number.MAX_SAFE_INTEGER;
     };
     const sortRows = (list: FSchedule[]) => [...list].sort((a, b) =>
-      importOrder(a) - importOrder(b) ||
-      byArabic(courseOf(a)?.CourseName || a.AdCourseName, courseOf(b)?.CourseName || b.AdCourseName) ||
-      byArabic(a.SCode, b.SCode) ||
+      compareCourseSection(
+        {courseCode:a.CourseCodeSnapshot||courseOf(a)?.CourseCode,sectionCode:a.SCode,courseName:a.AdCourseName||courseOf(a)?.CourseName,id:a.id},
+        {courseCode:b.CourseCodeSnapshot||courseOf(b)?.CourseCode,sectionCode:b.SCode,courseName:b.AdCourseName||courseOf(b)?.CourseName,id:b.id},
+      ) || importOrder(a) - importOrder(b) ||
       String(a.fstarttime).localeCompare(String(b.fstarttime)) ||
       Number(a.id) - Number(b.id)
     );
