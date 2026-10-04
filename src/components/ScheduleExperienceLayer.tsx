@@ -1,3 +1,4 @@
+import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -160,6 +161,8 @@ function strengthSentence(living: any) {
 }
 
 export function useScheduleExperience({
+  analysisScope,
+  setAnalysisScope,
   rows,
   courses,
   instructors,
@@ -169,6 +172,8 @@ export function useScheduleExperience({
   termId,
   isPowerAdmin,
 }: {
+  analysisScope: "college" | "department";
+  setAnalysisScope: (scope: "college" | "department") => void;
   rows: FSchedule[];
   courses: AdCourse[];
   instructors: AdInstructor[];
@@ -238,28 +243,31 @@ export function useScheduleExperience({
       return;
     }
     const controller = new AbortController();
+    setInsightBusy(true);
     const loadInsights = async () => {
         setInsightBusy(true);
         setInsightError("");
         try {
           const q = query(collegeId, sectionId, termId);
+          const readQuery = `${q}&analysisScope=${analysisScope}`;
           /* The decision deck asks for this same analysis the instant a scope
              appears, and this bundle runs a beat later on idle. If it already
              answered for this exact scope, the server is not asked twice —
              the genome and the constraints are still read normally. */
-          const key = livingScopeKey(collegeId, sectionId, termId);
+          const key = livingScopeKey(collegeId, sectionId, termId, analysisScope);
           const [l, g, c] = await Promise.all([
             /* No signal here, deliberately: this read is shared with the
                decision deck, and one layer's abort must never cancel the
                other's. The scope guard after the await still applies. */
-            sharedLiving(key, () => fetchJson(`/api/intelligence/living?${q}`)),
-            fetchJson(`/api/intelligence/genome?${q}`, {
+            sharedLiving(key, () => fetchJson(`/api/intelligence/living?${readQuery}`)),
+            fetchJson(`/api/intelligence/genome?${readQuery}`, {
               signal: controller.signal,
             }),
-            fetchJson(`/api/intelligence/constraints?${q}`, {
+            fetchJson(`/api/intelligence/constraints?${readQuery}`, {
               signal: controller.signal,
             }),
           ]);
+          if (controller.signal.aborted) return;
           setLiving(l);
           setGenome(g);
           setConstraints(Array.isArray(c) ? c : []);
@@ -291,7 +299,7 @@ export function useScheduleExperience({
       else window.clearTimeout(idleId);
       controller.abort();
     };
-  }, [collegeId, sectionId, termId, rows]);
+  }, [collegeId, sectionId, termId, rows, analysisScope]);
 
   const toggleGhost = async () => {
     /*
@@ -355,6 +363,8 @@ export function useScheduleExperience({
     return placement(now) === placement(row) ? "ghost-same" : "ghost-changed";
   };
   return {
+    analysisScope,
+    setAnalysisScope,
     ghostEnabled,
     ghostRows,
     ghostBusy,
@@ -430,7 +440,7 @@ export default function ScheduleExperienceLayer({
     topBottlenecks = (genome?.dna?.bottlenecks || []).slice(0, 3);
   const topInstructor = (() => {
     const counts = new Map<number, number>();
-    rows.forEach((row) =>
+    (e.living?.analysisRows || rows).forEach((row: FSchedule) =>
       counts.set(
         row.AdInstructorId,
         (counts.get(row.AdInstructorId) || 0) +
@@ -454,7 +464,7 @@ export default function ScheduleExperienceLayer({
     const id = ids[0];
     return id
       ? {
-          name: e.instructorById.get(id)?.AdInstructorName || `أستاذ ${id}`,
+          name: e.instructorById.get(id)?.AdInstructorName || e.living?.fairness?.profiles?.find((profile: any) => profile.id === id)?.name || `أستاذ ${id}`,
           count: counts.get(id) || 0,
           constraints: constrained.get(id) || 0,
         }
@@ -753,7 +763,8 @@ export default function ScheduleExperienceLayer({
                 <small>/100</small>
               </b>
             </header>
-            <div className="signature-scroll">
+            <IntelligenceScopeSwitch value={e.analysisScope} onChange={e.setAnalysisScope} />
+            <div className="signature-scroll" aria-busy={e.insightBusy}>
             <div className="signature-grid">
               <article>
                 <span>

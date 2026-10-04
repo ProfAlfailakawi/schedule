@@ -269,9 +269,9 @@ button.schedule-radar:hover{filter:brightness(.96)}
 .agenda-ident{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2) var(--s4);min-width:0}
 .agenda-sub span{display:flex;align-items:center;gap:var(--s1);color:var(--muted);font-size:var(--t-sm)}
 .agenda-sub svg{width:13px;height:13px}
-.agenda-sub .agenda-day-list{display:inline-flex;align-items:center;flex-wrap:wrap;gap:3px}
-.agenda-sub .agenda-day-chip{display:inline-flex;align-items:center;min-height:20px;padding:1px 7px;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:var(--r-full);background:color-mix(in srgb,var(--accent) 6%,var(--surface));color:var(--ink-2);font-size:11px;font-weight:550;line-height:1.25;white-space:nowrap}
-.agenda-sub .agenda-day-chip.is-empty{border-color:var(--line);background:var(--surface-2);color:var(--muted);font-weight:500}
+.agenda-day-list{display:inline-flex;align-items:center;flex-wrap:wrap;gap:3px}
+.agenda-day-chip{display:inline-flex;align-items:center;min-height:20px;padding:1px 7px;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:var(--r-full);background:color-mix(in srgb,var(--accent) 6%,var(--surface));color:var(--ink-2);font-size:11px;font-weight:550;line-height:1.25;white-space:nowrap}
+.agenda-day-chip.is-empty{border-color:var(--line);background:var(--surface-2);color:var(--muted);font-weight:500}
 /* Time and place lead with a glyph; the value is the only text that stays. */
 .agenda-time,.agenda-place{
   min-width:0;display:flex;align-items:center;gap:var(--s2);
@@ -8576,3 +8576,10 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
 }
 .schedule-agenda .agenda-rest>summary::-webkit-details-marker{display:none}
 .schedule-agenda .agenda-rest[open]>summary{margin-bottom:var(--s2)}
+
+.agenda-list .agenda-time{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px}
+.agenda-list .agenda-time .agenda-days{display:flex;align-items:center;justify-content:center;gap:5px;width:100%}
+.agenda-list .agenda-time .agenda-day-list{justify-content:center}
+.agenda-list .agenda-time .agenda-days>svg{width:13px;height:13px;color:var(--muted-2);flex:none}
+.agenda-clock-line{display:flex;align-items:center;justify-content:center;gap:var(--s2)}
+.agenda-clock-line>svg{width:15px;height:15px;flex:none;color:var(--muted-2)}

@@ -2521,7 +2521,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
 
   const [guideDetectedHelp, setGuideDetectedHelp] = useState<{ key?: string; featureId?: string; title: string; detail: string; level: "soft" | "strong" } | null>(null);
   const guideFailureTimesRef = useRef<number[]>([]);
+  const [analysisScope, setAnalysisScope] = useState<"college" | "department">("college");
   const experience = useScheduleExperience({
+    analysisScope,
+    setAnalysisScope,
     rows,
     courses,
     instructors,
@@ -10370,14 +10373,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                             {visitingIds.has(s.AdInstructorId) ? <VisitingBadge compact /> : null}
                           </span>
                         </div>
-                        <span className="agenda-days">
-                          <CalendarDays aria-hidden="true" />
-                          <span className="agenda-day-list">
-                            {activeDays.length
-                              ? activeDays.map(day => <b className="agenda-day-chip" key={day.key}>{day.label}</b>)
-                              : <b className="agenda-day-chip is-empty">بدون أيام</b>}
-                          </span>
-                        </span>
                       </div>
                       {/* «ليش المنع؟ شنو السبب؟» — الحلقة تقول سببها سطراً ظاهراً
                           على الصف نفسه، لا تلميحاً لا يراه الهاتف (rowClashReasons). */}
@@ -10389,10 +10384,20 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                       ))}
                     </div>
                     <div className="agenda-time" title="الوقت">
-                      <Clock3 aria-hidden="true" />
-                      <strong dir="ltr">
-                        {formatScheduleTimeRange(s.fstarttime, s.fendtime)}
-                      </strong>
+                        <span className="agenda-days">
+                          <CalendarDays aria-hidden="true" />
+                          <span className="agenda-day-list">
+                            {activeDays.length
+                              ? activeDays.map(day => <b className="agenda-day-chip" key={day.key}>{day.label}</b>)
+                              : <b className="agenda-day-chip is-empty">بدون أيام</b>}
+                          </span>
+                        </span>
+                      <span className="agenda-clock-line">
+                        <Clock3 aria-hidden="true" />
+                        <strong dir="ltr">
+                          {formatScheduleTimeRange(s.fstarttime, s.fendtime)}
+                        </strong>
+                      </span>
                     </div>
                     <div className={`agenda-place${roomDisplay(s) || historicalLocationNeedsReview(s) ? "" : " is-empty"}`} title="المكان">
                       <MapPin aria-hidden="true" />

@@ -1,3 +1,4 @@
+import IntelligenceScopeSwitch from "./IntelligenceScopeSwitch";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { TimeField } from "./TimeField";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
@@ -248,13 +249,13 @@ export default function LivingScheduleLayer({
   const loadLiving = async () => {
     const request = ++livingRequest.current;
     try {
-      const q = contextQuery();
+      const q = `${contextQuery()}&analysisScope=${experience?.analysisScope || "college"}`;
       /* Shared with the experience layer, which asks for the same analysis in
          the same burst. Whoever gets here first issues the read; the rest wait
          on it. The staleness guard below is unchanged and still decides whether
          this component may use what comes back. */
       const d = await sharedLiving(
-        livingScopeKey(collegeId, sectionId, termId),
+        livingScopeKey(collegeId, sectionId, termId, experience?.analysisScope),
         () => json(`/api/intelligence/living${q ? `?${q}` : ""}`),
       );
       if (request !== livingRequest.current) return;
@@ -271,11 +272,11 @@ export default function LivingScheduleLayer({
     // before the command buttons even existed. The lightweight living read is
     // now requested immediately, while an already available shared result is
     // still reused.
-    if (experience?.living) {
+    if (experience?.living && experience.living.context?.analysisScope === experience.analysisScope && experience.living.context?.collegeId === collegeId && experience.living.context?.sectionId === sectionId && experience.living.context?.termId === termId) {
       setLiving(experience.living);
       return;
     }
-    const shared = readLiving(livingScopeKey(collegeId, sectionId, termId));
+    const shared = readLiving(livingScopeKey(collegeId, sectionId, termId, experience?.analysisScope));
     if (shared) { setLiving(shared); return; }
     /**
      * ── ولماذا لا يبدأ هذا مع اللوحة ────────────────────────────────────────
@@ -313,10 +314,11 @@ export default function LivingScheduleLayer({
       ? idle.requestIdleCallback(() => { void loadLiving(); }, { timeout: 5000 })
       : window.setTimeout(() => { void loadLiving(); }, 5000);
     return () => {
+      livingRequest.current++;
       if (idle.cancelIdleCallback && idle.requestIdleCallback) idle.cancelIdleCallback(handle);
       else window.clearTimeout(handle);
     };
-  }, [experience?.living, collegeId, sectionId, termId, rows.length]);
+  }, [experience?.living, experience?.analysisScope, collegeId, sectionId, termId, rows.length]);
   useEffect(() => {
     if (!selected) return;
     setSelectedId(selected.id);
@@ -843,13 +845,14 @@ export default function LivingScheduleLayer({
                 <span>لوحة الذكاء</span>
                 <div>
                   <h2>{sceneItems.find((x) => x.id === scene)?.label}</h2>
-                  <p>{living.context?.sectionName} · {living.context?.termName}</p>
+                  <p>{living.context?.sectionName} · {living.context?.termName}{living.context?.analysisScope === "department" ? ` · ${living.context.scopeCount} كليات` : ""}</p>
                 </div>
               </div>
               <button onClick={() => setScene(null)} aria-label="إغلاق">
                 <X />
               </button>
             </header>
+            {experience && ["pulse", "topology", "health", "brief"].includes(scene) ? <IntelligenceScopeSwitch value={experience.analysisScope} onChange={experience.setAnalysisScope} /> : null}
             <nav className="living-scene-nav">
               {sceneItems.map((item) => (
                 <button
@@ -867,7 +870,7 @@ export default function LivingScheduleLayer({
             {experience ? (
               <section className="living-experience-tools" aria-label="اختصارات مركز القرار">
                 <button type="button" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>
-                  <BrainCircuit /><span>القرار الأهم الآن</span>
+                  <BrainCircuit /><span>القرار الأهم · هذه الكلية</span>
                 </button>
                 <button type="button" onClick={() => { setScene(null); experience.setSignatureOpen(true); }} disabled={!rows.length}>
                   <Gauge /><span>بصمة القسم</span>
@@ -876,7 +879,7 @@ export default function LivingScheduleLayer({
             ) : null}
             {error ? <Notice>{error}</Notice> : null}
             {message ? <Notice type="success">{message}</Notice> : null}
-            <div className="living-panel-body">
+            <div className="living-panel-body" aria-busy={["pulse", "topology", "health", "brief"].includes(scene) && (experience?.insightBusy || living?.context?.analysisScope !== (experience?.analysisScope || "college"))}>
               {scene === "pulse" ? (
                 <PulseScene living={living} onGo={(s) => open(s)} />
               ) : null}

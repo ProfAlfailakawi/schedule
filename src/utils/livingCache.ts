@@ -24,8 +24,8 @@
 const store = new Map<string, { at: number; value: unknown }>();
 const WINDOW_MS = 8000;
 
-export const livingScopeKey = (collegeId: number, sectionId: number, termId: number) =>
-  `${Number(collegeId) || 0}|${Number(sectionId) || 0}|${Number(termId) || 0}`;
+export const livingScopeKey = (collegeId: number, sectionId: number, termId: number, analysisScope = "college") =>
+  `${Number(collegeId) || 0}|${Number(sectionId) || 0}|${Number(termId) || 0}|${analysisScope}`;
 
 export function readLiving<T = unknown>(key: string): T | null {
   const hit = store.get(key);

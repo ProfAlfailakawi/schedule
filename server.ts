@@ -2038,6 +2038,14 @@ async function resolveSmartContext(req: AuthenticatedRequest, options: { allowCo
  */
 const breathe = () => new Promise<void>(resolve => setImmediate(resolve));
 
+/** Read-only department analysis uses the established department family mapping. */
+async function intelligenceReadScopes(req: AuthenticatedRequest, collegeId: number, sectionId: number) {
+  if (req.query.analysisScope !== "department") return [{ collegeId, sectionId }];
+  const sections = await Repository.getSections();
+  return departmentFamily(sections, collegeId, sectionId)
+    .filter(scope => isScopeAllowed(req, scope.collegeId, scope.sectionId));
+}
+
 async function scopedScheduleUniverse(collegeId: number, sectionId: number, termId: number) {
   const [rows, universe] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
@@ -8272,13 +8280,18 @@ app.get("/api/intelligence/lookups", requirePermission(7), async (req: Authentic
 
 app.get("/api/intelligence/genome", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [sectionRows,terms,courses,instructors]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId}),Repository.getTerms(),Repository.getCoursesBySection(sectionId),Repository.getInstructorsByScope(sectionId,0)]);
-  res.json(buildScheduleGenome(sectionRows,terms,termId,courses,instructors));
+  const scopes = await intelligenceReadScopes(req, collegeId, sectionId);
+  const [rowGroups,terms,courses,instructors]=await Promise.all([
+    Promise.all(scopes.map(scope => Repository.getSchedulesByScope(scope))),
+    Repository.getTerms(),Repository.getCourses(),Repository.getInstructors()
+  ]);
+  res.json(buildScheduleGenome(rowGroups.flat(),terms,termId,courses,instructors));
 });
 
 app.get("/api/intelligence/constraints", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  res.json(await Repository.getScheduleConstraints(collegeId,sectionId,termId));
+  const scopes = await intelligenceReadScopes(req, collegeId, sectionId);
+  res.json((await Promise.all(scopes.map(scope => Repository.getScheduleConstraints(scope.collegeId, scope.sectionId, termId)))).flat());
 });
 app.post("/api/intelligence/constraints", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
@@ -12264,7 +12277,9 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
   const { collegeId, sectionId, termId, section } = await resolveSmartContext(req);
   if (!collegeId || !sectionId || !termId || !section) { res.status(400).json({ error: "لا يوجد قسم أو فصل دراسي متاح للتحليل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const livingKey = dataContextCacheKey(`${collegeId}:${sectionId}:${termId}`);
+  const readScopes = await intelligenceReadScopes(req, collegeId, sectionId);
+  const departmentRead = req.query.analysisScope === "department";
+  const livingKey = dataContextCacheKey(`${collegeId}:${sectionId}:${termId}:${departmentRead ? "department" : "college"}:${readScopes.map(s => `${s.collegeId}/${s.sectionId}`).join(",")}`);
   const isDemoLiving = Boolean(Repository.currentDemoSessionId());
   if (!isDemoLiving) {
     const held = livingResponseCache.get(livingKey);
@@ -12274,9 +12289,10 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
     }
   }
   const [scheduleData, courses, instructors, terms, constraints] = await Promise.all([
-    scopedScheduleUniverse(collegeId,sectionId,termId), Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(), Repository.getScheduleConstraints(collegeId, sectionId, termId)
+    scopedScheduleUniverse(collegeId,sectionId,termId), Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(), Promise.all(readScopes.map(scope => Repository.getScheduleConstraints(scope.collegeId, scope.sectionId, termId))).then(groups => groups.flat())
   ]);
-  const {rows,universe}=scheduleData;
+  const {universe}=scheduleData;
+  const rows = departmentRead ? universe.filter(row => readScopes.some(scope => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId)) : scheduleData.rows;
   /* «حالة الجدول — N مانع اعتماد» is the ApprovalBar's number: the same
      placeholder exemption and the same hall identity (approvalBlockerOptions),
      one options object so every memoised reading below shares it. */
@@ -12293,10 +12309,17 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
      which no screen ever called — so the living layer's «ملخص الدقيقة» never
      said what changed. It now carries the same «since the last safety point»
      reading, from the same helper. */
-  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, await briefChangedSince(collegeId, sectionId, termId, rows), blockerOptions);
-  const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
+  const changedCounts = await Promise.all(readScopes.map(scope => {
+    const own = rows.filter(row => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId);
+    return briefChangedSince(scope.collegeId, scope.sectionId, termId, own);
+  }));
+  const changedSince = changedCounts.every(count => count !== undefined)
+    ? changedCounts.reduce((total, count) => total + count, 0) : undefined;
+  const brief = buildOneMinuteBrief(rows, universe, courses, instructors, changedSince, blockerOptions);
+  const memories = (await Promise.all(readScopes.map(scope => Repository.getScheduleDecisionMemories(scope.collegeId, scope.sectionId, 120)))).flat();
   const livingPayload = {
-    context:{collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
+    analysisRows: departmentRead ? rows : undefined,
+    context:{analysisScope:departmentRead ? "department" : "college",scopeCount:readScopes.length,collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
     pulse,health,fairness,fragility,roomIntelligence,
     topology,brief,
     memory:buildDecisionMemoryInsight(memories),
