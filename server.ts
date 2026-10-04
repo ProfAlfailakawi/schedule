@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
+import sanitizeHtml from "sanitize-html";
 import { rateLimit } from "express-rate-limit";
 import compression from "compression";
 import path from "path";
@@ -1115,11 +1116,29 @@ app.post("/print/snapshot", express.urlencoded({ extended: false, limit: "5mb", 
   const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, char => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[char] as string));
-  const markupWithoutActiveContent = markup
-    .replace(/<\x73cript\b[\s\S]*?<\/\x73cript\s*>/gi, "")
-    .replace(/<\/?(?:iframe|object|embed|form|meta|base)\b[^>]*>/gi, "")
-    .replace(/\son[a-z][\w:-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/\s(?:href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\1/gi, "");
+  const markupWithoutActiveContent = sanitizeHtml(markup, {
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, "div", "span", "svg", "path", "circle", "rect", "line", "polyline", "polygon", "g"],
+    allowedAttributes: {
+      "*": ["class", "id", "title", "role", "aria-label", "aria-hidden", "style", "data-print-rotate", "data-print-chromium"],
+      svg: ["viewBox", "xmlns", "width", "height", "fill", "stroke", "stroke-width", "aria-hidden"],
+      path: ["d", "fill", "stroke", "stroke-width"],
+      circle: ["cx", "cy", "r", "fill", "stroke", "stroke-width"],
+      rect: ["x", "y", "width", "height", "rx", "fill", "stroke", "stroke-width"],
+      line: ["x1", "y1", "x2", "y2", "stroke", "stroke-width"],
+      polyline: ["points", "fill", "stroke", "stroke-width"],
+      polygon: ["points", "fill", "stroke", "stroke-width"],
+    },
+    allowedStyles: {
+      "*": {
+        width: [/^(?:\d+(?:\.\d+)?(?:px|%|rem|em)?|auto|min-content|max-content)$/i],
+        "grid-template-columns": [/^[\d.%(),\sfrminax-]+$/i],
+        "--i": [/^\d+$/],
+        "--slots": [/^\d+$/],
+      },
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedSchemesByTag: { img: ["data"] },
+  });
   let styles: unknown = [];
   try { styles = JSON.parse(String(req.body?.styles || "[]")); } catch { /* empty stylesheet list is handled below */ }
   const stylesheetLinks = Array.isArray(styles)
