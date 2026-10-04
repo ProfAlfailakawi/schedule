@@ -645,12 +645,6 @@ function RequestRow({ row, item, index, current, busy, rejecting, error, onRejec
               </SecondaryButton>
             </div>
           )}
-          {!hasThread && !talking && !(decided === "fixed") ? (
-            <button type="button" className="request-talk" onClick={() => setTalking(true)}
-              data-guide-ignore="فتح الحوار مع الأستاذ — لا يغيّر شيئاً">
-              <MessageSquare aria-hidden="true" /> ردّ واقترح وقتاً
-            </button>
-          ) : null}
           {error ? <p className="request-row-error"><ShieldAlert aria-hidden="true" />{error}</p> : null}
         </td>
       </tr>
