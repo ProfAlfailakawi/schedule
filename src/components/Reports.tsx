@@ -1670,7 +1670,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     setError(null);
     try {
       const targets = scope === "all-colleges"
-        ? [{ id: 0, name: "كل الكليات" }]
+        ? collegeOptions.map(college => ({ id: Number(college.AdCollegeId), name: college.AdCollegeName }))
         : [{ id: collegeId, name: collegeById.get(collegeId)?.AdCollegeName || "الكلية المحددة" }];
       const responses = await Promise.all(targets.map(async target => {
         const query = new URLSearchParams({ termId: String(filters.termId) });
