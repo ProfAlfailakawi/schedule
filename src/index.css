@@ -170,3 +170,4 @@
 .location-health-grid>.surface{min-width:0}
 .location-health-grid>.surface span{white-space:normal!important;line-height:1.45}
 @media(max-width:900px){.location-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.location-health-grid>.surface{min-width:0}}
+.pwa-print-notice{position:fixed;inset-inline:16px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:100000;width:min(420px,calc(100vw - 32px));margin-inline:auto;display:grid;gap:4px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent,#1f6b5c) 22%,var(--line,#e5e7eb));border-radius:18px;background:var(--surface,#fff);color:var(--ink,#1f2937);box-shadow:0 16px 48px rgba(15,23,42,.18);direction:rtl;text-align:start;font:inherit;animation:rise .18s ease-out both}.pwa-print-notice strong{font-size:13px;font-weight:800}.pwa-print-notice span{color:var(--muted,#667085);font-size:12px;line-height:1.45}

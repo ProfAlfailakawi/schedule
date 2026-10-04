@@ -8,6 +8,7 @@ import {
   type DepartmentTermLoad, type SimilarTermHistory,
 } from "../utils/sectionCountSuggestion";
 import { manualRemainingValue, planRemainingApply, remainingOf, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
+import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 
 /**
  * ── تخطيط الشعب: كشفُ المتبقي ← مدىً يرسيه التاريخ ← تقرير ─────────────────
@@ -234,6 +235,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     setReport(true);
   };
   const print = () => {
+    if (showPwaPrintHelp()) return;
     const root = document.documentElement;
     root.dataset.printKind = "section-plan";
     const done = () => { delete root.dataset.printKind; window.removeEventListener("afterprint", done); };

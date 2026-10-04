@@ -4333,6 +4333,9 @@ button.twin-delta{width:100%}
 .student-case-actions .changes-chip,.student-case-approve-all{display:inline-flex;align-items:center;gap:4px;min-height:28px;padding-inline:9px;font-size:11px}
 .student-case-actions .changes-chip svg,.student-case-approve-all svg{width:12px;height:12px}
 .student-case-actions .changes-chip:disabled,.student-case-approve-all:disabled{opacity:.5;cursor:not-allowed}
+.student-case-row-action{margin-top:8px}
+.student-case-approve-all{min-height:34px;padding:0 11px;border-color:color-mix(in srgb,var(--accent) 28%,var(--line));background:var(--accent-softer);color:var(--accent-ink);font-weight:700;white-space:normal;text-align:start}
+.student-case-decision .student-case-actions{padding-inline-start:2px}
 .student-case-notes{display:grid;gap:4px;justify-items:start}
 .student-case-notes em{font-style:normal;font-size:11px;color:var(--muted)}
 .student-cases-register--decisions .student-cases-table td.student-case-detail-cell{min-width:320px}
@@ -4357,6 +4360,8 @@ button.twin-delta{width:100%}
   .student-case-filters button{justify-content:space-between;white-space:nowrap}
   .student-case-actions{width:100%}
   .student-case-actions .changes-chip{flex:1;justify-content:center;min-height:34px}
+  .student-case-row-action{display:flex;justify-content:flex-start}
+  .student-case-approve-all{min-height:40px}
 }
 
 /* Import editing deliberately mirrors Add/Edit Schedule: start/end labels,

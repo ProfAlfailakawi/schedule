@@ -1,5 +1,4 @@
 import express, { Request, Response, NextFunction } from "express";
-import sanitizeHtml from "sanitize-html";
 import { rateLimit } from "express-rate-limit";
 import compression from "compression";
 import path from "path";
@@ -1100,65 +1099,6 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
   }
   next();
 }
-
-/**
- * iOS Home Screen apps do not consistently expose the native print sheet.
- * Receive the already-rendered, permission-checked print portal and return it
- * as a short-lived no-store Safari document. Nothing is persisted server-side.
- */
-app.post("/print/snapshot", express.urlencoded({ extended: false, limit: "5mb", parameterLimit: 8 }), authMiddleware, requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  const markup = String(req.body?.markup || "");
-  if (!markup || markup.length > 4_000_000 || !markup.startsWith("<div")) {
-    res.status(400).type("text/plain; charset=utf-8").send("تعذر تجهيز نسخة الطباعة.");
-    return;
-  }
-
-  const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, char => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[char] as string));
-  const markupWithoutActiveContent = sanitizeHtml(markup, {
-    allowedTags: [...sanitizeHtml.defaults.allowedTags, "div", "span", "svg", "path", "circle", "rect", "line", "polyline", "polygon", "g"],
-    allowedAttributes: {
-      "*": ["class", "id", "title", "role", "aria-label", "aria-hidden", "style", "data-print-rotate", "data-print-chromium"],
-      svg: ["viewBox", "xmlns", "width", "height", "fill", "stroke", "stroke-width", "aria-hidden"],
-      path: ["d", "fill", "stroke", "stroke-width"],
-      circle: ["cx", "cy", "r", "fill", "stroke", "stroke-width"],
-      rect: ["x", "y", "width", "height", "rx", "fill", "stroke", "stroke-width"],
-      line: ["x1", "y1", "x2", "y2", "stroke", "stroke-width"],
-      polyline: ["points", "fill", "stroke", "stroke-width"],
-      polygon: ["points", "fill", "stroke", "stroke-width"],
-    },
-    allowedStyles: {
-      "*": {
-        width: [/^(?:\d+(?:\.\d+)?(?:px|%|rem|em)?|auto|min-content|max-content)$/i],
-        "grid-template-columns": [/^[\d.%(),\sfrminax-]+$/i],
-        "--i": [/^\d+$/],
-        "--slots": [/^\d+$/],
-      },
-    },
-    allowedSchemes: ["http", "https", "mailto", "tel"],
-    allowedSchemesByTag: { img: ["data"] },
-  });
-  let styles: unknown = [];
-  try { styles = JSON.parse(String(req.body?.styles || "[]")); } catch { /* empty stylesheet list is handled below */ }
-  const stylesheetLinks = Array.isArray(styles)
-    ? styles.slice(0, 12).map(value => String(value || "")).filter(href => /^\/(?!\/)[\w./?&=%#-]+$/.test(href))
-      .map(href => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join("")
-    : "";
-  const kind = String(req.body?.printKind || "").replace(/[^a-z0-9-]/gi, "").slice(0, 40);
-  const rotate = req.body?.printRotate === "1" ? " data-print-rotate=\"1\"" : "";
-  const chromium = req.body?.printChromium === "1" ? " data-print-chromium=\"1\"" : "";
-  const nonce = randomBytes(18).toString("base64");
-  res.setHeader("Cache-Control", "no-store, max-age=0");
-  res.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
-  res.type("text/html; charset=utf-8").send(`<!doctype html><html lang="ar" dir="rtl"${kind ? ` data-print-kind="${escapeHtml(kind)}"` : ""}${rotate}${chromium}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>نسخة الطباعة · SCHEDULE</title>${stylesheetLinks}<style>
-    html,body{margin:0;min-height:100%;background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    #app-print-root,.print-portal-root,.print-only{display:block!important;visibility:visible!important;position:static!important;inset:auto!important;width:100%!important;height:auto!important;overflow:visible!important;background:#fff!important;transform:none!important}
-    .print-snapshot-toolbar{position:sticky;top:0;z-index:9999;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:#f3f5f4;border-bottom:1px solid #ccd3d0;color:#202623;font:600 15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    .print-snapshot-toolbar button{border:0;border-radius:12px;padding:12px 20px;background:#1f6b5c;color:white;font:700 16px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    @media print{.print-snapshot-toolbar{display:none!important}html,body{min-height:0!important}.print-portal-root,.print-only{position:static!important}}
-  </style></head><body class="has-print-portal"><header class="print-snapshot-toolbar"><span>نسخة الطباعة جاهزة في Safari</span><button id="print-now" type="button">طباعة التقرير</button></header>${markupWithoutActiveContent}<script nonce="${nonce}">document.getElementById('print-now')?.addEventListener('click',()=>window.print());</script></body></html>`);
-});
 
 // Screens that are intentionally reserved for the main administrator.
 // The department scheduler keeps the operational schedule/search/report tools only.
@@ -6885,7 +6825,10 @@ app.post("/api/admin/location-registry/rooms", requirePermission(7), requirePowe
 app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const [registry,colleges]=await Promise.all([readLocationRegistry(),Repository.getColleges()]);const current=registry.rooms.find(x=>x.id===req.params.id);if(!current){res.status(404).json({error:"القاعة غير موجودة"});return;}
   const targetBuildingId=String(req.body?.newBuildingId||current.buildingId),targetBuilding=registry.buildings.find(x=>x.id===targetBuildingId&&x.active&&x.confidence==="CONFIRMED");if(!targetBuilding){res.status(400).json({error:"المبنى الهدف غير موجود أو غير فعال"});return;}
-  if(targetBuildingId!==current.buildingId&&registry.rooms.some(x=>x.id!==current.id&&x.buildingId===targetBuildingId&&x.canonicalCode===current.canonicalCode)){res.status(409).json({error:"توجد قاعة بالرمز نفسه داخل المبنى الهدف"});return;}
+  const requestedCode=String(req.body?.canonicalCode??current.canonicalCode).normalize("NFKC").trim().toUpperCase().replace(/\s+/g,"");
+  if(!requestedCode||requestedCode===PENDING_ROOM||isInvalidLocationToken(requestedCode)||!/^[A-Z0-9]{1,12}$/.test(requestedCode)||!/[0-9]/.test(requestedCode)){res.status(400).json({error:"رقم القاعة غير صالح. استخدم 1 إلى 12 حرفًا أو رقمًا، على أن يتضمن رقمًا."});return;}
+  const roomCodeChanged=requestedCode!==current.canonicalCode;
+  if(registry.rooms.some(x=>x.id!==current.id&&x.buildingId===targetBuildingId&&x.canonicalCode===requestedCode)){res.status(409).json({error:"يوجد رقم القاعة نفسه في هذا المبنى."});return;}
   const sectionIds=req.body?.sectionIds===undefined?current.sectionIds:locationIdList(req.body.sectionIds);const primarySectionIds=(req.body?.primarySectionIds===undefined?(current.primarySectionIds||[]):locationIdList(req.body.primarySectionIds)).filter(id=>sectionIds.includes(id));
   /* Compatibility/audit contract: the room metadata still follows the canonical target building.
      Legacy expression: roomCollegeIds=targetBuilding.collegeIds.length?[...targetBuilding.collegeIds]
@@ -6895,8 +6838,13 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
   const requestedRoomCollegeIds=req.body?.collegeIds===undefined?(targetBuildingId===current.buildingId?current.collegeIds:[...officialCollegeIds]):locationIdList(req.body.collegeIds);
   if(requestedRoomCollegeIds.some(id=>officialCollegeIds.length&&!officialCollegeIds.includes(id))){res.status(409).json({error:"لا يمكن نقل/ربط القاعة بكلية لا يتبع لها كود المبنى الهدف."});return;}
   const roomCollegeIds=officialCollegeIds.length?[...officialCollegeIds]:requestedRoomCollegeIds;
-  const now=new Date().toISOString();const shared=sectionIds.length>1;const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared,collegeIds:roomCollegeIds,sectionIds,primarySectionIds,aliases:req.body?.aliases===undefined?current.aliases:locationAliases(req.body.aliases),buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode};
-  const row:MasterRoom={...current,...next,id:current.id,canonicalCode:current.canonicalCode,confidence:"CONFIRMED",sharedConfidence:"CONFIRMED",adminVerified:true,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:targetBuildingId===current.buildingId?"UPDATE":"MOVE_BUILDING",before:{buildingId:current.buildingId,buildingCode:current.buildingCode,active:current.active,shared:current.shared,collegeIds:current.collegeIds,sectionIds:current.sectionIds,primarySectionIds:current.primarySectionIds},after:next}]};
+  const now=new Date().toISOString();const shared=sectionIds.length>1;
+  const aliases=locationAliases(req.body?.aliases===undefined?[
+    ...(current.aliases||[]),
+    ...(roomCodeChanged?[{value:current.canonicalCode,evidence:[`رمز القاعة السابق قبل تغييره إلى ${requestedCode}.`]}]:[]),
+  ]:req.body.aliases);
+  const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared,collegeIds:roomCollegeIds,sectionIds,primarySectionIds,aliases,buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode,canonicalCode:requestedCode};
+  const row:MasterRoom={...current,...next,id:current.id,confidence:"CONFIRMED",sharedConfidence:"CONFIRMED",adminVerified:true,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:targetBuildingId!==current.buildingId?"MOVE_BUILDING":roomCodeChanged?"RENAME_ROOM":"UPDATE",before:{buildingId:current.buildingId,buildingCode:current.buildingCode,canonicalCode:current.canonicalCode,active:current.active,shared:current.shared,collegeIds:current.collegeIds,sectionIds:current.sectionIds,primarySectionIds:current.primarySectionIds},after:next}]};
   /* ── لا نسخة كاملة للنظام قبل نقل قاعة ──────────────────────────────────
    * Moving a room between buildings used to copy the ENTIRE database first:
    * `createSystemRestorePoint` → `makeSystemBackup` → `collectSystemDocuments`
@@ -6915,12 +6863,31 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
    * walk for exports was moved into a resumable job precisely because "a
    * browser download is the wrong lifetime for a full Firestore walk". The
    * restore point kept doing it inline.) */
-  if(targetBuildingId!==current.buildingId){
-    const affected=(await Repository.getSchedules()).filter(schedule=>schedule.roomId===current.id);
-    try{await Repository.upsertLocationRooms([row]);await Repository.applyLocationSchedulePatches(affected.map(schedule=>({id:schedule.id,fields:{buildingId:targetBuilding.id,AdRoomCode:targetBuilding.officialCode,locationStatus:"VERIFIED",locationResolvedAt:now}})));}
-    catch(error){await Repository.upsertLocationRooms([current]);await Repository.applyLocationSchedulePatches(affected.map(schedule=>({id:schedule.id,fields:{buildingId:current.buildingId,AdRoomCode:current.buildingCode,locationStatus:schedule.locationStatus,locationResolvedAt:schedule.locationResolvedAt}})));throw error;}
+  const schedules=targetBuildingId!==current.buildingId||roomCodeChanged?await Repository.getSchedules():[];
+  const roomWasAddressedByLegacyCode=(schedule:FSchedule)=>!schedule.roomId
+    && String(schedule.buildingId||"")===current.buildingId
+    && String(schedule.AdRoomHall||"").normalize("NFKC").trim().toUpperCase().replace(/\s+/g,"")===current.canonicalCode;
+  let affected=schedules.filter(schedule=>schedule.roomId===current.id||(roomCodeChanged&&roomWasAddressedByLegacyCode(schedule)));
+  if(roomCodeChanged&&targetBuildingId===current.buildingId){
+    const terms=await Repository.getTerms();
+    const activeId=currentTermId(terms as any)||Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);
+    const activeTerm=terms.find(term=>Number(term.AdTermId)===activeId);
+    const activeChronology=activeTerm?termChronologyServer(activeTerm):Number.NEGATIVE_INFINITY;
+    const currentAndFutureTermIds=new Set(terms.filter(term=>termChronologyServer(term)>=activeChronology).map(term=>Number(term.AdTermId)));
+    affected=affected.filter(schedule=>currentAndFutureTermIds.has(Number(schedule.AdTermId)));
+  }
+  const schedulePatches:Array<{id:number;fields:Partial<FSchedule>}>=affected.map(schedule=>({id:schedule.id,fields:{
+    ...(targetBuildingId!==current.buildingId?{buildingId:targetBuilding.id,AdRoomCode:targetBuilding.officialCode,locationStatus:"VERIFIED" as const,locationResolvedAt:now}:{}),
+    ...(roomCodeChanged?{AdRoomHall:requestedCode}:{}),
+  }}));
+  if(schedulePatches.length){
+    try{await Repository.upsertLocationRooms([row]);await Repository.applyLocationSchedulePatches(schedulePatches);}
+    catch(error){await Repository.upsertLocationRooms([current]);await Repository.applyLocationSchedulePatches(affected.map(schedule=>({id:schedule.id,fields:{
+      ...(targetBuildingId!==current.buildingId?{buildingId:schedule.buildingId,AdRoomCode:schedule.AdRoomCode,locationStatus:schedule.locationStatus,locationResolvedAt:schedule.locationResolvedAt}:{}),
+      ...(roomCodeChanged&&schedule.AdRoomHall!==undefined?{AdRoomHall:schedule.AdRoomHall}:{}),
+    }})));throw error;}
   }else await Repository.upsertLocationRooms([row]);
-  invalidateLocationRegistry();res.json(row);
+  invalidateLocationRegistry();res.json({...row,updatedScheduleCount:schedulePatches.length});
 });
 app.put("/api/admin/location-registry/review/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const cases=await Repository.getLocationReviewCases();const current=cases.find(x=>x.id===req.params.id);if(!current){res.status(404).json({error:"حالة المراجعة غير موجودة"});return;}

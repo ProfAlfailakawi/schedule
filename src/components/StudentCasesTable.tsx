@@ -17,6 +17,7 @@ import React, { useMemo, useState } from "react";
 import { Printer } from "lucide-react";
 import { Badge, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 
 export type StudentCaseType = "new-course" | "course-conflict" | "graduate";
 type TypeFilter = "all" | StudentCaseType;
@@ -106,6 +107,8 @@ interface Props {
   renderCaseDecision?: (item: StudentCaseView) => React.ReactNode;
   /** Something said about the case under its courses (partner course, dropped notice). */
   renderCaseNote?: (item: StudentCaseView) => React.ReactNode;
+  /** A decision for the whole case, kept beside the student's identity rather than between courses. */
+  renderCaseAction?: (item: StudentCaseView) => React.ReactNode;
   /** A status column on the printed sheet (registration decisions). */
   printStatus?: (item: StudentCaseView) => string;
   print: { scope: string; college?: string };
@@ -113,7 +116,7 @@ interface Props {
 
 export default function StudentCasesTable({
   cases, sectionId, total, heading = "طلبات الطلبة بالتفاصيل", emptyText, toolbarExtra,
-  renderCourseDecision, renderCaseDecision, renderCaseNote, printStatus, print,
+  renderCourseDecision, renderCaseDecision, renderCaseNote, renderCaseAction, printStatus, print,
 }: Props) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [printMode, setPrintMode] = useState<TypeFilter | null>(null);
@@ -132,6 +135,7 @@ export default function StudentCasesTable({
   const decisions = Boolean(renderCourseDecision || renderCaseDecision);
 
   const printCases = (mode: TypeFilter) => {
+    if (showPwaPrintHelp()) return;
     setPrintMode(mode);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       document.documentElement.dataset.printKind = "student-cases";
@@ -241,6 +245,7 @@ export default function StudentCasesTable({
                   <tr key={item.id} className={`case-${type}${openMore.has(item.id) ? " is-more-open" : ""}`}>
                     <td data-label="رقم الحالة" dir="ltr"><code>{item.caseRef || "—"}</code></td>
                     <td data-label="الطالب"><strong>{item.name || "—"}</strong>
+                      {renderCaseAction ? <div className="student-case-row-action">{renderCaseAction(item)}</div> : null}
                       <button type="button" className="student-case-more-toggle" aria-expanded={openMore.has(item.id)} onClick={() => toggleMore(item.id)} data-guide-ignore="طيّ التفاصيل الثانوية لبطاقة الحالة على الهاتف عرضٌ فقط">تفاصيل</button></td>
                     <td className="student-case-secondary" data-label="الرقم المدني" dir="ltr">{item.civil || "—"}</td>
                     <td className="student-case-secondary" data-label="قسم الطالب">{item.studentSectionName || "—"}{curriculumTag(item)}</td>

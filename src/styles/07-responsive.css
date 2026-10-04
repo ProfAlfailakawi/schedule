@@ -630,6 +630,39 @@
     white-space:normal;
     overflow-wrap:anywhere;
   }
+  /* Visiting-instructor rows have their own second line (section/site), so
+     they must not inherit the generic four-column grouped-card geometry. */
+  .lens-groups.lens-visiting>article>button{
+    grid-template-columns:34px minmax(0,1fr) 18px;
+    grid-template-areas:"avatar identity chev" "avatar load chev";
+    align-items:center;
+    column-gap:var(--s3);
+    row-gap:4px;
+  }
+  .lens-visiting .group-avatar{grid-area:avatar}
+  .lens-visiting .visiting-card-identity{grid-area:identity;min-width:0}
+  .lens-visiting .visiting-card-identity strong{
+    grid-area:auto;
+    overflow:visible!important;
+    white-space:normal!important;
+    text-overflow:clip!important;
+    overflow-wrap:anywhere;
+    display:-webkit-box!important;
+    -webkit-box-orient:vertical;
+    -webkit-line-clamp:2;
+  }
+  .lens-visiting .visiting-card-places{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.4}
+  .lens-visiting .visiting-card-load{grid-area:load;white-space:normal;font-size:12px;line-height:1.35;text-align:start}
+  .lens-visiting>article>button .group-bar{display:none}
+  .lens-visiting .group-rows>div{
+    grid-template-columns:minmax(0,1fr) auto;
+    grid-template-areas:"name code" "place place" "time days";
+    align-items:start;
+    gap:5px 10px;
+    padding:10px 0;
+  }
+  .lens-visiting .group-rows>div>span:nth-child(2){white-space:normal;overflow:visible;text-overflow:clip;line-height:1.45}
+  .lens-visiting .group-rows .visiting-row-place{padding-top:5px;border-top:1px dashed var(--line);text-align:start}
   .lens-times>article{
     grid-template-columns:56px minmax(0,1fr) 36px;
     grid-template-areas:"time bar count" "rooms rooms rooms";

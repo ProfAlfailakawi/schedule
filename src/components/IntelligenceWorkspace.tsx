@@ -4,6 +4,7 @@ import { TimeField } from "./TimeField";
 import { DnaStepper } from "./dna";
 import { CampusTravelMap, EquationChips } from "./VisualBits";
 import { runVisualTransition } from "../utils/visualTransition";
+import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -3175,7 +3176,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             <QrCode /> {surveyQr?.id === link.id ? "أخفِ الرمز" : "رمز QR"}
                           </SecondaryButton>
                           {surveyQr?.id === link.id ? (
-                            <GhostButton onClick={() => window.print()}>
+                            <GhostButton onClick={() => { if (!showPwaPrintHelp()) window.print(); }}>
                               <Printer /> اطبع الرمز
                             </GhostButton>
                           ) : null}
@@ -3664,7 +3665,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   type="button"
                   data-guide-ignore="طباعة نتائج الاستعلام فقط ولا تغيّر الجدول"
                   className="copilot-print no-print"
-                  onClick={() => window.print()}
+                  onClick={() => { if (!showPwaPrintHelp()) window.print(); }}
                   title="طباعة نتائج الاستعلامات"
                 >
                   <Printer aria-hidden="true" /> طباعة النتائج

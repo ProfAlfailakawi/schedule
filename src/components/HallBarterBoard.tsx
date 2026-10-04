@@ -15,6 +15,7 @@ import {
 import { GhostButton, PrimaryButton, SecondaryButton, PrintPortal } from "./ui";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
+import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 
 type Opportunity = {
   id: string;
@@ -299,6 +300,7 @@ export default function HallBarterBoard({
      يتبعثر بين خانات الجدول. */
   const fmtDate = (iso: string) => { const t = Date.parse(String(iso || "")); if (!Number.isFinite(t)) return "—"; const d = new Date(t); const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; };
   const printLog = () => {
+    if (showPwaPrintHelp()) return;
     const root = document.documentElement;
     root.dataset.printKind = "barter-log";
     const done = () => { delete root.dataset.printKind; window.removeEventListener("afterprint", done); };

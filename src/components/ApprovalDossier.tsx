@@ -20,6 +20,7 @@ import type { LucideIcon } from "lucide-react";
 import { PrintPortal, useDialogDismiss } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { approvalScopeKey, createScopeGuard } from "../utils/approvalScope";
+import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 import {
   buildApprovalDossier, type ApprovalDossierModel, type DossierKind, type DossierReadiness, type DossierReport, type DossierTimelineStep,
 } from "../utils/approvalDossier";
@@ -239,6 +240,7 @@ export default function ApprovalDossier({ collegeId, sectionId, termId, collegeN
   }), [collegeId, sectionId, termId, collegeName, sectionName, termName, report, readiness]);
 
   const printIt = () => {
+    if (showPwaPrintHelp()) return;
     const root = document.documentElement;
     root.dataset.printKind = "approval-dossier";
     const done = () => { delete root.dataset.printKind; window.removeEventListener("afterprint", done); };

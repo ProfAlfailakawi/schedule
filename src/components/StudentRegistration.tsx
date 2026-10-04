@@ -379,7 +379,6 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   const committeeActs = canWrite && (viewer === "committee" || viewer === "both");
   const registrationActs = canWrite && (viewer === "registration" || viewer === "both");
   /* قرارُ التسجيل لا تنقضه اللجنة. */
-  const decidedByRegistration = (course: CaseCourse) => course.settled && (course.state === "registered" || course.state === "rejected");
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const row of rows || []) for (const status of rowStatuses(row)) counts[status] = (counts[status] || 0) + 1;
@@ -494,6 +493,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
   const courseStateLabel = (course: CaseCourse) => course.droppedByStudent ? (course.droppedLabel || "ألغاه الطالب")
     : course.readOnly ? `يقرّره قسم ${course.decidedBySectionName || "آخر"}`
     : course.settled ? STATE_LABEL[course.state] || course.state : PENDING_COMMITTEE;
+  const decidedByRegistration = (course: CaseCourse) => course.settled && (course.state === "registered" || course.state === "rejected");
 
   const courseDecision = (row: CaseRow, course: CaseCourse) => {
     const key = `${row.id}:${course.id}`;
@@ -505,58 +505,56 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         {course.reasonCode ? <em>{reasonLabel(course.reasonCode)}{course.note ? ` · ${course.note}` : ""}</em>
           : course.note ? <em>{course.note}</em> : null}
         {course.droppedByStudent ? <em className="registration-dropped">{course.droppedLabel || "ألغاه الطالب بعد التسجيل"}</em> : null}
-        {committeeActs && !course.readOnly && !course.droppedByStudent && !decidedByRegistration(course) ? (
+        {committeeActs && !(registrationActs && course.state === "awaiting-registration") && !course.readOnly && !course.droppedByStudent && !decidedByRegistration(course)
+          && (!course.settled || course.state === "committee-rejected" || course.state === "awaiting-registration") ? (
           <span className="student-case-actions" aria-label="قرار اللجنة">
-            <button
+            {!(course.settled && course.state === "awaiting-registration") ? <button
               type="button" className="changes-chip"
-              data-active={(course.settled && course.state === "awaiting-registration") || undefined}
               disabled={busyKey === key || busyKey === `${row.id}:all`}
               data-guide-target="registration.action.state"
               onClick={() => void setState(row, course, "awaiting-registration")}
             >
-              <Check aria-hidden="true" /> موافقة
-            </button>
-            <button
+              <Check aria-hidden="true" /> موافقة اللجنة
+            </button> : null}
+            {!course.settled || course.state === "awaiting-registration" ? <button
               type="button" className="changes-chip"
-              data-active={course.state === "committee-rejected" || undefined}
               disabled={busyKey === key || busyKey === `${row.id}:all`}
               data-guide-target="registration.action.state"
               onClick={() => setRejecting({ row, course, committee: true })}
             >
-              <X aria-hidden="true" /> لا توافق
-            </button>
+              <X aria-hidden="true" /> رفض اللجنة
+            </button> : null}
           </span>
         ) : null}
         {registrationActs && !course.readOnly && !course.droppedByStudent && course.settled && course.state !== "committee-rejected" ? (
           <span className="student-case-actions" aria-label="قرار التسجيل">
+            {course.state === "awaiting-registration" ? <>
             <button
               type="button" className="changes-chip"
-              data-active={course.state === "registered" || undefined}
               disabled={busyKey === key}
               data-guide-target="registration.action.state"
               onClick={() => void setState(row, course, "registered")}
             >
-              <Check aria-hidden="true" /> سُجّل
+              <Check aria-hidden="true" /> سجّل
             </button>
             <button
               type="button" className="changes-chip"
-              data-active={course.state === "rejected" || undefined}
               disabled={busyKey === key}
               data-guide-target="registration.action.state"
               onClick={() => setRejecting({ row, course, committee: false })}
             >
-              <X aria-hidden="true" /> رُدّ
+              <X aria-hidden="true" /> ردّ التسجيل
             </button>
-            {course.state !== "awaiting-registration" ? (
+            </> : (
               <button
                 type="button" className="changes-chip"
                 disabled={busyKey === key}
                 data-guide-target="registration.action.state"
                 onClick={() => void setState(row, course, "awaiting-registration")}
               >
-                <Clock3 aria-hidden="true" /> أعِده للانتظار
+                <Clock3 aria-hidden="true" /> إعادة للانتظار
               </button>
-            ) : null}
+            )}
           </span>
         ) : null}
       </span>
@@ -574,56 +572,53 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         {last?.reasonCode ? <em>{reasonLabel(last.reasonCode)}{last.note ? ` · ${last.note}` : ""}</em>
           : last?.note ? <em>{last.note}</em> : null}
         {row.graduate && !row.graduate.nameMatched ? <em>الاسم في صحيفة التخرج لم يُطابق حرفياً</em> : null}
-        {committeeActs && !row.caseState?.registrar ? (
+        {committeeActs && !(registrationActs && status === "approved") && (status === "pending" || status === "approved" || status === "committee-rejected") ? (
           <span className="student-case-actions" aria-label="قرار اللجنة في الحالة">
-            <button
+            {status !== "approved" ? <button
               type="button" className="changes-chip"
-              data-active={status === "approved" || undefined}
               disabled={busyKey === key}
               data-guide-target="registration.action.state"
               onClick={() => void setCaseState(row, "committee", "approved")}
             >
-              <Check aria-hidden="true" /> موافقة
-            </button>
-            <button
+              <Check aria-hidden="true" /> موافقة اللجنة
+            </button> : null}
+            {status !== "committee-rejected" ? <button
               type="button" className="changes-chip"
-              data-active={status === "committee-rejected" || undefined}
               disabled={busyKey === key}
               data-guide-target="registration.action.state"
               onClick={() => setRejecting({ row, course: null, committee: true })}
             >
-              <X aria-hidden="true" /> لا توافق
-            </button>
+              <X aria-hidden="true" /> رفض اللجنة
+            </button> : null}
           </span>
         ) : null}
         {registrationActs && row.caseState?.committee?.state === "approved" ? (
           <span className="student-case-actions" aria-label="قرار التسجيل في الحالة">
+            {status === "approved" ? <>
             <button
               type="button" className="changes-chip"
-              data-active={status === "registered" || undefined}
               disabled={busyKey === key}
               data-guide-target="registration.action.state"
               onClick={() => void setCaseState(row, "registrar", "approved")}
             >
-              <Check aria-hidden="true" /> نُفّذ
+              <Check aria-hidden="true" /> سجّل الطلب
             </button>
             <button
               type="button" className="changes-chip"
-              data-active={status === "rejected" || undefined}
               disabled={busyKey === key}
               data-guide-target="registration.action.state"
               onClick={() => setRejecting({ row, course: null, committee: false })}
             >
-              <X aria-hidden="true" /> رُدّ
+              <X aria-hidden="true" /> ردّ التسجيل
             </button>
-            {row.caseState?.registrar ? (
+            </> : status === "registered" || status === "rejected" ? (
               <button
                 type="button" className="changes-chip"
                 disabled={busyKey === key}
                 data-guide-target="registration.action.state"
                 onClick={() => void setCaseState(row, "registrar", "pending")}
               >
-                <Clock3 aria-hidden="true" /> أعِده للانتظار
+                <Clock3 aria-hidden="true" /> إعادة للانتظار
               </button>
             ) : null}
           </span>
@@ -632,28 +627,28 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
     );
   };
 
-  /* ما يُقال عن الحالة تحت مقرّراتها: ملاحظاتُ الطالب، وطلبُ خريجٍ استُبدل،
-     و«موافقة على الكل» لطالبٍ واحد. */
+  /* ما يُقال عن الحالة تحت مقرّراتها: ملاحظاتُ الطالب وطلبُ خريجٍ استُبدل. */
   const caseNote = (row: CaseRow) => {
-    const pendingHere = committeeActs && !row.caseLevel && row.courses.some(course => !course.settled && !course.readOnly && !course.droppedByStudent);
     if (row.caseLevel) return null;
-    if (!row.details && !row.caseDroppedAt && !pendingHere) return null;
+    if (!row.details && !row.caseDroppedAt) return null;
     return (
       <span className="student-case-notes">
         {row.details ? <em className="registration-details">ملاحظات الطالب: {row.details}</em> : null}
         {row.caseDroppedAt ? <em className="registration-dropped">ألغى الطالب طلب الخريج السابق بعد قرارٍ فيه، واستبدله بهذا الطلب.</em> : null}
-        {pendingHere ? (
-          <button
-            type="button" className="changes-chip student-case-approve-all"
-            disabled={busyKey === `${row.id}:all`}
-            data-guide-target="registration.action.state"
-            onClick={() => void approveAll(row)}
-          >
-            <CheckCheck aria-hidden="true" /> موافقة على الكل
-          </button>
-        ) : null}
       </span>
     );
+  };
+
+  const caseAction = (item: StudentCaseView) => {
+    const row = rowById.get(item.id);
+    const pendingHere = Boolean(row && committeeActs && !row.caseLevel && row.courses.some(course => !course.settled && !course.readOnly && !course.droppedByStudent));
+    if (!row || !pendingHere) return null;
+    return <button
+      type="button" className="changes-chip student-case-approve-all"
+      disabled={busyKey === `${row.id}:all`}
+      data-guide-target="registration.action.state"
+      onClick={() => void approveAll(row)}
+    ><CheckCheck aria-hidden="true" /> موافقة مقررات الطالب</button>;
   };
 
   const selects: ScopeAskSelect[] = [
@@ -798,6 +793,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
               const row = rowById.get(item.id);
               return row ? caseNote(row) : null;
             }}
+            renderCaseAction={caseAction}
             printStatus={item => {
               const row = rowById.get(item.id);
               if (!row) return "";

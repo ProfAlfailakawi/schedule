@@ -17,7 +17,7 @@ import { blockingSummaryPhrase } from "../utils/approvalWorkflow";
 import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { rowsInApprovalScope } from "../utils/approvalScope";
-import { isIosStandalonePwa, openPwaPrintSnapshot } from "../utils/pwaPrintSnapshot";
+import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 
 /**
  * The last read before a schedule is adopted.
@@ -381,6 +381,7 @@ export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, i
 
   const printReview = React.useCallback(() => {
     if (typeof window === "undefined") return;
+    if (showPwaPrintHelp()) return;
     flushSync(() => {});
     const ua = navigator.userAgent || "";
     const isWebKitSafari = /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(ua);
@@ -402,7 +403,7 @@ export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, i
     };
     window.addEventListener("afterprint", resume, { once: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
-    let invoked = isIosStandalonePwa() && openPwaPrintSnapshot();
+    let invoked = false;
     if (!invoked && isWebKitSafari && typeof document.execCommand === "function") {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }

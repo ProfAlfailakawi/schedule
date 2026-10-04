@@ -18,7 +18,7 @@ import { safeStorage } from "../utils/safeStorage";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { compareCourseSection } from "../utils/scheduleOrder";
-import { isIosStandalonePwa, openPwaPrintSnapshot } from "../utils/pwaPrintSnapshot";
+import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 import { sectionLabels } from "../utils/sectionLabel";
 import { currentTermId, sortTermsNewest, termChronology, termIsArchive } from "../utils/termSequence";
 import {
@@ -1530,6 +1530,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
    * ناقصاً خيرٌ من تقريرٍ لا يخرج.
    */
   const printComprehensiveWithChanges = async () => {
+    if (showPwaPrintHelp()) return;
     const { collegeId, sectionId, termId } = filters;
     if (!collegeId || !sectionId || !termId) { printReport("comprehensive"); return; }
     setAppendixBusy(true);
@@ -1556,6 +1557,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   };
 
   const printReport = (kind: Exclude<PrintKind, null> = lens) => {
+    if (showPwaPrintHelp()) return;
     /* Safari/WebKit has a long-standing failure mode where an active EventSource
        can make window.print() silently do nothing. Pause the live schedule stream
        synchronously inside the same tap, commit the requested sheet synchronously,
@@ -1620,8 +1622,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     window.addEventListener("afterprint", resume, { once: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
 
-    const handedToSafari = isIosStandalonePwa() && openPwaPrintSnapshot();
-    let invoked = handedToSafari;
+    let invoked = false;
     if (!invoked && SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }
@@ -1685,8 +1686,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     };
     window.addEventListener("afterprint", resume, { once: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
-    const handedToSafari = isIosStandalonePwa() && openPwaPrintSnapshot();
-    let invoked = handedToSafari;
+    let invoked = false;
     if (!invoked && SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }
@@ -1695,6 +1695,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   };
 
   const printBranchComprehensive = async () => {
+    if (showPwaPrintHelp()) return;
     if (!branchSites.length) return;
     setError(null);
     const { denied } = await loadBranchRows();
@@ -1704,6 +1705,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   };
 
   const printBranchAuthorityReport = async () => {
+    if (showPwaPrintHelp()) return;
     if (!branchSites.length || !filters.termId) return;
     setAuthorityReportBusy(true);
     setError(null);
@@ -1727,6 +1729,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   };
 
   const printAuthorityReport = async () => {
+    if (showPwaPrintHelp()) return;
     if (!filters.collegeId || !filters.sectionId || !filters.termId) {
       setError("اختر الفصل والكلية والقسم أولاً لفتح تقرير تغييرات الجدول.");
       return;
@@ -1772,8 +1775,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       window.addEventListener("afterprint", resume, { once: true });
       document.addEventListener("visibilitychange", onVisibilityChange);
 
-      const handedToSafari = isIosStandalonePwa() && openPwaPrintSnapshot();
-      let invoked = handedToSafari;
+      let invoked = false;
       if (!invoked && SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
         try { invoked = document.execCommand("print"); } catch { invoked = false; }
       }
