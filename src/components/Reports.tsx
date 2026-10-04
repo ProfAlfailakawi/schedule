@@ -472,7 +472,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [branchBusy, setBranchBusy] = useState(false);
   /* نطاق التقارير: الموقع المفتوح وحده (الافتراضي) أو مواقع الفرع كلها. */
   /* أي زر تقرير فتح قائمة نطاقه الآن — والقائمة تُغلق بالضغط خارجها. */
-  const [scopeMenu, setScopeMenu] = useState<"comprehensive" | "authority" | null>(null);
+  const [scopeMenu, setScopeMenu] = useState<"comprehensive" | "authority" | "instructor" | null>(null);
+  const [printRowsOverride, setPrintRowsOverride] = useState<FSchedule[] | null>(null);
+  const [printCollegeOverride, setPrintCollegeOverride] = useState("");
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
   /* صفةُ كل قسمٍ لمن يرى النهائيَّ وحده («accepted» | «historical»)، من ترويسة
@@ -1606,6 +1608,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
          المعاينة يُسقطه من المطبوع أو يُعيد ترتيب الصفحات — وهو العطبُ نفسه
          الذي وُصف أعلاه، لا عطبٌ آخر. */
       setChangesAppendix(null);
+      setPrintRowsOverride(null);
+      setPrintCollegeOverride("");
     };
     const resume = () => {
       if (resumed) return;
@@ -1636,8 +1640,48 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
        ويخرج مع أول طباعةٍ شاملةٍ بعده لم تطلبه. والسمات تبقى كما هي عمداً، كما
        يقول التعليق أعلاه؛ الملحقُ ليس سمةً على الجذر بل عقدةٌ في الوثيقة. */
     window.setTimeout(() => {
-      if (!leftForPrint && !resumed) { openReportEvents(); setChangesAppendix(null); }
+      if (!leftForPrint && !resumed) {
+        openReportEvents();
+        setChangesAppendix(null);
+        setPrintRowsOverride(null);
+        setPrintCollegeOverride("");
+      }
     }, 2500);
+  };
+
+  /* يطبع تقرير الأستاذ من نطاق مستقل عن مرشحات العرض الحالية. كل قراءة تمر
+     عبر /api/schedules، الذي يقصر الصفوف على صلاحيات الحساب قبل إرجاعها. */
+  const printInstructorScope = async (scope: "college" | "all-colleges" | "branches", collegeId = filters.collegeId) => {
+    if (showPwaPrintHelp() || !filters.termId) return;
+    const instructorId = Number(filters.instructorId || 0);
+    if (!instructorId && !filters.instructorQuery.trim()) return;
+    setScopeMenu(null);
+    setBranchBusy(true);
+    setError(null);
+    try {
+      const targets = scope === "all-colleges"
+        ? [{ id: 0, name: "كل الكليات" }]
+        : scope === "branches"
+          ? branchSites.map(site => ({ id: site.collegeId, name: site.siteLabel }))
+          : [{ id: collegeId, name: collegeById.get(collegeId)?.AdCollegeName || "الكلية المحددة" }];
+      const responses = await Promise.all(targets.map(async target => {
+        const query = new URLSearchParams({ termId: String(filters.termId) });
+        if (target.id) query.set("collegeId", String(target.id));
+        const response = await fetch(`/api/schedules?${query}`);
+        if (!response.ok) throw new Error("تعذرت قراءة جداول الأستاذ في النطاق المطلوب");
+        return { target, rows: await response.json() as FSchedule[] };
+      }));
+      const matches = responses.flatMap(({ rows }) => rows).filter(row => {
+        if (instructorId) return Number(row.AdInstructorId) === instructorId;
+        const q = sortKey(filters.instructorQuery).toLowerCase();
+        return sortKey(instructorById.get(Number(row.AdInstructorId))?.AdInstructorName || "").toLowerCase().includes(q);
+      });
+      const chosenCollege = scope === "college" ? collegeById.get(collegeId)?.AdCollegeName || "" : scope === "branches" ? "كل الفروع" : "كل الكليات";
+      flushSync(() => { setPrintRowsOverride(matches); setPrintCollegeOverride(chosenCollege); setPrintKind("instructor"); setAuthorityReport(null); setAuthorityBook(null); });
+      printReport("instructor");
+    } catch (e: any) {
+      setError(e?.message || "تعذر إعداد تقرير الأستاذ");
+    } finally { setBranchBusy(false); }
   };
 
   useEffect(() => {
@@ -2170,15 +2214,27 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
               </button>
             ) : null}
             {results.length ? <>
-              <button
-                type="button"
-                className="query-print-icon"
-                onClick={() => printReport(lens)}
-                aria-label="طباعة هذا العرض"
-                title="طباعة هذا العرض"
-              >
-                <Printer aria-hidden="true" />
-              </button>
+              {lens === "instructor" ? (
+                <div className="query-report-action">
+                  <SecondaryButton type="button" className="query-print-icon" aria-label="طباعة تقرير الأستاذ" aria-haspopup="menu" aria-expanded={scopeMenu === "instructor" || undefined} onClick={() => setScopeMenu(scopeMenu === "instructor" ? null : "instructor")} disabled={branchBusy} title="اختر نطاق تقرير الأستاذ للطباعة">
+                    <Printer aria-hidden="true" />
+                  </SecondaryButton>
+                  {scopeMenu === "instructor" ? (
+                    <div className="query-scope-menu" role="menu" aria-label="نطاق تقرير الأستاذ">
+                      {filters.collegeId ? <button type="button" role="menuitem" onClick={() => void printInstructorScope("college", filters.collegeId)}>هذه الكلية<small>{collegeById.get(filters.collegeId)?.AdCollegeName || "الكلية المحددة"}</small></button> : null}
+                      {collegeOptions.filter(college => Number(college.AdCollegeId) !== Number(filters.collegeId)).map(college => (
+                        <button key={college.AdCollegeId} type="button" role="menuitem" onClick={() => void printInstructorScope("college", Number(college.AdCollegeId))}>كلية محددة<small>{college.AdCollegeName}</small></button>
+                      ))}
+                      <button type="button" role="menuitem" onClick={() => void printInstructorScope("all-colleges")}>كل الكليات<small>ضمن صلاحيات حسابك</small></button>
+                      {branchSites.length > 1 ? <button type="button" role="menuitem" onClick={() => void printInstructorScope("branches")}>كل الفروع<small>{branchSites.map(site => site.siteLabel).join(" · ")}</small></button> : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <button type="button" className="query-print-icon" onClick={() => printReport(lens)} aria-label="طباعة هذا العرض" title="طباعة هذا العرض">
+                  <Printer aria-hidden="true" />
+                </button>
+              )}
               {/* ── تصدير Excel (N12) ────────────────────────────────────────
                   الملفّ بمرشّحات الشاشة نفسها، ومن قارئ الخادم نفسه: العميدان
                   يُصدّران النهائيَّ وحده، والرقمُ المدني لا يخرج لصفات الاطّلاع. */}
@@ -2919,20 +2975,22 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       <PrintPortal>
         <PrintSheet
           kind={printKind}
-          rows={results}
+          rows={printRowsOverride || results}
           fairness={fairness}
           matrix={matrix}
           roomLoad={roomLoad}
           roomDay={roomDay}
           balance={balance}
           visitingHistory={visibleVisitingHistory}
-          scopeLine={scopeLine}
-          collegeName={collegeName}
+          scopeLine={printCollegeOverride ? [termName, printCollegeOverride].filter(Boolean).join(" · ") : scopeLine}
+          collegeName={printCollegeOverride || collegeName}
           termName={termName}
           sectionName={sectionName}
           sectionCode={sectionCode}
           courseById={printKind === "comprehensive-branch" ? bookCourseById : courseById}
           instructorById={instructorById}
+          collegeById={collegeById}
+          showCollegeOnInstructorRows={printCollegeOverride === "كل الكليات" || printCollegeOverride === "كل الفروع"}
           visitingIds={visitingIds}
           visitingRows={familyTeaching ? familyTeaching.rows : undefined}
           visitingScopeNote={familyTeaching ? (familyTeaching.complete ? `القسم في: ${familyTeaching.family.map(item => item.collegeName).filter(Boolean).join("، ")}` : "غير مكتمل: لا صلاحية على بعض كليات القسم") : ""}
@@ -3506,7 +3564,7 @@ function PrintSheet(props: React.ComponentProps<typeof PrintSheetBody>) {
   );
 }
 
-function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds, visitingRows, visitingScopeNote, visitingPlace, siteGroups, approval, changesAppendix, balanceApprovals }: {
+function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, visitingHistory, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, collegeById, showCollegeOnInstructorRows, visitingIds, visitingRows, visitingScopeNote, visitingPlace, siteGroups, approval, changesAppendix, balanceApprovals }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -3522,6 +3580,8 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   sectionCode: string;
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
+  collegeById: Map<number, AdCollege>;
+  showCollegeOnInstructorRows: boolean;
   visitingIds: Set<number>;
   /** صفوف تدريس المنتدبين عبر كليات القسم (استعلام المنتدبين وحده). */
   visitingRows?: FSchedule[];
@@ -3861,7 +3921,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                     <td className="print-days">{dayCell(row)}</td>
                     <td className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</td>
                     <td className="print-ltr">{placeOfRow(row)}</td>
-                    <td className="print-ltr">{row.SCode || "—"}</td>
+                    <td className="print-ltr">{row.SCode || "—"}{showCollegeOnInstructorRows ? <small className="print-visiting-place">{collegeById.get(Number(row.AdCollegeId))?.AdCollegeName || "كلية غير مسماة"}</small> : null}</td>
                   </tr>)}</tbody>
                 </table>
               </section>
