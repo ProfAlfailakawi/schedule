@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
+import sanitizeHtml from "sanitize-html";
 import { rateLimit } from "express-rate-limit";
 import compression from "compression";
 import path from "path";
@@ -1099,6 +1100,65 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
   }
   next();
 }
+
+/**
+ * iOS Home Screen apps do not consistently expose the native print sheet.
+ * Receive the already-rendered, permission-checked print portal and return it
+ * as a short-lived no-store Safari document. Nothing is persisted server-side.
+ */
+app.post("/print/snapshot", express.urlencoded({ extended: false, limit: "5mb", parameterLimit: 8 }), authMiddleware, requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const markup = String(req.body?.markup || "");
+  if (!markup || markup.length > 4_000_000 || !markup.startsWith("<div")) {
+    res.status(400).type("text/plain; charset=utf-8").send("تعذر تجهيز نسخة الطباعة.");
+    return;
+  }
+
+  const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[char] as string));
+  const markupWithoutActiveContent = sanitizeHtml(markup, {
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, "div", "span", "svg", "path", "circle", "rect", "line", "polyline", "polygon", "g"],
+    allowedAttributes: {
+      "*": ["class", "id", "title", "role", "aria-label", "aria-hidden", "style", "data-print-rotate", "data-print-chromium"],
+      svg: ["viewBox", "xmlns", "width", "height", "fill", "stroke", "stroke-width", "aria-hidden"],
+      path: ["d", "fill", "stroke", "stroke-width"],
+      circle: ["cx", "cy", "r", "fill", "stroke", "stroke-width"],
+      rect: ["x", "y", "width", "height", "rx", "fill", "stroke", "stroke-width"],
+      line: ["x1", "y1", "x2", "y2", "stroke", "stroke-width"],
+      polyline: ["points", "fill", "stroke", "stroke-width"],
+      polygon: ["points", "fill", "stroke", "stroke-width"],
+    },
+    allowedStyles: {
+      "*": {
+        width: [/^(?:\d+(?:\.\d+)?(?:px|%|rem|em)?|auto|min-content|max-content)$/i],
+        "grid-template-columns": [/^[\d.%(),\sfrminax-]+$/i],
+        "--i": [/^\d+$/],
+        "--slots": [/^\d+$/],
+      },
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedSchemesByTag: { img: ["data"] },
+  });
+  let styles: unknown = [];
+  try { styles = JSON.parse(String(req.body?.styles || "[]")); } catch { /* empty stylesheet list is handled below */ }
+  const stylesheetLinks = Array.isArray(styles)
+    ? styles.slice(0, 12).map(value => String(value || "")).filter(href => /^\/(?!\/)[\w./?&=%#-]+$/.test(href))
+      .map(href => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join("")
+    : "";
+  const kind = String(req.body?.printKind || "").replace(/[^a-z0-9-]/gi, "").slice(0, 40);
+  const rotate = req.body?.printRotate === "1" ? " data-print-rotate=\"1\"" : "";
+  const chromium = req.body?.printChromium === "1" ? " data-print-chromium=\"1\"" : "";
+  const nonce = randomBytes(18).toString("base64");
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("Content-Security-Policy", `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
+  res.type("text/html; charset=utf-8").send(`<!doctype html><html lang="ar" dir="rtl"${kind ? ` data-print-kind="${escapeHtml(kind)}"` : ""}${rotate}${chromium}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>نسخة الطباعة · SCHEDULE</title>${stylesheetLinks}<style>
+    html,body{margin:0;min-height:100%;background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    #app-print-root,.print-portal-root,.print-only{display:block!important;visibility:visible!important;position:static!important;inset:auto!important;width:100%!important;height:auto!important;overflow:visible!important;background:#fff!important;transform:none!important}
+    .print-snapshot-toolbar{position:sticky;top:0;z-index:9999;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;background:#f3f5f4;border-bottom:1px solid #ccd3d0;color:#202623;font:600 15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .print-snapshot-toolbar button{border:0;border-radius:12px;padding:12px 20px;background:#1f6b5c;color:white;font:700 16px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    @media print{.print-snapshot-toolbar{display:none!important}html,body{min-height:0!important}.print-portal-root,.print-only{position:static!important}}
+  </style></head><body class="has-print-portal"><header class="print-snapshot-toolbar"><span>نسخة الطباعة جاهزة في Safari</span><button id="print-now" type="button">طباعة التقرير</button></header>${markupWithoutActiveContent}<script nonce="${nonce}">document.getElementById('print-now')?.addEventListener('click',()=>window.print());</script></body></html>`);
+});
 
 // Screens that are intentionally reserved for the main administrator.
 // The department scheduler keeps the operational schedule/search/report tools only.

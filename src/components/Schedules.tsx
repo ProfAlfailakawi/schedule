@@ -120,6 +120,7 @@ import { readSharedScope, resolveSharedScope, useSharedScope, type SharedScope }
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
 import { compareCourseSection } from "../utils/scheduleOrder";
+import { isIosStandalonePwa, openPwaPrintSnapshot } from "../utils/pwaPrintSnapshot";
 import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, currentTermId, termIsArchive } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
@@ -1573,7 +1574,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
     root.dataset.printKind="change-log";
     const clear=()=>{delete root.dataset.printKind;window.removeEventListener("afterprint",clear);};
     window.addEventListener("afterprint",clear,{once:true});
-    window.print();
+    if (!isIosStandalonePwa() || !openPwaPrintSnapshot()) window.print();
     window.setTimeout(clear,2500);
   };
   /**

@@ -17,6 +17,7 @@ import { blockingSummaryPhrase } from "../utils/approvalWorkflow";
 import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { rowsInApprovalScope } from "../utils/approvalScope";
+import { isIosStandalonePwa, openPwaPrintSnapshot } from "../utils/pwaPrintSnapshot";
 
 /**
  * The last read before a schedule is adopted.
@@ -383,9 +384,6 @@ export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, i
     flushSync(() => {});
     const ua = navigator.userAgent || "";
     const isWebKitSafari = /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(ua);
-    const isIosStandalonePwa = /iPhone|iPad|iPod/i.test(ua)
-      && ((navigator as Navigator & { standalone?: boolean }).standalone === true
-        || window.matchMedia?.("(display-mode: standalone)").matches === true);
     /* Landscape like every other sheet this program prints; Safari cannot be
        told that through `@page`, so it is told through geometry instead. */
     if (isWebKitSafari) document.documentElement.dataset.printRotate = "1";
@@ -404,8 +402,8 @@ export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, i
     };
     window.addEventListener("afterprint", resume, { once: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
-    let invoked = false;
-    if (isWebKitSafari && !isIosStandalonePwa && typeof document.execCommand === "function") {
+    let invoked = isIosStandalonePwa() && openPwaPrintSnapshot();
+    if (!invoked && isWebKitSafari && typeof document.execCommand === "function") {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }
     if (!invoked) window.print();
