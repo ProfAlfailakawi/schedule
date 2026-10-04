@@ -343,7 +343,7 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   const write = between(server, 'app.post("/api/student-registration/:id/course-state"', 'app.post("/api/student-registration/:id/case-state"');
   check(write.includes("هذا المقرّر لقسمٍ آخر؛ تقرّر فيه لجنةُ ذلك القسم."), "S14 ولجنة قسم الاستبيان لا تقرّر في مقرّر غيرها");
   const sheet = read("src/components/StudentRegistration.tsx");
-  check(sheet.includes("`يقرّره قسم ${course.decidedBySectionName") && sheet.includes("committeeActs && !course.readOnly"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
+  check(sheet.includes("`يقرّره قسم ${course.decidedBySectionName") && sheet.includes("!course.readOnly && !course.droppedByStudent"), "S14 الكشف يكتب «يقرّره قسم …» ولا يعرض أزراراً عليه");
 }
 
 /* ── S15 «سلّمته للتسجيل» لا يُقال قبل التوقيعين ─────────────────────────── */
