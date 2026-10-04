@@ -3176,7 +3176,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             <QrCode /> {surveyQr?.id === link.id ? "أخفِ الرمز" : "رمز QR"}
                           </SecondaryButton>
                           {surveyQr?.id === link.id ? (
-                            <GhostButton onClick={() => { if (!showPwaPrintHelp()) window.print(); }}>
+                            <GhostButton data-guide-ignore="طباعة رمز QR للرابط العام — لا تغيّر الجدول" onClick={() => { if (!showPwaPrintHelp()) window.print(); }}>
                               <Printer /> اطبع الرمز
                             </GhostButton>
                           ) : null}
