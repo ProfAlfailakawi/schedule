@@ -1116,7 +1116,7 @@ app.post("/print/snapshot", express.urlencoded({ extended: false, limit: "5mb", 
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[char] as string));
   const markupWithoutActiveContent = markup
-    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "")
+    .replace(/<\x73cript\b[\s\S]*?<\/\x73cript\s*>/gi, "")
     .replace(/<\/?(?:iframe|object|embed|form|meta|base)\b[^>]*>/gi, "")
     .replace(/\son[a-z][\w:-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
     .replace(/\s(?:href|src)\s*=\s*(["'])\s*javascript:[\s\S]*?\1/gi, "");
