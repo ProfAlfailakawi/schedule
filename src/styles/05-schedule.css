@@ -268,6 +268,9 @@ button.schedule-radar:hover{filter:brightness(.96)}
 .agenda-sub{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);margin-top:var(--s2)}
 .agenda-sub span{display:flex;align-items:center;gap:var(--s1);color:var(--muted);font-size:var(--t-sm)}
 .agenda-sub svg{width:13px;height:13px}
+.agenda-sub .agenda-day-list{display:inline-flex;align-items:center;flex-wrap:wrap;gap:3px}
+.agenda-sub .agenda-day-chip{display:inline-flex;align-items:center;min-height:20px;padding:1px 7px;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:var(--r-full);background:color-mix(in srgb,var(--accent) 6%,var(--surface));color:var(--ink-2);font-size:11px;font-weight:550;line-height:1.25;white-space:nowrap}
+.agenda-sub .agenda-day-chip.is-empty{border-color:var(--line);background:var(--surface-2);color:var(--muted);font-weight:500}
 /* Time and place lead with a glyph; the value is the only text that stays. */
 .agenda-time,.agenda-place{
   min-width:0;display:flex;align-items:center;gap:var(--s2);

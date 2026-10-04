@@ -10323,6 +10323,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               {(() => { const agendaEls = agendaRows.slice(0, visibleLimit).map((s, idx) => {
                 const c = courseById.get(s.AdCourseId),
                   i = instructorById.get(s.AdInstructorId);
+                const activeDays = days.filter(day => Boolean((s as any)[day.key]));
                 return (
                   <article
                     data-row-id={s.id}
@@ -10368,9 +10369,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                           {i?.AdInstructorName || "بدون أستاذ"}
                           {visitingIds.has(s.AdInstructorId) ? <VisitingBadge compact /> : null}
                         </span>
-                        <span>
-                          <CalendarDays />
-                          {arabicDays(s) || "بدون أيام"}
+                        <span className="agenda-days">
+                          <CalendarDays aria-hidden="true" />
+                          <span className="agenda-day-list">
+                            {activeDays.length
+                              ? activeDays.map(day => <b className="agenda-day-chip" key={day.key}>{day.label}</b>)
+                              : <b className="agenda-day-chip is-empty">بدون أيام</b>}
+                          </span>
                         </span>
                       </div>
                       {/* «ليش المنع؟ شنو السبب؟» — الحلقة تقول سببها سطراً ظاهراً
