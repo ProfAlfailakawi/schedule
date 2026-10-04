@@ -265,7 +265,8 @@ button.schedule-radar:hover{filter:brightness(.96)}
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font-size:var(--t-h4);font-weight:600;
 }
-.agenda-sub{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);margin-top:var(--s2)}
+.agenda-sub{display:flex;flex-direction:column;align-items:flex-start;gap:var(--s1);margin-top:var(--s2)}
+.agenda-ident{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2) var(--s4);min-width:0}
 .agenda-sub span{display:flex;align-items:center;gap:var(--s1);color:var(--muted);font-size:var(--t-sm)}
 .agenda-sub svg{width:13px;height:13px}
 .agenda-sub .agenda-day-list{display:inline-flex;align-items:center;flex-wrap:wrap;gap:3px}
@@ -8492,9 +8493,10 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
 .schedule-page{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 .living-loading .health-skeleton-dot{display:none}
 
-/* ── Schedule list on a phone: two calm lines per row (display only) ─────────
-   Line 1: title · instructor · days. Line 2: time · room. The edit/delete
-   buttons sit beside the two lines instead of under them. Placeholder dashes
+/* ── Schedule list on a phone: clear rows (display only) ─────────────────────
+   The course title, section and instructor lead; days keep a line of their own.
+   Time and room follow below. The edit/delete buttons sit beside these rows.
+   Placeholder dashes
    for empty values (code, units, hours, room) are not drawn. Every real value
    stays in the DOM and on screen. */
 @media (max-width:760px){
@@ -8517,8 +8519,9 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
     display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.45;
   }
   .schedule-agenda .agenda-title-row>.code-chip{flex:none}
-  .schedule-agenda .agenda-sub{align-items:center;gap:var(--s2) var(--s3)}
-  .schedule-agenda .agenda-sub>.badge{
+  .schedule-agenda .agenda-sub{align-items:flex-start;gap:var(--s1)}
+  .schedule-agenda .agenda-ident{gap:var(--s1) var(--s3)}
+  .schedule-agenda .agenda-ident>.badge{
     min-height:22px;padding:1px var(--s3);flex:none;
     background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
     font-size:var(--t-xs);font-weight:700;

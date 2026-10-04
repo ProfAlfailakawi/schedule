@@ -10361,14 +10361,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         ) : null}
                       </div>
                       <div className="agenda-sub">
-                        {/* رقم الشعبة معلومةٌ تعريفية: يثبت في سطر المعلومات لا بجانب
-                            العنوان، فلا يُقطع خلف الأزرار على الهاتف. */}
-                        <Badge tone="neutral">شعبة {s.SCode}</Badge>
-                        <span>
-                          <UsersRound />
-                          {i?.AdInstructorName || "بدون أستاذ"}
-                          {visitingIds.has(s.AdInstructorId) ? <VisitingBadge compact /> : null}
-                        </span>
+                        <div className="agenda-ident">
+                          {/* الشعبة والأستاذ في سطر واحد ثابت تحت عنوان المقرر. */}
+                          <Badge tone="neutral">شعبة {s.SCode}</Badge>
+                          <span>
+                            <UsersRound aria-hidden="true" />
+                            {i?.AdInstructorName || "بدون أستاذ"}
+                            {visitingIds.has(s.AdInstructorId) ? <VisitingBadge compact /> : null}
+                          </span>
+                        </div>
                         <span className="agenda-days">
                           <CalendarDays aria-hidden="true" />
                           <span className="agenda-day-list">
