@@ -304,6 +304,7 @@
     white-space:nowrap !important;overflow-wrap:normal !important;word-break:keep-all !important;
     print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
   }
+  .print-report thead th{text-align:center !important}
   /* A row header is not a column header. `.print-report th` paints every th
      white-on-jade for the heading strip; a th inside the body then kept the
      white text and took a pale background from its own rule — white on white,
