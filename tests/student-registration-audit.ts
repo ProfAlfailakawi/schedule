@@ -323,7 +323,8 @@ check(["الشاملة", "فتح مقرر", "التعارض", "الخريج"].ev
 check(registerSrc.includes("renderCourseDecision") && registerSrc.includes("renderCaseDecision")
   && regSrc.includes("renderCourseDecision=") && regSrc.includes("renderCaseDecision="),
   "والقرار طبقةٌ داخل السجلّ: لكل مقرّر، وللحالة كلها في طلب الخريج");
-check(["الكل", "PENDING_COMMITTEE", "لم توافق اللجنة", "بانتظار التسجيل", "سُجّل", "ردّه التسجيل", "تصدير Excel", "اسأل: رقم الحالة أو اسم الطالب", "سطرٌ للطالب", "موافقة على الكل"].every(text => regSrc.includes(text)),
+check(["الكل", "PENDING_COMMITTEE", "لم توافق اللجنة", "بانتظار التسجيل", "سُجّل", "ردّه التسجيل", "تصدير Excel", "اسأل: رقم الحالة أو اسم الطالب", "سطرٌ للطالب", "موافقة مقررات الطالب"].every(text => regSrc.includes(text))
+  && regSrc.includes("renderCaseAction={caseAction}"),
   "وبقي كلُّ ما في الكشف: مرشّحات الحالة، والتصدير، والبحث، وسطرُ الطالب، والموافقة على الكل");
 
 /* ── الهوية لمن يعمل على الحالة، لا لصفة العرض ─────────────────────────── */
