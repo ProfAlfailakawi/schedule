@@ -18,6 +18,7 @@ import { safeStorage } from "../utils/safeStorage";
 import { siblingBranchScopes, type BranchScope } from "../utils/branchScope";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { compareCourseSection } from "../utils/scheduleOrder";
+import { isIosStandalonePwa, openPwaPrintSnapshot } from "../utils/pwaPrintSnapshot";
 import { sectionLabels } from "../utils/sectionLabel";
 import { currentTermId, sortTermsNewest, termChronology, termIsArchive } from "../utils/termSequence";
 import {
@@ -86,13 +87,6 @@ const CHROMIUM_PRINT_ENGINE = typeof navigator !== "undefined"
    untouched. */
 const IOS_CHROME_PRINT_ENGINE = typeof navigator !== "undefined"
   && /CriOS/i.test(navigator.userAgent || "");
-/* Home-screen Safari PWAs are standalone web apps, not ordinary Safari tabs.
-   In standalone mode `execCommand("print")` can claim success while opening
-   no print sheet, which suppresses the `window.print()` fallback. */
-const IOS_STANDALONE_PWA = typeof navigator !== "undefined"
-  && /iPhone|iPad|iPod/i.test(navigator.userAgent || "")
-  && ((navigator as Navigator & { standalone?: boolean }).standalone === true
-    || (typeof window !== "undefined" && window.matchMedia?.("(display-mode: standalone)").matches === true));
 
 interface Props {
   mode: ReportMode;
@@ -1626,8 +1620,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     window.addEventListener("afterprint", resume, { once: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
 
-    let invoked = false;
-    if (SAFARI_PRINT_ENGINE && !IOS_STANDALONE_PWA && typeof document.execCommand === "function") {
+    const handedToSafari = isIosStandalonePwa() && openPwaPrintSnapshot();
+    let invoked = handedToSafari;
+    if (!invoked && SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }
     if (!invoked) window.print();
@@ -1690,8 +1685,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
     };
     window.addEventListener("afterprint", resume, { once: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
-    let invoked = false;
-    if (SAFARI_PRINT_ENGINE && !IOS_STANDALONE_PWA && typeof document.execCommand === "function") {
+    const handedToSafari = isIosStandalonePwa() && openPwaPrintSnapshot();
+    let invoked = handedToSafari;
+    if (!invoked && SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }
     if (!invoked) window.print();
@@ -1776,8 +1772,9 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
       window.addEventListener("afterprint", resume, { once: true });
       document.addEventListener("visibilitychange", onVisibilityChange);
 
-      let invoked = false;
-      if (SAFARI_PRINT_ENGINE && !IOS_STANDALONE_PWA && typeof document.execCommand === "function") {
+      const handedToSafari = isIosStandalonePwa() && openPwaPrintSnapshot();
+      let invoked = handedToSafari;
+      if (!invoked && SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
         try { invoked = document.execCommand("print"); } catch { invoked = false; }
       }
       if (!invoked) window.print();
