@@ -845,7 +845,7 @@ export default function LivingScheduleLayer({
                 <span>لوحة الذكاء</span>
                 <div>
                   <h2>{sceneItems.find((x) => x.id === scene)?.label}</h2>
-                  <p>{living.context?.sectionName} · {living.context?.termName}{living.context?.analysisScope === "department" ? ` · ${living.context.scopeCount} كليات` : ""}</p>
+                  <p>{living.context?.sectionName} · {living.context?.termName}{living.context?.analysisScope === "department" ? ` · ${countOf(living.context.scopeCount, AR.college)}` : ""}</p>
                 </div>
               </div>
               <button onClick={() => setScene(null)} aria-label="إغلاق">
