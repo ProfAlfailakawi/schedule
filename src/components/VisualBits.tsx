@@ -83,10 +83,11 @@ export function CampusTravelMap({ risks }: { risks: CampusRisk[] }) {
         })}
         {model.names.map(name => {
           const p = point.get(name)!;
+          const labelWidth = Math.max(38, Math.min(88, name.length * 7 + 16));
           return (
             <g key={name} className="campus-map-node" transform={`translate(${p.x} ${p.y})`}>
-              <circle r="17" />
-              <text textAnchor="middle" dominantBaseline="central" direction="ltr">{name.length > 4 ? `${name.slice(0, 3)}…` : name}</text>
+              <rect x={-labelWidth / 2} y={-17} width={labelWidth} height={34} rx={17} />
+              <text textAnchor="middle" dominantBaseline="central" direction="ltr" textLength={name.length > 10 ? labelWidth - 14 : undefined} lengthAdjust="spacingAndGlyphs">{name}</text>
               <title>{name}</title>
             </g>
           );

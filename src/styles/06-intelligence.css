@@ -4773,7 +4773,7 @@ button.twin-delta{width:100%}
 .campus-map svg{display:block;width:100%;max-width:460px;height:auto;margin-inline:auto}
 .campus-map line{stroke:var(--warning);opacity:.85}
 .campus-map .is-high line{stroke:var(--danger);opacity:1}
-.campus-map-node circle{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.5}
+.campus-map-node rect{fill:var(--surface);stroke:var(--line-strong);stroke-width:1.5}
 .campus-map-node text{fill:var(--ink);font-size:11px;font-weight:600;font-family:var(--font-mono,inherit)}
 .campus-map-min{fill:var(--ink-2);font-size:11px;font-weight:600;paint-order:stroke;stroke:var(--surface-2);stroke-width:4px;stroke-linejoin:round}
 .equation-chips{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);margin-top:var(--s3);direction:ltr}
@@ -4841,3 +4841,7 @@ button.twin-delta{width:100%}
 .demand-college-cases{display:grid;gap:8px;margin-block:var(--s4)}
 
 .intelligence-page .approval-status[hidden]{display:none!important}
+
+.intelligence-scenes .intelligence-steps{--node:32px;--icon:16px}
+.intelligence-scenes .intelligence-steps button.dna-node{padding:0;border:0;min-height:0;flex:none;cursor:pointer}
+.intelligence-scenes .intelligence-steps button.dna-node:focus-visible{outline:2px solid var(--accent);outline-offset:4px}

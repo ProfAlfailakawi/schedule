@@ -104,6 +104,8 @@ export interface DnaStep {
   stamp?: string;
   badge?: React.ReactNode;
   title?: string;
+  onSelect?: () => void;
+  actionLabel?: string;
 }
 
 const DEFAULT_STATE_TEXT: Record<DnaStepState, string> = {
@@ -132,6 +134,7 @@ export function DnaStepper({ steps, size = 'md', showLabels = true, ariaLabel, s
         const prev = i > 0 ? steps[i - 1] : null;
         const link = !prev ? 'none' : step.state === 'returned' ? 'returned' : prev.state === 'done' ? 'done' : 'pending';
         const stamped = Boolean(step.stamp) && step.state === 'done';
+        const Node = step.onSelect ? 'button' : 'span';
         return (
           <li
             key={step.key}
@@ -142,7 +145,7 @@ export function DnaStepper({ steps, size = 'md', showLabels = true, ariaLabel, s
             aria-current={step.state === 'current' ? 'step' : undefined}
             title={step.title ?? (size === 'xs' && typeof step.label === 'string' ? step.label : undefined)}
           >
-            <span className="dna-node" aria-hidden="true">
+            <Node className="dna-node" aria-hidden={step.onSelect ? undefined : true} type={step.onSelect ? "button" : undefined} onClick={step.onSelect} aria-label={step.actionLabel} aria-pressed={step.onSelect ? step.state === "current" : undefined}>
               {stamped ? (
                 <span className="dna-stamp">{step.stamp}</span>
               ) : step.icon ? (
@@ -158,7 +161,7 @@ export function DnaStepper({ steps, size = 'md', showLabels = true, ariaLabel, s
                 </span>
               )}
               {step.badge != null && step.badge !== false && <span className="dna-bdg">{step.badge}</span>}
-            </span>
+            </Node>
             <span className={labels ? 'dna-lbl' : 'dna-sr'}>{step.label}</span>
             <span className="dna-sr">{text[step.state]}</span>
           </li>

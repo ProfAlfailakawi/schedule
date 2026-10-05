@@ -2581,6 +2581,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             const at = all.findIndex(item => item.value === scene);
             return {
               key: option.value,
+              onSelect: () => runVisualTransition(() => changeScene(option.value)),
+              actionLabel: `فتح مرحلة ${option.value === "understand" ? "افهم" : option.value === "try" ? "جرّب" : "اعتمد"}`,
               icon: option.icon,
               state: option.value === scene ? "current" as const : index < at ? "done" as const : "pending" as const,
               label: (
