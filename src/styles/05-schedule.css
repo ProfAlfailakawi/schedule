@@ -8577,9 +8577,9 @@ html[data-schedule-workspace="presentation"] .schedule-status{padding:0;border:0
 .schedule-agenda .agenda-rest>summary::-webkit-details-marker{display:none}
 .schedule-agenda .agenda-rest[open]>summary{margin-bottom:var(--s2)}
 
-.agenda-list .agenda-time{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px}
-.agenda-list .agenda-time .agenda-days{display:flex;align-items:center;justify-content:center;gap:5px;width:100%}
-.agenda-list .agenda-time .agenda-day-list{justify-content:center}
-.agenda-list .agenda-time .agenda-days>svg{width:13px;height:13px;color:var(--muted-2);flex:none}
+.schedule-agenda .agenda-time{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px}
+.schedule-agenda .agenda-time .agenda-days{display:flex;align-items:center;justify-content:center;gap:5px;width:100%}
+.schedule-agenda .agenda-time .agenda-day-list{justify-content:center}
+.schedule-agenda .agenda-time .agenda-days>svg{width:13px;height:13px;color:var(--muted-2);flex:none}
 .agenda-clock-line{display:flex;align-items:center;justify-content:center;gap:var(--s2)}
 .agenda-clock-line>svg{width:15px;height:15px;flex:none;color:var(--muted-2)}

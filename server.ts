@@ -1,3 +1,4 @@
+import { compareIntelligenceTerms, rowsForIntelligenceScope } from "./src/utils/intelligenceReadingScope";
 import express, { Request, Response, NextFunction } from "express";
 import { rateLimit } from "express-rate-limit";
 import compression from "compression";
@@ -2040,7 +2041,7 @@ const breathe = () => new Promise<void>(resolve => setImmediate(resolve));
 
 /** Read-only department analysis uses the established department family mapping. */
 async function intelligenceReadScopes(req: AuthenticatedRequest, collegeId: number, sectionId: number) {
-  if (req.query.analysisScope !== "department") return [{ collegeId, sectionId }];
+  if ((req.query.analysisScope || req.body?.analysisScope) !== "department") return [{ collegeId, sectionId }];
   const sections = await Repository.getSections();
   return departmentFamily(sections, collegeId, sectionId)
     .filter(scope => isScopeAllowed(req, scope.collegeId, scope.sectionId));
@@ -8107,10 +8108,11 @@ app.get("/api/intelligence/guide-friction", requirePermission(7), async (req: Au
 app.get("/api/intelligence/experience-health", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const telemetry=await Repository.getClientTelemetry(collegeId,sectionId,1000).catch(()=>[]);
+  const readScopes = await intelligenceReadScopes(req, collegeId, sectionId);
+  const telemetry=(await Promise.all(readScopes.map(scope => Repository.getClientTelemetry(scope.collegeId,scope.sectionId,1000)))).flat();
   const cutoff=Date.now()-14*24*60*60*1000;
   const recent=telemetry.filter(item=>item.kind!=="guide"&&Date.parse(item.timestamp)>=cutoff);
-  const perf=apiPerformanceSamples.filter(item=>item.at>=Date.now()-2*60*60*1000 && (item.sectionId===sectionId||(!item.sectionId&&item.userId===Number(req.user?.SystemUserId||0))) && (!item.collegeId||item.collegeId===collegeId));
+  const perf=apiPerformanceSamples.filter(item=>item.at>=Date.now()-2*60*60*1000 && (readScopes.some(scope => item.sectionId===scope.sectionId && (!item.collegeId || item.collegeId === scope.collegeId)) || (!item.sectionId && item.userId===Number(req.user?.SystemUserId||0) && (!item.collegeId || readScopes.some(scope => scope.collegeId === item.collegeId)))));
   const durations=[...perf.map(item=>item.durationMs),...recent.filter(item=>item.kind==="api"&&item.durationMs).map(item=>Number(item.durationMs))].filter(Number.isFinite).sort((a,b)=>a-b);
   const p=(share:number)=>durations.length?durations[Math.min(durations.length-1,Math.floor((durations.length-1)*share))]:0;
   const failures=recent.filter(item=>item.kind==="error"||(item.kind==="api"&&(item.ok===false||(item.status||0)>=400))||(item.kind==="sync"&&item.ok===false));
@@ -8187,10 +8189,11 @@ app.post("/api/intelligence/policy-simulate", requirePermission(7), async (req: 
   if(!university&&(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId))){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const type=String(req.body?.type||"");
   if(!["day_off","close_building","no_classes_after","growth"].includes(type)){res.status(400).json({error:"اختر سياسة قابلة للمحاكاة"});return;}
+  const readScopes = university ? [] : await intelligenceReadScopes(req, collegeId, sectionId);
   const [terms,current,historyAll]=await Promise.all([
     Repository.getTerms(),
-    university?Repository.getSchedulesByScope({termId}):Repository.getSchedulesByScope({collegeId,sectionId,termId}),
-    university?Repository.getSchedules():Repository.getSchedulesByScope({collegeId,sectionId}),
+    university?Repository.getSchedulesByScope({termId}):Promise.all(readScopes.map(scope => Repository.getSchedulesByScope({...scope,termId}))).then(groups => groups.flat()),
+    university?Repository.getSchedules():Promise.all(readScopes.map(scope => Repository.getSchedulesByScope(scope))).then(groups => groups.flat()),
   ]);
   const recent=recentTenYearTermIds(terms); const history=historyAll.filter(row=>recent.has(Number(row.AdTermId||0)));
   const input={type,day:String(req.body?.day||"") as any,time:String(req.body?.time||"17:00").slice(0,5),building:String(req.body?.building||"").trim().slice(0,40),growth:Number(req.body?.growth||10)};
@@ -8208,15 +8211,37 @@ app.get("/api/intelligence/overview", requirePermission(7), async (req: Authenti
     scopedScheduleUniverse(collegeId, sectionId, termId), Repository.getCourses(), Repository.getInstructors(), Repository.getColleges(), Repository.getTerms(),
     Repository.getScheduleDrafts(collegeId, sectionId, termId), Repository.getSchedulePublication(collegeId, sectionId, termId), Repository.getCampusMobilityProfile(collegeId)
   ]);
-  const {rows:target,universe:termRows}=scheduleData;
+  const readScopes = await intelligenceReadScopes(req, collegeId, sectionId);
+  const family = readScopes.map(scope => ({ ...scope, collegeName: colleges.find(c => Number(c.AdCollegeId) === scope.collegeId)?.AdCollegeName || "" }));
+  const {universe:termRows}=scheduleData;
+  const target = readScopes.length > 1 ? termRows.filter(row => readScopes.some(scope => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId)) : scheduleData.rows;
+  const collegeReadings = await Promise.all(family.map(async scope => {
+    const own = rowsForIntelligenceScope(target, scope);
+    const profile = scope.collegeId === collegeId ? mobilityProfile : await Repository.getCampusMobilityProfile(scope.collegeId);
+    const spatial = roomCastlingProposals(own, termRows, profile, instructors);
+    const analysis = analyzeSchedule(own, termRows, courses, instructors, await approvalBlockerOptions());
+    const publication = scope.collegeId === collegeId && scope.sectionId === sectionId ? undefined : await Repository.getSchedulePublication(scope.collegeId, scope.sectionId, termId);
+    return { scope, analysis, publication, spatial };
+  }));
   const analysis = analyzeSchedule(target, termRows, courses, instructors, await approvalBlockerOptions());
-  const spatial = roomCastlingProposals(target, termRows, mobilityProfile, instructors);
+  const spatial = readScopes.length === 1 ? collegeReadings[0].spatial : {
+    radar: { ...collegeReadings[0].spatial.radar,
+      score: Math.min(...collegeReadings.map(item => item.spatial.radar.score)),
+      highRisk: collegeReadings.reduce((n, item) => n + item.spatial.radar.highRisk, 0),
+      guardedRisk: collegeReadings.reduce((n, item) => n + item.spatial.radar.guardedRisk, 0),
+      risks: collegeReadings.flatMap(item => item.spatial.radar.risks.map(risk => ({ ...risk, readingScope: item.scope }))),
+    },
+    proposals: collegeReadings.flatMap(item => item.spatial.proposals.filter(proposal => (proposal.changes || []).every(change => rowsForIntelligenceScope(target, item.scope).some(row => Number(row.id) === Number(change.id)))).map(proposal => ({ ...proposal, readingScope: item.scope }))),
+  };
   const universityHeatmap:any[]=[];
   for(const day of SCHEDULE_DAYS){for(let minute=SCHEDULE_DAY_START;minute<SCHEDULE_DAY_END;minute+=SCHEDULE_SLOT_MINUTES){const count=termRows.filter(row=>Boolean((row as any)[day.key])&&timeToMinutes(row.fstarttime)<minute+SCHEDULE_SLOT_MINUTES&&timeToMinutes(row.fendtime)>minute).length;universityHeatmap.push({day:day.key,label:day.label,time:minutesToTime(minute),count})}}
   const universityPeak=Math.max(0,...universityHeatmap.map(x=>x.count));
   res.json({
     context:{collegeId,sectionId,termId,collegeName:colleges.find(x=>x.AdCollegeId===collegeId)?.AdCollegeName||"",sectionName:section.AdSectionName,termName:terms.find(x=>x.AdTermId===termId)?.AdTermName||""},
     ...analysis,
+    readingRows: target, family, analysisScope: (req.query.analysisScope === "department" ? "department" : "college"),
+    alerts: readScopes.length > 1 ? [...collegeReadings.flatMap(item => item.analysis.alerts.filter(alert => alert.title !== "الوضع مستقر").map(alert => ({...alert, readingScope: item.scope}))), ...analysis.alerts.filter(alert => alert.title === "الوضع مستقر")].sort((a,b) => ({critical:0,warning:1,info:2}[a.severity] - {critical:0,warning:1,info:2}[b.severity])) : analysis.alerts,
+    collegeReadings: collegeReadings.map(item => ({ ...item.scope, score: item.analysis.score, metrics: item.analysis.metrics, dayLoad: item.analysis.dayLoad, professorLoads: item.analysis.professorLoads, blockers: item.analysis.metrics.criticalConflicts, publication: item.publication || (item.scope.collegeId === collegeId && item.scope.sectionId === sectionId ? publication : null) })),
     draftCount:drafts.filter(d=>d.status==="draft").length,
     latestDraft:drafts.find(d=>d.status==="draft") ? {id:drafts.find(d=>d.status==="draft")!.id,name:drafts.find(d=>d.status==="draft")!.name,updatedAt:drafts.find(d=>d.status==="draft")!.updatedAt,source:drafts.find(d=>d.status==="draft")!.source} : null,
     publication:publication||null, universityHeatmap, universityPeak,
@@ -8384,7 +8409,8 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   if(prompt.length<2){res.status(400).json({error:"اكتب سؤالك للمساعد"});return;}
   const [scheduleData,courses,instructors,sections]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getSections()]);
-  const target=scheduleData.rows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId&&Number(row.AdTermId)===termId);
+  const readScopes = await intelligenceReadScopes(req, collegeId, sectionId);
+  const target = scheduleData.universe.filter(row => readScopes.some(scope => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId) && Number(row.AdTermId) === termId);
   const universe=scheduleData.universe;
   const analysis=analyzeSchedule(target,universe,courses,instructors,await approvalBlockerOptions()); const bullets:string[]=[]; let title="قراءة ذكية للجدول";
   /**
@@ -8499,7 +8525,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     }
   } else if(dayMatch && (/مزدحم|ازدحام|زحمة/.test(normalized) || /ليش|لماذا|سبب|تحقيق/.test(normalized))){
     title=`تحقيق ${dayMatch.label}`; const day=analysis.dayLoad.find((x:any)=>x.key===dayMatch.key); const peaks=analysis.heatmap.filter((x:any)=>x.day===dayMatch.key).sort((a:any,b:any)=>b.count-a.count).slice(0,3);
-    const history=(await Repository.getSchedulesByScope({collegeId,sectionId})).filter(row=>Number(row.AdTermId)!==termId);
+    const history=(await Promise.all(readScopes.map(scope=>Repository.getSchedulesByScope(scope)))).flat().filter(row=>Number(row.AdTermId)!==termId);
     const investigation=investigateCrowding(target,dayMatch.key as any,history);
     summary=`في ${dayMatch.label} يوجد ${countOf(day?.count||0, AR.appointment)}؛ ${investigation.verdict}`;
     peaks.slice(0,2).forEach((x:any)=>bullets.push(`${x.time}: ${countOf(x.count, AR.lecture)} في الوقت نفسه.`));
@@ -8511,13 +8537,13 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     investigation.causes.forEach((x:any)=>bars.push(x));
   } else if(normalized.includes("إذا نقلت")||normalized.includes("اذا نقلت")){
     title="محاكاة نقل موعد"; const code=courses.find(c=>normalized.includes(String(c.CourseCode).toLowerCase())); const row=code?target.find(r=>r.AdCourseId===code.AdCourseId):target[0];
-    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const moveOpts=await approvalBlockerOptions();const before=approvalBlockerCount([row],universe,moveOpts),after=approvalBlockerCount([candidate],universe.filter(x=>x.id!==row.id).concat(candidate),moveOpts);summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
+    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const moveOpts=await approvalBlockerOptions();const before=approvalBlockerCount([row],universe,moveOpts),after=approvalBlockerCount([candidate],universe.filter(x=>x.id!==row.id).concat(candidate),moveOpts);summary=`نقل ${code?.CourseCode||row.AdCourseName}${readScopes.length > 1 ? ` · ${sections.find(s=>Number(s.AdSectionId)===Number(row.AdSectionId))?.AdSectionName || ""} (${row.AdCollegeId})` : ""} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
       shape="move";
       shift={label:"موانع الحفظ",before,after,better:after<=before};
       figures.push({label:"الوقت المقترح",value:formatScheduleTimeRange(candidate.fstarttime,candidate.fendtime),hint:"",tone:after===0?"good":"bad"});}
     else summary="حدد رمز المقرر والساعة في السؤال، مثال: إذا نقلت 101 إلى الساعة 11، فما الذي سيتأثر؟";
   } else if(normalized.includes("أفضل توزيع")||normalized.includes("افضل توزيع")||normalized.includes("قلل الفراغ")||normalized.includes("تقليل الفراغ")){
-    title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors,await approvalBlockerOptions()); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
+    title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const targetIds=new Set(target.map(row=>Number(row.id))); const external=universe.filter(r=>!targetIds.has(Number(r.id))); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors,await approvalBlockerOptions()); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
     summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${countOf(proposal.changed, oblique(AR.appointment))}: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
     if(dayMatch)bullets.push(`ذكرت ${dayMatch.label}. سأتعامل معه كأولوية تحليل، لكن لن أغيّر نمط أيام المقرر تلقائياً لأن ذلك قد يكون قيداً أكاديمياً.`);
     bullets.push("افتح «المحاكاة» لمراجعة كل تغيير قبل اعتماده.");
@@ -12189,13 +12215,19 @@ app.post("/api/intelligence/versions/:id/restore", requirePermission(7), async (
 });
 
 app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),fromTermId=Number(req.query.fromTermId||0),toTermId=Number(req.query.toTermId||0); if(!collegeId||!sectionId||!fromTermId||!toTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [fromData,toData,courses,instructors,terms]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,fromTermId),scopedScheduleUniverse(collegeId,sectionId,toTermId),Repository.getCoursesBySection(sectionId),Repository.getInstructorsByScope(sectionId,0),Repository.getTerms()]); const from=fromData.rows,to=toData.rows; const diff=compareTerms(from,to);
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),fromTermId=Number(req.query.fromTermId||0),toTermId=Number(req.query.toTermId||0); if(!collegeId||!sectionId||!fromTermId||!toTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [fromData,toData,courses,instructors,terms]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,fromTermId),scopedScheduleUniverse(collegeId,sectionId,toTermId),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms()]); const readScopes = await intelligenceReadScopes(req, collegeId, sectionId);
+  const from = fromData.universe.filter(row => readScopes.some(scope => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId));
+  const to = toData.universe.filter(row => readScopes.some(scope => Number(row.AdCollegeId) === scope.collegeId && Number(row.AdSectionId) === scope.sectionId));
+  const diff = compareIntelligenceTerms(from, to, readScopes);
+  const colleges = await Repository.getColleges();
   const courseById=new Map(courses.map(row=>[row.AdCourseId,row]));
   const instructorName=(id:number)=>instructors.find(row=>row.AdInstructorId===id)?.AdInstructorName||"";
   // Rows are shaped for reading, not for editing: code, section, and the
   // properties that differ. Nothing here is writable from this screen.
   const shapeRow=(row:any)=>({
     id:row.id,
+    collegeId: row.AdCollegeId, sectionId: row.AdSectionId,
+    collegeName: colleges.find(c => Number(c.AdCollegeId) === Number(row.AdCollegeId))?.AdCollegeName || "",
     code:courseById.get(row.AdCourseId)?.CourseCode||"",
     name:row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",
     section:row.SCode||"",

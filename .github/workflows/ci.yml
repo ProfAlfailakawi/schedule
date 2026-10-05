@@ -49,3 +49,19 @@ jobs:
 
       - name: Production Build
         run: npm run build
+
+      - name: Verify intelligence scopes through the isolated demo API
+        env:
+          DATA_MODE: demo
+          NODE_ENV: production
+        run: |
+          node dist/server.cjs > /tmp/schedule-api.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://localhost:3000/api/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          npm run test:intelligence-api
