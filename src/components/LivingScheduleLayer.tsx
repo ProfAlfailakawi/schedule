@@ -869,7 +869,7 @@ export default function LivingScheduleLayer({
             </nav>
             {experience ? (
               <section className="living-experience-tools" aria-label="اختصارات مركز القرار">
-                <button type="button" title="قرار الكلية الحالية" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>
+                <button type="button" data-guide-ignore="فتح مقترحات القرار للكلية الحالية دون تطبيق تلقائي" title="قرار الكلية الحالية" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>
                   <BrainCircuit /><span>القرار الأهم الآن</span>
                 </button>
                 <button type="button" onClick={() => { setScene(null); experience.setSignatureOpen(true); }} disabled={!rows.length}>
