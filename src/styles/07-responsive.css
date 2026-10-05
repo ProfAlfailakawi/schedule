@@ -1738,3 +1738,50 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
 @media (max-width:760px){
   .location-admin-page .location-room-table{max-height:none!important;overflow:visible!important}
 }
+
+/* Visiting faculty share the calm mobile faculty-card rhythm. */
+@media(max-width:760px){
+  .lens-groups.lens-visiting{gap:12px;padding:12px}
+  .lens-groups.lens-visiting>article{border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .lens-groups.lens-visiting>article>button{padding:16px 12px;gap:8px 10px;grid-template-columns:34px minmax(0,1fr) 18px;grid-template-areas:"avatar identity chev" ". load ."}
+  .lens-visiting .visiting-card-identity strong{display:flex!important;flex-wrap:wrap;gap:5px;font-size:14px;line-height:1.65}
+  .lens-visiting .visiting-card-places{font-size:11px;line-height:1.65;display:block;overflow:visible}
+  .lens-groups.lens-visiting .visiting-card-load{font-size:12px;text-align:start!important;font-weight:600;color:var(--accent);line-height:1.7}
+  .lens-visiting .group-rows{padding:0 14px 8px}
+  .lens-visiting .group-rows>div{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"name code" "place place" "days days" "time time";gap:8px 10px;padding:16px 0}
+  .lens-visiting .group-rows .code-chip{width:auto;min-width:42px;justify-self:end;padding:3px 8px;align-self:start;font-size:12px}
+  .lens-visiting .group-rows>div>span:nth-child(2){font-size:13px;line-height:1.7}
+  .lens-visiting .group-rows>div>span:nth-child(2)>small{display:block;text-align:start;margin-top:3px;white-space:normal}
+  .lens-visiting .group-rows .visiting-row-place{border:0;padding:0;font-size:11px;line-height:1.7}
+  .lens-visiting .group-rows>div>small:not(.visiting-row-place){text-align:center;white-space:normal;overflow:visible;line-height:1.7;font-size:12px;overflow-wrap:anywhere}
+  .lens-visiting .group-rows time{text-align:center;font-size:14px;line-height:1.5}
+}
+
+/* Phone appointments: one clear reading column, quiet contextual actions. */
+.agenda-mobile-actions{display:none}
+@media(max-width:760px){
+  .schedule-page>.approval-bar{order:-2;margin-block:0 var(--s3)}
+  .schedule-page .schedule-agenda .agenda-card{
+    position:relative;grid-template-columns:minmax(0,1fr) 44px!important;
+    grid-template-areas:"core actions" "time time" "place place" "meta meta"!important;
+    gap:14px 8px;padding:18px 16px;
+  }
+  .schedule-page>.schedule-agenda-surface .agenda-actions{display:none!important}
+  .schedule-agenda .agenda-mobile-actions{display:block;grid-area:actions;position:relative;align-self:start;z-index:2}
+  .agenda-mobile-actions>summary{display:grid;place-items:center;list-style:none;width:44px;height:44px;border-radius:12px;color:var(--muted);font-size:24px;cursor:pointer}
+  .agenda-mobile-actions>summary::-webkit-details-marker{display:none}
+  .agenda-mobile-actions>summary:focus-visible{outline:2px solid var(--accent)}
+  .agenda-mobile-actions[open]>summary{background:var(--surface-2);color:var(--accent)}
+  .agenda-mobile-actions>div{position:absolute;inset-inline-end:0;top:42px;display:flex;gap:6px;padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-sm)}
+  .schedule-agenda .agenda-core{min-width:0}
+  .schedule-agenda .agenda-title-row{gap:8px;flex-wrap:nowrap;align-items:flex-start}
+  .schedule-agenda .agenda-title-row>strong{min-width:0;flex:1;display:block;overflow:visible;font-size:14px;line-height:1.65}
+  .schedule-agenda .agenda-title-row>.code-chip{min-width:44px;width:auto;padding-inline:8px;font-size:12px}
+  .schedule-agenda .agenda-ident{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+  .schedule-agenda .agenda-ident>span{min-width:0;white-space:normal;line-height:1.6}
+  .schedule-agenda .agenda-time{justify-self:center;min-width:0;width:100%;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
+  .schedule-agenda .agenda-clock-line{justify-content:center}
+  .schedule-agenda .agenda-place{justify-self:center;justify-content:center;display:flex;align-items:center;width:100%;gap:7px}
+  .schedule-agenda .agenda-place strong{font-size:13px;overflow-wrap:anywhere}
+  .schedule-agenda .agenda-meta{justify-self:center;justify-content:center;gap:18px;width:100%;padding-top:4px}
+}

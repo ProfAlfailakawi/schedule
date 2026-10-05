@@ -10414,6 +10414,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
                         {c?.CourseHours ?? "—"}
                       </span>
                     </div>
+                    <details className="agenda-mobile-actions" onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+                      <summary aria-label="خيارات الموعد" data-guide-ignore="خيارات تعديل وحذف الموعد على الهاتف">⋯</summary>
+                      <div>
+                        <IconAction label="تعديل" kind="edit" onClick={() => openEdit(s)} />
+                        <IconAction label="حذف" kind="delete" onClick={() => remove(s.id)} />
+                      </div>
+                    </details>
                     <div className="agenda-actions">
                       <IconAction
                         label="تعديل"
