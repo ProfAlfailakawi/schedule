@@ -1,3 +1,4 @@
+import { byArabic } from "../utils/sorting";
 /**
  * ── تغييرات الجدول ──────────────────────────────────────────────────────────
  *
@@ -253,7 +254,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
   const collegeOptions = useMemo(() => {
     const seen = new Map<number, string>();
     for (const row of rows || []) if (!seen.has(row.collegeId)) seen.set(row.collegeId, row.collegeName || `كلية ${row.collegeId}`);
-    return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => byArabic(a.label, b.label));
   }, [rows]);
 
   /* نطاقٌ مشترك لا يظهر في هذا الوارد (كليةٌ لا قسمَ فيها ينتظر) يُعرض «الكل»
@@ -265,7 +266,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
       if (shownCollege && row.collegeId !== shownCollege) continue;
       if (!seen.has(row.sectionId)) seen.set(row.sectionId, row.sectionName || `قسم ${row.sectionId}`);
     }
-    return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, "ar"));
+    return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => byArabic(a.label, b.label));
   }, [rows, shownCollege]);
   const shownSection = shownCollege && sectionOptions.some(option => option.value === sectionId) ? sectionId : 0;
 

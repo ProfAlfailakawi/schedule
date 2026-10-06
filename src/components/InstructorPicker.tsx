@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CircleDot, Plus, Search, UserRound, X } from "lucide-react";
-import { byArabic } from "../utils/sorting";
+import { byArabic, sortByName } from "../utils/sorting";
 import { validateCivilId } from "../utils/civilId";
 import { numericText } from "../utils/digits";
 import { instructorCleanName } from "../utils/instructorIdentity";
@@ -144,10 +144,10 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       // Nothing typed: show the department and ONLY the department. Wider
       // university search starts after the user types, exactly as the hint says.
       const deptList = effectiveDepartmentIds.map(id => byId.get(id)).filter(p => p && !isHidden(p)) as Instructor[];
-      if (deptList.length) return deptList;
+      if (deptList.length) return sortByName(deptList, person => person.AdInstructorName);
       // Older screens that do not know a section still pass an already-scoped
       // instructor list; keep that compatibility without widening a known section.
-      return sectionId ? [] : knownInstructors.filter(p => !isHidden(p));
+      return sectionId ? [] : sortByName<Instructor>(knownInstructors.filter(p => !isHidden(p)), person => person.AdInstructorName);
     }
     const pool = strictDepartmentOnly
       ? knownInstructors.filter(person => departmentRank.has(person.AdInstructorId) || visitingSet.has(person.AdInstructorId))
@@ -173,7 +173,6 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       .sort((a, b) =>
         a.inDepartment - b.inDepartment ||
         a.score - b.score ||
-        a.rank - b.rank ||
         byArabic(a.person.AdInstructorName, b.person.AdInstructorName))
       .slice(0, 40)
       .map(x => x.person);

@@ -1003,7 +1003,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const instructorOptions = useMemo(() => {
     const allowed=new Set(rowsForFacet("instructor").map(row=>Number(row.AdInstructorId)).filter(Boolean));
     const source=instructors.filter(person=>allowed.has(Number(person.AdInstructorId))||Number(person.AdInstructorId)===Number(filters.instructorId));
-    return dedupeVisibleOptions<AdInstructor>(source,row=>optionKey(row.AdInstructorCivil)||optionKey(row.AdInstructorName),filters.instructorId,row=>Number(row.AdInstructorId));
+    return sortByName(dedupeVisibleOptions<AdInstructor>(source,row=>optionKey(row.AdInstructorCivil)||optionKey(row.AdInstructorName),filters.instructorId,row=>Number(row.AdInstructorId)), row => row.AdInstructorName);
   }, [instructors, filters.instructorId, rowsForFacet]);
   const departmentInstructorIds = useMemo(() => Array.from(new Set(all.filter(row => (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) && (!filters.termId || Number(row.AdTermId) === Number(filters.termId))).map(row => Number(row.AdInstructorId)).filter(Boolean))), [all, filters.sectionId, filters.termId]);
 
@@ -1230,7 +1230,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         load: rows.reduce((total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0),
         days: new Set(rows.flatMap(row => DAYS.filter(day => (row as any)[day.flag]).map(day => day.key))).size
       }))
-      .sort((a, b) => byRoomLabel(a.name, b.name));
+      .sort((a, b) => byArabic(a.name, b.name));
   }, [results, instructorById]);
 
   const visitingScopeKey = `${filters.collegeId}:${filters.sectionId}:${filters.termId}`;
@@ -1250,7 +1250,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         name: person?.AdInstructorName || `منتدب ${summary.instructorId}`,
         civil: person?.AdInstructorCivil || "",
       };
-    }).sort((a, b) => b.sections - a.sections || b.weeklyMinutes - a.weeklyMinutes || byRoomLabel(a.name, b.name));
+    }).sort((a, b) => byArabic(a.name, b.name));
   }, [familyTeaching, results, visitingIds, instructorById]);
   /* موقع التدريس باسمه: «كلية التربية · الرياضيات». */
   const visitingPlaceLabel = (collegeId: number, sectionId: number) => {
@@ -1286,7 +1286,7 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         };
       })
       .filter(person => person.times > 0 && person.sections > 0)
-      .sort((a, b) => b.times - a.times || b.sections - a.sections || byRoomLabel(a.name, b.name));
+      .sort((a, b) => byArabic(a.name, b.name));
   }, [visitingHistory, instructorById]);
   const visitingHistoryActiveTermIds = useMemo(() => new Set(
     visitingHistoryRows.flatMap(person => person.terms.map(term => Number(term.termId))).filter(Boolean)
@@ -3914,7 +3914,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
   }
 
   if (kind === "instructor") {
-    const groups = groupRows(rows, row => instructorOf(row)?.AdInstructorName || "بدون أستاذ");
+    const groups = groupRows(rows, row => instructorOf(row)?.AdInstructorName || "بدون أستاذ").sort((a, b) => byArabic(a.key, b.key));
     const pages = groups.flatMap(group => paginateItems(group.rows, PAGE_ROWS.instructorRows).map(groupRows => ({ group, rows: groupRows })));
     return (
       <div className="print-report print-wide print-query-report print-query-groups-report">

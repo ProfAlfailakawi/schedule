@@ -58,7 +58,7 @@ import {
   LocationMigrationRun,
 } from "../types";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
-import { sortByName } from "../utils/sorting";
+import { sortByName, byArabic } from "../utils/sorting";
 import { createDemoSandboxState } from "./demoSandbox";
 import { DEMO_LINK_TOKEN_PREFIX, isDemoLinkToken } from "../utils/demoLinkToken";
 import { applyStudentCaseDecision, studentCaseRefusal, type StudentCaseSide } from "../utils/studentCaseDecision";
@@ -3014,9 +3014,9 @@ export const Repository = {
   getInstructors: async (): Promise<AdInstructor[]> => scopedCachedReference(REFERENCE_KEYS.instructors, async () => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("instructors").orderBy("AdInstructorId", "asc").get();
-      return snap.docs.map(doc => doc.data() as AdInstructor);
+      return sortByName(snap.docs.map(doc => doc.data() as AdInstructor), person => person.AdInstructorName);
     }
-    return db.instructors;
+    return sortByName(db.instructors, person => person.AdInstructorName);
   }),
 
   /**
@@ -3035,10 +3035,10 @@ export const Repository = {
       return docs
         .filter(doc => doc.exists)
         .map(doc => doc.data() as AdInstructor)
-        .sort((a, b) => a.AdInstructorId - b.AdInstructorId);
+        .sort((a, b) => byArabic(a.AdInstructorName, b.AdInstructorName));
     }
     const wanted = new Set(ids);
-    return db.instructors.filter(person => wanted.has(Number(person.AdInstructorId)));
+    return sortByName(db.instructors.filter(person => wanted.has(Number(person.AdInstructorId))), person => person.AdInstructorName);
   },
 
   getInstructorsByScope: async (sectionId: number, termId = 0): Promise<AdInstructor[]> =>

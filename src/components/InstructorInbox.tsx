@@ -1,3 +1,4 @@
+import { byArabic } from "../utils/sorting";
 /**
  * ── وارِدُ الأساتذة ─────────────────────────────────────────────────────────
  *
@@ -853,7 +854,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
     setError(null);
     try {
       const data = await request(`/api/instructor-requests?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`);
-      setRows(data.rows || []);
+      setRows((data.rows || []).slice().sort((a: any, b: any) => byArabic(a.instructorName, b.instructorName)));
       setTotals(data.totals || null);
       setCurrentRows(new Map((data.currentRows || []).map((row: FSchedule) => [Number(row.id), row])));
       /* المقترحات تأتي بعد الطلبات ولا تُوقف عرضها إن تعذّرت. */
@@ -880,7 +881,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       return catalog.colleges
         .map(row => ({ value: Number(row.AdCollegeId), label: String(row.AdCollegeName || `كلية ${row.AdCollegeId}`) }))
         .filter(item => item.value)
-        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+        .sort((a, b) => byArabic(a.label, b.label));
     }
     const seen = new Map<number, string>();
     for (const scope of scopes) {
@@ -896,7 +897,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
         .filter(row => !collegeId || Number(row.AdCollegeId) === collegeId)
         .map(row => ({ value: Number(row.AdSectionId), label: String(row.AdSectionName || `قسم ${row.AdSectionId}`) }))
         .filter(item => item.value)
-        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+        .sort((a, b) => byArabic(a.label, b.label));
     }
     const seen = new Map<number, string>();
     for (const scope of scopes) {
@@ -939,7 +940,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
   }, [rows]);
   const openedQuiet = (rows || []).filter(row => row.status === "sent" && row.linkOpenedAt).length;
 
-  /* الأساتذةُ الذين في الوارد فعلاً، ومن طلب منهم أولاً — كقائمة الأستاذ في
+  /* الأساتذةُ الذين في الوارد فعلاً، مرتّبون أبجدياً بحسب الاسم — كقائمة الأستاذ في
      «الجدول الدراسي». */
   const instructorOptions = useMemo(() => {
     const seen = new Map<number, { label: string; changed: boolean }>();
@@ -949,7 +950,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       seen.set(id, { label: row.instructorName, changed: row.changedCount > 0 });
     }
     return [...seen]
-      .sort((a, b) => Number(b[1].changed) - Number(a[1].changed) || a[1].label.localeCompare(b[1].label, "ar"))
+      .sort((a, b) => byArabic(a[1].label, b[1].label))
       .map(([value, entry]) => ({ value, label: entry.changed ? `${entry.label} · طلب تعديلاً` : entry.label }));
   }, [rows]);
 
@@ -973,7 +974,7 @@ export default function InstructorInbox({ scopes, powerAdmin = false, onNavigate
       entry.count += 1;
       seen.set(id, entry);
     }
-    return [...seen].map(([id, entry]) => ({ id, ...entry })).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+    return [...seen].map(([id, entry]) => ({ id, ...entry })).sort((a, b) => byArabic(a.name, b.name));
   }, [rows]);
 
   const counts = useMemo(() => {

@@ -1,3 +1,4 @@
+import { byArabic } from "../utils/sorting";
 /**
  * ── مواعيد التسليم ──────────────────────────────────────────────────────────
  *
@@ -119,7 +120,7 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
   const colleges = useMemo(() => {
     const seen = new Map<number, string>();
     for (const row of rows) if (!seen.has(row.collegeId)) seen.set(row.collegeId, row.collegeName || `كلية ${row.collegeId}`);
-    return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "ar"));
+    return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => byArabic(a.name, b.name));
   }, [rows]);
   useEffect(() => { if (!collegeId && colleges.length) setCollegeId(colleges[0].id); }, [colleges, collegeId]);
 
@@ -141,7 +142,7 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
       list.push(row);
       byCollege.set(row.collegeName, list);
     }
-    return [...byCollege].sort((a, b) => a[0].localeCompare(b[0], "ar"));
+    return [...byCollege].sort((a, b) => byArabic(a[0], b[0]));
   }, [rows, search]);
 
   const toggle = (key: string) => setPicked(current => {

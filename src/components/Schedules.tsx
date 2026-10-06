@@ -12609,13 +12609,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <div>
                 <small>الجدول يفهم نفسه</small>
                 <h2>
-                  {context.selected.AdCourseName} · شعبة{" "}
-                  {context.selected.SCode}
+                  {context.selected.AdCourseName}
+                  <span className="context-section-label">شعبة <bdi>{context.selected.SCode}</bdi></span>
                 </h2>
-                <p>
-                  <span className="schedule-instructor-with-badge">{context.instructor?.AdInstructorName}{visitingIds.has(context.selected.AdInstructorId) ? <VisitingBadge compact /> : null}</span> ·{" "}
-                  {roomDisplay(context.selected) || "—"}{historicalLocationNeedsReview(context.selected)?" · بيانات مكان تاريخية غير موثقة":""}
-                </p>
+                <div className="context-appointment-meta">
+                  <span><UsersRound aria-hidden="true" /><span className="schedule-instructor-with-badge">{context.instructor?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(context.selected.AdInstructorId) ? <VisitingBadge compact /> : null}</span></span>
+                  <span><MapPin aria-hidden="true" /><bdi>{roomDisplay(context.selected) || "—"}</bdi></span>
+                  {historicalLocationNeedsReview(context.selected) ? <small>بيانات مكان تاريخية غير موثقة</small> : null}
+                </div>
               </div>
             </div>
             <nav className="context-tabs" aria-label="أقسام تفاصيل الموعد">
@@ -12624,7 +12625,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               <button type="button" data-guide-ignore="تبويب داخلي لتنظيم تفاصيل الموعد فقط" className={contextTab === "context" ? "active" : ""} aria-pressed={contextTab === "context"} onClick={() => setContextTab("context")}><Layers aria-hidden="true" /><span>السياق</span></button>
             </nav>
             <div className="context-intelligence-summary context-tab-overview">
-              <article className="context-why-here context-why-compact" title={context.whyHere || undefined}>
+              <article className="context-why-here" title={context.whyHere || undefined}>
                 <span><HelpCircle aria-hidden="true" /></span>
                 <div><small>{/مختلف|غير معتاد|تاريخ/i.test(context.whyHere || "") ? "خارج المعتاد" : "ضمن النمط"}</small><strong>{/مانع|تعارض/i.test(context.whyHere || "") ? "يحتاج تحقق" : "بدون مانع"}</strong></div>
               </article>
@@ -12639,7 +12640,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
               {/* No cost reading, no «0/100» tile (hide-empty rule). */}
               {context.decisionCost ? <article className={`decision-cost-${context.decisionCost.level || "low"}`} title={(context.decisionCost.factors || []).join(" · ") || undefined}>
                 <span><BrainCircuit aria-hidden="true" /></span>
-                <div><small>تكلفة التغيير</small><strong>{context.decisionCost.score ?? 0}/100</strong></div>
+                <div><small>تكلفة التغيير</small><strong><bdi dir="ltr">{context.decisionCost.score ?? 0}/100</bdi></strong></div>
                 <i style={{ ["--cost" as any]: `${context.decisionCost.score || 0}%` }} />
               </article> : null}
             </div>

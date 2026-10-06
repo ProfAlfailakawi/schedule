@@ -1,3 +1,4 @@
+import { byArabic } from "../utils/sorting";
 /**
  * ── كشفُ التسجيل ────────────────────────────────────────────────────────────
  *
@@ -334,7 +335,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
       return catalog.colleges
         .map(row => ({ value: Number(row.AdCollegeId), label: String(row.AdCollegeName || `كلية ${row.AdCollegeId}`) }))
         .filter(item => item.value)
-        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+        .sort((a, b) => byArabic(a.label, b.label));
     }
     const seen = new Map<number, string>();
     for (const scope of scopes) {
@@ -352,7 +353,7 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
         .filter(row => !collegeId || Number(row.AdCollegeId) === collegeId)
         .map(row => ({ value: Number(row.AdSectionId), label: String(row.AdSectionName || `قسم ${row.AdSectionId}`) }))
         .filter(item => item.value)
-        .sort((a, b) => a.label.localeCompare(b.label, "ar"));
+        .sort((a, b) => byArabic(a.label, b.label));
     }
     const seen = new Map<number, string>();
     for (const scope of scopes) {

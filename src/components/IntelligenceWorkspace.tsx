@@ -85,7 +85,7 @@ import { AR, countOf, nounFor, oblique, studentNounsFor } from "../utils/arabicC
 import { proposeSmartFills, applySmartFills } from "../utils/geminiScheduleLayer";
 import { resolveScopeSelection, singleDepartmentOf } from "../utils/scopeContext";
 import { readSharedScope, resolveSharedScope, useSharedScope } from "../utils/sharedScope";
-import { sortByName, byRoom } from "../utils/sorting";
+import { sortByName, byRoom, byArabic } from "../utils/sorting";
 import { sortTermsNewest, termIsArchive } from "../utils/termSequence";
 import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import { blockingConflicts, placeholderInstructorIds } from "../utils/scheduleBlockers";
@@ -3156,7 +3156,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <UsersRound />
             </div>
             <div className="professor-load-list">
-              {[...overview.professorLoads].sort((a: any, b: any) => new Intl.Collator("ar", { sensitivity: "base" }).compare(String(a.name || ""), String(b.name || ""))).map((p: any) => (
+              {[...overview.professorLoads].sort((a: any, b: any) => byArabic(a.name, b.name)).map((p: any) => (
                 <button key={p.id} onClick={() => loadProfessor(p)}>
                   <span className="prof-avatar">{p.name.trim().charAt(0)}</span>
                   <div>

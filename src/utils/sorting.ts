@@ -15,7 +15,7 @@ const TITLE_PREFIX = /^\s*(?:[أا]\s*\.\s*د|prof|dr|mr|ms|[أادم])\s*\.\s*/
 
 /** Strips academic titles and unifies hamza/alef/taa-marbuta before comparing. */
 export function sortKey(value: unknown): string {
-  let text = String(value ?? "").trim();
+  let text = String(value ?? "").normalize("NFKC").replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim();
   // A name may carry more than one title ("أ.د." then "د.").
   for (let pass = 0; pass < 2; pass++) {
     const stripped = text.replace(TITLE_PREFIX, "");

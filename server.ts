@@ -16,7 +16,7 @@ import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilI
 import { toEnglishDigits } from "./src/utils/digits";
 import { DEPARTMENT_HEAD_ROLE, planDepartmentHeadAccounts } from "./src/utils/departmentHeadAccounts";
 import { normalizeArabicText } from "./src/utils/arabicText";
-import { byRoom } from "./src/utils/sorting";
+import { byRoom, byArabic, sortByName } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
@@ -177,10 +177,6 @@ const PORT = 3000;
 // it at the API boundary prevents one picker from silently drifting away from
 // another screen that consumes the same data.
 const arabicUiCollator = new Intl.Collator("ar", { numeric: true, sensitivity: "base", ignorePunctuation: true });
-const normalizeArabicSortName = (value: unknown) => String(value ?? "").trim()
-  .replace(/^\s*(?:(?:[أا]\s*\.\s*د)|(?:د)|(?:م))\s*\.\s*/i, "")
-  .replace(/[ً-ْـ]/g, "").replace(/[إأآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
-  .replace(/\s+/g, " ").trim();
 const foldHeaderIdentity = (value: unknown) => String(value ?? "").normalize("NFKC")
   .replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
   .replace(/[ً-ْـ]/g, "").replace(/[إأآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
@@ -211,7 +207,7 @@ const academicSectionNameMatches = (observed: unknown, canonical: unknown) => {
   return tokens.length>0&&tokens.every(token=>sourceTokens.includes(token));
 };
 const sortArabicNamed = <T>(rows: readonly T[], pick: (row: T) => unknown): T[] =>
-  [...rows].sort((a, b) => arabicUiCollator.compare(normalizeArabicSortName(pick(a)), normalizeArabicSortName(pick(b))));
+  sortByName(rows, pick);
 const verifiedRoomKey = (row: Partial<FSchedule>): string =>
   row.roomId && row.locationStatus !== "PENDING_ROOM" && row.locationStatus !== "LOCATION_REVIEW_REQUIRED" && row.locationStatus !== "INVALID_HISTORICAL"
     ? `id:${row.roomId}`
@@ -4228,7 +4224,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
       const building=buildings.get(row.roomCode)||{code:row.roomCode,count:0};building.count+=1;buildings.set(row.roomCode,building);
     }
     return {
-      owners:[...owners.values()].sort((a,b)=>a.name.localeCompare(b.name)),
+      owners:[...owners.values()].sort((a,b)=>byArabic(a.name,b.name)),
       days:[...days.values()],
       buildings:[...buildings.values()].sort((a,b)=>byRoom(a.code,"",b.code,"")),
     };
@@ -5068,7 +5064,7 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
   const visitingInstructorIds = visitingRoster.instructorIds;
   const visitingPeople = visitingRoster.instructors;
   const instructors = [...new Map([...historicalDepartmentInstructors, ...scopedInstructors, ...visitingPeople].map(person => [Number(person.AdInstructorId), person])).values()]
-    .sort((a,b)=>String(a.AdInstructorName||"").localeCompare(String(b.AdInstructorName||""),"ar"));
+    .sort((a,b)=>byArabic(a.AdInstructorName,b.AdInstructorName));
 
   res.json({
     context: { collegeId, sectionId, termId },
@@ -7374,7 +7370,7 @@ app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: Auth
       };
     })
     .filter(Boolean)
-    .sort((a: any, b: any) => b.score - a.score || String(a.name).localeCompare(String(b.name), "ar"))
+    .sort((a: any, b: any) => b.score - a.score || byArabic(a.name,b.name))
     .slice(0, 12);
 
   const exceptions = await Repository.getScheduleWeekExceptions(Number(row.AdTermId), Number(row.id));
@@ -15268,7 +15264,7 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
       .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
       .sort((a:any,b:any)=>b.lastTaught-a.lastTaught||String(a.code).localeCompare(String(b.code),"ar"));
     return{id:section.AdSectionId,name:section.AdSectionName,courses:offered,graduateRule};
-  }))).sort((a:any,b:any)=>String(a.name).localeCompare(String(b.name),"ar"));
+  }))).sort((a:any,b:any)=>byArabic(a.name,b.name));
   const offered=sectionOptions.find((section:any)=>Number(section.id)===Number(resolved.link.AdSectionId))?.courses||[];
 
   const sectionName = sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "";

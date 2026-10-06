@@ -1,3 +1,4 @@
+import { byArabic } from "./sorting";
 import { termChronology } from "./termSequence";
 import { dedupeVisitingRows, visitingSectionKey, type VisitingTeachingRow } from "./visitingTeaching";
 
@@ -185,14 +186,10 @@ export function seasonOf(name: string): { key: string; label: string; order: num
   return { key: `other-${text}`, label: "فصل", order: 9 };
 }
 
-const byArabicName = (a: string, b: string) => String(a || "").localeCompare(String(b || ""), "ar");
-
-/** ترتيب المنتدبين: الأكثر فصولًا، ثم الأكثر شعبًا، ثم أبجديًا. */
+/** ترتيب أسماء المنتدبين أبجدياً للشاشة والطباعة. */
 export function sortVisitingPeople(people: readonly VisitingHistoryPerson[]): VisitingHistoryPerson[] {
   return [...people].sort((a, b) =>
-    Number(b.times || 0) - Number(a.times || 0)
-    || Number(b.sections || 0) - Number(a.sections || 0)
-    || byArabicName(a.name, b.name)
+    byArabic(a.name, b.name)
   );
 }
 

@@ -1,3 +1,4 @@
+import { byArabic } from "../utils/sorting";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarCheck2, Check, Search, Users, X } from "lucide-react";
 import { PrimaryButton } from "./ui";
@@ -81,7 +82,7 @@ export default function MeetingSlots({ instructors, scopeNarrowed = false, termI
   }, [termId, sectionId]);
   const faculty = useMemo(() => {
     const people = familyPeople ? [...new Map([...instructors, ...familyPeople].map(p => [Number(p.AdInstructorId), p])).values()] : instructors;
-    return meetingParticipants([...people].sort((a, b) => a.AdInstructorName.localeCompare(b.AdInstructorName, "ar")), excludedIds);
+    return meetingParticipants([...people].sort((a, b) => byArabic(a.AdInstructorName, b.AdInstructorName)), excludedIds);
   }, [instructors, familyPeople, excludedIds]);
   const options = useMemo(() => {
     const needle = query.trim();
