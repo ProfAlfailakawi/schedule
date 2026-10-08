@@ -4829,6 +4829,8 @@ button.twin-delta{width:100%}
   .student-cases-table td[data-label="الطالب"]>strong{flex:0 0 100%}
   .student-cases-table td[data-label="الطالب"] .student-case-row-action{margin-top:0;flex:0 1 auto;min-width:0}
   .student-cases-table td[data-label="الطالب"] .student-case-more-toggle{margin-top:0}
+  /* A card without an approve action renders an empty wrapper that still took a flex gap, pushing «تفاصيل» 8px in from the name's edge. */
+  .student-cases-table td[data-label="الطالب"] .student-case-row-action:empty{display:none}
 }
 
 /* Compact, shared read scope for the intelligence scenes and department fingerprint. */

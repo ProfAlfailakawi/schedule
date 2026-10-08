@@ -2451,6 +2451,21 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 @media (max-width:640px){
   .location-admin-page .location-health-grid>.surface:nth-child(n+5){grid-column:1/-1}
 }
+/* Zero readings: one calm collapsed row. The summary shows each reading's real count; opening it lists the full captions. */
+.location-admin-page .location-health-zero{border:1px solid var(--line);border-radius:var(--r-lg,16px);background:var(--surface);padding:0}
+.location-admin-page .location-health-zero>summary{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;min-block-size:44px;padding:8px 14px;cursor:pointer;list-style:none;color:var(--muted)}
+.location-admin-page .location-health-zero>summary::-webkit-details-marker{display:none}
+.location-admin-page .location-health-zero-chip{display:inline-flex;align-items:center;gap:5px}
+.location-admin-page .location-health-zero-chip svg{inline-size:16px;block-size:16px;color:var(--muted-2)}
+.location-admin-page .location-health-zero-chip b{font-size:.95rem;font-weight:500;color:var(--muted)}
+.location-admin-page .location-health-zero-caret{inline-size:16px;block-size:16px;margin-inline-start:auto;transition:transform .15s}
+.location-admin-page .location-health-zero[open] .location-health-zero-caret{transform:rotate(180deg)}
+.location-admin-page .location-health-zero-grid{padding:0 10px 10px}
+.location-admin-page .location-health-zero>summary:focus-visible{outline:2px solid var(--accent,#16745f);outline-offset:2px;border-radius:var(--r-lg,16px)}
+@media (max-width:640px){
+  .location-admin-page .location-health-zero-grid>.surface{grid-column:1/-1}
+  .location-admin-page .location-health-grid:not(.location-health-zero-grid)>.surface:last-child:nth-child(odd){grid-column:1/-1}
+}
 
 /* الجاهزية: الرقم نفسه مع حلقته — الرسم يكرّر الرقم الظاهر ولا يضيف قراءة. */
 .deck-signals .signal-ring-row{display:flex;align-items:center;justify-content:space-between;gap:10px}

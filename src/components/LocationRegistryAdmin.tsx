@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Building2, CheckCircle2, CircleAlert, Database, DoorOpen, Info, Plus, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
+import React, { Fragment, useEffect, useMemo, useState } from "react";
+import { Building2, CheckCircle2, ChevronDown, CircleAlert, Database, DoorOpen, Info, Plus, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
 import type { AdCollege, AdSection, LocationMigrationRun, LocationReviewCase, MasterBuilding, MasterRoom } from "../types";
 import { Badge, Field, Notice, PrimaryButton, SecondaryButton, Surface, useDialogDismiss } from "./ui";
 import { buildingNumberLabel, normalizeCollegeName, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "../utils/locationCollegePrefixes";
@@ -211,19 +211,38 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
       <p>اختر المبنى ثم أدر قاعاته. التعديلات تُحفظ في السجل الرسمي. «الصيغة التاريخية» كتابة قديمة لنفس المكان لفهم بيانات السنوات السابقة فقط، ولا تظهر للمستخدم العادي.</p>
     </details>
 
-    <div className="location-health-grid">
-      <Surface className={data.health.officialBuildings?"":"is-zero"}><Building2/><b>{data.health.officialBuildings||0}</b><span>{nounFor(data.health.officialBuildings||0, AR.building)} {nounFor(data.health.officialBuildings||0, AR.officialAdj)}</span></Surface>
-      <Surface className={data.health.officialRooms?"":"is-zero"}><DoorOpen/><b>{data.health.officialRooms||0}</b><span>{nounFor(data.health.officialRooms||0, AR.room)} {nounFor(data.health.officialRooms||0, AR.officialFemAdj)}</span></Surface>
-      <Surface className={data.health.sharedRooms?"":"is-zero"}><UsersRound/><b>{data.health.sharedRooms||0}</b><span>{nounFor(data.health.sharedRooms||0, AR.room)} {nounFor(data.health.sharedRooms||0, AR.sharedFemAdj)}</span></Surface>
-      <Surface className={data.health.pendingRooms?"":"is-zero"}><CircleAlert/><b>{data.health.pendingRooms||0}</b><span>بانتظار قاعة</span></Surface>
-      <Surface className={data.health.historicalReview?"":"is-zero"}><ShieldCheck/><b>{data.health.historicalReview||0}</b><span>تاريخية تحتاج توثيق</span></Surface>
-      {/* The two readings the panel never had: what the registry is holding
-          back, and what it is carrying that can never be used. Both are
-          actionable from this same screen. */}
-      <Surface className={data.health.awaitingConfirmation?"":"is-zero"}><CircleAlert/><b>{data.health.awaitingConfirmation||0}</b><span>بانتظار التأكيد — لا تظهر لأحد</span></Surface>
-      <Surface className={data.health.emptyBuildingsWithHistory?"":"is-zero"}><Building2/><b>{data.health.emptyBuildingsWithHistory||0}</b><span>{nounFor(data.health.emptyBuildingsWithHistory||0, AR.building)} بلا قاعة فعّالة ومع سجل سابق — القاعات تنتظر التأكيد</span></Surface>
-      <Surface className={data.health.emptyBuildingsUnused?"":"is-zero"}><Building2/><b>{data.health.emptyBuildingsUnused||0}</b><span>{nounFor(data.health.emptyBuildingsUnused||0, AR.building)} بلا قاعة ولا استخدام — التعطيل آمن</span></Surface>
-    </div>
+    {(() => {
+      /* Readings that are zero sit in one quiet collapsed row (their real counts in the summary); the full captions open beneath. */
+      const h = data.health;
+      const tiles: { key: string; count: number; Icon: typeof Building2; text: string }[] = [
+        { key: "officialBuildings", count: h.officialBuildings || 0, Icon: Building2, text: `${nounFor(h.officialBuildings || 0, AR.building)} ${nounFor(h.officialBuildings || 0, AR.officialAdj)}` },
+        { key: "officialRooms", count: h.officialRooms || 0, Icon: DoorOpen, text: `${nounFor(h.officialRooms || 0, AR.room)} ${nounFor(h.officialRooms || 0, AR.officialFemAdj)}` },
+        { key: "sharedRooms", count: h.sharedRooms || 0, Icon: UsersRound, text: `${nounFor(h.sharedRooms || 0, AR.room)} ${nounFor(h.sharedRooms || 0, AR.sharedFemAdj)}` },
+        { key: "pendingRooms", count: h.pendingRooms || 0, Icon: CircleAlert, text: "بانتظار قاعة" },
+        { key: "historicalReview", count: h.historicalReview || 0, Icon: ShieldCheck, text: "تاريخية تحتاج توثيق" },
+        /* The two readings the panel never had: what the registry is holding back, and what it is carrying that can never be used. Both are actionable from this same screen. */
+        { key: "awaitingConfirmation", count: h.awaitingConfirmation || 0, Icon: CircleAlert, text: "بانتظار التأكيد — لا تظهر لأحد" },
+        { key: "emptyBuildingsWithHistory", count: h.emptyBuildingsWithHistory || 0, Icon: Building2, text: `${nounFor(h.emptyBuildingsWithHistory || 0, AR.building)} بلا قاعة فعّالة ومع سجل سابق — القاعات تنتظر التأكيد` },
+        { key: "emptyBuildingsUnused", count: h.emptyBuildingsUnused || 0, Icon: Building2, text: `${nounFor(h.emptyBuildingsUnused || 0, AR.building)} بلا قاعة ولا استخدام — التعطيل آمن` },
+      ];
+      const live = tiles.filter(tile => tile.count);
+      const zero = tiles.filter(tile => !tile.count);
+      const tileCard = (tile: (typeof tiles)[number]) => (
+        <Fragment key={tile.key}><Surface className={tile.count ? "" : "is-zero"}><tile.Icon/><b>{tile.count}</b><span>{tile.text}</span></Surface></Fragment>
+      );
+      return <>
+        {live.length ? <div className="location-health-grid">{live.map(tileCard)}</div> : null}
+        {zero.length ? (
+          <details className="location-health-zero">
+            <summary aria-label={zero.map(tile => `${tile.count} ${tile.text}`).join(" · ")}>
+              {zero.map(tile => <span key={tile.key} className="location-health-zero-chip" aria-hidden="true"><tile.Icon/><b>{tile.count}</b></span>)}
+              <ChevronDown className="location-health-zero-caret" aria-hidden="true"/>
+            </summary>
+            <div className="location-health-grid location-health-zero-grid">{zero.map(tileCard)}</div>
+          </details>
+        ) : null}
+      </>;
+    })()}
 
     <nav className="location-admin-tabs" aria-label="أقسام إدارة المباني والقاعات">
       <button type="button" data-guide-ignore="تبويب داخلي في إدارة سجل المواقع" className={workspaceTab==="registry"?"active":""} onClick={()=>setWorkspaceTab("registry")}><Building2/>السجل الرسمي</button>
