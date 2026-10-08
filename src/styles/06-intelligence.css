@@ -4821,6 +4821,14 @@ button.twin-delta{width:100%}
   .student-case-more-toggle{display:inline-flex;align-items:center;justify-self:start;min-height:28px;margin-top:4px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font:600 11px/1 var(--font-ui);cursor:pointer}
   .student-case-more-toggle[aria-expanded="true"]{color:var(--ink)}
   .student-cases-table tr:not(.is-more-open) td.student-case-secondary{display:none}
+  /* The student cell holds the name, the approve action and «تفاصيل»: the two
+     pills sit side by side under the name and wrap only when the card is too
+     narrow, instead of stacking as two lonely full-height rows. */
+  .student-cases-table td[data-label="الطالب"]{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+  .student-cases-table td[data-label="الطالب"]::before,
+  .student-cases-table td[data-label="الطالب"]>strong{flex:0 0 100%}
+  .student-cases-table td[data-label="الطالب"] .student-case-row-action{margin-top:0;flex:0 1 auto;min-width:0}
+  .student-cases-table td[data-label="الطالب"] .student-case-more-toggle{margin-top:0}
 }
 
 /* Compact, shared read scope for the intelligence scenes and department fingerprint. */
