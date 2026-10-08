@@ -20274,7 +20274,7 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
     <thead><tr><th class="t">الوقت</th>${SHARE_DAY_NAMES.map(name => `<th>${esc(name)}</th>`).join("")}</tr></thead>
     <tbody>${tableBody}</tbody>
   </table>` : ""}
-  ${byDay.length ? `<ul class="daystrip">${byDay.map(day => `<li><a href="#day-${day.index}"><span>${esc(day.name)}</span><b>${day.rows.length}</b><i>${day.rows.slice(0, 5).map(() => "<u></u>").join("")}</i></a></li>`).join("")}</ul>` : ""}
+  ${byDay.length ? `<ul class="daystrip">${SHARE_DAY_NAMES.map((name, index) => { const day = byDay.find(d => d.index === index); return day ? `<li><a href="#day-${day.index}"><span>${esc(day.name)}</span><b>${day.rows.length}</b><i>${day.rows.slice(0, 5).map(() => "<u></u>").join("")}</i></a></li>` : `<li><a aria-disabled="true" style="opacity:.55;pointer-events:none"><span>${esc(name)}</span><b>0</b><i></i></a></li>`; }).join("")}</ul>` : ""}
   <div class="listing">
   ${byDay.length ? byDay.map(day => `<section id="day-${day.index}">
     <h2>${esc(day.name)}<em>${day.rows.length}</em></h2>
