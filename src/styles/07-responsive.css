@@ -512,6 +512,8 @@
   /* The instructor lens wraps its print icon in the same wrapper: keep it an icon beside Excel. */
   .query-canvas-actions>.query-report-action:has(>.query-print-icon){flex:0 0 auto;width:auto}
   .query-canvas-actions>.query-report-action>.query-print-icon{width:40px}
+  /* The icon-sized wrapper must not size its scope popup: the popup keeps its own width, opening from the start edge. */
+  .query-canvas-actions>.query-report-action:has(>.query-print-icon) .query-scope-menu{inset-inline:0 auto;min-width:216px}
   .query-canvas-actions .btn{width:100%}
   .print-menu-pop{inset-inline:0}
   .lens-list>article{
