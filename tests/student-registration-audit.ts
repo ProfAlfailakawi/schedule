@@ -303,7 +303,7 @@ check(responsiveCss.includes(".sidebar .side-nav-link{")
   "وقائمة الهاتف ترتّب مداخل تغييرات الجدول ورغبات الأساتذة وكشف التسجيل في صفٍّ واضح");
 check(approvalCss.includes(".request-card-head{align-items:flex-start;flex-direction:column}")
   && approvalCss.includes(".request-diff>div{display:grid;grid-template-columns:minmax(54px,auto) minmax(0,1fr)")
-  && intelligenceCss.includes(".student-cases-table tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)")
+  && intelligenceCss.includes(".student-cases-table tr{display:grid;grid-template-columns:auto minmax(0,1fr)")
   && intelligenceCss.includes(".student-cases-table td::before{content:attr(data-label)"),
   "وشاشتا رغبات الأساتذة وكشف التسجيل لهما ترتيب هاتف صريح: السجلّ بطاقاتٌ بحقولٍ معنونة، بلا تمريرٍ جانبي");
 

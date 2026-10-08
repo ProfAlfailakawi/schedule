@@ -509,6 +509,9 @@
   /* Print and Excel sit side by side at the start; the report button takes the next line. */
   .query-canvas-actions{display:flex;flex-wrap:wrap;gap:var(--s2)}
   .query-canvas-actions>.query-report-action{flex:1 1 100%}
+  /* The instructor lens wraps its print icon in the same wrapper: keep it an icon beside Excel. */
+  .query-canvas-actions>.query-report-action:has(>.query-print-icon){flex:0 0 auto;width:auto}
+  .query-canvas-actions>.query-report-action>.query-print-icon{width:40px}
   .query-canvas-actions .btn{width:100%}
   .print-menu-pop{inset-inline:0}
   .lens-list>article{
@@ -1601,6 +1604,10 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .dock-act::after,.dock-add::after{inset:-6px -3px}
   /* العينُ ملاصقةٌ لشريحة الفلتر: نكبّرها عمودياً فقط حتى لا تغطّي حافةَ الشريحة. */
   .week-legend-eye::after{inset:-4px 0}
+  /* Scope switch (34px) and stage nodes (24px at 360) of the intelligence page: same transparent hit growth, drawing unchanged. */
+  .intelligence-scope-switch button,.intelligence-scenes .intelligence-steps button.dna-node{position:relative}
+  .intelligence-scope-switch button::after{content:"";position:absolute;inset:-5px 0}
+  .intelligence-scenes .intelligence-steps button.dna-node::after{content:"";position:absolute;inset:-10px}
 }
 
 /* ── Guide panel on phones: legibility floor (visual only) ───────────────────
