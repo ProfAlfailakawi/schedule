@@ -759,7 +759,9 @@ body:has(.sp-root) .smart-guide-fab{visibility:hidden}
   .request-card-head{flex-direction:row;align-items:center;column-gap:var(--s2)}
   .request-card-head>div:first-child{flex:1 1 100%;min-inline-size:0}
   .request-card-head>.request-card-flags{order:2;flex:1 1 0;min-inline-size:0;justify-content:flex-start}
-  .request-card-head>.request-trail-btn{order:3;flex:none}
+  /* The button and the opened timeline live inside div.request-trail (display:contents), so they are descendants, not children. */
+  .request-card-head .request-trail-btn{order:3;flex:none}
+  .request-card-head .request-trail-line{order:5}
 }
 .request-card-head>.sp-thread{order:4;flex:1 1 100%;padding:0;border:0;background:transparent;border-radius:0}
 .request-card-head>.sp-thread .sp-pcard{border:0;background:var(--surface-2);border-radius:var(--r-md)}
