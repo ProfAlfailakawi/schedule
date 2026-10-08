@@ -64,7 +64,7 @@ export const PUBLIC_KIT_CSS = `/* ── عدّة الصفحات العامة �
 .sk-pick button,.sk-times button{border:1.5px solid var(--sk-line);background:var(--sk-card);color:var(--sk-muted);border-radius:14px;padding:10px 4px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;line-height:1.35}
 .sk-pick button small{display:block;font-size:11px;font-weight:500;opacity:.8}
 .sk-times{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
-.sk-times button{direction:ltr;font-variant-numeric:tabular-nums;font-size:14px;line-height:1;padding:11px 4px}
+.sk-times button{direction:ltr;font-variant-numeric:tabular-nums;font-size:14px;line-height:1;padding:11px 4px;min-block-size:44px}
 .sk-pick button[aria-pressed=true],.sk-times button[aria-pressed=true]{background:var(--sk-ok-s);border-color:var(--sk-ok);color:var(--sk-ok-ink)}
 .sk-v{display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:14px;font-size:13.5px;font-weight:600;background:var(--sk-ok-s);color:var(--sk-ok-ink)}
 .sk-v[data-t=bad]{background:var(--sk-bad-s);color:var(--sk-bad)}

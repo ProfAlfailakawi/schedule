@@ -160,6 +160,8 @@ export const REQUEST_V3_CSS = `:root{--ok-ink:#16523a;--on:#fff;--amber:#b07d00;
 .done .btn-main{margin-top:16px;inline-size:auto;display:inline-flex;padding-inline:24px}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 @media (max-width:380px){.when .big{font-size:26px}.pair{grid-template-columns:1fr}}
+/* عند ٣٢٠–٣٨٠ بكسل لا يتّسع العمودان معاً: تنزل حالة الموعد تحت نصّه بدل أن تركب على أيام الأسبوع */
+@media (max-width:380px){.appt-head{grid-template-columns:auto minmax(0,1fr) 20px;grid-template-areas:"ic main chev" "ic st chev"}.ap-st{justify-items:start}.appt-chev{grid-area:chev}}
 @media print{.dk-acts,.dk-nav,.thread-act{display:none!important}.deck{box-shadow:none;break-inside:avoid}}
 .sr{position:absolute;inline-size:1px;block-size:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .edit{border-top:1px dashed var(--line2)}
