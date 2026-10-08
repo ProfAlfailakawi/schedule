@@ -967,6 +967,26 @@
   }
 }
 
+/* The scope strip keeps z-index:400 so what opens from it (saved views, the
+   room-barter sheet, dialogs) stays above the top bar and the bottom dock — it
+   is their stacking context. At rest nothing is open, and on a short phone the
+   strip scrolling past the dock painted over it. So on phones only, while the
+   strip holds nothing open, it joins the normal layer (below the dock, 55);
+   the instant a menu, dialog or the barter sheet opens :has() restores 400. */
+@media screen and (max-width:768px){
+  .schedule-page>.schedule-control:not(:where(:has(
+    .hall-barter-board.is-open,
+    .views-menu,
+    .views-dialog-backdrop,
+    [role="dialog"],
+    [role="menu"],
+    [role="listbox"],
+    [aria-expanded="true"]:not(.schedule-tools-toggle)
+  ))){
+    z-index:auto;
+  }
+}
+
 @media (max-width:760px){
   .system-vault-hero{grid-template-columns:auto minmax(0,1fr);padding:18px;gap:14px}.system-vault-hero .system-vault-state{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;text-align:initial;min-width:0}.system-vault-hero .system-vault-state strong{margin:0}
   .system-vault-seal{width:48px;height:48px;border-radius:15px}.system-vault-grid{grid-template-columns:1fr;gap:12px}.system-vault-action{padding:17px;gap:12px}.vault-inline-actions{grid-template-columns:1fr}.vault-preview-hash{grid-template-columns:1fr;gap:6px}.vault-preview-hash code{font-size:9.5px}.vault-counts{max-height:150px;overflow:auto}.vault-safety-note{padding:15px}
