@@ -16561,6 +16561,7 @@ ${PROPOSAL_ALERT_CSS}
 <body>
 <div class="wrap">
   <div class="gate" id="gate">
+    <img src="/schedule-icon.svg" alt="" width="40" height="40" style="display:block;margin:0 auto 12px;border-radius:11px">
     <div class="mark">SCHEDULE</div>
     <h1>بطاقتي</h1>
     <p>${label}<br>اكتب رقمك المدني لعرض جدولك.</p>${demoHint}
@@ -19537,6 +19538,7 @@ label.gap{margin-top:13px}
 .case[data-s=registered]{color:var(--ok)}
 .case[data-s=rejected],.case[data-s=committee-rejected]{color:var(--bad);background:var(--bad-soft)}
 .case small{font-weight:400;color:var(--ink)}
+.steps{display:flex;align-items:center;margin:2px 14px 14px}.steps i{flex:none;display:grid;place-items:center;inline-size:26px;block-size:26px;border-radius:50%;border:2px solid var(--line-strong);background:var(--card);color:transparent}.steps i svg{inline-size:14px;block-size:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.steps b{flex:1;block-size:2px;border-radius:2px;background:var(--line-strong)}.steps i[data-k=done]{background:var(--ok);border-color:var(--ok);color:#fff}.steps i[data-k=bad]{background:var(--bad);border-color:var(--bad);color:#fff}.steps i[data-k=now]{border-color:var(--ok);box-shadow:0 0 0 4px var(--accent-soft)}.steps b[data-k=done]{background:var(--ok)}
 </style></head><body><div class="wrap">
 <img class="mark" src="/schedule-icon.svg" alt="" width="36" height="36">
 <h1>حالة طلبي</h1>
@@ -19577,13 +19579,19 @@ function caseLine(d){
  return '<p class="case" data-s="'+esc(st)+'">'+esc(CASE[st]||CASE.pending)+
   (last&&last.reason?' — '+esc(REASON[last.reason]||last.reason):'')+
   (last&&last.note?'<br><small>'+esc(last.note)+'</small>':'')+'</p>'}
+/* شريطُ مراحل الحالة: وصل إلى القسم ← لجنة القسم ← التسجيل، مرسومٌ من الحالة الفعلية نفسها؛ النصُّ تحته هو المعنى. */
+function stepsHtml(st){
+ var ok='<svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>',no='<svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+ var c=st==="pending"?"now":st==="committee-rejected"?"bad":"done";
+ var r=st==="registered"?"done":st==="rejected"?"bad":st==="approved"?"now":"";
+ return '<div class="steps" aria-hidden="true"><i data-k="done">'+ok+'</i><b data-k="'+(c==="now"?"":"done")+'"></b><i data-k="'+c+'">'+(c==="bad"?no:ok)+'</i><b data-k="'+(r==="done"||r==="bad"?"done":"")+'"></b><i data-k="'+r+'">'+(r==="bad"?no:ok)+'</i></div>'}
 function show(d){
  if(!d.found){out.innerHTML='<div class="card"><div class="empty">'+
   'لا يوجد طلبٌ بهذا الرقم المدني ورقم الحالة في '+esc(d.term||"هذا الفصل")+'.<br>'+
   'إن كنت قد عبّأت الاستبيان من رابطٍ آخر، افتح ذلك الرابط.</div></div>';return}
  out.innerHTML='<div class="card"><p class="ref">'+esc(d.caseRef)+'</p>'+
   '<p class="reflabel">رقم حالتك · '+esc(d.term)+(TYPE[d.requestType]?' · '+esc(TYPE[d.requestType]):'')+'</p>'+
-  (d.caseLevel?caseLine(d):'')+
+  (d.caseLevel?stepsHtml(d.caseStatus||'pending')+caseLine(d):'')+
   '<ul>'+(d.courses||[]).map(function(c){
    return '<li><span>'+esc(c.name)+(c.state?'<i class="st" data-s="'+esc(c.state)+'">'+
     esc(STATE[c.state]||c.state)+(c.reason?' — '+esc(REASON[c.reason]||c.reason):'')+
@@ -20127,7 +20135,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   const payload = await buildSharePayload(resolved.link);
   const byDay = SHARE_DAY_NAMES.map((name, index) => ({
-    name,
+    name, index,
     rows: payload.rows.filter(row => row.days.includes(index)).sort((a, b) => String(a.start).localeCompare(String(b.start)))
   })).filter(day => day.rows.length);
 
@@ -20219,8 +20227,16 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 .pub-week .slot time+time{color:var(--muted);margin-top:0}
 .pub-week .slot i{display:block;margin-top:2px;font-style:normal;font-size:11px;color:var(--muted)}
 .listing{margin-top:30px}
+/* Phone: one chip per day with that day's real lecture count, jumping to its list. */
+.daystrip{display:flex;gap:6px;margin:20px 0 0;padding:0;list-style:none}
+.daystrip li{flex:1;min-width:0;display:flex}.daystrip a{flex:1;min-width:0;display:grid;justify-items:center;align-content:center;gap:3px;min-height:56px;padding:6px 2px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);text-decoration:none;font-size:12px;font-weight:600}
+.daystrip a b{font-size:16px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums;line-height:1.2}
+.daystrip a span{font-size:11px;color:var(--muted);white-space:nowrap}
+.daystrip i{display:flex;gap:2px;justify-content:center;min-height:5px}.daystrip i u{inline-size:5px;block-size:5px;border-radius:50%;background:var(--accent)}
+.listing section{scroll-margin-top:12px}.listing h2{display:flex;align-items:center;gap:8px}.listing h2 em{font-style:normal;min-inline-size:22px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+.listing article{position:relative}.listing article::before{content:"";position:absolute;inset-block:0;inset-inline-start:83px;inline-size:2px;background:var(--line)}
 @media (max-width:640px){.pub-week{display:none}}
-@media (min-width:641px){.listing{display:none}}
+@media (min-width:641px){.listing,.daystrip{display:none}}
 @media print{
   .pub-week{display:table;background:#fff;border-radius:0}
   .pub-week th{color:#111;background:#f0f0ec;border-color:#9aa3a0}
@@ -20232,13 +20248,13 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
   .pub-week .slot time+time,.pub-week .slot i{color:#444}
   .listing{display:none}
 }
-@media print{body{background:#fff;color:#000}.tools{display:none}article,header,footer{border-color:#ccc}.meta span{border-color:#ccc;background:#fff}time{color:#000}}
+@media print{body{background:#fff;color:#000}.tools,.daystrip{display:none}article,header,footer{border-color:#ccc}.meta span{border-color:#ccc;background:#fff}time{color:#000}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <span class="mark">SCHEDULE</span>
+    <span style="display:inline-flex;align-items:center;gap:10px"><img src="/schedule-icon.svg" alt="" width="28" height="28" style="border-radius:8px"><span class="mark">SCHEDULE</span></span>
     <span class="sub">${esc(payload.college)}</span>
   </header>
   <h1>${esc(payload.section)}</h1>
@@ -20258,9 +20274,10 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
     <thead><tr><th class="t">الوقت</th>${SHARE_DAY_NAMES.map(name => `<th>${esc(name)}</th>`).join("")}</tr></thead>
     <tbody>${tableBody}</tbody>
   </table>` : ""}
+  ${byDay.length ? `<ul class="daystrip">${SHARE_DAY_NAMES.map((name, index) => { const day = byDay.find(d => d.index === index); return day ? `<li><a href="#day-${day.index}"><span>${esc(day.name)}</span><b>${day.rows.length}</b><i>${day.rows.slice(0, 5).map(() => "<u></u>").join("")}</i></a></li>` : `<li><a aria-disabled="true" style="opacity:.55;pointer-events:none"><span>${esc(name)}</span><b>0</b><i></i></a></li>`; }).join("")}</ul>` : ""}
   <div class="listing">
-  ${byDay.length ? byDay.map(day => `<section>
-    <h2>${esc(day.name)}</h2>
+  ${byDay.length ? byDay.map(day => `<section id="day-${day.index}">
+    <h2>${esc(day.name)}<em>${day.rows.length}</em></h2>
     ${day.rows.map(row => `<article>
       <time>${esc(row.start)}<small>${esc(row.end)}</small></time>
       <div>
