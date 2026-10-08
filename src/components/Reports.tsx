@@ -276,6 +276,9 @@ const PAGE_ROWS = {
 
 const COMPREHENSIVE_FIRST_PAGE_ROWS = 23;
 const COMPREHENSIVE_NEXT_PAGE_ROWS = 23;
+/* وثيقة «كل الفروع» تُقرأ بجانب ورقة التسجيل صفحةً بصفحة، وتلك تحمل ثمانية
+   وعشرين صفاً: فالصف نفسه يقع في الصفحة نفسها من الورقتين. */
+const COMPREHENSIVE_BRANCH_PAGE_ROWS = 28;
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const duration = (row: FSchedule) => Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
 /**
@@ -3348,14 +3351,14 @@ function groupRows(rows: FSchedule[], keyOf: (row: FSchedule) => string) {
     .sort((a, b) => byRoomLabel(a.key, b.key));
 }
 
-function paginateComprehensiveRows(rows: FSchedule[]) {
+function paginateComprehensiveRows(rows: FSchedule[], firstPageRows = COMPREHENSIVE_FIRST_PAGE_ROWS, nextPageRows = COMPREHENSIVE_NEXT_PAGE_ROWS) {
   if (!rows.length) return [[]] as FSchedule[][];
-  if (rows.length <= COMPREHENSIVE_FIRST_PAGE_ROWS) return [rows];
-  const pages: FSchedule[][] = [rows.slice(0, COMPREHENSIVE_FIRST_PAGE_ROWS)];
-  let cursor = COMPREHENSIVE_FIRST_PAGE_ROWS;
+  if (rows.length <= firstPageRows) return [rows];
+  const pages: FSchedule[][] = [rows.slice(0, firstPageRows)];
+  let cursor = firstPageRows;
   while (cursor < rows.length) {
-    pages.push(rows.slice(cursor, cursor + COMPREHENSIVE_NEXT_PAGE_ROWS));
-    cursor += COMPREHENSIVE_NEXT_PAGE_ROWS;
+    pages.push(rows.slice(cursor, cursor + nextPageRows));
+    cursor += nextPageRows;
   }
   return pages;
 }
@@ -3707,11 +3710,16 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     const bookRows = showSite ? sortRows(bookSites.flatMap(group => group.rows)) : sortRows(rows);
     const totalRows = bookRows.length;
     const legendItems = DAYS.map((day, index) => `${index + 1}=${day.label}`);
-    const pages = paginateComprehensiveRows(bookRows);
+    /* الكثافة تتبع النطاق المطلوب لا عدد المواقع التي فيها محاضرات: «كل
+       الفروع» تُقابَل بورقة التسجيل ولو خلا فرعٌ منها هذا الفصل. */
+    const branchDensity = kind === "comprehensive-branch";
+    const firstPageRows = branchDensity ? COMPREHENSIVE_BRANCH_PAGE_ROWS : COMPREHENSIVE_FIRST_PAGE_ROWS;
+    const nextPageRows = branchDensity ? COMPREHENSIVE_BRANCH_PAGE_ROWS : COMPREHENSIVE_NEXT_PAGE_ROWS;
+    const pages = paginateComprehensiveRows(bookRows, firstPageRows, nextPageRows);
     const totalPages = pages.length;
 
     return (
-      <div className={`print-report print-wide print-query-report print-comprehensive print-comprehensive-book${showSite ? " print-comprehensive-with-site" : ""}`}>
+      <div className={`print-report print-wide print-query-report print-comprehensive print-comprehensive-book${showSite ? " print-comprehensive-with-site" : ""}${branchDensity ? " print-comprehensive-branch-rows" : ""}`}>
         {totalRows ? (
           <div className="print-comprehensive-pages">
             {pages.map((pageRows, pageIndex) => {
@@ -3785,7 +3793,7 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
                       const instructor = instructorOf(row);
                       const serial = pageIndex === 0
                         ? index + 1
-                        : COMPREHENSIVE_FIRST_PAGE_ROWS + ((pageIndex - 1) * COMPREHENSIVE_NEXT_PAGE_ROWS) + index + 1;
+                        : firstPageRows + ((pageIndex - 1) * nextPageRows) + index + 1;
                       return (
                         <div className="print-comprehensive-grid-row" role="row" key={row.id}>
                           <div role="cell" className="print-num">{serial}</div>

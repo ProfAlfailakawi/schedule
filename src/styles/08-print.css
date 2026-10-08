@@ -2695,3 +2695,45 @@
   .approval-dossier-print-host .ad-tile b{font-size:24pt}
   .approval-dossier-print-host .ad-card,.approval-dossier-print-host .ad-course,.approval-dossier-print-host .ad-tile{break-inside:avoid}
 }
+
+/* ── «كل الفروع»: ثمانية وعشرون صفاً على الورقة، كورقة التسجيل ──────────
+   وثيقة الفرع تُقرأ بجانب ورقة التسجيل صفحةً بصفحة، وورقة التسجيل تحمل
+   ثمانية وعشرين صفاً. فالصفحة هنا تحمل العدد نفسه، والصف رقم ٢٩ يبدأ
+   الصفحة الثانية في الورقتين. المساحة للصفوف الخمسة تُسترد من الهواء:
+   حواف الصفحة، وارتفاع خانات الترويسة، وحشو الصف — لا من حجم الخط ولا
+   الأعمدة ولا التواقيع. وثيقة الموقع الواحد لا يمسّها شيء من هذا. */
+@media print{
+  .print-comprehensive-branch-rows .print-comprehensive-page{
+    padding-block-start:3.5mm !important;
+    padding-block-end:4mm !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-page .print-comprehensive-classic-head{
+    margin-block-end:1.4mm !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-page .print-comprehensive-side>div{
+    min-height:10.4mm !important;
+    padding:1.2mm 2.4mm !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-page .print-comprehensive-title-block{
+    padding:2mm 3.4mm !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-sites{
+    margin-block-end:1.4mm !important;
+    padding-block:.9mm !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-grid-head>[role="columnheader"]{
+    min-height:7.4mm !important;
+    padding-block:.6mm !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-grid-body .print-comprehensive-grid-row{
+    min-height:4.55mm !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-grid-body .print-comprehensive-grid-row>[role="cell"]{
+    padding-block:.5mm !important;
+    line-height:1.1 !important;
+  }
+  .print-comprehensive-branch-rows .print-comprehensive-page-footer{
+    margin-top:1.6mm !important;
+    padding-top:1.2mm !important;
+  }
+}
