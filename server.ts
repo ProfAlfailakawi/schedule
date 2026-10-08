@@ -19795,7 +19795,7 @@ input[type=search]:focus{outline:none;border-color:var(--jade);box-shadow:0 0 0 
 .wk-c[data-l="2"]{background:color-mix(in srgb,var(--jade) 32%,var(--card))}
 .wk-c[data-l="3"]{background:color-mix(in srgb,var(--jade) 55%,var(--card));color:#fff}
 .wk-c[data-today="1"]{box-shadow:0 0 0 1.5px var(--jade)}
-@media (min-width:720px){.wk-g{max-inline-size:560px}}
+@media (min-width:720px){.wk-g{max-inline-size:560px;margin-inline:auto}}
 
 /* ── حالاتُ الفراغ */
 .state{display:grid;justify-items:center;text-align:center;gap:6px;padding:44px 20px;border:1px dashed var(--line-strong);border-radius:var(--radius);background:color-mix(in srgb,var(--card) 60%,transparent)}
