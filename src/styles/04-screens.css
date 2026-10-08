@@ -146,6 +146,9 @@
   transition:color .18s var(--ease),border-color .18s var(--ease),background .18s var(--ease);
 }
 .demo-entry-link svg{width:13px;height:13px}
+/* Phone hit area: the pills stay small to the eye, the tap is 44px. */
+.demo-entry-link{position:relative}
+.demo-entry-link::after,.apex-login-identity-trigger::after{content:"";position:absolute;inset:-7px -4px}
 .demo-entry-link:hover:not(:disabled){color:#cfd9d1;border-color:color-mix(in srgb,#79a695 50%,transparent);background:color-mix(in srgb,#0d1714 70%,transparent)}
 .demo-entry-link:disabled{opacity:.55;cursor:default}
 

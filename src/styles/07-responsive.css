@@ -1122,14 +1122,14 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     gap:10px!important;padding:6px 0!important;align-content:center;
   }
   .apex-login-story{min-height:0}
-  .apex-login-kicker{font-size:10px}
+  .apex-login-kicker{font-size:11px}
   .apex-login-story h1{margin-top:8px!important;font-size:clamp(30px,9vw,40px)!important;line-height:.98}
   .apex-login-story>p{margin-top:8px!important;font-size:12px!important;line-height:1.55}
   .apex-login-principles{margin-top:10px!important;gap:6px!important}
   .apex-login-principles>span{padding:7px 10px!important}
   .apex-login-principles b{font-size:11px!important}
   .apex-login-access{padding:16px!important;border-radius:24px!important;min-height:0}
-  .apex-access-head>span{font-size:10px}
+  .apex-access-head>span{font-size:11px}
   .apex-access-head strong{font-size:21px!important}
   .apex-access-head p{margin-top:4px!important;font-size:11px!important}
   .apex-login-form{gap:10px!important;margin-top:12px!important}
@@ -1137,7 +1137,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .apex-login-form .field input{min-height:44px!important}
   .apex-login-form .btn{min-height:46px!important}
   .apex-login-access footer{margin-top:12px!important;padding-top:10px!important;gap:8px!important}
-  .install-login .install-trigger{width:34px!important;min-width:34px!important;height:34px!important;padding:0!important}
+  .install-login .install-trigger{width:44px!important;min-width:44px!important;height:34px!important;padding:0!important}
 }
 
 /* Landscape login uses the two-column composition again, but remains fixed. */
@@ -1153,8 +1153,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .apex-login-principles{display:flex!important;margin-top:8px!important}
   .apex-login-access{padding:14px 16px!important}
   .apex-login-form{gap:8px!important;margin-top:10px!important}
-  .apex-login-form .field input{min-height:40px!important}
-  .apex-login-form .btn{min-height:42px!important}
+  .apex-login-form .field input{min-height:44px!important}
+  .apex-login-form .btn{min-height:44px!important}
   .apex-login-access footer{margin-top:9px!important;padding-top:8px!important}
 }
 
@@ -1270,7 +1270,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     overflow:hidden!important;
   }
   .apex-login-story{width:100%!important;min-width:0!important}
-  .apex-login-kicker{font-size:10px!important}
+  .apex-login-kicker{font-size:11px!important}
   .apex-login-story h1{
     margin-top:clamp(8px,1.1svh,12px)!important;
     font-size:clamp(34px,5.05svh,45px)!important;
@@ -1299,7 +1299,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     border-radius:clamp(24px,3svh,29px)!important;
     overflow:visible!important;
   }
-  .apex-access-head>span{font-size:10px!important}
+  .apex-access-head>span{font-size:11px!important}
   .apex-access-head strong{font-size:clamp(23px,2.9svh,27px)!important}
   .apex-access-head p{margin-top:4px!important;font-size:12px!important}
   .apex-login-form{
@@ -1315,7 +1315,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     gap:8px!important;
   }
   .install-login .install-trigger,.demo-entry-icon{
-    width:34px!important;min-width:34px!important;height:34px!important;
+    width:44px!important;min-width:44px!important;height:34px!important;
   }
 }
 
@@ -1325,13 +1325,13 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .apex-login-stage{gap:7px!important;padding:3px 0!important}
   .apex-login-kicker{display:none!important}
   .apex-login-story h1{font-size:29px!important;margin-top:0!important}
-  .apex-login-story>p{font-size:10.5px!important;margin-top:4px!important;line-height:1.35!important}
+  .apex-login-story>p{font-size:11px!important;margin-top:4px!important;line-height:1.35!important}
   .apex-login-principles{display:none!important}
   .apex-login-access{padding:13px 15px!important}
   .apex-access-head p{display:none!important}
   .apex-login-form{margin-top:7px!important;gap:6px!important}
-  .apex-login-form .field input{min-height:39px!important}
-  .apex-login-form .btn{min-height:41px!important}
+  .apex-login-form .field input{min-height:44px!important}
+  .apex-login-form .btn{min-height:44px!important}
   .apex-login-access footer{margin-top:8px!important;padding-top:6px!important}
 }
 
