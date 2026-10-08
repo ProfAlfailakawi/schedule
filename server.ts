@@ -16335,7 +16335,7 @@ async function demoPageHint(link: ScheduleShareLink, page: "staff" | "survey" | 
     for (const entry of guide.cases.slice(0, 3)) lines.push(`${entry.label}: الرقم المدني ${num(entry.civil)} · رقم الحالة ${num(entry.caseRef)}`);
   }
   if (!lines.length) return "";
-  return `<div class="demo-hint" role="note" style="margin:12px 0;padding:10px 12px;border-radius:10px;background:#fff7e6;border:1px dashed #c79b5f;color:#5b4520;font-size:13px;line-height:1.8;text-align:start"><b>بيئة تجريبية</b> — الأرقام وهمية.<br>${lines.join("<br>")}</div>`;
+  return `<div class="demo-hint" role="note" style="margin:10px 0;padding:8px 11px;border-radius:10px;background:#fff7e6;border:1px dashed #c79b5f;color:#5b4520;font-size:12px;line-height:1.65;text-align:start"><b>بيئة تجريبية</b> — الأرقام وهمية.<br>${lines.join("<br>")}</div>`;
 }
 
 function publicPageNonce(res: Response): string {
@@ -19498,12 +19498,15 @@ function studentCaseStatusPage(token: string, nonce: string, demoHint = ""): str
   return `<!doctype html><html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<title>حالة طلبي</title>
+<title>حالة طلبي</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/plex-arabic-arabic-500.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}
 :root{${PUBLIC_LIGHT_VARS};--ok:var(--jade)}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.65 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}
-.wrap{max-width:520px;margin:0 auto;padding:22px 16px}
+body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,var(--accent-soft) 0,transparent 32%),var(--bg);color:var(--ink);font:400 16px/1.65 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal}
+.wrap{max-width:520px;margin:0 auto;padding:22px 16px calc(32px + env(safe-area-inset-bottom,0px))}
+.mark{display:block;width:36px;height:36px;margin:0 0 12px;border-radius:10px}
+.panel{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;margin-top:14px;box-shadow:0 20px 50px #1318171f}
+.panel label:first-child{margin-top:0}
 h1{font-size:21px;margin:0 0 4px}
 .sub{color:var(--muted);font-size:13px;margin:0 0 20px}
 label{display:block;font-size:13px;color:var(--muted);margin-bottom:7px}
@@ -19535,14 +19538,17 @@ label.gap{margin-top:13px}
 .case[data-s=rejected],.case[data-s=committee-rejected]{color:var(--bad);background:var(--bad-soft)}
 .case small{font-weight:400;color:var(--ink)}
 </style></head><body><div class="wrap">
+<img class="mark" src="/schedule-icon.svg" alt="" width="36" height="36">
 <h1>حالة طلبي</h1>
 <p class="sub">أدخل رقمك المدني ورقم الحالة لترى ما أرسلتَه إلى القسم.</p>${demoHint}
+<section class="panel">
 <label for="civil">الرقم المدني</label>
 <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقمًا">
 <label for="ref" class="gap">رقم الحالة</label>
 <input id="ref" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="16" placeholder="الرقم الذي ظهر لك عند الإرسال" aria-describedby="refHelp">
 <small id="refHelp" class="help">فقدت رقم الحالة؟ راجع القسم. لا تُعرض الحالة بالرقم المدني وحده.</small>
 <button id="go" type="button">اعرض حالتي</button>
+</section>
 <div id="out" aria-live="polite"></div>
 </div>
 <script nonce="${nonce}">(function(){
