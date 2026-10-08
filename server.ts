@@ -19318,15 +19318,16 @@ registerStudyProposalRoutes(app, {
 });
 
 /** بابُ الأستاذ. رابطٌ واحدٌ لشخصٍ واحد، ولا شيء خلفه إلا جدولُه هو. */
+/** صفحةُ «الرابط غير صالح» العامة: هويةٌ واحدة لكل الروابط العامة (عرضٌ فقط). */
+function publicInvalidLinkPage(message: string): string {
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2")}:root{${PUBLIC_LIGHT_VARS}}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:0 24px;box-sizing:border-box;background:var(--bg);color:var(--ink);font:400 16px/1.7 "Plex Arabic",-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;text-align:center}.brand{font:600 13px/1 system-ui;letter-spacing:.24em;color:var(--brass);margin-bottom:12px}p{margin:0;font-size:15px;color:var(--muted)}</style></head><body><div><div class="brand">SCHEDULE</div><p>${message}</p></div></body></html>`;
+}
+
 app.get("/r/:token", async (req: Request, res: Response) => {
   const resolved = await resolveRequestLink(String(req.params.token || ""));
   res.setHeader("Cache-Control", "no-store");
   if ("error" in resolved) {
-    res.status(resolved.status).type("text/html; charset=utf-8").send(
-      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
-<body style="font:400 16px/1.7 'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none;padding:40px;text-align:center;color:#16281f">
-${resolved.error}</body></html>`);
+    res.status(resolved.status).type("text/html; charset=utf-8").send(publicInvalidLinkPage(resolved.error));
     return;
   }
   res.type("text/html; charset=utf-8").send(instructorRequestPage(resolved.link.id, publicPageNonce(res), await demoPageHint(resolved.link, "request")));
@@ -19337,11 +19338,7 @@ app.get("/r/:token/proposal/:pid", async (req: Request, res: Response) => {
   const resolved = await resolveRequestLink(String(req.params.token || ""));
   res.setHeader("Cache-Control", "no-store");
   if ("error" in resolved) {
-    res.status(resolved.status).type("text/html; charset=utf-8").send(
-      `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>الرابط</title><style>@font-face{font-family:"Plex Arabic";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2")}</style></head>
-<body style="font:400 16px/1.7 'Plex Arabic','Segoe UI',Tahoma,sans-serif;font-synthesis:none;padding:40px;text-align:center;color:#16281f">
-${resolved.error}</body></html>`);
+    res.status(resolved.status).type("text/html; charset=utf-8").send(publicInvalidLinkPage(resolved.error));
     return;
   }
   res.type("text/html; charset=utf-8").send(studyProposalPage(resolved.link.id, String(req.params.pid || ""), publicPageNonce(res), await demoPageHint(resolved.link, "request")));
@@ -20075,7 +20072,7 @@ app.get("/t/:token", async (req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   const esc = (value: string) => String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
   if ("error" in resolved || resolved.link.kind !== "students") {
-    res.status("error" in resolved ? resolved.status : 404).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title></head><body style="font-family:system-ui;text-align:center;padding:30vh 16px"><p>${esc("error" in resolved ? resolved.error : "هذا الرابط ليس جدول الطلبة")}</p></body></html>`);
+    res.status("error" in resolved ? resolved.status : 404).send(publicInvalidLinkPage(esc("error" in resolved ? resolved.error : "هذا الرابط ليس جدول الطلبة")));
     return;
   }
   const sections = await Repository.getSections();
