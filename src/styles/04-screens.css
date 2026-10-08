@@ -261,7 +261,7 @@
   transition:height .24s var(--ease),opacity .16s var(--ease);
 }
 .daybar-hour>b{
-  font:600 10px/1.2 var(--font-mono);color:var(--muted);
+  font:600 11px/1.2 var(--font-mono);color:var(--muted);
   font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;
   min-height:12px;
 }
@@ -2271,7 +2271,7 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .degree-rule-card>p{margin:0;font-size:12px;line-height:1.75;color:var(--muted)}
 .degree-rule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:9px;margin:0}
 .degree-rule-grid>div{display:grid;gap:4px;padding:9px 11px;border:1px solid var(--line);border-radius:13px;background:var(--surface)}
-.degree-rule-grid dt{font-size:10.5px;color:var(--muted)}
+.degree-rule-grid dt{font-size:11px;color:var(--muted)}
 .degree-rule-grid dd{margin:0;font-size:17px;font-weight:700;color:var(--ink)}
 .degree-rule-grid dd input{width:100%;padding:6px 8px;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
 .degree-rule-actions{display:flex;flex-wrap:wrap;gap:8px}
