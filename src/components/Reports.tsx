@@ -3710,13 +3710,16 @@ function PrintSheetBody({ kind, rows, fairness, matrix, roomLoad, roomDay, balan
     const bookRows = showSite ? sortRows(bookSites.flatMap(group => group.rows)) : sortRows(rows);
     const totalRows = bookRows.length;
     const legendItems = DAYS.map((day, index) => `${index + 1}=${day.label}`);
-    const firstPageRows = showSite ? COMPREHENSIVE_BRANCH_PAGE_ROWS : COMPREHENSIVE_FIRST_PAGE_ROWS;
-    const nextPageRows = showSite ? COMPREHENSIVE_BRANCH_PAGE_ROWS : COMPREHENSIVE_NEXT_PAGE_ROWS;
+    /* الكثافة تتبع النطاق المطلوب لا عدد المواقع التي فيها محاضرات: «كل
+       الفروع» تُقابَل بورقة التسجيل ولو خلا فرعٌ منها هذا الفصل. */
+    const branchDensity = kind === "comprehensive-branch";
+    const firstPageRows = branchDensity ? COMPREHENSIVE_BRANCH_PAGE_ROWS : COMPREHENSIVE_FIRST_PAGE_ROWS;
+    const nextPageRows = branchDensity ? COMPREHENSIVE_BRANCH_PAGE_ROWS : COMPREHENSIVE_NEXT_PAGE_ROWS;
     const pages = paginateComprehensiveRows(bookRows, firstPageRows, nextPageRows);
     const totalPages = pages.length;
 
     return (
-      <div className={`print-report print-wide print-query-report print-comprehensive print-comprehensive-book${showSite ? " print-comprehensive-with-site" : ""}`}>
+      <div className={`print-report print-wide print-query-report print-comprehensive print-comprehensive-book${showSite ? " print-comprehensive-with-site" : ""}${branchDensity ? " print-comprehensive-branch-rows" : ""}`}>
         {totalRows ? (
           <div className="print-comprehensive-pages">
             {pages.map((pageRows, pageIndex) => {
