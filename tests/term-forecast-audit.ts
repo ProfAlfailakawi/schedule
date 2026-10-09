@@ -67,6 +67,12 @@ check(/createScopeGuard/.test(ui) && /guard\.accepts\(token\)/.test(ui), "الو
 check(!/\d+ (شعب|مقرر|أستاذ)/.test(ui + fs.readFileSync("src/utils/termForecast.ts", "utf8").replace(/\/\*[\s\S]*?\*\//, "")), "لا «رقم اسم» مكتوبٌ باليد");
 
 behaviour().then(() => {
-  console.log(`\n${passed} passed, ${failed} failed`);
+  /* متبقٍّ سالب (فوق السعة) لا يُسقط ولا يُعدّ صفراً. */
+{
+  const over = computeTermForecast({ ...base, remaining: { "1": -22 }, rows: [] });
+  check(over.status === "ready" && over.highlights.some(r => r.kind === "overflow" && r.text.includes("فوق السعة") && r.text.includes("22"))
+    && over.coverage.percent === null, "متبقٍّ −22: يُذكر «فوق السعة بـ22» ولا يدخل نسبة التغطية");
+}
+console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }).catch(error => { console.error(error); process.exit(1); });
