@@ -65,6 +65,10 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   /* «بيانات قديمة» أُزيلت بالزر: تُخفى حتى يُعاد التحميل (الحفظ يمحوها من الخادم). */
   const [legacyCleared, setLegacyCleared] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* رفضُ الكشف يظهر في صندوق الاستيراد نفسه، أحمرَ بعنوانٍ صريح، لا سطراً خافتاً أسفل الصفحة. */
+  const [importError, setImportError] = useState<string | null>(null);
+  const importErrorRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (importError) importErrorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [importError]);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState("");
   const [savedBy, setSavedBy] = useState("");
@@ -91,7 +95,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     let cancelled = false;
     /* ما بقي معلّقاً من النطاق السابق أُرسل إليه وهو يُغلق (أدناه)؛ ولا يُحفظ شيءٌ هنا قبل أن يُحمَّل النطاق الجديد. */
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null; }
-    setData(null); setError(null); setEdits(0); setSaveState("idle");
+    setData(null); setError(null); setImportError(null); setEdits(0); setSaveState("idle");
     fetch(`/api/registration-stats?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`)
       .then(async response => { const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error || "تعذّر تحميل تخطيط الشعب"); return body as Payload; })
       .then(body => {
@@ -177,7 +181,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
      معها عناوين الأولى، ثم تُقرأ صفحاتها معاً فتتطابق أعمدتها. */
   const showPreview = (found: ImportReading) => { setManual({}); setConfirmedSuspects([]); setConfirmedScan([]); setPreview(found); };
   const readFiles = async (files: File[]) => {
-    setReading(true); setError(null); setReadingNote("");
+    setReading(true); setError(null); setImportError(null); setReadingNote("");
     try {
       const results: ImportReading[] = [];
       let template: unknown = null;
@@ -223,7 +227,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
           pageCount: results.reduce((sum, item) => sum + item.pageCount, 0), fileName: files.map(file => file.name).join("، ") };
       }
       showPreview(found);
-    } catch (e: any) { setError(e.message); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
+    } catch (e: any) { setImportError(e.message); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
   };
   /* التعبئة تكتب المقروءَ بوضوح وما كتبه المستخدم وحده (planRemainingApply)؛ ما لم يُقرأ يبقى فارغاً
      أو على قيمته المحفوظة، ولا يصير صفراً ولا يُخمَّن. والكشف الذي لم يُثبت فرعه وقسمه من ترويسته رُفض قبل المعاينة. */
@@ -355,6 +359,16 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport} disabled={!hasSaved || reading}>
           <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : hasSaved ? "إزالة أرقام المتبقي" : "لا كشف مستورد لإزالته"}
         </SecondaryButton>
+        {importError ? (
+          <div ref={importErrorRef} className="section-plan-reject" role="alert">
+            <AlertTriangle aria-hidden="true" />
+            <div>
+              <strong>رُفض الكشف — لم يُستورد شيء</strong>
+              <p>{importError.replace(/\s*—\s*لم يُستورد شيء\.?$/, "")}</p>
+            </div>
+            <button data-guide-feature-id="schedule.tool.data" type="button" className="student-qr-close" onClick={() => setImportError(null)} aria-label="إغلاق رسالة الرفض"><X aria-hidden="true" /></button>
+          </div>
+        ) : null}
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"
           onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
         <div className="section-plan-import-text">

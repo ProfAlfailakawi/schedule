@@ -1871,6 +1871,13 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 }
 .section-plan-warning{display:flex;align-items:flex-start;gap:6px;margin:0;color:var(--danger);font-style:normal;font-size:var(--t-sm);line-height:1.7}
 .section-plan-warning>svg{flex:none;width:16px;height:16px;margin-top:4px}
+/* رفض الكشف: صندوقٌ أحمر بعرض صندوق الاستيراد، عنوانه «رُفض الكشف — لم يُستورد شيء». */
+.section-plan-reject{flex:1 1 100%;display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1.5px solid color-mix(in srgb,var(--danger) 60%,var(--line));border-radius:var(--r-sm);background:color-mix(in srgb,var(--danger) 9%,var(--surface));color:var(--ink)}
+.section-plan-reject>svg{flex:none;width:20px;height:20px;margin-top:2px;color:var(--danger)}
+.section-plan-reject>div{flex:1;min-width:0}
+.section-plan-reject strong{display:block;color:var(--danger);font-size:var(--t-md,15px)}
+.section-plan-reject p{margin:4px 0 0;font-size:var(--t-sm);line-height:1.8}
+.section-plan-reject .student-qr-close{flex:none}
 .section-plan-legacy{padding:12px 14px;border:1px solid color-mix(in srgb,var(--danger) 28%,var(--line));border-radius:14px;background:color-mix(in srgb,var(--danger-soft) 45%,var(--surface))}
 .section-plan-legacy>div{min-width:0;display:grid;gap:4px}
 .section-plan-legacy strong{font-weight:700}
