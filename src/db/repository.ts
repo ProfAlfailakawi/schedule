@@ -5308,7 +5308,7 @@ export const Repository = {
       : undefined;
     const row: RegistrationStats = {
       id: scopeKey, scopeKey, collegeId, sectionId, termId,
-      counts: clean(input.counts ?? previous?.counts, 100000), remaining: clean(input.remaining, 100000, -100000) /* «الذين لم يسجلوا» سالبٌ إن زاد المسجّلون على من لم يجتازوا */,
+      counts: clean(input.counts ?? previous?.counts, 100000), remaining: Object.fromEntries(Object.entries(clean(input.remaining, 100000, -100000)).map(([key, value]) => [key, Math.max(0, value)])) /* لا متبقٍّ سالب: «الذين لم يسجلوا» السالب (طلبةٌ جدد) = لا متأخرين = صفر */,
       vacant: clean(input.vacant, 100000, -100000) /* «المقاعد المتبقية» سالبةٌ إن زاد المسجّلون على السعة */, accepted: clean(input.accepted, 500),
       ...(source ? { remainingSource: source } : {}),
       updatedAt: new Date().toISOString(), updatedBy: String(updatedBy || "").slice(0, 120),
