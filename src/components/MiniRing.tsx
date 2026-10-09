@@ -39,7 +39,7 @@ export default function MiniRing({ value, size = 38, label, className, children,
       <svg viewBox="0 0 36 36" aria-hidden="true" focusable="false">
         <circle className="ring-track" cx="18" cy="18" r={R} />
         {known ? (
-          <circle className="ring-fill" cx="18" cy="18" r={R} strokeDasharray={`${(clamped / 100) * C} ${C}`} />
+          <circle className="ring-fill" cx="18" cy="18" r={R} strokeDasharray={`${(clamped / 100) * C} ${C}`} style={{ ["--ring-dash" as any]: `${(clamped / 100) * C} ${C}` }} />
         ) : null}
       </svg>
       <b>{children ?? (known ? Math.round(clamped) : null)}</b>

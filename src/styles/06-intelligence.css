@@ -1744,6 +1744,12 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
 }
 .mini-ring .ring-track{fill:none;stroke:color-mix(in srgb,var(--line-strong) 60%,transparent);stroke-width:3.4}
 .mini-ring .ring-fill{fill:none;stroke:currentColor;stroke-width:3.4;stroke-linecap:round;transition:stroke-dasharray .6s var(--ease-out)}
+@media screen and (prefers-reduced-motion:no-preference){
+  .mini-ring .ring-fill{animation:ring-sweep .9s var(--ease-out) both}
+}
+@keyframes ring-sweep{from{stroke-dasharray:0 95}to{stroke-dasharray:var(--ring-dash)}}
+@media (prefers-reduced-motion:reduce){.mini-ring .ring-fill{animation:none}}
+@media print{.mini-ring .ring-fill{animation:none!important}}
 .mini-ring.tone-good{color:var(--success)}
 .mini-ring.tone-warn{color:var(--warning)}
 .mini-ring.tone-bad{color:var(--danger)}

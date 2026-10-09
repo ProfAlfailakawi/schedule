@@ -68,7 +68,7 @@ export function CampusTravelMap({ risks }: { risks: CampusRisk[] }) {
           const q = point.get(edge.b)!;
           return (
             <g key={`${edge.a}-${edge.b}`} className={edge.high ? "is-high" : "is-guarded"}>
-              <line x1={p.x} y1={p.y} x2={q.x} y2={q.y} strokeWidth={2 + (edge.minutes / maxMinutes) * 6} strokeLinecap="round" />
+              <line className="travel-edge" pathLength={1} x1={p.x} y1={p.y} x2={q.x} y2={q.y} strokeWidth={2 + (edge.minutes / maxMinutes) * 6} strokeLinecap="round" />
             </g>
           );
         })}
