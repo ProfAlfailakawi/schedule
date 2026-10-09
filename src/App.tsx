@@ -2678,7 +2678,7 @@ export default function App() {
       ) : null}
       <main className="app-main">
         <div className="content-frame">
-          <Suspense fallback={<div className="view-loading" aria-busy="true"><span /></div>}>{renderView()}</Suspense>
+          <Suspense fallback={<div className="view-loading" aria-busy="true"><span /><i /><i /><i /></div>}>{renderView()}</Suspense>
         </div>
       </main>
 

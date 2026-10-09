@@ -518,8 +518,22 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 
 /* Route-level loading placeholder while a workspace chunk arrives. */
 .view-loading{
-  min-height:52vh;display:grid;place-items:center;
+  min-height:52vh;display:grid;place-items:start center;align-content:start;gap:var(--s3);padding:var(--s4) 0;
 }
+.view-loading>span{margin-bottom:var(--s2)}
+/* First-load skeleton: three quiet cards with one slow shimmer sweep. */
+.view-loading>i{
+  display:block;width:100%;height:96px;border-radius:var(--r-lg,16px);
+  border:1px solid var(--line);
+  background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 50%,var(--surface) 70%);
+  background-size:220% 100%;
+  animation:view-shimmer 1.4s ease-in-out infinite;
+}
+.view-loading>i:nth-of-type(2){height:140px;animation-delay:.12s}
+.view-loading>i:nth-of-type(3){height:72px;animation-delay:.24s}
+@keyframes view-shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+@media (prefers-reduced-motion:reduce){.view-loading>i{animation:none}}
+@media print{.view-loading{display:none}}
 .view-loading span{
   width:26px;height:26px;border-radius:var(--r-full);
   border:2px solid color-mix(in srgb,var(--muted) 26%,transparent);
