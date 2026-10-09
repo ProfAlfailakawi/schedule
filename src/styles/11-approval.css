@@ -1341,6 +1341,12 @@
 .ad-head-copy{flex:1;min-width:0}
 .ad-head h1{font-size:1.35rem;font-weight:700}
 .ad-head p{margin:2px 0 0;color:var(--muted);font-size:.9rem}
+/* Phones: the status pill drops under the title instead of squeezing it to a sliver. Screen only. */
+@media screen and (max-width:480px){
+  .ad-head{flex-wrap:wrap}
+  .ad-head-copy{flex:1 1 calc(100% - 60px)}
+  .ad-head .ad-status{flex:0 0 auto;margin-inline-start:56px}
+}
 .ad-status{padding:4px 12px;border-radius:var(--r-full);background:var(--surface-3);color:var(--ink-2);font-size:12px;font-weight:600;white-space:nowrap}
 .ad-status[data-tone="success"]{background:var(--success-soft);color:var(--success)}
 .ad-status[data-tone="warning"]{background:var(--warning-soft);color:var(--warning)}

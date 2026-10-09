@@ -524,8 +524,8 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 /* First-load skeleton: three quiet cards with one slow shimmer sweep. */
 .view-loading>i{
   display:block;width:100%;height:96px;border-radius:var(--r-lg,16px);
-  border:1px solid var(--line);
-  background:linear-gradient(100deg,var(--surface-2) 30%,var(--soft) 50%,var(--surface-2) 70%);
+  border:1px solid var(--line-strong);
+  background:linear-gradient(100deg,var(--soft) 30%,var(--line) 50%,var(--soft) 70%);
   background-size:220% 100%;
   animation:view-shimmer 1.4s ease-in-out infinite;
 }
