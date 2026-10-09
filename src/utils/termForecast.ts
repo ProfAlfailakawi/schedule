@@ -19,6 +19,8 @@
  *  5. تجاوز الأستاذ = ساعاته المعتمدة الأسبوعية (weeklyLoadOf: كل شعبة مرة) أعلى من
  *     نصابه المسجّل AdInstructorLoad — هو العتبة الموجودة في المشروع. أستاذٌ بلا نصاب
  *     مسجّل لا يُحكم عليه برقمٍ مخترع.
+ *  7. متبقٍّ سالب (الكشف يطبعه حين يزيد المسجّلون على السعة) لا يُعدّ صفراً ولا يُسقط:
+ *     يُذكر «فوق السعة بـN» تنبيهاً، ولا يدخل نسبة التغطية (لا مقعد شاغر يُغطّى).
  *  6. الشعب بلا قاعة = شعبٌ فيها صفٌّ واحد على الأقل بلا موقع (roomIdentityKey فارغ،
  *     ويشمل «بانتظار تثبيت القاعة»). لا يتطلب كشف المتبقي.
  *
@@ -30,7 +32,7 @@ import { AR, countOf } from "./arabicCount";
 import { weeklyLoadOf } from "./instructorRequestVerdict";
 import { roomIdentityKey } from "./locationRegistry";
 
-export type ForecastRiskKind = "shortage" | "overload" | "unroomed" | "capacity";
+export type ForecastRiskKind = "shortage" | "overflow" | "overload" | "unroomed" | "capacity";
 export interface ForecastRisk { kind: ForecastRiskKind; tone: "danger" | "warning" | "info"; text: string }
 
 export interface TermForecast {
@@ -65,10 +67,13 @@ export function computeTermForecast(input: ForecastInput): TermForecast {
   const ready = Boolean(input.remaining && Object.keys(input.remaining).length);
   let covered = 0, total = 0;
   const shortages: Array<{ code: string; missing: number }> = [];
+  const overflows: Array<{ code: string; over: number }> = [];
   let unknownCapacity = 0;
   if (ready) {
     for (const course of input.courses) {
-      const seats = Math.max(0, Math.round(Number(input.remaining![String(course.AdCourseId)]) || 0));
+      const signed = Math.round(Number(input.remaining![String(course.AdCourseId)]) || 0);
+      if (signed < 0) { overflows.push({ code: String(course.CourseCode || course.CourseName || ""), over: -signed }); continue; }
+      const seats = signed;
       if (!seats) continue;
       const capacity = Number(course.MaxStudent) || 0;
       if (capacity <= 0) { unknownCapacity++; continue; }
@@ -80,6 +85,7 @@ export function computeTermForecast(input: ForecastInput): TermForecast {
     }
   }
   shortages.sort((a, b) => b.missing - a.missing || a.code.localeCompare(b.code));
+  overflows.sort((a, b) => b.over - a.over || a.code.localeCompare(b.code));
 
   const byInstructor = new Map<number, FSchedule[]>();
   for (const row of rows) {
@@ -106,11 +112,15 @@ export function computeTermForecast(input: ForecastInput): TermForecast {
     text: overloaded === 1 ? `${firstOverloaded ? `الأستاذ ${firstOverloaded}` : "أستاذ"} تجاوز نصابه` : `${countOf(overloaded, AR.instructor)} تجاوزوا نصابهم` } : null;
   const unroomedRisk: ForecastRisk | null = unroomedSections.size ? { kind: "unroomed", tone: "warning",
     text: `${countOf(unroomedSections.size, AR.section)} بلا قاعة` } : null;
+  const overflowRisk: ForecastRisk | null = overflows.length ? { kind: "overflow", tone: "warning",
+    text: overflows.length === 1 ? `مقرر ${overflows[0].code}: المسجّلون فوق السعة بـ${countOf(overflows[0].over, AR.student)}`
+      : `${countOf(overflows.length, AR.course)} المسجّلون فيها فوق السعة (أشدّها ${overflows[0].code} بـ${countOf(overflows[0].over, AR.student)})` } : null;
   const capacityRisk: ForecastRisk | null = unknownCapacity ? { kind: "capacity", tone: "info",
     text: `السعة غير معروفة لـ${countOf(unknownCapacity, AR.course)}` } : null;
 
   const ordered = [
     ...(shortages[0] ? [shortageRisk(shortages[0])] : []),
+    ...(overflowRisk ? [overflowRisk] : []),
     ...(overloadRisk ? [overloadRisk] : []),
     ...(unroomedRisk ? [unroomedRisk] : []),
     ...shortages.slice(1).map(shortageRisk),

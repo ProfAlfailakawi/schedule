@@ -52,7 +52,7 @@ const fold = (value: string) => String(value || "").normalize("NFKC")
   .replace(/[ً-ْـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
   .toLowerCase().replace(/\s+/g, " ").trim();
 const asText = (map: Record<string, number> | undefined) => Object.fromEntries(Object.entries(map || {}).map(([k, v]) => [k, String(v)]));
-const asNumbers = (map: Record<string, string>) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).map(([k, v]) => [k, Math.max(0, Math.floor(Number(v)))]));
+const asNumbers = (map: Record<string, string>, min = 0) => Object.fromEntries(Object.entries(map).filter(([, v]) => v !== "" && Number.isFinite(Number(v))).map(([k, v]) => [k, Math.max(min, Math.floor(Number(v)))]));
 
 export default function SectionPlanning({ collegeId, sectionId, termId }: { collegeId: number; sectionId: number; termId: number }) {
   const [data, setData] = useState<Payload | null>(null);
@@ -109,7 +109,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   latest.current = { remaining, chosen, source };
   const body = useCallback(() => JSON.stringify({
     collegeId, sectionId, termId,
-    remaining: asNumbers(latest.current.remaining), accepted: asNumbers(latest.current.chosen), remainingSource: latest.current.source,
+    remaining: asNumbers(latest.current.remaining, -100000), accepted: asNumbers(latest.current.chosen), remainingSource: latest.current.source,
   }), [collegeId, sectionId, termId]);
   const persist = useCallback(async () => {
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null; }
@@ -365,7 +365,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             <div className={`section-plan-row${outside ? " is-outside" : ""}`} role="row">
               <span role="cell" className="section-plan-course"><b dir="ltr">{course.code}</b> {course.name}</span>
               <span role="cell" className="section-plan-left" data-label="المقاعد المتبقية">
-                <input type="number" min={0} max={100000} inputMode="numeric" value={remaining[key] ?? ""} placeholder="—" aria-label={`المقاعد المتبقية في ${course.name}`}
+                <input type="number" min={-100000} max={100000} inputMode="numeric" value={remaining[key] ?? ""} placeholder="—" aria-label={`المقاعد المتبقية في ${course.name}`}
                   title="من كشف عمادة التسجيل؛ يُصحَّح هنا إن أخطأت القراءة"
                   onChange={e => edit(setRemaining, key, e.target.value)} />
               </span>
@@ -386,8 +386,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             {openWhy[key] ? (
               <div className="section-plan-why" role="row">
                 <dl role="cell">
-                  <div><dt>المقاعد المتبقية</dt><dd>{remaining[key] !== undefined && remaining[key] !== "" ? remaining[key] : "لم تُستورد"}</dd></div>
-                  <div><dt>سعة الشعبة</dt><dd>{course.capacity || "—"}{course.capacity && remaining[key] ? ` · تكفي المقاعدَ ${countOf(Math.max(1, Math.ceil(Number(remaining[key]) / course.capacity)), AR.section)}` : ""}</dd></div>
+                  <div><dt>المقاعد المتبقية</dt><dd>{remaining[key] !== undefined && remaining[key] !== "" ? (Number(remaining[key]) < 0 ? `${remaining[key]} — المسجّلون فوق السعة بـ${-Number(remaining[key])}` : remaining[key]) : "لم تُستورد"}</dd></div>
+                  <div><dt>سعة الشعبة</dt><dd>{course.capacity || "—"}{course.capacity && Number(remaining[key]) > 0 ? ` · تكفي المقاعدَ ${countOf(Math.max(1, Math.ceil(Number(remaining[key]) / course.capacity)), AR.section)}` : ""}</dd></div>
                   <div><dt>آخر الفصول</dt><dd>{lastTerms(history)}{lineage ? ` · من رقمه السابق ${lineage}` : ""}</dd></div>
                 </dl>
                 <p>{suggestion.headline} — {suggestion.reason}</p>
@@ -458,7 +458,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                           </td>
                         ) : review ? (
                           <td className={typed !== undefined ? "import-cell-manual" : "import-cell-review"}>
-                            <input type="number" min={0} max={100000} inputMode="numeric" value={manual[key] ?? ""} placeholder="—" aria-label={`المقاعد المتبقية في ${course?.name || row.printed} (اكتبها بيدك)`}
+                            <input type="number" min={-100000} max={100000} inputMode="numeric" value={manual[key] ?? ""} placeholder="—" aria-label={`المقاعد المتبقية في ${course?.name || row.printed} (اكتبها بيدك)`}
                               onChange={e => setManual(currentManual => ({ ...currentManual, [key]: e.target.value }))} />
                             <br />
                             {typed !== undefined

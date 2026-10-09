@@ -11,7 +11,7 @@ import type { ForecastRisk, ForecastRiskKind, TermForecast as Forecast } from ".
  * لقسمٍ بعينه؛ والقراءةُ الواصلة بعد تبدّل النطاق تُرمى (createScopeGuard).
  * القواعد وحدها في src/utils/termForecast.ts — هذا رسمٌ فقط.
  */
-const ICON: Record<ForecastRiskKind, React.ComponentType<any>> = { shortage: AlertTriangle, overload: Users, unroomed: DoorClosed, capacity: Gauge };
+const ICON: Record<ForecastRiskKind, React.ComponentType<any>> = { shortage: AlertTriangle, overflow: Users, overload: Users, unroomed: DoorClosed, capacity: Gauge };
 
 const Line: React.FC<{ risk: ForecastRisk }> = ({ risk }) => {
   const Icon = ICON[risk.kind];
