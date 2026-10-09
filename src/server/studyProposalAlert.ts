@@ -5,19 +5,20 @@
  * المضيفة)، ودوالُّ تبدأ بـ pb. لا شرطاتٍ مائلة ولا علاماتِ اقتباسٍ مائلة فيه،
  * فلا يحتاج هروباً داخل قوالب الخادم.
  */
-export const PROPOSAL_ALERT_CSS = String.raw`.pb{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:13px 15px;border-radius:18px;border:1px solid #a9cfc3;background:linear-gradient(135deg,#e8f5ee,#f6fbf8);color:#131817;box-shadow:0 8px 22px rgba(22,57,40,.08)}
-.pb-ic{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#1f6b5c;color:#fff}
+export const PROPOSAL_ALERT_CSS = String.raw`.pb{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:13px 15px;border-radius:18px;border:1px solid #9fcdb6;background:linear-gradient(135deg,#e8f5ee,#f6fbf8);color:#15251d;box-shadow:0 8px 22px rgba(22,57,40,.08)}
+.pb-ic{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#247756;color:#fff}
 .pb-ic svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .pb-tx{flex:1 1 200px;min-width:0;line-height:1.6}
 .pb-tx b{display:block;font-size:15.5px}
 .pb-tx span{display:block;font-size:13px;color:#4a6356}
-.pb-go{flex:none;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:9px 18px;border-radius:13px;background:#1f6b5c;color:#fff;font-weight:700;font-size:14.5px;text-decoration:none;border:1.5px solid #1f6b5c}
-.pb-go:hover{background:#17564a}
-.pb-go:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(31,107,92,.35)}
+.pb-go{flex:none;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:9px 18px;border-radius:13px;background:#247756;color:#fff;font-weight:700;font-size:14.5px;text-decoration:none;border:1.5px solid #247756}
+.pb-go:hover{background:#1b5c43}
+.pb-go:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(36,119,86,.35)}
 .pb-more{display:flex;flex-wrap:wrap;gap:8px;width:100%}
-.pb-more .pb-go{background:#fff;color:#17564a}
+.pb-more .pb-go{background:#fff;color:#1b5c43}
 @media (max-width:520px){.pb-go{width:100%}}
-@media print{.pb{display:none}}`;
+@media print{.pb{display:none}}
+@media screen{.pb{border-color:#a9cfc3}.pb-ic,.pb-go{background:#1f6b5c}.pb-go:hover{background:#17564a}.pb-go:focus-visible{box-shadow:0 0 0 3px rgba(31,107,92,.35)}.pb-more .pb-go{color:#17564a}}`;
 
 export const PROPOSAL_ALERT_SCRIPT = String.raw`
 function pbEsc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
