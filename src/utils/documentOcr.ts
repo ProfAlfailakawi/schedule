@@ -1166,9 +1166,9 @@ async function ruledReportCells(image:Buffer,worker:PooledWorker,template?:Ruled
     if(label)cells.push({text:label,x0:column.left/W,x1:column.right/W,y:(header.top+header.bottom)/2/H});
   }
   await worker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:"7" as any});
-  /* «الذين لم يسجلوا» مدخل التخطيط، و«لم يجتازوا» والمسجّلون يفحصونه، وعدد الشعب والسعة تعرف ما لا شعب له؛
-     ولا يُقرأ ما لا يُحتاج إليه: «المقاعد المتبقية». */
-  const skipped=new Set(["seats"]);
+  /* «الذين لم يسجلوا» مدخل التخطيط، و«لم يجتازوا» والمسجّلون يفحصونه، وعدد الشعب والسعة تعرف ما لا شعب له،
+     و«المقاعد المتبقية» شاغرُ الشعب المفتوحة للإنذار المبكر. كل الأعمدة تُقرأ. */
+  const skipped=new Set<string>([]);
   const read:Array<{column:number;band:{top:number;bottom:number};cell:ReportCell}>=[];
   for(const [index,column] of columns.entries()){
     if(column.right-column.left>median*1.8||skipped.has(String(kinds[index])))continue;

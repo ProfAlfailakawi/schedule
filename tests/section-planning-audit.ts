@@ -229,9 +229,11 @@ const repo = fs.readFileSync("src/db/repository.ts", "utf8");
 check(repo.includes("getRegistrationStats: async") && repo.includes("saveRegistrationStats: async") && repo.includes('collection("registrationStats")'), "الإحصاء يُحفظ عبر المستودع (Firestore والمحلي)");
 check(repo.includes("input.counts ?? previous?.counts") && repo.includes("remaining: clean(input.remaining, 100000, -100000)"), "المتبقي يُحفظ بإشارته (سالبٌ إن زاد المسجّلون على من لم يجتازوا)، و«المسجّلين» القديم يبقى كما هو");
 check(repo.includes('input.remainingSource.column === "unregistered" || input.remainingSource.column === "seats"'), "وسم العمود يُحفظ كما أُرسل («unregistered»، و«seats» القديم يبقى قديماً)");
-check((server.match(/remainingSource\?\.column === "unregistered"/g) || []).length === 4 && !server.includes('remainingSource?.column === "seats"')
+check((server.match(/remainingSource\?\.column === "unregistered"/g) || []).length === 6 && !server.includes('remainingSource?.column === "seats"')
   && server.includes('legacyRemaining: stats?.remainingSource?.column !== "unregistered"'),
-  "الخادم: «unregistered» وحده مدخل الاقتراح والمقارنة والتوقّع، وما سواه (seats أو بلا وسم) «قديم» لا يُحسب");
+  "الخادم: «unregistered» وحده مدخل الاقتراح والمقارنة والتوقّع (والشاغر معه)، وما سواه (seats أو بلا وسم) «قديم» لا يُحسب");
+check(server.includes("vacant: req.body?.vacant || {}") && repo.includes("vacant: clean(input.vacant, 100000, -100000)"),
+  "شاغر الشعب («المقاعد المتبقية») يُحفظ مع الاستيراد بإشارته، للإنذار المبكر وحده");
 check(server.includes('app.get("/api/registration-stats", requirePermission(7)') && server.includes('app.put("/api/registration-stats", requirePermission(7)')
   && server.includes('app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw(') && server.includes("documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {\n  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);\n  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: \"حدد الكلية والقسم والفصل\" }); return; }\n  if (!isScopeAllowed(req, collegeId, sectionId))"),
   "أبواب الإحصاء والكشف محميّة بالصلاحية والنطاق، والكشف محدودُ المعدّل وفي طابور قراءة المستندات");
@@ -239,8 +241,8 @@ check(server.includes('app.post("/api/registration-stats/remaining-cells", rateL
   && server.includes('"image/*"], limit: "24mb" })') && server.includes("remainingWarnings(cells.headerText, departmentCode, termName)") && server.includes("imageOrientationRefusal(") && server.includes("assessment.reject"),
   "صفحات الصور تُقرأ معاً بالباب نفسه وحدوده، والصور مقبولة، وترويسة الكشف تُفحص");
 const ocr = fs.readFileSync("src/utils/documentOcr.ts", "utf8");
-check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set(["seats"])'),
-  "الصورة المسطّرة: تُعدَّل وتُستقام وتُقرأ خانةً خانة، ولا يُقرأ ما لا يُحتاج إليه («المقاعد المتبقية» وحدها؛ «لم يجتازوا» و«لم يسجلوا» تُقرآن)");
+check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set<string>([])'),
+  "الصورة المسطّرة: تُعدَّل وتُستقام وتُقرأ خانةً خانة، وكل الأعمدة تُقرأ («لم يسجلوا» للتخطيط، «لم يجتازوا» والمسجّلون لفحصه، «المقاعد المتبقية» شاغرٌ للإنذار)");
 check(server.includes("termSeasonOf(row.AdTermName) === season") && server.includes("if (!rows.length) continue;"), "الفصول المماثلة: الموسم نفسه، ويُتخطّى الفصل الذي لا جدول فيه للقسم");
 check(server.includes("Repository.getCourseTransitions(sectionId)") && server.includes("ancestorsOf(id)") && server.includes("remaining: known.reduce("), "المقرر المعاد ترقيمه يرث شعب سلفه ومتبقّيه");
 check(ui.includes("suggestSectionCount("), "الواجهة تستعمل الحساب نفسه");

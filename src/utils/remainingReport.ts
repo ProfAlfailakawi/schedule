@@ -534,6 +534,28 @@ export function remainingOf(row: Pick<ReportRow, "values" | "doubt" | "blankByDe
   return { value, state: "read" };
 }
 
+/**
+ * «المقاعد المتبقية» (سعة الشعب − المسجلين) لكل مقرر: الشاغر في الشعب المفتوحة. ليست مدخل
+ * التخطيط، لكن الإنذار المبكر يحتاجها كي لا يحسب للمتبقي سعةَ شعبٍ مشغولةٍ بالمسجّلين.
+ * تُؤخذ حين تُقرأ بثقة، وتُترك حين يخالفها حساب الكشف.
+ */
+export function vacantValues(reading: Pick<RemainingReading, "rows" | "columns">, only?: Iterable<number>): Record<string, number> {
+  const of = (kind: ColumnKind) => reading.columns.filter(column => column.kind === kind).sort((a, b) => b.filled - a.filled)[0]?.id;
+  const seats = of("seats"), capacity = of("capacity"), registered = of("registered");
+  if (seats == null) return {};
+  const allowed = only ? new Set(only) : null;
+  const out: Record<string, number> = {};
+  for (const row of reading.rows) {
+    if (allowed && !allowed.has(row.courseId)) continue;
+    const value = row.values[seats];
+    if (value == null || (row.confidence?.[seats] ?? 100) < MIN_CELL_CONFIDENCE) continue;
+    const cap = capacity != null ? row.values[capacity] : undefined, enrolled = registered != null ? row.values[registered] : undefined;
+    if (cap != null && enrolled != null && cap - enrolled !== value) continue;
+    out[String(row.courseId)] = value;
+  }
+  return out;
+}
+
 /** قيم عمود «الذين لم يسجلوا»: رقم المقرر ← العدد، لما قُرئ بوضوحٍ فقط. */
 export function remainingValues(reading: Pick<RemainingReading, "rows">, columnId: number): Record<string, number> {
   return Object.fromEntries(reading.rows

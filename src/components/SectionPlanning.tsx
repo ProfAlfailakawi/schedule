@@ -7,7 +7,7 @@ import {
   departmentLoadWarning, departmentTypicalTotal, suggestSectionCount,
   type DepartmentTermLoad, type SimilarTermHistory,
 } from "../utils/sectionCountSuggestion";
-import { manualRemainingValue, planRemainingApply, remainingOf, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
+import { manualRemainingValue, planRemainingApply, remainingOf, vacantValues, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 
 /**
@@ -24,6 +24,8 @@ interface Payload {
   similarTerms: string[];
   courses: Array<{ id: number; code: string; name: string; capacity: number }>;
   remaining: Record<string, number>;
+  /** «المقاعد المتبقية» من الكشف نفسه (شاغر الشعب المفتوحة) — للإنذار المبكر، لا للاقتراح. */
+  vacant?: Record<string, number>;
   remainingSource: { fileName: string; importedAt: string; column?: "unregistered" | "seats" } | null;
   /** ما حُفظ بعمودٍ غير «الذين لم يسجلوا» (مثل «المقاعد المتبقية»): يُعرض موسوماً ولا يُحسب به. */
   legacyRemaining?: { values: Record<string, number>; fileName: string; importedAt: string } | null;
@@ -59,6 +61,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [remaining, setRemaining] = useState<Record<string, string>>({});
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [source, setSource] = useState<Payload["remainingSource"]>(null);
+  const [vacant, setVacant] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState("");
@@ -96,6 +99,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         setRemaining(asText(body.remaining));
         setChosen(asText(body.accepted));
         setSource(body.remainingSource || null);
+        setVacant(body.vacant || {});
         setSavedAt(body.updatedAt || ""); setSavedBy(body.updatedBy || "");
       })
       .catch(e => { if (!cancelled) setError(e.message); });
@@ -107,11 +111,11 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
      أغلق النافذة قبله. الآن كلُّ تعديلٍ يُحفظ بعد لحظة، وما بقي معلّقاً حين
      تُغلق الشاشة يُرسل وهي تُغلق. «المختار» المحفوظ هو ما كتبه القسم بيده
      فقط؛ الخانة الفارغة تتبع المقترح وإن تغيّر المتبقي. */
-  const latest = useRef({ remaining, chosen, source });
-  latest.current = { remaining, chosen, source };
+  const latest = useRef({ remaining, chosen, source, vacant });
+  latest.current = { remaining, chosen, source, vacant };
   const body = useCallback(() => JSON.stringify({
     collegeId, sectionId, termId,
-    remaining: asNumbers(latest.current.remaining, -100000), accepted: asNumbers(latest.current.chosen), remainingSource: latest.current.source,
+    remaining: asNumbers(latest.current.remaining, -100000), accepted: asNumbers(latest.current.chosen), remainingSource: latest.current.source, vacant: latest.current.vacant,
   }), [collegeId, sectionId, termId]);
   const persist = useCallback(async () => {
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null; }
@@ -227,6 +231,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const applyImport = () => {
     if (!preview || !plan || !canApply) return;
     setRemaining(asText(plan.next));
+    /* الشاغر من الكشف نفسه؛ والمصوَّر منه لما أكّده المستخدم وحده. */
+    setVacant(vacantValues(preview, preview.source === "scan" ? confirmedScan : undefined));
     setSource({ fileName: preview.fileName, importedAt: new Date().toISOString(), column: "unregistered" });
     setPreview(null);
     setEdits(n => n + 1);

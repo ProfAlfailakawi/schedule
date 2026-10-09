@@ -78,6 +78,21 @@ behaviour().then(() => {
     && ![...mixed.highlights, ...mixed.more].some(r => r.kind === "overflow" || r.kind === "shortage"),
     "وبجانب مقررٍ موجب (40 بشعبة 40): التغطية 100٪ منه وحده، والسالب لا يُعدّ مقاعد سالبة");
 }
+/* الكشف أثناء التسجيل: شعب الفصل فيها المسجّلون. 70 لم يسجلوا، و5 شعب بسعة 30 (150 مقعداً)
+   لكن شاغرها 10 فقط: المغطّى 10 لا 70، والنقص ⌈60 ÷ 30⌉ = شعبتان إضافيتان — لا «مغطّى 100٪». */
+{
+  const sections = ["1", "2", "3", "4", "5"].map(code => row(1, code, 8));
+  const occupied = computeTermForecast({ ...base, remaining: { "1": 70 }, vacant: { "1": 10 }, rows: sections });
+  check(occupied.coverage.coveredSeats === 10 && occupied.coverage.totalSeats === 70 && occupied.coverage.percent === 14
+    && occupied.highlights.some(r => r.kind === "shortage" && r.text.includes("306") && r.text.includes("شعبتان")),
+    "شاغر الشعب وحده يستوعب الذين لم يسجلوا: 10 من 70، وشعبتان إضافيتان — لا تُحسب سعة شعبٍ مشغولة");
+  const full = computeTermForecast({ ...base, remaining: { "1": 70 }, vacant: { "1": -6 }, rows: sections });
+  check(full.coverage.coveredSeats === 0 && full.highlights.some(r => r.kind === "shortage" && r.text.includes("3 شعب")),
+    "شاغرٌ سالب (الشعب فوق سعتها) = لا شاغر: الـ70 كلهم ينتظرون ⌈70 ÷ 30⌉ = 3 شعب إضافية");
+  const noVacant = computeTermForecast({ ...base, remaining: { "1": 70 }, rows: sections });
+  check(noVacant.coverage.coveredSeats === 70 && noVacant.shortCourses === 0,
+    "بلا شاغرٍ محفوظ (إدخالٌ يدوي): سعة شعب الجدول تُحسب كاملة كما كانت");
+}
 console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }).catch(error => { console.error(error); process.exit(1); });

@@ -9,7 +9,7 @@ import {
 } from "../src/utils/remainingReport";
 import { readReportCells } from "../src/utils/documentOcr";
 import { suggestSectionCount } from "../src/utils/sectionCountSuggestion";
-import { signedCount } from "../src/utils/remainingReport";
+import { signedCount, vacantValues } from "../src/utils/remainingReport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
@@ -221,6 +221,9 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
     "والموجب والصفر كما طُبعا (113: 528، 125: 268، 212: 1315، 468: 0) — لا من «المقاعد المتبقية» (−6، −22، 2، 15)");
   check(!Object.values(reading.rows).some(row => row.doubt), "لا صفّ يخالف حساب الكشف (لم يجتازوا − المسجلين)");
   const plan = planRemainingApply(reading, reading.column!);
+  const vacant = vacantValues(reading);
+  check(vacant[id("105")] === 45 && vacant[id("112")] === 39 && vacant[id("113")] === -6 && vacant[id("125")] === -22 && !(id("106") in vacant),
+    "الشاغر («المقاعد المتبقية») يُحفظ معه للإنذار المبكر: 105 ← 45، 112 ← 39، 113 ← ‎-6‎، وما لا شعب له بلا شاغر");
   check(plan.total === 35 && plan.next[id("105")] === -89 && plan.next[id("125")] === 268 && plan.untouched.length === 12, "التطبيق يكتب السالب كما هو، ولا يمسّ ما لا شعب له");
 
   /* صورةٌ تُقرأ بالأرقام وحدها تُسقط الإشارة: يعيدها حساب الكشف حين يطابق المقدار تماماً. */

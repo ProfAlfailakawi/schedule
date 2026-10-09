@@ -14427,6 +14427,7 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
     /* «الذين لم يسجلوا» (المتبقي الإجمالي) وحده مدخلُ التخطيط؛ ما حُفظ بعمودٍ آخر («المقاعد المتبقية» أو بلا وسم) يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
     remaining: stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : {},
+    vacant: stats?.remainingSource?.column === "unregistered" ? stats.vacant || {} : {},
     remainingSource: stats?.remainingSource?.column === "unregistered" ? stats.remainingSource : null,
     legacyRemaining: stats?.remainingSource?.column !== "unregistered" && Object.keys(stats?.remaining || {}).length
       ? { values: stats!.remaining, fileName: stats!.remainingSource?.fileName || "", importedAt: stats!.remainingSource?.importedAt || "" } : null,
@@ -14457,6 +14458,8 @@ app.get("/api/forecast/term", requirePermission(7), async (req: AuthenticatedReq
     rows: scoped, courses,
     instructors: instructors.filter(item => mine.has(Number(item.AdInstructorId))),
     remaining: stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : null,
+    /* شاغرُ الشعب من الكشف نفسه: يُحفظ مع الاستيراد؛ إدخالٌ يدوي بلا كشف لا شاغر له. */
+    vacant: stats?.remainingSource?.column === "unregistered" && stats.vacant && Object.keys(stats.vacant).length ? stats.vacant : null,
   });
   res.json({ scopeKey: approvalScopeKey({ collegeId, sectionId, termId }), collegeId, sectionId, termId, ...forecast });
 });
@@ -14466,7 +14469,7 @@ app.put("/api/registration-stats", requirePermission(7), async (req: Authenticat
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const saved = await Repository.saveRegistrationStats(collegeId, sectionId, termId,
-    { remaining: req.body?.remaining || {}, accepted: req.body?.accepted || {}, remainingSource: req.body?.remainingSource || null }, String(req.user?.Name || ""));
+    { remaining: req.body?.remaining || {}, vacant: req.body?.vacant || {}, accepted: req.body?.accepted || {}, remainingSource: req.body?.remainingSource || null }, String(req.user?.Name || ""));
   res.json(saved);
 });
 

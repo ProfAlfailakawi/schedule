@@ -1191,6 +1191,8 @@ export interface RegistrationStats {
   /** AdCourseId → «الذين لم يسجلوا» (المتبقي الإجمالي) من كشف عمادة التسجيل (حين remainingSource.column === "unregistered").
       ما حُفظ بعمودٍ آخر («المقاعد المتبقية» = "seats"، أو بلا وسم): قديمٌ لا يُخلط به. */
   remaining?: Record<string, number>;
+  /** AdCourseId → «المقاعد المتبقية» من الكشف نفسه: شاغر الشعب المفتوحة (للإنذار المبكر). */
+  vacant?: Record<string, number>;
   /** من أين جاء المتبقي: الملف ومتى استُورد، وأيّ عمودٍ هو ("unregistered" = الذين لم يسجلوا؛ "seats" قديم). */
   remainingSource?: { fileName: string; importedAt: string; column?: "unregistered" | "seats" };
   /** AdCourseId → عدد الشعب الذي قبله القسم (اختياري) */

@@ -13,6 +13,8 @@
  *     التغطية والنقص ويُذكر وحده.
  *  3. الشعب المجدولة = عدد رموز الشعب (SCode، وإلا رقم الصف) المميّزة للمقرر في صفوف
  *     هذا الفصل. النقص = الشعب المطلوبة − المجدولة (لا يقلّ عن صفر).
+ *     وإن حُفظت «المقاعد المتبقية» من الكشف نفسه (vacant): الشعب المفتوحة فيها المسجّلون،
+ *     فالمغطّى = min(المتبقي، الشاغر)، والنقص = ⌈(المتبقي − الشاغر) ÷ السعة⌉ شعبةً إضافية.
  *  4. تغطية الطلب % = المقاعد المغطّاة ÷ مجموع المتبقي، بالمقرّبة إلى أقرب عدد صحيح؛
  *     المغطّى لكل مقرر = min(المتبقي، المجدولة × السعة)، والمجموع على المقررات
  *     المعروفة السعة التي لها متبقٍّ موجب. لا مقعد ← percent = null (لا رقم مختلق).
@@ -50,6 +52,12 @@ export interface ForecastInput {
   instructors: readonly Pick<AdInstructor, "AdInstructorId" | "AdInstructorName" | "AdInstructorLoad">[];
   /** AdCourseId → الذين لم يسجلوا؛ null/غائب = لم يُستورد كشفُ "unregistered". */
   remaining: Record<string, number> | null | undefined;
+  /**
+   * AdCourseId → «المقاعد المتبقية» من الكشف نفسه (كراسي شاغرة في الشعب المفتوحة)، إن حُفظت.
+   * الكشف يُستورد أثناء التسجيل: شعبُ الفصل فيها المسجّلون، و«الذين لم يسجلوا» هم من بقي
+   * بعدهم — فلا تُحسب لهم سعةُ الشعب كلها، بل شاغرها وحده. غائبٌ = لا يُعرف الشاغر.
+   */
+  vacant?: Record<string, number> | null;
 }
 
 const sectionKey = (row: FSchedule) => String(row.SCode || row.id);
@@ -76,11 +84,20 @@ export function computeTermForecast(input: ForecastInput): TermForecast {
       if (!seats) continue;
       const capacity = Number(course.MaxStudent) || 0;
       if (capacity <= 0) { unknownCapacity++; continue; }
-      const scheduled = sectionsOf.get(Number(course.AdCourseId))?.size || 0;
-      const required = Math.ceil(seats / capacity);
       total += seats;
-      covered += Math.min(seats, scheduled * capacity);
-      if (required > scheduled) shortages.push({ code: String(course.CourseCode || course.CourseName || ""), missing: required - scheduled });
+      if (input.vacant) {
+        /* الشاغر وحده يستوعبهم؛ والباقي شعبٌ إضافية بسعة المقرر. مقررٌ بلا شاغرٍ مقروء = لا شاغر. */
+        const open = Math.max(0, Math.round(Number(input.vacant[String(course.AdCourseId)]) || 0));
+        covered += Math.min(seats, open);
+        const extra = Math.ceil(Math.max(0, seats - open) / capacity);
+        if (extra) shortages.push({ code: String(course.CourseCode || course.CourseName || ""), missing: extra });
+      } else {
+        /* لا شاغر محفوظ (إدخالٌ يدوي أو كشفٌ قبل الفصل): شعبُ الجدول تُحسب سعتها كاملة. */
+        const scheduled = sectionsOf.get(Number(course.AdCourseId))?.size || 0;
+        const required = Math.ceil(seats / capacity);
+        covered += Math.min(seats, scheduled * capacity);
+        if (required > scheduled) shortages.push({ code: String(course.CourseCode || course.CourseName || ""), missing: required - scheduled });
+      }
     }
   }
   shortages.sort((a, b) => b.missing - a.missing || a.code.localeCompare(b.code));
