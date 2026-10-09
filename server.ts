@@ -14392,8 +14392,8 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
       if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
       sectionsOf.get(id)!.add(String(row.SCode || row.id));
     }
-    /* متبقّي فصلٍ سابق يدخل المقارنة إن كان «المقاعد المتبقية» نفسها؛ القديم عمودٌ آخر لا يُخلط بها. */
-    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.column === "seats" ? pastStats.remaining || {} : {} });
+    /* متبقّي فصلٍ سابق يدخل المقارنة إن كان «الذين لم يسجلوا» نفسه؛ ما حُفظ بعمودٍ آخر لا يُخلط به. */
+    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.column === "unregistered" ? pastStats.remaining || {} : {} });
     department.push({
       termName: past.AdTermName, similar: past.similar,
       sections: [...sectionsOf.values()].reduce((sum, set) => sum + set.size, 0),
@@ -14425,10 +14425,11 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     similarTerms: similar.filter(item => item.similar).map(item => item.AdTermName),
     department,
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
-    /* «المقاعد المتبقية» وحدها مدخلُ التخطيط؛ ما حُفظ قبلها (عمود «الذين لم يسجلوا») يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
-    remaining: stats?.remainingSource?.column === "seats" ? stats.remaining || {} : {},
-    remainingSource: stats?.remainingSource?.column === "seats" ? stats.remainingSource : null,
-    legacyRemaining: stats?.remainingSource?.column !== "seats" && Object.keys(stats?.remaining || {}).length
+    /* «الذين لم يسجلوا» (المتبقي الإجمالي) وحده مدخلُ التخطيط؛ ما حُفظ بعمودٍ آخر («المقاعد المتبقية» أو بلا وسم) يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
+    remaining: stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : {},
+    vacant: stats?.remainingSource?.column === "unregistered" ? stats.vacant || {} : {},
+    remainingSource: stats?.remainingSource?.column === "unregistered" ? stats.remainingSource : null,
+    legacyRemaining: stats?.remainingSource?.column !== "unregistered" && Object.keys(stats?.remaining || {}).length
       ? { values: stats!.remaining, fileName: stats!.remainingSource?.fileName || "", importedAt: stats!.remainingSource?.importedAt || "" } : null,
     accepted: stats?.accepted || {},
     updatedAt: stats?.updatedAt || "",
@@ -14456,7 +14457,9 @@ app.get("/api/forecast/term", requirePermission(7), async (req: AuthenticatedReq
   const forecast = computeTermForecast({
     rows: scoped, courses,
     instructors: instructors.filter(item => mine.has(Number(item.AdInstructorId))),
-    remaining: stats?.remainingSource?.column === "seats" ? stats.remaining || {} : null,
+    remaining: stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : null,
+    /* شاغرُ الشعب من الكشف نفسه: يُحفظ مع الاستيراد؛ إدخالٌ يدوي بلا كشف لا شاغر له. */
+    vacant: stats?.remainingSource?.column === "unregistered" && stats.vacant && Object.keys(stats.vacant).length ? stats.vacant : null,
   });
   res.json({ scopeKey: approvalScopeKey({ collegeId, sectionId, termId }), collegeId, sectionId, termId, ...forecast });
 });
@@ -14466,7 +14469,7 @@ app.put("/api/registration-stats", requirePermission(7), async (req: Authenticat
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const saved = await Repository.saveRegistrationStats(collegeId, sectionId, termId,
-    { remaining: req.body?.remaining || {}, accepted: req.body?.accepted || {}, remainingSource: req.body?.remainingSource || null }, String(req.user?.Name || ""));
+    { remaining: req.body?.remaining || {}, vacant: req.body?.vacant || {}, accepted: req.body?.accepted || {}, remainingSource: req.body?.remainingSource || null }, String(req.user?.Name || ""));
   res.json(saved);
 });
 
