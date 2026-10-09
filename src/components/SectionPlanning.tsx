@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CheckCircle2, ChevronDown, FileQuestion, FileUp, History, Layers, MinusCircle, PencilLine, Printer, RotateCcw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, ChevronDown, FileQuestion, FileText, FileUp, Hash, History, Layers, MinusCircle, MousePointerClick, PencilLine, Printer, RotateCcw, ScanLine, Trash2, Users, X } from "lucide-react";
 import { PrimaryButton, PrintPortal, SecondaryButton, useDialogDismiss } from "./ui";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import {
   departmentLoadWarning, departmentTypicalTotal, suggestSectionCount,
   type DepartmentTermLoad, type SimilarTermHistory,
 } from "../utils/sectionCountSuggestion";
-import { manualRemainingValue, planRemainingApply, remainingOf, vacantValues, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
+import { manualRemainingValue, planRemainingApply, remainingOf, vacantValues, type RejectKind, type RejectMismatch, type CellState, type ImportAssessment, type RemainingReading, type ReportRow, type ReportSuspect } from "../utils/remainingReport";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
 
 /**
@@ -43,6 +43,19 @@ type ImportReading = RemainingReading & {
   cells?: unknown[]; headerText?: string; template?: unknown;
 };
 type SaveState = "idle" | "saving" | "saved" | "error";
+/** رفضُ الكشف كما يردّه الخادم: النص الكامل، ونوعه، ومقارنة «في الكشف / المختار» إن كان لقسمٍ أو فرعٍ آخر. */
+type ImportRejection = { message: string; kind?: RejectKind | null; mismatch?: RejectMismatch | null };
+const rejection = (body: any, fallback: string, prefix = "") =>
+  Object.assign(new Error(`${prefix}${body?.error || fallback}`), { rejection: { message: `${prefix}${body?.error || fallback}`, kind: body?.rejectKind || null, mismatch: body?.mismatch || null } as ImportRejection });
+/* كل رفضٍ أيقونةٌ وكلمتان وإرشادٌ قصير؛ والنص الكامل يبقى لقارئ الشاشة. */
+const REJECT_SHORT: Record<Exclude<RejectKind, "mismatch">, { icon: React.ComponentType<any>; title: string; hint: string }> = {
+  noCode: { icon: Hash, title: "القسم بلا رمز في النظام", hint: "أضِف رمزه في «الأقسام»" },
+  branchUnread: { icon: ScanLine, title: "الفرع غير مقروء في الترويسة", hint: "ارفع PDF من نظام العمادة" },
+  departmentUnread: { icon: ScanLine, title: "رمز القسم غير مقروء في الترويسة", hint: "ارفع PDF من نظام العمادة" },
+  noCourses: { icon: FileQuestion, title: "لا مقررات لهذا القسم في الكشف", hint: "تأكد أنه كشف قسمك" },
+  noColumn: { icon: FileQuestion, title: "عمود «لم يسجلوا» غير موجود", hint: "صورة أوضح أو PDF" },
+  unread: { icon: ScanLine, title: "لم يُقرأ أي رقم", hint: "صورة أوضح أو PDF" },
+};
 
 /** ترتيبٌ برقم المقرر تصاعدياً (الأرقام عدداً لا حرفاً)، ثم الرمز. */
 const courseNumber = (code: string) => { const m = String(code).match(/\d+/); return m ? Number(m[0]) : Number.MAX_SAFE_INTEGER; };
@@ -66,7 +79,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [legacyCleared, setLegacyCleared] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /* رفضُ الكشف يظهر في صندوق الاستيراد نفسه، أحمرَ بعنوانٍ صريح، لا سطراً خافتاً أسفل الصفحة. */
-  const [importError, setImportError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<ImportRejection | null>(null);
   const importErrorRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { if (importError) importErrorRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [importError]);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -195,7 +208,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
           body: new Blob(files),
         });
         const result = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(result?.error || "تعذّرت قراءة الكشف");
+        if (!response.ok) throw rejection(result, "تعذّرت قراءة الكشف");
         const found = result as ImportReading;
         showPreview(found);
         return;
@@ -211,7 +224,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
           body: file,
         });
         const result = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(`${files.length > 1 ? `«${file.name}»: ` : ""}${result?.error || "تعذّرت قراءة الكشف"}`);
+        if (!response.ok) throw rejection(result, "تعذّرت قراءة الكشف", files.length > 1 ? `«${file.name}»: ` : "");
         results.push(result as ImportReading);
         template ??= result?.template || null;
       }
@@ -222,12 +235,12 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
           body: JSON.stringify({ collegeId, sectionId, termId, pages: results.flatMap(item => item.cells || []), headerText: results[0].headerText || "" }),
         });
         const merged = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(merged?.error || "تعذّرت قراءة الصفحات معاً");
+        if (!response.ok) throw rejection(merged, "تعذّرت قراءة الصفحات معاً");
         found = { ...merged, source: results.some(item => item.source === "scan") ? "scan" : "text",
           pageCount: results.reduce((sum, item) => sum + item.pageCount, 0), fileName: files.map(file => file.name).join("، ") };
       }
       showPreview(found);
-    } catch (e: any) { setImportError(e.message); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
+    } catch (e: any) { setImportError(e?.rejection || { message: String(e?.message || "تعذّرت قراءة الكشف") }); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
   };
   /* التعبئة تكتب المقروءَ بوضوح وما كتبه المستخدم وحده (planRemainingApply)؛ ما لم يُقرأ يبقى فارغاً
      أو على قيمته المحفوظة، ولا يصير صفراً ولا يُخمَّن. والكشف الذي لم يُثبت فرعه وقسمه من ترويسته رُفض قبل المعاينة. */
@@ -360,13 +373,32 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
           <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : hasSaved ? "إزالة أرقام المتبقي" : "لا كشف مستورد لإزالته"}
         </SecondaryButton>
         {importError ? (
-          <div ref={importErrorRef} className="section-plan-reject" role="alert">
-            <AlertTriangle aria-hidden="true" />
-            <div>
-              <strong>رُفض الكشف — لم يُستورد شيء</strong>
-              <p>{importError.replace(/\s*—\s*لم يُستورد شيء\.?$/, "")}</p>
+          <div ref={importErrorRef} className="section-plan-reject" role="alert" aria-label={importError.message}>
+            <div className="section-plan-reject-head">
+              <AlertTriangle aria-hidden="true" />
+              <strong>رُفض الكشف</strong>
+              <span className="section-plan-reject-tag">لم يُستورد شيء</span>
+              <button data-guide-feature-id="schedule.tool.data" type="button" className="student-qr-close" onClick={() => setImportError(null)} aria-label="إغلاق رسالة الرفض"><X aria-hidden="true" /></button>
             </div>
-            <button data-guide-feature-id="schedule.tool.data" type="button" className="student-qr-close" onClick={() => setImportError(null)} aria-label="إغلاق رسالة الرفض"><X aria-hidden="true" /></button>
+            {importError.mismatch ? (
+              <div className="section-plan-reject-compare" aria-hidden="true">
+                <div className="is-sheet">
+                  <span className="section-plan-reject-side"><FileText /> في الكشف</span>
+                  {importError.mismatch.fields.includes("department") ? <b><Building2 /> {importError.mismatch.sheet.department || importError.mismatch.sheet.departmentCode}</b> : null}
+                  {importError.mismatch.fields.includes("branch") ? <b><Users /> {importError.mismatch.sheet.branch}</b> : null}
+                </div>
+                <span className="section-plan-reject-vs">≠</span>
+                <div className="is-chosen">
+                  <span className="section-plan-reject-side"><MousePointerClick /> المختار</span>
+                  {importError.mismatch.fields.includes("department") ? <b><Building2 /> {importError.mismatch.chosen.department || importError.mismatch.chosen.departmentCode}</b> : null}
+                  {importError.mismatch.fields.includes("branch") ? <b><Users /> {importError.mismatch.chosen.branch}</b> : null}
+                </div>
+              </div>
+            ) : importError.kind && importError.kind !== "mismatch" ? (() => {
+              const short = REJECT_SHORT[importError.kind];
+              const Icon = short.icon;
+              return <p className="section-plan-reject-short" aria-hidden="true"><Icon /> <b>{short.title}</b> <span>· {short.hint}</span></p>;
+            })() : <p className="section-plan-reject-short">{importError.message.replace(/\s*—\s*لم يُستورد شيء\.?$/, "")}</p>}
           </div>
         ) : null}
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"

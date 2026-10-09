@@ -14560,7 +14560,7 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
     const cells = await readReportCells(input, mime, pages => blankSpots(pages, catalogue, departmentCode), template);
     const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
     const assessment = remainingAssessment(reading, departmentCode, departmentName, cells.headerText, branch);
-    if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
+    if (assessment.reject) { res.status(422).json({ error: assessment.reject, rejectKind: assessment.rejectKind || null, mismatch: assessment.mismatch || null, detectedDepartment: assessment.detectedDepartment || null }); return; }
     res.json({ ...reading, assessment, departmentName, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
       warnings: remainingWarnings(cells.headerText, departmentCode, termName),
       cells: cells.pages, headerText: cells.headerText.slice(0, 4000), template: cells.template || null });
@@ -14586,7 +14586,7 @@ app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requi
   const reading = readRemainingReport(pages, catalogue, departmentCode);
   const headerText = String(req.body?.headerText || "").slice(0, 4000);
   const assessment = remainingAssessment(reading, departmentCode, departmentName, headerText, branch);
-  if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
+  if (assessment.reject) { res.status(422).json({ error: assessment.reject, rejectKind: assessment.rejectKind || null, mismatch: assessment.mismatch || null, detectedDepartment: assessment.detectedDepartment || null }); return; }
   res.json({ ...reading, assessment, departmentName, warnings: remainingWarnings(headerText, departmentCode, termName) });
 });
 

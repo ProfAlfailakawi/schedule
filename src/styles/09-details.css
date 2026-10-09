@@ -1871,13 +1871,26 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 }
 .section-plan-warning{display:flex;align-items:flex-start;gap:6px;margin:0;color:var(--danger);font-style:normal;font-size:var(--t-sm);line-height:1.7}
 .section-plan-warning>svg{flex:none;width:16px;height:16px;margin-top:4px}
-/* رفض الكشف: صندوقٌ أحمر بعرض صندوق الاستيراد، عنوانه «رُفض الكشف — لم يُستورد شيء». */
-.section-plan-reject{flex:1 1 100%;display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1.5px solid color-mix(in srgb,var(--danger) 60%,var(--line));border-radius:var(--r-sm);background:color-mix(in srgb,var(--danger) 9%,var(--surface));color:var(--ink)}
-.section-plan-reject>svg{flex:none;width:20px;height:20px;margin-top:2px;color:var(--danger)}
-.section-plan-reject>div{flex:1;min-width:0}
-.section-plan-reject strong{display:block;color:var(--danger);font-size:var(--t-md,15px)}
-.section-plan-reject p{margin:4px 0 0;font-size:var(--t-sm);line-height:1.8}
-.section-plan-reject .student-qr-close{flex:none}
+/* رفض الكشف: صندوقٌ أحمر في مكان الاستيراد — عنوانٌ بكلمتين، ثم مقارنة «في الكشف ≠ المختار» بأيقونات. */
+.section-plan-reject{flex:1 1 100%;display:grid;gap:10px;padding:12px 14px;border:1.5px solid color-mix(in srgb,var(--danger) 55%,var(--line));border-radius:var(--r-sm);background:color-mix(in srgb,var(--danger) 7%,var(--surface));color:var(--ink)}
+.section-plan-reject-head{display:flex;align-items:center;gap:8px}
+.section-plan-reject-head>svg{flex:none;width:20px;height:20px;color:var(--danger)}
+.section-plan-reject-head strong{color:var(--danger);font-size:var(--t-md,15px)}
+.section-plan-reject-tag{padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--danger) 14%,var(--surface));color:var(--danger);font-size:11px;font-weight:700;white-space:nowrap}
+.section-plan-reject-head .student-qr-close{margin-inline-start:auto;flex:none}
+.section-plan-reject-compare{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:8px}
+.section-plan-reject-compare>div{display:grid;align-content:start;gap:6px;padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);min-width:0}
+.section-plan-reject-compare>.is-sheet{border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+.section-plan-reject-compare>.is-chosen{border-color:color-mix(in srgb,var(--success,#3f7f67) 45%,var(--line))}
+.section-plan-reject-side{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:11px;font-weight:700}
+.section-plan-reject-side svg{width:14px;height:14px}
+.section-plan-reject-compare b{display:flex;align-items:flex-start;gap:6px;font-size:var(--t-sm);line-height:1.5;overflow-wrap:anywhere}
+.section-plan-reject-compare b svg{flex:none;width:15px;height:15px;margin-top:3px;color:var(--muted)}
+.section-plan-reject-compare>.is-sheet b{color:var(--danger)}
+.section-plan-reject-vs{align-self:center;color:var(--danger);font-size:22px;font-weight:800}
+.section-plan-reject-short{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0;font-size:var(--t-sm);line-height:1.6}
+.section-plan-reject-short svg{flex:none;width:16px;height:16px;color:var(--danger)}
+.section-plan-reject-short span{color:var(--muted)}
 .section-plan-legacy{padding:12px 14px;border:1px solid color-mix(in srgb,var(--danger) 28%,var(--line));border-radius:14px;background:color-mix(in srgb,var(--danger-soft) 45%,var(--surface))}
 .section-plan-legacy>div{min-width:0;display:grid;gap:4px}
 .section-plan-legacy strong{font-weight:700}

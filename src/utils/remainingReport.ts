@@ -605,9 +605,19 @@ export function confirmReportDepartment(headerText: string, departmentCode: stri
   return { confirmed: byCode || byName, byCode, byName };
 }
 
+/** نوع الرفض، لتعرضه الواجهة أيقونةً وكلمتين بدل فقرة. */
+export type RejectKind = "mismatch" | "noCode" | "branchUnread" | "departmentUnread" | "noCourses" | "noColumn" | "unread";
+/** ما في الكشف وما المختار، للحقول المختلفة وحدها — يُرسم مقارنةً لا جملة. */
+export interface RejectMismatch {
+  fields: Array<"department" | "branch">;
+  sheet: { department?: string; departmentCode?: string; branch?: string };
+  chosen: { department?: string; departmentCode?: string; branch?: string };
+}
 export interface ImportAssessment {
   /** يُرفض الملف كله (لا يُطبَّق منه شيء): قسمٌ آخر، أو لا عمود «الذين لم يسجلوا»، أو لا خانة واحدة مقروءة. */
   reject: string | null;
+  rejectKind?: RejectKind;
+  mismatch?: RejectMismatch;
   detectedDepartment?: string;
   /** مقرراتٌ لم تُقرأ خانتها (فارغة أو ضعيفة أو تخالف حساب الكشف): تُعرض صفراء فارغة، ولا تُحسب. */
   unread: number[];
@@ -641,9 +651,9 @@ export function assessRemainingImport(
   /* ── لا يُستورد إلا كشف الكلية والفرع والقسم المختار، كاستيراد الجدول تماماً ──
      كل شرطٍ يُثبَت إيجاباً من ترويسة الكشف؛ ما لا يُقرأ يُرفض ولا يُستعاض عنه بتأكيدٍ بنقرة،
      فكشفٌ قُبل في قسمٍ آخر يكتب أرقامه في مقرراتٍ ليست له. */
-  const rejectWith = (reason: string): ImportAssessment => ({ ...base, reject: `${reason} — لم يُستورد شيء.` });
+  const rejectWith = (reason: string, rejectKind: RejectKind, extra: Partial<ImportAssessment> = {}): ImportAssessment => ({ ...base, ...extra, rejectKind, reject: `${reason} — لم يُستورد شيء.` });
   if (!context.departmentCode) {
-    return rejectWith(`القسم المختار ${context.departmentName ? `«${context.departmentName}» ` : ""}بلا رمزٍ مسجّل في النظام، فلا يمكن التحقق أن الكشف له. أضف رمز القسم في «الأقسام» كما في نظام العمادة ثم أعد الاستيراد`);
+    return rejectWith(`القسم المختار ${context.departmentName ? `«${context.departmentName}» ` : ""}بلا رمزٍ مسجّل في النظام، فلا يمكن التحقق أن الكشف له. أضف رمز القسم في «الأقسام» كما في نظام العمادة ثم أعد الاستيراد`, "noCode");
   }
 
   /* 1) الفرع والقسم معاً: كشف «بنين» لا يُستورد في «بنات» ولو تطابق القسم (رمز القسم 0109 واحدٌ في الفروع)،
@@ -674,30 +684,40 @@ export function assessRemainingImport(
     ].filter(Boolean).join("، ");
     const chosen = [departmentDiffers ? `قسم ${selected}` : "", branchDiffers ? chosenLabel : ""].filter(Boolean).join(" في ");
     const what = departmentDiffers && branchDiffers ? "القسم والفرع الصحيحين" : departmentDiffers ? "القسم الصحيح" : "الفرع الصحيح";
-    return rejectWith(`الكشف ليس لما اخترت: هو كشف ${inSheet}، والمختار في النظام ${chosen}. اختر ${what} أو ارفع الكشف الصحيح`);
+    /* الجنس والموقع يكفيان؛ والرمز يُذكر حين يكون هو وحده الفارق («بنات (011)» ≠ «بنات (012)»)، لا «بنات ≠ بنات». */
+    const branchText = (gender?: string, siteName = "", code?: string) => [label(gender, code), siteName].filter(Boolean).join(" · ");
+    const codesOnly = Boolean(printedBranch?.code && chosenCode && printedBranch.code !== chosenCode)
+      && branchText(printedBranch?.gender, site(header)) === branchText(chosenGender, site(collegeName));
+    const chosenBranch = branchText(chosenGender, site(collegeName), codesOnly ? chosenCode : undefined) || context.branch?.collegeName || "";
+    const mismatch: RejectMismatch = {
+      fields: [...(departmentDiffers ? ["department" as const] : []), ...(branchDiffers ? ["branch" as const] : [])],
+      sheet: { department: printedName || undefined, departmentCode: detected, branch: branchText(printedBranch?.gender, site(header), codesOnly ? printedBranch?.code : undefined) || printedBranch?.code },
+      chosen: { department: String(context.departmentName || "").replace(/^قسم\s+/, "") || undefined, departmentCode: context.departmentCode, branch: chosenBranch },
+    };
+    return rejectWith(`الكشف ليس لما اخترت: هو كشف ${inSheet}، والمختار في النظام ${chosen}. اختر ${what} أو ارفع الكشف الصحيح`, "mismatch", { mismatch });
   }
   if (branchKnown && !branchRead) {
-    return rejectWith(`لم يُقرأ «الفرع» في ترويسة الكشف، فلا يمكن التحقق أنه لفرع ${chosenLabel}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`);
+    return rejectWith(`لم يُقرأ «الفرع» في ترويسة الكشف، فلا يمكن التحقق أنه لفرع ${chosenLabel}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`, "branchUnread");
   }
 
   /* 2) القسم: لا بد أن يثبت رمزه في الترويسة («رمز القسم العلمي 0109»). */
   if (!confirmation.byCode) {
-    return rejectWith(`لم يُقرأ «رمز القسم العلمي» في ترويسة الكشف، فلا يمكن التحقق أنه لقسم ${selected}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`);
+    return rejectWith(`لم يُقرأ «رمز القسم العلمي» في ترويسة الكشف، فلا يمكن التحقق أنه لقسم ${selected}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`, "departmentUnread");
   }
   if (!reading.rows.length) {
-    return { ...base, reject: reading.foreign.length
+    return { ...base, rejectKind: "noCourses", reject: reading.foreign.length
       ? `الكشف لا يحوي مقررات القسم المختار ${selected} (فيه رموزٌ مثل ${reading.foreign.slice(0, 3).join("، ")}) — هل هو كشف قسمٍ آخر؟`
       : "لم أجد في الملف أرقام مقررات هذا القسم — تأكد أنه كشف «الذين لم يسجلوا» من عمادة التسجيل، وأن الصورة واضحة." };
   }
   if (reading.column == null) {
-    return { ...base, reject: "لم أجد في الكشف عمود «الذين لم يسجلوا» — وهو وحده ما تُبنى عليه خطة الشعب، فلا يؤخذ عمودٌ آخر بدله. ارفع صورةً أوضح تظهر فيها عناوين الأعمدة، أو الكشف PDF." };
+    return { ...base, rejectKind: "noColumn", reject: "لم أجد في الكشف عمود «الذين لم يسجلوا» — وهو وحده ما تُبنى عليه خطة الشعب، فلا يؤخذ عمودٌ آخر بدله. ارفع صورةً أوضح تظهر فيها عناوين الأعمدة، أو الكشف PDF." };
   }
   const states = reading.rows.map(row => ({ id: row.courseId, ...remainingOf(row, reading.column!) }));
   const unread = states.filter(item => item.state !== "read" && item.state !== "noSections").map(item => item.id);
   const noSections = states.filter(item => item.state === "noSections").map(item => item.id);
   const read = states.filter(item => item.state === "read").length;
   if (!read) {
-    return { ...base, unread, noSections, read, reject: `لم تُقرأ خانة «الذين لم يسجلوا» لأي مقرر — لا شيء يُعرض للمراجعة. ارفع صورةً أوضح (مستقيمة، بإضاءةٍ جيدة، وتظهر الأعمدة كاملة) أو الكشف PDF.` };
+    return { ...base, unread, noSections, read, rejectKind: "unread", reject: `لم تُقرأ خانة «الذين لم يسجلوا» لأي مقرر — لا شيء يُعرض للمراجعة. ارفع صورةً أوضح (مستقيمة، بإضاءةٍ جيدة، وتظهر الأعمدة كاملة) أو الكشف PDF.` };
   }
   const notes = (reading.gaps || []).map(gap => `سطرٌ لم يُقرأ رقم مقرره بين المقرر ${gap.after} والمقرر ${gap.before} (الصفحة ${gap.page}) — قد يكون مقرراً من مقرراتك؛ أضف قيمته يدوياً إن وُجد.`);
   return { ...base, unread, noSections, read, notes, reject: null };
