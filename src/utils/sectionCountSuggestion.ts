@@ -22,6 +22,8 @@
  *   4) مقررٌ لم يُفتح ← مدىً من شعبةٍ واحدة إلى ما يملؤه المتبقي، مسقوفاً
  *      بـ NO_HISTORY_MAX، ويُبدأ بشعبة.
  *   5) مجموع المختار يُقارن بما شغّله القسم في الفصول المماثلة (departmentLoad).
+ *   6) متبقٍّ سالب (الكشف يطبعه حين يزيد المسجّلون على السعة، ‎-6‎) ليس «لا متبقي»:
+ *      الشعب ممتلئة، فلا ينزل الاقتراح عن المعتاد ويتّسع لما يستوعب الزيادة.
  *
  * لا يُكتب شيءٌ في الجدول: الاقتراح يُختار منه أو يُترك.
  */
@@ -119,6 +121,23 @@ export function suggestSectionCount(
   const backlog = remainingBacklog(pool, history) || undefined;
   const result = (min: number, max: number, suggested: number, basis: SectionSuggestion["basis"], reason: string): SectionSuggestion =>
     ({ suggested, min, max, basis, reason, headline: rangeLabel(min, max), baseline: base?.sections, ...(backlog ? { backlog } : {}) });
+
+  /* المقاعد المتبقية سالبة: المسجّلون زادوا على السعة — الشعب ممتلئة لا فارغة.
+     لا تنزل عن المعتاد، ويُضاف ما يستوعب الزيادة داخل النطاق الواقعي نفسه. */
+  const over = remaining != null && Number.isFinite(Number(remaining)) && Number(remaining) < 0 ? Math.ceil(-Number(remaining)) : 0;
+  if (over) {
+    const overText = `المسجّلون زادوا على السعة بـ${countOf(over, AR.student)} (المقاعد المتبقية −${over})`;
+    if (base) {
+      const b = base.sections, band = b >= 4 ? 2 : 1;
+      const extra = cap ? Math.min(band, Math.ceil(over / cap)) : 0;
+      return result(b, b + extra, b, "history", `فُتحت عادةً ${countOf(b, AR.section)} (${base.label}) · ${overText}${extra
+        ? ` — تستوعبها ${countOf(extra, AR.section)} إضافية بسعة ${cap}` : cap ? "" : " — لا سعة مسجّلة لحساب شعبةٍ إضافية"}`);
+    }
+    const intro = history.length ? `لم يُفتح في آخر ${countOf(history.length, oblique(AR.term))}` : "لا تاريخ لهذا المقرر";
+    if (!cap) return { suggested: 1, min: 1, max: 1, basis: "pool", headline: rangeLabel(1, 1), reason: `${intro} · ${overText} — أدخل السعة في شاشة المقررات لحساب ما يستوعبها` };
+    const max = Math.min(Math.max(1, Math.ceil(over / cap)), NO_HISTORY_MAX);
+    return result(1, max, 1, "pool", `${intro} · ${overText}${max > 1 ? ` — تستوعبها ${countOf(max, AR.section)} على الأكثر بسعة ${cap} · يُبدأ بشعبة واحدة` : ""}`);
+  }
 
   if (pool === 0) {
     return { suggested: 0, min: 0, max: 0, basis: "empty", headline: "لا شعب", baseline: base?.sections,

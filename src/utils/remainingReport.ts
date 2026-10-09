@@ -148,8 +148,7 @@ function linesOf(pages: readonly ReportCell[][]): Line[] {
           offset = at + part.length;
           const width = cell.x1 - cell.x0;
           const x = parts.length === 1 ? (cell.x0 + cell.x1) / 2 : cell.x0 + width * ((at + part.length / 2) / Math.max(1, text.length));
-          const digits = part.replace(/[,٬]/g, "");
-          const value = /^\d{1,6}$/.test(digits) ? Number(digits) : null;
+          const value = signedCount(part);
           const code = /^[A-Za-z]{0,5}-?\d{3,8}$/.test(part) ? part.replace(/\D/g, "") : "";
           tokens.push({ text: part, x, value, code, cell, confidence: cell.confidence ?? 100 });
         }
@@ -159,6 +158,20 @@ function linesOf(pages: readonly ReportCell[][]): Line[] {
     }
   });
   return lines;
+}
+
+/**
+ * عددٌ صحيح من خلية، بإشارته: كشف SWRS136 يطبع «المقاعد المتبقية» سالبةً حين
+ * يزيد المسجّلون على السعة (‎-6‎ = ستة فوق السعة)، و«الذين لم يسجلوا» سالبةً
+ * كذلك. الإشارة قد تأتي بعد الرقم في ترتيب الكتابة من اليمين («6-»)، وقد تكون
+ * «−» أو «–». كان السالب يُرمى فتبدو الخانة «لم تُقرأ».
+ */
+export function signedCount(text: string): number | null {
+  const plain = normalize(text).trim().replace(/[,٬]/g, "").replace(/[−–‐‑]/g, "-");
+  const match = plain.match(/^(-)?(\d{1,6})(-)?$/);
+  if (!match || (match[1] && match[3])) return null;
+  const value = Number(match[2]);
+  return match[1] || match[3] ? (value ? -value : 0) : value;
 }
 
 /** مراكزُ متقاربة عمودٌ واحد. */
@@ -473,8 +486,12 @@ export function readRemainingReport(
   if (column != null && registered != null && capacity != null) for (const row of [...rows, ...suspects]) {
     const read = row.values[column], cap = row.values[capacity], enrolled = row.values[registered];
     if (read == null || cap == null || enrolled == null) continue;
-    const derived = Math.max(0, cap - enrolled);
-    if (read !== derived) row.doubt = { read, derived };
+    /* الكشف يطبع الفرق كما هو (سالباً إن زاد المسجّلون على السعة)؛ ويُقبل الصفر عنه إن طبعه مقصوصاً. */
+    const derived = cap - enrolled;
+    /* صورةٌ تُقرأ بالأرقام وحدها تُسقط الإشارة («‎-6‎» ← «6»): المقدار مطابقٌ تماماً
+       والمسجّلون فوق السعة، فالإشارة من حساب الكشف نفسه لا تخمين. */
+    if (derived < 0 && read === -derived) { row.values[column] = derived; continue; }
+    if (read !== derived && !(derived < 0 && read === 0)) row.doubt = { read, derived };
   }
   const seen = new Set([...rows, ...suspects].map(row => row.courseId));
   const suspectCodes = new Set(suspects.map(row => row.read));
@@ -625,11 +642,11 @@ export interface RemainingApplyPlan {
   untouched: number[];
 }
 
-/** قيمةٌ كتبها المستخدم: عددٌ صحيح غير سالب، وإلا لا شيء. */
+/** قيمةٌ كتبها المستخدم: عددٌ صحيح، وقد يكون سالباً كما يطبعه الكشف (مسجّلون فوق السعة)، وإلا لا شيء. */
 export function manualRemainingValue(raw: unknown): number | undefined {
-  const text = normalize(String(raw ?? "")).trim();
-  if (!/^\d{1,6}$/.test(text)) return undefined;
-  return Number(text);
+  const text = normalize(String(raw ?? "")).trim().replace(/[−–]/g, "-");
+  if (!/^-?\d{1,6}$/.test(text)) return undefined;
+  return Number(text) || 0;
 }
 
 /**

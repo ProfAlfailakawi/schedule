@@ -206,7 +206,7 @@ check(ui.includes("التقرير والطباعة") && ui.includes('dataset.pri
 const server = fs.readFileSync("server.ts", "utf8");
 const repo = fs.readFileSync("src/db/repository.ts", "utf8");
 check(repo.includes("getRegistrationStats: async") && repo.includes("saveRegistrationStats: async") && repo.includes('collection("registrationStats")'), "الإحصاء يُحفظ عبر المستودع (Firestore والمحلي)");
-check(repo.includes("input.counts ?? previous?.counts") && repo.includes("remaining: clean(input.remaining, 100000)"), "المتبقي يُحفظ، و«المسجّلين» القديم يبقى كما هو");
+check(repo.includes("input.counts ?? previous?.counts") && repo.includes("remaining: clean(input.remaining, 100000, -100000)"), "المتبقي يُحفظ بإشارته (سالبٌ إن زاد المسجّلون على السعة)، و«المسجّلين» القديم يبقى كما هو");
 check(server.includes('app.get("/api/registration-stats", requirePermission(7)') && server.includes('app.put("/api/registration-stats", requirePermission(7)')
   && server.includes('app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw(') && server.includes("documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {\n  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);\n  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: \"حدد الكلية والقسم والفصل\" }); return; }\n  if (!isScopeAllowed(req, collegeId, sectionId))"),
   "أبواب الإحصاء والكشف محميّة بالصلاحية والنطاق، والكشف محدودُ المعدّل وفي طابور قراءة المستندات");

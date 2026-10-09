@@ -8,6 +8,8 @@ import {
   confirmReportDepartment, HEADER_DIGITS_MARK, manualRemainingValue, planRemainingApply, readRemainingReport, remainingOf, remainingValues, type ReportCell,
 } from "../src/utils/remainingReport";
 import { readReportCells } from "../src/utils/documentOcr";
+import { suggestSectionCount } from "../src/utils/sectionCountSuggestion";
+import { signedCount } from "../src/utils/remainingReport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
@@ -77,8 +79,8 @@ check(plan.manual === 0 && !("3" in plan.next) && plan.untouched.includes(3), "�
 plan = planRemainingApply(r, r.column!, { "3": "" }, { "3": "40", "5": "9", "1": "7" });
 check(plan.next["3"] === 40 && plan.next["5"] === 9 && plan.next["1"] === 1336 && plan.untouched.includes(3),
   "القيمة المحفوظة سابقاً لخانةٍ لم تُقرأ تبقى كما هي، والمقرر الغائب من الكشف لا يُمسّ، والمقروء يحلّ محل القديم");
-check(manualRemainingValue("٣٥") === 35 && manualRemainingValue("-2") === undefined && manualRemainingValue("1.5") === undefined && manualRemainingValue("") === undefined,
-  "قيمة المستخدم: أرقامٌ هندية تُقبل، والسالب والكسر والفراغ لا");
+check(manualRemainingValue("٣٥") === 35 && manualRemainingValue("-2") === -2 && manualRemainingValue("1.5") === undefined && manualRemainingValue("") === undefined,
+  "قيمة المستخدم: أرقامٌ هندية وسالبٌ كما في الكشف تُقبل، والكسر والفراغ لا");
 
 /* ── قراءةٌ رديئة: أكثر الخانات فارغة أو ضعيفة ← يُقبل ما قُرئ، وكل ما سواه أصفر ── */
 const poor = [page(0, [["0101102", [54, 1336, 0, null, 19, 54]], ["0101201", [570, 256, 6, 250, 9, 370], 20], ["0101254", [48, 210, 10, null, 3, 48]], ["0101310", [12, 70, 70, 0, 1, 12]]])];
@@ -193,6 +195,45 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   check(mixedReading.rows.length === 6 && !Object.values(values).includes(140), "مقررات خارج القسم لا تُستورد ولا تختلط قيمها بمقررات القسم");
   check(mixedReading.foreign.length === 2, "وتُذكر للعلم فقط");
   check(mixedAssessment.reject === null && mixedAssessment.notes.length === 0, "ولا تمنع الاستيراد ولا تُعدّ سطراً ناقصاً");
+}
+
+/* ── مقاعد متبقية سالبة: المسجّلون فوق السعة (SWRS136 حقيقي، تكنولوجيا التعليم 0109) ── */
+{
+  check(signedCount("-6") === -6 && signedCount("6-") === -6 && signedCount("−22") === -22 && signedCount("‎-89‎") === -89
+    && signedCount("٤٥") === 45 && signedCount("-0") === 0 && signedCount("-6-") === null && signedCount("6a") === null,
+    "عددٌ بإشارته: «-6» و«6-» و«−22» سالبة، والهندية موجبة، وما سواها لا شيء");
+  const codes = ["105","106","107","108","110","111","112","113","114","125","135","145","148","150","198","199","210","212","213","215","217","225","227","232","235","237","244","247","258","265","268","275","314","324","334","344","345","354","434","437","444","445","458","464","468","491","499"];
+  const realCatalogue = codes.map((code, index) => ({ id: index + 1, code: `0109${code}` }));
+  const id = (code: string) => String(codes.indexOf(code) + 1);
+  const real = await readReportCells(fs.readFileSync("tests/fixtures/swrs136/negative-seats.pdf"));
+  const reading = readRemainingReport(real.pages, realCatalogue, "0109");
+  const judged = assessRemainingImport(reading, { departmentCode: "0109", departmentName: "تكنولوجيا التعليم", headerText: real.headerText });
+  const values = remainingValues(reading, reading.column!);
+  check(judged.reject === null && judged.unread.length === 0 && judged.read === 35 && judged.noSections.length === 12,
+    "الكشف الحقيقي: كل مقررٍ له شعب يُقرأ (35)، لا خانة «لم تُقرأ»، و12 بلا شعب");
+  check(values[id("113")] === -6 && values[id("114")] === -8 && values[id("125")] === -22 && values[id("135")] === -14
+    && values[id("217")] === -24 && values[id("227")] === -23 && values[id("444")] === -6,
+    "المقاعد المتبقية السالبة تُقرأ بإشارتها (113: −6، 125: −22، 217: −24 …)");
+  check(values[id("105")] === 45 && values[id("212")] === 2 && values[id("225")] === 0 && values[id("499")] === 42,
+    "والموجبة والصفر كما طُبعت، و«الذين لم يسجلوا» السالب (105: −89) لا يُخلط بها");
+  const plan = planRemainingApply(reading, reading.column!);
+  check(plan.total === 35 && plan.next[id("125")] === -22 && plan.untouched.length === 12, "التطبيق يكتب السالب كما هو، ولا يمسّ ما لا شعب له");
+
+  /* صورةٌ تُقرأ بالأرقام وحدها تُسقط الإشارة: يعيدها حساب الكشف حين يطابق المقدار تماماً. */
+  const scanned = readRemainingReport([page(0, [["0101102", [330, 40, 62, 22, 1, 268]], ["0101201", [10, 40, 62, 21, 1, 10]], ["0101254", [10, 40, 62, 0, 1, 10]]])], catalogue, "0101");
+  const sv = remainingValues(scanned, scanned.column!);
+  check(sv["1"] === -22 && !("3" in sv) && sv["4"] === 0,
+    "إشارةٌ سقطت (22 والحساب −22) تُعاد؛ ومقدارٌ مخالف (21) يُوقف للمراجعة؛ وصفرٌ مقصوص مقبول");
+  check(manualRemainingValue("-6") === -6 && manualRemainingValue("−6") === -6, "قيمةٌ يدوية سالبة تُقبل كما يطبعها الكشف");
+
+  /* الاقتراح: سالبٌ ليس «لا متبقي» — الشعب ممتلئة، فلا ينزل عن المعتاد. */
+  const hist = [{ termName: "الفصل الأول 2025-2026", sections: 2 }, { termName: "الفصل الأول 2024-2025", sections: 2 }];
+  const full = suggestSectionCount(-22, 40, hist);
+  check(full.min === 2 && full.max === 3 && full.suggested === 2 && full.basis === "history" && full.reason.includes("زادوا على السعة"),
+    "متبقٍّ −22 بسعة 40 وتاريخ شعبتين: المدى 2–3، لا «لا شعب»");
+  const fresh = suggestSectionCount(-90, 40, []);
+  check(fresh.min === 1 && fresh.max === 3 && fresh.suggested === 1, "بلا تاريخ: من شعبةٍ إلى ما يستوعب الزيادة (90 ÷ 40 ← 3)");
+  check(suggestSectionCount(0, 40, hist).headline === "لا شعب", "والصفر يبقى «لا شعب» كما كان");
 }
 
 console.log(`\nSection planning import audit: ${passed} passed, ${failed} failed`);
