@@ -96,12 +96,14 @@ r = readRemainingReport(nothing, catalogue, "0101");
 a = assessRemainingImport(r, context);
 check(r.rows.length === 3 && a.read === 0 && Boolean(a.reject?.includes("لأي مقرر")), `لا خانة مقروءة أصلاً: يُرفض — ${a.reject}`);
 
-/* ── رأس الكشف غير مقروء: تأكيدٌ صريح لا رفض ── */
+/* ── رأس الكشف غير مقروء: رفضٌ لا تأكيدٌ بنقرة — لا يُستورد إلا كشفٌ ثبت قسمه من ترويسته ── */
 /* كشفٌ يطبع الرمز بثلاث خانات: الرأس وحده دليل القسم. */
 const threeDigits = clear.map(cells => cells.map(cell => /^0101\d{3}$/.test(cell.text) ? { ...cell, text: cell.text.slice(4) } : cell));
 r = readRemainingReport(threeDigits, catalogue, "0101");
 a = assessRemainingImport(r, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: "" });
-check(a.reject === null && a.read === 4 && a.needsDepartmentConfirmation, "رأسٌ بلا رمز القسم ولا اسمه: لا يُرفض، ويُطلب من المستخدم تأكيد القسم");
+check(Boolean(a.reject?.includes("رمز القسم العلمي")) && !a.needsDepartmentConfirmation, "رأسٌ بلا رمز القسم: يُرفض (لا تأكيد بنقرة) — الأرقام الثلاثية تتكرر بين الأقسام");
+a = assessRemainingImport(r, { departmentCode: "", departmentName: "أصول التربية", headerText: "" });
+check(Boolean(a.reject?.includes("بلا رمزٍ مسجّل")), "قسمٌ بلا رمزٍ في النظام: يُرفض — لا يُطابَق الكشف بأرقام المقررات الثلاثية وحدها");
 a = assessRemainingImport(r, context);
 check(!a.needsDepartmentConfirmation, "والرأس المقروء: لا تأكيد");
 const garbled = "مر القسم العلصر, | !0010 dl نيه الإصسلاميةه\nالفصل الدراسي : 202420";
@@ -231,6 +233,15 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   const boys = assessRemainingImport(reading, { departmentCode: "0109", departmentName: "تكنولوجيا التعليم", headerText: real.headerText,
     branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
   check(boys.reject === null, "ويُقبل في فرعه (011 بنين)");
+  const jahra = assessRemainingImport(reading, { departmentCode: "0109", headerText: real.headerText, branch: { code: "012", collegeName: "كلية التربية الأساسية - بنات - الجهراء" } });
+  check(Boolean(jahra.reject) && /الجهراء/.test(jahra.reject!), "ويُرفض في «الجهراء»");
+  /* قسمٌ آخر في الفرع نفسه (أصول التربية 0120): رمز القسم في الترويسة 0109 — يُرفض ولو طابقت أرقامٌ ثلاثية مقرراته. */
+  const foundations = [["106", 1], ["107", 2], ["105", 3], ["112", 4]].map(([code, id]) => ({ id: Number(id), code: String(code) }));
+  const otherDept = readRemainingReport(real.pages, foundations, "0120");
+  const otherJudged = assessRemainingImport(otherDept, { departmentCode: "0120", departmentName: "أصول التربية", headerText: real.headerText, branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
+  check(Boolean(otherJudged.reject) && /قسمٍ آخر/.test(otherJudged.reject!) && /0109/.test(otherJudged.reject!), "كشف تكنولوجيا التعليم (0109) يُرفض في «أصول التربية» (0120) برسالةٍ تسمّي القسمين");
+  const noCode = assessRemainingImport(readRemainingReport(real.pages, foundations, ""), { departmentCode: "", departmentName: "أصول التربية", headerText: real.headerText, branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
+  check(Boolean(noCode.reject) && /بلا رمزٍ مسجّل/.test(noCode.reject!), "وقسمٌ بلا رمزٍ في النظام يُرفض — كان يطابق الأرقام الثلاثية (105، 106…) ويكتفي بتأكيدٍ بنقرة");
   check(readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.code === "012" && readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.gender === "girls"
     && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.gender === "boys"
     && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.code === "011"

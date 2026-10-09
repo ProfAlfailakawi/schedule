@@ -616,13 +616,13 @@ export interface ImportAssessment {
   read: number;
   /** ملاحظاتٌ صفراء تُعرض ولا تمنع (مثل سطرٍ لم يُقرأ رقم مقرره). */
   notes: string[];
-  /** لم يُقرأ في رأس الكشف رمز القسم ولا اسمه: على المستخدم أن يؤكد أن الكشف لقسمه قبل التطبيق (ليس رفضاً). */
+  /** أُبقي للتوافق، وهو false دائماً: كشفٌ لم يُتحقق من قسمه وفرعه من ترويسته يُرفض، لا يُؤكَّد بنقرة. */
   needsDepartmentConfirmation: boolean;
 }
 
 /**
  * الحكم على قراءة الكشف قبل أن يُعرض أو يُطبَّق — دالةٌ صافية يستعملها الخادم والاختبار.
- * يُرفض الكشف كله في أربع حالات فقط: قسمٌ آخر، لا مقررات للقسم، لا عمود «الذين لم يسجلوا»،
+ * يُرفض الكشف كله إن لم يثبت من ترويسته فرعُه وقسمُه المختاران (أو كانا آخرَين)، أو لا مقررات للقسم، أو لا عمود «الذين لم يسجلوا»،
  * ولا خانةً واحدة مقروءة. غير ذلك يُعرض ما قُرئ، وما لم يُقرأ يظهر لصاحبه أصفر فارغاً.
  */
 export function assessRemainingImport(
@@ -638,18 +638,43 @@ export function assessRemainingImport(
   const selected = context.departmentName ? `«${context.departmentName}» (${context.departmentCode})` : context.departmentCode;
   const base = { detectedDepartment: detected, unread: [] as number[], noSections: [] as number[], read: 0, notes: [] as string[], needsDepartmentConfirmation: false };
   const confirmation = confirmReportDepartment(context.headerText || "", context.departmentCode, context.departmentName, detected);
-  /* الفرع قبل كل شيء: كشف «بنين» لا يُستورد في «بنات» ولو تطابق القسم (رمز القسم 0109 واحدٌ في الفرعين). */
-  const printedBranch = readReportHeader(context.headerText || "").branch;
-  const chosenGender = /بنين/.test(context.branch?.collegeName || "") ? "boys" : /بنات/.test(context.branch?.collegeName || "") ? "girls" : undefined;
-  const chosenCode = String(context.branch?.code || "");
-  const byCode = Boolean(printedBranch?.code && chosenCode && printedBranch.code !== chosenCode);
-  const byGender = Boolean(printedBranch?.gender && chosenGender && printedBranch.gender !== chosenGender);
-  if (byCode || byGender) {
-    const label = (gender?: string, code?: string) => [gender === "boys" ? "بنين" : gender === "girls" ? "بنات" : "", code ? `(${code})` : ""].filter(Boolean).join(" ");
-    return { ...base, reject: `الكشف لفرع ${label(printedBranch?.gender, printedBranch?.code) || "آخر"}، والمختار في النظام «${context.branch?.collegeName || label(chosenGender, chosenCode)}». اختر الفرع الصحيح أو ارفع كشف هذا الفرع — لم يُستورد شيء.` };
+  /* ── لا يُستورد إلا كشف الكلية والفرع والقسم المختار، كاستيراد الجدول تماماً ──
+     كل شرطٍ يُثبَت إيجاباً من ترويسة الكشف؛ ما لا يُقرأ يُرفض ولا يُستعاض عنه بتأكيدٍ بنقرة،
+     فكشفٌ قُبل في قسمٍ آخر يكتب أرقامه في مقرراتٍ ليست له. */
+  const rejectWith = (reason: string): ImportAssessment => ({ ...base, reject: `${reason} — لم يُستورد شيء.` });
+  if (!context.departmentCode) {
+    return rejectWith(`القسم المختار ${context.departmentName ? `«${context.departmentName}» ` : ""}بلا رمزٍ مسجّل في النظام، فلا يمكن التحقق أن الكشف له. أضف رمز القسم في «الأقسام» كما في نظام العمادة ثم أعد الاستيراد`);
   }
-  if (detected && context.departmentCode && detected !== context.departmentCode && !confirmation.byName) {
-    return { ...base, reject: `الكشف لقسمٍ آخر: القسم المختار في النظام ${selected}، والقسم في الكشف ${detected}. اختر القسم الصحيح أو ارفع كشف قسمك — لم يُستورد شيء.` };
+
+  /* 1) الفرع: كشف «بنين» لا يُستورد في «بنات» ولو تطابق القسم (رمز القسم 0109 واحدٌ في الفروع). */
+  const printedBranch = readReportHeader(context.headerText || "").branch;
+  const collegeName = fold(context.branch?.collegeName || "");
+  const chosenGender = /بنين/.test(collegeName) ? "boys" : /بنات/.test(collegeName) ? "girls" : undefined;
+  const chosenCode = String(context.branch?.code || "");
+  const label = (gender?: string, code?: string) => [gender === "boys" ? "بنين" : gender === "girls" ? "بنات" : "", code ? `(${code})` : ""].filter(Boolean).join(" ");
+  const chosenLabel = `«${context.branch?.collegeName || label(chosenGender, chosenCode)}»`;
+  if (chosenCode || chosenGender) {
+    if (!printedBranch?.code && !printedBranch?.gender) {
+      return rejectWith(`لم يُقرأ «الفرع» في ترويسة الكشف، فلا يمكن التحقق أنه لفرع ${chosenLabel}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`);
+    }
+    const byCode = Boolean(printedBranch.code && chosenCode && printedBranch.code !== chosenCode);
+    const byGender = Boolean(printedBranch.gender && chosenGender && printedBranch.gender !== chosenGender);
+    /* الجهراء والفحيحيل تشارك «بنات» في الجنس: يُطابق اسم الموقع في الطرفين. */
+    const site = (text: string) => /الجهراء/.test(text) ? "الجهراء" : /الفحيحيل/.test(text) ? "الفحيحيل" : "";
+    const header = fold(context.headerText || "");
+    const bySite = site(collegeName) !== site(header) && Boolean(site(collegeName) || site(header));
+    if (byCode || byGender || bySite) {
+      const printedLabel = [label(printedBranch.gender, printedBranch.code), site(header)].filter(Boolean).join(" ") || "آخر";
+      return rejectWith(`الكشف لفرع ${printedLabel}، والمختار في النظام ${chosenLabel}. اختر الفرع الصحيح أو ارفع كشف هذا الفرع`);
+    }
+  }
+
+  /* 2) القسم: رمزه في الترويسة («رمز القسم العلمي 0109») يجب أن يكون رمز القسم المختار نفسه. */
+  if (detected && detected !== context.departmentCode) {
+    return rejectWith(`الكشف لقسمٍ آخر: القسم المختار في النظام ${selected}، والقسم في الكشف ${detected}. اختر القسم الصحيح أو ارفع كشف قسمك`);
+  }
+  if (!confirmation.byCode) {
+    return rejectWith(`لم يُقرأ «رمز القسم العلمي» في ترويسة الكشف، فلا يمكن التحقق أنه لقسم ${selected}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`);
   }
   if (!reading.rows.length) {
     return { ...base, reject: reading.foreign.length
@@ -667,7 +692,7 @@ export function assessRemainingImport(
     return { ...base, unread, noSections, read, reject: `لم تُقرأ خانة «الذين لم يسجلوا» لأي مقرر — لا شيء يُعرض للمراجعة. ارفع صورةً أوضح (مستقيمة، بإضاءةٍ جيدة، وتظهر الأعمدة كاملة) أو الكشف PDF.` };
   }
   const notes = (reading.gaps || []).map(gap => `سطرٌ لم يُقرأ رقم مقرره بين المقرر ${gap.after} والمقرر ${gap.before} (الصفحة ${gap.page}) — قد يكون مقرراً من مقرراتك؛ أضف قيمته يدوياً إن وُجد.`);
-  return { ...base, unread, noSections, read, notes, needsDepartmentConfirmation: !confirmation.confirmed, reject: null };
+  return { ...base, unread, noSections, read, notes, reject: null };
 }
 
 export interface RemainingApplyPlan {
