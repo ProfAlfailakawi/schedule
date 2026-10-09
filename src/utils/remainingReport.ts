@@ -787,10 +787,28 @@ export function imageOrientationRefusal(bytes: Uint8Array, fileName = ""): strin
  */
 export function readReportHeader(text: string): { department?: string; season?: "first" | "second" | "summer"; years?: [number, number]; branch?: { code?: string; gender?: "boys" | "girls" } } {
   const plain = fold(text).replace(/\s+/g, " ");
-  /* «الفرع : 011 كليه التربيه الاساسيه بنين» — رمز الفرع ثلاث خانات، والجنس من آخر السطر. */
-  const branchLine = plain.match(/الفرع\s*:?\s*([^]{0,60})/)?.[1] || "";
-  const branchCode = branchLine.match(/^(\d{3})(?!\d)/)?.[1];
-  const branchGender = /بنين/.test(branchLine) ? "boys" as const : /بنات/.test(branchLine) ? "girls" as const : undefined;
+  /* «الفرع : 011 كليه التربيه الاساسيه بنين» — رمز الفرع ثلاث خانات، والجنس من السطر نفسه.
+     والقراءة الضوئية قد تخرجه بالترتيب البصري من اليمين: «012 كلية التربية الأساسية بنات : الفرع». */
+  let branchCode: string | undefined, branchText = "";
+  for (const raw of fold(text).split(/\n/)) {
+    const line = raw.replace(/\s+/g, " ").trim();
+    if (!/الفرع/.test(line)) continue;
+    const forward = line.match(/الفرع\s*[:：-]?\s*(\d{3})(?!\d)\s*([^]{0,60})/);
+    const reversed = line.match(/(?:^|\s)(\d{3})(?!\d)\s*([^\d]{0,60}?)\s*[:：-]?\s*الفرع/);
+    const hit = forward || reversed;
+    /* سطرٌ فيه «الفرع :» وحده (والرمز في السطر التالي): لا يُحسم به، ويُكمل البحث في النص الممدود. */
+    if (!hit && !/بنين|بنات/.test(line)) continue;
+    branchCode = hit?.[1];
+    branchText = hit ? hit[2] : line;
+    break;
+  }
+  if (!branchCode && !branchText) {
+    const forward = plain.match(/الفرع\s*[:：-]?\s*(\d{3})(?!\d)\s*([^]{0,60})/);
+    const reversed = plain.match(/(?:^|\s)(\d{3})(?!\d)\s*([^\d]{0,60}?)\s*[:：-]?\s*الفرع/);
+    const hit = forward || reversed;
+    branchCode = hit?.[1]; branchText = hit?.[2] || "";
+  }
+  const branchGender = /بنين/.test(branchText) ? "boys" as const : /بنات/.test(branchText) ? "girls" as const : undefined;
   const branch = branchCode || branchGender ? { ...(branchCode ? { code: branchCode } : {}), ...(branchGender ? { gender: branchGender } : {}) } : undefined;
   const department = plain.match(/القسم العلمي\s*:?\s*(\d{4})(?!\d)/)?.[1];
   const named = plain.match(/(الاول|الثاني|الصيفي)\s*(\d{4})\s*[-/]\s*(\d{4})/);
