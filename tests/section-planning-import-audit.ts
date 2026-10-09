@@ -80,8 +80,8 @@ check(plan.manual === 0 && !("3" in plan.next) && plan.untouched.includes(3), "�
 plan = planRemainingApply(r, r.column!, { "3": "" }, { "3": "40", "5": "9", "1": "7" });
 check(plan.next["3"] === 40 && plan.next["5"] === 9 && plan.next["1"] === 1390 && plan.untouched.includes(3),
   "القيمة المحفوظة سابقاً لخانةٍ لم تُقرأ تبقى كما هي، والمقرر الغائب من الكشف لا يُمسّ، والمقروء يحلّ محل القديم");
-check(manualRemainingValue("٣٥") === 35 && manualRemainingValue("-2") === -2 && manualRemainingValue("1.5") === undefined && manualRemainingValue("") === undefined,
-  "قيمة المستخدم: أرقامٌ هندية وسالبٌ كما في الكشف تُقبل، والكسر والفراغ لا");
+check(manualRemainingValue("٣٥") === 35 && manualRemainingValue("-2") === 0 && manualRemainingValue("1.5") === undefined && manualRemainingValue("") === undefined,
+  "قيمة المستخدم: أرقامٌ هندية تُقبل، والسالب صفرٌ (لا متأخرين)، والكسر والفراغ لا");
 
 /* ── قراءةٌ رديئة: أكثر الخانات فارغة أو ضعيفة ← يُقبل ما قُرئ، وكل ما سواه أصفر ── */
 const poor = [page(0, [["0101102", [1390, 1336, 0, 1336, 19, null]], ["0101201", [376, 256, 6, 250, 9, 370], 20], ["0101254", [58, 210, 10, 200, 3, null]], ["0101310", [70, 80, 70, 10, 1, 0]]])];
@@ -214,8 +214,8 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   check(judged.reject === null && judged.unread.length === 0 && judged.read === 35 && judged.noSections.length === 12,
     "الكشف الحقيقي: كل مقررٍ له شعب يُقرأ (35)، لا خانة «لم تُقرأ»، و12 بلا شعب");
   check(reading.columns[reading.column!]?.kind === "unregistered", "عمود التخطيط في الكشف الحقيقي: «اعداد الذين لم يسجلوا»");
-  check(values[id("105")] === -89 && values[id("150")] === -23,
-    "«الذين لم يسجلوا» السالب يُقرأ بإشارته (105: −89 = 6 − 95، 150: −23 = 223 − 246)");
+  check(values[id("105")] === 0 && values[id("150")] === 0,
+    "لا متبقٍّ سالب: «الذين لم يسجلوا» السالب في الكشف (105: −89 = 6 − 95، 150: −23 = 223 − 246) يُقرأ صفراً — لا متأخرين");
   check(values[id("112")] === 175 && values[id("113")] === 528 && values[id("125")] === 268 && values[id("212")] === 1315
     && values[id("217")] === 334 && values[id("499")] === 3 && values[id("468")] === 0,
     "والموجب والصفر كما طُبعا (113: 528، 125: 268، 212: 1315، 468: 0) — لا من «المقاعد المتبقية» (−6، −22، 2، 15)");
@@ -224,16 +224,17 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   const vacant = vacantValues(reading);
   check(vacant[id("105")] === 45 && vacant[id("112")] === 39 && vacant[id("113")] === -6 && vacant[id("125")] === -22 && !(id("106") in vacant),
     "الشاغر («المقاعد المتبقية») يُحفظ معه للإنذار المبكر: 105 ← 45، 112 ← 39، 113 ← ‎-6‎، وما لا شعب له بلا شاغر");
-  check(plan.total === 35 && plan.next[id("105")] === -89 && plan.next[id("125")] === 268 && plan.untouched.length === 12, "التطبيق يكتب السالب كما هو، ولا يمسّ ما لا شعب له");
+  check(plan.total === 35 && plan.next[id("105")] === 0 && plan.next[id("125")] === 268 && plan.untouched.length === 12
+    && Object.values(plan.next).every(value => value >= 0), "التطبيق لا يكتب سالباً (105 ← 0)، ولا يمسّ ما لا شعب له");
 
   /* صورةٌ تُقرأ بالأرقام وحدها تُسقط الإشارة: يعيدها حساب الكشف حين يطابق المقدار تماماً. */
   const scanned = readRemainingReport([page(0, [["0101102", [6, 140, 95, 45, 2, 89]], ["0101201", [6, 140, 95, 45, 2, 88]], ["0101254", [6, 140, 95, 45, 2, 0]], ["0101310", [526, 390, 351, 39, 5, 175]], ["0101120", [526, 390, 351, 39, 5, 157]]])], catalogue, "0101");
   const sv = remainingValues(scanned, scanned.column!);
-  check(sv["1"] === -89 && !("3" in sv) && sv["4"] === 0 && sv["6"] === 175 && !("2" in sv),
-    "إشارةٌ سقطت (89 والحساب 6 − 95 = −89) تُعاد؛ ومقدارٌ مخالف (88، و157 بدل 175) يُوقف للمراجعة؛ وصفرٌ مقصوص مقبول");
+  check(sv["1"] === 0 && !("3" in sv) && sv["4"] === 0 && sv["6"] === 175 && !("2" in sv),
+    "إشارةٌ سقطت (89 والحساب 6 − 95 = −89) لا تُقرأ 89 بل صفراً (لا متأخرين)؛ ومقدارٌ مخالف (88، و157 بدل 175) يُوقف للمراجعة؛ وصفرٌ مقصوص مقبول");
   check(scanned.rows.find(row => row.courseId === 3)?.doubt?.derived === -89 && scanned.rows.find(row => row.courseId === 2)?.doubt?.derived === 175,
     "والمخالف يُذكر بحساب الكشف (لم يجتازوا − المسجلين)، لا بالسعة − المسجلين");
-  check(manualRemainingValue("-6") === -6 && manualRemainingValue("−6") === -6, "قيمةٌ يدوية سالبة تُقبل كما يطبعها الكشف");
+  check(manualRemainingValue("-6") === 0 && manualRemainingValue("−6") === 0 && manualRemainingValue("6") === 6, "قيمةٌ يدوية سالبة تُحفظ صفراً — لا متبقٍّ سالب");
 
   /* الاقتراح: «لم يسجلوا» صفرٌ أو سالب = لا متأخرين — يُقترح المعتاد، لا «لا شعب» ولا زيادة. */
   const hist = [{ termName: "الفصل الأول 2025-2026", sections: 2 }, { termName: "الفصل الأول 2024-2025", sections: 2 }];

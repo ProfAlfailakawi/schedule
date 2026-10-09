@@ -495,6 +495,9 @@ export function readRemainingReport(
     if (derived < 0 && read === -derived) { row.values[column] = derived; continue; }
     if (read !== derived && !(derived < 0 && read === 0)) row.doubt = { read, derived };
   }
+  /* 6ب) لا متبقٍّ سالب: الكشف يطبع «الذين لم يسجلوا» سالباً حين يزيد المسجّلون على من لم
+     يجتازوا (طلبةٌ جدد) — ومعناه «لا متأخرين»، فيُقرأ صفراً. يُفحص بحساب الكشف أولاً (أعلاه). */
+  if (column != null) for (const row of [...rows, ...suspects]) if ((row.values[column] ?? 0) < 0) row.values[column] = 0;
   const seen = new Set([...rows, ...suspects].map(row => row.courseId));
   const suspectCodes = new Set(suspects.map(row => row.read));
   /* 7) سطرٌ ضاع رقم مقرره (القراءة الضوئية أسقطته) يترك فجوةً بين جارَيه بقدر
@@ -670,7 +673,8 @@ export interface RemainingApplyPlan {
 export function manualRemainingValue(raw: unknown): number | undefined {
   const text = normalize(String(raw ?? "")).trim().replace(/[−–]/g, "-");
   if (!/^-?\d{1,6}$/.test(text)) return undefined;
-  return Number(text) || 0;
+  /* لا متبقٍّ سالب: السالب «لا متأخرين» = صفر. */
+  return Math.max(0, Number(text) || 0);
 }
 
 /**

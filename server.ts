@@ -14426,7 +14426,8 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     department,
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
     /* «الذين لم يسجلوا» (المتبقي الإجمالي) وحده مدخلُ التخطيط؛ ما حُفظ بعمودٍ آخر («المقاعد المتبقية» أو بلا وسم) يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
-    remaining: stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : {},
+    /* لا متبقٍّ سالب (ما حُفظ سالباً قبل اعتماد الصفر يُعرض صفراً). */
+    remaining: stats?.remainingSource?.column === "unregistered" ? Object.fromEntries(Object.entries(stats.remaining || {}).map(([key, value]) => [key, Math.max(0, Number(value) || 0)])) : {},
     vacant: stats?.remainingSource?.column === "unregistered" ? stats.vacant || {} : {},
     remainingSource: stats?.remainingSource?.column === "unregistered" ? stats.remainingSource : null,
     legacyRemaining: stats?.remainingSource?.column !== "unregistered" && Object.keys(stats?.remaining || {}).length

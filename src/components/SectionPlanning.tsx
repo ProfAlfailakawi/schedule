@@ -115,7 +115,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   latest.current = { remaining, chosen, source, vacant };
   const body = useCallback(() => JSON.stringify({
     collegeId, sectionId, termId,
-    remaining: asNumbers(latest.current.remaining, -100000), accepted: asNumbers(latest.current.chosen), remainingSource: latest.current.source, vacant: latest.current.vacant,
+    remaining: asNumbers(latest.current.remaining, 0), accepted: asNumbers(latest.current.chosen), remainingSource: latest.current.source, vacant: latest.current.vacant,
   }), [collegeId, sectionId, termId]);
   const persist = useCallback(async () => {
     if (timer.current) { window.clearTimeout(timer.current); timer.current = null; }
@@ -385,7 +385,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             <div className={`section-plan-row${outside ? " is-outside" : ""}`} role="row">
               <span role="cell" className="section-plan-course"><b dir="ltr">{course.code}</b> {course.name}</span>
               <span role="cell" className="section-plan-left" data-label="المتبقي (لم يسجلوا)">
-                <input type="number" min={-100000} max={100000} inputMode="numeric" value={remaining[key] ?? ""} placeholder="—" aria-label={`المتبقي (لم يسجلوا) في ${course.name}`}
+                <input type="number" min={0} max={100000} inputMode="numeric" value={remaining[key] ?? ""} placeholder="—" aria-label={`المتبقي (لم يسجلوا) في ${course.name}`}
                   title="من كشف عمادة التسجيل؛ يُصحَّح هنا إن أخطأت القراءة"
                   onChange={e => {
                     /* رقمٌ يُكتب بلا كشف: يُوسم مصدره «إدخال يدوي» بعمود التخطيط، وإلا لم يُعَد بعد التحميل. */
@@ -410,7 +410,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             {openWhy[key] ? (
               <div className="section-plan-why" role="row">
                 <dl role="cell">
-                  <div><dt>المتبقي (لم يسجلوا)</dt><dd>{remaining[key] !== undefined && remaining[key] !== "" ? (Number(remaining[key]) < 0 ? <><bdi className="section-plan-signed">{remaining[key]}</bdi> — لا متأخرين: المسجّلون أكثر ممن لم يجتازوا بـ{-Number(remaining[key])}</> : remaining[key]) : "لم تُستورد"}</dd></div>
+                  <div><dt>المتبقي (لم يسجلوا)</dt><dd>{remaining[key] !== undefined && remaining[key] !== "" ? (Number(remaining[key]) <= 0 ? <>0 — لا متأخرين على المقرر</> : remaining[key]) : "لم تُستورد"}</dd></div>
                   <div><dt>سعة الشعبة</dt><dd>{course.capacity || "—"}{course.capacity && Number(remaining[key]) > 0 ? ` · تكفي المقاعدَ ${countOf(Math.max(1, Math.ceil(Number(remaining[key]) / course.capacity)), AR.section)}` : ""}</dd></div>
                   <div><dt>آخر الفصول</dt><dd>{lastTerms(history)}{lineage ? ` · من رقمه السابق ${lineage}` : ""}</dd></div>
                 </dl>
@@ -505,12 +505,12 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                               onClick={() => setConfirmedScan(current => confirmed ? current.filter(id => id !== row.courseId) : [...current, row.courseId])}>
                               {confirmed ? "أُكِّد — تراجع" : "يطابق الورقة"}
                             </button>
-                            <input type="number" min={-100000} max={100000} inputMode="numeric" value={manual[key] ?? ""} placeholder="تصحيح" aria-label={`صحّح «المتبقي» في ${course?.name || row.printed} إن خالف الورقة`}
+                            <input type="number" min={0} max={100000} inputMode="numeric" value={manual[key] ?? ""} placeholder="تصحيح" aria-label={`صحّح «المتبقي» في ${course?.name || row.printed} إن خالف الورقة`}
                               onChange={e => setManual(currentManual => ({ ...currentManual, [key]: e.target.value }))} />
                           </td>
                         ) : review ? (
                           <td className={typed !== undefined ? "import-cell-manual" : "import-cell-review"}>
-                            <input type="number" min={-100000} max={100000} inputMode="numeric" value={manual[key] ?? ""} placeholder="—" aria-label={`المتبقي (لم يسجلوا) في ${course?.name || row.printed} (اكتبها بيدك)`}
+                            <input type="number" min={0} max={100000} inputMode="numeric" value={manual[key] ?? ""} placeholder="—" aria-label={`المتبقي (لم يسجلوا) في ${course?.name || row.printed} (اكتبها بيدك)`}
                               onChange={e => setManual(currentManual => ({ ...currentManual, [key]: e.target.value }))} />
                             <br />
                             {typed !== undefined
