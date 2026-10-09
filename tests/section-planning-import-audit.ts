@@ -255,6 +255,11 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   const noCode = assessRemainingImport(readRemainingReport(real.pages, foundations, ""), { departmentCode: "", departmentName: "أصول التربية", headerText: real.headerText, branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
   check(Boolean(noCode.reject) && /بلا رمزٍ مسجّل/.test(noCode.reject!), "وقسمٌ بلا رمزٍ في النظام يُرفض — كان يطابق الأرقام الثلاثية (105، 106…) ويكتفي بتأكيدٍ بنقرة");
   check(noCode.rejectKind === "noCode", "وقسمٌ بلا رمز: نوعه «noCode» لأيقونةٍ وكلمتين");
+  /* رمز الفرع وحده مختلف (011 في الترويسة، والجنس قُرئ «بنات»): البطاقتان تذكران الرمز، لا «بنات ≠ بنات». */
+  const codeOnly = assessRemainingImport(reading, { departmentCode: "0109", headerText: "الفرع : 011 كليه التربيه الاساسيه بنات\nرمز القسم العلمي 0109 تكنولوجيا التعليم",
+    branch: { code: "012", collegeName: "كلية التربية الأساسية - بنات" } });
+  check(codeOnly.mismatch?.fields.join(",") === "branch" && codeOnly.mismatch.sheet.branch === "بنات (011)" && codeOnly.mismatch.chosen.branch === "بنات (012)",
+    "ورمز الفرع وحده مختلف: «بنات (011)» ≠ «بنات (012)»");
   check(readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.code === "012" && readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.gender === "girls"
     && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.gender === "boys"
     && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.code === "011"

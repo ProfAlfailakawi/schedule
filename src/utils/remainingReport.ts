@@ -684,10 +684,14 @@ export function assessRemainingImport(
     ].filter(Boolean).join("، ");
     const chosen = [departmentDiffers ? `قسم ${selected}` : "", branchDiffers ? chosenLabel : ""].filter(Boolean).join(" في ");
     const what = departmentDiffers && branchDiffers ? "القسم والفرع الصحيحين" : departmentDiffers ? "القسم الصحيح" : "الفرع الصحيح";
-    const chosenBranch = [label(chosenGender), site(collegeName)].filter(Boolean).join(" · ") || context.branch?.collegeName || "";
+    /* الجنس والموقع يكفيان؛ والرمز يُذكر حين يكون هو وحده الفارق («بنات (011)» ≠ «بنات (012)»)، لا «بنات ≠ بنات». */
+    const branchText = (gender?: string, siteName = "", code?: string) => [label(gender, code), siteName].filter(Boolean).join(" · ");
+    const codesOnly = Boolean(printedBranch?.code && chosenCode && printedBranch.code !== chosenCode)
+      && branchText(printedBranch?.gender, site(header)) === branchText(chosenGender, site(collegeName));
+    const chosenBranch = branchText(chosenGender, site(collegeName), codesOnly ? chosenCode : undefined) || context.branch?.collegeName || "";
     const mismatch: RejectMismatch = {
       fields: [...(departmentDiffers ? ["department" as const] : []), ...(branchDiffers ? ["branch" as const] : [])],
-      sheet: { department: printedName || undefined, departmentCode: detected, branch: [label(printedBranch?.gender), site(header)].filter(Boolean).join(" · ") || printedBranch?.code },
+      sheet: { department: printedName || undefined, departmentCode: detected, branch: branchText(printedBranch?.gender, site(header), codesOnly ? printedBranch?.code : undefined) || printedBranch?.code },
       chosen: { department: String(context.departmentName || "").replace(/^قسم\s+/, "") || undefined, departmentCode: context.departmentCode, branch: chosenBranch },
     };
     return rejectWith(`الكشف ليس لما اخترت: هو كشف ${inSheet}، والمختار في النظام ${chosen}. اختر ${what} أو ارفع الكشف الصحيح`, "mismatch", { mismatch });
