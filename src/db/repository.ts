@@ -5304,11 +5304,11 @@ export const Repository = {
     const previous = input.counts === undefined ? await Repository.getRegistrationStats(collegeId, sectionId, termId) : null;
     const source = input.remainingSource && String(input.remainingSource.fileName || "").trim()
       ? { fileName: String(input.remainingSource.fileName).slice(0, 200), importedAt: String(input.remainingSource.importedAt || new Date().toISOString()).slice(0, 40),
-          ...(input.remainingSource.column === "seats" ? { column: "seats" as const } : {}) }
+          ...(input.remainingSource.column === "unregistered" || input.remainingSource.column === "seats" ? { column: input.remainingSource.column as "unregistered" | "seats" } : {}) }
       : undefined;
     const row: RegistrationStats = {
       id: scopeKey, scopeKey, collegeId, sectionId, termId,
-      counts: clean(input.counts ?? previous?.counts, 100000), remaining: clean(input.remaining, 100000, -100000) /* «المقاعد المتبقية» سالبةٌ إن زاد المسجّلون على السعة */, accepted: clean(input.accepted, 500),
+      counts: clean(input.counts ?? previous?.counts, 100000), remaining: clean(input.remaining, 100000, -100000) /* «الذين لم يسجلوا» سالبٌ إن زاد المسجّلون على من لم يجتازوا */, accepted: clean(input.accepted, 500),
       ...(source ? { remainingSource: source } : {}),
       updatedAt: new Date().toISOString(), updatedBy: String(updatedBy || "").slice(0, 120),
     };

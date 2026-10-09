@@ -47,10 +47,10 @@ async function behaviour() {
     const sections = await Repository.getSections();
     const [a, b] = sections.slice(0, 2);
     const ca = Number(a.AdCollegeId), sa = Number(a.AdSectionId), cb = Number(b.AdCollegeId), sb = Number(b.AdSectionId);
-    await Repository.saveRegistrationStats(ca, sa, 1, { remaining: { "1": 55 }, accepted: {}, remainingSource: { fileName: "x", importedAt: "", column: "seats" } }, "t");
+    await Repository.saveRegistrationStats(ca, sa, 1, { remaining: { "1": 55 }, accepted: {}, remainingSource: { fileName: "x", importedAt: "", column: "unregistered" } }, "t");
     const own = await Repository.getRegistrationStats(ca, sa, 1);
     const other = await Repository.getRegistrationStats(cb, sb, 1);
-    check(own?.remaining?.["1"] === 55, "المتبقي المحفوظ يُقرأ لنطاقه");
+    check(own?.remaining?.["1"] === 55 && own?.remainingSource?.column === "unregistered", "المتبقي المحفوظ يُقرأ لنطاقه، بوسم عموده «unregistered»");
     check(!other?.remaining?.["1"], "ولا يظهر في قسمٍ آخر");
     const rows = (await Repository.getSchedulesByScope({ collegeId: ca, sectionId: sa, termId: 1 })).filter(r => Number(r.AdSectionId) === sa);
     check(rows.every(r => Number(r.AdSectionId) === sa), "صفوف النطاق لقسمه وحده");
@@ -61,17 +61,22 @@ const server = fs.readFileSync("server.ts", "utf8");
 const route = server.slice(server.indexOf('app.get("/api/forecast/term"'), server.indexOf('app.put("/api/registration-stats"'));
 check(/requirePermission\(7\)/.test(route) && /isScopeAllowed\(req, collegeId, sectionId\)/.test(route), "المسار: صلاحية + isScopeAllowed");
 check(/readSchedulesForRequest\(/.test(route) && /AdSectionId\) === sectionId/.test(route), "المسار: صفوف القارئ وقسمٌ واحد");
-check(/column === "seats"/.test(route), "المسار: عمود «المقاعد المتبقية» وحده طلب");
+check(/column === "unregistered"/.test(route) && !/column === "seats"/.test(route), "المسار: عمود «اعداد الذين لم يسجلوا» وحده طلب");
 const ui = fs.readFileSync("src/components/TermForecast.tsx", "utf8");
 check(/createScopeGuard/.test(ui) && /guard\.accepts\(token\)/.test(ui), "الواجهة: حارس النطاق يرمي القراءة البائتة");
 check(!/\d+ (شعب|مقرر|أستاذ)/.test(ui + fs.readFileSync("src/utils/termForecast.ts", "utf8").replace(/\/\*[\s\S]*?\*\//, "")), "لا «رقم اسم» مكتوبٌ باليد");
 
 behaviour().then(() => {
-  /* متبقٍّ سالب (فوق السعة) لا يُسقط ولا يُعدّ صفراً. */
+  /* «الذين لم يسجلوا» سالب (المسجّلون أكثر ممن لم يجتازوا) = لا متأخرين: ليس طلباً، ولا خطر «فوق السعة». */
 {
-  const over = computeTermForecast({ ...base, remaining: { "1": -22 }, rows: [] });
-  check(over.status === "ready" && over.highlights.some(r => r.kind === "overflow" && r.text.includes("فوق السعة") && r.text.includes("22"))
-    && over.coverage.percent === null, "متبقٍّ −22: يُذكر «فوق السعة بـ22» ولا يدخل نسبة التغطية");
+  const negative = computeTermForecast({ ...base, remaining: { "1": -22 }, rows: [] });
+  const all = [...negative.highlights, ...negative.more];
+  check(negative.status === "ready" && !all.some(r => r.kind === "overflow" || r.kind === "shortage" || /فوق السعة/.test(r.text))
+    && negative.coverage.totalSeats === 0 && negative.coverage.percent === null, "لم يسجلوا −22: ليس طلباً — لا نقص ولا خطر «فوق السعة»، ولا يدخل نسبة التغطية");
+  const mixed = computeTermForecast({ ...base, remaining: { "1": -22, "2": 40 }, rows: [row(2, "1", 8)] });
+  check(mixed.coverage.totalSeats === 40 && mixed.coverage.coveredSeats === 40 && mixed.coverage.percent === 100
+    && ![...mixed.highlights, ...mixed.more].some(r => r.kind === "overflow" || r.kind === "shortage"),
+    "وبجانب مقررٍ موجب (40 بشعبة 40): التغطية 100٪ منه وحده، والسالب لا يُعدّ مقاعد سالبة");
 }
 console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

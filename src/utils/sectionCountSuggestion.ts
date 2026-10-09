@@ -5,7 +5,7 @@
  * وقاعات لثلاثمئة شعبة؟». فالذي يقود الاقتراح ما فتحه القسم فعلاً — فلا تُفتح
  * الشعب عشوائياً.
  *
- * والرقمُ الداخل «المقاعد المتبقية» من كشف عمادة التسجيل (عمودها وحده). هو وعاءُ من يحتاجه، لا عددُ من سيسجّله هذا الفصل — فلا يُقسم على
+ * والرقمُ الداخل «اعداد الذين لم يسجلوا» من كشف عمادة التسجيل (عمودها وحده) — المتبقي الإجمالي. هو وعاءُ من يحتاجه، لا عددُ من سيسجّله هذا الفصل — فلا يُقسم على
  * السعة ليصير عدد شعب (يكون دائماً أكبر مما يُفتح، فيميل الاقتراح إلى أقصاه في
  * كل مقرر). بل:
  *
@@ -22,8 +22,8 @@
  *   4) مقررٌ لم يُفتح ← مدىً من شعبةٍ واحدة إلى ما يملؤه المتبقي، مسقوفاً
  *      بـ NO_HISTORY_MAX، ويُبدأ بشعبة.
  *   5) مجموع المختار يُقارن بما شغّله القسم في الفصول المماثلة (departmentLoad).
- *   6) متبقٍّ سالب (الكشف يطبعه حين يزيد المسجّلون على السعة، ‎-6‎) ليس «لا متبقي»:
- *      الشعب ممتلئة، فلا ينزل الاقتراح عن المعتاد ويتّسع لما يستوعب الزيادة.
+ *   6) متبقٍّ صفرٌ أو سالب (الكشف يطبعه سالباً حين يزيد المسجّلون على من لم
+ *      يجتازوا — طلبةٌ جدد) = لا متأخرين: يُقترح المعتاد، لا «لا شعب» ولا زيادة.
  *
  * لا يُكتب شيءٌ في الجدول: الاقتراح يُختار منه أو يُترك.
  */
@@ -115,33 +115,22 @@ export function suggestSectionCount(
   capacity: number | null | undefined,
   history: readonly SimilarTermHistory[],
 ): SectionSuggestion {
-  const pool = known(remaining) ? Math.floor(Number(remaining)) : null;
+  /* بإشارته: «الذين لم يسجلوا» السالب قيمةٌ مستوردة (لا متأخرين)، لا «لم يُستورد». */
+  const pool = remaining != null && Number.isFinite(Number(remaining)) ? Math.floor(Number(remaining)) : null;
   const cap = Number(capacity) > 0 ? Math.floor(Number(capacity)) : 0;
   const base = historicalBaseline(history);
   const backlog = remainingBacklog(pool, history) || undefined;
   const result = (min: number, max: number, suggested: number, basis: SectionSuggestion["basis"], reason: string): SectionSuggestion =>
     ({ suggested, min, max, basis, reason, headline: rangeLabel(min, max), baseline: base?.sections, ...(backlog ? { backlog } : {}) });
 
-  /* المقاعد المتبقية سالبة: المسجّلون زادوا على السعة — الشعب ممتلئة لا فارغة.
-     لا تنزل عن المعتاد، ويُضاف ما يستوعب الزيادة داخل النطاق الواقعي نفسه. */
-  const over = remaining != null && Number.isFinite(Number(remaining)) && Number(remaining) < 0 ? Math.ceil(-Number(remaining)) : 0;
-  if (over) {
-    const overText = `المسجّلون زادوا على السعة بـ${countOf(over, AR.student)} (المقاعد المتبقية −${over})`;
-    if (base) {
-      const b = base.sections, band = b >= 4 ? 2 : 1;
-      const extra = cap ? Math.min(band, Math.ceil(over / cap)) : 0;
-      return result(b, b + extra, b, "history", `فُتحت عادةً ${countOf(b, AR.section)} (${base.label}) · ${overText}${extra
-        ? ` — تستوعبها ${countOf(extra, AR.section)} إضافية بسعة ${cap}` : cap ? "" : " — لا سعة مسجّلة لحساب شعبةٍ إضافية"}`);
-    }
-    const intro = history.length ? `لم يُفتح في آخر ${countOf(history.length, oblique(AR.term))}` : "لا تاريخ لهذا المقرر";
-    if (!cap) return { suggested: 1, min: 1, max: 1, basis: "pool", headline: rangeLabel(1, 1), reason: `${intro} · ${overText} — أدخل السعة في شاشة المقررات لحساب ما يستوعبها` };
-    const max = Math.min(Math.max(1, Math.ceil(over / cap)), NO_HISTORY_MAX);
-    return result(1, max, 1, "pool", `${intro} · ${overText}${max > 1 ? ` — تستوعبها ${countOf(max, AR.section)} على الأكثر بسعة ${cap} · يُبدأ بشعبة واحدة` : ""}`);
-  }
-
-  if (pool === 0) {
-    return { suggested: 0, min: 0, max: 0, basis: "empty", headline: "لا شعب", baseline: base?.sections,
-      reason: base ? `لا متبقي لهذا المقرر (فُتحت عادةً ${countOf(base.sections, AR.section)})` : "لا متبقي لهذا المقرر" };
+  /* «الذين لم يسجلوا» صفرٌ أو سالب: لا متأخرين — كل من لم يجتز المقرر مسجّلٌ فيه،
+     والسالب طلبةٌ جدد يزيدون عليهم (‎-89‎ في «أسس تكنولوجيا التعلم»). ليس «لا شعب»:
+     المسجّلون في الشعب المعتادة، فالاقتراح ما فُتح عادةً ولا يزيد. */
+  if (pool != null && pool <= 0) {
+    const none = pool < 0 ? `لا متأخرين على المقرر (المسجّلون أكثر ممن لم يجتازوا بـ${countOf(-pool, AR.student)})` : "لا متأخرين على المقرر";
+    if (base) return result(base.sections, base.sections, base.sections, "history", `فُتحت عادةً ${countOf(base.sections, AR.section)} (${base.label}) · ${none} — يكفي المعتاد`);
+    return { suggested: 0, min: 0, max: 0, basis: "empty", headline: "لا شعب",
+      reason: `${none}${history.length ? ` ولم يُفتح في آخر ${countOf(history.length, oblique(AR.term))}` : " ولا تاريخ له"} — اكتب «المختار» بيدك إن كان له مسجّلون` };
   }
 
   if (base) {
@@ -169,8 +158,8 @@ export function suggestSectionCount(
       /* الميل صعوداً لا يتجاوز ما يملؤه المتبقي كلّه؛ والتاريخ لا ينزل به. */
       const fill = Math.max(1, Math.ceil(pool / cap));
       if (target > b && target > fill) { target = Math.max(b, fill); hi = target; lo = Math.min(b, target); }
-      /* المقاعد المتبقية لا تُهمَل: إن كفاها أقلُّ مما يُفتح عادةً نزل طرفُ المدى إليه وقيل ذلك صراحةً. */
-      if (fill < b) { lo = Math.min(lo, fill); ceiling = ` · المقاعد المتبقية ${pool} تكفيها ${countOf(fill, AR.section)} بسعة ${cap} — أقل مما يُفتح عادةً، فالمدى يبدأ منها، وقد يخدم المقرر أقساماً أخرى`; }
+      /* المتبقي لا يُهمَل: إن كفاه أقلُّ مما يُفتح عادةً نزل طرفُ المدى إليه وقيل ذلك صراحةً. */
+      if (fill < b) { lo = Math.min(lo, fill); ceiling = ` · المتبقي ${pool} تكفيه ${countOf(fill, AR.section)} بسعة ${cap} — أقل مما يُفتح عادةً، فالمدى يبدأ منها، وقد يخدم المقرر أقساماً أخرى`; }
     }
     return result(lo, hi, target, "history", `${head} · ${trend}${ceiling}`);
   }

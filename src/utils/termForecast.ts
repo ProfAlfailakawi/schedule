@@ -2,11 +2,11 @@
  * ── الإنذار المبكر للفصل: توقّعٌ حتميّ من بياناتٍ محفوظة ──────────────────────
  *
  * ليس ذكاءً اصطناعياً ولا تخميناً: حسابٌ ثابت القواعد على ما خزّنه النظام
- * (كشف «المقاعد المتبقية» المستورد، شعب جدول الفصل، سعة المقرر، نصاب الأستاذ).
+ * (كشف «الذين لم يسجلوا» المستورد، شعب جدول الفصل، سعة المقرر، نصاب الأستاذ).
  * ما لا بيانات له لا يُحسب ولا يُخمَّن: يُقال إنه غير معروف.
  *
  * القواعد (لقسمٍ واحدٍ وفصلٍ واحد):
- *  1. الطلب = «المقاعد المتبقية» لكل مقرر من الكشف المستورد (العمود "seats" وحده؛
+ *  1. الطلب = «الذين لم يسجلوا» لكل مقرر من الكشف المستورد (العمود "unregistered" وحده؛
  *     العمود القديم لا يُعدّ طلباً). لا كشف ← لا توقّع (status = "no-remaining").
  *  2. الشعب المطلوبة = ⌈المتبقي ÷ سعة الشعبة⌉ والسعة هي MaxStudent المسجّلة للمقرر.
  *     سعةٌ صفرٌ أو غائبة = «السعة غير معروفة»: لا تُفترض سعة، ويُستثنى المقرر من
@@ -48,7 +48,7 @@ export interface ForecastInput {
   rows: readonly FSchedule[];
   courses: readonly AdCourse[];
   instructors: readonly Pick<AdInstructor, "AdInstructorId" | "AdInstructorName" | "AdInstructorLoad">[];
-  /** AdCourseId → المقاعد المتبقية؛ null/غائب = لم يُستورد كشفُ "seats". */
+  /** AdCourseId → الذين لم يسجلوا؛ null/غائب = لم يُستورد كشفُ "unregistered". */
   remaining: Record<string, number> | null | undefined;
 }
 
@@ -67,13 +67,12 @@ export function computeTermForecast(input: ForecastInput): TermForecast {
   const ready = Boolean(input.remaining && Object.keys(input.remaining).length);
   let covered = 0, total = 0;
   const shortages: Array<{ code: string; missing: number }> = [];
-  const overflows: Array<{ code: string; over: number }> = [];
   let unknownCapacity = 0;
   if (ready) {
     for (const course of input.courses) {
       const signed = Math.round(Number(input.remaining![String(course.AdCourseId)]) || 0);
-      if (signed < 0) { overflows.push({ code: String(course.CourseCode || course.CourseName || ""), over: -signed }); continue; }
-      const seats = signed;
+      /* «الذين لم يسجلوا» صفرٌ أو سالب = لا متأخرين (السالب طلبةٌ جدد زادوا على من لم يجتازوا): لا طلب ناقص. */
+      const seats = Math.max(0, signed);
       if (!seats) continue;
       const capacity = Number(course.MaxStudent) || 0;
       if (capacity <= 0) { unknownCapacity++; continue; }
@@ -85,7 +84,6 @@ export function computeTermForecast(input: ForecastInput): TermForecast {
     }
   }
   shortages.sort((a, b) => b.missing - a.missing || a.code.localeCompare(b.code));
-  overflows.sort((a, b) => b.over - a.over || a.code.localeCompare(b.code));
 
   const byInstructor = new Map<number, FSchedule[]>();
   for (const row of rows) {
@@ -112,15 +110,11 @@ export function computeTermForecast(input: ForecastInput): TermForecast {
     text: overloaded === 1 ? `${firstOverloaded ? `الأستاذ ${firstOverloaded}` : "أستاذ"} تجاوز نصابه` : `${countOf(overloaded, AR.instructor)} تجاوزوا نصابهم` } : null;
   const unroomedRisk: ForecastRisk | null = unroomedSections.size ? { kind: "unroomed", tone: "warning",
     text: `${countOf(unroomedSections.size, AR.section)} بلا قاعة` } : null;
-  const overflowRisk: ForecastRisk | null = overflows.length ? { kind: "overflow", tone: "warning",
-    text: overflows.length === 1 ? `مقرر ${overflows[0].code}: المسجّلون فوق السعة بـ${countOf(overflows[0].over, AR.student)}`
-      : `${countOf(overflows.length, AR.course)} المسجّلون فيها فوق السعة (أشدّها ${overflows[0].code} بـ${countOf(overflows[0].over, AR.student)})` } : null;
   const capacityRisk: ForecastRisk | null = unknownCapacity ? { kind: "capacity", tone: "info",
     text: `السعة غير معروفة لـ${countOf(unknownCapacity, AR.course)}` } : null;
 
   const ordered = [
     ...(shortages[0] ? [shortageRisk(shortages[0])] : []),
-    ...(overflowRisk ? [overflowRisk] : []),
     ...(overloadRisk ? [overloadRisk] : []),
     ...(unroomedRisk ? [unroomedRisk] : []),
     ...shortages.slice(1).map(shortageRisk),

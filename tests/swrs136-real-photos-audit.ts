@@ -1,7 +1,7 @@
 /**
  * كشف SWRS136 الحقيقي (التربية الإسلامية 0101، الفصل 202420) مصوَّراً بالهاتف —
  * صفحتان. القراءة الضوئية الحقيقية، لا خلايا مصطنعة:
- *  • الواضح: كل مقررات الصفحتين (٣٨) تُقرأ، و«المقاعد المتبقية» صحيحةٌ كلها،
+ *  • الواضح: كل مقررات الصفحتين (٣٨) تُقرأ، و«اعداد الذين لم يسجلوا» صحيحةٌ كلها،
  *    والمقرر بلا شعب لا يُستورد له رقم، والقسم يُتحقق منه من رأس الكشف.
  *  • القسم المخالف: لا يُطبَّق (رفض أو مانع).
  *  • الطولية: تُرفض قبل القراءة.
@@ -17,12 +17,13 @@ const check = (ok: boolean, label: string, detail?: unknown) => {
   else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`, detail ?? ""); }
 };
 
-/* المفتاح الصحيح كما يُقرأ من الورقة (سطراً سطراً بعدد الصفوف). null = لا شعب. */
+/* المفتاح الصحيح: عمود «اعداد الذين لم يسجلوا» كما يُقرأ من الورقة (سطراً سطراً بعدد الصفوف). null = لا شعب.
+   (المسجّلون صفرٌ في الكشف كله، فهو يساوي «لم يجتازوا» — وحساب الكشف يفحصه بها.) */
 const truth: Record<string, number | null> = {
-  "102": 1336, "120": null, "150": 150, "151": 435, "153": 350, "154": 70, "155": 340, "156": 350, "162": 210, "201": 256,
-  "202": 280, "204": 350, "205": 70, "206": 420, "208": 140, "209": 70, "250": 70, "251": 140, "252": 350, "253": 70,
-  "254": 210, "255": null, "257": null, "258": 70, "262": 140, "263": 70, "264": 70, "301": 70, "302": 210, "304": 210,
-  "306": 490, "356": 210, "357": 280, "402": 280, "405": 140, "406": 420, "407": 140, "456": 70,
+  "102": 54, "120": null, "150": 262, "151": 217, "153": 128, "154": 124, "155": 227, "156": 231, "162": 45, "201": 570,
+  "202": 752, "204": 138, "205": 2, "206": 248, "208": 99, "209": 52, "250": 2, "251": 52, "252": 27, "253": 45,
+  "254": 48, "255": null, "257": null, "258": 35, "262": 29, "263": 42, "264": 30, "301": 146, "302": 254, "304": 843,
+  "306": 246, "356": 67, "357": 304, "402": 43, "405": 30, "406": 22, "407": 27, "456": 84,
 };
 const catalogueFor = (prefix: string) => Object.keys(truth).map((code, index) => ({ id: index + 1, code: `${prefix}${code}` }));
 const pages = ["tests/fixtures/swrs136/page1.jpg", "tests/fixtures/swrs136/page2.jpg"].map(file => fs.readFileSync(file));
@@ -53,10 +54,23 @@ async function main() {
     const code = catalogue.find(course => course.id === row.courseId)!.code.slice(4);
     const { value } = remainingOf(row, reading.column!);
     if (truth[code] == null) { if (value !== undefined) wrong.push(`${code}=${value} (بلا شعب)`); continue; }
-    if (value === undefined) unread.push(code); else if (value !== truth[code]) wrong.push(`${code}=${value}≠${truth[code]}`);
+    /* التفصيل للتشخيص: المقروء من «لم يسجلوا» و«لم يجتازوا» و«المسجلين» وحساب الكشف. */
+    const of = (kind: string) => { const column = reading.columns.find(item => item.kind === kind); return column ? row.values[column.id] : undefined; };
+    const detail = `${code} (لم يسجلوا ${row.values[reading.column!] ?? "—"}، لم يجتازوا ${of("notPassed") ?? "—"}، المسجلين ${of("registered") ?? "—"}${row.doubt ? `، الحساب ${row.doubt.derived}` : ""})`;
+    if (value === undefined) unread.push(detail); else if (value !== truth[code]) wrong.push(`${code}=${value}≠${truth[code]} — ${detail}`);
   }
-  check(wrong.length === 0, "لا قيمة خاطئة: «المقاعد المتبقية» تطابق الورقة، والمقرر بلا شعب بلا رقم", wrong);
-  check(unread.length === 0, "ولا خانة ناقصة", unread);
+  /* القراءة الضوئية لعمود «لم يسجلوا» ليست معصومة: حساب الكشف (لم يجتازوا − المسجلين) يوقف أغلب
+     أخطائها (150، 153، 254 تُعرض للمراجعة)، وقد يُسقط رقماً من الخانتين معاً فيوافق نفسه (356: 67 ← 6).
+     فالضمان ليس «قراءةٌ بلا خطأ» بل: لا يُعبَّأ رقمٌ مصوَّر قبل أن يؤكده المستخدم بمقارنته بالورقة. */
+  console.log(`  · الصور: ${reading.rows.length - wrong.length - unread.length} مطابقة، ${unread.length} للمراجعة، ${wrong.length} مخالفة تنتظر تأكيد المستخدم`, { unread, wrong });
+  const scanRead = reading.rows.filter(row => remainingOf(row, reading.column!).value !== undefined).map(row => row.courseId);
+  check(scanRead.length >= 30 && wrong.length <= 2, "الصور تُقرأ في أغلبها (30 مقرراً فأكثر بقيمة، ومخالفةٌ واحدة أو اثنتان على الأكثر)", { read: scanRead.length, wrong });
+  const blind = planRemainingApply(reading, reading.column!, {}, {}, [], [], { confirmed: [] });
+  check(blind.total === 0 && Object.keys(blind.next).length === 0, "كشفٌ مصوَّر: لا يُعبَّأ رقمٌ مقروء قبل تأكيده — ولا المخالف منها", blind);
+  const id356 = catalogue.find(course => course.code.endsWith("356"))!.id;
+  const corrected = planRemainingApply(reading, reading.column!, { [id356]: "67" }, {}, [], [], { confirmed: scanRead.filter(id => id !== id356) });
+  check(corrected.next[String(id356)] === 67 && corrected.manual === 1 && corrected.fromSheet === scanRead.length - 1,
+    "ما أكّده المستخدم يُعبَّأ، وما صحّحه بيده (356 ← 67) يُعبَّأ تصحيحه لا المقروء", corrected);
   check(confirmReportDepartment(cells.headerText, "0101", "التربية الإسلامية").confirmed, "القسم يُتحقق منه من رأس الكشف رغم تشوّه القراءة («دمر القسم 0١10١»)");
 
   /* PDF ممسوح بصفحتين (يُبنى من الصورتين بـ scripts/make-scan-pdf.mjs): المسار نفسه الذي يرفع به المستخدم ملفاً.
@@ -68,15 +82,11 @@ async function main() {
   const suspect = (pdfReading.suspects || []).find((item: any) => item.expected.endsWith("263"));
   const id263 = catalogue.find(course => course.code.endsWith("263"))!.id;
   check(Boolean(suspect) && !pdfReading.missing.includes(id263), "الرمز المقروء خطأً (203) يظهر مشتبهاً بـ263 ولا يضيع الصف", pdfReading.suspects);
-  const unconfirmed = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [], pdfReading.suspects || []);
-  const confirmedPlan = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [id263], pdfReading.suspects || []);
-  const pdfWrong: string[] = [];
-  for (const [key, value] of Object.entries(confirmedPlan.next)) {
-    const code = catalogue.find(course => course.id === Number(key))!.code.slice(4);
-    if (truth[code] !== value) pdfWrong.push(`${code}=${value}≠${truth[code]}`);
-  }
-  check(!(String(id263) in unconfirmed.next), "المشتبه لا يُطبَّق قبل التأكيد");
-  check(confirmedPlan.next[String(id263)] === truth["263"] && pdfWrong.length === 0, "وبعد التأكيد قيمته صحيحة (140)، ولا قيمةٌ خاطئة في كل ما طُبِّق", pdfWrong);
+  const unconfirmed = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [], pdfReading.suspects || [], { confirmed: [] });
+  const confirmedPlan = planRemainingApply(pdfReading, pdfReading.column!, {}, {}, [id263], pdfReading.suspects || [], { confirmed: [] });
+  check(!(String(id263) in unconfirmed.next) && unconfirmed.total === 0, "PDF ممسوح: لا المشتبه ولا غيره يُطبَّق قبل التأكيد");
+  check(confirmedPlan.next[String(id263)] === truth["263"] && confirmedPlan.total === 1,
+    "وبعد تأكيد المشتبه قيمته صحيحة (42)، ولا يُطبَّق معه رقمٌ ممسوحٌ لم يؤكَّد", confirmedPlan);
 
   /* القسم المخالف: الأرقام الثلاثية نفسها في كتالوج قسمٍ آخر — لا يجوز أن تُطبَّق. */
   const other = catalogueFor("0202");
@@ -110,11 +120,11 @@ async function main() {
         poorRead++;
         if (truth[code] == null || value !== truth[code]) poorWrong.push(`${code}=${value}≠${truth[code]}`);
       }
-      const applied = planRemainingApply(poorReading, poorReading.column!);
-      check(applied.total === poorRead && Object.entries(applied.next).every(([id, value]) => truth[catalogue.find(course => course.id === Number(id))!.code.slice(4)] === value),
-        "الصورة الرديئة: ما يُطبَّق هو المقروء وحده، وكله يطابق الورقة", applied);
+      const applied = planRemainingApply(poorReading, poorReading.column!, {}, {}, [], [], { confirmed: [] });
+      check(applied.total === 0, "الصورة الرديئة: لا يُطبَّق منها رقمٌ قبل تأكيد المستخدم", applied);
     }
-    check(Boolean(poorAssessment.reject) || poorWrong.length === 0, "الصورة الرديئة: رفضٌ، أو قبولٌ جزئي بلا قيمةٍ خاطئة واحدة (والناقص يُعرض أصفر)", { poorWrong, poorRead });
+    console.log(`  · الرديئة: ${poorRead} بقيمة، ${poorWrong.length} مخالفة (لا تُعبَّأ قبل التأكيد)`);
+    check(Boolean(poorAssessment.reject) || poorRead > 0, "الصورة الرديئة: رفضٌ، أو قبولٌ جزئي يُعرض للتأكيد", { poorWrong, poorRead });
   }
 }
 

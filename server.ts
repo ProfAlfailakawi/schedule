@@ -14392,8 +14392,8 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
       if (!sectionsOf.has(id)) sectionsOf.set(id, new Set());
       sectionsOf.get(id)!.add(String(row.SCode || row.id));
     }
-    /* متبقّي فصلٍ سابق يدخل المقارنة إن كان «المقاعد المتبقية» نفسها؛ القديم عمودٌ آخر لا يُخلط بها. */
-    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.column === "seats" ? pastStats.remaining || {} : {} });
+    /* متبقّي فصلٍ سابق يدخل المقارنة إن كان «الذين لم يسجلوا» نفسه؛ ما حُفظ بعمودٍ آخر لا يُخلط به. */
+    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.column === "unregistered" ? pastStats.remaining || {} : {} });
     department.push({
       termName: past.AdTermName, similar: past.similar,
       sections: [...sectionsOf.values()].reduce((sum, set) => sum + set.size, 0),
@@ -14425,10 +14425,10 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
     similarTerms: similar.filter(item => item.similar).map(item => item.AdTermName),
     department,
     courses: courses.map(course => ({ id: course.AdCourseId, code: course.CourseCode || "", name: course.CourseName || "", capacity: Number(course.MaxStudent || 0) })),
-    /* «المقاعد المتبقية» وحدها مدخلُ التخطيط؛ ما حُفظ قبلها (عمود «الذين لم يسجلوا») يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
-    remaining: stats?.remainingSource?.column === "seats" ? stats.remaining || {} : {},
-    remainingSource: stats?.remainingSource?.column === "seats" ? stats.remainingSource : null,
-    legacyRemaining: stats?.remainingSource?.column !== "seats" && Object.keys(stats?.remaining || {}).length
+    /* «الذين لم يسجلوا» (المتبقي الإجمالي) وحده مدخلُ التخطيط؛ ما حُفظ بعمودٍ آخر («المقاعد المتبقية» أو بلا وسم) يُعاد منفصلاً موسوماً «قديماً» ولا يُحسب به. */
+    remaining: stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : {},
+    remainingSource: stats?.remainingSource?.column === "unregistered" ? stats.remainingSource : null,
+    legacyRemaining: stats?.remainingSource?.column !== "unregistered" && Object.keys(stats?.remaining || {}).length
       ? { values: stats!.remaining, fileName: stats!.remainingSource?.fileName || "", importedAt: stats!.remainingSource?.importedAt || "" } : null,
     accepted: stats?.accepted || {},
     updatedAt: stats?.updatedAt || "",
@@ -14456,7 +14456,7 @@ app.get("/api/forecast/term", requirePermission(7), async (req: AuthenticatedReq
   const forecast = computeTermForecast({
     rows: scoped, courses,
     instructors: instructors.filter(item => mine.has(Number(item.AdInstructorId))),
-    remaining: stats?.remainingSource?.column === "seats" ? stats.remaining || {} : null,
+    remaining: stats?.remainingSource?.column === "unregistered" ? stats.remaining || {} : null,
   });
   res.json({ scopeKey: approvalScopeKey({ collegeId, sectionId, termId }), collegeId, sectionId, termId, ...forecast });
 });
