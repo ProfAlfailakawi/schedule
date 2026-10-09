@@ -646,33 +646,41 @@ export function assessRemainingImport(
     return rejectWith(`القسم المختار ${context.departmentName ? `«${context.departmentName}» ` : ""}بلا رمزٍ مسجّل في النظام، فلا يمكن التحقق أن الكشف له. أضف رمز القسم في «الأقسام» كما في نظام العمادة ثم أعد الاستيراد`);
   }
 
-  /* 1) الفرع: كشف «بنين» لا يُستورد في «بنات» ولو تطابق القسم (رمز القسم 0109 واحدٌ في الفروع). */
+  /* 1) الفرع والقسم معاً: كشف «بنين» لا يُستورد في «بنات» ولو تطابق القسم (رمز القسم 0109 واحدٌ في الفروع)،
+     وكشف قسمٍ لا يُستورد في قسمٍ آخر. وحين يخالف الكشفُ في الاثنين تُسمّى المخالفتان معاً: ما في الكشف وما المختار. */
   const printedBranch = readReportHeader(context.headerText || "").branch;
   const collegeName = fold(context.branch?.collegeName || "");
   const chosenGender = /بنين/.test(collegeName) ? "boys" : /بنات/.test(collegeName) ? "girls" : undefined;
   const chosenCode = String(context.branch?.code || "");
   const label = (gender?: string, code?: string) => [gender === "boys" ? "بنين" : gender === "girls" ? "بنات" : "", code ? `(${code})` : ""].filter(Boolean).join(" ");
   const chosenLabel = `«${context.branch?.collegeName || label(chosenGender, chosenCode)}»`;
-  if (chosenCode || chosenGender) {
-    if (!printedBranch?.code && !printedBranch?.gender) {
-      return rejectWith(`لم يُقرأ «الفرع» في ترويسة الكشف، فلا يمكن التحقق أنه لفرع ${chosenLabel}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`);
-    }
-    const byCode = Boolean(printedBranch.code && chosenCode && printedBranch.code !== chosenCode);
-    const byGender = Boolean(printedBranch.gender && chosenGender && printedBranch.gender !== chosenGender);
-    /* الجهراء والفحيحيل تشارك «بنات» في الجنس: يُطابق اسم الموقع في الطرفين. */
-    const site = (text: string) => /الجهراء/.test(text) ? "الجهراء" : /الفحيحيل/.test(text) ? "الفحيحيل" : "";
-    const header = fold(context.headerText || "");
-    const bySite = site(collegeName) !== site(header) && Boolean(site(collegeName) || site(header));
-    if (byCode || byGender || bySite) {
-      const printedLabel = [label(printedBranch.gender, printedBranch.code), site(header)].filter(Boolean).join(" ") || "آخر";
-      return rejectWith(`الكشف لفرع ${printedLabel}، والمختار في النظام ${chosenLabel}. اختر الفرع الصحيح أو ارفع كشف هذا الفرع`);
-    }
+  const branchKnown = Boolean(chosenCode || chosenGender);
+  const branchRead = Boolean(printedBranch?.code || printedBranch?.gender);
+  /* الجهراء والفحيحيل تشارك «بنات» في الجنس: يُطابق اسم الموقع في الطرفين. */
+  const site = (text: string) => /الجهراء/.test(text) ? "الجهراء" : /الفحيحيل/.test(text) ? "الفحيحيل" : "";
+  const header = fold(context.headerText || "");
+  const branchDiffers = branchKnown && branchRead && (
+    Boolean(printedBranch!.code && chosenCode && printedBranch!.code !== chosenCode)
+    || Boolean(printedBranch!.gender && chosenGender && printedBranch!.gender !== chosenGender)
+    || (site(collegeName) !== site(header) && Boolean(site(collegeName) || site(header))));
+  const departmentDiffers = Boolean(detected && detected !== context.departmentCode);
+  if (branchDiffers || departmentDiffers) {
+    /* «رمز القسم العلمي 0109 تكنولوجيا التعليم»: اسم القسم كما طُبع، إن قُرئ. */
+    const printedName = normalize(context.headerText || "").match(/القسم\s*العلمي\s*:?\s*\d{4}\s+([^\n#:]{2,40})/)?.[1]?.trim() || "";
+    const printedBranchLabel = [label(printedBranch?.gender, printedBranch?.code), site(header)].filter(Boolean).join(" ");
+    const inSheet = [
+      departmentDiffers ? `قسم ${printedName ? `«${printedName}» ` : ""}(${detected})` : "",
+      branchDiffers && printedBranchLabel ? `فرع ${printedBranchLabel}` : "",
+    ].filter(Boolean).join("، ");
+    const chosen = [departmentDiffers ? `قسم ${selected}` : "", branchDiffers ? chosenLabel : ""].filter(Boolean).join(" في ");
+    const what = departmentDiffers && branchDiffers ? "القسم والفرع الصحيحين" : departmentDiffers ? "القسم الصحيح" : "الفرع الصحيح";
+    return rejectWith(`الكشف ليس لما اخترت: هو كشف ${inSheet}، والمختار في النظام ${chosen}. اختر ${what} أو ارفع الكشف الصحيح`);
+  }
+  if (branchKnown && !branchRead) {
+    return rejectWith(`لم يُقرأ «الفرع» في ترويسة الكشف، فلا يمكن التحقق أنه لفرع ${chosenLabel}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`);
   }
 
-  /* 2) القسم: رمزه في الترويسة («رمز القسم العلمي 0109») يجب أن يكون رمز القسم المختار نفسه. */
-  if (detected && detected !== context.departmentCode) {
-    return rejectWith(`الكشف لقسمٍ آخر: القسم المختار في النظام ${selected}، والقسم في الكشف ${detected}. اختر القسم الصحيح أو ارفع كشف قسمك`);
-  }
+  /* 2) القسم: لا بد أن يثبت رمزه في الترويسة («رمز القسم العلمي 0109»). */
   if (!confirmation.byCode) {
     return rejectWith(`لم يُقرأ «رمز القسم العلمي» في ترويسة الكشف، فلا يمكن التحقق أنه لقسم ${selected}. ارفع الكشف PDF من نظام العمادة، أو صورةً تظهر فيها الترويسة كاملةً بوضوح`);
   }

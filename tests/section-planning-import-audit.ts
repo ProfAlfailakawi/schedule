@@ -138,7 +138,7 @@ check(!confirmReportDepartment(`${garbled}\n${HEADER_DIGITS_MARK} 202420 01010 0
 /* ── قسمٌ آخر ── */
 r = readRemainingReport(clear, catalogue, "0101");
 a = assessRemainingImport(r, { ...context, headerText: "رمز القسم العلمي 0102 اللغة العربية" });
-check(Boolean(a.reject?.includes("لقسمٍ آخر") && a.reject.includes("0102") && a.reject.includes("التربية الإسلامية") && a.reject.includes("0101")) && a.detectedDepartment === "0102",
+check(Boolean(a.reject?.includes("ليس لما اخترت") && a.reject.includes("اللغة العربية") && a.reject.includes("0102") && a.reject.includes("التربية الإسلامية") && a.reject.includes("0101")) && a.detectedDepartment === "0102",
   `ترويسة قسمٍ آخر: يُرفض قبل التطبيق ويُسمّى القسمان — ${a.reject}`);
 const otherDept = [page(0, [["0102102", [1390, 1336, 0, 1336, 19, 1390]], ["0102201", [376, 256, 6, 250, 9, 370]], ["0102254", [1, 2, 0, 2, 1, 1]]])];
 r = readRemainingReport(otherDept, catalogue, "0101");
@@ -239,7 +239,13 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   const foundations = [["106", 1], ["107", 2], ["105", 3], ["112", 4]].map(([code, id]) => ({ id: Number(id), code: String(code) }));
   const otherDept = readRemainingReport(real.pages, foundations, "0120");
   const otherJudged = assessRemainingImport(otherDept, { departmentCode: "0120", departmentName: "أصول التربية", headerText: real.headerText, branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
-  check(Boolean(otherJudged.reject) && /قسمٍ آخر/.test(otherJudged.reject!) && /0109/.test(otherJudged.reject!), "كشف تكنولوجيا التعليم (0109) يُرفض في «أصول التربية» (0120) برسالةٍ تسمّي القسمين");
+  check(Boolean(otherJudged.reject) && /ليس لما اخترت/.test(otherJudged.reject!) && /تكنولوجيا التعليم/.test(otherJudged.reject!) && /0109/.test(otherJudged.reject!) && /أصول التربية/.test(otherJudged.reject!)
+    && !/فرع/.test(otherJudged.reject!), "كشف تكنولوجيا التعليم (0109) يُرفض في «أصول التربية» (0120) برسالةٍ تسمّي القسمين باسميهما (والفرع واحد فلا يُذكر)");
+  /* حالة صاحب النظام: كشف تكنولوجيا التعليم «بنين» في «أصول التربية» «بنات» — تُسمّى المخالفتان معاً. */
+  const both = assessRemainingImport(otherDept, { departmentCode: "0120", departmentName: "أصول التربية", headerText: real.headerText, branch: { code: "012", collegeName: "كلية التربية الأساسية - بنات" } });
+  check(Boolean(both.reject) && /تكنولوجيا التعليم/.test(both.reject!) && /بنين/.test(both.reject!) && /أصول التربية/.test(both.reject!) && /بنات/.test(both.reject!)
+    && /القسم والفرع الصحيحين/.test(both.reject!) && /لم يُستورد شيء/.test(both.reject!),
+    "قسمٌ آخر وفرعٌ آخر معاً: الرسالة تسمّي ما في الكشف (تكنولوجيا التعليم، بنين) وما المختار (أصول التربية، بنات)");
   const noCode = assessRemainingImport(readRemainingReport(real.pages, foundations, ""), { departmentCode: "", departmentName: "أصول التربية", headerText: real.headerText, branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
   check(Boolean(noCode.reject) && /بلا رمزٍ مسجّل/.test(noCode.reject!), "وقسمٌ بلا رمزٍ في النظام يُرفض — كان يطابق الأرقام الثلاثية (105، 106…) ويكتفي بتأكيدٍ بنقرة");
   check(readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.code === "012" && readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.gender === "girls"

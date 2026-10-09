@@ -250,6 +250,11 @@ check((server.match(/remainingAssessment\(reading, departmentCode, departmentNam
     && ui.includes("const hasSaved = Boolean(source || legacy || Object.values(remaining).some(value => value !== \"\"));") && ui.includes("disabled={!hasSaved || reading}") && ui.includes("لا كشف مستورد لإزالته"),
     "كشفٌ استُورد خطأً يُزال كله بعد تأكيد (المتبقي وشاغره ومصدره)، والزر ظاهرٌ دائماً: يعمل لأي متبقٍّ محفوظ (كشفٌ موسوم أو «بيانات قديمة» أو أرقامٌ بلا مصدر)، ومعطّلٌ حين لا شيء يُزال؛ ولا خانة «أؤكد…»");
 }
+{
+  const ui = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
+  check(ui.includes("setImportError(e.message)") && ui.includes('className="section-plan-reject" role="alert"') && ui.includes("رُفض الكشف — لم يُستورد شيء"),
+    "رفض الكشف يظهر في صندوق الاستيراد نفسه، أحمرَ بعنوان «رُفض الكشف — لم يُستورد شيء»، لا سطراً خافتاً أسفل الصفحة");
+}
 const ocr = fs.readFileSync("src/utils/documentOcr.ts", "utf8");
 check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set<string>([])'),
   "الصورة المسطّرة: تُعدَّل وتُستقام وتُقرأ خانةً خانة، وكل الأعمدة تُقرأ («لم يسجلوا» للتخطيط، «لم يجتازوا» والمسجّلون لفحصه، «المقاعد المتبقية» شاغرٌ للإنذار)");
