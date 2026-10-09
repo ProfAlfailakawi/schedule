@@ -627,13 +627,27 @@ export interface ImportAssessment {
  */
 export function assessRemainingImport(
   reading: RemainingReading,
-  context: { departmentCode: string; departmentName?: string; headerText?: string },
+  context: {
+    departmentCode: string; departmentName?: string; headerText?: string;
+    /** الفرع المختار في النظام: رمزه (011 بنين، 012 بنات) واسم كليته. */
+    branch?: { code?: string; collegeName?: string };
+  },
 ): ImportAssessment {
   const printed = [...reading.rows.map(row => row.printed), ...reading.foreign];
   const detected = detectReportDepartment(context.headerText || "", printed);
   const selected = context.departmentName ? `«${context.departmentName}» (${context.departmentCode})` : context.departmentCode;
   const base = { detectedDepartment: detected, unread: [] as number[], noSections: [] as number[], read: 0, notes: [] as string[], needsDepartmentConfirmation: false };
   const confirmation = confirmReportDepartment(context.headerText || "", context.departmentCode, context.departmentName, detected);
+  /* الفرع قبل كل شيء: كشف «بنين» لا يُستورد في «بنات» ولو تطابق القسم (رمز القسم 0109 واحدٌ في الفرعين). */
+  const printedBranch = readReportHeader(context.headerText || "").branch;
+  const chosenGender = /بنين/.test(context.branch?.collegeName || "") ? "boys" : /بنات/.test(context.branch?.collegeName || "") ? "girls" : undefined;
+  const chosenCode = String(context.branch?.code || "");
+  const byCode = Boolean(printedBranch?.code && chosenCode && printedBranch.code !== chosenCode);
+  const byGender = Boolean(printedBranch?.gender && chosenGender && printedBranch.gender !== chosenGender);
+  if (byCode || byGender) {
+    const label = (gender?: string, code?: string) => [gender === "boys" ? "بنين" : gender === "girls" ? "بنات" : "", code ? `(${code})` : ""].filter(Boolean).join(" ");
+    return { ...base, reject: `الكشف لفرع ${label(printedBranch?.gender, printedBranch?.code) || "آخر"}، والمختار في النظام «${context.branch?.collegeName || label(chosenGender, chosenCode)}». اختر الفرع الصحيح أو ارفع كشف هذا الفرع — لم يُستورد شيء.` };
+  }
   if (detected && context.departmentCode && detected !== context.departmentCode && !confirmation.byName) {
     return { ...base, reject: `الكشف لقسمٍ آخر: القسم المختار في النظام ${selected}، والقسم في الكشف ${detected}. اختر القسم الصحيح أو ارفع كشف قسمك — لم يُستورد شيء.` };
   }
@@ -771,8 +785,13 @@ export function imageOrientationRefusal(bytes: Uint8Array, fileName = ""): strin
  *   «رمز القسم العلمي 0101 التربيه الاسلاميه»
  *   «الفصل الدراسي : 202420 الفصل الدراسي الثاني 2025-2024»
  */
-export function readReportHeader(text: string): { department?: string; season?: "first" | "second" | "summer"; years?: [number, number] } {
+export function readReportHeader(text: string): { department?: string; season?: "first" | "second" | "summer"; years?: [number, number]; branch?: { code?: string; gender?: "boys" | "girls" } } {
   const plain = fold(text).replace(/\s+/g, " ");
+  /* «الفرع : 011 كليه التربيه الاساسيه بنين» — رمز الفرع ثلاث خانات، والجنس من آخر السطر. */
+  const branchLine = plain.match(/الفرع\s*:?\s*([^]{0,60})/)?.[1] || "";
+  const branchCode = branchLine.match(/^(\d{3})(?!\d)/)?.[1];
+  const branchGender = /بنين/.test(branchLine) ? "boys" as const : /بنات/.test(branchLine) ? "girls" as const : undefined;
+  const branch = branchCode || branchGender ? { ...(branchCode ? { code: branchCode } : {}), ...(branchGender ? { gender: branchGender } : {}) } : undefined;
   const department = plain.match(/القسم العلمي\s*:?\s*(\d{4})(?!\d)/)?.[1];
   const named = plain.match(/(الاول|الثاني|الصيفي)\s*(\d{4})\s*[-/]\s*(\d{4})/);
   const coded = plain.match(/(?<!\d)(20\d{2})(10|20|30)(?!\d)/);
@@ -780,5 +799,5 @@ export function readReportHeader(text: string): { department?: string; season?: 
     : coded ? ({ "10": "first", "20": "second", "30": "summer" } as const)[coded[2] as "10"] : undefined;
   const years = named ? [Math.min(Number(named[2]), Number(named[3])), Math.max(Number(named[2]), Number(named[3]))] as [number, number]
     : coded ? [Number(coded[1]), Number(coded[1]) + 1] as [number, number] : undefined;
-  return { ...(department ? { department } : {}), ...(season ? { season } : {}), ...(years ? { years } : {}) };
+  return { ...(department ? { department } : {}), ...(season ? { season } : {}), ...(years ? { years } : {}), ...(branch ? { branch } : {}) };
 }

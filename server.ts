@@ -14500,7 +14500,11 @@ async function remainingContext(collegeId: number, sectionId: number, termId: nu
   );
   const catalogue = courses.map(course => ({ id: Number(course.AdCourseId), code: String(course.CourseCode || "") }));
   const departmentName = String(sections.find((row: any) => Number(row.AdSectionId) === sectionId)?.AdSectionName || "");
-  return { departmentCode, departmentName, catalogue, termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || "") };
+  /* الفرع المختار: رمزه من بادئة موقع الكلية (011B ← 011 بنين، 012B ← 012 بنات)، واسم الكلية يحمل «بنين/بنات». */
+  const college = colleges.find((row: any) => Number(row.AdCollegeId) === collegeId);
+  const site = academicDigits(officialCollegeSitePrefix(String(college?.AdCollegeName || "")));
+  const branch = { code: site.length >= 3 ? site.slice(0, 3) : "", collegeName: String(college?.AdCollegeName || "") };
+  return { departmentCode, departmentName, branch, catalogue, termName: String(terms.find((row: any) => Number(row.AdTermId) === termId)?.AdTermName || "") };
 }
 /* الترويسة تقول لأيّ قسمٍ وأيّ فصلٍ طُبع الكشف: يُنبَّه القسم ولا يُمنع، فالقراءة الضوئية قد تخطئ رقماً. */
 function remainingWarnings(headerText: string, departmentCode: string, termName: string): string[] {
@@ -14513,8 +14517,8 @@ function remainingWarnings(headerText: string, departmentCode: string, termName:
   return warnings;
 }
 /* يُرفض قبل المعاينة: قسمٌ آخر، أو لا عمود «المقاعد المتبقية»، أو لا خانةً مقروءة. وما قُرئ جزئياً يُعرض والناقص أصفر. */
-function remainingAssessment(reading: ReturnType<typeof readRemainingReport>, departmentCode: string, departmentName: string, headerText: string) {
-  return assessRemainingImport(reading, { departmentCode, departmentName, headerText });
+function remainingAssessment(reading: ReturnType<typeof readRemainingReport>, departmentCode: string, departmentName: string, headerText: string, branch?: { code?: string; collegeName?: string }) {
+  return assessRemainingImport(reading, { departmentCode, departmentName, headerText, branch });
 }
 
 app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, requirePermission(7), express.raw({ type: ["application/octet-stream", "application/pdf", "image/*"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
@@ -14551,11 +14555,11 @@ app.post("/api/registration-stats/remaining-pdf", rateLimitDocumentRead, require
   const names = fileName.split("، ");
   const orientation = (Array.isArray(input) ? input : [input]).map((part, index) => imageOrientationRefusal(part, Array.isArray(input) ? names[index] || "" : "")).find(Boolean);
   if (orientation) { res.status(422).json({ error: orientation, code: "orientation" }); return; }
-  const { departmentCode, departmentName, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  const { departmentCode, departmentName, branch, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
   try {
     const cells = await readReportCells(input, mime, pages => blankSpots(pages, catalogue, departmentCode), template);
     const reading = readRemainingReport(cells.pages, catalogue, departmentCode);
-    const assessment = remainingAssessment(reading, departmentCode, departmentName, cells.headerText);
+    const assessment = remainingAssessment(reading, departmentCode, departmentName, cells.headerText, branch);
     if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
     res.json({ ...reading, assessment, departmentName, source: cells.source, pageCount: cells.pageCount, fileName: fileName.slice(0, 200),
       warnings: remainingWarnings(cells.headerText, departmentCode, termName),
@@ -14578,10 +14582,10 @@ app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requi
       ...(Number.isFinite(Number(cell?.confidence)) ? { confidence: Math.max(0, Math.min(100, Number(cell.confidence))) } : {}),
     })));
   if (!pages.length) { res.status(400).json({ error: "لا صفحات تُقرأ" }); return; }
-  const { departmentCode, departmentName, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
+  const { departmentCode, departmentName, branch, catalogue, termName } = await remainingContext(collegeId, sectionId, termId);
   const reading = readRemainingReport(pages, catalogue, departmentCode);
   const headerText = String(req.body?.headerText || "").slice(0, 4000);
-  const assessment = remainingAssessment(reading, departmentCode, departmentName, headerText);
+  const assessment = remainingAssessment(reading, departmentCode, departmentName, headerText, branch);
   if (assessment.reject) { res.status(422).json({ error: assessment.reject, detectedDepartment: assessment.detectedDepartment || null }); return; }
   res.json({ ...reading, assessment, departmentName, warnings: remainingWarnings(headerText, departmentCode, termName) });
 });
