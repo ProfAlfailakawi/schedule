@@ -796,13 +796,17 @@ export function readReportHeader(text: string): { department?: string; season?: 
     const forward = line.match(/الفرع\s*[:：-]?\s*(\d{3})(?!\d)\s*([^]{0,60})/);
     const reversed = line.match(/(?:^|\s)(\d{3})(?!\d)\s*([^\d]{0,60}?)\s*[:：-]?\s*الفرع/);
     const hit = forward || reversed;
+    /* سطرٌ فيه «الفرع :» وحده (والرمز في السطر التالي): لا يُحسم به، ويُكمل البحث في النص الممدود. */
+    if (!hit && !/بنين|بنات/.test(line)) continue;
     branchCode = hit?.[1];
     branchText = hit ? hit[2] : line;
     break;
   }
   if (!branchCode && !branchText) {
-    const flat = plain.match(/الفرع\s*[:：-]?\s*(\d{3})?(?!\d)\s*([^]{0,60})/);
-    branchCode = flat?.[1]; branchText = flat?.[2] || "";
+    const forward = plain.match(/الفرع\s*[:：-]?\s*(\d{3})(?!\d)\s*([^]{0,60})/);
+    const reversed = plain.match(/(?:^|\s)(\d{3})(?!\d)\s*([^\d]{0,60}?)\s*[:：-]?\s*الفرع/);
+    const hit = forward || reversed;
+    branchCode = hit?.[1]; branchText = hit?.[2] || "";
   }
   const branchGender = /بنين/.test(branchText) ? "boys" as const : /بنات/.test(branchText) ? "girls" as const : undefined;
   const branch = branchCode || branchGender ? { ...(branchCode ? { code: branchCode } : {}), ...(branchGender ? { gender: branchGender } : {}) } : undefined;

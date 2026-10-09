@@ -236,6 +236,8 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
     && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.code === "011"
     && readReportHeader("القسم 0109 تكنولوجيا").branch === undefined,
     "الفرع يُقرأ بالترتيبين: «الفرع : 011 … بنين» والبصري من القراءة الضوئية «012 … بنات : الفرع»؛ ولا فرع بلا سطره");
+  const split = readReportHeader("الكلية : 01 كلية التربية الأساسية\nالفرع :\n011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch;
+  check(split?.code === "011" && split?.gender === "boys", "وسطر «الفرع :» وحده والرمز في التالي: يُقرأ من النص الممدود ولا يضيع");
   const reversedHeader = assessRemainingImport(reading, { departmentCode: "0109", headerText: "011 كليه التربيه الاساسيه بنين : الفرع\nرمز القسم العلمي 0109",
     branch: { code: "012", collegeName: "كلية التربية الأساسية - بنات" } });
   check(Boolean(reversedHeader.reject), "وترويسةٌ بالترتيب البصري لفرع البنين تُرفض في «بنات» أيضاً");
