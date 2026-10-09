@@ -241,6 +241,9 @@ check(server.includes('app.get("/api/registration-stats", requirePermission(7)')
 check(server.includes('app.post("/api/registration-stats/remaining-cells", rateLimitDocumentRead, requirePermission(7)') && server.includes("if (!isScopeAllowed(req, collegeId, sectionId))")
   && server.includes('"image/*"], limit: "24mb" })') && server.includes("remainingWarnings(cells.headerText, departmentCode, termName)") && server.includes("imageOrientationRefusal(") && server.includes("assessment.reject"),
   "صفحات الصور تُقرأ معاً بالباب نفسه وحدوده، والصور مقبولة، وترويسة الكشف تُفحص");
+check((server.match(/remainingAssessment\(reading, departmentCode, departmentName, (cells\.)?headerText, branch\)/g) || []).length === 2
+  && server.includes("const branch = { code: site.length >= 3 ? site.slice(0, 3) : \"\", collegeName: String(college?.AdCollegeName || \"\") };"),
+  "بابا الكشف (الملف والصفحات معاً) يمرّران الفرع المختار، فكشف فرعٍ آخر يُرفض قبل المعاينة");
 const ocr = fs.readFileSync("src/utils/documentOcr.ts", "utf8");
 check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set<string>([])'),
   "الصورة المسطّرة: تُعدَّل وتُستقام وتُقرأ خانةً خانة، وكل الأعمدة تُقرأ («لم يسجلوا» للتخطيط، «لم يجتازوا» والمسجّلون لفحصه، «المقاعد المتبقية» شاغرٌ للإنذار)");

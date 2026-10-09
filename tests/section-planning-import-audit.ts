@@ -221,6 +221,16 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
     "والموجب والصفر كما طُبعا (113: 528، 125: 268، 212: 1315، 468: 0) — لا من «المقاعد المتبقية» (−6، −22، 2، 15)");
   check(!Object.values(reading.rows).some(row => row.doubt), "لا صفّ يخالف حساب الكشف (لم يجتازوا − المسجلين)");
   const plan = planRemainingApply(reading, reading.column!);
+  /* الفرع: الكشف «الفرع : 011 كليه التربيه الاساسيه بنين». لا يُستورد في «بنات» ولو تطابق القسم 0109. */
+  const girls = assessRemainingImport(reading, { departmentCode: "0109", departmentName: "تكنولوجيا التعليم", headerText: real.headerText,
+    branch: { code: "012", collegeName: "كلية التربية الأساسية - بنات" } });
+  check(Boolean(girls.reject) && /بنين/.test(girls.reject!) && /بنات/.test(girls.reject!) && /لم يُستورد/.test(girls.reject!),
+    "كشف فرع البنين (011) يُرفض في «كلية التربية الأساسية - بنات» برسالةٍ تسمّي الفرعين");
+  const girlsByName = assessRemainingImport(reading, { departmentCode: "0109", headerText: real.headerText, branch: { collegeName: "كلية التربية الأساسية - بنات" } });
+  check(Boolean(girlsByName.reject), "ويُرفض بالجنس وحده إن لم يُعرف رمز الفرع المختار");
+  const boys = assessRemainingImport(reading, { departmentCode: "0109", departmentName: "تكنولوجيا التعليم", headerText: real.headerText,
+    branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
+  check(boys.reject === null, "ويُقبل في فرعه (011 بنين)");
   const vacant = vacantValues(reading);
   check(vacant[id("105")] === 45 && vacant[id("112")] === 39 && vacant[id("113")] === -6 && vacant[id("125")] === -22 && !(id("106") in vacant),
     "الشاغر («المقاعد المتبقية») يُحفظ معه للإنذار المبكر: 105 ← 45، 112 ← 39، 113 ← ‎-6‎، وما لا شعب له بلا شاغر");
