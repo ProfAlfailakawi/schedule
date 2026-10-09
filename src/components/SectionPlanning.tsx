@@ -311,6 +311,15 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const nSuspect = previewRead.filter(item => item.suspect && !item.confirmed).length;
   const nNoSections = previewRead.filter(item => item.state === "noSections").length;
   const nMissing = preview?.missing.length || 0;
+  /* أسطرُ الكشف التي ليست من مقررات القسم في النظام: تظهر في مكانها من الجدول
+     بلونٍ خافت — موجودةٌ في الكشف فتُرى — ولا يُعبَّأ منها شيء. */
+  const foreignRows = preview ? [...new Set<string>(preview.foreign.map(String))].map(printed => ({ printed })) : [];
+  /* رقم المقرر = آخر ثلاث خانات، فيتساوى «0109105» في النظام و«105» المطبوع في الكشف. */
+  const courseTail = (code: string) => { const digits = String(code).replace(/\D/g, ""); return digits ? Number(digits.slice(-3)) : Number.MAX_SAFE_INTEGER; };
+  const previewOrder = [
+    ...previewRead.map(item => ({ n: courseTail(courseName.get(item.row.courseId)?.code || item.row.printed), item, foreign: null as string | null })),
+    ...foreignRows.map(row => ({ n: courseTail(row.printed), item: null, foreign: row.printed })),
+  ].sort((a, b) => a.n - b.n);
 
   return (
     <div className="section-plan">
@@ -386,7 +395,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             {openWhy[key] ? (
               <div className="section-plan-why" role="row">
                 <dl role="cell">
-                  <div><dt>المقاعد المتبقية</dt><dd>{remaining[key] !== undefined && remaining[key] !== "" ? (Number(remaining[key]) < 0 ? `${remaining[key]} — المسجّلون فوق السعة بـ${-Number(remaining[key])}` : remaining[key]) : "لم تُستورد"}</dd></div>
+                  <div><dt>المقاعد المتبقية</dt><dd>{remaining[key] !== undefined && remaining[key] !== "" ? (Number(remaining[key]) < 0 ? <><bdi className="section-plan-signed">{remaining[key]}</bdi> — المسجّلون فوق السعة بـ{-Number(remaining[key])}</> : remaining[key]) : "لم تُستورد"}</dd></div>
                   <div><dt>سعة الشعبة</dt><dd>{course.capacity || "—"}{course.capacity && Number(remaining[key]) > 0 ? ` · تكفي المقاعدَ ${countOf(Math.max(1, Math.ceil(Number(remaining[key]) / course.capacity)), AR.section)}` : ""}</dd></div>
                   <div><dt>آخر الفصول</dt><dd>{lastTerms(history)}{lineage ? ` · من رقمه السابق ${lineage}` : ""}</dd></div>
                 </dl>
@@ -431,12 +440,22 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
             ) : null}
             {(preview.assessment?.notes || []).map(note => <p key={note} className="section-plan-yellow-note" role="status"><AlertTriangle aria-hidden="true" /><span>{note}</span></p>)}
             {(preview.warnings || []).map(warning => <p key={warning} className="section-plan-yellow-note" role="status"><AlertTriangle aria-hidden="true" /><span>{warning}</span></p>)}
-            {preview.foreign.length ? <p className="section-plan-note">{countOf(preview.foreign.length, AR.course)} من خارج القسم في الكشف — تُتجاهل، فالتخطيط لمقررات القسم وحدها.</p> : null}
+            {preview.foreign.length ? <p className="section-plan-note">{countOf(foreignRows.length, AR.course)} في الكشف ليست من مقررات القسم في النظام — تظهر في الجدول بلونٍ خافت ولا يُعبَّأ منها شيء. إن كانت من مقررات القسم فأضفها في «المقررات» بالرقم نفسه ثم أعد الاستيراد.</p> : null}
             <div className="import-preview-table-wrap">
               <table className="import-preview-table section-plan-import-table">
                 <thead><tr><th>رقم المقرر</th><th>اسم المقرر</th><th>المقاعد المتبقية في الكشف</th><th>الحالة</th><th>الحالي</th></tr></thead>
                 <tbody>
-                  {previewRead.map(({ row, value, state, typed, review, suspect, confirmed }) => {
+                  {previewOrder.map(({ item, foreign }) => {
+                    if (!item) return (
+                      <tr key={`foreign-${foreign}`} className="is-foreign">
+                        <td dir="ltr">{foreign}</td>
+                        <td className="import-cell-course"><small className="section-plan-cell-note">ليس من مقررات القسم في النظام</small></td>
+                        <td><small className="section-plan-cell-note">لا يُعبَّأ</small></td>
+                        <td><span className="section-plan-state"><MinusCircle aria-hidden="true" /> خارج القائمة</span></td>
+                        <td />
+                      </tr>
+                    );
+                    const { row, value, state, typed, review, suspect, confirmed } = item;
                     const key = String(row.courseId);
                     const current = remaining[key];
                     const course = courseName.get(row.courseId);
@@ -449,7 +468,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                         </td>
                         {suspect && state === "read" ? (
                           <td className={confirmed ? undefined : "import-cell-review"}>
-                            {confirmed ? <b>{value}</b> : <b className="section-plan-cell-note">{value}</b>}
+                            {confirmed ? <b className="section-plan-signed">{value}</b> : <b className="section-plan-cell-note section-plan-signed">{value}</b>}
                             <br />
                             <button data-guide-ignore="تأكيد داخل معاينة الاستيراد فقط: أن السطر المشتبه برمزه هو المقرر المقترح؛ لا يحفظ شيئاً قبل «تعبئة»" type="button" className="section-plan-reason-chip is-manual" aria-pressed={confirmed}
                               onClick={() => setConfirmedSuspects(current => confirmed ? current.filter(id => id !== row.courseId) : [...current, row.courseId])}>
@@ -467,21 +486,20 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                           </td>
                         ) : state === "noSections" ? (
                           <td><small className="section-plan-cell-note">{STATE_NOTE.noSections}</small></td>
-                        ) : <td><b>{shown}</b></td>}
+                        ) : <td><b className="section-plan-signed">{shown}</b></td>}
                         <td>
                           {state === "noSections" ? <span className="section-plan-state"><MinusCircle aria-hidden="true" /> بلا شعب</span>
                             : typed !== undefined ? <span className="section-plan-state is-manual"><PencilLine aria-hidden="true" /> يدوي</span>
                             : review ? <span className="section-plan-state is-review"><AlertTriangle aria-hidden="true" /> يحتاج مراجعة</span>
                             : <span className="section-plan-state is-read"><CheckCircle2 aria-hidden="true" /> مقروء</span>}
                         </td>
-                        <td>{current !== undefined && current !== "" && Number(current) !== shown ? current : ""}</td>
+                        <td><bdi className="section-plan-signed">{current !== undefined && current !== "" && Number(current) !== shown ? current : ""}</bdi></td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-            {preview.foreign.length ? <details className="section-plan-note"><summary>رموز المقررات المتجاهلة</summary><bdi>{preview.foreign.slice(0, 20).join("، ")}</bdi>{preview.foreign.length > 20 ? "…" : ""}</details> : null}
             {nMissing ? (
               <details className="section-plan-missing-list">
                 <summary>غير واردة في الكشف: {countOf(nMissing, AR.course)} — لا تُمسّ قيمتها ولا تُفرَّغ</summary>
