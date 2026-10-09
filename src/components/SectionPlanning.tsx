@@ -62,6 +62,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [source, setSource] = useState<Payload["remainingSource"]>(null);
   const [vacant, setVacant] = useState<Record<string, number>>({});
+  /* «بيانات قديمة» أُزيلت بالزر: تُخفى حتى يُعاد التحميل (الحفظ يمحوها من الخادم). */
+  const [legacyCleared, setLegacyCleared] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState("");
@@ -99,6 +101,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         setChosen(asText(body.accepted));
         setSource(body.remainingSource || null);
         setVacant(body.vacant || {});
+        setLegacyCleared(false);
         setSavedAt(body.updatedAt || ""); setSavedBy(body.updatedBy || "");
       })
       .catch(e => { if (!cancelled) setError(e.message); });
@@ -238,10 +241,11 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
 
   /* كشفٌ استُورد خطأً (قسمٌ أو فرعٌ آخر قبل التحقق): يُزال كله — المتبقي وشاغره ومصدره — ويُحفظ،
      فيعود الاقتراح إلى التاريخ وحده حتى يُستورد الكشف الصحيح. «المختار» بيد القسم لا يُمسّ. */
+  /* يظهر الزر ما دام للفصل أيُّ «متبقٍّ» محفوظ: كشفٌ موسوم، أو «بيانات قديمة» بعمودٍ آخر، أو أرقامٌ بلا مصدر. */
   const clearImport = () => {
-    if (!source) return;
-    if (!window.confirm(`إزالة الكشف المستورد «${source.fileName}» وأرقام «المتبقي» كلها لهذا الفصل؟ يبقى «المختار» كما هو.`)) return;
-    setRemaining({}); setVacant({}); setSource(null); setPreview(null);
+    const name = source?.fileName || data?.legacyRemaining?.fileName || "";
+    if (!window.confirm(`إزالة ${name ? `الكشف المستورد «${name}»` : "أرقام «المتبقي» المحفوظة"} وأرقام «المتبقي» كلها لهذا الفصل؟ يبقى «المختار» كما هو.`)) return;
+    setRemaining({}); setVacant({}); setSource(null); setPreview(null); setLegacyCleared(true);
     setEdits(n => n + 1);
   };
 
@@ -306,7 +310,8 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     </>
   );
 
-  const legacy = data.legacyRemaining && Object.keys(data.legacyRemaining.values || {}).length ? data.legacyRemaining : null;
+  const legacy = !legacyCleared && data.legacyRemaining && Object.keys(data.legacyRemaining.values || {}).length ? data.legacyRemaining : null;
+  const hasSaved = Boolean(source || legacy || Object.values(remaining).some(value => value !== ""));
   const STATE_NOTE: Record<Exclude<CellState, "read">, string> = {
     unread: "لم تُقرأ الخانة", lowConfidence: "قراءة غير واضحة", mismatch: "تخالف حساب الكشف (لم يجتازوا − المسجلين)", noSections: "لا شعب له في الكشف — لا قيمة",
   };
@@ -345,9 +350,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
           <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي (لم يسجلوا)"}
         </PrimaryButton>
-        {source && !reading ? (
+        {hasSaved && !reading ? (
           <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport}>
-            <Trash2 aria-hidden="true" /> إزالة الكشف المستورد
+            <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : "إزالة أرقام المتبقي"}
           </SecondaryButton>
         ) : null}
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"
