@@ -246,8 +246,15 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   check(Boolean(both.reject) && /تكنولوجيا التعليم/.test(both.reject!) && /بنين/.test(both.reject!) && /أصول التربية/.test(both.reject!) && /بنات/.test(both.reject!)
     && /القسم والفرع الصحيحين/.test(both.reject!) && /لم يُستورد شيء/.test(both.reject!),
     "قسمٌ آخر وفرعٌ آخر معاً: الرسالة تسمّي ما في الكشف (تكنولوجيا التعليم، بنين) وما المختار (أصول التربية، بنات)");
+  check(both.rejectKind === "mismatch" && both.mismatch?.fields.join(",") === "department,branch"
+    && both.mismatch.sheet.department === "تكنولوجيا التعليم" && both.mismatch.sheet.branch === "بنين"
+    && both.mismatch.chosen.department === "أصول التربية" && both.mismatch.chosen.branch === "بنات",
+    "والمقارنة بياناتٌ تُرسم: في الكشف (تكنولوجيا التعليم · بنين) ≠ المختار (أصول التربية · بنات)");
+  check(otherJudged.mismatch?.fields.join(",") === "department" && jahra.mismatch?.fields.join(",") === "branch" && jahra.mismatch.chosen.branch === "بنات · الجهراء",
+    "ولا يُرسم إلا المختلف: القسم وحده، أو الفرع وحده (بنات · الجهراء)");
   const noCode = assessRemainingImport(readRemainingReport(real.pages, foundations, ""), { departmentCode: "", departmentName: "أصول التربية", headerText: real.headerText, branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
   check(Boolean(noCode.reject) && /بلا رمزٍ مسجّل/.test(noCode.reject!), "وقسمٌ بلا رمزٍ في النظام يُرفض — كان يطابق الأرقام الثلاثية (105، 106…) ويكتفي بتأكيدٍ بنقرة");
+  check(noCode.rejectKind === "noCode", "وقسمٌ بلا رمز: نوعه «noCode» لأيقونةٍ وكلمتين");
   check(readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.code === "012" && readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.gender === "girls"
     && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.gender === "boys"
     && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.code === "011"

@@ -252,8 +252,12 @@ check((server.match(/remainingAssessment\(reading, departmentCode, departmentNam
 }
 {
   const ui = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
-  check(ui.includes("setImportError(e.message)") && ui.includes('className="section-plan-reject" role="alert"') && ui.includes("رُفض الكشف — لم يُستورد شيء"),
-    "رفض الكشف يظهر في صندوق الاستيراد نفسه، أحمرَ بعنوان «رُفض الكشف — لم يُستورد شيء»، لا سطراً خافتاً أسفل الصفحة");
+  check(ui.includes("setImportError(e?.rejection ||") && ui.includes('className="section-plan-reject" role="alert" aria-label={importError.message}')
+    && ui.includes("<strong>رُفض الكشف</strong>") && ui.includes("لم يُستورد شيء") && ui.includes('className="section-plan-reject-compare"') && ui.includes("في الكشف") && ui.includes("المختار")
+    && ui.includes("const REJECT_SHORT"),
+    "رفض الكشف في صندوق الاستيراد: «رُفض الكشف · لم يُستورد شيء» ثم مقارنة «في الكشف ≠ المختار» بأيقونات (أو أيقونةٌ وكلمتان لغيرها)، والنص الكامل لقارئ الشاشة");
+  check((server.match(/rejectKind: assessment\.rejectKind \|\| null, mismatch: assessment\.mismatch \|\| null/g) || []).length === 2,
+    "بابا الكشف يردّان نوع الرفض ومقارنته بياناتٍ لا نصاً فقط");
 }
 const ocr = fs.readFileSync("src/utils/documentOcr.ts", "utf8");
 check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set<string>([])'),
