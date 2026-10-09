@@ -313,10 +313,12 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const nMissing = preview?.missing.length || 0;
   /* أسطرُ الكشف التي ليست من مقررات القسم في النظام: تظهر في مكانها من الجدول
      بلونٍ خافت — موجودةٌ في الكشف فتُرى — ولا يُعبَّأ منها شيء. */
-  const foreignRows = preview ? [...new Set<string>(preview.foreign.map(String))].map(printed => ({ printed, n: courseNumber(printed) })) : [];
+  const foreignRows = preview ? [...new Set<string>(preview.foreign.map(String))].map(printed => ({ printed })) : [];
+  /* رقم المقرر = آخر ثلاث خانات، فيتساوى «0109105» في النظام و«105» المطبوع في الكشف. */
+  const courseTail = (code: string) => { const digits = String(code).replace(/\D/g, ""); return digits ? Number(digits.slice(-3)) : Number.MAX_SAFE_INTEGER; };
   const previewOrder = [
-    ...previewRead.map(item => ({ n: courseNumber(courseName.get(item.row.courseId)?.code || item.row.printed), item, foreign: null as string | null })),
-    ...foreignRows.map(row => ({ n: row.n, item: null, foreign: row.printed })),
+    ...previewRead.map(item => ({ n: courseTail(courseName.get(item.row.courseId)?.code || item.row.printed), item, foreign: null as string | null })),
+    ...foreignRows.map(row => ({ n: courseTail(row.printed), item: null, foreign: row.printed })),
   ].sort((a, b) => a.n - b.n);
 
   return (
