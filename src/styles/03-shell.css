@@ -658,7 +658,7 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
 .ob-stage{position:relative;isolation:isolate;--ob-row:34px}
 .ob-stage-frame{
   border:1px solid var(--line);border-radius:var(--r-lg);
-  background:var(--surface-2);padding:10px;overflow:hidden;
+  background:var(--surface-2);padding:10px 10px 30px;overflow:hidden;
 }
 .ob-stage-days{
   display:grid;grid-template-columns:22px repeat(5,minmax(0,1fr));gap:4px;

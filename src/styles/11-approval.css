@@ -459,7 +459,15 @@
   min-block-size:38px;padding:6px 11px;font:inherit;
   border:1px solid var(--line-strong);border-radius:var(--r-sm);
   background:var(--surface);color:var(--ink);
+  -webkit-appearance:none;appearance:none;cursor:pointer;
+  padding-inline-end:32px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235b6660' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:left 11px center;
+  transition:border-color .16s,box-shadow .16s;
 }
+.changes-term-picker select:hover{border-color:var(--accent)}
+.changes-term-picker select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+@media (prefers-reduced-motion:reduce){.changes-term-picker select{transition:none}}
 /* ── سطر الإضافات المنتظِرة، ولوحة توقيع رئيس القسم ────────────────────
    سطرٌ واحد فوق الجدول، وزرٌّ واحد. ولا يظهر أيٌّ منهما إلا حين يكون
    مطلوباً فعلاً — فرئيس القسم الذي لا ينتظره شيء لا يرى شيئاً.          */
