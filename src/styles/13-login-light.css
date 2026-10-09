@@ -81,3 +81,15 @@
 :root:not([data-theme="dark"]) .install-login .install-pop header button{color:var(--muted)}
 :root:not([data-theme="dark"]) .install-login .install-step-icon{background:var(--accent-soft);color:var(--accent)}
 :root:not([data-theme="dark"]) .install-login .install-steps-grid li{background:var(--surface-2);border-color:var(--line)}
+
+/* Entrance: the card and the story settle in once. Nothing loops. */
+@media screen and (prefers-reduced-motion:no-preference){
+  :root:not([data-theme="dark"]) .apex-login-access{animation:login-light-rise .55s cubic-bezier(.2,.7,.2,1) both}
+  :root:not([data-theme="dark"]) .apex-login-story{animation:login-light-rise .55s cubic-bezier(.2,.7,.2,1) .06s both}
+}
+@keyframes login-light-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  :root:not([data-theme="dark"]) .apex-login-access,
+  :root:not([data-theme="dark"]) .apex-login-story{animation:none}
+}
+@media print{.apex-login-access,.apex-login-story{animation:none!important}}

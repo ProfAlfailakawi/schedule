@@ -22,14 +22,14 @@ import { ARABIC_COUNT_SCRIPT } from "../utils/arabicCount";
 import { PUBLIC_FONT_FACES, PUBLIC_KIT_CSS, PUBLIC_KIT_SCRIPT } from "./publicKit";
 
 const PAGE_CSS = String.raw`
-:root{--raise:#fff;--on:#fff;--seg:#e8efea;--tt-bg:#fbfdfc;--tt-sum:linear-gradient(#fbfdfc,#f6faf7);--chip-mute:#eef2ef;--sk-on:#fff;--ink:#15251d;--ink2:#2c3f34;--muted:#5d6e64;--muted2:#8a9890;--line:#dde6e0;--line2:#c8d5cd;--bg:#f3f7f4;--card:var(--raise);--soft:#edf5f0;
---accent:#247756;--accent-d:#1b5c43;--accent-soft:#e1f2e9;--accent-line:#9fcdb6;
+:root{--raise:#fff;--on:#fff;--seg:#e8efea;--tt-bg:#fbfdfc;--tt-sum:linear-gradient(#fbfdfc,#f6faf7);--chip-mute:#eef2ef;--sk-on:#fff;--ink:#131817;--ink2:#2c3f34;--muted:#5d6e64;--muted2:#6b766f;--line:#dde6e0;--line2:#c8d5cd;--bg:#f2f3ef;--card:var(--raise);--soft:#edf5f0;
+--accent:#1f6b5c;--accent-d:#17564a;--accent-soft:#dcece7;--accent-line:#a9cfc3;
 --amber:#85580a;--amber-soft:#fff4d6;--amber-line:#e3c26a;--bad:#a8322b;--bad-soft:#fdecea;--bad-line:#e1a39d;
 --info:#2b5d88;--info-soft:#e7f0f8;--info-line:#a9c6de;
---shadow:0 1px 2px rgba(22,57,40,.05),0 12px 32px rgba(22,57,40,.07);--ring:0 0 0 3px rgba(36,119,86,.28);--H:56px}
+--shadow:0 1px 2px rgba(22,57,40,.05),0 12px 32px rgba(22,57,40,.07);--ring:0 0 0 3px rgba(31,107,92,.28);--H:56px}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% -5%,rgba(36,119,86,.09),transparent 30%),var(--bg);color:var(--ink);font:400 16px/1.7 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;-webkit-font-smoothing:antialiased}
+body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% -5%,rgba(31,107,92,.09),transparent 30%),var(--bg);color:var(--ink);font:400 16px/1.7 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 button{touch-action:manipulation;cursor:pointer}
 button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible,a:focus-visible,.ev:focus-visible{outline:none;box-shadow:var(--ring);border-color:var(--accent)}
@@ -40,12 +40,12 @@ svg.i{width:1.15em;height:1.15em;flex:none;fill:none;stroke:currentColor;stroke-
 .wrap{max-width:1100px;margin:0 auto;padding:16px 16px 40px}
 .wrap.has-bar{padding-bottom:104px}
 /* الهيدر */
-.hero{position:relative;overflow:hidden;border-radius:24px;padding:18px 20px 16px;color:#fff;background:linear-gradient(135deg,#17513c 0%,#247756 62%,#2f8d68 100%);box-shadow:var(--shadow)}
+.hero{position:relative;overflow:hidden;border-radius:24px;padding:18px 20px 16px;color:#fff;background:linear-gradient(135deg,#17513c 0%,#1f6b5c 62%,#2f8d68 100%);box-shadow:var(--shadow)}
 .hero::after{content:"";position:absolute;inset:auto auto -70px -50px;width:230px;height:230px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.14),transparent 68%);pointer-events:none}
 .hero-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .brand{font:600 12px/1 system-ui,sans-serif;letter-spacing:.28em;opacity:.78}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px 5px 14px;border-radius:999px;font-size:13px;font-weight:700;line-height:1.5;border:1px solid transparent}
-.hero .badge{background:#fff;color:#15251d}
+.hero .badge{background:#fff;color:#131817}
 .badge[data-tone=ok]{color:var(--accent-d);background:var(--accent-soft);border-color:var(--accent-line)}
 .badge[data-tone=wait]{color:var(--amber);background:var(--amber-soft);border-color:var(--amber-line)}
 .badge[data-tone=bad]{color:var(--bad);background:var(--bad-soft);border-color:var(--bad-line)}
@@ -262,7 +262,7 @@ details.hist[open] summary{border-bottom:1px solid var(--line);border-radius:16p
 .bar p{margin:0;font-size:14px;line-height:1.5;color:var(--ink2);min-width:0}.bar p b{display:block;font-size:14.5px}
 .bar .btn{flex:none;min-height:46px;padding:9px 18px}
 /* تحميل */
-.sk{border-radius:20px;background:linear-gradient(90deg,#e7eee9 25%,#f3f7f4 50%,#e7eee9 75%);background-size:200% 100%;animation:sh 1.3s linear infinite}
+.sk{border-radius:20px;background:linear-gradient(90deg,#e7eee9 25%,#f2f3ef 50%,#e7eee9 75%);background-size:200% 100%;animation:sh 1.3s linear infinite}
 @keyframes sh{to{background-position:-200% 0}}
 .state{max-width:520px;margin:12vh auto 0;padding:30px 22px;text-align:center}
 .state .big-i{display:grid;place-items:center;width:58px;height:58px;margin:0 auto 12px;border-radius:50%;background:var(--bad-soft);color:var(--bad)}
@@ -742,7 +742,7 @@ export function studyProposalPage(token: string, proposalId: string, nonce: stri
     .replace("__KIT__", () => PUBLIC_KIT_SCRIPT);
   return `<!doctype html><html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#247756">
+<meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#1f6b5c">
 <title>مقترحك الدراسي — SCHEDULE</title>
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */${PUBLIC_FONT_FACES}${PAGE_CSS}${PUBLIC_KIT_CSS}</style></head><body>${demoHint ? `<div style="max-width:1100px;margin:0 auto;padding:12px 16px 0">${demoHint}</div>` : ""}<noscript>تحتاج هذه الصفحة إلى تفعيل جافاسكربت في المتصفح.</noscript><div id="host"></div>
