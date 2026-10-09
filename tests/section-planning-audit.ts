@@ -247,8 +247,8 @@ check((server.match(/remainingAssessment\(reading, departmentCode, departmentNam
 {
   const ui = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
   check(ui.includes("const clearImport = () =>") && ui.includes("setRemaining({}); setVacant({}); setSource(null);") && ui.includes("window.confirm(") && !ui.includes("setDeptConfirmed")
-    && ui.includes("const hasSaved = Boolean(source || legacy || Object.values(remaining).some(value => value !== \"\"));") && ui.includes("{hasSaved && !reading ? ("),
-    "كشفٌ استُورد خطأً يُزال كله بعد تأكيد (المتبقي وشاغره ومصدره)، والزر يظهر لأي متبقٍّ محفوظ — كشفٌ موسوم أو «بيانات قديمة» أو أرقامٌ بلا مصدر؛ ولا خانة «أؤكد…»");
+    && ui.includes("const hasSaved = Boolean(source || legacy || Object.values(remaining).some(value => value !== \"\"));") && ui.includes("disabled={!hasSaved || reading}") && ui.includes("لا كشف مستورد لإزالته"),
+    "كشفٌ استُورد خطأً يُزال كله بعد تأكيد (المتبقي وشاغره ومصدره)، والزر ظاهرٌ دائماً: يعمل لأي متبقٍّ محفوظ (كشفٌ موسوم أو «بيانات قديمة» أو أرقامٌ بلا مصدر)، ومعطّلٌ حين لا شيء يُزال؛ ولا خانة «أؤكد…»");
 }
 const ocr = fs.readFileSync("src/utils/documentOcr.ts", "utf8");
 check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set<string>([])'),
