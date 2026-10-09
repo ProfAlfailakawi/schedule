@@ -244,6 +244,11 @@ check(server.includes('app.post("/api/registration-stats/remaining-cells", rateL
 check((server.match(/remainingAssessment\(reading, departmentCode, departmentName, (cells\.)?headerText, branch\)/g) || []).length === 2
   && server.includes("const branch = { code: site.length >= 3 ? site.slice(0, 3) : \"\", collegeName: String(college?.AdCollegeName || \"\") };"),
   "بابا الكشف (الملف والصفحات معاً) يمرّران الفرع المختار، فكشف فرعٍ آخر يُرفض قبل المعاينة");
+{
+  const ui = fs.readFileSync("src/components/SectionPlanning.tsx", "utf8");
+  check(ui.includes("const clearImport = () =>") && ui.includes("setRemaining({}); setVacant({}); setSource(null);") && ui.includes("window.confirm(") && !ui.includes("setDeptConfirmed"),
+    "كشفٌ استُورد خطأً يُزال كله بعد تأكيد (المتبقي وشاغره ومصدره)، ولا خانة «أؤكد أن هذا الكشف لقسم…» بعد اليوم");
+}
 const ocr = fs.readFileSync("src/utils/documentOcr.ts", "utf8");
 check(ocr.includes("async function ruledReportCells(") && ocr.includes("await deskew(image)") && ocr.includes("straightenTable(lib,surface,geometry)") && ocr.includes('const skipped=new Set<string>([])'),
   "الصورة المسطّرة: تُعدَّل وتُستقام وتُقرأ خانةً خانة، وكل الأعمدة تُقرأ («لم يسجلوا» للتخطيط، «لم يجتازوا» والمسجّلون لفحصه، «المقاعد المتبقية» شاغرٌ للإنذار)");

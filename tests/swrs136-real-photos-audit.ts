@@ -48,6 +48,11 @@ async function main() {
   const reading = readRemainingReport(cells.pages, catalogue, "0101");
   const assessment = assessRemainingImport(reading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: cells.headerText });
   check(assessment.reject === null && assessment.notes.length === 0 && !assessment.needsDepartmentConfirmation, "الكشف الحقيقي الواضح: يُقبل بلا ملاحظات ولا تأكيد قسم", assessment);
+  /* الفرع من ترويسة الصورة («الفرع : 012 … بنات»): يُقبل في فرعه، ويُرفض في البنين وفي الجهراء. */
+  const asBranch = (code: string, collegeName: string) => assessRemainingImport(reading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: cells.headerText, branch: { code, collegeName } });
+  check(asBranch("012", "كلية التربية الأساسية - بنات").reject === null, "صورة فرع البنات تُقبل في «كلية التربية الأساسية - بنات»", asBranch("012", "كلية التربية الأساسية - بنات").reject);
+  check(/بنين/.test(asBranch("011", "كلية التربية الأساسية - بنين").reject || ""), "وتُرفض في «بنين» برسالةٍ تسمّي الفرعين");
+  check(/الجهراء/.test(asBranch("012", "كلية التربية الأساسية - بنات - الجهراء").reject || ""), "وتُرفض في «الجهراء» وإن شاركته «بنات» ورمز 012");
   check(reading.rows.length === 38 && reading.missing.length === 0, "كل مقررات الصفحتين (٣٨) قُرئت — بما فيها رموزٌ أسقطت القراءةُ الأولى رقماً منها (252، 255)", reading.missing);
   const wrong: string[] = [], unread: string[] = [];
   for (const row of reading.rows) {
@@ -78,7 +83,9 @@ async function main() {
   const pdfCells = await readReportCells(fs.readFileSync("tests/fixtures/swrs136/report.pdf"), "application/pdf", found => blankSpots(found, catalogue, "0101"));
   const pdfReading: any = readRemainingReport(pdfCells.pages, catalogue, "0101");
   const pdfAssessment: any = assessRemainingImport(pdfReading, { departmentCode: "0101", departmentName: "التربية الإسلامية", headerText: pdfCells.headerText });
-  check(pdfCells.pageCount === 2 && pdfAssessment.reject === null, "PDF ممسوح بصفحتين: يُقبل (لا رفض كامل)", pdfAssessment.reject);
+  /* ترويسته الممسوحة لا تُظهر رمز القسم («!0010»)، فلا يثبت أنه للقسم المختار: يُرفض برسالةٍ تطلب PDF النظام —
+     لا يُقبل بتأكيدٍ بنقرة. والقراءة نفسها (أدناه) تبقى مفحوصة. */
+  check(pdfCells.pageCount === 2 && /رمز القسم العلمي/.test(pdfAssessment.reject || ""), "PDF ممسوح لم يُقرأ رمز قسمه من ترويسته: يُرفض ويُطلب PDF النظام", pdfAssessment.reject);
   const suspect = (pdfReading.suspects || []).find((item: any) => item.expected.endsWith("263"));
   const id263 = catalogue.find(course => course.code.endsWith("263"))!.id;
   check(Boolean(suspect) && !pdfReading.missing.includes(id263), "الرمز المقروء خطأً (203) يظهر مشتبهاً بـ263 ولا يضيع الصف", pdfReading.suspects);
@@ -92,7 +99,7 @@ async function main() {
   const other = catalogueFor("0202");
   const otherReading = readRemainingReport(cells.pages, other, "0202");
   const otherAssessment = assessRemainingImport(otherReading, { departmentCode: "0202", departmentName: "الرياضيات", headerText: cells.headerText });
-  check(Boolean(otherAssessment.reject) || otherAssessment.needsDepartmentConfirmation, "كشف قسمٍ آخر لا يُطبَّق ولو تطابقت أرقام المقررات: رفض، أو تأكيدٌ صريح من المستخدم لا غير", otherAssessment);
+  check(Boolean(otherAssessment.reject) && !otherAssessment.needsDepartmentConfirmation, "كشف قسمٍ آخر لا يُطبَّق ولو تطابقت أرقام المقررات: رفضٌ لا تأكيد", otherAssessment);
   check(!otherAssessment.reject || /الرياضيات/.test(otherAssessment.reject), "والرسالة تسمّي القسم المختار");
 
   /* الطولية: الصورة نفسها مدوّرةً ربع دورة. */

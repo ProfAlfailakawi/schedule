@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CheckCircle2, ChevronDown, FileQuestion, FileUp, History, Layers, MinusCircle, PencilLine, Printer, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, FileQuestion, FileUp, History, Layers, MinusCircle, PencilLine, Printer, RotateCcw, Trash2, X } from "lucide-react";
 import { PrimaryButton, PrintPortal, SecondaryButton, useDialogDismiss } from "./ui";
 import { AR, countOf, oblique } from "../utils/arabicCount";
 import {
@@ -72,7 +72,6 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   const [preview, setPreview] = useState<ImportReading | null>(null);
   /* قيمٌ كتبها المستخدم بيده لخاناتٍ لم تُقرأ، وتأكيده أن الكشف لقسمه حين لم يُقرأ رأسه. */
   const [manual, setManual] = useState<Record<string, string>>({});
-  const [deptConfirmed, setDeptConfirmed] = useState(false);
   /* أسطرٌ رمزها المقروء مشتبهٌ (203 ← 263) أكّد المستخدم أنها لمقررها. */
   const [confirmedSuspects, setConfirmedSuspects] = useState<number[]>([]);
   /* كشفٌ ممسوح/صور: المقررات التي أكّد المستخدم رقمها المقروء بعد مقارنته بالورقة. */
@@ -173,7 +172,7 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
   /* ── كشف المتبقي ← معاينة ← تعبئة ─────────────────────────────────────── */
   /* كشفٌ PDF، أو صور صفحاته (تصوير الهاتف): كلُّ صورةٍ تُقرأ وحدها وتحمل
      معها عناوين الأولى، ثم تُقرأ صفحاتها معاً فتتطابق أعمدتها. */
-  const showPreview = (found: ImportReading) => { setManual({}); setDeptConfirmed(false); setConfirmedSuspects([]); setConfirmedScan([]); setPreview(found); };
+  const showPreview = (found: ImportReading) => { setManual({}); setConfirmedSuspects([]); setConfirmedScan([]); setPreview(found); };
   const readFiles = async (files: File[]) => {
     setReading(true); setError(null); setReadingNote("");
     try {
@@ -224,10 +223,9 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     } catch (e: any) { setError(e.message); } finally { setReading(false); setReadingNote(""); if (fileInput.current) fileInput.current.value = ""; }
   };
   /* التعبئة تكتب المقروءَ بوضوح وما كتبه المستخدم وحده (planRemainingApply)؛ ما لم يُقرأ يبقى فارغاً
-     أو على قيمته المحفوظة، ولا يصير صفراً ولا يُخمَّن. القسم غير المتحقَّق منه يلزمه تأكيدٌ صريح. */
+     أو على قيمته المحفوظة، ولا يصير صفراً ولا يُخمَّن. والكشف الذي لم يُثبت فرعه وقسمه من ترويسته رُفض قبل المعاينة. */
   const plan = useMemo(() => preview && preview.column != null ? planRemainingApply(preview, preview.column, manual, remaining, confirmedSuspects, preview.suspects || [], preview.source === "scan" ? { confirmed: confirmedScan } : null) : null, [preview, manual, remaining, confirmedSuspects, confirmedScan]);
-  const needsConfirm = Boolean(preview?.assessment?.needsDepartmentConfirmation);
-  const canApply = Boolean(plan && plan.total > 0 && (!needsConfirm || deptConfirmed));
+  const canApply = Boolean(plan && plan.total > 0);
   const applyImport = () => {
     if (!preview || !plan || !canApply) return;
     setRemaining(asText(plan.next));
@@ -235,6 +233,15 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
     setVacant(vacantValues(preview, preview.source === "scan" ? confirmedScan : undefined));
     setSource({ fileName: preview.fileName, importedAt: new Date().toISOString(), column: "unregistered" });
     setPreview(null);
+    setEdits(n => n + 1);
+  };
+
+  /* كشفٌ استُورد خطأً (قسمٌ أو فرعٌ آخر قبل التحقق): يُزال كله — المتبقي وشاغره ومصدره — ويُحفظ،
+     فيعود الاقتراح إلى التاريخ وحده حتى يُستورد الكشف الصحيح. «المختار» بيد القسم لا يُمسّ. */
+  const clearImport = () => {
+    if (!source) return;
+    if (!window.confirm(`إزالة الكشف المستورد «${source.fileName}» وأرقام «المتبقي» كلها لهذا الفصل؟ يبقى «المختار» كما هو.`)) return;
+    setRemaining({}); setVacant({}); setSource(null); setPreview(null);
     setEdits(n => n + 1);
   };
 
@@ -338,6 +345,11 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
           <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي (لم يسجلوا)"}
         </PrimaryButton>
+        {source && !reading ? (
+          <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport}>
+            <Trash2 aria-hidden="true" /> إزالة الكشف المستورد
+          </SecondaryButton>
+        ) : null}
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"
           onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
         <div className="section-plan-import-text">
@@ -538,15 +550,6 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
                 <summary>غير واردة في الكشف: {countOf(nMissing, AR.course)} — لا تُمسّ قيمتها ولا تُفرَّغ</summary>
                 <ul>{preview.missing.map(id => courseName.get(id)).filter(Boolean).map(course => <li key={course!.id}><b dir="ltr">{course!.code}</b> {course!.name}</li>)}</ul>
               </details>
-            ) : null}
-            {needsConfirm ? (
-              <div className="section-plan-yellow-note" role="status">
-                <AlertTriangle aria-hidden="true" />
-                <label className="section-plan-confirm">
-                  <input type="checkbox" checked={deptConfirmed} onChange={e => setDeptConfirmed(e.target.checked)} />
-                  <span>أؤكد أن هذا الكشف لقسم «{preview.departmentName || "هذا القسم"}» — لم يُقرأ رمز القسم ولا اسمه في رأس الكشف.</span>
-                </label>
-              </div>
             ) : null}
             <div className="section-plan-report-actions">
               <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={applyImport} disabled={!canApply}>
