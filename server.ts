@@ -14393,7 +14393,9 @@ app.get("/api/registration-stats", requirePermission(7), async (req: Authenticat
       sectionsOf.get(id)!.add(String(row.SCode || row.id));
     }
     /* متبقّي فصلٍ سابق يدخل المقارنة إن كان «الذين لم يسجلوا» نفسه؛ ما حُفظ بعمودٍ آخر لا يُخلط به. */
-    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.column === "unregistered" ? pastStats.remaining || {} : {} });
+    /* لا متبقٍّ سالب في التاريخ أيضاً: ما حُفظ سالباً قبل اعتماد الصفر لا يُنقص متبقّي سلفٍ آخر في عائلة المقرر. */
+    perTerm.push({ sectionsOf, remaining: pastStats?.remainingSource?.column === "unregistered"
+      ? Object.fromEntries(Object.entries(pastStats.remaining || {}).map(([key, value]) => [key, Math.max(0, Number(value) || 0)])) : {} });
     department.push({
       termName: past.AdTermName, similar: past.similar,
       sections: [...sectionsOf.values()].reduce((sum, set) => sum + set.size, 0),
