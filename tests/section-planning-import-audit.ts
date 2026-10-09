@@ -9,7 +9,7 @@ import {
 } from "../src/utils/remainingReport";
 import { readReportCells } from "../src/utils/documentOcr";
 import { suggestSectionCount } from "../src/utils/sectionCountSuggestion";
-import { signedCount, vacantValues } from "../src/utils/remainingReport";
+import { readReportHeader, signedCount, vacantValues } from "../src/utils/remainingReport";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => { if (ok) { passed++; console.log(`\x1b[32m✓ ${label}\x1b[0m`); } else { failed++; console.log(`\x1b[31m✗ ${label}\x1b[0m`); } };
@@ -231,6 +231,14 @@ check(Boolean(a.reject?.includes("0202") && a.reject.includes("0101")), "وال�
   const boys = assessRemainingImport(reading, { departmentCode: "0109", departmentName: "تكنولوجيا التعليم", headerText: real.headerText,
     branch: { code: "011", collegeName: "كلية التربية الأساسية - بنين" } });
   check(boys.reject === null, "ويُقبل في فرعه (011 بنين)");
+  check(readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.code === "012" && readReportHeader("012 كلية التربية الأساسية بنات : الفرع").branch?.gender === "girls"
+    && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.gender === "boys"
+    && readReportHeader("الفرع : 011 كليه التربيه الاساسيه بنين\nرمز القسم العلمي 0109").branch?.code === "011"
+    && readReportHeader("القسم 0109 تكنولوجيا").branch === undefined,
+    "الفرع يُقرأ بالترتيبين: «الفرع : 011 … بنين» والبصري من القراءة الضوئية «012 … بنات : الفرع»؛ ولا فرع بلا سطره");
+  const reversedHeader = assessRemainingImport(reading, { departmentCode: "0109", headerText: "011 كليه التربيه الاساسيه بنين : الفرع\nرمز القسم العلمي 0109",
+    branch: { code: "012", collegeName: "كلية التربية الأساسية - بنات" } });
+  check(Boolean(reversedHeader.reject), "وترويسةٌ بالترتيب البصري لفرع البنين تُرفض في «بنات» أيضاً");
   const vacant = vacantValues(reading);
   check(vacant[id("105")] === 45 && vacant[id("112")] === 39 && vacant[id("113")] === -6 && vacant[id("125")] === -22 && !(id("106") in vacant),
     "الشاغر («المقاعد المتبقية») يُحفظ معه للإنذار المبكر: 105 ← 45، 112 ← 39، 113 ← ‎-6‎، وما لا شعب له بلا شاغر");
