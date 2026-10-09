@@ -350,11 +350,11 @@ export default function SectionPlanning({ collegeId, sectionId, termId }: { coll
         <PrimaryButton data-guide-feature-id="schedule.tool.data" type="button" className="section-plan-save" onClick={() => fileInput.current?.click()} disabled={reading}>
           <FileUp aria-hidden="true" /> {reading ? (readingNote || "يقرأ الكشف…") : source ? "استيراد كشف أحدث" : "استيراد كشف المتبقي (لم يسجلوا)"}
         </PrimaryButton>
-        {hasSaved && !reading ? (
-          <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport}>
-            <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : "إزالة أرقام المتبقي"}
-          </SecondaryButton>
-        ) : null}
+        {/* الزر ظاهرٌ دائماً في مكانه: معطّلٌ حين لا متبقٍّ محفوظ لهذا الفصل، فيُعرف أن لا شيء دخل لا أن الزر غائب. */}
+        {/* لا تلميحٌ على الزر المعطّل (لا يُبلغ بالفأرة ولا بلوحة المفاتيح): عبارته المرئية هي الشرح. */}
+        <SecondaryButton data-guide-feature-id="schedule.tool.data" type="button" onClick={clearImport} disabled={!hasSaved || reading}>
+          <Trash2 aria-hidden="true" /> {source || legacy ? "إزالة الكشف المستورد" : hasSaved ? "إزالة أرقام المتبقي" : "لا كشف مستورد لإزالته"}
+        </SecondaryButton>
         <input ref={fileInput} type="file" accept="application/pdf,.pdf,image/*,.heic,.heif" multiple hidden aria-label="كشف المتبقي (لم يسجلوا) من عمادة التسجيل: PDF أو صور صفحاته (أفقية)"
           onChange={e => { const files = [...(e.target.files || [])].slice(0, 12); if (files.length) void readFiles(files); }} />
         <div className="section-plan-import-text">
