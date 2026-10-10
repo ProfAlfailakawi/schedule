@@ -1815,3 +1815,35 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .schedule-agenda .agenda-place strong{font-size:13px;overflow-wrap:anywhere}
   .schedule-agenda .agenda-meta{justify-self:center;justify-content:center;gap:18px;width:100%;padding-top:4px}
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Visual polish (presentation only)
+   ──────────────────────────────────────────────────────────────────────────
+   1. كشف التسجيل on a phone: the four reading tiles form a 2×2 grid instead
+      of four full-width rows. The rail-edged look (.stat-tone) is untouched;
+      the card only tightens so a number and its label fit half a screen.
+   2. Short master/detail screens (البيانات الأكاديمية …) no longer reserve
+      three quarters of the viewport: the shell is as tall as its content
+      needs, with a modest floor, so a two-row list is not followed by 300px
+      of empty paper. Long lists still scroll inside their own column.
+   3. The DEMO admin pill flows with the page instead of floating over the
+      rows that scroll beneath it, with a little room on both sides.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media screen and (max-width:640px){
+  .stat-tiles[aria-label="ملخّص الكشف"]{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card{
+    min-height:0;grid-template-columns:32px minmax(0,1fr);gap:var(--s2);padding:var(--s3);
+  }
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-icon{width:32px;height:32px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-icon svg{width:16px;height:16px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card strong{font-size:22px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card span{margin-top:2px;line-height:1.35}
+}
+
+@media screen and (min-width:901px){
+  .catalog-workspace,.master-detail-shell{min-height:min(52vh,520px)}
+}
+
+html[data-demo-admin-readonly="true"] .app-main::before{
+  position:relative;top:auto;margin:6px auto 14px;
+}
