@@ -314,6 +314,8 @@ figcaption{font-family:var(--font-mono); font-size:.58rem; letter-spacing:.1em; 
   inset-inline-start:-12px;inset-inline-end:50%}
 .flow .farrow::before{background:var(--line-strong)}
 .flow .farrow::after{background:var(--brass);transform-origin:right center}
+.flow:dir(ltr) .farrow::after{transform-origin:left center}
+.flow:dir(ltr) .farrow .ic{transform:scaleX(-1)} /* the arrow glyph points left: mirror it so it follows the LTR sequence */
 .flow .fstep{border-color:color-mix(in srgb,var(--brass) 55%,var(--line-strong))}
 .flow .fstep.human{border-color:var(--brass)}
 .flow .fstep .tile__ic{background:var(--brass);color:var(--ground)}
@@ -342,6 +344,8 @@ figcaption{font-family:var(--font-mono); font-size:.58rem; letter-spacing:.1em; 
     inset-block-start:-12px;inset-block-end:50%;margin-block-start:0;
     inset-inline-start:calc(50% - 1px);inset-inline-end:auto;inline-size:2px;block-size:auto}
   .flow .farrow::after{transform-origin:center top}
+  .flow:dir(ltr) .farrow::after{transform-origin:center top}
+  .flow:dir(ltr) .farrow .ic{transform:rotate(-90deg)} /* stacked: down in both directions */
   .flow.flow-armed .farrow::after{transform:scaleY(0)}
 }
 @media (prefers-reduced-motion:reduce){

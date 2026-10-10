@@ -116,5 +116,14 @@ import { importStageStates, noteImportPhase } from "../src/utils/importStages";
   check(/bar\.style\.width = '0%'/.test(landing) && /p\.done \|\| step >= phases\.length/.test(landing), "المحاكاة: الشريط يبدأ من صفر، والشارة تنقلب مع المحطة الرابعة");
 }
 
+
+/* ── الدفعة الثانية: لا غياب ولا خطّ مرسوم قبل المحطات ──────────────────────────────────── */
+{
+  const jcss2 = fs.readFileSync("src/styles/10-journey.css", "utf8");
+  check(!/\.jr-rail>\.jr-station\{opacity:0/.test(jcss2) && /\.jr-rail>\.jr-station\{opacity:\.4\}/.test(jcss2) && /@keyframes jr-light\{from\{opacity:\.4\}/.test(jcss2), "الرحلة: المحطات الخامدة ظاهرة خافتة لا غائبة، وتُضاء بالتتابع");
+  check(/transition:transform calc\(4 \* var\(--jr-step\) \+ \.3s\)/.test(jcss2) && /animation-delay:calc\(var\(--i,0\) \* var\(--jr-step\)\)/.test(jcss2), "الرحلة: امتلاء الخط وتتابع المحطات من متغيّر إيقاع واحد");
+  check(/@media \(max-width: 599px\) \{ #sim-log-text \{ min-height: 3em/.test(landing), "المحاكاة: ارتفاع السجل محجوز على الهاتف");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
