@@ -301,10 +301,12 @@ figcaption{font-family:var(--font-mono); font-size:.58rem; letter-spacing:.1em; 
 .fstep small{font-family:var(--font-mono); font-size:.56rem; letter-spacing:.11em; color:var(--muted-2)}
 .farrow{display:grid; place-items:center; color:var(--muted-2); font-size:18px}
 /* ---------- governance flow: play-once sequential reveal ----------
-   Boxes light in order, each connector fills from the inline-start side
-   (right in RTL), the last box gets one halo. .flow is the armed (not yet
-   played) state; .slide.is-live .flow stays set afterwards, so it never replays. */
-.flow .farrow{position:relative}
+   The base rules ARE the final look (no-JS, reduced motion, print and after the intro
+   are identical). .flow-armed is the dimmed, not-yet-played state (screen only); when
+   the flow is really on screen it is swapped for .flow-intro: boxes light in order,
+   each connector fills from the inline-start side (right in RTL), the last box gets one
+   halo. .flow-intro is removed when the intro ends. */
+.flow .farrow{position:relative;color:var(--brass)}
 .flow .farrow .ic{position:relative;z-index:1;}
 .flow .farrow::before,.flow .farrow::after{
   content:"";position:absolute;pointer-events:none;border-radius:2px;
@@ -312,39 +314,39 @@ figcaption{font-family:var(--font-mono); font-size:.58rem; letter-spacing:.1em; 
   inset-inline-start:-12px;inset-inline-end:50%}
 .flow .farrow::before{background:var(--line-strong)}
 .flow .farrow::after{background:var(--brass);transform-origin:right center}
-.flow .farrow{color:var(--line-strong)}
-.flow .farrow::after{transform:scaleX(0)}
-.flow .fstep{opacity:.55}
-.flow .fstep .tile__ic{background:var(--surface-3);color:var(--muted-2);border-color:var(--line-strong)}
-.slide.is-live .flow .fstep{opacity:1;border-color:color-mix(in srgb,var(--brass) 55%,var(--line-strong));
-  transition:opacity .5s var(--ease) var(--d,0s),border-color .5s var(--ease) var(--d,0s)}
-.slide.is-live .flow .fstep.human{border-color:var(--brass)}
-.slide.is-live .flow .fstep .tile__ic{background:var(--brass);color:var(--ground);
-  transition:background-color .4s var(--ease) var(--d,0s),color .4s var(--ease) var(--d,0s)}
-.slide.is-live .flow .farrow{color:var(--brass);transition:color .3s var(--ease) var(--d,0s)}
-.slide.is-live .flow .farrow::after{transform:scaleX(1);transition:transform .5s var(--ease) var(--d,0s)}
-.slide.is-live .flow .fstep:nth-child(1){--d:0s}
-.slide.is-live .flow .farrow:nth-child(2){--d:.45s}
-.slide.is-live .flow .fstep:nth-child(3){--d:1s}
-.slide.is-live .flow .farrow:nth-child(4){--d:1.45s}
-.slide.is-live .flow .fstep:nth-child(5){--d:2s}
-.slide.is-live .flow .fstep.human{animation:flowHalo 1.5s var(--ease) 2s 1 backwards}
+.flow .fstep{border-color:color-mix(in srgb,var(--brass) 55%,var(--line-strong))}
+.flow .fstep.human{border-color:var(--brass)}
+.flow .fstep .tile__ic{background:var(--brass);color:var(--ground)}
+@media screen{
+  .flow.flow-armed .farrow{color:var(--line-strong)}
+  .flow.flow-armed .farrow::after{transform:scaleX(0)}
+  .flow.flow-armed .fstep{opacity:.55;border-color:var(--line-strong)}
+  .flow.flow-armed .fstep .tile__ic{background:var(--surface-3);color:var(--muted-2);border-color:var(--line-strong)}
+}
+.flow.flow-intro .fstep{transition:opacity .5s var(--ease) var(--d,0s),border-color .5s var(--ease) var(--d,0s)}
+.flow.flow-intro .fstep .tile__ic{transition:background-color .4s var(--ease) var(--d,0s),color .4s var(--ease) var(--d,0s)}
+.flow.flow-intro .farrow{transition:color .3s var(--ease) var(--d,0s)}
+.flow.flow-intro .farrow::after{transition:transform .5s var(--ease) var(--d,0s)}
+.flow.flow-intro .fstep:nth-child(1){--d:0s}
+.flow.flow-intro .farrow:nth-child(2){--d:.45s}
+.flow.flow-intro .fstep:nth-child(3){--d:1s}
+.flow.flow-intro .farrow:nth-child(4){--d:1.45s}
+.flow.flow-intro .fstep:nth-child(5){--d:2s}
+.flow.flow-intro .fstep.human{animation:flowHalo 1.5s var(--ease) 2s 1 backwards}
 @keyframes flowHalo{
-  from{box-shadow:0 0 0 0 rgba(208,166,99,.34)}
-  to{box-shadow:0 0 0 12px rgba(208,166,99,0)}}
+  from{box-shadow:0 0 0 0 color-mix(in srgb,var(--brass) 34%,transparent)}
+  to{box-shadow:0 0 0 12px color-mix(in srgb,var(--brass) 0%,transparent)}}
 @media (max-width:879px){
   .flow .farrow .ic{transform:rotate(-90deg)}
   .flow .farrow::before,.flow .farrow::after{
     inset-block-start:-12px;inset-block-end:50%;margin-block-start:0;
     inset-inline-start:calc(50% - 1px);inset-inline-end:auto;inline-size:2px;block-size:auto}
   .flow .farrow::after{transform-origin:center top}
-  .flow .farrow::after{transform:scaleY(0)}
-  .slide.is-live .flow .farrow::after{transform:scaleY(1)}
+  .flow.flow-armed .farrow::after{transform:scaleY(0)}
 }
 @media (prefers-reduced-motion:reduce){
-  .flow .farrow::after,.slide.is-live .flow .farrow::after{transform:none;transition:none}
-  .flow .fstep,.slide.is-live .flow .fstep,.slide.is-live .flow .farrow,.slide.is-live .flow .fstep .tile__ic{transition:none}
-  .slide.is-live .flow .fstep.human{animation:none}
+  .flow .fstep,.flow .fstep .tile__ic,.flow .farrow,.flow .farrow::after{transition:none!important}
+  .flow .fstep.human{animation:none!important}
 }
 .blocked{
   margin-block-start:14px; display:flex; align-items:center; gap:13px;
@@ -1347,6 +1349,7 @@ html,body{margin:0}
     })(t0);
   }
 
+  var flowCheck=function(){};
   function activate(i){
     var s=slides[i];
     if(!s) return;
@@ -1354,7 +1357,36 @@ html,body{margin:0}
     var sw=s.querySelector('[data-stopwatch]'); if(sw) runStopwatch(sw);
     Array.prototype.forEach.call(s.querySelectorAll(NUMSEL),countUp);
     if(i===0) runDemo();
+    flowCheck();
   }
+
+  /* Governance flow: plays once, when it is really on screen. It does not ride on
+     .is-live (read mode marks every slide live at once) and it does not trust the
+     observer alone (in deck mode the hidden slides are stacked, so they still
+     "intersect"): the slide must also be the one on show. */
+  (function(){
+    var flow=document.querySelector('.flow');
+    if(!flow||reduce||typeof IntersectionObserver==='undefined') return;
+    var slide=flow.closest('.slide'), played=false;
+    flow.classList.add('flow-armed');
+    function check(){
+      if(played) return;
+      var r=flow.getBoundingClientRect(), h=Math.max(1,r.height),
+          need=Math.max(0.05,Math.min(0.6,(0.9*window.innerHeight)/h)),
+          shown=Math.max(0,Math.min(r.bottom,window.innerHeight)-Math.max(r.top,0))/h; /* measured now, not remembered: a mode switch moves the flow without telling the observer */
+      if(shown<need-0.01) return;
+      if(deck&&!(slide&&slide.classList.contains('is-on'))) return;
+      played=true; io.disconnect();
+      flow.classList.remove('flow-armed');
+      flow.classList.add('flow-intro');
+      setTimeout(function(){ flow.classList.remove('flow-intro'); },3700);
+    }
+    var io=new IntersectionObserver(function(entries){
+      check();
+    },{threshold:[0,0.05,0.2,0.4,0.6,0.85,1]});
+    io.observe(flow);
+    flowCheck=check;
+  })();
 
   function show(i){
     idx=Math.max(0,Math.min(slides.length-1,i));

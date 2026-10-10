@@ -1244,7 +1244,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                 </SecondaryButton>
               </div>
               {readProgress ? (
-                <div className="import-progress" role="status" aria-live="polite">
+                <div className="import-progress">
+                  {/* Only the message is a live region: the stations are read on demand, not re-announced on every phase. */}
                   {readProgress.seen ? (
                     <ol className="import-stages" aria-label="مراحل قراءة الملف">
                       {importStageStates(readProgress.seen).map((state, i) => (
@@ -1257,8 +1258,8 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
                     </ol>
                   ) : null}
                   <div className="import-progress-track"><i style={{ width: `${readProgress.pct}%` }} /></div>
-                  <span>{readProgress.message}</span>
-                  {readProgress.notice ? <p className="import-progress-notice"><AlertTriangle aria-hidden="true" />{readProgress.notice}</p> : null}
+                  <span role="status" aria-live="polite">{readProgress.message}</span>
+                  {readProgress.notice ? <p className="import-progress-notice" role="status"><AlertTriangle aria-hidden="true" />{readProgress.notice}</p> : null}
                 </div>
               ) : null}
 
