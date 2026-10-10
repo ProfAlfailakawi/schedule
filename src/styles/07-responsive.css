@@ -1815,3 +1815,61 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .schedule-agenda .agenda-place strong{font-size:13px;overflow-wrap:anywhere}
   .schedule-agenda .agenda-meta{justify-self:center;justify-content:center;gap:18px;width:100%;padding-top:4px}
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Visual polish (presentation only)
+   ──────────────────────────────────────────────────────────────────────────
+   1. كشف التسجيل on a phone: the four reading tiles form a 2×2 grid instead
+      of four full-width rows. The rail-edged look (.stat-tone) is untouched;
+      the card only tightens so a number and its label fit half a screen.
+   2. Short master/detail screens (البيانات الأكاديمية …) no longer reserve
+      three quarters of the viewport: the shell is as tall as its content
+      needs, with a modest floor, so a two-row list is not followed by 300px
+      of empty paper. Long lists still scroll inside their own column.
+   3. The DEMO admin pill flows with the page instead of floating over the
+      rows that scroll beneath it, with a little room on both sides.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media screen and (max-width:640px){
+  .stat-tiles[aria-label="ملخّص الكشف"]{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card{
+    min-height:0;grid-template-columns:32px minmax(0,1fr);gap:var(--s2);padding:var(--s3);
+  }
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-icon{width:32px;height:32px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-icon svg{width:16px;height:16px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card strong{font-size:22px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card span{margin-top:2px;line-height:1.35}
+}
+
+@media screen and (min-width:901px){
+  .catalog-workspace,.master-detail-shell{min-height:min(40vh,380px)}
+}
+
+html[data-demo-admin-readonly="true"] .app-main::before{
+  position:relative;top:auto;margin:6px auto 14px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Polish pass 2 (presentation only)
+   1. Inspector header: the icon sits beside kicker/title/lead instead of on a
+      row of its own, so a short inspector (الفصول والكليات والأقسام) is compact
+      and the phone does not open with an icon floating over empty paper.
+   2. Contrast: dimmed "settled/zero" rows keep body text >= 4.5:1; the
+      user avatar on the always-dark rail reads the brand brass; filled warning
+      badges use dark ink in dark mode.
+   ══════════════════════════════════════════════════════════════════════════ */
+.academic-inspector{display:grid;grid-template-columns:56px minmax(0,1fr);column-gap:var(--s4);align-content:start}
+.academic-inspector>.academic-inspector-icon{grid-column:1;grid-row:1 / span 3;align-self:start;margin:0}
+.academic-inspector>.surface-kicker,
+.academic-inspector>h2,
+.academic-inspector>p{grid-column:2;min-width:0}
+.academic-inspector>:not(.academic-inspector-icon,.surface-kicker,h2,p){grid-column:1 / -1}
+.academic-inspector>.inspector-facts{margin-top:var(--s5)}
+
+.changes-inbox-row[data-status="accepted"]{opacity:.92}
+.location-admin-page .location-health-grid>.surface.is-zero{opacity:.9}
+.sidebar .user-avatar{color:var(--brand-brass)}
+:root[data-theme="dark"] .week-unplaced>header b,
+:root[data-theme="dark"] .week-unplaced-card i,
+:root[data-theme="dark"] .brief-issues li.warning .brief-rank,
+:root[data-theme="dark"] .pulse-decisions article.warning>span{color:var(--accent-contrast)}
+:root[data-theme="dark"] .request-filter-chips button.active[data-tone] b{color:var(--accent-contrast)}
