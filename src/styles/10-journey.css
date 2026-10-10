@@ -388,12 +388,19 @@
   .jr-hero>.jr-scroll-cue{animation-delay:.19s}
   .jr-hero>.jr-mark{animation-delay:.24s}
 
-  .jr-figures>.jr-figure,
-  .jr-rail>.jr-station{opacity:0;transform:translateY(12px)}
-  .jr-figures.is-in>.jr-figure,
-  .jr-rail.is-in>.jr-station{
+  .jr-figures>.jr-figure{opacity:0;transform:translateY(12px)}
+  .jr-figures.is-in>.jr-figure{
     animation:jr-lift .54s var(--ease-out,ease) forwards;
     animation-delay:calc(var(--i,0) * .07s);
+  }
+  /* The stations are never absent: before the reveal they stand muted on the
+     (unfilled) track, so the first frame is a complete, quiet rail. They light one
+     after another, and the brass fill below grows with them. */
+  .jr-rail{--jr-step:.12s}
+  .jr-rail>.jr-station{opacity:.4}
+  .jr-rail.is-in>.jr-station{
+    animation:jr-light .54s var(--ease-out,ease) forwards;
+    animation-delay:calc(var(--i,0) * var(--jr-step));
   }
 
   /* The rail fills in step with the stagger above: it leaves the first station
@@ -426,11 +433,12 @@
   }
   .jr-rail.is-in::after{
     transform:none;
-    transition:transform calc(4 * .07s + .3s) cubic-bezier(.3,.6,.4,1);
+    transition:transform calc(4 * var(--jr-step) + .3s) cubic-bezier(.3,.6,.4,1);
   }
 }
 @keyframes jr-fade{from{opacity:0}to{opacity:1}}
 @keyframes jr-lift{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes jr-light{from{opacity:.4}to{opacity:1}}
 
 /* ==========================================================================
    Responsive — the journey has to read on a laptop, a tablet, a phone held

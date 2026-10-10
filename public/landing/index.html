@@ -892,6 +892,8 @@
       inset-inline-start:-10px;inset-inline-end:50%}
     .flow .farrow::before{background:var(--line-strong)}
     .flow .farrow::after{background:var(--brass);transform-origin:right center}
+    .flow:dir(ltr) .farrow::after{transform-origin:left center}
+    .flow:dir(ltr) .farrow .ic{transform:none}
     .flow .fstep{border-color:color-mix(in srgb,var(--brass) 55%,var(--line-strong))}
     .flow .fstep.human{border-color:var(--brass)}
     .flow .fstep .tile__ic{background:var(--brass);color:var(--bg)}
@@ -922,6 +924,8 @@
         inset-block-start:-10px;inset-block-end:50%;margin-block-start:0;
         inset-inline-start:calc(50% - 1px);inset-inline-end:auto;inline-size:2px;block-size:auto}
       .flow .farrow::after{transform-origin:center top}
+      .flow:dir(ltr) .farrow::after{transform-origin:center top}
+      .flow:dir(ltr) .farrow .ic{transform:rotate(90deg)}
       .flow.flow-armed .farrow::after{transform:scaleY(0)}
     }
     @media (prefers-reduced-motion:reduce){
@@ -941,6 +945,10 @@
     .sim-st li[data-state="current"] { color: var(--ink); }
     .sim-st li[data-state="current"] .sn { color: var(--brass-bright); box-shadow: inset 0 0 0 2px var(--brass-bright); animation: simHalo 1.5s cubic-bezier(.16, 1, .3, 1) 1; }
     @keyframes simHalo { from { box-shadow: inset 0 0 0 2px var(--brass-bright), 0 0 0 0 color-mix(in srgb, var(--brass-bright) 34%, transparent); } to { box-shadow: inset 0 0 0 2px var(--brass-bright), 0 0 0 9px color-mix(in srgb, var(--brass-bright) 0%, transparent); } }
+    /* Reserve the log's height (two lines on a phone) so the card does not jump between «بدء المحاكاة…» and the longer phase lines. */
+    .sim-st.sim-reset *, .sim-st.sim-reset li::before, .sim-st.sim-reset li::after { transition: none !important; animation: none !important; }
+    #sim-log-text { line-height: 1.5; min-height: 1.5em; }
+    @media (max-width: 599px) { #sim-log-text { min-height: 3em; } }
     .sim-st .sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
     @media (prefers-reduced-motion: reduce) { .sim-st *, .sim-st li::after { transition: none !important; animation: none !important; } }
     .blocked {
@@ -1928,7 +1936,7 @@
                 <div style="height:8px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden; margin-bottom:12px;">
                   <div id="sim-progress-bar" style="height:100%; width:100%; background:linear-gradient(90deg, var(--jade), var(--brass-bright)); transition:width 0.3s ease;"></div>
                 </div>
-                <div id="sim-log-text" style="font-size:0.82rem; color:var(--ink-dim); min-height:22px; margin-bottom:12px;">
+                <div id="sim-log-text" style="font-size:0.82rem; color:var(--ink-dim); margin-bottom:12px;">
                   <svg class="lx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg> تم مسح 89 صفاً · 34 أستاذاً · 9 قاعات دراسية دون أي تعارض زمني
                 </div>
                 <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -2768,13 +2776,20 @@
         badge.textContent = 'المعالجة جارية...';
       }
       // A new run starts from zero: the bar and the stopwatch must not keep the old result while the stations reset.
-      if (bar) bar.style.width = '0%';
+      // The reset is instant (no easing back from the old result), so the first frame of a run is already empty.
+      const stationList = document.getElementById('sim-stations');
+      if (stationList) stationList.classList.add('sim-reset');
+      const barEase = bar ? bar.style.transition : '';
+      if (bar) { bar.style.transition = 'none'; bar.style.width = '0%'; }
       if (digits) digits.textContent = '0:00';
       if (log) log.textContent = 'بدء المحاكاة…';
 
       let step = 0;
       const phases = SIM_PHASES;
       paintSimStations(0);
+      void document.body.offsetWidth; // flush the instant reset before easing is switched back on
+      if (bar) bar.style.transition = barEase;
+      if (stationList) stationList.classList.remove('sim-reset');
 
       clearInterval(simInterval);
       simInterval = setInterval(() => {
