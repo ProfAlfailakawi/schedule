@@ -19,6 +19,7 @@ import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill 
 import { campusOf } from "../utils/campusTravel";
 import { interruptedImportMessage } from "../utils/importStreamFailure";
 import { pageReviewIssues, pagesAwaitingReview, pagesWithUnreadCells, pagesLabel } from "../utils/importPageReview";
+import { IMPORT_STAGES, importStageStates, noteImportPhase } from "../utils/importStages";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -96,7 +97,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
      إلى كتالوج قسمٍ لا تمرّ بلا خبر. */
   const [plantedCourses, setPlantedCourses] = useState<string[]>([]);
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
-  const [readProgress, setReadProgress] = useState<{ pct: number; message: string; notice?: string } | null>(null);
+  const [readProgress, setReadProgress] = useState<{ pct: number; message: string; notice?: string; seen?: string[] } | null>(null);
   /* Scanned pages whose missing printed lines the reviewer confirmed (importPageReview). */
   const [reviewedImportPages, setReviewedImportPages] = useState<number[]>([]);
   /* A PDF can prove that the open selector points at the wrong department.
@@ -791,7 +792,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
   const readPdf = async (file: File, targetSectionId = sectionId) => {
     setError(null); setPdfScopeFix(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true); setReviewedImportPages([]);
     setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(file);
-    setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
+    setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة", seen: [] });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(targetSectionId),termId:String(termId)});
       const payload=await file.arrayBuffer();
@@ -833,7 +834,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
             const fallback=phase==="rescue"?"تدقيق دقيق للصفحات المحتاجة":phase==="match"?"مطابقة البيانات مع السجل الرسمي":phase==="render"?"تجهيز صفحات PDF للقراءة":"قراءة الجدول";
             /* A page the first reading could not read is named at once, not
                only when the whole file is refused minutes later. */
-            setReadProgress({pct,message:String(event.message||fallback),notice:event.notice?String(event.notice):undefined});
+            setReadProgress(prev=>({pct,message:String(event.message||fallback),notice:event.notice?String(event.notice):undefined,seen:noteImportPhase(prev?.seen??[],phase)}));
           }
           else if(event.type==="done")data=event.result;
           else if(event.type==="error")failure=event;
@@ -1244,6 +1245,17 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               </div>
               {readProgress ? (
                 <div className="import-progress" role="status" aria-live="polite">
+                  {readProgress.seen ? (
+                    <ol className="import-stages" aria-label="مراحل قراءة الملف">
+                      {importStageStates(readProgress.seen).map((state, i) => (
+                        <li key={IMPORT_STAGES[i].key} data-state={state} aria-current={state === "current" ? "step" : undefined}>
+                          <i className="import-stage-node" aria-hidden="true" />
+                          <b>{IMPORT_STAGES[i].label}</b>
+                          <em>{state === "done" ? "اكتملت" : state === "current" ? "جارية" : state === "skipped" ? "لم تلزم" : "لاحقة"}</em>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
                   <div className="import-progress-track"><i style={{ width: `${readProgress.pct}%` }} /></div>
                   <span>{readProgress.message}</span>
                   {readProgress.notice ? <p className="import-progress-notice"><AlertTriangle aria-hidden="true" />{readProgress.notice}</p> : null}

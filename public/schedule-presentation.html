@@ -300,6 +300,52 @@ figcaption{font-family:var(--font-mono); font-size:.58rem; letter-spacing:.1em; 
 .fstep h3{font-size:1.3rem}
 .fstep small{font-family:var(--font-mono); font-size:.56rem; letter-spacing:.11em; color:var(--muted-2)}
 .farrow{display:grid; place-items:center; color:var(--muted-2); font-size:18px}
+/* ---------- governance flow: play-once sequential reveal ----------
+   Boxes light in order, each connector fills from the inline-start side
+   (right in RTL), the last box gets one halo. .flow is the armed (not yet
+   played) state; .slide.is-live .flow stays set afterwards, so it never replays. */
+.flow .farrow{position:relative}
+.flow .farrow .ic{position:relative;z-index:1;}
+.flow .farrow::before,.flow .farrow::after{
+  content:"";position:absolute;pointer-events:none;border-radius:2px;
+  inset-block-start:50%;margin-block-start:-1px;block-size:2px;
+  inset-inline-start:-12px;inset-inline-end:50%}
+.flow .farrow::before{background:var(--line-strong)}
+.flow .farrow::after{background:var(--brass);transform-origin:right center}
+.flow .farrow{color:var(--line-strong)}
+.flow .farrow::after{transform:scaleX(0)}
+.flow .fstep{opacity:.55}
+.flow .fstep .tile__ic{background:var(--surface-3);color:var(--muted-2);border-color:var(--line-strong)}
+.slide.is-live .flow .fstep{opacity:1;border-color:color-mix(in srgb,var(--brass) 55%,var(--line-strong));
+  transition:opacity .5s var(--ease) var(--d,0s),border-color .5s var(--ease) var(--d,0s)}
+.slide.is-live .flow .fstep.human{border-color:var(--brass)}
+.slide.is-live .flow .fstep .tile__ic{background:var(--brass);color:var(--ground);
+  transition:background-color .4s var(--ease) var(--d,0s),color .4s var(--ease) var(--d,0s)}
+.slide.is-live .flow .farrow{color:var(--brass);transition:color .3s var(--ease) var(--d,0s)}
+.slide.is-live .flow .farrow::after{transform:scaleX(1);transition:transform .5s var(--ease) var(--d,0s)}
+.slide.is-live .flow .fstep:nth-child(1){--d:0s}
+.slide.is-live .flow .farrow:nth-child(2){--d:.45s}
+.slide.is-live .flow .fstep:nth-child(3){--d:1s}
+.slide.is-live .flow .farrow:nth-child(4){--d:1.45s}
+.slide.is-live .flow .fstep:nth-child(5){--d:2s}
+.slide.is-live .flow .fstep.human{animation:flowHalo 1.5s var(--ease) 2s 1 backwards}
+@keyframes flowHalo{
+  from{box-shadow:0 0 0 0 rgba(208,166,99,.34)}
+  to{box-shadow:0 0 0 12px rgba(208,166,99,0)}}
+@media (max-width:879px){
+  .flow .farrow .ic{transform:rotate(-90deg)}
+  .flow .farrow::before,.flow .farrow::after{
+    inset-block-start:-12px;inset-block-end:50%;margin-block-start:0;
+    inset-inline-start:calc(50% - 1px);inset-inline-end:auto;inline-size:2px;block-size:auto}
+  .flow .farrow::after{transform-origin:center top}
+  .flow .farrow::after{transform:scaleY(0)}
+  .slide.is-live .flow .farrow::after{transform:scaleY(1)}
+}
+@media (prefers-reduced-motion:reduce){
+  .flow .farrow::after,.slide.is-live .flow .farrow::after{transform:none;transition:none}
+  .flow .fstep,.slide.is-live .flow .fstep,.slide.is-live .flow .farrow,.slide.is-live .flow .fstep .tile__ic{transition:none}
+  .slide.is-live .flow .fstep.human{animation:none}
+}
 .blocked{
   margin-block-start:14px; display:flex; align-items:center; gap:13px;
   border:1px dashed var(--danger); background:var(--danger-soft); color:var(--danger);

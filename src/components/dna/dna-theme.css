@@ -81,3 +81,6 @@
 /* Every stepper on this site draws a state, not a live signal: the current
    node keeps its ring but does not breathe (the approval bar keeps its own). */
 .dna-steps .dna-stepi[data-state="current"] .dna-node { animation: none; }
+
+/* Journey reveal fills with the brass (light #86601f / dark #d0a663); one line to flip it back to the jade. */
+:root .dna-steps[data-journey] { --journey-fill: var(--brass); }
