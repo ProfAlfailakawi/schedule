@@ -2384,11 +2384,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                 <details className="agenda-rest">
                   <summary data-guide-ignore="طيّ بقية صفوف القائمة على الهاتف عرضٌ فقط">عرض الباقي ({(listEls.length - QUERY_PHONE_HEAD).toLocaleString("ar-KW-u-nu-latn")})</summary>
                   {listEls.slice(QUERY_PHONE_HEAD)}
+                  {/* Inside the fold on phones: the rows «المزيد» loads land in this disclosure, so the control must live with them. */}
+                  {results.length > visibleLimit ? (
+                    <div className="lens-more"><SecondaryButton onClick={() => setVisibleLimit(v => v + 150)}>المزيد</SecondaryButton></div>
+                  ) : null}
                 </details>
               </>
             ) : listEls;
             })()}
-            {results.length > visibleLimit ? (
+            {results.length > visibleLimit && !phoneFold ? (
               <div className="lens-more"><SecondaryButton onClick={() => setVisibleLimit(v => v + 150)}>المزيد</SecondaryButton></div>
             ) : null}
           </div>
