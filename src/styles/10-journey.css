@@ -303,6 +303,13 @@
     color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)) 86%,
     transparent);
 }
+.jr-rail:dir(ltr)::before{
+  background:linear-gradient(to right,
+    transparent,
+    color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)) 14%,
+    color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)) 86%,
+    transparent);
+}
 .jr-station{position:relative;display:grid;gap:10px;align-content:start;padding-top:0}
 .jr-station-node{
   position:relative;
@@ -409,7 +416,14 @@
     transform-origin:right center;
     pointer-events:none;
   }
-  .jr-rail:dir(ltr)::after{transform-origin:left center}
+  .jr-rail:dir(ltr)::after{
+    transform-origin:left center;
+    background:linear-gradient(to right,
+      transparent,
+      color-mix(in srgb,var(--jr-brass) 78%,transparent) 14%,
+      color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)) 86%,
+      transparent);
+  }
   .jr-rail.is-in::after{
     transform:none;
     transition:transform calc(4 * .07s + .3s) cubic-bezier(.3,.6,.4,1);
@@ -498,6 +512,21 @@
     transform:scaleY(0);
     transform-origin:center top;
   }
+  .jr-rail:dir(ltr)::before{
+    background:linear-gradient(to bottom,
+      transparent,
+      color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)) 8%,
+      color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)) 92%,
+      transparent);
+  }
+  .jr-rail:dir(ltr)::after{
+    transform-origin:center top;
+    background:linear-gradient(to bottom,
+      transparent,
+      color-mix(in srgb,var(--jr-brass) 78%,transparent) 8%,
+      color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)) 92%,
+      transparent);
+  }
   .jr-rail.is-in::after{transform:none}
   .jr-station{
     grid-template-columns:42px minmax(0,1fr);
@@ -537,7 +566,7 @@
   .jr-rail::before{display:block;inset-block-start:21px;inset-inline:6px;width:auto;height:1px}
   .jr-rail::after{display:block;inset-block:21px auto;inset-inline:6px;width:auto;height:2px;margin-block-start:-.5px;transform:scaleX(0);transform-origin:right center;
     background:linear-gradient(to left,transparent,color-mix(in srgb,var(--jr-brass) 78%,transparent) 14%,color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)) 86%,transparent)}
-  .jr-rail:dir(ltr)::after{transform-origin:left center}
+  .jr-rail:dir(ltr)::after{transform-origin:left center;background:linear-gradient(to right,transparent,color-mix(in srgb,var(--jr-brass) 78%,transparent) 14%,color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)) 86%,transparent)}
   .jr-rail.is-in::after{transform:none}
   .jr-station{
     grid-template-columns:none;grid-template-areas:none;
