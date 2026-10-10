@@ -516,7 +516,8 @@
   .query-canvas-actions>.query-report-action:has(>.query-print-icon) .query-scope-menu{inset-inline:0 auto;min-width:216px}
   .query-canvas-actions .btn{width:100%}
   .print-menu-pop{inset-inline:0}
-  .lens-list>article{
+  .lens-list>article,
+  .lens-list>.agenda-rest>article{
     grid-template-columns:minmax(0,1fr) auto;
     grid-template-areas:"main time" "room room" "days days";
     gap:var(--s2) var(--s3);
