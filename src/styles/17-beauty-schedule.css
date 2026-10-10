@@ -1,0 +1,138 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   17 · Beauty — schedule, queries, journey (presentation only)
+   Tokens only (light/dark follow); flat gradients, no blur; every motion is
+   behind prefers-reduced-motion: no-preference; fill-mode `backwards` so hover
+   transforms stay available after an entrance.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page headings: a display title with a short accent bar ─────────────── */
+.schedule-page>.page-heading h1,
+.query-page>.page-heading h1{
+  font-size:clamp(30px,3.4vw,42px);letter-spacing:-.04em;line-height:1.15;
+}
+.schedule-page>.page-heading h1::after,
+.query-page>.page-heading h1::after{
+  content:"";display:block;width:44px;height:4px;margin-top:10px;border-radius:4px;
+  background:linear-gradient(90deg,var(--accent-strong),var(--brass));
+}
+
+/* ── Scope / ask surfaces: a lit corner and a soft edge ─────────────────── */
+.schedule-page>.schedule-control,
+.query-page>.query-bar{
+  background:
+    radial-gradient(70% 120% at 100% 0%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 60%),
+    var(--surface);
+  box-shadow:var(--shadow-sm);
+}
+
+/* ── Schedule readings (score rings / mini stats) ───────────────────────── */
+.schedule-mini-stats .stat-card,
+.living-command-deck{
+  background:
+    radial-gradient(90% 140% at 100% 0%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 62%),
+    var(--surface);
+  box-shadow:var(--shadow-xs);
+  transition:transform .2s var(--ease),box-shadow .2s var(--ease);
+}
+.schedule-mini-stats .stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+.schedule-mini-stats .stat-card strong{font-size:clamp(24px,2.6vw,32px);font-weight:700;letter-spacing:-.04em}
+
+/* ── Agenda list (dashboard) ────────────────────────────────────────────── */
+.schedule-agenda-surface{box-shadow:var(--shadow-sm)}
+.schedule-agenda-surface .agenda-head h2{font-size:clamp(22px,2.2vw,28px);letter-spacing:-.03em}
+.schedule-agenda-surface .agenda-head>span{
+  font-weight:700;font-variant-numeric:tabular-nums;padding:6px 14px;border-radius:999px;
+  background:linear-gradient(160deg,var(--accent-softer),var(--accent-soft));color:var(--accent-ink);
+}
+.schedule-agenda .agenda-card{
+  position:relative;
+  transition:background .16s var(--ease),box-shadow .16s var(--ease);
+}
+.schedule-agenda .agenda-card::after{
+  content:"";position:absolute;inset-block:14px;inset-inline-start:0;width:3px;border-radius:0 3px 3px 0;
+  background:var(--accent);opacity:0;transition:opacity .18s var(--ease);pointer-events:none;
+}
+.schedule-agenda .agenda-card:hover,
+.schedule-agenda .agenda-card:focus-within{background:var(--accent-softer)}
+.schedule-agenda .agenda-card:hover::after,
+.schedule-agenda .agenda-card:focus-within::after{opacity:1}
+
+/* ── Queries: lens strip, count, rows ───────────────────────────────────── */
+.lens-strip{
+  background:radial-gradient(120% 160% at 100% 0%,color-mix(in srgb,var(--accent) 6%,transparent),transparent 55%),var(--surface);
+  box-shadow:var(--shadow-xs);
+}
+.lens-strip>button{transition:background .16s var(--ease),color .16s var(--ease),transform .16s var(--ease),box-shadow .16s var(--ease)}
+.lens-strip>button:hover:not(.active){transform:translateY(-1px)}
+.lens-strip>button.active{
+  background:linear-gradient(160deg,var(--accent-softer),var(--accent-soft));
+  box-shadow:0 5px 14px color-mix(in srgb,var(--accent) 16%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--accent) 24%,transparent);
+}
+.lens-strip>button.active svg{color:var(--accent)}
+.query-canvas{box-shadow:var(--shadow-sm)}
+.query-count b{
+  font-size:clamp(34px,4vw,48px);font-weight:700;letter-spacing:-.05em;line-height:1;
+  color:var(--ink);
+}
+.lens-list>article{position:relative}
+.lens-list>article::before{
+  content:"";position:absolute;inset-block:14px;inset-inline-start:0;width:3px;border-radius:0 3px 3px 0;
+  background:var(--accent);opacity:0;transition:opacity .18s var(--ease);pointer-events:none;
+}
+.lens-list>article:hover::before,
+.lens-list>article.is-selected::before,
+.lens-list>.agenda-rest>article:hover::before{opacity:1}
+.lens-list>.agenda-rest>article{position:relative}
+.lens-list>article:hover,
+.lens-list>.agenda-rest>article:hover{background:var(--accent-softer)}
+.lens-list>article.is-selected{background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent-soft) 55%,transparent))}
+.lens-list .code-chip{background:linear-gradient(160deg,var(--accent-softer),var(--accent-soft));color:var(--accent-ink)}
+
+/* ── Entrance ───────────────────────────────────────────────────────────── */
+@keyframes beauty-rise-s{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:no-preference){
+  .schedule-page>.page-heading,
+  .query-page>.page-heading,
+  .schedule-page>.schedule-control,
+  .query-page>.query-bar,
+  .query-page>.lens-strip,
+  .query-page>.query-canvas{animation:beauty-rise-s .42s var(--ease-out,ease-out) backwards}
+  .schedule-page>.schedule-control,.query-page>.query-bar{animation-delay:.05s}
+  .query-page>.lens-strip{animation-delay:.1s}
+  .query-page>.query-canvas{animation-delay:.15s}
+}
+@media (prefers-reduced-motion:reduce){
+  .schedule-mini-stats .stat-card,.schedule-agenda .agenda-card,.lens-strip>button,.lens-list>article::before{transition:none}
+  .schedule-mini-stats .stat-card:hover,.lens-strip>button:hover:not(.active){transform:none}
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   رحلة SCHEDULE follows the theme
+   The page used one literal light palette on purpose. The owner now wants it
+   to follow dark mode: the same variables, re-valued for the dark workspace
+   (body copy >= 7:1 on the dark canvas), plus the few literal colours that
+   lived outside the variables.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="dark"] .jr-root{
+  --jr-ink:#eef2ef;
+  --jr-ink-2:#c9d3ce;
+  --jr-ink-3:#9eaba5;
+  --jr-brass:#d0a663;
+  --jr-accent:#69c0a8;
+  --jr-canvas:#0b100f;
+  --jr-canvas-2:#141b19;
+  --jr-line:#2b3733;
+  --jr-line-soft:#1d2724;
+  color-scheme:dark;
+}
+:root[data-theme="dark"] .jr-sheet{scrollbar-color:#2b3733 transparent}
+:root[data-theme="dark"] .jr-sheet::-webkit-scrollbar-thumb{background:#2b3733;background-clip:padding-box}
+:root[data-theme="dark"] .jr-weather>i:nth-child(3){
+  background-image:
+    linear-gradient(to left,rgb(238 242 239 / .045) 1px,transparent 1px),
+    linear-gradient(to bottom,rgb(238 242 239 / .045) 1px,transparent 1px);
+}
+:root[data-theme="dark"] .jr-weather>i:nth-child(1){background:radial-gradient(circle,rgb(105 192 168 / .16),transparent 66%)}
+:root[data-theme="dark"] .jr-weather>i:nth-child(2){background:radial-gradient(circle,rgb(208 166 99 / .12),transparent 68%)}
+:root[data-theme="dark"] .jr-close{background:rgb(20 27 25 / .9)}
+:root[data-theme="dark"] .jr-close:hover{background:#1d2724;border-color:#3b4a45}
