@@ -1,0 +1,58 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   16 · Readings — presentation only
+   Stat tiles (كشف التسجيل، الطلب المتوقع): display numerals, duotone tone
+   tiles, a wash of each tile's own tone, and a staggered entrance. Filter
+   chips get an active state with weight. Tokens only, so dark follows.
+   ══════════════════════════════════════════════════════════════════════════ */
+.stat-tiles .stat-tone>.stat-card{
+  position:relative;overflow:hidden;isolation:isolate;
+  min-height:96px;border-radius:22px;
+  background:
+    radial-gradient(90% 140% at 100% 0%,color-mix(in srgb,var(--tone) 12%,transparent),transparent 62%),
+    var(--surface);
+  box-shadow:var(--shadow-xs);
+  transition:transform .2s var(--ease),box-shadow .2s var(--ease),border-color .2s var(--ease);
+}
+.stat-tiles .stat-tone>.stat-card::after{
+  content:"";position:absolute;inset-block-end:-34px;inset-inline-start:-26px;width:110px;height:110px;z-index:-1;
+  border-radius:50%;border:1px solid color-mix(in srgb,var(--tone) 16%,transparent);
+  box-shadow:0 0 0 14px color-mix(in srgb,var(--tone) 5%,transparent),0 0 0 28px color-mix(in srgb,var(--tone) 3%,transparent);
+}
+.stat-tiles .stat-tone>.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md,var(--shadow-sm))}
+.stat-tiles .stat-tone .stat-card strong{
+  font-size:clamp(32px,3.4vw,42px);font-weight:700;letter-spacing:-.045em;line-height:1;
+}
+.stat-tiles .stat-tone .stat-card span{margin-top:6px;font-size:var(--t-sm);font-weight:600}
+.stat-tiles .stat-tone .stat-icon{
+  width:46px;height:46px;border-radius:15px;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--tone) 22%,var(--surface)),var(--tone-soft));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tone) 20%,transparent);
+}
+.stat-tiles .stat-tone .stat-icon svg{width:21px;height:21px}
+
+@media (max-width:640px){
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card{min-height:84px;border-radius:18px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-card strong{font-size:28px}
+  .stat-tiles[aria-label="ملخّص الكشف"] .stat-icon{width:34px;height:34px;border-radius:12px}
+}
+
+/* Filter chips: the active one carries weight instead of just a tint. */
+.changes-chip{transition:background .16s var(--ease),border-color .16s var(--ease),transform .16s var(--ease),box-shadow .16s var(--ease)}
+.changes-chip:hover:not(:disabled){transform:translateY(-1px)}
+.changes-chip[data-active]{
+  background:linear-gradient(160deg,var(--accent-softer),var(--accent-soft));
+  border-color:color-mix(in srgb,var(--accent) 38%,var(--line));
+  box-shadow:0 4px 12px color-mix(in srgb,var(--accent) 14%,transparent);
+}
+
+@keyframes beauty-rise-r{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:no-preference){
+  .stat-tiles>.stat-tone{animation:beauty-rise-r .42s var(--ease-out,ease-out) backwards}
+  .stat-tiles>.stat-tone:nth-child(2){animation-delay:.05s}
+  .stat-tiles>.stat-tone:nth-child(3){animation-delay:.1s}
+  .stat-tiles>.stat-tone:nth-child(4){animation-delay:.15s}
+}
+@media (prefers-reduced-motion:reduce){
+  .stat-tiles .stat-tone>.stat-card,.changes-chip{transition:none}
+  .stat-tiles .stat-tone>.stat-card:hover,.changes-chip:hover:not(:disabled){transform:none}
+}
