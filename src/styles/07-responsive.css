@@ -1841,9 +1841,35 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
 }
 
 @media screen and (min-width:901px){
-  .catalog-workspace,.master-detail-shell{min-height:min(52vh,520px)}
+  .catalog-workspace,.master-detail-shell{min-height:min(40vh,380px)}
 }
 
 html[data-demo-admin-readonly="true"] .app-main::before{
   position:relative;top:auto;margin:6px auto 14px;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Polish pass 2 (presentation only)
+   1. Inspector header: the icon sits beside kicker/title/lead instead of on a
+      row of its own, so a short inspector (الفصول والكليات والأقسام) is compact
+      and the phone does not open with an icon floating over empty paper.
+   2. Contrast: dimmed "settled/zero" rows keep body text >= 4.5:1; the
+      user avatar on the always-dark rail reads the brand brass; filled warning
+      badges use dark ink in dark mode.
+   ══════════════════════════════════════════════════════════════════════════ */
+.academic-inspector{display:grid;grid-template-columns:56px minmax(0,1fr);column-gap:var(--s4);align-content:start}
+.academic-inspector>.academic-inspector-icon{grid-column:1;grid-row:1 / span 3;align-self:start;margin:0}
+.academic-inspector>.surface-kicker,
+.academic-inspector>h2,
+.academic-inspector>p{grid-column:2;min-width:0}
+.academic-inspector>:not(.academic-inspector-icon,.surface-kicker,h2,p){grid-column:1 / -1}
+.academic-inspector>.inspector-facts{margin-top:var(--s5)}
+
+.changes-inbox-row[data-status="accepted"]{opacity:.92}
+.location-admin-page .location-health-grid>.surface.is-zero{opacity:.9}
+.sidebar .user-avatar{color:var(--brand-brass)}
+:root[data-theme="dark"] .week-unplaced>header b,
+:root[data-theme="dark"] .week-unplaced-card i,
+:root[data-theme="dark"] .brief-issues li.warning .brief-rank,
+:root[data-theme="dark"] .pulse-decisions article.warning>span{color:var(--accent-contrast)}
+:root[data-theme="dark"] .request-filter-chips button.active[data-tone] b{color:var(--accent-contrast)}
