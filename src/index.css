@@ -16,6 +16,7 @@
 @import "./styles/07-responsive.css";
 @import "./styles/16-beauty-readings.css";
 @import "./styles/13-login-light.css";
+@import "./styles/15-beauty.css";
 @import "./components/dna/dna.css";
 @import "./components/dna/dna-theme.css";
 /* 10-journey and 08-print moved to deferred.css — loaded in parallel, off the
