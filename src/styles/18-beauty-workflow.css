@@ -1,0 +1,119 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   18 · Beauty — التغييرات، رغبات الأساتذة، مركز الذكاء (presentation only)
+   Tokens only; flat gradients; motion only under no-preference, with fill-mode
+   `backwards` so hover transforms stay live; reduce: static and visible.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared: headings and lit surfaces ──────────────────────────────────── */
+.changes-screen>.page-heading h1,
+.intelligence-page>.page-heading h1{
+  font-size:clamp(30px,3.4vw,42px);letter-spacing:-.04em;line-height:1.15;
+}
+.changes-screen>.page-heading h1::after,
+.intelligence-page>.page-heading h1::after{
+  content:"";display:block;width:44px;height:4px;margin-top:10px;border-radius:4px;
+  background:linear-gradient(90deg,var(--accent-strong),var(--brass));
+}
+.changes-screen>.surface,
+.changes-screen>.sd-panel,
+.intelligence-page>.surface,
+.changes-screen .glance-card,
+.changes-screen .request-card{
+  background:
+    radial-gradient(80% 120% at 100% 0%,color-mix(in srgb,var(--accent) 6%,transparent),transparent 60%),
+    var(--surface);
+  box-shadow:var(--shadow-sm);
+}
+
+/* ── التغييرات: deadline panel ──────────────────────────────────────────── */
+.sd-panel .sd-bar{height:12px;border-radius:999px;box-shadow:inset 0 1px 2px color-mix(in srgb,var(--ink) 10%,transparent)}
+.sd-panel .sd-bar>*{box-shadow:inset 0 -2px 0 rgb(0 0 0 / .08)}
+.sd-panel .sd-hero-text>strong{font-size:clamp(1.35rem,2.6vw,1.9rem);letter-spacing:-.03em}
+.sd-panel .sd-tile{box-shadow:0 10px 22px color-mix(in srgb,var(--brass) 22%,transparent)}
+.sd-panel .sd-block>h4{letter-spacing:-.01em}
+.sd-panel .sd-requests>li,.sd-panel .sd-exceptions>*{box-shadow:var(--shadow-xs)}
+.changes-inbox-row:hover{background:var(--accent-softer)}  /* the status rail (::before) lives in 11-approval.css and is left alone */
+
+/* ── رغبات الأساتذة: glance cards, filters, request cards ─────────────── */
+.glance-card{border-radius:22px;overflow:hidden;transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
+.glance-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.glance-ring-dial{filter:drop-shadow(0 4px 10px color-mix(in srgb,var(--accent) 22%,transparent))}
+.glance-ring-text strong,.glance-ring-text b{font-size:clamp(20px,2vw,26px);letter-spacing:-.03em}
+.heat-cell{border-radius:4px}
+.request-filters{
+  background:linear-gradient(160deg,var(--surface),var(--surface-2));
+  border-radius:20px;box-shadow:var(--shadow-xs);
+}
+.request-filters-mark{
+  border-radius:12px;
+  background:linear-gradient(145deg,var(--accent-soft),var(--accent-softer));
+  color:var(--accent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 16%,transparent);
+}
+.request-filter-chips button.active{
+  background:linear-gradient(160deg,var(--accent-softer),var(--accent-soft));
+  box-shadow:0 4px 12px color-mix(in srgb,var(--accent) 14%,transparent);
+}
+.request-card{border-radius:22px;transition:box-shadow .2s var(--ease)}
+.request-card:hover{box-shadow:var(--shadow-md)}
+.request-card-head{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 5%,transparent),transparent);
+}
+
+/* ── مركز الذكاء: context, stepper, scenes ──────────────────────────────── */
+.intel-context{border-radius:24px}
+.intel-context-copy>span{
+  border-radius:15px;
+  background:linear-gradient(145deg,var(--accent-strong),var(--accent));color:var(--accent-contrast);
+  box-shadow:0 8px 18px color-mix(in srgb,var(--accent) 30%,transparent),inset 0 1px 0 rgb(255 255 255 / .2);
+}
+.intel-context-copy>span svg{width:20px;height:20px}
+.intel-context-copy strong{font-size:clamp(18px,1.8vw,22px);letter-spacing:-.025em}
+.intelligence-scenes{
+  background:radial-gradient(100% 160% at 100% 0%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 60%),var(--surface);
+  border-radius:22px;box-shadow:var(--shadow-xs);
+}
+.scene-subnav>button{transition:background .16s var(--ease),transform .16s var(--ease),box-shadow .16s var(--ease)}
+.scene-subnav>button:hover:not(.active){transform:translateY(-1px)}
+.scene-subnav>button.active{
+  background:linear-gradient(160deg,var(--accent-softer),var(--accent-soft));
+  box-shadow:0 5px 14px color-mix(in srgb,var(--accent) 16%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--accent) 24%,transparent);
+}
+.insight-preview-rail{
+  background:radial-gradient(90% 140% at 100% 0%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 60%),var(--surface);
+  box-shadow:var(--shadow-sm);
+}
+.insight-preview-head strong{font-size:clamp(22px,2.4vw,30px);letter-spacing:-.035em}
+
+/* ── Entrance ───────────────────────────────────────────────────────────── */
+@keyframes beauty-rise-w{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:no-preference){
+  .changes-screen>.page-heading,.intelligence-page>.page-heading,
+  .changes-screen>.sd-panel,.changes-screen>.inbox-glance,.changes-screen>.request-filters,
+  .intelligence-page>.intel-context,.intelligence-page>.intelligence-scenes{animation:beauty-rise-w .42s var(--ease-out,ease-out) backwards}
+  .changes-screen>.sd-panel,.changes-screen>.inbox-glance,.intelligence-page>.intel-context{animation-delay:.05s}
+  .changes-screen>.request-filters,.intelligence-page>.intelligence-scenes{animation-delay:.1s}
+}
+@media (prefers-reduced-motion:reduce){
+  .glance-card,.request-card,.scene-subnav>button{transition:none}
+  .glance-card:hover,.scene-subnav>button:hover:not(.active){transform:none}
+}
+
+/* Reading cards: duotone icon tile, display numeral, lift. */
+.insight-preview{
+  position:relative;overflow:hidden;border-radius:20px;
+  background:radial-gradient(90% 140% at 100% 0%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 62%),var(--surface);
+  box-shadow:var(--shadow-xs);
+  transition:transform .2s var(--ease),box-shadow .2s var(--ease),border-color .2s var(--ease);
+}
+.insight-preview:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:color-mix(in srgb,var(--accent) 36%,var(--line))}
+.insight-preview-icon{
+  border-radius:14px;
+  background:linear-gradient(145deg,var(--accent-soft),var(--accent-softer));color:var(--accent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 16%,transparent);
+}
+.insight-preview-icon svg{width:22px;height:22px}
+.insight-preview>b:not(.insight-preview-ring){font-size:clamp(26px,2.6vw,34px);font-weight:700;letter-spacing:-.04em;line-height:1}
+@media (prefers-reduced-motion:reduce){
+  .insight-preview{transition:none}
+  .insight-preview:hover{transform:none}
+}
