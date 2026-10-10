@@ -432,6 +432,9 @@ function QuerySkeleton() {
   );
 }
 
+/** Rows shown before the phone fold in the appointment list (display only). */
+const QUERY_PHONE_HEAD = 6;
+
 export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const prefKey = `schedule-unified-prefs-${user?.SystemUserId || 0}`;
   const scopeOwner = Number(user?.SystemUserId || 0);
@@ -538,6 +541,15 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [visibleLimit, setVisibleLimit] = useState(150);
+  /* Phone-width fold of the appointment list (display only). Follows the viewport. */
+  const [phoneFold, setPhoneFold] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 760px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia?.("(max-width: 760px)");
+    if (!query) return;
+    const sync = () => setPhoneFold(query.matches);
+    query.addEventListener?.("change", sync);
+    return () => query.removeEventListener?.("change", sync);
+  }, []);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [selectedResultId, setSelectedResultId] = useState<number | null>(null);
   const [occupancy, setOccupancy] = useState<any>(null);
@@ -2323,7 +2335,8 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
         ) : lens === "list" ? (
           <>
           <div className="lens-list">
-            {results.slice(0, visibleLimit).map((row, index) => {
+            {(() => {
+            const listEls = results.slice(0, visibleLimit).map((row, index) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
               const isSelected = selectedResultId === row.id;
@@ -2363,7 +2376,18 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   </span>
                 </article>
               );
-            })}
+            });
+            /* Phones only: six rows, the rest behind a native disclosure (closed by default) — presentation, same pattern as the dashboard list. */
+            return phoneFold && listEls.length > QUERY_PHONE_HEAD ? (
+              <>
+                {listEls.slice(0, QUERY_PHONE_HEAD)}
+                <details className="agenda-rest">
+                  <summary data-guide-ignore="طيّ بقية صفوف القائمة على الهاتف عرضٌ فقط">عرض الباقي ({(listEls.length - QUERY_PHONE_HEAD).toLocaleString("ar-KW-u-nu-latn")})</summary>
+                  {listEls.slice(QUERY_PHONE_HEAD)}
+                </details>
+              </>
+            ) : listEls;
+            })()}
             {results.length > visibleLimit ? (
               <div className="lens-more"><SecondaryButton onClick={() => setVisibleLimit(v => v + 150)}>المزيد</SecondaryButton></div>
             ) : null}
