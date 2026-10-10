@@ -60,6 +60,9 @@ function markPlayed(playKey?: string | number | null) {
   try { sessionStorage.setItem(STORAGE_PREFIX + key, '1'); } catch { /* storage may be blocked */ }
 }
 
+/** One canonical identity per entity: 42 and "42" are the same journey; null/undefined mean no key. */
+export const journeyKey = (playKey?: string | number | null): string | null => (playKey == null ? null : String(playKey));
+
 /** Test hook: forget what has played. */
 export function resetJourneyPlayed() { played.clear(); }
 
@@ -107,7 +110,7 @@ export function useJourneyReveal<T extends HTMLElement = HTMLOListElement>({
   const [lit, setLit] = useState<number | null>(null);
   const [seen, setSeen] = useState(false);
   const armed = useRef(false);
-  const keyRef = useRef(playKey);
+  const keyRef = useRef(journeyKey(playKey));
   const step = stepMs ?? journeyStepMs(count);
   const hasTarget = target > 0;
 
@@ -117,8 +120,8 @@ export function useJourneyReveal<T extends HTMLElement = HTMLOListElement>({
   useIsoLayoutEffect(() => {
     // A stepper reused for another entity starts over: the old observer was disconnected by the
     // cleanup below, and its armed/lit/seen state must not leak into the new journey.
-    if (keyRef.current !== playKey) {
-      keyRef.current = playKey;
+    if (keyRef.current !== journeyKey(playKey)) {
+      keyRef.current = journeyKey(playKey);
       armed.current = false;
       setSeen(false);
       setLit(null);
@@ -147,7 +150,7 @@ export function useJourneyReveal<T extends HTMLElement = HTMLOListElement>({
       if (!fired) armed.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, hasTarget, playKey]);
+  }, [enabled, hasTarget, journeyKey(playKey)]);
 
   // Run: tick lit up to the real target, hold the last halo, then settle. Depends on `target`, so a
   // target that grows (or shrinks) mid-intro re-plans instead of leaving a station pending.
