@@ -923,8 +923,11 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   if (req.path.startsWith("/public/")) { bindPublicLinkContext(req, res, next); return; }
   const sessionId = getCookies(req)["session_id"];
   // /journey is intentionally a marketing read of the real institutional
-  // aggregate. It must never inherit a visitor's synthetic Demo sandbox.
-  if (!sessionId?.startsWith("demo_") || req.path === "/auth/demo" || req.path === "/journey") { next(); return; }
+  // aggregate. On a real deployment it must never inherit a visitor's
+  // synthetic Demo sandbox. A DATA_MODE=demo deployment has no institutional
+  // data at all (its base state is empty), so there the visitor's own sandbox
+  // is the only truthful source and Journey reads it.
+  if (!sessionId?.startsWith("demo_") || req.path === "/auth/demo" || (req.path === "/journey" && !Repository.isDemoMode())) { next(); return; }
   (req as AuthenticatedRequest).demoSessionId = sessionId;
   if (!Repository.runDemoSandbox(sessionId, next)) next();
 });
