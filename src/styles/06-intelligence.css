@@ -4177,6 +4177,24 @@ button.twin-delta{width:100%}
 .import-progress-track{height:5px;border-radius:999px;background:var(--surface-3,var(--line));overflow:hidden}
 .import-progress-track i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .45s var(--ease,ease);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent)}
 .import-progress span{font-size:var(--t-xs);color:var(--muted);text-align:center;font-weight:600}
+/* Stations of the PDF read: driven by the phases the server really streams (src/utils/importStages.ts). */
+.import-stages{--journey-fill:var(--brass);list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.import-stages li{position:relative;display:grid;justify-items:center;gap:2px;text-align:center;min-width:0}
+.import-stage-node{position:relative;z-index:1;display:block;width:14px;height:14px;border-radius:50%;background:var(--surface);box-shadow:inset 0 0 0 1.5px var(--line-strong);transition:background-color .3s var(--ease,ease),box-shadow .3s var(--ease,ease)}
+.import-stages li+li::before,.import-stages li+li::after{content:"";position:absolute;inset-block-start:6px;inset-inline-start:calc(-50% + 11px);inline-size:calc(100% - 22px);block-size:2px;border-radius:2px}
+.import-stages li+li::before{background:var(--line-strong)}
+.import-stages li+li::after{background:var(--journey-fill);transform:scaleX(0);transform-origin:right center;transition:transform .5s var(--ease,ease)}
+.import-stages li+li:dir(ltr)::after{transform-origin:left center}
+.import-stages li[data-state="current"]::after,.import-stages li[data-state="done"]::after,.import-stages li[data-state="skipped"]::after{transform:scaleX(1)}
+.import-stages li[data-state="skipped"]::after{background:repeating-linear-gradient(90deg,var(--line-strong) 0 4px,transparent 4px 7px)}
+.import-stages li[data-state="done"] .import-stage-node{background:var(--journey-fill);box-shadow:none}
+.import-stages li[data-state="current"] .import-stage-node{background:color-mix(in srgb,var(--journey-fill) 18%,var(--surface));box-shadow:inset 0 0 0 2px var(--journey-fill),0 0 0 4px color-mix(in srgb,var(--journey-fill) 14%,transparent)}
+.import-stages li[data-state="skipped"] .import-stage-node{background:transparent;box-shadow:inset 0 0 0 1.5px var(--line-strong)}
+.import-stages b{overflow-wrap:anywhere;padding-inline:2px;font-size:var(--t-xs);font-weight:600;color:var(--muted);line-height:1.4}
+.import-stages li[data-state="done"] b,.import-stages li[data-state="current"] b{color:var(--ink)}
+.import-stages em{font-style:normal;font-size:10.5px;color:var(--muted);line-height:1.3}
+.import-stages li[data-state="pending"]{opacity:.65}
+@media (prefers-reduced-motion:reduce){.import-stage-node,.import-stages li::after{transition:none}}
 .import-progress-notice{display:flex;align-items:flex-start;gap:6px;margin:0;padding:6px 8px;border-radius:9px;background:color-mix(in srgb,var(--warning) 9%,transparent);color:var(--ink);font-size:var(--t-xs);font-weight:600;line-height:1.6;text-align:start}
 .import-progress-notice svg{width:14px;height:14px;flex:none;margin-top:2px;color:var(--warning)}
 /* The card is a centred column: the lede and the footnote were reading ragged

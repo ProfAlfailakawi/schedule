@@ -877,6 +877,68 @@
       place-items: center;
       color: var(--brass);
     }
+
+    /* ---------- governance flow: play-once sequential reveal ----------
+       Boxes light in order, each connector fills from the inline-start side
+       (right in RTL), the last box gets one halo. .flow.flow-armed is the armed (not yet
+       played) state; .flow.flow-play stays set afterwards, so it never replays. */
+    .flow .farrow{position:relative}
+    .flow .farrow .ic{position:relative;z-index:1;transform:scaleX(-1)}
+    .flow .farrow::before,.flow .farrow::after{
+      content:"";position:absolute;pointer-events:none;border-radius:2px;
+      inset-block-start:50%;margin-block-start:-1px;block-size:2px;
+      inset-inline-start:-10px;inset-inline-end:50%}
+    .flow .farrow::before{background:var(--line-strong)}
+    .flow .farrow::after{background:var(--brass);transform-origin:right center}
+    .flow.flow-armed .farrow{color:var(--line-strong)}
+    .flow.flow-armed .farrow::after{transform:scaleX(0)}
+    .flow.flow-armed .fstep{opacity:.55}
+    .flow.flow-armed .fstep .tile__ic{background:var(--surface-card);color:var(--muted);border-color:var(--line-strong)}
+    .flow.flow-play .fstep{opacity:1;border-color:color-mix(in srgb,var(--brass) 55%,var(--line-strong));
+      transition:opacity .5s cubic-bezier(.16,1,.3,1) var(--d,0s),border-color .5s cubic-bezier(.16,1,.3,1) var(--d,0s)}
+    .flow.flow-play .fstep.human{border-color:var(--brass)}
+    .flow.flow-play .fstep .tile__ic{background:var(--brass);color:var(--bg);
+      transition:background-color .4s cubic-bezier(.16,1,.3,1) var(--d,0s),color .4s cubic-bezier(.16,1,.3,1) var(--d,0s)}
+    .flow.flow-play .farrow{color:var(--brass);transition:color .3s cubic-bezier(.16,1,.3,1) var(--d,0s)}
+    .flow.flow-play .farrow::after{transform:scaleX(1);transition:transform .5s cubic-bezier(.16,1,.3,1) var(--d,0s)}
+    .flow.flow-play .fstep:nth-child(1){--d:0s}
+    .flow.flow-play .farrow:nth-child(2){--d:.45s}
+    .flow.flow-play .fstep:nth-child(3){--d:1s}
+    .flow.flow-play .farrow:nth-child(4){--d:1.45s}
+    .flow.flow-play .fstep:nth-child(5){--d:2s}
+    .flow.flow-play .fstep.human{animation:flowHalo 1.5s cubic-bezier(.16,1,.3,1) 2s 1 backwards}
+    @keyframes flowHalo{
+      from{box-shadow:0 0 0 0 rgba(208,166,99,.34)}
+      to{box-shadow:0 0 0 12px rgba(208,166,99,0)}}
+    @media (max-width:599px){
+      .flow .farrow .ic{transform:rotate(90deg)}
+      .flow .farrow::before,.flow .farrow::after{
+        inset-block-start:-10px;inset-block-end:50%;margin-block-start:0;
+        inset-inline-start:calc(50% - 1px);inset-inline-end:auto;inline-size:2px;block-size:auto}
+      .flow .farrow::after{transform-origin:center top}
+      .flow.flow-armed .farrow::after{transform:scaleY(0)}
+      .flow.flow-play .farrow::after{transform:scaleY(1)}
+    }
+    @media (prefers-reduced-motion:reduce){
+      .flow.flow-armed .farrow::after,.flow.flow-play .farrow::after{transform:none;transition:none}
+      .flow.flow-armed .fstep,.flow.flow-play .fstep,.flow.flow-play .farrow,.flow.flow-play .fstep .tile__ic{transition:none}
+      .flow.flow-play .fstep.human{animation:none}
+    }
+    /* ---------- live processing simulation: stations ---------- */
+    .sim-st { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 12px; padding: 0; }
+    .sim-st li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; font-size: 0.74rem; line-height: 1.4; color: var(--muted); transition: color 0.3s ease; }
+    .sim-st .sn { position: relative; z-index: 1; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-card); box-shadow: inset 0 0 0 1.5px var(--line-strong); font-size: 0.7rem; font-weight: 700; transition: background-color 0.3s ease, box-shadow 0.3s ease, color 0.3s ease; }
+    .sim-st li + li::before, .sim-st li + li::after { content: ""; position: absolute; inset-block-start: 10px; inset-inline-start: calc(-50% + 15px); inline-size: calc(100% - 30px); block-size: 2px; border-radius: 2px; }
+    .sim-st li + li::before { background: var(--line-strong); }
+    .sim-st li + li::after { background: var(--brass-bright); transform: scaleX(0); transform-origin: right center; transition: transform 0.5s cubic-bezier(.16, 1, .3, 1); }
+    .sim-st li[data-state="current"]::after, .sim-st li[data-state="done"]::after { transform: scaleX(1); }
+    .sim-st li[data-state="done"] { color: var(--ink); }
+    .sim-st li[data-state="done"] .sn { background: var(--brass-bright); color: var(--bg); box-shadow: none; }
+    .sim-st li[data-state="current"] { color: var(--ink); }
+    .sim-st li[data-state="current"] .sn { color: var(--brass-bright); box-shadow: inset 0 0 0 2px var(--brass-bright); animation: simHalo 1.5s cubic-bezier(.16, 1, .3, 1) 1; }
+    @keyframes simHalo { from { box-shadow: inset 0 0 0 2px var(--brass-bright), 0 0 0 0 rgba(229, 188, 123, .34); } to { box-shadow: inset 0 0 0 2px var(--brass-bright), 0 0 0 9px rgba(229, 188, 123, 0); } }
+    .sim-st .sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    @media (prefers-reduced-motion: reduce) { .sim-st *, .sim-st li::after { transition: none !important; animation: none !important; } }
     .blocked {
       padding: 12px 16px;
       border-radius: var(--radius-sm);
@@ -1856,6 +1918,8 @@
                   <span style="font-size:0.86rem; font-weight:600; color:#fff;">محاكاة دورة المعالجة الحية</span>
                   <span id="sim-status-badge" class="chip chip-jade" style="font-size:0.72rem;">جاهز للتشغيل</span>
                 </div>
+                <!-- Stations: drawn from the same phase array that drives the bar, log and stopwatch (simulation) -->
+                <ol id="sim-stations" class="sim-st" aria-label="مراحل المحاكاة"></ol>
                 <!-- Progress Bar -->
                 <div style="height:8px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden; margin-bottom:12px;">
                   <div id="sim-progress-bar" style="height:100%; width:100%; background:linear-gradient(90deg, var(--jade), var(--brass-bright)); transition:width 0.3s ease;"></div>
@@ -2663,6 +2727,30 @@
 
     // ── Stopwatch Live Processing Simulation ────────────────────────────
     let simInterval = null;
+    // One phase array drives the stations, the bar, the stopwatch and the log. (A simulation, labelled as one.)
+    const SIM_PHASES = [
+      { station: "قراءة المستند", progress: 20, time: "0:45", log: "1/4: قراءة مستند الـPDF واستخراج 89 صفاً وبيانات الأساتذة..." },
+      { station: "مطابقة القاعات", progress: 50, time: "1:30", log: "2/4: مطابقة القاعات مع سجل المباني وتشفير 012B-09..." },
+      { station: "فحص التعارض", progress: 75, time: "2:40", log: "3/4: تشغيل مانع الحجز المزدوج وفحص تعارضات 34 أستاذاً..." },
+      { station: "الاعتماد", progress: 100, time: "3:24", done: true, log: "اكتمل الاعتماد: جدول معتمد 100% بدون أي تعارض زمني أو مكاني!" }
+    ];
+    // applied = number of phases already applied (null = resting final state, everything done)
+    function paintSimStations(applied) {
+      const list = document.getElementById('sim-stations');
+      if (!list) return;
+      if (!list.children.length) {
+        list.innerHTML = SIM_PHASES.map((p, i) => `<li><span class="sn" aria-hidden="true">${i + 1}</span><span>${p.station}</span><span class="sr-only"></span></li>`).join('');
+      }
+      const finished = applied === null || (applied > 0 && SIM_PHASES[applied - 1].done);
+      const names = { done: 'مكتملة', current: 'جارية', pending: 'لاحقة' };
+      Array.from(list.children).forEach((li, i) => {
+        const state = finished || i < applied - 1 ? 'done' : (i === applied - 1 ? 'current' : 'pending');
+        li.dataset.state = state;
+        if (state === 'current') li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+        const sr = li.lastElementChild; if (sr) sr.textContent = names[state];
+      });
+    }
+    paintSimStations(null);
     function startLiveProcessingSim() {
       const btn = document.getElementById('btn-run-sim');
       const badge = document.getElementById('sim-status-badge');
@@ -2677,12 +2765,8 @@
       }
 
       let step = 0;
-      const phases = [
-        { progress: 20, time: "0:45", log: "1/4: قراءة مستند الـPDF واستخراج 89 صفاً وبيانات الأساتذة..." },
-        { progress: 50, time: "1:30", log: "2/4: مطابقة القاعات مع سجل المباني وتشفير 012B-09..." },
-        { progress: 75, time: "2:40", log: "3/4: تشغيل مانع الحجز المزدوج وفحص تعارضات 34 أستاذاً..." },
-        { progress: 100, time: "3:24", done: true, log: "اكتمل الاعتماد: جدول معتمد 100% بدون أي تعارض زمني أو مكاني!" }
-      ];
+      const phases = SIM_PHASES;
+      paintSimStations(0);
 
       clearInterval(simInterval);
       simInterval = setInterval(() => {
@@ -2692,6 +2776,7 @@
           if (digits) digits.textContent = p.time;
           if (log) { log.textContent = p.log; if (p.done) log.insertAdjacentHTML('afterbegin', LX.check + ' '); }
           step++;
+          paintSimStations(step);
         } else {
           clearInterval(simInterval);
           if (badge) {
@@ -2711,6 +2796,7 @@
       const badge = document.getElementById('sim-status-badge');
       const btn = document.getElementById('btn-run-sim');
 
+      paintSimStations(null);
       if (bar) bar.style.width = '100%';
       if (digits) digits.textContent = '3:24';
       if (log) { log.textContent = 'تم مسح 89 صفاً · 34 أستاذاً · 9 قاعات دراسية دون أي تعارض زمني'; log.insertAdjacentHTML('afterbegin', LX.check + ' '); }
@@ -2752,6 +2838,20 @@
       const box = document.getElementById('gov-step-detail');
       if (box) box.innerHTML = `<b>المرحلة النشطة:</b> ${govStepDetails[idx]}`;
     }
+
+    // ── Governance flow: play once when it scrolls into view ───────────────
+    (function () {
+      const flow = document.getElementById('gov-flow');
+      if (!flow || typeof IntersectionObserver === 'undefined') return;
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      flow.classList.add('flow-armed');
+      const io = new IntersectionObserver((entries) => {
+        if (!entries.some(e => e.isIntersecting)) return;
+        io.disconnect();
+        flow.classList.add('flow-play');
+      }, { threshold: 0.6 });
+      io.observe(flow);
+    })();
 
     // ── Room Anatomy Quick Switcher ─────────────────────────────────────
     function switchRoomCode(col, bld, room, colName, bldName, roomName) {
