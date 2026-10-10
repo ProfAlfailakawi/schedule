@@ -388,6 +388,32 @@
     animation:jr-lift .54s var(--ease-out,ease) forwards;
     animation-delay:calc(var(--i,0) * .07s);
   }
+
+  /* The rail fills in step with the stagger above: it leaves the first station
+     when that station lifts and reaches the last one as it settles. It is the
+     same brass hairline, drawn a little firmer, from the inline-start side
+     (right in RTL). Chronology, not progress: nothing here means "done". */
+  .jr-rail::after{
+    content:"";
+    position:absolute;
+    inset-block-start:21px;
+    inset-inline:6px;
+    height:2px;
+    margin-block-start:-.5px;
+    background:linear-gradient(to left,
+      transparent,
+      color-mix(in srgb,var(--jr-brass) 78%,transparent) 14%,
+      color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)) 86%,
+      transparent);
+    transform:scaleX(0);
+    transform-origin:right center;
+    pointer-events:none;
+  }
+  .jr-rail:dir(ltr)::after{transform-origin:left center}
+  .jr-rail.is-in::after{
+    transform:none;
+    transition:transform calc(4 * .07s + .3s) cubic-bezier(.3,.6,.4,1);
+  }
 }
 @keyframes jr-fade{from{opacity:0}to{opacity:1}}
 @keyframes jr-lift{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
@@ -406,7 +432,7 @@
   .jr-figure:nth-child(3n):last-child{border-inline-start:0;padding-inline-start:0}
 
   .jr-rail{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:clamp(24px,3.4vh,34px)}
-  .jr-rail::before{display:none}
+  .jr-rail::before,.jr-rail::after{display:none}
 }
 
 /* Phone, upright. The rail becomes a vertical spine — the shape a journey
@@ -457,6 +483,22 @@
       color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)) 92%,
       transparent);
   }
+  .jr-rail::after{
+    display:block;
+    inset-block:14px 30px;
+    inset-inline-start:21px;
+    inset-inline-end:auto;
+    width:2px;height:auto;
+    margin-block-start:0;
+    background:linear-gradient(to bottom,
+      transparent,
+      color-mix(in srgb,var(--jr-brass) 78%,transparent) 8%,
+      color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)) 92%,
+      transparent);
+    transform:scaleY(0);
+    transform-origin:center top;
+  }
+  .jr-rail.is-in::after{transform:none}
   .jr-station{
     grid-template-columns:42px minmax(0,1fr);
     grid-template-areas:"node no" "node title" "node body";
@@ -493,6 +535,10 @@
   .jr-figure>b{font-size:clamp(24px,6.4vh,36px)}
   .jr-rail{grid-template-columns:repeat(5,minmax(0,1fr))}
   .jr-rail::before{display:block;inset-block-start:21px;inset-inline:6px;width:auto;height:1px}
+  .jr-rail::after{display:block;inset-block:21px auto;inset-inline:6px;width:auto;height:2px;margin-block-start:-.5px;transform:scaleX(0);transform-origin:right center;
+    background:linear-gradient(to left,transparent,color-mix(in srgb,var(--jr-brass) 78%,transparent) 14%,color-mix(in srgb,var(--jr-brass) 40%,var(--jr-accent)) 86%,transparent)}
+  .jr-rail:dir(ltr)::after{transform-origin:left center}
+  .jr-rail.is-in::after{transform:none}
   .jr-station{
     grid-template-columns:none;grid-template-areas:none;
     padding-block:0;row-gap:8px;
@@ -506,7 +552,7 @@
 @media (orientation:landscape) and (max-height:560px) and (max-width:700px){
   .jr-figures{grid-template-columns:repeat(3,minmax(0,1fr))}
   .jr-rail{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:22px}
-  .jr-rail::before{display:none}
+  .jr-rail::before,.jr-rail::after{display:none}
 }
 
 @media (prefers-reduced-motion:reduce){
