@@ -1,0 +1,65 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   19 · Beauty — إدارة النظام، كشف التسجيل (table), login (presentation only)
+   Tokens only; no animation here that carries a hover transform; no `!important`;
+   no nth-child on conditional siblings (the register keeps its own row rails).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── إدارة النظام ───────────────────────────────────────────────────────── */
+.admin-quiet-summary>span,
+.admin-quiet-summary>article{
+  position:relative;overflow:hidden;
+  background:radial-gradient(90% 140% at 100% 0%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 62%),var(--surface);
+  box-shadow:var(--shadow-xs);border-radius:20px;
+  transition:transform .2s var(--ease),box-shadow .2s var(--ease);
+}
+.admin-quiet-summary>span:hover,
+.admin-quiet-summary>article:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm)}
+.admin-quiet-summary svg{
+  width:40px;height:40px;padding:10px;border-radius:14px;
+  background:linear-gradient(145deg,var(--accent-soft),var(--accent-softer));color:var(--accent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 16%,transparent);
+}
+.admin-quiet-summary b,.admin-quiet-summary strong{font-size:clamp(26px,2.6vw,32px);font-weight:700;letter-spacing:-.04em}
+.admin-page .console-rail{
+  background:radial-gradient(120% 140% at 100% 0%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 55%),var(--surface);
+  box-shadow:var(--shadow-sm);
+}
+.admin-page .console-tab.active{
+  background:linear-gradient(160deg,var(--accent-softer),color-mix(in srgb,var(--accent-soft) 70%,var(--surface)));
+  box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 14%,transparent),inset 0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent);
+}
+.admin-page .console-tab.active .console-tab-icon{
+  background:linear-gradient(145deg,var(--accent-strong),var(--accent));
+  box-shadow:0 4px 12px color-mix(in srgb,var(--accent) 38%,transparent);
+}
+
+@media (max-width:640px){
+  .admin-quiet-summary>span,.admin-quiet-summary>article{grid-template-columns:34px minmax(0,1fr);padding-inline:var(--s3)}
+  .admin-quiet-summary svg{width:34px;height:34px;padding:8px;border-radius:12px}
+  .admin-quiet-summary b,.admin-quiet-summary strong{font-size:24px}
+}
+
+/* ── كشف التسجيل: table density (desktop only; the phone keeps its cards) ── */
+@media screen and (min-width:901px){
+  .student-cases-table-wrap{border-radius:18px;box-shadow:var(--shadow-xs);background:var(--surface)}
+  .student-cases-table thead th{
+    padding-block:12px;letter-spacing:.01em;
+    background:linear-gradient(180deg,var(--surface-2),color-mix(in srgb,var(--accent) 5%,var(--surface-2)));
+    border-bottom:1px solid var(--line-strong);
+  }
+  .student-cases-table tbody td{padding-block:14px;vertical-align:top}
+  .student-cases-table tbody tr{transition:background .16s var(--ease)}
+  .student-cases-table tbody tr:hover{background:var(--accent-softer)}
+  .student-cases-table td code{
+    display:inline-block;padding:3px 8px;border-radius:8px;
+    background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);
+  }
+}
+@media (prefers-reduced-motion:reduce){
+  .admin-quiet-summary>span,.admin-quiet-summary>article,.student-cases-table tbody tr{transition:none}
+  .admin-quiet-summary>span:hover,.admin-quiet-summary>article:hover{transform:none}
+}
+
+/* ── Login: dark signature caption reaches 4.5:1 ────────────────────────── */
+:root[data-theme="dark"] .apex-login-signature,
+:root[data-theme="dark"] .apex-login-signature small{color:#b3beb8}
