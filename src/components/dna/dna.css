@@ -446,7 +446,8 @@
   background: color-mix(in srgb, var(--journey-fill) 14%, var(--dna-surface));
   color: var(--journey-fill);
   box-shadow: inset 0 0 0 2px var(--journey-fill), 0 0 0 4px color-mix(in srgb, var(--journey-fill) 12%, transparent);
-  animation-iteration-count: 1;
+  /* a static ring: the breathing halo is off in reveal mode; only the [data-just] one-shot below plays */
+  animation: none;
 }
 .dna-steps[data-size='xs'][data-journey] .dna-stepi[data-state='current'] .dna-node {
   box-shadow: inset 0 0 0 2px var(--journey-fill);

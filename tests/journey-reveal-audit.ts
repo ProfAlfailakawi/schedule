@@ -13,7 +13,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DnaStepper } from "../src/components/dna/DnaKit";
 import {
-  JOURNEY_SETTLE_MS, journeyAlreadyPlayed, journeyShown, journeyStepMs, journeyTarget, resetJourneyPlayed,
+  JOURNEY_SETTLE_MS, journeyThreshold, journeyReached, journeyNext, journeyAlreadyPlayed, journeyShown, journeyStepMs, journeyTarget, resetJourneyPlayed,
 } from "../src/components/dna/useJourneyReveal";
 
 let passed = 0, failed = 0;
@@ -58,6 +58,30 @@ check(/:dir\(ltr\)::after \{ transform-origin: left/.test(css), "CSS: اتجاه
 check(/dna-journey-halo 1\.5s var\(--dna-ease\) 1;/.test(css), "CSS: هالةٌ واحدة لا تتكرّر");
 check(/prefers-reduced-motion: reduce[\s\S]*data-journey/.test(css), "CSS: حركةٌ مخفّضة تعطّل الانتقال والهالة");
 check(/--journey-fill: var\(--brass\)/.test(theme), "الثيم: لون التعبئة سطرٌ واحد (البرونزي)");
+
+/* ── العتبة يجب أن تكون قابلة للبلوغ ─────────────────────────────────────── */
+check(journeyThreshold(0.5, 300, 800) === 0.5, "عنصرٌ يتسع للشاشة: العتبة كما هي");
+check(journeyThreshold(0.5, 1200, 500) < 0.4 && journeyThreshold(0.5, 1200, 500) * 1200 <= 500, "عنصرٌ أطول من الشاشة: عتبةٌ يمكن بلوغها");
+check(journeyThreshold(0.6, 5000, 300) >= 0.05, "حدٌّ أدنى معقول");
+const landing = fs.readFileSync("public/landing/index.html", "utf8");
+check(/Math\.min\(0\.6, \(0\.9 \* window\.innerHeight\)/.test(landing), "الصفحة الهابطة: العتبة محدودة بارتفاع الشاشة");
+
+/* ── التقارب: لا تبقى محطةٌ معلّقة، ولا يبدأ العرض من بكسلٍ واحد ──────────── */
+check(journeyNext(2, 5, true, false) === "tick" && journeyNext(5, 5, true, false) === "settle", "المؤقّت: يتقدّم حتى الهدف ثم يستقرّ");
+check(journeyNext(2, 3, true, false) === "tick" && journeyNext(2, 4, true, false) === "tick", "الهدف يكبر أثناء المقدمة: يُعاد التخطيط ولا تبقى محطةٌ معلّقة");
+check(journeyNext(3, 2, true, false) === "settle", "الهدف يصغر: يستقرّ");
+check(journeyNext(0, 3, true, true) === "wait" && journeyNext(0, 3, false, false) === "wait", "hold أو قبل الظهور: انتظار");
+check(journeyNext(null, 3, true, false) === "idle", "بعد التسوية: لا إعادة");
+check(!journeyReached({ isIntersecting: true, intersectionRatio: 0.02 }, 0.5) && journeyReached({ isIntersecting: true, intersectionRatio: 0.5 }, 0.5) && !journeyReached({ isIntersecting: false, intersectionRatio: 0.9 }, 0.5), "المراقب: النسبة المرئية لا isIntersecting وحدها");
+const hookSrc = fs.readFileSync("src/components/dna/useJourneyReveal.ts", "utf8");
+check(/\[enabled, hasTarget\]/.test(hookSrc) && /armed\.current/.test(hookSrc), "التسليح يُعاد عند أول هدفٍ > 0 مع حارس armed (مرة واحدة)");
+check(/\[lit, target, seen, hold, step, playKey\]/.test(hookSrc), "المؤقّت يعتمد على الهدف");
+check(/data-journey\] \.dna-stepi\[data-state='current'\] \.dna-node \{[^}]*animation: none;/.test(fs.readFileSync("src/components/dna/dna.css", "utf8")), "CSS: المحطة الحالية في وضع الرحلة بلا حركة لانهائية");
+check(/need - 0\.01/.test(landing), "الصفحة الهابطة: تتحقق من النسبة المرئية");
+
+const dnaCss = fs.readFileSync("src/components/dna/dna.css", "utf8");
+const haloUses = dnaCss.match(/animation(-name)?: dna-journey-halo[^;]*;|animation-name: dna-journey-halo-ring;/g) || [];
+check(haloUses.length === 2 && /\[data-just\][^{]*\{\s*animation: dna-journey-halo/.test(dnaCss) && /\[data-just\]\[data-state='current'\][^{]*\{\s*animation-name: dna-journey-halo-ring/.test(dnaCss), "الهالة تُستعمل فقط على [data-just]؛ المحطة المحفوظة (playKey) تُرسم بحلقة ثابتة");
 
 /* ── محطات قراءة PDF: من أطوار الخادم الفعلية فقط ───────────────────────── */
 import { importStageStates, noteImportPhase } from "../src/utils/importStages";

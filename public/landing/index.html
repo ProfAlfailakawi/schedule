@@ -2845,11 +2845,13 @@
       if (!flow || typeof IntersectionObserver === 'undefined') return;
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
       flow.classList.add('flow-armed');
+      // Never ask for more than the viewport can show (the stacked phone flow can be taller than a short screen).
+      const need = Math.max(0.05, Math.min(0.6, (0.9 * window.innerHeight) / Math.max(1, flow.getBoundingClientRect().height)));
       const io = new IntersectionObserver((entries) => {
-        if (!entries.some(e => e.isIntersecting)) return;
+        if (!entries.some(e => e.isIntersecting && e.intersectionRatio >= need - 0.01)) return;
         io.disconnect();
         flow.classList.add('flow-play');
-      }, { threshold: 0.6 });
+      }, { threshold: [need, Math.min(1, need + 0.25)] });
       io.observe(flow);
     })();
 
