@@ -189,15 +189,26 @@
 /* --- Lens: flat list ------------------------------------------------------ */
 
 .lens-list{display:flex;flex-direction:column}
-.lens-list>article{
+.lens-list>article,
+.lens-list>.agenda-rest>article{
   display:grid;
   grid-template-columns:34px minmax(180px,1.6fr) 108px minmax(130px,1fr) minmax(0,.9fr);
   align-items:center;gap:var(--s4);
   padding:var(--s4) var(--s6);
   border-bottom:1px solid var(--line);
 }
-.lens-list>article:last-child{border-bottom:0}
-.lens-list>article:hover{background:var(--surface-2)}
+.lens-list>article:last-child,
+.lens-list>.agenda-rest>article:last-child{border-bottom:0}
+.lens-list>article:hover,
+.lens-list>.agenda-rest>article:hover{background:var(--surface-2)}
+.lens-list>.agenda-rest{display:flex;flex-direction:column}
+.lens-list>.agenda-rest>summary{
+  list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;justify-content:center;
+  margin:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);font-weight:700;
+}
+.lens-list>.agenda-rest>summary::-webkit-details-marker{display:none}
+.lens-list>.agenda-rest[open]>summary{margin-bottom:var(--s2)}
 .lens-index{font:500 var(--t-xs)/1 var(--font-mono);color:var(--muted-2);font-variant-numeric:tabular-nums}
 .lens-main{min-width:0}
 .lens-main strong{display:block;font-size:var(--t-h4);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -4632,7 +4643,7 @@ button.twin-delta{width:100%}
 }
 .import-locked-course{min-width:150px}
 .import-preview-table td[dir="ltr"],.import-preview-table td[dir="ltr"] *{white-space:nowrap}
-.lens-list>article>time,.query-detail-panel time,.time-slot-card time{white-space:nowrap!important}
+.lens-list>article>time,.lens-list>.agenda-rest>article>time,.query-detail-panel time,.time-slot-card time{white-space:nowrap!important}
 .report-instructor-with-badge .visiting-badge{flex:none}
 .lens-week article time{display:block!important;white-space:nowrap!important}
 

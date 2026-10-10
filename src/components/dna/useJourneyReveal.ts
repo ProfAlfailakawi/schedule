@@ -60,6 +60,9 @@ function markPlayed(playKey?: string | number | null) {
   try { sessionStorage.setItem(STORAGE_PREFIX + key, '1'); } catch { /* storage may be blocked */ }
 }
 
+/** One canonical identity per entity: 42 and "42" are the same journey; null/undefined mean no key. */
+export const journeyKey = (playKey?: string | number | null): string | null => (playKey == null ? null : String(playKey));
+
 /** Test hook: forget what has played. */
 export function resetJourneyPlayed() { played.clear(); }
 
@@ -107,6 +110,7 @@ export function useJourneyReveal<T extends HTMLElement = HTMLOListElement>({
   const [lit, setLit] = useState<number | null>(null);
   const [seen, setSeen] = useState(false);
   const armed = useRef(false);
+  const keyRef = useRef(journeyKey(playKey));
   const step = stepMs ?? journeyStepMs(count);
   const hasTarget = target > 0;
 
@@ -114,24 +118,39 @@ export function useJourneyReveal<T extends HTMLElement = HTMLOListElement>({
   // It also re-runs when the target first becomes > 0 (data that loads after mount), so a
   // hold/loading stepper starts its intro when the journey arrives instead of appearing settled.
   useIsoLayoutEffect(() => {
+    // A stepper reused for another entity starts over: the old observer was disconnected by the
+    // cleanup below, and its armed/lit/seen state must not leak into the new journey.
+    if (keyRef.current !== journeyKey(playKey)) {
+      keyRef.current = journeyKey(playKey);
+      armed.current = false;
+      setSeen(false);
+      setLit(null);
+    }
     if (armed.current || !enabled || !hasTarget) return;
     if (typeof IntersectionObserver === 'undefined' || reducedMotion() || journeyAlreadyPlayed(playKey) || !ref.current) return;
     armed.current = true;
     setLit(0);
     const node = ref.current;
+    let fired = false; // the intro has actually been released (observer reached, or failsafe)
     const need = journeyThreshold(threshold, node.getBoundingClientRect().height, window.innerHeight);
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => journeyReached(entry, need))) { observer.disconnect(); setSeen(true); }
+        if (entries.some((entry) => journeyReached(entry, need))) { fired = true; observer.disconnect(); setSeen(true); }
       },
       { threshold: [need, Math.min(1, need + 0.25)] },
     );
     observer.observe(node);
     // Nothing may stay hidden: if the observer never reaches it, show the real state.
-    const failsafe = window.setTimeout(() => { observer.disconnect(); setSeen(true); }, 6000);
-    return () => { observer.disconnect(); window.clearTimeout(failsafe); };
+    const failsafe = window.setTimeout(() => { fired = true; observer.disconnect(); setSeen(true); }, 6000);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(failsafe);
+      // Torn down before anything played (StrictMode's setup -> cleanup -> setup, or a dependency change):
+      // forget the token so the next setup arms again instead of leaving the stepper hidden at lit = 0.
+      if (!fired) armed.current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, hasTarget]);
+  }, [enabled, hasTarget, journeyKey(playKey)]);
 
   // Run: tick lit up to the real target, hold the last halo, then settle. Depends on `target`, so a
   // target that grows (or shrinks) mid-intro re-plans instead of leaving a station pending.
