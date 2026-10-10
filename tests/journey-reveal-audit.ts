@@ -74,11 +74,13 @@ check(journeyNext(0, 3, true, true) === "wait" && journeyNext(0, 3, false, false
 check(journeyNext(null, 3, true, false) === "idle", "بعد التسوية: لا إعادة");
 check(!journeyReached({ isIntersecting: true, intersectionRatio: 0.02 }, 0.5) && journeyReached({ isIntersecting: true, intersectionRatio: 0.5 }, 0.5) && !journeyReached({ isIntersecting: false, intersectionRatio: 0.9 }, 0.5), "المراقب: النسبة المرئية لا isIntersecting وحدها");
 const hookSrc = fs.readFileSync("src/components/dna/useJourneyReveal.ts", "utf8");
-check(/\[enabled, hasTarget\]/.test(hookSrc) && /armed\.current/.test(hookSrc), "التسليح يُعاد عند أول هدفٍ > 0 مع حارس armed (مرة واحدة)");
+check(/\[enabled, hasTarget, playKey\]/.test(hookSrc) && /armed\.current/.test(hookSrc), "التسليح يُعاد عند أول هدفٍ > 0 مع حارس armed (مرة واحدة)");
+check(/keyRef\.current !== playKey[\s\S]*armed\.current = false[\s\S]*setSeen\(false\)/.test(hookSrc), "تغيّر playKey: يُعاد التسليح ويُقطع المراقب القديم ولا تتسرّب الحالة");
 check(/\[lit, target, seen, hold, step, playKey\]/.test(hookSrc), "المؤقّت يعتمد على الهدف");
 check(/data-journey\] \.dna-stepi\[data-state='current'\] \.dna-node \{[^}]*animation: none;/.test(fs.readFileSync("src/components/dna/dna.css", "utf8")), "CSS: المحطة الحالية في وضع الرحلة بلا حركة لانهائية");
 check(/need - 0\.01/.test(landing), "الصفحة الهابطة: تتحقق من النسبة المرئية");
 
+check(/if \(!fired\) armed\.current = false;/.test(hookSrc) && /fired = true; observer\.disconnect\(\); setSeen\(true\)/.test(hookSrc), "StrictMode: التنظيف قبل أي تشغيل يُسقط علامة التسليح فيُعاد التسليح؛ وبعد التشغيل لا إعادة");
 const dnaCss = fs.readFileSync("src/components/dna/dna.css", "utf8");
 const haloUses = dnaCss.match(/animation(-name)?: dna-journey-halo[^;]*;|animation-name: dna-journey-halo-ring;/g) || [];
 check(haloUses.length === 2 && /\[data-just\][^{]*\{\s*animation: dna-journey-halo/.test(dnaCss) && /\[data-just\]\[data-state='current'\][^{]*\{\s*animation-name: dna-journey-halo-ring/.test(dnaCss), "الهالة تُستعمل فقط على [data-just]؛ المحطة المحفوظة (playKey) تُرسم بحلقة ثابتة");
