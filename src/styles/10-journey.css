@@ -86,7 +86,7 @@
   inset-inline-end:max(18px,env(safe-area-inset-right));
   width:46px;height:46px;
   display:grid;place-items:center;
-  border:1px solid #ccd2cb;border-radius:16px;
+  border:1px solid var(--jr-line);border-radius:16px;
   background:rgb(255 255 255 / .88);
   -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
   color:var(--jr-ink-2);
@@ -309,7 +309,7 @@
   z-index:1;
   width:42px;height:42px;
   display:grid;place-items:center;
-  border:1px solid #ccd2cb;border-radius:14px;
+  border:1px solid var(--jr-line);border-radius:14px;
   /* Opaque, so the rail passes behind the node rather than through it. */
   background:var(--jr-canvas-2);
   color:var(--jr-accent);
@@ -317,7 +317,7 @@
 }
 /* The first station is where the story starts; it carries the brass. */
 .jr-station:first-child .jr-station-node{
-  border-color:color-mix(in srgb,var(--jr-brass) 46%,#ccd2cb);
+  border-color:color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line));
   color:var(--jr-brass);
 }
 .jr-station-node svg{width:19px;height:19px}
