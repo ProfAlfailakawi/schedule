@@ -43,14 +43,10 @@
   position:relative;
   transition:background .16s var(--ease),box-shadow .16s var(--ease),transform .16s var(--ease);
 }
-.academic-console .record-card-clickable::before{
-  content:"";position:absolute;inset-block:14px;inset-inline-start:0;width:3px;border-radius:0 3px 3px 0;
-  background:var(--accent);transform:scaleY(0);transform-origin:center;transition:transform .2s var(--ease);
-}
 .academic-console .record-card-clickable:hover{background:var(--accent-softer)}
-.academic-console .record-card-clickable:hover::before,
-.academic-console .record-card-clickable.select::before{transform:scaleY(1)}
-.academic-console .record-card-clickable.select{
+.academic-console .record-card-clickable:hover::before{background:color-mix(in srgb,var(--accent) 55%,transparent)}
+.academic-console .record-card.selected::before{background:var(--accent)}
+.academic-console .record-card.selected{
   background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent-soft) 55%,transparent));
 }
 .academic-console .record-card .record-card-lead>*:first-child:not(.record-card-copy){
@@ -100,8 +96,8 @@
 @keyframes beauty-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:no-preference){
   .academic-console .catalog-workspace,
-  .academic-console .master-detail-shell{animation:beauty-rise .42s var(--ease-out,ease-out) both}
-  .academic-console .record-deck>.record-card{animation:beauty-rise .38s var(--ease-out,ease-out) both}
+  .academic-console .master-detail-shell{animation:beauty-rise .42s var(--ease-out,ease-out) backwards}
+  .academic-console .record-deck>.record-card{animation:beauty-rise .38s var(--ease-out,ease-out) backwards}
   .academic-console .record-deck>.record-card:nth-child(2){animation-delay:.04s}
   .academic-console .record-deck>.record-card:nth-child(3){animation-delay:.08s}
   .academic-console .record-deck>.record-card:nth-child(4){animation-delay:.12s}
@@ -109,6 +105,6 @@
   .academic-console .record-deck>.record-card:nth-child(n+6){animation-delay:.2s}
 }
 @media (prefers-reduced-motion:reduce){
-  .academic-console .console-tab,.academic-console .record-card-clickable,.academic-console .record-card-clickable::before{transition:none}
+  .academic-console .console-tab,.academic-console .record-card-clickable{transition:none}
   .academic-console .console-tab:hover{transform:none}
 }
