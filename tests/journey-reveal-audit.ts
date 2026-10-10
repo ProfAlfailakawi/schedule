@@ -100,5 +100,21 @@ import { importStageStates, noteImportPhase } from "../src/utils/importStages";
   check(noteImportPhase(["read"], "read").length === 1, "التكرار لا يضيف");
 }
 
+
+/* ── جولة الصقل: لا تأخيرٌ بعد المقدمة، حالةٌ نهائية واحدة، المحطات خارج منطقة الإعلان ───────── */
+{
+  const pres = fs.readFileSync("public/schedule-presentation.html", "utf8");
+  const jcss = fs.readFileSync("src/styles/10-journey.css", "utf8");
+  const xfer = fs.readFileSync("src/components/ScheduleTransfer.tsx", "utf8");
+  check(!/flow\.flow-play/.test(landing) && /flow\.flow-intro \.fstep\{/.test(landing) && /classList\.remove\('flow-intro'\)/.test(landing), "الصفحة الهابطة: التأخيرات المتدرّجة على flow-intro فقط وتُزال بعد المقدمة");
+  check(/\.flow \.fstep \.tile__ic\{background:var\(--brass\)/.test(landing) && /\.flow \.fstep \.tile__ic\{background:var\(--brass\)/.test(pres), "الحالة النهائية (بلا JS/حركة مخفّضة) هي نفسها بعد المقدمة: بلاطات نحاسية");
+  check(!/is-live \.flow/.test(pres) && /flow-armed/.test(pres) && /IntersectionObserver/.test(pres.slice(pres.indexOf("Governance flow: plays once"))), "العرض: المقدمة مرتبطة بظهور الشريحة فعلاً لا بـ is-live");
+  const presFlow = pres.slice(pres.indexOf("governance flow"), pres.indexOf(".blocked{"));
+  check(!/rgba\(/.test(presFlow) && !/@keyframes (flowHalo|simHalo)[^}]*rgba/.test(landing), "الهالة بلا ألوان حرفية جديدة");
+  check(/\.jr-rail:dir\(ltr\)::after\{[^}]*to right/.test(jcss.replace(/\s+/g, " ").replace(/\{ /g, "{")) || /jr-rail:dir\(ltr\)::after\{\s*transform-origin:left center;\s*background:linear-gradient\(to right/.test(jcss), "10-journey: تدرّج الوصلة يتبع اتجاه السطر في LTR");
+  check(!/className="import-progress" role="status"/.test(xfer) && /<span role="status" aria-live="polite">\{readProgress\.message\}/.test(xfer), "ScheduleTransfer: الرسالة وحدها منطقة إعلان، لا قائمة المحطات");
+  check(/bar\.style\.width = '0%'/.test(landing) && /p\.done \|\| step >= phases\.length/.test(landing), "المحاكاة: الشريط يبدأ من صفر، والشارة تنقلب مع المحطة الرابعة");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
