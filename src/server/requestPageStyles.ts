@@ -118,8 +118,8 @@ export const REQUEST_V3_CSS = `:root{--ok-ink:#16523a;--on:#fff;--amber:#b07d00;
 .ap-main b{font-weight:700;font-size:15px;line-height:1.4}
 .ap-main small{color:var(--muted2);font-size:11.5px}
 .ap-when{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:2px}
-.pips{display:inline-flex;gap:3px}
-.pips i{inline-size:18px;block-size:18px;border-radius:5px;background:var(--line);display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700;color:var(--on)}
+.pips{display:inline-flex;gap:4px}
+.pips i{inline-size:22px;block-size:22px;border-radius:6px;background:var(--line);display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:700;color:var(--on)}
 .pips i[data-on="1"]{background:var(--ok)}
 .appt[data-act=change] .pips i[data-on="1"]{background:var(--amber)}
 .appt[data-act=delete] .pips i[data-on="1"]{background:var(--bad)}
@@ -167,6 +167,8 @@ export const REQUEST_V3_CSS = `:root{--ok-ink:#16523a;--on:#fff;--amber:#b07d00;
 .edit{border-top:1px dashed var(--line2)}
 .days button,.starts button,.acts .act{font-family:inherit;border-radius:13px;font-weight:600;letter-spacing:0}
 .starts button{font-size:14px;line-height:1;padding:12px 4px;font-variant-numeric:tabular-nums}
+.starts{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.starts button{min-block-size:46px;font-size:15px}
 .days button{font-size:13px;padding:11px 2px}
 .days button[aria-pressed=true],.starts button[aria-pressed=true]{background:var(--ok2);border-color:var(--ok);color:var(--ok-ink)}
 .starts button[aria-pressed=true]{background:var(--ok);color:var(--on)}
