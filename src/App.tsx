@@ -17,13 +17,11 @@ import {
   Library,
   LogOut,
   Menu,
-  Moon,
   RefreshCw,
   Search,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
-  Sun,
   UsersRound,
   ClipboardCheck,
   MailCheck,
@@ -1055,12 +1053,6 @@ export default function App() {
     [commandThinking, setCommandThinking] = useState(false),
     [commandInsight, setCommandInsight] = useState<any>(null),
     [naturalAnswer, setNaturalAnswer] = useState<any>(null);
-  const [theme, setTheme] = useState<"light" | "dark">(() => {
-    const stored = safeStorage.get("schedule-theme");
-    if (stored === "dark" || stored === "light") return stored;
-    // Default to day/light mode; only an explicit user choice switches to dark.
-    return "light";
-  });
   const [dataMode, setDataMode] = useState<{ mode: string; real: boolean } | null>(null);
   /** True for the last minute before an idle sign-out, so the screen can say so. */
   const [idleWarning, setIdleWarning] = useState(false);
@@ -1071,13 +1063,11 @@ export default function App() {
   const searchInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    /* The head script stamps this before the first paint; keeping it in step on
-       every switch is what stops the phone's status bar from staying on the
-       theme the reader just left. One source of truth for the whole chrome. */
-    document.querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", theme === "dark" ? "#080c0b" : "#f2f3ef");
-  }, [theme]);
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.colorScheme = "light";
+    safeStorage.set("schedule-theme", "light");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f2f3ef");
+  }, []);
   // On phones the master list and its detail panel stack in one column, so
   // tapping a row updated a panel far below the fold and the tap read as nothing
   // happening ("where's the screen? we're at the very bottom"). One delegated
@@ -1097,12 +1087,6 @@ export default function App() {
     document.addEventListener("click", onPointerUp);
     return () => document.removeEventListener("click", onPointerUp);
   }, []);
-  // Persist ONLY an explicit user choice, so the day-mode default is never
-  // silently written to storage on first load (Note 31: always day unless changed).
-  const chooseTheme = (next: "light" | "dark") => {
-    setTheme(next);
-    safeStorage.set("schedule-theme", next);
-  };
   useEffect(() => {
     if (!user) return;
     let lastActivityAt = Date.now();
@@ -2628,16 +2612,6 @@ export default function App() {
                 data-guide-ignore="يعيد عرض الجولة التعريفية ولا ينفذ إجراءً على بيانات الجدول"
               >
                 <Compass />
-              </button>
-              <button
-                type="button"
-                aria-label={
-                  theme === "dark" ? "تفعيل الوضع الفاتح" : "تفعيل الوضع الداكن"
-                }
-                title={theme === "dark" ? "الوضع الفاتح" : "الوضع الداكن"}
-                onClick={() => chooseTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? <Sun /> : <Moon />}
               </button>
               <button
                 type="button"
