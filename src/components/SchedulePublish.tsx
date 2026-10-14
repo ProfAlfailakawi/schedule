@@ -1,7 +1,7 @@
 import { DnaStepper } from "./dna";
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
+import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, RefreshCw, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { AR, countOf, oblique } from "../utils/arabicCount";
@@ -158,11 +158,11 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
    * بـ`/api/share` ولا يظهر في قائمة الروابط: يُصدَر ويُتابَع في «وارد
    * الأساتذة»، ويُرسل لكلِّ أستاذٍ رابطُه من هناك.
    */
-  const issueRequests = async () => {
+  const issueRequests = async (deadline = closesAt) => {
     const response = await fetch("/api/instructor-requests/issue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ collegeId, sectionId, termId, closesAt, source: "draft" }),
+      body: JSON.stringify({ collegeId, sectionId, termId, closesAt: deadline, source: "draft" }),
     });
     const data = await readReply(response, "تعذر فتح طلبات التعديل");
     if (data?.emptyTerm) {
@@ -544,8 +544,8 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               {issued?.empty ? (
                 <p className="share-created share-created-empty" role="status">
                   {issued.empty === "no-instructors"
-                    ? "أُنشئت البطاقة، لكن لم تُفتح طلبات تعديل لأحد: لا محاضرة في جدول هذا القسم لهذا الفصل مُسندةٌ إلى أستاذ بعد."
-                    : "أُنشئت البطاقة، لكن لم تُفتح طلبات تعديل لأحد: جدول هذا القسم لهذا الفصل فارغ. انسخ الجدول أو أضف محاضراته ثم افتح الطلبات."}
+                    ? "لم تُفتح طلبات تعديل لأحد: لا توجد محاضرة في جدول هذا القسم لهذا الفصل مُسندةٌ إلى أستاذ."
+                    : "لم تُفتح طلبات تعديل لأحد: جدول هذا القسم لهذا الفصل فارغ. أضف محاضراته ثم أعد المحاولة."}
                 </p>
               ) : issued ? (
                 <p className="share-created" role="status">
@@ -621,6 +621,30 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                           >
                             {copied === link.id ? <Check /> : <Copy />}
                           </button>
+                          {link.kind === "staff" ? (
+                            <button
+                              type="button"
+                              title="فتح طلبات التعديل أو إعادة المحاولة"
+                              aria-label="فتح طلبات التعديل أو إعادة المحاولة"
+                              data-guide-ignore="إعادة محاولة فتح نافذة رغبات الجدول من البطاقة المنشورة"
+                              onClick={async () => {
+                                const deadline = String(link.requestsCloseAt || "").slice(0, 10);
+                                if (!deadline) {
+                                  setError("لا يوجد موعد إغلاق محفوظ لهذه البطاقة. أنشئ بطاقة أستاذ بموعد جديد لفتح الرغبات.");
+                                  return;
+                                }
+                                setBusy(true);
+                                setError(null);
+                                setIssued(null);
+                                try { await issueRequests(deadline); }
+                                catch (e: any) { setError(`تعذر فتح طلبات التعديل: ${e.message}`); }
+                                finally { setBusy(false); }
+                              }}
+                              disabled={dead || busy}
+                            >
+                              <RefreshCw />
+                            </button>
+                          ) : null}
                           {link.kind === "staff" ? (
                             <button
                               type="button"
