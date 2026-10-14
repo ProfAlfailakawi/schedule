@@ -16889,7 +16889,7 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
     };
     try{
       var until=new Intl.DateTimeFormat("ar-KW-u-nu-latn",{day:"numeric",month:"long",year:"numeric"}).format(new Date(d.expiresAt));
-      document.getElementById("foot").textContent="هذا الرابط صالح حتى نهاية الفصل ("+until+") · للقراءة فقط";
+      document.getElementById("foot").textContent="قراءة الجدول متاحة حتى نهاية الفصل ("+until+") · للقراءة فقط";
       var life=document.getElementById("subLife");
       if(life) life.textContent="اشتراك يتابع جدولك من نفسه حتى "+until+" (نهاية الفصل)، ولا يحتاج إعادة إضافة بعد كل تعديل.";
     }catch(e){}

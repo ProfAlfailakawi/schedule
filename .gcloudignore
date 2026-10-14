@@ -1,5 +1,6 @@
 # Cloud Run source payload only. Keep the AI Studio workspace complete, but deploy only source + compact bootstrap data.
 .git/
+!Dockerfile
 .github/
 node_modules/
 dist/
