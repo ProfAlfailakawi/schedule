@@ -18589,15 +18589,16 @@ function instructorRequestPage(token: string, nonce: string, demoHint = ""): str
   return `<!doctype html><html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="light">
 <title>جدولي — طلب تعديل</title>
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */${PUBLIC_FONT_FACES}
-:root{--ink:#15251d;--muted:#627269;--muted2:#8b9991;--line:#dce5df;--line2:#cbd8d0;--bg:#f3f7f4;--card:#fff;
+:root{color-scheme:light;--ink:#15251d;--muted:#627269;--muted2:#8b9991;--line:#dce5df;--line2:#cbd8d0;--bg:#fff;--card:#fff;
 --soft:#edf5f0;--ok:#247756;--ok2:#dff2e8;--warn:#9a6a00;--warn2:#fff5d9;--bad:#ad2f28;--bad2:#fdecea;--accent:#247756;--shadow:0 12px 34px rgba(22,57,40,.07)}
 /* لوحةُ الصفحات العامة الموحّدة — للشاشة فقط؛ الطباعةُ تبقى كما كانت. */
-@media screen{:root{--ink:#131817;--muted:#5b6660;--muted2:#6b766f;--line:#e3e6e0;--line2:#ccd2cb;--bg:#f2f3ef;--soft:#edefe9;--ok:#1f6b5c;--ok2:#dcece7;--accent:#1f6b5c}
-body{background:radial-gradient(circle at 85% 0,rgba(31,107,92,.07),transparent 28%),var(--bg)}}
+@media screen{:root{color-scheme:light;--ink:#131817;--muted:#5b6660;--muted2:#6b766f;--line:#e3e6e0;--line2:#ccd2cb;--bg:#fff;--soft:#edefe9;--ok:#1f6b5c;--ok2:#dcece7;--accent:#1f6b5c}
+body{background:var(--bg)}}
 *{box-sizing:border-box}
-body{margin:0;min-height:100dvh;background:radial-gradient(circle at 85% 0,rgba(36,119,86,.07),transparent 28%),var(--bg);color:var(--ink);font:400 16px/1.65 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);font:400 16px/1.65 "Plex Arabic","Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-synthesis:none;font-kerning:normal;-webkit-text-size-adjust:100%}
 button,input,select,textarea{font:inherit}
 button{touch-action:manipulation}
 .wrap{max-width:760px;margin:0 auto;padding:18px 16px 120px}

@@ -587,7 +587,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                             <strong className="share-status">{status}</strong>
                             {!dead ? (
                               <time className="share-expiry" dateTime={link.expiresAt}>
-                                {link.kind === "staff" ? "صالح حتى نهاية الفصل " : "ينتهي "}{new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.expiresAt))}
+                                {link.kind === "staff" ? "قراءة الجدول حتى نهاية الفصل " : "ينتهي "}{new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.expiresAt))}
                               </time>
                             ) : null}
                             {!dead && link.kind === "staff" && link.requestsCloseAt ? (
