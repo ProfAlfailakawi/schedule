@@ -16626,6 +16626,7 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
       <label for="termPick">الفصل الدراسي</label>
       <select id="termPick" aria-label="اختر الفصل الدراسي"></select>
     </div>
+    <p id="wishesDeadline" hidden style="padding:12px 16px;background:var(--soft);border:1px solid var(--line);border-radius:14px;font-weight:700"></p>
     <div class="approvals" id="approvals" aria-label="حالة اعتماد جدول القسم"></div>
     <div class="stats" id="stats"></div>
     <div class="soon" id="soon" hidden></div>
@@ -16889,6 +16890,12 @@ input:focus{box-shadow:0 0 0 3px color-mix(in srgb,var(--jade) 20%,transparent)}
     };
     try{
       var until=new Intl.DateTimeFormat("ar-KW-u-nu-latn",{day:"numeric",month:"long",year:"numeric"}).format(new Date(d.expiresAt));
+      var deadlineNode=document.getElementById("wishesDeadline");
+      deadlineNode.hidden=!d.requestsCloseAt;
+      if(d.requestsCloseAt){
+        var deadlineDate=new Intl.DateTimeFormat("ar-KW-u-nu-latn",{day:"numeric",month:"long",year:"numeric",timeZone:"Asia/Kuwait"}).format(new Date(d.requestsCloseAt));
+        deadlineNode.textContent="آخر موعد لإرسال الرغبات: "+deadlineDate+(Date.parse(d.requestsCloseAt)<Date.now()?" — انتهى استقبال الرغبات":"");
+      }
       document.getElementById("foot").textContent="قراءة الجدول متاحة حتى نهاية الفصل ("+until+") · للقراءة فقط";
       var life=document.getElementById("subLife");
       if(life) life.textContent="اشتراك يتابع جدولك من نفسه حتى "+until+" (نهاية الفصل)، ولا يحتاج إعادة إضافة بعد كل تعديل.";
