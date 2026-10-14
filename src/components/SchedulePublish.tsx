@@ -585,14 +585,15 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                           <span>
                             <i aria-hidden="true" />
                             <strong className="share-status">{status}</strong>
-                            {!dead ? (
-                              <time className="share-expiry" dateTime={link.expiresAt}>
-                                {link.kind === "staff" ? "قراءة الجدول حتى نهاية الفصل " : "ينتهي "}{new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.expiresAt))}
+                            {!dead && link.kind === "staff" && link.requestsCloseAt ? (
+                              <time className="share-expiry" dateTime={link.requestsCloseAt} style={{ display: "block", fontWeight: 700 }}>
+                                آخر موعد لإرسال الرغبات: {new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kuwait" }).format(new Date(link.requestsCloseAt))}
+                                {Date.parse(link.requestsCloseAt) < Date.now() ? " — انتهى استقبال الرغبات" : ""}
                               </time>
                             ) : null}
-                            {!dead && link.kind === "staff" && link.requestsCloseAt ? (
-                              <time className="share-expiry" dateTime={link.requestsCloseAt}>
-                                {" · "}{Date.parse(link.requestsCloseAt) < Date.now() ? "أُغلقت الطلبات" : "الطلبات حتى"} {new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(link.requestsCloseAt))}
+                            {!dead ? (
+                              <time className="share-expiry" dateTime={link.expiresAt} style={{ display: "block" }}>
+                                {link.kind === "staff" ? "متاح لقراءة الجدول حتى نهاية الفصل: " : "ينتهي "}{new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kuwait" }).format(new Date(link.expiresAt))}
                               </time>
                             ) : null}
                             {/* رابطٌ لم يُفتح بعد لا يُكتب له «0 فتحة». */}

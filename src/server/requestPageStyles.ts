@@ -173,31 +173,5 @@ export const REQUEST_V3_CSS = `:root{--ok-ink:#16523a;--on:#fff;--amber:#b07d00;
 .acts .act{min-block-size:46px}
 .hint-pro{margin:0 0 8px;padding:9px 12px;border-radius:12px;background:var(--warn2);color:var(--warn);font-size:12.5px;line-height:1.6}
 .verdict{border-radius:14px}
-:root{color-scheme:light dark}
-@media (prefers-color-scheme:dark){
-:root{--ink:#e6efe9;--muted:#a2b2a9;--muted2:#7d8d84;--line:#26362d;--line2:#35483d;--bg:#0e1612;--card:#16211b;--soft:#1b2a22;--ok:#4fbf8c;--ok2:#17372a;--warn:#e8b64d;--warn2:#332a10;--bad:#f08c84;--bad2:#3a1c1a;--accent:#4fbf8c;--shadow:0 12px 34px rgba(0,0,0,.4);
---ok-ink:#86dcb1;--on:#08140e;--amber:#e8b64d;--gold:#e8b64d;--raise:#1d2b23;--amber-line:#6a5320;--warn-line:#4a3b16;--sk-on:#08140e;--sk-toast-bg:#e6efe9;--sk-toast-fg:#0e1612;color-scheme:dark}
-body{background:radial-gradient(circle at 85% 0,rgba(79,191,140,.08),transparent 28%),var(--bg)}
-.pick button,.days button,.alts button,textarea,.course-college select,.course-search,.course-option,label.sign input,label.time input,.starts button,.act{background:var(--raise);color:var(--ink);border-color:var(--line2)}
-.tabs{background:color-mix(in srgb,var(--card) 92%,transparent)}
-.card[data-act="delete"]{background:var(--bad2)}
-.state,.chip.st{background:var(--warn2);border-color:var(--warn-line);color:var(--warn)}
-.state[data-approved="1"],.statusline[data-approved="1"] .chip.st{background:var(--ok2);border-color:var(--line2);color:var(--ok)}
-.add-card{background:color-mix(in srgb,var(--card) 70%,transparent);border-color:var(--line2)}
-.err{background:var(--bad2)}
-.restored{background:var(--soft)}
-details.demo>summary{background:var(--warn2);border-color:var(--warn-line);color:var(--warn)}
-.verdict[data-tone=warn]{color:var(--warn)}
-.alts-ro span{background:var(--soft);color:var(--ink)}
-.status[data-act=add],.status[data-act=change],.status[data-act=delete],.add-start,.send button,.starts button[aria-pressed=true],.done .tick,.verdict>i,.dept i,.reply button[data-reply]{color:var(--on)}
-.days button[aria-pressed=true],.pick button[aria-pressed=true]{background:var(--ok2);border-color:var(--ok);color:var(--ink)}
-.appt-head:hover{background:rgba(79,191,140,.08)}
-label.sign input::placeholder,.course-search::placeholder,textarea::placeholder,.signnote{color:var(--muted)}
-.deck{background:linear-gradient(180deg,var(--warn2),var(--card) 44%);border-color:var(--warn-line)}
-.sd[data-k=asked]{background:var(--warn2)}
-.ruler .track{background-color:var(--raise)}
-.tb[data-q=mute]{background:var(--line2);color:var(--ink)}
-.pips i{color:var(--on)}
-.ev,.plan-head{color:var(--ink)}
-}
+:root{color-scheme:light}
 `;
