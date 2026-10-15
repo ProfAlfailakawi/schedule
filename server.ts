@@ -22,7 +22,7 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { currentTermId, planningTermCandidates, termHasEnded, termIsArchive } from "./src/utils/termSequence";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
+import type { AdCourse, FSchedule, ScheduleApproval, ScheduleApprovalSignature, ScheduleComment, ScheduleNoteField, ScheduleShareLink, HallBarterRequest, MasterBuilding, MasterRoom, LocationReviewCase, InstructorRequest, InstructorRequestItem, InstructorRequestSignature, InstructorRequestSnapshot, InstructorRequestEventKind, StudentNeed, CurriculumPlan, CurriculumDegreeRule } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { computeMeetingSlots, meetingParticipants } from "./src/utils/meetingSlots";
 import { directoryVisitingIds, liveVisitingIds, termVisitingIds } from "./src/utils/liveVisiting";
@@ -6851,6 +6851,9 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
   const requestedCode=String(req.body?.canonicalCode??current.canonicalCode).normalize("NFKC").trim().toUpperCase().replace(/\s+/g,"");
   if(!requestedCode||requestedCode===PENDING_ROOM||isInvalidLocationToken(requestedCode)||!/^[A-Z0-9]{1,12}$/.test(requestedCode)||!/[0-9]/.test(requestedCode)){res.status(400).json({error:"رقم القاعة غير صالح. استخدم 1 إلى 12 حرفًا أو رقمًا، على أن يتضمن رقمًا."});return;}
   const roomCodeChanged=requestedCode!==current.canonicalCode;
+  const rawCapacity=req.body?.capacity;
+  const roomCapacity=rawCapacity===undefined?current.capacity:rawCapacity===null||rawCapacity===""?undefined:Number(rawCapacity);
+  if(roomCapacity!==undefined&&(!Number.isInteger(roomCapacity)||roomCapacity<1||roomCapacity>2000)){res.status(400).json({error:"سعة القاعة يجب أن تكون عدداً صحيحاً بين 1 و2000، أو تترك فارغة إن لم تُعرف."});return;}
   if(registry.rooms.some(x=>x.id!==current.id&&x.buildingId===targetBuildingId&&x.canonicalCode===requestedCode)){res.status(409).json({error:"يوجد رقم القاعة نفسه في هذا المبنى."});return;}
   const sectionIds=req.body?.sectionIds===undefined?current.sectionIds:locationIdList(req.body.sectionIds);const primarySectionIds=(req.body?.primarySectionIds===undefined?(current.primarySectionIds||[]):locationIdList(req.body.primarySectionIds)).filter(id=>sectionIds.includes(id));
   /* Compatibility/audit contract: the room metadata still follows the canonical target building.
@@ -6866,7 +6869,7 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
     ...(current.aliases||[]),
     ...(roomCodeChanged?[{value:current.canonicalCode,evidence:[`رمز القاعة السابق قبل تغييره إلى ${requestedCode}.`]}]:[]),
   ]:req.body.aliases);
-  const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared,collegeIds:roomCollegeIds,sectionIds,primarySectionIds,aliases,buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode,canonicalCode:requestedCode};
+  const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared,collegeIds:roomCollegeIds,sectionIds,primarySectionIds,aliases,buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode,canonicalCode:requestedCode,...(roomCapacity===undefined?{}:{capacity:roomCapacity})};
   const row:MasterRoom={...current,...next,id:current.id,confidence:"CONFIRMED",sharedConfidence:"CONFIRMED",adminVerified:true,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:targetBuildingId!==current.buildingId?"MOVE_BUILDING":roomCodeChanged?"RENAME_ROOM":"UPDATE",before:{buildingId:current.buildingId,buildingCode:current.buildingCode,canonicalCode:current.canonicalCode,active:current.active,shared:current.shared,collegeIds:current.collegeIds,sectionIds:current.sectionIds,primarySectionIds:current.primarySectionIds},after:next}]};
   /* ── لا نسخة كاملة للنظام قبل نقل قاعة ──────────────────────────────────
    * Moving a room between buildings used to copy the ENTIRE database first:
@@ -6911,6 +6914,19 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
     }})));throw error;}
   }else await Repository.upsertLocationRooms([row]);
   invalidateLocationRegistry();res.json({...row,updatedScheduleCount:schedulePatches.length});
+});
+app.put("/api/section/location-rooms/:id/capacity", requirePermission(7), async (req:AuthenticatedRequest,res:Response)=>{
+  const room=(await Repository.getLocationRooms()).find(item=>item.id===String(req.params.id));
+  if(!room){res.status(404).json({error:"القاعة غير موجودة في سجل المواقع."});return;}
+  const sectionId=Number(req.body?.sectionId||0),section=(await Repository.getSections()).find(item=>Number(item.AdSectionId)===sectionId);
+  if(!section||!room.sectionIds.map(Number).includes(sectionId)||!isScopeAllowed(req,Number(section.AdCollegeId),sectionId)){res.status(403).json({error:"تعديل سعة القاعة متاح للقسم المرتبطة به القاعة فقط."});return;}
+  const allSections=await Repository.getSections();
+  if((room.sectionIds||[]).some(id=>{const linked=allSections.find(item=>Number(item.AdSectionId)===Number(id));return Number(id)!==sectionId&&(!linked||!isScopeAllowed(req,Number(linked.AdCollegeId),Number(id)));})){res.status(403).json({error:"القاعة مشتركة؛ يلزم أن تملك صلاحية كل الأقسام المرتبطة بها."});return;}
+  const capacity=Number(req.body?.capacity);
+  if(!Number.isInteger(capacity)||capacity<1||capacity>2000){res.status(400).json({error:"أدخل سعة فعلية صحيحة بين 1 و2000."});return;}
+  const now=new Date().toISOString();
+  const updated:MasterRoom={...room,capacity,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(room.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:"CAPACITY_UPDATE",before:{capacity:room.capacity},after:{capacity},note:`حدّثها قسم ${section.AdSectionName||sectionId}`} ]};
+  await Repository.upsertLocationRooms([updated]);invalidateLocationRegistry();res.json(updated);
 });
 app.put("/api/admin/location-registry/review/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const cases=await Repository.getLocationReviewCases();const current=cases.find(x=>x.id===req.params.id);if(!current){res.status(404).json({error:"حالة المراجعة غير موجودة"});return;}
@@ -10291,6 +10307,54 @@ function refuseIfStale(req: AuthenticatedRequest, res: Response, current: { roun
 }
 
 /** قراءة حالة الاعتماد لقسمٍ واحد، بالموعد والملاحظات والتعارضات معه. */
+async function scheduleDataReadiness(collegeId: number, sectionId: number, termId: number, rows?: FSchedule[]) {
+  const [scheduleRows, courses, registry, instructors] = await Promise.all([
+    rows ? Promise.resolve(rows) : Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getCourses(), readLocationRegistry(), Repository.getInstructors(),
+  ]);
+  const courseById = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course]));
+  const instructorIds = new Set((instructors as any[]).map(instructor => Number(instructor.AdInstructorId)));
+  const roomById = new Map(registry.rooms.map(room => [String(room.id), room]));
+  const missing = new Map<string, { kind: string; id: string; label: string; fields: string[] }>();
+  for (const row of scheduleRows) {
+    const courseId = Number(row.AdCourseId || 0), course = courseById.get(courseId);
+    const label = `${course?.CourseCode || "موعد"} · ${course?.CourseName || row.AdCourseName || "مقرر"} · شعبة ${row.SCode || "—"}`;
+    if (!courseId || !course) {
+      missing.set(`course:${row.id}`, { kind: "course", id: String(courseId || row.id), label, fields: ["ربط المقرر برمز صحيح في المكتبة"] });
+    }
+    if (course) {
+      const fields = [
+        !(Number(course.CourseCredit) > 0) && "الوحدات",
+        !(Number(course.CourseHours) > 0) && "الساعات",
+        !(Number(course.MaxStudent) > 0) && "سعة الشعبة",
+        !String(course.CourseCode || "").trim() && "رمز المقرر",
+        !String(course.CourseName || "").trim() && "اسم المقرر",
+      ].filter(Boolean) as string[];
+      if (fields.length) missing.set(`course:${courseId}`, { kind: "course", id: String(courseId), label: `${course.CourseCode || "مقرر"} · ${course.CourseName || courseId}`, fields });
+    }
+    const rowFields: string[] = [];
+    if (!String(row.SCode || "").trim()) rowFields.push("رمز الشعبة");
+    if (!Number(row.AdInstructorId) || !instructorIds.has(Number(row.AdInstructorId))) rowFields.push("عضو هيئة التدريس");
+    if (!SCHEDULE_DAYS.some(day => Boolean((row as any)[day.key]))) rowFields.push("أيام المحاضرة");
+    const start = timeToMinutes(String(row.fstarttime || "")), end = timeToMinutes(String(row.fendtime || ""));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) rowFields.push("وقت بداية ونهاية صحيح");
+    if (rowFields.length) missing.set(`schedule:${row.id}`, { kind: "schedule", id: String(row.id), label, fields: rowFields });
+    const roomId = String(row.roomId || "");
+    if (!roomId) {
+      missing.set(`location:${row.id}`, { kind: "location", id: String(row.id), label, fields: ["ربط الموعد بقاعة معتمدة"] });
+    } else {
+      const room = roomById.get(roomId);
+      if (!room) missing.set(`room:${roomId}`, { kind: "room", id: roomId, label: `قاعة ${row.AdRoomHall || roomId}`, fields: ["تأكيد ربط القاعة في سجل المواقع"] });
+      else if (!(Number(room.capacity) > 0)) missing.set(`room:${roomId}`, { kind: "room", id: roomId, label: `مبنى ${room.buildingCode} · قاعة ${room.canonicalCode}`, fields: ["سعة القاعة"] });
+    }
+  }
+  const rooms = [...new Set(scheduleRows.map(row => String(row.roomId || "")).filter(Boolean))]
+    .map(id => roomById.get(id)).filter((room): room is MasterRoom => Boolean(room))
+    .map(room => ({ id: String(room.id), label: `مبنى ${room.buildingCode} · قاعة ${room.canonicalCode}`, capacity: Number(room.capacity) || null }));
+  const items = [...missing.values()];
+  return { ready: items.length === 0, count: items.length, items, rooms };
+}
+
 app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "اختر الفصل والكلية والقسم أولاً." }); return; }
@@ -10326,6 +10390,7 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res: Re
     rowCount: rows.length,
     /* سببُ منع التعديل لهذا الناظر، من حارس الخادم نفسه (R21). */
     lockReason,
+    dataReadiness: await scheduleDataReadiness(collegeId, sectionId, termId, rows),
     /* من القاعدة نفسها التي يُسأل بها مسارُ الطلب (extensionRequestRefusal). */
     canRequestExtension: extensionRequestRefusal(approval, deadline) === null,
     statusLabel: APPROVAL_STATUS_LABEL[approval.status],
@@ -10414,6 +10479,8 @@ app.post("/api/approvals/sign", requireAuth, async (req: AuthenticatedRequest, r
     const approval = await readApproval(collegeId, sectionId, termId);
     const rows = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
     if (refuseIfStale(req, res, { round: approval.currentRound, rowCount: rows.length, status: approval.status })) return;
+    const dataReadiness = await scheduleDataReadiness(collegeId, sectionId, termId, rows);
+    if (!dataReadiness.ready) { res.status(409).json({ error: `لا يمكن التوقيع قبل استكمال بيانات ${countOf(dataReadiness.count, AR.item)}: ${dataReadiness.items[0].label} — ${dataReadiness.items[0].fields.join("، ")}.`, code: "data-readiness", dataReadiness }); return; }
     const blocking = await blockingSummaryFor(collegeId, sectionId, termId);
     const verdict = canSign(approval, stage, { blockingConflicts: blocking.conflicts, blockingDuplicates: blocking.duplicates, rowCount: rows.length });
     if (verdict.ok !== true) { res.status(409).json({ error: verdict.message, code: verdict.code }); return; }

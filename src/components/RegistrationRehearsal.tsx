@@ -22,8 +22,13 @@ interface Summary {
   canRun: boolean;
   auto?: { enabled: boolean; everyHours: number };
   phase?: { mode: string; label: string; line: string; namesVisible: boolean };
-  run: { ranAt: string; ranBy: string; students: number; withoutRules: number; defaulted: number; rounds: number; windows: number[]; scoped: boolean } | null;
+  run: { ranAt: string; ranBy: string; students: number; population: number; withoutRules: number; defaulted: number; rounds: number; windows: number[]; scoped: boolean; stale?: boolean;
+    capacity?: { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number } | null;
+    projected?: { students: number; capacity: { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number } } | null;
+    dataQuality?: { total: number; ready: number; excluded: number; issues: Record<string, number> } | null;
+  } | null;
   courses: CourseRow[];
+  projectedCourses?: CourseRow[];
 }
 
 const request = async (url: string, init?: RequestInit) => {
@@ -38,6 +43,14 @@ const request = async (url: string, init?: RequestInit) => {
 const WHY: Array<[keyof Unmet, string, string]> = [
   ["full", "مقاعد لا تكفي", "bad"], ["not-offered", "مطلوبٌ ولا يُطرح", "warn"], ["conflict", "تعارض أوقات", "info"], ["units", "فوق الوحدات", "soft"], ["prereq", "ينقصهم مسبق", "soft"],
 ];
+const qualityLabel = (key: string) => ({
+  "invalid-identity": "هوية المقرر أو الشعبة غير مكتملة",
+  "missing-capacity": "السعة غير محددة",
+  "invalid-capacity": "السعة ليست عدداً صحيحاً",
+  "missing-meetings": "لا يوجد موعد مكتمل",
+  "invalid-meetings": "وقت أو يوم غير صالح",
+  "duplicate-id": "معرّف شعبة مكرر",
+} as Record<string, string>)[key] || "بيانات تحتاج مراجعة";
 const needsDecision = (c: CourseRow) => c.unmet.full > 0 || c.unmet["not-offered"] > 0;
 const weight = (c: CourseRow) => c.unmet.full * 3 + c.unmet["not-offered"] * 2 + c.unmet.conflict;
 
@@ -48,6 +61,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
   const [busy, setBusy] = useState(false);
   const [all, setAll] = useState(false);
   const [q, setQ] = useState("");
+  const [scenario, setScenario] = useState<"actual" | "projected">("actual");
 
   const load = useCallback(async () => {
     try { setData(await request("/api/simulation/summary")); setError(""); } catch (e: any) { setError(e.message); }
@@ -77,7 +91,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
     XLSX.writeFile(wb, "تقرير_رادار_التسجيل.xlsx");
   };
 
-  const rows = useMemo(() => [...(data?.courses || [])].sort((a, b) => weight(b) - weight(a) || b.wanted - a.wanted || a.code.localeCompare(b.code, "en")), [data]);
+  const rows = useMemo(() => [...(scenario === "projected" ? data?.projectedCourses || [] : data?.courses || [])].sort((a, b) => weight(b) - weight(a) || b.wanted - a.wanted || a.code.localeCompare(b.code, "en")), [data, scenario]);
   const decide = rows.filter(needsDecision);
   const calm = rows.filter(c => !needsDecision(c));
   const shown = (all ? rows : decide).filter(c => !q.trim() || `${c.code} ${c.name}`.includes(q.trim()));
@@ -86,7 +100,10 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
   const r = data?.run;
   const wantedTotal = rows.reduce((s, c) => s + c.wanted, 0), seatedTotal = rows.reduce((s, c) => s + c.seated, 0);
   const coverage = wantedTotal ? Math.round((seatedTotal / wantedTotal) * 100) : 0;
-  const wishesPct = r && r.students ? Math.round(((r.students - r.defaulted) / r.students) * 100) : 0;
+  const bands = scenario === "projected" ? r?.projected?.capacity : r?.capacity;
+  const selectedPopulation = scenario === "projected" ? r?.projected?.students || 0 : r?.students || 0;
+  const quality = r?.dataQuality;
+  const qualityPct = quality?.total ? Math.round(quality.ready / quality.total * 100) : 0;
   const maxWindow = Math.max(1, ...(r?.windows || [1]));
 
   return (
@@ -121,22 +138,36 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
         <EmptyState title="لم يُبنَ الرادار بعد" detail={data.canRun ? "اضغط «شغّل الرادار» لتُبنى خططُ الطلبة من ملفّاتهم." : "تُجريها إدارةُ النظام حين تكتمل رغباتُ الطلبة."} />
       ) : (
         <>
-          <div className="sm-kpis">
-            <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{r.students.toLocaleString("ar-KW-u-nu-latn")}</b><small>من ملفّات الطلبة المكتملة</small>
-              <div className="sm-meter" title={`${wishesPct}٪ كتبوا رغباتهم`}><i style={{ inlineSize: `${wishesPct}%` }} /></div><em>{wishesPct}٪ كتبوا رغباتهم</em></article>
-            <article className="sm-kpi"><span className="sm-ic"><Layers /></span><b>{coverage}٪</b><small>من المطلوب وجد مقعداً</small>
-              <div className="sm-meter"><i style={{ inlineSize: `${coverage}%` }} /></div><em>{countOf(seatedTotal, AR.seat)} من {countOf(wantedTotal, AR.seat)}</em></article>
-            <article className={`sm-kpi${decide.length ? " hot" : ""}`}><span className="sm-ic"><AlertTriangle /></span><b>{decide.length}</b><small>{decide.length === 1 ? "مقررٌ يحتاج قراراً" : "مقرراتٍ تحتاج قراراً"}</small>
-              <em>{decide.length ? "زحامٌ أو مطلوبٌ لا يُطرح" : "لا زحام ظاهراً"}</em></article>
-            <article className="sm-kpi"><span className="sm-ic"><Ticket /></span><b>{r.rounds}</b><small>{r.rounds === 1 ? "نافذة" : "نوافذ"} مقترحة</small>
-              <div className="sm-bars" aria-label="الطلبة في كل نافذة">{r.windows.map((n, i) => <span key={i} title={`النافذة ${i + 1}: ${n}`}><i style={{ blockSize: `${Math.max(8, (n / maxWindow) * 100)}%` }} /><u>{n}</u></span>)}</div></article>
+          <div className="sm-scenario-tabs" role="tablist" aria-label="مصدر تحليل التسجيل">
+            <button type="button" role="tab" aria-selected={scenario === "actual"} onClick={() => setScenario("actual")} data-guide-ignore="اختيار مصدر الرغبات داخل شاشة مرشد التسجيل">الرغبات الفعلية <small>{r.students.toLocaleString("ar-KW-u-nu-latn")}</small></button>
+            <button type="button" role="tab" aria-selected={scenario === "projected"} onClick={() => setScenario("projected")} disabled={!r.projected} data-guide-ignore="اختيار التوقعات داخل شاشة مرشد التسجيل">التوقعات <small>{(r.projected?.students || 0).toLocaleString("ar-KW-u-nu-latn")}</small></button>
           </div>
+          {r.stale ? <div className="sm-stale" role="status"><AlertTriangle size={16} /> تغيّرت بيانات المصدر بعد آخر احتساب. الأرقام قديمة؛ حدّث الرادار قبل اتخاذ القرار.</div> : null}
+          <section className="sm-capacity-summary" aria-label="قدرة الطلبة على تكوين جدول">
+            <header><div><small>{scenario === "actual" ? "قدرة المشاركين" : "سيناريو غير المشاركين"}</small><strong>{countOf(selectedPopulation, AR.student)}</strong></div><span>خطة فعلية في المسودة · السعة افتراضية</span></header>
+            <div className="sm-capacity-bands">
+              <article><b>{(bands?.canReach15 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>يصلون إلى 15 وحدة</span></article>
+              <article><b>{(bands?.canReach12To14 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>12–14 وحدة</span></article>
+              <article className="is-alert"><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>أقل من 12</span></article>
+              <article><b>{(bands?.unknown || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>بيانات غير كافية</span></article>
+            </div>
+            {bands?.graduatingBelow12 ? <p className="sm-graduation-note">{bands.graduatingBelow12.toLocaleString("ar-KW-u-nu-latn")} يحتاجون أقل من 12 وحدة لإكمال المتبقي وفق الصحيفة.</p> : null}
+            <p className="sm-base">هذا تقدير قدرة، لا أهلية رسمية ولا تسجيل أو حجز. المقررات المجتازة واردة من ملفات الطلبة وليست صحيفة رسمية.</p>
+          </section>
+          {quality ? <details className="sm-quality">
+            <summary><span><i style={{ inlineSize: `${qualityPct}%` }} /></span><b>{qualityPct}٪ من الشعب جاهزة للتحليل</b><small>{quality.excluded ? `${countOf(quality.excluded, AR.section)} تحتاج استكمال بياناتها` : "لا توجد شعب مستبعدة"}</small></summary>
+            {quality.excluded ? <ul>
+              {Object.entries(quality.issues).filter(([key, count]) => key !== "duplicateRows" && Number(count) > 0).map(([key, count]) => <li key={key}>{qualityLabel(key)} · {Number(count).toLocaleString("ar-KW-u-nu-latn")}</li>)}
+              {quality.issues.duplicateRows ? <li>صفوف مكررة جرى تجاهلها · {quality.issues.duplicateRows}</li> : null}
+              <li>الشعب المستبعدة لا تدخل في المقاعد المؤكدة. أعد الاحتساب بعد تصحيح المصدر.</li>
+            </ul> : null}
+          </details> : null}
 
           <p className="sm-auto">{data.auto?.enabled ? `يتحدّث الرادار تلقائياً كل ${countOf(data.auto.everyHours, AR.hour)} ما دامت الرغبات مفتوحةً أو بعدها، ومرةً أخيرةً بعد إغلاق الرغبات.` : "التحديث التلقائي متوقّف: يُحدَّث الرادار يدوياً."}{data.canRun ? " «حدّث الرادار» يحدّثه الآن." : ""}</p>
           <p className="sm-base">
-            أساس الأرقام: {countOf(r.students, AR.profile)} من ملفّات الطلبة، أُجريت {new Date(r.ranAt).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" })}
+            أساس الرغبات الفعلية: {countOf(r.students, AR.profile)} من {countOf(r.population, AR.profile)} ملفاً مكتملاً، أُجريت {new Date(r.ranAt).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" })}
             {r.withoutRules ? ` · ${countOf(r.withoutRules, AR.profile)} على صحيفةٍ بلا قواعد معتمدة (بُنيت بلا مسبقات)` : ""}
-            {r.defaulted ? ` · ${countOf(r.defaulted, AR.profile)} بلا رغبات (افتُرضت ١٥ وحدة)` : ""}
+            {r.defaulted ? ` · ${countOf(r.defaulted, AR.profile)} غير مشارك في هذا الفصل، وتحليله منفصل كتوقع` : ""}
             {r.scoped ? " · المعروض مقرراتُ قسمك فقط" : ""}. تقديرٌ لا بياناتُ التسجيل الرسمي.
           </p>
 

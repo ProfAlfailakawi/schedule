@@ -147,7 +147,7 @@ try {
   check((await http("POST", "/api/simulation/run", { who: "chair11" })).status === 403, "F1 رئيسُ لجنةٍ لا يشغّل (يحسب لكل الطلبة)");
   const first = await http("POST", "/api/simulation/run", { who: "admin" });
   const again = await http("POST", "/api/simulation/run", { who: "admin" });
-  check(first.status === 200 && again.status === 200 && first.json.students === 24, "F1 تشغيلٌ ثم إعادةٌ: كلُّ الملفّات المكتملة دخلت (٢٤)", [first.json, again.json]);
+  check(first.status === 200 && again.status === 200 && first.json.students === 23, "F1 التشغيلُ يحتسب أصحاب رغبات الفصل وحدهم (٢٣)", [first.json, again.json]);
   const routeSrc = fs.readFileSync(path.join(process.cwd(), "src/server/simulationRoutes.ts"), "utf8");
   const lease1 = await Repository.acquireRegistrationRunLease(1, "a"), lease2 = await Repository.acquireRegistrationRunLease(1, "b");
   await Repository.releaseRegistrationRunLease(1, "b");
@@ -173,7 +173,7 @@ try {
   const tn = (await http("GET", "/api/public/me/ticket", { cookie: nearGrad.cookie })).json;
   check(tn.window.n === 1, "F2 الأوشكُ على التخرّج: النافذة الأولى", tn.window);
   const td = (await http("GET", "/api/public/me/ticket", { cookie: noWishes.cookie })).json;
-  check(td.defaulted === true && td.ready === true, "F2 من لم يكتب رغباتٍ: تذكرةٌ افتراضية موسومة");
+  check(td.ready === false && td.reason === "no-run", "F2 غير المشارك لا تُنشأ له تذكرة رغبات افتراضية");
   check(JSON.stringify(t).indexOf(rookies[0].ID) < 0 && !("fp" in t) && !("fingerprint" in t), "F5 التذكرةُ لا تحمل الرقمَ المدني ولا البصمة");
 
   /* F3 */
@@ -195,7 +195,7 @@ try {
   const adminSum = (await http("GET", "/api/simulation/summary", { who: "admin" })).json;
   const chairSum = (await http("GET", "/api/simulation/summary", { who: "chair11" })).json;
   check(adminSum.canRun === true && chairSum.canRun === false, "F4 التشغيلُ ظاهرٌ للإدارة وحدها");
-  check(adminSum.run.students === 24 && adminSum.run.windows.reduce((a: number, b: number) => a + b, 0) === 24, "F4 الملخّص: ٢٤ ملفاً موزَّعون على النوافذ", adminSum.run);
+  check(adminSum.run.students === 23 && adminSum.run.population === 24 && adminSum.run.defaulted === 1 && adminSum.run.projected.students === 1 && adminSum.run.windows.reduce((a: number, b: number) => a + b, 0) === 23, "F4 يفصل الرغبات الفعلية عن غير المشاركين والتوقع", adminSum.run);
   check(adminSum.courses.length === 9 && chairSum.courses.length === 6 && chairSum.courses.every((c: any) => c.sectionId === 11), "F4 القسمُ يرى مقرراتِه الستة، والإدارةُ التسعة", [adminSum.courses.length, chairSum.courses.length]);
   check(chairSum.run.scoped === true && adminSum.run.scoped === false, "F4 الملخّصُ يقول إن عرضه محدودٌ بالنطاق");
   const dump = JSON.stringify(adminSum);
@@ -205,9 +205,10 @@ try {
 
   /* F5 */
   check((await http("GET", "/api/simulation/summary")).status === 401, "F5 الملخّصُ بدخولٍ فقط");
-  await Repository.updateStudentProfile((await Repository.listStudentProfiles())[0].id, current => (current ? { ...current, updatedAt: new Date(Date.now() + 60_000).toISOString() } : undefined));
+  await Repository.updateStudentProfile((await Repository.listStudentProfiles())[0].id, current => (current ? { ...current, wishes: { ...(current.wishes || { termId: 1, targetUnits: 15, courseIds: [], constraints: {} }), targetUnits: 12, updatedAt: new Date().toISOString() }, updatedAt: new Date(Date.now() + 60_000).toISOString() } : undefined));
   const staleSeen = await Promise.all(rookies.slice(0, 3).map(async r => (await http("GET", "/api/public/me/ticket", { cookie: r.cookie })).json.stale));
   check(staleSeen.some(Boolean), "F5 ملفٌّ عُدّل بعد آخر تحديث للرادار: تذكرتُه «قديمة»", staleSeen);
+  check((await http("GET", "/api/simulation/summary", { who: "admin" })).json.run.stale === true, "F5 تعديل رغبات طالب يجعل ملخص الرادار قديماً");
 
   /* ── G: «هل سجلت؟» بعد بدء الجولة ── */
   const r1 = (await http("GET", "/api/public/me/report", { cookie: rookies[1].cookie })).json;

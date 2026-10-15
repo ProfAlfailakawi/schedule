@@ -31,16 +31,17 @@ try {
     const get = async (url: string) => (await fetch(BASE + url, { headers: { cookie } })).json() as Promise<any>;
 
     const summary = await get("/api/simulation/summary");
-    check(summary.canRun === true && summary.run?.students === 320 && summary.run.rounds === 3 && summary.courses.length >= 20, "T1 الرادار مشغَّلٌ على ٣٢٠ ملفاً وثلاث جولات", summary.run);
-    check(summary.run.windows.reduce((a: number, b: number) => a + b, 0) === 320 && summary.phase?.namesVisible === true, "T1 النوافذ تجمع الملفات كلَّها، والجولةُ جارية (الأسماء تصل الأقسام)");
-    check(summary.run.withoutRules > 0 && summary.run.withoutRules < 320, "T1 بعضُ الصحائف بقواعد معتمدة وبعضُها لا (كما في الواقع)", summary.run.withoutRules);
+    check(summary.canRun === true && summary.run?.population === 320 && summary.run.students + summary.run.defaulted === 320 && summary.run.rounds === 3 && summary.courses.length >= 20, "T1 يفصل المشاركين عن الملفات غير المشاركة في ٣٢٠ ملفاً", summary.run);
+    check(summary.run.windows.reduce((a: number, b: number) => a + b, 0) === summary.run.students && summary.run.projected?.students === summary.run.defaulted && summary.phase?.namesVisible === true, "T1 نوافذ الرغبات الفعلية لا تضم غير المشاركين، وتوقعهم منفصل", summary.run);
+    check(summary.run.withoutRules > 0 && summary.run.withoutRules < summary.run.students, "T1 بعضُ الصحائف بقواعد معتمدة وبعضُها لا (كما في الواقع)", summary.run.withoutRules);
     const outcome = await get("/api/simulation/outcome");
     check(outcome.answered > 100 && outcome.courses.some((c: any) => c.stuck > 0 && c.registered > 0), "T2 أجوبةُ «هل سجلت؟» موجودة بسجّلتُ وتعثّرتُ", [outcome.answered, outcome.courses.length]);
     const plans = await get("/api/plan-review/status");
     check(plans.pending.length === 1 && plans.sections.length >= 5 && plans.sections.find((s: any) => s.plans[0].pending)?.plans[0].status === "active", "T3 صحيفةٌ واحدة قيد المراجعة، وتتصدّر قسمَها (الجديدة لا السابقة)", plans.pending);
     const bell = await get("/api/notifications");
     const titles: string[] = bell.items.map((i: any) => i.title);
-    check(titles.some(t => /تنتظر مراجعتك واعتمادك/.test(t)) && titles.some(t => /رادار التسجيل/.test(t)) && titles.some(t => /تعثّر الطلبة/.test(t)), "T4 الجرسُ يعرف الصحيفة والرادار وتعثّر الطلبة", titles);
+    const needsDecision = summary.courses.filter((course: any) => course.unmet?.full > 0 || course.unmet?.["not-offered"] > 0).length > 0;
+    check(titles.some(t => /تنتظر مراجعتك واعتمادك/.test(t)) && titles.some(t => /رادار التسجيل/.test(t)) === needsDecision && titles.some(t => /تعثّر الطلبة/.test(t)), "T4 الجرسُ يطابق تنبيه الرادار وجودَ احتياجٍ يحتاج قراراً", titles);
     check(titles.some(t => /كشف التسجيل/.test(t)), "T4 والحالاتُ المسمّاة تصل كشفَ التسجيل");
   }
 } finally {

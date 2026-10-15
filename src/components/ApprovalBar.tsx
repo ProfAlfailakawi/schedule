@@ -56,6 +56,7 @@ interface Payload {
   escalatedNotes?: number;
   /** أيُعرض «طلب تمديد» الآن: قرب الموعد أو بعده، ولا طلبَ قائم. */
   canRequestExtension?: boolean;
+  dataReadiness?: { ready: boolean; count: number; items: Array<{ kind: string; id: string; label: string; fields: string[] }>; rooms?: Array<{ id: string; label: string; capacity: number | null }> };
 }
 
 interface Props {
@@ -76,6 +77,7 @@ interface Props {
   onLockChange?: (reason: string | null) => void;
   /** يفتح شاشة التغييرات حيث تُقرأ الملاحظات على مواعيدها. غيابه يعني أنها معروضةٌ هنا. */
   onOpenNotes?: () => void;
+  onOpenCourses?: () => void;
 }
 
 const request = async (url: string, init?: RequestInit) => {
@@ -93,7 +95,7 @@ const arabicDate = (iso?: string) => {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("ar-KW-u-nu-latn", { year: "numeric", month: "long", day: "numeric" });
 };
 
-export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, onChanged, onLockChange, onOpenNotes }: Props) {
+export default function ApprovalBar({ collegeId, sectionId, termId, signatureStage, powerAdmin = false, refreshSignal = 0, onChanged, onLockChange, onOpenNotes, onOpenCourses }: Props) {
   const [state, setState] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,6 +104,8 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [reason, setReason] = useState("");
   const [days, setDays] = useState(7);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [roomCapacityDrafts, setRoomCapacityDrafts] = useState<Record<string, string>>({});
+  const [savingRoomId, setSavingRoomId] = useState<string | null>(null);
   /* تلميحٌ واحد مثبَّتٌ بالنقر في كل لحظة؛ يُطوى بـ Esc أو بنقرةٍ خارج الشريط. */
   const [openTip, setOpenTip] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -152,6 +156,19 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       if (guardRef.current.accepts(token)) setState(next);
     } catch { if (guardRef.current.accepts(token)) setState(null); }
   }, [collegeId, sectionId, termId, scopeKey]);
+
+  const saveRoomCapacity = async (roomId: string) => {
+    const raw = roomCapacityDrafts[roomId];
+    const capacity = Number(raw);
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 2000) { setError("أدخل سعة فعلية صحيحة للقاعة بين 1 و2000."); return; }
+    setSavingRoomId(roomId); setError(null);
+    try {
+      await request(`/api/section/location-rooms/${encodeURIComponent(roomId)}/capacity`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sectionId, capacity }) });
+      setRoomCapacityDrafts(current => { const next = { ...current }; delete next[roomId]; return next; });
+      await load(); onChanged?.();
+    } catch (reason: any) { setError(reason?.message || "تعذر حفظ سعة القاعة"); }
+    finally { setSavingRoomId(null); }
+  };
 
   useEffect(() => { void load(); }, [load]);
   /* وإشارةُ الجدول تُعيد القراءة دون أن تُبدّل هويّة `load` — فلا تُقرأ الحال
@@ -472,6 +489,16 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
           </InfoTip>
         ) : null}
 
+        {state.dataReadiness && !state.dataReadiness.ready ? (
+          <InfoTip {...tipProps("data-readiness")} label={`بيانات ناقصة · ${countOf(state.dataReadiness.count, AR.item)}`} tip={["تحتاج هذه البيانات استكمالاً قبل التوقيع."]} className="apb-badge apb-blocked" data-tone="warning" data-guide-ignore="تنبيه موجز ببيانات ناقصة قبل التوقيع؛ التفاصيل في لوحة المراجعة">
+            <AlertTriangle aria-hidden="true" /><b>{state.dataReadiness.count.toLocaleString("ar-KW-u-nu-latn")}</b>
+          </InfoTip>
+        ) : null}
+        {state.dataReadiness ? <IconButton label={showDetails ? "إخفاء مراجعة بيانات القسم" : "مراجعة بيانات القسم"} aria-expanded={showDetails} data-active={showDetails || undefined}
+          onClick={toggleExpanded} data-guide-ignore="أيقونة مؤقتة تفتح مراجعة بيانات القسم وسعات القاعات قبل الاعتماد">
+          <FilePenLine aria-hidden="true" />
+        </IconButton> : null}
+
         {!onOpenNotes && openNotes > 0 ? (
           <InfoTip {...tipProps("notes")} label={countOf(openNotes, AR.note)} tip={[notesLine]} className="apb-badge" data-tone="warning"
             data-guide-ignore="شارة ملاحظات التسجيل المفتوحة — الملاحظات معروضةٌ أسفل الشاشة، والشارة تلميحٌ لا فعل">
@@ -576,9 +603,9 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
         ) : null}
 
         {canSignNow ? (
-          <PrimaryButton type="button" className="apb-primary" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0}
+          <PrimaryButton type="button" className="apb-primary" data-guide-target="approval.action.sign" disabled={busy || blockingConflicts > 0 || Boolean(state.dataReadiness && !state.dataReadiness.ready)}
             aria-label={signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
-            title={signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
+            title={state.dataReadiness && !state.dataReadiness.ready ? "استكمل البيانات الناقصة من تفاصيل مراجعة الاعتماد أولاً" : signatureStage === "head" ? "اعتماد وإرسال للتسجيل" : "توقيع لجنة الجدول"}
             onClick={() => void act("/api/approvals/sign")}>
             {signatureStage === "head" ? <BadgeCheck aria-hidden="true" /> : <PenLine aria-hidden="true" />}
             {busy ? "يوقّع…" : signatureStage === "head" ? "اعتماد وإرسال" : "توقيع"}
@@ -615,6 +642,17 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
 
       {showDetails ? (
         <div className="apb-expanded" data-reveal={revealSteps || undefined}>
+          {state.dataReadiness ? (
+            <section className="apb-data-readiness" aria-label="بيانات تحتاج استكمالاً">
+              <div>{state.dataReadiness.ready ? <Check aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}<span><strong>{state.dataReadiness.ready ? "البيانات الأساسية مكتملة" : `${countOf(state.dataReadiness.count, AR.item)} تحتاج استكمالاً قبل التوقيع`}</strong><small>تأكد من الوحدات والساعات وسعة الشعبة والقاعة.</small></span></div>
+              {!state.dataReadiness.ready ? <ul>{state.dataReadiness.items.slice(0, 5).map(item => <li key={`${item.kind}:${item.id}`}>
+                {item.label} · {item.fields.join("، ")}
+              </li>)}</ul>
+              : null}
+              {state.dataReadiness.rooms?.length ? <div className="apb-room-capacities" aria-label="سعات القاعات المستخدمة"><strong>سعات القاعات المستخدمة</strong>{state.dataReadiness.rooms.map(room => <div key={room.id}><span>{room.label}</span><label><span className="sr-only">السعة</span><input inputMode="numeric" aria-label={`سعة ${room.label}`} value={roomCapacityDrafts[room.id] ?? String(room.capacity ?? "")} onChange={event => setRoomCapacityDrafts(current => ({ ...current, [room.id]: event.target.value.replace(/[^0-9]/g, "") }))} /></label><SecondaryButton type="button" disabled={savingRoomId === room.id} onClick={() => void saveRoomCapacity(room.id)} data-guide-ignore="حفظ سعة القاعة الفعلية ضمن نطاق القسم">{savingRoomId === room.id ? "يحفظ…" : "حفظ"}</SecondaryButton></div>)}</div> : null}
+              {onOpenCourses ? <SecondaryButton type="button" onClick={onOpenCourses} data-guide-ignore="فتح محرر مقررات القسم لاستكمال البيانات قبل التوقيع">مراجعة بيانات المقررات</SecondaryButton> : null}
+            </section>
+          ) : null}
           <div className="apb-expanded-row">
             <Stepper steps={steps} size="lg" returnFrom={returnFrom}
               stamp={(step) => step.sig?.length ? (

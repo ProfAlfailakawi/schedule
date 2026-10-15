@@ -101,14 +101,14 @@ const cohortCount = (
     .filter(item => item.reasons?.includes("cohort") || item.type === "cohort").length;
 
 /** Everything else — the thing a proposal is forbidden to create. */
-const otherCount = (
+const otherConflictKeys = (
   rows: FSchedule[],
   all: FSchedule[],
   pairs: Set<string>,
   doorwayMinutes: number,
-) =>
-  findConflicts(rows, all, { cohortPairs: pairs, doorwayMinutes })
-    .filter(item => !(item.reasons?.length === 1 && item.reasons[0] === "cohort") && item.type !== "cohort").length;
+) => new Set(findConflicts(rows, all, { cohortPairs: pairs, doorwayMinutes })
+  .filter(item => !(item.reasons?.length === 1 && item.reasons[0] === "cohort") && item.type !== "cohort")
+  .map(item => `${item.type}:${Math.min(item.rowId, item.otherId)}:${Math.max(item.rowId, item.otherId)}`));
 
 /**
  * @param rows      every row in the term — the week the move lands in
@@ -155,6 +155,9 @@ export function readDemandRepairs(
     for (const subject of [left, right]) {
       const home = dayOf(subject);
       if (!home) continue;
+      /* A row that contains several meeting days cannot be moved as one lecture:
+         moving it would silently rewrite every day in that row. */
+      if (DAY_KEYS.filter(key => Boolean((subject as any)[key])).length !== 1) continue;
       const start = timeToMinutes(subject.fstarttime);
       const length = timeToMinutes(subject.fendtime) - start;
       if (length <= 0) continue;
@@ -170,10 +173,7 @@ export function readDemandRepairs(
       if (!ladders.size) continue;
 
       const others = rows.filter(row => row.id !== subject.id);
-      const before = {
-        cohort: cohortCount([subject], rows, pairs, doorway),
-        other: otherCount([subject], rows, pairs, doorway),
-      };
+      const before = { cohort: cohortCount([subject], rows, pairs, doorway), other: otherConflictKeys([subject], rows, pairs, doorway) };
 
       for (const [day, ladder] of ladders) {
         for (const slot of ladder) {
@@ -182,7 +182,8 @@ export function readDemandRepairs(
           const candidate = moved(subject, day, at, length);
           const week = [...others, candidate];
           // Forbidden outright: anything that was not there before.
-          if (otherCount([candidate], week, pairs, doorway) > before.other) continue;
+          const afterOther = otherConflictKeys([candidate], week, pairs, doorway);
+          if ([...afterOther].some(key => !before.other.has(key))) continue;
           const after = cohortCount([candidate], week, pairs, doorway);
           if (after >= before.cohort) continue;
 

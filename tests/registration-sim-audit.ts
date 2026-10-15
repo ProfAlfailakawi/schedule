@@ -8,7 +8,7 @@
  *   S5 الرغبات: قيدُ الصباح، والوحدات، والاحتياط (ب/ج).
  *   S6 المقياس: ٢٥ ألف طالبٍ في ثوانٍ.
  */
-import { SIM_UNITS_MIN, parseClock, simulateRegistration, slotsConflict, type SimInput, type SimOffering, type SimPlanRules, type SimStudent } from "../src/utils/registrationSim";
+import { SIM_UNITS_MIN, auditSimOfferings, parseClock, simulateRegistration, slotsConflict, type SimInput, type SimOffering, type SimPlanRules, type SimStudent } from "../src/utils/registrationSim";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string, extra?: unknown) => {
@@ -46,6 +46,28 @@ const base = (students: SimStudent[], extra: Partial<SimInput> = {}): SimInput =
   const one = simulateRegistration(input), two = simulateRegistration({ ...JSON.parse(JSON.stringify({ ...input, credit: undefined })), credit });
   check(JSON.stringify(one) === JSON.stringify(two), "S1 الحتمية: مدخلاتٌ واحدة، مخرجاتٌ واحدة");
   check(parseClock("08:30") === 510 && parseClock("24:00") === null && parseClock("x") === null, "S1 قراءةُ الساعة");
+  check(parseClock("08:30oops") === null, "S1 لا يقبل وقتاً ملحقاً بنصٍّ غير صالح");
+}
+
+/* S1b: لا سعة مفترضة ولا شعبة بلا وقت، والفئات متنافية. */
+{
+  const sound = off(1, "A", 0, "08:00", "09:00", 1);
+  const missingCapacity = { ...off(2, "B", 1, "08:00", "09:00"), capacity: 0 };
+  const missingTime = { ...off(3, "C", 2, "08:00", "09:00"), slots: [] };
+  const duplicate = { ...sound };
+  const audited = auditSimOfferings([sound, missingCapacity, missingTime, duplicate]);
+  check(audited.confirmed.length === 0 && audited.issues.some(x => x.code === "missing-capacity") && audited.issues.some(x => x.code === "missing-meetings") && audited.issues.some(x => x.code === "duplicate-id"), "S1b التدقيق يعزل السعة والوقت الناقصين والتكرار", audited);
+  const capacityPlan: SimPlanRules = { planId: "cap", courseIds: [1, 2, 3, 4, 5], hasApprovedRules: true, rules: [1, 2, 3, 4, 5].map(courseId => ({ courseId, level: 1, kind: "compulsory" })), groups: [] };
+  const capCredits = new Map([1, 2, 3, 4, 5].map(id => [id, 3]));
+  const capOffers = [1, 2, 3, 4, 5].map((id, i) => off(id, "01", i, "08:00", "09:00", 10));
+  const capInput: SimInput = { students: [
+    { fp: "15", planId: "cap", passed: [], assessable: true },
+    { fp: "12", planId: "cap", passed: [1], assessable: true },
+    { fp: "grad", planId: "cap", passed: [1, 2, 3, 4], assessable: true, remainingUnits: 3 },
+    { fp: "unknown", planId: "cap", passed: [], assessable: false },
+  ], offerings: capOffers, plans: [capacityPlan], credit: capCredits, rounds: 1, assessCapacity: true };
+  const bands = simulateRegistration(capInput).capacity;
+  check(bands.canReach15 === 1 && bands.canReach12To14 === 1 && bands.graduatingBelow12 === 1 && bands.unknown === 1 && bands.below12 === 0, "S1b فئات القدرة واضحة ومتداخلة صفراً، مع تخرّج أقل من ١٢", bands);
 }
 
 /* S2 */
