@@ -97,6 +97,7 @@ import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
 import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
+import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
@@ -10701,6 +10702,43 @@ app.post("/api/approvals/deadline", requireAuth, async (req: AuthenticatedReques
   await Repository.setTermSubmissionDeadline(termId, deadline || undefined);
   res.locals.auditChanges = deadline ? `موعد تسليم الجداول: ${deadline}` : "رُفع موعد تسليم الجداول";
   res.json({ termId, deadline: deadline || null });
+});
+
+/**
+ * تواريخ رحلة الطلبة للفصل: الرغبات، جولات التسجيل، إغلاق الطلبات.
+ *
+ * بيد رئيس التسجيل وحده كموعد التسليم، ومن اللوحة نفسها. الفحصُ هنا هو الفحصُ
+ * الذي تعرضه الواجهة (checkStudentPhases)، فلا تَعِد الشاشةُ بتاريخٍ يرفضه
+ * الخادم. وفارغٌ يرفع التواريخ كلها: رفعُ القيد قرارٌ وارد.
+ */
+app.post("/api/approvals/student-phases", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  if (!canManageDeadline(req.user?.Role) && !isPowerUser(req)) { res.status(403).json({ error: "مواعيد الطلبة يضعها رئيس التسجيل." }); return; }
+  const termId = Number(req.body?.termId || 0);
+  if (!termId) { res.status(400).json({ error: "اختر الفصل أولاً." }); return; }
+  const term = await Repository.getTermById(termId);
+  if (!term) { res.status(404).json({ error: "الفصل غير موجود" }); return; }
+  const incoming = req.body?.phases;
+  if (incoming === null || incoming === undefined) {
+    await Repository.setTermStudentPhases(termId, undefined);
+    res.locals.auditChanges = "رُفعت مواعيد الطلبة";
+    res.json({ termId, phases: null });
+    return;
+  }
+  if ((term as any).AdTermClosed === true || termHasEnded(term as any)) {
+    res.status(409).json({ error: "انتهى هذا الفصل — لا تُوضع له مواعيد طلبة.", code: "term-closed" }); return;
+  }
+  const checked = checkStudentPhases(incoming, { submissionDeadline: (term as any).AdTermSubmissionDeadline });
+  if (!checked.ok) { res.status(400).json({ error: checked.issues[0].message, issues: checked.issues }); return; }
+  if (!hasStudentPhases(checked.phases)) {
+    await Repository.setTermStudentPhases(termId, undefined);
+    res.locals.auditChanges = "رُفعت مواعيد الطلبة";
+    res.json({ termId, phases: null });
+    return;
+  }
+  const phases = { ...checked.phases, updatedAt: new Date().toISOString(), updatedBy: String(req.user?.Name || req.user?.Role || "") };
+  await Repository.setTermStudentPhases(termId, phases);
+  res.locals.auditChanges = `مواعيد الطلبة: رغبات ${phases.wishesOpen || "—"} ← ${phases.wishesClose || "—"} · ${countOf((phases.rounds || []).length, AR.round)} · إغلاق ${phases.requestsClose || "—"}`;
+  res.json({ termId, phases });
 });
 
 /**

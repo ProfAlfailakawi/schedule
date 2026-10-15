@@ -285,6 +285,96 @@
 .changes-extend-card .sd-picker-row input{min-block-size:0;padding:0;inline-size:16px;block-size:16px}
 .changes-extend-card .sd-days-input input{min-block-size:34px;inline-size:74px;padding:4px 8px}
 
+/* ═════════════════════════════════════════════════════════════════
+   رحلة الطلبة — خمس محطاتٍ على خطٍّ واحد
+   الأخضر ما مضى، والذهبي اليوم، والرمادي ما لم يأتِ بعد.
+   ═════════════════════════════════════════════════════════════════ */
+
+.sp-block h4{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sp-block h4 .sd-add{margin-inline-start:auto}
+.sp-now{
+  display:inline-flex;align-items:center;gap:6px;padding:3px 11px;border-radius:var(--r-full);
+  font-size:.78rem;font-weight:700;color:var(--brass);
+  background:var(--brass-soft);border:1px solid color-mix(in srgb,var(--brass) 30%,transparent);
+}
+.sp-block[data-mode="wishes"] .sp-now,.sp-block[data-mode="report"] .sp-now{
+  color:var(--accent-ink);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 30%,transparent);
+}
+.sp-block[data-mode="closed"] .sp-now{color:var(--muted);background:var(--surface-3);border-color:var(--line)}
+
+.sp-track{
+  list-style:none;margin:6px 0 2px;padding:0;
+  display:grid;grid-auto-flow:column;grid-auto-columns:minmax(92px,1fr);gap:0;
+  overflow-x:auto;padding-block:4px 6px;
+}
+.sp-step{
+  position:relative;display:grid;justify-items:center;align-content:start;gap:3px;
+  padding-inline:6px;text-align:center;min-inline-size:0;
+}
+.sp-step::before{
+  content:"";position:absolute;inset-block-start:23px;inset-inline-start:50%;inset-inline-end:-50%;
+  block-size:2px;background:var(--line-strong);z-index:0;
+}
+.sp-step:last-child::before{display:none}
+.sp-step[data-state="done"]::before{background:var(--accent)}
+.sp-step[data-state="unset"]::before{background:repeating-linear-gradient(90deg,var(--line-strong) 0 5px,transparent 5px 10px)}
+.sp-dot{
+  position:relative;z-index:1;display:grid;place-items:center;
+  inline-size:40px;block-size:40px;border-radius:50%;
+  background:var(--surface);border:2px solid var(--line-strong);color:var(--muted);
+}
+.sp-dot svg{inline-size:18px;block-size:18px}
+.sp-step[data-state="done"] .sp-dot{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
+.sp-step[data-state="now"] .sp-dot{
+  background:var(--brass-soft);border-color:var(--brass);color:var(--brass);
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--brass) 16%,transparent);
+}
+.sp-step[data-state="next"] .sp-dot{border-color:color-mix(in srgb,var(--accent) 40%,var(--line-strong));color:var(--accent-ink)}
+.sp-step[data-state="unset"] .sp-dot{border-style:dashed;background:transparent}
+.sp-step b{font-size:.84rem;font-weight:700;color:var(--ink);line-height:1.4;overflow-wrap:anywhere}
+.sp-step small{font-size:.72rem;color:var(--muted);line-height:1.5;font-variant-numeric:tabular-nums}
+.sp-step[data-state="now"] b{color:var(--brass)}
+.sp-step[data-state="unset"] b{color:var(--muted);font-weight:600}
+.sp-line{margin-block-start:2px}
+@media (prefers-reduced-motion:no-preference){
+  .sp-step[data-state="now"] .sp-dot{animation:sp-pulse 2.4s var(--ease) infinite}
+  @keyframes sp-pulse{0%,100%{box-shadow:0 0 0 4px color-mix(in srgb,var(--brass) 18%,transparent)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--brass) 6%,transparent)}}
+}
+
+.sp-empty .sp-hint{grid-column:1/-1}
+.sp-editor{gap:14px}
+.sp-group{display:grid;gap:8px;margin:0;min-inline-size:0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.sp-group legend{display:inline-flex;align-items:center;gap:7px;padding-inline:6px;font-size:.86rem;font-weight:700;color:var(--ink)}
+.sp-group legend svg{inline-size:16px;block-size:16px;color:var(--brass)}
+.sp-group legend small{font-weight:500;color:var(--muted)}
+.sp-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.sp-group .sd-field,.sp-group input{min-inline-size:0}
+.sp-group input[type="date"]{inline-size:100%}
+.sp-round{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) auto;gap:8px;align-items:center}
+.sp-round-issue{grid-column:1/-1;margin:0}
+.sp-group input[aria-invalid="true"]{border-color:var(--danger)}
+.sp-add,.sp-suggest{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;justify-self:start;
+  min-block-size:38px;padding:6px 14px;border-radius:var(--r-full);cursor:pointer;font:inherit;font-size:.84rem;font-weight:700;
+  border:1px dashed color-mix(in srgb,var(--accent) 45%,var(--line-strong));background:transparent;color:var(--accent-ink);
+}
+.sp-add svg,.sp-suggest svg{inline-size:16px;block-size:16px}
+.sp-add:hover:not(:disabled),.sp-suggest:hover{background:var(--accent-softer);border-style:solid}
+.sp-add:disabled{opacity:.5;cursor:not-allowed}
+.sp-add:focus-visible,.sp-suggest:focus-visible{outline:none;box-shadow:var(--ring)}
+.sp-suggest{background:var(--brass-soft);border-color:color-mix(in srgb,var(--brass) 40%,transparent);color:var(--brass)}
+
+@media (max-width:640px){
+  .sp-track{grid-auto-flow:row;grid-auto-columns:auto;overflow:visible}
+  .sp-step{grid-template-columns:40px 1fr;justify-items:start;text-align:start;align-items:center;column-gap:12px;row-gap:0;padding-block:6px}
+  .sp-step .sp-dot{grid-row:1/3}
+  .sp-step::before{display:none}
+  .sp-pair{grid-template-columns:minmax(0,1fr)}
+  .sp-round{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
+  .sp-round>label:first-child{grid-column:1/-1}
+  .sp-round input[type="date"]{padding-inline:6px;font-size:.78rem;min-block-size:38px}
+}
+
 /* ميزان الفصل: الشريط يتمدّد من الجهة الأولى مرّةً واحدة (useMotionScope).
    hold = مطويّ قبل الرسمة الأولى، go = يُكشف بالتدريج؛ لا fill-mode — الراحةُ هي النهاية. */
 @keyframes sd-bar-draw{from{clip-path:inset(0 0 0 100%)}}

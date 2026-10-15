@@ -79,6 +79,36 @@ export interface AdTerm {
    * اختياريّ: فصلٌ بلا موعد هو فصلٌ بلا قيد، وهذا هو حال كل فصل قديم.
    */
   AdTermSubmissionDeadline?: string;
+  /**
+   * ── رحلة الطلبة في الفصل ───────────────────────────────────────────────────
+   *
+   * التواريخ التي تحرّك بابَ الطالب والشاشةَ الموحدة معاً: متى تُجمع الرغبات،
+   * ومتى يُجمَّد الجدول المتوقع، وجولات التسجيل، وآخر يومٍ لطلب المتعثّر.
+   * يضعها رئيس التسجيل من لوحة «مواعيد التسليم» نفسها، ومن لا تواريخ لفصله
+   * يعمل كما كان: لا بابَ مفتوحاً ولا مرحلة. القواعد في utils/termStudentPhases.
+   */
+  AdTermStudentPhases?: TermStudentPhases;
+}
+
+/** جولةُ تسجيل واحدة: «مبكر»، «عادي»… بداية ونهاية، YYYY-MM-DD شاملتان. */
+export interface TermStudentRound {
+  id: string;
+  name: string;
+  start: string;
+  end: string;
+}
+
+export interface TermStudentPhases {
+  /** أول يومٍ يكتب فيه الطالب رغباته، وبعد موعد تسليم الجداول. */
+  wishesOpen?: string;
+  /** آخر يوم للرغبات؛ بعده يُجمَّد الجدول المتوقع للقراءة. */
+  wishesClose?: string;
+  /** جولات التسجيل بالترتيب، لا تتداخل، وكلها بعد الرغبات. */
+  rounds?: TermStudentRound[];
+  /** آخر يومٍ يستقبل فيه القسمُ طلبَ طالبٍ متعثّر. */
+  requestsClose?: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface AdCollege {
