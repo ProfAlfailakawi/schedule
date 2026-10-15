@@ -9,11 +9,12 @@
  * والحارسُ الحقيقي في الخادم. والاعتمادُ لرئيس لجنة الجدول، على النسخة التي رآها.
  */
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
-import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, dependentsOf, describePrereq } from "../utils/curriculumRules";
+import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, courseLevelFromCode, dependentsOf, describePrereq } from "../utils/curriculumRules";
 import type { CourseKind, CurriculumCourseRule, ElectiveGroup } from "../types";
 
 interface Status {
@@ -163,7 +164,8 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     try {
       const next: View = await request(url, { method, body: JSON.stringify({ planId, sectionId, ...(body as object) }) });
       setView(next);
-      void loadStatus();
+      await loadStatus();
+      window.dispatchEvent(new Event("schedule:plan-review-updated"));
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   };
@@ -182,7 +184,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
   const nameOf = (id: number) => names.get(id)?.name || `مقرر ${id}`;
   const ruleOf = (id: number) => view?.rules.find(r => r.courseId === id);
 
-  const levels = useMemo(() => view ? byLevel(view.courses.map(c => c.id), view.rules) : new Map<number, number[]>(), [view]);
+  const levels = useMemo(() => view ? byLevel(view.courses.map(c => c.id), view.rules, new Map(view.courses.map(c => [c.id, c.code]))) : new Map<number, number[]>(), [view]);
   const upstream = useMemo(() => {
     if (!view || !selected) return new Set<number>();
     const out = new Set<number>();
@@ -210,7 +212,7 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
     <div className="pr-page" dir="rtl">
       <PageTitle eyebrow="مراجعة الصحيفة" subtitle="مستوى كل مقرر ونوعه وما يسبقه، ثم يعتمدها رئيس لجنة الجدول.">قواعد المقررات</PageTitle>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
-      {status?.canImport ? <ImportPanel onDone={() => void loadStatus()} /> : null}
+      {status?.canImport ? <ImportPanel onDone={() => { void loadStatus().then(() => window.dispatchEvent(new Event("schedule:plan-review-updated"))); }} /> : null}
       {!status?.sections.length ? <EmptyState title="لا صحائف في نطاقك" detail="تظهر هنا صحائف الأقسام التي تملك نطاقها." /> : (
         <>
           <div className="pr-pickers">
@@ -298,13 +300,33 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave }: {
   key?: React.Key; course: CourseRow; rule?: CurriculumCourseRule; view: View; nameOf: (id: number) => string; busy: boolean; onClose: () => void; onSave: (rule: CurriculumCourseRule) => void;
 }) {
   const editable = view.can.edit && course.owned;
-  const [level, setLevel] = useState(rule?.level || 0);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const closeRef = useRef(onClose);
+  const [level, setLevel] = useState(rule?.level || courseLevelFromCode(course.code) || 0);
   const [kind, setKind] = useState<CourseKind | "">(rule?.kind || "");
   const [all, setAll] = useState<number[]>(rule?.prereq?.all || []);
   const [anyOf, setAnyOf] = useState<number[][]>(rule?.prereq?.anyOf || []);
   const [minUnits, setMinUnits] = useState(rule?.prereq?.minUnits || 0);
   const [coreq, setCoreq] = useState<number[]>(rule?.coreq || []);
-  const options = view.courses.filter(c => c.id !== course.id);
+  const options = view.courses.filter(c => c.id !== course.id).sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }));
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.querySelector<HTMLElement>("button")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { closeRef.current(); return; }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const controls = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),[tabindex]:not([tabindex="-1"])')];
+      if (!controls.length) return;
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, []);
   const pick = (current: number[], set: (v: number[]) => void) => (
     <select aria-label="إضافة مقرر" value="" disabled={!editable} onChange={e => { const id = Number(e.target.value); if (id && !current.includes(id)) set([...current, id]); }}>
       <option value="">＋ إضافة</option>
@@ -314,10 +336,11 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave }: {
   const chips = (list: number[], set: (v: number[]) => void) => list.map(id => (
     <span key={id} className="pr-chip">{nameOf(id)}{editable ? <button type="button" aria-label="إزالة" onClick={() => set(list.filter(x => x !== id))} data-guide-ignore="إزالةُ مقررٍ من شرطٍ داخل محرّر شاشةٍ مسجّلة في المرشد باسم page.planReview"><X size={12} /></button> : null}</span>
   ));
-  return (
-    <section className="pr-editor" aria-label={`قواعد ${course.name}`}>
+  const editor = (
+    <div className="pr-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <section ref={dialogRef} className="pr-editor pr-course-dialog" role="dialog" aria-modal="true" aria-labelledby="pr-course-dialog-title" tabIndex={-1}>
       <header>
-        <div><b>{course.code}</b> {course.name}</div>
+        <div id="pr-course-dialog-title"><bdi dir="ltr">{course.code}</bdi> · {course.name}</div>
         <button type="button" aria-label="إغلاق" onClick={onClose} data-guide-ignore="إغلاقُ محرّر المقرر داخل شاشةٍ مسجّلة في المرشد باسم page.planReview"><X size={16} /></button>
       </header>
       {!course.owned ? <Notice type="info" inline><Lock size={14} /> هذا المقرر من {course.ownerSectionName || "قسمٍ آخر"} — يعدّل قواعده قسمُه.</Notice> : null}
@@ -357,12 +380,14 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave }: {
         </footer>
       ) : null}
     </section>
+    </div>
   );
+  return createPortal(editor, document.body);
 }
 
 function GroupsPanel({ view, nameOf, busy, onSave, onDelete }: { view: View; nameOf: (id: number) => string; busy: boolean; onSave: (g: ElectiveGroup) => void; onDelete: (id: string) => void }) {
   const [draft, setDraft] = useState<ElectiveGroup | null>(null);
-  const electives = view.courses;
+  const electives = [...view.courses].sort((a, b) => a.code.localeCompare(b.code, "en", { numeric: true, sensitivity: "base" }));
   return (
     <section className="pr-groups">
       <h3>المجموعات الاختيارية</h3>

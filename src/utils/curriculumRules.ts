@@ -20,6 +20,14 @@ import { AR, countOf } from "./arabicCount";
 export const CURRICULUM_LEVELS = [100, 200, 300, 400] as const;
 export const MAX_LEVEL = 400;
 export const MAX_UNITS_RULE = 200;
+/** The final three digits in the institutional course code encode its 100-level band. */
+export function courseLevelFromCode(value: unknown): number | undefined {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length < 3) return undefined;
+  const number = Number(digits.slice(-3));
+  const level = Math.floor(number / 100) * 100;
+  return CURRICULUM_LEVELS.includes(level as typeof CURRICULUM_LEVELS[number]) ? level : undefined;
+}
 export const KINDS: readonly CourseKind[] = ["compulsory", "college", "university", "elective"];
 export const KIND_LABEL: Record<CourseKind, string> = {
   compulsory: "إجباري", college: "متطلب كلية", university: "متطلب جامعة", elective: "اختياري",
@@ -294,11 +302,11 @@ export function describePrereq(prereq: CoursePrereq | undefined, name: (id: numb
 }
 
 /** المستوياتُ من القواعد: خريطةٌ مستوى ← مقررات، ومقرراتٌ بلا مستوى تُجمع تحت 0. */
-export function byLevel(planCourseIds: readonly number[], rules: readonly CurriculumCourseRule[]): Map<number, number[]> {
+export function byLevel(planCourseIds: readonly number[], rules: readonly CurriculumCourseRule[], codeById?: ReadonlyMap<number, string>): Map<number, number[]> {
   const levelOf = new Map(rules.map(rule => [rule.courseId, rule.level || 0] as const));
   const out = new Map<number, number[]>();
   for (const id of planCourseIds) {
-    const level = levelOf.get(id) || 0;
+    const level = levelOf.get(id) || (codeById ? courseLevelFromCode(codeById.get(id)) : undefined) || 0;
     out.set(level, [...(out.get(level) || []), id]);
   }
   return new Map([...out].sort((a, b) => (a[0] === 0 ? Number.MAX_SAFE_INTEGER : a[0]) - (b[0] === 0 ? Number.MAX_SAFE_INTEGER : b[0])));

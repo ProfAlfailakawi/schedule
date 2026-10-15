@@ -30,6 +30,7 @@ import { ticketContext } from "./simulationData";
 import { unmetPrereq } from "../utils/curriculumRules";
 import { buildStudentNotices } from "../utils/studentNotices";
 import { caseRefFor } from "../db/repository";
+import { isCaseLevelNeed, studentCaseStatus } from "../utils/studentCaseDecision";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
 import { deadlineDateShort } from "../utils/submissionDeadlines";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
@@ -432,6 +433,56 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const saved = await Repository.updateStudentProfile(fingerprint, current => (current ? { ...current, wishes } : undefined));
     if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
     noStore(res); res.json({ ok: true, wishes });
+  });
+
+  /* ── حالاتي: متابعة آمنة لطلبات الاستبيان القديم من ملف مساري ─────────── */
+  app.get("/api/public/me/cases", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint } = doorOf(res);
+    noStore(res);
+    const [needs, courses, terms] = await Promise.all([
+      Repository.getStudentNeedHistoryByFingerprint(fingerprint), Repository.getCourses(), Repository.getTerms(),
+    ]);
+    const courseById = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
+    const termById = new Map((terms as any[]).map(term => [Number(term.AdTermId), String(term.AdTermName || "الفصل") ] as const));
+    const statusText: Record<string, string> = {
+      pending: "وصل طلبك · قيد مراجعة القسم", approved: "وافقت اللجنة · بانتظار الإجراء التالي",
+      "committee-rejected": "تعذّر قبول الطلب من اللجنة", registered: "اكتمل قرار الحالة داخل SCHEDULE",
+      rejected: "تعذّر قبول الطلب في المراجعة التالية",
+    };
+    const rows = needs
+      .sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)))
+      .slice(0, 100)
+      .map(need => {
+        const status = isCaseLevelNeed(need)
+          ? studentCaseStatus(need.caseState)
+          : (need.courseStates || []).some(item => item.state === "committee-rejected") ? "committee-rejected"
+            : (need.courseStates || []).some(item => item.state === "rejected") ? "rejected"
+              : (need.courseStates || []).some(item => item.state === "awaiting-registration") ? "approved"
+                : (need.courseStates || []).length && (need.courseStates || []).every(item => item.state === "registered") ? "registered" : "pending";
+        const courseIds = [...new Set([...(need.courseIds || []), ...(need.courseStates || []).map(state => Number(state.courseId))])];
+        const coursesForNeed = courseIds.map(id => {
+          const course = courseById.get(Number(id));
+          const state = (need.courseStates || []).find(item => Number(item.courseId) === Number(id));
+          const courseStatus: Record<string, string> = {
+            pending: "قيد مراجعة القسم", "awaiting-registration": "وافقت اللجنة · بانتظار الإجراء التالي",
+            "committee-rejected": "تعذّر قبوله من اللجنة", registered: "اكتملت مراجعته داخل SCHEDULE",
+            rejected: "تعذّر قبوله في المراجعة التالية",
+          };
+          return { code: String(course?.CourseCode || ""), name: String(course?.CourseName || "مقرر"),
+            dropped: Boolean(state?.droppedByStudent), state: String(state?.state || "pending"),
+            status: state?.droppedByStudent ? "أزلته من طلبك بعد القرار" : courseStatus[state?.state || "pending"] };
+        });
+        return {
+          caseRef: caseRefFor(need), term: termById.get(Number(need.AdTermId)) || "فصل سابق",
+          requestType: String(need.requestType || "new-course"), isCaseLevel: isCaseLevelNeed(need),
+          title: need.requestType === "graduate" ? "مراجعة حالة التخرج والميداني" : need.requestType === "course-conflict" ? "مراجعة تعارض مقررات" : "مراجعة مقررات",
+          status: statusText[status] || "وصل طلبك", statusCode: status,
+          /* لا نعيد ملاحظات اللجنة الداخلية إلى بوابة الطالب؛ تُعرض فقط حالة
+             القرار العامة. تفاصيل الطالب التي كتبها تبقى في سجل القسم. */
+          courses: coursesForNeed, sentAt: String(need.createdAt || ""), updatedAt: String(need.updatedAt || need.createdAt || ""),
+        };
+      });
+    res.json({ cases: rows });
   });
 
   /* ── المطروح لي: متبقّي صحيفتي أيُّه يُطرح هذا الفصل؟ (أعدادٌ لا مواعيد) ─── */

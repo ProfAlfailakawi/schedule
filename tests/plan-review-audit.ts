@@ -15,7 +15,7 @@ import path from "path";
 import express from "express";
 import type { AddressInfo } from "net";
 import {
-  byLevel, checkRuleSet, coreqMet, dependentsOf, describePrereq, findPrereqCycle, groupProgress, normalizeGroups, normalizeRule,
+  byLevel, checkRuleSet, coreqMet, courseLevelFromCode, dependentsOf, describePrereq, findPrereqCycle, groupProgress, normalizeGroups, normalizeRule,
   normalizeRules, prereqMet, remainingNeed, unmetPrereq, withDerivedGroups,
 } from "../src/utils/curriculumRules";
 import { parseKind, rowsToDrafts } from "../src/utils/curriculumRulesImport";
@@ -95,6 +95,20 @@ const ctx = (plan: number[]) => ({
   check(describePrereq({ all: [1, 2], anyOf: [[3, 4]], minUnits: 60 }, id => NAMES[id]) === "أ + ب + (ج أو د) + 60 وحدة", "R3 المسبق بالعربية", describePrereq({ all: [1, 2], anyOf: [[3, 4]], minUnits: 60 }, id => NAMES[id]));
   const levels = byLevel([1, 2, 3, 4], [{ courseId: 2, level: 200 }, { courseId: 1, level: 100 }, { courseId: 3, level: 200 }]);
   check([...levels.keys()].join() === "100,200,0" && levels.get(200)!.join() === "2,3" && levels.get(0)!.join() === "4", "R3 الخريطة بالمستويات، وغيرُ الموزَّع في الآخر");
+  check(courseLevelFromCode("0109101") === 100 && courseLevelFromCode("0109201") === 200 && courseLevelFromCode("0109468") === 400 && courseLevelFromCode("0109099") === undefined,
+    "R3 مستوى المقرر يستنتج من آخر ثلاثة أرقام دون تصنيف المواد التمهيدية ضمن 100");
+  const inferred = byLevel([1, 2, 3], [], new Map([[1, "0109101"], [2, "0109201"], [3, "0109099"]]));
+  check([...inferred.keys()].join() === "100,200,0", "R3 خريطة المستوى تستخدم رمز المقرر عند غياب قاعدة محفوظة");
+}
+
+{
+  const source = read("src/components/CurriculumReferenceReview.tsx");
+  check(source.includes("reference-level-map") && source.includes("courseLevelFromCode") && source.includes("reference-filterbar"),
+    "R6 المقارنة تعرض المستويات وتتيح البحث والفلاتر داخل الصفحة نفسها");
+  check(source.includes("ancestry.up") && source.includes("ancestry.down") && source.includes("reference-selected-links"),
+    "R6 اختيار مقرر يبرز المتطلبات السابقة والمقررات التي تعتمد عليه");
+  check(source.includes('aria-label="نوع المقرر"') && source.includes('aria-label="المجموعة"') && source.includes('aria-label="حالة المطابقة"'),
+    "R6 فلاتر التصنيف والمجموعة وحالة المطابقة قابلة للوصول");
 }
 
 /* ── R4: الاستيراد ───────────────────────────────────────────────────────── */
@@ -299,6 +313,12 @@ const ctx = (plan: number[]) => ({
   const routes = read("src/server/planReviewRoutes.ts");
   check(routes.includes("ownsCourse(req, course)") && routes.includes('code: "foreign-course"'), "R6 حارسُ «مقررات القسم وحدها» في الخادم لا في الواجهة");
   check(routes.includes('roleId(req) === "committeeChair"') && routes.includes("approveRuleDraft("), "R6 الاعتماد لرئيس اللجنة عبر معاملةٍ واحدة");
+  const app = read("src/App.tsx"), ui = read("src/components/PlanReview.tsx"), refs = read("src/components/CurriculumReferenceReview.tsx"), styles = read("src/styles/05-schedule.css");
+  check(app.includes("planReviewCount > 0") && app.includes("planReviewAccess ? <PlanReview") && app.includes('addEventListener("schedule:plan-review-updated"'), "R6 تختفي أيقونة المراجعة بعد آخر اعتماد وتبقى الصفحة مفتوحة حتى المغادرة");
+  check(ui.includes("schedule:plan-review-updated") && ui.includes("createPortal(editor, document.body)") && ui.includes('aria-modal="true"'), "R6 اعتماد الصحيفة يحدّث الأيقونة فوراً ومحرّر المقرر نافذة حوار");
+  check(ui.includes('localeCompare(b.code, "en", { numeric: true') && ui.includes("const electives = [...view.courses].sort"), "R6 قوائم اختيار المقررات مرتبة رقمياً");
+  check(refs.includes("تعديل الوحدات والساعات والسعة") && refs.includes('kind: "edit"'), "R6 المقارنة تتيح فتح بيانات المقرر المملوك لتعديل وحداته وساعاته وسعته");
+  check(styles.includes(".schedule-status .schedule-status-head .dna-hsub") && styles.includes("overflow-wrap:anywhere"), "R6 نص حالة الجدول يلتف داخل الإطار المرن");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

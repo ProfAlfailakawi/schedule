@@ -652,14 +652,17 @@ export default function App() {
       .then(response => (response.ok ? response.json() : null))
       .then(data => { if (alive) setPlanReviewCount(Array.isArray(data?.pending) ? data.pending.length : 0); })
       .catch(() => undefined);
+    const refresh = () => void read();
     const readSimulation = () => fetch("/api/simulation/summary", { credentials: "include" })
       .then(response => (response.ok ? response.json() : null))
       .then(data => { if (alive) setSimulationVisible(Boolean(data && (data.canRun || ((hasPerm(7) || hasPerm(14)) && !sessionRole.viewerOnly)))); })
       .catch(() => undefined);
     void read(); void readSimulation();
     const onFocus = () => { void read(); void readSimulation(); };
+    const timer = window.setInterval(read, 30000);
     window.addEventListener("focus", onFocus);
-    return () => { alive = false; window.removeEventListener("focus", onFocus); };
+    window.addEventListener("schedule:plan-review-updated", refresh);
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", onFocus); window.removeEventListener("schedule:plan-review-updated", refresh); };
   }, [user?.SystemUserId, sessionRole.id, permissions]);
   useEffect(() => {
     if (!user || !opensChangesScreen(sessionRole)) { setChangesBadge(0); return; }
@@ -1490,7 +1493,8 @@ export default function App() {
     [permissions],
   );
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.IsRootAdmin);
-  const planReviewVisible = Boolean(user && (user.IsAdminUser || ["committeeChair", "departmentHead", "standard"].includes(sessionRole.id)) && (hasPerm(7) || hasPerm(14)));
+  const planReviewAccess = Boolean(user && (user.IsAdminUser || user.IsRootAdmin || ["committeeChair", "departmentHead", "standard"].includes(sessionRole.id)) && (hasPerm(7) || hasPerm(14)));
+  const planReviewVisible = planReviewAccess && (Boolean(user?.IsAdminUser || user?.IsRootAdmin) || planReviewCount > 0);
 
   const availableSearchModes = searchViews.filter((v) =>
     v === "searchAdvanced"
@@ -1804,7 +1808,7 @@ export default function App() {
         return simulationVisible ? <RegistrationRehearsal onNavigate={(view) => go(view as View)} /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
-        return planReviewVisible ? <PlanReview onNavigate={hasPerm(6) ? go : undefined} /> : unauthorized();
+        return planReviewAccess ? <PlanReview onNavigate={hasPerm(6) ? go : undefined} /> : unauthorized();
       case "studentRegistration":
         /* الكشفُ يُقرأ من الطرفين ويُكتب من طرفين: التسجيلُ صاحبُ القرار، ومن
            يبني الجدول يسلّم ويتابع. وصفةُ العرض الصرف لا تفتحه أصلاً — الخادمُ
@@ -2408,7 +2412,7 @@ export default function App() {
                 الطرفان معاً، فتجاور أختيها ولا تُنفى إلى قائمةٍ أخرى. */}
             {(allowed.schedule || hasPerm(14)) && !sessionRole.viewerOnly || simulationVisible ? (
               <NavSection navGroups={navGroups} onToggle={(id) => setNavGroups(current => ({ ...current, [id]: !current[id] }))}
-                id="registration" title="التسجيل" icon={<ClipboardCheck />} rail="registration"
+                id="registration" title="الإرشاد" icon={<ClipboardCheck />} rail="registration"
                 className="registration-nav" holdsActive={activeView === "studentRegistration" || activeView === "simulation"}>
                 {(allowed.schedule || hasPerm(14)) && !sessionRole.viewerOnly ? <NavButton activeView={activeView} onGo={go} view="studentRegistration" icon={<ClipboardCheck />} label="كشف التسجيل" data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.studentRegistration" /> : null}
                 {simulationVisible ? <NavButton activeView={activeView} onGo={go} view="simulation" icon={<Ticket />} label="رادار التسجيل" data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.simulation" /> : null}

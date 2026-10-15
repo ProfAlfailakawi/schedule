@@ -31,6 +31,13 @@ const check = (ok: boolean, label: string, extra?: unknown) => {
 const read = (file: string) => fs.readFileSync(path.join(process.cwd(), file), "utf8");
 const DAY = 86_400_000;
 
+/* الرغبات الصريحة تشمل المقرر غير المطروح، حتى يصل الطلب إلى الرادار الجماعي. */
+const studentHomeSource = read("src/server/studentHomePage.ts");
+check(studentHomeSource.includes("var remaining=(S.offered&&S.offered.courses)||[];")
+  && studentHomeSource.includes("غير مطروح هذا الفصل")
+  && studentHomeSource.includes("غير مطروح") ,
+"D5 يستطيع الطالب إبداء حاجته إلى مقرر غير مطروح، وتظهر حالته بوضوح");
+
 /* ── D1: القواعد ─────────────────────────────────────────────────────────── */
 {
   check(codeProblem("135790") === null && codeProblem("482615") === null, "D1 رمزٌ جيّد يُقبل");
@@ -354,6 +361,15 @@ const DAY = 86_400_000;
   const routes = fs.readFileSync(path.join(process.cwd(), "src/server/studentDoorRoutes.ts"), "utf8");
   const page = fs.readFileSync(path.join(process.cwd(), "src/server/studentHomePage.ts"), "utf8");
   const repo = fs.readFileSync(path.join(process.cwd(), "src/db/repository.ts"), "utf8");
+  check(routes.includes('app.get("/api/public/me/cases", requireDoor') && routes.includes("getStudentNeedHistoryByFingerprint(fingerprint)"),
+    "متابعة الحالات داخل مساري محمية بجلسة الملف وتقرأ تاريخ صاحبها فقط");
+  const caseRoute = routes.slice(routes.indexOf('app.get("/api/public/me/cases", requireDoor'), routes.indexOf('/* ── المطروح لي:', routes.indexOf('app.get("/api/public/me/cases", requireDoor')));
+  check(!caseRoute.includes("decision?.note") && !caseRoute.includes("state?.note") && !caseRoute.includes("need.details"),
+    "ملخص الطالب لا يكشف ملاحظات اللجنة الداخلية أو التفاصيل المخزنة للحالة");
+  check(repo.includes("getStudentNeedHistoryByFingerprint: async") && /where\("fingerprint", "==", fingerprint\)/.test(repo),
+    "تاريخ الحالة يُقرأ بفهرس البصمة لا بتحميل سجل الطلبات كله");
+  check(page.includes("loadCases();") && page.includes("حالاتي") && page.includes("/api/public/me/cases"),
+    "ملف مساري يعرض المتابعة دون فتح رابط استبيان جديد");
   check(routes.includes("lockState(current, now).locked) { locked = true; left = 0; return current; }"), "قفلٌ نشأ أثناء التحقّق يبقى ولا يُستبدل بعدّاد");
   check(routes.includes("lockedMeanwhile") && routes.includes("fail(res, 423"), "رمزٌ صحيح بعد قفلٍ متوازٍ لا يُدخل صاحبه");
   check(page.includes("w.termId!==s.term.id)w=null"), "رغباتُ فصلٍ سابق لا تظهر في الفصل الحالي");

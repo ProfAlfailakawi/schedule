@@ -8417,8 +8417,13 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 /* ── حالُ الجدول: رأسٌ هادئ وحبوبٌ بأعدادها داخل بطاقة المرشّحات ──────────
    One calm status area instead of stacked strips. The strips keep their own
    classes (focus/presentation rules still find them); only the look is new. */
-.schedule-status{display:grid;gap:12px;padding-block-end:var(--s4);border-block-end:1px dashed var(--line)}
-.schedule-status .schedule-status-head{padding:0;background:transparent;border:0;box-shadow:none}
+.schedule-status{display:grid;gap:12px;min-inline-size:0;inline-size:100%;padding-block:10px var(--s4);border-block-end:1px dashed var(--line)}
+.schedule-status .schedule-status-head{min-inline-size:0;padding:0;background:transparent;border:0;box-shadow:none}
+.schedule-status .schedule-status-head .dna-headrow{min-inline-size:0;align-items:flex-start}
+.schedule-status .schedule-status-head .dna-headtxt{min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere}
+.schedule-status .schedule-status-head .dna-htitle,.schedule-status .schedule-status-head .dna-hsub{max-inline-size:100%;white-space:normal;overflow-wrap:anywhere;line-height:1.5}
+.schedule-status .schedule-status-head .dna-hsub{margin-block-start:4px}
+.schedule-status .schedule-status-head .dna-headact{max-inline-size:100%;flex-wrap:wrap}
 .schedule-status .schedule-practice-strip{display:block;width:auto;padding:0;border:0;background:transparent}
 .schedule-status .schedule-practice-strip .dna-headact>button{
   display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid var(--line);

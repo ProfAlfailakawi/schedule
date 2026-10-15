@@ -100,6 +100,7 @@ button,input{font:inherit;color:inherit}
 .link{border:0;background:none;color:var(--accent);font-weight:600;font-size:14px;cursor:pointer;padding:8px;text-decoration:underline;text-underline-offset:3px}
 .row{display:flex;align-items:center;gap:10px}
 .row.between{justify-content:space-between}
+.case-row{padding:12px 0;border-top:1px solid var(--line);display:grid;gap:5px}.case-row:first-of-type{border-top:0;padding-top:0}.case-row .case-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.case-row .case-head b{font-size:14px}.case-row .ref{font:600 12px/1.4 ui-monospace,monospace;direction:ltr;color:var(--muted)}.case-row .case-courses{display:flex;flex-wrap:wrap;gap:6px}.case-row .case-course{padding:3px 8px;border-radius:9px;background:var(--card2);font-size:12px}.case-row .case-detail{font-size:12.5px;color:var(--muted);margin:0}
 .err{padding:11px 14px;border-radius:14px;background:var(--bad-soft);color:var(--bad);font-size:13.5px;font-weight:600}
 .note{display:flex;gap:9px;align-items:flex-start;padding:11px 13px;border-radius:14px;background:var(--gold-soft);color:#6b4a14;font-size:13px;line-height:1.7}
 .note .i{margin-block-start:2px}
@@ -430,7 +431,7 @@ function viewHome(){
   dockEl.innerHTML="";var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
   var idn=p.identity?'<section class="card idn fade" style="margin-block-start:6px"><div class="row" style="gap:12px"><span class="ic">'+ic("user")+'</span><div class="tx"><b>أهلاً، '+esc(p.identity.name)+'</b><small>الرقم المدني <bdi dir="ltr">'+esc(p.identity.civilMasked)+'</bdi> · راجع بياناتك أدناه وتأكّد أنها صحيحة</small></div><button type="button" class="link" id="nmb">الاسم غير صحيح؟</button></div></section>':"";
   var h=idn+'<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div><p class="muted grad-estimate">'+(pr.remainingUnits?'التخرج المتوقع: نحو '+countOf(Math.ceil(pr.remainingUnits/15),AR.term)+' بحسب المتبقي ومعدل 15 وحدة في الفصل.':'أكملت وحدات الصحيفة بحسب المقررات التي علّمتها.')+' تقدير يتغير مع تحديث إنجازك والقواعد المعتمدة، وليس موعداً رسمياً.</p></section>';
-  h+='<div id="notices"></div>';h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
+  h+='<div id="notices"></div><div id="cases"></div>';h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
   h+='<div id="ticket"></div><div id="report"></div><div id="offered"></div><div id="wishes"></div>';
   h+='<section class="card fade"><h2><span class="b">'+ic("user")+'</span>ملفي</h2><p class="muted">'+ic("shield","")+' يُحفظ ملفّك حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn alt small" id="chg" style="inline-size:auto">'+ic("key")+'غيّر الرمز</button><button class="btn alt small" id="del" style="inline-size:auto">'+ic("trash")+'احذف ملفّي</button><button class="btn alt small" id="out" style="inline-size:auto">'+ic("out")+'اخرج</button></div></section>';
   app.innerHTML=h;animateRings();markOverflow();
@@ -439,13 +440,13 @@ function viewHome(){
   document.getElementById("chg").addEventListener("click",sheetCode);
   var nmb=document.getElementById("nmb");if(nmb)nmb.addEventListener("click",sheetName);
   document.getElementById("del").addEventListener("click",sheetForget);
-  loadNotices();loadTicket();loadReport();loadOffered();renderWishes();
+  loadNotices();loadCases();loadTicket();loadReport();loadOffered();renderWishes();
 }
 var DAYN=["أحد","اثنين","ثلاثاء","أربعاء","خميس"];
 function hhmm(m){var h=Math.floor(m/60),n=m%60;return (h<10?"0":"")+h+":"+(n<10?"0":"")+n}
 function slotsText(slots){var g={};slots.forEach(function(x){var k=hhmm(x.start)+"–"+hhmm(x.end);(g[k]=g[k]||[]).push(DAYN[x.day]||"")});return Object.keys(g).map(function(k){return g[k].join(" · ")+' <bdi dir="ltr">'+k+'</bdi>'}).join("، ")}
 var WHY={prereq:"ينقصك مسبقه",full:"امتلأت شعبه",conflict:"يتعارض مع غيره",units:"فوق وحداتك المطلوبة","not-offered":"لا يُطرح هذا الفصل"};
-var NT_ICON={edit:"edit",ticket:"ticket",check:"check",info:"info",clock:"clock",lock:"lock"},NT_TARGET={setup:"edp",wishes:"wishes",ticket:"ticket",report:"report",cases:"notices"};
+var NT_ICON={edit:"edit",ticket:"ticket",check:"check",info:"info",clock:"clock",lock:"lock"},NT_TARGET={setup:"edp",wishes:"wishes",ticket:"ticket",report:"report",cases:"cases"};
 function loadNotices(){var host=document.getElementById("notices");if(!host)return;
   api("GET","/api/public/me/notices").then(function(r){if(!r.ok||!r.d.notices||!r.d.notices.length){host.innerHTML="";return}
     var list=r.d.notices,showAll=false;
@@ -457,6 +458,13 @@ function loadNotices(){var host=document.getElementById("notices");if(!host)retu
       host.querySelectorAll(".it").forEach(function(b){b.addEventListener("click",function(){var n=shown[Number(b.getAttribute("data-i"))],el=document.getElementById(NT_TARGET[n.target]||"");if(el&&el.scrollIntoView)el.scrollIntoView({behavior:"smooth",block:"center"});if(n.target==="setup"&&el)el.click()})});
       var all=document.getElementById("ntall");if(all)all.addEventListener("click",function(){showAll=true;paint()})}
     paint()})}
+function loadCases(){var host=document.getElementById("cases");if(!host)return;
+  api("GET","/api/public/me/cases").then(function(r){if(!r.ok||!r.d.cases||!r.d.cases.length){host.innerHTML="";return}
+    var rows=r.d.cases,h='<section class="card fade"><h2><span class="b">'+ic("ticket")+'</span>حالاتي</h2><p class="muted">متابعة الطلبات التي أرسلتها، بما فيها الطلبات السابقة.</p>';
+    rows.forEach(function(c){h+='<article class="case-row"><div class="case-head"><b>'+esc(c.title)+'</b><span class="chip '+(c.statusCode==="approved"?"ok":c.statusCode==="committee-rejected"||c.statusCode==="rejected"?"gold":"")+'">'+esc(c.status)+'</span></div><div class="row between"><span class="muted">'+esc(c.term)+'</span><bdi class="ref">'+esc(c.caseRef)+'</bdi></div>';
+      if(c.courses&&c.courses.length)h+='<div class="case-courses">'+c.courses.map(function(course){return '<span class="case-course">'+esc(course.name)+(course.dropped?' · أُزيل من الطلب':course.state!=="pending"?' · '+esc(course.status):'')+'</span>'}).join("")+'</div>';
+      if(c.detail)h+='<p class="case-detail">'+esc(c.detail)+'</p>';h+='</article>'});
+    host.innerHTML=h+'</section>'})}
 function loadTicket(){var host=document.getElementById("ticket");if(!host)return;
   api("GET","/api/public/me/ticket").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var t=r.d;S.ticket=t;S.tkPlan=S.tkPlan||"A";paintTicket(host)})}
 function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
@@ -515,8 +523,10 @@ function renderWishes(){var host=document.getElementById("wishes"),s=S.state,ph=
    +'<button type="button" class="tag" data-k="noMorning" aria-pressed="'+(cur.constraints.noMorning?"true":"false")+'"'+(edit?"":" disabled")+'>'+ic("sun")+'لا أستطيع الصباح الباكر</button>'
    +'<button type="button" class="tag" data-k="noAfternoon" aria-pressed="'+(cur.constraints.noAfternoon?"true":"false")+'"'+(edit?"":" disabled")+'>'+ic("moon")+'لا أستطيع بعد الظهر</button>'
    +'<button type="button" class="tag" data-k="freeDay" aria-pressed="'+(cur.constraints.freeDay?"true":"false")+'"'+(edit?"":" disabled")+'>'+ic("calx")+'أحتاج يوماً فارغاً</button></div></div>';
-  var off=(S.offered&&S.offered.courses||[]).filter(function(c){return c.sections});
-  if(off.length&&edit){h+='<details class="more"><summary>'+ic("down")+' اختر مقرراتٍ بعينها <span class="chip" id="wn">'+cur.courseIds.length+'</span></summary><div class="list" id="wl" style="margin-block-start:6px">'+off.map(function(c){return '<div class="opt" role="checkbox" tabindex="0" aria-checked="'+(cur.courseIds.indexOf(c.id)>=0?"true":"false")+'" data-id="'+c.id+'"><span class="box">'+ic("check")+'</span><span class="tx"><b>'+esc(c.name)+'</b><small><span class="code">'+esc(c.code)+'</span> · '+countOf(c.credit,AR.unit)+'</small></span></div>'}).join("")+'</div></details>'}
+  /* الرغبةُ تُعبّر عمّا يحتاجه الطالب، لا عمّا طرحه القسم فقط. إخفاءُ غير
+     المطروح كان يمحو إشارةَ الطلب الجماعي التي يحتاجها الرادار قبل فتح الشعبة. */
+  var remaining=(S.offered&&S.offered.courses)||[];
+  if(remaining.length&&edit){h+='<details class="more"><summary>'+ic("down")+' اختر مقرراتٍ بعينها <span class="chip" id="wn">'+cur.courseIds.length+'</span></summary><div class="list" id="wl" style="margin-block-start:6px">'+remaining.map(function(c){return '<div class="opt'+(c.sections?"":" off")+'" role="checkbox" tabindex="0" aria-checked="'+(cur.courseIds.indexOf(c.id)>=0?"true":"false")+'" data-id="'+c.id+'"><span class="box">'+ic("check")+'</span><span class="tx"><b>'+esc(c.name)+'</b><small><span class="code">'+esc(c.code)+'</span> · '+countOf(c.credit,AR.unit)+(c.sections?"":" · غير مطروح هذا الفصل")+'</small></span><span class="chip'+(c.sections?" ok":"")+'">'+(c.sections?countOf(c.sections,AR.section):"غير مطروح")+'</span></div>'}).join("")+'</div></details>'}
   if(edit)h+=errBox("werr")+'<button class="btn" id="wsv">'+(w?"حدّث رغباتي":"احفظ رغباتي")+'</button><p class="muted">'+(ph.nextAt?"تُغلق الرغبات "+esc(fmtShort(ph.nextAt))+". ":"")+'يمكنك تعديلها قبل ذلك.</p>';
   host.innerHTML=h+'</section>';
   if(!edit)return;

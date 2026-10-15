@@ -5125,6 +5125,30 @@ export const Repository = {
   },
 
   /**
+   * «مساري» يقرأ حالات صاحب الجلسة عبر الفصول، كي تبقى متابعة الحالة القديمة
+   * متاحة بعد انتهاء نافذة الاستبيان. القراءة بالبصمة وحدها ثم ترقيم كل الصفحات؛
+   * لا يُكشف سجلّ طالب آخر ولا يُسقط تاريخٌ قديم بسبب حدٍّ صامت.
+   */
+  getStudentNeedHistoryByFingerprint: async (fingerprint: string): Promise<StudentNeed[]> => {
+    if (!fingerprint) return [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const out: StudentNeed[] = [];
+      let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      for (;;) {
+        let query: FirebaseFirestore.Query = firestoreDb.collection("studentNeeds")
+          .where("fingerprint", "==", fingerprint).orderBy(FieldPath.documentId()).limit(STUDENT_NEEDS_PAGE);
+        if (last) query = query.startAfter(last);
+        const snap = await query.get();
+        for (const doc of snap.docs) out.push(doc.data() as StudentNeed);
+        if (snap.size < STUDENT_NEEDS_PAGE) break;
+        last = snap.docs[snap.docs.length - 1];
+      }
+      return out;
+    }
+    return (db.studentNeeds || []).filter(item => item.fingerprint === fingerprint);
+  },
+
+  /**
    * ── قواعدُ الصحيفة: مسوّدةٌ تُراجَع، ونسخةٌ معتمدة تُقرأ ─────────────────────
    *
    * وثيقتان لكل صحيفة بالمفتاح نفسه (planId): `curriculumRuleDrafts` يعدّلها القسم
