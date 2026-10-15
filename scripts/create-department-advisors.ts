@@ -1,5 +1,6 @@
 /**
- * Prepare one inactive, passwordless advisor account for every department.
+ * Prepare one inactive, passwordless advisor account for every department,
+ * covering matching department sections across colleges in a single scope.
  * Preview by default; pass --apply to create only unambiguous accounts.
  * Usernames follow `<department-prefix>advisor`; no leading `01` is retained.
  */
@@ -49,7 +50,7 @@ if (APPLY) {
       Role: ADVISOR_ROLE,
     } as any);
     await Repository.saveSecurityByUser(user.SystemUserId, definition.formIds);
-    await Repository.saveUserAssigns(user.SystemUserId, [{ AdCollegeId: row.collegeId, AdSectionId: row.sectionId }]);
+    await Repository.saveUserAssigns(user.SystemUserId, row.scopeAssignments || [{ AdCollegeId: row.collegeId, AdSectionId: row.sectionId }]);
     created++;
   }
 }

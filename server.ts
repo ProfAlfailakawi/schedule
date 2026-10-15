@@ -13338,11 +13338,59 @@ app.post("/api/users/advisors", requirePermission(11), requirePowerAdmin, async 
       AdInstructorId: 0,
       Role: ADVISOR_ROLE,
     } as any);
-    await applyRoleTemplate(user.SystemUserId, ADVISOR_ROLE as AcademicRole, { assigns: [{ AdCollegeId: row.collegeId, AdSectionId: row.sectionId }] });
+    await applyRoleTemplate(user.SystemUserId, ADVISOR_ROLE as AcademicRole, { assigns: row.scopeAssignments || [{ AdCollegeId: row.collegeId, AdSectionId: row.sectionId }] });
     created.push({ login: row.proposedLogin, sectionName: row.sectionName, collegeName: row.collegeName });
   }
   res.locals.auditChanges = `حسابات المرشدين: أُنشئ ${countOf(created.length, AR.account)} (موقوفة وبلا كلمة سر)`;
   res.json({ created, skipped: rows.length - created.length, rows: await advisorPlan() });
+});
+
+/**
+ * توحيد حسابات الإرشاد القديمة المكررة للقسم نفسه عبر الكليات المتناظرة.
+ * لا يُمسّ إلا الحساب غير النشط، الخالي من كلمة السر، الذي لا يملك نطاقاً
+ * خارج القسم. تُبقى هوية واحدة، وتُنقل إليها نطاقات القسم، وتُحفظ الحسابات
+ * الزائدة كحسابات محذوفة منطقياً مع سحب شاشاتها ونطاقاتها.
+ */
+app.post("/api/users/advisors/consolidate", requirePermission(11), requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  const [rows, users, assigns] = await Promise.all([advisorPlan(), Repository.getUsers(), Repository.getCollegeUserAssigns()]);
+  const byId = new Map(users.map(user => [Number(user.SystemUserId), user]));
+  const consolidated: Array<{ login: string; removedIds: number[]; sectionName: string }> = [];
+  const skipped: Array<{ sectionName: string; reason: string }> = [];
+  for (const row of rows.filter(item => item.status === "review" && item.duplicateUserIds && item.duplicateUserIds.length > 1)) {
+    if (!row.consolidationReady || !row.existingUserId) {
+      skipped.push({ sectionName: row.sectionName, reason: row.note || "الحسابات تحتاج مراجعة يدوية" });
+      continue;
+    }
+    const ids = row.duplicateUserIds!;
+    const canonical = byId.get(Number(row.existingUserId));
+    const duplicates = ids.map(id => byId.get(Number(id)));
+    const targetKeys = new Set((row.scopeAssignments || []).map(scope => `${scope.AdCollegeId}:${scope.AdSectionId}`));
+    const safe = canonical && duplicates.every(user => user && user.Role === ADVISOR_ROLE && !user.IsActive && !String(user.SystemUserPass || "").trim() && !String(user.SystemUserPassVault || "").trim())
+      && duplicates.every(user => assigns.filter(scope => Number(scope.SystemUserId) === Number(user!.SystemUserId)).every(scope => targetKeys.has(`${Number(scope.AdCollegeId)}:${Number(scope.AdSectionId)}`)));
+    const loginOwner = await Repository.getUserByLogin(row.proposedLogin);
+    if (!safe || (loginOwner && !ids.includes(Number(loginOwner.SystemUserId)))) {
+      skipped.push({ sectionName: row.sectionName, reason: "تغيّرت حالة الحساب أو نطاقه منذ المعاينة؛ أُوقف التوحيد الآمن" });
+      continue;
+    }
+    const primary = canonical!;
+    await Repository.updateUser(Number(primary.SystemUserId), {
+      Name: row.proposedName,
+      SystemUserLogin: row.proposedLogin,
+      IsActive: false,
+      IsDeleted: false,
+      Role: ADVISOR_ROLE as any,
+    });
+    await applyRoleTemplate(Number(primary.SystemUserId), ADVISOR_ROLE as AcademicRole, { assigns: row.scopeAssignments || [] });
+    const removedIds = ids.filter(id => Number(id) !== Number(primary.SystemUserId));
+    for (const id of removedIds) {
+      await Repository.saveSecurityByUser(Number(id), []);
+      await Repository.saveUserAssigns(Number(id), []);
+      await Repository.updateUser(Number(id), { IsActive: false, IsLocked: true, IsDeleted: true, Role: "standard" as any });
+    }
+    consolidated.push({ login: row.proposedLogin, removedIds, sectionName: row.sectionName });
+  }
+  res.locals.auditChanges = `توحيد حسابات المرشدين: الأقسام ${consolidated.length}، الحسابات الزائدة المسحوبة ${consolidated.reduce((sum, item) => sum + item.removedIds.length, 0)}`;
+  res.json({ consolidated, skipped, rows: await advisorPlan() });
 });
 
 app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Response) => {
