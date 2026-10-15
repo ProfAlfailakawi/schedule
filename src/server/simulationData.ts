@@ -102,3 +102,31 @@ export async function runRegistrationSimulation(term: AdTerm, by: string): Promi
   await Repository.saveRegistrationRun(run, tickets);
   return run;
 }
+
+/* ── ما يراه الطالبُ: مواعيدُ شعبةٍ لا تظهر إلا إذا وُقّع جدولُ قسمها ──────────── */
+import { createTtlMemo } from "./notificationCache";
+
+export interface TicketContext {
+  offerings: Map<string, { code: string; collegeId: number; sectionId: number; slots: SimSlot[] }>;
+  /** أقسامٌ وقّعت لجنتُها ورئيسُها: `college:section`. */
+  signed: Set<string>;
+}
+const SIGNED = new Set(["head", "submitted", "accepted"]);
+const contextMemo = createTtlMemo<TicketContext>({ ttlMs: 5 * 60_000 });
+
+export function ticketContext(termId: number): Promise<TicketContext> {
+  return contextMemo.get(String(termId), async () => {
+    const [schedules, approvals] = await Promise.all([Repository.getSchedulesByScope({ termId }), Repository.getScheduleApprovalsForTerm(termId)]);
+    const offerings: TicketContext["offerings"] = new Map();
+    for (const row of schedules) {
+      const key = `${Number(row.AdCourseId)}|${String(row.SCode || row.id)}`;
+      let offering = offerings.get(key);
+      if (!offering) { offering = { code: String(row.SCode || row.id), collegeId: Number(row.AdCollegeId), sectionId: Number(row.AdSectionId), slots: [] }; offerings.set(key, offering); }
+      const start = parseClock(row.fstarttime), end = parseClock(row.fendtime);
+      if (start === null || end === null || end <= start) continue;
+      for (const [field, day] of DAYS) if ((row as any)[field]) offering.slots.push({ day, start, end });
+    }
+    const signed = new Set(approvals.filter(a => SIGNED.has(a.status)).map(a => `${a.AdCollegeId}:${a.AdSectionId}`));
+    return { offerings, signed };
+  });
+}

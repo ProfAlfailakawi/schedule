@@ -26,6 +26,7 @@ import {
   AFTER_GRADUATION_DAYS, CODE_LENGTH, CODE_MAX_FAILURES, REMEMBER_DAYS, afterCodeFailure, codeProblem, expectedGraduation,
   lockState, planProgress, profileLifetime, resetLifetime, sanitizePassed, shouldTouch, unitsOf, RESET_COOLDOWN_DAYS,
 } from "../utils/studentProfile";
+import { ticketContext } from "./simulationData";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { createAttemptLimiter } from "./publicAttemptLimiter";
@@ -418,6 +419,38 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     res.json({
       ready: true, termName: String(term.AdTermName || ""), remainingCount: courses.length, offeredCount: offered.length,
       offeredUnits: offered.reduce((sum, course) => sum + course.credit, 0), courses,
+    });
+  });
+
+  /* ── تذكرتي: خططي (أ/ب/ج) ونافذتي من بروفة التسجيل ──────────────────────────
+     تقديرٌ لا حجز. والشعبةُ وموعدُها لا يظهران إلا إن وُقّع جدولُ قسمها؛ قبل ذلك
+     يرى الطالبُ المقرراتِ ووحداتها، لا الأوقات (المسوّداتُ للأقسام والعمادة). */
+  app.get("/api/public/me/ticket", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    const terms = await Repository.getTerms();
+    const term = pickDoorTerm(terms as any);
+    if (!term) { res.json({ ready: false, reason: "no-term" }); return; }
+    const termId = Number(term.AdTermId);
+    const [run, ticket] = await Promise.all([Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint)]);
+    if (!run || !ticket || ticket.runId !== run.runId) { res.json({ ready: false, reason: profile.AdSectionId > 0 ? "no-run" : "no-setup" }); return; }
+    const [catalog, context] = await Promise.all([sectionCatalog(profile.AdSectionId), ticketContext(termId)]);
+    const info = (id: number) => catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
+    const round = term.AdTermStudentPhases?.rounds?.[ticket.window - 1];
+    res.json({
+      ready: true, termName: String(term.AdTermName || ""), ranAt: run.ranAt,
+      stale: Date.parse(profile.updatedAt) > Date.parse(run.ranAt),
+      window: { n: ticket.window, of: run.rounds, name: round?.name || "", start: round?.start || "", end: round?.end || "" },
+      remainingUnits: ticket.remainingUnits, defaulted: ticket.defaulted,
+      plans: ticket.plans.map(plan => ({
+        label: plan.label, units: plan.units,
+        items: plan.items.map(item => {
+          const offering = context.offerings.get(item.offeringId);
+          const visible = Boolean(offering && context.signed.has(`${offering.collegeId}:${offering.sectionId}`));
+          return { courseId: item.courseId, ...info(item.courseId), tight: item.tight, timesVisible: visible, section: visible ? offering!.code : "", slots: visible ? offering!.slots : [] };
+        }),
+      })),
+      unmet: ticket.unmet.map(entry => ({ courseId: entry.courseId, ...info(entry.courseId), reason: entry.reason })),
     });
   });
 
