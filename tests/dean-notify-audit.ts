@@ -290,7 +290,7 @@ check(HISTORICAL_FINALITY_LABEL === "جدول نُفّذ (قبل دورة الا
   check(excel.includes("instructorsForReader(req, instructors)"), "N13: الرقم المدني لا يخرج في الملفّ لصفات الاطّلاع");
   const reports = read("src/components/Reports.tsx");
   const at = reports.indexOf("/api/reports/excel/ListofTeacherCourseExcel?");
-  check(at > 0 && reports.slice(at - 200, at + 400).includes("data-guide-ignore="), "N12: زرّ «تصدير Excel» في مساحة التقرير بسمة المرشد");
+  check(at > 0 && reports.slice(at - 200, at + 400).includes("data-guide-ignore="), "N12: زرّ «تصدير جدول بيانات» في مساحة التقرير بسمة المرشد");
 }
 
 /* ══ N14 — نشرة المجلس تُطبع في أي وقت، بعمود الاعتماد ═══════════════════ */
