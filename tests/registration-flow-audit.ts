@@ -142,6 +142,13 @@ try {
   const again = await http("POST", "/api/simulation/run", { who: "admin" });
   check(first.status === 200 && again.status === 200 && first.json.students === 24, "F1 تشغيلٌ ثم إعادةٌ: كلُّ الملفّات المكتملة دخلت (٢٤)", [first.json, again.json]);
   const routeSrc = fs.readFileSync(path.join(process.cwd(), "src/server/simulationRoutes.ts"), "utf8");
+  const lease1 = await Repository.acquireRegistrationRunLease(1, "a"), lease2 = await Repository.acquireRegistrationRunLease(1, "b");
+  await Repository.releaseRegistrationRunLease(1, "b");
+  const lease3 = await Repository.acquireRegistrationRunLease(1, "c");
+  await Repository.releaseRegistrationRunLease(1, "a");
+  const lease4 = await Repository.acquireRegistrationRunLease(1, "d");
+  await Repository.releaseRegistrationRunLease(1, "d");
+  check(lease1 === true && lease2 === false && lease3 === false && lease4 === true, "F1 قفلٌ في قاعدة البيانات: واحدٌ يأخذه، ومن ليس صاحبَه لا يفكّه", [lease1, lease2, lease3, lease4]);
   check(routeSrc.indexOf("running = true;") > 0 && routeSrc.indexOf("running = true;") < routeSrc.indexOf("await Repository.getTerms()", routeSrc.indexOf('app.post("/api/simulation/run"')), "F1 علَمُ «يعمل» يُرفع قبل أيّ انتظار: لا يمرّ تشغيلان معاً");
 
   /* F2 */

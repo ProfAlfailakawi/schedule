@@ -115,5 +115,27 @@ const base = (students: SimStudent[], extra: Partial<SimInput> = {}): SimInput =
   check(ms < 30000, "S6 في ثوانٍ لا دقائق", ms);
 }
 
+/* S7: مراجعاتٌ بعد الدمج: المقرن، وحدّ الوحدات في المجموعة، وسببُ الإسقاط */
+{
+  const rules2: SimPlanRules = { planId: "q", courseIds: [1, 2, 3, 4, 5, 6], hasApprovedRules: true,
+    rules: [{ courseId: 1, level: 1, kind: "compulsory", coreq: [2] }, { courseId: 2, level: 1, kind: "compulsory" }, { courseId: 3, level: 1, kind: "compulsory" },
+      { courseId: 4, kind: "elective", groupId: "g" }, { courseId: 5, kind: "elective", groupId: "g" }, { courseId: 6, kind: "elective", groupId: "g" }],
+    groups: [{ id: "g", name: "اختياري", minCourses: 1, minUnits: 6, courseIds: [4, 5, 6] }] };
+  const run = (offs: SimOffering[], students: SimStudent[]) => simulateRegistration({ students, offerings: offs, plans: [rules2], credit, rounds: 1 });
+  const st = (fp: string): SimStudent => ({ fp, planId: "q", passed: [], wishes: { targetUnits: 18, courseIds: [], constraints: {} } });
+  const okOffs = [off(1, "01", 0, "08:00", "09:00"), off(2, "01", 1, "08:00", "09:00"), off(3, "01", 2, "08:00", "09:00"), off(4, "01", 3, "08:00", "09:00"), off(5, "01", 3, "10:00", "11:00"), off(6, "01", 3, "12:00", "13:00")];
+  const together = run(okOffs, [st("a")]).tickets[0].plans[0].items.map(i => i.courseId);
+  check(together.includes(1) && together.includes(2), "S7 المقرن يُسجَّل مع مقرره", together);
+  const clash = run([off(1, "01", 0, "08:00", "09:00"), off(2, "01", 0, "08:30", "09:30"), ...okOffs.slice(2)], [st("b")]);
+  const bItems = clash.tickets[0].plans[0].items.map(i => i.courseId);
+  check(!bItems.includes(1) && clash.tickets[0].unmet.some(u => u.courseId === 1 && u.reason === "conflict"), "S7 مقرنٌ يتعارض معه: يسقط المقرّرُ كلُّه ولا تذكرةَ بمقررٍ بلا مقرنه", clash.tickets[0]);
+  check(!clash.tickets[0].plans.some(p => p.items.some(i => i.courseId === 1) && !p.items.some(i => i.courseId === 2)), "S7 ولا في الخطتين (ب) و(ج)");
+  const elec = run(okOffs, [st("c")]).tickets[0].plans[0].items.map(i => i.courseId).filter(id => id >= 4);
+  check(elec.length === 2, "S7 المجموعةُ بحدّ ست وحدات: مقرران لا واحد", elec);
+  const mixed = run([off(1, "01", 0, "08:00", "09:00", 0), off(1, "02", 1, "08:00", "09:00"), off(2, "01", 1, "08:30", "09:30"), ...okOffs.slice(2)], [{ ...st("d"), wishes: { targetUnits: 18, courseIds: [], constraints: {} } }]);
+  const reasons = mixed.demand.find(d => d.courseId === 1)!.unmet;
+  check(reasons.full === 0 && reasons.conflict >= 1, "S7 شعبةٌ ممتلئة وأخرى فيها مقعدٌ يمنعها الوقتُ: «تعارض» لا «امتلأت»", reasons);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
