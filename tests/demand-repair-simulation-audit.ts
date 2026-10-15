@@ -1,4 +1,5 @@
-import { rankDemandRepairsBySimulation } from "../src/server/simulationData";
+import { rankDemandRepairsBySimulation, rankSectionOpeningsBySimulation } from "../src/server/simulationData";
+import { readDemandRepairs } from "../src/utils/demandRepair";
 import type { FSchedule } from "../src/types";
 import type { DemandRepair } from "../src/utils/demandRepair";
 import type { AdCourse } from "../src/types";
@@ -40,3 +41,30 @@ check(ranked[0].simulationImpact.before.canReach15 === 0 && ranked[0].simulation
 check(ranked[0].simulationImpact.respondents === 1 && ranked[0].simulationImpact.virtualCapacity,
   "إظهار حجم العينة والتنبيه إلى أن السعة افتراضية");
 check(schedules[1].fsunday && !schedules[1].fthursday, "المعاينة لا تغيّر مسودة الجدول الأصلية");
+
+const swapRows: FSchedule[] = [
+  { ...schedules[0], id: 21, AdCourseId: 1, AdCourseName: "أ", SCode: "01", AdInstructorId: 1, fsunday: true, fmonday: false, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "R1" },
+  { ...schedules[1], id: 22, AdCourseId: 2, AdCourseName: "ب", SCode: "01", AdInstructorId: 1, fsunday: false, fmonday: true, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "R2" },
+  { ...schedules[2], id: 23, AdCourseId: 3, AdCourseName: "ج", SCode: "01", AdInstructorId: 3, fsunday: true, fmonday: false, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "R3" },
+  { ...schedules[3], id: 24, AdCourseId: 4, AdCourseName: "د", SCode: "01", AdInstructorId: 4, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "R4" },
+  { ...schedules[4], id: 25, AdCourseId: 5, AdCourseName: "هـ", SCode: "01", AdInstructorId: 5, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "R5" },
+].map(row => ({ ...row, ftuesday: row.id === 24, fwednesday: row.id === 25, fthursday: false }));
+const swapDemand: any = {
+  respondents: 3, courses: [], pairs: [{ a: 1, b: 3, shared: 3, nameA: "أ", nameB: "ج" }], unwanted: [], headline: "",
+};
+const rhythm: any = { forDay: () => ({ ladder: ["08:00"] }) };
+const swapCandidates = readDemandRepairs(swapRows, swapDemand, rhythm, 0).repairs;
+const swap = swapCandidates.find(item => item.swapWith?.rowId === 22);
+check(Boolean(swap), "اقتراح تبديل شعبة مع شعبة أخرى يفك تعارض الفوج دون تعارض موارد جديد");
+if (swap) {
+  const swappedRank = rankDemandRepairsBySimulation(input, swapRows, coursesById, 7, [swap], { collegeId: 1, sectionId: 11 });
+  check(swappedRank.length === 1 && swappedRank[0].swapWith?.rowId === 22, "إعادة محاكاة التبديل تحفظ المقترح فقط إذا تحسنت قدرة الطلبة");
+}
+const opening = rankSectionOpeningsBySimulation(input, swapRows.filter(row => row.AdCourseId !== 3), coursesById, 7, [{
+  courseId: 3, courseName: "ج", courseCode: "C3", demand: 1, predicted: false, capacity: 2,
+  openSections: 0, seats: 0, shortfall: 1, needed: 1,
+  placements: [{ index: 1, day: "fthursday", dayLabel: "الخميس", start: "08:00", end: "09:00", buildingId: "b", roomId: "r", roomCode: "R", roomHall: "1", instructorId: 3, instructorName: "د", sectionCode: "02", note: "" }],
+  sentence: "",
+}]);
+check(opening.tested === 1 && opening.proposals.length === 1 && opening.proposals[0].simulationImpact.delta15 === 1,
+  "فتح الشعبة لا يُوصى به إلا بعد تحسن 15 وحدة في إعادة المحاكاة الفعلية");

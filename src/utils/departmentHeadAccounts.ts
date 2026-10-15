@@ -105,7 +105,11 @@ export function planDepartmentHeadAccounts(input: {
       .filter(user => DEPT_SUFFIX.test(String(user.SystemUserLogin || "").trim()))
       .sort((a, b) => Number(a.SystemUserId) - Number(b.SystemUserId))[0];
     const deptLogin = dept ? String(dept.SystemUserLogin).trim() : null;
-    const prefix = deptLogin ? deptLogin.replace(DEPT_SUFFIX, "") : `s${sectionId}`;
+    /* Use the department's own short code when no `<prefix>dept` account exists.
+       This keeps advisor identities predictable (Math → Mathadvisor) without
+       requiring a placeholder account or silently choosing an unrelated ID. */
+    const sectionCode = String(section.AdSectionCode || "").replace(/[^A-Za-z0-9]/g, "");
+    const prefix = deptLogin ? deptLogin.replace(DEPT_SUFFIX, "") : sectionCode || `s${sectionId}`;
     const currentHead = scoped.find(user => user.Role === kind.role);
     return { section, collegeId, sectionId, deptLogin, prefix, currentHead };
   });
@@ -151,7 +155,7 @@ export function planDepartmentHeadAccounts(input: {
       proposedName: `${kind.namePrefix} ${String(draft.section.AdSectionName || "").trim()}`.trim(),
       status: "create",
     };
-    if (!draft.deptLogin) row.note = "لا يوجد حساب «…dept» لهذا القسم؛ اقتُرح اسمٌ من رقمه";
+    if (!draft.deptLogin) row.note = "لا يوجد حساب «…dept» لهذا القسم؛ استُخدم رمز القسم أو رقمه";
 
     const sameLogin = userByLogin.get(lower(proposedLogin));
     const baseHolder = userByLogin.get(lower(base));

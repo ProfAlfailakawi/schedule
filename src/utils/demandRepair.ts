@@ -62,6 +62,12 @@ export interface DemandRepair {
   /** How far the lecture travels, for ranking and for the sentence. */
   distanceMinutes: number;
   sameDay: boolean;
+  /** A time exchange with a second section, when neither one-way move is safe. */
+  swapWith?: {
+    rowId: number; courseId: number; courseName: string; sectionCode: string; room: string;
+    from: { day: DayKey; dayLabel: string; start: string; end: string };
+    to: { day: DayKey; dayLabel: string; start: string; end: string };
+  };
   sentence: string;
 }
 
@@ -123,6 +129,7 @@ export function readDemandRepairs(
   rhythm: RhythmReading | null,
   doorway: number,
   limit = 6,
+  universe: FSchedule[] = rows,
 ): RepairReading {
   const pairs = cohortPairs(demand);
   if (!pairs.size || rows.length < 2)
@@ -130,7 +137,7 @@ export function readDemandRepairs(
 
   /* Where the clashes actually are. A pair in the survey that never overlaps on
      the board is not a problem and must not be "fixed". */
-  const clashes = findConflicts(rows, rows, { cohortPairs: pairs, doorwayMinutes: doorway })
+  const clashes = findConflicts(rows, universe, { cohortPairs: pairs, doorwayMinutes: doorway })
     .filter(item => item.reasons?.includes("cohort") || item.type === "cohort");
   if (!clashes.length)
     return { repairs: [], unsolved: [], examined: 0, headline: "" };
@@ -149,6 +156,60 @@ export function readDemandRepairs(
 
     const shared = sharedBetween(demand, left.AdCourseId, right.AdCourseId);
     let best: DemandRepair | null = null;
+    let bestSwap: DemandRepair | null = null;
+
+    /* A pair exchange can work when neither lecture has a clean one-way
+       destination. The second row may be any section in this department, not
+       only the other course in the clash. Keep both durations and check the
+       changed rows against the entire week. */
+    const conflictKeys = (changed: FSchedule[], universe: FSchedule[]) => {
+      const cohort = new Set<string>(), other = new Set<string>();
+      for (const item of findConflicts(changed, universe, { cohortPairs: pairs, doorwayMinutes: doorway })) {
+        const pair = `${Math.min(item.rowId, item.otherId)}:${Math.max(item.rowId, item.otherId)}`;
+        if (item.reasons?.includes("cohort") || item.type === "cohort") cohort.add(pair);
+        if (!(item.reasons?.length === 1 && item.reasons[0] === "cohort") && item.type !== "cohort") other.add(`${item.type}:${pair}`);
+      }
+      return { cohort, other };
+    };
+    for (const subject of [left, right]) {
+      const subjectDay = dayOf(subject), subjectStart = timeToMinutes(subject.fstarttime);
+      const subjectLength = timeToMinutes(subject.fendtime) - subjectStart;
+      if (!subjectDay || DAY_KEYS.filter(key => Boolean((subject as any)[key])).length !== 1 || subjectLength <= 0) continue;
+      for (const partner of rows) {
+        if (partner.id === subject.id) continue;
+        const partnerDay = dayOf(partner), partnerStart = timeToMinutes(partner.fstarttime);
+        const partnerLength = timeToMinutes(partner.fendtime) - partnerStart;
+        if (!partnerDay || DAY_KEYS.filter(key => Boolean((partner as any)[key])).length !== 1 || partnerLength <= 0 || (subjectDay === partnerDay && subjectStart === partnerStart)) continue;
+        if (partnerStart + subjectLength > 24 * 60 || subjectStart + partnerLength > 24 * 60) continue;
+        const nextSubject = moved(subject, partnerDay, partnerStart, subjectLength);
+        const nextPartner = moved(partner, subjectDay, subjectStart, partnerLength);
+        const changed = [nextSubject, nextPartner];
+        const revised = universe.map(row => row.id === subject.id ? nextSubject : row.id === partner.id ? nextPartner : row);
+        const before = conflictKeys([subject, partner], universe);
+        const after = conflictKeys(changed, revised);
+        if ([...after.other].some(key => !before.other.has(key))) continue;
+        if ([...after.cohort].some(key => !before.cohort.has(key)) || after.cohort.size >= before.cohort.size) continue;
+        const distance = (subjectDay === partnerDay ? 0 : 24 * 60) + Math.abs(subjectStart - partnerStart);
+        const proposal: DemandRepair = {
+          rowId: subject.id, courseId: subject.AdCourseId, courseName: String(subject.AdCourseName || ""),
+          sectionCode: String(subject.SCode || ""), room: `${subject.AdRoomCode || ""}${subject.AdRoomHall ? "/" + subject.AdRoomHall : ""}`,
+          againstCourseId: subject.id === left.id ? right.AdCourseId : left.AdCourseId,
+          againstCourseName: String(subject.id === left.id ? right.AdCourseName : left.AdCourseName || ""), shared,
+          from: { day: subjectDay, dayLabel: DAY_LABEL.get(subjectDay) || "", start: subject.fstarttime, end: subject.fendtime },
+          to: { day: partnerDay, dayLabel: DAY_LABEL.get(partnerDay) || "", start: minutesToTime(partnerStart), end: minutesToTime(partnerStart + subjectLength) },
+          removes: before.cohort.size - after.cohort.size, adds: 0, distanceMinutes: distance,
+          sameDay: subjectDay === partnerDay, sentence: "",
+          swapWith: {
+            rowId: partner.id, courseId: partner.AdCourseId, courseName: String(partner.AdCourseName || ""),
+            sectionCode: String(partner.SCode || ""), room: `${partner.AdRoomCode || ""}${partner.AdRoomHall ? "/" + partner.AdRoomHall : ""}`,
+            from: { day: partnerDay, dayLabel: DAY_LABEL.get(partnerDay) || "", start: partner.fstarttime, end: partner.fendtime },
+            to: { day: subjectDay, dayLabel: DAY_LABEL.get(subjectDay) || "", start: minutesToTime(subjectStart), end: minutesToTime(subjectStart + partnerLength) },
+          },
+        };
+        if (!bestSwap || proposal.removes > bestSwap.removes || (proposal.removes === bestSwap.removes && proposal.distanceMinutes < bestSwap.distanceMinutes)) bestSwap = proposal;
+      }
+    }
+    if (bestSwap) bestSwap.sentence = describeRepair(bestSwap);
 
     /* Either lecture may be the one that moves. Trying both doubles the search
        and roughly doubles the chance of finding a move that costs nothing. */
@@ -172,15 +233,14 @@ export function readDemandRepairs(
       }
       if (!ladders.size) continue;
 
-      const others = rows.filter(row => row.id !== subject.id);
-      const before = { cohort: cohortCount([subject], rows, pairs, doorway), other: otherConflictKeys([subject], rows, pairs, doorway) };
+      const before = { cohort: cohortCount([subject], universe, pairs, doorway), other: otherConflictKeys([subject], universe, pairs, doorway) };
 
       for (const [day, ladder] of ladders) {
         for (const slot of ladder) {
           const at = timeToMinutes(slot);
           if (day === home && at === start) continue;
           const candidate = moved(subject, day, at, length);
-          const week = [...others, candidate];
+          const week = [...universe.filter(row => row.id !== subject.id), candidate];
           // Forbidden outright: anything that was not there before.
           const afterOther = otherConflictKeys([candidate], week, pairs, doorway);
           if ([...afterOther].some(key => !before.other.has(key))) continue;
@@ -221,7 +281,8 @@ export function readDemandRepairs(
     }
 
     if (best) repairs.push(best);
-    else unsolved.push({
+    if (bestSwap) repairs.push(bestSwap);
+    if (!best && !bestSwap) unsolved.push({
       a: String(left.AdCourseName || ""), b: String(right.AdCourseName || ""), shared,
     });
   }
@@ -238,6 +299,9 @@ export function readDemandRepairs(
 
 /** One sentence per proposal, assembled from its own numbers. */
 export function describeRepair(repair: DemandRepair): string {
+  if (repair.swapWith) {
+    return `تبديل موعدَي «${repair.courseName}» و«${repair.swapWith.courseName}» يُزيل ${countOf(repair.removes, AR.clash)} على الطلاب دون تعارض جديد.`;
+  }
   const where = repair.sameDay
     ? `${repair.from.dayLabel} ${repair.from.start} ← ${repair.to.start}`
     : `${repair.from.dayLabel} ${repair.from.start} ← ${repair.to.dayLabel} ${repair.to.start}`;

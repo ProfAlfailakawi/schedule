@@ -1,4 +1,4 @@
-import type { AdCourse, AdInstructor, FSchedule } from "../types";
+import type { AdCourse, AdInstructor, FSchedule, MasterRoom } from "../types";
 import { AR, countOf, oblique } from "./arabicCount";
 import {
   SCHEDULE_DAYS,
@@ -11,6 +11,7 @@ import type { RhythmReading } from "./departmentRhythm";
 import { cohortPairs, type DemandReading } from "./studentDemand";
 import type { Prediction } from "./courseSuccession";
 import { roomIdentityKey } from "./locationRegistry";
+import { weeklyLoadOf } from "./instructorRequestVerdict";
 
 /**
  * ── الشعبة الجديدة، وأين توضع ───────────────────────────────────────────────
@@ -102,6 +103,9 @@ export interface OpeningReading {
   /** Courses in demand whose ceiling is not recorded, so nothing can be said. */
   noCeiling: Array<{ courseId: number; name: string; demand: number }>;
   headline: string;
+  /** Proposal counts that were re-simulated against explicit current-term responses. */
+  simulationTested?: number;
+  simulationRejected?: number;
 }
 
 const DAY_LABEL = new Map(SCHEDULE_DAYS.map(day => [day.key, day.label] as const));
@@ -200,6 +204,7 @@ export function readSectionOpenings(
   rhythm: RhythmReading | null,
   doorway: number,
   limit = 6,
+  verifiedRooms: readonly MasterRoom[] = [],
 ): OpeningReading {
   const wanted = demand.respondents
     ? demand.courses.map(course => ({ id: course.courseId, students: course.students, predicted: false }))
@@ -208,20 +213,23 @@ export function readSectionOpenings(
 
   const byId = new Map(courses.map(course => [course.AdCourseId, course]));
   const personById = new Map(instructors.map(person => [person.AdInstructorId, person]));
+  const courseById = new Map(courses.map(course => [Number(course.AdCourseId), course]));
+  const verifiedRoomById = new Map(verifiedRooms.filter(room => room.active && room.confidence === "CONFIRMED").map(room => [String(room.id), room] as const));
   const pairs = cohortPairs(demand);
 
   /* Rooms this section actually uses, commonest first. A proposal that puts a
      lecture in a hall the department has never taught in is not a proposal. */
-  const roomUse = new Map<string, { count:number; buildingId:string; roomId:string; code:string; hall:string }>();
+  const roomUse = new Map<string, { count:number; buildingId:string; roomId:string; code:string; hall:string; capacity:number }>();
   for (const row of history) {
     const key=roomIdentityKey(row);
-    if (!key || !row.buildingId || !row.roomId || row.locationStatus === "PENDING_ROOM") continue;
+    const verifiedRoom = verifiedRoomById.get(String(row.roomId || ""));
+    if (!key || !row.buildingId || !row.roomId || row.locationStatus !== "VERIFIED" || !verifiedRoom || !(Number(verifiedRoom.capacity) > 0)) continue;
     const current=roomUse.get(key);
-    roomUse.set(key,{count:(current?.count||0)+1,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||"")});
+    roomUse.set(key,{count:(current?.count||0)+1,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||""),capacity:Number(verifiedRoom.capacity)});
   }
   const rooms = [...roomUse.entries()]
     .sort((a, b) => b[1].count - a[1].count)
-    .map(([key,item]) => ({ key, buildingId:item.buildingId, roomId:item.roomId, code:item.code, hall:item.hall }));
+    .map(([key,item]) => ({ key, buildingId:item.buildingId, roomId:item.roomId, code:item.code, hall:item.hall, capacity:item.capacity }));
 
   const proposals: SectionProposal[] = [];
   const noCeiling: OpeningReading["noCeiling"] = [];
@@ -229,6 +237,11 @@ export function readSectionOpenings(
      two new sections are never proposed into the same hall at the same hour. */
   const working = [...universe];
   let draftId = -1;
+  const currentLoads = new Map<number, number>();
+  for (const instructor of instructors) {
+    const assigned = weeklyLoadOf(universe.filter(row => Number(row.AdInstructorId) === Number(instructor.AdInstructorId)), courseById);
+    currentLoads.set(Number(instructor.AdInstructorId), assigned);
+  }
 
   for (const item of wanted) {
     const course = byId.get(item.id);
@@ -283,17 +296,24 @@ export function readSectionOpenings(
         for (const time of ladder) {
           if (placed) break;
           const at = timeToMinutes(time);
-          for (const room of rooms.slice(0, 24)) {
+          for (const room of rooms.filter(candidateRoom => candidateRoom.capacity >= capacity).slice(0, 24)) {
             if (placed) break;
-            /* A teacher is tried before "unassigned": a slot somebody can
-               actually teach is worth more than a slot nobody can. */
-            const candidates = teachers.length ? [...teachers, 0] : [0];
+            /* An executable placement needs an active teacher with a recorded
+               load allowance and a verified hall large enough for this section. */
+            const courseHours = Number(course.CourseHours || course.CourseCredit) || 0;
+            const candidates = teachers.filter(id => {
+              const person = personById.get(id);
+              const limit = Number(person?.AdInstructorLoad) || 0;
+              return person && person.AdInstructorStatus !== "retired" && person.AdInstructorStatus !== "sabbatical"
+                && limit > 0 && (currentLoads.get(id) || 0) + courseHours <= limit;
+            });
             for (const teacherId of candidates) {
               const candidate = draft(seed, day, at, length, room, teacherId, draftId);
               if (!physicallyFree(candidate, working)) continue;
               if (!clean([candidate], [...working, candidate], pairs, doorway)) continue;
               draftId -= 1;
               working.push(candidate);
+              currentLoads.set(teacherId, (currentLoads.get(teacherId) || 0) + courseHours);
               const person = personById.get(teacherId);
               placed = {
                 index: slot, day, dayLabel: DAY_LABEL.get(day) || "",
@@ -302,9 +322,7 @@ export function readSectionOpenings(
                 instructorId: teacherId,
                 instructorName: person?.AdInstructorName || "",
                 sectionCode: String(nextCode + slot - 1),
-                note: teacherId
-                  ? ""
-                  : "لم يتفرّغ أيٌّ ممن درّسوا هذا المقرر في هذا الوقت — الوقت والقاعة متاحان، ويحتاج أستاذاً.",
+                note: "",
               };
               break;
             }
