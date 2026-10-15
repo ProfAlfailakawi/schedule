@@ -932,7 +932,7 @@
 .balance-split i{display:block;height:100%;background:var(--accent);border-radius:var(--r-full)}
 .balance-table td b{font-size:var(--t-xs);color:var(--muted);font-weight:600}
 .balance-ring{vertical-align:middle}
-.balance-ring .dna-ringc{font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums}
+.balance-ring .dna-ringc{font-size:.75rem;font-weight:700;font-variant-numeric:tabular-nums}
 .balance-bad{color:var(--danger);font-weight:700}
 .balance-ok{color:var(--muted-2)}
 

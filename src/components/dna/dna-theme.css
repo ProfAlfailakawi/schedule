@@ -50,7 +50,7 @@
 
 /* Deadline ring (inbox rows, dean's balance): small, number or icon inside. */
 .dna-deadline{display:inline-flex;flex:none}
-.dna-deadline .dna-ringc{font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums}
+.dna-deadline .dna-ringc{font-size:.75rem;font-weight:700;font-variant-numeric:tabular-nums}
 .dna-deadline .dna-ringc svg{width:14px;height:14px}
 
 /* Steppers whose labels are the screen's own buttons (intelligence scenes,
