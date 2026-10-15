@@ -55,6 +55,17 @@
     background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--line);
   }
 }
+/* The register beside the side rail (≈ 1024–1400px): eight columns at their roomy
+   padding are wider than the card, so the last column (the date) sat cut off at
+   rest. Tighter cell padding lets the same eight columns fit; below this the table
+   still scrolls inside its card and on a phone it is cards. */
+@media screen and (min-width:761px) and (max-width:1400px){
+  .student-cases-table{min-width:0}
+  .student-cases-table thead th,.student-cases-table tbody td{padding-inline:4px}
+  .student-cases-table td.student-case-detail-cell,
+  .student-cases-register--decisions .student-cases-table td.student-case-detail-cell{min-width:130px}
+  .student-cases-table td code{padding-inline:6px}
+}
 @media (prefers-reduced-motion:reduce){
   .admin-quiet-summary>span,.admin-quiet-summary>article,.student-cases-table tbody tr{transition:none}
   .admin-quiet-summary>span:hover,.admin-quiet-summary>article:hover{transform:none}
