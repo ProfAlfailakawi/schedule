@@ -177,7 +177,8 @@ export default function StudentPhasesBlock({ term, terms, canEdit, onChanged }: 
           ) : null}
 
           <fieldset className="sp-group">
-            <legend><Heart aria-hidden="true" /> الرغبات</legend>
+            <legend><Heart aria-hidden="true" /> فترة رغبات الطلبة في «مساري»</legend>
+            <p className="sd-muted">هنا تحدد موعد استقبال احتياجات الطلبة لهذا الفصل، لا تسجيلهم الرسمي.</p>
             <div className="sp-pair">
               <label className="sd-field"><span>تبدأ</span>
                 <input type="date" value={draft.wishesOpen || ""} onChange={e => setDraft(v => ({ ...v, wishesOpen: e.target.value }))} aria-invalid={Boolean(issueOf("wishesOpen"))} />

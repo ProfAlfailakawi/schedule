@@ -167,7 +167,7 @@ const DAY = 86_400_000;
   check(html.includes("prefers-reduced-motion") && html.includes("env(safe-area-inset-bottom)"), "D5 احترامُ تقليل الحركة وحوافّ الهاتف");
   const server = read("server.ts");
   check(server.includes("registerStudentDoorRoutes(app,") && server.includes('app.get(["/me", "/me/"]') && server.includes("scheduleStudentProfilePurge("), "D5 الخادم يسجّل المسارات والصفحة والتطهير");
-  check(server.includes("studentHomePage(publicPageNonce(res))"), "D5 الصفحة بنونسٍ جديد في كل طلب");
+  check(server.includes("studentHomePage(publicPageNonce(res), track as \"boys\" | \"girls\" | \"\")"), "D5 الصفحة بنونسٍ جديد ومسار منفصل في كل طلب");
   const routes = read("src/server/studentDoorRoutes.ts");
   check(!/civil\s*:/.test(routes.slice(routes.indexOf("async function summaryOf"), routes.indexOf("export function registerStudentDoorRoutes"))), "D5 ملخّصُ الملف لا يحمل رقماً مدنياً");
   check(routes.includes("offeringIndex(") && routes.includes("ttlMs: 5 * 60_000"), "D5 المطروح من فهرسٍ في الذاكرة لا من قاعدة البيانات في كل زيارة");
@@ -207,8 +207,8 @@ const DAY = 86_400_000;
     users: [], formNames: [], formSecurity: [], collegeUserAssign: [],
     terms: [{ AdTermId: 1, AdTermName: MARK, AdTermStart: "2026-09-13", AdTermWeeks: 14, AdTermClosed: false, AdTermSubmissionDeadline: add(today, -8),
       AdTermStudentPhases: { wishesOpen: add(today, -3), wishesClose: add(today, 10), rounds: [{ id: "r1", name: "مبكر", start: add(today, 16), end: add(today, 22) }], requestsClose: add(today, 60) } }],
-    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية التربية" }],
-    sections: [{ AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }],
+    colleges: [{ AdCollegeId: 1, AdCollegeCode: "EDU", AdCollegeName: "كلية التربية الأساسية — بنين" }, { AdCollegeId: 2, AdCollegeCode: "EDUG", AdCollegeName: "كلية التربية الأساسية — بنات" }],
+    sections: [{ AdSectionId: 11, AdCollegeId: 1, AdSectionCode: "ISL", AdSectionName: "قسم التربية الإسلامية" }, { AdSectionId: 12, AdCollegeId: 1, AdSectionCode: "ARB", AdSectionName: "قسم اللغة العربية" }, { AdSectionId: 21, AdCollegeId: 2, AdSectionCode: "PSY", AdSectionName: "قسم علم النفس" }],
     instructors: [{ AdInstructorId: 1, AdInstructorName: "د. تجريبي", AdInstructorCivil: "", AdInstructorMobile: "" }],
     courses, curriculumPlans: [
       { id: "p-11-new", AdCollegeId: 1, AdSectionId: 11, name: "الجديدة", status: "active", createdAt: "2026-02-01" },
@@ -264,7 +264,11 @@ const DAY = 86_400_000;
       jar = sessionCookie;
 
       const cat = (await http("GET", "/api/public/me/catalog")).json;
-      check(cat.colleges?.[0]?.sections?.length === 2, "D6 الأقسام تُسرد");
+      const boys = (await http("GET", "/api/public/me/catalog?track=boys")).json;
+      const girls = (await http("GET", "/api/public/me/catalog?track=girls")).json;
+      check(cat.colleges.length === 0 && cat.tracks.join() === "boys,girls", "D6 لا تظهر كل الكليات قبل اختيار المسار");
+      check(boys.colleges.length === 1 && boys.colleges[0].sections.length === 2 && boys.colleges[0].name.includes("بنين"), "D6 مسار البنين يعرض أقسامه فقط");
+      check(girls.colleges.length === 1 && girls.colleges[0].sections.length === 1 && girls.colleges[0].sections[0].name === "قسم علم النفس", "D6 مسار البنات يعرض أقسامه فقط");
       const plan = (await http("GET", "/api/public/me/plan?sectionId=11")).json;
       check(plan.source === "plan" && plan.plans.length === 2 && plan.plans[0].courses.length > 0, "D6 صحيفتان لقسمٍ انتقاليّ", plan.plans?.map((p: any) => p.courses.length));
       check((await http("PUT", "/api/public/me/profile", { sectionId: 999, passedCourseIds: [] })).json.code === "bad-section", "D6 قسمٌ غير موجود");

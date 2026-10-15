@@ -146,6 +146,15 @@ button,input{font:inherit;color:inherit}
 .opt .code{font:600 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);direction:ltr;unicode-bidi:isolate}
 .opt.off{opacity:.55}
 .grp{margin:10px 2px 2px;font-size:12.5px;font-weight:700;color:var(--brass);letter-spacing:.02em}
+.track-picks{display:grid;gap:9px;margin-block-start:14px}
+.section-campus{margin-block-start:10px;border:1px solid var(--line);border-radius:16px;background:var(--card);overflow:hidden}
+.section-campus>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-block-size:54px;padding:10px 14px;cursor:pointer;font-weight:700;list-style:none}
+.section-campus>summary::-webkit-details-marker{display:none}
+.section-campus>summary::after{content:"＋";color:var(--accent);font-size:18px}
+.section-campus[open]>summary::after{content:"−"}
+.section-campus>summary small{margin-inline-start:auto;color:var(--muted);font-size:12px;font-weight:500}
+.section-campus>.list{padding:0 10px 10px}
+.grad-estimate{padding-block-start:8px;border-block-start:1px solid var(--line)}
 .srch{position:relative}
 .srch .i{position:absolute;inset-inline-start:14px;inset-block-start:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
 .srch .inp{padding-inline-start:44px;font-size:16px}
@@ -271,7 +280,7 @@ export const STUDENT_HOME_SCRIPT = String.raw`
 (function(){
 "use strict";
 var app=document.getElementById("app"),topEl=document.getElementById("top"),dockEl=document.getElementById("dock");
-var S={state:null,view:"boot",civil:"",exists:false,resetPending:false,resetAt:"",catalog:null,plans:null,planSource:"",draft:null,offered:null,busy:false,remember:false,sheet:""};
+var S={state:null,view:"boot",civil:"",exists:false,resetPending:false,resetAt:"",catalog:null,plans:null,planSource:"",draft:null,offered:null,busy:false,remember:false,sheet:"",track:window.__SCHEDULE_TRACK||""};
 
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))}).replace(/\D/g,"")}
@@ -363,14 +372,18 @@ function viewCreate(){
 function afterSignIn(){S.civil="";api("GET","/api/public/me/state").then(function(r){if(r.ok){S.state=r.d;setTop()}S.draft=null;S.offered=null;setView(S.state&&S.state.profile&&S.state.profile.setupDone?"home":"setup")})}
 
 /* ── إعداد الملف: القسم ← الصحيفة ← ما أنجزت ── */
-function ensureCatalog(cb){if(S.catalog)return cb();api("GET","/api/public/me/catalog").then(function(r){S.catalog=r.ok?r.d.colleges:[];cb()})}
+function ensureCatalog(cb){if(!S.track)return cb();if(S.catalog)return cb();api("GET","/api/public/me/catalog?track="+encodeURIComponent(S.track)).then(function(r){S.catalog=r.ok?r.d.colleges:[];cb()})}
 function startDraft(){var p=S.state.profile||{};S.draft={sectionId:p.sectionId||0,sectionName:p.sectionName||"",planId:p.planId||"",passed:(p.passedCourseIds||[]).slice(),step:1,q:"",filter:"all"};return S.draft}
 function viewSetup(){var d=S.draft||startDraft();ensureCatalog(function(){if(d.step===1)setupSection();else if(d.step===2)setupPlan();else setupPassed()})}
 function stepsBar(n,total){var h='<div class="steps" aria-hidden="true">';for(var i=1;i<=total;i++)h+='<i class="'+(i<n?"on":i===n?"now":"")+'"></i>';return h+'</div>'}
 function setupSection(){var d=S.draft;
+  if(!S.track){
+    app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">اختر مسار الدراسة</h1><p class="muted">اختر البنين أو البنات، ثم يظهر لك دليل الأقسام المناسب فقط.</p><div class="track-picks"><button type="button" class="opt" data-track="boys"><span class="tx"><b>مسار البنين</b><small>أقسام كلية التربية الأساسية</small></span>'+ic("back")+'</button><button type="button" class="opt" data-track="girls"><span class="tx"><b>مسار البنات</b><small>أقسام كلية التربية الأساسية</small></span>'+ic("back")+'</button></div>';
+    app.querySelectorAll("[data-track]").forEach(function(b){b.addEventListener("click",function(){S.track=b.getAttribute("data-track");history.replaceState(null,"","/me?track="+encodeURIComponent(S.track));S.catalog=null;viewSetup()})});return;
+  }
   app.innerHTML=stepsBar(1,3)+'<h1 class="h2 fade">ما قسمك العلمي؟</h1><p class="muted">اختر القسم الذي تدرس فيه.</p><div class="srch" style="margin-block-start:12px">'+ic("search")+'<input class="inp" id="q" type="search" placeholder="ابحث باسم القسم" aria-label="ابحث باسم القسم" autocomplete="off"></div><div id="lst" class="list" style="margin-block-start:12px"></div>';
   var lst=document.getElementById("lst"),q=document.getElementById("q");
-  function paint(){var t=q.value.trim(),h="",any=false;(S.catalog||[]).forEach(function(c){var items=c.sections.filter(function(s){return!t||(s.name+" "+c.name).indexOf(t)>=0});if(!items.length)return;any=true;h+='<div class="grp">'+esc(c.name)+'</div>';items.forEach(function(s){h+='<button type="button" class="opt" data-id="'+s.id+'" data-n="'+esc(s.name)+'" aria-pressed="'+(d.sectionId===s.id?"true":"false")+'"><span class="tx"><b>'+esc(s.name)+'</b></span>'+ic("back")+'</button>'})});lst.innerHTML=any?h:'<p class="muted">لا قسم بهذا الاسم.</p>'}
+  function paint(){var t=q.value.trim(),h="",any=false;(S.catalog||[]).forEach(function(c){var items=c.sections.filter(function(s){return!t||(s.name+" "+c.campus).indexOf(t)>=0});if(!items.length)return;any=true;h+='<details class="section-campus"'+(t?' open':'')+'><summary>'+esc(c.campus)+'<small>'+countOf(items.length,AR.section)+'</small></summary><div class="list">';items.forEach(function(s){h+='<button type="button" class="opt" data-id="'+s.id+'" data-n="'+esc(s.name)+'" aria-pressed="'+(d.sectionId===s.id?"true":"false")+'"><span class="tx"><b>'+esc(s.name)+'</b></span>'+ic("back")+'</button>'});h+='</div></details>'});lst.innerHTML=any?h:'<p class="muted">لا قسم بهذا الاسم في هذا المسار.</p>'}
   q.addEventListener("input",paint);paint();
   lst.addEventListener("click",function(e){var b=e.target.closest(".opt");if(!b)return;var id=Number(b.getAttribute("data-id"));if(id!==d.sectionId){d.passed=[];d.planId=""}d.sectionId=id;d.sectionName=b.getAttribute("data-n");d.plans=null;
     api("GET","/api/public/me/plan?sectionId="+id).then(function(r){if(!r.ok){toast(r.d.error||"تعذّر تحميل القسم",true);return}S.plans=r.d.plans;S.planSource=r.d.source;
@@ -416,7 +429,7 @@ function setupPassed(){var d=S.draft,load=function(){
 function viewHome(){
   dockEl.innerHTML="";var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
   var idn=p.identity?'<section class="card idn fade" style="margin-block-start:6px"><div class="row" style="gap:12px"><span class="ic">'+ic("user")+'</span><div class="tx"><b>أهلاً، '+esc(p.identity.name)+'</b><small>الرقم المدني <bdi dir="ltr">'+esc(p.identity.civilMasked)+'</bdi> · راجع بياناتك أدناه وتأكّد أنها صحيحة</small></div><button type="button" class="link" id="nmb">الاسم غير صحيح؟</button></div></section>':"";
-  var h=idn+'<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div></section>';
+  var h=idn+'<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div><p class="muted grad-estimate">'+(pr.remainingUnits?'التخرج المتوقع: نحو '+countOf(Math.ceil(pr.remainingUnits/15),AR.term)+' بحسب المتبقي ومعدل 15 وحدة في الفصل.':'أكملت وحدات الصحيفة بحسب المقررات التي علّمتها.')+' تقدير يتغير مع تحديث إنجازك والقواعد المعتمدة، وليس موعداً رسمياً.</p></section>';
   h+='<div id="notices"></div>';h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
   h+='<div id="ticket"></div><div id="report"></div><div id="offered"></div><div id="wishes"></div>';
   h+='<section class="card fade"><h2><span class="b">'+ic("user")+'</span>ملفي</h2><p class="muted">'+ic("shield","")+' يُحفظ ملفّك حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn alt small" id="chg" style="inline-size:auto">'+ic("key")+'غيّر الرمز</button><button class="btn alt small" id="del" style="inline-size:auto">'+ic("trash")+'احذف ملفّي</button><button class="btn alt small" id="out" style="inline-size:auto">'+ic("out")+'اخرج</button></div></section>';
@@ -495,7 +508,7 @@ function loadOffered(){var host=document.getElementById("offered");if(!host)retu
 function renderWishes(){var host=document.getElementById("wishes"),s=S.state,ph=s.phase,w=s.profile.wishes;if(w&&s.term&&w.termId!==s.term.id)w=null;if(!host)return;
   if(ph.mode!=="wishes"&&!(w&&ph.mode==="frozen")){host.innerHTML="";return}
   var edit=ph.mode==="wishes";
-  var h='<section class="card fade"><h2><span class="b">'+ic("heart")+'</span>رغباتي'+(edit?"":'<span class="chip">للقراءة</span>')+'</h2>';
+  var h='<section class="card fade"><h2><span class="b">'+ic("heart")+'</span>احتياجي لهذا الفصل'+(edit?"":'<span class="chip">للقراءة</span>')+'</h2><p class="muted">هذه رغباتك أنت في المقررات والأوقات، وليست طلب تسجيل رسمي.</p>';
   var cur=w||{targetUnits:15,courseIds:[],constraints:{}};
   h+='<div class="field"><span class="lbl">كم وحدةً تريد هذا الفصل؟</span><div class="seg fit" id="wu" role="group" aria-label="الوحدات">'+[12,13,14,15,16,17,18].map(function(n){return '<button type="button" data-n="'+n+'" aria-pressed="'+(n===cur.targetUnits?"true":"false")+'"'+(edit?"":" disabled")+'>'+n+'</button>'}).join("")+'</div></div>';
   h+='<div class="field"><span class="lbl">ما الذي لا يناسبك؟</span><div class="tags" id="wc">'
@@ -546,7 +559,7 @@ boot();
 })();
 `;
 
-export function studentHomePage(nonce: string): string {
+export function studentHomePage(nonce: string, track: "boys" | "girls" | "" = ""): string {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -567,7 +580,7 @@ ${SPRITE}
 </div>
 <div class="dock" id="dock"></div>
 <noscript><p style="padding:24px;text-align:center">يلزم تفعيل JavaScript لفتح مساري.</p></noscript>
-<script nonce="${nonce}">${STUDENT_HOME_SCRIPT}</script>
+<script nonce="${nonce}">window.__SCHEDULE_TRACK=${JSON.stringify(track)};</script><script nonce="${nonce}">${STUDENT_HOME_SCRIPT}</script>
 </body>
 </html>`;
 }

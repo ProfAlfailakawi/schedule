@@ -253,18 +253,19 @@
   .apex-login-story{max-width:none}
   .apex-login-story h1{margin-top:var(--s4);font-size:clamp(34px,10.5vw,46px)}
   .apex-login-story>p{margin-top:var(--s4);font-size:var(--t-body)}
-  /* Principles compress to one quiet row so the sign-in card stays reachable. */
+  /* Three principles become equal, centered touch targets on narrow screens. */
   .apex-login-principles{
-    display:flex;gap:var(--s2);margin-top:var(--s5);
-    overflow-x:auto;scrollbar-width:none;
+    display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+    justify-items:stretch;align-items:stretch;gap:var(--s2);margin-top:var(--s5);
+    overflow:visible;
   }
-  .apex-login-principles::-webkit-scrollbar{display:none}
   .apex-login-principles>span{
-    display:inline-flex;align-items:center;gap:var(--s2);
-    flex:none;padding:var(--s2) var(--s4);
+    display:flex;flex-direction:column;justify-content:center;align-items:center;gap:5px;
+    min-width:0;min-height:62px;padding:8px 4px;text-align:center;
     border:1px solid #2a3531;border-radius:var(--r-full);
   }
-  .apex-login-principles b{margin-top:0;white-space:nowrap}
+  .apex-login-principles svg{width:18px;height:18px;flex:none}
+  .apex-login-principles b{margin-top:0;font-size:clamp(10px,2.8vw,12px);line-height:1.35;white-space:normal;text-wrap:balance}
   .apex-login-principles small{display:none}
   .apex-login-access{padding:var(--s5);border-radius:var(--r-xl)}
   .apex-access-head strong{font-size:23px}

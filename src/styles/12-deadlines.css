@@ -501,6 +501,9 @@
 .sm-bars u{text-decoration:none;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .sm-base{margin:0;color:var(--muted);font-size:.88rem;line-height:1.8}
 .sm-list{display:grid;gap:8px}
+.sm-how{margin-block-start:4px;border-block-start:1px solid var(--line);padding-block-start:8px;color:var(--muted);font-size:.84rem;line-height:1.75}
+.sm-how summary{width:max-content;max-width:100%;cursor:pointer;color:var(--accent-ink);font-weight:650}
+.sm-how p{max-width:78ch;margin:8px 0 0;overflow-wrap:anywhere}
 .sm-list header{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .sm-list h3{margin:0;margin-inline-end:auto}
 .sm-list header input{min-inline-size:0;flex:1 1 160px;max-inline-size:260px}

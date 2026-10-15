@@ -444,19 +444,19 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   <IdCard aria-hidden="true" />
                   <span>بطاقة الأستاذ</span>
                 </button>
-                {/* استبيانُ الطلبة من الباب نفسه: رابطٌ ورمزُ QR يُعلَّق، وتصل
-                    إجاباتُه «مركز الذكاء» و«كشف التسجيل» كما كانت. */}
+                {/* مساري يجمع احتياج الفصل العام؛ هذا الرابط يبقى لطلب حالةٍ فردية موثقة. */}
                 <button
                   type="button"
                   className={kind === "survey" ? "active" : ""}
                   onClick={() => setKind("survey")}
-                  data-guide-ignore="اختيار نوع الرابط: استبيان الطلبة — لا يعدّل الجدول"
-                  aria-pressed={kind === "survey"} title="استبيان الطلبة"
+                  data-guide-ignore="اختيار رابط الطلب الأكاديمي الفردي؛ رغبات الفصل العامة تجمع في مساري"
+                  aria-pressed={kind === "survey"} title="طلب حالة أكاديمية"
                 >
                   <ClipboardList aria-hidden="true" />
-                  <span>استبيان الطلبة</span>
+                  <span>طلب حالة أكاديمية</span>
                 </button>
               </div>
+              <p className="share-kind-note">لرغبات الطلبة العامة استخدم QR «مساري»؛ هذا الرابط مخصص لحالة فردية مثل طلب مقرر أو تعارض محدد أو استكمال متطلبات التخرج.</p>
               <div className="share-step-actions">
                 <PrimaryButton type="button" onClick={() => setStep("options")}>
                   التالي · الصلاحية
@@ -576,7 +576,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                             {link.kind === "staff"
                               ? <><IdCard aria-hidden="true" /> بطاقة الأستاذ</>
                               : link.kind === "survey"
-                              ? <><ClipboardList aria-hidden="true" /> استبيان الطلبة</>
+                              ? <><ClipboardList aria-hidden="true" /> طلب حالة أكاديمية</>
                               : <><Users aria-hidden="true" /> جدول القسم</>}
                           </span>
                           <b dir="ltr" className="share-link-id">

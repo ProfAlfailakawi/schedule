@@ -343,17 +343,20 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
   });
 
   /* ── الأقسام (عامّة): قائمةُ اختيار القسم ───────────────────────────────── */
-  app.get("/api/public/me/catalog", async (_req: Request, res: Response) => {
+  app.get("/api/public/me/catalog", async (req: Request, res: Response) => {
+    const track = req.query.track === "boys" || req.query.track === "girls" ? String(req.query.track) : "";
     const data = await sectionsMemo.get("all", async () => {
       const [colleges, sections] = await Promise.all([Repository.getColleges(), Repository.getSections()]);
       return (colleges as any[]).map(college => ({
         id: Number(college.AdCollegeId), name: String(college.AdCollegeName || ""),
+        campus: String(college.AdCollegeName || "").includes("الجهراء") ? "الجهراء" : String(college.AdCollegeName || "").includes("الفحيحيل") ? "الفحيحيل" : "المقر الرئيسي",
         sections: (sections as any[]).filter(section => Number(section.AdCollegeId) === Number(college.AdCollegeId))
           .map(section => ({ id: Number(section.AdSectionId), name: String(section.AdSectionName || "") }))
           .sort((a, b) => byArabic(a.name, b.name)),
       })).filter(college => college.sections.length).sort((a, b) => byArabic(a.name, b.name));
     });
-    res.setHeader("Cache-Control", "public, max-age=300"); res.json({ colleges: data });
+    const basicEducation = data.filter(college => college.name.includes("التربية الأساسية") && (!track || (track === "boys" ? college.name.includes("بنين") : college.name.includes("بنات"))));
+    res.setHeader("Cache-Control", "public, max-age=300"); res.json({ track: track || null, colleges: track ? basicEducation : [], tracks: ["boys", "girls"] });
   });
 
   /* ── صحيفةُ قسمٍ: الصحائف ومقرراتها ─────────────────────────────────────── */

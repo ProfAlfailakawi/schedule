@@ -737,7 +737,7 @@ export interface CoursePrereq {
 
 export interface CurriculumCourseRule {
   courseId: number;
-  /** المستوى/الفصل المقترح في الصحيفة: ١–١٢. */
+  /** المستوى المقترح في الصحيفة: ١٠٠ أو ٢٠٠ أو ٣٠٠ أو ٤٠٠؛ وتُطبَّع القيم القديمة ١–٤ عند القراءة. */
   level?: number;
   kind?: CourseKind;
   prereq?: CoursePrereq;

@@ -1858,6 +1858,9 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .student-qr-code svg{display:block;width:100%;height:100%}
 .student-qr-url{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);background:transparent;color:var(--ink);font-size:var(--t-xs)}
 .student-qr-actions{display:flex;flex-wrap:wrap;gap:var(--s2);justify-content:center}
+.student-qr-tracks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.student-qr-tracks button{min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}
+.student-qr-tracks button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
 /* تخطيط الشعب (SectionPlanning): جدولٌ يطوي أعمدته على الهاتف. */
 .section-plan{display:grid;gap:var(--s3)}
 .section-plan-note{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.8}
