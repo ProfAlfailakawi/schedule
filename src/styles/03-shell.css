@@ -197,7 +197,7 @@
   color:#fff;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;
   box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#1f8f76) 22%,transparent);
 }
-.side-nav-link .side-nav-badge>b{font-weight:700}
+.side-nav-link .side-nav-badge>b{font-weight:700;direction:ltr;unicode-bidi:isolate}
 .side-nav-link.active .side-nav-badge{box-shadow:0 0 0 3px #ffffff14}
 @keyframes side-nav-badge-breathe{
   0%,70%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#1f8f76) 22%,transparent)}
@@ -1917,6 +1917,7 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
   display:grid;place-items:center;
   background:var(--danger);color:#fff;font-size:12px;font-weight:700;line-height:1;
   border:2px solid var(--surface);font-variant-numeric:tabular-nums;
+  direction:ltr;unicode-bidi:isolate; /* "99+" reads as written, not "+99" */
 }
 .notify-dot{position:absolute;top:6px;inset-inline-start:8px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--surface)}
 @keyframes notify-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(-14deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(4deg)}}
