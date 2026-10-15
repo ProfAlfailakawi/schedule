@@ -28,8 +28,10 @@ import {
 } from "../utils/studentProfile";
 import { ticketContext } from "./simulationData";
 import { unmetPrereq } from "../utils/curriculumRules";
+import { buildStudentNotices } from "../utils/studentNotices";
 import { caseRefFor } from "../db/repository";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
+import { deadlineDateShort } from "../utils/submissionDeadlines";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { createAttemptLimiter } from "./publicAttemptLimiter";
 import { createTtlMemo } from "./notificationCache";
@@ -442,6 +444,41 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     res.json({
       ready: true, termName: String(term.AdTermName || ""), remainingCount: courses.length, offeredCount: offered.length,
       offeredUnits: offered.reduce((sum, course) => sum + course.credit, 0), courses,
+    });
+  });
+
+  /* ── ما الجديد؟ ── إشعاراتُ الطالب مشتقّةٌ من حاله لحظةَ السؤال (utils/studentNotices). */
+  app.get("/api/public/me/notices", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    const terms = await Repository.getTerms();
+    const term = pickDoorTerm(terms as any);
+    if (!term) { res.json({ notices: [] }); return; }
+    const termId = Number(term.AdTermId);
+    const reading = readStudentPhase(term.AdTermStudentPhases);
+    const [run, ticket, needs, catalog] = await Promise.all([
+      Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint),
+      Repository.getStudentNeedsByFingerprint(fingerprint, 0, termId), profile.AdSectionId > 0 ? sectionCatalog(profile.AdSectionId) : Promise.resolve(null),
+    ]);
+    const courseNames = new Map((await Repository.getCourses() as any[]).map(course => [Number(course.AdCourseId), String(course.CourseName || "")] as const));
+    const nameOf = (id: number) => courseNames.get(id) || catalog?.courses.get(id)?.name || `مقرر ${id}`;
+    const live = run && ticket && ticket.runId === run.runId ? ticket : null;
+    const round = live ? term.AdTermStudentPhases?.rounds?.[live.window - 1] : undefined;
+    /* العددُ نفسُه الذي تعرضه بطاقةُ «هل سجلت؟»: خطّةُ (أ) إن وُجدت، وإلا ما طُرح من متبقّي صحيفته. */
+    const reportCourses = profile.AdSectionId > 0 ? ((await reportContext(profile, fingerprint))?.ids.length || 0) : 0;
+    const cases = needs.flatMap(need => need.courseIds.map(courseId => {
+      const state = (need.courseStates || []).find(row => Number(row.courseId) === courseId);
+      return { courseId, name: nameOf(courseId), state: (state?.state || "pending") as any, reasonCode: state?.reasonCode, note: state?.note, dropped: state?.droppedByStudent };
+    }));
+    res.json({
+      notices: buildStudentNotices({
+        setupDone: profile.AdSectionId > 0,
+        phase: { mode: reading.mode, canEditWishes: reading.canEditWishes, canReport: reading.canReport, line: reading.line, nextAt: reading.nextAt ? deadlineDateShort(reading.nextAt) : "", nextLabel: reading.nextLabel },
+        hasWishes: Boolean(profile.wishes && profile.wishes.termId === termId),
+        ticket: live ? { stale: Date.parse(profile.updatedAt) > Date.parse(run!.ranAt), window: live.window, of: run!.rounds, windowName: round?.name, start: round?.start ? deadlineDateShort(round.start) : "", end: round?.end ? deadlineDateShort(round.end) : "" } : null,
+        reportAnswered: Boolean(profile.registration && profile.registration.termId === termId),
+        reportCourses, cases,
+      }),
     });
   });
 

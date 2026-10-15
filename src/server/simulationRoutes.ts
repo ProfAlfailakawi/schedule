@@ -107,3 +107,32 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     }
   });
 }
+
+/**
+ * ما يخصّ الجرسَ من الرادار وأجوبة «هل سجلت؟»: عددٌ واحدٌ لكل منهما بحدود نطاق الحساب.
+ * يقرأ الملخّصَ المحفوظ والعدّاداتِ المشاظِرة فقط — لا يحسب شيئاً ولا يقرأ ملفّات الطلبة.
+ */
+export async function radarNoticeFor(req: any, deps: Pick<SimulationDeps, "isScopeAllowed" | "isPowerUser">): Promise<{ radar: { ranAt: string; needsDecision: number; scoped: boolean } | null; outcome: { answered: number; stuck: number; scoped: boolean } | null; termId: number; termName: string }> {
+  const none = { radar: null, outcome: null, termId: 0, termName: "" };
+  const term = pickDoorTerm((await Repository.getTerms()) as any);
+  if (!term) return none;
+  const termId = Number(term.AdTermId), power = deps.isPowerUser(req);
+  const [run, shards] = await Promise.all([Repository.getRegistrationRun(termId), outcomeMemo.get(String(termId), () => Repository.getRegistrationOutcome(termId))]);
+  const mine = (collegeId: number, sectionId: number) => power || deps.isScopeAllowed(req, collegeId, sectionId);
+  const radar = run ? {
+    ranAt: run.ranAt, scoped: !power,
+    needsDecision: run.courses.filter(row => mine(row.collegeId, row.sectionId) && (row.unmet.full > 0 || row.unmet["not-offered"] > 0)).length,
+  } : null;
+  let outcome: { answered: number; stuck: number; scoped: boolean } | null = null;
+  const answered = shards.reduce((sum, shard) => sum + (Number(shard.students) || 0), 0);
+  if (answered > 0) {
+    const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
+    let stuck = 0;
+    for (const shard of shards) for (const [id, row] of Object.entries(shard.byCourse || {})) {
+      const course = catalog.get(Number(id));
+      if (course && mine(Number(course.AdCollegeId), Number(course.AdSectionId))) stuck += Number(row.stuck) || 0;
+    }
+    outcome = { answered, stuck, scoped: !power };
+  }
+  return { radar, outcome, termId, termName: String(term.AdTermName || "") };
+}

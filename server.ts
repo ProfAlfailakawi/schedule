@@ -99,8 +99,9 @@ import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduati
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
 import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
-import { registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
-import { registerSimulationRoutes } from "./src/server/simulationRoutes";
+import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
+import { buildFeatureNotifications } from "./src/utils/featureNotifications";
+import { radarNoticeFor, registerSimulationRoutes } from "./src/server/simulationRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
@@ -11425,6 +11426,21 @@ app.get("/api/notifications", requireAuth, async (req: AuthenticatedRequest, res
     }))];
     const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
     items.sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
+  }
+  /* ── المزايا الجديدة: صحائفُ قيد المراجعة، ورادارُ التسجيل، وما تعثّر فيه الطلبة ─────────
+     تُشتقّ من الحال كبقية الجرس، وتُضاف دون فصل: فصلُ الرادار هو فصلُ باب الطالب. وتعذّرُها
+     لا يُسقط الجرس. */
+  try {
+    const role = req.user?.IsAdminUser && !isAcademicRole(req.user?.Role) ? "admin" : roleDefinition(req.user?.Role).id;
+    const scopeDeps = { isScopeAllowed: (r: any, c: number, s: number) => isScopeAllowed(r, c, s), isPowerUser: (r: any) => isPowerUser(r) };
+    const [reviews, radar] = await Promise.all([pendingPlanReviews(req, scopeDeps), radarNoticeFor(req, scopeDeps)]);
+    const extra = buildFeatureNotifications({ role, planReviews: reviews, radar: radar.radar, outcome: radar.outcome, termId: radar.termId || termId, termName: radar.termName || termName });
+    if (extra.length) {
+      const rank: Record<string, number> = { alert: 0, action: 1, waiting: 2, done: 3 };
+      items = [...items, ...extra.map(item => ({ ...item, termId: item.termId ?? termId, termName: item.termName ?? termName }))].sort((a, b) => rank[a.tone] - rank[b.tone] || String(b.at || "").localeCompare(String(a.at || "")));
+    }
+  } catch (error) {
+    console.error("[notifications] feature items:", error instanceof Error ? error.message : error);
   }
   /* «المقروء» محفوظٌ للمستخدم على الخادم فيتطابق الجرس على أجهزته كلها؛ يُرسل
      منه ما يخصّ القائمة الحاضرة وحده. تعذّرُ قراءته لا يُسقط الجرس. */

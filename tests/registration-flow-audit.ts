@@ -251,6 +251,36 @@ try {
   const arbOut = (await http("GET", "/api/simulation/outcome", { who: "chair12" })).json;
   check(arbOut.courses.length === 0, "G6 قسمٌ آخر: لا شيء من مقررات غيره");
   check((await http("GET", "/api/simulation/outcome")).status === 401, "G6 بدخولٍ فقط");
+
+  /* ── H: الإشعاراتُ مربوطةٌ بالحال ── */
+  const nt = (await http("GET", "/api/public/me/notices", { cookie: rookies[1].cookie })).json.notices as Array<{ id: string; tone: string; title: string; detail?: string }>;
+  check(nt.some(n => n.id === "report-done") && nt.some(n => n.id.startsWith("ticket-ready:")), "H1 «ما الجديد؟»: أجاب وتذكرتُه جاهزة", nt.map(n => n.id));
+  check(nt.some(n => n.id.startsWith("case:") && n.id.endsWith(":pending")), "H1 وطلبُه في القسم ينتظر القرار");
+  const myNeed = (await Repository.getStudentNeedsByFingerprint(fp1, 0, 1))[0];
+  await Repository.setStudentCourseState(myNeed.id, { courseId: myNeed.courseIds[0], state: "committee-rejected", reasonCode: "prerequisite", by: "department", at: new Date().toISOString() } as any);
+  const nt2 = (await http("GET", "/api/public/me/notices", { cookie: rookies[1].cookie })).json.notices as Array<{ id: string; tone: string; title: string; detail?: string }>;
+  const rej = nt2.find(n => n.id.endsWith(":committee-rejected"));
+  check(Boolean(rej) && rej!.tone === "alert" && rej!.detail === "متطلّبٌ سابق لم يُستوفَ" && nt2[0].tone !== "done", "H1 قرارُ القسم يصل الطالبَ بسببه ويتصدّر القائمة", nt2);
+  const fresh = (await http("GET", "/api/public/me/notices", { cookie: rookies[5].cookie })).json.notices as Array<{ id: string }>;
+  check(fresh.some(n => n.id.startsWith("ticket-ready:")) && !fresh.some(n => n.id === "report-done"), "H1 طالبٌ لم يُجب: تذكرتُه جاهزة و«أخبرنا» ظاهرة", fresh);
+  check((await http("GET", "/api/public/me/notices")).status === 401, "H1 بلا جلسة: ٤٠١");
+
+  /* العاملون: صحائفُ قيد المراجعة ورادارٌ وتعثّر بحدود النطاق */
+  const { pendingPlanReviews } = await import("../src/server/planReviewRoutes");
+  const { radarNoticeFor } = await import("../src/server/simulationRoutes");
+  await Repository.updateRuleDraft("p12", () => ({ id: "p12", planId: "p12", AdCollegeId: 1, AdSectionId: 12, version: 0, status: "review", basedOnVersion: 0, updatedAt: new Date().toISOString(), rules: [{ courseId: 201, level: 1, kind: "compulsory" }], groups: [] } as any));
+  const scopeDeps = {
+    isScopeAllowed: (req: any, c: number, sec: number) => Boolean(req.user?.IsAdminUser) || (req.scopes || []).some((x: any) => x.AdCollegeId === c && x.AdSectionId === sec),
+    isPowerUser: (req: any) => Boolean(req.user?.IsAdminUser),
+  };
+  const asReq = (who: string) => ({ user: USERS[who].user, scopes: USERS[who].scopes });
+  const rv12 = await pendingPlanReviews(asReq("chair12"), scopeDeps), rv11 = await pendingPlanReviews(asReq("chair11"), scopeDeps), rvAdmin = await pendingPlanReviews(asReq("admin"), scopeDeps);
+  check(rv12.length === 1 && rv12[0].sectionName === "قسم اللغة العربية" && rv11.length === 0 && rvAdmin.length === 1, "H2 الصحيفةُ قيد المراجعة تصل قسمَها وإدارةَ النظام وحدهما");
+  const rad11 = await radarNoticeFor(asReq("chair11"), scopeDeps), radAdmin = await radarNoticeFor(asReq("admin"), scopeDeps);
+  check(Boolean(rad11.radar) && rad11.radar!.scoped === true && radAdmin.radar!.scoped === false && radAdmin.radar!.needsDecision >= rad11.radar!.needsDecision, "H2 الرادار بحدود النطاق: القسمُ أقلُّ من الإدارة أو يساويها", [rad11.radar, radAdmin.radar]);
+  check(rad11.outcome !== null && rad11.outcome.answered >= 1 && rad11.outcome.stuck >= 1 && radAdmin.outcome!.stuck >= rad11.outcome.stuck, "H2 ما تعثّر فيه الطلبةُ يصل القسمَ بعدّه في مقرراته", [rad11.outcome, radAdmin.outcome]);
+  const rad12 = await radarNoticeFor(asReq("chair12"), scopeDeps);
+  check(rad12.outcome!.stuck === 0, "H2 قسمٌ لم يتعثّر طلبتُه في مقرراته: صفر");
 } finally { server.close(); }
 
 console.log(`\n${passed} passed, ${failed} failed`);

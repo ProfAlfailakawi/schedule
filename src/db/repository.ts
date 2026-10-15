@@ -5047,8 +5047,9 @@ export const Repository = {
    * والفصل في الذاكرة على ما رجع (عشراتٌ لا آلاف)، كي لا يلزم فهرسٌ مركّب.
    */
   getStudentNeedsByFingerprint: async (fingerprint: string, collegeId: number, termId: number): Promise<StudentNeed[]> => {
+    /* كليةٌ = 0: كلُّ الكليات (طلبٌ في مقرراتِ قسمٍ من كليةٍ أخرى يُحفظ باسم كليّة المقرر). */
     const mine = (item: StudentNeed) => item.fingerprint === fingerprint
-      && Number(item.AdCollegeId) === Number(collegeId) && Number(item.AdTermId) === Number(termId);
+      && (!Number(collegeId) || Number(item.AdCollegeId) === Number(collegeId)) && Number(item.AdTermId) === Number(termId);
     if (!fingerprint) return [];
     if (firestoreDb && !demoSandboxContext.getStore()) {
       /* كلُّ ما بصمته هذه — صفحةً صفحة — ثم الفصلُ والكلية في الذاكرة: حدٌّ بلا ترقيمٍ

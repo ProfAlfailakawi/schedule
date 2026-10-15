@@ -12,7 +12,7 @@ import { AR, countOf, nounFor, oblique } from "./arabicCount";
 import { additionsAwaitingHead, awaitsHeadSignature, signatureOf } from "./approvalWorkflow";
 
 export type NotificationTone = "action" | "waiting" | "done" | "alert";
-export type NotificationView = "scheduleChanges" | "schedules" | "instructorRequests" | "reportDepartment" | "studentRegistration";
+export type NotificationView = "scheduleChanges" | "schedules" | "instructorRequests" | "reportDepartment" | "studentRegistration" | "planReview" | "simulation";
 
 export interface CenterNotification {
   id: string;

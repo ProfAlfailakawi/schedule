@@ -207,6 +207,18 @@ button,input{font:inherit;color:inherit}
 .tk .bar{block-size:8px;border-radius:99px;background:var(--soft);overflow:hidden}
 .tk .bar i{display:block;block-size:100%;border-radius:99px;background:var(--accent)}
 .chip.warn{background:var(--gold-soft);color:var(--gold)}
+.nt{padding:14px;gap:8px}
+.nt h2{margin-block-end:2px}
+.nt .it{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;background:var(--soft);cursor:pointer;border:0;inline-size:100%;text-align:start;font:inherit;color:inherit;min-block-size:56px}
+.nt .it .ic{flex:none;inline-size:36px;block-size:36px;border-radius:12px;display:grid;place-items:center;background:var(--card);color:var(--accent)}
+.nt .it.action .ic{background:var(--accent);color:var(--on-accent)}
+.nt .it.alert .ic{background:var(--bad);color:#fff}
+.nt .it.done .ic{background:var(--ok-soft);color:var(--ok)}
+.nt .it .tx{flex:1;min-inline-size:0;display:grid;gap:1px}
+.nt .it .tx b{font-size:14px;font-weight:600;line-height:1.5}
+.nt .it .tx small{color:var(--muted);font-size:12px;line-height:1.6}
+.nt .it .i.go{flex:none;color:var(--muted);inline-size:16px;block-size:16px}
+
 .opt .tx small.need{color:var(--gold);display:flex;align-items:center;gap:5px;flex-wrap:wrap}.opt .tx small.need .i{inline-size:13px;block-size:13px}
 .rp .ln{display:grid;gap:10px;padding:12px;border-radius:14px;background:var(--soft)}
 .rp .ln .top{display:flex;align-items:center;gap:10px}
@@ -401,7 +413,7 @@ function setupPassed(){var d=S.draft,load=function(){
 function viewHome(){
   dockEl.innerHTML="";var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
   var h='<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div></section>';
-  h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
+  h+='<div id="notices"></div>';h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
   h+='<div id="ticket"></div><div id="report"></div><div id="offered"></div><div id="wishes"></div>';
   h+='<section class="card fade"><h2><span class="b">'+ic("user")+'</span>ملفي</h2><p class="muted">'+ic("shield","")+' يُحفظ ملفّك حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn alt small" id="chg" style="inline-size:auto">'+ic("key")+'غيّر الرمز</button><button class="btn alt small" id="del" style="inline-size:auto">'+ic("trash")+'احذف ملفّي</button><button class="btn alt small" id="out" style="inline-size:auto">'+ic("out")+'اخرج</button></div></section>';
   app.innerHTML=h;animateRings();markOverflow();
@@ -409,12 +421,24 @@ function viewHome(){
   document.getElementById("out").addEventListener("click",function(){api("POST","/api/public/me/exit",{}).then(function(){S.state.signedIn=false;S.state.profile=null;S.civil="";S.remember=false;S.draft=null;S.offered=null;setView("gate")})});
   document.getElementById("chg").addEventListener("click",sheetCode);
   document.getElementById("del").addEventListener("click",sheetForget);
-  loadTicket();loadReport();loadOffered();renderWishes();
+  loadNotices();loadTicket();loadReport();loadOffered();renderWishes();
 }
 var DAYN=["أحد","اثنين","ثلاثاء","أربعاء","خميس"];
 function hhmm(m){var h=Math.floor(m/60),n=m%60;return (h<10?"0":"")+h+":"+(n<10?"0":"")+n}
 function slotsText(slots){var g={};slots.forEach(function(x){var k=hhmm(x.start)+"–"+hhmm(x.end);(g[k]=g[k]||[]).push(DAYN[x.day]||"")});return Object.keys(g).map(function(k){return g[k].join(" · ")+' <bdi dir="ltr">'+k+'</bdi>'}).join("، ")}
 var WHY={prereq:"ينقصك مسبقه",full:"امتلأت شعبه",conflict:"يتعارض مع غيره",units:"فوق وحداتك المطلوبة","not-offered":"لا يُطرح هذا الفصل"};
+var NT_ICON={edit:"edit",ticket:"ticket",check:"check",info:"info",clock:"clock",lock:"lock"},NT_TARGET={setup:"edp",wishes:"wishes",ticket:"ticket",report:"report",cases:"notices"};
+function loadNotices(){var host=document.getElementById("notices");if(!host)return;
+  api("GET","/api/public/me/notices").then(function(r){if(!r.ok||!r.d.notices||!r.d.notices.length){host.innerHTML="";return}
+    var list=r.d.notices,showAll=false;
+    function paint(){var shown=showAll?list:list.slice(0,4);
+      var h='<section class="card nt fade"><h2><span class="b">'+ic("spark")+'</span>ما الجديد؟'+(list.filter(function(n){return n.tone==="action"||n.tone==="alert"}).length?'<span class="chip gold">'+list.filter(function(n){return n.tone==="action"||n.tone==="alert"}).length+'</span>':'')+'</h2>';
+      shown.forEach(function(n,i){h+='<button type="button" class="it '+n.tone+'" data-i="'+i+'"><span class="ic">'+ic(NT_ICON[n.icon]||"info")+'</span><span class="tx"><b>'+esc(n.title)+'</b>'+(n.detail?'<small>'+esc(n.detail)+'</small>':'')+'</span>'+ic("back","go")+'</button>'});
+      if(list.length>4&&!showAll)h+='<button type="button" class="link" id="ntall">عرض الكل ('+list.length+')</button>';
+      host.innerHTML=h+'</section>';
+      host.querySelectorAll(".it").forEach(function(b){b.addEventListener("click",function(){var n=shown[Number(b.getAttribute("data-i"))],el=document.getElementById(NT_TARGET[n.target]||"");if(el&&el.scrollIntoView)el.scrollIntoView({behavior:"smooth",block:"center"});if(n.target==="setup"&&el)el.click()})});
+      var all=document.getElementById("ntall");if(all)all.addEventListener("click",function(){showAll=true;paint()})}
+    paint()})}
 function loadTicket(){var host=document.getElementById("ticket");if(!host)return;
   api("GET","/api/public/me/ticket").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var t=r.d;S.ticket=t;S.tkPlan=S.tkPlan||"A";paintTicket(host)})}
 function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){if(p.label===S.tkPlan)cur=p});if(!cur)cur=t.plans[0];
