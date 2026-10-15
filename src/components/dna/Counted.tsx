@@ -36,6 +36,11 @@ export function countShouldAnimate(env: { value: number; reduced: boolean; playe
   return !env.needsObserver || env.hasObserver;
 }
 
+/** Pure: a zero is "nothing to count yet" — shown as is, but the one-shot stays armed for the first later positive value. */
+export function countStaysEligible(env: { value: number; reduced: boolean; played: boolean }): boolean {
+  return !(env.value > 0) && !env.reduced && !env.played;
+}
+
 const envNow = (value: number, observe: boolean, playKey?: string | number | null) => typeof window !== 'undefined' && countShouldAnimate({
   value,
   reduced: reducedMotion(),
@@ -70,7 +75,11 @@ export function Counted({ value, duration = 900, play = true, observe = false, p
   useEffect(() => {
     if (!play) { if (!done.current) setShown(0); return; }
     if (done.current) { setShown(value); return; }
-    if (!envNow(value, observe, playKey)) { done.current = true; setShown(value); return; }
+    if (!envNow(value, observe, playKey)) {
+      // Zero while data is still loading: show it, but keep the count-up for the first positive value.
+      if (countStaysEligible({ value, reduced: reducedMotion(), played: journeyAlreadyPlayed(playKey) })) { setShown(value); return; }
+      done.current = true; setShown(value); return;
+    }
     if (!seen) return;
     let frame = 0;
     const base = Math.min(shownRef.current, value);

@@ -128,13 +128,14 @@ import { importStageStates, noteImportPhase } from "../src/utils/importStages";
 
 /* ── جولة الحركة الهادئة: العدّادات والرسم الأحادي والحلقات المهدّأة ───────────────────── */
 {
-  const { Counted, countShouldAnimate } = await import("../src/components/dna/Counted");
+  const { Counted, countShouldAnimate, countStaysEligible } = await import("../src/components/dna/Counted");
   const { motionShouldArm } = await import("../src/components/dna/useMotionScope");
   const fmt = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
   const base = { value: 12, reduced: false, played: false, needsObserver: true, hasObserver: true, hidden: false };
   check(countShouldAnimate(base), "العدّاد: يتحرّك حين يُسمح له");
   check(!countShouldAnimate({ ...base, reduced: true }) && !countShouldAnimate({ ...base, played: true }) && !countShouldAnimate({ ...base, value: 0 }) && !countShouldAnimate({ ...base, hasObserver: false }) && !countShouldAnimate({ ...base, hidden: true }), "العدّاد: الحركة المخفّضة/المعروض سابقاً/الصفر/غياب المراقب/التبويب المخفي → القيمة النهائية");
   check(countShouldAnimate({ ...base, needsObserver: false, hasObserver: false }), "العدّاد بلا مراقب (رحلة SCHEDULE) لا يشترط المراقب");
+  check(countStaysEligible({ value: 0, reduced: false, played: false }) && !countStaysEligible({ value: 5, reduced: false, played: false }) && !countStaysEligible({ value: 0, reduced: true, played: false }) && !countStaysEligible({ value: 0, reduced: false, played: true }), "العدّاد: الصفر أثناء التحميل يبقى مؤهَّلاً للعدّ عند وصول أول قيمة موجبة");
   const final = renderToStaticMarkup(React.createElement(Counted, { value: 9418, observe: true, playKey: "t" }));
   check(final.includes(fmt(9418)) && !/sr-only/.test(final), "العدّاد على الخادم: القيمة النهائية فوراً، بلا نصٍّ مكرّر");
   const plainFinal = renderToStaticMarkup(React.createElement(Counted, { value: 9418 }));
