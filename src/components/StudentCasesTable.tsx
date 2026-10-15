@@ -14,7 +14,7 @@
  * `tests/student-registration-audit.ts` refuses a second copy of the table.
  */
 import React, { useMemo, useState } from "react";
-import { Printer } from "lucide-react";
+import { ListFilter, Printer } from "lucide-react";
 import { Badge, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { showPwaPrintHelp } from "../utils/pwaPrintHelp";
@@ -67,7 +67,7 @@ const typeTone = (type: StudentCaseType) => type === "graduate" ? "warning" : ty
 const courseLabel = (course: StudentCaseCourseView) => `${course.name}${course.code ? ` (${course.code})` : ""}`;
 const caseMoment = (value: string) => {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("ar-KW-u-nu-latn");
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("ar-KW-u-nu-latn", { year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
 /** A calendar day for print — the register carries the moment, the report the date. */
 const printableCaseDate = (value: string) => {
@@ -119,6 +119,8 @@ export default function StudentCasesTable({
   renderCourseDecision, renderCaseDecision, renderCaseNote, renderCaseAction, printStatus, print,
 }: Props) {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  /* On a phone the filter chips and print buttons sit behind one «تصفية» button. */
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [printMode, setPrintMode] = useState<TypeFilter | null>(null);
   /* Phone cards: the secondary lines fold behind «تفاصيل»; display only. */
   const [openMore, setOpenMore] = useState<ReadonlySet<string | number>>(() => new Set());
@@ -204,6 +206,12 @@ export default function StudentCasesTable({
         </div>
       </header>
       {grand ? <>
+        <button
+          type="button" className="student-case-filter-toggle" aria-expanded={filtersOpen}
+          data-guide-ignore="إظهار أو إخفاء أدوات التصفية والطباعة على الهاتف — عرضٌ فقط"
+          onClick={() => setFiltersOpen(open => !open)}
+        ><ListFilter aria-hidden="true" />تصفية{typeFilter !== "all" ? <b aria-hidden="true" /> : null}</button>
+        <div className={`student-case-filter-panel${filtersOpen ? " is-open" : ""}`}>
         <div className="student-case-toolbar">
           <div className="student-case-filters" role="group" aria-label="فلترة حالات الطلبة">
             {([
@@ -231,6 +239,7 @@ export default function StudentCasesTable({
           </div>
         </div>
         {toolbarExtra ? <div className="student-case-toolbar student-case-toolbar--extra">{toolbarExtra}</div> : null}
+        </div>
         {visible.length ? (
           <div className="student-cases-table-wrap">
             <table className="student-cases-table">
