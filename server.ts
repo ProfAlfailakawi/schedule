@@ -102,7 +102,7 @@ import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/se
 import { pendingPlanReviews, registerPlanReviewRoutes } from "./src/server/planReviewRoutes";
 import { buildFeatureNotifications } from "./src/utils/featureNotifications";
 import { seedDemoRadar } from "./src/server/demoRadarSeed";
-import { radarNoticeFor, registerSimulationRoutes } from "./src/server/simulationRoutes";
+import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "./src/server/simulationRoutes";
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
@@ -19792,6 +19792,7 @@ registerSimulationRoutes(app, {
 registerStudentDoorRoutes(app, {
   surveyFingerprint,
   sealIdentity: sealStudentIdentity,
+  openIdentity: value => openStudentIdentity(value),
   identityKey: studentIdentityKey,
   isProduction: () => process.env.NODE_ENV === "production",
 });
@@ -20599,6 +20600,7 @@ async function startServer() {
   });
   /* ملفّاتُ الطلبة تُحذف وحدها حين ينتهي عمرُها (التخرّج المتوقَّع + سنة، أو الانقطاع). */
   if (!databaseFailure) scheduleStudentProfilePurge(message => console.log(message));
+  if (!databaseFailure) scheduleRadarAutoRun(message => console.log(message));
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {
