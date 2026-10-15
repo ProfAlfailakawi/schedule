@@ -28,6 +28,7 @@ import {
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import { approvalBarPresence } from "../utils/approvalBarPresence";
 import { approvalScopeKey, createScopeGuard } from "../utils/approvalScope";
+import { journeyAlreadyPlayed, markPlayed, reducedMotion } from "./dna/useJourneyReveal";
 import { deadlineDateLong, departmentDeadlineLine, lastExtensionRejection } from "../utils/submissionDeadlines";
 import type { ScheduleApproval, ScheduleApprovalStatus } from "../types";
 
@@ -115,11 +116,27 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
   const [expanded, setExpanded] = useState<boolean>(() => {
     try { return safeStorage.get("schedule-approval-bar-open") === "1"; } catch { return false; }
   });
-  const toggleExpanded = () => setExpanded(open => {
-    const next = !open;
-    try { safeStorage.set("schedule-approval-bar-open", next ? "1" : "0"); } catch { /* تفضيلٌ لا يلزم حفظه */ }
-    return next;
-  });
+  /* حركةُ فتح التفاصيل: عندما يفتحها المستخدم بنفسه فقط (لا حين تُستعاد مفتوحةً)،
+     ومرّةً واحدة لكل نطاقٍ في الجلسة — العقد تمتلئ ثم تظهر الأختام. عرضٌ لا غير. */
+  const [revealSteps, setRevealSteps] = useState(false);
+  const revealTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(revealTimer.current), []);
+  const toggleExpanded = () => {
+    if (!expanded) {
+      const key = `approval-bar:${approvalScopeKey({ collegeId, sectionId, termId })}`;
+      if (!journeyAlreadyPlayed(key) && !reducedMotion()) {
+        markPlayed(key);
+        setRevealSteps(true);
+        window.clearTimeout(revealTimer.current);
+        revealTimer.current = window.setTimeout(() => setRevealSteps(false), 2400);
+      }
+    }
+    setExpanded(open => {
+      const next = !open;
+      try { safeStorage.set("schedule-approval-bar-open", next ? "1" : "0"); } catch { /* تفضيلٌ لا يلزم حفظه */ }
+      return next;
+    });
+  };
 
   /* حالُ الاعتماد لنطاقٍ بعينه: تبدّلُ النطاق يُفرغ ما قبله، وجوابٌ وصل لنطاقٍ
      سابق — أو بعد قراءةٍ أحدث — يُرمى (approvalScope). */
@@ -597,7 +614,7 @@ export default function ApprovalBar({ collegeId, sectionId, termId, signatureSta
       </div>
 
       {showDetails ? (
-        <div className="apb-expanded">
+        <div className="apb-expanded" data-reveal={revealSteps || undefined}>
           <div className="apb-expanded-row">
             <Stepper steps={steps} size="lg" returnFrom={returnFrom}
               stamp={(step) => step.sig?.length ? (

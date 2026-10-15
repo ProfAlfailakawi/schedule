@@ -210,7 +210,7 @@
   opacity:.85;
 }
 @media (prefers-reduced-motion:no-preference){
-  .jr-scroll-cue>i{animation:jr-cue 2.1s var(--ease-out,ease) infinite}
+  .jr-scroll-cue>i{animation:jr-cue 2.1s var(--ease-out,ease) 3}
 }
 @keyframes jr-cue{
   0%{transform:scaleY(.25);transform-origin:top;opacity:.25}

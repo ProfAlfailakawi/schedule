@@ -15094,7 +15094,7 @@ const normalizeCaseRef=(value:unknown)=>toEnglishDigits(value).toUpperCase().rep
 /** The one stored request of this hand (fingerprint + term + survey department). */
 const priorNeedForHand=async(link:any,civil:string)=>{
   const fingerprint=await surveyFingerprint(civil);
-  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  const needs=await Repository.getStudentNeedsByFingerprint(fingerprint,Number(link.AdCollegeId),Number(link.AdTermId));
   return (needs as any[])
     .filter((need:any)=>String(need?.fingerprint||"")===fingerprint
       &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId))
@@ -15115,7 +15115,7 @@ const reusableGraduateVerification=async(link:any,civil:string,sectionId:number,
   /* A verified sheet is reused only for the holder of the case number too. */
   if(!caseRefMatches(await priorNeedForHand(link,civil),caseRef))return null;
   const fingerprint=await surveyFingerprint(civil);
-  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  const needs=await Repository.getStudentNeedsByFingerprint(fingerprint,Number(link.AdCollegeId),Number(link.AdTermId));
   const prior=(needs as any[]).find((need:any)=>
     String(need?.fingerprint||"")===fingerprint
     &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId)
@@ -15151,7 +15151,7 @@ const normalizeStudentIdentityName=(value:unknown)=>String(value||"").normalize(
  * a crafted request from changing the stored name or home section. */
 const reusableStudentIdentity=async(link:any,civil:string)=>{
   const fingerprint=await surveyFingerprint(civil);
-  const needs=await Repository.getStudentNeeds(Number(link.AdCollegeId),0,Number(link.AdTermId));
+  const needs=await Repository.getStudentNeedsByFingerprint(fingerprint,Number(link.AdCollegeId),Number(link.AdTermId));
   const prior=(needs as any[]).find((need:any)=>
     String(need?.fingerprint||"")===fingerprint
     &&Number(need?.surveySectionId||need?.AdSectionId||0)===Number(link.AdSectionId)
@@ -19505,7 +19505,7 @@ app.post("/api/public/survey/:token/my-case", async (req: Request, res: Response
 
   const fingerprint = await surveyFingerprint(civil);
   const [needs, courses, terms] = await Promise.all([
-    Repository.getStudentNeeds(Number(resolved.link.AdCollegeId), 0, Number(resolved.link.AdTermId)),
+    Repository.getStudentNeedsByFingerprint(fingerprint, Number(resolved.link.AdCollegeId), Number(resolved.link.AdTermId)),
     Repository.getCourses(),
     Repository.getTerms(),
   ]);
