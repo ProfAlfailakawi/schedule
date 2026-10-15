@@ -5043,8 +5043,20 @@ export const Repository = {
       && Number(item.AdCollegeId) === Number(collegeId) && Number(item.AdTermId) === Number(termId);
     if (!fingerprint) return [];
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("studentNeeds").where("fingerprint", "==", fingerprint).limit(500).get();
-      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+      /* كلُّ ما بصمته هذه — صفحةً صفحة — ثم الفصلُ والكلية في الذاكرة: حدٌّ بلا ترقيمٍ
+         يُسقط سجلَّ الفصل المطلوب لمن تراكمت له سجلاتٌ في فصولٍ وكلياتٍ كثيرة. */
+      const out: StudentNeed[] = [];
+      let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      for (;;) {
+        let query: FirebaseFirestore.Query = firestoreDb.collection("studentNeeds")
+          .where("fingerprint", "==", fingerprint).orderBy(FieldPath.documentId()).limit(STUDENT_NEEDS_PAGE);
+        if (last) query = query.startAfter(last);
+        const snap = await query.get();
+        for (const doc of snap.docs) { const item = doc.data() as StudentNeed; if (mine(item)) out.push(item); }
+        if (snap.size < STUDENT_NEEDS_PAGE) break;
+        last = snap.docs[snap.docs.length - 1];
+      }
+      return out;
     }
     return (db.studentNeeds || []).filter(mine);
   },

@@ -3,7 +3,7 @@ import { PUBLIC_FONT_FACES } from "./publicKit";
 import { PUBLIC_LIGHT_VARS, PUBLIC_THEME_COLOR } from "./publicTheme";
 
 /**
- * ── بيتُ الطالب: صفحةٌ واحدة، والهاتفُ أولاً ─────────────────────────────────
+ * ── مساري: صفحةٌ واحدة، والهاتفُ أولاً ─────────────────────────────────
  *
  * يفتحها الطالبُ من ملصقٍ أو رسالة، ولا يحتاج شيئاً غير رقمه المدني. تُرسم كلُّها
  * في المتصفح من `/api/public/me/*`، والخادمُ يقرّر ما يُسمح به؛ هنا رسمٌ فقط.
@@ -242,7 +242,7 @@ function wireOtp(id,cb){var inp=document.getElementById(id),box=document.getElem
 function ring(pct,size){var r=34,c=2*Math.PI*r,off=c*(1-Math.max(0,Math.min(100,pct))/100);return '<div class="ring" role="img" aria-label="'+pct+'٪"><svg viewBox="0 0 80 80"><circle class="bg" cx="40" cy="40" r="'+r+'"/><circle class="fg" cx="40" cy="40" r="'+r+'" stroke-dasharray="'+c.toFixed(1)+'" stroke-dashoffset="'+c.toFixed(1)+'" data-off="'+off.toFixed(1)+'"/></svg><b>'+pct+'٪</b></div>'}
 function markOverflow(){var t=document.querySelector(".track");if(t&&t.scrollWidth>t.clientWidth+2)t.className+=" ov"}
 function animateRings(){var fgs=document.querySelectorAll(".ring .fg");for(var i=0;i<fgs.length;i++){(function(el){requestAnimationFrame(function(){requestAnimationFrame(function(){el.style.strokeDashoffset=el.getAttribute("data-off")})})})(fgs[i])}}
-function phaseChip(){var s=S.state;if(!s)return"";var ph=s.phase;return '<div class="phase">'+ic(ph.mode==="wishes"?"heart":ph.mode==="report"?"ticket":ph.mode==="frozen"?"lock":"clock")+'<span><b>'+esc(ph.label)+'</b> · '+esc(ph.line)+'</span></div>'}
+function phaseChip(){var s=S.state;if(!s)return"";var ph=s.phase;return '<div class="phase">'+ic(ph.mode==="wishes"?"heart":ph.mode==="report"?"ticket":ph.mode==="frozen"?"lock":"clock")+'<span>'+(ph.line.indexOf(ph.label)>=0?'':'<b>'+esc(ph.label)+'</b> · ')+esc(ph.line)+'</span></div>'}
 function track(){var s=S.state;if(!s||!s.timeline)return"";var ICON={submission:"book",wishes:"heart",frozen:"lock",round:"ticket",close:"flag"};var h='<ol class="track" aria-label="رحلة الفصل">';s.timeline.forEach(function(st){var d=st.to||st.from;h+='<li class="stp '+st.state+'"'+(st.state==="now"?' aria-current="step"':"")+'><span class="d">'+ic(st.state==="done"?"check":ICON[st.kind]||"clock")+'</span><b>'+esc(st.title)+'</b><small>'+(d?esc(fmtShort(d)):"—")+'</small></li>'});return h+'</ol>'}
 function setTop(){var s=S.state;topEl.innerHTML='<span class="mark">SCHEDULE</span>'+(s&&s.term?'<span class="term">'+ic("cal")+esc(s.term.name)+'</span>':"")}
 function setView(v){S.view=v;render()}
@@ -253,8 +253,8 @@ function showErr(id,msg){var el=document.getElementById(id);if(!el)return;el.tex
 
 /* ── الدخول ── */
 function viewGate(){
-  app.innerHTML='<section class="hero fade"><span class="disc">'+ic("cap")+'</span><h1>بيت الطالب</h1><p>جدولك المتوقع قبل التسجيل، في مكانٍ واحد.</p>'+phaseChip()+'</section>'
-   +'<section class="card fade"><div class="field"><label for="civil">الرقم المدني</label><input class="inp civil" id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="12 رقماً" dir="ltr" aria-describedby="chint"><p class="hint" id="chint"></p></div>'
+  app.innerHTML='<section class="hero fade"><span class="disc">'+ic("cap")+'</span><h1>مساري</h1><p>جدولك المتوقع قبل التسجيل، في مكانٍ واحد.</p>'+phaseChip()+'</section>'
+   +'<section class="card fade"><div class="field"><label for="civil">الرقم المدني</label><input class="inp civil" id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="اكتب رقمك المدني" dir="ltr" aria-describedby="chint"><p class="hint" id="chint"></p></div>'
    +errBox("gerr")+'<button class="btn" id="go" disabled>تابع '+ic("back")+'</button>'
    +'<p class="priv">'+ic("shield")+'نحفظ بصمةً مشفّرة وأرقام مقرراتك فقط — لا اسم ولا رقم مدني.</p></section>';
   var inp=document.getElementById("civil"),hint=document.getElementById("chint"),go=document.getElementById("go");
@@ -324,7 +324,7 @@ function setupSection(){var d=S.draft;
 function setupPlan(){var d=S.draft;
   var label={transition:"السابقة",active:"الجديدة"};
   app.innerHTML=stepsBar(2,3)+'<button class="link" id="bk" style="padding-inline:0">'+ic("back")+' القسم</button><h1 class="h2 fade">على أي صحيفةٍ تدرس؟</h1><p class="muted">'+esc(d.sectionName)+'</p><div class="list" style="margin-block-start:12px" id="pl"></div>';
-  var h="";S.plans.forEach(function(p){h+='<button type="button" class="opt" data-id="'+esc(p.id)+'" aria-pressed="'+(d.planId===p.id?"true":"false")+'"><span class="tx"><b>'+esc(p.name)+'</b><small>'+(label[p.status]?"الصحيفة "+label[p.status]+" · ":"")+countOf(p.courses.length,AR.course)+'</small></span>'+ic("back")+'</button>'});
+  var h="";S.plans.forEach(function(p){h+='<button type="button" class="opt" data-id="'+esc(p.id)+'" aria-pressed="'+(d.planId===p.id?"true":"false")+'"><span class="tx"><b>'+esc(p.name)+'</b><small>'+(label[p.status]&&p.name.indexOf(label[p.status])<0?"الصحيفة "+label[p.status]+" · ":"")+countOf(p.courses.length,AR.course)+'</small></span>'+ic("back")+'</button>'});
   document.getElementById("pl").innerHTML=h;
   document.getElementById("pl").addEventListener("click",function(e){var b=e.target.closest(".opt");if(!b)return;d.planId=b.getAttribute("data-id");d.passed=[];d.step=3;viewSetup()});
   document.getElementById("bk").addEventListener("click",function(){d.step=1;viewSetup()});
@@ -380,7 +380,7 @@ function loadOffered(){var host=document.getElementById("offered");if(!host)retu
     else{h+='<div class="row" style="gap:16px">'+ring(pct)+'<div style="flex:1;display:grid;gap:4px"><span class="big">'+o.offeredCount+' <small>من '+o.remainingCount+'</small></span><span class="muted">من مقرراتك المتبقية مطروحٌ منها ما يعادل '+countOf(o.offeredUnits,AR.unit)+' هذا الفصل (قيد الإعداد).</span></div></div>'
       +'<details class="more"><summary>'+ic("down")+' المقررات</summary><div class="list" style="margin-block-start:6px">'+o.courses.map(function(c){return '<div class="opt'+(c.sections?"":" off")+'"><span class="tx"><b>'+esc(c.name)+'</b><small><span class="code">'+esc(c.code)+'</span> · '+countOf(c.credit,AR.unit)+'</small></span><span class="chip'+(c.sections?" ok":"")+'">'+(c.sections?countOf(c.sections,AR.section):"غير مطروح")+'</span></div>'}).join("")+'</div></details>'}
     host.innerHTML=h+'</section>';animateRings()})}
-function renderWishes(){var host=document.getElementById("wishes"),s=S.state,ph=s.phase,w=s.profile.wishes;if(!host)return;
+function renderWishes(){var host=document.getElementById("wishes"),s=S.state,ph=s.phase,w=s.profile.wishes;if(w&&s.term&&w.termId!==s.term.id)w=null;if(!host)return;
   if(ph.mode!=="wishes"&&!(w&&ph.mode==="frozen")){host.innerHTML="";return}
   var edit=ph.mode==="wishes";
   var h='<section class="card fade"><h2><span class="b">'+ic("heart")+'</span>رغباتي'+(edit?"":'<span class="chip">للقراءة</span>')+'</h2>';
@@ -438,7 +438,7 @@ export function studentHomePage(nonce: string): string {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="${PUBLIC_THEME_COLOR}">
 <meta name="robots" content="noindex,nofollow">
-<title>بيت الطالب · SCHEDULE</title>
+<title>مساري · SCHEDULE</title>
 <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/schedule-icon-192.png">
 <style>/* SCHEDULE_PUBLIC_PLEX_ARABIC */${PUBLIC_FONT_FACES}${STUDENT_HOME_CSS}</style>
@@ -450,7 +450,7 @@ ${SPRITE}
 <main id="app" aria-live="polite"><div class="skel"></div></main>
 </div>
 <div class="dock" id="dock"></div>
-<noscript><p style="padding:24px;text-align:center">يلزم تفعيل JavaScript لفتح بيت الطالب.</p></noscript>
+<noscript><p style="padding:24px;text-align:center">يلزم تفعيل JavaScript لفتح مساري.</p></noscript>
 <script nonce="${nonce}">${STUDENT_HOME_SCRIPT}</script>
 </body>
 </html>`;

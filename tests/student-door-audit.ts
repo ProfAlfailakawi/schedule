@@ -1,5 +1,5 @@
 /**
- * ── بيتُ الطالب: الملفّ، الرمز، الجلسة، العمر، والصفحة (المرحلة ٣) ─────────────
+ * ── مساري: الملفّ، الرمز، الجلسة، العمر، والصفحة (المرحلة ٣) ─────────────
  *
  *   D1  قواعد الملف النقية: الرمز، القفل، المنجَز والمتبقّي، التخرّج المتوقَّع، عمر الملف.
  *   D2  الجلسة الموقَّعة: لا تُزوَّر، وتنتهي، وتغييرُ الرمز يُنهيها.
@@ -342,6 +342,18 @@ const DAY = 86_400_000;
     /* مجموعةُ العمليات كلها: tsx يُطلق ابناً لا يموت بقتل الأب. */
     if (child?.pid) { try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill(); } }
   }
+}
+
+/* ── مراجعاتٌ بعد الدمج: القفلُ لا يُمحى بطلباتٍ متوازية، والرغباتُ لا تتجاوز فصلها ── */
+{
+  const routes = fs.readFileSync(path.join(process.cwd(), "src/server/studentDoorRoutes.ts"), "utf8");
+  const page = fs.readFileSync(path.join(process.cwd(), "src/server/studentHomePage.ts"), "utf8");
+  const repo = fs.readFileSync(path.join(process.cwd(), "src/db/repository.ts"), "utf8");
+  check(routes.includes("lockState(current, now).locked) { locked = true; left = 0; return current; }"), "قفلٌ نشأ أثناء التحقّق يبقى ولا يُستبدل بعدّاد");
+  check(routes.includes("lockedMeanwhile") && routes.includes("fail(res, 423"), "رمزٌ صحيح بعد قفلٍ متوازٍ لا يُدخل صاحبه");
+  check(page.includes("w.termId!==s.term.id)w=null"), "رغباتُ فصلٍ سابق لا تظهر في الفصل الحالي");
+  check(routes.includes("allowed.includes(id) && !passed.includes(id)"), "الرغباتُ تُنقّى عند تغيّر الصحيفة أو المنجَز");
+  check(/where\("fingerprint", "==", fingerprint\)\.orderBy\(FieldPath\.documentId\(\)\)/.test(repo), "قراءةُ بصمةٍ بالترقيم لا بحدٍّ يُسقط السجلات");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
