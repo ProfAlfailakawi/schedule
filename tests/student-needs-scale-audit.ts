@@ -74,7 +74,8 @@ const between = (source: string, start: string, end: string) => {
   const repo = read("src/db/repository.ts");
   const method = between(repo, "  getStudentNeedsByFingerprint: async", "\n  },\n");
   check(method.includes('.where("fingerprint", "==", fingerprint)'), "P1 المستودع يستعمل فهرس الحقل المفرد (بلا فهرس مركّب)");
-  check(!/FieldPath\.documentId|readStudentNeedsWhere/.test(method), "P1 لا مسح بالصفحات في مسار اليد الواحدة");
+  check(!/readStudentNeedsWhere/.test(method), "P1 لا مسح فصلٍ أو كليةٍ كاملة في مسار اليد الواحدة");
+  check(/where\("fingerprint", "==", fingerprint\)\s*\.orderBy\(FieldPath\.documentId\(\)\)/.test(method) && /startAfter\(last\)/.test(method), "P1 ترقيمٌ بمعرّف الوثيقة على حقل البصمة وحده: لا حدّ يُسقط السجلات");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
