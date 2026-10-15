@@ -108,7 +108,8 @@
     "test:study-proposal-flow": "tsx tests/study-proposal-flow-audit.ts",
     "test:intelligence-scope": "tsx tests/intelligence-reading-scope-audit.ts",
     "test:intelligence-api": "node tests/intelligence-scope-api.mjs",
-    "test:curriculum-reference": "tsx tests/curriculum-reference-audit.ts"
+    "test:curriculum-reference": "tsx tests/curriculum-reference-audit.ts",
+    "audit:tech-ed-curricula": "tsx scripts/audit-tech-education-curricula.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.7.1",

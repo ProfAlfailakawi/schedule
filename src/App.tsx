@@ -27,7 +27,6 @@ import {
   ListChecks,
   Ticket,
   MailCheck,
-  WandSparkles,
   Wifi,
   WifiOff,
   X,
@@ -505,6 +504,7 @@ function subscribeRail(onChange: () => void) {
 function NavSection({
   id,
   title,
+  icon,
   rail,
   holdsActive,
   className,
@@ -514,6 +514,7 @@ function NavSection({
 }: {
   id: string;
   title: string;
+  icon?: React.ReactNode;
   rail: string;
   holdsActive: boolean;
   className?: string;
@@ -548,7 +549,9 @@ function NavSection({
         aria-controls={bodyId}
         onClick={() => onToggle(id, open)}
         title={open ? `طيّ ${title}` : `فتح ${title}`}
+        data-guide-ignore="زر فتح وطيّ مجموعة التنقل؛ لا ينفذ إجراءً على البيانات"
       >
+        {icon ? <span className="nav-section-icon" aria-hidden="true">{icon}</span> : null}
         <span>{title}</span>
         <ChevronLeft className="nav-section-chevron" aria-hidden="true" />
       </button>
@@ -1094,8 +1097,6 @@ export default function App() {
     [query, setQuery] = useState(""),
     [searching, setSearching] = useState(false),
     [searchResults, setSearchResults] = useState<SearchHit[]>([]),
-    [commandThinking, setCommandThinking] = useState(false),
-    [commandInsight, setCommandInsight] = useState<any>(null),
     [naturalAnswer, setNaturalAnswer] = useState<any>(null);
   const [dataMode, setDataMode] = useState<{ mode: string; real: boolean } | null>(null);
   /** True for the last minute before an idle sign-out, so the screen can say so. */
@@ -1414,7 +1415,6 @@ export default function App() {
     if (!searchOpen) {
       setQuery("");
       setSearchResults([]);
-      setCommandInsight(null);
       setNaturalAnswer(null);
       return;
     }
@@ -1640,14 +1640,6 @@ export default function App() {
       } else if (e.altKey && e.key === "3" && (smartSearchView || smartReportView)) {
         e.preventDefault();
         go((smartSearchView || smartReportView) as View);
-      } else if (
-        e.altKey &&
-        e.key.toLowerCase() === "i" &&
-        allowed.schedule &&
-        isPowerAdmin
-      ) {
-        e.preventDefault();
-        go("intelligence");
       } else if (e.altKey && e.key.toLowerCase() === "n" && allowed.schedule) {
         e.preventDefault();
         runScheduleCommand("new");
@@ -1809,7 +1801,7 @@ export default function App() {
         );
       case "simulation":
         /* القراءةُ بحدود النطاق في الخادم؛ والأيقونةُ لا تظهر إلا إن كانت هناك تحديثٌ أو من يشغّلها. */
-        return simulationVisible ? <RegistrationRehearsal canOpenIntelligence={hasPerm(7)} onNavigate={(view) => go(view as View)} /> : unauthorized();
+        return simulationVisible ? <RegistrationRehearsal onNavigate={(view) => go(view as View)} /> : unauthorized();
       case "planReview":
         /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
         return planReviewVisible ? <PlanReview onNavigate={hasPerm(6) ? go : undefined} /> : unauthorized();
@@ -2067,7 +2059,6 @@ export default function App() {
   const viewLabels: Partial<Record<View, string>> = {
     dashboard: "لوحة العمل",
     schedules: "إدارة الجدول",
-    intelligence: "مركز الذكاء",
     reportDepartment: "الاستعلامات والتقارير",
     searchAdvanced: "البحث المتقدم",
     instructors: "أساتذة المقررات",
@@ -2077,7 +2068,7 @@ export default function App() {
     .filter(
       ([v]) =>
         viewLabels[v] &&
-        ((v !== "intelligence" && v !== "schedules") || allowed.schedule),
+        (v !== "schedules" || allowed.schedule),
     )
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
@@ -2088,87 +2079,7 @@ export default function App() {
       mm = Math.min(59, Number(m[2] || 0));
     return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
   })();
-  const looksNaturalCommand =
-    /(فراغ|مشكلة|تعارض|مزدحم|افضل|أفضل|وين|ليش|لماذا|اذا|إذا|اقترح|حلل|حلّل|قاعة|نقل)/.test(
-      query.trim(),
-    );
-  const runNaturalCommand = async () => {
-    const q = query.trim();
-    if (q.length < 2 || !allowed.schedule) return;
-    setCommandThinking(true);
-    setCommandInsight(null);
-    try {
-      const o = await fetch("/api/intelligence/overview");
-      const od = await o.json();
-      if (!o.ok) throw new Error(od.error || "تعذر قراءة نطاق الجدول");
-      const r = await fetch("/api/intelligence/copilot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          collegeId: od.context?.collegeId,
-          sectionId: od.context?.sectionId,
-          termId: od.context?.termId,
-          prompt: q,
-        }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "تعذر تحليل الأمر");
-      setCommandInsight(d);
-    } catch (e: any) {
-      setCommandInsight({
-        title: "تعذر تنفيذ الأمر",
-        summary: e?.message || "حاول مرة أخرى",
-        bullets: [],
-      });
-    } finally {
-      setCommandThinking(false);
-    }
-  };
-  const openCommandScene = () => {
-    const q = query.trim();
-    if (
-      commandHour &&
-      /(قاعة|قاعه)/.test(q) &&
-      availableSearchModes.includes("searchRoomTime")
-    ) {
-      const [hh, mm] = commandHour.split(":").map(Number);
-      sessionStorage.setItem(
-        "schedule-report-prefill",
-        JSON.stringify({
-          mode: "searchRoomTime",
-          startTime: commandHour,
-          endTime: `${String(Math.min(23, hh + 1)).padStart(2, "0")}:${String(mm).padStart(2, "0")}`,
-        }),
-      );
-      go("searchRoomTime");
-      return;
-    }
-    if (isPowerAdmin && /(مشكلة|تعارض|مزدحم|ليش|لماذا|حلل|حلّل)/.test(q)) {
-      sessionStorage.setItem("schedule-intelligence-tab", "command");
-      go("intelligence");
-      return;
-    }
-    go("schedules");
-  };
-  const commandSceneLabel =
-    commandHour && /(قاعة|قاعه)/.test(query)
-      ? "افتح استعلام القاعات"
-      : isPowerAdmin && /(مشكلة|تعارض|مزدحم|ليش|لماذا|حلل|حلّل)/.test(query)
-        ? "افتح مشهد القرار"
-        : "افتح الجدول على هذا السياق";
   const commandActions = [
-    ...(looksNaturalCommand && allowed.schedule
-      ? [
-          {
-            label: "نفّذ العبارة كأمر ذكي",
-            hint: "يفهم السؤال من بيانات قسمك الحالية بدون تغيير أي موعد",
-            keywords: `ذكاء طبيعي سؤال أمر ${query}`,
-            icon: <WandSparkles />,
-            run: runNaturalCommand,
-            show: true,
-          },
-        ]
-      : []),
     ...(commandHour &&
     /(قاعة|قاعه)/.test(query) &&
     availableSearchModes.includes("searchRoomTime")
@@ -2195,63 +2106,20 @@ export default function App() {
           },
         ]
       : []),
-    ...(query.trim().includes("مسودة") && isPowerAdmin
-      ? [
-          {
-            label: "افتح آخر المسودات",
-            hint: "سجل النسخ · المسودات · النشر",
-            keywords: "مسودة draft",
-            icon: <FileSearch />,
-            run: () => {
-              sessionStorage.setItem("schedule-intelligence-tab", "history");
-              go("intelligence");
-            },
-            show: true,
-          },
-        ]
-      : []),
-    ...(query.trim().includes("قارن") && isPowerAdmin
-      ? [
-          {
-            label: "مقارنة الفصول",
-            hint: "قارن فصلين قبل اتخاذ القرار",
-            keywords: "قارن مقارنة فصلين",
-            icon: <FileText />,
-            run: () => {
-              sessionStorage.setItem("schedule-intelligence-tab", "command");
-              go("intelligence");
-            },
-            show: true,
-          },
-        ]
-      : []),
     ...(query.trim().includes("تعارض")
       ? [
           {
             label: "راجع موانع الحفظ الآن",
-            hint: isPowerAdmin
-              ? "افتح مركز الذكاء"
-              : "افتح الجدول وفحص الموانع",
+            hint: "افتح الجدول وفحص الموانع",
             keywords: "تعارض تعارضات",
             icon: <ShieldCheck />,
             run: () => {
-              if (isPowerAdmin) {
-                sessionStorage.setItem("schedule-intelligence-tab", "command");
-                go("intelligence");
-              } else go("schedules");
+              go("schedules");
             },
             show: allowed.schedule,
           },
         ]
       : []),
-    {
-      label: "افتح مركز الذكاء",
-      hint: "نسخة تجريبية · مساعد ذكي · جودة الجدول",
-      keywords: "ذكاء مساعد twin محاكاة جودة",
-      icon: <WandSparkles />,
-      run: () => go("intelligence"),
-      show: allowed.schedule && isPowerAdmin,
-    },
     {
       label: "الاستعلامات والتقارير",
       hint: "ابحث ثم اطبع أو صدّر من نفس الشاشة",
@@ -2538,53 +2406,20 @@ export default function App() {
                 آخِرُ حلقةٍ في السلسلة: رغباتُ الأساتذة، ثم دورةُ الاعتماد، ثم
                 تسليمُ الطلبة إلى التسجيل. وهي الشاشةُ الوحيدة التي يكتب فيها
                 الطرفان معاً، فتجاور أختيها ولا تُنفى إلى قائمةٍ أخرى. */}
-            {(allowed.schedule || hasPerm(14)) && !sessionRole.viewerOnly ? (
-              <NavButton
-                activeView={activeView}
-                onGo={go}
-                view="studentRegistration"
-                icon={<ClipboardCheck />}
-                label="كشف التسجيل"
-                /* الوجهة نفسها مسجّلة في المرشد باسم `page.studentRegistration`،
-                   وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
-                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.studentRegistration"
-              />
+            {(allowed.schedule || hasPerm(14)) && !sessionRole.viewerOnly || simulationVisible ? (
+              <NavSection navGroups={navGroups} onToggle={(id) => setNavGroups(current => ({ ...current, [id]: !current[id] }))}
+                id="registration" title="التسجيل" icon={<ClipboardCheck />} rail="registration"
+                className="registration-nav" holdsActive={activeView === "studentRegistration" || activeView === "simulation"}>
+                {(allowed.schedule || hasPerm(14)) && !sessionRole.viewerOnly ? <NavButton activeView={activeView} onGo={go} view="studentRegistration" icon={<ClipboardCheck />} label="كشف التسجيل" data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.studentRegistration" /> : null}
+                {simulationVisible ? <NavButton activeView={activeView} onGo={go} view="simulation" icon={<Ticket />} label="رادار التسجيل" data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.simulation" /> : null}
+              </NavSection>
             ) : null}
-            {planReviewVisible ? (
-              <NavButton
-                activeView={activeView}
-                onGo={go}
-                view="planReview"
-                icon={<ListChecks />}
-                label="مراجعة الصحيفة"
-                badge={planReviewCount}
-                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.planReview"
-              />
-            ) : null}
-            {simulationVisible ? (
-              <NavButton
-                activeView={activeView}
-                onGo={go}
-                view="simulation"
-                icon={<Ticket />}
-                label="رادار التسجيل"
-                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.simulation"
-              />
-            ) : null}
+            {planReviewVisible ? <NavButton activeView={activeView} onGo={go} view="planReview" icon={<ListChecks />} label="مراجعة الصحيفة" badge={planReviewCount} data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.planReview" /> : null}
             {/* ── ورشةُ الجدول لمن يبني ─────────────────────────────────────
                 مركزُ الذكاء وورشةُ الجدول أدواتُ بناءٍ لمن يبني — اللجنةُ
                 والمدير. ورئيسُ القسم لا يبني: يقرأ ويعلّق ويوقّع، وكلُّ ذلك في
                 شاشة «تغييرات الجدول»، فلا يُعطى ورشةَ تعديلٍ لا يملك فيها فعلاً.
                 وحجبُها عنه يكفيه غيابُ إذنها (allowed.schedule)، فلا يراها. */}
-            {allowed.schedule && !sessionRole.viewerOnly ? (
-              <NavButton
-                activeView={activeView}
-                onGo={go}
-                view="intelligence"
-                icon={<WandSparkles />}
-                label="مركز الذكاء"
-              />
-            ) : null}
           </div>
           {canOpenAcademicCatalog && academicEntry ? (
             <NavSection
@@ -2769,15 +2604,6 @@ export default function App() {
             }
           />
         ) : null}
-        {isPowerAdmin && allowed.schedule ? (
-          <MobileDockLink
-            activeView={activeView}
-            onGo={go}
-            view="intelligence"
-            icon={<WandSparkles />}
-            label="الذكاء"
-          />
-        ) : null}
         <button
           type="button"
           className={`mobile-dock-link mobile-dock-more ${
@@ -2919,49 +2745,6 @@ export default function App() {
                     </div>
                   ) : null}
                 </section>
-              ) : null}
-              {commandThinking ? (
-                <div className="command-intelligence-card thinking">
-                  <WandSparkles />
-                  <div>
-                    <strong>أقرأ الجدول وأفهم سؤالك…</strong>
-                    <span>ضمن نطاقك فقط</span>
-                  </div>
-                </div>
-              ) : commandInsight ? (
-                <div className="command-intelligence-card">
-                  <WandSparkles />
-                  <div>
-                    <small>ذكاء الأوامر</small>
-                    <strong>{commandInsight.title}</strong>
-                    <p>{commandInsight.summary}</p>
-                    {commandInsight.bullets?.length ? (
-                      <div>
-                        {commandInsight.bullets
-                          .slice(0, 5)
-                          .map((x: string, i: number) => (
-                            <span key={i}>{x}</span>
-                          ))}
-                      </div>
-                    ) : null}
-                    <button
-                      className="command-scene-jump"
-                      type="button"
-                      onClick={openCommandScene}
-                    >
-                      {commandSceneLabel}
-                      <ChevronLeft />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="إغلاق نتيجة التحليل"
-                    title="إغلاق نتيجة التحليل"
-                    onClick={() => setCommandInsight(null)}
-                  >
-                    <X />
-                  </button>
-                </div>
               ) : null}
               {commandActions.length ? (
                 <div className="command-actions">

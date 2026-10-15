@@ -10,7 +10,7 @@
  */
 import CurriculumReferenceReview from "./CurriculumReferenceReview";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, GraduationCap, Layers, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, dependentsOf, describePrereq } from "../utils/curriculumRules";
@@ -252,6 +252,14 @@ export default function PlanReview({ onNavigate }: { onNavigate?: (view: "course
                 </ul>
               ) : null}
               {view.blockers ? <Notice type="block" inline>{countOf(view.blockers, AR.blocker)} يمنع الاعتماد حتى يُصلَح.</Notice> : null}
+
+              <section className="pr-infographic" aria-label="ملخص الصحيفة">
+                <div className="pr-infographic-stat"><span><GraduationCap /></span><div><small>مقررات الصحيفة</small><strong>{view.courses.length.toLocaleString("ar-KW-u-nu-latn")}</strong></div></div>
+                <div className="pr-infographic-stat"><span><Layers /></span><div><small>المستويات</small><strong>{levels.size.toLocaleString("ar-KW-u-nu-latn")}</strong></div></div>
+                <div className="pr-level-ribbon" aria-label="توزيع المقررات على المستويات">
+                  {[...levels.entries()].map(([level, ids]) => <div key={level} title={`${level ? `المستوى ${level}` : "بلا مستوى"}: ${countOf(ids.length, AR.course)}`}><span>{level || "—"}</span><i><b style={{ inlineSize: `${view.courses.length ? ids.length / view.courses.length * 100 : 0}%` }} /></i><small>{ids.length}</small></div>)}
+                </div>
+              </section>
 
               <div className="pr-map" aria-label="خريطة المستويات">
                 {[...levels.entries()].map(([level, ids]) => (
