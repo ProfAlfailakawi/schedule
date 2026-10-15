@@ -146,6 +146,7 @@ interface Props {
   /** صفوف نطاق القارئ كما وصلت الجلسة. */
   scopes?: ScopeAssignmentLike[];
   powerAdmin?: boolean;
+  onOpenDepartmentSchedule?: () => void;
 }
 
 const request = async (url: string, init?: RequestInit) => {
@@ -1394,7 +1395,7 @@ function Report({ termId, termName, scope, role, onBack, archive = false }: {
 
 /* ── الشاشة ─────────────────────────────────────────────────────────────── */
 
-export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin = false }: Props) {
+export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin = false, onOpenDepartmentSchedule }: Props) {
   const [terms, setTerms] = useState<AdTerm[] | null>(null);
   const [termId, setTermId] = useState(0);
   const [opened, setOpened] = useState<{ collegeId: number; sectionId: number; collegeName?: string; sectionName?: string } | null>(null);
@@ -1467,18 +1468,19 @@ export default function ScheduleChanges({ role, scope, scopes = [], powerAdmin =
            يكون ثمّة فصلٌ مختار. والثانيةُ ليست حالةً نظرية: «اختر الفصل» خيارٌ
            يُنقر، ونقرُه كان يُفرّغ الفصلَ فيختفي الشريطُ الذي يحمل قائمته،
            فيبقى القارئ أمام شاشةٍ فارغةٍ لا مخرجَ منها إلا إعادة التحميل. */
-        action={
-          terms.length > 1 && (active || !termId) ? (
-            <label className="changes-term-picker">
-              <span>الفصل</span>
-              <select value={termId || ""} onChange={(e) => pickTerm(Number(e.target.value) || 0)}>
-                {terms.map(row => (
-                  <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>
-                ))}
-              </select>
-            </label>
-          ) : undefined
-        }
+        action={onOpenDepartmentSchedule || (terms.length > 1 && (active || !termId)) ? (
+          <div className="changes-title-actions">
+            {onOpenDepartmentSchedule ? <SecondaryButton onClick={onOpenDepartmentSchedule} data-guide-ignore="فتح جدول القسم للقراءة فقط"><CalendarDays size={16} /> جدول القسم</SecondaryButton> : null}
+            {terms.length > 1 && (active || !termId) ? (
+              <label className="changes-term-picker">
+                <span>الفصل</span>
+                <select value={termId || ""} onChange={(e) => pickTerm(Number(e.target.value) || 0)}>
+                  {terms.map(row => <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>)}
+                </select>
+              </label>
+            ) : null}
+          </div>
+        ) : undefined}
       >
         تغييرات الجدول
       </PageTitle>
