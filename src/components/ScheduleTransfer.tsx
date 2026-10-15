@@ -1204,7 +1204,7 @@ export default function ScheduleTransfer({ collegeId, collegeName, sectionId, te
               </div>
               <div className="transfer-import-actions">
                 <PrimaryButton type="button" data-guide-feature-id="schedule.tool.data" onClick={() => void exportTerm("xlsx")} disabled={!scopeReady || busy}>
-                  <Download /> {busy ? "جاري التصدير…" : "تصدير إلى جدول بيانات (.xlsx)"}
+                  <Download /> {busy ? "جاري التصدير…" : "تصدير إلى ملف Excel (.xlsx)"}
                 </PrimaryButton>
                 <SecondaryButton type="button" onClick={() => void exportTerm("json")} disabled={!scopeReady || busy}>
                   <Download /> {busy ? "جاري التنزيل…" : "تنزيل ملف JSON"}

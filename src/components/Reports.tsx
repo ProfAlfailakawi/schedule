@@ -2267,16 +2267,16 @@ export default function Reports({ mode, user, scopes = [], roleId }: Props) {
                   <Printer aria-hidden="true" />
                 </button>
               )}
-              {/* ── تصدير جدول بيانات (N12) ────────────────────────────────────────
+              {/* ── تصدير Excel (N12) ────────────────────────────────────────
                   الملفّ بمرشّحات الشاشة نفسها، ومن قارئ الخادم نفسه: العميدان
                   يُصدّران النهائيَّ وحده، والرقمُ المدني لا يخرج لصفات الاطّلاع. */}
               <a
                 className="query-print-icon"
                 href={`/api/reports/excel/ListofTeacherCourseExcel?${excelQuery}`}
                 download
-                data-guide-ignore="تنزيل جدول بيانات بمرشحات العرض الحالي؛ قراءة فقط ولا يغيّر بيانات الجدول"
-                aria-label="تصدير جدول بيانات"
-                title="تصدير جدول بيانات"
+                data-guide-ignore="تنزيل ملف Excel بمرشحات العرض الحالي؛ قراءة فقط ولا يغيّر بيانات الجدول"
+                aria-label="تصدير Excel"
+                title="تصدير Excel"
               >
                 <FileSpreadsheet aria-hidden="true" />
               </a>

@@ -772,9 +772,9 @@ export default function StudentRegistration({ scopes, powerAdmin = false }: Prop
                   type="button" className="changes-chip registration-export"
                   disabled={!visible.length}
                   onClick={() => void exportVisible()}
-                  data-guide-ignore="تصدير ما يُعرض إلى جدول بيانات — لا يغيّر شيئاً"
+                  data-guide-ignore="تصدير ما يُعرض إلى Excel — لا يغيّر شيئاً"
                 >
-                  <Download aria-hidden="true" /> تصدير جدول بيانات
+                  <Download aria-hidden="true" /> تصدير Excel
                 </button>
                 {!visible.length && (needle || statusFilter !== "all") ? (
                   <SecondaryButton type="button" onClick={() => { setAsk(""); filterChosen.current = true; setStatusFilter("all"); }} data-guide-ignore="مسح البحث — عرضٌ لا فعل">اعرض الكل</SecondaryButton>
