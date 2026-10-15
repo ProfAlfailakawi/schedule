@@ -20,6 +20,7 @@ interface Outcome { term: { id: number; name: string } | null; answered: number 
 interface Summary {
   term: { id: number; name: string } | null;
   canRun: boolean;
+  auto?: { enabled: boolean; everyHours: number };
   phase?: { mode: string; label: string; line: string; namesVisible: boolean };
   run: { ranAt: string; ranBy: string; students: number; withoutRules: number; defaulted: number; rounds: number; windows: number[]; scoped: boolean } | null;
   courses: CourseRow[];
@@ -131,6 +132,7 @@ export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (vi
               <div className="sm-bars" aria-label="الطلبة في كل نافذة">{r.windows.map((n, i) => <span key={i} title={`النافذة ${i + 1}: ${n}`}><i style={{ blockSize: `${Math.max(8, (n / maxWindow) * 100)}%` }} /><u>{n}</u></span>)}</div></article>
           </div>
 
+          <p className="sm-auto">{data.auto?.enabled ? `يتحدّث الرادار تلقائياً كل ${countOf(data.auto.everyHours, AR.hour)} ما دامت الرغبات مفتوحةً أو بعدها، ومرةً أخيرةً بعد إغلاق الرغبات.` : "التحديث التلقائي متوقّف: يُحدَّث الرادار يدوياً."}{data.canRun ? " «حدّث الرادار» يحدّثه الآن." : ""}</p>
           <p className="sm-base">
             أساس الأرقام: {countOf(r.students, AR.profile)} من ملفّات الطلبة، أُجريت {new Date(r.ranAt).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" })}
             {r.withoutRules ? ` · ${countOf(r.withoutRules, AR.profile)} على صحيفةٍ بلا قواعد معتمدة (بُنيت بلا مسبقات)` : ""}

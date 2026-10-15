@@ -496,3 +496,4 @@
 .pr-import-actions{display:flex;gap:8px;flex-wrap:wrap}
 .pr-import-actions label{cursor:pointer;display:inline-flex;align-items:center}
 .pr-import-result{display:grid;gap:8px}
+.sm-auto{margin:0;color:var(--muted);font-size:.84rem;line-height:1.8}

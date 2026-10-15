@@ -96,6 +96,7 @@ const identityKey = createHmac("sha256", "test-secret").update("identity").diges
 registerStudentDoorRoutes(app, {
   surveyFingerprint: async civilId => createHash("sha256").update("fp|" + civilId).digest("hex").slice(0, 32),
   sealIdentity: async value => "sealed:" + Buffer.from(value).toString("base64url"),
+  openIdentity: async cipher => Buffer.from(cipher.replace("sealed:", ""), "base64url").toString(),
   identityKey: async () => identityKey,
   isProduction: () => false,
 });
@@ -235,6 +236,12 @@ try {
   check(Boolean(prof.nameCipher && prof.civilCipher) && !JSON.stringify(prof).includes(rookies[1].ID) && !JSON.stringify(prof).includes("طالب تجريبي"), "G5 الملفُّ يحمل المختوم فقط: لا اسمَ ولا رقماً مكشوفين");
   const mePlain = JSON.stringify((await http("GET", "/api/public/me/profile", { cookie: rookies[1].cookie })).json);
   check(mePlain.includes('"hasIdentity":true') && !mePlain.includes("Cipher") && !mePlain.includes("sealed:"), "G5 الطالبُ يعرف أنّ اسمه محفوظ ولا يُعاد إليه المختوم");
+  /* الطالبُ يرى اسمَه ورقمَه مقنَّعاً ليتأكّد، ويصحّح الاسم */
+  const me = (await http("GET", "/api/public/me/profile", { cookie: rookies[1].cookie })).json;
+  check(me.identity?.name === "طالب تجريبي اختباري" && /^•{9}\d{3}$/.test(me.identity.civilMasked) && !JSON.stringify(me).includes(rookies[1].ID), "G5 «أهلاً، اسمي»: الاسمُ كاملاً والرقمُ المدني آخرُ ثلاثةِ أرقامٍ فقط", me.identity);
+  check((await http("PUT", "/api/public/me/name", { cookie: rookies[1].cookie, body: { name: "س" } })).json.code === "bad-name", "G5 تصحيحُ الاسم: اسمٌ غير صالح مرفوض");
+  const renamed = (await http("PUT", "/api/public/me/name", { cookie: rookies[1].cookie, body: { name: "عبدالله محمد الصباح" } })).json;
+  check(renamed.identity?.name === "عبدالله محمد الصباح" && (await http("PUT", "/api/public/me/name", { body: { name: "عبدالله محمد الصباح" } })).status === 401, "G5 تصحيحُ الاسم يُحفظ مختوماً، وبلا جلسةٍ ٤٠١");
   /* ملفٌّ قديم بلا مختوم: يُسأل مرةً، ورقمُه يجب أن يطابق ملفَّه، ثم يُحفظ */
   await Repository.updateStudentProfile(fp1, cur => (cur ? { ...cur, nameCipher: undefined, civilCipher: undefined } : undefined));
   const legacyBad = await http("POST", "/api/public/me/report", { cookie: rookies[1].cookie, body: { answers: [{ courseId: stuckId, state: "stuck" }], help: { name: "عبدالله محمد العلي", civil: rookies[2].ID } } });
@@ -284,6 +291,22 @@ try {
   check(rad11.outcome !== null && rad11.outcome.answered >= 1 && rad11.outcome.stuck >= 1 && radAdmin.outcome!.stuck >= rad11.outcome.stuck, "H2 ما تعثّر فيه الطلبةُ يصل القسمَ بعدّه في مقرراته", [rad11.outcome, radAdmin.outcome]);
   const rad12 = await radarNoticeFor(asReq("chair12"), scopeDeps);
   check(rad12.outcome!.stuck === 0, "H2 قسمٌ لم يتعثّر طلبتُه في مقرراته: صفر");
+
+  /* ── I: التشغيل التلقائي للرادار ── */
+  const { radarDue, radarAutoSettings } = await import("../src/server/simulationRoutes");
+  const H = 3_600_000, now = Date.parse("2026-10-15T09:00:00Z"), todayIso = "2026-10-15";
+  const due = (o: any) => radarDue({ mode: "wishes", today: todayIso, now, everyMs: 24 * H, ...o });
+  check(due({ ranAt: undefined }) === true, "I1 لم يُشغَّل قطّ والرغباتُ مفتوحة: يُشغَّل");
+  check(due({ ranAt: new Date(now - 3 * H).toISOString() }) === false, "I1 شُغِّل قبل ٣ ساعات: لا تكرار");
+  check(due({ ranAt: new Date(now - 25 * H).toISOString() }) === true, "I1 مضى ٢٥ ساعة: يتحدّث");
+  check(due({ mode: "waiting", ranAt: undefined }) === false && due({ mode: "closed", ranAt: undefined }) === false, "I1 قبل الرغبات وبعد الإغلاق: لا يعمل وحدَه");
+  check(due({ mode: "frozen", wishesClose: "2026-10-12", ranAt: "2026-10-12T05:00:00Z" }) === true, "I1 أُغلقت الرغباتُ بعد آخر تحديث: تحديثٌ أخيرٌ بالرغبات النهائية");
+  check(due({ mode: "frozen", wishesClose: "2026-10-12", ranAt: "2026-10-14T20:00:00Z" }) === false, "I1 وبعد التحديث الأخير لا يتكرّر قبل ٢٤ ساعة");
+  check(radarAutoSettings().enabled === true && radarAutoSettings().everyHours === 24, "I2 الافتراضي: تلقائيٌّ كل ٢٤ ساعة");
+  const adminSummary = (await http("GET", "/api/simulation/summary", { who: "admin" })).json;
+  check(adminSummary.auto?.enabled === true && adminSummary.auto.everyHours === 24, "I2 الشاشةُ تقول إنه تلقائي وكم ساعة");
+  const rs = fs.readFileSync(path.join(process.cwd(), "src/server/simulationRoutes.ts"), "utf8"), sv = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+  check(rs.includes("acquireRegistrationRunLease") && rs.includes("Repository.isDemoMode()") && sv.includes("scheduleRadarAutoRun("), "I2 بقفلٍ بين الخوادم، ولا يعمل في التجربة، ويُجدول عند الإقلاع");
 } finally { server.close(); }
 
 console.log(`\n${passed} passed, ${failed} failed`);

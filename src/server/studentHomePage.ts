@@ -207,6 +207,9 @@ button,input{font:inherit;color:inherit}
 .tk .bar{block-size:8px;border-radius:99px;background:var(--soft);overflow:hidden}
 .tk .bar i{display:block;block-size:100%;border-radius:99px;background:var(--accent)}
 .chip.warn{background:var(--gold-soft);color:var(--gold)}
+.idn .ic{flex:none;inline-size:42px;block-size:42px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.idn .tx{flex:1;min-inline-size:0;display:grid;gap:2px}.idn .tx b{font-size:15.5px}.idn .tx small{color:var(--muted);font-size:12px;line-height:1.6}
+.idn .link{flex:none;font-size:12.5px}
 .nt{padding:14px;gap:8px}
 .nt h2{margin-block-end:2px}
 .nt .it{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;background:var(--soft);cursor:pointer;border:0;inline-size:100%;text-align:start;font:inherit;color:inherit;min-block-size:56px}
@@ -412,7 +415,8 @@ function setupPassed(){var d=S.draft,load=function(){
 /* ── الرئيسية ── */
 function viewHome(){
   dockEl.innerHTML="";var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
-  var h='<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div></section>';
+  var idn=p.identity?'<section class="card idn fade" style="margin-block-start:6px"><div class="row" style="gap:12px"><span class="ic">'+ic("user")+'</span><div class="tx"><b>أهلاً، '+esc(p.identity.name)+'</b><small>الرقم المدني <bdi dir="ltr">'+esc(p.identity.civilMasked)+'</bdi> · راجع بياناتك أدناه وتأكّد أنها صحيحة</small></div><button type="button" class="link" id="nmb">الاسم غير صحيح؟</button></div></section>':"";
+  var h=idn+'<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div></section>';
   h+='<div id="notices"></div>';h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
   h+='<div id="ticket"></div><div id="report"></div><div id="offered"></div><div id="wishes"></div>';
   h+='<section class="card fade"><h2><span class="b">'+ic("user")+'</span>ملفي</h2><p class="muted">'+ic("shield","")+' يُحفظ ملفّك حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn alt small" id="chg" style="inline-size:auto">'+ic("key")+'غيّر الرمز</button><button class="btn alt small" id="del" style="inline-size:auto">'+ic("trash")+'احذف ملفّي</button><button class="btn alt small" id="out" style="inline-size:auto">'+ic("out")+'اخرج</button></div></section>';
@@ -420,6 +424,7 @@ function viewHome(){
   document.getElementById("edp").addEventListener("click",function(){var d=startDraft();d.step=3;viewSetup()});
   document.getElementById("out").addEventListener("click",function(){api("POST","/api/public/me/exit",{}).then(function(){S.state.signedIn=false;S.state.profile=null;S.civil="";S.remember=false;S.draft=null;S.offered=null;setView("gate")})});
   document.getElementById("chg").addEventListener("click",sheetCode);
+  var nmb=document.getElementById("nmb");if(nmb)nmb.addEventListener("click",sheetName);
   document.getElementById("del").addEventListener("click",sheetForget);
   loadNotices();loadTicket();loadReport();loadOffered();renderWishes();
 }
@@ -511,6 +516,10 @@ function renderWishes(){var host=document.getElementById("wishes"),s=S.state,ph=
 }
 
 /* ── أوراق: الرمز والحذف ── */
+function sheetName(){var cur=(S.state.profile.identity||{}).name||"";
+  sheet('<h3>تصحيح الاسم</h3><p class="lead">اكتب اسمك الثلاثي كما في الجامعة. هو ما يصل قسمك إن طلبتَ مساعدته.</p><div class="field"><label for="nm2">الاسم الثلاثي</label><input class="inp" id="nm2" maxlength="80" autocomplete="name"></div>'+errBox("nerr")+'<button class="btn" id="ns">احفظ</button><button class="btn alt" id="nc">إلغاء</button>');
+  var inp=document.getElementById("nm2");inp.value=cur;document.getElementById("nc").addEventListener("click",closeSheet);
+  document.getElementById("ns").addEventListener("click",function(){var b=this;b.disabled=true;api("PUT","/api/public/me/name",{name:inp.value}).then(function(r){b.disabled=false;if(!r.ok){showErr("nerr",r.d.error||"تعذّر الحفظ");return}closeSheet();S.state.profile=r.d;toast("تم تصحيح الاسم");render()})})}
 function sheetCode(){sheet('<h3>تغيير الرمز</h3>'+otp("o1","رمزك الحالي")+otp("o2","الرمز الجديد")+errBox("kerr")+'<button class="btn" id="ks" disabled>احفظ الرمز الجديد</button><button class="btn alt" id="kc">إلغاء</button>');
   var a="",b="",ks=document.getElementById("ks");wireOtp("o1",function(v){a=v;ks.disabled=!(a.length===6&&b.length===6)});wireOtp("o2",function(v){b=v;ks.disabled=!(a.length===6&&b.length===6)});
   document.getElementById("kc").addEventListener("click",closeSheet);

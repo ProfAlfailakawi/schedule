@@ -12,6 +12,7 @@ import type { AdCourse, RegistrationOutcomeShard } from "../types";
 import { createTtlMemo } from "./notificationCache";
 import { AR, countOf } from "../utils/arabicCount";
 import { pickDoorTerm, readStudentPhase } from "../utils/termStudentPhases";
+import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { runRegistrationSimulation } from "./simulationData";
 
 export interface SimulationDeps {
@@ -44,6 +45,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     res.json({
       term: { id: Number(term.AdTermId), name: String(term.AdTermName || "") },
       canRun: power,
+      auto: radarAutoSettings(),
       phase: (() => { const reading = readStudentPhase(term.AdTermStudentPhases); return { mode: reading.mode, label: reading.label, line: reading.line, namesVisible: reading.namesVisible }; })(),
       run: run ? {
         ranAt: run.ranAt, ranBy: run.ranBy, students: run.students, withoutRules: run.withoutRules, defaulted: run.defaulted,
@@ -138,4 +140,55 @@ export async function radarNoticeFor(req: any, deps: Pick<SimulationDeps, "isSco
     outcome = { answered: power ? answered : answers, stuck, scoped: !power };
   }
   return { radar, outcome, termId, termName: String(term.AdTermName || "") };
+}
+
+/* ── التشغيل التلقائي ──────────────────────────────────────────────────────────
+ * لا يحتاج أحدٌ أن يضغط كلَّ مرة: يُحدَّث الرادارُ وحدَه مرةً كل ٢٤ ساعة (RADAR_AUTO_HOURS) ما دامت
+ * رغباتُ الطلبة مفتوحةً أو بعدها (حتى إغلاق الطلبات)، ومرةً أخيرةً بعد إغلاق الرغبات مباشرةً كي
+ * تُبنى التذاكرُ على الرغبات النهائية. وزرُّ «حدّث الرادار» يبقى لمن يريده الآن. التحديثُ يقرأ ملفّاتِ
+ * الطلبة كلَّها (قراءةً لكل ملف)، فلا يُجعل أقصرَ من ذلك بلا حاجة. RADAR_AUTO=false يُوقفه. */
+export const RADAR_RUN_MODES = new Set(["wishes", "frozen", "report"]);
+
+export function radarDue(input: { mode: string; wishesClose?: string; today: string; ranAt?: string; now: number; everyMs: number }): boolean {
+  if (!RADAR_RUN_MODES.has(input.mode)) return false;
+  if (!input.ranAt) return true;
+  const ranMs = Date.parse(input.ranAt);
+  if (!Number.isFinite(ranMs)) return true;
+  /* أُغلقت الرغباتُ بعد آخر تحديث: تحديثٌ أخيرٌ بالرغبات النهائية. */
+  if (input.wishesClose && input.today > input.wishesClose && input.ranAt.slice(0, 10) <= input.wishesClose) return true;
+  return input.now - ranMs >= input.everyMs;
+}
+
+export function radarAutoSettings(): { enabled: boolean; everyHours: number } {
+  const hours = Number(process.env.RADAR_AUTO_HOURS);
+  return { enabled: String(process.env.RADAR_AUTO ?? "").trim().toLowerCase() !== "false", everyHours: Number.isFinite(hours) && hours >= 1 ? Math.floor(hours) : 24 };
+}
+
+export function scheduleRadarAutoRun(log: (message: string) => void = console.log): void {
+  const { enabled, everyHours } = radarAutoSettings();
+  if (!enabled) return;
+  const tick = async () => {
+    if (running || Repository.isDemoMode()) return;
+    running = true;
+    let lease: { termId: number; holder: string } | null = null;
+    try {
+      const term = pickDoorTerm((await Repository.getTerms()) as any);
+      if (!term) return;
+      const reading = readStudentPhase(term.AdTermStudentPhases);
+      const run = await Repository.getRegistrationRun(Number(term.AdTermId));
+      if (!radarDue({ mode: reading.mode, wishesClose: term.AdTermStudentPhases?.wishesClose, today: kuwaitDateISO(), ranAt: run?.ranAt, now: Date.now(), everyMs: everyHours * 3_600_000 })) return;
+      const holder = `auto-${process.pid}-${Date.now()}`;
+      if (!(await Repository.acquireRegistrationRunLease(Number(term.AdTermId), holder))) return; // خادمٌ آخر يعمل
+      lease = { termId: Number(term.AdTermId), holder };
+      const done = await runRegistrationSimulation(term, "تلقائي");
+      log(`[radar] تحديثٌ تلقائي: ${countOf(done.students, AR.profile)}`);
+    } catch (error) {
+      console.error("[radar] auto:", error instanceof Error ? error.message : error);
+    } finally {
+      running = false;
+      if (lease) await Repository.releaseRegistrationRunLease(lease.termId, lease.holder).catch(() => undefined);
+    }
+  };
+  setTimeout(() => void tick(), 2 * 60_000).unref();
+  setInterval(() => void tick(), 60 * 60_000).unref();
 }

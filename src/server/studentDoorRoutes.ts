@@ -43,6 +43,8 @@ export interface StudentDoorDeps {
   surveyFingerprint: (civil: string) => Promise<string>;
   /** يختم الاسمَ والرقم المدني للطلب (AES-GCM) كما تفعل صفحةُ الاستبيان. */
   sealIdentity: (value: string) => Promise<string>;
+  /** يفتح ما ختمه `sealIdentity` — ليرى الطالبُ اسمَه ويتأكّد أنّ بياناته صحيحة. */
+  openIdentity?: (cipher: string) => Promise<string>;
   identityKey: () => Promise<Buffer>;
   isProduction: () => boolean;
 }
@@ -113,6 +115,18 @@ async function offeringIndex(termId: number): Promise<Map<number, { sections: nu
 }
 
 /** ما يعرفه الطالبُ عن ملفّه. لا رمزَ ولا تجزئة ولا بصمة. */
+let identityOpener: ((cipher: string) => Promise<string>) | null = null;
+
+/** اسمُ الطالب ورقمُه المدني مقنَّعاً (آخر ثلاثة أرقام) — لصاحب الجلسة وحده، ليتأكّد أنّ بياناته صحيحة. */
+async function identityOf(profile: StudentProfile): Promise<{ name: string; civilMasked: string } | null> {
+  if (!identityOpener || !profile.nameCipher || !profile.civilCipher) return null;
+  try {
+    const [name, civil] = await Promise.all([identityOpener(profile.nameCipher), identityOpener(profile.civilCipher)]);
+    if (!name || !civil) return null;
+    return { name, civilMasked: `${"•".repeat(Math.max(0, civil.length - 3))}${civil.slice(-3)}` };
+  } catch { return null; }
+}
+
 async function summaryOf(profile: StudentProfile) {
   const setupDone = profile.AdSectionId > 0;
   let progress = null as null | ReturnType<typeof planProgress>;
@@ -129,6 +143,7 @@ async function summaryOf(profile: StudentProfile) {
     passedCourseIds: profile.passedCourseIds, passedUnits: profile.passedUnits,
     progress, wishes: profile.wishes || null,
     createdAt: profile.createdAt, keepsUntil: profile.deleteAt, keepsReason: profile.deleteReason, hasIdentity: Boolean(profile.nameCipher && profile.civilCipher),
+    identity: await identityOf(profile),
   };
 }
 
@@ -139,6 +154,7 @@ function cleanName(value: unknown): string {
 }
 
 export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): void {
+  identityOpener = deps.openIdentity || null;
   /* الهويةُ تُسأل كثيراً (كل طالبٍ مرة)، فيُعدّ كل سؤالٍ بحدٍّ سخيّ؛ أما الرمز فيُعدّ خطؤه وحده. */
   const identityLimiter = createAttemptLimiter({ maxFailures: intFromEnv("STUDENT_DOOR_IDENTITY_MAX", 240), windowMs: 10 * 60_000, capacity: 20_000 });
   const codeLimiter = createAttemptLimiter({ maxFailures: intFromEnv("STUDENT_DOOR_CODE_MAX_FAILURES", 40), windowMs: 10 * 60_000, capacity: 20_000 });
@@ -613,6 +629,17 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       })),
       unmet: ticket.unmet.map(entry => ({ courseId: entry.courseId, ...info(entry.courseId), reason: entry.reason })),
     });
+  });
+
+  /* ── اسمي: يصحّحه الطالبُ إن أخطأ (الرقمُ المدنيُّ هو المفتاح فلا يتغيّر) ── */
+  app.put("/api/public/me/name", writeLimit, requireDoor, async (req: Request, res: Response) => {
+    const { fingerprint } = doorOf(res);
+    const name = cleanName(req.body?.name);
+    if (!name) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
+    const nameCipher = await deps.sealIdentity(name);
+    const saved = await Repository.updateStudentProfile(fingerprint, current => (current ? { ...current, nameCipher, updatedAt: new Date().toISOString() } : undefined));
+    if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
+    noStore(res); res.json(await summaryOf(saved));
   });
 
   /* ── الرمز: تغييرٌ، ونسيانُ الملف كلِّه ──────────────────────────────────── */
