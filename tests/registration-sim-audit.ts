@@ -159,5 +159,27 @@ const base = (students: SimStudent[], extra: Partial<SimInput> = {}): SimInput =
   check(reasons.full === 0 && reasons.conflict >= 1, "S7 شعبةٌ ممتلئة وأخرى فيها مقعدٌ يمنعها الوقتُ: «تعارض» لا «امتلأت»", reasons);
 }
 
+/* S8: proof of feasibility must include every alternative and transitive corequisite. */
+{
+  const plan: SimPlanRules = { planId: "strict", courseIds: [1,2,3,4,5,6], hasApprovedRules: true, rules: [], groups: [{ id: "choice", name: "اختياري", minCourses: 1, minUnits: 3, courseIds: [5,6] }] };
+  const input: SimInput = { plans: [plan], credit: new Map([1,2,3,4,5,6].map(id => [id,3])), rounds: 1, assessCapacity: true,
+    students: [{ fp:"valid", planId:"strict", passed:[], assessable:true }],
+    offerings: [off(1,"1",0,"08:00","09:00",1), off(2,"1",1,"08:00","09:00",1), off(3,"1",2,"08:00","09:00",1), off(4,"1",3,"08:00","09:00",1), off(5,"1",0,"08:00","09:00",1), off(6,"1",4,"08:00","09:00",1)] };
+  const alternatives = simulateRegistration(input);
+  check(alternatives.capacity.canReach15 === 1 && alternatives.tickets[0].plans[0].items.some(item => item.courseId === 6), "S8 البديل الاختياري الثاني يتيح 15 حين يتعارض الأول", alternatives.capacity);
+  check(alternatives.tickets[0].plans.every(p => p.items.filter(item => [5,6].includes(item.courseId)).length <= 1), "S8 لا تضخيم للوحدات بأخذ كل البدائل في أ/ب/ج");
+  const freeDay = simulateRegistration({ ...input, students: [{...input.students[0], wishes: {targetUnits:15,courseIds:[],constraints:{freeDay:true}}}] });
+  check(freeDay.capacity.canReach12To14 === 1, "S8 طلب يوم خالٍ يُحترم في قياس القدرة: أربعة أيام لا خمسة", freeDay.capacity);
+  const unknown = simulateRegistration({ ...input, students: [{fp:"unknown",planId:"strict",passed:[],assessable:false}, ...input.students] });
+  check(unknown.capacity.canReach15 === 1 && unknown.capacity.unknown === 1 && unknown.tickets.find(t=>t.fp==="unknown")!.plans.every(p=>!p.items.length), "S8 البيانات المجهولة لا تستولي على مقاعد المشاركين المعروفين", unknown.capacity);
+  const bad = { ...input.offerings[5], capacity:0 };
+  const incomplete = simulateRegistration({ ...input, offerings:[...input.offerings.slice(0,5),bad] });
+  check(incomplete.capacity.unknown === 1 && incomplete.capacity.canReach12To14 === 0, "S8 شعبة بديلة ناقصة: لا نجزم بالعجز عن 15", incomplete.capacity);
+  const chain = simulateRegistration({ ...input, plans:[{...plan, groups:[], rules:[{courseId:1,coreq:[2]}, {courseId:2,coreq:[3]}]}], offerings:input.offerings.filter(o=>o.courseId!==3) });
+  check(chain.tickets[0].plans.every(p=>p.items.every(item=>item.courseId!==1 && item.courseId!==2)), "S8 سلسلة المقرنات المتعدية لا تسجل دون آخر مقرن", chain.tickets[0]);
+  const overlap = auditSimOfferings([{...input.offerings[0], slots:[{day:0,start:480,end:540},{day:0,start:510,end:570}]}]);
+  check(overlap.confirmed.length===0 && overlap.issues.some(issue=>issue.code==="overlapping-meetings"), "S8 تعارض داخلي بين محاضرات الشعبة يُعزل");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

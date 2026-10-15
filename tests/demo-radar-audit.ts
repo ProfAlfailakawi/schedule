@@ -35,7 +35,7 @@ try {
     check(summary.run.windows.reduce((a: number, b: number) => a + b, 0) === summary.run.students && summary.run.projected?.students === summary.run.defaulted && summary.phase?.namesVisible === true, "T1 نوافذ الرغبات الفعلية لا تضم غير المشاركين، وتوقعهم منفصل", summary.run);
     check(summary.run.withoutRules > 0 && summary.run.withoutRules < summary.run.students, "T1 بعضُ الصحائف بقواعد معتمدة وبعضُها لا (كما في الواقع)", summary.run.withoutRules);
     const outcome = await get("/api/simulation/outcome");
-    check(outcome.answered > 100 && outcome.courses.some((c: any) => c.stuck > 0 && c.registered > 0), "T2 أجوبةُ «هل سجلت؟» موجودة بسجّلتُ وتعثّرتُ", [outcome.answered, outcome.courses.length]);
+    check(outcome.answered > 0 && outcome.answered <= summary.run.students && outcome.courses.some((c: any) => c.stuck > 0 && c.registered > 0), "T2 أجوبةُ «هل سجلت؟» من المشاركين فقط وبها سجّلتُ وتعثّرتُ", [outcome.answered, outcome.courses.length]);
     const plans = await get("/api/plan-review/status");
     check(plans.pending.length === 1 && plans.sections.length >= 5 && plans.sections.find((s: any) => s.plans[0].pending)?.plans[0].status === "active", "T3 صحيفةٌ واحدة قيد المراجعة، وتتصدّر قسمَها (الجديدة لا السابقة)", plans.pending);
     const bell = await get("/api/notifications");
