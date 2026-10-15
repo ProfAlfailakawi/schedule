@@ -269,8 +269,11 @@ export function readSectionOpenings(
       .map(row => timeToMinutes(row.fendtime) - timeToMinutes(row.fstarttime))
       .filter(minutes => minutes > 0);
     const length = mode(lengths)
-      || rhythm?.patterns.find(pattern => pattern.durationMinutes)?.durationMinutes
-      || 75;
+      || rhythm?.patterns.find(pattern => Number(pattern.durationMinutes) > 0)?.durationMinutes
+      || 0;
+    /* لا نخترع مدة للمحاضرة. من دون شعبة قائمة أو مدة تعلّمها القسم، لا توجد
+       توصية قابلة للتنفيذ حتى لو توافرت قاعة وأستاذ. */
+    if (!Number.isFinite(Number(length)) || Number(length) <= 0) continue;
 
     const taught = new Map<number, number>();
     for (const row of history)

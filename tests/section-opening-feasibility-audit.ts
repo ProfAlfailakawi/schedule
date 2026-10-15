@@ -26,7 +26,7 @@ const room = (capacity?: number): MasterRoom => ({
   confidence: "CONFIRMED", source: "TEST", adminVerified: true, evidence: [], auditHistory: [],
 });
 const demand: any = { respondents: 25, courses: [{ courseId: 1, name: course.CourseName, code: course.CourseCode, students: 25, share: 100 }], pairs: [], unwanted: [], headline: "" };
-const rhythm: any = { forDay: () => ({ ladder: ["08:00"] }), patterns: [], learnedFrom: { rows: 1, terms: 1 } };
+const rhythm: any = { forDay: () => ({ ladder: ["08:00"] }), patterns: [{ durationMinutes: 60 }], learnedFrom: { rows: 1, terms: 1 } };
 const read = (people: AdInstructor[], rooms: MasterRoom[]) => readSectionOpenings(
   [weekRow], [weekRow], [course, existing], people, [pastRow], demand, null, rhythm, 0, 6, rooms,
 );
@@ -39,3 +39,9 @@ check(read([instructor(1, 3), instructor(2, 3)], [room(15)]).proposals[0]?.place
   "قاعة أصغر من سعة الشعبة لا تدخل في اقتراح فتحها");
 check(read([instructor(1, 3), instructor(2, 3)], []).proposals[0]?.placements.length === 0,
   "غياب سجل قاعات موثوق يمنع اقتراح مورد مكاني غير مؤكد");
+const noLearnedDuration = readSectionOpenings(
+  [weekRow], [weekRow], [{ ...course, CourseHours: 0 }], [instructor(1, 3)], [pastRow], demand, null,
+  { ...rhythm, patterns: [{ durationMinutes: 0 }], forDay: () => ({ ladder: ["08:00"] }) }, 0, 6, [room(30)],
+);
+check(noLearnedDuration.proposals.length === 0,
+  "غياب مدة محاضرة موثوقة يمنع اقتراح وقت افتراضي مدته 75 دقيقة");

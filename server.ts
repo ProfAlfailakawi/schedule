@@ -90,7 +90,7 @@ import { AR, ARABIC_COUNT_SCRIPT, countOf, nounFor, oblique } from "./src/utils/
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
-import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
+import { readStudentDemand, mergeCurrentDemandResponses, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { isCaseLevelNeed, studentCaseStatus } from "./src/utils/studentCaseDecision";
 import { sectionOwnsNeed, surveyOwnsNeed } from "./src/utils/studentCaseScope";
 import { droppedCourseLabel } from "./src/utils/studentNeedMerge";
@@ -15895,7 +15895,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
    * search needs; the section's own history is what the room and teacher
    * preferences are read from. Nothing here ever needed another department's
    * back-catalogue. */
-  const [allTermNeeds, courses, termWeek, sectionHistory, links, allHistory, allTerms, sections] = await Promise.all([
+  const [allTermNeeds, courses, termWeek, sectionHistory, links, allHistory, allTerms, sections, currentProfiles] = await Promise.all([
     // Read the term at college scope, then attribute each request to its survey
     // owner. This also lets us recover older records written before
     // surveySectionId existed, using their requested course ownership.
@@ -15907,16 +15907,27 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     Repository.getStudentNeedHistory(collegeId, 0).catch(() => []),
     Repository.getTerms().catch(() => []),
     Repository.getSections().catch(() => []),
+    Repository.getStudentProfilesByCollege(collegeId).catch(() => []),
   ]);
   const operationalDemandIds=await surveyActiveCourseIds(sectionId);
-  const mine = courses.filter(course => Number(course.AdSectionId) === sectionId && operationalDemandIds.has(Number(course.AdCourseId)));
-  const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
+  const profileCourseIds = new Set((currentProfiles as any[])
+    .filter(profile => Number(profile.AdSectionId) === sectionId && Number(profile.wishes?.termId) === termId)
+    .flatMap(profile => Array.isArray(profile.wishes?.courseIds) ? profile.wishes.courseIds.map(Number) : []));
+  /* Keep the operational catalogue for legacy survey ownership, and add any
+     current Masari wish that names a known department course—even when no
+     section is offered this term. Otherwise the system would hide precisely
+     the unmet demand the radar is meant to find. */
+  const mine = courses.filter(course => Number(course.AdSectionId) === sectionId
+    && (operationalDemandIds.has(Number(course.AdCourseId)) || profileCourseIds.has(Number(course.AdCourseId))));
+  const targetCourseIds = new Set(courses.filter(course => Number(course.AdSectionId) === sectionId
+    && operationalDemandIds.has(Number(course.AdCourseId))).map(course => Number(course.AdCourseId)));
   /* The register's rule; the registration sheet reads a superset of it
      (src/utils/studentCaseScope.ts), so a case shown here is never missing there. */
   const belongsToSurvey = (need:any) => surveyOwnsNeed(need, sectionId, targetCourseIds);
   const needs = (allTermNeeds as any[]).filter(belongsToSurvey);
   const history = (allHistory as any[]).filter(belongsToSurvey);
-  const analyticalNeeds=needs.filter((need:any)=>Array.isArray(need.courseIds)&&need.courseIds.length>0);
+  const analyticalNeeds = mergeCurrentDemandResponses(needs as any[], currentProfiles as any[], { termId, collegeId, sectionId })
+    .filter((need:any) => Array.isArray(need.courseIds));
   const reading = readStudentDemand(analyticalNeeds, mine);
 
   /* ── الطلبة يتغيّرون كل فصل ────────────────────────────────────────────────

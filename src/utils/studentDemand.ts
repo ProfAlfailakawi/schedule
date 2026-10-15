@@ -1,4 +1,4 @@
-import type { AdCourse, FSchedule, StudentNeed } from "../types";
+import type { AdCourse, FSchedule, StudentNeed, StudentProfile } from "../types";
 import { AR, countOf } from "./arabicCount";
 
 /**
@@ -62,6 +62,38 @@ export interface DemandReading {
  * conflict nobody can act on.
  */
 export const PAIR_FLOOR = 3;
+
+/**
+ * One current-term response per student. Masari wishes replace that student's
+ * legacy survey answer for this department; legacy-only respondents remain in
+ * the analysis until they submit in Masari. This is an in-memory analytical
+ * view only: it does not migrate or rewrite either source.
+ */
+export function mergeCurrentDemandResponses(
+  needs: StudentNeed[],
+  profiles: StudentProfile[],
+  scope: { termId: number; collegeId: number; sectionId: number },
+): StudentNeed[] {
+  const byStudent = new Map<string, StudentNeed>();
+  for (const need of needs) {
+    if (Number(need.AdTermId) !== scope.termId || Number(need.AdCollegeId) !== scope.collegeId) continue;
+    const key = String(need.fingerprint || `legacy:${need.id}`);
+    byStudent.set(key, need);
+  }
+  for (const profile of profiles) {
+    if (Number(profile.AdCollegeId) !== scope.collegeId || Number(profile.AdSectionId) !== scope.sectionId
+      || Number(profile.wishes?.termId) !== scope.termId) continue;
+    const key = String(profile.fingerprint || profile.id);
+    byStudent.set(key, {
+      id: `masari:${key}`, fingerprint: key, AdCollegeId: scope.collegeId,
+      AdSectionId: scope.sectionId, surveySectionId: scope.sectionId,
+      studentSectionId: scope.sectionId, AdTermId: scope.termId,
+      courseIds: [...new Set((profile.wishes?.courseIds || []).map(Number).filter(Number.isInteger))],
+      createdAt: String(profile.wishes?.updatedAt || profile.updatedAt || profile.createdAt || ""),
+    } as StudentNeed);
+  }
+  return [...byStudent.values()];
+}
 
 export function readStudentDemand(needs: StudentNeed[], courses: AdCourse[]): DemandReading {
   const byId = new Map(courses.map(course => [course.AdCourseId, course]));

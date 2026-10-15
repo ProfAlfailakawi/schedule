@@ -5194,6 +5194,30 @@ export const Repository = {
     return [...(db.studentProfiles || [])].slice(0, limit);
   },
   /**
+   * Profiles for one college's demand analysis. The query scopes the Firestore
+   * scan before pagination; section and term are filtered by the pure merge
+   * helper so this uses the ordinary college index without a new composite
+   * index or an all-university profile read on each department screen.
+   */
+  getStudentProfilesByCollege: async (collegeId: number, limit = 60000): Promise<StudentProfile[]> => {
+    if (!Number.isInteger(collegeId) || collegeId <= 0) return [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const out: StudentProfile[] = [];
+      let last: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      while (out.length < limit) {
+        let query: FirebaseFirestore.Query = firestoreDb.collection("studentProfiles")
+          .where("AdCollegeId", "==", collegeId).orderBy(FieldPath.documentId()).limit(1000);
+        if (last) query = query.startAfter(last);
+        const snap = await query.get();
+        for (const doc of snap.docs) out.push(doc.data() as StudentProfile);
+        if (snap.size < 1000) break;
+        last = snap.docs[snap.docs.length - 1];
+      }
+      return out.slice(0, limit);
+    }
+    return (db.studentProfiles || []).filter(profile => Number(profile.AdCollegeId) === collegeId).slice(0, limit);
+  },
+  /**
    * قفلٌ في قاعدة البيانات لتحديثٍ واحد لكل فصل: مديران على نسختين من الخادم لا يشغّلان
    * معاً (وإلا كتب كلٌّ فوق تذاكر الآخر وتركا الملخّصَ يشير إلى تحديثٍ كُنست تذاكرُه).
    * ينتهي وحدَه بعد `ttlMs` إن مات الخادمُ في منتصف العمل.

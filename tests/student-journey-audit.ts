@@ -273,6 +273,13 @@ const surveyPageSource = between(server, "function studentCaseSurveyPage", "</sc
   check(get.includes("surveyActiveCourseIds(sid)") && !get.includes("curriculumOverview("), "S9 صفحة الاستبيان تعرض المجموعة الفعّالة نفسها");
   check((post.match(/surveyActiveCourseIds\(/g) || []).length === 2 && !post.includes("getOperationalCourseIds("), "S9 والإرسال يتحقق بها");
   check(demand.includes("surveyActiveCourseIds(sectionId)") && !demand.includes("getOperationalCourseIds("), "S9 وقراءة القسم تعدّ بها");
+  check(demand.includes("Repository.getStudentProfilesByCollege(collegeId)")
+    && demand.includes("mergeCurrentDemandResponses(needs as any[], currentProfiles as any[]")
+    && demand.includes("Number(profile.wishes?.termId) === termId"),
+    "S9 رادار القسم يضم رغبات مساري للفصل نفسه ويزيل تكرار الطالب مع الاستبيان القديم");
+  check(demand.includes("operationalDemandIds.has(Number(course.AdCourseId)) || profileCourseIds.has(Number(course.AdCourseId))")
+    && demand.includes("const targetCourseIds = new Set(courses.filter(course => Number(course.AdSectionId) === sectionId"),
+    "S9 الرادار يظهر الطلب على مقرر القسم غير المطروح، مع إبقاء ملكية الاستبيان القديم في نطاقها");
 }
 
 /* ── S10 مهلة العشرين دقيقة لا تُسقط الطالب ─────────────────────────────── */

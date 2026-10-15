@@ -16,7 +16,7 @@ import { describeRollover, readTermRollover } from "../src/utils/termRollover";
 import { buildCalendar, escapeText, foldLine } from "../src/utils/icalendar";
 import { createPresenceClient, createPresencePainter, type PresencePeer } from "../src/components/schedulePresence";
 import { readSettledDrift, settledTerm } from "../src/utils/settledDrift";
-import { readStudentDemand, cohortPairs, sharedBetween, PAIR_FLOOR } from "../src/utils/studentDemand";
+import { readStudentDemand, mergeCurrentDemandResponses, cohortPairs, sharedBetween, PAIR_FLOOR } from "../src/utils/studentDemand";
 import { reachAboutCard, unreachable, whatsappNumber } from "../src/utils/reachInstructor";
 import { learnRhythm, offRhythm, describeRhythm } from "../src/utils/departmentRhythm";
 import { AR, countOf, nounFor } from "../src/utils/arabicCount";
@@ -1124,6 +1124,21 @@ async function runTests() {
     // A student who changes their mind replaces their answer; they are one person.
     const twice = readStudentDemand([need(1,[1]), { ...need(1,[1,2]), id: "n1b" }], courses);
     assert(twice.respondents === 2, "the reading counts the rows it is given…");
+    const unified = mergeCurrentDemandResponses(
+      needs as any,
+      [
+        { id: "f1", fingerprint: "f1", AdCollegeId: 1, AdSectionId: 1, wishes: { termId: 1, courseIds: [2], targetUnits: 15 } },
+        { id: "f6", fingerprint: "f6", AdCollegeId: 1, AdSectionId: 1, wishes: { termId: 1, courseIds: [], targetUnits: 12 } },
+        { id: "other-term", fingerprint: "f7", AdCollegeId: 1, AdSectionId: 1, wishes: { termId: 2, courseIds: [1], targetUnits: 15 } },
+        { id: "other-section", fingerprint: "f8", AdCollegeId: 1, AdSectionId: 2, wishes: { termId: 1, courseIds: [1], targetUnits: 15 } },
+      ] as any,
+      { termId: 1, collegeId: 1, sectionId: 1 },
+    );
+    const unifiedReading = readStudentDemand(unified, courses);
+    assert(unifiedReading.respondents === 6, "Masari and legacy answers share one respondent count; a matched student is not doubled");
+    assert(unifiedReading.courses.find(row => row.courseId === 1)?.students === 3
+      && unifiedReading.courses.find(row => row.courseId === 2)?.students === 4,
+      "the current Masari wish replaces that student's older answer and unrelated term/section profiles are excluded");
     assert(cohortPairs(readStudentDemand([need(1,[1,2])], courses)).size === 0,
       "…and one person alone never makes a pair");
   }
