@@ -393,11 +393,12 @@ function NavButton({
 }) {
   const on = active ?? activeView === view;
   const visibleText = view === "dashboard" ? "" : (visualLabel ?? label);
-  /* الشارة ساكنة، وتنبض نبضةً واحدة حين يزيد العدد فقط (عرضٌ لا غير). */
+  /* الشارة ساكنة، وتنبض نبضةً واحدة حين يزيد عددٌ موجودٌ فعلاً (عرضٌ لا غير).
+     وصولُ أول رقمٍ بعد التحميل (من صفر) ليس «زيادة»، فيظهر ساكناً بلا نبض. */
   const lastBadge = useRef(badge);
   const [bump, setBump] = useState(0);
   useEffect(() => {
-    if (badge > lastBadge.current) setBump(count => count + 1);
+    if (lastBadge.current > 0 && badge > lastBadge.current) setBump(count => count + 1);
     lastBadge.current = badge;
   }, [badge]);
   return (
