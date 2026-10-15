@@ -8,7 +8,8 @@
  */
 import type { Express, Request, RequestHandler, Response } from "express";
 import { Repository } from "../db/repository";
-import type { AdCourse } from "../types";
+import type { AdCourse, RegistrationOutcomeShard } from "../types";
+import { createTtlMemo } from "./notificationCache";
 import { AR, countOf } from "../utils/arabicCount";
 import { pickDoorTerm } from "../utils/termStudentPhases";
 import { runRegistrationSimulation } from "./simulationData";
@@ -21,6 +22,7 @@ export interface SimulationDeps {
 }
 
 let running = false;
+const outcomeMemo = createTtlMemo<RegistrationOutcomeShard[]>({ ttlMs: 30_000 });
 
 export function registerSimulationRoutes(app: Express, deps: SimulationDeps): void {
   const fail = (res: Response, status: number, error: string, code?: string) => res.status(status).json({ error, ...(code ? { code } : {}) });
@@ -48,6 +50,34 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
       } : null,
       courses: rows,
     });
+  });
+
+  /* ما قاله الطلبةُ بعد التسجيل («هل سجلت؟»): أعدادٌ لكل مقرر، بحدود النطاق. */
+  app.get("/api/simulation/outcome", deps.requireAuth, async (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const terms = await Repository.getTerms();
+    const term = pickDoorTerm(terms as any);
+    if (!term) { res.json({ term: null, answered: 0, courses: [] }); return; }
+    const termId = Number(term.AdTermId);
+    const shards = await outcomeMemo.get(String(termId), () => Repository.getRegistrationOutcome(termId));
+    const merged = new Map<number, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>();
+    let answered = 0;
+    for (const shard of shards) {
+      answered += Number(shard.students) || 0;
+      for (const [id, row] of Object.entries(shard.byCourse || {})) {
+        const sum = merged.get(Number(id)) || { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 };
+        for (const key of Object.keys(sum) as Array<keyof typeof sum>) sum[key] += Number(row[key]) || 0;
+        merged.set(Number(id), sum);
+      }
+    }
+    const power = deps.isPowerUser(req);
+    const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
+    const courses = [...merged].flatMap(([courseId, row]) => {
+      const course = catalog.get(courseId);
+      if (!course || (!power && !deps.isScopeAllowed(req, Number(course.AdCollegeId), Number(course.AdSectionId)))) return [];
+      return [{ courseId, code: String(course.CourseCode || ""), name: String(course.CourseName || ""), ...row }];
+    }).sort((a, b) => b.stuck - a.stuck || a.code.localeCompare(b.code, "en"));
+    res.json({ term: { id: termId, name: String(term.AdTermName || "") }, answered, scoped: !power, courses });
   });
 
   app.post("/api/simulation/run", deps.requireAuth, async (req: Request, res: Response) => {

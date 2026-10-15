@@ -14,6 +14,8 @@ import { AR, countOf } from "../utils/arabicCount";
 
 interface Unmet { "not-offered": number; conflict: number; full: number; prereq: number; units: number }
 interface CourseRow { courseId: number; code: string; name: string; sections: number; capacity: number; taken: number; wanted: number; seated: number; unmet: Unmet }
+interface OutcomeRow { courseId: number; code: string; name: string; registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }
+interface Outcome { term: { id: number; name: string } | null; answered: number; scoped: boolean; courses: OutcomeRow[] }
 interface Summary {
   term: { id: number; name: string } | null;
   canRun: boolean;
@@ -38,6 +40,7 @@ const weight = (c: CourseRow) => c.unmet.full * 3 + c.unmet["not-offered"] * 2 +
 
 export default function RegistrationRehearsal() {
   const [data, setData] = useState<Summary | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [all, setAll] = useState(false);
@@ -45,6 +48,7 @@ export default function RegistrationRehearsal() {
 
   const load = useCallback(async () => {
     try { setData(await request("/api/simulation/summary")); setError(""); } catch (e: any) { setError(e.message); }
+    try { setOutcome(await request("/api/simulation/outcome")); } catch { /* الجزءُ الثاني اختياري: لا يُسقط الشاشة */ }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -96,6 +100,8 @@ export default function RegistrationRehearsal() {
             {r.scoped ? " · المعروض مقرراتُ قسمك فقط" : ""}. تقديرٌ لا بياناتُ التسجيل الرسمي.
           </p>
 
+          {outcome && outcome.answered > 0 ? <OutcomeBlock outcome={outcome} predictedStudents={r.students} /> : null}
+
           <section className="sm-list">
             <header>
               <h3>{all ? "كل المقررات" : "تحتاج قراراً"}</h3>
@@ -120,5 +126,40 @@ export default function RegistrationRehearsal() {
         </>
       )}
     </div>
+  );
+}
+
+/** ما قاله الطلبةُ بعد التسجيل: كم سجّلوا، وأين تعثّروا ولماذا. أعدادٌ لا أسماء. */
+function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predictedStudents: number }) {
+  const registered = outcome.courses.reduce((s, c) => s + c.registered, 0), stuck = outcome.courses.reduce((s, c) => s + c.stuck, 0);
+  const total = registered + stuck;
+  const okPct = total ? Math.round((registered / total) * 100) : 0;
+  const reasons: Array<[string, string, number]> = [
+    ["امتلأت الشعب", "bad", outcome.courses.reduce((s, c) => s + c.full, 0)], ["المسبق لا يسمح", "soft", outcome.courses.reduce((s, c) => s + c.prereq, 0)],
+    ["تعارض", "info", outcome.courses.reduce((s, c) => s + c.conflict, 0)], ["سبب آخر", "soft", outcome.courses.reduce((s, c) => s + c.other, 0)],
+  ];
+  const worst = outcome.courses.filter(c => c.stuck > 0).slice(0, 8);
+  const share = predictedStudents ? Math.round((outcome.answered / predictedStudents) * 100) : 0;
+  return (
+    <section className="sm-list sm-out">
+      <header><h3>بعد التسجيل: ماذا قال الطلبة؟</h3></header>
+      <div className="sm-kpis">
+        <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answered.toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا «هل سجلت؟»</small><em>{share}٪ ممن شملتهم البروفة</em></article>
+        <article className="sm-kpi"><span className="sm-ic"><Layers /></span><b>{okPct}٪</b><small>من المقرراتِ المُجاب عنها سُجّلت</small>
+          <div className="sm-meter"><i style={{ inlineSize: `${okPct}%` }} /></div><em>{countOf(registered, AR.course)} سُجّلت · {countOf(stuck, AR.course)} تعثّرت</em></article>
+      </div>
+      <div className="sm-why">{reasons.filter(x => x[2] > 0).map(([label, tone, n]) => <span key={label} className={`sm-chip ${tone}`}>{label} {n}</span>)}</div>
+      {worst.map(c => {
+        const sum = c.registered + c.stuck;
+        return (
+          <article key={c.courseId} className="sm-row hot">
+            <div className="sm-name"><b>{c.name}</b><span>{c.code}</span></div>
+            <div className="sm-gauge"><div className="sm-track"><i className="full" style={{ inlineSize: `${sum ? Math.round((c.stuck / sum) * 100) : 0}%` }} /></div><small>تعثّر {c.stuck} من {sum} أجابوا</small></div>
+            <div className="sm-why">{c.full ? <span className="sm-chip bad">امتلأت {c.full}</span> : null}{c.prereq ? <span className="sm-chip soft">مسبق {c.prereq}</span> : null}{c.conflict ? <span className="sm-chip info">تعارض {c.conflict}</span> : null}</div>
+          </article>
+        );
+      })}
+      <p className="sm-base">مصدرها: أجوبةُ الطلبة أنفسهم في «مساري»، وهي عيّنةٌ ممن اختار أن يجيب — لا كلُّ الطلبة.{outcome.scoped ? " المعروض مقرراتُ قسمك فقط." : ""}</p>
+    </section>
   );
 }

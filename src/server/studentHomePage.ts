@@ -207,6 +207,19 @@ button,input{font:inherit;color:inherit}
 .tk .bar{block-size:8px;border-radius:99px;background:var(--soft);overflow:hidden}
 .tk .bar i{display:block;block-size:100%;border-radius:99px;background:var(--accent)}
 .chip.warn{background:var(--gold-soft);color:var(--gold)}
+.rp .ln{display:grid;gap:10px;padding:12px;border-radius:14px;background:var(--soft)}
+.rp .ln .top{display:flex;align-items:center;gap:10px}
+.rp .ln .top b{flex:1;min-inline-size:0;font-size:14.5px;line-height:1.5}
+.rp .ln .why{display:flex;gap:6px;flex-wrap:wrap}
+.rp .why button{min-block-size:40px;padding:0 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);font:inherit;font-size:13px;cursor:pointer}
+.rp .why button[aria-pressed="true"]{border-color:var(--bad);background:var(--bad);color:#fff}
+.rp .yn{display:flex;gap:6px;flex:none}
+.rp .yn button{min-block-size:44px;padding:0 14px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.rp .yn button[data-v="registered"][aria-pressed="true"]{background:var(--ok);border-color:var(--ok);color:#fff}
+.rp .yn button[data-v="stuck"][aria-pressed="true"]{background:var(--bad);border-color:var(--bad);color:#fff}
+.rp .help{display:grid;gap:10px;padding:14px;border-radius:16px;border:1.5px dashed var(--line-strong)}
+.rp .ref{font:700 22px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;direction:ltr;text-align:center;padding:12px;border-radius:14px;background:var(--accent-soft);color:var(--accent)}
+
 .tk .fine{font-size:11.5px;color:var(--muted);line-height:1.7;margin:0}
 
 
@@ -386,14 +399,14 @@ function viewHome(){
   dockEl.innerHTML="";var s=S.state,p=s.profile,ph=s.phase,pr=p.progress||{percent:0,passedUnits:0,totalUnits:0,remainingUnits:0};
   var h='<section class="card fade" style="margin-block-start:6px"><div class="row" style="gap:16px">'+ring(pr.percent)+'<div style="flex:1;min-inline-size:0;display:grid;gap:2px"><b style="font-size:17px">'+esc(p.sectionName)+'</b><span class="muted">'+(p.planName?esc(p.planName)+" · ":"")+countOf(p.passedUnits,AR.unit)+' مجتازة'+(pr.remainingUnits?" · بقي "+countOf(pr.remainingUnits,AR.unit):"")+'</span></div><button class="link" id="edp" aria-label="عدّل ما أنجزت">'+ic("edit")+'</button></div></section>';
   h+='<section class="card fade"><h2><span class="b">'+ic("clock")+'</span>رحلة الفصل</h2>'+track()+'<p class="muted">'+esc(ph.line)+(ph.nextAt?" · التالي: "+esc(ph.nextLabel)+" "+esc(fmtShort(ph.nextAt)):"")+'</p></section>';
-  h+='<div id="ticket"></div><div id="offered"></div><div id="wishes"></div>';
+  h+='<div id="ticket"></div><div id="report"></div><div id="offered"></div><div id="wishes"></div>';
   h+='<section class="card fade"><h2><span class="b">'+ic("user")+'</span>ملفي</h2><p class="muted">'+ic("shield","")+' يُحفظ ملفّك حتى '+esc(fmtDate(p.keepsUntil))+(p.keepsReason==="inactive"?" ما لم تعد إليه":"")+'، ثم يُحذف وحده.</p><div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn alt small" id="chg" style="inline-size:auto">'+ic("key")+'غيّر الرمز</button><button class="btn alt small" id="del" style="inline-size:auto">'+ic("trash")+'احذف ملفّي</button><button class="btn alt small" id="out" style="inline-size:auto">'+ic("out")+'اخرج</button></div></section>';
   app.innerHTML=h;animateRings();markOverflow();
   document.getElementById("edp").addEventListener("click",function(){var d=startDraft();d.step=3;viewSetup()});
   document.getElementById("out").addEventListener("click",function(){api("POST","/api/public/me/exit",{}).then(function(){S.state.signedIn=false;S.state.profile=null;S.civil="";S.remember=false;S.draft=null;S.offered=null;setView("gate")})});
   document.getElementById("chg").addEventListener("click",sheetCode);
   document.getElementById("del").addEventListener("click",sheetForget);
-  loadTicket();loadOffered();renderWishes();
+  loadTicket();loadReport();loadOffered();renderWishes();
 }
 var DAYN=["أحد","اثنين","ثلاثاء","أربعاء","خميس"];
 function hhmm(m){var h=Math.floor(m/60),n=m%60;return (h<10?"0":"")+h+":"+(n<10?"0":"")+n}
@@ -414,6 +427,28 @@ function paintTicket(host){var t=S.ticket,cur=null;t.plans.forEach(function(p){i
   h+='<p class="fine">'+ic("shield","")+' تقديرٌ تجريبي من بياناتٍ جمعناها — لا يحجز مقعداً ولا يُغني عن التسجيل الرسمي.</p></div></section>';
   host.innerHTML=h;
   host.querySelectorAll(".seg button").forEach(function(b){b.addEventListener("click",function(){S.tkPlan=b.getAttribute("data-l");paintTicket(host)})})}
+function loadReport(){var host=document.getElementById("report");if(!host)return;
+  api("GET","/api/public/me/report").then(function(r){if(!r.ok||!r.d.ready||(!r.d.canReport&&!r.d.answers.length)||!r.d.courses.length){host.innerHTML="";return}S.report=r.d;S.rp={};r.d.answers.forEach(function(a){S.rp[a.courseId]={state:a.state,reason:a.reason||"other"}});S.rpHelp=false;paintReport(host)})}
+function paintReport(host){var d=S.report,h='<section class="card rp fade"><h2><span class="b">'+ic("check")+'</span>هل سجّلت؟'+(d.answeredAt?'<span class="chip ok">'+ic("check","")+' أُرسل</span>':'')+'</h2><p class="muted">'+esc(d.line)+' أخبرنا بما حدث — يساعدنا ويساعد قسمك.</p>';
+  var anyStuck=false;
+  d.courses.forEach(function(c){var a=S.rp[c.courseId]||{},stuck=a.state==="stuck";if(stuck)anyStuck=true;
+    h+='<div class="ln" data-c="'+c.courseId+'"><div class="top"><b>'+esc(c.name)+'</b><div class="yn"><button type="button" data-v="registered" aria-pressed="'+(a.state==="registered")+'">سجّلت</button><button type="button" data-v="stuck" aria-pressed="'+stuck+'">تعثّرت</button></div></div>'
+      +(stuck?'<div class="why">'+[["full","امتلأت الشعب"],["prereq","المسبق لا يسمح"],["conflict","تعارض"],["other","آخر"]].map(function(x){return '<button type="button" data-w="'+x[0]+'" aria-pressed="'+(a.reason===x[0])+'">'+x[1]+'</button>'}).join("")+'</div>':'')+'</div>'});
+  if(anyStuck&&d.canReport){h+='<div class="help"><label class="row" style="gap:10px"><input type="checkbox" id="hp"'+(S.rpHelp?" checked":"")+'><span>أريد أن يساعدني القسم في حالتي</span></label>'
+    +(S.rpHelp?'<div class="field"><label for="hn">الاسم الثلاثي</label><input class="inp" id="hn" autocomplete="name"></div><div class="field"><label for="hc">الرقم المدني</label><input class="inp civil" id="hc" inputmode="numeric" maxlength="12" dir="ltr" autocomplete="off"></div><p class="muted">'+ic("shield","")+' يصل اسمك ورقمك المدني لقسم المقرر وللتسجيل فقط، ولا يُحفظان في ملفّك الدائم.</p>':'')+'</div>'}
+  h+=errBox("rperr");
+  if(d.canReport)h+='<button class="btn" id="rps"'+(Object.keys(S.rp).length?"":" disabled")+'>'+ic("check")+' أرسل</button>';
+  h+='<div id="rpdone"></div></section>';host.innerHTML=h;
+  host.querySelectorAll(".ln").forEach(function(row){var id=Number(row.getAttribute("data-c"));
+    row.querySelectorAll(".yn button").forEach(function(b){b.addEventListener("click",function(){if(!d.canReport)return;var v=b.getAttribute("data-v");S.rp[id]={state:v,reason:(S.rp[id]&&S.rp[id].reason)||"other"};paintReport(host)})});
+    row.querySelectorAll(".why button").forEach(function(b){b.addEventListener("click",function(){S.rp[id].reason=b.getAttribute("data-w");paintReport(host)})})});
+  var hp=document.getElementById("hp");if(hp)hp.addEventListener("change",function(){S.rpHelp=hp.checked;paintReport(host)});
+  var sv=document.getElementById("rps");if(sv)sv.addEventListener("click",function(){sv.disabled=true;showErr("rperr","");
+    var answers=Object.keys(S.rp).map(function(k){return{courseId:Number(k),state:S.rp[k].state,reason:S.rp[k].reason}});
+    var body={answers:answers};if(anyStuck&&S.rpHelp){body.help={name:(document.getElementById("hn")||{}).value||"",civil:(document.getElementById("hc")||{}).value||""}}
+    api("POST","/api/public/me/report",body).then(function(r){sv.disabled=false;if(!r.ok){showErr("rperr",r.d.error||"تعذّر الإرسال");return}
+      var m='<p class="lead">شكراً — سُجّل جوابك.</p>';(r.d.cases||[]).forEach(function(c){m+='<p class="muted">حالتك لدى '+esc(c.sectionName)+'؛ رقمها:</p><div class="ref">'+esc(c.caseRef)+'</div>'});
+      document.getElementById("rpdone").innerHTML=m;toast("وصل جوابك")})})}
 function loadOffered(){var host=document.getElementById("offered");if(!host)return;
   host.innerHTML='<div class="skel"></div>';
   api("GET","/api/public/me/offered").then(function(r){if(!r.ok||!r.d.ready){host.innerHTML="";return}var o=r.d;S.offered=o;

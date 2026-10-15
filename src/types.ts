@@ -822,6 +822,25 @@ export interface StudentProfile {
    * مرحلة الرغبات وتُبنى منها تذكرتُه.
    */
   wishes?: StudentWishes;
+  /** جوابُه على «هل سجلت؟» في فصلٍ بعينه. */
+  registration?: StudentRegistrationReport;
+}
+
+/** ما قاله الطالبُ بعد جولة التسجيل: لكل مقررٍ سجّله أو تعثّر فيه وسبب التعثّر. */
+export type RegistrationAnswerReason = "full" | "prereq" | "conflict" | "other";
+export interface StudentRegistrationReport {
+  termId: number;
+  at: string;
+  answers: Array<{ courseId: number; state: "registered" | "stuck"; reason?: RegistrationAnswerReason }>;
+}
+
+/** عدّاداتُ أجوبة «هل سجلت؟» لفصلٍ: مشاظِرةٌ على عدّة وثائق كي لا تزدحم وثيقةٌ واحدة يومَ التسجيل. */
+export interface RegistrationOutcomeShard {
+  id: string;
+  termId: number;
+  shard: number;
+  students: number;
+  byCourse: Record<string, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>;
 }
 
 /** تذكرةُ طالبٍ من بروفة تسجيل فصلٍ بعينه. وثيقةٌ لكل طالب: `{termId}_{fingerprint}`. */

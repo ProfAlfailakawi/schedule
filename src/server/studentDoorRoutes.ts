@@ -27,6 +27,7 @@ import {
   lockState, planProgress, profileLifetime, resetLifetime, sanitizePassed, shouldTouch, unitsOf, RESET_COOLDOWN_DAYS,
 } from "../utils/studentProfile";
 import { ticketContext } from "./simulationData";
+import { caseRefFor } from "../db/repository";
 import { pickDoorTerm, readStudentPhase, studentTimeline } from "../utils/termStudentPhases";
 import { kuwaitDateISO } from "../utils/approvalWorkflow";
 import { createAttemptLimiter } from "./publicAttemptLimiter";
@@ -37,6 +38,8 @@ import {
 
 export interface StudentDoorDeps {
   surveyFingerprint: (civil: string) => Promise<string>;
+  /** يختم الاسمَ والرقم المدني للطلب (AES-GCM) كما تفعل صفحةُ الاستبيان. */
+  sealIdentity: (value: string) => Promise<string>;
   identityKey: () => Promise<Buffer>;
   isProduction: () => boolean;
 }
@@ -420,6 +423,107 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       ready: true, termName: String(term.AdTermName || ""), remainingCount: courses.length, offeredCount: offered.length,
       offeredUnits: offered.reduce((sum, course) => sum + course.credit, 0), courses,
     });
+  });
+
+  /* ── هل سجلت؟ ── بعد جولة التسجيل: ما سجّلتَه وما تعثّرتَ فيه ولماذا.
+     من تعثّر وطلب المساعدة كتب اسمَه ورقمَه المدني (يُختمان) فتصل حالتُه قسمَ المقرر؛
+     ولا يُحفظ الاسمُ في ملفّه الدائم أبداً. ما يقوله لنا يُضاف إلى عدّادات البروفة
+     (أعداد لا أسماء) فيعرف صاحبُ القرار أين صدقت البروفةُ وأين لم تصدق. */
+  const REASONS = new Set(["full", "prereq", "conflict", "other"]);
+  const REASON_TEXT: Record<string, string> = { full: "امتلأت الشعب", prereq: "المسبق لا يسمح", conflict: "تعارض مع مقرر آخر", other: "سبب آخر" };
+
+  async function reportContext(profile: StudentProfile, fingerprint: string) {
+    const terms = await Repository.getTerms();
+    const term = pickDoorTerm(terms as any);
+    if (!term) return null;
+    const reading = readStudentPhase(term.AdTermStudentPhases);
+    const termId = Number(term.AdTermId);
+    const catalog = await sectionCatalog(profile.AdSectionId);
+    const credit = new Map([...catalog.courses].map(([id, course]) => [id, course.credit]));
+    const [run, ticket, index] = await Promise.all([Repository.getRegistrationRun(termId), Repository.getRegistrationTicket(termId, fingerprint), offeringIndex(termId)]);
+    const info = (id: number) => catalog.courses.get(id) || { code: "", name: `مقرر ${id}`, credit: 0 };
+    const planned = run && ticket && ticket.runId === run.runId ? (ticket.plans.find(plan => plan.label === "A")?.items.map(item => item.courseId) || []) : [];
+    const remaining = planProgress(allowedFor(catalog, profile.curriculumPlanId), profile.passedCourseIds, credit).remainingIds.filter(id => (index.get(id)?.sections || 0) > 0);
+    const ids = [...new Set([...planned, ...(planned.length ? [] : remaining.slice(0, 12))])];
+    return { term, termId, reading, ids, info, allowed: new Set([...planned, ...remaining]) };
+  }
+
+  app.get("/api/public/me/report", requireDoor, async (_req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    noStore(res);
+    if (profile.AdSectionId <= 0) { res.json({ ready: false, reason: "no-setup" }); return; }
+    const ctx = await reportContext(profile, fingerprint);
+    if (!ctx) { res.json({ ready: false, reason: "no-term" }); return; }
+    const mine = profile.registration && profile.registration.termId === ctx.termId ? profile.registration : null;
+    res.json({
+      ready: true, canReport: ctx.reading.canReport, line: ctx.reading.line,
+      courses: ctx.ids.map(id => ({ courseId: id, ...ctx.info(id) })),
+      answers: mine?.answers || [], answeredAt: mine?.at || "",
+    });
+  });
+
+  app.post("/api/public/me/report", writeLimit, requireDoor, async (req: Request, res: Response) => {
+    const { fingerprint, profile } = doorOf(res);
+    if (profile.AdSectionId <= 0) { fail(res, 409, "أكمل ملفّك أولاً.", "no-setup"); return; }
+    const ctx = await reportContext(profile, fingerprint);
+    if (!ctx || !ctx.reading.canReport) { fail(res, 409, "سؤال «هل سجلت؟» غير مفتوح الآن.", "report-closed", { line: ctx?.reading.line || "" }); return; }
+    const raw = Array.isArray(req.body?.answers) ? req.body.answers.slice(0, 40) : [];
+    const answers: NonNullable<StudentProfile["registration"]>["answers"] = [];
+    const seen = new Set<number>();
+    for (const item of raw) {
+      const courseId = Number(item?.courseId);
+      if (!Number.isInteger(courseId) || seen.has(courseId) || !ctx.allowed.has(courseId)) continue;
+      seen.add(courseId);
+      if (item?.state === "registered") answers.push({ courseId, state: "registered" });
+      else if (item?.state === "stuck") answers.push({ courseId, state: "stuck", reason: REASONS.has(String(item?.reason)) ? item.reason : "other" });
+    }
+    if (!answers.length) { fail(res, 400, "اختر حالة مقرّرٍ واحدٍ على الأقل.", "empty"); return; }
+    const stuck = answers.filter(answer => answer.state === "stuck");
+    const help = req.body?.help;
+    let identity: { name: string; civil: string } | null = null;
+    if (stuck.length && help) {
+      const civil = toEnglishDigits(help.civil).replace(/\D/g, "");
+      const name = String(help.name || "").replace(/\s+/g, " ").trim();
+      if (name.length < 6 || name.length > 80 || /[<>{}\\\d]/.test(name)) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
+      if (civil.length !== 12 || !validateCivilId(civil).isValid) { fail(res, 400, "الرقم المدني غير صحيح.", "bad-civil"); return; }
+      if ((await deps.surveyFingerprint(civil)) !== fingerprint) { fail(res, 403, "هذا الرقم المدني ليس رقمَ هذا الملف.", "civil-mismatch"); return; }
+      identity = { name, civil };
+    }
+
+    let before: NonNullable<StudentProfile["registration"]>["answers"] | undefined;
+    const saved = await Repository.updateStudentProfile(fingerprint, current => {
+      if (!current) return undefined;
+      before = current.registration && current.registration.termId === ctx.termId ? current.registration.answers : undefined;
+      return { ...current, registration: { termId: ctx.termId, at: new Date().toISOString(), answers } };
+    });
+    if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
+    await Repository.applyRegistrationOutcome(ctx.termId, fingerprint, before, answers);
+
+    /* حالةٌ لكل قسمٍ يملك مقرراً تعثّر فيه: يصله الطلبُ على كشف التسجيل كأيّ طلب. */
+    const cases: Array<{ sectionName: string; caseRef: string }> = [];
+    if (identity) {
+      const [courses, sections] = await Promise.all([Repository.getCourses(), Repository.getSections()]);
+      const courseOf = new Map((courses as any[]).map(course => [Number(course.AdCourseId), course] as const));
+      const byOwner = new Map<number, typeof stuck>();
+      for (const answer of stuck) {
+        const owner = Number(courseOf.get(answer.courseId)?.AdSectionId) || 0;
+        if (owner) byOwner.set(owner, [...(byOwner.get(owner) || []), answer]);
+      }
+      const nameCipher = await deps.sealIdentity(identity.name), civilCipher = await deps.sealIdentity(identity.civil);
+      for (const [ownerSectionId, list] of byOwner) {
+        const ownerCollegeId = Number(courseOf.get(list[0].courseId)?.AdCollegeId) || profile.AdCollegeId;
+        const homeInOwnerCollege = profile.AdCollegeId === ownerCollegeId;
+        const need = await Repository.saveStudentNeed({
+          fingerprint, AdCollegeId: ownerCollegeId, AdSectionId: homeInOwnerCollege ? profile.AdSectionId : ownerSectionId,
+          studentSectionId: profile.AdSectionId, surveySectionId: ownerSectionId, AdTermId: ctx.termId,
+          curriculumPlanId: profile.curriculumPlanId, courseIds: list.map(answer => answer.courseId), requestType: "new-course",
+          nameCipher, civilCipher, eligibility: "not-checked",
+          details: `من «مساري» بعد التسجيل — ${list.map(answer => `${ctx.info(answer.courseId).name}: ${REASON_TEXT[answer.reason || "other"]}`).join("؛ ")}`,
+        } as any);
+        cases.push({ sectionName: String((sections as any[]).find(row => Number(row.AdSectionId) === ownerSectionId)?.AdSectionName || ""), caseRef: caseRefFor(need) });
+      }
+    }
+    noStore(res); res.json({ ok: true, registered: answers.length - stuck.length, stuck: stuck.length, cases });
   });
 
   /* ── تذكرتي: خططي (أ/ب/ج) ونافذتي من بروفة التسجيل ──────────────────────────

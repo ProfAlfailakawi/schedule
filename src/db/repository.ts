@@ -21,7 +21,9 @@ import {
   TermStudentPhases,
   StudentProfile,
   CurriculumRuleSet,
+  RegistrationOutcomeShard,
   RegistrationRun,
+  StudentRegistrationReport,
   RegistrationTicket,
   AdCollege,
   AdSection,
@@ -232,6 +234,7 @@ interface DBState {
   curriculumRuleDrafts?: CurriculumRuleSet[];
   registrationTickets?: RegistrationTicket[];
   registrationRuns?: RegistrationRun[];
+  registrationOutcomes?: RegistrationOutcomeShard[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
   degreeRules?: AdDegreeRule[];
@@ -273,7 +276,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], registrationTickets: [], registrationRuns: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [], registrationTickets: [], registrationRuns: [], registrationOutcomes: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
@@ -5157,6 +5160,49 @@ export const Repository = {
     db.registrationTickets = db.registrationTickets.filter(row => row.termId !== run.termId).concat(tickets);
     db.registrationRuns = db.registrationRuns.filter(row => row.id !== run.id).concat(run);
     saveDatabase();
+  },
+  /**
+   * ── «هل سجلت؟»: عدّاداتٌ مشاظِرة ─────────────────────────────────────────────
+   * كلُّ جوابٍ يطرح قديمَه ويضيف جديدَه في شظيةٍ يحدّدها اسمُ الطالب المجزّأ (٦٤ شظية)،
+   * فلا تتزاحم آلافُ الكتابات على وثيقةٍ واحدة يومَ التسجيل. القراءةُ تجمع الشظايا.
+   */
+  applyRegistrationOutcome: async (termId: number, fingerprint: string, before: StudentRegistrationReport["answers"] | undefined, after: StudentRegistrationReport["answers"]): Promise<void> => {
+    const OUTCOME_SHARDS = 64;
+    let h = 2166136261; for (let i = 0; i < fingerprint.length; i++) { h ^= fingerprint.charCodeAt(i); h = Math.imul(h, 16777619); }
+    const shard = (h >>> 0) % OUTCOME_SHARDS;
+    const delta = new Map<number, { registered: number; stuck: number; full: number; prereq: number; conflict: number; other: number }>();
+    const bump = (answers: StudentRegistrationReport["answers"] | undefined, sign: 1 | -1) => {
+      for (const answer of answers || []) {
+        const row = delta.get(answer.courseId) || { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 };
+        if (answer.state === "registered") row.registered += sign;
+        else { row.stuck += sign; row[answer.reason || "other"] += sign; }
+        delta.set(answer.courseId, row);
+      }
+    };
+    bump(before, -1); bump(after, 1);
+    const students = (after.length ? 1 : 0) - (before && before.length ? 1 : 0);
+    const id = `${termId}_${shard}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const byCourse: Record<string, any> = {};
+      for (const [courseId, row] of delta) byCourse[String(courseId)] = Object.fromEntries(Object.entries(row).map(([k, v]) => [k, FieldValue.increment(v)]));
+      await firestoreDb.collection("registrationOutcomes").doc(id).set({ id, termId, shard, students: FieldValue.increment(students), byCourse }, { merge: true });
+      return;
+    }
+    if (!Array.isArray(db.registrationOutcomes)) db.registrationOutcomes = [];
+    let doc = db.registrationOutcomes.find(row => row.id === id);
+    if (!doc) { doc = { id, termId, shard, students: 0, byCourse: {} }; db.registrationOutcomes.push(doc); }
+    doc.students += students;
+    for (const [courseId, row] of delta) {
+      const target = doc.byCourse[String(courseId)] || (doc.byCourse[String(courseId)] = { registered: 0, stuck: 0, full: 0, prereq: 0, conflict: 0, other: 0 });
+      for (const key of Object.keys(row) as Array<keyof typeof row>) target[key] += row[key];
+    }
+    saveDatabase();
+  },
+  getRegistrationOutcome: async (termId: number): Promise<RegistrationOutcomeShard[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      return (await firestoreDb.collection("registrationOutcomes").where("termId", "==", termId).get()).docs.map(doc => doc.data() as RegistrationOutcomeShard);
+    }
+    return (db.registrationOutcomes || []).filter(row => row.termId === termId);
   },
   listRuleDrafts: async (): Promise<CurriculumRuleSet[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
