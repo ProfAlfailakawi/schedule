@@ -172,6 +172,7 @@ const DAY = 86_400_000;
   check(!/civil\s*:/.test(routes.slice(routes.indexOf("async function summaryOf"), routes.indexOf("export function registerStudentDoorRoutes"))), "D5 ملخّصُ الملف لا يحمل رقماً مدنياً");
   check(routes.includes("offeringIndex(") && routes.includes("ttlMs: 5 * 60_000"), "D5 المطروح من فهرسٍ في الذاكرة لا من قاعدة البيانات في كل زيارة");
   check(routes.includes("reading.canEditWishes") && routes.includes('"wishes-closed"'), "D5 الرغبات لا تُكتب خارج مرحلتها");
+  check(server.includes('req.originalUrl.startsWith("/api/public/me/")'), "D5 مساري خارج عدّاد العنوان العام (شبكةُ الجامعة عنوانٌ واحد لآلاف الطلبة)");
   check(routes.includes("codeLimiter.reserve(") && routes.includes("attempt.release()"), "D5 أخطاءُ الرمز وحدها تُعدّ على العنوان");
   check(/afterCodeFailure\(current, now\)/.test(routes) && /lockState\(profile, now\)/.test(routes), "D5 القفل على الملف نفسه لا على العنوان وحده");
 }

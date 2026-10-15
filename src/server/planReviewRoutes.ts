@@ -153,12 +153,13 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       });
     }
     /* الصحائفُ التي يُفتح عليها: أقسامُ هذا الحساب وحدها، بلا المؤرشفة. */
-    const reachable: Array<{ sectionId: number; sectionName: string; plans: Array<{ id: string; name: string }> }> = [];
+    const reachable: Array<{ sectionId: number; sectionName: string; plans: Array<{ id: string; name: string; status: string; pending: boolean }> }> = [];
+    const pendingIds = new Set(rows.filter(row => row.state === "review").map(row => row.planId));
     for (const section of await Repository.getSections() as any[]) {
       const collegeId = Number(section.AdCollegeId), sectionId = Number(section.AdSectionId);
       if (!canSee(req, { id: "", AdCollegeId: collegeId, AdSectionId: sectionId, name: "", status: "" })) continue;
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => plan.status !== "archived" && !plan.virtual);
-      if (plans.length) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: plans.map(plan => ({ id: plan.id, name: plan.name })) });
+      if (plans.length) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: [...plans].sort((x, y) => Number(pendingIds.has(y.id)) - Number(pendingIds.has(x.id)) || Number(y.status === "active") - Number(x.status === "active")).map(plan => ({ id: plan.id, name: plan.name, status: plan.status, pending: pendingIds.has(plan.id) })) });
     }
     res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isPowerUser(req) });
   });
