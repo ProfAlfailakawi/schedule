@@ -20,7 +20,7 @@ const sections = [
   { AdSectionId: 10, AdCollegeId: 1, AdSectionName: "قسم تكنولوجيا التعليم" },
   { AdSectionId: 11, AdCollegeId: 1, AdSectionName: "قسم الدراسات الاجتماعية" },
   { AdSectionId: 20, AdCollegeId: 2, AdSectionName: "قسم تكنولوجيا التعليم" },
-  { AdSectionId: 21, AdCollegeId: 2, AdSectionCode: "Math", AdSectionName: "قسم الرياضيات" },
+  { AdSectionId: 21, AdCollegeId: 2, AdSectionCode: "0109", AdSectionName: "قسم الرياضيات" },
 ];
 const users = [
   { SystemUserId: 1, SystemUserLogin: "Techdept", Role: "committeeChair" },
@@ -39,7 +39,21 @@ const by = (id: number) => plan.find(row => row.sectionId === id)!;
 check(by(10).status === "exists" && by(10).existingLogin === "Techhead", "Techhead الموجود يُعدّ رئيس قسم تكنولوجيا التعليم (بنات) ولا يُنشأ ثانية");
 check(by(11).status === "create" && by(11).proposedLogin === "Sochead", "Socdept ← Sochead");
 check(by(20).status === "create" && by(20).proposedLogin === "TechheadBB", "البادئة نفسها في كلية أخرى تأخذ رمز الكلية");
-check(by(21).status === "create" && by(21).proposedLogin === "Mathhead" && Boolean(by(21).note), "قسم بلا حساب dept: يُستخدم رمز القسم واسمه واضح للمدير");
+check(by(21).status === "create" && by(21).proposedLogin === "9head" && Boolean(by(21).note), "القسم ذو رمز 0109 يستخدم الاسم بعد حذف بادئة 01");
+const prefixedArabic = planDepartmentHeadAccounts({
+  users: [{ SystemUserId: 50, SystemUserLogin: "01Arabicdept", Role: "committeeChair" }],
+  assigns: [{ SystemUserId: 50, AdCollegeId: 1, AdSectionId: 30 }],
+  colleges: [{ AdCollegeId: 1, AdCollegeCode: "BG", AdCollegeName: "كلية" }],
+  sections: [{ AdSectionId: 30, AdCollegeId: 1, AdSectionCode: "01Arabic", AdSectionName: "قسم اللغة العربية" }],
+});
+check(prefixedArabic[0].proposedLogin === "Arabichead", "بادئة dept والقسم تزيل 01 من اسم الدخول");
+const arabicAdvisor = planAdvisorAccounts({
+  users: [{ SystemUserId: 51, SystemUserLogin: "01Arabicdept", Role: "committeeChair" }],
+  assigns: [{ SystemUserId: 51, AdCollegeId: 1, AdSectionId: 30 }],
+  colleges: [{ AdCollegeId: 1, AdCollegeCode: "BG", AdCollegeName: "كلية" }],
+  sections: [{ AdSectionId: 30, AdCollegeId: 1, AdSectionCode: "01Arabic", AdSectionName: "قسم اللغة العربية" }],
+});
+check(arabicAdvisor[0].proposedLogin === "Arabicadvisor", "حساب الإرشاد العربي يُقترح Arabicadvisor دون 01");
 const logins = plan.map(row => (row.existingLogin || row.proposedLogin).toLowerCase());
 check(new Set(logins).size === logins.length, "لا اسمان متطابقان في الخطة");
 
@@ -65,7 +79,9 @@ const adv = (id: number) => advisors.find(row => row.sectionId === id)!;
 check(adv(10).proposedLogin === "Econoadvisor" && adv(10).status === "create", "Econodept ← Econoadvisor");
 check(adv(11).proposedLogin === "TechadvisorBG" && adv(20).proposedLogin === "TechadvisorBB", "البادئة المشتركة بين كليتين تأخذ رمز الكلية");
 const codeBasedAdvisor = planAdvisorAccounts({ users: [], assigns: [], colleges, sections: [sections[3]] });
-check(codeBasedAdvisor[0].proposedLogin === "Mathadvisor", "القسم بلا حساب dept: رمز Math ينتج Mathadvisor");
+check(codeBasedAdvisor[0].proposedLogin === "9advisor", "القسم ذو رمز 0109 ينتج اسماً بلا بادئة 01");
+const numericCodeAdvisor = planAdvisorAccounts({ users: [], assigns: [], colleges, sections: [{ ...sections[3], AdSectionCode: "0109" }] });
+check(numericCodeAdvisor[0].proposedLogin === "9advisor", "رمز القسم الرقمي 0109 يزيل بادئة 01 كما طلب المالك");
 check(advisors.every(row => row.proposedName.startsWith("إرشاد ")), "اسم الحساب «إرشاد <القسم>»");
 check(!advisors.some(row => /head/i.test(row.proposedLogin)), "لا تتداخل حسابات المرشدين مع حسابات الرؤساء");
 check(advisors.length === sections.length, "حسابٌ لكل قسم");
