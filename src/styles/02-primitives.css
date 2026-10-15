@@ -561,7 +561,7 @@
 .notice{
   position:relative;
   display:grid;grid-template-columns:20px minmax(0,1fr) 30px;
-  align-items:start;gap:var(--s3);
+  align-items:center;gap:var(--s3);
   padding:var(--s4) var(--s5);
   border:1px solid var(--line);
   border-radius:var(--r-md);
@@ -569,7 +569,7 @@
   font-size:var(--t-sm);
   line-height:1.65;
 }
-.notice>svg{width:20px;height:20px;margin-top:1px}
+.notice>svg{width:20px;height:20px}
 .notice-copy{min-width:0;display:flex;flex-direction:column;gap:var(--s2)}
 .notice-copy>span{
   overflow:hidden;
