@@ -98,6 +98,8 @@ import { suggestedDegreeRule, type DegreeRule } from "./src/utils/degreeRules";
 import { choosePlanForSheet, type PlanRuleCandidate } from "./src/utils/graduationPlan";
 import { termWindow, previousYearSameTermName, sameTermName, termSeasonOf } from "./src/utils/termSequence";
 import { checkStudentPhases, hasStudentPhases } from "./src/utils/termStudentPhases";
+import { registerStudentDoorRoutes, scheduleStudentProfilePurge } from "./src/server/studentDoorRoutes";
+import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
@@ -19740,6 +19742,21 @@ app.get("/q/:token", async (req: Request, res: Response) => {
   res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res), await demoPageHint(resolved.link, "survey")));
 });
 
+/* ── بيتُ الطالب: رابطٌ دائمٌ واحدٌ للجامعة كلها ────────────────────────────
+ *
+ * لا يحمل قسماً ولا فصلاً ولا رمزاً: الطالبُ هو المفتاح، والفصلُ يُقرأ من
+ * التواريخ (utils/termStudentPhases). فملصقٌ يُطبع مرةً يبقى صالحاً سنين. */
+registerStudentDoorRoutes(app, {
+  surveyFingerprint,
+  identityKey: studentIdentityKey,
+  isProduction: () => process.env.NODE_ENV === "production",
+});
+app.get(["/me", "/me/"], (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(studentHomePage(publicPageNonce(res)));
+});
+
 /* ── جدولُ الطلبة برمز QR ─────────────────────────────────────────────────────
  *
  * رابطٌ واحدٌ للقسم (kind: "students") يُطبع رمزُه على لوحة الإعلانات: يفتح
@@ -20536,6 +20553,8 @@ async function startServer() {
       { start: term.AdTermStart, weeks: term.AdTermWeeks, closed: true }),
     log: message => console.log(message),
   });
+  /* ملفّاتُ الطلبة تُحذف وحدها حين ينتهي عمرُها (التخرّج المتوقَّع + سنة، أو الانقطاع). */
+  if (!databaseFailure) scheduleStudentProfilePurge(message => console.log(message));
 
   // ── تسجيل طلبات الاستعراض من صفحة الهبوط التسويقية ──────────────────────────
   app.post("/api/landing/inquiry", express.json(), (req, res) => {

@@ -148,6 +148,7 @@ export const AR = {
   meeting:     { one: "لقاء", two: "لقاءان", few: "لقاءات", many: "لقاءً" },
   filter:      { one: "مرشّح", two: "مرشّحان", few: "مرشّحات", many: "مرشّحاً" },
   matter:      { one: "أمر", two: "أمران", few: "أمور", many: "أمراً" },
+  attempt:     { one: "محاولة", two: "محاولتان", few: "محاولات", many: "محاولة" },
   round:       { one: "جولة", two: "جولتان", few: "جولات", many: "جولة" },
   student:     { one: "طالب", two: "طالبان", few: "طلاب", many: "طالباً" },
   pair:        { one: "زوج", two: "زوجان", few: "أزواج", many: "زوجاً" },
