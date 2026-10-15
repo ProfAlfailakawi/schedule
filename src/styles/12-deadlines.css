@@ -64,7 +64,7 @@
   background:var(--sd-tone);color:var(--accent-contrast);font-size:.75rem;font-weight:700;
 }
 .sd-tile b{font-size:2.1rem;line-height:1.15;font-weight:700;color:var(--ink);padding-block-start:4px;font-variant-numeric:tabular-nums}
-.sd-tile-weekday{font-size:.74rem;color:var(--muted);padding-block-end:6px}
+.sd-tile-weekday{font-size:.75rem;color:var(--muted);padding-block-end:6px}
 .sd-hero-text{display:grid;gap:4px;flex:1 1 240px;min-inline-size:0}
 .sd-hero-label{font-size:.8rem;color:var(--muted);font-weight:600}
 .sd-hero-text>strong{font-size:clamp(1.2rem,2.2vw,1.55rem);font-weight:700;color:var(--ink);line-height:1.35}

@@ -283,6 +283,10 @@
   .deck-today-lead b{font-size:40px}
   .daybar-track{height:44px}
   .daybar-scale span:nth-child(even){display:none}
+  /* 12 hour columns at a real 44px touch width: the strip scrolls sideways inside
+     its own card instead of squeezing to 24px; track and scale scroll together. */
+  .daybar{overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding-bottom:2px}
+  .daybar-track,.daybar-scale{min-width:561px}
   .deck-today-actions{width:100%}
   .deck-today-actions .btn{flex:1}
   /* Four rings in two rows, small enough that all four are seen at once. */
@@ -1890,4 +1894,9 @@ html[data-demo-admin-readonly="true"] .app-main::before{
   .sidebar .command-search kbd,.sidebar .rail-identity-name,.sidebar .user-card-section{font-size:12px}
   .smart-guide-fab{min-width:44px}
   .sidebar-brand>button{min-height:44px}
+}
+
+/* Phone: the appointment editor's text buttons are real touch targets. */
+@media (max-width:760px){
+  .schedule-form-sections button:not([aria-label]){min-height:44px}
 }
