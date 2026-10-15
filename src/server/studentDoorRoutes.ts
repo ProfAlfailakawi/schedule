@@ -273,6 +273,8 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         let left = CODE_MAX_FAILURES, locked = false;
         await Repository.updateStudentProfile(fingerprint, current => {
           if (!current) return undefined;
+          /* قفلٌ نشأ بينما كان التحقّق جارياً (طلباتٌ متوازية): يبقى كما هو ولا يُستبدل بعدّادٍ جديد. */
+          if (lockState(current, now).locked) { locked = true; left = 0; return current; }
           const failures = afterCodeFailure(current, now);
           locked = Boolean(failures.lockedUntil);
           left = locked ? 0 : CODE_MAX_FAILURES - failures.count;
@@ -282,11 +284,18 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
         return;
       }
       done();
+      let lockedMeanwhile = false;
       const entered = (await Repository.updateStudentProfile(fingerprint, current => {
         if (!current) return undefined;
+        /* رمزٌ صحيح وصل بعد أن قُفل الملفُّ بخطأٍ متوازٍ: القفلُ يسري ولا يُمحى. */
+        if (lockState(current, now).locked) { lockedMeanwhile = true; return current; }
         const lastSeenAt = new Date(now).toISOString();
         return { ...current, codeFailures: undefined, resetRequestedAt: undefined, lastSeenAt, ...profileLifetime({ ...current, lastSeenAt }, new Date(now)) };
       })) || profile;
+      if (lockedMeanwhile) {
+        fail(res, 423, "أخطأت في الرمز مراتٍ كثيرة. جرّب بعد ١٥ دقيقة.", "locked");
+        return;
+      }
       await issueSession(res, entered, remember);
       noStore(res); res.json({ ok: true, profile: await summaryOf(entered) });
     } catch (error) {
@@ -354,7 +363,11 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
       const base = { ...current, AdCollegeId: Number(section.AdCollegeId), AdSectionId: sectionId, curriculumPlanId: planId || undefined,
         passedCourseIds: passed, passedUnits: unitsOf(passed, credit), updatedAt: now.toISOString(),
         expectedGraduationAt: expectedGraduation(progress.remainingUnits, now),
-        wishes: sameSection ? current.wishes : undefined };
+        /* الرغباتُ تُبقى ما دامت صالحةً للصحيفة الجديدة: القسمُ نفسُه والصحيفةُ نفسُها،
+           وما أُنجز من مقرراتها المرغوبة يسقط منها. */
+        wishes: sameSection && (current.curriculumPlanId || "") === planId && current.wishes
+          ? { ...current.wishes, courseIds: current.wishes.courseIds.filter(id => allowed.includes(id) && !passed.includes(id)) }
+          : undefined };
       return { ...base, ...profileLifetime(base, now) };
     });
     if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
