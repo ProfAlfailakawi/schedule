@@ -754,7 +754,9 @@ export function createDemoSandboxState(): DemoSandboxState {
      («بداية الفصل»). والحالتان التجريبيتان المقصودتان لا تُورَّثان. */
   const history = previousTermRows(schedules);
 
-  const formNames: FormName[] = Array.from({ length: 17 }, (_, index) => ({ FormNameId: index + 1, FormName: `صلاحية ${index + 1}` }));
+  /* أسماءُ الشاشات كما في academicRoles.ts (2…17). الرقمان 1 و13 غير موصوفين هناك، فسُمّيا بأقرب معنى. */
+  const FORM_LABELS = ["الرئيسية", "الكليات", "الأساتذة", "الأقسام", "الفصول", "المقررات", "الجداول ومركز الذكاء", "استعلام الأساتذة", "استعلام القاعات", "استعلام الأوقات", "المستخدمون", "الصلاحيات", "التقارير العامة", "تقرير القسم", "النطاقات", "القاعات والأوقات", "البحث المتقدم"];
+  const formNames: FormName[] = FORM_LABELS.map((label, index) => ({ FormNameId: index + 1, FormName: label }));
 
   const users: SystemUser[] = [
     { SystemUserId: 1, Name: "مدير البيئة التجريبية", SystemUserLogin: "demo.admin", SystemUserPass: "", IsAdminUser: true, IsActive: true, IsLocked: false, IsDeleted: false },
