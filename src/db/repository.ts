@@ -4989,6 +4989,29 @@ export const Repository = {
     return (db.studentNeeds || []).filter(mine);
   },
 
+  /**
+   * ── يدٌ واحدة، لا فصلٌ كامل ────────────────────────────────────────────────
+   *
+   * فحصُ الهوية والإرسال وصفحةُ الحالة كانت تسأل «هل لهذا الطالب طلبٌ؟» بقراءة
+   * **كل طلبات الكلية في الفصل** ثم البحث فيها بالذاكرة. على ألفٍ يعمل، وعلى
+   * خمسةٍ وعشرين ألف طالبٍ يقرأ كلُّ إرسالٍ آلافَ الوثائق أربع مرات، فتنتهي
+   * الحصةُ اليومية قبل أن يمرّ الصباح.
+   *
+   * البصمةُ حقلٌ واحدٌ له فهرسُ الحقل المفرد التلقائي، فالسؤالُ بها يقرأ ما
+   * يخصّ الطالب وحده — وهو ما تفعله `saveStudentNeed` أصلاً. والتصفيةُ بالكلية
+   * والفصل في الذاكرة على ما رجع (عشراتٌ لا آلاف)، كي لا يلزم فهرسٌ مركّب.
+   */
+  getStudentNeedsByFingerprint: async (fingerprint: string, collegeId: number, termId: number): Promise<StudentNeed[]> => {
+    const mine = (item: StudentNeed) => item.fingerprint === fingerprint
+      && Number(item.AdCollegeId) === Number(collegeId) && Number(item.AdTermId) === Number(termId);
+    if (!fingerprint) return [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("studentNeeds").where("fingerprint", "==", fingerprint).limit(500).get();
+      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+    }
+    return (db.studentNeeds || []).filter(mine);
+  },
+
   /** كلُّ طلبات الطلبة في فصلٍ واحد، لكل الكليات: يحتاجها مركزُ الإشعارات ليعدّ لكل قسم. */
   getStudentNeedsForTerm: async (termId: number): Promise<StudentNeed[]> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {
