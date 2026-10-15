@@ -385,3 +385,55 @@
 .sd-progress[data-motion="go"] .sd-bar{animation:sd-bar-draw .7s var(--ease-out)}
 .sd-progress[data-motion="go"] .sd-bar:dir(ltr){animation-name:sd-bar-draw-ltr}
 @media (prefers-reduced-motion:reduce){.sd-progress[data-motion] .sd-bar{clip-path:none;animation:none}}
+
+/* ── مراجعةُ الصحيفة (pr-*) ───────────────────────────────────────────────── */
+.pr-page{display:grid;gap:16px;min-inline-size:0}
+.pr-pickers{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.pr-sec{color:var(--ink)}
+.pr-plans{display:flex;gap:6px;flex-wrap:wrap}
+.pr-plan{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:var(--r-full);padding:6px 14px;cursor:pointer;font:inherit}
+.pr-plan.on{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent)}
+.pr-state{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface)}
+.pr-state.review{background:var(--brass-soft);border-color:var(--brass)}
+.pr-state.approved{background:var(--success-soft);border-color:var(--success)}
+.pr-state-ic{display:grid;place-items:center;inline-size:36px;block-size:36px;border-radius:50%;background:var(--surface);color:var(--accent)}
+.pr-state small{display:block;color:var(--muted)}
+.pr-state .btn{margin-inline-start:auto}
+.pr-issues{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.pr-issues li{display:flex;gap:8px;align-items:center;padding:8px 12px;border-radius:var(--r-md);font-size:.9rem;cursor:pointer}
+.pr-issues li.block{background:var(--danger-soft);color:var(--danger)}
+.pr-issues li.warn{background:var(--warning-soft);color:var(--warning)}
+.pr-map{display:flex;gap:12px;overflow-x:auto;padding-block-end:8px;align-items:flex-start}
+.pr-col{min-inline-size:168px;flex:0 0 168px;display:grid;gap:8px}
+.pr-col h4{margin:0;color:var(--muted);font-size:.85rem;border-block-end:2px solid var(--line);padding-block-end:4px}
+.pr-card{display:grid;gap:2px;text-align:start;padding:10px;border-radius:var(--r-md);border:1px solid var(--line);border-inline-start:4px solid var(--line-strong);background:var(--surface);cursor:pointer;font:inherit;color:var(--ink);transition:box-shadow .15s,transform .15s}
+.pr-card b{font-size:.8rem;color:var(--muted)}
+.pr-card span{font-size:.92rem}
+.pr-card i{font-style:normal;font-size:.78rem;color:var(--muted);display:flex;gap:4px;align-items:center}
+.pr-card.k-ok{border-inline-start-color:var(--success)}
+.pr-card.k-info{border-inline-start-color:var(--accent)}
+.pr-card.k-brass{border-inline-start-color:var(--brass)}
+.pr-card.k-soft{border-inline-start-color:var(--line-strong);border-style:dashed;border-inline-start-style:solid}
+.pr-card.sel{box-shadow:0 0 0 2px var(--accent);transform:translateY(-1px)}
+.pr-card.up{background:var(--brass-soft)}
+.pr-card.down{background:var(--accent-softer)}
+.pr-card.lock{opacity:.7}
+.pr-editor{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);padding:14px;display:grid;gap:12px;min-inline-size:0}
+.pr-editor header{display:flex;justify-content:space-between;align-items:center}
+.pr-editor footer{display:flex;gap:8px}
+.pr-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr));gap:10px}
+.pr-grid label{display:grid;gap:4px;font-size:.85rem;color:var(--muted)}
+.pr-field{display:grid;gap:6px}
+.pr-field>span{font-size:.85rem;color:var(--muted)}
+.pr-field>div,.pr-any{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pr-chip{display:inline-flex;gap:4px;align-items:center;background:var(--accent-soft);color:var(--accent-ink);border-radius:var(--r-full);padding:2px 10px;font-size:.85rem}
+.pr-chip button{border:0;background:none;cursor:pointer;display:grid;color:inherit;padding:0}
+.pr-sum{margin:0;color:var(--ink-2)}
+.pr-groups{display:grid;gap:10px}
+.pr-groups h3{margin:0}
+.pr-group-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:10px}
+.pr-group{border:1px solid var(--line);border-radius:var(--r-md);padding:12px;display:grid;gap:6px;background:var(--surface)}
+.pr-group small,.pr-none{color:var(--muted)}
+.pr-group-actions{display:flex;gap:6px}
+.pr-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr));gap:6px}
+.pr-opt{display:flex;gap:6px;align-items:center;font-size:.88rem}

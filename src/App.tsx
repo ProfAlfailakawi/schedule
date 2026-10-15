@@ -24,6 +24,7 @@ import {
   Sparkles,
   UsersRound,
   ClipboardCheck,
+  ListChecks,
   MailCheck,
   WandSparkles,
   Wifi,
@@ -114,6 +115,7 @@ const Onboarding = safeLazy(() => import("./components/Onboarding"));
 const ScheduleChanges = safeLazy(() => import("./components/ScheduleChanges"));
 const InstructorInbox = safeLazy(() => import("./components/InstructorInbox"));
 const StudentRegistration = safeLazy(() => import("./components/StudentRegistration"));
+const PlanReview = safeLazy(() => import("./components/PlanReview"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
@@ -134,6 +136,7 @@ type View =
   | "scheduleChanges"
   | "instructorRequests"
   | "studentRegistration"
+  | "planReview"
   | ReportMode
   | AdminMode
   | "about";
@@ -285,6 +288,7 @@ const pathByView: Record<View, string> = {
   scheduleChanges: "/FSchedule/Changes",
   instructorRequests: "/FSchedule/InstructorRequests",
   studentRegistration: "/FSchedule/StudentRegistration",
+  planReview: "/FSchedule/PlanReview",
   about: "/Public/Aboutus",
 };
 /**
@@ -330,6 +334,7 @@ function prefetchView(view: View) {
   else if (adminViews.includes(view as AdminMode)) void loadAdminUsers();
   else if (view === "instructorRequests") void import("./components/InstructorInbox");
   else if (view === "studentRegistration") void import("./components/StudentRegistration");
+  else if (view === "planReview") void import("./components/PlanReview");
   else if (view === "about") void loadAbout();
 }
 
@@ -622,6 +627,19 @@ export default function App() {
    * لا بريدٌ ولا إشعارُ دفع، لأن من يدخل النظام يومياً يكفيه رقمٌ يراه.
    */
   const [changesBadge, setChangesBadge] = useState(0);
+  /* أيقونةُ «مراجعة الصحيفة» مؤقتة: لا تظهر إلا وفي نطاق الحساب مسوّدةٌ تنتظر. */
+  const [planReviewCount, setPlanReviewCount] = useState(0);
+  useEffect(() => {
+    if (!user) { setPlanReviewCount(0); return; }
+    let alive = true;
+    const read = () => fetch("/api/plan-review/status", { credentials: "include" })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => { if (alive) setPlanReviewCount(Array.isArray(data?.pending) ? data.pending.length : 0); })
+      .catch(() => undefined);
+    void read();
+    window.addEventListener("focus", read);
+    return () => { alive = false; window.removeEventListener("focus", read); };
+  }, [user?.SystemUserId, sessionRole.id]);
   useEffect(() => {
     if (!user || !opensChangesScreen(sessionRole)) { setChangesBadge(0); return; }
     let alive = true;
@@ -1755,6 +1773,9 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "planReview":
+        /* الحارسُ في الخادم (النطاقُ والصفةُ والملكية)؛ هنا نخفي ما لا يعمل فقط. */
+        return planReviewCount > 0 ? <PlanReview /> : unauthorized();
       case "studentRegistration":
         /* الكشفُ يُقرأ من الطرفين ويُكتب من طرفين: التسجيلُ صاحبُ القرار، ومن
            يبني الجدول يسلّم ويتابع. وصفةُ العرض الصرف لا تفتحه أصلاً — الخادمُ
@@ -2488,6 +2509,17 @@ export default function App() {
                 /* الوجهة نفسها مسجّلة في المرشد باسم `page.studentRegistration`،
                    وزرّ القائمة يحمل ذلك المعرّف من داخل NavButton. */
                 data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.studentRegistration"
+              />
+            ) : null}
+            {planReviewCount > 0 ? (
+              <NavButton
+                activeView={activeView}
+                onGo={go}
+                view="planReview"
+                icon={<ListChecks />}
+                label="مراجعة الصحيفة"
+                badge={planReviewCount}
+                data-guide-ignore="وجهةُ تنقّل مسجّلة في المرشد باسم page.planReview"
               />
             ) : null}
             {/* ── ورشةُ الجدول لمن يبني ─────────────────────────────────────
