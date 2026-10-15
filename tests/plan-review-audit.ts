@@ -197,6 +197,9 @@ const ctx = (plan: number[]) => ({
     check(source.json.sections.length === 1 && source.json.sections[0].sectionId === 21, "R5 رئيس القسم يرى كلية نطاقه فقط في اختيار مطابقة الكليات");
     const allColleges = await call("admin", "GET", "/api/plan-review/reference?sectionId=21");
     check(allColleges.status === 200 && allColleges.json.sections.length === 2 && allColleges.json.sections.some((row: any) => row.sectionId === 22 && row.collegeName === "كلية أخرى"), "R5 الإدارة تجهّز مقارنة تكنولوجيا التعليم لكل كلية من سجلاتها");
+    const adminStatus = await call("admin", "GET", "/api/plan-review/status");
+    const techLabels = adminStatus.json.sections.filter((row: any) => [21, 22].includes(row.sectionId)).map((row: any) => row.sectionName);
+    check(new Set(techLabels).size === 2 && techLabels.some((name: string) => name.includes("كلية")) && techLabels.some((name: string) => name.includes("أخرى")), "R5 القسم المشترك يظهر مرةً واضحةً لكل كلية ولا تتشابه خيارات الصحيفة", techLabels);
     const sec22Ref = allColleges.json.sections.find((row: any) => row.sectionId === 22).references.find((row: any) => row.id === "new");
     const missingOwnedCourse = sec22Ref.groups.flatMap((group: any) => group.courses).find((course: any) => course.code === "0109108");
     check(missingOwnedCourse.state === "missing" && missingOwnedCourse.ownerSectionId === 22, "R5 رمز القسم المتكرر يُحلّ داخل الكلية، فتظهر الإضافة لمالكها الصحيح");

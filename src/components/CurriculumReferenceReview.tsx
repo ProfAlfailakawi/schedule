@@ -18,7 +18,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
     if (!sectionId) return;
     fetch(`/api/plan-review/reference?sectionId=${sectionId}`, { cache: "no-store" }).then(async response => {
       const body = await response.json(); if (!response.ok) throw new Error(body.error || "تعذرت مقارنة الصحيفة");
-      if (active) setSections(body.sections || []);
+      if (active) setSections([...new Map((body.sections || []).map((row: SectionResult) => [Number(row.sectionId), row])).values()]);
     }).catch(e => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [sectionId]);

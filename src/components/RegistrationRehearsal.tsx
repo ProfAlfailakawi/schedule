@@ -8,7 +8,7 @@
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, Layers, Ticket, Users } from "lucide-react";
+import { AlertTriangle, CircleAlert, CircleHelp, Download, GraduationCap, Layers, Ticket, Users } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
@@ -55,7 +55,7 @@ const qualityLabel = (key: string) => ({
 const needsDecision = (c: CourseRow) => c.unmet.full > 0 || c.unmet["not-offered"] > 0;
 const weight = (c: CourseRow) => c.unmet.full * 3 + c.unmet["not-offered"] * 2 + c.unmet.conflict;
 
-export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence = false }: { onNavigate?: (view: string) => void; canOpenIntelligence?: boolean } = {}) {
+export default function RegistrationRehearsal({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
   const [data, setData] = useState<Summary | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [error, setError] = useState("");
@@ -133,12 +133,7 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
           <span className="sm-ic">{data.phase.namesVisible ? <Users /> : <Ticket />}</span>
           <div><b>{data.phase.label}</b><small>{data.phase.line}</small>
             <small>{data.phase.namesVisible ? "بدأ التسجيل: تصل أسماءُ المتعثّرين الأقسامَ المالكة للمقررات في «كشف التسجيل»." : "قبل التسجيل: أرقامٌ فقط — لا أسماءَ حتى تبدأ الجولة الأولى."}</small></div>
-          {onNavigate ? (
-            <div className="sm-links">
-              {data.phase.namesVisible ? <button type="button" onClick={() => onNavigate("studentRegistration")} data-guide-ignore="انتقالٌ إلى كشف التسجيل من شاشةٍ مسجّلة في المرشد باسم page.simulation">كشف التسجيل (الأسماء)</button> : null}
-              {canOpenIntelligence ? <button type="button" onClick={() => onNavigate("intelligence")} data-guide-ignore="انتقالٌ إلى مركز الذكاء من شاشةٍ مسجّلة في المرشد باسم page.simulation">مركز الذكاء</button> : null}
-            </div>
-          ) : null}
+          {onNavigate && data.phase.namesVisible ? <div className="sm-links"><button type="button" onClick={() => onNavigate("studentRegistration")} data-guide-ignore="انتقالٌ إلى كشف التسجيل من شاشةٍ مسجّلة في المرشد باسم page.simulation">كشف التسجيل</button></div> : null}
         </div>
       ) : null}
       {!data?.term ? <EmptyState title="لا فصلَ للرادار" detail="تظهر حين يكون للفصل القادم تواريخُ طلبة." /> : !r ? (
@@ -153,11 +148,12 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
           <section className="sm-capacity-summary" aria-label="قدرة الطلبة على تكوين جدول">
             <header><div><small>{scenario === "actual" ? "قدرة المشاركين" : "سيناريو غير المشاركين"}</small><strong>{countOf(selectedPopulation, AR.student)}</strong></div><span>خطة فعلية في المسودة · السعة افتراضية</span></header>
             <div className="sm-capacity-bands">
-              <article><b>{(bands?.canReach15 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>يصلون إلى 15 وحدة</span></article>
-              <article><b>{(bands?.canReach12To14 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>12–14 وحدة</span></article>
-              <article className="is-alert"><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>أقل من 12</span></article>
-              <article><b>{(bands?.unknown || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>بيانات غير كافية</span></article>
+              <article><span className="sm-band-icon"><GraduationCap /></span><b>{(bands?.canReach15 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>15 وحدة</span></article>
+              <article><span className="sm-band-icon"><Layers /></span><b>{(bands?.canReach12To14 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>12–14 وحدة</span></article>
+              <article className="is-alert"><span className="sm-band-icon"><CircleAlert /></span><b>{(bands?.below12 || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>أقل من 12</span></article>
+              <article><span className="sm-band-icon"><CircleHelp /></span><b>{(bands?.unknown || 0).toLocaleString("ar-KW-u-nu-latn")}</b><span>بيانات ناقصة</span></article>
             </div>
+            {selectedPopulation > 0 ? <div className="sm-capacity-bar" role="img" aria-label="توزيع المشاركين حسب قدرتهم على تكوين جدول"><i className="reach15" style={{ inlineSize: `${(bands?.canReach15 || 0) / selectedPopulation * 100}%` }} /><i className="reach12" style={{ inlineSize: `${(bands?.canReach12To14 || 0) / selectedPopulation * 100}%` }} /><i className="below12" style={{ inlineSize: `${(bands?.below12 || 0) / selectedPopulation * 100}%` }} /><i className="unknown" style={{ inlineSize: `${(bands?.unknown || 0) / selectedPopulation * 100}%` }} /></div> : null}
             {bands?.graduatingBelow12 ? <p className="sm-graduation-note">{bands.graduatingBelow12.toLocaleString("ar-KW-u-nu-latn")} يحتاجون أقل من 12 وحدة لإكمال المتبقي وفق الصحيفة.</p> : null}
             <p className="sm-base">هذا تقدير قدرة، لا أهلية رسمية ولا تسجيل أو حجز. المقررات المجتازة واردة من ملفات الطلبة وليست صحيفة رسمية.</p>
           </section>
@@ -170,13 +166,9 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
             </ul> : null}
           </details> : null}
 
-          <p className="sm-auto">{data.auto?.enabled ? `يُعاد الاحتساب تلقائياً عند تغيّر بيانات الطلبة أو الجدول، ويُراجع دورياً كل ${countOf(data.auto.everyHours, AR.hour)}.` : "التحديث التلقائي متوقّف من إعدادات النظام."}</p>
-          <p className="sm-base">
-            أساس الرغبات الفعلية: {countOf(r.students, AR.profile)} من {countOf(r.population, AR.profile)} ملفاً مكتملاً، أُجريت {new Date(r.ranAt).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" })}
-            {r.withoutRules ? ` · ${countOf(r.withoutRules, AR.profile)} على صحيفةٍ بلا قواعد معتمدة (بياناته غير كافية لتأكيد القدرة)` : ""}
-            {r.defaulted ? ` · ${countOf(r.defaulted, AR.profile)} غير مشارك في هذا الفصل، وتحليله منفصل كتوقع` : ""}
-            {r.scoped ? " · المعروض مقرراتُ قسمك فقط" : ""}. تقديرٌ لا بياناتُ التسجيل الرسمي.
-          </p>
+          <details className="sm-provenance"><summary>مصدر الأرقام <small>آخر احتساب {new Date(r.ranAt).toLocaleString("ar-KW-u-nu-latn", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></summary>
+            <p>الرغبات الفعلية: {countOf(r.students, AR.profile)} من {countOf(r.population, AR.profile)} ملفاً مكتملاً. {data.auto?.enabled ? `تحديث تلقائي عند تغيّر البيانات، ومراجعة دورية كل ${countOf(data.auto.everyHours, AR.hour)}.` : "التحديث التلقائي متوقف."} {r.withoutRules ? `${countOf(r.withoutRules, AR.profile)} بلا قواعد صحيفة معتمدة.` : ""} {r.defaulted ? `${countOf(r.defaulted, AR.profile)} غير مشارك؛ يظهر كتوقع مستقل.` : ""} {r.scoped ? "مقررات قسمك." : ""} محاكاة تقديرية، لا تسجيل رسمي ولا مقاعد محجوزة.</p>
+          </details>
 
           {outcome && outcome.answers > 0 ? <OutcomeBlock outcome={outcome} predictedStudents={r.students} /> : null}
 

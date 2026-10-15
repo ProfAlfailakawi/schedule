@@ -20,6 +20,7 @@ import type { Express, Request, RequestHandler, Response } from "express";
 import { RuleDraftConflict, Repository } from "../db/repository";
 import type { AdCourse, CurriculumRuleSet } from "../types";
 import { roleDefinition } from "../utils/academicRoles";
+import { sectionLabels } from "../utils/sectionLabel";
 import {
   checkRuleSet, normalizeGroup, normalizeRule, normalizeRules, withDerivedGroups, type RuleIssue,
 } from "../utils/curriculumRules";
@@ -52,7 +53,8 @@ export async function pendingPlanReviews(req: any, deps: Pick<PlanReviewDeps, "i
   const drafts = (await Repository.listRuleDrafts()).filter(draft => draft.status === "review");
   const visible = drafts.filter(draft => deps.isPowerUser(req) || (READERS.has(role) && deps.isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)));
   if (!visible.length) return [];
-  const sections = new Map<number, string>((await Repository.getSections() as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
+  const [sectionRows, collegeRows] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+  const sections = sectionLabels(sectionRows as any[], collegeRows as any[]);
   const out = [];
   for (const draft of visible) {
     const plan = (await Repository.getCurriculumPlans(draft.AdSectionId)).find(row => row.id === draft.planId);
@@ -114,7 +116,8 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
   async function view(req: any, ctx: Context) {
     const [draft, live] = await Promise.all([Repository.getRuleDraft(ctx.plan.id), Repository.getRuleSet(ctx.plan.id)]);
     const shown = draft || (live ? { ...live, status: "approved" as const } : blank(ctx, ""));
-    const sections = new Map<number, string>((await Repository.getSections() as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
+    const [sectionRows, collegeRows] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+    const sections = sectionLabels(sectionRows as any[], collegeRows as any[]);
     const issues = issuesOf(ctx, shown);
     return {
       plan: { id: ctx.plan.id, name: ctx.plan.name, status: ctx.plan.status, sectionId: ctx.plan.AdSectionId, sectionName: ctx.sectionName },
@@ -144,7 +147,8 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
   app.get("/api/plan-review/status", deps.requireAuth, async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
     const drafts = await Repository.listRuleDrafts();
-    const sections = new Map<number, string>((await Repository.getSections() as any[]).map(row => [Number(row.AdSectionId), String(row.AdSectionName || "")]));
+    const [sectionRows, collegeRows] = await Promise.all([Repository.getSections(), Repository.getColleges()]);
+    const sections = sectionLabels(sectionRows as any[], collegeRows as any[]);
     const rows: any[] = [];
     for (const draft of drafts) {
       const plan: Plan = { id: draft.planId, AdCollegeId: draft.AdCollegeId, AdSectionId: draft.AdSectionId, name: "", status: "" };
@@ -158,11 +162,11 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     /* الصحائفُ التي يُفتح عليها: أقسامُ هذا الحساب وحدها، بلا المؤرشفة. */
     const reachable: Array<{ sectionId: number; sectionName: string; plans: Array<{ id: string; name: string; status: string; pending: boolean }> }> = [];
     const pendingIds = new Set(rows.filter(row => row.state === "review").map(row => row.planId));
-    for (const section of await Repository.getSections() as any[]) {
+    for (const section of sectionRows as any[]) {
       const collegeId = Number(section.AdCollegeId), sectionId = Number(section.AdSectionId);
       if (!canSee(req, { id: "", AdCollegeId: collegeId, AdSectionId: sectionId, name: "", status: "" })) continue;
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => plan.status !== "archived" && !plan.virtual);
-      if (plans.length || isTechnologyEducation(section.AdSectionName)) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: [...plans].sort((x, y) => Number(pendingIds.has(y.id)) - Number(pendingIds.has(x.id)) || Number(y.status === "active") - Number(x.status === "active")).map(plan => ({ id: plan.id, name: plan.name, status: plan.status, pending: pendingIds.has(plan.id) })) });
+      if (plans.length || isTechnologyEducation(section.AdSectionName)) reachable.push({ sectionId, sectionName: sections.get(sectionId) || String(section.AdSectionName || ""), plans: [...plans].sort((x, y) => Number(pendingIds.has(y.id)) - Number(pendingIds.has(x.id)) || Number(y.status === "active") - Number(x.status === "active")).map(plan => ({ id: plan.id, name: plan.name, status: plan.status, pending: pendingIds.has(plan.id) })) });
     }
     res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isRootAdmin(req) });
   });
