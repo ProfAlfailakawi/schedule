@@ -21,6 +21,7 @@ import {
 import { pickDoorTerm } from "../src/utils/termStudentPhases";
 import { clearDoorCookie, codeVersion, doorCookie, hashCode, readCookie, readDoorSession, signDoorSession, verifyCode } from "../src/server/studentDoor";
 import { STUDENT_HOME_SCRIPT, studentHomePage } from "../src/server/studentHomePage";
+import { studentNeedsCommitteeHelp } from "../src/utils/studentNeedRequest";
 import type { AdTerm, StudentProfile } from "../src/types";
 
 let passed = 0, failed = 0;
@@ -37,6 +38,21 @@ check(studentHomeSource.includes("var remaining=(S.offered&&S.offered.courses)||
   && studentHomeSource.includes("غير مطروح هذا الفصل")
   && studentHomeSource.includes("غير مطروح") ,
 "D5 يستطيع الطالب إبداء حاجته إلى مقرر غير مطروح، وتظهر حالته بوضوح");
+check(studentHomeSource.includes("/api/public/me/request-context") && studentHomeSource.includes("/api/public/me/request")
+  && studentHomeSource.includes("أوافق على إرسال اسمي ورقمي المدني") && studentHomeSource.includes("تعذّر تكوين جدول؟")
+  && studentHomeSource.includes("لا يؤكد وجود تعارض"),
+"D5 يستطيع الطالب إرسال طلب الفتح/التعارض من مساري بموافقة صريحة");
+
+{
+  const profile: any = { updatedAt: "2026-10-01T00:00:00.000Z", wishes: { termId: 7 } };
+  const run: any = { runId: "r1", ranAt: "2026-10-02T00:00:00.000Z" };
+  const ticket: any = { runId: "r1", remainingUnits: 24, plans: [{ units: 9 }, { units: 9 }, { units: 6 }], unmet: [{ courseId: 12 }] };
+  check(studentNeedsCommitteeHelp(profile, run, ticket, 7), "D5 طلب المساعدة متاح عند تعثر موثق في محاكاة حالية");
+  check(!studentNeedsCommitteeHelp(profile, run, { ...ticket, plans: [{ units: 12 }] }, 7), "D5 لا يُنشأ طلب فردي إذا استطاع الطالب بلوغ 12 وحدة");
+  check(!studentNeedsCommitteeHelp(profile, run, { ...ticket, remainingUnits: 9 }, 7), "D5 لا يُعدّ المتوقع تخرجه والمتبقي له أقل من 12 متعثراً");
+  check(!studentNeedsCommitteeHelp({ ...profile, updatedAt: "2026-10-03T00:00:00.000Z" }, run, ticket, 7), "D5 إعادة المحاكاة مطلوبة بعد تغيير ملف الطالب");
+  check(!studentNeedsCommitteeHelp(profile, run, { ...ticket, runId: "old" }, 7), "D5 لا يُقبل تشغيل قديم أو تذكرة من تشغيل آخر");
+}
 
 /* ── D1: القواعد ─────────────────────────────────────────────────────────── */
 {
@@ -295,6 +311,22 @@ check(studentHomeSource.includes("var remaining=(S.offered&&S.offered.courses)||
       const wantId = offered.courses.find((c: any) => c.sections > 0).id;
       const wished = await http("PUT", "/api/public/me/wishes", { targetUnits: 15, courseIds: [wantId, shared[0], 424242], constraints: { noMorning: true, freeDay: "yes" } });
       check(wished.status === 200 && wished.json.wishes.courseIds.join() === String(wantId) && wished.json.wishes.constraints.noMorning === true && wished.json.wishes.constraints.freeDay === false, "D6 الرغبات: المنجَزُ والغريب يُسقطان، والقيد بقيمةٍ صارمة", wished.json);
+      const requestContext = await http("GET", "/api/public/me/request-context");
+      const requestCourse = oldPlan.courses.find((c: any) => !saved.json.passedCourseIds.includes(c.id));
+      const otherCollegeCourse = requestContext.json.conflictCourses.find((c: any) => !c.own);
+      check(requestContext.status === 200 && !requestContext.json.canRequest && requestContext.json.courses.length === 0, "D6 لا يعرض طلباً فردياً قبل أن تثبت المحاكاة تعثر الطالب", requestContext.json);
+      const noConsent = await http("POST", "/api/public/me/request", { requestType: "new-course", courseIds: [requestCourse.id], details: "احتاجه للتخرج" });
+      check(noConsent.status === 400 && noConsent.json.code === "consent-needed", "D6 لا تُرسل هوية الطالب للقسم دون موافقته الصريحة");
+      const opened = await http("POST", "/api/public/me/request", { requestType: "new-course", courseIds: [requestCourse.id], details: "أحتاج المقرر لاستكمال خطتي", consent: true });
+      check(opened.status === 409 && opened.json.code === "no-proven-blocker", "D6 رفض طلب فردي بلا تعثر مثبت في المحاكاة");
+      const casesAfterRequest = await http("GET", "/api/public/me/cases");
+      check(casesAfterRequest.json.cases.length === 0, "D6 الطلب المرفوض لا ينشئ حالة في كشف القسم");
+      if (otherCollegeCourse) {
+        const cross = await http("POST", "/api/public/me/request", { requestType: "course-conflict", courseIds: [requestCourse.id, otherCollegeCourse.id], details: "يتعارض موعد المقررين", consent: true });
+        check(cross.status === 409 && cross.json.code === "no-proven-blocker", "D6 لا تُرسل مراجعة تعارض قبل إثبات تعثر المحاكاة");
+        const outside = requestContext.json.conflictCourses.find((c: any) => c.id === 999999);
+        check(!outside, "D6 قائمة تعارض المقررات محصورة ببيانات الكلية");
+      }
       const rawOffered = JSON.stringify(offered);
       check(!/fstarttime|fendtime|AdRoom|AdInstructor|fsunday|SCode/.test(rawOffered), "D6 ما يراه الطالب أعدادٌ لا مواعيدَ ولا قاعاتٍ ولا أساتذة");
 
