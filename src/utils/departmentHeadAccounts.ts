@@ -56,7 +56,7 @@ export const ADVISOR_KIND: AccountKind = { suffix: "advisor", role: ADVISOR_ROLE
 
 function lower(value: string) { return String(value || "").trim().toLowerCase(); }
 function accountPrefix(value: string) {
-  return String(value || "").replace(/^(?:01)+(?=[A-Za-z])/i, "");
+  return String(value || "").replace(/^(?:01)+/i, "");
 }
 
 /** رمز الكلية صالحاً لاسم دخول: حروف وأرقام لاتينية فقط، وإلا رقمُها. */
@@ -111,8 +111,12 @@ export function planDepartmentHeadAccounts(input: {
     /* Use the department's own short code when no `<prefix>dept` account exists.
        This keeps advisor identities predictable (Math → Mathadvisor) without
        requiring a placeholder account or silently choosing an unrelated ID. */
-    const sectionCode = String(section.AdSectionCode || "").replace(/[^A-Za-z0-9]/g, "");
-    const prefix = accountPrefix(deptLogin ? deptLogin.replace(DEPT_SUFFIX, "") : sectionCode) || `s${sectionId}`;
+    const sectionCode = accountPrefix(String(section.AdSectionCode || "").replace(/[^A-Za-z0-9]/g, ""));
+    const sourcePrefix = deptLogin ? deptLogin.replace(DEPT_SUFFIX, "") : sectionCode;
+    /* A section code such as 0109 is institutional metadata, not part of the
+       department's human-facing account name. Strip only leading 01 so the
+       advisor identity stays Arabicadvisor, Techadvisor, etc. */
+    const prefix = accountPrefix(sourcePrefix).replace(/^0+(?=\d)/, "") || `s${sectionId}`;
     const currentHead = scoped.find(user => user.Role === kind.role);
     return { section, collegeId, sectionId, deptLogin, prefix, currentHead };
   });

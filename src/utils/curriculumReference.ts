@@ -9,7 +9,7 @@ export const isTechnologyEducation = (name: unknown) => arabicMatchKey(String(na
 /** A department's short code is resolved only for its own 0109 courses.
  * Equal names never merge courses. The caller supplies the scoped catalog.
  */
-export function compareCurriculumReference(reference: CurriculumReference, courses: readonly AdCourse[], memberIds?: ReadonlySet<number>) {
+export function compareCurriculumReference(reference: CurriculumReference, courses: readonly AdCourse[], memberIds?: ReadonlySet<number>, membershipOwnerSectionId?: number) {
   return reference.groups.map(group => ({ ...group, courses: group.courses.map(source => {
     const exact = courses.filter(course => referenceCodeKey(course.CourseCode) === source.code);
     const candidates = exact.length ? exact : source.code.startsWith("0109")
@@ -20,9 +20,9 @@ export function compareCurriculumReference(reference: CurriculumReference, cours
       if (String(current.CourseName).normalize("NFKC").trim() !== source.name) differences.push("name");
       if (Number(current.CourseCredit) !== source.credit) differences.push("credit");
       if (Number(current.CourseHours) !== source.hours) differences.push("hours");
-      if (memberIds && !memberIds.has(Number(current.AdCourseId))) differences.push("membership");
+      if (memberIds && (membershipOwnerSectionId === undefined || Number(current.AdSectionId) === membershipOwnerSectionId) && !memberIds.has(Number(current.AdCourseId))) differences.push("membership");
     }
     return { ...source, state: candidates.length > 1 ? "ambiguous" : current ? differences.length ? "different" : "matched" : "missing", differences,
-      ...(current ? { current: { id: current.AdCourseId, code: current.CourseCode, name: String(current.CourseName).normalize("NFKC"), credit: current.CourseCredit, hours: current.CourseHours } } : {}) };
+      ...(current ? { current: { id: current.AdCourseId, code: current.CourseCode, name: String(current.CourseName).normalize("NFKC"), credit: current.CourseCredit, hours: current.CourseHours, capacity: Number(current.MaxStudent) > 0 ? Number(current.MaxStudent) : null } } : {}) };
   }) }));
 }

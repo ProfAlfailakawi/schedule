@@ -48,6 +48,7 @@ export default function CurriculumReferenceReview({ sectionId, onCatalogAction }
           <div><strong>{course.name}</strong><bdi>{course.code}</bdi><span>{countOf(course.credit, AR.unit)} · {countOf(course.hours, AR.hour)}</span></div>
           {course.prerequisites.length ? <small>المسبق: <bdi>{course.prerequisites.join(" + ")}</bdi>{course.externalAlternative ? ` أو ${course.externalAlternative} (شرط خارجي يحتاج توثيقًا)` : ""}</small> : null}
           {course.state === "different" && course.current ? <small>الحالي: {course.current.name} · {countOf(course.current.credit, AR.unit)} · {countOf(course.current.hours, AR.hour)}. المطلوب: {course.differences.map(field => labels[field]).join("، ")}.</small> : null}
+          {course.current ? <small>السعة المسجلة: {course.current.capacity === null ? "غير محددة" : countOf(course.current.capacity, AR.student)}.</small> : null}
           {course.state === "different" && course.ownerSectionId !== selectedSectionId && course.ownerSectionName ? <small>السجل مملوك لقسم {course.ownerSectionName}؛ يصححه القسم المالك.</small> : null}
           {course.state === "missing" ? <small>{course.ownerSectionName ? `غير موجود في كتالوج قسم ${course.ownerSectionName}.` : "لم تُحسم هوية القسم المالك من الرمز؛ يلزم التحقق قبل الإضافة."}</small> : null}
           {course.state === "ambiguous" ? <small>الرمز يطابق أكثر من سجل؛ تُحسم الهوية قبل أي تعديل.</small> : null}

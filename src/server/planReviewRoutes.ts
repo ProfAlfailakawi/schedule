@@ -195,7 +195,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
         const matchingPlans = plans.filter(plan => !plan.virtual && plan.status === (reference.id === "new" ? "active" : "transition"));
         const plan = matchingPlans.length === 1 ? matchingPlans[0] : undefined;
         const members = new Set(links.filter(link => link.planId === plan?.id).map(link => Number(link.AdCourseId)));
-        const groups = compareCurriculumReference(reference, collegeCourses, members).map(group => ({ ...group, courses: group.courses.map(course => {
+        const groups = compareCurriculumReference(reference, collegeCourses, members, Number(target.AdSectionId)).map(group => ({ ...group, courses: group.courses.map(course => {
           const matched = course.current && collegeCourses.find(row => Number(row.AdCourseId) === Number(course.current?.id));
           const inferred = sectionIdsByCollegeCode.get(`${Number(target.AdCollegeId)}:${course.code.slice(2, 4)}`) || [];
           const ownerSectionId = Number(matched?.AdSectionId) || (inferred.length === 1 ? inferred[0] : 0);
