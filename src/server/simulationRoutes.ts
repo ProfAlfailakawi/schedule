@@ -155,7 +155,7 @@ export function radarDue(input: { mode: string; wishesClose?: string; today: str
   const ranMs = Date.parse(input.ranAt);
   if (!Number.isFinite(ranMs)) return true;
   /* أُغلقت الرغباتُ بعد آخر تحديث: تحديثٌ أخيرٌ بالرغبات النهائية. */
-  if (input.wishesClose && input.today > input.wishesClose && input.ranAt.slice(0, 10) <= input.wishesClose) return true;
+  if (input.wishesClose && input.today > input.wishesClose && kuwaitDateISO(new Date(ranMs)) <= input.wishesClose) return true;
   return input.now - ranMs >= input.everyMs;
 }
 

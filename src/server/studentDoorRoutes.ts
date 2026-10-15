@@ -637,7 +637,7 @@ export function registerStudentDoorRoutes(app: Express, deps: StudentDoorDeps): 
     const name = cleanName(req.body?.name);
     if (!name) { fail(res, 400, "اكتب اسمك الثلاثي كما في الجامعة.", "bad-name"); return; }
     const nameCipher = await deps.sealIdentity(name);
-    const saved = await Repository.updateStudentProfile(fingerprint, current => (current ? { ...current, nameCipher, updatedAt: new Date().toISOString() } : undefined));
+    const saved = await Repository.updateStudentProfile(fingerprint, current => (current ? { ...current, nameCipher } : undefined));
     if (!saved) { fail(res, 401, "انتهت جلستك. أدخل من جديد.", "signed-out"); return; }
     noStore(res); res.json(await summaryOf(saved));
   });
