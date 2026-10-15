@@ -106,6 +106,7 @@ import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
+import { loadSimulationInput, rankDemandRepairsBySimulation } from "./src/server/simulationData";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
@@ -15902,6 +15903,23 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     ? readDemandRepairs(week, reading, style?.reading || null, style?.doorway || 0)
     : { repairs: [], unsolved: [], examined: 0, headline: "" };
 
+  /* Rank timetable moves by rerunning the registration simulation, not by
+     extrapolating the pairwise survey count. This is a read-only preview over
+     current-term, explicit responders; no profile, schedule, or radar run is
+     written. Return only this department's aggregate impact. */
+  let evaluatedRepairs: Array<any> = [];
+  let repairCandidates = repairs.repairs.length;
+  let repairSimulationReady = false;
+  if (repairs.repairs.length) {
+    const term = (allTerms as any[]).find(row => Number(row.AdTermId) === termId);
+    if (term) {
+      repairSimulationReady = true;
+      const rounds = Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2);
+      const loaded = await loadSimulationInput(term, rounds);
+      evaluatedRepairs = rankDemandRepairsBySimulation(loaded.input, loaded.schedules as any[], loaded.courses, termId, repairs.repairs, { collegeId, sectionId });
+    }
+  }
+
   /* ── كم شعبة نفتح، وأين ────────────────────────────────────────────────────
      The question the survey is actually sent to answer. The department mails it
      before the term and registers in the first week, by which time the board is
@@ -15945,6 +15963,9 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   res.json({
     ...reading,
     ...repairs,
+    repairs: evaluatedRepairs,
+    repairCandidates,
+    repairSimulationReady,
     ...cohort,
     sectionName,
     survey,

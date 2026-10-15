@@ -178,6 +178,8 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
     if (!isTechnologyEducation(section.AdSectionName)) { res.json({ references: [] }); return; }
     const [courses, sections, plans, links] = await Promise.all([Repository.getCourses(), Repository.getSections(), Repository.getCurriculumPlans(sectionId), Repository.getCurriculumPlanCourses(sectionId)]);
     const sectionCodes = new Map(sections.map(row => [Number(row.AdSectionId), referenceCodeKey(row.AdSectionCode).padStart(2, "0")]));
+    const sectionIdsByCode = new Map<string, number[]>();
+    for (const [id, code] of sectionCodes) sectionIdsByCode.set(code, [...(sectionIdsByCode.get(code) || []), id]);
     const collegeCourses = courses.filter(row => Number(row.AdCollegeId) === Number(section.AdCollegeId)).map(row => {
       const code = referenceCodeKey(row.CourseCode), ownerCode = sectionCodes.get(Number(row.AdSectionId));
       return { ...row, CourseCode: /^\d{1,3}$/.test(code) && /^\d{2}$/.test(ownerCode || "") ? `01${ownerCode}${code.padStart(3, "0")}` : code };
@@ -186,7 +188,14 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const matchingPlans = plans.filter(plan => !plan.virtual && plan.status === (reference.id === "new" ? "active" : "transition"));
       const plan = matchingPlans.length === 1 ? matchingPlans[0] : undefined;
       const members = new Set(links.filter(link => link.planId === plan?.id).map(link => Number(link.AdCourseId)));
-      return { ...reference, planId: plan?.id || null, groups: compareCurriculumReference(reference, collegeCourses, members) };
+      const groups = compareCurriculumReference(reference, collegeCourses, members).map(group => ({ ...group, courses: group.courses.map(course => {
+        const matched = course.current && collegeCourses.find(row => Number(row.AdCourseId) === Number(course.current?.id));
+        const inferred = sectionIdsByCode.get(course.code.slice(2, 4)) || [];
+        const ownerSectionId = Number(matched?.AdSectionId) || (inferred.length === 1 ? inferred[0] : 0);
+        const owner = sections.find(row => Number(row.AdSectionId) === ownerSectionId);
+        return { ...course, ownerSectionId, ownerSectionName: String(owner?.AdSectionName || ""), ownerCollegeId: Number(section.AdCollegeId) };
+      }) }));
+      return { ...reference, planId: plan?.id || null, groups };
     }) });
   });
 

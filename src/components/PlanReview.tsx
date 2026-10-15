@@ -120,7 +120,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
-export default function PlanReview() {
+export default function PlanReview({ onNavigate }: { onNavigate?: (view: "courses") => void } = {}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [sectionId, setSectionId] = useState(0);
   const [planId, setPlanId] = useState("");
@@ -166,6 +166,11 @@ export default function PlanReview() {
       void loadStatus();
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
+  };
+
+  const openCatalogCorrection = (action: { kind: "edit" | "create"; sectionId: number; collegeId: number; courseId?: number; code: string; name: string; credit: number; hours: number }) => {
+    sessionStorage.setItem("schedule-reference-course-action", JSON.stringify(action));
+    onNavigate?.("courses");
   };
 
   const names = useMemo(() => {
@@ -221,7 +226,7 @@ export default function PlanReview() {
             </div>
           </div>
 
-          <CurriculumReferenceReview sectionId={sectionId} />
+          <CurriculumReferenceReview sectionId={sectionId} onCatalogAction={onNavigate ? openCatalogCorrection : undefined} />
           {!planId ? <EmptyState title="لم تُجهّز صحيفة تشغيلية بعد" detail="المرجع المرفق متاح للمطابقة. إنشاء الصحيفة وربط مقرراتها يسبق اعتماد قواعدها." /> : !view ? <MicroLoader /> : (
             <>
               <div className={`pr-state ${view.state.status}`}>

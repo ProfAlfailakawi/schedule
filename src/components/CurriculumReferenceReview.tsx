@@ -4,9 +4,10 @@ import type { compareCurriculumReference } from "../utils/curriculumReference";
 import type { CurriculumReference } from "../data/technologyEducationCurricula";
 import { Notice } from "./ui";
 
-type Reference = Omit<CurriculumReference, "groups"> & { planId: string | null; groups: ReturnType<typeof compareCurriculumReference> };
+type Reference = Omit<CurriculumReference, "groups"> & { planId: string | null; groups: Array<Omit<ReturnType<typeof compareCurriculumReference>[number], "courses"> & { courses: Array<ReturnType<typeof compareCurriculumReference>[number]["courses"][number] & { ownerSectionId: number; ownerSectionName: string; ownerCollegeId: number }> }> };
 const labels: Record<string, string> = { name: "الاسم", credit: "الوحدات", hours: "الساعات", membership: "إضافته إلى الصحيفة" };
-export default function CurriculumReferenceReview({ sectionId }: { sectionId: number }) {
+type CatalogAction = { kind: "edit" | "create"; sectionId: number; collegeId: number; courseId?: number; code: string; name: string; credit: number; hours: number };
+export default function CurriculumReferenceReview({ sectionId, onCatalogAction }: { sectionId: number; onCatalogAction?: (action: CatalogAction) => void }) {
   const [references, setReferences] = useState<Reference[]>([]);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState("new");
@@ -39,8 +40,15 @@ export default function CurriculumReferenceReview({ sectionId }: { sectionId: nu
           <div><strong>{course.name}</strong><bdi>{course.code}</bdi><span>{countOf(course.credit, AR.unit)} · {countOf(course.hours, AR.hour)}</span></div>
           {course.prerequisites.length ? <small>المسبق: <bdi>{course.prerequisites.join(" + ")}</bdi>{course.externalAlternative ? ` أو ${course.externalAlternative} (شرط خارجي يحتاج توثيقًا)` : ""}</small> : null}
           {course.state === "different" && course.current ? <small>الحالي: {course.current.name} · {countOf(course.current.credit, AR.unit)} · {countOf(course.current.hours, AR.hour)}. المطلوب: {course.differences.map(field => labels[field]).join("، ")}.</small> : null}
-          {course.state === "missing" ? <small>غير موجود في كتالوج الكلية بهذه الهوية؛ يلزم استكماله لدى القسم المالك.</small> : null}
+          {course.state === "different" && course.ownerSectionId !== sectionId && course.ownerSectionName ? <small>السجل مملوك لقسم {course.ownerSectionName}؛ يصححه القسم المالك.</small> : null}
+          {course.state === "missing" ? <small>{course.ownerSectionName ? `غير موجود في كتالوج قسم ${course.ownerSectionName}.` : "لم تُحسم هوية القسم المالك من الرمز؛ يلزم التحقق قبل الإضافة."}</small> : null}
           {course.state === "ambiguous" ? <small>الرمز يطابق أكثر من سجل؛ تُحسم الهوية قبل أي تعديل.</small> : null}
+          {course.state === "different" && course.current && course.ownerSectionId === sectionId && onCatalogAction && course.differences.some(field => field === "name" || field === "credit" || field === "hours") ? (
+            <button type="button" className="reference-fix" data-guide-ignore="فتح سجل المقرر المملوك للقسم لتصحيح الاسم أو الوحدات أو الساعات" onClick={() => onCatalogAction({ kind: "edit", sectionId, collegeId: course.ownerCollegeId, courseId: course.current!.id, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>افتح المقرر لتصحيح البيانات</button>
+          ) : null}
+          {course.state === "missing" && course.ownerSectionId === sectionId && onCatalogAction ? (
+            <button type="button" className="reference-fix" data-guide-ignore="بدء إضافة المقرر الناقص إلى سجل القسم بعد التحقق من سعته" onClick={() => onCatalogAction({ kind: "create", sectionId, collegeId: course.ownerCollegeId, code: course.code, name: course.name, credit: course.credit, hours: course.hours })}>أضف المقرر إلى القسم</button>
+          ) : null}
         </article>)}
       </section>)}
     </details>)}
