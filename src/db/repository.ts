@@ -18,6 +18,7 @@ import {
   FormSecurity,
   AdCollegeUserAssign,
   AdTerm,
+  TermStudentPhases,
   AdCollege,
   AdSection,
   AdInstructor,
@@ -2827,6 +2828,32 @@ export const Repository = {
     if (index === -1) throw new Error("الفصل الدراسي غير موجود");
     if (deadline) db.terms[index].AdTermSubmissionDeadline = deadline;
     else delete db.terms[index].AdTermSubmissionDeadline;
+    saveDatabase();
+    return db.terms[index];
+  },
+
+  /**
+   * تواريخ رحلة الطلبة للفصل (الرغبات، الجولات، الإغلاق).
+   *
+   * دالّةٌ مستقلّة لحقلٍ واحد لنفس سبب موعد التسليم: من يضعها رئيسُ التسجيل لا
+   * محرّرُ الفصل. وقيمةٌ فارغة ترفعها بدل أن تكتب كائناً فارغاً.
+   */
+  setTermStudentPhases: async (id: number, phases: TermStudentPhases | undefined): Promise<AdTerm> => {
+    invalidateReference(REFERENCE_KEYS.terms);
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const docRef = firestoreDb.collection("terms").doc(`term_${id}`);
+      const doc = await docRef.get();
+      if (!doc.exists) throw new Error("الفصل الدراسي غير موجود");
+      const updated = { ...(doc.data() as AdTerm) };
+      if (phases) updated.AdTermStudentPhases = phases;
+      else delete updated.AdTermStudentPhases;
+      await docRef.set(updated);
+      return updated;
+    }
+    const index = db.terms.findIndex(row => row.AdTermId === id);
+    if (index === -1) throw new Error("الفصل الدراسي غير موجود");
+    if (phases) db.terms[index].AdTermStudentPhases = phases;
+    else delete db.terms[index].AdTermStudentPhases;
     saveDatabase();
     return db.terms[index];
   },

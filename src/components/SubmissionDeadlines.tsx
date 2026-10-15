@@ -32,6 +32,8 @@ import {
   previewExceptions, progressSegment, type ExceptionAmount, type ProgressSegment,
 } from "../utils/submissionDeadlines";
 import { currentTermId, termHasEnded, termPhase } from "../utils/termSequence";
+import StudentPhasesBlock from "./StudentPhasesBlock";
+import { hasStudentPhases, readStudentPhase } from "../utils/termStudentPhases";
 import type { AdTerm, ScheduleApprovalStatus } from "../types";
 
 /** سطرُ قسمٍ كما يصل من الوارد (/api/approvals/inbox). */
@@ -448,6 +450,7 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
             {progress.late ? <span className="sd-pill" data-tone="danger">{countOf(progress.late, AR.department)} {nounFor(progress.late, AR.lateAdj)}</span> : null}
             {exceptions.length ? <span className="sd-pill">{countOf(exceptions.length, AR.exception)}</span> : null}
             {requests.length ? <span className="sd-pill" data-tone="warning">طلبات تمديد: {requests.length}</span> : null}
+            {hasStudentPhases(term?.AdTermStudentPhases) ? <span className="sd-pill" title="مرحلة الطلبة اليوم">الطلبة: {readStudentPhase(term?.AdTermStudentPhases).label}</span> : null}
           </div>
         </div>
         <button type="button" className="sd-toggle" aria-expanded={false} data-guide-ignore="فتح لوحة مواعيد التسليم — عرضٌ لا فعل" onClick={toggleCollapsed}>
@@ -575,6 +578,9 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
           </ul>
         </div>
       ) : <p className="sd-muted">يقرأ الأقسام…</p>}
+
+      {/* ── رحلة الطلبة: الرغبات، التجميد، جولات التسجيل، الإغلاق ── */}
+      <StudentPhasesBlock term={term} terms={terms} canEdit={canEdit} onChanged={onChanged} />
 
       {/* ── طلبات الأقسام ── */}
       {requests.length ? (
