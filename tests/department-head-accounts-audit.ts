@@ -20,7 +20,7 @@ const sections = [
   { AdSectionId: 10, AdCollegeId: 1, AdSectionName: "قسم تكنولوجيا التعليم" },
   { AdSectionId: 11, AdCollegeId: 1, AdSectionName: "قسم الدراسات الاجتماعية" },
   { AdSectionId: 20, AdCollegeId: 2, AdSectionName: "قسم تكنولوجيا التعليم" },
-  { AdSectionId: 21, AdCollegeId: 2, AdSectionName: "قسم بلا حساب" },
+  { AdSectionId: 21, AdCollegeId: 2, AdSectionCode: "Math", AdSectionName: "قسم الرياضيات" },
 ];
 const users = [
   { SystemUserId: 1, SystemUserLogin: "Techdept", Role: "committeeChair" },
@@ -39,7 +39,7 @@ const by = (id: number) => plan.find(row => row.sectionId === id)!;
 check(by(10).status === "exists" && by(10).existingLogin === "Techhead", "Techhead الموجود يُعدّ رئيس قسم تكنولوجيا التعليم (بنات) ولا يُنشأ ثانية");
 check(by(11).status === "create" && by(11).proposedLogin === "Sochead", "Socdept ← Sochead");
 check(by(20).status === "create" && by(20).proposedLogin === "TechheadBB", "البادئة نفسها في كلية أخرى تأخذ رمز الكلية");
-check(by(21).status === "create" && by(21).proposedLogin === "s21head" && Boolean(by(21).note), "قسم بلا حساب dept: اسم بديل مع تنبيه");
+check(by(21).status === "create" && by(21).proposedLogin === "Mathhead" && Boolean(by(21).note), "قسم بلا حساب dept: يُستخدم رمز القسم واسمه واضح للمدير");
 const logins = plan.map(row => (row.existingLogin || row.proposedLogin).toLowerCase());
 check(new Set(logins).size === logins.length, "لا اسمان متطابقان في الخطة");
 
@@ -64,6 +64,8 @@ const advisors = planAdvisorAccounts({
 const adv = (id: number) => advisors.find(row => row.sectionId === id)!;
 check(adv(10).proposedLogin === "Econoadvisor" && adv(10).status === "create", "Econodept ← Econoadvisor");
 check(adv(11).proposedLogin === "TechadvisorBG" && adv(20).proposedLogin === "TechadvisorBB", "البادئة المشتركة بين كليتين تأخذ رمز الكلية");
+const codeBasedAdvisor = planAdvisorAccounts({ users: [], assigns: [], colleges, sections: [sections[3]] });
+check(codeBasedAdvisor[0].proposedLogin === "Mathadvisor", "القسم بلا حساب dept: رمز Math ينتج Mathadvisor");
 check(advisors.every(row => row.proposedName.startsWith("إرشاد ")), "اسم الحساب «إرشاد <القسم>»");
 check(!advisors.some(row => /head/i.test(row.proposedLogin)), "لا تتداخل حسابات المرشدين مع حسابات الرؤساء");
 check(advisors.length === sections.length, "حسابٌ لكل قسم");

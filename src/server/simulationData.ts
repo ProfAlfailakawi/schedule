@@ -10,6 +10,7 @@ import { createHash, randomUUID } from "crypto";
 import { Repository } from "../db/repository";
 import type { AdCourse, AdTerm, RegistrationRun, RegistrationTicket } from "../types";
 import type { DemandRepair } from "../utils/demandRepair";
+import type { SectionProposal } from "../utils/sectionOpening";
 import { remainingNeed } from "../utils/curriculumRules";
 import { auditSimOfferings, parseClock, simulateRegistration, type SimInput, type SimOffering, type SimPlanRules, type SimResult, type SimSlot, type SimStudent } from "../utils/registrationSim";
 
@@ -130,6 +131,69 @@ export interface DemandRepairImpact {
   virtualCapacity: true;
 }
 
+export interface SectionOpeningImpact extends DemandRepairImpact {}
+
+/** Add proposed sections only to a throwaway schedule and compare the actual
+ * responder population. A placement with no measured benefit is not promoted. */
+export function rankSectionOpeningsBySimulation(
+  input: SimInput,
+  schedules: import("../types").FSchedule[],
+  courses: Map<number, AdCourse>,
+  termId: number,
+  proposals: SectionProposal[],
+): { proposals: Array<SectionProposal & { simulationImpact: SectionOpeningImpact }>; tested: number; rejected: number } {
+  const responders = input.students.filter(student => student.wishes);
+  if (!responders.length) return { proposals: [], tested: 0, rejected: proposals.length };
+  const baseline = simulateRegistration({
+    ...input, students: responders, offerings: buildSimulationOfferings(termId, schedules, courses).offerings, assessCapacity: true,
+  });
+  const summarize = (result: SimResult, scope?: { collegeId: number; sectionId: number }) => {
+    const ids = new Set(responders.filter(student => !scope || (student.collegeId === scope.collegeId && student.sectionId === scope.sectionId)).map(student => student.fp));
+    const value: SimResult["capacity"] = { canReach15: 0, canReach12To14: 0, below12: 0, graduatingBelow12: 0, unknown: 0 };
+    for (const ticket of result.tickets) if (ids.has(ticket.fp)) value[ticket.assessment || "unknown"] += 1;
+    return value;
+  };
+  const scopedFor = (proposal: SectionProposal) => {
+    const course = courses.get(proposal.courseId);
+    return { collegeId: Number(course?.AdCollegeId) || 0, sectionId: Number(course?.AdSectionId) || 0 };
+  };
+  const reaches12 = (value: SimResult["capacity"]) => value.canReach15 + value.canReach12To14;
+  let nextId = Math.max(0, ...schedules.map(row => Number(row.id) || 0)) + 1;
+  const accepted: Array<SectionProposal & { simulationImpact: SectionOpeningImpact }> = [];
+  for (const proposal of proposals) {
+    const course = courses.get(proposal.courseId), scope = scopedFor(proposal);
+    if (!course || !scope.collegeId || !scope.sectionId || proposal.predicted || !proposal.placements.length) continue;
+    const added = proposal.placements.map(placement => ({
+      id: nextId++, AdCollegeId: scope.collegeId, AdSectionId: scope.sectionId, AdTermId: termId,
+      AdCourseId: proposal.courseId, AdCourseName: course.CourseName, SCode: placement.sectionCode,
+      AdInstructorId: placement.instructorId,
+      fsunday: placement.day === "fsunday", fmonday: placement.day === "fmonday", ftuesday: placement.day === "ftuesday",
+      fwednesday: placement.day === "fwednesday", fthursday: placement.day === "fthursday",
+      fstarttime: placement.start, fendtime: placement.end, AdRoomCode: placement.roomCode, AdRoomHall: placement.roomHall,
+      buildingId: placement.buildingId, roomId: placement.roomId, locationStatus: "VERIFIED" as const,
+    } as import("../types").FSchedule));
+    const revised = [...schedules, ...added];
+    const afterResult = simulateRegistration({
+      ...input, students: responders, offerings: buildSimulationOfferings(termId, revised, courses).offerings, assessCapacity: true,
+    });
+    const before = summarize(baseline, scope), after = summarize(afterResult, scope);
+    const delta12 = reaches12(after) - reaches12(before), delta15 = after.canReach15 - before.canReach15;
+    const beforeAll = new Map(baseline.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
+    const afterAll = new Map(afterResult.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
+    const regresses = responders.some(student => {
+      const prior = beforeAll.get(student.fp), next = afterAll.get(student.fp);
+      if (prior === "canReach15") return next !== "canReach15";
+      if (prior === "canReach12To14") return next !== "canReach15" && next !== "canReach12To14";
+      if (prior === "graduatingBelow12") return next !== "graduatingBelow12" && next !== "canReach15" && next !== "canReach12To14";
+      return false;
+    });
+    if (regresses || delta12 < 0 || delta15 < 0 || (delta12 === 0 && delta15 === 0)) continue;
+    accepted.push({ ...proposal, simulationImpact: { before, after, delta12, delta15, respondents: responders.filter(student => student.collegeId === scope.collegeId && student.sectionId === scope.sectionId).length, virtualCapacity: true } });
+  }
+  accepted.sort((a, b) => b.simulationImpact.delta12 - a.simulationImpact.delta12 || b.simulationImpact.delta15 - a.simulationImpact.delta15 || b.shortfall - a.shortfall);
+  return { proposals: accepted, tested: proposals.filter(proposal => !proposal.predicted && proposal.placements.length > 0).length, rejected: proposals.length - accepted.length };
+}
+
 /** Re-score only current-term respondents after each candidate schedule move.
  * The helper is pure: it reads no storage and persists no scenario or result. */
 export function rankDemandRepairsBySimulation(
@@ -153,12 +217,17 @@ export function rankDemandRepairsBySimulation(
   const baselineByStudent = new Map(baselineResult.tickets.map(ticket => [ticket.fp, ticket.assessment || "unknown"] as const));
   const reaches12 = (value: SimResult["capacity"]) => value.canReach15 + value.canReach12To14;
   return repairs.flatMap(repair => {
-    const revised = schedules.map(row => Number(row.id) === Number(repair.rowId) ? {
-      ...row,
-      fsunday: repair.to.day === "fsunday", fmonday: repair.to.day === "fmonday",
-      ftuesday: repair.to.day === "ftuesday", fwednesday: repair.to.day === "fwednesday",
-      fthursday: repair.to.day === "fthursday", fstarttime: repair.to.start, fendtime: repair.to.end,
-    } : row);
+    const moves = [repair, ...(repair.swapWith ? [{ rowId: repair.swapWith.rowId, to: repair.swapWith.to }] : [])];
+    const moveById = new Map(moves.map(move => [Number(move.rowId), move.to] as const));
+    const revised = schedules.map(row => {
+      const to = moveById.get(Number(row.id));
+      return to ? {
+        ...row,
+        fsunday: to.day === "fsunday", fmonday: to.day === "fmonday",
+        ftuesday: to.day === "ftuesday", fwednesday: to.day === "fwednesday",
+        fthursday: to.day === "fthursday", fstarttime: to.start, fendtime: to.end,
+      } : row;
+    });
     if (!revised.some(row => Number(row.id) === Number(repair.rowId))) return [];
     const offerings = buildSimulationOfferings(termId, revised, courses).offerings;
     const afterResult = simulateRegistration({ ...input, students: responders, offerings, assessCapacity: true });

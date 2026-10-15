@@ -106,10 +106,10 @@ import { radarNoticeFor, registerSimulationRoutes, scheduleRadarAutoRun } from "
 import { studentHomePage } from "./src/server/studentHomePage";
 import { scheduleAutoTermJob } from "./src/server/autoTerms";
 import { readDemandRepairs } from "./src/utils/demandRepair";
-import { loadSimulationInput, rankDemandRepairsBySimulation } from "./src/server/simulationData";
+import { loadSimulationInput, rankDemandRepairsBySimulation, rankSectionOpeningsBySimulation } from "./src/server/simulationData";
 import { endForRequest, judgeRequest, requestFullySettled, rowFromRequest, weeklyLoadOf, type RequestDayKey, type RequestedRow } from "./src/utils/instructorRequestVerdict";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
-import { readSectionOpenings } from "./src/utils/sectionOpening";
+import { readSectionOpenings, type OpeningReading } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
 import { buildCalendar, calendarSpanForTerm, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
@@ -15900,7 +15900,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     ? await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId })
     : null;
   const repairs = reading.respondents
-    ? readDemandRepairs(week, reading, style?.reading || null, style?.doorway || 0)
+    ? readDemandRepairs(week, reading, style?.reading || null, style?.doorway || 0, 6, termWeek)
     : { repairs: [], unsolved: [], examined: 0, headline: "" };
 
   /* Rank timetable moves by rerunning the registration simulation, not by
@@ -15910,13 +15910,14 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   let evaluatedRepairs: Array<any> = [];
   let repairCandidates = repairs.repairs.length;
   let repairSimulationReady = false;
+  let simulationLoaded: Awaited<ReturnType<typeof loadSimulationInput>> | null = null;
   if (repairs.repairs.length) {
     const term = (allTerms as any[]).find(row => Number(row.AdTermId) === termId);
     if (term) {
       repairSimulationReady = true;
       const rounds = Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2);
-      const loaded = await loadSimulationInput(term, rounds);
-      evaluatedRepairs = rankDemandRepairsBySimulation(loaded.input, loaded.schedules as any[], loaded.courses, termId, repairs.repairs, { collegeId, sectionId });
+      simulationLoaded = await loadSimulationInput(term, rounds);
+      evaluatedRepairs = rankDemandRepairsBySimulation(simulationLoaded.input, simulationLoaded.schedules as any[], simulationLoaded.courses, termId, repairs.repairs, { collegeId, sectionId });
     }
   }
 
@@ -15926,17 +15927,34 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
      written — so what the answers change is not where a lecture sits, it is how
      many sections exist. Priced against each course's own MaxStudent, and every
      new section placed against the real week before it is offered. */
-  const people = reading.respondents || prediction.courses.length
-    ? await Repository.getInstructors().catch(() => [])
-    : [];
-  const openings = reading.respondents || prediction.courses.length
+  const [people, openingRegistry] = reading.respondents || prediction.courses.length
+    ? await Promise.all([Repository.getInstructors().catch(() => []), readLocationRegistry()])
+    : [[], { buildings: [], rooms: [] } as Awaited<ReturnType<typeof readLocationRegistry>>];
+  let openings: OpeningReading = reading.respondents || prediction.courses.length
     ? readSectionOpenings(
         week,
         termWeek,
         mine, people, sectionHistory, reading, prediction,
-        style?.reading || null, style?.doorway || 0,
+        style?.reading || null, style?.doorway || 0, 6, openingRegistry.rooms,
       )
     : { proposals: [], noCeiling: [], headline: "" };
+  let openingSimulationTested = 0;
+  let openingSimulationRejected = 0;
+  if (reading.respondents && openings.proposals.length) {
+    const term = (allTerms as any[]).find(row => Number(row.AdTermId) === termId);
+    if (term) {
+      if (!simulationLoaded) {
+        const rounds = Math.max(1, term.AdTermStudentPhases?.rounds?.length || 2);
+        simulationLoaded = await loadSimulationInput(term, rounds);
+      }
+      const ranked = rankSectionOpeningsBySimulation(simulationLoaded.input, simulationLoaded.schedules as any[], simulationLoaded.courses, termId, openings.proposals);
+      openings = { ...openings, proposals: ranked.proposals };
+      openingSimulationTested = ranked.tested;
+      openingSimulationRejected = ranked.rejected;
+      openings.simulationTested = openingSimulationTested;
+      openings.simulationRejected = openingSimulationRejected;
+    }
+  }
 
   /* The door itself, so the screen that shows the answers can also show the way
      to collect more of them. Revoked and expired links are not doors. */

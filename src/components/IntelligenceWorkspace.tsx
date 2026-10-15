@@ -1345,27 +1345,29 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const openRepair = async (fix: any) => {
     if (!enterSourceScope(fix, "repair")) return;
     const base = (scenario || rows).map(row => ({ ...row }));
-    const applied = base.map(row =>
-      row.id === fix.rowId
-        ? {
-            ...row,
-            fsunday: fix.to.day === "fsunday",
-            fmonday: fix.to.day === "fmonday",
-            ftuesday: fix.to.day === "ftuesday",
-            fwednesday: fix.to.day === "fwednesday",
-            fthursday: fix.to.day === "fthursday",
-            fstarttime: fix.to.start,
-            fendtime: fix.to.end,
-          }
-        : row,
-    );
+    const moves = [fix, ...(fix.swapWith ? [fix.swapWith] : [])];
+    const byId = new Map(moves.map((move: any) => [Number(move.rowId), move.to]));
+    const applied = base.map(row => {
+      const to: any = byId.get(Number(row.id));
+      return to ? {
+        ...row,
+        fsunday: to.day === "fsunday",
+        fmonday: to.day === "fmonday",
+        ftuesday: to.day === "ftuesday",
+        fwednesday: to.day === "fwednesday",
+        fthursday: to.day === "fthursday",
+        fstarttime: to.start,
+        fendtime: to.end,
+      } : row;
+    });
     setActiveDraftId(null);
     setScenario(applied);
     setScenarioId(fix.rowId);
     setTab("twin");
     showTwinCard("editor");
     setMessage(
-      `طُبِّقت النقلة داخل النسخة التجريبية فقط: «${fix.courseName}» إلى ${fix.to.dayLabel} ${scheduleClockForDisplay(fix.to.start)}. ` +
+      `${fix.swapWith ? "طُبِّق تبديل الموعدين" : "طُبِّقت النقلة"} داخل النسخة التجريبية فقط: «${fix.courseName}» إلى ${fix.to.dayLabel} ${scheduleClockForDisplay(fix.to.start)}` +
+      `${fix.swapWith ? `، و«${fix.swapWith.courseName}» إلى ${fix.swapWith.to.dayLabel} ${scheduleClockForDisplay(fix.swapWith.to.start)}` : ""}. ` +
       `أُعيد حساب جداول ${countOf(demand?.respondents || 0, AR.student)} مشاركاً. هذه معاينة محلية؛ لا تحفظ المسودة الأصلية ولا تنشر التغيير.`,
     );
     await evaluateScenario(applied);
@@ -3446,6 +3448,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         </span>
                       </div>
 
+                      {item.simulationImpact ? <p className="demand-why">
+                        بعد إضافة الشعب المقترحة وإعادة محاكاة {countOf(item.simulationImpact.respondents, AR.student)} من أصحاب الرغبات الحالية، يرتفع القادرون على بلوغ 12 وحدة بمقدار <b>{countOf(item.simulationImpact.delta12, AR.student)}</b>، وبلوغ 15 وحدة بمقدار <b>{countOf(item.simulationImpact.delta15, AR.student)}</b>. المقاعد افتراضية؛ هذه معاينة بلا حفظ.
+                      </p> : item.predicted ? <p className="opening-note">هذا توقع من بيانات سابقة؛ لم يُخلط مع الرغبات الحالية ولم يُعرض كتحسن مؤكد.</p> : null}
+
                       {item.placements.length ? (
                         <div className="opening-slots">
                           {item.placements.map((slot: any) => (
@@ -3481,6 +3487,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   ) : null}
                 </div>
               ) : null}
+              {!demand.openings?.proposals?.length && demand.openings?.simulationTested ? <p className="demand-headline">
+                أُعيدت محاكاة {countOf(demand.openings.simulationTested, AR.section)} لفتح شعب على رغبات المشاركين؛ لم يثبت تحسن صافٍ في بلوغ 12 أو 15 وحدة دون الإضرار بطالب آخر، لذلك لا توجد توصية مؤكدة.
+              </p> : null}
 
               {/* ── الاقتراح ─────────────────────────────────────────────────
                   Each card is one move that was tried against the real week and
@@ -3492,12 +3501,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {demand.repairs.map((fix: any) => (
                     <article key={`${fix.rowId}-${fix.to.day}-${fix.to.start}`} className="demand-repair">
                       <header>
-                        <b>{fix.courseName}</b>
+                        <b>{fix.swapWith ? "تبديل موعدي شعبتين" : fix.courseName}</b>
                         <span>شعبة {fix.sectionCode}{fix.room ? ` · ${fix.room}` : ""}</span>
                       </header>
                       <div className="demand-move" dir="rtl">
                         <span className="demand-from">
-                          <small>{fix.from.dayLabel}</small>
+                          <small>{fix.courseName} · {fix.from.dayLabel}</small>
                           <b dir="ltr">{scheduleClockForDisplay(fix.from.start)}</b>
                         </span>
                         <ArrowLeftRight aria-hidden="true" />
@@ -3506,6 +3515,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           <b dir="ltr">{scheduleClockForDisplay(fix.to.start)}</b>
                         </span>
                       </div>
+                      {fix.swapWith ? <div className="demand-move" dir="rtl">
+                        <span className="demand-from"><small>{fix.swapWith.courseName} · {fix.swapWith.from.dayLabel}</small><b dir="ltr">{scheduleClockForDisplay(fix.swapWith.from.start)}</b></span>
+                        <ArrowLeftRight aria-hidden="true" />
+                        <span className="demand-to"><small>{fix.swapWith.to.dayLabel}</small><b dir="ltr">{scheduleClockForDisplay(fix.swapWith.to.start)}</b></span>
+                      </div> : null}
                       <p className="demand-why">
                         بعد إعادة المحاكاة، يرتفع القادرون على بلوغ 12 وحدة من <b>{countOf((fix.simulationImpact?.before.canReach15 || 0) + (fix.simulationImpact?.before.canReach12To14 || 0), AR.student)}</b> إلى{" "}
                         <b>{countOf((fix.simulationImpact?.after.canReach15 || 0) + (fix.simulationImpact?.after.canReach12To14 || 0), AR.student)}</b> من أصل {countOf(fix.simulationImpact?.respondents || 0, AR.student)} مشاركاً؛ وبلوغ 15 وحدة يتحسن بمقدار{" "}
