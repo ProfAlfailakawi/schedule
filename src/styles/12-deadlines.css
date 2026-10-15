@@ -404,6 +404,17 @@
 .pr-issues li.block{background:var(--danger-soft);color:var(--danger)}
 .pr-issues li.warn{background:var(--warning-soft);color:var(--warning)}
 .pr-map{display:flex;gap:12px;overflow-x:auto;padding-block-end:8px;align-items:flex-start}
+.department-schedule-page{display:grid;gap:14px;min-inline-size:0;max-inline-size:100%}
+.department-schedule-actions{display:flex;gap:8px;flex-wrap:wrap}
+.department-schedule-readonly{margin:0;color:var(--muted);font-size:.9rem}
+.department-schedule-table-wrap{min-inline-size:0;overflow:auto;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
+.department-schedule-table{inline-size:100%;table-layout:fixed;border-collapse:collapse;text-align:start}
+.department-schedule-table th,.department-schedule-table td{padding:12px 10px;border-block-end:1px solid var(--line);white-space:normal;overflow-wrap:anywhere}
+.department-schedule-table th{color:var(--muted);font-size:.83rem;font-weight:600}
+.department-schedule-table th:nth-child(1){width:22%}.department-schedule-table th:nth-child(2){width:9%}.department-schedule-table th:nth-child(3){width:17%}.department-schedule-table th:nth-child(4){width:20%}.department-schedule-table th:nth-child(5){width:17%}.department-schedule-table th:nth-child(6){width:15%}
+.department-schedule-table td:first-child{min-inline-size:0}
+.department-schedule-table td small{display:block;color:var(--muted);margin-block-start:3px}
+.department-schedule-cards{display:none}
 .pr-col{min-inline-size:168px;flex:0 0 168px;display:grid;gap:8px}
 .pr-col h4{margin:0;color:var(--muted);font-size:.85rem;border-block-end:2px solid var(--line);padding-block-end:4px}
 .pr-card{display:grid;gap:2px;text-align:start;padding:10px;border-radius:var(--r-md);border:1px solid var(--line);border-inline-start:4px solid var(--line-strong);background:var(--surface);cursor:pointer;font:inherit;color:var(--ink);transition:box-shadow .15s,transform .15s}
@@ -418,6 +429,19 @@
 .pr-card.up{background:var(--brass-soft)}
 .pr-card.down{background:var(--accent-softer)}
 .pr-card.lock{opacity:.7}
+@media(max-width:640px){
+  .department-schedule-table{display:none}
+  .department-schedule-cards{display:grid;gap:8px;padding:10px}
+  .department-schedule-card{display:grid;gap:6px;padding:12px;border:1px solid var(--line);border-radius:var(--r-md);min-inline-size:0}
+  .department-schedule-card small,.department-schedule-card span{color:var(--muted);font-size:.88rem;overflow-wrap:anywhere}
+  .pr-map{display:grid;grid-template-columns:minmax(0,1fr);overflow:visible;gap:14px;padding:0}
+  .pr-col{min-inline-size:0;inline-size:100%;grid-template-columns:minmax(0,1fr)}
+  .pr-col h4{position:sticky;inset-block-start:0;z-index:1;background:var(--bg);padding:6px 0}
+  .pr-state{align-items:flex-start}
+  .pr-state .btn{margin-inline-start:0}
+  .pr-pickers{align-items:stretch;flex-direction:column}
+  .pr-pickers select,.pr-plan{min-inline-size:0;max-inline-size:100%}
+}
 .pr-editor{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);padding:14px;display:grid;gap:12px;min-inline-size:0}
 .pr-editor header{display:flex;justify-content:space-between;align-items:center}
 .pr-editor footer{display:flex;gap:8px}

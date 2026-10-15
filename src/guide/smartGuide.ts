@@ -135,6 +135,7 @@ export const GUIDE_FEATURES: GuideFeature[] = [
   { id:"page.searchRoomTime", title:"قاعة ووقت", summary:"البحث المركب عن القاعة والوقت معًا.", view:"searchRoomTime", group:"الاستعلامات", keywords:["قاعة","وقت","فارغة"], permission:16, version:1 },
   { id:"page.searchAdvanced", title:"الاستعلام المتقدم", summary:"بحث مركب في عناصر الجدول بعدة شروط.", view:"searchAdvanced", group:"الاستعلامات", keywords:["متقدم","بحث","استعلام"], permission:17, version:1 },
   { id:"page.reportDepartment", title:"تقرير القسم", summary:"تقرير جدول القسم ضمن نطاق الصلاحية.", view:"reportDepartment", group:"التقارير", keywords:["تقرير","قسم"], permission:14, version:1 },
+  { id:"page.departmentSchedule", title:"جدول القسم", summary:"عرضٌ للقراءة فقط للشعب المعتمدة في قسم الحساب ضمن الفصل الحالي.", view:"departmentSchedule", group:"العمل اليومي", keywords:["جدول القسم","الشعب","الوقت","القاعة"], permission:14, version:1 },
   { id:"page.reportInstructor", title:"تقرير الأستاذ", summary:"تقرير تفصيلي لجدول عضو هيئة تدريس.", view:"reportInstructor", group:"التقارير", keywords:["تقرير","أستاذ"], permission:8, version:1 },
   { id:"page.reportRoom", title:"تقرير القاعة", summary:"تقرير استخدام القاعة ومواعيدها.", view:"reportRoom", group:"التقارير", keywords:["تقرير","قاعة"], permission:9, version:1 },
   { id:"page.reportTime", title:"تقرير الوقت", summary:"تقرير المواعيد حسب الفترات الزمنية.", view:"reportTime", group:"التقارير", keywords:["تقرير","وقت"], permission:10, version:1 },
@@ -596,7 +597,7 @@ export const GUIDE_INTENT_FEATURES:Record<string,string>={
   "view-list":"schedule.view.list","view-week":"schedule.view.week","view-rooms":"schedule.view.rooms","quick-search":"schedule.search.quick","undo":"schedule.undo","undo-log":"schedule.undo.log","review":"schedule.tool.review","data-tools":"schedule.tool.data","publish":"schedule.publish","practice":"schedule.practice",
   "dashboard":"page.dashboard","schedules":"page.schedules","intelligence":"page.intelligence","intelligence-understand":"intelligence.scene.understand","ask-table":"intelligence.ask-table","intelligence-try":"intelligence.scene.try","intelligence-approve":"intelligence.scene.approve",
   "search-instructor":"page.searchInstructor","search-room":"page.searchRoom","search-time":"page.searchTime","search-room-time":"page.searchRoomTime","search-advanced":"page.searchAdvanced",
-  "report-department":"page.reportDepartment","report-instructor":"page.reportInstructor","report-room":"page.reportRoom","report-time":"page.reportTime","report-room-time":"page.reportRoomTime",
+  "report-department":"page.reportDepartment","departmentSchedule":"page.departmentSchedule","report-instructor":"page.reportInstructor","report-room":"page.reportRoom","report-time":"page.reportTime","report-room-time":"page.reportRoomTime",
   "terms":"page.terms","colleges":"page.colleges","sections":"page.sections","instructors":"page.instructors","courses":"page.courses","users":"page.users","permissions":"page.permissions","scopes":"page.scopes","audit":"page.audit","locations":"page.locations","backup":"page.backup","about":"page.about",
 };
 export function featureIdForGuideIntentGoal(goal:string){

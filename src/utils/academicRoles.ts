@@ -146,7 +146,7 @@ export const ACADEMIC_ROLES: AcademicRoleDefinition[] = [
     label: "رئيس لجنة الجدول",
     hint: "يبني جدول القسم ويعدّله ويرسله للتسجيل — سلوك النظام المعتاد.",
     readOnly: false,
-    formIds: [SCHEDULE_WORKSPACE, REPORT_DEPARTMENT, QUERY_INSTRUCTOR, QUERY_ROOM, QUERY_TIME, QUERY_ROOM_TIME, QUERY_ADVANCED],
+    formIds: [SCHEDULE_WORKSPACE, REPORT_DEPARTMENT, QUERY_INSTRUCTOR, QUERY_ROOM, QUERY_TIME, QUERY_ROOM_TIME, QUERY_ADVANCED, 6],
     scopeMode: "section",
     landing: "schedules",
     order: 7,

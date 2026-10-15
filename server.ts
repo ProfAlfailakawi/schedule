@@ -1113,7 +1113,7 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
 
 // Screens that are intentionally reserved for the main administrator.
 // The department scheduler keeps the operational schedule/search/report tools only.
-const powerOnlyFormIds = new Set([2, 3, 4, 5, 6, 11, 12, 15]);
+const powerOnlyFormIds = new Set([2, 3, 4, 5, 11, 12, 15]);
 /* The schedule workspace and مركز الذكاء are the same permission — every
    intelligence route is guarded by it, and every list route accepts it. */
 const DECISION_CENTRE_FORM_ID = 7;
@@ -3708,6 +3708,19 @@ app.post("/api/curriculum/plans/:planId/archive", requirePermission(6), async (r
   }
 });
 
+/** Committee corrections are available only while its own curriculum is a draft awaiting review. */
+async function committeeCatalogEditAllowed(req: AuthenticatedRequest, sectionId: number): Promise<boolean> {
+  if (roleDefinition(req.user?.Role).id !== "committeeChair") return true;
+  const section = await Repository.getSectionById(sectionId);
+  if (!section || !isScopeAllowed(req, Number(section.AdCollegeId), sectionId)) return false;
+  const plans = await Repository.getCurriculumPlans(sectionId);
+  for (const plan of plans) if (await Repository.getRuleDraft(plan.id)) return true;
+  return false;
+}
+function refuseCommitteeCatalogEdit(res: Response): void {
+  res.status(409).json({ error: "تعديل بيانات القسم متاح أثناء مراجعة مسوّدة الصحيفة فقط؛ أكمل النواقص قبل اعتمادها." });
+}
+
 app.post("/api/courses", requirePermission(6), async (req: AuthenticatedRequest, res: Response) => {
   const CourseCode = cleanText(req.body?.CourseCode, TEXT_LIMIT.code);
   const CourseName = cleanText(req.body?.CourseName, TEXT_LIMIT.name);
@@ -3742,6 +3755,7 @@ app.post("/api/courses", requirePermission(6), async (req: AuthenticatedRequest,
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
+  if (!await committeeCatalogEditAllowed(req, sectionId)) { refuseCommitteeCatalogEdit(res); return; }
 
   /* Uniqueness of the course code inside its department is claimed inside the
      write transaction, so a double-submitted form is refused by the database
@@ -3812,6 +3826,7 @@ app.put("/api/courses/:id", requirePermission(6), async (req: AuthenticatedReque
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
+  if (!await committeeCatalogEditAllowed(req, Number(currentCourse.AdSectionId))) { refuseCommitteeCatalogEdit(res); return; }
 
   const sectionCourses = await Repository.getCoursesBySection(sectionId);
   const codeExists = sectionCourses.some(c => c.CourseCode === CourseCode && c.AdCourseId !== id);
@@ -3844,6 +3859,7 @@ app.delete("/api/courses/:id", requirePermission(6), async (req: AuthenticatedRe
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
+  if (course && !await committeeCatalogEditAllowed(req, Number(course.AdSectionId))) { refuseCommitteeCatalogEdit(res); return; }
   // Curriculum history is a first-class reference just like timetable history.
   if (course) {
     const memberships=await Repository.getCurriculumPlanCourses(course.AdSectionId);

@@ -114,6 +114,7 @@ import { legacyOnboardingSeenKey, onboardingSeen, onboardingSeenKey } from "./ut
    every returning user downloads. */
 const Onboarding = safeLazy(() => import("./components/Onboarding"));
 const ScheduleChanges = safeLazy(() => import("./components/ScheduleChanges"));
+const DepartmentSchedule = safeLazy(() => import("./components/DepartmentSchedule"));
 const InstructorInbox = safeLazy(() => import("./components/InstructorInbox"));
 const StudentRegistration = safeLazy(() => import("./components/StudentRegistration"));
 const PlanReview = safeLazy(() => import("./components/PlanReview"));
@@ -133,6 +134,7 @@ type View =
   | "instructors"
   | "courses"
   | "schedules"
+  | "departmentSchedule"
   | "scheduleCopy"
   | "intelligence"
   | "scheduleChanges"
@@ -269,6 +271,7 @@ const pathByView: Record<View, string> = {
   instructors: "/AdInstructor/Index",
   courses: "/AdCourse/Index",
   schedules: "/FSchedule/Index",
+  departmentSchedule: "/FSchedule/DepartmentSchedule",
   scheduleCopy: "/FSchedule/CopySchedule",
   /* The rail's own name for the same screen — translated before it is ever
      navigated to, and mapped here so the route table stays total. */
@@ -1723,7 +1726,7 @@ export default function App() {
       case "sections":
       case "instructors":
       case "courses":
-        return isPowerAdmin && hasPerm(ACADEMIC_PERM[activeView]) ? (
+        return (isPowerAdmin || (sessionRole.id === "committeeChair" && singleDepartmentOf(scopes, 0, false) !== null)) && hasPerm(ACADEMIC_PERM[activeView]) ? (
           <AcademicConsole
             tab={activeView}
             onTab={(next) => go(next)}
@@ -1738,6 +1741,10 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "departmentSchedule":
+        return sessionRole.id === "departmentHead" && hasPerm(14) ? (
+          <DepartmentSchedule scopes={scopes} onBack={() => go("scheduleChanges")} />
+        ) : unauthorized();
       case "copyTerm":
       case "scheduleCopy":
         return isPowerAdmin && hasPerm(7) && user.IsRootAdmin ? (
@@ -1767,6 +1774,7 @@ export default function App() {
             }}
             scopes={scopes}
             powerAdmin={isPowerAdmin}
+            onOpenDepartmentSchedule={sessionRole.id === "departmentHead" ? () => go("departmentSchedule") : undefined}
             scope={(() => {
               /* القسم الواحد يفتح على تقريره مباشرةً — بالقاعدة الواحدة نفسها
                  التي تُخفي منتقي القسم في كل شاشة (singleDepartmentOf). */
@@ -2049,6 +2057,7 @@ export default function App() {
   // The academic console opens on the first catalogue this account can reach,
   // so a coordinator without "terms" still lands somewhere useful.
   const academicEntry = academicViews.find((view) => hasPerm(ACADEMIC_PERM[view]));
+  const canOpenAcademicCatalog = isPowerAdmin || (sessionRole.id === "committeeChair" && singleDepartmentOf(scopes, 0, false) !== null);
   const viewLabels: Partial<Record<View, string>> = {
     dashboard: "لوحة العمل",
     schedules: "إدارة الجدول",
@@ -2571,7 +2580,7 @@ export default function App() {
               />
             ) : null}
           </div>
-          {isPowerAdmin && academicEntry ? (
+          {canOpenAcademicCatalog && academicEntry ? (
             <NavSection
             navGroups={navGroups}
             onToggle={(id, open) =>
@@ -2581,7 +2590,7 @@ export default function App() {
               setNavGroups(current => ({ ...current, [id]: !open }))
             }
               id="catalog"
-              title="المرجع والإدارة"
+              title={isPowerAdmin ? "المرجع والإدارة" : "بيانات القسم"}
               rail="catalog"
               className="admin-only-nav"
               holdsActive={

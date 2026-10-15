@@ -2323,6 +2323,7 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 .curriculum-section-bar:has(select+select){grid-template-columns:auto minmax(0,1fr) minmax(160px,260px) minmax(160px,260px)}
 .curriculum-section-bar select:focus{border-color:color-mix(in srgb,var(--brand,#375b52) 55%,var(--line));box-shadow:0 0 0 3px color-mix(in srgb,var(--brand,#375b52) 10%,transparent)}
 .curriculum-loading{padding:32px;text-align:center;color:var(--muted)}
+.curriculum-admin,.plan-grid,.plan-card,.plan-steps{min-width:0;max-width:100%}
 /* ── الصحائف الأكاديمية: صحيفتان تعملان معاً ─────────────────────────────
    Jade marks the new plan, brass the previous one — the same two colours on
    the plan cards, the step list and the student-case tag. */
@@ -2424,7 +2425,31 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"تجريبي ·
 .course-plan-tag.is-new{color:var(--accent-ink);background:var(--accent-soft)}.course-plan-tag.is-old{color:var(--brass);background:var(--brass-soft)}.course-plan-tag.is-shared{color:var(--ink-2);background:var(--surface-2)}
 .curriculum-archive-strip{display:flex;align-items:center;gap:11px;padding:13px 15px;background:var(--surface-muted,var(--surface))}.curriculum-archive-strip>svg{width:19px;height:19px;color:var(--muted)}.curriculum-archive-strip>div{display:grid;gap:2px}.curriculum-archive-strip strong{font-size:12px}.curriculum-archive-strip span{font-size:12px;color:var(--muted);line-height:1.6}
 @media(max-width:900px){.plan-start{grid-template-columns:1fr}.plan-steps ol{grid-template-columns:1fr}.plan-map-form{grid-template-columns:1fr}.plan-map-form>svg{justify-self:center;transform:rotate(90deg)}}
-@media(max-width:640px){.curriculum-section-bar{grid-template-columns:auto 1fr}.curriculum-section-bar select{grid-column:1/-1}.plan-start{padding:var(--s4)}.plan-card-head{grid-template-columns:auto minmax(0,1fr)}.plan-card-count{grid-column:1/-1;justify-self:start;display:flex;align-items:baseline;gap:6px}.plan-rule-grid{grid-template-columns:1fr 1fr}.plan-tab-body{padding:12px}}
+@media(max-width:640px){
+  .curriculum-admin{inline-size:100%;overflow-wrap:anywhere}
+  .curriculum-section-bar{grid-template-columns:auto minmax(0,1fr);gap:10px;padding:12px}
+  .curriculum-section-bar select{grid-column:1/-1;inline-size:100%;min-inline-size:0}
+  .plan-start{grid-template-columns:minmax(0,1fr);padding:var(--s4);gap:14px}
+  .plan-start-form{min-width:0;padding:14px}
+  .plan-card{padding:14px;gap:12px}
+  .plan-card-head{grid-template-columns:36px minmax(0,1fr);gap:9px}
+  .plan-card-title h3{display:block;font-size:1rem;line-height:1.55}
+  .plan-card-count{grid-column:2;justify-self:start;display:flex;align-items:baseline;gap:6px;font-size:22px}
+  .plan-rule{padding:10px}
+  .plan-rule-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .plan-rule-grid>div,.plan-rule-grid>label{min-width:0;padding:8px}
+  .plan-rule-grid dd{font-size:clamp(16px,5vw,20px)}
+  .plan-rule-foot{align-items:flex-start;flex-wrap:wrap}
+  .plan-rule-actions>*{flex:1 1 auto}
+  .plan-tabs{scrollbar-width:none}
+  .plan-tabs button{padding-inline:10px}
+  .plan-tab-body{padding:10px}
+  .plan-course-list{max-height:min(54dvh,460px)}
+  .plan-course-list article{grid-template-columns:auto minmax(0,1fr) auto;gap:8px;padding:9px}
+  .plan-course-list article>button{width:40px;height:40px}
+  .plan-picker{padding:10px}
+  .plan-picker-list{grid-template-columns:minmax(0,1fr);max-height:min(42dvh,300px)}
+}
 
 /* ── نشر الجدول من أدوات البيانات ──────────────────────────────────────────
    بطاقةٌ واحدة: علامة، وسطران، وزرٌّ بارز. على الهاتف ينزل الزرُّ تحت النص
