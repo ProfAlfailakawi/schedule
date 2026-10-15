@@ -167,7 +167,7 @@ const DAY = 86_400_000;
   check(html.includes("prefers-reduced-motion") && html.includes("env(safe-area-inset-bottom)"), "D5 احترامُ تقليل الحركة وحوافّ الهاتف");
   const server = read("server.ts");
   check(server.includes("registerStudentDoorRoutes(app,") && server.includes('app.get(["/me", "/me/"]') && server.includes("scheduleStudentProfilePurge("), "D5 الخادم يسجّل المسارات والصفحة والتطهير");
-  check(server.includes("studentHomePage(publicPageNonce(res), track as \"boys\" | \"girls\" | \"\")"), "D5 الصفحة بنونسٍ جديد ومسار منفصل في كل طلب");
+  check(server.includes('req.query.track === "boys" ? "boys" : req.query.track === "girls" ? "girls" : ""') && server.includes("studentHomePage(publicPageNonce(res), track)"), "D5 مسار الصفحة ثابتٌ من قائمة مسموحة وبنونسٍ جديد في كل طلب");
   const routes = read("src/server/studentDoorRoutes.ts");
   check(!/civil\s*:/.test(routes.slice(routes.indexOf("async function summaryOf"), routes.indexOf("export function registerStudentDoorRoutes"))), "D5 ملخّصُ الملف لا يحمل رقماً مدنياً");
   check(routes.includes("offeringIndex(") && routes.includes("ttlMs: 5 * 60_000"), "D5 المطروح من فهرسٍ في الذاكرة لا من قاعدة البيانات في كل زيارة");

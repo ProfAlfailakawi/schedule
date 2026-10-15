@@ -19960,8 +19960,8 @@ registerStudentDoorRoutes(app, {
 app.get(["/me", "/me/"], (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  const track = req.query.track === "boys" || req.query.track === "girls" ? req.query.track : "";
-  res.send(studentHomePage(publicPageNonce(res), track as "boys" | "girls" | ""));
+  const track: "boys" | "girls" | "" = req.query.track === "boys" ? "boys" : req.query.track === "girls" ? "girls" : "";
+  res.send(studentHomePage(publicPageNonce(res), track));
 });
 
 /* ── جدولُ الطلبة برمز QR ─────────────────────────────────────────────────────
