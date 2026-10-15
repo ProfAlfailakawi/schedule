@@ -2330,6 +2330,7 @@ export const caseRefFor = (need: { id: string; caseRef?: string }): string =>
  * automatic single-field index, so no composite index is involved.
  */
 const STUDENT_NEEDS_PAGE = 1000;
+const localRunLeases = new Map<number, { until: number; holder: string }>();
 async function readStudentNeedsWhere(field: "AdTermId" | "AdCollegeId", value: number): Promise<StudentNeed[]> {
   if (!firestoreDb) return [];
   const out: StudentNeed[] = [];
@@ -5109,6 +5110,39 @@ export const Repository = {
       return out.slice(0, limit);
     }
     return [...(db.studentProfiles || [])].slice(0, limit);
+  },
+  /**
+   * قفلٌ في قاعدة البيانات لبروفةٍ واحدة لكل فصل: مديران على نسختين من الخادم لا يشغّلان
+   * معاً (وإلا كتب كلٌّ فوق تذاكر الآخر وتركا الملخّصَ يشير إلى بروفةٍ كُنست تذاكرُها).
+   * ينتهي وحدَه بعد `ttlMs` إن مات الخادمُ في منتصف العمل.
+   */
+  acquireRegistrationRunLease: async (termId: number, holder: string, ttlMs = 15 * 60_000): Promise<boolean> => {
+    const now = Date.now();
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("registrationRunLocks").doc(String(termId));
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        const until = snap.exists ? Number((snap.data() as any).until) || 0 : 0;
+        if (until > now) return false;
+        transaction.set(ref, { until: now + ttlMs, holder });
+        return true;
+      });
+    }
+    const held = localRunLeases.get(termId);
+    if (held && held.until > now) return false;
+    localRunLeases.set(termId, { until: now + ttlMs, holder });
+    return true;
+  },
+  releaseRegistrationRunLease: async (termId: number, holder: string): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("registrationRunLocks").doc(String(termId));
+      await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        if (snap.exists && (snap.data() as any).holder === holder) transaction.delete(ref);
+      });
+      return;
+    }
+    if (localRunLeases.get(termId)?.holder === holder) localRunLeases.delete(termId);
   },
   getRegistrationRun: async (termId: number): Promise<RegistrationRun | undefined> => {
     if (firestoreDb && !demoSandboxContext.getStore()) {

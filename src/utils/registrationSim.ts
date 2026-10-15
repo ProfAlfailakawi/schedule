@@ -124,6 +124,9 @@ export function simulateRegistration(input: SimInput): SimResult {
     student: SimStudent; passed: Set<number>; passedUnits: number; plan: SimPlanRules | undefined;
     need: ReturnType<typeof remainingNeed>; target: number; defaulted: boolean; score: number;
     candidates: Array<{ courseId: number; priority: number; required: boolean }>; unmet: Map<number, SimUnmetReason>;
+    /** مقرناتُ مقررٍ لم تُنجَز بعد: تُسجَّل معه أو لا يُسجَّل. */
+    coreqNeed: (courseId: number) => number[];
+    prereqOk: (courseId: number) => boolean;
   }
   const prepared: Prepared[] = input.students.map(student => {
     const plan = planOf.get(student.planId);
@@ -137,13 +140,17 @@ export function simulateRegistration(input: SimInput): SimResult {
     const unmet = new Map<number, SimUnmetReason>();
     const candidates: Prepared["candidates"] = [];
     const rule = (id: number) => rules.find(r => r.courseId === id);
-    const consider = (courseId: number, required: boolean) => {
+    const prereqOk = (courseId: number) => prereqMet(rule(courseId)?.prereq, passed, passedUnits);
+    const coreqNeed = (courseId: number) => (rule(courseId)?.coreq || []).filter(id => !passed.has(id));
+    /** يُرجع هل قُبل مرشّحاً (ليُحسب في حدّ المجموعة الاختيارية). */
+    const consider = (courseId: number, required: boolean): boolean => {
       const r = rule(courseId);
-      if (!prereqMet(r?.prereq, passed, passedUnits)) { unmet.set(courseId, "prereq"); return; }
-      if (!byCourse.has(courseId)) { unmet.set(courseId, "not-offered"); return; }
+      if (!prereqOk(courseId)) { unmet.set(courseId, "prereq"); return false; }
+      if (!byCourse.has(courseId)) { unmet.set(courseId, "not-offered"); return false; }
       const unlocks = dependentsOf(rules, courseId).length;
       const priority = (required ? 1000 : 400) - (r?.level || 6) * 20 + unlocks * 8 + (wished.has(courseId) ? 150 : 0);
       candidates.push({ courseId, priority, required });
+      return true;
     };
     need.compulsoryRemaining.forEach(id => consider(id, true));
     for (const group of need.groups) {
@@ -151,7 +158,12 @@ export function simulateRegistration(input: SimInput): SimResult {
       /* ما يلزم من المجموعة: ما رغب فيه أولاً، ثم الأقلُّ تعدّداً في الشعب لا الأعسر. */
       const pool = group.candidateIds.filter(id => !passed.has(id));
       const ranked = [...pool].sort((a, b) => (wished.has(b) ? 1 : 0) - (wished.has(a) ? 1 : 0) || (byCourse.get(b)?.length || 0) - (byCourse.get(a)?.length || 0) || a - b);
-      ranked.slice(0, Math.max(1, group.needCourses)).forEach(id => consider(id, true));
+      /* حتى يتحقّق الحدّان معاً: عددُ المقررات والوحدات (مقرراتٌ من ثلاث وحداتٍ وحدُّ ست وحداتٍ: اثنان لا واحد). */
+      let taken = 0, units = 0;
+      for (const id of ranked) {
+        if (taken > 0 && taken >= group.needCourses && units >= group.needUnits) break;
+        if (consider(id, true)) { taken += 1; units += credit(id); }
+      }
     }
     /* رغبةٌ خارج المطلوب (اختياريٌّ حرّ ضمن صحيفته) تدخل بأولويةٍ أدنى. */
     for (const id of wished) {
@@ -163,7 +175,7 @@ export function simulateRegistration(input: SimInput): SimResult {
     const target = Math.min(clampUnits(student.wishes?.targetUnits ?? SIM_UNITS_DEFAULT), Math.max(SIM_UNITS_MIN, need.remainingUnits));
     /* حاجتُه: من أوشك على التخرّج أولاً، ثم من عليه إجباريٌّ أكثر. */
     const graduating = need.remainingUnits > 0 && need.remainingUnits <= 36 ? 2000 - need.remainingUnits : 0;
-    return { student, passed, passedUnits, plan, need, target, defaulted, score: graduating + need.compulsoryUnits, candidates, unmet };
+    return { student, passed, passedUnits, plan, need, target, defaulted, score: graduating + need.compulsoryUnits, candidates, unmet, coreqNeed, prereqOk };
   });
 
   /* ── النوافذ: الأشدّ حاجةً أولاً، ثم تقسيمٌ متساوٍ على الجولات ── */
@@ -184,18 +196,36 @@ export function simulateRegistration(input: SimInput): SimResult {
   const bestOffering = (courseId: number, picks: readonly Pick[], constraints: NonNullable<SimStudent["wishes"]>["constraints"] | undefined, avoid: ReadonlySet<string>, mode: "strict" | "relaxed") => {
     const days = new Set(picks.flatMap(p => offeringOf.get(p.offeringId)!.slots.map(s => s.day)));
     let best: { offering: SimOffering; score: number } | null = null;
-    let reason: SimUnmetReason = "not-offered";
+    /* «امتلأت» لا تُقال ما دامت شعبةٌ فيها مقعدٌ لم يمنعها إلا الوقتُ أو القيد: ذاك تعارضٌ لا نقصُ مقاعد. */
+    let anyFull = false, anyOpen = false;
     for (const offering of byCourse.get(courseId) || []) {
-      if (free(ledger, offering.id) <= 0) { if (reason === "not-offered") reason = "full"; continue; }
-      if (!fits(picks, offering)) { reason = reason === "full" ? reason : "conflict"; continue; }
-      if (mode === "strict" && !allowedByConstraints(offering, constraints)) { if (reason === "not-offered") reason = "conflict"; continue; }
+      if (free(ledger, offering.id) <= 0) { anyFull = true; continue; }
+      anyOpen = true;
+      if (!fits(picks, offering)) continue;
+      if (mode === "strict" && !allowedByConstraints(offering, constraints)) continue;
       const cap = ledger.capacity.get(offering.id) || 1;
       let score = (free(ledger, offering.id) / cap) * 10;
       if (constraints?.freeDay) score += offering.slots.filter(s => days.has(s.day)).length * 3 - offering.slots.filter(s => !days.has(s.day)).length;
       if (avoid.has(offering.id)) score -= 100;
       if (!best || score > best.score || (score === best.score && offering.id < best.offering.id)) best = { offering, score };
     }
+    const reason: SimUnmetReason = anyOpen ? "conflict" : anyFull ? "full" : "not-offered";
     return best ? { offering: best.offering } : { reason };
+  };
+  /**
+   * يضع مقرراً مع مقرناتِه معاً: كلُّها أو لا شيء. المقرنُ الذي لا يُطرح أو يتعارض أو
+   * ينقصه مسبقٌ يُسقط المقرّرَ كلَّه، فلا تذكرةَ بمقررٍ بلا مقرنه.
+   */
+  const place = (entry: Prepared, courseId: number, picks: readonly Pick[], constraints: NonNullable<SimStudent["wishes"]>["constraints"] | undefined, avoid: ReadonlySet<string>, mode: "strict" | "relaxed"): { add: Pick[] } | { reason: SimUnmetReason } => {
+    const bundle = [courseId, ...entry.coreqNeed(courseId).filter(id => id !== courseId && !picks.some(p => p.courseId === id))];
+    const add: Pick[] = [];
+    for (const id of bundle) {
+      if (id !== courseId && !entry.prereqOk(id)) return { reason: "prereq" };
+      const found = bestOffering(id, [...picks, ...add], constraints, avoid, mode);
+      if (!("offering" in found)) return { reason: id === courseId ? found.reason : (found.reason === "not-offered" ? "not-offered" : "conflict") };
+      add.push({ courseId: id, offeringId: found.offering.id });
+    }
+    return { add };
   };
 
   const demand = new Map<number, SimCourseDemand>();
@@ -216,15 +246,20 @@ export function simulateRegistration(input: SimInput): SimResult {
     const unmet = [...entry.unmet].map(([courseId, reason]) => ({ courseId, reason }));
     for (const [courseId, reason] of entry.unmet) { row(courseId).wanted += 1; row(courseId).unmet[reason] += 1; }
     for (const c of candidates) {
+      if (picks.some(p => p.courseId === c.courseId)) continue; // دخل مقرناً لمقررٍ سبقه
       const r = row(c.courseId);
       r.wanted += 1;
-      if (units + credit(c.courseId) > target && picks.length) { r.unmet.units += 1; unmet.push({ courseId: c.courseId, reason: "units" }); continue; }
-      const found = bestOffering(c.courseId, picks, student.wishes?.constraints, new Set(), "strict");
-      if ("offering" in found) {
-        ledger.taken.set(found.offering.id, (ledger.taken.get(found.offering.id) || 0) + 1);
-        picks.push({ courseId: c.courseId, offeringId: found.offering.id });
-        units += credit(c.courseId); r.seated += 1;
-      } else { r.unmet[found.reason] += 1; unmet.push({ courseId: c.courseId, reason: found.reason }); }
+      const bundleUnits = credit(c.courseId) + entry.coreqNeed(c.courseId).filter(id => !picks.some(p => p.courseId === id)).reduce((sum, id) => sum + credit(id), 0);
+      if (units + bundleUnits > target && picks.length) { r.unmet.units += 1; unmet.push({ courseId: c.courseId, reason: "units" }); continue; }
+      const placed = place(entry, c.courseId, picks, student.wishes?.constraints, new Set(), "strict");
+      if ("add" in placed) {
+        for (const pick of placed.add) {
+          ledger.taken.set(pick.offeringId, (ledger.taken.get(pick.offeringId) || 0) + 1);
+          picks.push(pick); units += credit(pick.courseId);
+          row(pick.courseId).seated += 1;
+          if (pick.courseId !== c.courseId) row(pick.courseId).wanted += 1;
+        }
+      } else { r.unmet[placed.reason] += 1; unmet.push({ courseId: c.courseId, reason: placed.reason }); }
     }
     planA.set(student.fp, picks);
     tickets.set(student.fp, {
@@ -242,10 +277,12 @@ export function simulateRegistration(input: SimInput): SimResult {
     const cap = label === "B" ? entry.target : SIM_UNITS_MIN;
     const list = label === "B" ? entry.candidates : entry.candidates.filter(c => c.required);
     for (const c of list) {
-      if (units + credit(c.courseId) > cap && picks.length) continue;
+      if (picks.some(p => p.courseId === c.courseId)) continue;
+      const bundleUnits = credit(c.courseId) + entry.coreqNeed(c.courseId).filter(id => !picks.some(p => p.courseId === id)).reduce((sum, id) => sum + credit(id), 0);
+      if (units + bundleUnits > cap && picks.length) continue;
       /* (ب): شعباً مختلفة عن (أ) كلما أمكن — إن امتلأت (أ) فهذه بديلُها. (ج): أيُّ شعبةٍ، بلا قيودٍ. */
-      const found = bestOffering(c.courseId, picks, label === "B" ? entry.student.wishes?.constraints : undefined, label === "B" ? avoid : new Set(), label === "B" ? "strict" : "relaxed");
-      if ("offering" in found) { picks.push({ courseId: c.courseId, offeringId: found.offering.id }); units += credit(c.courseId); }
+      const placed = place(entry, c.courseId, picks, label === "B" ? entry.student.wishes?.constraints : undefined, label === "B" ? avoid : new Set(), label === "B" ? "strict" : "relaxed");
+      if ("add" in placed) for (const pick of placed.add) { picks.push(pick); units += credit(pick.courseId); }
     }
     return { label, items: picks.map(p => ({ courseId: p.courseId, offeringId: p.offeringId, tight: isTight(ledger, p.offeringId) })), units };
   };

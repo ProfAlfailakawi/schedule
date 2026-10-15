@@ -25,6 +25,7 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
   const courseById = new Map((courses as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
   const credit = new Map([...courseById].map(([id, course]) => [id, Number(course.CourseCredit) || 0] as const));
   const approved = new Map(ruleSets.map(set => [set.planId, set] as const));
+  const referenced = new Set(profiles.map(profile => profile.curriculumPlanId).filter((id): id is string => Boolean(id)));
 
   const plans: SimPlanRules[] = [];
   for (const section of sections as any[]) {
@@ -32,7 +33,8 @@ export async function loadSimulationInput(term: AdTerm, rounds: number): Promise
     const [sectionPlans, links, operational] = await Promise.all([
       Repository.getCurriculumPlans(sid), Repository.getCurriculumPlanCourses(sid), Repository.getOperationalCourseIds(sid),
     ]);
-    const live = sectionPlans.filter(plan => plan.status !== "archived" && !plan.virtual);
+    /* صحيفةٌ أُرشفت وما زال في الملفّات من يدرس عليها تبقى في الحساب، وإلا خرج طلبتُها بلا خطط. */
+    const live = sectionPlans.filter(plan => !plan.virtual && (plan.status !== "archived" || referenced.has(plan.id)));
     if (!live.length) {
       plans.push({ planId: sectionPlanId(sid), courseIds: [...operational], rules: [], groups: [], hasApprovedRules: false });
       continue;
