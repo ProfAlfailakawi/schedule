@@ -206,9 +206,14 @@ check('.about-editorial-people' not in all_css or re.search(r'\.about-editorial-
 check('animation: pulse' not in (css+refine).lower() and 'animation:pulse' not in (css+refine).lower(),'no continuous pulse/blink decoration in the base layers')
 deck_live=re.search(r'\.deck-live i\s*\{([^}]*)\}',all_css,re.S)
 check(deck_live is not None and 'animation' not in deck_live.group(1),'the always-shown dashboard dot stays still')
-for selector,label in [(r'\.user-avatar\.health-reconnecting i','reconnecting'),(r'\.command-intelligence-card\.thinking>svg','thinking'),(r'\.ripple-pulse i','analysing'),(r'\.agenda-card\.just-changed::after','just changed')]:
+for selector,label in [(r'\.user-avatar\.health-reconnecting i','reconnecting'),(r'\.command-intelligence-card\.thinking>svg','thinking'),(r'\.ripple-pulse i','analysing')]:
     block=re.search(selector+r'[^{]*\{([^}]*)\}',all_css,re.S)
     check(block is not None and 'animation:pulse' in block.group(1).replace(' ',''),f'transient status keeps its pulse: {label}')
+# «تغيّر للتوّ»: التوهّجُ الذي يخفت في ستّ ثوانٍ (just-changed-fade) هو الخبر؛ والنقطةُ فوقه
+# تبقى ظاهرةً ساكنة — نبضُها فوق الوهج ضجيجٌ مضاعف (قرارُ جولة الحركة الهادئة).
+jc_dot=re.search(r'\.agenda-card\.just-changed::after\s*\{([^}]*)\}',all_css,re.S)
+check(jc_dot is not None and 'animation' not in jc_dot.group(1),'just changed: the dot is static, the 7s fade is the signal')
+check('animation:just-changed-fade 7s' in all_css,'just changed: the fading halo remains')
 # `@import` صار وسيلةَ ترتيبِ الطبقات المحليّة، وهو ليس المقصود. والمقصودُ
 # ألّا يُحمَّل خطٌّ من الشبكة فيحجب الرسم.
 check('fonts.googleapis.com' not in all_css and '@import url(' not in all_css,'no blocking external font import')

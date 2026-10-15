@@ -53,7 +53,7 @@ export function journeyAlreadyPlayed(playKey?: string | number | null): boolean 
   try { return typeof sessionStorage !== 'undefined' && sessionStorage.getItem(STORAGE_PREFIX + key) === '1'; } catch { return false; }
 }
 
-function markPlayed(playKey?: string | number | null) {
+export function markPlayed(playKey?: string | number | null) {
   if (playKey == null) return;
   const key = String(playKey);
   played.add(key);
@@ -91,7 +91,7 @@ export function journeyNext(lit: number | null, target: number, seen: boolean, h
   return lit >= target ? 'settle' : 'tick';
 }
 
-const reducedMotion = () =>
+export const reducedMotion = () =>
   typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
 // useLayoutEffect warns when a component is rendered on the server.

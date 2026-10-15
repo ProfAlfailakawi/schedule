@@ -125,5 +125,51 @@ import { importStageStates, noteImportPhase } from "../src/utils/importStages";
   check(/@media \(max-width: 599px\) \{ #sim-log-text \{ min-height: 3em/.test(landing), "المحاكاة: ارتفاع السجل محجوز على الهاتف");
 }
 
+
+/* ── جولة الحركة الهادئة: العدّادات والرسم الأحادي والحلقات المهدّأة ───────────────────── */
+{
+  const { Counted, countShouldAnimate } = await import("../src/components/dna/Counted");
+  const { motionShouldArm } = await import("../src/components/dna/useMotionScope");
+  const fmt = (n: number) => n.toLocaleString("ar-KW-u-nu-latn");
+  const base = { value: 12, reduced: false, played: false, needsObserver: true, hasObserver: true, hidden: false };
+  check(countShouldAnimate(base), "العدّاد: يتحرّك حين يُسمح له");
+  check(!countShouldAnimate({ ...base, reduced: true }) && !countShouldAnimate({ ...base, played: true }) && !countShouldAnimate({ ...base, value: 0 }) && !countShouldAnimate({ ...base, hasObserver: false }) && !countShouldAnimate({ ...base, hidden: true }), "العدّاد: الحركة المخفّضة/المعروض سابقاً/الصفر/غياب المراقب/التبويب المخفي → القيمة النهائية");
+  check(countShouldAnimate({ ...base, needsObserver: false, hasObserver: false }), "العدّاد بلا مراقب (رحلة SCHEDULE) لا يشترط المراقب");
+  const final = renderToStaticMarkup(React.createElement(Counted, { value: 9418, observe: true, playKey: "t" }));
+  check(final.includes(fmt(9418)) && !/sr-only/.test(final), "العدّاد على الخادم: القيمة النهائية فوراً، بلا نصٍّ مكرّر");
+  const plainFinal = renderToStaticMarkup(React.createElement(Counted, { value: 9418 }));
+  check(plainFinal === fmt(9418), "العدّاد بلا observe على الخادم: النص النهائي وحده (بلا غلاف)");
+  const held = renderToStaticMarkup(React.createElement(Counted, { value: 9418, play: false }));
+  check(/aria-hidden="true">0</.test(held.replace(/[٠]/g, "0")) || held.includes("sr-only"), "العدّاد المحجوز (play=false): الصفر مخفيٌّ عن القارئ والقيمة النهائية له");
+  check(motionShouldArm({ hasObserver: true, reduced: false, hidden: false, played: false }) && !motionShouldArm({ hasObserver: false, reduced: false, hidden: false, played: false }) && !motionShouldArm({ hasObserver: true, reduced: true, hidden: false, played: false }) && !motionShouldArm({ hasObserver: true, reduced: false, hidden: true, played: false }) && !motionShouldArm({ hasObserver: true, reduced: false, hidden: false, played: true }), "نطاق الرسم: لا يُسلَّح بلا مراقب/مع الحركة المخفّضة/التبويب المخفي/بعد التشغيل");
+
+  const read = (f: string) => fs.readFileSync(f, "utf8");
+  const scopeSrc = read("src/components/dna/useMotionScope.ts");
+  check(/setPhase\('hold'\)/.test(scopeSrc) && /markPlayed\(playKey\)/.test(scopeSrc) && /MOTION_FAILSAFE_MS/.test(scopeSrc), "نطاق الرسم: hold قبل الرسم، play-once بالذاكرة نفسها، ومهلة أمان");
+  check(/useMotionScope/.test(read("src/components/ScheduleChanges.tsx")) && (read("src/components/ScheduleChanges.tsx").match(/new IntersectionObserver/g) || []).length === 0, "وارد التغييرات: مراقبٌ واحد للقائمة لا لكل سطر");
+  const ScheduleJourneySrc = read("src/components/ScheduleJourney.tsx");
+  check(/import \{ Counted \} from "\.\/dna\/Counted"/.test(ScheduleJourneySrc) && !/function Counted/.test(ScheduleJourneySrc), "ScheduleJourney يستورد Counted المشترك");
+
+  const noInfinite = (file: string, selectorRe: RegExp, label: string) => {
+    const css = read(file);
+    const rule = css.match(selectorRe);
+    check(Boolean(rule) && !/infinite/.test(rule![0]), label);
+  };
+  noInfinite("src/styles/03-shell.css", /\.side-nav-link \.side-nav-badge\[data-bump\]\{[^}]*\}/, "شارة الشريط الجانبي: نبضةٌ واحدة عند الزيادة لا دائمة");
+  noInfinite("src/styles/11-approval.css", /\.apb-steps li\[data-turn\] \.apb-node,\.apb-steps li\[data-turn\] \.apb-stamp\{[^}]*\}/, "عقدة «دورك»: هالةٌ واحدة");
+  const dnaCssAll = read("src/components/dna/dna.css");
+  check(!/dna-halo[^;]*infinite/.test(dnaCssAll), "مرقاة DNA: لا هالةَ لانهائية على المحطة الحالية");
+  check(!/\.schedule-live-dot\.on\{[^}]*infinite/.test(read("src/styles/05-schedule.css")), "نقطة البث الحيّ ساكنة");
+  const details = read("src/styles/09-details.css");
+  check(!/\.week-chip\.just-changed::after,[^{]*\{[^}]*animation:pulse/.test(details) && /animation:review-glow 1\.6s var\(--ease\) 3;/.test(details), "just-changed: نقطةٌ ساكنة، وreview-glow ثلاث مرّات");
+  const sched = read("src/styles/05-schedule.css");
+  check(/animation:presence-held 1\.8s ease-in-out 3;/.test(sched) && /animation:hall-barter-inbox-pulse 2\.4s ease-out 3;/.test(sched) && /\.ripple-pulse i\{[^}]*animation:pulse 1\.8s ease-in-out 3\}/.test(sched), "الحجز داخل الشبكة وصندوق المقايضة وripple-pulse: منتهية");
+  check(/jr-cue 2\.1s var\(--ease-out,ease\) 3\}/.test(read("src/styles/10-journey.css")), "10-journey: مؤشّر التمرير ثلاث دورات");
+  check(!/sml-calm[^;]*infinite/.test(read("src/styles/02-primitives.css")), "المحمّل: لا حلقة لانهائية تحت الحركة المخفّضة");
+  const appr = read("src/styles/11-approval.css");
+  check(/@media print\{\s*\.ad-ring-fill,\.ad-timeline>li\{animation:none!important\}/.test(appr) && /@media screen and \(prefers-reduced-motion:no-preference\)\{\s*\.ad-dialog \.ad-ring-fill/.test(appr), "ملف الاعتماد: الحركة على الشاشة فقط، والطباعة بالحالة النهائية");
+  check(!/(forwards|both)/.test((appr.match(/apb-expanded\[data-reveal\][^\n]*/g) || []).join("\n")), "فتح شريط الاعتماد: لا forwards/both على حركات transform");
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

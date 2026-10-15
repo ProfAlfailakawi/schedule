@@ -23,6 +23,7 @@ import {
   CalendarClock, CalendarPlus, Check, ChevronDown, ChevronUp, Hourglass, Inbox, Pencil, Search, Trash2, X,
 } from "lucide-react";
 import { Notice, PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
+import { useMotionScope } from "./dna/useMotionScope";
 import { daysBetween, effectiveSubmissionDate, kuwaitDateISO, readDeadline } from "../utils/approvalWorkflow";
 import { AR, countOf, nounFor, oblique } from "../utils/arabicCount";
 import {
@@ -312,6 +313,8 @@ function ExceptionSheet({ seed, rows, termId, termDeadline, onClose, onApplied }
 
 export default function SubmissionDeadlines({ terms, termId, onTermChange, rows, canEdit, onChanged, extendFor, focus }: Props) {
   const term = terms.find(row => Number(row.AdTermId) === termId);
+  /* ميزان الفصل: الشريط يتمدّد مرّةً واحدة لكل فصل في الجلسة، لا مع كل تحديث. */
+  const progressScope = useMotionScope<HTMLDivElement>({ playKey: `deadlines-progress:${termId}`, enabled: Boolean(rows) });
   const termDeadline = String(term?.AdTermSubmissionDeadline || "");
   const today = kuwaitDateISO();
   const state = readDeadline({ termDeadline: termDeadline || undefined }, new Date());
@@ -559,7 +562,7 @@ export default function SubmissionDeadlines({ terms, termId, onTermChange, rows,
 
       {/* ── ميزان الفصل ── */}
       {rows ? (
-        <div className="sd-progress">
+        <div className="sd-progress" ref={progressScope.ref} {...progressScope.motionProps}>
           <div className="sd-progress-head">
             <strong>سلّم {handedOver} من {countOf(progress.total, AR.department)}</strong>
             {progress.late ? <span className="sd-pill" data-tone="danger">{countOf(progress.late, AR.department)} {nounFor(progress.late, AR.lateAdj)} عن الموعد</span> : null}

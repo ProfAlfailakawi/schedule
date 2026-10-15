@@ -22,7 +22,7 @@ import {
   CalendarPlus, CornerUpLeft, FileCheck, FileDiff, Inbox, Info, MapPin, MessageSquarePlus, Search, Send, ShieldCheck, Trash2,
   UsersRound, X, FilePenLine, OctagonAlert, MessageSquareWarning, MessageSquareReply, ListPlus,
 } from "lucide-react";
-import { DnaCount, DnaTimeline } from "./dna";
+import { DnaCount, DnaTimeline, useMotionScope } from "./dna";
 import { ApprovalDnaStepper, DeadlineDnaRing } from "./dna/scheduleDna";
 import ApprovalBar from "./ApprovalBar";
 import SubmissionDeadlines from "./SubmissionDeadlines";
@@ -285,6 +285,9 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
     return matchesInboxAsk(row, effective);
   }), [rows, shownCollege, shownSection, effective]);
 
+  /* مراحلُ كلِّ السطور تمتلئ معاً مرّةً واحدة لكل فصل — مراقِبٌ واحد، بلا إعادةٍ عند الترشيح أو التحديث. */
+  const relayScope = useMotionScope<HTMLDivElement>({ playKey: `changes-inbox:${termId}`, enabled: visible.length > 0 });
+
   /* كم سطراً يحمل كلَّ إشارة — منه يُعرف أيُّ مرشّحٍ يستحق أن يُعرض. */
   const signalCounts = useMemo(() => {
     const list = rows || [];
@@ -443,7 +446,7 @@ function Inbox_({ termId, terms, onTermChange, onOpen, audience, onLoaded, onExt
           ) : undefined}
         />
       ) : (
-        <div className="changes-inbox" data-row-label={audience.rowLabel}>
+        <div className="changes-inbox" data-row-label={audience.rowLabel} ref={relayScope.ref} {...relayScope.motionProps}>
           {/* قسمٌ واحد في مواقع عدّة: يُقال مرّةً في رأس القائمة، وتُسمّى السطورُ
               بمواقعها — لا اسمُ القسم نفسه مكرّراً بعدد الكليات. */}
           {audience.multiSite ? (

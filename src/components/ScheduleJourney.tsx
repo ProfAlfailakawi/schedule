@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
+import { Counted } from "./dna/Counted";
 
 export type JourneyReading = {
   scoped: boolean;
@@ -51,31 +52,6 @@ const Num = ({ children }: { children: React.ReactNode }) => (
 
 function prefersReducedMotion() {
   return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
-}
-
-/** Counts up once, and only after the figure has actually been scrolled into view. */
-function Counted({ value, duration = 900, play = true }: { value: number; duration?: number; play?: boolean }) {
-  const [shown, setShown] = useState(play ? value : 0);
-  const animated = useRef(false);
-
-  useEffect(() => {
-    if (!play) { setShown(0); return; }
-    if (animated.current) { setShown(value); return; }
-    animated.current = true;
-    if (prefersReducedMotion() || value <= 0) { setShown(value); return; }
-    let frame = 0;
-    const from = performance.now();
-    const tick = (now: number) => {
-      const p = Math.min(1, (now - from) / duration);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setShown(Math.round(value * eased));
-      if (p < 1) frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [value, duration, play]);
-
-  return <>{ar(shown)}</>;
 }
 
 /*

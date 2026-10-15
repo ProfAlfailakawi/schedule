@@ -238,7 +238,7 @@
   .sml{animation:sml-mount .01s linear .25s forwards}
   .sml-grid i,
   .sml-grid i.a,
-  .sml-grid i.a4{animation:sml-calm 2.6s ease-in-out .3s infinite}
+  .sml-grid i.a4{animation:none;opacity:1}
 }
 @keyframes sml-calm{0%,100%{opacity:1}50%{opacity:.55}}
 
