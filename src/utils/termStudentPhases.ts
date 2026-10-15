@@ -2,7 +2,9 @@ import type { AdTerm, TermStudentPhases, TermStudentRound } from "../types";
 import { kuwaitDateISO } from "./approvalWorkflow";
 import { AR, countOf, oblique } from "./arabicCount";
 import { deadlineDateShort } from "./submissionDeadlines";
-import { previousYearSameTermName, sameTermName, termWindow } from "./termSequence";
+import {
+  currentTermId, planningTermCandidates, previousYearSameTermName, sameTermName, sortTermsNewest, termHasEnded, termWindow,
+} from "./termSequence";
 
 /**
  * ── رحلة الطلبة في الفصل: تواريخ تُكتب مرة وتحرّك كل شيء ──────────────────────
@@ -325,3 +327,23 @@ export const newRoundId = (existing: readonly TermStudentRound[]): string => {
   while (used.has(`r${n}`)) n += 1;
   return `r${n}`;
 };
+
+/* ───────────────────────── أيُّ فصلٍ يفتحه الباب؟ ───────────────────────── */
+
+/**
+ * الفصلُ الذي يتحدّث عنه بابُ الطالب اليوم.
+ *
+ * أحدثُ فصلٍ لم ينتهِ له تواريخُ طلبةٍ لم تُغلق؛ وإلا فصلُ التخطيط (القادم)؛ وإلا
+ * الجاري. الباب واحدٌ للجامعة، فلا يُسأل الطالبُ عن فصل — يُقال له أيُّ فصلٍ
+ * هذا، ويُغيَّر بتغيّر التواريخ وحدها.
+ */
+export function pickDoorTerm(terms: readonly AdTerm[], now: number = Date.now(), today: string = kuwaitDateISO(new Date(now))): AdTerm | null {
+  const live = sortTermsNewest(terms).filter(term => term.AdTermClosed !== true && !termHasEnded(term as any, now));
+  const dated = live.find(term => hasStudentPhases(term.AdTermStudentPhases) && readStudentPhase(term.AdTermStudentPhases, today).key !== "closed");
+  if (dated) return dated;
+  const planning = planningTermCandidates(terms as any, now)[0];
+  const byId = (id: number) => terms.find(term => Number(term.AdTermId) === Number(id)) || null;
+  if (planning) return byId(planning);
+  const current = currentTermId(terms as any, now);
+  return current ? byId(current) : null;
+}

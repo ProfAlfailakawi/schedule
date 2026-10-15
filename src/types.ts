@@ -715,6 +715,62 @@ export interface StudentNeed {
 }
 
 /**
+ * ── ملفُّ الطالب: ما يحتاجه الباب ليبني له جدولاً ────────────────────────────
+ *
+ * مفتاحُه بصمةُ الرقم المدني نفسُها التي يعرفها الاستبيان (HMAC بمفتاح الخادم)،
+ * فالطالبُ نفسُه يُعرف في كل فصل دون أن يُحفظ رقمُه. **لا اسم ولا رقم مدنيّ
+ * هنا**: ما يلزم لتسجيل حالةٍ يدوياً يُكتب في الطلب نفسه (StudentNeed) عند
+ * التبليغ، لا في الملف الدائم.
+ *
+ * وله عمرٌ مكتوب (`deleteAt`): يُحسب من التخرّج المتوقّع + سنة، أو من الانقطاع
+ * عن الباب، أيهما أقرب؛ ويُحذف الملفُّ وحده بعدها.
+ */
+export interface StudentProfile {
+  /** = fingerprint. وثيقةٌ واحدة لكل طالب. */
+  id: string;
+  fingerprint: string;
+  /** قسمُه العلمي. 0 قبل أن يكمل إعداد ملفّه. */
+  AdCollegeId: number;
+  AdSectionId: number;
+  /** الصحيفة (السابقة/الجديدة) التي يدرس عليها، حين يكون للقسم أكثر من صحيفة حيّة. */
+  curriculumPlanId?: string;
+  /** المقررات التي أنجزها، من صحيفته. */
+  passedCourseIds: number[];
+  /** مجموع وحداتها وقت الحفظ — للعرض وللتخرّج المتوقَّع. */
+  passedUnits: number;
+  /** الرمزُ الشخصي: scrypt بملحٍ عشوائي. لا يُخزَّن الرمز نفسه. */
+  codeHash?: string;
+  codeSalt?: string;
+  /** محاولاتٌ خاطئة متتالية للرمز، وقفلٌ مؤقّت بعد الحدّ. */
+  codeFailures?: { count: number; lockedUntil?: number };
+  createdAt: string;
+  updatedAt: string;
+  /** آخرُ دخول (يُحدَّث مرةً في اليوم على الأكثر). */
+  lastSeenAt: string;
+  /** متى يُحذف هذا الملف، وسببه. */
+  deleteAt: string;
+  deleteReason: "initial" | "graduation" | "inactive";
+  /** التخرّج المتوقَّع (ISO) كما قدّره النظام من المتبقّي — تقديرٌ لا وعد. */
+  expectedGraduationAt?: string;
+  /**
+   * رغبات الطالب في فصلٍ بعينه: ما يريد تسجيله ووحداته وقيوده. تُقرأ في
+   * مرحلة الرغبات وتُبنى منها تذكرتُه.
+   */
+  wishes?: StudentWishes;
+}
+
+export interface StudentWishes {
+  termId: number;
+  /** الوحدات التي يريدها هذا الفصل: 12–18. */
+  targetUnits: number;
+  /** مقرراتٌ يريدها صراحةً. */
+  courseIds: number[];
+  /** قيودُ الوقت: ما لا يستطيعه فعلاً (عمل، مواصلات). */
+  constraints: { noMorning?: boolean; noAfternoon?: boolean; freeDay?: boolean };
+  updatedAt: string;
+}
+
+/**
  * A digitally approved right to use another college's historically-owned hall
  * for one recurring weekly window in one term.
  *

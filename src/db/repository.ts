@@ -19,6 +19,7 @@ import {
   AdCollegeUserAssign,
   AdTerm,
   TermStudentPhases,
+  StudentProfile,
   AdCollege,
   AdSection,
   AdInstructor,
@@ -223,6 +224,7 @@ interface DBState {
   instructorRequests?: InstructorRequest[];
   studyProposals?: StudyProposal[];
   studentNeeds?: StudentNeed[];
+  studentProfiles?: StudentProfile[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
   degreeRules?: AdDegreeRule[];
@@ -264,7 +266,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
@@ -5037,6 +5039,83 @@ export const Repository = {
       return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
     }
     return (db.studentNeeds || []).filter(mine);
+  },
+
+  /**
+   * ── ملفُّ الطالب (بصمته مفتاحُه) ───────────────────────────────────────────
+   *
+   * قراءةٌ بالمفتاح مباشرة: وثيقةٌ واحدة، لا استعلام. والكتابةُ كلُّها تمرّ
+   * بـ`updateStudentProfile` — دالّةٌ تقرأ الحالةَ وتكتبها في معاملةٍ واحدة، لأن
+   * عدّاد المحاولات الخاطئة وتحديثَ الملف من جهازين في اللحظة نفسها لا يجوز
+   * أن يكتب أحدُهما فوق الآخر.
+   */
+  getStudentProfile: async (fingerprint: string): Promise<StudentProfile | undefined> => {
+    if (!fingerprint) return undefined;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("studentProfiles").doc(fingerprint).get();
+      return doc.exists ? (doc.data() as StudentProfile) : undefined;
+    }
+    return (db.studentProfiles || []).find(row => row.id === fingerprint);
+  },
+
+  /**
+   * يقرأ الملفَّ ويُجري عليه `mutate` ويكتبه في معاملةٍ واحدة.
+   * `mutate` يُرجع الملفَّ الجديد، أو null لحذفه، أو undefined لترك الحال كما هي.
+   */
+  updateStudentProfile: async (
+    fingerprint: string,
+    mutate: (current: StudentProfile | undefined) => StudentProfile | null | undefined,
+  ): Promise<StudentProfile | undefined> => {
+    if (!fingerprint) throw new Error("بصمة الطالب مطلوبة");
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("studentProfiles").doc(fingerprint);
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        const current = snap.exists ? (snap.data() as StudentProfile) : undefined;
+        const next = mutate(current);
+        if (next === undefined) return current;
+        if (next === null) { if (snap.exists) transaction.delete(ref); return undefined; }
+        transaction.set(ref, { ...next, id: fingerprint, fingerprint });
+        return next;
+      });
+    }
+    if (!Array.isArray(db.studentProfiles)) db.studentProfiles = [];
+    const index = db.studentProfiles.findIndex(row => row.id === fingerprint);
+    const current = index >= 0 ? db.studentProfiles[index] : undefined;
+    const next = mutate(current);
+    if (next === undefined) return current;
+    if (next === null) {
+      if (index >= 0) { db.studentProfiles.splice(index, 1); saveDatabase(); }
+      return undefined;
+    }
+    const row = { ...next, id: fingerprint, fingerprint };
+    if (index >= 0) db.studentProfiles[index] = row; else db.studentProfiles.push(row);
+    saveDatabase();
+    return row;
+  },
+
+  /**
+   * يحذف الملفاتِ التي انتهى عمرُها (deleteAt). دفعةٌ محدودة في المرّة:
+   * الحذفُ يُحسب من الحصة اليومية المجانية، والباقي يُحذف في الدورة التالية.
+   * يرجع ما حُذف.
+   */
+  purgeExpiredStudentProfiles: async (nowISO: string, limit = 400): Promise<number> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("studentProfiles").where("deleteAt", "<=", nowISO).limit(limit).get();
+      if (snap.empty) return 0;
+      const batch = firestoreDb.batch();
+      snap.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+      return snap.size;
+    }
+    const before = (db.studentProfiles || []).length;
+    const keep: StudentProfile[] = [];
+    let removed = 0;
+    for (const row of db.studentProfiles || []) {
+      if (String(row.deleteAt) <= nowISO && removed < limit) removed += 1; else keep.push(row);
+    }
+    if (removed) { db.studentProfiles = keep; saveDatabase(); }
+    return before - keep.length;
   },
 
   /** كلُّ طلبات الطلبة في فصلٍ واحد، لكل الكليات: يحتاجها مركزُ الإشعارات ليعدّ لكل قسم. */
