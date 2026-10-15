@@ -10208,6 +10208,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], s
           onChanged={() => setLiveFeedSerial(value => value + 1)}
           onLockChange={setApprovalLock}
           onOpenNotes={onNavigate ? () => onNavigate("scheduleChanges") : undefined}
+          onOpenCourses={onNavigate ? () => onNavigate("courses") : undefined}
         />
       ) : null}
       <ScheduleExperienceLayer

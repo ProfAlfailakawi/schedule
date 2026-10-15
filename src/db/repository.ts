@@ -923,9 +923,38 @@ export function saveDatabase() {
   fs.chmodSync(DB_FILE, 0o600);
 }
 
+/** Mark saved radar results stale when an input used by the simulation changes. */
+async function markRegistrationRunsStale(termId?: number): Promise<void> {
+  const at = new Date().toISOString();
+  try {
+    if (firestoreDb) {
+      const snapshot = await firestoreDb.collection("registrationRuns").get();
+      const matches = snapshot.docs.filter(doc => {
+        const run = doc.data() as RegistrationRun;
+        return !run.stale && (!termId || Number(run.termId) === Number(termId));
+      });
+      await Promise.all(matches.map(doc => doc.ref.set({ stale: true, staleAt: at }, { merge: true })));
+      return;
+    }
+    if (!Array.isArray(db.registrationRuns)) db.registrationRuns = [];
+    let changed = false;
+    db.registrationRuns = db.registrationRuns.map(run => {
+      if (run.stale || (termId && Number(run.termId) !== Number(termId))) return run;
+      changed = true;
+      return { ...run, stale: true, staleAt: at };
+    });
+    if (changed) saveDatabase();
+  } catch (error) {
+    console.error("[simulation] could not mark saved radar stale:", error instanceof Error ? error.message : error);
+  }
+}
+
 const identityListeners = new Set<() => void>();
 /** Fired whenever an account, its permissions or its scopes change. */
 function announceIdentityChange() { for (const listener of identityListeners) listener(); }
+
+const registrationFactsChanged = (before?: StudentProfile, after?: StudentProfile | null) => JSON.stringify(before ? [before.AdCollegeId, before.AdSectionId, before.curriculumPlanId, before.passedCourseIds, before.wishes] : null)
+  !== JSON.stringify(after ? [after.AdCollegeId, after.AdSectionId, after.curriculumPlanId, after.passedCourseIds, after.wishes] : null);
 
 /**
  * Raised when a write was based on a revision that is no longer current.
@@ -3034,6 +3063,7 @@ export const Repository = {
       const updated = { AdSectionId: id, AdCollegeId: collegeId, AdSectionCode: code, AdSectionName: name };
       await docRef.set(updated);
       invalidateScheduleRelationCache();
+      await markRegistrationRunsStale();
       return updated;
     }
     const idx = db.sections.findIndex(s => s.AdSectionId === id);
@@ -3258,6 +3288,7 @@ export const Repository = {
       });
       invalidateScheduleRelationCache();
       await Repository.attachCourseToActiveCurriculum(newCourse);
+      await markRegistrationRunsStale();
       return newCourse;
     }
     if (db.courses.some(course => course.AdSectionId === sectionId && course.CourseCode === code)) {
@@ -3277,6 +3308,7 @@ export const Repository = {
     db.courses.push(newCourse);
     saveDatabase();
     await Repository.attachCourseToActiveCurriculum(newCourse);
+    await markRegistrationRunsStale();
     return newCourse;
   },
 
@@ -3309,6 +3341,7 @@ export const Repository = {
       };
       await docRef.set(updated);
       invalidateScheduleRelationCache();
+      await markRegistrationRunsStale();
       return updated;
     }
     const idx = db.courses.findIndex(c => c.AdCourseId === id);
@@ -3324,6 +3357,7 @@ export const Repository = {
       MaxStudent: maxStudent
     };
     saveDatabase();
+    await markRegistrationRunsStale();
     return db.courses[idx];
   },
 
@@ -3333,10 +3367,12 @@ export const Repository = {
       await archiveBeforeDelete("courses", `course_${id}`);
       await firestoreDb.collection("courses").doc(`course_${id}`).delete();
       invalidateScheduleRelationCache();
+      await markRegistrationRunsStale();
       return;
     }
     db.courses = db.courses.filter(c => c.AdCourseId !== id);
     saveDatabase();
+    await markRegistrationRunsStale();
   },
 
   // Curriculum plans -------------------------------------------------------
@@ -3428,6 +3464,7 @@ export const Repository = {
       }
       batch.set(firestoreDb.collection("curriculumPlans").doc(newPlan.id),newPlan);
       await batch.commit();
+      await markRegistrationRunsStale();
       return newPlan;
     }
     if (!Array.isArray(db.curriculumPlans)) db.curriculumPlans=[];
@@ -3439,7 +3476,7 @@ export const Repository = {
     } else {
       db.curriculumPlans=db.curriculumPlans.map(plan=>Number(plan.AdSectionId)===sectionId&&plan.status==="active"?{...plan,status:"transition"}:plan);
     }
-    db.curriculumPlans.push(newPlan); saveDatabase(); return newPlan;
+    db.curriculumPlans.push(newPlan); saveDatabase(); await markRegistrationRunsStale(); return newPlan;
   },
 
   /** Rename a plan or set its graduation rule. Status never changes here. */
@@ -3451,10 +3488,10 @@ export const Repository = {
     if(patch.name!==undefined)updated.name=patch.name;
     if(patch.degreeRule)updated.degreeRule=patch.degreeRule;
     if(!updated.code)delete updated.code;
-    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);return updated;}
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);await markRegistrationRunsStale();return updated;}
     if(!Array.isArray(db.curriculumPlans))db.curriculumPlans=[];
     const at=db.curriculumPlans.findIndex(row=>row.id===planId);if(at<0)throw new Error("الصحيفة غير موجودة");
-    db.curriculumPlans[at]=updated;saveDatabase();return updated;
+    db.curriculumPlans[at]=updated;saveDatabase();await markRegistrationRunsStale();return updated;
   },
 
   addCourseToCurriculumPlan: async (planId:string, course:AdCourse, by=""): Promise<CurriculumPlanCourse> => {
@@ -3462,16 +3499,16 @@ export const Repository = {
     const plan=plans.find(row=>row.id===planId);
     if(!plan||plan.status==="archived") throw new Error("الصحيفة غير متاحة للتعديل");
     const row:CurriculumPlanCourse={id:`${planId}_${course.AdCourseId}`,planId,AdCollegeId:Number(course.AdCollegeId),AdSectionId:Number(course.AdSectionId),AdCourseId:Number(course.AdCourseId),createdAt:new Date().toISOString(),createdBy:by||undefined};
-    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlanCourses").doc(row.id).set(row);return row;}
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlanCourses").doc(row.id).set(row);await markRegistrationRunsStale();return row;}
     if(!Array.isArray(db.curriculumPlanCourses))db.curriculumPlanCourses=[];
-    const at=db.curriculumPlanCourses.findIndex(item=>item.id===row.id); if(at>=0)db.curriculumPlanCourses[at]=row;else db.curriculumPlanCourses.push(row);saveDatabase();return row;
+    const at=db.curriculumPlanCourses.findIndex(item=>item.id===row.id); if(at>=0)db.curriculumPlanCourses[at]=row;else db.curriculumPlanCourses.push(row);saveDatabase();await markRegistrationRunsStale();return row;
   },
 
   removeCourseFromCurriculumPlan: async (planId:string, courseId:number): Promise<void> => {
     const id=`${planId}_${Number(courseId)}`;
-    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlanCourses").doc(id).delete();return;}
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlanCourses").doc(id).delete();await markRegistrationRunsStale();return;}
     if(!Array.isArray(db.curriculumPlanCourses))db.curriculumPlanCourses=[];
-    db.curriculumPlanCourses=db.curriculumPlanCourses.filter(row=>row.id!==id);saveDatabase();
+    db.curriculumPlanCourses=db.curriculumPlanCourses.filter(row=>row.id!==id);saveDatabase();await markRegistrationRunsStale();
   },
 
   attachCourseToActiveCurriculum: async (course:AdCourse, by=""): Promise<void> => {
@@ -3507,8 +3544,8 @@ export const Repository = {
     if(!plan)throw new Error("الصحيفة غير موجودة");
     if(plan.status==="active")throw new Error("لا يمكن أرشفة الصحيفة الحالية. أنشئ صحيفة أحدث أولاً.");
     const updated={...plan,status:"archived" as const,archivedAt:new Date().toISOString(),archivedBy:by||undefined};
-    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);return updated;}
-    if(!Array.isArray(db.curriculumPlans))db.curriculumPlans=[];const at=db.curriculumPlans.findIndex(row=>row.id===planId);if(at<0)throw new Error("الصحيفة غير موجودة");db.curriculumPlans[at]=updated;saveDatabase();return updated;
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("curriculumPlans").doc(planId).set(updated);await markRegistrationRunsStale();return updated;}
+    if(!Array.isArray(db.curriculumPlans))db.curriculumPlans=[];const at=db.curriculumPlans.findIndex(row=>row.id===planId);if(at<0)throw new Error("الصحيفة غير موجودة");db.curriculumPlans[at]=updated;saveDatabase();await markRegistrationRunsStale();return updated;
   },
 
   getOperationalCourseIds: async (sectionId:number): Promise<Set<number>> => {
@@ -3786,12 +3823,14 @@ export const Repository = {
       const nextId = await reserveFirestoreIds("schedules");
       const newSched = { ...schedule, id: nextId, rev: 1 };
       await firestoreDb.collection("schedules").doc(`schedule_${nextId}`).set(newSched);
+      await markRegistrationRunsStale(Number(schedule.AdTermId));
       return newSched;
     }
     const nextId = db.schedules.length > 0 ? Math.max(...db.schedules.map(s => s.id)) + 1 : 1;
     const newSched = { ...schedule, id: nextId, rev: 1 };
     db.schedules.push(newSched);
     saveDatabase();
+    await markRegistrationRunsStale(Number(schedule.AdTermId));
     return newSched;
   },
 
@@ -3812,7 +3851,7 @@ export const Repository = {
     invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("schedules").doc(`schedule_${id}`);
-      return await firestoreDb.runTransaction(async transaction => {
+      const updated = await firestoreDb.runTransaction(async transaction => {
         const doc = await transaction.get(docRef);
         if (!doc.exists) throw new Error("الجدول غير موجود");
         const current = doc.data() as FSchedule;
@@ -3822,6 +3861,8 @@ export const Repository = {
         transaction.set(docRef, updated);
         return updated;
       });
+      await markRegistrationRunsStale(Number(updated.AdTermId));
+      return updated;
     }
     const idx = db.schedules.findIndex(s => s.id === id);
     if (idx === -1) throw new Error("الجدول غير موجود");
@@ -3829,6 +3870,7 @@ export const Repository = {
       throw new ScheduleRevisionConflict(db.schedules[idx]);
     db.schedules[idx] = { ...db.schedules[idx], ...fields, rev: Number(db.schedules[idx].rev || 0) + 1 };
     saveDatabase();
+    await markRegistrationRunsStale(Number(db.schedules[idx].AdTermId));
     return db.schedules[idx];
   },
 
@@ -3850,7 +3892,7 @@ export const Repository = {
       // A WriteBatch cannot carry a precondition, so the party moves inside a
       // transaction instead: every revision is compared against the same read
       // that the write is committed with, and the all-or-none promise is kept.
-      return await firestoreDb.runTransaction(async transaction => {
+      const updated = await firestoreDb.runTransaction(async transaction => {
         const docs = await transaction.getAll(...refs);
         const updated: FSchedule[] = [];
         docs.forEach((doc, index) => {
@@ -3864,6 +3906,8 @@ export const Repository = {
         updated.forEach((next, index) => transaction.set(refs[index], next));
         return updated;
       });
+      await Promise.all([...new Set(updated.map(row => Number(row.AdTermId)))].map(id => markRegistrationRunsStale(id)));
+      return updated;
     }
     // Demo mode: verify everything — existence AND revision — before touching
     // anything, then one save.
@@ -3880,6 +3924,7 @@ export const Repository = {
       updated.push(db.schedules[idx]);
     }
     saveDatabase();
+    await Promise.all([...new Set(updated.map(row => Number(row.AdTermId)))].map(id => markRegistrationRunsStale(id)));
     return updated;
   },
 
@@ -3887,11 +3932,16 @@ export const Repository = {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      const old = await firestoreDb.collection("schedules").doc(`schedule_${id}`).get();
+      const termId = old.exists ? Number((old.data() as FSchedule).AdTermId) : undefined;
       await firestoreDb.collection("schedules").doc(`schedule_${id}`).delete();
+      await markRegistrationRunsStale(termId);
       return;
     }
+    const old = db.schedules.find(s => s.id === id);
     db.schedules = db.schedules.filter(s => s.id !== id);
     saveDatabase();
+    await markRegistrationRunsStale(old ? Number(old.AdTermId) : undefined);
   },
 
   // Copy Schedule (atomic transaction / batch write)
@@ -3920,6 +3970,7 @@ export const Repository = {
         });
       });
       await batch.commit();
+      await markRegistrationRunsStale(toTermId);
       return source.length;
     }
 
@@ -3935,6 +3986,7 @@ export const Repository = {
     let nextId = db.schedules.length > 0 ? Math.max(...db.schedules.map(row => row.id)) + 1 : 1;
     for (const row of source) db.schedules.push({ ...row, id: nextId++, AdTermId: toTermId });
     saveDatabase();
+    await markRegistrationRunsStale(toTermId);
     return source.length;
   },
 
@@ -4512,6 +4564,7 @@ export const Repository = {
         return { proposal: next, created, updated };
       });
       invalidateSchedules();
+      if (plan.termId !== undefined) await markRegistrationRunsStale(plan.termId);
       return result;
     }
     /* Demo / local: the check and the apply run with no await between them, so
@@ -4542,6 +4595,7 @@ export const Repository = {
     const next = { ...plan.build(created), rev: plan.expectedRev + 1, updatedAt: new Date().toISOString() };
     db.studyProposals[at] = next;
     saveDatabase();
+    if (plan.termId !== undefined) await markRegistrationRunsStale(plan.termId);
     return { proposal: next, created, updated };
   },
 
@@ -5317,12 +5371,14 @@ export const Repository = {
     };
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const draftRef = firestoreDb.collection("curriculumRuleDrafts").doc(planId), liveRef = firestoreDb.collection("curriculumRuleSets").doc(planId);
-      return await firestoreDb.runTransaction(async transaction => {
+      const approved = await firestoreDb.runTransaction(async transaction => {
         const [draftSnap, liveSnap] = await Promise.all([transaction.get(draftRef), transaction.get(liveRef)]);
         const { approved, draft } = promote(draftSnap.exists ? (draftSnap.data() as CurriculumRuleSet) : undefined, liveSnap.exists ? (liveSnap.data() as CurriculumRuleSet) : undefined);
         transaction.set(liveRef, approved); transaction.set(draftRef, draft);
         return approved;
       });
+      await markRegistrationRunsStale();
+      return approved;
     }
     if (!Array.isArray(db.curriculumRuleDrafts)) db.curriculumRuleDrafts = [];
     if (!Array.isArray(db.curriculumRuleSets)) db.curriculumRuleSets = [];
@@ -5332,6 +5388,7 @@ export const Repository = {
     db.curriculumRuleDrafts[draftIndex] = draft;
     if (liveIndex >= 0) db.curriculumRuleSets[liveIndex] = approved; else db.curriculumRuleSets.push(approved);
     saveDatabase();
+    await markRegistrationRunsStale();
     return approved;
   },
 
@@ -5363,15 +5420,17 @@ export const Repository = {
     if (!fingerprint) throw new Error("بصمة الطالب مطلوبة");
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("studentProfiles").doc(fingerprint);
-      return await firestoreDb.runTransaction(async transaction => {
+      const result = await firestoreDb.runTransaction(async transaction => {
         const snap = await transaction.get(ref);
         const current = snap.exists ? (snap.data() as StudentProfile) : undefined;
         const next = mutate(current);
-        if (next === undefined) return current;
-        if (next === null) { if (snap.exists) transaction.delete(ref); return undefined; }
+        if (next === undefined) return { profile: current, changed: false };
+        if (next === null) { if (snap.exists) transaction.delete(ref); return { profile: undefined, changed: registrationFactsChanged(current, null) }; }
         transaction.set(ref, { ...next, id: fingerprint, fingerprint });
-        return next;
+        return { profile: next, changed: registrationFactsChanged(current, next) };
       });
+      if (result.changed) await markRegistrationRunsStale();
+      return result.profile;
     }
     if (!Array.isArray(db.studentProfiles)) db.studentProfiles = [];
     const index = db.studentProfiles.findIndex(row => row.id === fingerprint);
@@ -5379,12 +5438,13 @@ export const Repository = {
     const next = mutate(current);
     if (next === undefined) return current;
     if (next === null) {
-      if (index >= 0) { db.studentProfiles.splice(index, 1); saveDatabase(); }
+      if (index >= 0) { db.studentProfiles.splice(index, 1); saveDatabase(); if (registrationFactsChanged(current, null)) await markRegistrationRunsStale(); }
       return undefined;
     }
     const row = { ...next, id: fingerprint, fingerprint };
     if (index >= 0) db.studentProfiles[index] = row; else db.studentProfiles.push(row);
     saveDatabase();
+    if (registrationFactsChanged(current, row)) await markRegistrationRunsStale();
     return row;
   },
 
@@ -5993,6 +6053,7 @@ export const Repository = {
       current.forEach(row=>batch.delete(firestoreDb!.collection("schedules").doc(`schedule_${row.id}`)));
       normalized.forEach(row=>batch.set(firestoreDb!.collection("schedules").doc(`schedule_${row.id}`),row));
       await batch.commit();
+      await markRegistrationRunsStale(termId);
       return normalized;
     }
     const hydrated=hydrateSchedules(db.schedules,db.courses,db.sections);
@@ -6004,6 +6065,7 @@ export const Repository = {
     db.schedules=db.schedules.filter(row=>!idsToRemove.has(row.id));
     db.schedules.push(...normalized.map(row=>({...row})));
     saveDatabase();
+    await markRegistrationRunsStale(termId);
     return normalized;
     });
   },
@@ -6072,9 +6134,10 @@ export const Repository = {
     if(!rows.length)return;
     if(firestoreDb&&!demoSandboxContext.getStore()){
       for(let i=0;i<rows.length;i+=400){const batch=firestoreDb.batch();rows.slice(i,i+400).forEach(row=>batch.set(firestoreDb!.collection("locationRooms").doc(row.id),row,{merge:true}));await batch.commit();}
+      await markRegistrationRunsStale();
       return;
     }
-    const map=new Map((db.locationRooms||[]).map(x=>[x.id,x]));rows.forEach(x=>map.set(x.id,{...map.get(x.id),...x}));db.locationRooms=[...map.values()];saveDatabase();
+    const map=new Map((db.locationRooms||[]).map(x=>[x.id,x]));rows.forEach(x=>map.set(x.id,{...map.get(x.id),...x}));db.locationRooms=[...map.values()];saveDatabase();await markRegistrationRunsStale();
   },
   getLocationReviewCases: async (): Promise<LocationReviewCase[]> => {
     if(firestoreDb&&!demoSandboxContext.getStore()){const snap=await firestoreDb.collection("locationReviewCases").get();return snap.docs.map(d=>d.data() as LocationReviewCase);}
@@ -6111,9 +6174,11 @@ export const Repository = {
   applyLocationSchedulePatches: async (patches: Array<{id:number;fields:Partial<FSchedule>}>): Promise<void> => {
     if(!patches.length)return;invalidateSchedules();
     if(firestoreDb&&!demoSandboxContext.getStore()){
-      for(let i=0;i<patches.length;i+=400){const batch=firestoreDb.batch();patches.slice(i,i+400).forEach(p=>batch.set(firestoreDb!.collection("schedules").doc(`schedule_${p.id}`),p.fields,{merge:true}));await batch.commit();}return;
+      const rows=await Repository.getSchedules();const terms=new Set(rows.filter(row=>patches.some(p=>p.id===row.id)).map(row=>Number(row.AdTermId)));
+      for(let i=0;i<patches.length;i+=400){const batch=firestoreDb.batch();patches.slice(i,i+400).forEach(p=>batch.set(firestoreDb!.collection("schedules").doc(`schedule_${p.id}`),p.fields,{merge:true}));await batch.commit();}
+      await Promise.all([...terms].map(id=>markRegistrationRunsStale(id)));return;
     }
-    const byId=new Map(patches.map(p=>[p.id,p.fields]));db.schedules=db.schedules.map(row=>byId.has(row.id)?{...row,...byId.get(row.id)}:row);saveDatabase();
+    const byId=new Map(patches.map(p=>[p.id,p.fields]));const terms=new Set(db.schedules.filter(row=>byId.has(row.id)).map(row=>Number(row.AdTermId)));db.schedules=db.schedules.map(row=>byId.has(row.id)?{...row,...byId.get(row.id)}:row);saveDatabase();await Promise.all([...terms].map(id=>markRegistrationRunsStale(id)));
   },
 
   // Rooms

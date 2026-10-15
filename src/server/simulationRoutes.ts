@@ -36,7 +36,7 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
     const run = await Repository.getRegistrationRun(Number(term.AdTermId));
     const catalog = new Map(((await Repository.getCourses()) as AdCourse[]).map(course => [Number(course.AdCourseId), course] as const));
     const power = deps.isPowerUser(req);
-    const rows = (run?.courses || [])
+    const inScope = (rows: NonNullable<typeof run>["courses"] | undefined) => (rows || [])
       .filter(row => power || deps.isScopeAllowed(req, row.collegeId, row.sectionId))
       .map(row => {
         const course = catalog.get(row.courseId);
@@ -49,9 +49,16 @@ export function registerSimulationRoutes(app: Express, deps: SimulationDeps): vo
       phase: (() => { const reading = readStudentPhase(term.AdTermStudentPhases); return { mode: reading.mode, label: reading.label, line: reading.line, namesVisible: reading.namesVisible }; })(),
       run: run ? {
         ranAt: run.ranAt, ranBy: run.ranBy, students: run.students, withoutRules: run.withoutRules, defaulted: run.defaulted,
+        population: run.population ?? run.students + run.defaulted,
+        capacity: run.capacity || null,
+        projected: run.projected ? { students: run.projected.students, capacity: run.projected.capacity } : null,
+        dataQuality: run.dataQuality || null,
+        stale: Boolean(run.stale), staleAt: run.staleAt || null,
+        sourceFingerprint: run.sourceFingerprint || null,
         rounds: run.rounds, windows: run.windows, scoped: !power,
       } : null,
-      courses: rows,
+      courses: inScope(run?.courses),
+      projectedCourses: inScope(run?.projected?.courses),
     });
   });
 

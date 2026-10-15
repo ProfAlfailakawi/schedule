@@ -354,6 +354,8 @@ export interface MasterRoom {
   buildingId: string;
   buildingCode: string;
   canonicalCode: string;
+  /** Verified seat count used by the registration schedule rehearsal. Missing means unknown. */
+  capacity?: number;
   active: boolean;
   aliases: LocationRegistryAlias[];
   collegeIds: number[];
@@ -873,8 +875,22 @@ export interface RegistrationRun {
   ranAt: string;
   ranBy: string;
   students: number;
+  /** Profiles with current-term explicit wishes; the main scenario uses these only. */
+  population?: number;
   withoutRules: number;
   defaulted: number;
+  /** Counts from a separate stated-assumption scenario for current nonrespondents. */
+  capacity?: { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number };
+  projected?: {
+    students: number;
+    capacity: { canReach15: number; canReach12To14: number; below12: number; graduatingBelow12: number; unknown: number };
+    courses: RegistrationRun["courses"];
+  };
+  dataQuality?: { total: number; ready: number; excluded: number; issues: Record<string, number> };
+  sourceFingerprint?: string;
+  /** Set by source mutations; false means the saved result is no longer current. */
+  stale?: boolean;
+  staleAt?: string;
   rounds: number;
   windows: number[];
   /** لكل مقرر: سعتُه وما أُخذ منه وكم شعبةً، مع أسباب ما لم يتحقّق. */
