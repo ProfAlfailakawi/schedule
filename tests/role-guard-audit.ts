@@ -29,7 +29,7 @@ function check(condition: boolean, name: string) {
 
 /* ── ١) تعريف الأدوار ───────────────────────────────────────────────────── */
 
-const READERS: AcademicRole[] = ["dean", "viceDean", "registrarDean", "registrarHead", "registrarStaff", "departmentHead"];
+const READERS: AcademicRole[] = ["dean", "viceDean", "registrarDean", "registrarHead", "registrarStaff", "departmentHead", "advisor"];
 const WRITERS: AcademicRole[] = ["committeeChair", "standard"];
 
 for (const role of READERS) check(isReadOnlyRole(role), `«${roleLabel(role)}» صفة اطّلاع`);

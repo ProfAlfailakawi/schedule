@@ -3,7 +3,8 @@
  * والتكرار لا يُنشئ شيئاً مرتين، ولا كلمة سرّ في أي موضع.
  */
 import fs from "fs";
-import { planDepartmentHeadAccounts } from "../src/utils/departmentHeadAccounts";
+import { planAdvisorAccounts, planDepartmentHeadAccounts } from "../src/utils/departmentHeadAccounts";
+import { ACADEMIC_ROLES, isAdvisorRole, isReadOnlyRole, roleDefinition } from "../src/utils/academicRoles";
 
 let passed = 0, failed = 0;
 const check = (ok: boolean, label: string) => {
@@ -54,10 +55,33 @@ const afterAssigns = [...assigns, ...plan.filter(r => r.status === "create").map
 const again = planDepartmentHeadAccounts({ users: afterUsers, assigns: afterAssigns, colleges, sections });
 check(again.every(row => row.status === "exists"), "التشغيل الثاني: لا شيء يُنشأ");
 
+/* ── حسابات المرشدين: Econoadvisor وأخواتها ─────────────────────────────── */
+const advisors = planAdvisorAccounts({
+  users: [{ SystemUserId: 1, SystemUserLogin: "Econodept", Role: "committeeChair" }, { SystemUserId: 2, SystemUserLogin: "Techdept", Role: "committeeChair" }, { SystemUserId: 3, SystemUserLogin: "TechDept", Role: "committeeChair" } as any],
+  assigns: [{ SystemUserId: 1, AdCollegeId: 1, AdSectionId: 10 }, { SystemUserId: 2, AdCollegeId: 1, AdSectionId: 11 }, { SystemUserId: 3, AdCollegeId: 2, AdSectionId: 20 }],
+  colleges, sections,
+});
+const adv = (id: number) => advisors.find(row => row.sectionId === id)!;
+check(adv(10).proposedLogin === "Econoadvisor" && adv(10).status === "create", "Econodept ← Econoadvisor");
+check(adv(11).proposedLogin === "TechadvisorBG" && adv(20).proposedLogin === "TechadvisorBB", "البادئة المشتركة بين كليتين تأخذ رمز الكلية");
+check(advisors.every(row => row.proposedName.startsWith("إرشاد ")), "اسم الحساب «إرشاد <القسم>»");
+check(!advisors.some(row => /head/i.test(row.proposedLogin)), "لا تتداخل حسابات المرشدين مع حسابات الرؤساء");
+check(advisors.length === sections.length, "حسابٌ لكل قسم");
+check(isAdvisorRole("advisor") && !isAdvisorRole("departmentHead"), "isAdvisorRole");
+const def = roleDefinition("advisor");
+check(def.readOnly && isReadOnlyRole("advisor") && def.landing === "registration" && def.scopeMode === "section" && JSON.stringify(def.formIds) === "[14]", "صفة المرشد: قراءة فقط، قسمه، شاشة واحدة، تفتح على كشف التسجيل");
+check(ACADEMIC_ROLES.some(role => role.id === "advisor"), "الصفة معرّفة في القائمة");
+const appSrc = fs.readFileSync("src/App.tsx", "utf8");
+check(/sessionRole\.advisorOnly[\s\S]{0,200}studentRegistration/.test(appSrc) && /advisorOnly\s*\n?\s*\? undefined/.test(appSrc), "القائمة: المرشد بلا استعلامات وتقارير، وأي وجهة تعود إلى كشف التسجيل");
+
 const server = fs.readFileSync("server.ts", "utf8");
 const block = server.slice(server.indexOf('app.post("/api/users/department-heads"'), server.indexOf('app.put("/api/users/:id"'));
 check(/requirePowerAdmin/.test(block), "الإنشاء لمدير النظام وحده على الخادم");
 check(/SystemUserPass: ""/.test(block) && /IsActive: false/.test(block) && !/hashPassword|randomBytes|encryptPasswordForVault/.test(block), "لا كلمة سرّ تُولَّد، والحساب موقوف");
+
+const advBlock = server.slice(server.indexOf('app.post("/api/users/advisors"'), server.indexOf('app.put("/api/users/:id"'));
+check(/requirePowerAdmin/.test(advBlock) && /SystemUserPass: ""/.test(advBlock) && /IsActive: false/.test(advBlock) && !/hashPassword|randomBytes|encryptPasswordForVault/.test(advBlock), "حسابات المرشدين: لمدير النظام، موقوفة، بلا كلمة سر");
+check(/advisorOnly: isAdvisorRole/.test(server), "الخادم يرسل advisorOnly للواجهة");
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

@@ -47,6 +47,12 @@ export interface HeadPlanRow {
 
 const DEPT_SUFFIX = /dept$/i;
 export const DEPARTMENT_HEAD_ROLE = "departmentHead";
+export const ADVISOR_ROLE = "advisor";
+
+/** ما يتغيّر بين حسابات رؤساء الأقسام وحسابات الإرشاد: لاحقة الاسم والصفة وعنوانه. */
+export interface AccountKind { suffix: string; role: string; namePrefix: string }
+export const HEAD_KIND: AccountKind = { suffix: "head", role: DEPARTMENT_HEAD_ROLE, namePrefix: "رئيس" };
+export const ADVISOR_KIND: AccountKind = { suffix: "advisor", role: ADVISOR_ROLE, namePrefix: "إرشاد" };
 
 function lower(value: string) { return String(value || "").trim().toLowerCase(); }
 
@@ -56,12 +62,16 @@ function collegeTag(college: HeadPlanCollege | undefined, collegeId: number): st
   return code || String(collegeId);
 }
 
+export function planAdvisorAccounts(input: Parameters<typeof planDepartmentHeadAccounts>[0]): HeadPlanRow[] {
+  return planDepartmentHeadAccounts(input, ADVISOR_KIND);
+}
+
 export function planDepartmentHeadAccounts(input: {
   users: HeadPlanUser[];
   assigns: HeadPlanAssign[];
   colleges: HeadPlanCollege[];
   sections: HeadPlanSection[];
-}): HeadPlanRow[] {
+}, kind: AccountKind = HEAD_KIND): HeadPlanRow[] {
   const users = input.users.filter(user => !user.IsDeleted);
   const userById = new Map(users.map(user => [Number(user.SystemUserId), user]));
   const userByLogin = new Map(users.map(user => [lower(user.SystemUserLogin), user]));
@@ -96,7 +106,7 @@ export function planDepartmentHeadAccounts(input: {
       .sort((a, b) => Number(a.SystemUserId) - Number(b.SystemUserId))[0];
     const deptLogin = dept ? String(dept.SystemUserLogin).trim() : null;
     const prefix = deptLogin ? deptLogin.replace(DEPT_SUFFIX, "") : `s${sectionId}`;
-    const currentHead = scoped.find(user => user.Role === DEPARTMENT_HEAD_ROLE);
+    const currentHead = scoped.find(user => user.Role === kind.role);
     return { section, collegeId, sectionId, deptLogin, prefix, currentHead };
   });
 
@@ -107,7 +117,7 @@ export function planDepartmentHeadAccounts(input: {
 
   return drafts.map(draft => {
     const college = collegeById.get(draft.collegeId);
-    const base = `${draft.prefix}head`;
+    const base = `${draft.prefix}${kind.suffix}`;
     const scopedIds = new Set((usersBySection.get(sectionKey(draft.collegeId, draft.sectionId)) || []).map(user => Number(user.SystemUserId)));
     const ownsLogin = (login: string) => {
       const holder = userByLogin.get(lower(login));
@@ -138,7 +148,7 @@ export function planDepartmentHeadAccounts(input: {
       sectionName: String(draft.section.AdSectionName || ""),
       deptLogin: draft.deptLogin,
       proposedLogin,
-      proposedName: `رئيس ${String(draft.section.AdSectionName || "").trim()}`.trim(),
+      proposedName: `${kind.namePrefix} ${String(draft.section.AdSectionName || "").trim()}`.trim(),
       status: "create",
     };
     if (!draft.deptLogin) row.note = "لا يوجد حساب «…dept» لهذا القسم؛ اقتُرح اسمٌ من رقمه";
@@ -164,7 +174,7 @@ export function planDepartmentHeadAccounts(input: {
       row.existingUserId = Number(sameLogin.SystemUserId);
       row.existingLogin = sameLogin.SystemUserLogin;
       const gaps: string[] = [];
-      if (sameLogin.Role !== DEPARTMENT_HEAD_ROLE) gaps.push("صفته ليست «رئيس القسم العلمي»");
+      if (sameLogin.Role !== kind.role) gaps.push(kind.role === ADVISOR_ROLE ? "صفته ليست «مرشد القسم»" : "صفته ليست «رئيس القسم العلمي»");
       if (!scopedIds.has(Number(sameLogin.SystemUserId))) gaps.push("نطاقه لا يشمل هذا القسم");
       if (gaps.length) row.note = `الحساب موجود بالاسم نفسه، لكن ${gaps.join(" و")} — يُكمَل من شاشة المستخدمين`;
     }

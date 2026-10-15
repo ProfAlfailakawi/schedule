@@ -14,7 +14,7 @@ import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/refe
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { generateSyntheticCivilId, normalizeCivilId, sameCivilId, validateCivilId } from "./src/utils/civilId";
 import { toEnglishDigits } from "./src/utils/digits";
-import { DEPARTMENT_HEAD_ROLE, planDepartmentHeadAccounts } from "./src/utils/departmentHeadAccounts";
+import { ADVISOR_ROLE, DEPARTMENT_HEAD_ROLE, planAdvisorAccounts, planDepartmentHeadAccounts } from "./src/utils/departmentHeadAccounts";
 import { normalizeArabicText } from "./src/utils/arabicText";
 import { byRoom, byArabic, sortByName } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, isBlockingConflict, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
@@ -82,7 +82,7 @@ import { awaitedItemIndexes } from "./src/utils/linkedRequestItems";
 import { reviewSchedule } from "./src/utils/scheduleRegulations";
 import {
   ACADEMIC_ROLES, DEFAULT_MIGRATION_ROLE, canManageDeadline, canReviewSubmissions,
-  canAnnotateCells, isAcademicRole, isReadOnlyRole, isRegistrarRole, isViewerOnlyRole, roleDefinition, roleLabel,
+  canAnnotateCells, isAcademicRole, isAdvisorRole, isReadOnlyRole, isRegistrarRole, isViewerOnlyRole, roleDefinition, roleLabel,
   signatureStage, watchesInbox,
   type AcademicRole,
 } from "./src/utils/academicRoles";
@@ -2505,6 +2505,7 @@ function roleDescriptor(user: any) {
      * ثم يُردّ عند الحفظ بلا أن يفهم لماذا. فتُرسل الحقيقةُ صريحةً. */
     committeeEligible: isAcademicRole(user?.Role) && signatureStage(user?.Role) === "committee",
     viewerOnly: isViewerOnlyRole(definition.id),
+    advisorOnly: isAdvisorRole(definition.id),
   };
 }
 
@@ -13194,6 +13195,14 @@ async function departmentHeadPlan() {
   return planDepartmentHeadAccounts({ users: users as any, assigns, colleges, sections });
 }
 
+/* حسابات المرشدين: الخطةُ نفسها بلاحقة advisor وصفة «مرشد القسم». */
+async function advisorPlan() {
+  const [users, assigns, colleges, sections] = await Promise.all([
+    Repository.getUsers(), Repository.getCollegeUserAssigns(), Repository.getColleges(), Repository.getSections(),
+  ]);
+  return planAdvisorAccounts({ users: users as any, assigns, colleges, sections });
+}
+
 app.get("/api/users/department-heads/preview", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
   res.json({ rows: await departmentHeadPlan() });
 });
@@ -13221,6 +13230,35 @@ app.post("/api/users/department-heads", requirePermission(11), requirePowerAdmin
   }
   res.locals.auditChanges = `حسابات رؤساء الأقسام: أُنشئ ${countOf(created.length, AR.account)} (موقوفة وبلا كلمة سر)`;
   res.json({ created, skipped: rows.length - created.length, rows: await departmentHeadPlan() });
+});
+
+app.get("/api/users/advisors/preview", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  res.json({ rows: await advisorPlan() });
+});
+
+app.post("/api/users/advisors", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  const rows = await advisorPlan();
+  const created: Array<{ login: string; sectionName: string; collegeName: string }> = [];
+  for (const row of rows) {
+    if (row.status !== "create") continue;
+    /* فحصٌ أخير قبل الكتابة: طلبان متزامنان لا يُنشئان الاسم مرتين. */
+    if (await Repository.getUserByLogin(row.proposedLogin)) continue;
+    const user = await Repository.createUser({
+      Name: row.proposedName,
+      SystemUserLogin: row.proposedLogin,
+      SystemUserPass: "",
+      IsAdminUser: false,
+      IsActive: false,
+      IsLocked: false,
+      IsDeleted: false,
+      AdInstructorId: 0,
+      Role: ADVISOR_ROLE,
+    } as any);
+    await applyRoleTemplate(user.SystemUserId, ADVISOR_ROLE as AcademicRole, { assigns: [{ AdCollegeId: row.collegeId, AdSectionId: row.sectionId }] });
+    created.push({ login: row.proposedLogin, sectionName: row.sectionName, collegeName: row.collegeName });
+  }
+  res.locals.auditChanges = `حسابات المرشدين: أُنشئ ${countOf(created.length, AR.account)} (موقوفة وبلا كلمة سر)`;
+  res.json({ created, skipped: rows.length - created.length, rows: await advisorPlan() });
 });
 
 app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Response) => {
