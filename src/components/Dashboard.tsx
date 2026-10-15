@@ -1,8 +1,9 @@
-import React,{useEffect,useMemo,useState}from"react";
+import React,{useEffect,useMemo,useRef,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,TrendingDown,TrendingUp,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
 import MiniRing from"./MiniRing";
+import{Counted,useMotionScope}from"./dna";
 import TermForecast from"./TermForecast";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
@@ -155,6 +156,8 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
  const dateValue=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
  const decisionLevel=decisionTone(primaryDecision);
  const today=data?.today||[];
+ /* أعمدة شريط اليوم تنمو من القاعدة مرّةً واحدة (مراقِبٌ واحد للشريط كلّه). */
+ const dayScope=useMotionScope<HTMLDivElement>({playKey:"dashboard:daybar",enabled:today.length>0,goMs:1300});
  const nowMinutes=now.getHours()*60+now.getMinutes();
  const nowVisible=nowMinutes>=SCHEDULE_DAY_START&&nowMinutes<=SCHEDULE_DAY_END;
  const currentLecture=useMemo(()=>today.find(row=>minutesOf(row.startTime)<=nowMinutes&&minutesOf(row.endTime)>nowMinutes)||null,[today,nowMinutes]);
@@ -191,18 +194,21 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
   * in flight the tiles are already there holding «—»; if a read fails they drop
   * out exactly as they always did.
   */
- const signals:Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean;ring?:number}>=[
-  {key:"today",label:"محاضرات اليوم",value:num(today.length)},
+ const signals:Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean;ring?:number;count?:number}>=[
+  {key:"today",label:"محاضرات اليوم",value:num(today.length),count:today.length},
   /* الصفر لا يُعرض لوحةً: «الجدول سليم» تقوله بطاقةُ القرار فوقها. */
-  criticalCount?{key:"conflicts",label:"تعارضات حرجة",value:num(criticalCount),tone:"danger"}:null,
-  ws?.peakOccupiedRooms?{key:"rooms",label:"قاعات مشغولة",value:num(ws.peakOccupiedRooms)}:null,
+  criticalCount?{key:"conflicts",label:"تعارضات حرجة",value:num(criticalCount),tone:"danger",count:criticalCount}:null,
+  ws?.peakOccupiedRooms?{key:"rooms",label:"قاعات مشغولة",value:num(ws.peakOccupiedRooms),count:ws.peakOccupiedRooms}:null,
   overview?.metrics?.avgInstructorGap!=null
    ?{key:"gap",label:"متوسط الفراغ",value:formatCompactDurationArabic(overview.metrics.avgInstructorGap)}
    :insightsPending?{key:"gap",label:"متوسط الفراغ",value:"—",awaiting:true}:null,
   living?.health
    ?{key:"ready",label:"الجاهزية",value:`${num(percent(living.health.quality))}٪`,ring:percent(living.health.quality)}
    :insightsPending?{key:"ready",label:"الجاهزية",value:"—",awaiting:true}:null,
- ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean;ring?:number}>;
+ ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean;ring?:number;count?:number}>;
+ /* رقمٌ وصل متأخراً بعد «—»: يظهر بتلاشٍ واحد، ولا يتكرّر مع التحديث. */
+ const awaitedSignals=useRef(new Set<string>());
+ signals.forEach(item=>{if(item.awaiting)awaitedSignals.current.add(item.key);});
 
  return <div className="content-stack dashboard-page command-deck visual-minimal">
   <header className="deck-bar" aria-label="ملخص الحساب والنطاق الحالي">
@@ -233,8 +239,8 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    </section>
 
    {signals.length>1?<section className="deck-signals" aria-label="مؤشرات الجاهزية">
-    {signals.map(item=><article key={item.key} className={[item.tone?`signal-${item.tone}`:"",item.awaiting?"is-awaiting":""].filter(Boolean).join(" ")||undefined} aria-busy={item.awaiting||undefined}>
-     {item.ring!=null?<div className="signal-ring-row"><MiniRing value={item.ring} size={60} label={item.label}>{item.value}</MiniRing></div>:<b>{item.value}</b>}
+    {signals.map(item=><article key={item.key} className={[item.tone?`signal-${item.tone}`:"",item.awaiting?"is-awaiting":"",!item.awaiting&&awaitedSignals.current.has(item.key)?"signal-arrived":""].filter(Boolean).join(" ")||undefined} aria-busy={item.awaiting||undefined}>
+     {item.ring!=null?<div className="signal-ring-row"><MiniRing value={item.ring} size={60} label={item.label}>{item.value}</MiniRing></div>:<b>{item.count!=null?<Counted value={item.count} observe playKey={`dashboard:signal:${item.key}`} format={num}/>:item.value}</b>}
      <span>{item.label}</span>
     </article>)}
    </section>:null}
@@ -264,7 +270,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
      {nextUp?<em dir="ltr" title={currentLecture?`المحاضرة الجارية حتى ${scheduleClockForDisplay(nextUp.endTime)}`:`المحاضرة التالية تبدأ ${scheduleClockForDisplay(nextUp.startTime)}`} aria-label={currentLecture?`المحاضرة الجارية حتى ${scheduleClockForDisplay(nextUp.endTime)}`:`المحاضرة التالية تبدأ ${scheduleClockForDisplay(nextUp.startTime)}`}>{scheduleClockForDisplay(currentLecture?nextUp.endTime:nextUp.startTime)}</em>:null}
     </div>
     <div className="daybar">
-     <div className="daybar-track" role="img" aria-label={`ضغط اليوم على ساعاته: ${
+     <div className="daybar-track" ref={dayScope.ref} {...dayScope.motionProps} role="img" aria-label={`ضغط اليوم على ساعاته: ${
        Array.from({length:12},(_,k)=>8+k).map(h=>`${h} ${
          today.filter(r=>minutesOf(r.startTime)<(h+1)*60 && Math.max(minutesOf(r.startTime)+30,minutesOf(r.endTime))>h*60).length
        }`).join("، ")}`}>

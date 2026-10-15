@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { AlertTriangle, Building2, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, History, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
@@ -210,6 +210,9 @@ export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, i
   /* The bar's two numbers, as the server read them for the same scope. */
   const [serverSummary, setServerSummary] = useState<{ conflicts: number; rows: number; duplicates: number } | null>(null);
   const [readinessChecked, setReadinessChecked] = useState(false);
+  /* عرضٌ فقط: هل رأى هذا الفتحُ «أتحقق…» ثم صار نتيجة؟ — لإبراز العنوان مرّةً واحدة. لا يدخل في منطق الحكم. */
+  const sawChecking = useRef(false);
+  if (!readinessChecked) sawChecking.current = true;
   const [readinessError, setReadinessError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [quietOpen, setQuietOpen] = useState(false);
@@ -635,7 +638,7 @@ export default function ScheduleReview({ rows: rowsProp, courses: coursesProp, i
           </svg>
           <div className="review-title">
             <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
-            <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
+            <h2 data-resolved={readinessChecked && sawChecking.current ? "" : undefined}>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
             <p>{scopeLabel}</p>
             {readinessChecked && blockerSummary.conflicts > 0 ? <strong className="review-blocker-headline" data-review-headline="blocking">يمنع الاعتماد: {blockingSummaryPhrase(blockerSummary.conflicts, blockerSummary.rows, blockerSummary.duplicates)}</strong> : null}
             {readinessError ? <small>تمت مراجعة قرار 1913/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}

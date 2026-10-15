@@ -284,3 +284,13 @@
 /* حقولُ الورقة المنبثقة عامّةٌ (40px)؛ مربّعُ الاختيار وحقلُ الأيام ليسا منها. */
 .changes-extend-card .sd-picker-row input{min-block-size:0;padding:0;inline-size:16px;block-size:16px}
 .changes-extend-card .sd-days-input input{min-block-size:34px;inline-size:74px;padding:4px 8px}
+
+/* ميزان الفصل: الشريط يتمدّد من الجهة الأولى مرّةً واحدة (useMotionScope).
+   hold = مطويّ قبل الرسمة الأولى، go = يُكشف بالتدريج؛ لا fill-mode — الراحةُ هي النهاية. */
+@keyframes sd-bar-draw{from{clip-path:inset(0 0 0 100%)}}
+@keyframes sd-bar-draw-ltr{from{clip-path:inset(0 100% 0 0)}}
+.sd-progress[data-motion="hold"] .sd-bar{clip-path:inset(0 0 0 100%)}
+.sd-progress[data-motion="hold"] .sd-bar:dir(ltr){clip-path:inset(0 100% 0 0)}
+.sd-progress[data-motion="go"] .sd-bar{animation:sd-bar-draw .7s var(--ease-out)}
+.sd-progress[data-motion="go"] .sd-bar:dir(ltr){animation-name:sd-bar-draw-ltr}
+@media (prefers-reduced-motion:reduce){.sd-progress[data-motion] .sd-bar{clip-path:none;animation:none}}
