@@ -715,6 +715,66 @@ export interface StudentNeed {
 }
 
 /**
+ * ── قواعدُ الصحيفة: ما يسبق ماذا ──────────────────────────────────────────────
+ *
+ * `CurriculumPlanCourse` تقول أيَّ المقررات في الصحيفة فقط. هذه تقول **كيف
+ * تُؤخذ**: في أي مستوى، ومن أيِّ نوع، وما يسبقها وما يُسجَّل معها، وأيُّ مجموعةٍ
+ * اختيارية تنتمي إليها. تُخزَّن بجانب الصحيفة لا فيها، فلا يمسّ شيءٌ منها
+ * بياناتِ الصحيفة القائمة، ولا تُعتمد إلا بتوقيع لجنة الجدول (مسوّدةٌ ثم اعتماد).
+ */
+export type CourseKind = "compulsory" | "college" | "university" | "elective";
+
+export interface CoursePrereq {
+  /** كلُّها يجب اجتيازها. */
+  all: number[];
+  /** كلُّ مجموعةٍ هنا: يكفي اجتيازُ واحدٍ منها («أ أو ب أو ج»). */
+  anyOf: number[][];
+  /** وحداتٌ مجتازة لا تقلّ عن. */
+  minUnits?: number;
+}
+
+export interface CurriculumCourseRule {
+  courseId: number;
+  /** المستوى/الفصل المقترح في الصحيفة: ١–١٢. */
+  level?: number;
+  kind?: CourseKind;
+  prereq?: CoursePrereq;
+  /** مقرراتٌ تُسجَّل معه في الفصل نفسه (أو سبق اجتيازها). */
+  coreq?: number[];
+  /** المجموعةُ الاختيارية التي ينتمي إليها. */
+  groupId?: string;
+}
+
+export interface ElectiveGroup {
+  id: string;
+  name: string;
+  /** «اختر ٢». */
+  minCourses: number;
+  /** «بحدٍّ أدنى ٩ وحدات». الشرطان معاً. */
+  minUnits: number;
+  courseIds: number[];
+}
+
+export interface CurriculumRuleSet {
+  /** = planId. وثيقةٌ لكل صحيفة. */
+  id: string;
+  planId: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  rules: CurriculumCourseRule[];
+  groups: ElectiveGroup[];
+  /** رقمُ النسخة المعتمدة؛ كل اعتمادٍ يرفعه. المسوّدةُ تحمل ما بُنيت عليه. */
+  version: number;
+  /** للمسوّدة: «review» قيد المراجعة، «approved» اعتُمدت (وتبقى سجلاً). */
+  status?: "review" | "approved";
+  basedOnVersion?: number;
+  updatedAt: string;
+  updatedBy?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+}
+
+/**
  * ── ملفُّ الطالب: ما يحتاجه الباب ليبني له جدولاً ────────────────────────────
  *
  * مفتاحُه بصمةُ الرقم المدني نفسُها التي يعرفها الاستبيان (HMAC بمفتاح الخادم)،

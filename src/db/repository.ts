@@ -20,6 +20,7 @@ import {
   AdTerm,
   TermStudentPhases,
   StudentProfile,
+  CurriculumRuleSet,
   AdCollege,
   AdSection,
   AdInstructor,
@@ -225,6 +226,8 @@ interface DBState {
   studyProposals?: StudyProposal[];
   studentNeeds?: StudentNeed[];
   studentProfiles?: StudentProfile[];
+  curriculumRuleSets?: CurriculumRuleSet[];
+  curriculumRuleDrafts?: CurriculumRuleSet[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
   degreeRules?: AdDegreeRule[];
@@ -266,7 +269,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], curriculumPlans: [], curriculumPlanCourses: [], courseTransitions: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], instructorRequests: [], studyProposals: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], scheduleApprovals: [], hallBarterRequests: [], scheduleWeekExceptions: [], studentProfiles: [], curriculumRuleSets: [], curriculumRuleDrafts: [],
   locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
@@ -2337,6 +2340,11 @@ async function readStudentNeedsWhere(field: "AdTermId" | "AdCollegeId", value: n
     last = snap.docs[snap.docs.length - 1];
   }
   return out;
+}
+
+/** اعتمادُ مسوّدةٍ رُفض: ليست قيد المراجعة، أو تغيّرت بعد أن رآها المعتمِد. */
+export class RuleDraftConflict extends Error {
+  constructor(message: string) { super(message); this.name = "RuleDraftConflict"; }
 }
 
 /** A course-state write refused by its guard, read inside the write itself. */
@@ -5039,6 +5047,101 @@ export const Repository = {
       return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
     }
     return (db.studentNeeds || []).filter(mine);
+  },
+
+  /**
+   * ── قواعدُ الصحيفة: مسوّدةٌ تُراجَع، ونسخةٌ معتمدة تُقرأ ─────────────────────
+   *
+   * وثيقتان لكل صحيفة بالمفتاح نفسه (planId): `curriculumRuleDrafts` يعدّلها القسم
+   * ويراجعها، و`curriculumRuleSets` هي المعتمدة التي يقرؤها المحرّكُ وبابُ
+   * الطالب. لا يكتب أحدٌ في المعتمدة إلا `approveRuleDraft`، في معاملةٍ واحدة،
+   * وبشرط ألا تكون المسوّدةُ تغيّرت بين ما رآه المعتمِد وما اعتمده.
+   */
+  getRuleDraft: async (planId: string): Promise<CurriculumRuleSet | undefined> => {
+    if (!planId) return undefined;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("curriculumRuleDrafts").doc(planId).get();
+      return doc.exists ? (doc.data() as CurriculumRuleSet) : undefined;
+    }
+    return (db.curriculumRuleDrafts || []).find(row => row.id === planId);
+  },
+  getRuleSet: async (planId: string): Promise<CurriculumRuleSet | undefined> => {
+    if (!planId) return undefined;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("curriculumRuleSets").doc(planId).get();
+      return doc.exists ? (doc.data() as CurriculumRuleSet) : undefined;
+    }
+    return (db.curriculumRuleSets || []).find(row => row.id === planId);
+  },
+  /** كلُّ المسوّدات: عددُها بعددِ الصحائف (عشراتٌ) فتُقرأ كلُّها وتُصفّى في الذاكرة. */
+  listRuleDrafts: async (): Promise<CurriculumRuleSet[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      return (await firestoreDb.collection("curriculumRuleDrafts").get()).docs.map(doc => doc.data() as CurriculumRuleSet);
+    }
+    return [...(db.curriculumRuleDrafts || [])];
+  },
+  listRuleSets: async (): Promise<CurriculumRuleSet[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      return (await firestoreDb.collection("curriculumRuleSets").get()).docs.map(doc => doc.data() as CurriculumRuleSet);
+    }
+    return [...(db.curriculumRuleSets || [])];
+  },
+  /** قراءةٌ ثم كتابةٌ في معاملةٍ واحدة. `mutate` يرجع المسوّدةَ الجديدة أو undefined لترك الحال. */
+  updateRuleDraft: async (planId: string, mutate: (current: CurriculumRuleSet | undefined) => CurriculumRuleSet | undefined): Promise<CurriculumRuleSet | undefined> => {
+    if (!planId) throw new Error("معرّف الصحيفة مطلوب");
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("curriculumRuleDrafts").doc(planId);
+      return await firestoreDb.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        const current = snap.exists ? (snap.data() as CurriculumRuleSet) : undefined;
+        const next = mutate(current);
+        if (!next) return current;
+        transaction.set(ref, { ...next, id: planId, planId });
+        return next;
+      });
+    }
+    if (!Array.isArray(db.curriculumRuleDrafts)) db.curriculumRuleDrafts = [];
+    const index = db.curriculumRuleDrafts.findIndex(row => row.id === planId);
+    const current = index >= 0 ? db.curriculumRuleDrafts[index] : undefined;
+    const next = mutate(current);
+    if (!next) return current;
+    const row = { ...next, id: planId, planId };
+    if (index >= 0) db.curriculumRuleDrafts[index] = row; else db.curriculumRuleDrafts.push(row);
+    saveDatabase();
+    return row;
+  },
+  /**
+   * الاعتماد: المسوّدةُ تصير النسخةَ المعتمدة (الإصدار +١) في معاملةٍ واحدة.
+   * يرمي `RuleDraftConflict` إن لم تكن المسوّدةُ قيد المراجعة أو تغيّرت بعد أن رآها
+   * المعتمِد (`expectedUpdatedAt`).
+   */
+  approveRuleDraft: async (planId: string, expectedUpdatedAt: string, by: string): Promise<CurriculumRuleSet> => {
+    const at = new Date().toISOString();
+    const promote = (draft: CurriculumRuleSet | undefined, live: CurriculumRuleSet | undefined) => {
+      if (!draft || draft.status !== "review") throw new RuleDraftConflict("لا مسوّدةَ قيد المراجعة لهذه الصحيفة.");
+      if (draft.updatedAt !== expectedUpdatedAt) throw new RuleDraftConflict("تغيّرت المسوّدةُ بعد أن راجعتَها — حدّث الصفحة وراجع التغيير.");
+      const version = (live?.version || 0) + 1;
+      const approved: CurriculumRuleSet = { ...draft, status: undefined, version, approvedAt: at, approvedBy: by, basedOnVersion: undefined };
+      return { approved, draft: { ...draft, status: "approved" as const, version, approvedAt: at, approvedBy: by } };
+    };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const draftRef = firestoreDb.collection("curriculumRuleDrafts").doc(planId), liveRef = firestoreDb.collection("curriculumRuleSets").doc(planId);
+      return await firestoreDb.runTransaction(async transaction => {
+        const [draftSnap, liveSnap] = await Promise.all([transaction.get(draftRef), transaction.get(liveRef)]);
+        const { approved, draft } = promote(draftSnap.exists ? (draftSnap.data() as CurriculumRuleSet) : undefined, liveSnap.exists ? (liveSnap.data() as CurriculumRuleSet) : undefined);
+        transaction.set(liveRef, approved); transaction.set(draftRef, draft);
+        return approved;
+      });
+    }
+    if (!Array.isArray(db.curriculumRuleDrafts)) db.curriculumRuleDrafts = [];
+    if (!Array.isArray(db.curriculumRuleSets)) db.curriculumRuleSets = [];
+    const draftIndex = db.curriculumRuleDrafts.findIndex(row => row.id === planId);
+    const liveIndex = db.curriculumRuleSets.findIndex(row => row.id === planId);
+    const { approved, draft } = promote(draftIndex >= 0 ? db.curriculumRuleDrafts[draftIndex] : undefined, liveIndex >= 0 ? db.curriculumRuleSets[liveIndex] : undefined);
+    db.curriculumRuleDrafts[draftIndex] = draft;
+    if (liveIndex >= 0) db.curriculumRuleSets[liveIndex] = approved; else db.curriculumRuleSets.push(approved);
+    saveDatabase();
+    return approved;
   },
 
   /**
