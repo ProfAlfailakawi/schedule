@@ -754,7 +754,7 @@ export default function LivingScheduleLayer({
           <div>
             <small>حالة الجدول</small>
             <strong>أقرأ نبض الجدول…</strong>
-            <p>مركز القرار جاهز؛ مؤشرات الصحة تصل بعد لحظة.</p>
+            <p>مركز القرار جاهز. جارٍ تحميل مؤشرات صحة الجدول.</p>
           </div>
         </div>
         <div className="living-health-strip" aria-label="مؤشرات صحة الجدول قيد التحميل">

@@ -29,6 +29,7 @@ export interface PlanReviewDeps {
   requireAuth: RequestHandler;
   isScopeAllowed: (req: any, collegeId: number, sectionId: number) => boolean;
   isPowerUser: (req: any) => boolean;
+  isRootAdmin: (req: any) => boolean;
   hasPermission: (req: any, formId: number) => boolean;
   actorName: (req: any) => string;
 }
@@ -163,7 +164,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
       const plans = (await Repository.getCurriculumPlans(sectionId)).filter(plan => plan.status !== "archived" && !plan.virtual);
       if (plans.length || isTechnologyEducation(section.AdSectionName)) reachable.push({ sectionId, sectionName: String(section.AdSectionName || ""), plans: [...plans].sort((x, y) => Number(pendingIds.has(y.id)) - Number(pendingIds.has(x.id)) || Number(y.status === "active") - Number(x.status === "active")).map(plan => ({ id: plan.id, name: plan.name, status: plan.status, pending: pendingIds.has(plan.id) })) });
     }
-    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isPowerUser(req) });
+    res.json({ pending: rows.filter(row => row.state === "review"), approved: rows.filter(row => row.state === "approved"), sections: reachable, canApprove: deps.isPowerUser(req) || roleId(req) === "committeeChair", canImport: deps.isRootAdmin(req) });
   });
 
   /* The supplied source sheets are a read-only comparison, available to both
@@ -291,7 +292,7 @@ export function registerPlanReviewRoutes(app: Express, deps: PlanReviewDeps): vo
 
   /* ── استيراد الصحائف: إدارةُ النظام وحدها، ويُنشئ مسوّداتٍ لا يعتمد شيئاً ────── */
   app.post("/api/plan-review/import", deps.requireAuth, async (req: Request, res: Response) => {
-    if (!deps.isPowerUser(req)) { fail(res, 403, "الاستيراد لإدارة النظام."); return; }
+    if (!deps.isRootAdmin(req)) { fail(res, 403, "استيراد قواعد الصحائف مخصص لحساب الإدارة الرئيسي."); return; }
     const rows = (Array.isArray(req.body?.rows) ? req.body.rows : []).slice(0, 20000) as RuleImportRow[];
     if (!rows.length) { fail(res, 400, "لا أسطر."); return; }
     const [sections, courses] = await Promise.all([Repository.getSections(), Repository.getCourses()]);

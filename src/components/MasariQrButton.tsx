@@ -17,16 +17,16 @@ export default function MasariQrButton({ sectionName }: { sectionName?: string; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [qr, setQr] = useState<{ url: string; svg: string } | null>(null);
+  const [track, setTrack] = useState<"boys" | "girls" | "">("");
   const [copied, setCopied] = useState(false);
   const close = () => setOpen(false);
   useDialogDismiss(open, close);
 
-  const start = async () => {
-    setOpen(true); setError(null);
-    if (qr) return;
+  const start = async (nextTrack: "boys" | "girls") => {
+    setOpen(true); setError(null); setTrack(nextTrack); setQr(null);
     setBusy(true);
     try {
-      const url = `${window.location.origin}/me`;
+      const url = `${window.location.origin}/me?track=${nextTrack}`;
       const factory = (await import("../utils/qrcodeGenerator")).default as unknown as QrFactory;
       const code = factory(0, "M");
       code.addData(url);
@@ -78,7 +78,7 @@ h1{font-size:44px;margin:0 0 6px;color:#1f6b5c}h2{font-size:20px;margin:0 0 8px;
 
   return (
     <>
-      <SecondaryButton type="button" onClick={start} aria-haspopup="dialog" data-guide-ignore="أزرارُ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">
+      <SecondaryButton type="button" onClick={() => { setOpen(true); setError(null); setTrack(""); setQr(null); }} aria-haspopup="dialog" data-guide-ignore="أزرارُ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">
         <QrCode aria-hidden="true" /> رمز QR لمساري
       </SecondaryButton>
       {open ? createPortal(
@@ -88,12 +88,16 @@ h1{font-size:44px;margin:0 0 6px;color:#1f6b5c}h2{font-size:20px;margin:0 0 8px;
               <strong>رمز QR لمساري</strong>
               <button data-guide-ignore="أزرارُ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation" type="button" className="student-qr-close" onClick={close} aria-label="إغلاق"><X aria-hidden="true" /></button>
             </header>
-            <p className="student-qr-lede">رابطٌ دائمٌ واحدٌ للجامعة كلها: يفتح «مساري» للطالب في أي فصل. اطبعه مرةً وضعه على لوحة القسم.</p>
+            <p className="student-qr-lede">اختر مسار البنين أو البنات؛ لكل مسار رمز مستقل يعرض أقسام كلية التربية الأساسية المناسبة فقط.</p>
+            <div className="student-qr-tracks" role="group" aria-label="مسار الطلبة">
+              <button type="button" aria-pressed={track === "boys"} onClick={() => void start("boys")} data-guide-ignore="اختيار مسار البنين لرمز مساري">مسار البنين</button>
+              <button type="button" aria-pressed={track === "girls"} onClick={() => void start("girls")} data-guide-ignore="اختيار مسار البنات لرمز مساري">مسار البنات</button>
+            </div>
             {busy ? <p className="student-qr-lede">يُولَّد الرمز…</p> : null}
             {error ? <p className="student-qr-error" role="alert">{error}</p> : null}
             {qr ? (
               <>
-                <div className="student-qr-code" role="img" aria-label={`رمز QR للرابط ${qr.url}`} dangerouslySetInnerHTML={{ __html: qr.svg }} />
+                <div className="student-qr-code" role="img" aria-label={`رمز QR لمسار ${track === "boys" ? "البنين" : "البنات"}`} dangerouslySetInnerHTML={{ __html: qr.svg }} />
                 <input className="student-qr-url" readOnly value={qr.url} dir="ltr" aria-label="رابط مساري" onFocus={e => e.currentTarget.select()} />
                 <div className="student-qr-actions">
                   <SecondaryButton type="button" onClick={print} data-guide-ignore="أزرارُ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation"><Printer aria-hidden="true" /> طباعة ملصق</SecondaryButton>

@@ -1856,7 +1856,7 @@ button.visiting-history-cell:hover{transform:translateY(-1px);box-shadow:var(--s
   font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.06em;
 }
 .living-pulse-core strong{display:block;margin-top:2px;font-size:var(--t-h4);font-weight:600;line-height:1.3}
-.living-pulse-core p{margin:2px 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.55}
+.living-pulse-core p{margin:2px 0 0;max-width:100%;min-width:0;color:var(--muted);font-size:var(--t-sm);line-height:1.55;overflow-wrap:anywhere}
 .pulse-beacon{
   width:10px;height:10px;flex:none;margin-top:6px;border-radius:50%;
   background:var(--success);

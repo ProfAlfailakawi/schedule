@@ -13,7 +13,7 @@ import { normalizeGroups, normalizeRules, withDerivedGroups } from "./curriculum
  *   section   اسمُ القسم (أو رمزه)
  *   plan      اسمُ الصحيفة — اختياري إن كان للقسم صحيفةٌ واحدة
  *   code      رمزُ المقرر
- *   level     المستوى ١–١٢
+ *   level     المستوى ١٠٠ / ٢٠٠ / ٣٠٠ / ٤٠٠ (وتحوَّل القيم القديمة ١–٤)
  *   kind      إجباري | كلية | جامعة | اختياري
  *   prereqAll مسبقاتٌ كلُّها لازمة، يفصل بينها «+»    مثل: ISL100+ISL110
  *   prereqAny مجموعاتٌ يكفي واحدٌ من كلٍّ منها، «;» بين المجموعات و«|» بين البدائل
@@ -113,7 +113,7 @@ export function rowsToDrafts(rows: readonly RuleImportRow[], plans: readonly Imp
 
     const rule: CurriculumCourseRule = { courseId: course };
     const level = num(row.level);
-    if (String(row.level ?? "").trim() && (level < 1 || level > 12)) say(line, `مستوىً خارج ١–١٢: «${row.level}».`);
+    if (String(row.level ?? "").trim() && !([1, 2, 3, 4, 100, 200, 300, 400] as number[]).includes(level)) say(line, `المستوى يجب أن يكون ١٠٠ أو ٢٠٠ أو ٣٠٠ أو ٤٠٠: «${row.level}».`);
     else if (level) rule.level = level;
     const kind = parseKind(row.kind);
     if (String(row.kind ?? "").trim() && !kind) say(line, `نوعٌ غير مفهوم: «${row.kind}».`);

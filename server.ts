@@ -19933,6 +19933,7 @@ registerPlanReviewRoutes(app, {
   requireAuth,
   isScopeAllowed: (req, collegeId, sectionId) => isScopeAllowed(req, collegeId, sectionId),
   isPowerUser: req => isPowerUser(req),
+  isRootAdmin: req => Number(req.user?.SystemUserId) === ROOT_ADMIN_USER_ID,
   hasPermission: (req, formId) => (req.permissions || []).includes(formId),
   actorName: req => String(req.user?.Name || req.user?.SystemUserLogin || roleLabel(req.user?.Role) || ""),
 });
@@ -19956,10 +19957,11 @@ registerStudentDoorRoutes(app, {
   identityKey: studentIdentityKey,
   isProduction: () => process.env.NODE_ENV === "production",
 });
-app.get(["/me", "/me/"], (_req: Request, res: Response) => {
+app.get(["/me", "/me/"], (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.send(studentHomePage(publicPageNonce(res)));
+  const track: "boys" | "girls" | "" = req.query.track === "boys" ? "boys" : req.query.track === "girls" ? "girls" : "";
+  res.send(studentHomePage(publicPageNonce(res), track));
 });
 
 /* ── جدولُ الطلبة برمز QR ─────────────────────────────────────────────────────

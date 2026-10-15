@@ -7,9 +7,9 @@
  * وهي **تقديرٌ** من ملفّات الطلبة وجداولِ الأقسام (مسوّدةً أو معتمدة)، لا بياناتُ
  * التسجيل الرسمي ولا حجزُ مقعد. التشغيلُ لإدارة النظام؛ والقسمُ يرى مقرراتِه فحسب.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, Layers, Play, RefreshCw, Ticket, Users } from "lucide-react";
-import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Download, Layers, Ticket, Users } from "lucide-react";
+import { EmptyState, MicroLoader, Notice, PageTitle, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import MasariQrButton from "./MasariQrButton";
 
@@ -41,7 +41,7 @@ const request = async (url: string, init?: RequestInit) => {
 };
 
 const WHY: Array<[keyof Unmet, string, string]> = [
-  ["full", "مقاعد لا تكفي", "bad"], ["not-offered", "مطلوبٌ ولا يُطرح", "warn"], ["conflict", "تعارض أوقات", "info"], ["units", "فوق الوحدات", "soft"], ["prereq", "ينقصهم مسبق", "soft"],
+  ["full", "السعة الافتراضية لا تكفي", "bad"], ["not-offered", "المقرر مطلوب ولا توجد له شعبة", "warn"], ["conflict", "موعد الشعبة يتعارض مع مقرر آخر اختاره الطالب", "info"], ["units", "المقررات تتجاوز حد الوحدات الذي اختاره الطالب", "soft"], ["prereq", "المتطلب السابق غير مكتمل وفق الملف", "soft"],
 ];
 const qualityLabel = (key: string) => ({
   "invalid-identity": "هوية المقرر أو الشعبة غير مكتملة",
@@ -63,17 +63,28 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
   const [all, setAll] = useState(false);
   const [q, setQ] = useState("");
   const [scenario, setScenario] = useState<"actual" | "projected">("actual");
+  const autoRunInFlight = useRef(false);
 
   const load = useCallback(async () => {
     try { setData(await request("/api/simulation/summary")); setError(""); } catch (e: any) { setError(e.message); }
     try { setOutcome(await request("/api/simulation/outcome")); } catch { /* الجزءُ الثاني اختياري: لا يُسقط الشاشة */ }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(); }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
-  const run = async () => {
-    setBusy(true); setError("");
-    try { await request("/api/simulation/run", { method: "POST" }); await load(); } catch (e: any) { setError(e.message); } finally { setBusy(false); }
-  };
+  /* Source writes mark the saved run stale. The admin view repairs it on its
+     own; polling also catches changes made in another session or process. */
+  useEffect(() => {
+    if (!data?.canRun || data.auto?.enabled === false || !data.term || (data.run && !data.run.stale) || autoRunInFlight.current) return;
+    autoRunInFlight.current = true; setBusy(true);
+    void request("/api/simulation/run", { method: "POST" })
+      .then(() => load())
+      .catch((e: any) => { if (!/يُحدَّث الآن/.test(e.message || "")) setError(e.message || "تعذّر تحديث الرادار تلقائياً."); })
+      .finally(() => { autoRunInFlight.current = false; setBusy(false); });
+  }, [data, load]);
 
   /** تقريرُ العمادة: ورقةٌ للتحديث وأخرى لما قاله الطلبة بعد التسجيل. أعدادٌ لا أسماء. */
   const exportXlsx = async () => {
@@ -114,11 +125,6 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
           <div className="sm-actions">
             {data?.run ? <SecondaryButton onClick={exportXlsx} data-guide-ignore="تصديرُ تقرير الرادار داخل شاشةٍ مسجّلة في المرشد باسم page.simulation"><Download size={16} /> تقرير Excel</SecondaryButton> : null}
             <MasariQrButton data-guide-ignore="زرُّ رمز «مساري» داخل شاشةٍ مسجّلة في المرشد باسم page.simulation" />
-            {data?.canRun ? (
-              <PrimaryButton disabled={busy} onClick={run} data-guide-ignore="تحديثُ الرادار داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">
-                {busy ? <RefreshCw size={16} className="sm-spin" /> : <Play size={16} />} {r ? "حدّث الرادار" : "شغّل الرادار"}
-              </PrimaryButton>
-            ) : null}
           </div>
         )}>رادار يوم التسجيل</PageTitle>
       {error ? <Notice type="error" onDismiss={() => setError("")}>{error}</Notice> : null}
@@ -136,14 +142,14 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
         </div>
       ) : null}
       {!data?.term ? <EmptyState title="لا فصلَ للرادار" detail="تظهر حين يكون للفصل القادم تواريخُ طلبة." /> : !r ? (
-        <EmptyState title="لم يُبنَ الرادار بعد" detail={data.canRun ? "اضغط «شغّل الرادار» لتُبنى خططُ الطلبة من ملفّاتهم." : "تُجريها إدارةُ النظام حين تكتمل رغباتُ الطلبة."} />
+        <EmptyState title="جارٍ إعداد الرادار تلقائياً" detail={data.canRun ? "سيظهر التحليل هنا بعد اكتمال الاحتساب؛ لا حاجة إلى تشغيله يدوياً." : "تُحدّثه إدارةُ النظام آلياً، ثم يظهر التحليل هنا."} />
       ) : (
         <>
           <div className="sm-scenario-tabs" role="tablist" aria-label="مصدر تحليل التسجيل">
             <button type="button" role="tab" aria-selected={scenario === "actual"} onClick={() => setScenario("actual")} data-guide-ignore="اختيار مصدر الرغبات داخل شاشة مرشد التسجيل">الرغبات الفعلية <small>{r.students.toLocaleString("ar-KW-u-nu-latn")}</small></button>
             <button type="button" role="tab" aria-selected={scenario === "projected"} onClick={() => setScenario("projected")} disabled={!r.projected} data-guide-ignore="اختيار التوقعات داخل شاشة مرشد التسجيل">التوقعات <small>{(r.projected?.students || 0).toLocaleString("ar-KW-u-nu-latn")}</small></button>
           </div>
-          {r.stale ? <div className="sm-stale" role="status"><AlertTriangle size={16} /> تغيّرت بيانات المصدر بعد آخر احتساب. الأرقام قديمة؛ حدّث الرادار قبل اتخاذ القرار.</div> : null}
+          {r.stale ? <div className="sm-stale" role="status"><AlertTriangle size={16} /> تغيّرت البيانات؛ {busy ? "يجري تحديث الرادار تلقائياً الآن." : "سيُعاد احتساب الرادار تلقائياً."}</div> : null}
           <section className="sm-capacity-summary" aria-label="قدرة الطلبة على تكوين جدول">
             <header><div><small>{scenario === "actual" ? "قدرة المشاركين" : "سيناريو غير المشاركين"}</small><strong>{countOf(selectedPopulation, AR.student)}</strong></div><span>خطة فعلية في المسودة · السعة افتراضية</span></header>
             <div className="sm-capacity-bands">
@@ -164,7 +170,7 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
             </ul> : null}
           </details> : null}
 
-          <p className="sm-auto">{data.auto?.enabled ? `يتحدّث الرادار تلقائياً كل ${countOf(data.auto.everyHours, AR.hour)} ما دامت الرغبات مفتوحةً أو بعدها، ومرةً أخيرةً بعد إغلاق الرغبات.` : "التحديث التلقائي متوقّف: يُحدَّث الرادار يدوياً."}{data.canRun ? " «حدّث الرادار» يحدّثه الآن." : ""}</p>
+          <p className="sm-auto">{data.auto?.enabled ? `يُعاد الاحتساب تلقائياً عند تغيّر بيانات الطلبة أو الجدول، ويُراجع دورياً كل ${countOf(data.auto.everyHours, AR.hour)}.` : "التحديث التلقائي متوقّف من إعدادات النظام."}</p>
           <p className="sm-base">
             أساس الرغبات الفعلية: {countOf(r.students, AR.profile)} من {countOf(r.population, AR.profile)} ملفاً مكتملاً، أُجريت {new Date(r.ranAt).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long" })}
             {r.withoutRules ? ` · ${countOf(r.withoutRules, AR.profile)} على صحيفةٍ بلا قواعد معتمدة (بياناته غير كافية لتأكيد القدرة)` : ""}
@@ -180,6 +186,7 @@ export default function RegistrationRehearsal({ onNavigate, canOpenIntelligence 
               <input aria-label="بحث" placeholder="ابحث بالرمز أو الاسم" value={q} onChange={e => setQ(e.target.value)} />
               <button type="button" className="sm-toggle" onClick={() => setAll(!all)} data-guide-ignore="تبديلُ عرض المقررات داخل شاشةٍ مسجّلة في المرشد باسم page.simulation">{all ? "الزحام فقط" : `كل المقررات (${rows.length})`}</button>
             </header>
+            <details className="sm-how"><summary>كيف أقرأ الأرقام؟</summary><p>«طُلب» هو عدد الطلبة الذين اختاروا المقرر. «وجد مقعداً» نتيجة توزيع افتراضي على الشعب والسعات المتاحة؛ لا يحجز مقعداً. «تعارض» يعني أن وقت شعبة هذا المقرر يتزامن مع مقرر آخر اختاره الطالب. «المتطلب السابق» مقرر يجب اجتيازه بحسب قواعد الصحيفة المعتمدة.</p></details>
             {!shown.length ? <p className="sm-none">{all ? "لا نتائج." : calm.length ? "لا اختناق مقاعد ظاهر في المقررات المعروضة؛ راجع فئات قدرة الطلبة وجودة البيانات." : "لا مقررات."}</p> : shown.map(c => {
               const unmet = WHY.map(([key, label, tone]) => ({ key, label, tone, n: c.unmet[key] })).filter(x => x.n > 0);
               const fill = c.capacity ? Math.min(100, Math.round((c.taken / c.capacity) * 100)) : 0;
@@ -214,7 +221,8 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
   const share = outcome.answered !== null && predictedStudents ? Math.round((outcome.answered / predictedStudents) * 100) : 0;
   return (
     <section className="sm-list sm-out">
-      <header><h3>بعد التسجيل: ماذا قال الطلبة؟</h3></header>
+      <header><h3>بعد التسجيل: ماذا حدث؟</h3></header>
+      <p className="sm-base">تظهر هنا إجابات الطلبة بعد التسجيل: «لم يسجّل» تعني أنه لم يتمكن من تسجيل المقرر. أعداد الأسباب هي إجاباتهم عن سبب التعثر.</p>
       <div className="sm-kpis">
         {outcome.answered !== null
           ? <article className="sm-kpi"><span className="sm-ic"><Users /></span><b>{outcome.answered.toLocaleString("ar-KW-u-nu-latn")}</b><small>أجابوا «هل سجلت؟»</small><em>{share}٪ ممن شملهم الرادار</em></article>
@@ -222,14 +230,14 @@ function OutcomeBlock({ outcome, predictedStudents }: { outcome: Outcome; predic
         <article className="sm-kpi"><span className="sm-ic"><Layers /></span><b>{okPct}٪</b><small>من المقرراتِ المُجاب عنها سُجّلت</small>
           <div className="sm-meter"><i style={{ inlineSize: `${okPct}%` }} /></div><em>{countOf(registered, AR.course)} سُجّلت · {countOf(stuck, AR.course)} تعثّرت</em></article>
       </div>
-      <div className="sm-why">{reasons.filter(x => x[2] > 0).map(([label, tone, n]) => <span key={label} className={`sm-chip ${tone}`}>{label} {n}</span>)}</div>
+      <div className="sm-why">{reasons.filter(x => x[2] > 0).map(([label, tone, n]) => <span key={label} className={`sm-chip ${tone}`}>{label === "تعارض" ? "تعارض مع مقرر آخر" : label === "المسبق لا يسمح" ? "المتطلب السابق غير مكتمل" : label} {n}</span>)}</div>
       {worst.map(c => {
         const sum = c.registered + c.stuck;
         return (
           <article key={c.courseId} className="sm-row hot">
             <div className="sm-name"><b>{c.name}</b><span>{c.code}</span></div>
-            <div className="sm-gauge"><div className="sm-track"><i className="full" style={{ inlineSize: `${sum ? Math.round((c.stuck / sum) * 100) : 0}%` }} /></div><small>تعثّر {c.stuck} من {sum} أجابوا</small></div>
-            <div className="sm-why">{c.full ? <span className="sm-chip bad">امتلأت {c.full}</span> : null}{c.prereq ? <span className="sm-chip soft">مسبق {c.prereq}</span> : null}{c.conflict ? <span className="sm-chip info">تعارض {c.conflict}</span> : null}</div>
+            <div className="sm-gauge"><div className="sm-track"><i className="full" style={{ inlineSize: `${sum ? Math.round((c.stuck / sum) * 100) : 0}%` }} /></div><small>لم يسجّله {c.stuck} من {sum} أجابوا</small></div>
+            <div className="sm-why">{c.full ? <span className="sm-chip bad">السعة انتهت {c.full}</span> : null}{c.prereq ? <span className="sm-chip soft">المتطلب السابق غير مكتمل {c.prereq}</span> : null}{c.conflict ? <span className="sm-chip info">تعارض مع مقرر آخر {c.conflict}</span> : null}</div>
           </article>
         );
       })}

@@ -13,7 +13,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BookOpenCheck, CheckCircle2, FileSpreadsheet, Link2, Lock, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { EmptyState, MicroLoader, Notice, PageTitle, PrimaryButton, SecondaryButton } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
-import { KIND_LABEL, KINDS, MAX_LEVEL, byLevel, dependentsOf, describePrereq } from "../utils/curriculumRules";
+import { CURRICULUM_LEVELS, KIND_LABEL, KINDS, byLevel, dependentsOf, describePrereq } from "../utils/curriculumRules";
 import type { CourseKind, CurriculumCourseRule, ElectiveGroup } from "../types";
 
 interface Status {
@@ -318,7 +318,7 @@ function CourseEditor({ course, rule, view, nameOf, busy, onClose, onSave }: {
         <label>المستوى
           <select value={level} disabled={!editable} onChange={e => setLevel(Number(e.target.value))}>
             <option value={0}>—</option>
-            {Array.from({ length: MAX_LEVEL }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+            {CURRICULUM_LEVELS.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         <label>النوع

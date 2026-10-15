@@ -15,7 +15,10 @@ import { AR, countOf } from "./arabicCount";
  * وما يُسجَّل معه: `coreq`. والاختياري: مجموعةٌ بحدٍّ أدنى للمواد **وللوحدات معاً**.
  */
 
-export const MAX_LEVEL = 12;
+/** Levels follow the institutional 100–400 convention. Older 1–4 values are
+ * normalized when read so stored plans remain compatible. */
+export const CURRICULUM_LEVELS = [100, 200, 300, 400] as const;
+export const MAX_LEVEL = 400;
 export const MAX_UNITS_RULE = 200;
 export const KINDS: readonly CourseKind[] = ["compulsory", "college", "university", "elective"];
 export const KIND_LABEL: Record<CourseKind, string> = {
@@ -34,8 +37,9 @@ export function normalizeRule(raw: any): CurriculumCourseRule | null {
   const courseId = toId(raw?.courseId);
   if (!courseId) return null;
   const rule: CurriculumCourseRule = { courseId };
-  const level = Math.round(Number(raw?.level));
-  if (Number.isFinite(level) && level >= 1 && level <= MAX_LEVEL) rule.level = level;
+  const enteredLevel = Math.round(Number(raw?.level));
+  const level = enteredLevel >= 1 && enteredLevel <= 4 ? enteredLevel * 100 : enteredLevel;
+  if (CURRICULUM_LEVELS.includes(level as typeof CURRICULUM_LEVELS[number])) rule.level = level;
   if (KINDS.includes(raw?.kind)) rule.kind = raw.kind;
 
   const all = uniqueIds(raw?.prereq?.all, courseId);
@@ -297,5 +301,5 @@ export function byLevel(planCourseIds: readonly number[], rules: readonly Curric
     const level = levelOf.get(id) || 0;
     out.set(level, [...(out.get(level) || []), id]);
   }
-  return new Map([...out].sort((a, b) => (a[0] || 99) - (b[0] || 99)));
+  return new Map([...out].sort((a, b) => (a[0] === 0 ? Number.MAX_SAFE_INTEGER : a[0]) - (b[0] === 0 ? Number.MAX_SAFE_INTEGER : b[0])));
 }
