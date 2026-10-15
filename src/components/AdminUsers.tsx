@@ -1496,8 +1496,8 @@ export default function AdminUsers({
               data-guide-ignore="معاينة حسابات رؤساء الأقسام قبل إنشائها؛ الإنشاء يحتاج تأكيداً ثانياً"
               disabled={headBusy}
               onClick={async () => {
-                setHeadBusy(true); setError(null); setHeadMessage(null); setPlanKind("department-heads");
-                try { setHeadPlan((await api("/api/users/department-heads/preview")).rows || []); }
+                setHeadBusy(true); setError(null); setHeadMessage(null); setHeadPlan(null);
+                try { const rows = (await api("/api/users/department-heads/preview")).rows || []; setPlanKind("department-heads"); setHeadPlan(rows); }
                 catch (e: any) { setError(e.message); }
                 finally { setHeadBusy(false); }
               }}
@@ -1512,8 +1512,8 @@ export default function AdminUsers({
               data-guide-ignore="معاينة حسابات مرشدي الأقسام قبل إنشائها؛ الإنشاء يحتاج تأكيداً ثانياً"
               disabled={headBusy}
               onClick={async () => {
-                setHeadBusy(true); setError(null); setHeadMessage(null); setPlanKind("advisors");
-                try { setHeadPlan((await api("/api/users/advisors/preview")).rows || []); }
+                setHeadBusy(true); setError(null); setHeadMessage(null); setHeadPlan(null);
+                try { const rows = (await api("/api/users/advisors/preview")).rows || []; setPlanKind("advisors"); setHeadPlan(rows); }
                 catch (e: any) { setError(e.message); }
                 finally { setHeadBusy(false); }
               }}

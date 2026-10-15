@@ -79,6 +79,9 @@ const block = server.slice(server.indexOf('app.post("/api/users/department-heads
 check(/requirePowerAdmin/.test(block), "الإنشاء لمدير النظام وحده على الخادم");
 check(/SystemUserPass: ""/.test(block) && /IsActive: false/.test(block) && !/hashPassword|randomBytes|encryptPasswordForVault/.test(block), "لا كلمة سرّ تُولَّد، والحساب موقوف");
 
+import { roleWriteDecision } from "../src/server/roleGuard";
+const guard = (role: string, path: string, method = "DELETE") => roleWriteDecision({ method, path, authenticated: true, powerUser: false, role } as any);
+check(!guard("advisor", "/schedule-notes/5").allowed && !guard("advisor", "/student-registration/3/course-state", "POST").allowed && guard("departmentHead", "/schedule-notes/5").allowed, "المرشد لا يكتب في مسارات الاعتماد ولو كانت مفتوحة لغيره من صفات القراءة");
 const advBlock = server.slice(server.indexOf('app.post("/api/users/advisors"'), server.indexOf('app.put("/api/users/:id"'));
 check(/requirePowerAdmin/.test(advBlock) && /SystemUserPass: ""/.test(advBlock) && /IsActive: false/.test(advBlock) && !/hashPassword|randomBytes|encryptPasswordForVault/.test(advBlock), "حسابات المرشدين: لمدير النظام، موقوفة، بلا كلمة سر");
 check(/advisorOnly: isAdvisorRole/.test(server), "الخادم يرسل advisorOnly للواجهة");
