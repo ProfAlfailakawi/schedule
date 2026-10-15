@@ -85,6 +85,35 @@ check(numericCodeAdvisor[0].proposedLogin === "9advisor", "رمز القسم ا�
 check(advisors.every(row => row.proposedName.startsWith("إرشاد ")), "اسم الحساب «إرشاد <القسم>»");
 check(!advisors.some(row => /head/i.test(row.proposedLogin)), "لا تتداخل حسابات المرشدين مع حسابات الرؤساء");
 check(advisors.length === sections.length - 1, "حساب واحد لكل قسم متمايز مع دمج القسم المتناظر بين الكليات");
+const repeatedSection = planAdvisorAccounts({
+  users: [], assigns: [], colleges,
+  sections: [
+    { AdSectionId: 31, AdCollegeId: 1, AdSectionCode: "03", AdSectionName: "قسم الدراسات الاجتماعية" },
+    { AdSectionId: 32, AdCollegeId: 1, AdSectionCode: "03", AdSectionName: "قسم الدراسات الإجتماعية" },
+    { AdSectionId: 33, AdCollegeId: 2, AdSectionCode: "03", AdSectionName: "قسم الدراسات الاجتماعية" },
+  ],
+});
+check(repeatedSection.length === 1 && repeatedSection[0].sectionIds?.length === 3 && repeatedSection[0].scopeAssignments?.length === 3,
+  "السجلان المتطابقان بالاسم والرمز في الكلية نفسها لهما مرشد واحد يغطي النطاقين");
+const ambiguousSection = planAdvisorAccounts({
+  users: [], assigns: [], colleges: [colleges[0]],
+  sections: [
+    { AdSectionId: 34, AdCollegeId: 1, AdSectionCode: "03", AdSectionName: "قسم الدراسات الاجتماعية" },
+    { AdSectionId: 35, AdCollegeId: 1, AdSectionCode: "04", AdSectionName: "قسم الدراسات الاجتماعية" },
+  ],
+});
+check(ambiguousSection.length === 2 && ambiguousSection.every(row => row.status === "review"),
+  "تكرار الاسم برمزين مختلفين يبقى للمراجعة ولا يدمج نطاقين ملتبسين");
+const namedAdvisorFallbacks = planAdvisorAccounts({
+  users: [], assigns: [], colleges: [colleges[0]],
+  sections: [
+    { AdSectionId: 36, AdCollegeId: 1, AdSectionCode: "", AdSectionName: "قسم التربية الإسلامية" },
+    { AdSectionId: 37, AdCollegeId: 1, AdSectionCode: "30", AdSectionName: "وحدة اللغة الإنجليزية" },
+    { AdSectionId: 38, AdCollegeId: 1, AdSectionCode: "20", AdSectionName: "وحدة الكهرباء" },
+  ],
+});
+check(namedAdvisorFallbacks.map(row => row.proposedLogin).sort().join(",") === "Electricadvisor,EnglishUnitadvisor,Islamicadvisor",
+  "الأقسام بلا بادئة لاتينية تحصل على أسماء مرشد مفهومة بلا أرقام");
 
 const duplicatedAdvisors = planAdvisorAccounts({
   users: [
