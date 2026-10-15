@@ -23,6 +23,7 @@ export type AcademicRole =
   | "registrarStaff"  // موظف التسجيل
   | "departmentHead"  // رئيس القسم العلمي
   | "committeeChair"  // رئيس لجنة الجدول في القسم
+  | "advisor"         // مرشد القسم: كشف التسجيل ورادار التسجيل لقسمه فقط
   | "standard";       // مستخدم عادي — سلوك النظام قبل هذه الإضافة
 
 /** كيف يُملأ نطاق الحساب عند اختيار دوره، بدل التعيين قسماً قسماً. */
@@ -49,7 +50,7 @@ export interface AcademicRoleDefinition {
   formIds: number[];
   scopeMode: RoleScopeMode;
   /** الشاشة التي يفتح عليها الحساب مباشرة بعد الدخول. */
-  landing: "balance" | "changes" | "schedules" | "dashboard";
+  landing: "balance" | "changes" | "schedules" | "dashboard" | "registration";
   /** ترتيب العرض في قائمة الاختيار: من الأعلى إدارياً إلى الأدنى. */
   order: number;
 }
@@ -131,6 +132,16 @@ export const ACADEMIC_ROLES: AcademicRoleDefinition[] = [
     order: 6,
   },
   {
+    id: "advisor",
+    label: "مرشد القسم",
+    hint: "الإرشاد الأكاديمي: كشف التسجيل ورادار التسجيل لقسمه فقط، قراءةً، بلا جداول.",
+    readOnly: true,
+    formIds: [REPORT_DEPARTMENT],
+    scopeMode: "section",
+    landing: "registration",
+    order: 6.5,
+  },
+  {
     id: "committeeChair",
     label: "رئيس لجنة الجدول",
     hint: "يبني جدول القسم ويعدّله ويرسله للتسجيل — سلوك النظام المعتاد.",
@@ -209,6 +220,11 @@ export function signatureStage(value: unknown): "committee" | "head" | null {
   if (id === "committeeChair") return "committee";
   if (id === "departmentHead") return "head";
   return null;
+}
+
+/** مرشد القسم: لا يرى من النظام إلا أيقونتي الإرشاد الخاصتين بالطلبة. */
+export function isAdvisorRole(value: unknown): boolean {
+  return roleDefinition(value).id === "advisor";
 }
 
 /** أدوار العرض الصرف: لا تكتب شيئاً البتّة، ولا حتى ملاحظة. */

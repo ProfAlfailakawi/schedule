@@ -166,7 +166,7 @@ interface SessionRole {
   id: string;
   label: string;
   readOnly: boolean;
-  landing: "balance" | "changes" | "schedules" | "dashboard";
+  landing: "balance" | "changes" | "schedules" | "dashboard" | "registration";
   canReview: boolean;
   canManageDeadline: boolean;
   /** يفتح صندوق الوارد — ولو لم يقرّر فيه، كعميد التسجيل. */
@@ -184,6 +184,8 @@ interface SessionRole {
    */
   committeeEligible: boolean;
   viewerOnly: boolean;
+  /** مرشد القسم: لا يرى إلا أيقونتي كشف التسجيل ورادار التسجيل. */
+  advisorOnly?: boolean;
 }
 const DEFAULT_SESSION_ROLE: SessionRole = {
   id: "committeeChair", label: "رئيس لجنة الجدول", readOnly: false,
@@ -305,6 +307,7 @@ function landingViewFor(role: { landing: string }): View {
   if (role.landing === "changes") return "scheduleChanges";
   if (role.landing === "balance") return "reportDepartment";
   if (role.landing === "schedules") return "schedules";
+  if (role.landing === "registration") return "studentRegistration";
   return "dashboard";
 }
 
@@ -1509,9 +1512,11 @@ export default function App() {
       : availableSearchModes[0]
   ) as View | undefined;
   const smartReportView = (
-    availableReportModes.includes("reportDepartment")
-      ? "reportDepartment"
-      : availableReportModes[0]
+    sessionRole.advisorOnly
+      ? undefined
+      : availableReportModes.includes("reportDepartment")
+        ? "reportDepartment"
+        : availableReportModes[0]
   ) as View | undefined;
   const recordUse = (view: View) => {
     if (!user) return;
@@ -1697,6 +1702,10 @@ export default function App() {
     />
   );
   const renderView = () => {
+    /* مرشد القسم: أيقونتان فقط. أيُّ وجهةٍ أخرى (لوحة العمل أو رابطٌ مباشر) تعود إلى كشف التسجيل. */
+    if (sessionRole.advisorOnly && activeView !== "studentRegistration" && activeView !== "simulation") {
+      return <StudentRegistration scopes={scopes} powerAdmin={isPowerAdmin} />;
+    }
     switch (activeView) {
       case "dashboard":
         return (

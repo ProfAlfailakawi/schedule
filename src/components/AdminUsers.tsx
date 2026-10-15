@@ -211,6 +211,7 @@ export default function AdminUsers({
     [roleColleges, setRoleColleges] = useState<number[]>([]),
     /* «إنشاء حسابات رؤساء الأقسام»: المعاينة تُعرض أولاً، والإنشاء بعد تأكيد. */
     [headPlan, setHeadPlan] = useState<HeadPlanRow[] | null>(null),
+    [planKind, setPlanKind] = useState<"department-heads" | "advisors">("department-heads"),
     [headBusy, setHeadBusy] = useState(false),
     [headMessage, setHeadMessage] = useState<string | null>(null);
   useDialogDismiss(Boolean(backupConfirm) && !backupBusy, () => setBackupConfirm(null));
@@ -1495,8 +1496,8 @@ export default function AdminUsers({
               data-guide-ignore="معاينة حسابات رؤساء الأقسام قبل إنشائها؛ الإنشاء يحتاج تأكيداً ثانياً"
               disabled={headBusy}
               onClick={async () => {
-                setHeadBusy(true); setError(null); setHeadMessage(null);
-                try { setHeadPlan((await api("/api/users/department-heads/preview")).rows || []); }
+                setHeadBusy(true); setError(null); setHeadMessage(null); setHeadPlan(null);
+                try { const rows = (await api("/api/users/department-heads/preview")).rows || []; setPlanKind("department-heads"); setHeadPlan(rows); }
                 catch (e: any) { setError(e.message); }
                 finally { setHeadBusy(false); }
               }}
@@ -1504,17 +1505,33 @@ export default function AdminUsers({
               <UsersRound aria-hidden="true" /> إنشاء حسابات رؤساء الأقسام
             </button>
           ) : null}
+          {!demoReadOnly ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              data-guide-ignore="معاينة حسابات مرشدي الأقسام قبل إنشائها؛ الإنشاء يحتاج تأكيداً ثانياً"
+              disabled={headBusy}
+              onClick={async () => {
+                setHeadBusy(true); setError(null); setHeadMessage(null); setHeadPlan(null);
+                try { const rows = (await api("/api/users/advisors/preview")).rows || []; setPlanKind("advisors"); setHeadPlan(rows); }
+                catch (e: any) { setError(e.message); }
+                finally { setHeadBusy(false); }
+              }}
+            >
+              <UsersRound aria-hidden="true" /> إنشاء حسابات المرشدين
+            </button>
+          ) : null}
           </>,
         )}
         {headPlan ? (
-          <section className="admin-head-plan" aria-label="معاينة حسابات رؤساء الأقسام">
+          <section className="admin-head-plan" aria-label={planKind === "advisors" ? "معاينة حسابات مرشدي الأقسام" : "معاينة حسابات رؤساء الأقسام"}>
             <header>
-              <strong>حسابات رؤساء الأقسام</strong>
+              <strong>{planKind === "advisors" ? "حسابات مرشدي الأقسام" : "حسابات رؤساء الأقسام"}</strong>
               <span>
                 جديد {headPlan.filter(row => row.status === "create").length} · موجود {headPlan.filter(row => row.status === "exists").length}
               </span>
             </header>
-            <p>تُنشأ الحسابات موقوفةً وبلا كلمة سر، بصفة «رئيس القسم العلمي» ونطاق قسمها. عيّن كلمة السر وفعّل الحساب من هذه الشاشة حين يُسلَّم لصاحبه.</p>
+            <p>تُنشأ الحسابات موقوفةً وبلا كلمة سر، بصفة «{planKind === "advisors" ? "مرشد القسم" : "رئيس القسم العلمي"}» ونطاق قسمها. عيّن كلمة السر وفعّل الحساب من هذه الشاشة حين يُسلَّم لصاحبه.</p>
             {headMessage ? <p role="status">{headMessage}</p> : null}
             <table className="data-table">
               <thead><tr><th>القسم</th><th>الكلية</th><th>حساب القسم</th><th>اسم الدخول المقترح</th><th>الحالة</th></tr></thead>
@@ -1542,7 +1559,7 @@ export default function AdminUsers({
                 onClick={async () => {
                   setHeadBusy(true); setError(null);
                   try {
-                    const result = await api("/api/users/department-heads", { method: "POST" });
+                    const result = await api(`/api/users/${planKind}`, { method: "POST" });
                     setHeadPlan(result.rows || []);
                     setHeadMessage(`أُنشئ: ${countOf(result.created?.length || 0, AR.account)} — موقوفة بلا كلمة سر.`);
                     await load();

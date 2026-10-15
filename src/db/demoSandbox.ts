@@ -453,6 +453,7 @@ const DEMO_ROLE_SEEDS: DemoRoleSeed[] = [
   { role: "registrarHead",  id: 13, name: "أ. رئيس التسجيل",           login: "demo.reghead" },
   { role: "registrarStaff", id: 14, name: "أ. موظف التسجيل",           login: "demo.regstaff" },
   { role: "departmentHead", id: 15, name: "د. رئيس قسم علوم الحاسب",   login: "demo.dept" },
+  { role: "advisor",        id: 19, name: "أ. مرشد قسم علوم الحاسب",    login: "demo.advisor" },
   { role: "committeeChair", id: 16, name: "د. رئيس لجنة جدول الحاسب",  login: "demo.committee" },
   { role: "standard",       id: 17, name: "أ. مستخدم عادي",            login: "demo.standard" },
 ];
