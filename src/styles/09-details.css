@@ -294,7 +294,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   min-width:18px;height:18px;margin-inline-start:var(--s1);
   border-radius:var(--r-full);
   background:var(--accent);color:var(--accent-contrast);
-  font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;
+  font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;
 }
 
 /* The sheet sits on the page, not in it.
@@ -434,7 +434,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   border-radius:var(--r-xs);color:var(--muted);
   font-size:var(--t-h4);font-weight:600;font-variant-numeric:tabular-nums;
 }
-.share-days button small{font-size:10px;font-weight:400}
+.share-days button small{font-size:12px;font-weight:400}
 .share-days button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-xs)}
 .share-toggle{display:inline-flex;align-items:center;gap:var(--s2);color:var(--muted);font-size:var(--t-sm);cursor:pointer}
 .share-toggle input{width:17px;height:17px;accent-color:var(--accent)}
@@ -774,7 +774,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-subject{overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
 .review-subject>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;background:var(--surface-2);border-bottom:1px solid var(--line)}
 .review-subject>header strong{min-width:0;font-size:var(--t-sm);font-weight:700;color:var(--ink);overflow-wrap:anywhere}
-.review-subject>header small{flex:none;padding:3px 8px;border-radius:999px;background:var(--danger-soft);color:var(--danger);font-size:10px;font-weight:700}
+.review-subject>header small{flex:none;padding:3px 8px;border-radius:999px;background:var(--danger-soft);color:var(--danger);font-size:12px;font-weight:700}
 .review-subject-cases{display:grid}
 .review-subject-cases p{margin:0;padding:10px 13px;color:var(--ink-2);font-size:var(--t-sm);line-height:1.75;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
 .review-subject-cases p:first-child{border-top:0}
@@ -803,7 +803,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-copy small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
 .review-finding em{
   font-style:normal;padding:2px var(--s2);border-radius:var(--r-full);
-  background:var(--surface-3);color:var(--muted);font-size:10px;white-space:nowrap;
+  background:var(--surface-3);color:var(--muted);font-size:12px;white-space:nowrap;
 }
 .review-finding i{font-style:normal;color:var(--muted-2);font-size:var(--t-xs);white-space:nowrap;text-align:end}
 /* ── الملاحظات التي لا تمنع الاعتماد ─────────────────────────────────────────
@@ -833,7 +833,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-finding-detail p{margin:0;color:var(--ink-2);font-size:var(--t-sm);line-height:1.8}
 .review-finding-meta{display:flex;flex-wrap:wrap;gap:8px}
 .review-finding-meta span{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 11px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700}
-.history-review-infographic{display:grid;gap:12px}.history-review-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.history-review-kpis article{display:grid;grid-template-columns:28px 1fr;align-items:center;column-gap:8px;padding:10px;border-radius:13px;background:var(--surface);border:1px solid var(--line)}.history-review-kpis svg{grid-row:1/3;width:18px;color:var(--accent)}.history-review-kpis strong{font-size:18px;line-height:1}.history-review-kpis span{font-size:10px;color:var(--muted)}.history-review-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.history-review-cards>article{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:13px;background:var(--surface)}.history-review-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}.history-review-icon svg{width:16px}.history-review-cards div{min-width:0;display:grid;gap:2px}.history-review-cards div strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-review-cards div small{font-size:9px;color:var(--muted)}.history-review-cards time{font-size:10px;font-weight:700}.history-review-cards p{grid-column:2/-1;display:flex;align-items:center;gap:5px;margin:0!important;color:var(--muted)!important;font-size:9px!important}.history-review-cards p svg{width:11px}.history-review-cards p svg:nth-of-type(2){margin-inline-start:6px}.history-review-more{color:var(--muted);text-align:center}@media(max-width:620px){.history-review-cards{grid-template-columns:1fr}.history-review-kpis{grid-template-columns:1fr 1fr 1fr}.history-review-kpis article{grid-template-columns:1fr;text-align:center;justify-items:center}.history-review-kpis svg{grid-row:auto}}
+.history-review-infographic{display:grid;gap:12px}.history-review-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.history-review-kpis article{display:grid;grid-template-columns:28px 1fr;align-items:center;column-gap:8px;padding:10px;border-radius:13px;background:var(--surface);border:1px solid var(--line)}.history-review-kpis svg{grid-row:1/3;width:18px;color:var(--accent)}.history-review-kpis strong{font-size:18px;line-height:1}.history-review-kpis span{font-size:12px;color:var(--muted)}.history-review-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.history-review-cards>article{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:13px;background:var(--surface)}.history-review-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}.history-review-icon svg{width:16px}.history-review-cards div{min-width:0;display:grid;gap:2px}.history-review-cards div strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-review-cards div small{font-size:12px;color:var(--muted)}.history-review-cards time{font-size:12px;font-weight:700}.history-review-cards p{grid-column:2/-1;display:flex;align-items:center;gap:5px;margin:0!important;color:var(--muted)!important;font-size:12px!important}.history-review-cards p svg{width:11px}.history-review-cards p svg:nth-of-type(2){margin-inline-start:6px}.history-review-more{color:var(--muted);text-align:center}@media(max-width:620px){.history-review-cards{grid-template-columns:1fr}.history-review-kpis{grid-template-columns:1fr 1fr 1fr}.history-review-kpis article{grid-template-columns:1fr;text-align:center;justify-items:center}.history-review-kpis svg{grid-row:auto}}
 /* Each conflicting section is its own card now — code, teacher, section·days and
    time read at a glance instead of as one run-on line (Note 25). */
 .review-row-card{
@@ -1556,7 +1556,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   display:inline-flex;align-items:baseline;gap:6px;min-height:34px;padding:6px 10px;
   border:1px solid var(--line);border-radius:999px;background:var(--surface)
 }
-.schedule-time-intelligence-pills small{color:var(--muted);font-size:10px;font-weight:700}
+.schedule-time-intelligence-pills small{color:var(--muted);font-size:12px;font-weight:700}
 .schedule-time-intelligence-pills b{color:var(--ink);font-size:12px;font-weight:700}
 .schedule-time-intelligence details{margin:0}
 .schedule-time-intelligence summary{cursor:pointer;list-style:none;color:var(--warning);font-size:11px;font-weight:700}
@@ -1719,14 +1719,14 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .meeting-slots-none{background:var(--surface-2);border-color:var(--line)}
 .meeting-slots-answer{display:grid;gap:12px}
 .meeting-slots-alternatives-title{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:0 2px}
-.meeting-slots-alternatives-title small{color:var(--muted);font-size:10.5px;font-weight:700}
+.meeting-slots-alternatives-title small{color:var(--muted);font-size:12px;font-weight:700}
 .meeting-slots-alternatives-title strong{color:var(--ink);font-size:13px;font-weight:700}
 .meeting-slots-days{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
 .meeting-slots-days section{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--surface)}
 .meeting-slots-days h3{margin:0 0 8px;font-size:12.5px;font-weight:700;color:var(--ink)}
 .meeting-slots-days ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .meeting-slots-days li{display:grid;gap:4px;justify-items:start;font-size:12.5px;color:var(--ink)}
-.meeting-slots-days li small{color:var(--muted);font-size:10.5px}
+.meeting-slots-days li small{color:var(--muted);font-size:12px}
 .meeting-slots-miss{margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
 .meeting-slots-miss li{color:var(--ink-2)}
 @media(max-width:640px){
@@ -1823,7 +1823,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .meeting-meter{display:block;height:5px;border-radius:999px;background:var(--surface-2);overflow:hidden}
 .meeting-meter i{display:block;height:100%;border-radius:inherit;background:var(--accent)}
 .meeting-busy{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
-.meeting-busy small{color:var(--muted);font-size:10.5px;font-weight:700;margin-inline-end:2px}
+.meeting-busy small{color:var(--muted);font-size:12px;font-weight:700;margin-inline-end:2px}
 .meeting-busy span{padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);font-size:11px;background:var(--surface-2)}
 /* رمز QR لجدول الطلبة (StudentQrButton) — ورقةٌ صغيرة، والرمزُ على بطاقةٍ بيضاء
    ليبقى مقروءاً للكاميرا في أي سمة. */
@@ -1974,7 +1974,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .section-plan-state.is-read{color:var(--success,#3f7f67)}
 .section-plan-state.is-review{color:var(--warning)}
 .section-plan-state.is-manual{color:#2f6f78}
-.section-plan-reason-chip{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:2px 8px;border:1px solid color-mix(in srgb,var(--warning) 38%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--warning) 9%,var(--surface));color:var(--warning);font-size:10px;font-weight:700;line-height:1.4}
+.section-plan-reason-chip{display:inline-flex;align-items:center;gap:4px;margin-top:4px;padding:2px 8px;border:1px solid color-mix(in srgb,var(--warning) 38%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--warning) 9%,var(--surface));color:var(--warning);font-size:12px;font-weight:700;line-height:1.4}
 .section-plan-reason-chip.is-manual{border-color:color-mix(in srgb,#2f6f78 40%,var(--line));background:color-mix(in srgb,#2f6f78 8%,var(--surface));color:#2f6f78}
 .section-plan-yellow-note{display:flex;align-items:flex-start;gap:7px;padding:8px 11px;border:1px solid color-mix(in srgb,var(--warning) 40%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--warning) 8%,var(--surface));color:var(--ink);font-size:var(--t-sm);line-height:1.7}
 .section-plan-yellow-note svg{flex:none;width:16px;height:16px;margin-top:4px;color:var(--warning)}

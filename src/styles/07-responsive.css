@@ -994,7 +994,7 @@
 
 @media (max-width:760px){
   .system-vault-hero{grid-template-columns:auto minmax(0,1fr);padding:18px;gap:14px}.system-vault-hero .system-vault-state{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;text-align:initial;min-width:0}.system-vault-hero .system-vault-state strong{margin:0}
-  .system-vault-seal{width:48px;height:48px;border-radius:15px}.system-vault-grid{grid-template-columns:1fr;gap:12px}.system-vault-action{padding:17px;gap:12px}.vault-inline-actions{grid-template-columns:1fr}.vault-preview-hash{grid-template-columns:1fr;gap:6px}.vault-preview-hash code{font-size:9.5px}.vault-counts{max-height:150px;overflow:auto}.vault-safety-note{padding:15px}
+  .system-vault-seal{width:48px;height:48px;border-radius:15px}.system-vault-grid{grid-template-columns:1fr;gap:12px}.system-vault-action{padding:17px;gap:12px}.vault-inline-actions{grid-template-columns:1fr}.vault-preview-hash{grid-template-columns:1fr;gap:6px}.vault-preview-hash code{font-size:12px}.vault-counts{max-height:150px;overflow:auto}.vault-safety-note{padding:15px}
 }
 
 @media screen and (max-width:640px){
@@ -1409,7 +1409,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
      what the number counts. */
   .schedule-overview-stack>.schedule-mini-stats .stat-icon{display:none}
   .schedule-overview-stack>.schedule-mini-stats .stat-card strong{font-size:19px;line-height:1.15}
-  .schedule-overview-stack>.schedule-mini-stats .stat-card span{margin-top:1px;font-size:10.5px;line-height:1.3}
+  .schedule-overview-stack>.schedule-mini-stats .stat-card span{margin-top:1px;font-size:12px;line-height:1.3}
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1655,7 +1655,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .smart-guide-hint>div button,.guide-point-banner button,.guide-ghost-card button,
   .guide-preview button,.schedule-guide-ghost-diff footer button,
   .guide-simulation-brief footer button{font-size:11px}
-  .smart-guide-browse i{font-size:9.5px}
+  .smart-guide-browse i{font-size:12px}
   .smart-guide-onboarding button strong,.smart-guide strong,.guide-ghost-card>strong{font-size:12px}
   .smart-guide-steps span,.smart-guide-focus-card>header p{font-size:11.5px}
   .smart-guide-hint>div button{height:30px}

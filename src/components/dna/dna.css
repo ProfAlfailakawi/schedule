@@ -357,7 +357,7 @@
   border-radius: 999px;
   background: var(--dna-surface);
   color: var(--dna-ink);
-  font-size: 10.5px;
+  font-size:12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   box-shadow: 0 0 0 1px var(--dna-line-2);

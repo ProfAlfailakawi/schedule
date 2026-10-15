@@ -230,7 +230,7 @@
   letter-spacing:var(--brand-word-track);
 }
 .jr-mark>i{flex:0 0 44px;height:1px;background:var(--jr-line)}
-.jr-mark>small{font-size:10px;letter-spacing:0;font-size:11px}
+.jr-mark>small{font-size:12px;letter-spacing:0;font-size:11px}
 
 /* ── States ────────────────────────────────────────────────────────────── */
 .jr-state{display:grid;gap:8px;justify-items:start}
@@ -551,7 +551,7 @@
   .jr-mark{gap:10px;flex-wrap:nowrap}
   .jr-mark>b{font-size:11px}
   .jr-mark>i{flex:1 1 auto}
-  .jr-mark>small{font-size:9px;letter-spacing:.14em;white-space:nowrap}
+  .jr-mark>small{font-size:12px;letter-spacing:.14em;white-space:nowrap}
 
   .jr-creed blockquote{font-size:clamp(27px,8.6vw,40px)}
   .jr-foot{align-items:start;gap:14px}
